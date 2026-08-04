@@ -1,0 +1,279 @@
+name: Fork Nightly
+
+on:
+  schedule:
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: none
+
+concurrency:
+  group: fork-nightly
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Rebase and verify
+    if: github.repository == 'incognitojam/t3code'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      has_changes: ${{ steps.candidate.outputs.has_changes }}
+      ref: ${{ steps.candidate.outputs.ref }}
+      version: ${{ steps.release_meta.outputs.version }}
+      tag: ${{ steps.release_meta.outputs.tag }}
+      release_name: ${{ steps.release_meta.outputs.name }}
+      short_sha: ${{ steps.release_meta.outputs.short_sha }}
+    steps:
+      - name: Checkout fork patch stack
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - id: candidate
+        name: Rebase candidate onto upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/pingdotgg/t3code.git
+          git fetch upstream main --tags
+          git fetch origin '+refs/heads/nightly:refs/remotes/origin/nightly' || true
+          git fetch origin \
+            '+refs/heads/nightly-candidate:refs/remotes/origin/nightly-candidate' || true
+
+          git switch -C nightly-candidate origin/main
+          git rebase upstream/main
+
+          candidate_ref=$(git rev-parse HEAD)
+          has_changes=true
+          if git rev-parse --verify refs/remotes/origin/nightly >/dev/null 2>&1 && \
+            git diff --quiet origin/nightly HEAD --; then
+            has_changes=false
+          fi
+
+          echo "has_changes=$has_changes" >> "$GITHUB_OUTPUT"
+          echo "ref=$candidate_ref" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Vite+
+        if: steps.candidate.outputs.has_changes == 'true'
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Ensure Electron runtime is installed
+        if: steps.candidate.outputs.has_changes == 'true'
+        run: vp run --filter @t3tools/desktop ensure:electron
+
+      - name: Check
+        if: steps.candidate.outputs.has_changes == 'true'
+        run: vp check
+
+      - name: Typecheck
+        if: steps.candidate.outputs.has_changes == 'true'
+        run: vp run typecheck
+
+      - name: Test
+        if: steps.candidate.outputs.has_changes == 'true'
+        run: vp run test
+
+      - id: release_meta
+        name: Resolve nightly version
+        if: steps.candidate.outputs.has_changes == 'true'
+        shell: bash
+        env:
+          CANDIDATE_REF: ${{ steps.candidate.outputs.ref }}
+          NIGHTLY_RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          nightly_date=$(date -u +%Y%m%d)
+          node scripts/resolve-nightly-release.ts \
+            --date "$nightly_date" \
+            --run-number "$NIGHTLY_RUN_NUMBER" \
+            --sha "$CANDIDATE_REF" \
+            --github-output
+
+      - name: Publish verified candidate
+        if: steps.candidate.outputs.has_changes == 'true'
+        run: git push --force-with-lease origin HEAD:refs/heads/nightly-candidate
+
+  build_macos:
+    name: Build macOS arm64
+    needs: prepare
+    if: needs.prepare.outputs.has_changes == 'true'
+    runs-on: macos-15
+    timeout-minutes: 45
+    outputs:
+      signed: ${{ steps.build.outputs.signed }}
+    steps:
+      - name: Checkout verified candidate
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+          fetch-depth: 0
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/desktop...
+              - --filter=t3...
+              - --filter=@t3tools/scripts...
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Align package versions
+        run: node scripts/update-release-package-versions.ts "${{ needs.prepare.outputs.version }}"
+
+      - id: build
+        name: Build desktop artifact
+        shell: bash
+        env:
+          T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          MACOS_PROVISIONING_PROFILE: ${{ secrets.MACOS_PROVISIONING_PROFILE }}
+          T3CODE_CLERK_PASSKEY_RP_DOMAINS: ${{ vars.CLERK_PASSKEY_RP_DOMAINS }}
+        run: |
+          set -euo pipefail
+
+          args=(
+            --platform mac
+            --target dmg
+            --arch arm64
+            --build-version "${{ needs.prepare.outputs.version }}"
+            --verbose
+          )
+
+          has_all() {
+            for value in "$@"; do
+              if [[ -z "$value" ]]; then
+                return 1
+              fi
+            done
+          }
+
+          if has_all \
+            "$CSC_LINK" \
+            "$CSC_KEY_PASSWORD" \
+            "$APPLE_API_KEY" \
+            "$APPLE_API_KEY_ID" \
+            "$APPLE_API_ISSUER" \
+            "$APPLE_TEAM_ID" \
+            "$MACOS_PROVISIONING_PROFILE" \
+            "$T3CODE_CLERK_PASSKEY_RP_DOMAINS"; then
+            key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+            printf '%s' "$APPLE_API_KEY" > "$key_path"
+            export APPLE_API_KEY="$key_path"
+
+            profile_path="$RUNNER_TEMP/t3code.provisionprofile"
+            printf '%s' "$MACOS_PROVISIONING_PROFILE" | base64 -D > "$profile_path"
+            security cms -D -i "$profile_path" >/dev/null
+            export T3CODE_APPLE_TEAM_ID="$APPLE_TEAM_ID"
+            export T3CODE_MACOS_PROVISIONING_PROFILE="$profile_path"
+
+            args+=(--signed)
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+            echo "Building a signed and notarized macOS artifact."
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "Apple signing configuration is incomplete; building an unsigned artifact."
+          fi
+
+          vp run dist:desktop:artifact "${args[@]}"
+
+      - name: Collect release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-publish
+
+          shopt -s nullglob
+          for pattern in \
+            "release/*.dmg" \
+            "release/*.zip" \
+            "release/*.yml"; do
+            for file in $pattern; do
+              cp "$file" release-publish/
+            done
+          done
+
+          test -n "$(find release-publish -maxdepth 1 -type f -print -quit)"
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-mac-arm64
+          path: release-publish/*
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub prerelease
+    needs: [prepare, build_macos]
+    if: needs.prepare.outputs.has_changes == 'true' && needs.build_macos.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout released source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+          fetch-depth: 0
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Download release assets
+        uses: actions/download-artifact@v8
+        with:
+          name: desktop-mac-arm64
+          path: release-assets
+
+      - name: Publish prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          target_commitish: ${{ needs.prepare.outputs.ref }}
+          name: ${{ needs.prepare.outputs.release_name }}
+          body: |
+            Automated build of `incognitojam/t3code` rebased onto `pingdotgg/t3code@main`.
+
+            Source: `${{ needs.prepare.outputs.short_sha }}`
+            macOS Developer ID signed: `${{ needs.build_macos.outputs.signed }}`
+          generate_release_notes: true
+          prerelease: true
+          make_latest: false
+          files: release-assets/*
+          fail_on_unmatched_files: true
+          token: ${{ github.token }}
+
+      - name: Promote successful nightly source
+        shell: bash
+        run: |
+          git fetch origin '+refs/heads/nightly:refs/remotes/origin/nightly' || true
+          git push --force-with-lease origin HEAD:refs/heads/nightly
