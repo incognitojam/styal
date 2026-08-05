@@ -44,6 +44,7 @@ describe("clientPersistenceStorage", () => {
       await import("./clientPersistenceStorage");
     const settings = {
       ...DEFAULT_CLIENT_SETTINGS,
+      completionSound: "none" as const,
       timestampFormat: "24-hour" as const,
     };
 
