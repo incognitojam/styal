@@ -113,6 +113,21 @@ describe("ClientSettings sidebar", () => {
   });
 });
 
+describe("ClientSettings completion sound", () => {
+  it("defaults to no sound", () => {
+    expect(decodeClientSettings({}).completionSound).toBe("none");
+  });
+
+  it("accepts valid persisted values", () => {
+    expect(decodeClientSettings({ completionSound: "none" }).completionSound).toBe("none");
+    expect(decodeClientSettings({ completionSound: "chime" }).completionSound).toBe("chime");
+  });
+
+  it("rejects invalid persisted values", () => {
+    expect(() => decodeClientSettings({ completionSound: "silent" })).toThrow();
+  });
+});
+
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   it("defaults text generation to Luna at low reasoning effort", () => {
     expect(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection).toEqual({
