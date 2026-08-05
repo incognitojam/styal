@@ -155,6 +155,7 @@ const TIMESTAMP_FORMAT_LABELS = {
 const COMPLETION_SOUND_LABELS: Record<CompletionSound, string> = {
   none: "No sound",
   chime: "Chime",
+  avanti: "Avanti",
 };
 
 const BACKGROUND_ACTIVITY_PROFILE_LABELS: Record<BackgroundActivityProfile, string> = {
@@ -1723,7 +1724,7 @@ export function GeneralSettingsPanel() {
               <Select
                 value={settings.completionSound}
                 onValueChange={(value) => {
-                  if (value === "none" || value === "chime") {
+                  if (value === "none" || value === "chime" || value === "avanti") {
                     updateSettings({ completionSound: value });
                   }
                 }}
@@ -1737,6 +1738,9 @@ export function GeneralSettingsPanel() {
                   </SelectItem>
                   <SelectItem hideIndicator value="chime">
                     {COMPLETION_SOUND_LABELS.chime}
+                  </SelectItem>
+                  <SelectItem hideIndicator value="avanti">
+                    {COMPLETION_SOUND_LABELS.avanti}
                   </SelectItem>
                 </SelectPopup>
               </Select>
