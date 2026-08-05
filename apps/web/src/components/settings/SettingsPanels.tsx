@@ -19,6 +19,7 @@ import {
 import {
   DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
   DEFAULT_UNIFIED_SETTINGS,
+  type CompletionSound,
   type EnvironmentIdentificationMode,
   MAX_CODE_FONT_SIZE,
   MAX_GLASS_OPACITY,
@@ -153,6 +154,11 @@ const TIMESTAMP_FORMAT_LABELS = {
   "12-hour": "12-hour",
   "24-hour": "24-hour",
 } as const;
+
+const COMPLETION_SOUND_LABELS: Record<CompletionSound, string> = {
+  none: "No sound",
+  chime: "Chime",
+};
 
 const BACKGROUND_ACTIVITY_PROFILE_LABELS: Record<BackgroundActivityProfile, string> = {
   balanced: "Balanced",
@@ -481,6 +487,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat
         ? ["Time format"]
         : []),
+      ...(settings.completionSound !== DEFAULT_UNIFIED_SETTINGS.completionSound
+        ? ["Completion sound"]
+        : []),
       ...(settings.sidebarThreadPreviewCount !== DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount
         ? ["Visible threads"]
         : []),
@@ -536,6 +545,7 @@ export function useSettingsRestore(onRestored?: () => void) {
     [
       isTextGenerationModelDirty,
       isBackgroundActivityDirty,
+      settings.completionSound,
       settings.confirmThreadArchive,
       settings.confirmThreadDelete,
       settings.addProjectBaseDirectory,
@@ -629,6 +639,7 @@ export function useSettingsRestore(onRestored?: () => void) {
     }
     updateSettings({
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
+      completionSound: DEFAULT_UNIFIED_SETTINGS.completionSound,
       wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
       diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
       environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
@@ -1888,6 +1899,45 @@ export function GeneralSettingsPanel() {
               }
               aria-label="Hide whitespace changes by default"
             />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("completion-sound")}
+          description="Choose whether T3 Code plays a sound when a response finishes."
+          resetAction={
+            settings.completionSound !== DEFAULT_UNIFIED_SETTINGS.completionSound ? (
+              <SettingResetButton
+                label="completion sound"
+                onClick={() =>
+                  updateSettings({
+                    completionSound: DEFAULT_UNIFIED_SETTINGS.completionSound,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.completionSound}
+              onValueChange={(value) => {
+                if (value === "none" || value === "chime") {
+                  updateSettings({ completionSound: value });
+                }
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-40" aria-label="Completion sound">
+                <SelectValue>{COMPLETION_SOUND_LABELS[settings.completionSound]}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="none">
+                  {COMPLETION_SOUND_LABELS.none}
+                </SelectItem>
+                <SelectItem hideIndicator value="chime">
+                  {COMPLETION_SOUND_LABELS.chime}
+                </SelectItem>
+              </SelectPopup>
+            </Select>
           }
         />
 
