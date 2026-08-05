@@ -86,7 +86,7 @@ jobs:
 
       - name: Test
         if: steps.candidate.outputs.has_changes == 'true'
-        run: vp run test
+        run: vp run -r --concurrency-limit 1 test --maxWorkers=1
 
       - id: release_meta
         name: Resolve nightly version
