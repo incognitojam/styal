@@ -80,6 +80,7 @@ import { isMacPlatform } from "../../lib/utils";
 import { primaryServerObservabilityAtom, primaryServerProvidersAtom } from "../../state/server";
 import { useProjects } from "../../state/entities";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
+import { playCompletionSound } from "../../lib/completionSound";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
@@ -1889,26 +1890,35 @@ export function GeneralSettingsPanel() {
             ) : null
           }
           control={
-            <Select
-              value={settings.completionSound}
-              onValueChange={(value) => {
-                if (value === "none" || value === "chime") {
-                  updateSettings({ completionSound: value });
-                }
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-40" aria-label="Completion sound">
-                <SelectValue>{COMPLETION_SOUND_LABELS[settings.completionSound]}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="none">
-                  {COMPLETION_SOUND_LABELS.none}
-                </SelectItem>
-                <SelectItem hideIndicator value="chime">
-                  {COMPLETION_SOUND_LABELS.chime}
-                </SelectItem>
-              </SelectPopup>
-            </Select>
+            <>
+              <Select
+                value={settings.completionSound}
+                onValueChange={(value) => {
+                  if (value === "none" || value === "chime") {
+                    updateSettings({ completionSound: value });
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full sm:w-40" aria-label="Completion sound">
+                  <SelectValue>{COMPLETION_SOUND_LABELS[settings.completionSound]}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem hideIndicator value="none">
+                    {COMPLETION_SOUND_LABELS.none}
+                  </SelectItem>
+                  <SelectItem hideIndicator value="chime">
+                    {COMPLETION_SOUND_LABELS.chime}
+                  </SelectItem>
+                </SelectPopup>
+              </Select>
+              <Button
+                variant="outline"
+                disabled={settings.completionSound === "none"}
+                onClick={() => playCompletionSound(settings.completionSound)}
+              >
+                Test
+              </Button>
+            </>
           }
         />
 
