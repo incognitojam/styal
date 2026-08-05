@@ -86,7 +86,11 @@ jobs:
 
       - name: Test
         if: steps.candidate.outputs.has_changes == 'true'
-        run: vp run -r --concurrency-limit 1 test --maxWorkers=1
+        run: |
+          vp run -r test --exclude '**/imageCompression.test.ts'
+          vp run --filter @t3tools/web test src/lib/imageCompression.test.ts \
+            --no-file-parallelism \
+            --maxWorkers=1
 
       - id: release_meta
         name: Resolve nightly version
