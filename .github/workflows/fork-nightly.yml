@@ -125,7 +125,7 @@ jobs:
       github.event_name != 'pull_request' &&
       needs.prepare.outputs.has_changes == 'true'
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 100
     steps:
       - name: Checkout verified candidate
         uses: actions/checkout@v6
@@ -157,6 +157,7 @@ jobs:
         run: node scripts/update-release-package-versions.ts "${{ needs.prepare.outputs.version }}"
 
       - name: Build signed desktop artifact
+        timeout-minutes: 90
         shell: bash
         env:
           T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
