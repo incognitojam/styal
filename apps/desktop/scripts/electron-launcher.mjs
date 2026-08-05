@@ -15,10 +15,11 @@ const repoRoot = NodePath.resolve(desktopDir, "..", "..");
 const devBundleIdSuffix = NodePath.basename(repoRoot)
   .toLowerCase()
   .replaceAll(/[^a-z0-9]+/g, "");
-export const APP_DISPLAY_NAME = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";
+const appStageLabel = isDevelopment ? "Dev" : "Alpha";
+export const APP_DISPLAY_NAME = `T3 Code (incognitojam ${appStageLabel})`;
 export const APP_BUNDLE_ID = isDevelopment
   ? `com.t3tools.t3code.dev.${devBundleIdSuffix || "local"}`
-  : "com.t3tools.t3code";
+  : "dev.incognitojam.t3code";
 const APP_PROTOCOL_SCHEMES = isDevelopment ? ["t3code-dev"] : ["t3code"];
 const LAUNCHER_VERSION = 14;
 const defaultIconPath = NodePath.join(desktopDir, "resources", "icon.icns");
