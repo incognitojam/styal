@@ -371,8 +371,11 @@ jobs:
         always() &&
         (
           needs.prepare.result == 'failure' ||
+          needs.prepare.result == 'cancelled' ||
           needs.build_macos.result == 'failure' ||
-          needs.release.result == 'failure'
+          needs.build_macos.result == 'cancelled' ||
+          needs.release.result == 'failure' ||
+          needs.release.result == 'cancelled'
         )
       }}
     runs-on: ubuntu-24.04
