@@ -30,10 +30,6 @@ function GitHubStatusTooltip({ notice }: { readonly notice: GitHubStatusNoticeVi
           ))}
         </div>
       ) : null}
-      <div className="mt-2 flex items-center gap-1 text-muted-foreground">
-        Open GitHub Status
-        <ExternalLinkIcon className="size-3" />
-      </div>
     </div>
   );
 }
@@ -102,6 +98,7 @@ export function GitHubStatusNotice() {
           >
             <TriangleAlertIcon className="size-3.5 shrink-0" />
             <span className="truncate">{notice.label}</span>
+            <ExternalLinkIcon className="ml-auto size-3 shrink-0 opacity-70" />
           </button>
         }
       />
