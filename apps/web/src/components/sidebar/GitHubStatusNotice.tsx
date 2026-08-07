@@ -5,7 +5,6 @@ import {
   GITHUB_STATUS_PAGE_URL,
   GITHUB_STATUS_SUMMARY_URL,
   resolveGitHubStatusNotice,
-  resolveGitHubStatusPreview,
   type GitHubStatusNotice as GitHubStatusNoticeView,
 } from "../../githubStatus";
 import { useClientSettings } from "../../hooks/useSettings";
@@ -38,13 +37,10 @@ function GitHubStatusTooltip({ notice }: { readonly notice: GitHubStatusNoticeVi
 
 export function GitHubStatusNotice() {
   const enabled = useClientSettings((settings) => settings.githubStatusAlertsEnabled);
-  const [liveNotice, setLiveNotice] = useState<GitHubStatusNoticeView | null>(null);
-  const previewNotice = import.meta.env.DEV
-    ? resolveGitHubStatusPreview(window.location.search)
-    : undefined;
+  const [notice, setNotice] = useState<GitHubStatusNoticeView | null>(null);
 
   useEffect(() => {
-    if (!enabled || previewNotice) return;
+    if (!enabled) return;
 
     let cancelled = false;
     let nextRefresh: number | undefined;
@@ -60,7 +56,7 @@ export function GitHubStatusNotice() {
         if (!response.ok) return;
         const summary: unknown = await response.json();
         if (!cancelled) {
-          setLiveNotice(resolveGitHubStatusNotice(summary));
+          setNotice(resolveGitHubStatusNotice(summary));
         }
       } catch {
         // A missing status response is not evidence of a GitHub outage. Keep
@@ -79,7 +75,7 @@ export function GitHubStatusNotice() {
       activeRequest?.abort();
       if (nextRefresh !== undefined) window.clearTimeout(nextRefresh);
     };
-  }, [enabled, previewNotice]);
+  }, [enabled]);
 
   const openGitHubStatus = useCallback(() => {
     void readLocalApi()
@@ -87,7 +83,6 @@ export function GitHubStatusNotice() {
       .catch(() => undefined);
   }, []);
 
-  const notice = previewNotice ?? liveNotice;
   if (!enabled || !notice) return null;
 
   return (
