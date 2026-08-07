@@ -121,6 +121,7 @@ describe("ClientSettings completion sound", () => {
   it("accepts valid persisted values", () => {
     expect(decodeClientSettings({ completionSound: "none" }).completionSound).toBe("none");
     expect(decodeClientSettings({ completionSound: "chime" }).completionSound).toBe("chime");
+    expect(decodeClientSettings({ completionSound: "avanti" }).completionSound).toBe("avanti");
   });
 
   it("rejects invalid persisted values", () => {
