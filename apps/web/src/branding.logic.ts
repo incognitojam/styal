@@ -11,6 +11,25 @@ export function formatAppDisplayName(input: {
   return `${input.baseName} (${input.stageLabel})`;
 }
 
+export function formatDistributionBadgeLabel(input: {
+  readonly distributionName: string;
+  readonly stageLabel: string;
+  readonly stageIdentifiedByArtwork: boolean;
+}): string {
+  if (input.stageIdentifiedByArtwork) {
+    return input.distributionName;
+  }
+
+  const normalizedStageLabel = input.stageLabel.trim().toLowerCase();
+  if (normalizedStageLabel === "dev") {
+    return `${input.distributionName} Dev`;
+  }
+  if (normalizedStageLabel === "nightly") {
+    return `${input.distributionName} Nightly`;
+  }
+  return input.distributionName;
+}
+
 /**
  * Whether the sidebar v2 beta is on by default for a build stage.
  *
