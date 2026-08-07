@@ -30,7 +30,7 @@ concurrency:
 jobs:
   prepare:
     name: Upstream compatibility
-    if: github.repository == 'incognitojam/t3code'
+    if: github.repository == 'yngatech/t3code'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     outputs:
