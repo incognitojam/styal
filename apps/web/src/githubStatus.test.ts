@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolveGitHubStatusNotice } from "./githubStatus";
+import { resolveGitHubStatusNotice, resolveGitHubStatusPreview } from "./githubStatus";
 
 function statusSummary(input?: {
   readonly indicator?: string;
@@ -93,5 +93,21 @@ describe("GitHub status notice", () => {
 
   it("ignores malformed responses", () => {
     expect(resolveGitHubStatusNotice({ status: "down" })).toBeNull();
+  });
+});
+
+describe("GitHub status preview", () => {
+  it("provides deterministic partial and major outage states", () => {
+    expect(resolveGitHubStatusPreview("?github-status=partial")?.label).toBe(
+      "GitHub Outage: Actions, Pages",
+    );
+    expect(resolveGitHubStatusPreview("?github-status=major")?.label).toBe(
+      "GitHub Outage: 3 services affected",
+    );
+  });
+
+  it("uses live status when the preview parameter is absent or invalid", () => {
+    expect(resolveGitHubStatusPreview("")).toBeUndefined();
+    expect(resolveGitHubStatusPreview("?github-status=healthy")).toBeUndefined();
   });
 });

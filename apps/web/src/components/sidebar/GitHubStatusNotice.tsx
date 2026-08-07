@@ -5,8 +5,10 @@ import {
   GITHUB_STATUS_PAGE_URL,
   GITHUB_STATUS_SUMMARY_URL,
   resolveGitHubStatusNotice,
+  resolveGitHubStatusPreview,
   type GitHubStatusNotice as GitHubStatusNoticeView,
 } from "../../githubStatus";
+import { useClientSettings } from "../../hooks/useSettings";
 import { readLocalApi } from "../../localApi";
 import { cn } from "../../lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -35,9 +37,15 @@ function GitHubStatusTooltip({ notice }: { readonly notice: GitHubStatusNoticeVi
 }
 
 export function GitHubStatusNotice() {
-  const [notice, setNotice] = useState<GitHubStatusNoticeView | null>(null);
+  const enabled = useClientSettings((settings) => settings.githubStatusAlertsEnabled);
+  const [liveNotice, setLiveNotice] = useState<GitHubStatusNoticeView | null>(null);
+  const previewNotice = import.meta.env.DEV
+    ? resolveGitHubStatusPreview(window.location.search)
+    : undefined;
 
   useEffect(() => {
+    if (!enabled || previewNotice) return;
+
     let cancelled = false;
     let nextRefresh: number | undefined;
     let activeRequest: AbortController | undefined;
@@ -52,7 +60,7 @@ export function GitHubStatusNotice() {
         if (!response.ok) return;
         const summary: unknown = await response.json();
         if (!cancelled) {
-          setNotice(resolveGitHubStatusNotice(summary));
+          setLiveNotice(resolveGitHubStatusNotice(summary));
         }
       } catch {
         // A missing status response is not evidence of a GitHub outage. Keep
@@ -71,7 +79,7 @@ export function GitHubStatusNotice() {
       activeRequest?.abort();
       if (nextRefresh !== undefined) window.clearTimeout(nextRefresh);
     };
-  }, []);
+  }, [enabled, previewNotice]);
 
   const openGitHubStatus = useCallback(() => {
     void readLocalApi()
@@ -79,7 +87,8 @@ export function GitHubStatusNotice() {
       .catch(() => undefined);
   }, []);
 
-  if (!notice) return null;
+  const notice = previewNotice ?? liveNotice;
+  if (!enabled || !notice) return null;
 
   return (
     <Tooltip>

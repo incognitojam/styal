@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 
 export const GITHUB_STATUS_PAGE_URL = "https://www.githubstatus.com";
 export const GITHUB_STATUS_SUMMARY_URL = `${GITHUB_STATUS_PAGE_URL}/api/v2/summary.json`;
+export const GITHUB_STATUS_PREVIEW_PARAM = "github-status";
 
 const GitHubStatusSummarySchema = Schema.Struct({
   status: Schema.Struct({
@@ -32,6 +33,35 @@ export interface GitHubStatusNotice {
   readonly description: string;
   readonly label: string;
   readonly tone: GitHubStatusNoticeTone;
+}
+
+const GITHUB_STATUS_PREVIEWS = {
+  partial: {
+    affectedComponents: [
+      { name: "Actions", status: "major_outage", statusLabel: "Major outage" },
+      { name: "Pages", status: "major_outage", statusLabel: "Major outage" },
+    ],
+    description: "Partial System Outage",
+    label: "GitHub Outage: Actions, Pages",
+    tone: "error",
+  },
+  major: {
+    affectedComponents: [
+      { name: "Git Operations", status: "major_outage", statusLabel: "Major outage" },
+      { name: "API Requests", status: "major_outage", statusLabel: "Major outage" },
+      { name: "Pull Requests", status: "partial_outage", statusLabel: "Partial outage" },
+    ],
+    description: "Major System Outage",
+    label: "GitHub Outage: 3 services affected",
+    tone: "error",
+  },
+} as const satisfies Readonly<Record<string, GitHubStatusNotice>>;
+
+/** Returns a deterministic notice for local visual testing, or undefined for live status. */
+export function resolveGitHubStatusPreview(search: string): GitHubStatusNotice | undefined {
+  const preview = new URLSearchParams(search).get(GITHUB_STATUS_PREVIEW_PARAM);
+  if (preview !== "partial" && preview !== "major") return undefined;
+  return GITHUB_STATUS_PREVIEWS[preview];
 }
 
 function componentStatusLabel(status: string): string {
