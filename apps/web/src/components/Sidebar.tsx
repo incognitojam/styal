@@ -44,6 +44,7 @@ import {
   FolderPlusIcon,
   GitBranchIcon,
   MessageSquareIcon,
+  PencilIcon,
   PinIcon,
   PlusIcon,
   SearchIcon,
@@ -93,6 +94,7 @@ import {
   buildSidebarProjectSnapshots,
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
+import { useComposerThreadHasDraftContent } from "../composerDraftStore";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useThreadActions } from "../hooks/useThreadActions";
@@ -740,6 +742,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   });
   const terminalStatus = terminalStatusFromRunningIds(runningTerminalIds);
   const terminalProcessCount = runningTerminalIds.length;
+  const hasDraft = useComposerThreadHasDraftContent(threadRef);
 
   const gitCwd = thread.worktreePath ?? props.projectCwd;
   const gitStatus = useEnvironmentQuery(
@@ -1113,6 +1116,23 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       <TerminalIcon className={cn("size-3.5", terminalStatus.pulse && "animate-status-pulse")} />
     </span>
   ) : null;
+  const draftIcon = hasDraft ? (
+    <span
+      role="img"
+      aria-label="Unsent draft"
+      data-testid={`sidebar-v2-draft-${thread.id}`}
+      className={cn(
+        // Matches the PR badge's settled treatment: muted at rest so the
+        // parked tail stays quiet, brightening with the row on hover. The
+        // pencil has no state colour of its own, so it lifts to the same
+        // foreground the title does.
+        "inline-flex shrink-0 items-center justify-center text-secondary-label",
+        !props.isActive && "transition-colors group-hover/v2-row:text-foreground",
+      )}
+    >
+      <PencilIcon className="size-3.5" />
+    </span>
+  ) : null;
 
   if (variant === "slim") {
     return (
@@ -1154,6 +1174,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               />
             </span>
             {title}
+            {draftIcon}
             {terminalStatusIcon}
             {isRegeneratingTitle ? (
               <span role="status" className="sr-only">
@@ -1436,6 +1457,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               ) : (
                 <span className="flex-1" />
               )}
+              {draftIcon}
               {terminalStatusIcon}
               {prBadge}
               {diff ? (
