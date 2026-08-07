@@ -22,6 +22,7 @@ import {
   type GitActionProgressEvent,
   type GitManagerServiceError,
   OrchestrationDispatchCommandError,
+  OrchestrationGetCommandOutputError,
   type OrchestrationEvent,
   type OrchestrationShellStreamEvent,
   type OrchestrationShellStreamItem,
@@ -63,6 +64,7 @@ import { HttpRouter, HttpServerRequest, HttpServerRespondable } from "effect/uns
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
+import * as CommandOutputQuery from "./orchestration/CommandOutputQuery.ts";
 import * as ServerConfig from "./config.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
@@ -357,6 +359,7 @@ const makeWsRpcLayer = (
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
       const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
       const checkpointDiffQuery = yield* CheckpointDiffQuery.CheckpointDiffQuery;
+      const commandOutputQuery = yield* CommandOutputQuery.CommandOutputQuery;
       const keybindings = yield* Keybindings.Keybindings;
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
@@ -1109,6 +1112,20 @@ const makeWsRpcLayer = (
                 (cause) =>
                   new OrchestrationGetTurnDiffError({
                     message: "Failed to load turn diff",
+                    cause,
+                  }),
+              ),
+            ),
+            { "rpc.aggregate": "orchestration" },
+          ),
+        [ORCHESTRATION_WS_METHODS.getCommandOutput]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.getCommandOutput,
+            commandOutputQuery.getCommandOutput(input).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationGetCommandOutputError({
+                    message: "Failed to load command output",
                     cause,
                   }),
               ),

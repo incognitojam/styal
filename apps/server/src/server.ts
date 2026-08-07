@@ -102,6 +102,7 @@ import * as ResourceAttribution from "./resourceTelemetry/ResourceAttribution.ts
 import * as ResourceMonitorBinary from "./resourceTelemetry/ResourceMonitorBinary.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
+import * as CommandOutputQuery from "./orchestration/CommandOutputQuery.ts";
 import {
   clearPersistedServerRuntimeState,
   makePersistedServerRuntimeState,
@@ -255,7 +256,10 @@ const ProviderLayerLive = ProviderServiceLive.pipe(
   Layer.provideMerge(ProviderSessionDirectoryLayerLive),
 );
 
-const PersistenceLayerLive = Layer.empty.pipe(Layer.provideMerge(SqlitePersistenceLayerLive));
+const PersistenceLayerLive = Layer.mergeAll(
+  SqlitePersistenceLayerLive,
+  CommandOutputQuery.layer.pipe(Layer.provide(SqlitePersistenceLayerLive)),
+);
 
 const VcsDriverRegistryLayerLive = VcsDriverRegistry.layer.pipe(
   Layer.provide(VcsProjectConfig.layer),
