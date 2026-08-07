@@ -833,7 +833,14 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
       role="img"
       aria-label="Unsent draft"
       data-testid={`sidebar-v2-draft-${thread.id}`}
-      className="inline-flex shrink-0 items-center justify-center text-secondary-label"
+      className={cn(
+        // Matches the PR badge's settled treatment: muted at rest so the
+        // parked tail stays quiet, brightening with the row on hover. The
+        // pencil has no state colour of its own, so it lifts to the same
+        // foreground the title does.
+        "inline-flex shrink-0 items-center justify-center text-secondary-label",
+        !props.isActive && "transition-colors group-hover/v2-row:text-foreground",
+      )}
     >
       <PencilIcon className="size-3.5" />
     </span>
