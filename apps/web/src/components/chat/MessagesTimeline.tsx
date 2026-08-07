@@ -2613,6 +2613,8 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const displayText = workEntryPreview(workEntry, workspaceRoot) ?? toolWorkEntryHeading(workEntry);
   const expandedBody = buildToolCallExpandedBody(workEntry, workspaceRoot);
   const canExpand = expandedBody !== null;
+  const exitCodeLabel =
+    workEntry.exitCode === undefined ? null : `Exit code ${workEntry.exitCode.toString()}`;
   const showDestructiveRowStyle =
     showFailedIndicator &&
     (workEntrySignalsSevereFailure(workEntry) || !workLogEntryIsToolLike(workEntry));
@@ -2635,10 +2637,15 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       : workLogEntryIsToolLike(workEntry)
         ? "text-secondary-label"
         : "text-foreground/80";
-  const showEntryIcon = !isExpandedToolGroupEntry || showWarningIndicator || showFailedIndicator;
-  const accessibleDisplayText = showFailedIndicator
-    ? `${displayText}, tool call failed`
-    : displayText;
+  const showEntryIcon =
+    !isExpandedToolGroupEntry || showWarningIndicator || showFailedIndicator || exitCodeLabel !== null;
+  const accessibleDisplayText = [
+    displayText,
+    showFailedIndicator ? "tool call failed" : null,
+    exitCodeLabel,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(", ");
   const rowToggleProps = canExpand
     ? {
         role: "button" as const,
@@ -2666,17 +2673,38 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       {...rowToggleProps}
     >
       <div className="flex select-none items-center gap-1.5 transition-[opacity,translate] duration-200">
-        <span
-          className={cn(iconWrapperClass, !showEntryIcon && "invisible")}
-          role={showFailedIndicator ? "img" : undefined}
-          aria-label={showFailedIndicator ? "Tool call failed" : undefined}
-          aria-hidden={!showEntryIcon}
-        >
-          <WorkEntryIconSvg
-            name={entryIconName}
-            className="block size-4 shrink-0 stroke-[1.8] opacity-70"
-          />
-        </span>
+        {exitCodeLabel ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span
+                  className={cn(iconWrapperClass, !showEntryIcon && "invisible")}
+                  role="img"
+                  aria-label={exitCodeLabel}
+                  aria-hidden={!showEntryIcon}
+                />
+              }
+            >
+              <WorkEntryIconSvg
+                name={entryIconName}
+                className="block size-4 shrink-0 stroke-[1.8] opacity-70"
+              />
+            </TooltipTrigger>
+            <TooltipPopup>{exitCodeLabel}</TooltipPopup>
+          </Tooltip>
+        ) : (
+          <span
+            className={cn(iconWrapperClass, !showEntryIcon && "invisible")}
+            role={showFailedIndicator ? "img" : undefined}
+            aria-label={showFailedIndicator ? "Tool call failed" : undefined}
+            aria-hidden={!showEntryIcon}
+          >
+            <WorkEntryIconSvg
+              name={entryIconName}
+              className="block size-4 shrink-0 stroke-[1.8] opacity-70"
+            />
+          </span>
+        )}
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <div className="min-w-0 flex-1 overflow-hidden">
             <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-relaxed">
