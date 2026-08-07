@@ -671,8 +671,10 @@ describe("MessagesTimeline", () => {
               createdAt: "2026-03-17T19:12:28.000Z",
               label: "Glob",
               tone: "tool",
+              itemType: "command_execution",
               toolLifecycleStatus: "failed",
               detail: "No files found",
+              exitCode: 17,
             },
           },
         ]}
@@ -680,6 +682,36 @@ describe("MessagesTimeline", () => {
     );
 
     expect(markup).toContain("lucide-x");
-    expect(markup).toContain('aria-label="Tool call failed"');
+    expect(markup).toContain('aria-label="Exit code 17"');
+    expect(markup).toContain("Exit code 17");
+  });
+
+  it("renders a zero exit code for successful commands", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-1",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-1",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "Ran command",
+              tone: "tool",
+              itemType: "command_execution",
+              toolLifecycleStatus: "completed",
+              command: "bun run test",
+              exitCode: 0,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("lucide-check");
+    expect(markup).toContain('aria-label="Exit code 0"');
+    expect(markup).toContain("Exit code 0");
   });
 });
