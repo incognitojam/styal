@@ -26,6 +26,7 @@ import { ProviderInstanceId } from "./providerInstance.ts";
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
   getWorkflowScript: "orchestration.getWorkflowScript",
+  getCommandOutput: "orchestration.getCommandOutput",
   getTurnDiff: "orchestration.getTurnDiff",
   getFullThreadDiff: "orchestration.getFullThreadDiff",
   searchThreads: "orchestration.searchThreads",
@@ -1554,6 +1555,24 @@ export const DispatchResult = Schema.Struct({
 });
 export type DispatchResult = typeof DispatchResult.Type;
 
+export const OrchestrationGetCommandOutputInput = Schema.Struct({
+  threadId: ThreadId,
+  activityId: EventId,
+});
+export type OrchestrationGetCommandOutputInput = typeof OrchestrationGetCommandOutputInput.Type;
+
+export const OrchestrationCommandOutputStatus = Schema.Literals(["available", "unavailable"]);
+export type OrchestrationCommandOutputStatus = typeof OrchestrationCommandOutputStatus.Type;
+
+export const OrchestrationGetCommandOutputResult = Schema.Struct({
+  status: OrchestrationCommandOutputStatus,
+  output: Schema.NullOr(Schema.String),
+  stdout: Schema.NullOr(Schema.String),
+  stderr: Schema.NullOr(Schema.String),
+  exitCode: Schema.NullOr(Schema.Int),
+});
+export type OrchestrationGetCommandOutputResult = typeof OrchestrationGetCommandOutputResult.Type;
+
 export const OrchestrationGetTurnDiffInput = TurnCountRange.mapFields(
   Struct.assign({
     threadId: ThreadId,
@@ -1658,6 +1677,10 @@ export const OrchestrationRpcSchemas = {
     input: OrchestrationGetWorkflowScriptInput,
     output: OrchestrationGetWorkflowScriptResult,
   },
+  getCommandOutput: {
+    input: OrchestrationGetCommandOutputInput,
+    output: OrchestrationGetCommandOutputResult,
+  },
   getTurnDiff: {
     input: OrchestrationGetTurnDiffInput,
     output: OrchestrationGetTurnDiffResult,
@@ -1694,6 +1717,14 @@ export class OrchestrationGetSnapshotError extends Schema.TaggedErrorClass<Orche
 
 export class OrchestrationDispatchCommandError extends Schema.TaggedErrorClass<OrchestrationDispatchCommandError>()(
   "OrchestrationDispatchCommandError",
+  {
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {}
+
+export class OrchestrationGetCommandOutputError extends Schema.TaggedErrorClass<OrchestrationGetCommandOutputError>()(
+  "OrchestrationGetCommandOutputError",
   {
     message: TrimmedNonEmptyString,
     cause: Schema.optional(Schema.Defect()),
