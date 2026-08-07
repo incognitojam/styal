@@ -31,7 +31,7 @@ jobs:
   prepare:
     name: Upstream compatibility
     if: github.repository == 'yngatech/t3code'
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 40
     outputs:
       has_changes: ${{ steps.candidate.outputs.has_changes }}
@@ -363,7 +363,7 @@ jobs:
     if: >-
       github.event_name != 'pull_request' &&
       needs.prepare.outputs.has_changes == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 15
     steps:
       - name: Checkout verified candidate
@@ -516,7 +516,7 @@ jobs:
       needs.prepare.outputs.has_changes == 'true' &&
       needs.build_macos.result == 'success' &&
       needs.build_windows.result == 'success'
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
       - name: Checkout released source
@@ -671,7 +671,7 @@ jobs:
           needs.release.result == 'cancelled'
         )
       }}
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions: {}
     steps:
       - uses: tsickert/discord-webhook@b217a69502f52803de774ded2b1ab7c282e99645 # v7.0.0
