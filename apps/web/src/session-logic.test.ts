@@ -1660,6 +1660,7 @@ describe("deriveWorkLogEntries", () => {
     const [entry] = deriveWorkLogEntries(activities);
     expect(entry).toMatchObject({
       id: "cursor-command-complete",
+      exitCode: 0,
       label: "Ran command",
       itemType: "command_execution",
       toolTitle: "Ran command",
