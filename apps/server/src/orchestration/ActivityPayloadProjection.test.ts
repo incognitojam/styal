@@ -14,6 +14,16 @@ function activity(payload: Record<string, unknown>): OrchestrationThreadActivity
   } as unknown as OrchestrationThreadActivity;
 }
 
+function commandActivity(data: Record<string, unknown>): OrchestrationThreadActivity {
+  return activity({
+    itemType: "command_execution",
+    status: "completed",
+    title: "Ran command",
+    detail: "/bin/zsh -lc 'echo ping'",
+    data,
+  });
+}
+
 /**
  * Wire-survival regression: the slimming pass rewrites payload.data but must
  * never strip the top-level per-agent fields the subagent fold depends on.
@@ -166,5 +176,75 @@ describe("projectActivityPayload agent-field survival", () => {
     });
     const projected = projectActivityPayload(source);
     expect(projected.payload).toEqual(source.payload);
+  });
+});
+
+describe("projectActivityPayload command exit codes", () => {
+  it("retains a Codex command exit code while dropping command output", () => {
+    const projected = projectActivityPayload(
+      commandActivity({
+        completedAtMs: 1_785_974_254_706,
+        item: {
+          aggregatedOutput: "ping\n",
+          command: "/bin/zsh -lc 'echo ping'",
+          exitCode: 0,
+          status: "completed",
+        },
+      }),
+    );
+
+    expect(projected.payload).toMatchObject({
+      data: {
+        item: {
+          command: "/bin/zsh -lc 'echo ping'",
+          exitCode: 0,
+        },
+      },
+    });
+    expect(JSON.stringify(projected.payload)).not.toContain("aggregatedOutput");
+  });
+
+  it("retains an ACP command exit code alongside its compact output summary", () => {
+    const projected = projectActivityPayload(
+      commandActivity({
+        kind: "execute",
+        command: "bun run check",
+        rawOutput: {
+          exitCode: 17,
+          stdout: "check failed\nmore detail",
+          stderr: "",
+        },
+      }),
+    );
+
+    expect(projected.payload).toMatchObject({
+      data: {
+        kind: "execute",
+        command: "bun run check",
+        rawOutput: {
+          exitCode: 17,
+          content: "check failed",
+        },
+      },
+    });
+  });
+
+  it("retains an exit code when ACP command output is empty", () => {
+    const projected = projectActivityPayload(
+      commandActivity({
+        kind: "execute",
+        rawOutput: {
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+        },
+      }),
+    );
+
+    expect(projected.payload).toMatchObject({
+      data: {
+        rawOutput: { exitCode: 0 },
+      },
+    });
   });
 });
