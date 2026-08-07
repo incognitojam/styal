@@ -1,14 +1,14 @@
 <svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <marker id="arrowStart" markerWidth="5" markerHeight="5" refX="1.2" refY="2.5" orient="auto" markerUnits="strokeWidth">
-      <path d="M4.5 0.6L1 2.5L4.5 4.4" fill="none" stroke="#DDF7FF" stroke-width="0.8" stroke-linecap="round"/>
+      <path d="M4.5 0.6L1 2.5L4.5 4.4" fill="none" stroke="#DDFBF5" stroke-width="0.8" stroke-linecap="round"/>
     </marker>
     <marker id="arrowEnd" markerWidth="5" markerHeight="5" refX="3.8" refY="2.5" orient="auto" markerUnits="strokeWidth">
-      <path d="M0.5 0.6L4 2.5L0.5 4.4" fill="none" stroke="#DDF7FF" stroke-width="0.8" stroke-linecap="round"/>
+      <path d="M0.5 0.6L4 2.5L0.5 4.4" fill="none" stroke="#DDFBF5" stroke-width="0.8" stroke-linecap="round"/>
     </marker>
   </defs>
 
-  <g stroke="#DDF7FF" stroke-linecap="round" stroke-linejoin="round">
+  <g stroke="#DDFBF5" stroke-linecap="round" stroke-linejoin="round">
     <g opacity="0.9" stroke-width="0.44">
       <path d="M15.5309 31V25.6M64.3309 31V25.6M68.1653 31V25.6M107.365 31V25.6"/>
       <path d="M16.9 27.2H62.96" marker-start="url(#arrowStart)" marker-end="url(#arrowEnd)"/>
