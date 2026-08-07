@@ -34,6 +34,7 @@ const clientSettings: ClientSettings = {
   fontSizePrompt: 14,
   fontSizeTerminal: 12,
   fontSmoothing: true,
+  githubStatusAlertsEnabled: false,
   glassOpacity: 80,
   planModeEnabled: false,
   providerModelPreferences: {},
