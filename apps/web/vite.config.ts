@@ -40,6 +40,19 @@ const configuredRelayTracingDataset = repoEnv.VITE_RELAY_OTLP_TRACES_DATASET?.tr
 const configuredRelayTracingToken = repoEnv.VITE_RELAY_OTLP_TRACES_TOKEN?.trim() || "";
 const configuredHostedAppChannel = process.env.VITE_HOSTED_APP_CHANNEL?.trim() || "";
 const configuredAppVersion = process.env.APP_VERSION?.trim() || pkg.version;
+const configuredAppCommitHash = (() => {
+  const suppliedCommitHash = [
+    process.env.T3CODE_COMMIT_HASH,
+    process.env.VERCEL_GIT_COMMIT_SHA,
+    process.env.GITHUB_SHA,
+  ]
+    .map((value) => value?.trim() ?? "")
+    .find((value) => /^[0-9a-f]{7,40}$/i.test(value));
+  if (suppliedCommitHash) {
+    return suppliedCommitHash.slice(0, 12).toLowerCase();
+  }
+  return "unknown";
+})();
 const configuredHostedAppUrl = (() => {
   const explicitHostedAppUrl = process.env.VITE_HOSTED_APP_URL?.trim();
   if (explicitHostedAppUrl) {
@@ -202,6 +215,7 @@ export default defineConfig(() => {
       "import.meta.env.VITE_HOSTED_APP_URL": JSON.stringify(configuredHostedAppUrl ?? ""),
       "import.meta.env.VITE_HOSTED_APP_CHANNEL": JSON.stringify(configuredHostedAppChannel),
       "import.meta.env.APP_VERSION": JSON.stringify(configuredAppVersion),
+      "import.meta.env.APP_COMMIT_HASH": JSON.stringify(configuredAppCommitHash),
     },
     resolve: {
       tsconfigPaths: true,
