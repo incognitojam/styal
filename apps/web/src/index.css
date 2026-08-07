@@ -336,15 +336,15 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   }
 
   .stage-blueprint {
-    --stage-bp-top: #67c2ff;
-    --stage-bp-mid: #347ff8;
-    --stage-bp-bottom: #1538d0;
+    --stage-bp-top: #5cd6ce;
+    --stage-bp-mid: #219eae;
+    --stage-bp-bottom: #0a5b72;
   }
 
   .dark .stage-blueprint {
-    --stage-bp-top: #3a7ad1;
-    --stage-bp-mid: #2050ae;
-    --stage-bp-bottom: #101f6e;
+    --stage-bp-top: #35939c;
+    --stage-bp-mid: #1b6675;
+    --stage-bp-bottom: #0b3540;
   }
 
   .workspace-topbar {
