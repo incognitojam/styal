@@ -1690,6 +1690,15 @@ export default function ThreadTerminalDrawer({
                                 type="button"
                                 className="flex min-w-0 flex-1 cursor-pointer items-center gap-1 text-left"
                                 onClick={() => onActiveTerminalChange(terminalId)}
+                                onMouseDown={(event) => {
+                                  if (event.button === 1) event.preventDefault();
+                                }}
+                                onAuxClick={(event) => {
+                                  if (event.button !== 1) return;
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  confirmCloseTerminal(terminalId);
+                                }}
                               >
                                 <span className="truncate">{terminalLabel}</span>
                               </button>
