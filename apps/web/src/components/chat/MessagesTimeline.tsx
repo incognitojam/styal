@@ -2248,6 +2248,8 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const expandedBody = buildToolCallExpandedBody(workEntry, workspaceRoot);
   const canExpand = expandedBody !== null;
   const showFailedIndicator = workEntryIndicatesToolFailure(workEntry);
+  const exitCodeLabel =
+    workEntry.exitCode === undefined ? null : `Exit code ${workEntry.exitCode.toString()}`;
   const showDestructiveRowStyle =
     showFailedIndicator &&
     (workEntry.sourceActivityKind === "runtime.error" || !workLogEntryIsToolLike(workEntry));
@@ -2333,18 +2335,23 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
                     render={
                       <span
                         className="flex size-4 items-center justify-center"
-                        aria-label="Tool call failed"
+                        aria-label={exitCodeLabel ?? "Tool call failed"}
                       />
                     }
                   >
                     <XIcon className="block size-3 shrink-0 text-destructive" aria-hidden />
                   </TooltipTrigger>
-                  <TooltipPopup>Failed</TooltipPopup>
+                  <TooltipPopup>{exitCodeLabel ?? "Failed"}</TooltipPopup>
                 </Tooltip>
               ) : showSuccessIndicator ? (
                 <Tooltip>
                   <TooltipTrigger
-                    render={<span className="flex size-4 items-center justify-center" />}
+                    render={
+                      <span
+                        className="flex size-4 items-center justify-center"
+                        aria-label={exitCodeLabel ?? "Tool call completed"}
+                      />
+                    }
                   >
                     <span className="inline-flex size-4 items-center justify-center">
                       <CheckIcon
@@ -2354,7 +2361,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
                       />
                     </span>
                   </TooltipTrigger>
-                  <TooltipPopup>Completed</TooltipPopup>
+                  <TooltipPopup>{exitCodeLabel ?? "Completed"}</TooltipPopup>
                 </Tooltip>
               ) : showNeutralIndicator ? (
                 <Tooltip>
