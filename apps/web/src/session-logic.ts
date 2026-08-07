@@ -71,6 +71,7 @@ export interface WorkLogEntry {
   detail?: string;
   command?: string;
   rawCommand?: string;
+  exitCode?: number;
   changedFiles?: ReadonlyArray<string>;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
@@ -231,6 +232,9 @@ function workEntryIndicatesToolFailureFromOutput(
   includeCommand: boolean,
 ): boolean {
   if (entry.tone === "error") {
+    return true;
+  }
+  if (entry.exitCode !== undefined && entry.exitCode !== 0) {
     return true;
   }
   const ls = entry.toolLifecycleStatus;
@@ -939,6 +943,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   };
   const itemType = extractWorkLogItemType(payload);
   const requestKind = extractWorkLogRequestKind(payload);
+  const exitCode = itemType === "command_execution" ? extractToolExitCode(payload) : null;
   if (detail) {
     entry.detail = detail;
   }
@@ -947,6 +952,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (commandPreview.rawCommand) {
     entry.rawCommand = commandPreview.rawCommand;
+  }
+  if (exitCode !== null) {
+    entry.exitCode = exitCode;
   }
   if (changedFiles.length > 0) {
     entry.changedFiles = changedFiles;
@@ -1163,6 +1171,7 @@ function mergeDerivedWorkLogEntries(
   const detail = next.detail ?? previous.detail;
   const command = next.command ?? previous.command;
   const rawCommand = next.rawCommand ?? previous.rawCommand;
+  const exitCode = next.exitCode ?? previous.exitCode;
   const toolTitle = next.toolTitle ?? previous.toolTitle;
   const itemType = next.itemType ?? previous.itemType;
   const requestKind = next.requestKind ?? previous.requestKind;
@@ -1176,6 +1185,7 @@ function mergeDerivedWorkLogEntries(
     ...(detail ? { detail } : {}),
     ...(command ? { command } : {}),
     ...(rawCommand ? { rawCommand } : {}),
+    ...(exitCode !== undefined ? { exitCode } : {}),
     ...(changedFiles.length > 0 ? { changedFiles } : {}),
     ...(toolTitle ? { toolTitle } : {}),
     ...(itemType ? { itemType } : {}),
@@ -1435,6 +1445,28 @@ function extractToolCommand(payload: Record<string, unknown> | null): {
     command: null,
     rawCommand: null,
   };
+}
+
+function extractToolExitCode(payload: Record<string, unknown> | null): number | null {
+  const data = asRecord(payload?.data);
+  const item = asRecord(data?.item);
+  const candidates = [
+    payload?.exitCode,
+    data?.exitCode,
+    item?.exitCode,
+    asRecord(item?.result)?.exitCode,
+    asRecord(data?.result)?.exitCode,
+    asRecord(data?.rawOutput)?.exitCode,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "number" && Number.isInteger(candidate)) {
+      return candidate;
+    }
+  }
+
+  const detail = asTrimmedString(payload?.detail);
+  return detail ? (stripTrailingExitCode(detail).exitCode ?? null) : null;
 }
 
 function extractToolTitle(payload: Record<string, unknown> | null): string | null {
