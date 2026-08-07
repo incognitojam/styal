@@ -86,25 +86,21 @@ function collectChangedFiles(
 
 function projectCommandData(data: Record<string, unknown>): Record<string, unknown> | undefined {
   const item = asRecord(data.item);
-  if (!item) {
-    return undefined;
-  }
-
   const projectedItem: Record<string, unknown> = {};
-  if ("command" in item) {
+  if (item && "command" in item) {
     projectedItem.command = item.command;
   }
-  const exitCode = asInteger(item.exitCode);
+  const exitCode = asInteger(item?.exitCode);
   if (exitCode !== null) {
     projectedItem.exitCode = exitCode;
   }
 
-  const input = asRecord(item.input);
+  const input = asRecord(item?.input);
   if (input && "command" in input) {
     projectedItem.input = { command: input.command };
   }
 
-  const result = asRecord(item.result);
+  const result = asRecord(item?.result);
   if (result) {
     const projectedResult: Record<string, unknown> = {};
     if ("command" in result) {
@@ -117,6 +113,21 @@ function projectCommandData(data: Record<string, unknown>): Record<string, unkno
     if (Object.keys(projectedResult).length > 0) {
       projectedItem.result = projectedResult;
     }
+  }
+
+  const state = asRecord(data.state);
+  const stateInput = asRecord(state?.input);
+  if (!("input" in projectedItem) && stateInput && "command" in stateInput) {
+    projectedItem.input = { command: stateInput.command };
+  }
+  const stateMetadata = asRecord(state?.metadata);
+  const stateExitCode = state?.exitCode ?? stateMetadata?.exitCode;
+  if (
+    !("exitCode" in projectedItem) &&
+    typeof stateExitCode === "number" &&
+    Number.isInteger(stateExitCode)
+  ) {
+    projectedItem.exitCode = stateExitCode;
   }
 
   return Object.keys(projectedItem).length > 0 ? projectedItem : undefined;
@@ -249,7 +260,10 @@ function projectMcpToolCallData(data: Record<string, unknown>): Record<string, u
   return projectedData;
 }
 
-function projectRawOutput(value: unknown): Record<string, unknown> | undefined {
+function projectRawOutput(
+  value: unknown,
+  options?: { preserveOnlyExitCode?: boolean },
+): Record<string, unknown> | undefined {
   const rawOutput = asRecord(value);
   if (!rawOutput) {
     return undefined;
@@ -267,6 +281,10 @@ function projectRawOutput(value: unknown): Record<string, unknown> | undefined {
       projected.truncated = true;
     }
     return projected;
+  }
+
+  if (options?.preserveOnlyExitCode) {
+    return exitCode !== null ? { exitCode } : undefined;
   }
 
   const content = asTrimmedString(rawOutput.content);
@@ -343,17 +361,27 @@ export function projectActivityPayload(
     projectedData.kind = data.kind;
   }
 
-  const rawOutput = projectRawOutput(data.rawOutput);
+  const rawOutput = projectRawOutput(data.rawOutput, {
+    preserveOnlyExitCode: payload.itemType === "command_execution",
+  });
   if (rawOutput) {
     projectedData.rawOutput = rawOutput;
   }
 
+  const projectedPayload: Record<string, unknown> = {
+    ...payload,
+    data: projectedData,
+  };
+  if (payload.itemType === "command_execution") {
+    const state = asRecord(data.state);
+    if (payload.detail === state?.output || payload.detail === state?.error) {
+      delete projectedPayload.detail;
+    }
+  }
+
   return {
     ...activity,
-    payload: {
-      ...payload,
-      data: projectedData,
-    },
+    payload: projectedPayload,
   };
 }
 
