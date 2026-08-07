@@ -30,6 +30,7 @@ import {
 } from "../ui/sidebar";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdatePill } from "./SidebarUpdatePill";
+import { GitHubStatusNotice } from "./GitHubStatusNotice";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -174,6 +175,7 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
 
   return (
     <SidebarFooter className="p-[var(--sidebar-content-inset)]">
+      <GitHubStatusNotice />
       <SidebarProviderUpdatePill />
       <SidebarUpdatePill />
       <SidebarMenu>
