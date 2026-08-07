@@ -40,6 +40,30 @@ class FakeAudioContext {
   }
 }
 
+function stubSampleAudio() {
+  const pause = vi.fn();
+  const play = vi.fn().mockResolvedValue(undefined);
+  const audioInstances: Array<{
+    readonly url: string;
+    preload: string;
+    volume: number;
+    currentTime: number;
+  }> = [];
+  class FakeAudio {
+    preload = "";
+    volume = 1;
+    currentTime = 5;
+    readonly pause = pause;
+    readonly play = play;
+
+    constructor(readonly url: string) {
+      audioInstances.push(this);
+    }
+  }
+  vi.stubGlobal("Audio", FakeAudio);
+  return { audioInstances, pause, play };
+}
+
 beforeEach(() => {
   vi.resetModules();
   audioContextInstances.length = 0;
@@ -90,16 +114,35 @@ describe("playCompletionSound", () => {
     });
   });
 
-  it("does nothing when Web Audio is unavailable", async () => {
-    const audio = vi.fn();
+  it("does not fall back to a sample without Web Audio", async () => {
+    const { audioInstances, pause, play } = stubSampleAudio();
     vi.stubGlobal("AudioContext", undefined);
-    vi.stubGlobal("Audio", audio);
     const { playCompletionSound } = await import("./completionSound");
 
     playCompletionSound("chime");
 
     await Promise.resolve();
-    expect(audio).not.toHaveBeenCalled();
+    expect(audioInstances).toEqual([]);
+    expect(pause).not.toHaveBeenCalled();
+    expect(play).not.toHaveBeenCalled();
+  });
+
+  it("plays Avanti through the retained sample player", async () => {
+    const { audioInstances, pause, play } = stubSampleAudio();
+    const { playCompletionSound } = await import("./completionSound");
+
+    playCompletionSound("avanti");
+
+    expect(audioInstances).toEqual([
+      expect.objectContaining({
+        url: "/avanti.mp3",
+        preload: "auto",
+        volume: 0.7,
+        currentTime: 0,
+      }),
+    ]);
+    expect(pause).toHaveBeenCalledOnce();
+    expect(play).toHaveBeenCalledOnce();
   });
 
   it("does nothing when completion sounds are disabled", async () => {
