@@ -36,6 +36,59 @@ export const ChangeRequest = Schema.Struct({
 });
 export type ChangeRequest = typeof ChangeRequest.Type;
 
+export const SourceControlIssueState = Schema.Literals(["open", "closed"]);
+export type SourceControlIssueState = typeof SourceControlIssueState.Type;
+
+/** One row in the issue picker. Kept small so listing a repo stays cheap. */
+export const SourceControlIssueSummary = Schema.Struct({
+  provider: SourceControlProviderKind,
+  number: PositiveInt,
+  title: TrimmedNonEmptyString,
+  url: Schema.String,
+  state: SourceControlIssueState,
+  labels: Schema.Array(TrimmedNonEmptyString),
+  updatedAt: Schema.Option(Schema.DateTimeUtc),
+});
+export type SourceControlIssueSummary = typeof SourceControlIssueSummary.Type;
+
+export const SourceControlIssueComment = Schema.Struct({
+  author: Schema.NullOr(TrimmedNonEmptyString),
+  body: Schema.String,
+});
+export type SourceControlIssueComment = typeof SourceControlIssueComment.Type;
+
+/** The full issue, fetched only once the user picks one out of the list. */
+export const SourceControlIssue = Schema.Struct({
+  provider: SourceControlProviderKind,
+  repository: Schema.NullOr(TrimmedNonEmptyString),
+  number: PositiveInt,
+  title: TrimmedNonEmptyString,
+  url: Schema.String,
+  state: SourceControlIssueState,
+  author: Schema.NullOr(TrimmedNonEmptyString),
+  body: Schema.String,
+  comments: Schema.Array(SourceControlIssueComment),
+});
+export type SourceControlIssue = typeof SourceControlIssue.Type;
+
+export const SourceControlListIssuesInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  limit: Schema.optional(PositiveInt),
+});
+export type SourceControlListIssuesInput = typeof SourceControlListIssuesInput.Type;
+
+export const SourceControlListIssuesResult = Schema.Struct({
+  provider: SourceControlProviderKind,
+  issues: Schema.Array(SourceControlIssueSummary),
+});
+export type SourceControlListIssuesResult = typeof SourceControlListIssuesResult.Type;
+
+export const SourceControlGetIssueInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  number: PositiveInt,
+});
+export type SourceControlGetIssueInput = typeof SourceControlGetIssueInput.Type;
+
 export const SourceControlRepositoryCloneUrls = Schema.Struct({
   nameWithOwner: TrimmedNonEmptyString,
   url: TrimmedNonEmptyString,
