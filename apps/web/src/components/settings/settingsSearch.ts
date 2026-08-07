@@ -198,6 +198,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/beta",
   },
   {
+    id: "github-outage-alerts",
+    title: "GitHub outage alerts",
+    to: "/settings/beta",
+  },
+  {
     id: "archive",
     title: "Archived threads",
     to: "/settings/archived",

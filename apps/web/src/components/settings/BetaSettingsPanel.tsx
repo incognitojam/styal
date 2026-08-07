@@ -61,6 +61,9 @@ export function BetaSettingsPanel() {
     (settings) => settings.sidebarAutoSettleAfterDays,
   );
   const planModeEnabled = useClientSettings((settings) => settings.planModeEnabled);
+  const githubStatusAlertsEnabled = useClientSettings(
+    (settings) => settings.githubStatusAlertsEnabled,
+  );
   const updateSettings = useUpdateClientSettings();
 
   return (
@@ -123,6 +126,19 @@ export function BetaSettingsPanel() {
               checked={planModeEnabled}
               onCheckedChange={(checked) => updateSettings({ planModeEnabled: Boolean(checked) })}
               aria-label="Restore plan mode (legacy)"
+            />
+          }
+        />
+        <SettingsRow
+          {...searchableSetting("github-outage-alerts")}
+          description="Shows affected GitHub services in the sidebar during incidents, based on GitHub's official status page."
+          control={
+            <Switch
+              checked={githubStatusAlertsEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ githubStatusAlertsEnabled: Boolean(checked) })
+              }
+              aria-label="Enable GitHub outage alerts"
             />
           }
         />
