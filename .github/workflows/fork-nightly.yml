@@ -49,10 +49,6 @@ jobs:
           token: ${{ github.event_name == 'pull_request' && github.token || secrets.FORK_RELEASE_TOKEN }}
           ref: ${{ github.event_name == 'pull_request' && github.sha || 'main' }}
           fetch-depth: 0
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
 
       - id: candidate
         name: Rebase candidate onto upstream
