@@ -11,6 +11,13 @@ on:
         required: false
         type: boolean
         default: false
+      dry_run:
+        description: >-
+          Run the full pipeline even without new changes, but leave the
+          release as an unpublished draft and skip nightly promotion
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -50,6 +57,8 @@ jobs:
       - id: candidate
         name: Rebase candidate onto upstream
         shell: bash
+        env:
+          DRY_RUN: ${{ inputs.dry_run == true }}
         run: |
           set -euo pipefail
 
@@ -69,6 +78,7 @@ jobs:
           candidate_ref=$(git rev-parse HEAD)
           has_changes=true
           if [[ "$GITHUB_EVENT_NAME" != "pull_request" ]] && \
+            [[ "$DRY_RUN" != "true" ]] && \
             git rev-parse --verify refs/remotes/origin/nightly >/dev/null 2>&1 && \
             git diff --quiet origin/nightly HEAD --; then
             has_changes=false
@@ -618,6 +628,7 @@ jobs:
           token: ${{ github.token }}
 
       - name: Publish complete prerelease
+        if: inputs.dry_run != true
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -633,6 +644,7 @@ jobs:
             >/dev/null
 
       - name: Promote successful nightly source
+        if: inputs.dry_run != true
         shell: bash
         run: |
           git fetch origin '+refs/heads/nightly:refs/remotes/origin/nightly' || true
