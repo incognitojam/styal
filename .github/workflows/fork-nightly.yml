@@ -29,10 +29,12 @@ jobs:
     outputs:
       has_changes: ${{ steps.candidate.outputs.has_changes }}
       ref: ${{ steps.candidate.outputs.ref }}
+      fork_ref: ${{ steps.candidate.outputs.fork_ref }}
+      upstream_ref: ${{ steps.candidate.outputs.upstream_ref }}
       version: ${{ steps.release_meta.outputs.version }}
       tag: ${{ steps.release_meta.outputs.tag }}
       release_name: ${{ steps.release_meta.outputs.name }}
-      short_sha: ${{ steps.release_meta.outputs.short_sha }}
+      previous_tag: ${{ steps.previous_tag.outputs.previous_tag }}
     steps:
       - name: Checkout fork patch stack
         uses: actions/checkout@v6
@@ -54,13 +56,15 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git remote add upstream https://github.com/pingdotgg/t3code.git
-          git fetch upstream main --tags
+          fork_ref=$(git rev-parse HEAD)
+          git fetch --no-tags upstream main
+          upstream_ref=$(git rev-parse FETCH_HEAD)
           git fetch origin '+refs/heads/nightly:refs/remotes/origin/nightly' || true
           git fetch origin \
             '+refs/heads/nightly-candidate:refs/remotes/origin/nightly-candidate' || true
 
           git switch -C nightly-candidate HEAD
-          git rebase upstream/main
+          git rebase "$upstream_ref"
 
           candidate_ref=$(git rev-parse HEAD)
           has_changes=true
@@ -70,8 +74,12 @@ jobs:
             has_changes=false
           fi
 
-          echo "has_changes=$has_changes" >> "$GITHUB_OUTPUT"
-          echo "ref=$candidate_ref" >> "$GITHUB_OUTPUT"
+          {
+            echo "has_changes=$has_changes"
+            echo "ref=$candidate_ref"
+            echo "fork_ref=$fork_ref"
+            echo "upstream_ref=$upstream_ref"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Setup Vite+
         if: steps.candidate.outputs.has_changes == 'true'
@@ -135,6 +143,17 @@ jobs:
             --date "$nightly_date" \
             --run-number "$NIGHTLY_RUN_NUMBER" \
             --sha "$CANDIDATE_REF" \
+            --github-output
+
+      - id: previous_tag
+        name: Resolve previous fork nightly
+        if: >-
+          github.event_name != 'pull_request' &&
+          steps.candidate.outputs.has_changes == 'true'
+        run: |
+          node scripts/resolve-previous-release-tag.ts \
+            --channel nightly \
+            --current-tag "${{ steps.release_meta.outputs.tag }}" \
             --github-output
 
       - name: Publish verified candidate
@@ -348,6 +367,82 @@ jobs:
           name: desktop-mac-arm64
           path: release-assets
 
+      - name: Generate prerelease notes
+        shell: bash
+        env:
+          FORK_SOURCE_REF: ${{ needs.prepare.outputs.fork_ref }}
+          PREVIOUS_TAG: ${{ needs.prepare.outputs.previous_tag }}
+          UPSTREAM_REF: ${{ needs.prepare.outputs.upstream_ref }}
+        run: |
+          set -euo pipefail
+
+          git fetch --no-tags origin "$FORK_SOURCE_REF"
+          git rev-parse --verify "${FORK_SOURCE_REF}^{commit}" >/dev/null
+          git rev-parse --verify "${UPSTREAM_REF}^{commit}" >/dev/null
+
+          append_changes() {
+            local repository="$1"
+            shift
+
+            if (( $# == 0 )); then
+              return
+            fi
+
+            local sha short_sha subject title pull_number
+            for sha in "$@"; do
+              short_sha="${sha:0:7}"
+              subject=$(git show -s --format=%s "$sha")
+              if [[ "$subject" =~ ^(.+)\ \(#([0-9]+)\)$ ]]; then
+                title="${BASH_REMATCH[1]}"
+                pull_number="${BASH_REMATCH[2]}"
+                printf -- '- %s ([%s#%s](https://github.com/%s/pull/%s))\n' \
+                  "$title" "$repository" "$pull_number" "$repository" "$pull_number"
+              else
+                # shellcheck disable=SC2016 # Markdown backticks must remain literal.
+                printf -- '- %s ([`%s`](https://github.com/%s/commit/%s))\n' \
+                  "$subject" "$short_sha" "$repository" "$sha"
+              fi
+            done
+          }
+
+          if [[ -n "$PREVIOUS_TAG" ]]; then
+            git rev-parse --verify "${PREVIOUS_TAG}^{commit}" >/dev/null
+            previous_upstream_ref=$(git merge-base "$PREVIOUS_TAG" "$UPSTREAM_REF")
+          else
+            previous_upstream_ref=$(git merge-base "$FORK_SOURCE_REF" "$UPSTREAM_REF")
+          fi
+
+          upstream_changes=()
+          while IFS= read -r sha; do
+            upstream_changes+=("$sha")
+          done < <(git rev-list --reverse "${previous_upstream_ref}..${UPSTREAM_REF}")
+
+          fork_changes=()
+          if [[ -n "$PREVIOUS_TAG" ]]; then
+            while IFS= read -r sha; do
+              fork_changes+=("$sha")
+            done < <(
+              git rev-list --reverse --cherry-pick --right-only \
+                "${PREVIOUS_TAG}...${FORK_SOURCE_REF}"
+            )
+          else
+            while IFS= read -r sha; do
+              fork_changes+=("$sha")
+            done < <(git rev-list --reverse "${previous_upstream_ref}..${FORK_SOURCE_REF}")
+          fi
+
+          {
+            printf "## What's Changed\n\n"
+            if (( ${#fork_changes[@]} > 0 )); then
+              append_changes "$GITHUB_REPOSITORY" "${fork_changes[@]}"
+            fi
+            if (( ${#upstream_changes[@]} > 0 )); then
+              append_changes pingdotgg/t3code "${upstream_changes[@]}"
+            fi
+            printf '\n**Full Changelog**: https://github.com/pingdotgg/t3code/compare/%s...%s\n' \
+              "$previous_upstream_ref" "$UPSTREAM_REF"
+          } > release-notes.md
+
       - id: draft_release
         name: Upload draft prerelease
         uses: softprops/action-gh-release@v2
@@ -355,12 +450,7 @@ jobs:
           tag_name: ${{ needs.prepare.outputs.tag }}
           target_commitish: ${{ needs.prepare.outputs.ref }}
           name: ${{ needs.prepare.outputs.release_name }}
-          body: |
-            Automated build of `incognitojam/t3code` rebased onto `pingdotgg/t3code@main`.
-
-            Source: `${{ needs.prepare.outputs.short_sha }}`
-            macOS Developer ID signed and notarized.
-          generate_release_notes: true
+          body_path: release-notes.md
           draft: true
           prerelease: true
           make_latest: false
