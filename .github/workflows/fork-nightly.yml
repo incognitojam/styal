@@ -213,7 +213,7 @@ jobs:
           active_submission=$(jq -r '
             .history
             | map(select(
-                .name == "T3 Code (incognitojam Nightly).zip" and
+                .name == "T3 Code (yngatech Nightly).zip" and
                 .status == "In Progress"
               ))
             | sort_by(.createdDate)
