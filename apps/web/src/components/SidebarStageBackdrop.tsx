@@ -46,11 +46,7 @@ export function useSidebarStageBackdropVariant(enabled = true): SidebarStageBack
   return resolveSidebarStageBackdropVariant(useEnvironmentStageLabel(), enabled);
 }
 
-/**
- * Stage-channel header art; palettes mirror the per-channel app icons in
- * `assets/`. Same geometry as upstream, but this yngatech fork keys the
- * palettes to a petrol/teal colorway as the distribution signature.
- */
+/** Stage-channel header art; palettes mirror the per-channel app icons in `assets/`. */
 export function SidebarStageBackdrop({ variant }: { variant: SidebarStageBackdropVariant }) {
   return (
     <div

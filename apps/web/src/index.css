@@ -310,8 +310,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     );
   }
 
-  /* yngatech fork colorway: same blueprint geometry, petrol/teal paper
-     instead of upstream's blue. Mirrors assets/dev/app-icon.icon. */
   .stage-blueprint {
     --stage-bp-top: #5cd6ce;
     --stage-bp-mid: #219eae;
