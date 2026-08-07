@@ -11,6 +11,13 @@ on:
         required: false
         type: boolean
         default: false
+      dry_run:
+        description: >-
+          Run the full pipeline even without new changes, but leave the
+          release as an unpublished draft and skip nightly promotion
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -50,6 +57,8 @@ jobs:
       - id: candidate
         name: Rebase candidate onto upstream
         shell: bash
+        env:
+          DRY_RUN: ${{ inputs.dry_run == true }}
         run: |
           set -euo pipefail
 
@@ -69,6 +78,7 @@ jobs:
           candidate_ref=$(git rev-parse HEAD)
           has_changes=true
           if [[ "$GITHUB_EVENT_NAME" != "pull_request" ]] && \
+            [[ "$DRY_RUN" != "true" ]] && \
             git rev-parse --verify refs/remotes/origin/nightly >/dev/null 2>&1 && \
             git diff --quiet origin/nightly HEAD --; then
             has_changes=false
@@ -341,13 +351,171 @@ jobs:
           path: release-publish/*
           if-no-files-found: error
 
+  # node-pty publishes no Linux prebuilt and the WSL backend runs under the
+  # distro's own (Linux) Node, which can't load the Windows/Electron binary. We
+  # build the Linux pty.node here, on Linux, and hand it to the Windows packaging
+  # job — the Windows artifact then ships a ready WSL backend binary with no
+  # cross-compiling and no first-launch compiler/node-gyp/network on the user's
+  # machine. node-pty is N-API, so one binary works across all WSL Node versions.
+  build_wsl_node_pty:
+    name: Build WSL node-pty (linux-x64)
+    needs: prepare
+    if: >-
+      github.event_name != 'pull_request' &&
+      needs.prepare.outputs.has_changes == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout verified candidate
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=t3...
+
+      - name: Build node-pty linux-x64 prebuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Resolve node-pty from apps/server (where it's a dependency) and build
+          # its native binary from source for Linux. node-addon-api resolves from
+          # node-pty's own dependency tree, so node-gyp has everything it needs.
+          pty_pkg="$(node -e "console.log(require.resolve('node-pty/package.json', { paths: ['$GITHUB_WORKSPACE/apps/server'] }))")"
+          pty_dir="$(dirname "$pty_pkg")"
+          ( cd "$pty_dir" && npx --yes node-gyp rebuild )
+          mkdir -p wsl-prebuild
+          cp "$pty_dir/build/Release/pty.node" wsl-prebuild/pty.node
+          file wsl-prebuild/pty.node
+
+      - name: Upload node-pty linux-x64 prebuild
+        uses: actions/upload-artifact@v7
+        with:
+          name: wsl-node-pty-x64
+          path: wsl-prebuild/pty.node
+          if-no-files-found: error
+
+  build_windows:
+    name: Build Windows x64
+    needs: [prepare, build_wsl_node_pty]
+    if: >-
+      github.event_name != 'pull_request' &&
+      needs.prepare.outputs.has_changes == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 100
+    steps:
+      - name: Checkout verified candidate
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+          fetch-depth: 0
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/desktop...
+              - --filter=t3...
+              - --filter=@t3tools/scripts...
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Align package versions
+        run: node scripts/update-release-package-versions.ts "${{ needs.prepare.outputs.version }}"
+
+      - name: Download WSL node-pty prebuild
+        uses: actions/download-artifact@v8
+        with:
+          name: wsl-node-pty-x64
+          path: wsl-prebuild
+
+      - name: Install Spectre-mitigated MSVC libs
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installPath = & $vswhere -products * -latest -property installationPath
+          $setupExe = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
+          $proc = Start-Process -FilePath $setupExe `
+            -ArgumentList "modify", "--installPath", "`"$installPath`"", "--add", `
+            "Microsoft.VisualStudio.Component.VC.Tools.x86.x64.Spectre", "--quiet", "--norestart" `
+            -Wait -PassThru -NoNewWindow
+          if ($null -eq $proc -or $proc.ExitCode -ne 0) {
+            $code = if ($null -ne $proc) { $proc.ExitCode } else { 1 }
+            Write-Error "Visual Studio Installer failed with exit code $code"
+            exit $code
+          }
+
+      # Unsigned: the fork has no Windows signing certificate or Azure Trusted
+      # Signing account. Users see a one-time SmartScreen warning on install.
+      - name: Build unsigned desktop artifact
+        timeout-minutes: 90
+        shell: bash
+        env:
+          T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          vp run dist:desktop:artifact \
+            --platform win \
+            --target nsis \
+            --arch x64 \
+            --build-version "${{ needs.prepare.outputs.version }}" \
+            --wsl-prebuild "$GITHUB_WORKSPACE/wsl-prebuild/pty.node" \
+            --verbose
+
+      - name: Collect release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-publish
+
+          shopt -s nullglob
+          for pattern in \
+            "release/*.exe" \
+            "release/*.blockmap" \
+            "release/*.yml"; do
+            for file in $pattern; do
+              cp "$file" release-publish/
+            done
+          done
+
+          test -n "$(find release-publish -maxdepth 1 -type f -print -quit)"
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-win-x64
+          path: release-publish/*
+          if-no-files-found: error
+
   release:
     name: Publish GitHub prerelease
-    needs: [prepare, build_macos]
+    needs: [prepare, build_macos, build_windows]
     if: >-
       github.event_name != 'pull_request' &&
       needs.prepare.outputs.has_changes == 'true' &&
-      needs.build_macos.result == 'success'
+      needs.build_macos.result == 'success' &&
+      needs.build_windows.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -365,7 +533,8 @@ jobs:
       - name: Download release assets
         uses: actions/download-artifact@v8
         with:
-          name: desktop-mac-arm64
+          pattern: desktop-*
+          merge-multiple: true
           path: release-assets
 
       - name: Generate prerelease notes
@@ -460,6 +629,7 @@ jobs:
           token: ${{ github.token }}
 
       - name: Publish complete prerelease
+        if: inputs.dry_run != true
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -475,6 +645,7 @@ jobs:
             >/dev/null
 
       - name: Promote successful nightly source
+        if: inputs.dry_run != true
         shell: bash
         run: |
           git fetch origin '+refs/heads/nightly:refs/remotes/origin/nightly' || true
@@ -482,7 +653,7 @@ jobs:
 
   notify_failure:
     name: Notify Discord
-    needs: [prepare, build_macos, release]
+    needs: [prepare, build_wsl_node_pty, build_macos, build_windows, release]
     if: >-
       ${{
         github.event_name != 'pull_request' &&
@@ -490,8 +661,12 @@ jobs:
         (
           needs.prepare.result == 'failure' ||
           needs.prepare.result == 'cancelled' ||
+          needs.build_wsl_node_pty.result == 'failure' ||
+          needs.build_wsl_node_pty.result == 'cancelled' ||
           needs.build_macos.result == 'failure' ||
           needs.build_macos.result == 'cancelled' ||
+          needs.build_windows.result == 'failure' ||
+          needs.build_windows.result == 'cancelled' ||
           needs.release.result == 'failure' ||
           needs.release.result == 'cancelled'
         )
@@ -508,6 +683,8 @@ jobs:
             `${{ github.sha }}` · `${{ github.actor }}`
 
             Prepare: `${{ needs.prepare.result }}`
+            WSL node-pty build: `${{ needs.build_wsl_node_pty.result }}`
             macOS build: `${{ needs.build_macos.result }}`
+            Windows build: `${{ needs.build_windows.result }}`
             Release: `${{ needs.release.result }}`
           embed-color: 15158332
