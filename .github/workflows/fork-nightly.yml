@@ -22,10 +22,10 @@ concurrency:
 
 jobs:
   prepare:
-    name: Rebase and verify
+    name: Upstream compatibility
     if: github.repository == 'incognitojam/t3code'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     outputs:
       has_changes: ${{ steps.candidate.outputs.has_changes }}
       ref: ${{ steps.candidate.outputs.ref }}
@@ -38,7 +38,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           token: ${{ github.event_name == 'pull_request' && github.token || secrets.FORK_RELEASE_TOKEN }}
-          ref: ${{ github.event.pull_request.head.sha || 'main' }}
+          ref: ${{ github.event_name == 'pull_request' && github.sha || 'main' }}
           fetch-depth: 0
           sparse-checkout: |
             /*
@@ -85,6 +85,10 @@ jobs:
         if: steps.candidate.outputs.has_changes == 'true'
         run: vp run --filter @t3tools/desktop ensure:electron
 
+      - name: Setup Rust
+        if: steps.candidate.outputs.has_changes == 'true'
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Check
         if: steps.candidate.outputs.has_changes == 'true'
         run: vp check
@@ -93,6 +97,17 @@ jobs:
         if: steps.candidate.outputs.has_changes == 'true'
         run: vp run typecheck
 
+      - name: Build desktop pipeline
+        if: steps.candidate.outputs.has_changes == 'true'
+        run: vp run build:desktop
+
+      - name: Verify preload bundle output
+        if: steps.candidate.outputs.has_changes == 'true'
+        run: |
+          test -f apps/desktop/dist-electron/preload.cjs
+          grep -nE "desktopBridge|getLocalEnvironmentBootstrap|PICK_FOLDER_CHANNEL|wsUrl" apps/desktop/dist-electron/preload.cjs
+          grep -n "__clerk_internal_electron_passkeys" apps/desktop/dist-electron/preload.cjs
+
       - name: Test
         if: steps.candidate.outputs.has_changes == 'true'
         run: |
@@ -100,6 +115,10 @@ jobs:
           vp run --filter @t3tools/web test src/lib/imageCompression.test.ts \
             --no-file-parallelism \
             --maxWorkers=1
+
+      - name: Test resource monitor
+        if: steps.candidate.outputs.has_changes == 'true'
+        run: cargo test --locked --manifest-path native/resource-monitor/Cargo.toml
 
       - id: release_meta
         name: Resolve nightly version
