@@ -31,7 +31,7 @@ jobs:
   prepare:
     name: Upstream compatibility
     if: github.repository == 'yngatech/t3code'
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 40
     outputs:
       has_changes: ${{ steps.candidate.outputs.has_changes }}
