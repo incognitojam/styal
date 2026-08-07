@@ -11,6 +11,7 @@ import {
 import { type VcsRefTarget } from "@t3tools/client-runtime/state/vcs";
 import type {
   EnvironmentId,
+  EventId,
   OrchestrationThread,
   ProjectContentMatch,
   ProjectEntryKind,
@@ -386,4 +387,24 @@ export function useCheckpointDiff(
     turnTarget === null ? null : orchestrationEnvironment.turnDiff(turnTarget),
   );
   return fullThreadTarget === null ? turn : fullThread;
+}
+
+export function useCommandOutput(target: {
+  readonly environmentId: EnvironmentId | null;
+  readonly threadId: ThreadId | null;
+  readonly activityId: EventId | null;
+}) {
+  const enabled =
+    target.environmentId !== null && target.threadId !== null && target.activityId !== null;
+  return useEnvironmentQuery(
+    enabled
+      ? orchestrationEnvironment.commandOutput({
+          environmentId: target.environmentId,
+          input: {
+            threadId: target.threadId,
+            activityId: target.activityId,
+          },
+        })
+      : null,
+  );
 }

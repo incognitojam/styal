@@ -74,6 +74,7 @@ const fixtures = [
   makeActivity("command", "command_execution", {
     item: {
       command: ["bash", "-lc", "pnpm test"],
+      exitCode: 7,
       input: { command: "fallback input", ignored: "input bulk" },
       result: { command: "fallback result", aggregatedOutput: "x".repeat(10_000) },
       commandActions: [{ type: "unknown", output: "y".repeat(5_000) }],
@@ -84,6 +85,7 @@ const fixtures = [
     rawOutput: {
       content: "\n```\nfirst useful line\nsecond line",
       stdout: "unused stdout",
+      exitCode: 7,
       ignored: "raw bulk",
     },
     ignored: "top-level bulk",
@@ -167,13 +169,14 @@ describe("projectActivityPayload", () => {
       data: {
         item: {
           command: ["bash", "-lc", "pnpm test"],
+          exitCode: 7,
           input: { command: "fallback input" },
           result: { command: "fallback result" },
         },
         command: "fallback data",
         toolCallId: "tool-command",
         kind: "execute",
-        rawOutput: { content: "first useful line" },
+        rawOutput: { exitCode: 7 },
       },
     });
 
@@ -181,6 +184,25 @@ describe("projectActivityPayload", () => {
       data: {
         files: [{ path: "src/new.ts" }, { path: "src/old.ts" }, { path: "src/second.ts" }],
       },
+    });
+
+    const openCodeCommand = makeActivity("opencode-command", "command_execution", {
+      state: {
+        status: "completed",
+        input: { command: "bun test" },
+        output: "test output that should load on demand",
+      },
+    });
+    openCodeCommand.payload = {
+      ...openCodeCommand.payload,
+      detail: "test output that should load on demand",
+    };
+    expect(projectActivityPayload(openCodeCommand).payload).toEqual({
+      itemType: "command_execution",
+      title: "command_execution",
+      status: "completed",
+      requestKind: "command",
+      data: { item: { input: { command: "bun test" } } },
     });
   });
 
