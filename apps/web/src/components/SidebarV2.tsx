@@ -29,6 +29,7 @@ import {
   GitBranchIcon,
   EllipsisIcon,
   MessageSquareIcon,
+  PencilIcon,
   PinIcon,
   PlusIcon,
   SearchIcon,
@@ -83,6 +84,7 @@ import {
   type SidebarProjectGroupMember,
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
+import { useComposerThreadHasDraftContent } from "../composerDraftStore";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useThreadActions } from "../hooks/useThreadActions";
@@ -469,6 +471,7 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
   });
   const terminalStatus = terminalStatusFromRunningIds(runningTerminalIds);
   const terminalProcessCount = runningTerminalIds.length;
+  const hasDraft = useComposerThreadHasDraftContent(threadRef);
 
   const gitCwd = thread.worktreePath ?? props.projectCwd;
   const gitStatus = useEnvironmentQuery(
@@ -825,6 +828,16 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
       <TerminalIcon className={cn("size-3.5", terminalStatus.pulse && "animate-status-pulse")} />
     </span>
   ) : null;
+  const draftIcon = hasDraft ? (
+    <span
+      role="img"
+      aria-label="Unsent draft"
+      data-testid={`sidebar-v2-draft-${thread.id}`}
+      className="inline-flex shrink-0 items-center justify-center text-secondary-label"
+    >
+      <PencilIcon className="size-3.5" />
+    </span>
+  ) : null;
 
   if (variant === "slim") {
     return (
@@ -865,6 +878,7 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
               />
             </span>
             {title}
+            {draftIcon}
             {terminalStatusIcon}
             {isRegeneratingTitle ? (
               <span role="status" className="sr-only">
@@ -1125,6 +1139,7 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
               ) : (
                 <span className="flex-1" />
               )}
+              {draftIcon}
               {terminalStatusIcon}
               {prBadge}
               {diff ? (
