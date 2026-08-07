@@ -151,7 +151,7 @@ describe("projectActivityPayload command exit codes", () => {
     expect(JSON.stringify(projected.payload)).not.toContain("aggregatedOutput");
   });
 
-  it("retains an ACP command exit code alongside its compact output summary", () => {
+  it("retains an ACP command exit code while dropping command output", () => {
     const projected = projectActivityPayload(
       commandActivity({
         kind: "execute",
@@ -170,7 +170,6 @@ describe("projectActivityPayload command exit codes", () => {
         command: "bun run check",
         rawOutput: {
           exitCode: 17,
-          content: "check failed",
         },
       },
     });
