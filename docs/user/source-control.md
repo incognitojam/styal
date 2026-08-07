@@ -127,8 +127,11 @@ Control settings**.
 **Common issues:**
 
 - **Provider shows "Not authenticated"** – Run the login command for that provider (e.g., `gh auth login`) in a terminal on the server, then rescan in Settings
+- **GitHub operations are unexpectedly failing** – Enable **GitHub outage alerts** in **Settings → Beta**. When GitHub reports a service disruption, T3 Code shows the affected services above **Settings** in the web and desktop sidebar. Select the notice to open the official GitHub Status page.
 - **Bitbucket not connecting** – Double-check your environment variables are set in the correct shell profile and the server was restarted
 - **Can't push to a remote** – Verify your Git remote URL matches the provider you've authenticated with (SSH vs HTTPS remotes may need different credentials)
+
+![The sidebar stays quiet while GitHub is healthy and shows affected services during an outage](./images/github-status-before-after.png)
 
 **Need more help?** Check your provider's CLI documentation:
 
