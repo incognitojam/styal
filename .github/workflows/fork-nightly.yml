@@ -334,6 +334,7 @@ jobs:
             "release/*.blockmap" \
             "release/*.yml"; do
             for file in $pattern; do
+              [[ "$(basename "$file")" == "builder-debug.yml" ]] && continue
               cp "$file" release-publish/
             done
           done
@@ -491,6 +492,7 @@ jobs:
             "release/*.blockmap" \
             "release/*.yml"; do
             for file in $pattern; do
+              [[ "$(basename "$file")" == "builder-debug.yml" ]] && continue
               cp "$file" release-publish/
             done
           done
