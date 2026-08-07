@@ -100,7 +100,7 @@ function resolveDesktopAppBranding(input: {
   return {
     baseName: APP_BASE_NAME,
     stageLabel,
-    displayName: `${APP_BASE_NAME} (incognitojam ${stageLabel})`,
+    displayName: `${APP_BASE_NAME} (yngatech ${stageLabel})`,
   };
 }
 
