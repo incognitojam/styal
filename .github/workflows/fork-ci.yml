@@ -18,7 +18,7 @@ concurrency:
 jobs:
   check:
     name: Fork Check
-    if: github.repository == 'incognitojam/t3code'
+    if: github.repository == 'yngatech/t3code'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -67,7 +67,7 @@ jobs:
 
   test:
     name: Fork Test
-    if: github.repository == 'incognitojam/t3code'
+    if: github.repository == 'yngatech/t3code'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -105,7 +105,7 @@ jobs:
 
   release_smoke:
     name: Fork Release Smoke
-    if: github.repository == 'incognitojam/t3code'
+    if: github.repository == 'yngatech/t3code'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
