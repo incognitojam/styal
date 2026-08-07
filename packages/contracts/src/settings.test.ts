@@ -126,6 +126,21 @@ describe("ClientSettings completion sound", () => {
   });
 });
 
+describe("ClientSettings GitHub status alerts", () => {
+  it("defaults the beta off", () => {
+    expect(decodeClientSettings({}).githubStatusAlertsEnabled).toBe(false);
+  });
+
+  it("accepts the setting in stored settings and patches", () => {
+    expect(
+      decodeClientSettings({ githubStatusAlertsEnabled: true }).githubStatusAlertsEnabled,
+    ).toBe(true);
+    expect(decodeClientSettingsPatch({ githubStatusAlertsEnabled: true })).toEqual({
+      githubStatusAlertsEnabled: true,
+    });
+  });
+});
+
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   it("defaults text generation to Luna at low reasoning effort", () => {
     expect(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection).toEqual({
