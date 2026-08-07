@@ -236,6 +236,9 @@ export function workEntryIndicatesToolFailure(entry: WorkLogEntry): boolean {
   if (ls === "failed" || ls === "declined") {
     return true;
   }
+  if (entry.exitCode !== undefined && entry.exitCode !== 0) {
+    return true;
+  }
   if (!workLogEntryIsToolLike(entry)) {
     return false;
   }
