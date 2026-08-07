@@ -106,7 +106,7 @@ jobs:
   release_smoke:
     name: Fork Release Smoke
     if: github.repository == 'yngatech/t3code'
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Checkout
