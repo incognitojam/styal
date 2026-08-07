@@ -18,6 +18,10 @@ function asTrimmedString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function asInteger(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) ? value : null;
+}
+
 function pushChangedFile(target: string[], seen: Set<string>, value: unknown): void {
   const normalized = asTrimmedString(value);
   if (!normalized || seen.has(normalized)) {
@@ -90,6 +94,10 @@ function projectCommandData(data: Record<string, unknown>): Record<string, unkno
   if ("command" in item) {
     projectedItem.command = item.command;
   }
+  const exitCode = asInteger(item.exitCode);
+  if (exitCode !== null) {
+    projectedItem.exitCode = exitCode;
+  }
 
   const input = asRecord(item.input);
   if (input && "command" in input) {
@@ -97,8 +105,18 @@ function projectCommandData(data: Record<string, unknown>): Record<string, unkno
   }
 
   const result = asRecord(item.result);
-  if (result && "command" in result) {
-    projectedItem.result = { command: result.command };
+  if (result) {
+    const projectedResult: Record<string, unknown> = {};
+    if ("command" in result) {
+      projectedResult.command = result.command;
+    }
+    const resultExitCode = asInteger(result.exitCode);
+    if (resultExitCode !== null) {
+      projectedResult.exitCode = resultExitCode;
+    }
+    if (Object.keys(projectedResult).length > 0) {
+      projectedItem.result = projectedResult;
+    }
   }
 
   return Object.keys(projectedItem).length > 0 ? projectedItem : undefined;
@@ -237,26 +255,38 @@ function projectRawOutput(value: unknown): Record<string, unknown> | undefined {
     return undefined;
   }
 
+  const projected: Record<string, unknown> = {};
+  const exitCode = asInteger(rawOutput.exitCode);
+  if (exitCode !== null) {
+    projected.exitCode = exitCode;
+  }
+
   if (typeof rawOutput.totalFiles === "number" && Number.isFinite(rawOutput.totalFiles)) {
-    return {
-      totalFiles: rawOutput.totalFiles,
-      ...(rawOutput.truncated === true ? { truncated: true } : {}),
-    };
+    projected.totalFiles = rawOutput.totalFiles;
+    if (rawOutput.truncated === true) {
+      projected.truncated = true;
+    }
+    return projected;
   }
 
   const content = asTrimmedString(rawOutput.content);
   if (content) {
     const summary = summarizeToolTextOutput(content);
-    return summary ? { content: summary } : undefined;
+    if (summary) {
+      projected.content = summary;
+    }
+    return Object.keys(projected).length > 0 ? projected : undefined;
   }
 
   const stdout = asTrimmedString(rawOutput.stdout);
   if (stdout) {
     const summary = summarizeToolTextOutput(stdout);
-    return summary ? { content: summary } : undefined;
+    if (summary) {
+      projected.content = summary;
+    }
   }
 
-  return undefined;
+  return Object.keys(projected).length > 0 ? projected : undefined;
 }
 
 /**
@@ -289,6 +319,14 @@ export function projectActivityPayload(
   }
   if ("command" in data) {
     projectedData.command = data.command;
+  }
+  const exitCode = asInteger(data.exitCode);
+  if (exitCode !== null) {
+    projectedData.exitCode = exitCode;
+  }
+  const resultExitCode = asInteger(asRecord(data.result)?.exitCode);
+  if (resultExitCode !== null) {
+    projectedData.result = { exitCode: resultExitCode };
   }
 
   const changedFiles: string[] = [];
