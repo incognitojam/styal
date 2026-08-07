@@ -155,10 +155,10 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   });
 
   it("uses the fork identity for desktop packaging", () => {
-    assert.equal(resolveDesktopProductName("0.0.17"), "T3 Code (incognitojam Alpha)");
+    assert.equal(resolveDesktopProductName("0.0.17"), "T3 Code (yngatech Alpha)");
     assert.equal(
       resolveDesktopProductName("0.0.17-nightly.20260413.42"),
-      "T3 Code (incognitojam Nightly)",
+      "T3 Code (yngatech Nightly)",
     );
   });
 
