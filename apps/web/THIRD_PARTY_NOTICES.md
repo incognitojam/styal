@@ -9,3 +9,14 @@ Copyright (c) 2016 Roberto Huertas
 
 Licensed under the MIT License. The full license text is available in the
 upstream repository: <https://github.com/vscode-icons/vscode-icons/blob/master/LICENSE>.
+
+## Avanti completion sound
+
+The `public/avanti.mp3` completion sound is sourced from the
+[`rail-announcements`](https://github.com/davwheat/rail-announcements/blob/main/audio/AWC/390/chime.mp3)
+project.
+
+Copyright (c) 2021 David Wheatley
+
+Licensed under the MIT License. The full license text is available in the
+upstream repository: <https://github.com/davwheat/rail-announcements/blob/main/LICENSE>.
