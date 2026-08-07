@@ -1,6 +1,8 @@
 import {
   type EnvironmentId,
+  EventId,
   type MessageId,
+  type OrchestrationGetCommandOutputResult,
   type ScopedThreadRef,
   type ServerProviderSkill,
   type TurnId,
@@ -105,6 +107,7 @@ import {
 import { cn } from "~/lib/utils";
 import { useUiStateStore } from "~/uiStateStore";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
+import { useCommandOutput } from "~/state/queries";
 import { formatChatTimestampTooltip, formatShortTimestamp } from "../../timestampFormat";
 
 import {
@@ -2063,6 +2066,71 @@ function buildToolCallExpandedBody(
   return blocks.length > 0 ? blocks.join("\n\n") : null;
 }
 
+function buildCommandOutputBody(result: OrchestrationGetCommandOutputResult): string {
+  if (result.status === "unavailable") {
+    return "Command output is unavailable.";
+  }
+
+  const blocks: string[] = [];
+  if (result.output) {
+    blocks.push(result.output.trimEnd());
+  } else if (result.stdout && result.stderr) {
+    blocks.push(`stdout\n${result.stdout.trimEnd()}`);
+    blocks.push(`stderr\n${result.stderr.trimEnd()}`);
+  } else if (result.stdout) {
+    blocks.push(result.stdout.trimEnd());
+  } else if (result.stderr) {
+    blocks.push(`stderr\n${result.stderr.trimEnd()}`);
+  }
+  if (result.exitCode !== null && result.exitCode !== 0) {
+    blocks.push(`Process exited with code ${result.exitCode}`);
+  }
+  return blocks.length > 0 ? blocks.join("\n\n") : "No output";
+}
+
+const CommandOutputExpandedBody = memo(function CommandOutputExpandedBody(props: {
+  workEntry: TimelineWorkEntry;
+}) {
+  const { workEntry } = props;
+  const { activeThreadEnvironmentId, threadRef } = use(TimelineRowCtx);
+  const pending = workEntry.toolLifecycleStatus === "inProgress";
+  const query = useCommandOutput({
+    environmentId: pending ? null : activeThreadEnvironmentId,
+    threadId: threadRef?.threadId ?? null,
+    activityId: EventId.make(workEntry.id),
+  });
+
+  if (pending) {
+    return (
+      <pre className="font-mono text-[11px] leading-relaxed text-muted-foreground">
+        Output will be available when the command finishes.
+      </pre>
+    );
+  }
+
+  if (query.error) {
+    return (
+      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+        <span>Couldn’t load command output.</span>
+        <button className="underline underline-offset-2" type="button" onClick={query.refresh}>
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  const body = query.data
+    ? buildCommandOutputBody(query.data)
+    : query.isPending
+      ? "Loading output…"
+      : "Command output is unavailable.";
+  return (
+    <pre className="max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-muted-foreground select-text">
+      {body}
+    </pre>
+  );
+});
+
 function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   if (
     workEntry.sourceActivityKind === "user-input.requested" ||
@@ -2243,7 +2311,8 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       : rawPreview;
   const displayText = preview ? `${heading} - ${preview}` : heading;
   const expandedBody = buildToolCallExpandedBody(workEntry, workspaceRoot);
-  const canExpand = expandedBody !== null;
+  const isCommandExecution = workEntry.itemType === "command_execution";
+  const canExpand = isCommandExecution || expandedBody !== null;
   const showFailedIndicator = workEntryIndicatesToolFailure(workEntry);
   const exitCodeLabel =
     workEntry.exitCode === undefined ? null : `Exit code ${workEntry.exitCode.toString()}`;
@@ -2374,15 +2443,19 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           </div>
         </div>
       </div>
-      {expanded && canExpand && expandedBody ? (
+      {expanded && canExpand ? (
         <div
           className="mt-1 ms-7 cursor-default border-s border-border/45 ps-3 pt-0.5"
           onClick={stopRowToggle}
           onPointerDown={stopRowToggle}
         >
-          <pre className="max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words font-mono text-secondary-label text-[11px] leading-relaxed select-text">
-            {expandedBody}
-          </pre>
+          {isCommandExecution ? (
+            <CommandOutputExpandedBody workEntry={workEntry} />
+          ) : expandedBody ? (
+            <pre className="max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words font-mono text-secondary-label text-[11px] leading-relaxed select-text">
+              {expandedBody}
+            </pre>
+          ) : null}
         </div>
       ) : null}
     </div>
