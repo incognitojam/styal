@@ -631,6 +631,18 @@ describe("workEntryIndicatesToolFailure", () => {
     ).toBe(true);
   });
 
+  it("is true when a command has a nonzero exit code", () => {
+    expect(
+      workEntryIndicatesToolFailure({
+        ...base,
+        tone: "tool",
+        itemType: "command_execution",
+        toolLifecycleStatus: "completed",
+        exitCode: 17,
+      }),
+    ).toBe(true);
+  });
+
   it("detects file-not-found style tool output with completed lifecycle", () => {
     expect(
       workEntryIndicatesToolFailure({
@@ -1131,9 +1143,9 @@ describe("deriveWorkLogEntries", () => {
           data: {
             item: {
               command: ["bun", "run", "dev"],
+              exitCode: 0,
               result: {
                 content: '{ "dev": "vite dev --port 3000" } <exited with exit code 0>',
-                exitCode: 0,
               },
             },
           },
@@ -1145,9 +1157,41 @@ describe("deriveWorkLogEntries", () => {
     expect(entry).toMatchObject({
       command: "bun run dev",
       detail: '{ "dev": "vite dev --port 3000" }',
+      exitCode: 0,
       itemType: "command_execution",
       toolTitle: "bash",
     });
+  });
+
+  it("extracts command exit codes from ACP raw output", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "command-tool-failed",
+        kind: "tool.completed",
+        summary: "Ran command",
+        payload: {
+          itemType: "command_execution",
+          status: "completed",
+          data: {
+            kind: "execute",
+            command: "bun run check",
+            rawOutput: {
+              exitCode: 17,
+              stdout: "",
+              stderr: "check failed",
+            },
+          },
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities);
+    expect(entry).toMatchObject({
+      command: "bun run check",
+      exitCode: 17,
+      itemType: "command_execution",
+    });
+    expect(entry && workEntryIndicatesToolFailure(entry)).toBe(true);
   });
 
   it("extracts changed file paths for file-change tool activities", () => {
