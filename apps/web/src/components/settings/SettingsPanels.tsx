@@ -37,7 +37,13 @@ import { createModelSelection } from "@t3tools/shared/model";
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
-import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";
+import {
+  APP_COMMIT_HASH,
+  APP_REPOSITORY,
+  APP_VERSION,
+  HOSTED_APP_CHANNEL,
+  HOSTED_APP_CHANNEL_LABEL,
+} from "../../branding";
 import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
@@ -221,6 +227,28 @@ function AboutVersionTitle() {
   );
 }
 
+/**
+ * Update provenance for this distribution: which repository produced the
+ * running build and at which commit. Rendered as the version row's status line
+ * so "what would an update install?" is answerable at a glance.
+ */
+function AboutBuildProvenance() {
+  const commitLabel = APP_COMMIT_HASH === "unknown" ? "unknown" : APP_COMMIT_HASH.slice(0, 10);
+
+  return (
+    <span className="inline-flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 font-mono text-[11px]">
+      <span className="sr-only">Built from repository </span>
+      <span className="rounded-sm border border-teal-700/20 bg-teal-500/8 px-1 py-0.5 text-teal-700 dark:border-teal-300/20 dark:bg-teal-400/10 dark:text-teal-300">
+        {APP_REPOSITORY}
+      </span>
+      <span aria-hidden className="text-muted-foreground/50">
+        ·
+      </span>
+      <span title={APP_COMMIT_HASH}>commit {commitLabel}</span>
+    </span>
+  );
+}
+
 function AboutVersionSection() {
   const updateState = useDesktopUpdateState();
   const [isChangingUpdateChannel, setIsChangingUpdateChannel] = useState(false);
@@ -349,6 +377,7 @@ function AboutVersionSection() {
       <SettingsRow
         title={<AboutVersionTitle />}
         description={description}
+        status={<AboutBuildProvenance />}
         control={
           <Tooltip>
             <TooltipTrigger
@@ -2163,6 +2192,7 @@ export function GeneralSettingsPanel() {
           <SettingsRow
             title={<AboutVersionTitle />}
             description="Current version of the application."
+            status={<AboutBuildProvenance />}
           />
         )}
         <SettingsRow
