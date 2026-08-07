@@ -17,7 +17,7 @@ export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"])
 export type TimestampFormat = typeof TimestampFormat.Type;
 export const DEFAULT_TIMESTAMP_FORMAT: TimestampFormat = "locale";
 
-export const CompletionSound = Schema.Literals(["none", "chime"]);
+export const CompletionSound = Schema.Literals(["none", "chime", "avanti"]);
 export type CompletionSound = typeof CompletionSound.Type;
 export const DEFAULT_COMPLETION_SOUND: CompletionSound = "none";
 
