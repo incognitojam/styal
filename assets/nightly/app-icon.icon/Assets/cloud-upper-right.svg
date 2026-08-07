@@ -1,13 +1,13 @@
 <svg width="64" height="32" viewBox="0 0 64 32" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="cloud" x1="7" y1="10" x2="57" y2="25" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#4EA4FF" stop-opacity="0.62"/>
-      <stop offset="0.52" stop-color="#696FEA" stop-opacity="0.72"/>
-      <stop offset="1" stop-color="#A85BEA" stop-opacity="0.58"/>
+      <stop stop-color="#4EDCE2" stop-opacity="0.62"/>
+      <stop offset="0.52" stop-color="#38A9B6" stop-opacity="0.72"/>
+      <stop offset="1" stop-color="#5FE0BF" stop-opacity="0.58"/>
     </linearGradient>
     <radialGradient id="highlight" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(30 14) rotate(13) scale(27 10)">
-      <stop stop-color="#C8D7FF" stop-opacity="0.4"/>
-      <stop offset="1" stop-color="#8C8EF2" stop-opacity="0"/>
+      <stop stop-color="#CFFAF2" stop-opacity="0.4"/>
+      <stop offset="1" stop-color="#6FD9CC" stop-opacity="0"/>
     </radialGradient>
     <filter id="soft" x="-8" y="-8" width="80" height="48" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
       <feGaussianBlur stdDeviation="2.5"/>
