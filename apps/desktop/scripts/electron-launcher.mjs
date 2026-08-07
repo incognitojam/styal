@@ -16,7 +16,7 @@ const devBundleIdSuffix = NodePath.basename(repoRoot)
   .toLowerCase()
   .replaceAll(/[^a-z0-9]+/g, "");
 const appStageLabel = isDevelopment ? "Dev" : "Alpha";
-export const APP_DISPLAY_NAME = `T3 Code (incognitojam ${appStageLabel})`;
+export const APP_DISPLAY_NAME = `T3 Code (yngatech ${appStageLabel})`;
 export const APP_BUNDLE_ID = isDevelopment
   ? `com.t3tools.t3code.dev.${devBundleIdSuffix || "local"}`
   : "dev.incognitojam.t3code";
