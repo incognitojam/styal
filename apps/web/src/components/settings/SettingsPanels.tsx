@@ -1911,6 +1911,20 @@ export function GeneralSettingsPanel() {
         ) : null}
 
         <SettingsRow
+          {...searchableSetting("github-outage-alerts")}
+          description="Shows affected GitHub services in the sidebar during incidents, based on GitHub's official status page."
+          control={
+            <Switch
+              checked={settings.githubStatusAlertsEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ githubStatusAlertsEnabled: Boolean(checked) })
+              }
+              aria-label="Enable GitHub outage alerts"
+            />
+          }
+        />
+
+        <SettingsRow
           {...searchableSetting("time-format")}
           description="System default follows your browser or OS clock preference."
           resetAction={
