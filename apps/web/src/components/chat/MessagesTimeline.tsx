@@ -2594,6 +2594,9 @@ function capitalizePhrase(value: string): string {
 }
 
 function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
+  if (workEntry.sourceActivityKind?.startsWith("setup-script.")) {
+    return capitalizePhrase(workEntry.label);
+  }
   if (!workEntry.toolTitle) {
     return capitalizePhrase(normalizeCompactToolLabel(workEntry.label));
   }
