@@ -80,6 +80,7 @@ interface WorkLogEntry {
 interface DerivedWorkLogEntry extends WorkLogEntry {
   activityKind: OrchestrationThreadActivity["kind"];
   collapseKey?: string;
+  setupRunId?: string;
   /** Grouping key for subagent lifecycle rows (one row per agent). */
   taskId?: string;
 }
@@ -426,6 +427,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (requestKind) {
     entry.requestKind = requestKind;
   }
+  if (activity.kind.startsWith("setup-script.") && typeof payload?.runId === "string") {
+    entry.setupRunId = payload.runId;
+  }
   let toolLifecycleStatus = extractWorkLogToolLifecycleStatus(payload);
   if (!toolLifecycleStatus && activity.kind === "tool.completed") {
     toolLifecycleStatus = "completed";
@@ -444,10 +448,28 @@ function collapseDerivedWorkLogEntries(
   entries: ReadonlyArray<DerivedWorkLogEntry>,
 ): DerivedWorkLogEntry[] {
   const collapsed: DerivedWorkLogEntry[] = [];
+  const setupRowIndex = new Map<string, number>();
   // Subagent rows collapse by identity, not adjacency (quiet-timeline
   // guarantee; mirrors web's session-logic).
   const taskRowIndex = new Map<string, number>();
   for (const entry of entries) {
+    if (entry.setupRunId !== undefined) {
+      const existingIndex = setupRowIndex.get(entry.setupRunId);
+      if (existingIndex !== undefined) {
+        const existing = collapsed[existingIndex]!;
+        collapsed[existingIndex] = {
+          ...mergeDerivedWorkLogEntries(existing, entry),
+          id: existing.id,
+          createdAt: existing.createdAt,
+          turnId: existing.turnId,
+          setupRunId: entry.setupRunId,
+        };
+        continue;
+      }
+      setupRowIndex.set(entry.setupRunId, collapsed.length);
+      collapsed.push(entry);
+      continue;
+    }
     const isTaskRow =
       entry.taskId !== undefined &&
       (entry.activityKind === "task.progress" ||
@@ -503,6 +525,7 @@ function mergeDerivedWorkLogEntries(
   const collapseKey = next.collapseKey ?? previous.collapseKey;
   const toolLifecycleStatus = next.toolLifecycleStatus ?? previous.toolLifecycleStatus;
   const toolData = next.toolData ?? previous.toolData;
+  const setupRunId = next.setupRunId ?? previous.setupRunId;
   return {
     ...previous,
     ...next,
@@ -516,6 +539,7 @@ function mergeDerivedWorkLogEntries(
     ...(collapseKey ? { collapseKey } : {}),
     ...(toolLifecycleStatus ? { toolLifecycleStatus } : {}),
     ...(toolData !== undefined ? { toolData } : {}),
+    ...(setupRunId !== undefined ? { setupRunId } : {}),
   };
 }
 
@@ -709,7 +733,10 @@ function capitalizePhrase(value: string): string {
   return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
 }
 
-function workEntryHeading(workEntry: WorkLogEntry): string {
+function workEntryHeading(workEntry: DerivedWorkLogEntry): string {
+  if (workEntry.activityKind.startsWith("setup-script.")) {
+    return capitalizePhrase(workEntry.label);
+  }
   if (!workEntry.toolTitle) {
     return capitalizePhrase(normalizeCompactToolLabel(workEntry.label));
   }
