@@ -128,6 +128,15 @@ export class TerminalManager extends Context.Service<
     ) => Effect.Effect<TerminalSessionSnapshot, TerminalError>;
 
     /**
+     * Open a terminal whose shell executes one finite command and exits with
+     * that command's status. This is server-only; interactive clients use
+     * {@link open} and {@link write} instead.
+     */
+    readonly openCommand: (
+      input: TerminalCommandOpenInput,
+    ) => Effect.Effect<TerminalSessionSnapshot, TerminalError>;
+
+    /**
      * Attach to a terminal and stream its initial snapshot followed by live events.
      *
      * Returns an unsubscribe function.
@@ -227,6 +236,11 @@ export interface ShellCandidate {
 export interface TerminalStartInput extends TerminalOpenInput {
   cols: number;
   rows: number;
+  command?: string;
+}
+
+export interface TerminalCommandOpenInput extends TerminalOpenInput {
+  readonly command: string;
 }
 
 export interface TerminalSessionState {
@@ -254,6 +268,7 @@ export interface TerminalSessionState {
   /** Normalized child command name when `hasRunningSubprocess`; cleared when idle. */
   childCommandLabel: string | null;
   runtimeEnv: Record<string, string> | null;
+  launchCommand: string | null;
 }
 
 interface PersistHistoryRequest {
@@ -562,6 +577,24 @@ function resolveShellCandidates(
     shellCandidateFromCommand("bash", platform),
     shellCandidateFromCommand("sh", platform),
   ]);
+}
+
+function shellCandidateForCommand(
+  candidate: ShellCandidate,
+  command: string,
+  platform: NodeJS.Platform,
+): ShellCandidate {
+  const shellName = basenameForPlatform(candidate.shell, platform).toLowerCase();
+  const existingArgs = candidate.args ?? [];
+  if (platform === "win32") {
+    if (shellName === "pwsh.exe" || shellName === "powershell.exe") {
+      return { ...candidate, args: [...existingArgs, "-Command", command] };
+    }
+    if (shellName === "cmd.exe") {
+      return { ...candidate, args: [...existingArgs, "/d", "/s", "/c", command] };
+    }
+  }
+  return { ...candidate, args: [...existingArgs, "-ic", command] };
 }
 
 function isRetryableShellSpawnError(error: PtyAdapter.PtySpawnError): boolean {
@@ -1831,6 +1864,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     shellCandidates: ReadonlyArray<ShellCandidate>,
     spawnEnv: NodeJS.ProcessEnv,
     session: TerminalSessionState,
+    command: string | null,
     index = 0,
     lastError: PtyAdapter.PtySpawnError | null = null,
   ): Effect.fn.Return<
@@ -1845,8 +1879,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       });
     }
 
-    const candidate = shellCandidates[index];
-    if (!candidate) {
+    const baseCandidate = shellCandidates[index];
+    if (!baseCandidate) {
       return yield* (
         lastError ??
           new PtyAdapter.PtySpawnError({
@@ -1855,6 +1889,9 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           })
       );
     }
+    const candidate = command
+      ? shellCandidateForCommand(baseCandidate, command, platform)
+      : baseCandidate;
 
     const attempt = yield* Effect.result(
       options.ptyAdapter.spawn({
@@ -1879,7 +1916,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       return yield* spawnError;
     }
 
-    return yield* trySpawn(shellCandidates, spawnEnv, session, index + 1, spawnError);
+    return yield* trySpawn(shellCandidates, spawnEnv, session, command, index + 1, spawnError);
   });
 
   const startSession = Effect.fn("terminal.startSession")(function* (
@@ -1922,7 +1959,12 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           Effect.gen(function* () {
             const shellCandidates = resolveShellCandidates(shellResolver, platform, baseEnv);
             const terminalEnv = createTerminalSpawnEnv(baseEnv, session.runtimeEnv);
-            const spawnResult = yield* trySpawn(shellCandidates, terminalEnv, session);
+            const spawnResult = yield* trySpawn(
+              shellCandidates,
+              terminalEnv,
+              session,
+              input.command ?? null,
+            );
             ptyProcess = spawnResult.process;
             startedShell = spawnResult.shellLabel;
 
@@ -2180,8 +2222,11 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     }).pipe(Effect.ignoreCause({ log: true })),
   );
 
-  const openLocked = Effect.fn("terminal.openLocked")(function* (input: TerminalOpenInput) {
+  const openLocked = Effect.fn("terminal.openLocked")(function* (
+    input: TerminalOpenInput | TerminalCommandOpenInput,
+  ) {
     const terminalId = input.terminalId;
+    const launchCommand = "command" in input ? input.command : null;
     yield* assertValidCwd(input.cwd);
 
     const sessionKey = toSessionKey(input.threadId, terminalId);
@@ -2215,6 +2260,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         hasRunningSubprocess: false,
         childCommandLabel: null,
         runtimeEnv: normalizedRuntimeEnv(input.env),
+        launchCommand,
       };
 
       const createdSession = session;
@@ -2235,6 +2281,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           cols,
           rows,
           ...(input.env ? { env: input.env } : {}),
+          ...(launchCommand ? { command: launchCommand } : {}),
         },
         "started",
       );
@@ -2247,11 +2294,13 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     const targetCols = input.cols ?? liveSession.cols;
     const targetRows = input.rows ?? liveSession.rows;
     const runtimeEnvChanged = !Equal.equals(currentRuntimeEnv, nextRuntimeEnv);
+    const nextLaunchCommand = launchCommand;
     const nextWorktreePath =
       input.worktreePath !== undefined ? (input.worktreePath ?? null) : liveSession.worktreePath;
     const launchContextChanged =
       liveSession.cwd !== input.cwd ||
       runtimeEnvChanged ||
+      liveSession.launchCommand !== nextLaunchCommand ||
       liveSession.worktreePath !== nextWorktreePath;
 
     if (launchContextChanged) {
@@ -2259,6 +2308,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       liveSession.cwd = input.cwd;
       liveSession.worktreePath = nextWorktreePath;
       liveSession.runtimeEnv = nextRuntimeEnv;
+      liveSession.launchCommand = nextLaunchCommand;
       liveSession.history = "";
       liveSession.pendingHistoryControlSequence = "";
       liveSession.pendingProcessEvents = [];
@@ -2267,6 +2317,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       yield* persistHistory(liveSession.threadId, liveSession.terminalId, liveSession.history);
     } else if (liveSession.status === "exited" || liveSession.status === "error") {
       liveSession.runtimeEnv = nextRuntimeEnv;
+      liveSession.launchCommand = nextLaunchCommand;
       liveSession.worktreePath = nextWorktreePath;
       liveSession.history = "";
       liveSession.pendingHistoryControlSequence = "";
@@ -2287,6 +2338,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           cols: targetCols,
           rows: targetRows,
           ...(input.env ? { env: input.env } : {}),
+          ...(launchCommand ? { command: launchCommand } : {}),
         },
         "started",
       );
@@ -2304,6 +2356,9 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   });
 
   const open: TerminalManager["Service"]["open"] = (input) =>
+    withThreadLock(input.threadId, openLocked(input));
+
+  const openCommand: TerminalManager["Service"]["openCommand"] = (input) =>
     withThreadLock(input.threadId, openLocked(input));
 
   const openOrAttachForStream = (input: TerminalAttachInput) =>
@@ -2627,6 +2682,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
             hasRunningSubprocess: false,
             childCommandLabel: null,
             runtimeEnv: normalizedRuntimeEnv(input.env),
+            launchCommand: null,
           };
           const createdSession = session;
           yield* modifyManagerState((state) => {
@@ -2641,6 +2697,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           session.cwd = input.cwd;
           session.worktreePath = input.worktreePath ?? null;
           session.runtimeEnv = normalizedRuntimeEnv(input.env);
+          session.launchCommand = null;
         }
 
         const cols = input.cols ?? session.cols;
@@ -2693,6 +2750,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
   return TerminalManager.of({
     open,
+    openCommand,
     attachStream,
     write,
     resize,
