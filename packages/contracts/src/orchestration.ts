@@ -871,6 +871,8 @@ export const ThreadTurnStartCommand = Schema.Struct({
   ),
   bootstrap: Schema.optional(ThreadTurnStartBootstrap),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
+  /** Clears this composer revision only if it is still current after dispatch. */
+  composerDraftRevision: Schema.optional(NonNegativeInt),
   createdAt: IsoDateTime,
 });
 
@@ -890,6 +892,7 @@ const ClientThreadTurnStartCommand = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   bootstrap: Schema.optional(ThreadTurnStartBootstrap),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
+  composerDraftRevision: Schema.optional(NonNegativeInt),
   createdAt: IsoDateTime,
 });
 
