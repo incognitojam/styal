@@ -379,7 +379,9 @@ export function snoozeWakeLabel(snoozedUntil: string, options: { readonly now: s
   if (Number.isNaN(wakeMs) || Number.isNaN(nowMs)) return "now";
   const remainingMs = wakeMs - nowMs;
   if (remainingMs <= 0) return "now";
-  if (remainingMs < HOUR_MS) return `${Math.max(1, Math.ceil(remainingMs / 60_000))}m`;
-  if (remainingMs < DAY_MS) return `${Math.ceil(remainingMs / HOUR_MS)}h`;
+  const remainingMinutes = Math.ceil(remainingMs / 60_000);
+  if (remainingMinutes < 60) return `${Math.max(1, remainingMinutes)}m`;
+  const remainingHours = Math.ceil(remainingMs / HOUR_MS);
+  if (remainingHours < 24) return `${remainingHours}h`;
   return `${Math.ceil(remainingMs / DAY_MS)}d`;
 }
