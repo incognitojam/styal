@@ -1,11 +1,13 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import { SourceControlProviderError } from "@t3tools/contracts";
 import type {
   ChangeRequest,
   ChangeRequestState,
-  SourceControlProviderError,
   SourceControlProviderInfo,
   SourceControlProviderKind,
+  SourceControlIssue,
+  SourceControlIssueSummary,
   SourceControlRepositoryCloneUrls,
   SourceControlRepositoryVisibility,
 } from "@t3tools/contracts";
@@ -96,6 +98,16 @@ export class SourceControlProvider extends Context.Service<
       readonly context?: SourceControlProviderContext;
       readonly reference: string;
     }) => Effect.Effect<ChangeRequest, SourceControlProviderError>;
+    readonly listIssues: (input: {
+      readonly cwd: string;
+      readonly context?: SourceControlProviderContext;
+      readonly limit?: number;
+    }) => Effect.Effect<ReadonlyArray<SourceControlIssueSummary>, SourceControlProviderError>;
+    readonly getIssue: (input: {
+      readonly cwd: string;
+      readonly context?: SourceControlProviderContext;
+      readonly number: number;
+    }) => Effect.Effect<SourceControlIssue, SourceControlProviderError>;
     readonly createChangeRequest: (input: {
       readonly cwd: string;
       readonly context?: SourceControlProviderContext;
@@ -128,3 +140,31 @@ export class SourceControlProvider extends Context.Service<
     }) => Effect.Effect<void, SourceControlProviderError>;
   }
 >()("t3/sourceControl/SourceControlProvider") {}
+
+/**
+ * Issue browsing only ships for GitHub today. Every other provider reuses this
+ * so the capability gap is a typed, explainable failure instead of a missing
+ * method.
+ */
+export function unsupportedIssueOperations(
+  kind: SourceControlProviderKind,
+  detail = `Browsing issues is not supported for ${kind} yet.`,
+): Pick<SourceControlProvider["Service"], "listIssues" | "getIssue"> {
+  return {
+    listIssues: (input) =>
+      new SourceControlProviderError({
+        provider: kind,
+        operation: "listIssues",
+        cwd: input.cwd,
+        detail,
+      }),
+    getIssue: (input) =>
+      new SourceControlProviderError({
+        provider: kind,
+        operation: "getIssue",
+        cwd: input.cwd,
+        reference: String(input.number),
+        detail,
+      }),
+  };
+}
