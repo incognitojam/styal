@@ -148,6 +148,7 @@ import {
 } from "../sidebarProjectGrouping";
 import type { Project } from "../types";
 import { useViewPullRequest } from "../lib/viewPullRequest";
+import { getSourceControlPresentation } from "../sourceControlPresentation";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
 
@@ -883,6 +884,9 @@ function OpenCommandPaletteDialog(props: {
     activeThreadGitStatus.data,
     activeThreadRef,
   );
+  const changeRequestTerminology = getSourceControlPresentation(
+    activeThreadGitStatus.data?.sourceControlProvider,
+  ).terminology;
   const isPullRequestStatusLoading =
     activeThreadGitStatus.isPending && activeThreadGitStatus.data === null;
   const currentProjectCwdForBrowse =
@@ -1636,13 +1640,22 @@ function OpenCommandPaletteDialog(props: {
   actionItems.push({
     kind: "action",
     value: "action:view-pull-request",
-    searchTerms: ["view pull request", "open pr", "source control", "github"],
-    title: "View pull request",
+    searchTerms: [
+      "view pull request",
+      "open pr",
+      "view merge request",
+      "open mr",
+      "change request",
+      "source control",
+      "github",
+      "gitlab",
+    ],
+    title: `View ${changeRequestTerminology.shortLabel}`,
     description: canViewPullRequest
       ? undefined
       : isPullRequestStatusLoading
-        ? "Checking pull request status…"
-        : "No open pull request for this thread",
+        ? `Checking ${changeRequestTerminology.singular} status…`
+        : `No open ${changeRequestTerminology.singular} for this thread`,
     disabled: !canViewPullRequest,
     icon: <GitPullRequestIcon className={ITEM_ICON_CLASS} />,
     shortcutCommand: "sourceControl.viewPullRequest",
