@@ -1552,6 +1552,54 @@ describe("ProviderCommandReactor", () => {
     });
   });
 
+  it("keeps setup-script work-log activities out of provider input", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.activity.append",
+        commandId: CommandId.make("cmd-setup-script-started"),
+        threadId: ThreadId.make("thread-1"),
+        activity: {
+          id: EventId.make("activity-setup-script-started"),
+          tone: "info",
+          kind: "setup-script.started",
+          summary: "Setup script started",
+          payload: {
+            runId: "setup-run-1",
+            command: "bun install",
+          },
+          turnId: null,
+          createdAt: now,
+        },
+        createdAt: now,
+      }),
+    );
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-after-setup-activity"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-after-setup-activity"),
+          role: "user",
+          text: "Implement the requested change.",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    const request = harness.sendTurn.mock.calls[0]?.[0];
+    expect(request).toMatchObject({ input: "Implement the requested change." });
+    expect(JSON.stringify(request)).not.toContain("Setup script started");
+    expect(JSON.stringify(request)).not.toContain("bun install");
+  });
+
   it("forwards claude effort options through session start and turn send", async () => {
     const harness = await createHarness({
       threadModelSelection: {
