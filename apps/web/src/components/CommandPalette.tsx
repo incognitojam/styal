@@ -29,6 +29,7 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import {
   ArrowLeftIcon,
+  CircleDotIcon,
   CornerLeftUpIcon,
   FileSearchIcon,
   FolderIcon,
@@ -67,6 +68,8 @@ import { useEnvironmentQuery } from "../state/query";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
+import { useComposerDraftStore } from "../composerDraftStore";
+import { normalizeIssueContextSelection } from "../lib/issueContext";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { useProjects, useThreadShells } from "../state/entities";
 import { useThreadSearch } from "../state/queries";
@@ -360,6 +363,30 @@ function buildAddProjectRemoteSourceReadiness(
   return readiness;
 }
 
+/**
+ * The issue picker only speaks GitHub today. When `gh` is missing or logged
+ * out, the list request fails with a generic provider error, so we read the
+ * discovery snapshot to explain what to actually do about it.
+ */
+function describeGitHubIssuesUnavailable(
+  discovery: SourceControlDiscoveryResult | null,
+): string | null {
+  const provider = discovery?.sourceControlProviders.find((entry) => entry.kind === "github");
+  if (!provider) {
+    return null;
+  }
+  if (provider.status !== "available") {
+    return `GitHub CLI is not installed. ${provider.installHint}`;
+  }
+  if (provider.auth.status === "unauthenticated") {
+    return (
+      Option.getOrNull(provider.auth.detail) ??
+      "GitHub CLI is not authenticated. Run `gh auth login` and retry."
+    );
+  }
+  return null;
+}
+
 function errorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim().length > 0) {
     return error.message;
@@ -568,6 +595,15 @@ function OpenCommandPaletteDialog(props: {
   const createProject = useAtomCommand(projectEnvironment.create, {
     reportFailure: false,
   });
+  const listSourceControlIssues = useAtomQueryRunner(sourceControlEnvironment.issues, {
+    reportFailure: false,
+    reportDefect: false,
+  });
+  const loadSourceControlIssue = useAtomQueryRunner(sourceControlEnvironment.issue, {
+    reportFailure: false,
+    reportDefect: false,
+  });
+  const addComposerDraftIssueContext = useComposerDraftStore((store) => store.addIssueContext);
   const lookupRepository = useAtomQueryRunner(sourceControlEnvironment.repository, {
     reportFailure: false,
   });
@@ -602,6 +638,7 @@ function OpenCommandPaletteDialog(props: {
     return map;
   }, [environments, primaryEnvironmentId, providers]);
   const [viewStack, setViewStack] = useState<CommandPaletteView[]>([]);
+  const [issuePickerEmptyMessage, setIssuePickerEmptyMessage] = useState<string | null>(null);
   const currentView = viewStack.at(-1) ?? null;
   const environmentIds = useMemo(
     () =>
@@ -1109,6 +1146,7 @@ function OpenCommandPaletteDialog(props: {
   function popView(): void {
     browseNavigation.invalidate();
     setAddProjectCloneFlow(null);
+    setIssuePickerEmptyMessage(null);
     if (viewStack.length <= 1) {
       setAddProjectEnvironmentId(null);
     }
@@ -1306,6 +1344,137 @@ function OpenCommandPaletteDialog(props: {
     ],
   );
 
+  const contextualProjectCwd = contextualProjectRef
+    ? (projectCwdById.get(contextualProjectRef.projectId) ?? null)
+    : null;
+  const contextualSourceControlDiscovery = useEnvironmentQuery(
+    contextualProjectRef === null
+      ? null
+      : sourceControlEnvironment.discovery({
+          environmentId: contextualProjectRef.environmentId,
+          input: {},
+        }),
+  );
+
+  /**
+   * Fetch the full issue (body + comments), open a fresh draft for the
+   * contextual project, and attach the issue as a pending context block. The
+   * user writes and sends the prompt themselves — nothing is auto-sent.
+   */
+  const attachIssueToNewThread = useCallback(
+    async (issueNumber: number): Promise<void> => {
+      if (contextualProjectRef === null || contextualProjectCwd === null) {
+        return;
+      }
+      const issueResult = await loadSourceControlIssue({
+        environmentId: contextualProjectRef.environmentId,
+        input: { cwd: contextualProjectCwd, number: issueNumber },
+      });
+      if (issueResult._tag === "Failure") {
+        if (!isAtomCommandInterrupted(issueResult)) {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Could not load issue",
+              description: errorMessage(squashAtomCommandFailure(issueResult)),
+            }),
+          );
+        }
+        return;
+      }
+      const selection = normalizeIssueContextSelection(issueResult.value);
+      if (selection === null) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not load issue",
+            description: "The issue payload was missing a number or title.",
+          }),
+        );
+        return;
+      }
+      const opened = await handleNewThread(contextualProjectRef);
+      if (opened === null) {
+        return;
+      }
+      addComposerDraftIssueContext(opened.draftId, selection);
+    },
+    [
+      addComposerDraftIssueContext,
+      contextualProjectCwd,
+      contextualProjectRef,
+      handleNewThread,
+      loadSourceControlIssue,
+    ],
+  );
+
+  const startNewThreadFromIssueBrowse = useCallback(async (): Promise<void> => {
+    if (contextualProjectRef === null || contextualProjectCwd === null) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "No project selected",
+          description: "Open or add a project before starting a thread from an issue.",
+        }),
+      );
+      return;
+    }
+    const issuesResult = await listSourceControlIssues({
+      environmentId: contextualProjectRef.environmentId,
+      input: { cwd: contextualProjectCwd },
+    });
+    if (issuesResult._tag === "Failure") {
+      if (isAtomCommandInterrupted(issuesResult)) {
+        return;
+      }
+      setIssuePickerEmptyMessage(
+        describeGitHubIssuesUnavailable(contextualSourceControlDiscovery.data ?? null) ??
+          errorMessage(squashAtomCommandFailure(issuesResult)),
+      );
+      pushPaletteView({ addonIcon: <CircleDotIcon className={ADDON_ICON_CLASS} />, groups: [] });
+      return;
+    }
+    const issues = issuesResult.value.issues;
+    setIssuePickerEmptyMessage(issues.length === 0 ? "No open issues." : null);
+    pushPaletteView({
+      addonIcon: <CircleDotIcon className={ADDON_ICON_CLASS} />,
+      groups:
+        issues.length === 0
+          ? []
+          : [
+              {
+                value: "issues",
+                label: "Open issues",
+                items: issues.map((issue) => ({
+                  kind: "action" as const,
+                  value: `issue:${issue.number}`,
+                  searchTerms: [
+                    `#${issue.number}`,
+                    String(issue.number),
+                    issue.title,
+                    ...issue.labels,
+                  ],
+                  title: issue.title,
+                  titleLeadingContent: (
+                    <span className="text-muted-foreground tabular-nums">#{issue.number}</span>
+                  ),
+                  icon: <CircleDotIcon className={ITEM_ICON_CLASS} />,
+                  run: async () => {
+                    await attachIssueToNewThread(issue.number);
+                  },
+                })),
+              },
+            ],
+    });
+  }, [
+    attachIssueToNewThread,
+    contextualProjectCwd,
+    contextualProjectRef,
+    contextualSourceControlDiscovery.data,
+    listSourceControlIssues,
+    pushPaletteView,
+  ]);
+
   const addProjectEnvironmentItems: CommandPaletteActionItem[] = addProjectEnvironmentOptions.map(
     (option) => ({
       kind: "action",
@@ -1443,6 +1612,16 @@ function OpenCommandPaletteDialog(props: {
         },
       });
     }
+
+    actionItems.push({
+      kind: "action",
+      value: "action:new-thread-from-issue",
+      searchTerms: ["new thread from github issue", "issue", "github", "gh", "ticket", "bug"],
+      title: "New thread from GitHub issue…",
+      icon: <CircleDotIcon className={ITEM_ICON_CLASS} />,
+      keepOpen: true,
+      run: startNewThreadFromIssueBrowse,
+    });
 
     actionItems.push({
       kind: "submenu",
@@ -2404,24 +2583,27 @@ function OpenCommandPaletteDialog(props: {
         isActionsOnly={isActionsOnly}
         keybindings={keybindings}
         onExecuteItem={executeItem}
-        {...(addProjectCloneFlow?.step === "repository"
-          ? {
-              emptyStateMessage:
-                addProjectCloneFlow.source === "url"
-                  ? "Enter a Git clone URL and press Enter to continue."
-                  : "Enter a repository path and press Enter to look it up.",
-            }
-          : addProjectCloneFlow?.step === "confirm"
-            ? { emptyStateMessage: "Choose a destination path and press Enter to clone." }
-            : relativePathNeedsActiveProject
-              ? { emptyStateMessage: "Relative paths require an active project." }
-              : willCreateProjectPath
-                ? {
-                    emptyStateMessage: "Press Enter to create this folder and add it as a project.",
-                  }
-                : threadSearch.isPending
-                  ? { emptyStateMessage: "Searching thread messages…" }
-                  : {})}
+        {...(currentView !== null && issuePickerEmptyMessage !== null && query.trim().length === 0
+          ? { emptyStateMessage: issuePickerEmptyMessage }
+          : addProjectCloneFlow?.step === "repository"
+            ? {
+                emptyStateMessage:
+                  addProjectCloneFlow.source === "url"
+                    ? "Enter a Git clone URL and press Enter to continue."
+                    : "Enter a repository path and press Enter to look it up.",
+              }
+            : addProjectCloneFlow?.step === "confirm"
+              ? { emptyStateMessage: "Choose a destination path and press Enter to clone." }
+              : relativePathNeedsActiveProject
+                ? { emptyStateMessage: "Relative paths require an active project." }
+                : willCreateProjectPath
+                  ? {
+                      emptyStateMessage:
+                        "Press Enter to create this folder and add it as a project.",
+                    }
+                  : threadSearch.isPending
+                    ? { emptyStateMessage: "Searching thread messages…" }
+                    : {})}
       />
     </CommandPaletteContent>
   );
