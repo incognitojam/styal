@@ -10,6 +10,7 @@ import { useCallback, useMemo } from "react";
 import {
   markPromotedDraftThreadByRef,
   type DraftThreadEnvMode,
+  type DraftId,
   type DraftThreadState,
   useComposerDraftStore,
 } from "../composerDraftStore";
@@ -52,7 +53,10 @@ export function useNewThreadHandler() {
         startFromOrigin?: boolean;
         replace?: boolean;
       },
-    ): Promise<void> => {
+      // Resolves with the draft the caller landed on, so callers that need to
+      // seed the new draft (e.g. attaching an issue context) can address it
+      // without re-deriving the logical project key.
+    ): Promise<DraftId | null> => {
       const {
         getComposerDraft,
         getDraftSessionByLogicalProjectKey,
@@ -199,13 +203,14 @@ export function useNewThreadHandler() {
             currentRouteTarget?.kind === "draft" &&
             currentRouteTarget.draftId === reusableStoredDraftThread.draftId
           ) {
-            return;
+            return reusableStoredDraftThread.draftId;
           }
           await router.navigate({
             to: "/draft/$draftId",
             params: { draftId: reusableStoredDraftThread.draftId },
             replace: options?.replace ?? false,
           });
+          return reusableStoredDraftThread.draftId;
         })();
       }
 
@@ -238,7 +243,7 @@ export function useNewThreadHandler() {
           ...(hasEnvModeOption ? { envMode: options?.envMode } : {}),
           ...(hasStartFromOriginOption ? { startFromOrigin: options?.startFromOrigin } : {}),
         });
-        return Promise.resolve();
+        return Promise.resolve(currentRouteTarget.draftId);
       }
 
       const draftId = newDraftId();
@@ -276,6 +281,7 @@ export function useNewThreadHandler() {
           params: { draftId },
           replace: options?.replace ?? false,
         });
+        return draftId;
       })();
     },
     [getCurrentRouteTarget, primaryServerSettings, projectGroupingSettings, projects, router],

@@ -16,7 +16,9 @@ interface NewThreadHandler {
       envMode?: DraftThreadEnvMode;
       startFromOrigin?: boolean;
     },
-  ): Promise<void>;
+    // Resolves with the draft the caller landed on, or null when nothing was
+    // opened. Callers that only navigate can ignore it.
+  ): Promise<unknown>;
 }
 
 export interface ChatThreadActionContext {
