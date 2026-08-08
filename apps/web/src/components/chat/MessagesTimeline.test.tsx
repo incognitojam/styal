@@ -554,6 +554,30 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("Work Log");
   });
 
+  it("keeps the completed state in setup lifecycle labels", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "setup-entry",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "setup-work",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "Setup script completed",
+              tone: "info",
+              sourceActivityKind: "setup-script.completed",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Setup script completed");
+  });
+
   it("formats changed file paths from the workspace root", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
