@@ -190,6 +190,7 @@ jobs:
     permissions:
       contents: write
       issues: write
+      pull-requests: read
     if: >-
       github.event_name != 'pull_request' &&
       needs.prepare.outputs.has_changes == 'true' &&
@@ -225,7 +226,9 @@ jobs:
         continue-on-error: true
         env:
           FORK_SOURCE_REF: ${{ needs.prepare.outputs.fork_ref }}
+          GITHUB_TOKEN: ${{ github.token }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_FORK_CHANGELOG_API_KEY }}
+          PREVIOUS_TAG: ${{ needs.prepare.outputs.previous_tag }}
           UPSTREAM_REF: ${{ needs.prepare.outputs.upstream_ref }}
         shell: bash
         run: |
@@ -241,9 +244,11 @@ jobs:
           node scripts/generate-fork-features-summary.ts \
             --fork-ref "$FORK_SOURCE_REF" \
             --upstream-ref "$UPSTREAM_REF" \
+            --previous-release-ref "$PREVIOUS_TAG" \
             --fork-repository "$GITHUB_REPOSITORY" \
             --upstream-repository pingdotgg/t3code \
-            --output fork-features.md
+            --output fork-features.md \
+            --nightly-output nightly-highlights.md
           echo "generated=true" >> "$GITHUB_OUTPUT"
 
       - name: Generate prerelease notes
@@ -307,6 +312,10 @@ jobs:
 
           rendered_change_count=0
           {
+            if [[ -f nightly-highlights.md ]]; then
+              cat nightly-highlights.md
+              printf '\n'
+            fi
             printf "## What's Changed\n\n"
             if (( ${#fork_changes[@]} > 0 )); then
               append_changes "$GITHUB_REPOSITORY" "${fork_changes[@]}"
@@ -319,10 +328,6 @@ jobs:
             fi
             printf '\n**Full Changelog**: https://github.com/pingdotgg/t3code/compare/%s...%s\n' \
               "$previous_upstream_ref" "$UPSTREAM_REF"
-            if [[ -f fork-features.md ]]; then
-              printf '\n## Fork features and improvements\n\n'
-              sed 's/^## /### /' fork-features.md
-            fi
           } > release-notes.md
 
       - id: draft_release
