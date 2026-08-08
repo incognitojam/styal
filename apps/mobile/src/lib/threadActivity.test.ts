@@ -179,6 +179,90 @@ describe("buildThreadFeed", () => {
     );
   });
 
+  it("collapses a setup run into its latest state across interleaved activity", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-setup-collapse"),
+      projectId: ProjectId.make("project-1"),
+      title: "Setup lifecycle",
+      activities: [
+        makeActivity({
+          id: EventId.make("setup-requested"),
+          kind: "setup-script.requested",
+          summary: "Starting setup script",
+          createdAt: "2026-04-01T00:00:01.000Z",
+          payload: { runId: "setup-run-1" },
+        }),
+        makeActivity({
+          id: EventId.make("unrelated-work"),
+          kind: "runtime.info",
+          summary: "Created worktree",
+          createdAt: "2026-04-01T00:00:02.000Z",
+        }),
+        makeActivity({
+          id: EventId.make("setup-started"),
+          kind: "setup-script.started",
+          summary: "Setup script started",
+          createdAt: "2026-04-01T00:00:03.000Z",
+          payload: { runId: "setup-run-1" },
+        }),
+        makeActivity({
+          id: EventId.make("setup-failed"),
+          kind: "setup-script.failed",
+          tone: "error",
+          summary: "Setup script failed",
+          createdAt: "2026-04-01T00:00:04.000Z",
+          payload: { runId: "setup-run-1", exitCode: 1 },
+        }),
+      ],
+    });
+
+    const activities = buildThreadFeed(thread).flatMap((entry) =>
+      entry.type === "activity-group" ? entry.activities : [],
+    );
+
+    expect(activities).toHaveLength(2);
+    expect(activities[0]).toMatchObject({
+      id: "setup-requested",
+      createdAt: "2026-04-01T00:00:01.000Z",
+      summary: "Setup script failed",
+      status: "failure",
+    });
+    expect(activities[1]?.summary).toBe("Created worktree");
+  });
+
+  it("keeps separate setup runs and preserves completed labels", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-separate-setup-runs"),
+      projectId: ProjectId.make("project-1"),
+      title: "Separate setup runs",
+      activities: [
+        makeActivity({
+          id: EventId.make("setup-one"),
+          kind: "setup-script.completed",
+          summary: "Setup script completed",
+          createdAt: "2026-04-01T00:00:01.000Z",
+          payload: { runId: "setup-run-1" },
+        }),
+        makeActivity({
+          id: EventId.make("setup-two"),
+          kind: "setup-script.completed",
+          summary: "Setup script completed",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          payload: { runId: "setup-run-2" },
+        }),
+      ],
+    });
+
+    const activities = buildThreadFeed(thread).flatMap((entry) =>
+      entry.type === "activity-group" ? entry.activities : [],
+    );
+
+    expect(activities.map((activity) => activity.summary)).toEqual([
+      "Setup script completed",
+      "Setup script completed",
+    ]);
+  });
+
   it("keeps MCP inputs available to expanded mobile work rows", () => {
     const turnId = TurnId.make("turn-mcp");
     const thread = makeThread({
