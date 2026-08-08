@@ -910,7 +910,7 @@ describe("composerDraftStore project draft thread mapping", () => {
       branch: "feature/test",
       worktreePath: "/tmp/worktree-test",
       envMode: "worktree",
-      runtimeMode: "full-access",
+      runtimeMode: "auto",
       interactionMode: "default",
       createdAt: "2026-01-01T00:00:00.000Z",
     });
@@ -921,7 +921,7 @@ describe("composerDraftStore project draft thread mapping", () => {
       branch: "feature/test",
       worktreePath: "/tmp/worktree-test",
       envMode: "worktree",
-      runtimeMode: "full-access",
+      runtimeMode: "auto",
       interactionMode: "default",
       createdAt: "2026-01-01T00:00:00.000Z",
     });
