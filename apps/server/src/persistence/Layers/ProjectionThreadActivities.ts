@@ -106,6 +106,39 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
       `,
   });
 
+  const listUnfinishedSetupRunRows = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: ProjectionThreadActivityDbRowSchema,
+    execute: () =>
+      sql`
+        SELECT
+          started.activity_id AS "activityId",
+          started.thread_id AS "threadId",
+          started.turn_id AS "turnId",
+          started.tone,
+          started.kind,
+          started.summary,
+          started.payload_json AS "payload",
+          started.sequence,
+          started.created_at AS "createdAt"
+        FROM projection_thread_activities AS started
+        WHERE started.kind = 'setup-script.started'
+          AND json_extract(started.payload_json, '$.runId') IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM projection_thread_activities AS finished
+            WHERE finished.thread_id = started.thread_id
+              AND finished.kind IN (
+                'setup-script.completed',
+                'setup-script.failed'
+              )
+              AND json_extract(finished.payload_json, '$.runId') =
+                json_extract(started.payload_json, '$.runId')
+        )
+        ORDER BY started.sequence ASC, started.created_at ASC, started.activity_id ASC
+      `,
+  });
+
   const upsert: ProjectionThreadActivityRepositoryShape["upsert"] = (row) =>
     upsertProjectionThreadActivityRow(row).pipe(
       Effect.mapError(
@@ -146,9 +179,34 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
       ),
     );
 
+  const listUnfinishedSetupRuns: ProjectionThreadActivityRepositoryShape["listUnfinishedSetupRuns"] =
+    () =>
+      listUnfinishedSetupRunRows().pipe(
+        Effect.mapError(
+          toPersistenceSqlOrDecodeError(
+            "ProjectionThreadActivityRepository.listUnfinishedSetupRuns:query",
+            "ProjectionThreadActivityRepository.listUnfinishedSetupRuns:decodeRows",
+          ),
+        ),
+        Effect.map((rows) =>
+          rows.map((row) => ({
+            activityId: row.activityId,
+            threadId: row.threadId,
+            turnId: row.turnId,
+            tone: row.tone,
+            kind: row.kind,
+            summary: row.summary,
+            payload: row.payload,
+            ...(row.sequence !== null ? { sequence: row.sequence } : {}),
+            createdAt: row.createdAt,
+          })),
+        ),
+      );
+
   return {
     upsert,
     listByThreadId,
+    listUnfinishedSetupRuns,
     deleteByThreadId,
   } satisfies ProjectionThreadActivityRepositoryShape;
 });
