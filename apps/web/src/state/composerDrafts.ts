@@ -42,6 +42,7 @@ function commonFromDraft(draft: ComposerThreadDraftState): ComposerDraftCommon |
     draft.persistedAttachments.length > 0 ||
     draft.terminalContexts.length > 0 ||
     draft.elementContexts.length > 0 ||
+    draft.issueContexts.length > 0 ||
     draft.previewAnnotations.length > 0 ||
     draft.reviewComments.length > 0;
   if (hasLocalOnlyContext) return null;
@@ -118,6 +119,7 @@ export function useServerComposerDraftSync(threadRef: ScopedThreadRef | null): v
           current.persistedAttachments.length === 0 &&
           current.terminalContexts.length === 0 &&
           current.elementContexts.length === 0 &&
+          current.issueContexts.length === 0 &&
           current.previewAnnotations.length === 0 &&
           current.reviewComments.length === 0
         );
@@ -162,6 +164,7 @@ export function useServerComposerDraftSync(threadRef: ScopedThreadRef | null): v
     draft.elementContexts,
     draft.images,
     draft.interactionMode,
+    draft.issueContexts,
     draft.modelSelectionByProvider,
     draft.persistedAttachments,
     draft.previewAnnotations,

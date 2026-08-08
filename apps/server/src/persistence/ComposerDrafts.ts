@@ -37,9 +37,6 @@ export class ComposerDraftRepository extends Context.Service<
     readonly subscribe: (
       input: ComposerDraftGetInput,
     ) => Stream.Stream<ComposerDraftSnapshot, ComposerDraftPersistenceError>;
-    readonly deleteByThreadId: (
-      threadId: ThreadId,
-    ) => Effect.Effect<void, ComposerDraftPersistenceError>;
   }
 >()("t3/persistence/ComposerDrafts/ComposerDraftRepository") {}
 
@@ -155,14 +152,6 @@ export const make = Effect.gen(function* () {
     `,
   });
 
-  const hardDeleteRow = SqlSchema.void({
-    Request: Schema.Struct({ threadId: ThreadId }),
-    execute: ({ threadId }) => sql`
-      DELETE FROM composer_drafts
-      WHERE thread_id = ${threadId}
-    `,
-  });
-
   const get: ComposerDraftRepository["Service"]["get"] = Effect.fn("ComposerDraftRepository.get")(
     function* (input) {
       const row = yield* getRow(input).pipe(
@@ -213,15 +202,7 @@ export const make = Effect.gen(function* () {
       }),
     );
 
-  const deleteByThreadId: ComposerDraftRepository["Service"]["deleteByThreadId"] = Effect.fn(
-    "ComposerDraftRepository.deleteByThreadId",
-  )(function* (threadId) {
-    yield* hardDeleteRow({ threadId }).pipe(
-      Effect.mapError(mapPersistenceError("ComposerDraftRepository.deleteByThreadId:query")),
-    );
-  });
-
-  return ComposerDraftRepository.of({ get, update, subscribe, deleteByThreadId });
+  return ComposerDraftRepository.of({ get, update, subscribe });
 });
 
 export const layer = Layer.effect(ComposerDraftRepository, make);

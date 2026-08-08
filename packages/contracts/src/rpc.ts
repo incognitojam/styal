@@ -199,7 +199,6 @@ export const WS_METHODS = {
   assetsCreateUrl: "assets.createUrl",
 
   // Existing-thread composer draft synchronization
-  composerDraftGet: "composerDraft.get",
   composerDraftUpdate: "composerDraft.update",
 
   // VCS methods
@@ -289,12 +288,6 @@ export const WS_METHODS = {
   subscribeResourceTelemetry: "subscribeResourceTelemetry",
   subscribeComposerDraft: "subscribeComposerDraft",
 } as const;
-
-export const WsComposerDraftGetRpc = Rpc.make(WS_METHODS.composerDraftGet, {
-  payload: ComposerDraftGetInput,
-  success: ComposerDraftSnapshot,
-  error: Schema.Union([ComposerDraftSyncError, EnvironmentAuthorizationError]),
-});
 
 export const WsComposerDraftUpdateRpc = Rpc.make(WS_METHODS.composerDraftUpdate, {
   payload: ComposerDraftUpdateInput,
@@ -908,7 +901,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
   WsAssetsCreateUrlRpc,
-  WsComposerDraftGetRpc,
   WsComposerDraftUpdateRpc,
   WsSubscribeVcsStatusRpc,
   WsVcsPullRpc,

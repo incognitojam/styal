@@ -11,7 +11,6 @@ import type { EnvironmentRegistry } from "../connection/registry.ts";
 import {
   createAtomCommandScheduler,
   createEnvironmentRpcCommand,
-  createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
 } from "./runtime.ts";
 
@@ -21,12 +20,6 @@ export function createComposerDraftEnvironmentAtoms<R, E>(
 ) {
   const scheduler = createAtomCommandScheduler();
   return {
-    get: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "environment-data:composer-draft:get",
-      tag: WS_METHODS.composerDraftGet,
-      staleTimeMs: 0,
-      idleTtlMs: 1_000,
-    }),
     changes: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:composer-draft:changes",
       tag: WS_METHODS.subscribeComposerDraft,

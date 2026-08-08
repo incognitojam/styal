@@ -1037,19 +1037,6 @@ const makeWsRpcLayer = (
           .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
 
       return WsRpcGroup.of({
-        [WS_METHODS.composerDraftGet]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.composerDraftGet,
-            composerDrafts
-              .get(input)
-              .pipe(
-                Effect.mapError(
-                  () =>
-                    new ComposerDraftSyncError({ message: "Failed to load the composer draft." }),
-                ),
-              ),
-            { threadId: input.threadId },
-          ),
         [WS_METHODS.composerDraftUpdate]: (input) =>
           observeRpcEffect(
             WS_METHODS.composerDraftUpdate,

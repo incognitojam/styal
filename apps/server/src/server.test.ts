@@ -4520,6 +4520,66 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     ).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("clears the matching composer draft revision after thread.turn.start", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const threadId = ThreadId.make("sent-composer-draft");
+      const commandId = CommandId.make("cmd-send-composer-draft");
+      const createdAt = "2026-01-01T00:00:00.000Z";
+      const update = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.composerDraftUpdate]({
+            threadId,
+            baseRevision: 0,
+            common: {
+              text: "send this draft",
+              modelSelection: defaultModelSelection,
+              runtimeMode: "full-access",
+              interactionMode: "default",
+            },
+            clientMutationId: "test:send-composer-draft",
+          }),
+        ),
+      );
+      assert.equal(update._tag, "accepted");
+
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+            type: "thread.turn.start",
+            commandId,
+            threadId,
+            message: {
+              messageId: MessageId.make("msg-send-composer-draft"),
+              role: "user",
+              text: "send this draft",
+              attachments: [],
+            },
+            modelSelection: defaultModelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            composerDraftRevision: update.snapshot.revision,
+            createdAt,
+          }),
+        ),
+      );
+
+      const cleared = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.subscribeComposerDraft]({ threadId }).pipe(
+            Stream.runHead,
+            Effect.map(Option.getOrThrow),
+          ),
+        ),
+      );
+      assert.equal(cleared.revision, 2);
+      assert.isNull(cleared.common);
+      assert.equal(cleared.clientMutationId, `turn:${commandId}`);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("rejects websocket rpc handshake when session authentication is missing", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
