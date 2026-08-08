@@ -111,6 +111,7 @@ import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import { OrchestrationListenerCallbackError } from "./orchestration/Errors.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ComposerDrafts from "./persistence/ComposerDrafts.ts";
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
 import { PersistenceSqlError } from "./persistence/Errors.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
@@ -617,14 +618,17 @@ const buildAppUnderTest = (options?: {
       },
     ).pipe(
       Layer.provide(
-        Layer.mock(Keybindings.Keybindings)({
-          loadConfigState: Effect.succeed({
-            keybindings: [],
-            issues: [],
+        Layer.mergeAll(
+          ComposerDrafts.layer.pipe(Layer.provide(SqlitePersistenceMemory)),
+          Layer.mock(Keybindings.Keybindings)({
+            loadConfigState: Effect.succeed({
+              keybindings: [],
+              issues: [],
+            }),
+            streamChanges: Stream.empty,
+            ...options?.layers?.keybindings,
           }),
-          streamChanges: Stream.empty,
-          ...options?.layers?.keybindings,
-        }),
+        ),
       ),
       Layer.provide(
         Layer.mock(ProviderRegistry.ProviderRegistry)({
@@ -4481,6 +4485,105 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.isTrue(Option.isSome(firstStreamClosed));
       }),
     ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("shares composer draft updates across websocket sessions", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* buildAppUnderTest();
+
+        const wsUrl = yield* getWsServerUrl("/ws");
+        const threadId = ThreadId.make("shared-composer-draft");
+        const subscribed = yield* Deferred.make<void>();
+        const snapshotsFiber = yield* withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.subscribeComposerDraft]({ threadId }).pipe(
+            Stream.tap(() => Deferred.succeed(subscribed, undefined)),
+            Stream.take(2),
+            Stream.runCollect,
+          ),
+        ).pipe(Effect.forkScoped);
+
+        yield* Deferred.await(subscribed);
+        const update = yield* withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.composerDraftUpdate]({
+            threadId,
+            baseRevision: 0,
+            common: {
+              text: "shared from another websocket",
+              modelSelection: null,
+              runtimeMode: null,
+              interactionMode: null,
+            },
+            clientMutationId: "test:shared-composer-draft",
+          }),
+        );
+        const snapshots = Array.from(yield* Fiber.join(snapshotsFiber));
+
+        assert.equal(update._tag, "accepted");
+        assert.equal(snapshots[0]?.revision, 0);
+        assert.deepEqual(snapshots[1], update.snapshot);
+      }),
+    ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("clears the matching composer draft revision after thread.turn.start", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const threadId = ThreadId.make("sent-composer-draft");
+      const commandId = CommandId.make("cmd-send-composer-draft");
+      const createdAt = "2026-01-01T00:00:00.000Z";
+      const update = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.composerDraftUpdate]({
+            threadId,
+            baseRevision: 0,
+            common: {
+              text: "send this draft",
+              modelSelection: defaultModelSelection,
+              runtimeMode: "full-access",
+              interactionMode: "default",
+            },
+            clientMutationId: "test:send-composer-draft",
+          }),
+        ),
+      );
+      assert.equal(update._tag, "accepted");
+
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+            type: "thread.turn.start",
+            commandId,
+            threadId,
+            message: {
+              messageId: MessageId.make("msg-send-composer-draft"),
+              role: "user",
+              text: "send this draft",
+              attachments: [],
+            },
+            modelSelection: defaultModelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            composerDraftRevision: update.snapshot.revision,
+            createdAt,
+          }),
+        ),
+      );
+
+      const cleared = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.subscribeComposerDraft]({ threadId }).pipe(
+            Stream.runHead,
+            Effect.map(Option.getOrThrow),
+          ),
+        ),
+      );
+      assert.equal(cleared.revision, 2);
+      assert.isNull(cleared.common);
+      assert.equal(cleared.clientMutationId, `turn:${commandId}`);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
   it.effect("rejects websocket rpc handshake when session authentication is missing", () =>

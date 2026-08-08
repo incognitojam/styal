@@ -172,6 +172,39 @@ function draftByKey(key: string) {
   return useComposerDraftStore.getState().draftsByThreadKey[key] ?? undefined;
 }
 
+describe("composerDraftStore shared draft section", () => {
+  const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, ThreadId.make("thread-synced-common"));
+
+  beforeEach(() => {
+    resetComposerDraftStore();
+  });
+
+  it("applies remote common state without replacing local attachments", () => {
+    const image = makeImage({ id: "local-image", previewUrl: "blob:local" });
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, "local");
+    store.addImage(threadRef, image);
+
+    store.applySyncedCommon(threadRef, {
+      text: "remote",
+      modelSelection: {
+        instanceId: CODEX_INSTANCE,
+        model: "gpt-5.4",
+      },
+      runtimeMode: "full-access",
+      interactionMode: "plan",
+    });
+
+    expect(draftByKey(scopedThreadKey(threadRef))).toMatchObject({
+      prompt: "remote",
+      images: [image],
+      activeProvider: CODEX_INSTANCE,
+      runtimeMode: "full-access",
+      interactionMode: "plan",
+    });
+  });
+});
+
 describe("composerDraftStore addImages", () => {
   const threadId = ThreadId.make("thread-dedupe");
   const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
