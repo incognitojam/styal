@@ -11,6 +11,7 @@ import {
   composerDraftHasUserContent,
   markPromotedDraftThreadByRef,
   type DraftThreadEnvMode,
+  type DraftId,
   type DraftThreadState,
   useComposerDraftStore,
 } from "../composerDraftStore";
@@ -74,7 +75,10 @@ export function useNewThreadHandler() {
         startFromOrigin?: boolean;
         replace?: boolean;
       },
-    ): Promise<void> => {
+      // Resolves with the draft the caller landed on, so callers that need to
+      // seed the new draft (e.g. attaching an issue context) can address it
+      // without re-deriving the logical project key.
+    ): Promise<DraftId | null> => {
       const {
         getComposerDraft,
         getDraftSessionByLogicalProjectKey,
@@ -271,13 +275,14 @@ export function useNewThreadHandler() {
             routeTargetAfterWrites?.kind === "draft" &&
             routeTargetAfterWrites.draftId === emptyStoredDraftThread.draftId
           ) {
-            return;
+            return reusableStoredDraftThread.draftId;
           }
           await router.navigate({
             to: "/draft/$draftId",
             params: { draftId: emptyStoredDraftThread.draftId },
             replace: options?.replace ?? false,
           });
+          return reusableStoredDraftThread.draftId;
         })();
       }
 
@@ -305,7 +310,7 @@ export function useNewThreadHandler() {
           interactionMode: latestActiveDraftThread.interactionMode,
           ...pickExplicitWorkspaceOptions(options),
         });
-        return Promise.resolve();
+        return Promise.resolve(currentRouteTarget.draftId);
       }
 
       const draftId = newDraftId();
@@ -379,6 +384,7 @@ export function useNewThreadHandler() {
           params: { draftId },
           replace: options?.replace ?? false,
         });
+        return draftId;
       })();
     },
     [getCurrentRouteTarget, primaryServerSettings, projectGroupingSettings, projects, router],
