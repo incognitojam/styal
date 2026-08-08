@@ -74,6 +74,14 @@ export const terminalRestartsTotal = Metric.counter("t3_terminal_restarts_total"
   description: "Total terminal restart requests handled.",
 });
 
+export const setupScriptRunsTotal = Metric.counter("t3_setup_script_runs_total", {
+  description: "Total setup script runs by terminal outcome.",
+});
+
+export const setupScriptDuration = Metric.timer("t3_setup_script_duration", {
+  description: "Setup script run duration.",
+});
+
 export const metricAttributes = (
   attributes: Readonly<Record<string, unknown>>,
 ): ReadonlyArray<[string, string]> => Object.entries(compactMetricAttributes(attributes));
