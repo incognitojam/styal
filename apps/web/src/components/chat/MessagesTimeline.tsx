@@ -2135,23 +2135,35 @@ const CommandOutputExpandedBody = memo(function CommandOutputExpandedBody(props:
     threadId: threadRef?.threadId ?? null,
     activityId: EventId.make(workEntry.id),
   });
+  const command = (workEntryRawCommand(workEntry) ?? workEntry.command)?.trim();
+  const commandBlock = command ? (
+    <pre className="mb-2 max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words font-mono text-secondary-label text-[11px] leading-relaxed select-text">
+      {command}
+    </pre>
+  ) : null;
 
   if (pending) {
     return (
-      <pre className="font-mono text-[11px] leading-relaxed text-muted-foreground">
-        Output will be available when the command finishes.
-      </pre>
+      <>
+        {commandBlock}
+        <pre className="font-mono text-[11px] leading-relaxed text-muted-foreground">
+          Output will be available when the command finishes.
+        </pre>
+      </>
     );
   }
 
   if (query.error) {
     return (
-      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-        <span>Couldn’t load command output.</span>
-        <button className="underline underline-offset-2" type="button" onClick={query.refresh}>
-          Retry
-        </button>
-      </div>
+      <>
+        {commandBlock}
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          <span>Couldn’t load command output.</span>
+          <button className="underline underline-offset-2" type="button" onClick={query.refresh}>
+            Retry
+          </button>
+        </div>
+      </>
     );
   }
 
@@ -2161,9 +2173,12 @@ const CommandOutputExpandedBody = memo(function CommandOutputExpandedBody(props:
       ? "Loading output…"
       : "Command output is unavailable.";
   return (
-    <pre className="max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-muted-foreground select-text">
-      {body}
-    </pre>
+    <>
+      {commandBlock}
+      <pre className="max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-muted-foreground select-text">
+        {body}
+      </pre>
+    </>
   );
 });
 
