@@ -21,6 +21,9 @@ import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { primaryServerKeybindingsAtom } from "~/state/server";
+import { useEnvironmentQuery } from "~/state/query";
+import { vcsEnvironment } from "~/state/vcs";
+import { useViewPullRequest } from "~/lib/viewPullRequest";
 
 function ChatRouteGlobalShortcuts() {
   const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
@@ -32,6 +35,27 @@ function ChatRouteGlobalShortcuts() {
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const activeProject = useMemo(
+    () =>
+      activeThread
+        ? (projects.find(
+            (project) =>
+              project.environmentId === activeThread.environmentId &&
+              project.id === activeThread.projectId,
+          ) ?? null)
+        : null,
+    [activeThread, projects],
+  );
+  const gitCwd = activeThread?.worktreePath ?? activeProject?.workspaceRoot ?? null;
+  const gitStatusQuery = useEnvironmentQuery(
+    routeThreadRef && gitCwd
+      ? vcsEnvironment.status({
+          environmentId: routeThreadRef.environmentId,
+          input: { cwd: gitCwd },
+        })
+      : null,
+  );
+  const { viewPullRequest } = useViewPullRequest(gitStatusQuery.data, routeThreadRef);
   const projectGroupCount = useMemo(
     () =>
       buildSidebarProjectSnapshots({
@@ -108,6 +132,13 @@ function ChatRouteGlobalShortcuts() {
         return;
       }
 
+      if (command === "sourceControl.viewPullRequest") {
+        event.preventDefault();
+        event.stopPropagation();
+        void viewPullRequest();
+        return;
+      }
+
       if (command === "preview.toggle") {
         event.preventDefault();
         event.stopPropagation();
@@ -169,6 +200,7 @@ function ChatRouteGlobalShortcuts() {
     selectedThreadKeysSize,
     legacySidebarEnabled,
     terminalOpen,
+    viewPullRequest,
   ]);
 
   return null;
