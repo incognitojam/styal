@@ -53,6 +53,19 @@ T3 Code works with the platforms your team already uses:
 - Works on GitHub, GitLab, and Bitbucket. Azure DevOps takes a new title and description; its
   comments stay read-only here, as they already were
 
+### Start a Thread from a GitHub Issue
+
+Open the command palette and run **New thread from GitHub issue…** to pick from the current
+project's open issues.
+
+- Search the list by issue number or title
+- Picking an issue opens a new thread draft with the issue's title, body, and comments attached as
+  a removable context chip
+- Nothing is sent automatically — write your instructions, then send when you're ready
+- If the GitHub CLI isn't installed or signed in, the picker tells you what to fix
+
+Issue browsing is GitHub-only today.
+
 ### Know Your Setup at a Glance
 
 The **Source Control settings** page shows you exactly what's connected:

@@ -1,6 +1,7 @@
 import { type ThreadId } from "@t3tools/contracts";
 
 import { extractTrailingElementContexts, type ParsedElementContextEntry } from "./elementContext";
+import { extractTrailingIssueContexts, type ParsedIssueContextEntry } from "./issueContext";
 
 export interface TerminalContextSelection {
   terminalId: string;
@@ -35,6 +36,11 @@ export interface DisplayedUserMessageState {
    * leak into the user's bubble.
    */
   elementContexts: ParsedElementContextEntry[];
+  /**
+   * Issue-context entries extracted from the trailing `<issue_context>` block
+   * (if any). Stripped from `visibleText` for the same reason.
+   */
+  issueContexts: ParsedIssueContextEntry[];
 }
 
 export interface ParsedTerminalContextEntry {
@@ -246,18 +252,20 @@ export function extractTrailingTerminalContexts(prompt: string): ExtractedTermin
 }
 
 export function deriveDisplayedUserMessageState(prompt: string): DisplayedUserMessageState {
-  // Order matters: send-time appends `<terminal_context>` first, then
-  // `<element_context>` last. Strip element first so the (now-trailing)
-  // terminal block can be matched by `extractTrailingTerminalContexts`.
+  // Order matters: send-time appends `<issue_context>` first, then
+  // `<terminal_context>`, then `<element_context>` last. Unwind in reverse so
+  // each block is the trailing one when its extractor runs.
   const extractedElement = extractTrailingElementContexts(prompt);
   const extractedTerminal = extractTrailingTerminalContexts(extractedElement.promptText);
+  const extractedIssue = extractTrailingIssueContexts(extractedTerminal.promptText);
   return {
-    visibleText: extractedTerminal.promptText,
+    visibleText: extractedIssue.promptText,
     copyText: prompt,
     contextCount: extractedTerminal.contextCount,
     previewTitle: extractedTerminal.previewTitle,
     contexts: extractedTerminal.contexts,
     elementContexts: extractedElement.contexts,
+    issueContexts: extractedIssue.contexts,
   };
 }
 

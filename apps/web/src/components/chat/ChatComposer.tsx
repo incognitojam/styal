@@ -78,7 +78,9 @@ import {
 } from "../../lib/terminalContext";
 import { useComposerPathSearch } from "../../lib/composerPathSearchState";
 import { type ElementContextDraft } from "../../lib/elementContext";
+import { type IssueContextDraft } from "../../lib/issueContext";
 import { ComposerPendingElementContexts } from "./ComposerPendingElementContexts";
+import { ComposerPendingIssueContexts } from "./ComposerPendingIssueContexts";
 import { ComposerPendingReviewComments } from "./ComposerPendingReviewComments";
 import { ComposerPreviewAnnotationCards } from "./ComposerPreviewAnnotationCards";
 import {
@@ -483,6 +485,7 @@ export interface ChatComposerHandle {
     images: ComposerImageAttachment[];
     terminalContexts: TerminalContextDraft[];
     elementContexts: ElementContextDraft[];
+    issueContexts: IssueContextDraft[];
     previewAnnotations: PreviewAnnotationPayload[];
     reviewComments: ReviewCommentContext[];
     selectedPromptEffort: string | null;
@@ -574,6 +577,7 @@ export interface ChatComposerProps {
   composerImagesRef: React.RefObject<ComposerImageAttachment[]>;
   composerTerminalContextsRef: React.RefObject<TerminalContextDraft[]>;
   composerElementContextsRef: React.RefObject<ElementContextDraft[]>;
+  composerIssueContextsRef: React.RefObject<IssueContextDraft[]>;
   composerRef: React.RefObject<ChatComposerHandle | null>;
 
   // Callbacks
@@ -659,6 +663,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerImagesRef,
     composerTerminalContextsRef,
     composerElementContextsRef,
+    composerIssueContextsRef,
     onSend,
     onInterrupt,
     onImplementPlanInNewThread,
@@ -687,6 +692,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerImages = composerDraft.images;
   const composerTerminalContexts = composerDraft.terminalContexts;
   const composerElementContexts = composerDraft.elementContexts;
+  const composerIssueContexts = composerDraft.issueContexts;
   const composerPreviewAnnotations = composerDraft.previewAnnotations;
   const composerReviewComments = composerDraft.reviewComments;
   const nonPersistedComposerImageIds = composerDraft.nonPersistedImageIds;
@@ -706,6 +712,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const removeComposerDraftElementContext = useComposerDraftStore(
     (store) => store.removeElementContext,
+  );
+  const removeComposerDraftIssueContext = useComposerDraftStore(
+    (store) => store.removeIssueContext,
   );
   const removeComposerDraftPreviewAnnotation = useComposerDraftStore(
     (store) => store.removePreviewAnnotation,
@@ -1351,6 +1360,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   useEffect(() => {
     composerElementContextsRef.current = composerElementContexts;
   }, [composerElementContexts, composerElementContextsRef]);
+
+  useEffect(() => {
+    composerIssueContextsRef.current = composerIssueContexts;
+  }, [composerIssueContexts, composerIssueContextsRef]);
 
   // ------------------------------------------------------------------
   // Composer menu highlight sync
@@ -2628,6 +2641,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         images: composerImagesRef.current,
         terminalContexts: composerTerminalContextsRef.current,
         elementContexts: composerElementContextsRef.current,
+        issueContexts: composerIssueContextsRef.current,
         previewAnnotations: composerPreviewAnnotations,
         reviewComments: composerReviewComments,
         selectedPromptEffort,
@@ -2660,6 +2674,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       composerImagesRef,
       composerTerminalContextsRef,
       composerElementContextsRef,
+      composerIssueContextsRef,
       composerPreviewAnnotations,
       composerReviewComments,
       focusComposer,
@@ -2963,6 +2978,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   contexts={composerElementContexts}
                   onRemove={(contextId) =>
                     removeComposerDraftElementContext(composerDraftTarget, contextId)
+                  }
+                  className="mb-3"
+                />
+              )}
+
+            {!isComposerCollapsedMobile &&
+              !isComposerApprovalState &&
+              pendingUserInputs.length === 0 &&
+              composerIssueContexts.length > 0 && (
+                <ComposerPendingIssueContexts
+                  contexts={composerIssueContexts}
+                  onRemove={(contextId) =>
+                    removeComposerDraftIssueContext(composerDraftTarget, contextId)
                   }
                   className="mb-3"
                 />
