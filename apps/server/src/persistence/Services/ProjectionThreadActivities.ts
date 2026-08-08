@@ -67,6 +67,12 @@ export interface ProjectionThreadActivityRepositoryShape {
     input: ListProjectionThreadActivitiesInput,
   ) => Effect.Effect<ReadonlyArray<ProjectionThreadActivity>, ProjectionRepositoryError>;
 
+  /** List setup starts that have no persisted terminal outcome. */
+  readonly listUnfinishedSetupRuns: () => Effect.Effect<
+    ReadonlyArray<ProjectionThreadActivity>,
+    ProjectionRepositoryError
+  >;
+
   /**
    * Delete projected thread activity rows by thread.
    */
