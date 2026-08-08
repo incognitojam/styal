@@ -6,6 +6,8 @@ import {
   SourceControlProviderError,
   type ChangeRequest,
   type ChangeRequestState,
+  type SourceControlIssue,
+  type SourceControlIssueSummary,
 } from "@t3tools/contracts";
 
 import * as GitHubCli from "./GitHubCli.ts";
@@ -39,6 +41,32 @@ function toChangeRequest(summary: GitHubCli.GitHubPullRequestSummary): ChangeReq
     ...(summary.headRepositoryOwnerLogin !== undefined
       ? { headRepositoryOwnerLogin: summary.headRepositoryOwnerLogin }
       : {}),
+  };
+}
+
+function toIssueSummary(issue: GitHubCli.GitHubIssueSummary): SourceControlIssueSummary {
+  return {
+    provider: "github",
+    number: issue.number,
+    title: issue.title,
+    url: issue.url,
+    state: issue.state,
+    labels: issue.labels,
+    updatedAt: issue.updatedAt,
+  };
+}
+
+function toIssue(issue: GitHubCli.GitHubIssue): SourceControlIssue {
+  return {
+    provider: "github",
+    repository: issue.repository,
+    number: issue.number,
+    title: issue.title,
+    url: issue.url,
+    state: issue.state,
+    author: issue.author,
+    body: issue.body,
+    comments: issue.comments,
   };
 }
 
@@ -200,6 +228,42 @@ export const make = Effect.gen(function* () {
               reference: SourceControlProvider.transportSafeSourceControlErrorValue(
                 input.reference,
               ),
+              detail: error.detail,
+              cause: error,
+            }),
+        ),
+      ),
+    listIssues: (input) =>
+      github
+        .listIssues({
+          cwd: input.cwd,
+          ...(input.limit !== undefined ? { limit: input.limit } : {}),
+        })
+        .pipe(
+          Effect.map((issues) => issues.map(toIssueSummary)),
+          Effect.mapError(
+            (error) =>
+              new SourceControlProviderError({
+                provider: "github",
+                operation: "listIssues",
+                command: error.command,
+                cwd: input.cwd,
+                detail: error.detail,
+                cause: error,
+              }),
+          ),
+        ),
+    getIssue: (input) =>
+      github.getIssue({ cwd: input.cwd, reference: String(input.number) }).pipe(
+        Effect.map(toIssue),
+        Effect.mapError(
+          (error) =>
+            new SourceControlProviderError({
+              provider: "github",
+              operation: "getIssue",
+              command: error.command,
+              cwd: input.cwd,
+              reference: String(input.number),
               detail: error.detail,
               cause: error,
             }),
