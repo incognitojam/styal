@@ -828,6 +828,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
 
         case "thread.deleted": {
           attachmentSideEffects.deletedThreadIds.add(event.payload.threadId);
+          yield* sql`
+            DELETE FROM composer_drafts
+            WHERE thread_id = ${event.payload.threadId}
+          `.pipe(Effect.mapError(toPersistenceSqlError("delete thread composer draft")));
           const existingRow = yield* projectionThreadRepository.getById({
             threadId: event.payload.threadId,
           });
