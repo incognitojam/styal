@@ -9,7 +9,7 @@ import {
   type CompletionSoundThreadSnapshot,
 } from "../lib/completionSound.logic";
 
-export function CompletionSoundObserver() {
+export function TurnCompletionSound() {
   const threadShells = useThreadShells();
   const completionSound = useClientSettings((settings) => settings.completionSound);
   const snapshotsByThreadKey = useMemo(() => {
