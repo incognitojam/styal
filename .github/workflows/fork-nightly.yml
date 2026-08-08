@@ -602,6 +602,9 @@ jobs:
   release:
     name: Publish GitHub prerelease
     needs: [prepare, build_macos, build_linux, build_windows]
+    permissions:
+      contents: write
+      issues: write
     if: >-
       github.event_name != 'pull_request' &&
       needs.prepare.outputs.has_changes == 'true' &&
@@ -628,6 +631,37 @@ jobs:
           pattern: desktop-*
           merge-multiple: true
           path: release-assets
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+
+      - id: fork_features
+        name: Generate fork features and improvements
+        continue-on-error: true
+        env:
+          FORK_SOURCE_REF: ${{ needs.prepare.outputs.fork_ref }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_FORK_CHANGELOG_API_KEY }}
+          UPSTREAM_REF: ${{ needs.prepare.outputs.upstream_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$OPENAI_API_KEY" ]]; then
+            echo "OPENAI_FORK_CHANGELOG_API_KEY is not configured; keeping commit-based release notes."
+            echo "generated=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git fetch --no-tags origin "$FORK_SOURCE_REF"
+          node scripts/generate-fork-features-summary.ts \
+            --fork-ref "$FORK_SOURCE_REF" \
+            --upstream-ref "$UPSTREAM_REF" \
+            --fork-repository "$GITHUB_REPOSITORY" \
+            --upstream-repository pingdotgg/t3code \
+            --output fork-features.md
+          echo "generated=true" >> "$GITHUB_OUTPUT"
 
       - name: Generate prerelease notes
         shell: bash
@@ -702,6 +736,10 @@ jobs:
             fi
             printf '\n**Full Changelog**: https://github.com/pingdotgg/t3code/compare/%s...%s\n' \
               "$previous_upstream_ref" "$UPSTREAM_REF"
+            if [[ -f fork-features.md ]]; then
+              printf '\n## Fork features and improvements\n\n'
+              sed 's/^## /### /' fork-features.md
+            fi
           } > release-notes.md
 
       - id: draft_release
@@ -741,6 +779,15 @@ jobs:
         run: |
           git fetch origin '+refs/heads/nightly:refs/remotes/origin/nightly' || true
           git push --force-with-lease origin HEAD:refs/heads/nightly
+
+      - name: Update rolling fork features issue
+        if: inputs.dry_run != true && steps.fork_features.outputs.generated == 'true'
+        continue-on-error: true
+        env:
+          FORK_FEATURES_ISSUE_NUMBER: "43"
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: gh issue edit "$FORK_FEATURES_ISSUE_NUMBER" --body-file fork-features.md
 
   notify_failure:
     name: Notify Discord
