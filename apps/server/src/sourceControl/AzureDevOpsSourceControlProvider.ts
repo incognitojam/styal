@@ -81,6 +81,7 @@ export const make = Effect.gen(function* () {
 
   return SourceControlProvider.SourceControlProvider.of({
     kind: "azure-devops",
+    ...SourceControlProvider.unsupportedIssueOperations("azure-devops"),
     listChangeRequests: (input) => {
       const source = SourceControlProvider.sourceControlRefFromInput(input);
       return azure

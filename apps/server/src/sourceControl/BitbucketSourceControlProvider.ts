@@ -35,6 +35,7 @@ export const make = Effect.gen(function* () {
 
   return SourceControlProvider.SourceControlProvider.of({
     kind: "bitbucket",
+    ...SourceControlProvider.unsupportedIssueOperations("bitbucket"),
     listChangeRequests: (input) => {
       const source = SourceControlProvider.sourceControlRefFromInput(input);
       return bitbucket

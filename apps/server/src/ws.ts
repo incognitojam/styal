@@ -1764,6 +1764,22 @@ const makeWsRpcLayer = (
               "rpc.aggregate": "source-control",
             },
           ),
+        [WS_METHODS.sourceControlListIssues]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.sourceControlListIssues,
+            sourceControlRepositories.listIssues(input),
+            {
+              "rpc.aggregate": "source-control",
+            },
+          ),
+        [WS_METHODS.sourceControlGetIssue]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.sourceControlGetIssue,
+            sourceControlRepositories.getIssue(input),
+            {
+              "rpc.aggregate": "source-control",
+            },
+          ),
         [WS_METHODS.projectsSearchEntries]: (input) =>
           observeRpcEffect(
             WS_METHODS.projectsSearchEntries,
