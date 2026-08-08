@@ -129,6 +129,11 @@ const DEFAULT_BINDINGS = compile([
     whenAst: whenNot(whenIdentifier("terminalFocus")),
   },
   {
+    shortcut: modShortcut("g", { shiftKey: true }),
+    command: "sourceControl.viewPullRequest",
+    whenAst: whenNot(whenIdentifier("terminalFocus")),
+  },
+  {
     shortcut: modShortcut("t", { altKey: true, shiftKey: true }),
     command: "themeEditor.toggle",
   },
@@ -533,6 +538,23 @@ describe("chat/editor shortcuts", () => {
         context: { terminalFocus: true },
       }),
       "commandPalette.toggle",
+    );
+  });
+
+  it("matches sourceControl.viewPullRequest shortcut outside terminal focus", () => {
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "g", metaKey: true, shiftKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: false },
+      }),
+      "sourceControl.viewPullRequest",
+    );
+    assert.notStrictEqual(
+      resolveShortcutCommand(event({ key: "g", metaKey: true, shiftKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }),
+      "sourceControl.viewPullRequest",
     );
   });
 
