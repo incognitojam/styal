@@ -240,6 +240,7 @@ import {
   threadHasOlderTurns,
 } from "@t3tools/client-runtime/state/threads";
 import { vcsEnvironment } from "../state/vcs";
+import { markComposerDraftSent, readComposerDraftRevision } from "../state/composerDrafts";
 import { useEnvironments, usePrimaryEnvironment } from "../state/environments";
 import {
   useProject,
@@ -5090,6 +5091,9 @@ function ChatViewContent(props: ChatViewProps) {
     );
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
+    const composerDraftRevision = isServerThread
+      ? readComposerDraftRevision(routeThreadRef)
+      : undefined;
     const outgoingMessageText = formatOutgoingPrompt({
       provider: ctxSelectedProvider,
       model: ctxSelectedModel,
@@ -5158,6 +5162,7 @@ function ChatViewContent(props: ChatViewProps) {
     }
     promptRef.current = "";
     clearComposerDraftContent(composerDraftTarget);
+    if (isServerThread) markComposerDraftSent(routeThreadRef);
     composerRef.current?.resetCursorState();
 
     let firstComposerImageName: string | null = null;
@@ -5271,6 +5276,7 @@ function ChatViewContent(props: ChatViewProps) {
           titleSeed: title,
           runtimeMode,
           interactionMode,
+          ...(composerDraftRevision === undefined ? {} : { composerDraftRevision }),
           ...(bootstrap ? { bootstrap } : {}),
           createdAt: messageCreatedAt,
         },
