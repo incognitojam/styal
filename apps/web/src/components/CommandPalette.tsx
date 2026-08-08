@@ -34,6 +34,7 @@ import {
   FileSearchIcon,
   FolderIcon,
   FolderPlusIcon,
+  GitPullRequestIcon,
   LinkIcon,
   MessageSquareIcon,
   PaletteIcon,
@@ -66,6 +67,7 @@ import { filesystemEnvironment } from "../state/filesystem";
 import { projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
 import { sourceControlEnvironment } from "../state/sourceControl";
+import { vcsEnvironment } from "../state/vcs";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useComposerDraftStore } from "../composerDraftStore";
@@ -145,6 +147,8 @@ import {
   buildSidebarProjectSnapshots,
 } from "../sidebarProjectGrouping";
 import type { Project } from "../types";
+import { useViewPullRequest } from "../lib/viewPullRequest";
+import { getSourceControlPresentation } from "../sourceControlPresentation";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
 
@@ -864,6 +868,27 @@ function OpenCommandPaletteDialog(props: {
   const currentProjectCwd = currentProjectId
     ? (projectCwdById.get(currentProjectId) ?? null)
     : null;
+  const activeThreadRef = activeThread
+    ? scopeThreadRef(activeThread.environmentId, activeThread.id)
+    : null;
+  const activeThreadGitCwd = activeThread?.worktreePath ?? currentProjectCwd;
+  const activeThreadGitStatus = useEnvironmentQuery(
+    activeThreadRef && activeThreadGitCwd
+      ? vcsEnvironment.status({
+          environmentId: activeThreadRef.environmentId,
+          input: { cwd: activeThreadGitCwd },
+        })
+      : null,
+  );
+  const { canViewPullRequest, viewPullRequest } = useViewPullRequest(
+    activeThreadGitStatus.data,
+    activeThreadRef,
+  );
+  const changeRequestTerminology = getSourceControlPresentation(
+    activeThreadGitStatus.data?.sourceControlProvider,
+  ).terminology;
+  const isPullRequestStatusLoading =
+    activeThreadGitStatus.isPending && activeThreadGitStatus.data === null;
   const currentProjectCwdForBrowse =
     browseEnvironmentId && currentProjectEnvironmentId === browseEnvironmentId
       ? currentProjectCwd
@@ -1610,6 +1635,31 @@ function OpenCommandPaletteDialog(props: {
     run: async () => {
       openOverlayMode("content");
     },
+  });
+
+  actionItems.push({
+    kind: "action",
+    value: "action:view-pull-request",
+    searchTerms: [
+      "view pull request",
+      "open pr",
+      "view merge request",
+      "open mr",
+      "change request",
+      "source control",
+      "github",
+      "gitlab",
+    ],
+    title: `View ${changeRequestTerminology.shortLabel}`,
+    description: canViewPullRequest
+      ? undefined
+      : isPullRequestStatusLoading
+        ? `Checking ${changeRequestTerminology.singular} status…`
+        : `No open ${changeRequestTerminology.singular} for this thread`,
+    disabled: !canViewPullRequest,
+    icon: <GitPullRequestIcon className={ITEM_ICON_CLASS} />,
+    shortcutCommand: "sourceControl.viewPullRequest",
+    run: viewPullRequest,
   });
 
   actionItems.push({
