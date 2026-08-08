@@ -89,7 +89,7 @@ import { resolvePathLinkTarget } from "~/terminal-links";
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { readLocalApi } from "~/localApi";
 import { getSourceControlPresentation } from "~/sourceControlPresentation";
-import { openPullRequestLink } from "~/lib/openPullRequestLink";
+import { useViewPullRequest } from "~/lib/viewPullRequest";
 
 interface GitActionsControlProps {
   gitCwd: string | null;
@@ -1100,6 +1100,7 @@ export default function GitActionsControl({
   const isRepo = gitStatus?.isRepo ?? true;
   const hasPrimaryRemote = gitStatus?.hasPrimaryRemote ?? false;
   const gitStatusForActions = gitStatus;
+  const { viewPullRequest } = useViewPullRequest(gitStatusForActions, activeThreadRef);
 
   const allFiles = gitStatusForActions?.workingTree.files ?? [];
   const selectedFiles = allFiles.filter((f) => !excludedFiles.has(f.path));
@@ -1211,38 +1212,6 @@ export default function GitActionsControl({
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [activeEnvironmentId, gitCwd, refreshVcsStatus]);
-
-  const openExistingPr = useCallback(async () => {
-    const api = readLocalApi();
-    if (!api) {
-      toastManager.add({
-        type: "error",
-        title: "Link opening is unavailable.",
-        data: threadToastData,
-      });
-      return;
-    }
-    const prUrl = gitStatusForActions?.pr?.state === "open" ? gitStatusForActions.pr.url : null;
-    if (!prUrl) {
-      toastManager.add({
-        type: "error",
-        title: "No open pull request found.",
-        data: threadToastData,
-      });
-      return;
-    }
-    void openPullRequestLink(api.shell, prUrl).catch((err: unknown) => {
-      console.error(err);
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Unable to open pull request link",
-          description: err instanceof Error ? err.message : "An error occurred.",
-          ...(threadToastData !== undefined ? { data: threadToastData } : {}),
-        }),
-      );
-    });
-  }, [gitStatusForActions, threadToastData]);
 
   runGitActionWithToast = useEffectEvent(
     async ({
@@ -1526,7 +1495,7 @@ export default function GitActionsControl({
 
   const runQuickAction = () => {
     if (quickAction.kind === "open_pr") {
-      void openExistingPr();
+      void viewPullRequest();
       return;
     }
     if (quickAction.kind === "open_publish") {
@@ -1590,7 +1559,7 @@ export default function GitActionsControl({
   const openDialogForMenuItem = (item: GitActionMenuItem) => {
     if (item.disabled) return;
     if (item.kind === "open_pr") {
-      void openExistingPr();
+      void viewPullRequest();
       return;
     }
     if (item.dialogAction === "push") {
