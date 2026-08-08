@@ -29,7 +29,7 @@ concurrency:
 
 jobs:
   prepare:
-    name: Upstream compatibility
+    name: Prepare and verify candidate
     if: github.repository == 'yngatech/t3code'
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 40
@@ -174,7 +174,7 @@ jobs:
     if: >-
       github.event_name != 'pull_request' &&
       needs.prepare.outputs.has_changes == 'true'
-    runs-on: blacksmith-12vcpu-macos-15
+    runs-on: blacksmith-6vcpu-macos-15
     timeout-minutes: 100
     steps:
       - name: Check Apple notarization queue
@@ -354,7 +354,7 @@ jobs:
     if: >-
       github.event_name != 'pull_request' &&
       needs.prepare.outputs.has_changes == 'true'
-    runs-on: blacksmith-32vcpu-ubuntu-2404
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 100
     steps:
       - name: Checkout verified candidate
@@ -448,12 +448,12 @@ jobs:
   # cross-compiling and no first-launch compiler/node-gyp/network on the user's
   # machine. node-pty is N-API, so one binary works across all WSL Node versions.
   build_wsl_node_pty:
-    name: Build WSL node-pty (linux-x64)
+    name: Build WSL node-pty x64
     needs: prepare
     if: >-
       github.event_name != 'pull_request' &&
       needs.prepare.outputs.has_changes == 'true'
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 15
     steps:
       - name: Checkout verified candidate
@@ -501,7 +501,7 @@ jobs:
     if: >-
       github.event_name != 'pull_request' &&
       needs.prepare.outputs.has_changes == 'true'
-    runs-on: blacksmith-32vcpu-windows-2025
+    runs-on: blacksmith-16vcpu-windows-2025
     timeout-minutes: 100
     steps:
       - name: Checkout verified candidate
@@ -790,7 +790,7 @@ jobs:
         run: gh issue edit "$FORK_FEATURES_ISSUE_NUMBER" --body-file fork-features.md
 
   notify_failure:
-    name: Notify Discord
+    name: Notify Discord of failure
     needs: [prepare, build_wsl_node_pty, build_macos, build_linux, build_windows, release]
     if: >-
       ${{
