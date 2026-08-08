@@ -1,0 +1,35 @@
+name: Fork Desktop Build (manual)
+
+run-name: Build ${{ inputs.target }} from ${{ github.ref_name }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Desktop target to build
+        required: true
+        default: macos-arm64
+        type: choice
+        options:
+          - macos-arm64
+          - linux-x64
+          - windows-x64
+
+permissions:
+  contents: read
+  id-token: none
+
+concurrency:
+  group: fork-desktop-build-${{ github.ref }}-${{ inputs.target }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ inputs.target }}
+    uses: ./.github/workflows/fork-desktop-build.yml
+    with:
+      ref: ${{ github.sha }}
+      version: 0.0.0-build.${{ github.run_number }}
+      target: ${{ inputs.target }}
+      sign_macos: false
+      check_notarization: false
