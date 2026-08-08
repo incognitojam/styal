@@ -212,6 +212,13 @@ import {
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
+import {
+  ComposerDraftGetInput,
+  ComposerDraftSnapshot,
+  ComposerDraftSyncError,
+  ComposerDraftUpdateInput,
+  ComposerDraftUpdateResult,
+} from "./composerDraft.ts";
 
 export const WS_METHODS = {
   // Project registry methods
@@ -235,6 +242,9 @@ export const WS_METHODS = {
 
   // Provider methods
   providerUploadFeedback: "provider.uploadFeedback",
+
+  // Existing-thread composer draft synchronization
+  composerDraftUpdate: "composerDraft.update",
 
   // VCS methods
   vcsPull: "vcs.pull",
@@ -340,7 +350,21 @@ export const WS_METHODS = {
   subscribeAuthAccess: "subscribeAuthAccess",
   subscribeBackgroundPolicy: "subscribeBackgroundPolicy",
   subscribeResourceTelemetry: "subscribeResourceTelemetry",
+  subscribeComposerDraft: "subscribeComposerDraft",
 } as const;
+
+export const WsComposerDraftUpdateRpc = Rpc.make(WS_METHODS.composerDraftUpdate, {
+  payload: ComposerDraftUpdateInput,
+  success: ComposerDraftUpdateResult,
+  error: Schema.Union([ComposerDraftSyncError, EnvironmentAuthorizationError]),
+});
+
+export const WsSubscribeComposerDraftRpc = Rpc.make(WS_METHODS.subscribeComposerDraft, {
+  payload: ComposerDraftGetInput,
+  success: ComposerDraftSnapshot,
+  error: Schema.Union([ComposerDraftSyncError, EnvironmentAuthorizationError]),
+  stream: true,
+});
 
 export const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
   payload: ServerUpsertKeybindingInput,
@@ -1104,6 +1128,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsAttachmentsCreateUploadUrlRpc,
   WsAttachmentsDeleteRpc,
   WsProviderUploadFeedbackRpc,
+  WsComposerDraftUpdateRpc,
   WsSubscribeVcsStatusRpc,
   WsVcsPullRpc,
   WsVcsRefreshStatusRpc,
@@ -1144,6 +1169,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeAuthAccessRpc,
   WsSubscribeBackgroundPolicyRpc,
   WsSubscribeResourceTelemetryRpc,
+  WsSubscribeComposerDraftRpc,
   WsOrchestrationDispatchCommandRpc,
   WsOrchestrationGetWorkflowScriptRpc,
   WsOrchestrationGetCommandOutputRpc,
