@@ -348,6 +348,99 @@ jobs:
           path: release-publish/*
           if-no-files-found: error
 
+  build_linux:
+    name: Build Linux x64
+    needs: prepare
+    if: >-
+      github.event_name != 'pull_request' &&
+      needs.prepare.outputs.has_changes == 'true'
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    timeout-minutes: 100
+    steps:
+      - name: Checkout verified candidate
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+          fetch-depth: 0
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/desktop...
+              - --filter=t3...
+              - --filter=@t3tools/scripts...
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Align package versions
+        run: node scripts/update-release-package-versions.ts "${{ needs.prepare.outputs.version }}"
+
+      - name: Install ImageMagick
+        shell: bash
+        run: |
+          if ! command -v magick >/dev/null 2>&1 && ! command -v convert >/dev/null 2>&1; then
+              sudo apt-get update
+              sudo apt-get install -y imagemagick
+          fi
+
+          if command -v magick >/dev/null 2>&1; then
+              magick -version
+          else
+              convert -version
+          fi
+
+      - name: Build unsigned desktop artifact
+        timeout-minutes: 90
+        shell: bash
+        env:
+          T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          vp run dist:desktop:artifact \
+            --platform linux \
+            --target AppImage \
+            --arch x64 \
+            --build-version "${{ needs.prepare.outputs.version }}" \
+            --verbose
+
+      - name: Collect release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-publish
+
+          shopt -s nullglob
+          for pattern in \
+            "release/*.AppImage" \
+            "release/*.blockmap" \
+            "release/*.yml"; do
+            for file in $pattern; do
+              [[ "$(basename "$file")" == "builder-debug.yml" ]] && continue
+              cp "$file" release-publish/
+            done
+          done
+
+          test -n "$(find release-publish -maxdepth 1 -type f -print -quit)"
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-linux-x64
+          path: release-publish/*
+          if-no-files-found: error
+
   # node-pty publishes no Linux prebuilt and the WSL backend runs under the
   # distro's own (Linux) Node, which can't load the Windows/Electron binary. We
   # build the Linux pty.node here, on Linux, and hand it to the Windows packaging
@@ -508,11 +601,12 @@ jobs:
 
   release:
     name: Publish GitHub prerelease
-    needs: [prepare, build_macos, build_windows]
+    needs: [prepare, build_macos, build_linux, build_windows]
     if: >-
       github.event_name != 'pull_request' &&
       needs.prepare.outputs.has_changes == 'true' &&
       needs.build_macos.result == 'success' &&
+      needs.build_linux.result == 'success' &&
       needs.build_windows.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -660,7 +754,7 @@ jobs:
 
   notify_failure:
     name: Notify Discord
-    needs: [prepare, build_wsl_node_pty, build_macos, build_windows, release]
+    needs: [prepare, build_wsl_node_pty, build_macos, build_linux, build_windows, release]
     if: >-
       ${{
         github.event_name != 'pull_request' &&
@@ -672,6 +766,8 @@ jobs:
           needs.build_wsl_node_pty.result == 'cancelled' ||
           needs.build_macos.result == 'failure' ||
           needs.build_macos.result == 'cancelled' ||
+          needs.build_linux.result == 'failure' ||
+          needs.build_linux.result == 'cancelled' ||
           needs.build_windows.result == 'failure' ||
           needs.build_windows.result == 'cancelled' ||
           needs.release.result == 'failure' ||
@@ -692,6 +788,7 @@ jobs:
             Prepare: `${{ needs.prepare.result }}`
             WSL node-pty build: `${{ needs.build_wsl_node_pty.result }}`
             macOS build: `${{ needs.build_macos.result }}`
+            Linux build: `${{ needs.build_linux.result }}`
             Windows build: `${{ needs.build_windows.result }}`
             Release: `${{ needs.release.result }}`
           embed-color: 15158332
