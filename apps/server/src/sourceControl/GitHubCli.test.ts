@@ -263,6 +263,136 @@ describe("GitHubCli.layer", () => {
     }).pipe(Effect.provide(layer)),
   );
 
+  it.effect("lists open issues and drops invalid rows", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(
+        Effect.succeed(
+          processOutput(
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            JSON.stringify([
+              {
+                number: 0,
+                title: "invalid",
+                url: "https://github.com/pingdotgg/codething-mvp/issues/0",
+              },
+              {
+                number: 123,
+                title: "  Fix login crash  ",
+                url: " https://github.com/pingdotgg/codething-mvp/issues/123 ",
+                state: "OPEN",
+                labels: [{ name: " bug " }, { name: "   " }],
+                updatedAt: "2026-01-02T03:04:05Z",
+              },
+            ]),
+          ),
+        ),
+      );
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const result = yield* gh.listIssues({ cwd: "/repo" });
+
+      assert.equal(result.length, 1);
+      assert.deepStrictEqual(
+        result.map(({ updatedAt: _updatedAt, ...issue }) => issue),
+        [
+          {
+            number: 123,
+            title: "Fix login crash",
+            url: "https://github.com/pingdotgg/codething-mvp/issues/123",
+            state: "open",
+            labels: ["bug"],
+          },
+        ],
+      );
+      expect(mockRun).toHaveBeenCalledWith({
+        operation: "GitHubCli.execute",
+        command: "gh",
+        args: [
+          "issue",
+          "list",
+          "--state",
+          "open",
+          "--limit",
+          "50",
+          "--json",
+          "number,title,state,url,labels,updatedAt",
+        ],
+        cwd: "/repo",
+        timeoutMs: 30_000,
+      });
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("returns an empty issue list when gh prints nothing", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(Effect.succeed(processOutput("")));
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const result = yield* gh.listIssues({ cwd: "/repo" });
+
+      assert.deepStrictEqual(result, []);
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("reads a single issue with its comments", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(
+        Effect.succeed(
+          processOutput(
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            JSON.stringify({
+              number: 123,
+              title: "Fix login crash",
+              url: "https://github.com/pingdotgg/codething-mvp/issues/123",
+              state: "OPEN",
+              body: "\nSteps to reproduce\n",
+              author: { login: "octocat" },
+              comments: [
+                { author: { login: "hubot" }, body: " Repros here " },
+                { author: null, body: null },
+              ],
+            }),
+          ),
+        ),
+      );
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const result = yield* gh.getIssue({ cwd: "/repo", reference: "123" });
+
+      assert.deepStrictEqual(result, {
+        number: 123,
+        title: "Fix login crash",
+        url: "https://github.com/pingdotgg/codething-mvp/issues/123",
+        state: "open",
+        repository: "pingdotgg/codething-mvp",
+        author: "octocat",
+        body: "Steps to reproduce",
+        comments: [
+          { author: "hubot", body: "Repros here" },
+          { author: null, body: "" },
+        ],
+      });
+      expect(mockRun).toHaveBeenCalledWith({
+        operation: "GitHubCli.execute",
+        command: "gh",
+        args: ["issue", "view", "123", "--json", "number,title,state,url,body,author,comments"],
+        cwd: "/repo",
+        timeoutMs: 30_000,
+      });
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("fails with a decode error when issue json is malformed", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(Effect.succeed(processOutput("{ not json")));
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const error = yield* gh.getIssue({ cwd: "/repo", reference: "123" }).pipe(Effect.flip);
+
+      assert.strictEqual(error._tag, "GitHubIssueDecodeError");
+    }).pipe(Effect.provide(layer)),
+  );
+
   it.effect("reads repository clone URLs", () =>
     Effect.gen(function* () {
       mockRun.mockReturnValueOnce(
