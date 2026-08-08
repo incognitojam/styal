@@ -655,9 +655,6 @@ jobs:
             for sha in "$@"; do
               short_sha="${sha:0:7}"
               subject=$(git show -s --format=%s "$sha")
-              if is_ci_release_commit "$subject"; then
-                continue
-              fi
               rendered_change_count=$((rendered_change_count + 1))
               if [[ "$subject" =~ ^(.+)\ \(#([0-9]+)\)$ ]]; then
                 title="${BASH_REMATCH[1]}"
