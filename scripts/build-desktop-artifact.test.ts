@@ -13,6 +13,7 @@ import {
   createStageWorkspaceConfig,
   createStagePatchedDependencies,
   createBuildConfig,
+  resolveDesktopBuildDescription,
   DESKTOP_ELECTRON_LANGUAGES,
   DESKTOP_FILE_EXCLUSIONS,
   DESKTOP_EXTRA_RESOURCES,
@@ -93,8 +94,16 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   it("uses the fork identity for desktop packaging", () => {
     assert.equal(resolveDesktopProductName("0.0.17"), "T3 Code (yngatech Alpha)");
     assert.equal(
+      resolveDesktopBuildDescription("0.0.17"),
+      "T3 Code (yngatech Alpha) desktop build",
+    );
+    assert.equal(
       resolveDesktopProductName("0.0.17-nightly.20260413.42"),
       "T3 Code (yngatech Nightly)",
+    );
+    assert.equal(
+      resolveDesktopBuildDescription("0.0.17-nightly.20260413.42"),
+      "T3 Code (yngatech Nightly) desktop build",
     );
   });
 

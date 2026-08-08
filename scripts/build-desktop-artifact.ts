@@ -1522,6 +1522,10 @@ export function resolveDesktopProductName(version: string): string {
     : (desktopPackageJson.productName ?? "T3 Code");
 }
 
+export function resolveDesktopBuildDescription(version: string): string {
+  return `${resolveDesktopProductName(version)} desktop build`;
+}
+
 function resolveDesktopPackageName(platform: typeof BuildPlatform.Type): string {
   // electron-builder's one-click NSIS target derives the install directory from
   // the package name rather than productName. Keep other platforms stable while
@@ -1933,7 +1937,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     t3codeCommitHash: commitHash,
     private: true,
     packageManager: rootPackageJson.packageManager,
-    description: "T3 Code desktop build",
+    description: resolveDesktopBuildDescription(appVersion),
     author: "T3 Tools",
     main: "apps/desktop/dist-electron/main.cjs",
     build: yield* createBuildConfig(
