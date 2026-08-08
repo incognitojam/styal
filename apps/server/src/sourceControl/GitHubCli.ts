@@ -13,11 +13,18 @@ import {
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import {
+  decodeGitHubIssueJson,
+  decodeGitHubIssueListJson,
+  type NormalizedGitHubIssue,
+  type NormalizedGitHubIssueSummary,
+} from "./gitHubIssues.ts";
+import {
   decodeGitHubPullRequestJson,
   decodeGitHubPullRequestListJson,
 } from "./gitHubPullRequests.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_ISSUE_LIST_LIMIT = 50;
 
 const gitHubCliFailureFields = {
   command: Schema.Literal("gh"),
@@ -122,6 +129,32 @@ export class GitHubPullRequestDecodeError extends Schema.TaggedErrorClass<GitHub
   }
 }
 
+export class GitHubIssueListDecodeError extends Schema.TaggedErrorClass<GitHubIssueListDecodeError>()(
+  "GitHubIssueListDecodeError",
+  gitHubCliDecodeFields,
+) {
+  get detail(): string {
+    return "GitHub CLI returned invalid issue list JSON.";
+  }
+
+  override get message(): string {
+    return `GitHub CLI failed in listIssues: ${this.detail}`;
+  }
+}
+
+export class GitHubIssueDecodeError extends Schema.TaggedErrorClass<GitHubIssueDecodeError>()(
+  "GitHubIssueDecodeError",
+  gitHubCliDecodeFields,
+) {
+  get detail(): string {
+    return "GitHub CLI returned invalid issue JSON.";
+  }
+
+  override get message(): string {
+    return `GitHub CLI failed in getIssue: ${this.detail}`;
+  }
+}
+
 export class GitHubRepositoryDecodeError extends Schema.TaggedErrorClass<GitHubRepositoryDecodeError>()(
   "GitHubRepositoryDecodeError",
   gitHubCliDecodeFields,
@@ -143,6 +176,8 @@ export const GitHubCliError = Schema.Union([
   GitHubPullRequestListDecodeError,
   GitHubChangeRequestListDecodeError,
   GitHubPullRequestDecodeError,
+  GitHubIssueListDecodeError,
+  GitHubIssueDecodeError,
   GitHubRepositoryDecodeError,
 ]);
 export type GitHubCliError = typeof GitHubCliError.Type;
@@ -190,6 +225,9 @@ export interface GitHubPullRequestSummary {
   readonly headRepositoryOwnerLogin?: string | null;
 }
 
+export type GitHubIssueSummary = NormalizedGitHubIssueSummary;
+export type GitHubIssue = NormalizedGitHubIssue;
+
 export interface GitHubRepositoryCloneUrls {
   readonly nameWithOwner: string;
   readonly url: string;
@@ -215,6 +253,16 @@ export class GitHubCli extends Context.Service<
       readonly cwd: string;
       readonly reference: string;
     }) => Effect.Effect<GitHubPullRequestSummary, GitHubCliError>;
+
+    readonly listIssues: (input: {
+      readonly cwd: string;
+      readonly limit?: number;
+    }) => Effect.Effect<ReadonlyArray<GitHubIssueSummary>, GitHubCliError>;
+
+    readonly getIssue: (input: {
+      readonly cwd: string;
+      readonly reference: string;
+    }) => Effect.Effect<GitHubIssue, GitHubCliError>;
 
     readonly getRepositoryCloneUrls: (input: {
       readonly cwd: string;
@@ -387,6 +435,67 @@ export const make = Effect.gen(function* () {
                 (({ updatedAt: _updatedAt, ...summary }) => summary)(decoded.success),
               );
             }),
+          ),
+        ),
+      ),
+    listIssues: (input) =>
+      execute({
+        cwd: input.cwd,
+        args: [
+          "issue",
+          "list",
+          "--state",
+          "open",
+          "--limit",
+          String(input.limit ?? DEFAULT_ISSUE_LIST_LIMIT),
+          "--json",
+          "number,title,state,url,labels,updatedAt",
+        ],
+      }).pipe(
+        Effect.map((result) => result.stdout.trim()),
+        Effect.flatMap((raw) =>
+          raw.length === 0
+            ? Effect.succeed([])
+            : Effect.sync(() => decodeGitHubIssueListJson(raw)).pipe(
+                Effect.flatMap((decoded) =>
+                  Result.isSuccess(decoded)
+                    ? Effect.succeed(decoded.success)
+                    : Effect.fail(
+                        new GitHubIssueListDecodeError({
+                          command: "gh",
+                          cwd: input.cwd,
+                          cause: decoded.failure,
+                        }),
+                      ),
+                ),
+              ),
+        ),
+      ),
+    getIssue: (input) =>
+      execute({
+        cwd: input.cwd,
+        args: [
+          "issue",
+          "view",
+          input.reference,
+          "--json",
+          "number,title,state,url,body,author,comments",
+        ],
+      }).pipe(
+        Effect.map((result) => result.stdout.trim()),
+        Effect.flatMap((raw) =>
+          Effect.sync(() => decodeGitHubIssueJson(raw)).pipe(
+            Effect.flatMap((decoded) =>
+              Result.isSuccess(decoded)
+                ? Effect.succeed(decoded.success)
+                : Effect.fail(
+                    new GitHubIssueDecodeError({
+                      command: "gh",
+                      cwd: input.cwd,
+                      cause: decoded.failure,
+                    }),
+                  ),
+            ),
           ),
         ),
       ),
