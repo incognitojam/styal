@@ -506,7 +506,7 @@ const makeWsRpcLayer = (
 
       const appendSetupScriptActivity = (input: {
         readonly threadId: ThreadId;
-        readonly kind: "setup-script.requested" | "setup-script.started" | "setup-script.failed";
+        readonly kind: "setup-script.failed";
         readonly summary: string;
         readonly createdAt: string;
         readonly payload: Record<string, unknown>;
@@ -788,6 +788,16 @@ const makeWsRpcLayer = (
             readonly worktreePath: string;
           }) => {
             const detail = projectSetupScriptCompatibilityDetail(input.error);
+            if (
+              input.error._tag === "ProjectSetupScriptOperationError" &&
+              input.error.operation === "openTerminal"
+            ) {
+              return Effect.logWarning("bootstrap turn start failed to launch setup script", {
+                threadId: command.threadId,
+                worktreePath: input.worktreePath,
+                detail,
+              });
+            }
             return appendSetupScriptActivity({
               threadId: command.threadId,
               kind: "setup-script.failed",
@@ -809,55 +819,6 @@ const makeWsRpcLayer = (
               ),
             );
           };
-
-          const recordSetupScriptStarted = (input: {
-            readonly requestedAt: string;
-            readonly worktreePath: string;
-            readonly scriptId: string;
-            readonly scriptName: string;
-            readonly terminalId: string;
-          }) =>
-            Effect.gen(function* () {
-              const startedAt = yield* nowIso;
-              const payload = {
-                scriptId: input.scriptId,
-                scriptName: input.scriptName,
-                terminalId: input.terminalId,
-                worktreePath: input.worktreePath,
-              };
-              yield* Effect.all([
-                appendSetupScriptActivity({
-                  threadId: command.threadId,
-                  kind: "setup-script.requested",
-                  summary: "Starting setup script",
-                  createdAt: input.requestedAt,
-                  payload,
-                  tone: "info",
-                }),
-                appendSetupScriptActivity({
-                  threadId: command.threadId,
-                  kind: "setup-script.started",
-                  summary: "Setup script started",
-                  createdAt: startedAt,
-                  payload,
-                  tone: "info",
-                }),
-              ]).pipe(
-                Effect.asVoid,
-                Effect.catch((error) =>
-                  Effect.logWarning(
-                    "bootstrap turn start launched setup script but failed to record setup activity",
-                    {
-                      threadId: command.threadId,
-                      worktreePath: input.worktreePath,
-                      scriptId: input.scriptId,
-                      terminalId: input.terminalId,
-                      detail: error.message,
-                    },
-                  ),
-                ),
-              );
-            });
 
           const runSetupProgram = () =>
             Effect.gen(function* () {
@@ -885,13 +846,7 @@ const makeWsRpcLayer = (
                       if (setupResult.status !== "started") {
                         return Effect.void;
                       }
-                      return recordSetupScriptStarted({
-                        requestedAt,
-                        worktreePath,
-                        scriptId: setupResult.scriptId,
-                        scriptName: setupResult.scriptName,
-                        terminalId: setupResult.terminalId,
-                      });
+                      return Effect.void;
                     },
                   }),
                 );
