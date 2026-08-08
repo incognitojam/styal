@@ -114,10 +114,17 @@ An empty database is a bad test. Seed your worktree's `.t3` with a copy of real 
 - Never make a PR unless the developer explicitly asks you to do so.
 - Conventional commit titles, plain language: `fix(web): new threads no longer spike CPU`.
 - Body: the problem in a sentence or two, then how you fixed it. End with the model and harness that did the work.
-- **Rebase onto latest main before opening.** Stale branches conflict and burn a review round.
+- **Rebase standalone branches onto latest main before opening.** Stale branches conflict and burn a review round.
 - UI changes need before/after images. Motion or timing needs a short video.
 - One concern per PR. If the description says "also", split it.
 - When babysitting: poll checks and comments newer than the last push, verify each bot finding against the source, fix real ones, dismiss false positives with a written reason. Stay quiet when nothing is new. Stop when the bots are green on the latest commit.
+
+### Stacked pull requests
+
+- Most changes are a single PR. Stack only when a large change splits into dependent, independently reviewable layers; unrelated concerns stay separate, non-stacked PRs.
+- Manage a stack exclusively with the `gh stack` extension (`gh extension install github/gh-stack`). Keep it current with `gh stack rebase` then `gh stack push` — the stack's equivalent of the rebase-before-opening rule above. Plain `git rebase`, `git push --force`, or manual PR retargeting corrupt the stack's dependent branches and GitHub metadata. If the extension is unavailable, report that instead of falling back.
+- `gh stack` is newer than most models' training data — run `gh stack --help` and review the workflow before your first stack operation rather than guessing from priors.
+- `gh stack submit` and `gh stack merge` create or change remote PRs, so the existing rules apply: only when the developer explicitly asks. Note `gh stack merge <pr-number>` also lands every unmerged layer below it — a middle layer cannot merge alone. Run `gh stack view` first and state exactly which layers will land.
 
 ## How it works
 
