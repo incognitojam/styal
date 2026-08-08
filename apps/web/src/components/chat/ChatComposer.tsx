@@ -124,6 +124,7 @@ import {
   submitComposerDraft,
 } from "./composerSubmission";
 import { ComposerPromptLengthValidation } from "./ComposerPromptLengthValidation";
+import { useServerComposerDraftSync } from "../../state/composerDrafts";
 
 type ComposerCommandMenuPosition = {
   bottom: number;
@@ -717,6 +718,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // Store subscriptions (prompt / images / terminal contexts)
   // ------------------------------------------------------------------
   const composerDraft = useComposerThreadDraft(composerDraftTarget);
+  useServerComposerDraftSync(routeKind === "server" ? routeThreadRef : null);
   const prompt = composerDraft.prompt;
   const composerImages = composerDraft.images;
   const composerTerminalContexts = composerDraft.terminalContexts;
