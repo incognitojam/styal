@@ -547,6 +547,7 @@ jobs:
           git fetch --no-tags origin "$FORK_SOURCE_REF"
           git rev-parse --verify "${FORK_SOURCE_REF}^{commit}" >/dev/null
           git rev-parse --verify "${UPSTREAM_REF}^{commit}" >/dev/null
+          source .github/scripts/release-changelog.sh
 
           append_changes() {
             local repository="$1"
@@ -560,6 +561,10 @@ jobs:
             for sha in "$@"; do
               short_sha="${sha:0:7}"
               subject=$(git show -s --format=%s "$sha")
+              if is_ci_release_commit "$subject"; then
+                continue
+              fi
+              rendered_change_count=$((rendered_change_count + 1))
               if [[ "$subject" =~ ^(.+)\ \(#([0-9]+)\)$ ]]; then
                 title="${BASH_REMATCH[1]}"
                 pull_number="${BASH_REMATCH[2]}"
@@ -599,6 +604,7 @@ jobs:
             done < <(git rev-list --reverse "${previous_upstream_ref}..${FORK_SOURCE_REF}")
           fi
 
+          rendered_change_count=0
           {
             printf "## What's Changed\n\n"
             if (( ${#fork_changes[@]} > 0 )); then
@@ -606,6 +612,9 @@ jobs:
             fi
             if (( ${#upstream_changes[@]} > 0 )); then
               append_changes pingdotgg/t3code "${upstream_changes[@]}"
+            fi
+            if (( rendered_change_count == 0 )); then
+              printf 'No user-facing changes.\n'
             fi
             printf '\n**Full Changelog**: https://github.com/pingdotgg/t3code/compare/%s...%s\n' \
               "$previous_upstream_ref" "$UPSTREAM_REF"
