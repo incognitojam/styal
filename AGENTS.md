@@ -111,6 +111,7 @@ An empty database is a bad test. Seed your worktree's `.t3` with a copy of real 
 
 ## Pull requests
 
+- This repository is the `yngatech/t3code` fork of `pingdotgg/t3code`. Treat the upstream repository as read-only: never open a PR against upstream unless the developer explicitly names upstream as the target and authorizes that contribution. A general request to open a PR authorizes a PR against the fork only.
 - Never make a PR unless the developer explicitly asks you to do so.
 - Conventional commit titles, plain language: `fix(web): new threads no longer spike CPU`.
 - Body: the problem in a sentence or two, then how you fixed it. End with the model and harness that did the work.
