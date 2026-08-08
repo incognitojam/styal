@@ -89,7 +89,7 @@ import { resolvePathLinkTarget } from "~/terminal-links";
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { readLocalApi } from "~/localApi";
 import { getSourceControlPresentation } from "~/sourceControlPresentation";
-import { openPullRequestLink } from "~/lib/openPullRequestLink";
+import { useViewPullRequest } from "~/lib/viewPullRequest";
 
 interface GitActionsControlProps {
   gitCwd: string | null;
@@ -1106,6 +1106,10 @@ export default function GitActionsControl({
   const isRepo = gitStatus?.isRepo ?? true;
   const hasPrimaryRemote = gitStatus?.hasPrimaryRemote ?? false;
   const gitStatusForActions = gitStatus;
+  const { viewPullRequest: viewPullRequestLink } = useViewPullRequest(
+    gitStatusForActions,
+    activeThreadRef,
+  );
 
   const allFiles = gitStatusForActions?.workingTree.files ?? [];
   const selectedFiles = allFiles.filter((f) => !excludedFiles.has(f.path));
@@ -1218,7 +1222,7 @@ export default function GitActionsControl({
     };
   }, [activeEnvironmentId, gitCwd, refreshVcsStatus]);
 
-  const openExistingPr = useCallback(async () => {
+  const viewPullRequest = useCallback(async () => {
     const openPr = gitStatusForActions?.pr?.state === "open" ? gitStatusForActions.pr : null;
     // Beside the thread where it was made, the way the browser opens beside it. Checked before
     // the shell, which opening in the app does not need.
@@ -1226,36 +1230,8 @@ export default function GitActionsControl({
       onOpenPullRequest(openPr.number);
       return;
     }
-    const api = readLocalApi();
-    if (!api) {
-      toastManager.add({
-        type: "error",
-        title: "Link opening is unavailable.",
-        data: threadToastData,
-      });
-      return;
-    }
-    const prUrl = openPr?.url ?? null;
-    if (!prUrl) {
-      toastManager.add({
-        type: "error",
-        title: "No open pull request found.",
-        data: threadToastData,
-      });
-      return;
-    }
-    void openPullRequestLink(api.shell, prUrl).catch((err: unknown) => {
-      console.error(err);
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Unable to open pull request link",
-          description: err instanceof Error ? err.message : "An error occurred.",
-          ...(threadToastData !== undefined ? { data: threadToastData } : {}),
-        }),
-      );
-    });
-  }, [gitStatusForActions, onOpenPullRequest, threadToastData]);
+    await viewPullRequestLink();
+  }, [gitStatusForActions, onOpenPullRequest, viewPullRequestLink]);
 
   runGitActionWithToast = useEffectEvent(
     async ({
@@ -1539,7 +1515,7 @@ export default function GitActionsControl({
 
   const runQuickAction = () => {
     if (quickAction.kind === "open_pr") {
-      void openExistingPr();
+      void viewPullRequest();
       return;
     }
     if (quickAction.kind === "open_publish") {
@@ -1603,7 +1579,7 @@ export default function GitActionsControl({
   const openDialogForMenuItem = (item: GitActionMenuItem) => {
     if (item.disabled) return;
     if (item.kind === "open_pr") {
-      void openExistingPr();
+      void viewPullRequest();
       return;
     }
     if (item.dialogAction === "push") {
