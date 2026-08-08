@@ -52,6 +52,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
 const DESKTOP_APP_ID = "dev.incognitojam.t3code";
+const WINDOWS_INSTALLER_GUID = "0122c0ea-801f-5352-a48e-ce98c31bc2d9";
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
@@ -2019,6 +2020,13 @@ export function resolveDesktopProductName(version: string): string {
     : (desktopPackageJson.productName ?? "T3 Code");
 }
 
+function resolveDesktopPackageName(platform: typeof BuildPlatform.Type): string {
+  // electron-builder's one-click NSIS target derives the install directory from
+  // the package name rather than productName. Keep other platforms stable while
+  // preventing the yngatech distribution from sharing upstream's Windows folder.
+  return platform === "win" ? "t3code-yngatech" : "t3code";
+}
+
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   platform: typeof BuildPlatform.Type,
   target: string,
@@ -2132,10 +2140,16 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
 
   if (platform === "win") {
     buildConfig.npmRebuild = false;
-    // Keep blockmap-based differential downloads enabled while changing the
-    // installed file topology. The optimization is in the payload shape, not
-    // in trading update bandwidth for install speed.
-    buildConfig.nsis = { differentialPackage: true };
+    buildConfig.nsis = {
+      // Distinct from both upstream and earlier fork builds so the first
+      // separated install never reuses or uninstalls their shared directory.
+      guid: WINDOWS_INSTALLER_GUID,
+      include: "installer.nsh",
+      // Keep blockmap-based differential downloads enabled while changing the
+      // installed file topology. The optimization is in the payload shape, not
+      // in trading update bandwidth for install speed.
+      differentialPackage: true,
+    };
     const winConfig: Record<string, unknown> = {
       target: [target],
       icon: "icon.ico",
@@ -2896,7 +2910,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       ? path.join(stageAppDir, WINDOWS_SERVER_RESOURCE_SOURCE_DIR, WINDOWS_SERVER_ASAR_RESOURCE)
       : undefined;
   const stagePackageJson: StagePackageJson = {
-    name: "t3code",
+    name: resolveDesktopPackageName(options.platform),
     version: appVersion,
     buildVersion: appVersion,
     t3codeCommitHash: commitHash,
