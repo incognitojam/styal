@@ -10,6 +10,7 @@ import {
 } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Data from "effect/Data";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
@@ -1487,6 +1488,33 @@ it.layer(
       if (!spawnInput) return;
 
       expect(spawnInput.args).toEqual(["-o", "nopromptsp"]);
+    }),
+  );
+
+  it.effect("runs a terminal command through the shell and reports its exit status", () =>
+    Effect.gen(function* () {
+      if ((yield* HostProcessPlatform) === "win32") return;
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        shellResolver: () => "/bin/zsh",
+      });
+      const exited = yield* Deferred.make<Extract<TerminalEvent, { type: "exited" }>>();
+      const unsubscribe = yield* manager.subscribe((event) =>
+        event.type === "exited" ? Deferred.succeed(exited, event).pipe(Effect.asVoid) : Effect.void,
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+
+      yield* manager.openCommand({
+        ...openInput({ terminalId: "setup-setup" }),
+        command: "bun install",
+      });
+      expect(ptyAdapter.spawnInputs[0]?.args).toEqual(["-o", "nopromptsp", "-ic", "bun install"]);
+
+      const process = ptyAdapter.processes[0];
+      expect(process).toBeDefined();
+      process?.emitExit({ exitCode: 9, signal: null });
+      const exitEvent = yield* Deferred.await(exited);
+      expect(exitEvent.exitCode).toBe(9);
+      expect(exitEvent.exitSignal).toBeNull();
     }),
   );
 
