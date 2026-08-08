@@ -1,4 +1,5 @@
 import {
+  type ComposerDraftCommon,
   DEFAULT_MODEL,
   DEFAULT_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
@@ -465,6 +466,8 @@ interface ComposerDraftStoreState {
   clearDraftThread: (threadRef: ComposerThreadTarget) => void;
   setStickyModelSelection: (modelSelection: ModelSelection | null | undefined) => void;
   setPrompt: (threadRef: ComposerThreadTarget, prompt: string) => void;
+  /** Replaces only the cross-device section and preserves local attachments/context. */
+  applySyncedCommon: (threadRef: ComposerThreadTarget, common: ComposerDraftCommon | null) => void;
   setTerminalContexts: (threadRef: ComposerThreadTarget, contexts: TerminalContextDraft[]) => void;
   setModelSelection: (
     threadRef: ComposerThreadTarget,
@@ -2823,6 +2826,34 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             const nextDraft: ComposerThreadDraftState = {
               ...existing,
               prompt,
+            };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        applySyncedCommon: (threadRef, common) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          if (threadKey.length === 0) {
+            return;
+          }
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
+            const nextMap = { ...existing.modelSelectionByProvider };
+            if (common?.modelSelection) {
+              nextMap[common.modelSelection.instanceId] = common.modelSelection;
+            }
+            const nextDraft: ComposerThreadDraftState = {
+              ...existing,
+              prompt: common?.text ?? "",
+              modelSelectionByProvider: nextMap,
+              activeProvider: common?.modelSelection?.instanceId ?? null,
+              runtimeMode: common?.runtimeMode ?? null,
+              interactionMode: common?.interactionMode ?? null,
             };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
             if (shouldRemoveDraft(nextDraft)) {
