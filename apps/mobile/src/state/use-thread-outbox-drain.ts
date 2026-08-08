@@ -231,9 +231,6 @@ export function useThreadOutboxDrain(): void {
           modelSelection: settings.modelSelection,
           runtimeMode: settings.runtimeMode,
           interactionMode: settings.interactionMode,
-          ...(queuedMessage.composerDraftRevision === undefined
-            ? {}
-            : { composerDraftRevision: queuedMessage.composerDraftRevision }),
           createdAt: queuedMessage.createdAt,
         },
       });

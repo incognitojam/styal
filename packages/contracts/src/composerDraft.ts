@@ -4,11 +4,11 @@ import { IsoDateTime, NonNegativeInt, ThreadId, TrimmedNonEmptyString } from "./
 import { ModelSelection, ProviderInteractionMode, RuntimeMode } from "./orchestration.ts";
 
 /**
- * The cross-surface portion of an existing thread's composer draft.
+ * The web/desktop transferable portion of an existing thread's composer draft.
  *
  * Attachments and surface-specific context intentionally stay out of v1. The
- * server replaces this section as one revisioned value so clients never erase
- * fields owned by a surface they do not understand.
+ * server replaces this section as one revisioned value so web/desktop clients
+ * never erase fields owned by local-only composer state.
  */
 export const ComposerDraftCommon = Schema.Struct({
   text: Schema.String,

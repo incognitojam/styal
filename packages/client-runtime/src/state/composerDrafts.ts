@@ -14,7 +14,7 @@ import {
   createEnvironmentRpcSubscriptionAtomFamily,
 } from "./runtime.ts";
 
-/** Typed RPC primitives shared by the web and mobile composer adapters. */
+/** Typed RPC primitives used by the web composer adapter and desktop wrapper. */
 export function createComposerDraftEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
@@ -72,7 +72,7 @@ export interface ComposerDraftSyncController {
 /**
  * Reconciles one existing thread's local cache with its revisioned server value.
  * The surface owns persistence and rendering; this controller only defines the
- * conflict and debounce behavior shared by web and mobile.
+ * conflict and debounce behavior shared by web and desktop.
  */
 export function createComposerDraftSyncController(options: {
   readonly threadId: ThreadId;
@@ -178,8 +178,8 @@ export function createComposerDraftSyncController(options: {
         return;
       }
       if (!options.canApplyRemote()) {
-        // Hide a transferable draft as soon as this device has richer local
-        // context; another surface must not send the incomplete server copy.
+        // Hide a transferable draft as soon as this web/desktop client has
+        // richer local context; another client must not send an incomplete copy.
         if (remote !== null) schedule();
         return;
       }
@@ -201,7 +201,7 @@ export function createComposerDraftSyncController(options: {
       options.applyRemote(remote);
       return;
     }
-    // Local typing (or a device-local attachment) wins after the idle window.
+    // Local typing (or a client-local attachment) wins after the idle window.
     schedule();
   };
 

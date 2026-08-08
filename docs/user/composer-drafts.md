@@ -1,8 +1,9 @@
 # Composer drafts
 
-Draft text in an existing thread follows you between web, desktop, and mobile clients connected to
-the same T3 Code environment. The selected model, runtime mode, and interaction mode travel with
-the text. Changes sync after a short typing pause and converge after an offline device reconnects.
+Draft text in an existing thread follows you between web and desktop clients connected to the same
+T3 Code environment. The selected model, runtime mode, and interaction mode travel with the text.
+Changes sync after a short typing pause and converge after an offline client reconnects. Mobile
+drafts remain device-local and do not participate in this synchronization.
 
 Drafts for a new task remain on the device until the thread is created. Images, terminal excerpts,
 preview selections, review comments, and other device-specific context also remain local. While an
