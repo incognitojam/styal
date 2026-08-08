@@ -12,6 +12,7 @@ import {
   type RuntimeMode,
   type ThreadId,
 } from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import {
   codexFeedbackMessage,
@@ -53,6 +54,11 @@ import { enqueueThreadOutboxMessage } from "./thread-outbox";
 import { useThreadOutboxMessages } from "./use-thread-outbox";
 import { threadEnvironment } from "./threads";
 import { useAtomCommand } from "./use-atom-command";
+import {
+  markComposerDraftSent,
+  readComposerDraftRevision,
+  useServerComposerDraftSync,
+} from "./composer-draft-sync";
 
 export function appendReviewCommentToDraft(input: {
   readonly environmentId: EnvironmentId;
@@ -104,6 +110,14 @@ export function useThreadComposerState() {
   const selectedThreadKey = selectedThreadShell
     ? scopedThreadKey(selectedThreadShell.environmentId, selectedThreadShell.id)
     : null;
+  const selectedThreadRef = useMemo(
+    () =>
+      selectedThreadShell
+        ? scopeThreadRef(selectedThreadShell.environmentId, selectedThreadShell.id)
+        : null,
+    [selectedThreadShell],
+  );
+  useServerComposerDraftSync(selectedThreadRef);
   const selectedThreadQueuedMessages = useMemo(
     () => (selectedThreadKey ? (queuedMessagesByThreadKey[selectedThreadKey] ?? []) : []),
     [queuedMessagesByThreadKey, selectedThreadKey],
@@ -238,6 +252,8 @@ export function useThreadComposerState() {
 
     const metadata = makeQueuedMessageMetadata();
     const messageId = MessageId.make(metadata.messageId);
+    const composerDraftRevision =
+      selectedThreadRef === null ? undefined : readComposerDraftRevision(selectedThreadRef);
     // Enqueue publishes the queued atom synchronously (the durable write
     // happens behind it), so clearing the draft here gives send feedback on
     // the tap frame instead of after file I/O. If the write fails the message
@@ -253,9 +269,11 @@ export function useThreadComposerState() {
       modelSelection: draft.modelSelection ?? thread.modelSelection,
       runtimeMode: draft.runtimeMode ?? thread.runtimeMode,
       interactionMode: draft.interactionMode ?? thread.interactionMode,
+      ...(composerDraftRevision === undefined ? {} : { composerDraftRevision }),
       createdAt: metadata.createdAt,
     });
     clearComposerDraftContent(threadKey);
+    if (selectedThreadRef !== null) markComposerDraftSent(selectedThreadRef);
     enqueuePromise.catch((error: unknown) => {
       // Restore text via merge (idempotent) but attachments via the uncapped
       // append: the merge path slots existing attachments first and truncates
@@ -271,6 +289,7 @@ export function useThreadComposerState() {
   }, [
     selectedEnvironmentRuntime?.serverConfig?.providers,
     selectedThreadDetail,
+    selectedThreadRef,
     selectedThreadShell,
     uploadThreadFeedback,
   ]);
