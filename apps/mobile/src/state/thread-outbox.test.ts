@@ -58,18 +58,20 @@ describe("thread outbox", () => {
     });
   });
 
-  it("decodes the persisted schema and rejects incomplete messages", () => {
+  it("decodes persisted v1-v3 messages and rejects incomplete messages", () => {
     const message = queuedMessage({
       messageId: "message-1",
       createdAt: "2026-06-08T10:00:01.000Z",
     });
 
-    expect(
-      decodeQueuedThreadMessage({
-        schemaVersion: 1,
-        ...message,
-      }),
-    ).toEqual(message);
+    for (const schemaVersion of [1, 2, 3] as const) {
+      expect(
+        decodeQueuedThreadMessage({
+          schemaVersion,
+          ...message,
+        }),
+      ).toEqual(message);
+    }
     expect(() =>
       decodeQueuedThreadMessage({
         schemaVersion: 1,
@@ -92,6 +94,7 @@ describe("thread outbox", () => {
       },
       runtimeMode: "approval-required",
       interactionMode: "plan",
+      composerDraftRevision: 7,
     } satisfies QueuedThreadMessage;
 
     expect(decodeQueuedThreadMessage(encodeQueuedThreadMessage(selectedMessage))).toEqual(
