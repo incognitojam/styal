@@ -734,6 +734,74 @@ describe("workEntryIndicatesToolFailure", () => {
 });
 
 describe("deriveWorkLogEntries", () => {
+  it("collapses a setup run into its latest state across interleaved activity", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "setup-requested",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "setup-script.requested",
+        summary: "Starting setup script",
+        payload: { runId: "setup-run-1" },
+      }),
+      makeActivity({
+        id: "unrelated-work",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "runtime.info",
+        summary: "Created worktree",
+      }),
+      makeActivity({
+        id: "setup-started",
+        createdAt: "2026-02-23T00:00:03.000Z",
+        kind: "setup-script.started",
+        summary: "Setup script started",
+        payload: { runId: "setup-run-1" },
+      }),
+      makeActivity({
+        id: "setup-completed",
+        createdAt: "2026-02-23T00:00:04.000Z",
+        kind: "setup-script.completed",
+        summary: "Setup script completed",
+        payload: { runId: "setup-run-1", durationMs: 3_000, exitCode: 0 },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities);
+
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toMatchObject({
+      id: "setup-requested",
+      createdAt: "2026-02-23T00:00:01.000Z",
+      label: "Setup script completed",
+      sourceActivityKind: "setup-script.completed",
+    });
+    expect(entries[0]).not.toHaveProperty("setupRunId");
+    expect(entries[1]?.label).toBe("Created worktree");
+  });
+
+  it("does not collapse separate setup runs", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "setup-one",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "setup-script.failed",
+        summary: "Setup script failed",
+        payload: { runId: "setup-run-1" },
+      }),
+      makeActivity({
+        id: "setup-two",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "setup-script.completed",
+        summary: "Setup script completed",
+        payload: { runId: "setup-run-2" },
+      }),
+    ];
+
+    expect(deriveWorkLogEntries(activities).map((entry) => entry.label)).toEqual([
+      "Setup script failed",
+      "Setup script completed",
+    ]);
+  });
+
   it("omits tool started entries and keeps completed entries", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
