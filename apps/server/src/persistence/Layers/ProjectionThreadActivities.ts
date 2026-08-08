@@ -106,6 +106,42 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
       `,
   });
 
+  const listUnfinishedSetupRunRows = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: ProjectionThreadActivityDbRowSchema,
+    execute: () =>
+      sql`
+        SELECT
+          lifecycle.activity_id AS "activityId",
+          lifecycle.thread_id AS "threadId",
+          lifecycle.turn_id AS "turnId",
+          lifecycle.tone,
+          lifecycle.kind,
+          lifecycle.summary,
+          lifecycle.payload_json AS "payload",
+          lifecycle.sequence,
+          lifecycle.created_at AS "createdAt"
+        FROM projection_thread_activities AS lifecycle
+        WHERE lifecycle.kind IN (
+            'setup-script.requested',
+            'setup-script.started'
+          )
+          AND json_extract(lifecycle.payload_json, '$.runId') IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM projection_thread_activities AS finished
+            WHERE finished.thread_id = lifecycle.thread_id
+              AND finished.kind IN (
+                'setup-script.completed',
+                'setup-script.failed'
+              )
+              AND json_extract(finished.payload_json, '$.runId') =
+                json_extract(lifecycle.payload_json, '$.runId')
+        )
+        ORDER BY lifecycle.sequence ASC, lifecycle.created_at ASC, lifecycle.activity_id ASC
+      `,
+  });
+
   const upsert: ProjectionThreadActivityRepositoryShape["upsert"] = (row) =>
     upsertProjectionThreadActivityRow(row).pipe(
       Effect.mapError(
@@ -146,9 +182,34 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
       ),
     );
 
+  const listUnfinishedSetupRuns: ProjectionThreadActivityRepositoryShape["listUnfinishedSetupRuns"] =
+    () =>
+      listUnfinishedSetupRunRows().pipe(
+        Effect.mapError(
+          toPersistenceSqlOrDecodeError(
+            "ProjectionThreadActivityRepository.listUnfinishedSetupRuns:query",
+            "ProjectionThreadActivityRepository.listUnfinishedSetupRuns:decodeRows",
+          ),
+        ),
+        Effect.map((rows) =>
+          rows.map((row) => ({
+            activityId: row.activityId,
+            threadId: row.threadId,
+            turnId: row.turnId,
+            tone: row.tone,
+            kind: row.kind,
+            summary: row.summary,
+            payload: row.payload,
+            ...(row.sequence !== null ? { sequence: row.sequence } : {}),
+            createdAt: row.createdAt,
+          })),
+        ),
+      );
+
   return {
     upsert,
     listByThreadId,
+    listUnfinishedSetupRuns,
     deleteByThreadId,
   } satisfies ProjectionThreadActivityRepositoryShape;
 });
