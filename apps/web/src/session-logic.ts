@@ -100,6 +100,7 @@ export interface WorkLogEntry {
 interface DerivedWorkLogEntry extends WorkLogEntry {
   activityKind: OrchestrationThreadActivity["kind"];
   collapseKey?: string;
+  setupRunId?: string;
   toolCallId?: string;
   isWorkflowCoordinator?: boolean;
   /** Shell/monitor/plan tasks: ordinary work-log rows, never spawn CTAs. */
@@ -770,7 +771,7 @@ export function deriveWorkLogEntries(
     entries.push(toDerivedWorkLogEntry(activity));
   }
   return collapseDerivedWorkLogEntries(entries).map((entry) => {
-    const { activityKind, collapseKey: _collapseKey, ...rest } = entry;
+    const { activityKind, collapseKey: _collapseKey, setupRunId: _setupRunId, ...rest } = entry;
     return Object.assign(rest, { sourceActivityKind: activityKind });
   });
 }
@@ -888,6 +889,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (toolCallId) {
     entry.toolCallId = toolCallId;
   }
+  if (activity.kind.startsWith("setup-script.") && typeof payload?.runId === "string") {
+    entry.setupRunId = payload.runId;
+  }
   let toolLifecycleStatus = extractWorkLogToolLifecycleStatus(payload);
   if (!toolLifecycleStatus && activity.kind === "tool.completed") {
     toolLifecycleStatus = "completed";
@@ -948,6 +952,10 @@ function collapseDerivedWorkLogEntries(
   entries: ReadonlyArray<DerivedWorkLogEntry>,
 ): DerivedWorkLogEntry[] {
   const collapsed: DerivedWorkLogEntry[] = [];
+  // Setup lifecycle events describe one operation. Keep the row anchored at
+  // the launch point while its visible state advances, even when unrelated
+  // work-log activity lands between lifecycle events.
+  const setupRowIndex = new Map<string, number>();
   // Subagent rows collapse by spawn group, not adjacency: a workflow run (or
   // a turn's batch of direct spawns) is ONE narrative event in the chat — a
   // CTA row that opens the Agents panel — no matter how many agents it
@@ -961,6 +969,23 @@ function collapseDerivedWorkLogEntries(
   // rows (live-test finding, thread 7ac7ef05).
   const groupKeyByTaskId = new Map<string, string>();
   for (const entry of entries) {
+    if (entry.setupRunId !== undefined) {
+      const existingIndex = setupRowIndex.get(entry.setupRunId);
+      if (existingIndex !== undefined) {
+        const existing = collapsed[existingIndex]!;
+        collapsed[existingIndex] = {
+          ...mergeDerivedWorkLogEntries(existing, entry),
+          id: existing.id,
+          createdAt: existing.createdAt,
+          turnId: existing.turnId ?? null,
+          setupRunId: entry.setupRunId,
+        };
+        continue;
+      }
+      setupRowIndex.set(entry.setupRunId, collapsed.length);
+      collapsed.push(entry);
+      continue;
+    }
     const isTaskRow =
       entry.taskId !== undefined &&
       !entry.isBackgroundTask &&
@@ -1055,6 +1080,7 @@ function mergeDerivedWorkLogEntries(
   const toolCallId = next.toolCallId ?? previous.toolCallId;
   const toolLifecycleStatus = next.toolLifecycleStatus ?? previous.toolLifecycleStatus;
   const toolData = next.toolData ?? previous.toolData;
+  const setupRunId = next.setupRunId ?? previous.setupRunId;
   return {
     ...previous,
     ...next,
@@ -1070,6 +1096,7 @@ function mergeDerivedWorkLogEntries(
     ...(toolCallId ? { toolCallId } : {}),
     ...(toolLifecycleStatus !== undefined ? { toolLifecycleStatus } : {}),
     ...(toolData !== undefined ? { toolData } : {}),
+    ...(setupRunId !== undefined ? { setupRunId } : {}),
   };
 }
 
