@@ -112,30 +112,33 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
     execute: () =>
       sql`
         SELECT
-          started.activity_id AS "activityId",
-          started.thread_id AS "threadId",
-          started.turn_id AS "turnId",
-          started.tone,
-          started.kind,
-          started.summary,
-          started.payload_json AS "payload",
-          started.sequence,
-          started.created_at AS "createdAt"
-        FROM projection_thread_activities AS started
-        WHERE started.kind = 'setup-script.started'
-          AND json_extract(started.payload_json, '$.runId') IS NOT NULL
+          lifecycle.activity_id AS "activityId",
+          lifecycle.thread_id AS "threadId",
+          lifecycle.turn_id AS "turnId",
+          lifecycle.tone,
+          lifecycle.kind,
+          lifecycle.summary,
+          lifecycle.payload_json AS "payload",
+          lifecycle.sequence,
+          lifecycle.created_at AS "createdAt"
+        FROM projection_thread_activities AS lifecycle
+        WHERE lifecycle.kind IN (
+            'setup-script.requested',
+            'setup-script.started'
+          )
+          AND json_extract(lifecycle.payload_json, '$.runId') IS NOT NULL
           AND NOT EXISTS (
             SELECT 1
             FROM projection_thread_activities AS finished
-            WHERE finished.thread_id = started.thread_id
+            WHERE finished.thread_id = lifecycle.thread_id
               AND finished.kind IN (
                 'setup-script.completed',
                 'setup-script.failed'
               )
               AND json_extract(finished.payload_json, '$.runId') =
-                json_extract(started.payload_json, '$.runId')
+                json_extract(lifecycle.payload_json, '$.runId')
         )
-        ORDER BY started.sequence ASC, started.created_at ASC, started.activity_id ASC
+        ORDER BY lifecycle.sequence ASC, lifecycle.created_at ASC, lifecycle.activity_id ASC
       `,
   });
 

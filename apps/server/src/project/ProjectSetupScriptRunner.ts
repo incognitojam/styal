@@ -73,12 +73,12 @@ export function deriveUnfinishedSetupRuns(
     const payload = decodeSetupRunActivityPayload(activity.payload);
     if (Option.isNone(payload)) continue;
     const runId = payload.value.runId;
-    if (activity.kind === "setup-script.started") {
+    if (activity.kind === "setup-script.requested" || activity.kind === "setup-script.started") {
       unfinished.set(runId, {
         ...payload.value,
         threadId: activity.threadId,
         startedAt: activity.createdAt,
-        startedActivityRecorded: true,
+        startedActivityRecorded: activity.kind === "setup-script.started",
         pendingOutcome: null,
       });
       continue;

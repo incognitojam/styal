@@ -106,7 +106,7 @@ const testLayer = (
   );
 
 describe("ProjectSetupScriptRunner", () => {
-  it("derives only started setup runs without a terminal outcome as unfinished", () => {
+  it("derives requested or started setup runs without a terminal outcome as unfinished", () => {
     const activity = (
       runId: string,
       kind: string,
@@ -130,13 +130,27 @@ describe("ProjectSetupScriptRunner", () => {
       createdAt: `2026-01-01T00:00:0${sequence}.000Z`,
     });
 
-    expect(
-      ProjectSetupScriptRunner.deriveUnfinishedSetupRuns([
-        activity("finished-run", "setup-script.started", 1),
-        activity("finished-run", "setup-script.completed", 2),
-        activity("unfinished-run", "setup-script.started", 3),
-      ]).map((run) => run.runId),
-    ).toEqual(["unfinished-run"]);
+    const runs = ProjectSetupScriptRunner.deriveUnfinishedSetupRuns([
+      activity("requested-only-run", "setup-script.requested", 1),
+      activity("finished-run", "setup-script.requested", 2),
+      activity("finished-run", "setup-script.started", 3),
+      activity("finished-run", "setup-script.completed", 4),
+      activity("unfinished-run", "setup-script.requested", 5),
+      activity("unfinished-run", "setup-script.started", 6),
+    ]);
+
+    expect(runs).toMatchObject([
+      {
+        runId: "requested-only-run",
+        startedAt: "2026-01-01T00:00:01.000Z",
+        startedActivityRecorded: false,
+      },
+      {
+        runId: "unfinished-run",
+        startedAt: "2026-01-01T00:00:06.000Z",
+        startedActivityRecorded: true,
+      },
+    ]);
   });
 
   it.effect("returns no-script when no setup script exists", () => {

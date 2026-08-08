@@ -12,7 +12,7 @@ const layer = it.layer(
 );
 
 layer("ProjectionThreadActivityRepository", (it) => {
-  it.effect("lists only setup starts without a persisted outcome", () =>
+  it.effect("lists requested and started setup lifecycle rows without a persisted outcome", () =>
     Effect.gen(function* () {
       const repository = yield* ProjectionThreadActivityRepository;
       const threadId = ThreadId.make("thread-setup-recovery");
@@ -37,25 +37,52 @@ layer("ProjectionThreadActivityRepository", (it) => {
           createdAt: `2026-01-01T00:00:0${sequence}.000Z`,
         });
 
-      yield* append("started", "setup-script.started", 1);
-      yield* append("unrelated", "file-edit", 2);
-      yield* append("completed", "setup-script.completed", 3);
+      yield* append("requested", "setup-script.requested", 1);
+      yield* append("started", "setup-script.started", 2);
+      yield* append("unrelated", "file-edit", 3);
+      yield* append("completed", "setup-script.completed", 4);
       yield* repository.upsert({
-        activityId: EventId.make("unfinished"),
+        activityId: EventId.make("unfinished-requested"),
+        threadId,
+        turnId: null,
+        tone: "info",
+        kind: "setup-script.requested",
+        summary: "setup-script.requested",
+        payload: { ...payload, runId: "run-2" },
+        sequence: 5,
+        createdAt: "2026-01-01T00:00:05.000Z",
+      });
+      yield* repository.upsert({
+        activityId: EventId.make("unfinished-requested-before-start"),
+        threadId,
+        turnId: null,
+        tone: "info",
+        kind: "setup-script.requested",
+        summary: "setup-script.requested",
+        payload: { ...payload, runId: "run-3" },
+        sequence: 6,
+        createdAt: "2026-01-01T00:00:06.000Z",
+      });
+      yield* repository.upsert({
+        activityId: EventId.make("unfinished-started"),
         threadId,
         turnId: null,
         tone: "info",
         kind: "setup-script.started",
         summary: "setup-script.started",
-        payload: { ...payload, runId: "run-2" },
-        sequence: 4,
-        createdAt: "2026-01-01T00:00:04.000Z",
+        payload: { ...payload, runId: "run-3" },
+        sequence: 7,
+        createdAt: "2026-01-01T00:00:07.000Z",
       });
 
       const rows = yield* repository.listUnfinishedSetupRuns();
       assert.deepEqual(
         rows.map((row) => row.activityId),
-        [EventId.make("unfinished")],
+        [
+          EventId.make("unfinished-requested"),
+          EventId.make("unfinished-requested-before-start"),
+          EventId.make("unfinished-started"),
+        ],
       );
     }),
   );
