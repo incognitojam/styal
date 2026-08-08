@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeChildProcess from "node:child_process";
-import * as NodeFs from "node:fs";
-import * as NodeOs from "node:os";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import { assert, it } from "@effect/vitest";
@@ -42,7 +42,7 @@ function runGit(cwd: string, ...args: ReadonlyArray<string>): string {
 }
 
 function commitFile(cwd: string, fileName: string, contents: string, subject: string): string {
-  NodeFs.writeFileSync(NodePath.join(cwd, fileName), contents);
+  NodeFS.writeFileSync(NodePath.join(cwd, fileName), contents);
   runGit(cwd, "add", fileName);
   runGit(cwd, "commit", "-m", subject);
   return runGit(cwd, "rev-parse", "HEAD");
@@ -112,7 +112,7 @@ it("keeps non-CI commits in release changelogs", () => {
 });
 
 it("does not attribute upstream commits to the fork after a rebase", () => {
-  const fixtureRoot = NodeFs.mkdtempSync(NodePath.join(NodeOs.tmpdir(), "t3-release-changelog-"));
+  const fixtureRoot = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-release-changelog-"));
 
   try {
     runGit(fixtureRoot, "init");
@@ -156,6 +156,6 @@ it("does not attribute upstream commits to the fork after a rebase", () => {
       forkCommit,
     ]);
   } finally {
-    NodeFs.rmSync(fixtureRoot, { recursive: true, force: true });
+    NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
   }
 });
