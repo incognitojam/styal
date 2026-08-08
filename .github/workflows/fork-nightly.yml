@@ -168,449 +168,32 @@ jobs:
           steps.candidate.outputs.has_changes == 'true'
         run: git push --force-with-lease origin HEAD:refs/heads/nightly-candidate
 
-  build_macos:
-    name: Build macOS arm64
+  build_desktop:
+    name: Build desktop artifacts
     needs: prepare
     if: >-
       github.event_name != 'pull_request' &&
       needs.prepare.outputs.has_changes == 'true'
-    runs-on: blacksmith-6vcpu-macos-15
-    timeout-minutes: 100
-    steps:
-      - name: Check Apple notarization queue
-        if: >-
-          github.event_name != 'workflow_dispatch' ||
-          inputs.force_notarization != true
-        shell: bash
-        env:
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-        run: |
-          set -euo pipefail
-          umask 077
-
-          required=(APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER)
-          for name in "${required[@]}"; do
-            if [[ -z "${!name:-}" ]]; then
-              echo "Missing required Apple notarization configuration: $name" >&2
-              exit 1
-            fi
-          done
-
-          key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
-          printf '%s' "$APPLE_API_KEY" > "$key_path"
-          history_json=$(xcrun notarytool history \
-            --key "$key_path" \
-            --key-id "$APPLE_API_KEY_ID" \
-            --issuer "$APPLE_API_ISSUER" \
-            --output-format json)
-
-          active_submission=$(jq -r '
-            .history
-            | map(select(
-                .name == "T3 Code (yngatech Nightly).zip" and
-                .status == "In Progress"
-              ))
-            | sort_by(.createdDate)
-            | last
-            | if . == null then empty else [.id, .createdDate] | @tsv end
-          ' <<< "$history_json")
-
-          if [[ -n "$active_submission" ]]; then
-            IFS=$'\t' read -r submission_id created_date <<< "$active_submission"
-            echo "::error title=Apple notarization already in progress::Submission $submission_id from $created_date is still in progress. Wait for Apple to finish, or manually dispatch with force_notarization enabled."
-            exit 1
-          fi
-
-      - name: Checkout verified candidate
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.prepare.outputs.ref }}
-          fetch-depth: 0
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
-
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: |
-            args:
-              - --filter=@t3tools/desktop...
-              - --filter=t3...
-              - --filter=@t3tools/scripts...
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin
-
-      - name: Align package versions
-        run: node scripts/update-release-package-versions.ts "${{ needs.prepare.outputs.version }}"
-
-      - name: Build signed desktop artifact
-        timeout-minutes: 90
-        shell: bash
-        env:
-          T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
-          MACOS_PROVISIONING_PROFILE: ${{ secrets.MACOS_PROVISIONING_PROFILE }}
-          T3CODE_CLERK_PASSKEY_RP_DOMAINS: ${{ vars.CLERK_PASSKEY_RP_DOMAINS }}
-        run: |
-          set -euo pipefail
-
-          required=(
-            CSC_LINK
-            CSC_KEY_PASSWORD
-            APPLE_API_KEY
-            APPLE_API_KEY_ID
-            APPLE_API_ISSUER
-            APPLE_TEAM_ID
-            MACOS_PROVISIONING_PROFILE
-            T3CODE_CLERK_PASSKEY_RP_DOMAINS
-          )
-          for name in "${required[@]}"; do
-            if [[ -z "${!name:-}" ]]; then
-              echo "Missing required Apple signing configuration: $name" >&2
-              exit 1
-            fi
-          done
-
-          key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
-          printf '%s' "$APPLE_API_KEY" > "$key_path"
-          export APPLE_API_KEY="$key_path"
-
-          profile_path="$RUNNER_TEMP/t3code.provisionprofile"
-          profile_plist="$RUNNER_TEMP/t3code-profile.plist"
-          printf '%s' "$MACOS_PROVISIONING_PROFILE" | base64 -D > "$profile_path"
-          security cms -D -i "$profile_path" > "$profile_plist"
-
-          expected_app_id="$APPLE_TEAM_ID.dev.incognitojam.t3code"
-          profile_app_id=$(/usr/libexec/PlistBuddy \
-            -c 'Print :Entitlements:com.apple.application-identifier' \
-            "$profile_plist")
-          if [[ "$profile_app_id" != "$expected_app_id" ]]; then
-            echo "Provisioning profile app ID is '$profile_app_id'; expected '$expected_app_id'." >&2
-            exit 1
-          fi
-
-          if ! /usr/libexec/PlistBuddy \
-            -c 'Print :Entitlements:com.apple.developer.associated-domains' \
-            "$profile_plist" >/dev/null; then
-            echo "Provisioning profile does not enable Associated Domains." >&2
-            exit 1
-          fi
-
-          export T3CODE_APPLE_TEAM_ID="$APPLE_TEAM_ID"
-          export T3CODE_MACOS_PROVISIONING_PROFILE="$profile_path"
-
-          vp run dist:desktop:artifact \
-            --platform mac \
-            --target dmg \
-            --arch arm64 \
-            --build-version "${{ needs.prepare.outputs.version }}" \
-            --signed \
-            --verbose
-
-      - name: Collect release assets
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p release-publish
-
-          shopt -s nullglob
-          for pattern in \
-            "release/*.dmg" \
-            "release/*.zip" \
-            "release/*.blockmap" \
-            "release/*.yml"; do
-            for file in $pattern; do
-              [[ "$(basename "$file")" == "builder-debug.yml" ]] && continue
-              cp "$file" release-publish/
-            done
-          done
-
-          test -n "$(find release-publish -maxdepth 1 -type f -print -quit)"
-
-      - name: Upload release assets
-        uses: actions/upload-artifact@v7
-        with:
-          name: desktop-mac-arm64
-          path: release-publish/*
-          if-no-files-found: error
-
-  build_linux:
-    name: Build Linux x64
-    needs: prepare
-    if: >-
-      github.event_name != 'pull_request' &&
-      needs.prepare.outputs.has_changes == 'true'
-    runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 100
-    steps:
-      - name: Checkout verified candidate
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.prepare.outputs.ref }}
-          fetch-depth: 0
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
-
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: |
-            args:
-              - --filter=@t3tools/desktop...
-              - --filter=t3...
-              - --filter=@t3tools/scripts...
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-gnu
-
-      - name: Align package versions
-        run: node scripts/update-release-package-versions.ts "${{ needs.prepare.outputs.version }}"
-
-      - name: Install ImageMagick
-        shell: bash
-        run: |
-          if ! command -v magick >/dev/null 2>&1 && ! command -v convert >/dev/null 2>&1; then
-              sudo apt-get update
-              sudo apt-get install -y imagemagick
-          fi
-
-          if command -v magick >/dev/null 2>&1; then
-              magick -version
-          else
-              convert -version
-          fi
-
-      - name: Build unsigned desktop artifact
-        timeout-minutes: 90
-        shell: bash
-        env:
-          T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-
-          vp run dist:desktop:artifact \
-            --platform linux \
-            --target AppImage \
-            --arch x64 \
-            --build-version "${{ needs.prepare.outputs.version }}" \
-            --verbose
-
-      - name: Collect release assets
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p release-publish
-
-          shopt -s nullglob
-          for pattern in \
-            "release/*.AppImage" \
-            "release/*.blockmap" \
-            "release/*.yml"; do
-            for file in $pattern; do
-              [[ "$(basename "$file")" == "builder-debug.yml" ]] && continue
-              cp "$file" release-publish/
-            done
-          done
-
-          test -n "$(find release-publish -maxdepth 1 -type f -print -quit)"
-
-      - name: Upload release assets
-        uses: actions/upload-artifact@v7
-        with:
-          name: desktop-linux-x64
-          path: release-publish/*
-          if-no-files-found: error
-
-  # node-pty publishes no Linux prebuilt and the WSL backend runs under the
-  # distro's own (Linux) Node, which can't load the Windows/Electron binary. We
-  # build the Linux pty.node here, on Linux, and hand it to the Windows packaging
-  # job — the Windows artifact then ships a ready WSL backend binary with no
-  # cross-compiling and no first-launch compiler/node-gyp/network on the user's
-  # machine. node-pty is N-API, so one binary works across all WSL Node versions.
-  build_wsl_node_pty:
-    name: Build WSL node-pty x64
-    needs: prepare
-    if: >-
-      github.event_name != 'pull_request' &&
-      needs.prepare.outputs.has_changes == 'true'
-    runs-on: blacksmith-2vcpu-ubuntu-2404
-    timeout-minutes: 15
-    steps:
-      - name: Checkout verified candidate
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.prepare.outputs.ref }}
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
-
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: |
-            args:
-              - --filter=t3...
-
-      - name: Build node-pty linux-x64 prebuild
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Resolve node-pty from apps/server (where it's a dependency) and build
-          # its native binary from source for Linux. node-addon-api resolves from
-          # node-pty's own dependency tree, so node-gyp has everything it needs.
-          pty_pkg="$(node -e "console.log(require.resolve('node-pty/package.json', { paths: ['$GITHUB_WORKSPACE/apps/server'] }))")"
-          pty_dir="$(dirname "$pty_pkg")"
-          ( cd "$pty_dir" && npx --yes node-gyp rebuild )
-          mkdir -p wsl-prebuild
-          cp "$pty_dir/build/Release/pty.node" wsl-prebuild/pty.node
-          file wsl-prebuild/pty.node
-
-      - name: Upload node-pty linux-x64 prebuild
-        uses: actions/upload-artifact@v7
-        with:
-          name: wsl-node-pty-x64
-          path: wsl-prebuild/pty.node
-          if-no-files-found: error
-
-  build_windows:
-    name: Build Windows x64
-    needs: [prepare, build_wsl_node_pty]
-    if: >-
-      github.event_name != 'pull_request' &&
-      needs.prepare.outputs.has_changes == 'true'
-    runs-on: blacksmith-16vcpu-windows-2025
-    timeout-minutes: 100
-    steps:
-      - name: Checkout verified candidate
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.prepare.outputs.ref }}
-          fetch-depth: 0
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
-
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: |
-            args:
-              - --filter=@t3tools/desktop...
-              - --filter=t3...
-              - --filter=@t3tools/scripts...
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
-
-      - name: Align package versions
-        run: node scripts/update-release-package-versions.ts "${{ needs.prepare.outputs.version }}"
-
-      - name: Download WSL node-pty prebuild
-        uses: actions/download-artifact@v8
-        with:
-          name: wsl-node-pty-x64
-          path: wsl-prebuild
-
-      - name: Install Spectre-mitigated MSVC libs
-        shell: pwsh
-        run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $installPath = & $vswhere -products * -latest -property installationPath
-          $setupExe = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
-          $proc = Start-Process -FilePath $setupExe `
-            -ArgumentList "modify", "--installPath", "`"$installPath`"", "--add", `
-            "Microsoft.VisualStudio.Component.VC.Tools.x86.x64.Spectre", "--quiet", "--norestart" `
-            -Wait -PassThru -NoNewWindow
-          if ($null -eq $proc -or $proc.ExitCode -ne 0) {
-            $code = if ($null -ne $proc) { $proc.ExitCode } else { 1 }
-            Write-Error "Visual Studio Installer failed with exit code $code"
-            exit $code
-          }
-
-      # Unsigned: the fork has no Windows signing certificate or Azure Trusted
-      # Signing account. Users see a one-time SmartScreen warning on install.
-      - name: Build unsigned desktop artifact
-        timeout-minutes: 90
-        shell: bash
-        env:
-          T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-
-          vp run dist:desktop:artifact \
-            --platform win \
-            --target nsis \
-            --arch x64 \
-            --build-version "${{ needs.prepare.outputs.version }}" \
-            --wsl-prebuild "$GITHUB_WORKSPACE/wsl-prebuild/pty.node" \
-            --verbose
-
-      - name: Collect release assets
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p release-publish
-
-          shopt -s nullglob
-          for pattern in \
-            "release/*.exe" \
-            "release/*.blockmap" \
-            "release/*.yml"; do
-            for file in $pattern; do
-              [[ "$(basename "$file")" == "builder-debug.yml" ]] && continue
-              cp "$file" release-publish/
-            done
-          done
-
-          test -n "$(find release-publish -maxdepth 1 -type f -print -quit)"
-
-      - name: Upload release assets
-        uses: actions/upload-artifact@v7
-        with:
-          name: desktop-win-x64
-          path: release-publish/*
-          if-no-files-found: error
+    uses: ./.github/workflows/fork-desktop-build.yml
+    with:
+      ref: ${{ needs.prepare.outputs.ref }}
+      version: ${{ needs.prepare.outputs.version }}
+      target: all
+      sign_macos: true
+      check_notarization: true
+      force_notarization: ${{ inputs.force_notarization == true }}
+    secrets: inherit
 
   release:
     name: Publish GitHub prerelease
-    needs: [prepare, build_macos, build_linux, build_windows]
+    needs: [prepare, build_desktop]
     permissions:
       contents: write
       issues: write
     if: >-
       github.event_name != 'pull_request' &&
       needs.prepare.outputs.has_changes == 'true' &&
-      needs.build_macos.result == 'success' &&
-      needs.build_linux.result == 'success' &&
-      needs.build_windows.result == 'success'
+      needs.build_desktop.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -791,7 +374,7 @@ jobs:
 
   notify_failure:
     name: Notify Discord of failure
-    needs: [prepare, build_wsl_node_pty, build_macos, build_linux, build_windows, release]
+    needs: [prepare, build_desktop, release]
     if: >-
       ${{
         github.event_name != 'pull_request' &&
@@ -799,14 +382,8 @@ jobs:
         (
           needs.prepare.result == 'failure' ||
           needs.prepare.result == 'cancelled' ||
-          needs.build_wsl_node_pty.result == 'failure' ||
-          needs.build_wsl_node_pty.result == 'cancelled' ||
-          needs.build_macos.result == 'failure' ||
-          needs.build_macos.result == 'cancelled' ||
-          needs.build_linux.result == 'failure' ||
-          needs.build_linux.result == 'cancelled' ||
-          needs.build_windows.result == 'failure' ||
-          needs.build_windows.result == 'cancelled' ||
+          needs.build_desktop.result == 'failure' ||
+          needs.build_desktop.result == 'cancelled' ||
           needs.release.result == 'failure' ||
           needs.release.result == 'cancelled'
         )
@@ -823,9 +400,6 @@ jobs:
             `${{ github.sha }}` · `${{ github.actor }}`
 
             Prepare: `${{ needs.prepare.result }}`
-            WSL node-pty build: `${{ needs.build_wsl_node_pty.result }}`
-            macOS build: `${{ needs.build_macos.result }}`
-            Linux build: `${{ needs.build_linux.result }}`
-            Windows build: `${{ needs.build_windows.result }}`
+            Desktop builds: `${{ needs.build_desktop.result }}`
             Release: `${{ needs.release.result }}`
           embed-color: 15158332
