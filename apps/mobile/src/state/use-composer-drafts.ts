@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
+  type ComposerDraftCommon,
   ModelSelection as ModelSelectionSchema,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   ProviderInteractionMode as ProviderInteractionModeSchema,
@@ -100,6 +101,10 @@ const EMPTY_DRAFT: ComposerDraft = {
 export const composerDraftsAtom = Atom.make<Record<string, ComposerDraft>>({}).pipe(
   Atom.keepAlive,
   Atom.withLabel("mobile:composer-drafts"),
+);
+export const composerDraftsLoadedAtom = Atom.make(false).pipe(
+  Atom.keepAlive,
+  Atom.withLabel("mobile:composer-drafts-loaded"),
 );
 
 let loadPromise: Promise<void> | null = null;
@@ -265,6 +270,9 @@ export function ensureComposerDraftsLoaded(): void {
         }),
       );
       // Draft loading is best-effort; in-memory drafts still keep working.
+    })
+    .finally(() => {
+      appAtomRegistry.set(composerDraftsLoadedAtom, true);
     });
 }
 
@@ -388,6 +396,41 @@ export function updateComposerDraftSettings(
       ...current,
       [draftKey]: draft,
     };
+  });
+}
+
+/** Applies the server-owned draft section without touching device-local assets. */
+export function applySyncedComposerDraftCommon(
+  draftKey: string,
+  common: ComposerDraftCommon | null,
+): void {
+  updateComposerDrafts((current) => {
+    const existing = normalizeDraft(current[draftKey]);
+    const {
+      modelSelection: _modelSelection,
+      runtimeMode: _runtimeMode,
+      interactionMode: _interactionMode,
+      ...deviceLocal
+    } = existing;
+    const draft: ComposerDraft = {
+      ...deviceLocal,
+      text: common?.text ?? "",
+      ...(common?.modelSelection === null || common?.modelSelection === undefined
+        ? {}
+        : { modelSelection: common.modelSelection }),
+      ...(common?.runtimeMode === null || common?.runtimeMode === undefined
+        ? {}
+        : { runtimeMode: common.runtimeMode }),
+      ...(common?.interactionMode === null || common?.interactionMode === undefined
+        ? {}
+        : { interactionMode: common.interactionMode }),
+    };
+    if (isEmptyDraft(draft)) {
+      const next = { ...current };
+      delete next[draftKey];
+      return next;
+    }
+    return { ...current, [draftKey]: draft };
   });
 }
 
