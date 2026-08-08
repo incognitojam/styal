@@ -7,6 +7,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
 import {
+  SourceControlProviderError,
   SourceControlRepositoryError,
   type SourceControlCloneRepositoryInput,
   type SourceControlCloneRepositoryResult,
@@ -16,6 +17,10 @@ import {
   type SourceControlPublishRepositoryResult,
   type SourceControlRepositoryCloneUrls,
   type SourceControlRepositoryInfo,
+  type SourceControlGetIssueInput,
+  type SourceControlIssue,
+  type SourceControlListIssuesInput,
+  type SourceControlListIssuesResult,
   type SourceControlRepositoryLookupInput,
 } from "@t3tools/contracts";
 
@@ -36,6 +41,18 @@ export class SourceControlRepositoryService extends Context.Service<
     readonly publishRepository: (
       input: SourceControlPublishRepositoryInput,
     ) => Effect.Effect<SourceControlPublishRepositoryResult, SourceControlRepositoryError>;
+    /**
+     * Issue browsing resolves the provider from the working directory's remote
+     * rather than an explicit `provider` field, so it keeps the richer
+     * `SourceControlProviderError` (which carries the CLI install/auth detail
+     * the picker's empty state renders).
+     */
+    readonly listIssues: (
+      input: SourceControlListIssuesInput,
+    ) => Effect.Effect<SourceControlListIssuesResult, SourceControlProviderError>;
+    readonly getIssue: (
+      input: SourceControlGetIssueInput,
+    ) => Effect.Effect<SourceControlIssue, SourceControlProviderError>;
   }
 >()("t3/sourceControl/SourceControlRepositoryService") {}
 
@@ -275,7 +292,27 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  const listIssues = Effect.fn("SourceControlRepositoryService.listIssues")(function* (
+    input: SourceControlListIssuesInput,
+  ) {
+    const provider = yield* providers.resolve({ cwd: input.cwd });
+    const issues = yield* provider.listIssues({
+      cwd: input.cwd,
+      ...(input.limit !== undefined ? { limit: input.limit } : {}),
+    });
+    return { provider: provider.kind, issues } satisfies SourceControlListIssuesResult;
+  });
+
+  const getIssue = Effect.fn("SourceControlRepositoryService.getIssue")(function* (
+    input: SourceControlGetIssueInput,
+  ) {
+    const provider = yield* providers.resolve({ cwd: input.cwd });
+    return yield* provider.getIssue({ cwd: input.cwd, number: input.number });
+  });
+
   return SourceControlRepositoryService.of({
+    listIssues,
+    getIssue,
     lookupRepository: (input) =>
       lookupRepository(input).pipe(mapRepositoryError("lookupRepository", input.provider)),
     cloneRepository: (input) =>
