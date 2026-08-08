@@ -123,6 +123,7 @@ describe("terminalContext", () => {
         },
       ],
       elementContexts: [],
+      issueContexts: [],
     });
   });
 
