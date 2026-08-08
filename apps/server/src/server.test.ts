@@ -7358,6 +7358,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           ) =>
             Effect.succeed({
               status: "started" as const,
+              runId: "run-setup",
               scriptId: "setup",
               scriptName: "Setup",
               terminalId: "setup-setup",
@@ -7431,16 +7432,10 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           ),
         );
 
-        assert.equal(response.sequence, 5);
+        assert.equal(response.sequence, 3);
         assert.deepEqual(
           dispatchedCommands.map((command) => command.type),
-          [
-            "thread.create",
-            "thread.meta.update",
-            "thread.activity.append",
-            "thread.activity.append",
-            "thread.turn.start",
-          ],
+          ["thread.create", "thread.meta.update", "thread.turn.start"],
         );
         assert.deepEqual(createWorktree.mock.calls[0]?.[0], {
           cwd: "/tmp/project",
@@ -7472,15 +7467,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         });
         assert.deepEqual(refreshStatus.mock.calls[0]?.[0], "/tmp/bootstrap-worktree");
 
-        const setupActivities = dispatchedCommands.filter(
-          (command): command is Extract<OrchestrationCommand, { type: "thread.activity.append" }> =>
-            command.type === "thread.activity.append",
-        );
-        assert.deepEqual(
-          setupActivities.map((command) => command.activity.kind),
-          ["setup-script.requested", "setup-script.started"],
-        );
-        const finalCommand = dispatchedCommands[4];
+        const finalCommand = dispatchedCommands[2];
         assertTrue(finalCommand?.type === "thread.turn.start");
         if (finalCommand?.type === "thread.turn.start") {
           assert.equal(finalCommand.bootstrap, undefined);
@@ -7592,7 +7579,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("records setup-script failures without aborting bootstrap turn start", () =>
+  it.effect("records setup-script resolution failures without aborting bootstrap turn start", () =>
     Effect.gen(function* () {
       const dispatchedCommands: Array<OrchestrationCommand> = [];
       const createWorktree = vi.fn(
@@ -7614,8 +7601,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             new ProjectSetupScriptRunner.ProjectSetupScriptOperationError({
               threadId: input.threadId,
               worktreePath: input.worktreePath,
-              operation: "openTerminal",
-              cause: { message: "pty unavailable" },
+              operation: "resolveProject",
+              cause: { message: "project unavailable" },
             }),
           ),
       );
@@ -7690,14 +7677,14 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       );
       assert.equal(setupFailureActivity?.activity.kind, "setup-script.failed");
       assert.deepEqual(setupFailureActivity?.activity.payload, {
-        detail: "pty unavailable",
+        detail: "project unavailable",
         worktreePath: "/tmp/bootstrap-worktree",
       });
       assertTrue(dispatchedCommands.every((command) => command.type !== "thread.delete"));
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("does not misattribute setup activity dispatch failures as setup launch failures", () =>
+  it.effect("does not duplicate runner-owned setup activities in bootstrap", () =>
     Effect.gen(function* () {
       const dispatchedCommands: Array<OrchestrationCommand> = [];
       const createWorktree = vi.fn(
@@ -7717,41 +7704,24 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         ) =>
           Effect.succeed({
             status: "started" as const,
+            runId: "run-setup",
             scriptId: "setup",
             scriptName: "Setup",
             terminalId: "setup-setup",
             cwd: "/tmp/bootstrap-worktree",
           }),
       );
-      let setupActivityAppendAttempt = 0;
-
       yield* buildAppUnderTest({
         layers: {
           gitVcsDriver: {
             createWorktree,
           },
           orchestrationEngine: {
-            dispatch: (command) => {
-              if (
-                command.type === "thread.activity.append" &&
-                command.activity.kind.startsWith("setup-script.")
-              ) {
-                setupActivityAppendAttempt += 1;
-                if (setupActivityAppendAttempt === 2) {
-                  return Effect.fail(
-                    new OrchestrationListenerCallbackError({
-                      listener: "domain-event",
-                      detail: "failed to append setup-script.started activity",
-                    }),
-                  );
-                }
-              }
-
-              return Effect.sync(() => {
+            dispatch: (command) =>
+              Effect.sync(() => {
                 dispatchedCommands.push(command);
                 return { sequence: dispatchedCommands.length };
-              });
-            },
+              }),
             readEvents: () => Stream.empty,
           },
           projectSetupScriptRunner: {
@@ -7800,19 +7770,16 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         ),
       );
 
-      assert.equal(response.sequence, 4);
+      assert.equal(response.sequence, 3);
       assert.deepEqual(
         dispatchedCommands.map((command) => command.type),
-        ["thread.create", "thread.meta.update", "thread.activity.append", "thread.turn.start"],
+        ["thread.create", "thread.meta.update", "thread.turn.start"],
       );
       const setupActivities = dispatchedCommands.filter(
         (command): command is Extract<OrchestrationCommand, { type: "thread.activity.append" }> =>
           command.type === "thread.activity.append",
       );
-      assert.deepEqual(
-        setupActivities.map((command) => command.activity.kind),
-        ["setup-script.requested"],
-      );
+      assert.deepEqual(setupActivities, []);
       assertTrue(
         setupActivities.every((command) => command.activity.kind !== "setup-script.failed"),
       );
