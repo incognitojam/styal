@@ -14,6 +14,7 @@ import {
   AuthAccessStreamError,
   type AuthAccessStreamEvent,
   type AuthEnvironmentScope,
+  ComposerDraftSyncError,
   AuthSessionId,
   CommandId,
   type DiscoveredLocalServerList,
@@ -65,6 +66,7 @@ import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as CommandOutputQuery from "./orchestration/CommandOutputQuery.ts";
+import * as ComposerDrafts from "./persistence/ComposerDrafts.ts";
 import * as ServerConfig from "./config.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
@@ -419,6 +421,7 @@ const makeWsRpcLayer = (
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const usage = yield* UsageService.UsageService;
+      const composerDrafts = yield* ComposerDrafts.ComposerDraftRepository;
       const relayClient = yield* RelayClient.RelayClient;
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({
@@ -991,6 +994,32 @@ const makeWsRpcLayer = (
           .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
 
       return WsRpcGroup.of({
+        [WS_METHODS.composerDraftUpdate]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.composerDraftUpdate,
+            composerDrafts
+              .update(input)
+              .pipe(
+                Effect.mapError(
+                  () =>
+                    new ComposerDraftSyncError({ message: "Failed to save the composer draft." }),
+                ),
+              ),
+            { threadId: input.threadId },
+          ),
+        [WS_METHODS.subscribeComposerDraft]: (input) =>
+          observeRpcStream(
+            WS_METHODS.subscribeComposerDraft,
+            composerDrafts
+              .subscribe(input)
+              .pipe(
+                Stream.mapError(
+                  () =>
+                    new ComposerDraftSyncError({ message: "Composer draft sync was interrupted." }),
+                ),
+              ),
+            { threadId: input.threadId },
+          ),
         [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.dispatchCommand,
@@ -1029,6 +1058,26 @@ const makeWsRpcLayer = (
                   )
                 : false;
               const result = yield* dispatchNormalizedCommand(normalizedCommand);
+              if (
+                normalizedCommand.type === "thread.turn.start" &&
+                normalizedCommand.composerDraftRevision !== undefined
+              ) {
+                yield* composerDrafts
+                  .update({
+                    threadId: normalizedCommand.threadId,
+                    baseRevision: normalizedCommand.composerDraftRevision,
+                    common: null,
+                    clientMutationId: `turn:${normalizedCommand.commandId}`,
+                  })
+                  .pipe(
+                    Effect.catch((error) =>
+                      Effect.logWarning("failed to clear the sent composer draft", {
+                        threadId: normalizedCommand.threadId,
+                        error: error.message,
+                      }),
+                    ),
+                  );
+              }
               if (parkingCommand) {
                 const parkingKind = parkingCommand.type === "thread.archive" ? "archive" : "settle";
                 if (shouldStopSessionAfterCommand) {
@@ -2252,6 +2301,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const pullRequests = yield* PullRequestService.PullRequestService;
+    const composerDrafts = yield* ComposerDrafts.ComposerDraftRepository;
     return HttpRouter.add(
       "GET",
       "/ws",
@@ -2272,6 +2322,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
         }).pipe(
           Effect.provide(
             makeWsRpcLayer(session, previewAutomationBroker).pipe(
+              Layer.provide(Layer.succeed(ComposerDrafts.ComposerDraftRepository, composerDrafts)),
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(ProviderMaintenanceRunner.layer),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
