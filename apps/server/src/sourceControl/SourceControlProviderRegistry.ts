@@ -82,6 +82,10 @@ function unsupportedProvider(
         reference: SourceControlProvider.transportSafeSourceControlErrorValue(input.reference),
         detail: `No ${kind} source control provider is registered.`,
       }),
+    ...SourceControlProvider.unsupportedIssueOperations(
+      kind,
+      `No ${kind} source control provider is registered.`,
+    ),
     createChangeRequest: (input) =>
       new SourceControlProviderError({
         provider: kind,
@@ -167,6 +171,16 @@ function bindProviderContext(
       }),
     getChangeRequest: (input) =>
       provider.getChangeRequest({
+        ...input,
+        context: input.context ?? context,
+      }),
+    listIssues: (input) =>
+      provider.listIssues({
+        ...input,
+        context: input.context ?? context,
+      }),
+    getIssue: (input) =>
+      provider.getIssue({
         ...input,
         context: input.context ?? context,
       }),
