@@ -239,6 +239,50 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       assert.deepEqual(unsettledRows, [{ settledOverride: "active", settledAt: null }]);
     }),
   );
+
+  it.effect("removes the composer draft when its thread is deleted", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const threadId = ThreadId.make("thread-with-composer-draft");
+      const now = "2026-01-01T00:00:00.000Z";
+      const commonJson =
+        '{"text":"delete me","modelSelection":null,"runtimeMode":null,"interactionMode":null}';
+
+      yield* sql`
+        INSERT INTO composer_drafts (
+          thread_id, revision, common_json, updated_at, client_mutation_id
+        ) VALUES (
+          ${threadId}, 1, ${commonJson}, ${now}, 'test:delete-composer-draft'
+        )
+      `;
+      yield* eventStore.append({
+        type: "thread.deleted",
+        eventId: EventId.make("evt-delete-composer-draft"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-delete-composer-draft"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-delete-composer-draft"),
+        metadata: {},
+        payload: {
+          threadId,
+          deletedAt: now,
+        },
+      });
+
+      yield* projectionPipeline.bootstrap;
+
+      const remaining = yield* sql<{ readonly count: number }>`
+        SELECT COUNT(*) AS count
+        FROM composer_drafts
+        WHERE thread_id = ${threadId}
+      `;
+      assert.deepEqual(remaining, [{ count: 0 }]);
+    }),
+  );
 });
 
 it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-base-")))(
