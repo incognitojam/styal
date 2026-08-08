@@ -685,18 +685,11 @@ jobs:
           done < <(git rev-list --reverse "${previous_upstream_ref}..${UPSTREAM_REF}")
 
           fork_changes=()
-          if [[ -n "$PREVIOUS_TAG" ]]; then
-            while IFS= read -r sha; do
-              fork_changes+=("$sha")
-            done < <(
-              git rev-list --reverse --cherry-pick --right-only \
-                "${PREVIOUS_TAG}...${FORK_SOURCE_REF}"
-            )
-          else
-            while IFS= read -r sha; do
-              fork_changes+=("$sha")
-            done < <(git rev-list --reverse "${previous_upstream_ref}..${FORK_SOURCE_REF}")
-          fi
+          while IFS= read -r sha; do
+            fork_changes+=("$sha")
+          done < <(
+            list_fork_release_commits "$PREVIOUS_TAG" "$FORK_SOURCE_REF" "$UPSTREAM_REF"
+          )
 
           rendered_change_count=0
           {
