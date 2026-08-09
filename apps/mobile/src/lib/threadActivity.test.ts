@@ -151,6 +151,42 @@ function makeThread(
 }
 
 describe("buildThreadFeed", () => {
+  it("shows projected file paths and line stats instead of serialized input", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-file-change"),
+      projectId: ProjectId.make("project-1"),
+      title: "File change preview",
+      activities: [
+        makeActivity({
+          id: EventId.make("file-change-completed"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "File change",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          payload: {
+            title: "File change",
+            itemType: "file_change",
+            detail: 'Edit: {"file_path":"/workspace/main.swift"}',
+            status: "completed",
+            data: {
+              files: [{ path: "/workspace/main.swift" }],
+              fileChangeStat: { additions: 2, deletions: 1 },
+            },
+          },
+        }),
+      ],
+    });
+
+    const group = buildThreadFeed(thread)[0];
+    expect(group).toMatchObject({ type: "activity-group" });
+    if (!group || group.type !== "activity-group") return;
+    expect(group.activities[0]).toMatchObject({
+      summary: "File change",
+      detail: "/workspace/main.swift",
+      fileChangeStat: { additions: 2, deletions: 1 },
+    });
+  });
+
   it("keeps historic work entries attributed to their turns", () => {
     const thread = makeThread({
       id: ThreadId.make("thread-1"),
