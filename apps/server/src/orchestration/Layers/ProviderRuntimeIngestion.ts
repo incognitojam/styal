@@ -1494,8 +1494,10 @@ const make = Effect.gen(function* () {
       const pendingTurnStart = yield* projectionTurnRepository.getPendingTurnStartByThreadId({
         threadId: thread.id,
       });
-      const hasPendingTurnStart =
-        Option.isSome(pendingTurnStart) && thread.session?.status === "starting";
+      // A pending start is the lifecycle authority even while the previous
+      // turn is still running: providers can report that old turn ready or
+      // completed before they announce the replacement turn.
+      const hasPendingTurnStart = Option.isSome(pendingTurnStart);
 
       const conflictsWithActiveTurn =
         activeTurnId !== null && eventTurnId !== undefined && !sameId(activeTurnId, eventTurnId);
@@ -1571,7 +1573,9 @@ const make = Effect.gen(function* () {
             case "turn.completed":
               return normalizeRuntimeTurnState(event.payload.state) === "failed"
                 ? "error"
-                : "ready";
+                : hasPendingTurnStart
+                  ? "starting"
+                  : "ready";
             case "session.started":
             case "thread.started":
               // Provider thread/session start notifications can arrive during an
