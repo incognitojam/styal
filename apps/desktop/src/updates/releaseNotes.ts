@@ -71,15 +71,23 @@ function truncateReleaseNoteItem(item: string): string {
   return `${item.slice(0, MAX_RELEASE_NOTE_ITEM_LENGTH - 3).trimEnd()}...`;
 }
 
-function isIgnoredReleaseNoteLine(line: string): boolean {
-  const normalized = line
+function normalizeReleaseNoteLine(line: string): string {
+  return line
     .toLowerCase()
     .replace(/[*_`#]/g, "")
     .trim();
+}
+
+function isCommitListHeading(line: string): boolean {
+  const normalized = normalizeReleaseNoteLine(line);
+  return normalized === "what's changed" || normalized === "whats changed";
+}
+
+function isIgnoredReleaseNoteLine(line: string): boolean {
+  const normalized = normalizeReleaseNoteLine(line);
   return (
     normalized === "" ||
-    normalized === "what's changed" ||
-    normalized === "whats changed" ||
+    isCommitListHeading(line) ||
     normalized === "full changelog" ||
     normalized === "new contributors" ||
     normalized.startsWith("compare: ") ||
@@ -97,6 +105,10 @@ function extractReleaseNoteItems(note: string | null | undefined): ReadonlyArray
       .replace(/^[-*]\s+/, "")
       .replace(/^\d+[.)]\s+/, "")
       .replace(/\s+/g, " ");
+    // Nightly release bodies open with curated highlights and follow with a raw
+    // "What's Changed" commit list; mixing the two styles reads poorly, so keep
+    // only the highlights. Bodies that open with the commit list still use it.
+    if (isCommitListHeading(item) && items.length > 0) break;
     if (isIgnoredReleaseNoteLine(item)) continue;
     items.push(truncateReleaseNoteItem(item));
     if (items.length >= MAX_RELEASE_NOTE_ITEMS_PER_GROUP) break;
