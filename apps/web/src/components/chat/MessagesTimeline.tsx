@@ -72,6 +72,7 @@ import { Button } from "../ui/button";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesCard } from "./ChangedFilesTree";
+import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
 import { shouldAutoExpandChangedFiles } from "./changedFilesPresentation";
 import { keepTimelineEndVisibleAfterOverlayGrowth } from "./timelineScrollAnchoring";
 import { MessageCopyButton } from "./MessageCopyButton";
@@ -2239,10 +2240,18 @@ function workToneIcon(tone: TimelineWorkEntry["tone"]): {
 }
 
 function workEntryPreview(
-  workEntry: Pick<TimelineWorkEntry, "detail" | "command" | "changedFiles">,
+  workEntry: Pick<TimelineWorkEntry, "detail" | "command" | "changedFiles" | "itemType">,
   workspaceRoot: string | undefined,
 ) {
   if (workEntry.command) return workEntry.command;
+  if (workEntry.itemType === "file_change" && (workEntry.changedFiles?.length ?? 0) > 0) {
+    const [firstPath] = workEntry.changedFiles ?? [];
+    if (!firstPath) return null;
+    const displayPath = formatWorkspaceRelativePath(firstPath, workspaceRoot);
+    return workEntry.changedFiles!.length === 1
+      ? displayPath
+      : `${displayPath} +${workEntry.changedFiles!.length - 1} more`;
+  }
   if (workEntry.detail) return workEntry.detail;
   if ((workEntry.changedFiles?.length ?? 0) === 0) return null;
   const [firstPath] = workEntry.changedFiles ?? [];
@@ -2731,6 +2740,10 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const entryIconName =
     showWarningIndicator || showFailedIndicator ? "x" : workEntryIconName(workEntry);
   const displayText = workEntryPreview(workEntry, workspaceRoot) ?? toolWorkEntryHeading(workEntry);
+  const fileChangeStat =
+    workEntry.fileChangeStat && hasNonZeroStat(workEntry.fileChangeStat)
+      ? workEntry.fileChangeStat
+      : null;
   const expandedBody = buildToolCallExpandedBody(workEntry, workspaceRoot);
   const isCommandExecution = workEntry.itemType === "command_execution";
   const canExpand = isCommandExecution || expandedBody !== null;
@@ -2830,6 +2843,14 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           <div className="min-w-0 flex-1 overflow-hidden">
             <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-relaxed">
               <span className={cn("min-w-0 flex-1 truncate", headingClass)}>{displayText}</span>
+              {fileChangeStat ? (
+                <DiffStatLabel
+                  additions={fileChangeStat.additions}
+                  deletions={fileChangeStat.deletions}
+                  layout="inline"
+                  className="shrink-0 text-[11px]"
+                />
+              ) : null}
             </p>
           </div>
           <span
