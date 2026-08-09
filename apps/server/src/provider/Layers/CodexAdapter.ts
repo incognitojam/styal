@@ -42,6 +42,7 @@ import * as EffectCodexSchema from "effect-codex-app-server/schema";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { getCodexServiceTierOptionValue } from "../../codexModelOptions.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import { classifyCommandInteraction } from "../../CommandInteraction.ts";
 
 import {
   ProviderAdapterRequestError,
@@ -1133,17 +1134,31 @@ function mapToRuntimeEvents(
     return completed ? [completed] : [];
   }
 
-  if (
-    event.method === "item/reasoning/summaryPartAdded" ||
-    event.method === "item/commandExecution/terminalInteraction"
-  ) {
+  if (event.method === "item/commandExecution/terminalInteraction") {
+    const payload = readPayload(EffectCodexSchema.V2TerminalInteractionNotification, event.payload);
+    if (!payload) {
+      return [];
+    }
+    const interaction = classifyCommandInteraction(payload.stdin);
+    if (!interaction) {
+      return [];
+    }
+    return [
+      {
+        ...runtimeEventBase(event, canonicalThreadId),
+        type: "command.interaction",
+        payload: { interaction },
+      },
+    ];
+  }
+
+  if (event.method === "item/reasoning/summaryPartAdded") {
     return [
       {
         ...runtimeEventBase(event, canonicalThreadId),
         type: "item.updated",
         payload: {
-          itemType:
-            event.method === "item/reasoning/summaryPartAdded" ? "reasoning" : "command_execution",
+          itemType: "reasoning",
           ...(event.payload !== undefined ? { data: event.payload } : {}),
         },
       },

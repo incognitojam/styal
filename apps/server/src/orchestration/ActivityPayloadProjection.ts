@@ -5,6 +5,8 @@ import type {
 } from "@t3tools/contracts";
 import { deriveToolFileChangeLineStat } from "@t3tools/shared/toolActivity";
 
+import { classifyCommandInteraction, commandInteractionSummary } from "../CommandInteraction.ts";
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -345,6 +347,59 @@ function projectAcpContent(value: unknown): Record<string, unknown> | undefined 
   return summary ? { content: summary } : undefined;
 }
 
+function isCodexTerminalInteractionActivity(
+  activity: OrchestrationThreadActivity,
+  payload: Record<string, unknown>,
+  data: Record<string, unknown>,
+): boolean {
+  if (activity.kind !== "tool.updated" || payload.itemType !== "command_execution") {
+    return false;
+  }
+
+  const expectedKeys = new Set(["itemId", "processId", "stdin", "threadId", "turnId"]);
+  return (
+    Object.keys(data).every((key) => expectedKeys.has(key)) &&
+    typeof data.itemId === "string" &&
+    typeof data.processId === "string" &&
+    typeof data.stdin === "string" &&
+    typeof data.threadId === "string" &&
+    typeof data.turnId === "string"
+  );
+}
+
+function projectCodexTerminalInteraction(
+  activity: OrchestrationThreadActivity,
+  payload: Record<string, unknown>,
+  data: Record<string, unknown>,
+): OrchestrationThreadActivity | null {
+  if (!isCodexTerminalInteractionActivity(activity, payload, data)) {
+    return null;
+  }
+
+  const interaction = classifyCommandInteraction(data.stdin as string);
+  if (!interaction) {
+    return {
+      ...activity,
+      payload: {
+        ...payload,
+        timelineBypass: true,
+        data: {},
+      },
+    };
+  }
+
+  return {
+    ...activity,
+    tone: "info",
+    kind: "command.interaction",
+    summary: commandInteractionSummary(interaction),
+    payload: {
+      interaction,
+      commandItemId: data.itemId,
+    },
+  };
+}
+
 /**
  * Removes activity payload fields that no current client reads while retaining
  * the full payload in persistence and the event store.
@@ -356,6 +411,14 @@ export function projectActivityPayload(
   const data = asRecord(payload?.data);
   if (!payload || !data) {
     return activity;
+  }
+
+  // Older event stores contain Codex terminal-interaction notifications that
+  // were projected as anonymous command updates. Reclassify meaningful input
+  // without shipping stdin, and keep empty status polls out of the timeline.
+  const terminalInteraction = projectCodexTerminalInteraction(activity, payload, data);
+  if (terminalInteraction) {
+    return terminalInteraction;
   }
 
   if (payload.itemType === "mcp_tool_call") {
