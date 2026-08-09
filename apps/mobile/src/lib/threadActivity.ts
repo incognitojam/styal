@@ -8,6 +8,10 @@ import type {
   UserInputQuestion,
 } from "@t3tools/contracts";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+import {
+  deriveToolFileChangeLineStat,
+  type ToolFileChangeLineStat,
+} from "@t3tools/shared/toolActivity";
 
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
@@ -36,6 +40,7 @@ export interface ThreadFeedActivity {
   readonly turnId: TurnId | null;
   readonly summary: string;
   readonly detail: string | null;
+  readonly fileChangeStat?: ToolFileChangeLineStat;
   readonly canExpand: boolean;
   readonly getFullDetail: () => string | null;
   readonly getCopyText: () => string;
@@ -69,6 +74,7 @@ interface WorkLogEntry {
   command?: string;
   rawCommand?: string;
   changedFiles?: ReadonlyArray<string>;
+  fileChangeStat?: ToolFileChangeLineStat;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
   itemType?: ToolLifecycleItemType;
@@ -332,8 +338,11 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
     activity.payload && typeof activity.payload === "object"
       ? (activity.payload as Record<string, unknown>)
       : null;
+  const itemType = extractWorkLogItemType(payload);
   const commandPreview = extractToolCommand(payload);
   const changedFiles = extractChangedFiles(payload);
+  const fileChangeStat =
+    itemType === "file_change" ? deriveToolFileChangeLineStat(payload?.data) : undefined;
   const title = extractToolTitle(payload);
   // task.updated included: terminal bypassed updates (Codex children's only
   // terminal signal) must carry task identity so they collapse per child
@@ -372,7 +381,6 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
           : activity.tone,
     activityKind: activity.kind,
   };
-  const itemType = extractWorkLogItemType(payload);
   const requestKind = extractWorkLogRequestKind(payload);
   if (
     !taskDetailAsLabel &&
@@ -393,6 +401,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (changedFiles.length > 0) {
     entry.changedFiles = changedFiles;
+  }
+  if (fileChangeStat) {
+    entry.fileChangeStat = fileChangeStat;
   }
   if (title) {
     entry.toolTitle = title;
@@ -498,6 +509,7 @@ function mergeDerivedWorkLogEntries(
   next: DerivedWorkLogEntry,
 ): DerivedWorkLogEntry {
   const changedFiles = mergeChangedFiles(previous.changedFiles, next.changedFiles);
+  const fileChangeStat = next.fileChangeStat ?? previous.fileChangeStat;
   const detail = next.detail ?? previous.detail;
   const command = next.command ?? previous.command;
   const rawCommand = next.rawCommand ?? previous.rawCommand;
@@ -515,6 +527,7 @@ function mergeDerivedWorkLogEntries(
     ...(command ? { command } : {}),
     ...(rawCommand ? { rawCommand } : {}),
     ...(changedFiles.length > 0 ? { changedFiles } : {}),
+    ...(fileChangeStat ? { fileChangeStat } : {}),
     ...(toolTitle ? { toolTitle } : {}),
     ...(itemType ? { itemType } : {}),
     ...(requestKind ? { requestKind } : {}),
@@ -695,9 +708,16 @@ function memoizeValue<T>(build: () => T): () => T {
 }
 
 function workEntryPreview(
-  workEntry: Pick<WorkLogEntry, "detail" | "command" | "changedFiles">,
+  workEntry: Pick<WorkLogEntry, "detail" | "command" | "changedFiles" | "itemType">,
 ): string | null {
   if (workEntry.command) return workEntry.command;
+  if (workEntry.itemType === "file_change" && (workEntry.changedFiles?.length ?? 0) > 0) {
+    const [firstPath] = workEntry.changedFiles ?? [];
+    if (!firstPath) return null;
+    return workEntry.changedFiles!.length === 1
+      ? firstPath
+      : `${firstPath} +${workEntry.changedFiles!.length - 1} more`;
+  }
   if (workEntry.detail) return workEntry.detail;
   if ((workEntry.changedFiles?.length ?? 0) === 0) return null;
   const [firstPath] = workEntry.changedFiles ?? [];
@@ -1529,6 +1549,7 @@ export function buildThreadFeed(
               turnId: entry.turnId,
               summary,
               detail,
+              ...(entry.fileChangeStat ? { fileChangeStat: entry.fileChangeStat } : {}),
               canExpand: workEntryHasExpandedBody(entry),
               getFullDetail,
               getCopyText,
