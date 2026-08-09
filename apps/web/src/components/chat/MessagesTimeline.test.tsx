@@ -756,6 +756,37 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("C:/Users/mike/dev-stuff/t3code/apps/web/src/session-logic.ts");
   });
 
+  it("shows structured file-change previews instead of serialized tool input", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-file-change",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-file-change",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "File change",
+              toolTitle: "File change",
+              tone: "tool",
+              itemType: "file_change",
+              detail: 'Edit: {"file_path":"/workspace/tools/main.swift"}',
+              changedFiles: ["/workspace/tools/main.swift"],
+              fileChangeStat: { additions: 2, deletions: 1 },
+            },
+          },
+        ]}
+        workspaceRoot="/workspace"
+      />,
+    );
+
+    expect(markup).toContain("workspace/tools/main.swift");
+    expect(markup).toContain("2 additions, 1 deletions");
+    expect(markup).not.toContain("file_path");
+  });
+
   it("renders review comment contexts as structured cards instead of raw tags", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
