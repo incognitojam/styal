@@ -1652,6 +1652,78 @@ describe("ProviderRuntimeIngestion", () => {
     expect(threadAfterSteer.latestTurn?.state).toBe("running");
   });
 
+  effectIt.effect(
+    "keeps a pending steer in progress when the superseded turn completes first",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* Effect.promise(() => createHarness());
+        const threadId = asThreadId("thread-1");
+        const oldTurnId = asTurnId("turn-before-pending-steer");
+
+        harness.emit({
+          type: "turn.started",
+          eventId: asEventId("evt-turn-started-before-pending-steer"),
+          provider: ProviderDriverKind.make("codex"),
+          createdAt: "2026-01-01T00:00:00.000Z",
+          threadId,
+          turnId: oldTurnId,
+        });
+        yield* Effect.promise(() => harness.drain());
+
+        yield* harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make("cmd-pending-steer-before-old-completion"),
+          threadId,
+          message: {
+            messageId: asMessageId("msg-pending-steer-before-old-completion"),
+            role: "user",
+            text: "continue with this follow-up",
+            attachments: [],
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt: "2026-01-01T00:00:01.000Z",
+        });
+
+        harness.emit({
+          type: "session.state.changed",
+          eventId: asEventId("evt-session-ready-after-pending-steer"),
+          provider: ProviderDriverKind.make("codex"),
+          createdAt: "2026-01-01T00:00:02.000Z",
+          threadId,
+          payload: { state: "ready" },
+        });
+        yield* Effect.promise(() => harness.drain());
+
+        let thread = (yield* Effect.promise(() => harness.readModel())).threads.find(
+          (entry) => entry.id === threadId,
+        );
+        expect(thread?.session?.status).toBe("starting");
+        expect(thread?.session?.activeTurnId).toBeNull();
+        expect(thread?.latestTurn?.state).toBe("running");
+
+        harness.emit({
+          type: "turn.completed",
+          eventId: asEventId("evt-old-turn-completed-after-pending-steer"),
+          provider: ProviderDriverKind.make("codex"),
+          createdAt: "2026-01-01T00:00:03.000Z",
+          threadId,
+          turnId: oldTurnId,
+          status: "completed",
+        });
+        yield* Effect.promise(() => harness.drain());
+
+        thread = (yield* Effect.promise(() => harness.readModel())).threads.find(
+          (entry) => entry.id === threadId,
+        );
+        expect(thread?.session?.status).toBe("starting");
+        expect(thread?.session?.activeTurnId).toBeNull();
+        expect(thread?.latestTurn?.turnId).toBe(oldTurnId);
+        expect(thread?.latestTurn?.state).toBe("running");
+        expect(thread?.latestTurn?.completedAt).toBeNull();
+      }),
+  );
+
   it("does not mark the source proposed plan implemented for an unrelated turn.started when no thread active turn is tracked", async () => {
     const harness = await createHarness();
     const sourceThreadId = asThreadId("thread-plan");
