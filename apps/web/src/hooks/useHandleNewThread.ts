@@ -225,7 +225,7 @@ export function useNewThreadHandler() {
               getComposerDraft(emptyStoredDraftThread.draftId),
             );
             if (openedMeanwhile || promotedMeanwhile || remappedMeanwhile || investedMeanwhile) {
-              return;
+              return null;
             }
             workspaceContext = {
               branch: null,
@@ -275,14 +275,14 @@ export function useNewThreadHandler() {
             routeTargetAfterWrites?.kind === "draft" &&
             routeTargetAfterWrites.draftId === emptyStoredDraftThread.draftId
           ) {
-            return reusableStoredDraftThread.draftId;
+            return emptyStoredDraftThread.draftId;
           }
           await router.navigate({
             to: "/draft/$draftId",
             params: { draftId: emptyStoredDraftThread.draftId },
             replace: options?.replace ?? false,
           });
-          return reusableStoredDraftThread.draftId;
+          return emptyStoredDraftThread.draftId;
         })();
       }
 
@@ -352,7 +352,7 @@ export function useNewThreadHandler() {
             params: { draftId: racedDraft.draftId },
             replace: options?.replace ?? false,
           });
-          return;
+          return racedDraft.draftId;
         }
         setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, draftId, {
           threadId,
