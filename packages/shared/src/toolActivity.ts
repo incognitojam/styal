@@ -14,6 +14,71 @@ function asTrimmedString(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+export interface ToolFileChangeLineStat {
+  readonly additions: number;
+  readonly deletions: number;
+}
+
+function splitLines(value: string): string[] {
+  if (value.length === 0) {
+    return [];
+  }
+  const lines = value.split(/\r\n|\r|\n/u);
+  if (lines.at(-1) === "") {
+    lines.pop();
+  }
+  return lines;
+}
+
+function lineChangeStat(oldValue: string, newValue: string): ToolFileChangeLineStat {
+  const oldLines = splitLines(oldValue);
+  const newLines = splitLines(newValue);
+  if (oldLines.length * newLines.length > 40_000) {
+    return { additions: newLines.length, deletions: oldLines.length };
+  }
+  const row = new Uint32Array(newLines.length + 1);
+  for (const oldLine of oldLines) {
+    let diagonal = 0;
+    for (let index = 1; index <= newLines.length; index += 1) {
+      const above = row[index] ?? 0;
+      row[index] =
+        oldLine === newLines[index - 1] ? diagonal + 1 : Math.max(row[index - 1] ?? 0, above);
+      diagonal = above;
+    }
+  }
+  const unchanged = row[newLines.length] ?? 0;
+  return {
+    additions: newLines.length - unchanged,
+    deletions: oldLines.length - unchanged,
+  };
+}
+
+/** Derives display-only line counts from Edit-style tool inputs. */
+export function deriveToolFileChangeLineStat(data: unknown): ToolFileChangeLineStat | undefined {
+  const record = asRecord(data);
+  const projected = asRecord(record?.fileChangeStat);
+  const projectedAdditions = projected?.additions;
+  const projectedDeletions = projected?.deletions;
+  if (
+    typeof projectedAdditions === "number" &&
+    Number.isInteger(projectedAdditions) &&
+    projectedAdditions >= 0 &&
+    typeof projectedDeletions === "number" &&
+    Number.isInteger(projectedDeletions) &&
+    projectedDeletions >= 0
+  ) {
+    return { additions: projectedAdditions, deletions: projectedDeletions };
+  }
+
+  const item = asRecord(record?.item);
+  const input = asRecord(record?.input) ?? asRecord(item?.input);
+  return typeof input?.old_string === "string" &&
+    typeof input.new_string === "string" &&
+    input.replace_all !== true
+    ? lineChangeStat(input.old_string, input.new_string)
+    : undefined;
+}
+
 function normalizeCommandValue(value: unknown): string | undefined {
   const direct = asTrimmedString(value);
   if (direct) {
