@@ -3,6 +3,10 @@ import * as Arr from "effect/Array";
 import * as Schema from "effect/Schema";
 import { isBackgroundTaskActivity } from "@t3tools/client-runtime/state/subagentRuntime";
 import {
+  deriveToolFileChangeLineStat,
+  type ToolFileChangeLineStat,
+} from "@t3tools/shared/toolActivity";
+import {
   ApprovalRequestId,
   isToolLifecycleItemType,
   type OrchestrationLatestTurn,
@@ -76,6 +80,7 @@ export interface WorkLogEntry {
   rawCommand?: string;
   exitCode?: number;
   changedFiles?: ReadonlyArray<string>;
+  fileChangeStat?: ToolFileChangeLineStat;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
   toolData?: unknown;
@@ -951,8 +956,11 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
     activity.payload && typeof activity.payload === "object"
       ? (activity.payload as Record<string, unknown>)
       : null;
+  const itemType = extractWorkLogItemType(payload);
   const commandPreview = extractToolCommand(payload);
   const changedFiles = extractChangedFiles(payload);
+  const fileChangeStat =
+    itemType === "file_change" ? deriveToolFileChangeLineStat(payload?.data) : undefined;
   const title = extractToolTitle(payload);
   const isTaskActivity =
     activity.kind === "task.started" ||
@@ -992,7 +1000,6 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
           : activity.tone,
     sourceActivityKind: activity.kind,
   };
-  const itemType = extractWorkLogItemType(payload);
   const requestKind = extractWorkLogRequestKind(payload);
   const exitCode = itemType === "command_execution" ? extractToolExitCode(payload) : null;
   if (detail) {
@@ -1009,6 +1016,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (changedFiles.length > 0) {
     entry.changedFiles = changedFiles;
+  }
+  if (fileChangeStat) {
+    entry.fileChangeStat = fileChangeStat;
   }
   if (title) {
     entry.toolTitle = title;
@@ -1253,6 +1263,7 @@ function mergeDerivedWorkLogEntries(
   next: DerivedWorkLogEntry,
 ): DerivedWorkLogEntry {
   const changedFiles = mergeChangedFiles(previous.changedFiles, next.changedFiles);
+  const fileChangeStat = next.fileChangeStat ?? previous.fileChangeStat;
   const detail = next.detail ?? previous.detail;
   const command = next.command ?? previous.command;
   const rawCommand = next.rawCommand ?? previous.rawCommand;
@@ -1273,6 +1284,7 @@ function mergeDerivedWorkLogEntries(
     ...(rawCommand ? { rawCommand } : {}),
     ...(exitCode !== undefined ? { exitCode } : {}),
     ...(changedFiles.length > 0 ? { changedFiles } : {}),
+    ...(fileChangeStat ? { fileChangeStat } : {}),
     ...(toolTitle ? { toolTitle } : {}),
     ...(itemType ? { itemType } : {}),
     ...(requestKind ? { requestKind } : {}),
