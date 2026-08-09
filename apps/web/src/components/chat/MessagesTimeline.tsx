@@ -72,6 +72,7 @@ import { Button } from "../ui/button";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesCard } from "./ChangedFilesTree";
+import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
 import { shouldAutoExpandChangedFiles } from "./changedFilesPresentation";
 import { MessageCopyButton } from "./MessageCopyButton";
 import {
@@ -2044,10 +2045,18 @@ function workToneIcon(tone: TimelineWorkEntry["tone"]): {
 }
 
 function workEntryPreview(
-  workEntry: Pick<TimelineWorkEntry, "detail" | "command" | "changedFiles">,
+  workEntry: Pick<TimelineWorkEntry, "detail" | "command" | "changedFiles" | "itemType">,
   workspaceRoot: string | undefined,
 ) {
   if (workEntry.command) return workEntry.command;
+  if (workEntry.itemType === "file_change" && (workEntry.changedFiles?.length ?? 0) > 0) {
+    const [firstPath] = workEntry.changedFiles ?? [];
+    if (!firstPath) return null;
+    const displayPath = formatWorkspaceRelativePath(firstPath, workspaceRoot);
+    return workEntry.changedFiles!.length === 1
+      ? displayPath
+      : `${displayPath} +${workEntry.changedFiles!.length - 1} more`;
+  }
   if (workEntry.detail) return workEntry.detail;
   if ((workEntry.changedFiles?.length ?? 0) === 0) return null;
   const [firstPath] = workEntry.changedFiles ?? [];
@@ -2357,7 +2366,16 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       normalizeCompactToolLabel(heading).toLowerCase()
       ? null
       : rawPreview;
-  const displayText = preview ? `${heading} - ${preview}` : heading;
+  const fileChangeStat =
+    workEntry.fileChangeStat && hasNonZeroStat(workEntry.fileChangeStat)
+      ? workEntry.fileChangeStat
+      : null;
+  const displayText = [
+    preview ? `${heading} - ${preview}` : heading,
+    fileChangeStat ? `+${fileChangeStat.additions} -${fileChangeStat.deletions}` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
   const expandedBody = buildToolCallExpandedBody(workEntry, workspaceRoot);
   const isCommandExecution = workEntry.itemType === "command_execution";
   const canExpand = isCommandExecution || expandedBody !== null;
@@ -2425,6 +2443,14 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
               {preview && (
                 <span className="min-w-0 flex-1 truncate text-secondary-label">{preview}</span>
               )}
+              {fileChangeStat ? (
+                <DiffStatLabel
+                  additions={fileChangeStat.additions}
+                  deletions={fileChangeStat.deletions}
+                  layout="inline"
+                  className="shrink-0 text-[11px]"
+                />
+              ) : null}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-px text-icon-muted">
