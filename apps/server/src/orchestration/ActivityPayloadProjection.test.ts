@@ -194,3 +194,32 @@ describe("projectActivityPayload command exit codes", () => {
     });
   });
 });
+
+describe("projectActivityPayload file changes", () => {
+  it("keeps a compact path and line stat while dropping Edit source strings", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "file_change",
+        title: "File change",
+        detail: 'Edit: {"file_path":"/workspace/main.swift"}',
+        data: {
+          toolName: "Edit",
+          input: {
+            file_path: "/workspace/main.swift",
+            old_string: "one\ntwo\nthree",
+            new_string: "one\nupdated\nthree\nfour",
+          },
+        },
+      }),
+    );
+
+    expect(projected.payload).toMatchObject({
+      data: {
+        files: [{ path: "/workspace/main.swift" }],
+        fileChangeStat: { additions: 2, deletions: 1 },
+      },
+    });
+    expect(JSON.stringify(projected.payload)).not.toContain("old_string");
+    expect(JSON.stringify(projected.payload)).not.toContain("new_string");
+  });
+});
