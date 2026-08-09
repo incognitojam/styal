@@ -169,6 +169,7 @@ const ProviderRuntimeEventType = Schema.Literals([
   "item.started",
   "item.updated",
   "item.completed",
+  "command.interaction",
   "content.delta",
   "request.opened",
   "request.resolved",
@@ -220,6 +221,7 @@ const TurnDiffUpdatedType = Schema.Literal("turn.diff.updated");
 const ItemStartedType = Schema.Literal("item.started");
 const ItemUpdatedType = Schema.Literal("item.updated");
 const ItemCompletedType = Schema.Literal("item.completed");
+const CommandInteractionType = Schema.Literal("command.interaction");
 const ContentDeltaType = Schema.Literal("content.delta");
 const RequestOpenedType = Schema.Literal("request.opened");
 const RequestResolvedType = Schema.Literal("request.resolved");
@@ -418,6 +420,14 @@ export const ItemLifecyclePayload = Schema.Struct({
   parentToolUseId: Schema.optional(TrimmedNonEmptyStringSchema),
 });
 export type ItemLifecyclePayload = typeof ItemLifecyclePayload.Type;
+
+export const CommandInteractionKind = Schema.Literals(["ctrl_c", "ctrl_d", "control", "input"]);
+export type CommandInteractionKind = typeof CommandInteractionKind.Type;
+
+const CommandInteractionPayload = Schema.Struct({
+  interaction: CommandInteractionKind,
+});
+export type CommandInteractionPayload = typeof CommandInteractionPayload.Type;
 
 const ContentDeltaPayload = Schema.Struct({
   streamKind: RuntimeContentStreamKind,
@@ -949,6 +959,14 @@ const ProviderRuntimeItemCompletedEvent = Schema.Struct({
 });
 export type ProviderRuntimeItemCompletedEvent = typeof ProviderRuntimeItemCompletedEvent.Type;
 
+const ProviderRuntimeCommandInteractionEvent = Schema.Struct({
+  ...ProviderRuntimeEventBase.fields,
+  type: CommandInteractionType,
+  payload: CommandInteractionPayload,
+});
+export type ProviderRuntimeCommandInteractionEvent =
+  typeof ProviderRuntimeCommandInteractionEvent.Type;
+
 const ProviderRuntimeContentDeltaEvent = Schema.Struct({
   ...ProviderRuntimeEventBase.fields,
   type: ContentDeltaType,
@@ -1160,6 +1178,7 @@ export const ProviderRuntimeEventV2 = Schema.Union([
   ProviderRuntimeItemStartedEvent,
   ProviderRuntimeItemUpdatedEvent,
   ProviderRuntimeItemCompletedEvent,
+  ProviderRuntimeCommandInteractionEvent,
   ProviderRuntimeContentDeltaEvent,
   ProviderRuntimeRequestOpenedEvent,
   ProviderRuntimeRequestResolvedEvent,
