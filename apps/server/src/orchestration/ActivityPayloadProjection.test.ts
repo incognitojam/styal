@@ -340,4 +340,43 @@ describe("projectActivityPayload file changes", () => {
     expect(JSON.stringify(projected.payload)).not.toContain("old_string");
     expect(JSON.stringify(projected.payload)).not.toContain("new_string");
   });
+
+  it("derives line stats from Codex file-change diffs", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "file_change",
+        title: "File change",
+        data: {
+          item: {
+            type: "fileChange",
+            changes: [
+              {
+                path: "src/app.ts",
+                kind: { type: "update" },
+                diff: "@@ -1,3 +1,4 @@\n one\n-two\n+updated\n three\n+four",
+              },
+              {
+                path: "README.md",
+                kind: { type: "add" },
+                diff: "# New\n\nDetails\n",
+              },
+              {
+                path: "old.txt",
+                kind: { type: "delete" },
+                diff: "old\nlines\n",
+              },
+            ],
+          },
+        },
+      }),
+    );
+
+    expect(projected.payload).toMatchObject({
+      data: {
+        files: [{ path: "src/app.ts" }, { path: "README.md" }, { path: "old.txt" }],
+        fileChangeStat: { additions: 5, deletions: 3 },
+      },
+    });
+    expect(JSON.stringify(projected.payload)).not.toContain("@@ -1,3");
+  });
 });
