@@ -1572,6 +1572,7 @@ describe("deriveWorkLogEntries", () => {
                 { filename: "apps/web/src/session-logic.ts" },
               ],
             },
+            fileChangeStat: { additions: 2, deletions: 1 },
           },
         },
       }),
@@ -1582,6 +1583,7 @@ describe("deriveWorkLogEntries", () => {
       "apps/web/src/components/ChatView.tsx",
       "apps/web/src/session-logic.ts",
     ]);
+    expect(entry?.fileChangeStat).toEqual({ additions: 2, deletions: 1 });
   });
 
   it("drops duplicated tool detail when it only repeats the title", () => {
