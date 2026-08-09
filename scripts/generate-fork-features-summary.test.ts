@@ -7,11 +7,13 @@ import {
   buildRollingSummaryPrompt,
   collectChangeEvidence,
   extractResponseText,
+  fitEvidenceToPromptBudget,
   parseChangeRecords,
   parseChangelogSummary,
   parsePullRequestNumber,
   renderForkFeaturesSummary,
   renderNightlySummary,
+  restrictSummaryToEvidence,
   sanitizePullRequestBody,
   type ChangeEvidence,
   type ChangeRecord,
@@ -24,6 +26,7 @@ const commits: ReadonlyArray<RepositoryCommit> = [
     sha: "a".repeat(40),
     subject: "feat(web): show GitHub service outages (#14)",
     body: "feat(web): make GitHub outage alerts opt-in",
+    diff: "+ const notice = useGitHubStatus();",
     files: ["apps/web/src/components/sidebar/GitHubStatusNotice.tsx"],
   },
 ];
@@ -36,6 +39,7 @@ const evidence: ReadonlyArray<ChangeEvidence> = [
     title: "feat(web): show GitHub service outages",
     description:
       "GitHub incidents looked like T3 Code failures. Show affected services in the sidebar.",
+    diff: "+ const notice = useGitHubStatus();",
     files: ["apps/web/src/components/sidebar/GitHubStatusNotice.tsx"],
   },
 ];
@@ -103,6 +107,7 @@ Show the final result in the timeline.
         sha: "a".repeat(40),
         title: "feat(web): show GitHub service outages",
         description: "Show affected GitHub services in the sidebar.",
+        diff: "+ const notice = useGitHubStatus();",
         files: ["apps/web/src/components/sidebar/GitHubStatusNotice.tsx"],
       },
     ]);
@@ -127,6 +132,7 @@ Show the final result in the timeline.
         sha: "a".repeat(40),
         title: "feat(web): show GitHub service outages",
         description: "feat(web): make GitHub outage alerts opt-in",
+        diff: "+ const notice = useGitHubStatus();",
         files: ["apps/web/src/components/sidebar/GitHubStatusNotice.tsx"],
       },
     ]);
@@ -141,6 +147,21 @@ Show the final result in the timeline.
     assert.match(prompt, /do not consolidate separate pull requests/);
     assert.match(prompt, /Pull request descriptions are stronger evidence/);
     assert.match(prompt, /Show affected services in the sidebar/);
+    assert.match(prompt, /Diffs are truncated/);
+    assert.match(prompt, /useGitHubStatus/);
+  });
+
+  it("drops the largest diffs first when evidence exceeds the prompt budget", () => {
+    const oversized: ReadonlyArray<ChangeEvidence> = [
+      { ...evidence[0]!, id: "yngatech/t3code#20", diff: "small diff" },
+      { ...evidence[0]!, id: "yngatech/t3code#21", diff: "x".repeat(200_000) },
+    ];
+
+    const fitted = fitEvidenceToPromptBudget(oversized);
+
+    assert.equal(fitted[0]?.diff, "small diff");
+    assert.equal(fitted[1]?.diff, "");
+    assert.deepEqual(fitEvidenceToPromptBudget(evidence), evidence);
   });
 
   it("reconciles rolling state and gives measured changelog style examples", () => {
@@ -155,6 +176,8 @@ Show the final result in the timeline.
     assert.match(prompt, /use its replacement text verbatim/);
     assert.match(prompt, /Start new threads with GitHub issues as context/);
     assert.match(prompt, /Show setup script outcomes in the thread timeline/);
+    assert.match(prompt, /list in "evidenceIds" the evidenceId/);
+    assert.match(prompt, /never mention pull requests, commits, or contributors inside "text"/);
   });
 
   it("describes the nightly delta rather than all fork features", () => {
@@ -201,17 +224,46 @@ Show the final result in the timeline.
 
   it("normalizes label punctuation and rejects links or multiline output", () => {
     assert.deepEqual(
-      parseChangelogSummary('{"added":["Play completion sounds."],"improved":[],"removed":[]}'),
-      { added: ["Play completion sounds"], improved: [], removed: [] },
+      parseChangelogSummary(
+        '{"added":[{"text":"Play completion sounds.","evidenceIds":["yngatech/t3code#14","yngatech/t3code#14"]}],"improved":[],"removed":[]}',
+      ),
+      {
+        added: [{ text: "Play completion sounds", evidenceIds: ["yngatech/t3code#14"] }],
+        improved: [],
+        removed: [],
+      },
     );
     assert.throws(() =>
       parseChangelogSummary(
-        '{"added":["Read [this](https://example.com)"],"improved":[],"removed":[]}',
+        '{"added":[{"text":"Read [this](https://example.com)","evidenceIds":[]}],"improved":[],"removed":[]}',
       ),
     );
     assert.throws(() =>
-      parseChangelogSummary('{"added":[],"improved":["First line\\nSecond line"],"removed":[]}'),
+      parseChangelogSummary(
+        '{"added":[],"improved":[{"text":"First line\\nSecond line","evidenceIds":[]}],"removed":[]}',
+      ),
     );
+    assert.throws(() =>
+      parseChangelogSummary('{"added":["Bare string item"],"improved":[],"removed":[]}'),
+    );
+  });
+
+  it("keeps only evidence references that exist in the collected evidence", () => {
+    const summary = restrictSummaryToEvidence(
+      {
+        added: [
+          {
+            text: "Play completion sounds",
+            evidenceIds: ["yngatech/t3code#14", "yngatech/t3code#999"],
+          },
+        ],
+        improved: [],
+        removed: [],
+      },
+      new Set(["yngatech/t3code#14"]),
+    );
+
+    assert.deepEqual(summary.added[0]?.evidenceIds, ["yngatech/t3code#14"]);
   });
 
   it("renders current fork features around deterministic release details", () => {
@@ -223,9 +275,11 @@ Show the final result in the timeline.
       generatedAt: new Date("2026-08-08T12:00:00Z"),
       model: "gpt-5.6-sol",
       summary: {
-        added: ["Play configurable completion sounds"],
-        improved: ["Show exit codes for shell commands"],
-        removed: ["Remove a superseded internal feature"],
+        added: [
+          { text: "Play configurable completion sounds", evidenceIds: ["yngatech/t3code#14"] },
+        ],
+        improved: [{ text: "Show exit codes for shell commands", evidenceIds: [] }],
+        removed: [{ text: "Remove a superseded internal feature", evidenceIds: [] }],
       },
       upstreamRef: "b".repeat(40),
       upstreamRepository: "pingdotgg/t3code",
@@ -234,7 +288,10 @@ Show the final result in the timeline.
     assert.match(rendered, /35 commits ahead/);
     assert.match(rendered, /1 commit behind/);
     assert.equal(/1 commits behind/.test(rendered), false);
-    assert.match(rendered, /## Added\n\n- Play configurable completion sounds/);
+    assert.match(
+      rendered,
+      /## Added\n\n- Play configurable completion sounds \(\[#14\]\(https:\/\/github\.com\/yngatech\/t3code\/pull\/14\)\)/,
+    );
     assert.match(rendered, /## Improved\n\n- Show exit codes for shell commands/);
     assert.equal(/superseded internal feature/.test(rendered), false);
     assert.match(rendered, /macOS arm64.*signed and Apple-notarized DMG/);
@@ -247,20 +304,33 @@ Show the final result in the timeline.
     assert.match(rendered, /low extraction and medium synthesis reasoning/);
   });
 
-  it("renders additions, improvements, and removals for one nightly", () => {
-    const rendered = renderNightlySummary({
-      added: ["Start threads from GitHub issues"],
-      improved: ["Show setup script outcomes in the thread timeline"],
-      removed: ["Remove the superseded status preview"],
-    });
+  it("renders nightly highlights as a flat tooltip-safe list with PR references", () => {
+    const rendered = renderNightlySummary(
+      {
+        added: [{ text: "Start threads from GitHub issues", evidenceIds: ["yngatech/t3code#14"] }],
+        improved: [
+          {
+            text: "Show setup script outcomes in the thread timeline",
+            evidenceIds: ["pingdotgg/t3code#12083", `pingdotgg/t3code@${"c".repeat(12)}`],
+          },
+        ],
+        removed: [{ text: "Remove the superseded status preview", evidenceIds: [] }],
+      },
+      "yngatech/t3code",
+    );
 
-    assert.match(rendered, /^## Nightly highlights/);
-    assert.match(rendered, /### Added\n\n- Start threads from GitHub issues/);
-    assert.match(rendered, /### Improved\n\n- Show setup script outcomes/);
-    assert.match(rendered, /### Removed\n\n- Remove the superseded status preview/);
     assert.equal(
-      renderNightlySummary({ added: [], improved: [], removed: [] }),
-      "## Nightly highlights\n\n_No user-facing changes._\n",
+      rendered,
+      "- **Added:** Start threads from GitHub issues ([#14](https://github.com/yngatech/t3code/pull/14))\n" +
+        "- **Improved:** Show setup script outcomes in the thread timeline " +
+        "([t3code#12083](https://github.com/pingdotgg/t3code/pull/12083), " +
+        `[\`${"c".repeat(7)}\`](https://github.com/pingdotgg/t3code/commit/${"c".repeat(12)}))\n` +
+        "- **Removed:** Remove the superseded status preview\n",
+    );
+    assert.equal(/^#|\n#/.test(rendered), false);
+    assert.equal(
+      renderNightlySummary({ added: [], improved: [], removed: [] }, "yngatech/t3code"),
+      "",
     );
   });
 });

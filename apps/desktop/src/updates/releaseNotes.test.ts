@@ -57,6 +57,31 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
     expect(notes).toEqual([{ version: "1.3.2", items: ["Older but real change"] }]);
   });
 
+  it("keeps only curated highlights when the commit list follows them", () => {
+    const notes = normalizeDesktopUpdateReleaseNotes(
+      [
+        "- **Added:** Start threads from GitHub issues ([#14](https://example.com/pull/14))",
+        "- **Improved:** Show setup script outcomes ([t3code#12083](https://example.com/pull/12083))",
+        "",
+        "## What's Changed",
+        "",
+        "- fix(release): generate clearer nightly changelogs ([yngatech/t3code#59](https://example.com/pull/59)) by @cameron",
+        "",
+        "**Full Changelog**: https://example.com/compare/x...y",
+      ].join("\n"),
+      "1.2.3",
+    );
+    expect(notes).toEqual([
+      {
+        version: "1.2.3",
+        items: [
+          "Added: Start threads from GitHub issues (#14)",
+          "Improved: Show setup script outcomes (t3code#12083)",
+        ],
+      },
+    ]);
+  });
+
   it("does not throw on out-of-range numeric entities and keeps the literal", () => {
     expect(() =>
       normalizeDesktopUpdateReleaseNotes("- Broken entity &#9999999999;", "1.0.0"),
