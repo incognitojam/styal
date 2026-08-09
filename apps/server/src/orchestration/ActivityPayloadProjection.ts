@@ -3,6 +3,7 @@ import type {
   OrchestrationThreadActivity,
   OrchestrationThreadDetailSnapshot,
 } from "@t3tools/contracts";
+import { deriveToolFileChangeLineStat } from "@t3tools/shared/toolActivity";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -56,6 +57,7 @@ function collectChangedFiles(
   }
 
   pushChangedFile(target, seen, record.path);
+  pushChangedFile(target, seen, record.file_path);
   pushChangedFile(target, seen, record.filePath);
   pushChangedFile(target, seen, record.relativePath);
   pushChangedFile(target, seen, record.filename);
@@ -352,6 +354,12 @@ export function projectActivityPayload(
   if (changedFiles.length > 0) {
     // Both clients discover file names by walking objects with path-like keys.
     projectedData.files = changedFiles.map((path) => ({ path }));
+  }
+  if (payload.itemType === "file_change") {
+    const fileChangeStat = deriveToolFileChangeLineStat(data);
+    if (fileChangeStat) {
+      projectedData.fileChangeStat = fileChangeStat;
+    }
   }
 
   if ("toolCallId" in data) {
