@@ -43,6 +43,7 @@ import {
 } from "../Services/ProviderRuntimeIngestion.ts";
 import { forkParked } from "../../serverActivation.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { commandInteractionSummary } from "../../CommandInteraction.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 const providerTaskKey = (threadId: ThreadId, taskId: string) => `${threadId}:${taskId}`;
@@ -801,6 +802,24 @@ export function runtimeEventToActivities(
             ...(event.payload.parentToolUseId
               ? { parentToolUseId: event.payload.parentToolUseId }
               : {}),
+          },
+          turnId: toTurnId(event.turnId) ?? null,
+          ...maybeSequence,
+        },
+      ];
+    }
+
+    case "command.interaction": {
+      return [
+        {
+          id: event.eventId,
+          createdAt: event.createdAt,
+          tone: "info",
+          kind: "command.interaction",
+          summary: commandInteractionSummary(event.payload.interaction),
+          payload: {
+            interaction: event.payload.interaction,
+            ...(event.itemId ? { commandItemId: event.itemId } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,
