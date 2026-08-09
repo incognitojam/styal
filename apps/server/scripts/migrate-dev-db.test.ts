@@ -5,6 +5,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
+import ForkMigration0001 from "../src/persistence/ForkMigrations/001_ComposerDrafts.ts";
 import { runMigrations } from "../src/persistence/Migrations.ts";
 import * as NodeSqliteClient from "../src/persistence/NodeSqliteClient.ts";
 import { runMigrateDevDb } from "./migrate-dev-db.ts";
@@ -18,6 +19,7 @@ const withDatabase = <A, E>(
  * `stopped-thread` qualifies for the clone. */
 const createFixtureSource = Effect.fn("createMigrateDevDbFixtureSource")(function* (
   baseDir: string,
+  migrationState: "current" | "legacy-fork" = "current",
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -28,7 +30,16 @@ const createFixtureSource = Effect.fn("createMigrateDevDbFixtureSource")(functio
     databasePath,
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      yield* runMigrations();
+      if (migrationState === "legacy-fork") {
+        yield* runMigrations({ toMigrationInclusive: 38 });
+        yield* ForkMigration0001;
+        yield* sql`
+          INSERT INTO effect_sql_migrations (migration_id, name)
+          VALUES (39, 'ComposerDrafts')
+        `;
+      } else {
+        yield* runMigrations();
+      }
       // The real shared db carries this column from a branch build without a
       // matching migration; reproduce that drift so the filter is exercised.
       yield* sql`ALTER TABLE projection_threads ADD COLUMN monitor_json TEXT`;
@@ -129,6 +140,88 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         assert.equal(error.slot, 1);
         assert.equal(error.appliedName, "SomebodyElsesMigration");
       }
+    }),
+  );
+
+  it.effect("repairs legacy fork migration history before pruning", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const sourceDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-legacy-" });
+      const destDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "migrate-dev-db-legacy-dest-",
+      });
+      const source = yield* createFixtureSource(sourceDir, "legacy-fork");
+      yield* withDatabase(
+        source,
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`
+            INSERT INTO composer_drafts (
+              thread_id,
+              revision,
+              common_json,
+              updated_at,
+              client_mutation_id
+            ) VALUES
+              ('stopped-thread', 1, '{"text":"keep"}', '2026-08-09', 'kept-draft'),
+              ('running-thread', 1, '{"text":"discard"}', '2026-08-09', 'discarded-draft')
+          `;
+        }),
+      );
+
+      const result = yield* runMigrateDevDb(
+        { baseDir: destDir, source, projects: 5, threadsPerProject: 10 },
+        { sharedHome: sourceDir },
+      );
+
+      assert.include(result.executedMigrations, "40_ProjectionProjectFaviconPath");
+      const migrated = yield* withDatabase(
+        result.databasePath,
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          const projectColumns = yield* sql<{ readonly name: string }>`
+            PRAGMA table_info(projection_projects)
+          `;
+          const upstreamHistory = yield* sql<{
+            readonly migration_id: number;
+            readonly name: string;
+          }>`
+            SELECT migration_id, name
+            FROM effect_sql_migrations
+            WHERE migration_id >= 39
+            ORDER BY migration_id
+          `;
+          const forkHistory = yield* sql<{
+            readonly migration_id: number;
+            readonly name: string;
+          }>`
+            SELECT migration_id, name
+            FROM yngatech_sql_migrations
+          `;
+          const drafts = yield* sql<{ readonly thread_id: string }>`
+            SELECT thread_id
+            FROM composer_drafts
+            ORDER BY thread_id
+          `;
+          return { projectColumns, upstreamHistory, forkHistory, drafts };
+        }),
+      );
+      assert.includeMembers(
+        migrated.projectColumns.map(({ name }) => name),
+        ["default_thread_env_mode", "favicon_path"],
+      );
+      assert.deepStrictEqual(migrated.upstreamHistory, [
+        {
+          migration_id: 39,
+          name: "ProjectionProjectsDefaultThreadEnvMode",
+        },
+        {
+          migration_id: 40,
+          name: "ProjectionProjectFaviconPath",
+        },
+      ]);
+      assert.deepStrictEqual(migrated.forkHistory, [{ migration_id: 1, name: "ComposerDrafts" }]);
+      assert.deepStrictEqual(migrated.drafts, [{ thread_id: "stopped-thread" }]);
     }),
   );
 
