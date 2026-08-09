@@ -153,7 +153,13 @@ export function ThreadWorkLog(props: {
           const expanded = props.expandedRows[row.id] ?? false;
           const canExpand = row.canExpand;
           const fullDetail = expanded ? row.getFullDetail() : null;
-          const displayText = row.detail ? `${row.summary} ${row.detail}` : row.summary;
+          const statText =
+            row.fileChangeStat &&
+            (row.fileChangeStat.additions > 0 || row.fileChangeStat.deletions > 0)
+              ? `+${row.fileChangeStat.additions} -${row.fileChangeStat.deletions}`
+              : null;
+          const fileChangeStat = statText ? row.fileChangeStat : undefined;
+          const displayText = [row.summary, row.detail, statText].filter(Boolean).join(" ");
           const iconIsDestructive = row.icon === "alert" || row.icon === "warning";
 
           return (
@@ -205,6 +211,16 @@ export function ThreadWorkLog(props: {
                     </Text>
                     {row.detail ? (
                       <Text className="text-foreground-muted opacity-60"> {row.detail}</Text>
+                    ) : null}
+                    {fileChangeStat ? (
+                      <Text>
+                        <Text className="font-t3-medium text-emerald-600 dark:text-emerald-400">
+                          {` +${fileChangeStat.additions}`}
+                        </Text>
+                        <Text className="font-t3-medium text-rose-600 dark:text-rose-400">
+                          {` -${fileChangeStat.deletions}`}
+                        </Text>
+                      </Text>
                     ) : null}
                   </Text>
 
