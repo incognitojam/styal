@@ -255,6 +255,7 @@ jobs:
         shell: bash
         env:
           FORK_SOURCE_REF: ${{ needs.prepare.outputs.fork_ref }}
+          GH_TOKEN: ${{ github.token }}
           PREVIOUS_TAG: ${{ needs.prepare.outputs.previous_tag }}
           UPSTREAM_REF: ${{ needs.prepare.outputs.upstream_ref }}
         run: |
@@ -273,7 +274,7 @@ jobs:
               return
             fi
 
-            local sha short_sha subject title pull_number
+            local sha short_sha subject title pull_number author
             for sha in "$@"; do
               short_sha="${sha:0:7}"
               subject=$(git show -s --format=%s "$sha")
@@ -281,8 +282,15 @@ jobs:
               if [[ "$subject" =~ ^(.+)\ \(#([0-9]+)\)$ ]]; then
                 title="${BASH_REMATCH[1]}"
                 pull_number="${BASH_REMATCH[2]}"
-                printf -- '- %s ([%s#%s](https://github.com/%s/pull/%s))\n' \
-                  "$title" "$repository" "$pull_number" "$repository" "$pull_number"
+                author=$(gh api "repos/${repository}/pulls/${pull_number}" \
+                  --jq '.user.login' 2>/dev/null || true)
+                if [[ -n "$author" ]]; then
+                  printf -- '- %s ([%s#%s](https://github.com/%s/pull/%s)) by @%s\n' \
+                    "$title" "$repository" "$pull_number" "$repository" "$pull_number" "$author"
+                else
+                  printf -- '- %s ([%s#%s](https://github.com/%s/pull/%s))\n' \
+                    "$title" "$repository" "$pull_number" "$repository" "$pull_number"
+                fi
               else
                 # shellcheck disable=SC2016 # Markdown backticks must remain literal.
                 printf -- '- %s ([`%s`](https://github.com/%s/commit/%s))\n' \
