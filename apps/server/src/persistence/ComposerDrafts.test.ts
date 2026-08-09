@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import * as ComposerDrafts from "./ComposerDrafts.ts";
-import { runMigrations } from "./Migrations.ts";
+import { runAllMigrations } from "./ForkMigrations.ts";
 import * as NodeSqliteClient from "./NodeSqliteClient.ts";
 
 const layer = it.layer(
@@ -14,7 +14,7 @@ const layer = it.layer(
 layer("ComposerDraftRepository", (it) => {
   it.effect("uses revision compare-and-swap and preserves the winning snapshot", () =>
     Effect.gen(function* () {
-      yield* runMigrations({ toMigrationInclusive: 41 });
+      yield* runAllMigrations();
       const repository = yield* ComposerDrafts.ComposerDraftRepository;
       const threadId = ThreadId.make("draft-cas-thread");
       const common = {
@@ -50,7 +50,7 @@ layer("ComposerDraftRepository", (it) => {
 
   it.effect("keeps clears as revisioned tombstones", () =>
     Effect.gen(function* () {
-      yield* runMigrations({ toMigrationInclusive: 41 });
+      yield* runAllMigrations();
       const repository = yield* ComposerDrafts.ComposerDraftRepository;
       const threadId = ThreadId.make("draft-tombstone-thread");
 
@@ -81,7 +81,7 @@ layer("ComposerDraftRepository", (it) => {
 
   it.effect("does not let a delayed send clear a newer device revision", () =>
     Effect.gen(function* () {
-      yield* runMigrations({ toMigrationInclusive: 41 });
+      yield* runAllMigrations();
       const repository = yield* ComposerDrafts.ComposerDraftRepository;
       const threadId = ThreadId.make("draft-delayed-send-thread");
       const first = {
