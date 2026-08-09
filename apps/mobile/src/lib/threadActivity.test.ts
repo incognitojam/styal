@@ -92,6 +92,40 @@ describe("buildThreadFeed", () => {
     });
   });
 
+  it("renders command interactions as compact non-expandable rows", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-interaction"),
+      projectId: ProjectId.make("project-1"),
+      title: "Command interaction",
+      activities: [
+        makeActivity({
+          id: EventId.make("command-interaction"),
+          kind: "command.interaction",
+          summary: "Sent Ctrl+C",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          payload: {
+            interaction: "ctrl_c",
+            commandItemId: "exec-1",
+          },
+        }),
+      ],
+    });
+
+    const feed = buildThreadFeed(thread);
+    expect(feed).toMatchObject([
+      {
+        type: "activity-group",
+        activities: [
+          {
+            id: "command-interaction",
+            summary: "Sent Ctrl+C",
+            canExpand: false,
+          },
+        ],
+      },
+    ]);
+  });
+
   it("keeps historic work entries attributed to their turns", () => {
     const thread = makeThread({
       id: ThreadId.make("thread-1"),
