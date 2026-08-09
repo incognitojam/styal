@@ -116,6 +116,7 @@ An empty database is a bad test. Seed your worktree's `.t3` with a copy of real 
 - Conventional commit titles, plain language: `fix(web): new threads no longer spike CPU`.
 - Body: the problem in a sentence or two, then how you fixed it. End with the model and harness that did the work.
 - **Rebase standalone branches onto latest main before opening.** Stale branches conflict and burn a review round.
+- **Rebasing after main was force-pushed.** This fork's `main` is a patch stack rebased onto upstream and force-pushed after each nightly rebase. Transplant only the branch's own commits: find the commit the branch was cut from (the parent of its first own commit — check `git log --oneline`; do not trust `git merge-base`, which resolves to a stale ancestor here), then `git rebase --onto origin/main <old-base>`.
 - UI changes need before/after images. Motion or timing needs a short video.
 - One concern per PR. If the description says "also", split it.
 - When babysitting: poll checks and comments newer than the last push, verify each bot finding against the source, fix real ones, dismiss false positives with a written reason. Stay quiet when nothing is new. Stop when the bots are green on the latest commit.
