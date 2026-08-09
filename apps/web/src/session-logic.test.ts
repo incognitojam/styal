@@ -734,6 +734,33 @@ describe("workEntryIndicatesToolFailure", () => {
 });
 
 describe("deriveWorkLogEntries", () => {
+  it("keeps command interactions as standalone non-command rows", () => {
+    const entries = deriveWorkLogEntries([
+      makeActivity({
+        id: "command-interaction",
+        kind: "command.interaction",
+        summary: "Sent Ctrl+C",
+        tone: "info",
+        payload: {
+          interaction: "ctrl_c",
+          commandItemId: "exec-1",
+        },
+      }),
+    ]);
+
+    expect(entries).toMatchObject([
+      {
+        id: "command-interaction",
+        label: "Sent Ctrl+C",
+        tone: "info",
+        sourceActivityKind: "command.interaction",
+      },
+    ]);
+    expect(entries[0]).not.toHaveProperty("itemType");
+    expect(entries[0]).not.toHaveProperty("command");
+    expect(entries[0]).not.toHaveProperty("detail");
+  });
+
   it("collapses a setup run into its latest state across interleaved activity", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
