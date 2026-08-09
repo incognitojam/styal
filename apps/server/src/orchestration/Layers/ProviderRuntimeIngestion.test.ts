@@ -2959,6 +2959,19 @@ describe("ProviderRuntimeIngestion", () => {
     });
 
     harness.emit({
+      type: "command.interaction",
+      eventId: asEventId("evt-command-interaction"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-p1"),
+      itemId: asItemId("item-p1-tool"),
+      payload: {
+        interaction: "ctrl_c",
+      },
+    });
+
+    harness.emit({
       type: "runtime.warning",
       eventId: asEventId("evt-runtime-warning"),
       provider: ProviderDriverKind.make("codex"),
@@ -2995,6 +3008,9 @@ describe("ProviderRuntimeIngestion", () => {
           (activity: ProviderRuntimeTestActivity) => activity.kind === "tool.updated",
         ) &&
         entry.activities.some(
+          (activity: ProviderRuntimeTestActivity) => activity.kind === "command.interaction",
+        ) &&
+        entry.activities.some(
           (activity: ProviderRuntimeTestActivity) => activity.kind === "runtime.warning",
         ) &&
         entry.checkpoints.some(
@@ -3024,6 +3040,19 @@ describe("ProviderRuntimeIngestion", () => {
     expect(toolUpdate?.kind).toBe("tool.updated");
     expect(toolUpdatePayload?.itemType).toBe("command_execution");
     expect(toolUpdatePayload?.status).toBe("in_progress");
+
+    const commandInteraction = thread.activities.find(
+      (activity: ProviderRuntimeTestActivity) => activity.id === "evt-command-interaction",
+    );
+    expect(commandInteraction).toMatchObject({
+      kind: "command.interaction",
+      tone: "info",
+      summary: "Sent Ctrl+C",
+      payload: {
+        interaction: "ctrl_c",
+        commandItemId: "item-p1-tool",
+      },
+    });
 
     const warning = thread.activities.find(
       (activity: ProviderRuntimeTestActivity) => activity.id === "evt-runtime-warning",
