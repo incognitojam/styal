@@ -38,7 +38,8 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { Command, Flag } from "effect/unstable/cli";
 
-import { migrationManifest, runMigrations } from "../src/persistence/Migrations.ts";
+import { forkMigrationManifest, runAllMigrations } from "../src/persistence/ForkMigrations.ts";
+import { migrationManifest } from "../src/persistence/Migrations.ts";
 import * as NodeSqliteClient from "../src/persistence/NodeSqliteClient.ts";
 
 export class MigrateDevDbNotInWorktreeError extends Schema.TaggedErrorClass<MigrateDevDbNotInWorktreeError>()(
@@ -301,6 +302,7 @@ const pruneSnapshot = Effect.fn("pruneDevDbSnapshot")(function* (input: RunMigra
         "projection_pending_approvals",
         "projection_thread_proposed_plans",
         "checkpoint_diff_blobs",
+        "composer_drafts",
       ]) {
         yield* sql.unsafe(
           `DELETE FROM ${table} WHERE thread_id NOT IN (SELECT thread_id FROM kept_threads)`,
@@ -343,6 +345,16 @@ const verifyMigrationSlots = Effect.fn("verifyMigrationSlots")(function* () {
   const appliedById = new Map(applied.map((row) => [Number(row.migration_id), row.name]));
   for (const [slot, codeName] of migrationManifest) {
     const appliedName = appliedById.get(slot);
+    if (appliedName !== undefined && appliedName !== codeName) {
+      return yield* new MigrateDevDbSlotCollisionError({ slot, codeName, appliedName });
+    }
+  }
+
+  const appliedFork = yield* sql<{ migration_id: number; name: string }>`
+    SELECT migration_id, name FROM yngatech_sql_migrations`;
+  const appliedForkById = new Map(appliedFork.map((row) => [Number(row.migration_id), row.name]));
+  for (const [slot, codeName] of forkMigrationManifest) {
+    const appliedName = appliedForkById.get(slot);
     if (appliedName !== undefined && appliedName !== codeName) {
       return yield* new MigrateDevDbSlotCollisionError({ slot, codeName, appliedName });
     }
@@ -436,7 +448,11 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
       const sql = yield* SqlClient.SqlClient;
       // Mirror server boot (persistence/Layers/Sqlite.ts).
       yield* sql.unsafe("PRAGMA foreign_keys = ON").unprepared;
-      return yield* runMigrations();
+      const result = yield* runAllMigrations();
+      return [
+        ...result.upstream.map(([id, name]) => `${id}_${name}`),
+        ...result.fork.map(([id, name]) => `fork:${id}_${name}`),
+      ];
     }).pipe(
       Effect.provide(NodeSqliteClient.layer({ filename: snapshotPath })),
       wrapPhase("migrate", snapshotPath),
@@ -495,7 +511,7 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
     sizeBytes: Number(size),
     projects: pruned.projects,
     eventCount: pruned.eventCount,
-    executedMigrations: executedMigrations.map(([id, name]) => `${id}_${name}`),
+    executedMigrations,
   };
 });
 
