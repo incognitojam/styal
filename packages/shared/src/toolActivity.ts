@@ -53,7 +53,39 @@ function lineChangeStat(oldValue: string, newValue: string): ToolFileChangeLineS
   };
 }
 
-/** Derives display-only line counts from Edit-style tool inputs. */
+function codexFileChangeLineStat(
+  item: Record<string, unknown> | undefined,
+): ToolFileChangeLineStat | undefined {
+  if (!Array.isArray(item?.changes)) {
+    return undefined;
+  }
+  let additions = 0;
+  let deletions = 0;
+  let foundChange = false;
+  for (const value of item.changes) {
+    const change = asRecord(value);
+    const kind = asRecord(change?.kind)?.type;
+    if (typeof change?.diff !== "string" || typeof kind !== "string") {
+      continue;
+    }
+    foundChange = true;
+    if (kind === "add" || kind === "delete") {
+      const lineCount = splitLines(change.diff).length;
+      additions += kind === "add" ? lineCount : 0;
+      deletions += kind === "delete" ? lineCount : 0;
+      continue;
+    }
+    if (kind === "update") {
+      for (const line of splitLines(change.diff)) {
+        additions += line.startsWith("+") && !line.startsWith("+++ ") ? 1 : 0;
+        deletions += line.startsWith("-") && !line.startsWith("--- ") ? 1 : 0;
+      }
+    }
+  }
+  return foundChange ? { additions, deletions } : undefined;
+}
+
+/** Derives display-only line counts from provider file-change payloads. */
 export function deriveToolFileChangeLineStat(data: unknown): ToolFileChangeLineStat | undefined {
   const record = asRecord(data);
   const projected = asRecord(record?.fileChangeStat);
@@ -72,11 +104,13 @@ export function deriveToolFileChangeLineStat(data: unknown): ToolFileChangeLineS
 
   const item = asRecord(record?.item);
   const input = asRecord(record?.input) ?? asRecord(item?.input);
-  return typeof input?.old_string === "string" &&
+  const editStat =
+    typeof input?.old_string === "string" &&
     typeof input.new_string === "string" &&
     input.replace_all !== true
-    ? lineChangeStat(input.old_string, input.new_string)
-    : undefined;
+      ? lineChangeStat(input.old_string, input.new_string)
+      : undefined;
+  return editStat ?? codexFileChangeLineStat(item);
 }
 
 function normalizeCommandValue(value: unknown): string | undefined {
