@@ -178,6 +178,7 @@ Show the final result in the timeline.
     assert.match(prompt, /Show setup script outcomes in the thread timeline/);
     assert.match(prompt, /list in "evidenceIds" the evidenceId/);
     assert.match(prompt, /never mention pull requests, commits, or contributors inside "text"/);
+    assert.match(prompt, /Start removal items with "Remove"/);
   });
 
   it("describes the nightly delta rather than all fork features", () => {
@@ -321,11 +322,11 @@ Show the final result in the timeline.
 
     assert.equal(
       rendered,
-      "- **Added:** Start threads from GitHub issues ([#14](https://github.com/yngatech/t3code/pull/14))\n" +
-        "- **Improved:** Show setup script outcomes in the thread timeline " +
+      "- Start threads from GitHub issues ([#14](https://github.com/yngatech/t3code/pull/14))\n" +
+        "- Show setup script outcomes in the thread timeline " +
         "([t3code#12083](https://github.com/pingdotgg/t3code/pull/12083), " +
         `[\`${"c".repeat(7)}\`](https://github.com/pingdotgg/t3code/commit/${"c".repeat(12)}))\n` +
-        "- **Removed:** Remove the superseded status preview\n",
+        "- Remove the superseded status preview\n",
     );
     assert.equal(/^#|\n#/.test(rendered), false);
     assert.equal(

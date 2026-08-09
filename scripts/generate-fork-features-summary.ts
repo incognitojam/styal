@@ -438,6 +438,7 @@ function summaryStyleGuidance(): string {
 - Describe setup script status in the thread timeline, not as work-log or lifecycle rows.
 - Do not use "can", "now", "prefilled", "removable", or "lifecycle entries".
 - Use normal internal punctuation when it improves clarity, but omit terminal punctuation.
+- Start removal items with "Remove" so they read clearly without a section label.
 - Do not add Markdown, links, section labels, or PR references.
 - When a capability matches a style example below, use its replacement text verbatim.
 
@@ -754,16 +755,12 @@ _Updated automatically on ${generatedDate} from [fork \`${options.forkRef.slice(
 
 // The desktop update tooltip flattens the release body into plain bullet lines
 // (apps/desktop/src/updates/releaseNotes.ts), so the nightly section must stay a
-// flat list: no headings, bold prefixes instead of subsections, and references
-// that read cleanly once link markup is stripped.
+// flat list: no headings or section labels, and references that read cleanly
+// once link markup is stripped.
 export function renderNightlySummary(summary: ChangelogSummary, forkRepository: string): string {
-  const renderLines = (items: ReadonlyArray<ChangelogSummaryItem>, prefix: string) =>
-    items.map((item) => `- **${prefix}:** ${renderSummaryItem(item, forkRepository)}`);
-  const lines = [
-    ...renderLines(summary.added, "Added"),
-    ...renderLines(summary.improved, "Improved"),
-    ...renderLines(summary.removed, "Removed"),
-  ];
+  const lines = [...summary.added, ...summary.improved, ...summary.removed].map(
+    (item) => `- ${renderSummaryItem(item, forkRepository)}`,
+  );
   return lines.length === 0 ? "" : `${lines.join("\n")}\n`;
 }
 

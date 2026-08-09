@@ -60,8 +60,8 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
   it("keeps only curated highlights when the commit list follows them", () => {
     const notes = normalizeDesktopUpdateReleaseNotes(
       [
-        "- **Added:** Start threads from GitHub issues ([#14](https://example.com/pull/14))",
-        "- **Improved:** Show setup script outcomes ([t3code#12083](https://example.com/pull/12083))",
+        "- Start threads from GitHub issues ([#14](https://example.com/pull/14))",
+        "- Show setup script outcomes ([t3code#12083](https://example.com/pull/12083))",
         "",
         "## What's Changed",
         "",
@@ -75,8 +75,8 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
       {
         version: "1.2.3",
         items: [
-          "Added: Start threads from GitHub issues (#14)",
-          "Improved: Show setup script outcomes (t3code#12083)",
+          "Start threads from GitHub issues (#14)",
+          "Show setup script outcomes (t3code#12083)",
         ],
       },
     ]);
