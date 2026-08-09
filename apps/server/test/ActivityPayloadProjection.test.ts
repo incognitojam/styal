@@ -349,6 +349,54 @@ describe("superseded tool.updated snapshot dedup", () => {
     expect(projectedIds([inFlight, other, completed])).toEqual([inFlight.id, completed.id]);
   });
 
+  it("keeps a sanitized historical command interaction beside its completion", () => {
+    const interaction: OrchestrationThreadActivity = {
+      id: EventId.make("interaction"),
+      tone: "tool",
+      kind: "tool.updated",
+      summary: "Tool updated",
+      payload: {
+        itemType: "command_execution",
+        data: {
+          itemId: "exec-1",
+          processId: "1234",
+          stdin: "\u0003",
+          threadId: "provider-thread-1",
+          turnId: "turn-a",
+        },
+      },
+      turnId: TurnId.make("turn-a"),
+      createdAt: "2026-07-27T00:00:00.000Z",
+    };
+    const completed: OrchestrationThreadActivity = {
+      id: EventId.make("completed"),
+      tone: "tool",
+      kind: "tool.completed",
+      summary: "Ran command",
+      payload: {
+        itemType: "command_execution",
+        title: "Ran command",
+        detail: "sleep 10",
+        data: { item: { id: "exec-1", command: "sleep 10" } },
+      },
+      turnId: TurnId.make("turn-a"),
+      createdAt: "2026-07-27T00:00:01.000Z",
+    };
+
+    const projected = projectThreadDetailSnapshot({
+      snapshotSequence: 7,
+      thread: makeThread([interaction, completed]),
+    }).thread.activities;
+
+    expect(projected).toHaveLength(2);
+    expect(projected[0]).toMatchObject({
+      kind: "command.interaction",
+      summary: "Sent Ctrl+C",
+      payload: { interaction: "ctrl_c", commandItemId: "exec-1" },
+    });
+    expect(projected[1]?.kind).toBe("tool.completed");
+  });
+
   it("drops interleaved superseded updates even when a parallel call separates them", () => {
     // Deliberate divergence from the clients' adjacency-based collapse: a
     // superseded update separated from its completion by an interleaved
