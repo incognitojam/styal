@@ -22,3 +22,9 @@ pill** fallback because their colors are not controlled by T3 Code.
 To generate a fresh title from the conversation, open a thread's context menu and choose
 **Regenerate title**. While T3 Code is generating it, the action reads **Regenerating…** and cannot
 be selected again. The option is hidden when the connected environment needs a server update.
+
+## Completion sounds
+
+On web and desktop, choose a **Completion sound** in **Settings → General** to hear when an agent
+finishes a response or asks for structured input. An input request appears as **Awaiting Input**
+until you answer it; it remains separate from the unread completion indicator.
