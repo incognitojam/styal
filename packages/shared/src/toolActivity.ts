@@ -176,58 +176,6 @@ function extractToolCommand(data: Record<string, unknown> | undefined, title: st
   return extractCommandFromTitle(title);
 }
 
-function unwrapLiteralShellWord(value: string): string | undefined {
-  if (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) {
-    return value.slice(1, -1);
-  }
-  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
-    const contents = value.slice(1, -1);
-    // Keep this display heuristic literal-only. Expansions can resolve to a
-    // different file than the text shown in the command.
-    if (/[`$\\]/u.test(contents)) {
-      return undefined;
-    }
-    return contents;
-  }
-  if (/['"`$\\;&|<>]/u.test(value)) {
-    return undefined;
-  }
-  return value;
-}
-
-export interface CommandFileReadPresentation extends ToolActivityPresentation {
-  readonly path: string;
-}
-
-/**
- * Recognizes the narrow `sed -n '<lines>p' <file>` form agents commonly use
- * as a read primitive. More general sed programs stay command executions.
- */
-export function deriveCommandFileReadPresentation(
-  command: string | null | undefined,
-): CommandFileReadPresentation | undefined {
-  const normalized = asTrimmedString(command);
-  if (!normalized) {
-    return undefined;
-  }
-  const commandBody = normalized.replace(/^(?:bash|shell|terminal):\s+/iu, "");
-  const match =
-    /^(?<executable>(?:[^\s]*[/\\])?sed)\s+-n\s+(?<program>'[^']*'|"[^"]*"|[^\s]+)\s+(?:--\s+)?(?<path>'[^']*'|"[^"]*"|[^\s]+)\s*$/u.exec(
-      commandBody,
-    );
-  const program = match?.groups?.program ? unwrapLiteralShellWord(match.groups.program) : undefined;
-  const filePath = match?.groups?.path ? unwrapLiteralShellWord(match.groups.path) : undefined;
-  if (!program || !/^\d+(?:,\d+)?p$/u.test(program) || !filePath || filePath === "-") {
-    return undefined;
-  }
-
-  return {
-    summary: "Read file",
-    detail: filePath,
-    path: filePath,
-  };
-}
-
 function maybePathLike(value: string | undefined): string | undefined {
   if (!value) {
     return undefined;
@@ -363,10 +311,6 @@ export function deriveToolActivityPresentation(
   });
 
   if (action === "command") {
-    const fileRead = deriveCommandFileReadPresentation(command);
-    if (fileRead) {
-      return fileRead;
-    }
     return {
       summary: "Ran command",
       ...(command ? { detail: command } : {}),
