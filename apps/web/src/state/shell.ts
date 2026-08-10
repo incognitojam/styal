@@ -7,7 +7,9 @@ import {
   createEnvironmentShellSummaryAtom,
   createEnvironmentSnapshotAtom,
   createShellEnvironmentAtoms,
+  type EnvironmentShellStatus,
 } from "@t3tools/client-runtime/state/shell";
+import type { EnvironmentId } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
@@ -21,6 +23,25 @@ export const environmentShellSummaryAtom = createEnvironmentShellSummaryAtom({
   catalogValueAtom: environmentCatalog.catalogValueAtom,
   shellStateValueAtom: environmentShell.stateValueAtom,
 });
+
+let previousEnvironmentShellStatuses: ReadonlyMap<EnvironmentId, EnvironmentShellStatus> =
+  new Map();
+export const environmentShellStatusesAtom = Atom.make((get) => {
+  const next = new Map<EnvironmentId, EnvironmentShellStatus>();
+  for (const environmentId of get(environmentCatalog.catalogValueAtom).entries.keys()) {
+    next.set(environmentId, get(environmentShell.stateValueAtom(environmentId)).status);
+  }
+  if (
+    next.size === previousEnvironmentShellStatuses.size &&
+    [...next].every(
+      ([environmentId, status]) => status === previousEnvironmentShellStatuses.get(environmentId),
+    )
+  ) {
+    return previousEnvironmentShellStatuses;
+  }
+  previousEnvironmentShellStatuses = next;
+  return previousEnvironmentShellStatuses;
+}).pipe(Atom.withLabel("web-environment-shell-statuses"));
 
 export const allEnvironmentShellsBootstrappedAtom = Atom.make((get) => {
   const catalog = AsyncResult.value(get(environmentCatalog.catalogAtom));
