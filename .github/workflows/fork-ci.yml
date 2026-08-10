@@ -57,6 +57,25 @@ jobs:
 
           echo "run_ci=$run_ci" >> "$GITHUB_OUTPUT"
 
+  upstream_rebase:
+    name: Fork Upstream Rebase
+    # Every commit here joins the patch stack that Fork Nightly rebases onto
+    # upstream before each release, so fail fast when the stack no longer
+    # applies cleanly. Runs even for docs-only changes; those rebase too.
+    if: github.repository == 'yngatech/t3code'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # github.sha is the synthetic merge commit for pull_request runs.
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Rebase patch stack onto upstream
+        run: source .github/scripts/rebase-onto-upstream.sh
+
   check:
     name: Fork Check
     needs: changes
@@ -178,6 +197,7 @@ jobs:
     name: Fork CI Required
     needs:
       - changes
+      - upstream_rebase
       - check
       - test
       - release_smoke
@@ -187,11 +207,13 @@ jobs:
       - name: Verify required jobs
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
+          UPSTREAM_REBASE_RESULT: ${{ needs.upstream_rebase.result }}
           CHECK_RESULT: ${{ needs.check.result }}
           TEST_RESULT: ${{ needs.test.result }}
           RELEASE_SMOKE_RESULT: ${{ needs.release_smoke.result }}
         run: |
           test "$CHANGES_RESULT" = success
+          test "$UPSTREAM_REBASE_RESULT" = success
           test "$CHECK_RESULT" = success -o "$CHECK_RESULT" = skipped
           test "$TEST_RESULT" = success -o "$TEST_RESULT" = skipped
           test "$RELEASE_SMOKE_RESULT" = success -o "$RELEASE_SMOKE_RESULT" = skipped
