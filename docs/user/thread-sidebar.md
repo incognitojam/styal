@@ -18,3 +18,9 @@ Dev and Nightly environments can identify themselves with artwork at the top of 
 the send button. Choose **Artwork**, **Version pill**, or **None** in Settings under environment
 identification. Artwork is recolored to match each built-in theme. Custom themes use the **Version
 pill** fallback because their colors are not controlled by T3 Code.
+
+## Completion sounds
+
+On web and desktop, choose a **Completion sound** in **Settings → General** to hear when an agent
+finishes a response or asks for structured input. An input request appears as **Awaiting Input**
+until you answer it; it remains separate from the unread completion indicator.
