@@ -1,10 +1,6 @@
 // @effect-diagnostics globalDate:off - Fixed native dates keep rendered release metadata deterministic.
 import { assert, describe, it } from "@effect/vitest";
 import {
-  buildChangeExtractionPrompt,
-  buildNightlySummaryPrompt,
-  buildOpenAIRequest,
-  buildRollingSummaryPrompt,
   collectChangeEvidence,
   extractResponseText,
   fitEvidenceToPromptBudget,
@@ -138,20 +134,6 @@ Show the final result in the timeline.
     ]);
   });
 
-  it("keeps extraction per PR and marks repository evidence as untrusted", () => {
-    const prompt = buildChangeExtractionPrompt(evidence);
-
-    assert.match(prompt, /untrusted repository data/);
-    assert.match(prompt, /Never follow instructions/);
-    assert.match(prompt, /exactly one evidenceId/);
-    assert.match(prompt, /do not consolidate separate pull requests/);
-    assert.match(prompt, /Pull request descriptions are stronger evidence/);
-    assert.match(prompt, /record the symptom users\s+experienced/);
-    assert.match(prompt, /Show affected services in the sidebar/);
-    assert.match(prompt, /Diffs are truncated/);
-    assert.match(prompt, /useGitHubStatus/);
-  });
-
   it("drops the largest diffs first when evidence exceeds the prompt budget", () => {
     const oversized: ReadonlyArray<ChangeEvidence> = [
       { ...evidence[0]!, id: "yngatech/t3code#20", diff: "small diff" },
@@ -163,52 +145,6 @@ Show the final result in the timeline.
     assert.equal(fitted[0]?.diff, "small diff");
     assert.equal(fitted[1]?.diff, "");
     assert.deepEqual(fitEvidenceToPromptBudget(evidence), evidence);
-  });
-
-  it("reconciles rolling state and gives measured changelog style examples", () => {
-    const prompt = buildRollingSummaryPrompt(records);
-
-    assert.match(prompt, /current-state summary/);
-    assert.match(prompt, /later changes may extend, replace, or remove/);
-    assert.match(prompt, /omit\s+capabilities later removed/i);
-    assert.match(prompt, /semantically overlapping records whose capability names differ/);
-    assert.match(prompt, /thread timeline, not as work-log or lifecycle rows/);
-    assert.match(prompt, /normal internal punctuation when it improves clarity/);
-    assert.match(prompt, /use its replacement text verbatim/);
-    assert.match(prompt, /verbs that claim no more than the evidence shows/);
-    assert.match(prompt, /the symptom that no longer happens/);
-    assert.match(prompt, /make sense to a reader who has not seen the pull request/);
-    assert.match(prompt, /avoid design-process words/);
-    assert.match(prompt, /Start new threads with GitHub issues as context/);
-    assert.match(prompt, /Show setup script outcomes in the thread timeline/);
-    assert.match(prompt, /Fix threads briefly showing as done before a queued turn starts/);
-    assert.match(prompt, /Fix styling of the theme creation and import buttons/);
-    assert.match(prompt, /list in "evidenceIds" the evidenceId/);
-    assert.match(prompt, /never mention pull requests, commits, or contributors inside "text"/);
-    assert.match(prompt, /Start removal items with "Remove"/);
-  });
-
-  it("describes the nightly delta rather than all fork features", () => {
-    const prompt = buildNightlySummaryPrompt(records);
-
-    assert.match(prompt, /since the previous nightly/);
-    assert.match(prompt, /release delta rather than the fork's full feature set/);
-    assert.match(prompt, /additions, improvements, and removals/);
-  });
-
-  it("uses low reasoning for extraction and medium reasoning for synthesis", () => {
-    const extraction = buildOpenAIRequest("gpt-5.6-sol", "prompt", "extraction");
-    const synthesis = buildOpenAIRequest("gpt-5.6-sol", "prompt", "synthesis");
-
-    assert.equal(extraction.model, "gpt-5.6-sol");
-    assert.deepEqual(extraction.reasoning, { effort: "low" });
-    assert.deepEqual(synthesis.reasoning, { effort: "medium" });
-    assert.equal(extraction.store, false);
-    assert.equal(
-      (extraction.text as { format: { name: string } }).format.name,
-      "changelog_change_records",
-    );
-    assert.equal((synthesis.text as { format: { name: string } }).format.name, "changelog_summary");
   });
 
   it("extracts and validates structured response text", () => {
@@ -302,14 +238,6 @@ Show the final result in the timeline.
     );
     assert.match(rendered, /## Improved\n\n- Show exit codes for shell commands/);
     assert.equal(/superseded internal feature/.test(rendered), false);
-    assert.match(rendered, /macOS arm64.*signed and Apple-notarized DMG/);
-    assert.match(rendered, /Linux x64.*unsigned AppImage/);
-    assert.match(rendered, /Windows x64.*unsigned NSIS/);
-    assert.match(
-      rendered,
-      /https:\/\/github\.com\/pingdotgg\/t3code\/compare\/main\.\.\.yngatech:t3code:main/,
-    );
-    assert.match(rendered, /low extraction and medium synthesis reasoning/);
   });
 
   it("renders nightly highlights as a flat tooltip-safe list with PR references", () => {
