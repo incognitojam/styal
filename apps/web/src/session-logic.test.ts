@@ -1035,6 +1035,28 @@ describe("deriveWorkLogEntries", () => {
     expect(entry?.command).toBe("bun run lint");
   });
 
+  it("presents sed print ranges as file reads", () => {
+    const [fileRead] = deriveWorkLogEntries([
+      makeActivity({
+        id: "file-read",
+        kind: "tool.completed",
+        summary: "Ran command",
+        payload: {
+          itemType: "command_execution",
+          title: "Ran command",
+          data: { item: { command: "sed -n '1,80p' /workspace/src/app.ts" } },
+        },
+      }),
+    ]);
+
+    expect(fileRead).toMatchObject({
+      label: "Read file",
+      toolTitle: "Read file",
+      detail: "/workspace/src/app.ts",
+      fileReadPath: "/workspace/src/app.ts",
+    });
+  });
+
   it("extracts failed tool lifecycle status from item payloads", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
