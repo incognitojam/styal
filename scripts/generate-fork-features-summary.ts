@@ -423,7 +423,8 @@ A replacement may require both a "remove" record for the superseded behavior and
 Use the same short conceptual capability name for records that affect the same feature. State the
 factual user outcome and product surface; use "application" when the change is not tied to one named
 surface. Pull request descriptions are stronger evidence of intent than commit wording, while later
-evidence is stronger evidence of the resulting behavior.
+evidence is stronger evidence of the resulting behavior. For bug fixes, record the symptom users
+experienced, not the internal correction that resolved it.
 
 Chronological evidence:
 ${evidenceData}`;
@@ -433,8 +434,17 @@ function summaryStyleGuidance(): string {
   return `Write each item as a short capability label:
 - Use 5–12 words and start with an active base-form verb.
 - Describe what the user can do or see; mention the UI location only when useful.
+- Choose verbs that claim no more than the evidence shows; showing a file's path and change
+  counts is not "previewing" the edit.
+- Write bug fixes as "Fix" followed by the symptom that no longer happens, not the invariant
+  the fix upholds.
+- Each item must make sense to a reader who has not seen the pull request; when the evidence
+  offers no concrete user-visible outcome, state the symptom fixed or the plainest description
+  the evidence supports.
 - Prefer product language such as thread, timeline, sidebar, and command palette.
 - Omit configuration mechanics, implementation vocabulary, and incidental interaction details.
+- Describe styling fixes plainly by naming what looked wrong or which controls were restyled;
+  avoid design-process words such as "consistent", "responsive", or "unified".
 - Describe setup script status in the thread timeline, not as work-log or lifecycle rows.
 - Do not use "can", "now", "prefilled", "removable", or "lifecycle entries".
 - Use normal internal punctuation when it improves clarity, but omit terminal punctuation.
@@ -454,7 +464,13 @@ becomes "Detect GitHub outages and show status in the sidebar"
 becomes "Start new threads with GitHub issues as context"
 
 "Setup script outcomes now appear as collapsed lifecycle entries."
-becomes "Show setup script outcomes in the thread timeline"`;
+becomes "Show setup script outcomes in the thread timeline"
+
+"Keep threads active while queued turns begin"
+becomes "Fix threads briefly showing as done before a queued turn starts"
+
+"Use consistent responsive buttons for theme creation and import"
+becomes "Fix styling of the theme creation and import buttons"`;
 }
 
 export function buildRollingSummaryPrompt(records: ReadonlyArray<ChangeRecord>): string {
