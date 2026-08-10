@@ -1949,7 +1949,7 @@ export function GeneralSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("completion-sound")}
-          description="Choose whether T3 Code plays a sound when a response finishes."
+          description="Choose whether T3 Code plays a sound when a response finishes or the agent asks for your input."
           resetAction={
             settings.completionSound !== DEFAULT_UNIFIED_SETTINGS.completionSound ? (
               <SettingResetButton
