@@ -45,7 +45,6 @@ import {
   FolderPlusIcon,
   GitBranchIcon,
   MessageSquareIcon,
-  PencilIcon,
   PinIcon,
   PlusIcon,
   SearchIcon,
@@ -1129,15 +1128,18 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       aria-label="Unsent draft"
       data-testid={`sidebar-v2-draft-${thread.id}`}
       className={cn(
-        // Matches the PR badge's settled treatment: muted at rest so the
-        // parked tail stays quiet, brightening with the row on hover. The
-        // pencil has no state colour of its own, so it lifts to the same
-        // foreground the title does.
+        // Same glyph as the draft-session rows so "unsent draft" reads as
+        // one concept, but muted rather than amber: on a thread row it's a
+        // quiet status flag, not a block asking for a decision. Matches the
+        // PR badge's settled treatment: muted at rest so the parked tail
+        // stays quiet, brightening with the row on hover. The glyph has no
+        // state colour of its own, so it lifts to the same foreground the
+        // title does.
         "inline-flex shrink-0 items-center justify-center text-secondary-label",
         !props.isActive && "transition-colors group-hover/v2-row:text-foreground",
       )}
     >
-      <PencilIcon className="size-3.5" />
+      <SquarePenIcon className="size-3.5" />
     </span>
   ) : null;
 
