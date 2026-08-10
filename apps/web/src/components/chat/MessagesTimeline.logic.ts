@@ -286,7 +286,6 @@ export function workLogEntryIsLocalCodeSearch(entry: WorkLogEntry): boolean {
 
 export function toolGroupAction(entry: WorkLogEntry): ToolGroupAction {
   if (
-    entry.fileReadPath ||
     entry.requestKind === "file-read" ||
     entry.itemType === "image_view" ||
     (entry.itemType === "dynamic_tool_call" && entry.toolTitle === "Read File")
