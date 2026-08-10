@@ -11,3 +11,9 @@ other connected devices.
 If reordering is unavailable for one environment, update the T3 Code server running in that
 environment. Older servers can still pin and unpin threads, but do not understand synced ordering;
 their pinned threads keep the default newest-first order below the ones you have arranged.
+
+## Completion sounds
+
+On web and desktop, choose a **Completion sound** in **Settings → General** to hear when an agent
+finishes a response or asks for structured input. An input request appears as **Awaiting Input**
+until you answer it; it remains separate from the unread completion indicator.
