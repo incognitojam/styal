@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { deriveToolActivityPresentation } from "./toolActivity.ts";
+import {
+  deriveCommandFileReadPresentation,
+  deriveToolActivityPresentation,
+} from "./toolActivity.ts";
 
 describe("toolActivity", () => {
   it("normalizes command tools to a stable ran-command label", () => {
@@ -53,5 +56,32 @@ describe("toolActivity", () => {
     ).toEqual({
       summary: "Read file",
     });
+  });
+
+  it("presents a single-file sed print range as a file read", () => {
+    expect(deriveCommandFileReadPresentation("sed -n '1,240p' /workspace/src/app.ts")).toEqual({
+      summary: "Read file",
+      detail: "/workspace/src/app.ts",
+      requestedRange: { startLine: 1, endLine: 240 },
+    });
+    expect(
+      deriveCommandFileReadPresentation("Bash: /usr/bin/sed -n 40p -- 'docs/My File.md'"),
+    ).toEqual({
+      summary: "Read file",
+      detail: "docs/My File.md",
+      requestedRange: { startLine: 40, endLine: 40 },
+    });
+  });
+
+  it("leaves general sed commands classified as commands", () => {
+    for (const command of [
+      "sed 's/foo/bar/' app.ts",
+      "sed -n '1,40p' app.ts other.ts",
+      "sed -n '1,40p' app.ts | head",
+      "sed -n '$p' app.ts",
+      "sed -n '40,1p' app.ts",
+    ]) {
+      expect(deriveCommandFileReadPresentation(command)).toBeUndefined();
+    }
   });
 });
