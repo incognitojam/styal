@@ -1,7 +1,6 @@
 name: Fork Nightly
 
 on:
-  pull_request:
   schedule:
     - cron: "23 */6 * * *"
   workflow_dispatch:
@@ -24,8 +23,7 @@ permissions:
   id-token: none
 
 concurrency:
-  group: fork-nightly-${{ github.event.pull_request.number || 'publish' }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: fork-nightly-publish
 
 jobs:
   prepare:
@@ -46,8 +44,8 @@ jobs:
       - name: Checkout fork patch stack
         uses: actions/checkout@v6
         with:
-          token: ${{ github.event_name == 'pull_request' && github.token || secrets.FORK_RELEASE_TOKEN }}
-          ref: ${{ github.event_name == 'pull_request' && github.sha || 'main' }}
+          token: ${{ secrets.FORK_RELEASE_TOKEN }}
+          ref: main
           fetch-depth: 0
 
       - id: candidate
@@ -58,23 +56,18 @@ jobs:
         run: |
           set -euo pipefail
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git remote add upstream https://github.com/pingdotgg/t3code.git
           fork_ref=$(git rev-parse HEAD)
-          git fetch --no-tags upstream main
-          upstream_ref=$(git rev-parse FETCH_HEAD)
           git fetch origin '+refs/heads/nightly:refs/remotes/origin/nightly' || true
           git fetch origin \
             '+refs/heads/nightly-candidate:refs/remotes/origin/nightly-candidate' || true
 
           git switch -C nightly-candidate HEAD
-          git rebase "$upstream_ref"
+          source .github/scripts/rebase-onto-upstream.sh
+          upstream_ref=$UPSTREAM_REF
 
           candidate_ref=$(git rev-parse HEAD)
           has_changes=true
-          if [[ "$GITHUB_EVENT_NAME" != "pull_request" ]] && \
-            [[ "$DRY_RUN" != "true" ]] && \
+          if [[ "$DRY_RUN" != "true" ]] && \
             git rev-parse --verify refs/remotes/origin/nightly >/dev/null 2>&1 && \
             git diff --quiet origin/nightly HEAD --; then
             has_changes=false
@@ -136,9 +129,7 @@ jobs:
 
       - id: release_meta
         name: Resolve nightly version
-        if: >-
-          github.event_name != 'pull_request' &&
-          steps.candidate.outputs.has_changes == 'true'
+        if: steps.candidate.outputs.has_changes == 'true'
         shell: bash
         env:
           CANDIDATE_REF: ${{ steps.candidate.outputs.ref }}
@@ -153,9 +144,7 @@ jobs:
 
       - id: previous_tag
         name: Resolve previous fork nightly
-        if: >-
-          github.event_name != 'pull_request' &&
-          steps.candidate.outputs.has_changes == 'true'
+        if: steps.candidate.outputs.has_changes == 'true'
         run: |
           node scripts/resolve-previous-release-tag.ts \
             --channel nightly \
@@ -163,17 +152,13 @@ jobs:
             --github-output
 
       - name: Publish verified candidate
-        if: >-
-          github.event_name != 'pull_request' &&
-          steps.candidate.outputs.has_changes == 'true'
+        if: steps.candidate.outputs.has_changes == 'true'
         run: git push --force-with-lease origin HEAD:refs/heads/nightly-candidate
 
   build_desktop:
     name: Build desktop artifacts
     needs: prepare
-    if: >-
-      github.event_name != 'pull_request' &&
-      needs.prepare.outputs.has_changes == 'true'
+    if: needs.prepare.outputs.has_changes == 'true'
     uses: ./.github/workflows/fork-desktop-build.yml
     with:
       ref: ${{ needs.prepare.outputs.ref }}
@@ -192,7 +177,6 @@ jobs:
       issues: write
       pull-requests: read
     if: >-
-      github.event_name != 'pull_request' &&
       needs.prepare.outputs.has_changes == 'true' &&
       needs.build_desktop.result == 'success'
     runs-on: ubuntu-24.04
@@ -390,7 +374,6 @@ jobs:
     needs: [prepare, build_desktop, release]
     if: >-
       ${{
-        github.event_name != 'pull_request' &&
         always() &&
         (
           needs.prepare.result == 'failure' ||
