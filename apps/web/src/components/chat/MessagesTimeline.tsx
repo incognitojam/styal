@@ -2051,9 +2051,13 @@ function workToneIcon(tone: TimelineWorkEntry["tone"]): {
 }
 
 function workEntryPreview(
-  workEntry: Pick<TimelineWorkEntry, "detail" | "command" | "changedFiles" | "itemType">,
+  workEntry: Pick<
+    TimelineWorkEntry,
+    "detail" | "command" | "fileReadPath" | "changedFiles" | "itemType"
+  >,
   workspaceRoot: string | undefined,
 ) {
+  if (workEntry.fileReadPath) return workEntry.detail ?? null;
   if (workEntry.command) return workEntry.command;
   if (workEntry.itemType === "file_change" && (workEntry.changedFiles?.length ?? 0) > 0) {
     const [firstPath] = workEntry.changedFiles ?? [];
@@ -2202,6 +2206,7 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   if (workEntry.requestKind === "file-read") return "eye";
   if (workEntry.requestKind === "file-change") return "square-pen";
 
+  if (workEntry.fileReadPath) return "eye";
   if (workEntry.itemType === "command_execution" || workEntry.command) {
     return "terminal";
   }
