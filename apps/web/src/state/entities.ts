@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import type {
   EnvironmentProject,
+  EnvironmentShellStatus,
   EnvironmentThread,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
@@ -23,7 +24,7 @@ import { useMemo } from "react";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentProjects } from "./projects";
 import { environmentServerConfigsAtom } from "./server";
-import { allEnvironmentShellsBootstrappedAtom } from "./shell";
+import { allEnvironmentShellsBootstrappedAtom, environmentShellStatusesAtom } from "./shell";
 import { environmentThreadDetails, environmentThreadShells } from "./threads";
 
 const EMPTY_PROJECT_REFS: ReadonlyArray<ScopedProjectRef> = Object.freeze([]);
@@ -118,6 +119,10 @@ export function useServerConfigs(): ReadonlyMap<EnvironmentId, ServerConfig> {
 
 export function useThreadShells(): ReadonlyArray<EnvironmentThreadShell> {
   return useAtomValue(environmentThreadShells.threadShellsAtom);
+}
+
+export function useEnvironmentShellStatuses(): ReadonlyMap<EnvironmentId, EnvironmentShellStatus> {
+  return useAtomValue(environmentShellStatusesAtom);
 }
 
 export function useAllEnvironmentShellsBootstrapped(): boolean {
