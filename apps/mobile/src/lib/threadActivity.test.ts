@@ -344,6 +344,42 @@ describe("buildThreadFeed", () => {
     );
   });
 
+  it("shows a sed print range as a file read", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-file-read"),
+      projectId: ProjectId.make("project-1"),
+      title: "File read",
+      activities: [
+        makeActivity({
+          id: EventId.make("file-read"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "Ran command",
+          createdAt: "2026-04-01T00:00:01.000Z",
+          payload: {
+            title: "Ran command",
+            itemType: "command_execution",
+            data: {
+              item: {
+                command: "sed -n '1,240p' /workspace/src/app.ts",
+              },
+            },
+          },
+        }),
+      ],
+    });
+
+    const group = buildThreadFeed(thread)[0];
+    expect(group).toMatchObject({ type: "activity-group" });
+    if (!group || group.type !== "activity-group") return;
+    expect(group.activities[0]).toMatchObject({
+      summary: "Read file",
+      detail: "/workspace/src/app.ts",
+      icon: "eye",
+      canExpand: true,
+    });
+  });
+
   it("collapses a setup run into its latest state across interleaved activity", () => {
     const thread = makeThread({
       id: ThreadId.make("thread-setup-collapse"),

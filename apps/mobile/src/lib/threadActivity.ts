@@ -9,6 +9,7 @@ import type {
 } from "@t3tools/contracts";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
 import {
+  deriveCommandFileReadPresentation,
   deriveToolFileChangeLineStat,
   type ToolFileChangeLineStat,
 } from "@t3tools/shared/toolActivity";
@@ -1586,8 +1587,12 @@ export function buildThreadFeed(
           );
         })
         .map<RawThreadFeedEntry>((entry) => {
-          const summary = workEntryHeading(entry);
-          const detail = workEntryPreview(entry);
+          const fileRead =
+            entry.itemType === "command_execution"
+              ? deriveCommandFileReadPresentation(entry.command)
+              : undefined;
+          const summary = fileRead?.summary ?? workEntryHeading(entry);
+          const detail = fileRead?.detail ?? workEntryPreview(entry);
           const getFullDetail = memoizeValue(() => buildWorkEntryExpandedBody(entry));
           const getCopyText = memoizeValue(() =>
             [summary, detail, getFullDetail()]
@@ -1611,7 +1616,7 @@ export function buildThreadFeed(
               canExpand: workEntryHasExpandedBody(entry),
               getFullDetail,
               getCopyText,
-              icon: workEntryIcon(entry),
+              icon: fileRead ? "eye" : workEntryIcon(entry),
               toolLike: workLogEntryIsToolLike(entry),
               status: workEntryStatus(entry),
             },
