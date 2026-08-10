@@ -146,6 +146,7 @@ Show the final result in the timeline.
     assert.match(prompt, /exactly one evidenceId/);
     assert.match(prompt, /do not consolidate separate pull requests/);
     assert.match(prompt, /Pull request descriptions are stronger evidence/);
+    assert.match(prompt, /record the symptom users\s+experienced/);
     assert.match(prompt, /Show affected services in the sidebar/);
     assert.match(prompt, /Diffs are truncated/);
     assert.match(prompt, /useGitHubStatus/);
@@ -174,8 +175,14 @@ Show the final result in the timeline.
     assert.match(prompt, /thread timeline, not as work-log or lifecycle rows/);
     assert.match(prompt, /normal internal punctuation when it improves clarity/);
     assert.match(prompt, /use its replacement text verbatim/);
+    assert.match(prompt, /verbs that claim no more than the evidence shows/);
+    assert.match(prompt, /the symptom that no longer happens/);
+    assert.match(prompt, /make sense to a reader who has not seen the pull request/);
+    assert.match(prompt, /avoid design-process words/);
     assert.match(prompt, /Start new threads with GitHub issues as context/);
     assert.match(prompt, /Show setup script outcomes in the thread timeline/);
+    assert.match(prompt, /Fix threads briefly showing as done before a queued turn starts/);
+    assert.match(prompt, /Fix styling of the theme creation and import buttons/);
     assert.match(prompt, /list in "evidenceIds" the evidenceId/);
     assert.match(prompt, /never mention pull requests, commits, or contributors inside "text"/);
     assert.match(prompt, /Start removal items with "Remove"/);
