@@ -9,7 +9,6 @@ import type {
 } from "@t3tools/contracts";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
 import {
-  deriveCommandFileReadPresentation,
   deriveToolFileChangeLineStat,
   type ToolFileChangeLineStat,
 } from "@t3tools/shared/toolActivity";
@@ -74,7 +73,6 @@ interface WorkLogEntry {
   detail?: string;
   command?: string;
   rawCommand?: string;
-  fileReadPath?: string;
   changedFiles?: ReadonlyArray<string>;
   fileChangeStat?: ToolFileChangeLineStat;
   tone: "thinking" | "tool" | "info" | "error";
@@ -342,14 +340,10 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       : null;
   const itemType = extractWorkLogItemType(payload);
   const commandPreview = extractToolCommand(payload);
-  const commandFileRead =
-    itemType === "command_execution"
-      ? deriveCommandFileReadPresentation(commandPreview.command)
-      : undefined;
   const changedFiles = extractChangedFiles(payload);
   const fileChangeStat =
     itemType === "file_change" ? deriveToolFileChangeLineStat(payload?.data) : undefined;
-  const title = commandFileRead?.summary ?? extractToolTitle(payload);
+  const title = extractToolTitle(payload);
   // task.updated included: terminal bypassed updates (Codex children's only
   // terminal signal) must carry task identity so they collapse per child
   // instead of stacking anonymous "Task idle" rows.
@@ -378,7 +372,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
     createdAt: activity.createdAt,
     turnId: activity.turnId,
     ...(taskId ? { taskId } : {}),
-    label: taskLabel || commandFileRead?.summary || activity.summary,
+    label: taskLabel || activity.summary,
     tone:
       activity.kind === "task.progress"
         ? "thinking"
@@ -388,10 +382,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
     activityKind: activity.kind,
   };
   const requestKind = extractWorkLogRequestKind(payload);
-  if (commandFileRead?.detail) {
-    entry.detail = commandFileRead.detail;
-  } else if (
-    !commandFileRead &&
+  if (
     !taskDetailAsLabel &&
     payload &&
     typeof payload.detail === "string" &&
@@ -407,9 +398,6 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (commandPreview.rawCommand) {
     entry.rawCommand = commandPreview.rawCommand;
-  }
-  if (commandFileRead) {
-    entry.fileReadPath = commandFileRead.path;
   }
   if (changedFiles.length > 0) {
     entry.changedFiles = changedFiles;
@@ -525,7 +513,6 @@ function mergeDerivedWorkLogEntries(
   const detail = next.detail ?? previous.detail;
   const command = next.command ?? previous.command;
   const rawCommand = next.rawCommand ?? previous.rawCommand;
-  const fileReadPath = next.fileReadPath ?? previous.fileReadPath;
   const toolTitle = next.toolTitle ?? previous.toolTitle;
   const itemType = next.itemType ?? previous.itemType;
   const requestKind = next.requestKind ?? previous.requestKind;
@@ -539,7 +526,6 @@ function mergeDerivedWorkLogEntries(
     ...(detail ? { detail } : {}),
     ...(command ? { command } : {}),
     ...(rawCommand ? { rawCommand } : {}),
-    ...(fileReadPath ? { fileReadPath } : {}),
     ...(changedFiles.length > 0 ? { changedFiles } : {}),
     ...(fileChangeStat ? { fileChangeStat } : {}),
     ...(toolTitle ? { toolTitle } : {}),
@@ -665,7 +651,6 @@ function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
   if (entry.requestKind === "command") return "command";
   if (entry.requestKind === "file-read") return "eye";
   if (entry.requestKind === "file-change") return "edit";
-  if (entry.fileReadPath) return "eye";
   if (entry.itemType === "command_execution" || entry.command) return "command";
   if (entry.itemType === "file_change" || (entry.changedFiles?.length ?? 0) > 0) return "edit";
   if (entry.itemType === "web_search") return "globe";
@@ -723,12 +708,8 @@ function memoizeValue<T>(build: () => T): () => T {
 }
 
 function workEntryPreview(
-  workEntry: Pick<
-    WorkLogEntry,
-    "detail" | "command" | "fileReadPath" | "changedFiles" | "itemType"
-  >,
+  workEntry: Pick<WorkLogEntry, "detail" | "command" | "changedFiles" | "itemType">,
 ): string | null {
-  if (workEntry.fileReadPath) return workEntry.detail ?? null;
   if (workEntry.command) return workEntry.command;
   if (workEntry.itemType === "file_change" && (workEntry.changedFiles?.length ?? 0) > 0) {
     const [firstPath] = workEntry.changedFiles ?? [];
