@@ -3,7 +3,6 @@ import * as Arr from "effect/Array";
 import * as Schema from "effect/Schema";
 import { isBackgroundTaskActivity } from "@t3tools/client-runtime/state/subagentRuntime";
 import {
-  deriveCommandFileReadPresentation,
   deriveToolFileChangeLineStat,
   type ToolFileChangeLineStat,
 } from "@t3tools/shared/toolActivity";
@@ -79,7 +78,6 @@ export interface WorkLogEntry {
   detail?: string;
   command?: string;
   rawCommand?: string;
-  fileReadPath?: string;
   exitCode?: number;
   changedFiles?: ReadonlyArray<string>;
   fileChangeStat?: ToolFileChangeLineStat;
@@ -937,14 +935,10 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       : null;
   const itemType = extractWorkLogItemType(payload);
   const commandPreview = extractToolCommand(payload);
-  const commandFileRead =
-    itemType === "command_execution"
-      ? deriveCommandFileReadPresentation(commandPreview.command)
-      : undefined;
   const changedFiles = extractChangedFiles(payload);
   const fileChangeStat =
     itemType === "file_change" ? deriveToolFileChangeLineStat(payload?.data) : undefined;
-  const title = commandFileRead?.summary ?? extractToolTitle(payload);
+  const title = extractToolTitle(payload);
   const isTaskActivity =
     activity.kind === "task.started" ||
     activity.kind === "task.progress" ||
@@ -961,22 +955,20 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       ? payload.detail
       : null;
   const taskLabel = taskSummary || taskDetailAsLabel;
-  const detail = commandFileRead
-    ? (commandFileRead.detail ?? null)
-    : isTaskActivity
-      ? !taskDetailAsLabel &&
-        payload &&
-        typeof payload.detail === "string" &&
-        payload.detail.length > 0
-        ? stripTrailingExitCode(payload.detail).output
-        : null
-      : extractToolDetail(payload, title ?? activity.summary);
+  const detail = isTaskActivity
+    ? !taskDetailAsLabel &&
+      payload &&
+      typeof payload.detail === "string" &&
+      payload.detail.length > 0
+      ? stripTrailingExitCode(payload.detail).output
+      : null
+    : extractToolDetail(payload, title ?? activity.summary);
   const toolCallId = isTaskActivity ? null : extractToolCallId(payload);
   const entry: DerivedWorkLogEntry = {
     id: activity.id,
     createdAt: activity.createdAt,
     turnId: activity.turnId,
-    label: taskLabel || commandFileRead?.summary || activity.summary,
+    label: taskLabel || activity.summary,
     tone:
       activity.kind === "task.progress"
         ? "thinking"
@@ -995,9 +987,6 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (commandPreview.rawCommand) {
     entry.rawCommand = commandPreview.rawCommand;
-  }
-  if (commandFileRead) {
-    entry.fileReadPath = commandFileRead.path;
   }
   if (exitCode !== null) {
     entry.exitCode = exitCode;
@@ -1255,7 +1244,6 @@ function mergeDerivedWorkLogEntries(
   const detail = next.detail ?? previous.detail;
   const command = next.command ?? previous.command;
   const rawCommand = next.rawCommand ?? previous.rawCommand;
-  const fileReadPath = next.fileReadPath ?? previous.fileReadPath;
   const exitCode = next.exitCode ?? previous.exitCode;
   const toolTitle = next.toolTitle ?? previous.toolTitle;
   const itemType = next.itemType ?? previous.itemType;
@@ -1271,7 +1259,6 @@ function mergeDerivedWorkLogEntries(
     ...(detail ? { detail } : {}),
     ...(command ? { command } : {}),
     ...(rawCommand ? { rawCommand } : {}),
-    ...(fileReadPath ? { fileReadPath } : {}),
     ...(exitCode !== undefined ? { exitCode } : {}),
     ...(changedFiles.length > 0 ? { changedFiles } : {}),
     ...(fileChangeStat ? { fileChangeStat } : {}),
