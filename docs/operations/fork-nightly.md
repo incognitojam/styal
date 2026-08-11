@@ -21,8 +21,13 @@ publishes a GitHub prerelease.
   failure notification fires), as does any other failure checking or pushing refs. Dry runs never
   promote.
 - **Maintainer-reviewed manual rebases.** When the rebase onto upstream conflicts, the nightly fails
-  in prepare before promoting anything. A human resolves the conflict, verifies the stack, pushes a
-  backup branch, and force-pushes `main` — the same procedure as before automation existed.
+  in prepare before promoting anything. A human resolves the conflict locally and pushes the
+  resolved stack to a scratch branch on origin, then dispatches the workflow with `source_ref` set to
+  that branch: the run rebases it onto upstream (a no-op when nothing moved since, a loud failure
+  when it did), verifies it, publishes the release, and promotes it to `main` through the same backup
+  and lease mechanics as an automated run. The ruleset blocks force-pushing `main` from the CLI, so
+  this dispatch is how a resolved stack reaches `main`. Pair `source_ref` with `dry_run` first to
+  verify a resolution without publishing or promoting anything.
 
 ## Fork features summary
 
