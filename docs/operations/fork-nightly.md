@@ -4,6 +4,23 @@ The `Fork Nightly` workflow rebases the `yngatech/t3code` patch stack onto the c
 `pingdotgg/t3code` main branch, validates the candidate, builds the supported desktop targets, and
 publishes a GitHub prerelease.
 
+## Keeping `main` current
+
+`main` is the fork patch stack, rebased onto upstream. Two paths move it:
+
+- **Automated daily promotion (mechanical rebases only).** Once per day — the first scheduled run
+  (08:xx UTC), or a `workflow_dispatch` with `promote_main` enabled — the nightly promotes the
+  verified rebased stack to `main`. When the run has new changes, promotion happens after the
+  release publishes. When it has none (the candidate tree matches `origin/nightly`), the prepare job
+  instead aligns `main` to the already-released `origin/nightly` commit — same tree, already fully
+  verified — skipping as a no-op when `main` already matches it. Either path first force-pushes the
+  pre-promotion `main` commit to `backup/main-YYYYMMDD`, then force-pushes to `main` with a lease
+  pinned to the commit the run started from, so a manual push landing mid-run fails the step (and
+  the Discord failure notification fires) instead of being overwritten. Dry runs never promote.
+- **Maintainer-reviewed manual rebases.** When the rebase onto upstream conflicts, the nightly fails
+  in prepare before promoting anything. A human resolves the conflict, verifies the stack, pushes a
+  backup branch, and force-pushes `main` — the same procedure as before automation existed.
+
 ## Fork features summary
 
 Each published nightly can include model-generated highlights for changes since the previous nightly.
