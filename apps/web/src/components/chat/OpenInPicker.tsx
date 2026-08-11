@@ -14,10 +14,10 @@ import {
   useRemoteOpenState,
 } from "../../remoteOpen";
 import { useEnvironment } from "../../state/environments";
-import { ChevronDownIcon, FolderClosedIcon } from "lucide-react";
+import { ChevronDownIcon, CopyIcon, FolderClosedIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { Group, GroupSeparator } from "../ui/group";
-import { Menu, MenuItem, MenuPopup, MenuShortcut, MenuTrigger } from "../ui/menu";
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from "../ui/menu";
 import {
   AntigravityIcon,
   CursorIcon,
@@ -46,6 +46,8 @@ import {
 import { cn, isMacPlatform, isWindowsPlatform } from "~/lib/utils";
 import { shellEnvironment } from "~/state/shell";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { toastManager } from "../ui/toast";
 
 type OpenInOption = {
   label: string;
@@ -224,6 +226,19 @@ export const OpenInPicker = memo(function OpenInPicker({
     [effectiveEditors],
   );
   const primaryOption = options.find(({ value }) => value === preferredEditor) ?? null;
+  const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
+    target: "path",
+    onCopy: ({ path }) => {
+      toastManager.add({ type: "success", title: "Path copied", description: path });
+    },
+    onError: (error) => {
+      toastManager.add({
+        type: "error",
+        title: "Failed to copy path",
+        description: error.message,
+      });
+    },
+  });
 
   const openInEditor = useCallback(
     (editorId: EditorId | null) => {
@@ -346,6 +361,16 @@ export const OpenInPicker = memo(function OpenInPicker({
               )}
             </>
           )}
+          <MenuSeparator />
+          <MenuItem
+            disabled={!openInCwd}
+            onClick={() => {
+              if (openInCwd) copyPathToClipboard(openInCwd, { path: openInCwd });
+            }}
+          >
+            <CopyIcon aria-hidden="true" />
+            Copy path
+          </MenuItem>
         </MenuPopup>
       </Menu>
     </Group>
