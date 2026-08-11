@@ -1,4 +1,4 @@
-import { MessageCircle, Trash2 } from "lucide-react";
+import { MessageCircle, Pencil, Trash2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { Button } from "~/components/ui/button";
@@ -13,6 +13,15 @@ interface DiffCommentSecondaryAction {
   readonly onAction: (text: string) => void;
 }
 
+interface DiffCommentEditState {
+  readonly active: boolean;
+  readonly text: string;
+  readonly onStart: () => void;
+  readonly onChange: (text: string) => void;
+  readonly onCancel: () => void;
+  readonly onSave: (text: string) => void;
+}
+
 interface DiffCommentAnnotationProps {
   kind: "draft" | "comment";
   rangeLabel: string;
@@ -20,6 +29,7 @@ interface DiffCommentAnnotationProps {
   onTextChange?: (text: string) => void;
   onCancel: () => void;
   onComment: (text: string) => void;
+  edit?: DiffCommentEditState;
   onDelete?: () => void;
   placeholder?: string;
   submitLabel?: string;
@@ -35,6 +45,7 @@ export function DiffCommentAnnotation({
   onTextChange,
   onCancel,
   onComment,
+  edit,
   onDelete,
   placeholder = "Add a comment…",
   submitLabel = "Comment",
@@ -42,10 +53,22 @@ export function DiffCommentAnnotation({
   secondaryAction,
 }: DiffCommentAnnotationProps) {
   const [localDraftText, setLocalDraftText] = useState("");
-  const displayedText = kind === "draft" && !onTextChange ? localDraftText : text;
+  const isEditingComment = kind === "comment" && edit?.active === true;
+  const displayedText = isEditingComment
+    ? edit.text
+    : kind === "draft" && !onTextChange
+      ? localDraftText
+      : text;
   const trimmedText = displayedText.trim();
+  const submit = () => {
+    if (isEditingComment) {
+      edit.onSave(trimmedText);
+    } else {
+      onComment(trimmedText);
+    }
+  };
 
-  if (kind === "comment") {
+  if (kind === "comment" && !isEditingComment) {
     return (
       <div
         data-diff-comment-annotation
@@ -55,16 +78,31 @@ export function DiffCommentAnnotation({
       >
         <MessageCircle className="mt-0.5 size-3.5 shrink-0 text-primary/70" aria-hidden="true" />
         <p className="min-w-0 flex-1 whitespace-pre-wrap text-[13px] leading-5">{displayedText}</p>
-        {onDelete ? (
-          <Button
-            className="-my-1 -mr-1 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/comment:opacity-100 focus-visible:opacity-100 max-sm:opacity-100"
-            variant="ghost"
-            size="icon-xs"
-            aria-label="Delete comment"
-            onClick={onDelete}
-          >
-            <Trash2 className="size-3" />
-          </Button>
+        {edit || onDelete ? (
+          <div className="-my-1 -mr-1 flex shrink-0 items-center opacity-0 transition-opacity group-hover/comment:opacity-100 focus-within:opacity-100 max-sm:opacity-100">
+            {edit ? (
+              <Button
+                className="text-muted-foreground"
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Edit comment"
+                onClick={edit.onStart}
+              >
+                <Pencil className="size-3" />
+              </Button>
+            ) : null}
+            {onDelete ? (
+              <Button
+                className="text-muted-foreground"
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Delete comment"
+                onClick={onDelete}
+              >
+                <Trash2 className="size-3" />
+              </Button>
+            ) : null}
+          </div>
         ) : null}
       </div>
     );
@@ -84,8 +122,12 @@ export function DiffCommentAnnotation({
         size="sm"
         value={displayedText}
         placeholder={placeholder}
-        aria-label={`Comment on lines ${rangeLabel}`}
-        onChange={(event) => (onTextChange ?? setLocalDraftText)(event.target.value)}
+        aria-label={`${isEditingComment ? "Edit comment" : "Comment"} on lines ${rangeLabel}`}
+        onChange={(event) =>
+          (isEditingComment ? edit.onChange : (onTextChange ?? setLocalDraftText))(
+            event.target.value,
+          )
+        }
         onFocus={(event) => {
           const end = event.currentTarget.value.length;
           event.currentTarget.setSelectionRange(end, end);
@@ -93,21 +135,33 @@ export function DiffCommentAnnotation({
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.preventDefault();
-            onCancel();
+            if (isEditingComment) {
+              edit.onCancel();
+            } else {
+              onCancel();
+            }
           }
           if (isCommentSubmitShortcut(event, trimmedText, pending)) {
             event.preventDefault();
-            onComment(trimmedText);
+            submit();
           }
         }}
       />
       <div className="mt-1.5 flex items-center gap-1">
-        <span className="mr-auto text-[10px] text-muted-foreground/70">⌘/Ctrl Enter to send</span>
+        <span className="mr-auto text-[10px] text-muted-foreground/70">
+          ⌘/Ctrl Enter to {isEditingComment ? "save" : "send"}
+        </span>
         <Button
           className="text-muted-foreground hover:text-foreground"
           variant="ghost"
           size="xs"
-          onClick={onCancel}
+          onClick={() => {
+            if (isEditingComment) {
+              edit.onCancel();
+            } else {
+              onCancel();
+            }
+          }}
         >
           Cancel
         </Button>
@@ -122,8 +176,8 @@ export function DiffCommentAnnotation({
             {secondaryAction.label}
           </Button>
         ) : null}
-        <Button size="xs" disabled={pending || !trimmedText} onClick={() => onComment(trimmedText)}>
-          {submitLabel}
+        <Button size="xs" disabled={pending || !trimmedText} onClick={submit}>
+          {isEditingComment ? "Save" : submitLabel}
         </Button>
       </div>
     </div>
