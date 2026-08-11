@@ -267,7 +267,8 @@ export function PullRequestDetailPanel({
     if (scroller) scroller.scrollTop = Math.max(0, scroller.scrollTop + delta);
   }, [condensed]);
   const [mergeMethod, setMergeMethod] = useState<PullRequestMergeMethod>("merge");
-  const [confirmAction, setConfirmAction] = useState<"merge" | "close" | null>(null);
+  const [confirmAction, setConfirmAction] = useState<"merge" | "close">("merge");
+  const [confirmOpen, setConfirmOpen] = useState(false);
   // Which handoff is preparing, keyed so a per-finding button can say "Preparing..." on itself
   // alone. One at a time whatever the key: they all check the same pull request out.
   const [handoff, setHandoff] = useState<string | null>(null);
@@ -923,7 +924,10 @@ export function PullRequestDetailPanel({
                       <MenuItem
                         variant="destructive"
                         disabled={actionPending}
-                        onClick={() => setConfirmAction("close")}
+                        onClick={() => {
+                          setConfirmAction("close");
+                          setConfirmOpen(true);
+                        }}
                       >
                         <GitPullRequestClosedIcon className="size-3.5" />
                         Close pull request
@@ -993,7 +997,10 @@ export function PullRequestDetailPanel({
                 <Button
                   size="xs"
                   disabled={actionPending}
-                  onClick={() => setConfirmAction("merge")}
+                  onClick={() => {
+                    setConfirmAction("merge");
+                    setConfirmOpen(true);
+                  }}
                 >
                   {actionPending ? "Merging..." : "Merge"}
                 </Button>
@@ -1374,10 +1381,7 @@ export function PullRequestDetailPanel({
         ) : null}
       </div>
 
-      <AlertDialog
-        open={confirmAction !== null}
-        onOpenChange={(open) => !open && setConfirmAction(null)}
-      >
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogPopup>
           <AlertDialogHeader>
             <AlertDialogTitle>
@@ -1398,10 +1402,9 @@ export function PullRequestDetailPanel({
               variant={confirmAction === "close" ? "destructive" : "default"}
               disabled={actionPending}
               onClick={() => {
-                const action = confirmAction;
-                setConfirmAction(null);
-                if (action === "merge") void perform("merge", selectedMergeMethod);
-                if (action === "close") void perform("close");
+                setConfirmOpen(false);
+                if (confirmAction === "merge") void perform("merge", selectedMergeMethod);
+                if (confirmAction === "close") void perform("close");
               }}
             >
               {confirmAction === "merge" ? "Merge" : "Close"}
