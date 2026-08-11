@@ -17,6 +17,11 @@ on:
         required: false
         type: boolean
         default: false
+      promote_main:
+        description: Force-push the verified rebased stack to main
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -40,7 +45,30 @@ jobs:
       tag: ${{ steps.release_meta.outputs.tag }}
       release_name: ${{ steps.release_meta.outputs.name }}
       previous_tag: ${{ steps.previous_tag.outputs.previous_tag }}
+      promote_main: ${{ steps.promote_gate.outputs.promote_main }}
     steps:
+      - id: promote_gate
+        name: Resolve main promotion gate
+        shell: bash
+        env:
+          DRY_RUN: ${{ inputs.dry_run == true }}
+          EVENT_NAME: ${{ github.event_name }}
+          FORCE_PROMOTE: ${{ inputs.promote_main == true }}
+        run: |
+          set -euo pipefail
+
+          # Promote main once per day: only the first scheduled run (08:xx UTC)
+          # or an explicit dispatch opt-in. Dry runs never promote anything.
+          promote_main=false
+          if [[ "$DRY_RUN" != "true" ]]; then
+            if [[ "$EVENT_NAME" == "schedule" && "$(date -u +%H)" == "08" ]]; then
+              promote_main=true
+            elif [[ "$EVENT_NAME" == "workflow_dispatch" && "$FORCE_PROMOTE" == "true" ]]; then
+              promote_main=true
+            fi
+          fi
+          echo "promote_main=$promote_main" >> "$GITHUB_OUTPUT"
+
       - name: Checkout fork patch stack
         uses: actions/checkout@v6
         with:
@@ -79,6 +107,39 @@ jobs:
             echo "fork_ref=$fork_ref"
             echo "upstream_ref=$upstream_ref"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Align main to released nightly
+        if: >-
+          steps.promote_gate.outputs.promote_main == 'true' &&
+          steps.candidate.outputs.has_changes == 'false'
+        shell: bash
+        env:
+          FORK_REF: ${{ steps.candidate.outputs.fork_ref }}
+        run: |
+          set -euo pipefail
+
+          # No new upstream this run, so the release job (and its promotion
+          # step) will not run. The existing origin/nightly commit has a tree
+          # identical to the freshly rebased candidate (that is exactly what
+          # has_changes=false means) and already shipped through a fully
+          # verified release, so align main to it directly without
+          # re-verification.
+          if ! nightly_ref=$(git rev-parse --verify \
+            refs/remotes/origin/nightly 2>/dev/null); then
+            echo "origin/nightly does not exist; nothing to align main to."
+            exit 0
+          fi
+          if [[ "$FORK_REF" == "$nightly_ref" ]]; then
+            echo "main already matches origin/nightly; skipping promotion."
+            exit 0
+          fi
+
+          # Same backup + leased-push mechanics as the release job's "Promote
+          # verified stack to main" step; keep the two in sync.
+          backup_ref="refs/heads/backup/main-$(date -u +%Y%m%d)"
+          git push --force origin "${FORK_REF}:${backup_ref}"
+          git push --force-with-lease="refs/heads/main:${FORK_REF}" \
+            origin "${nightly_ref}:refs/heads/main"
 
       - name: Setup Vite+
         if: steps.candidate.outputs.has_changes == 'true'
@@ -359,6 +420,33 @@ jobs:
         run: |
           git fetch origin '+refs/heads/nightly:refs/remotes/origin/nightly' || true
           git push --force-with-lease origin HEAD:refs/heads/nightly
+
+      - name: Promote verified stack to main
+        if: inputs.dry_run != true && needs.prepare.outputs.promote_main == 'true'
+        shell: bash
+        env:
+          CANDIDATE_REF: ${{ needs.prepare.outputs.ref }}
+          FORK_REF: ${{ needs.prepare.outputs.fork_ref }}
+        run: |
+          set -euo pipefail
+
+          git fetch --no-tags origin "$FORK_REF"
+          git rev-parse --verify "${FORK_REF}^{commit}" >/dev/null
+          git rev-parse --verify "${CANDIDATE_REF}^{commit}" >/dev/null
+
+          # Keep a recoverable snapshot of pre-promotion main. Plain force so a
+          # same-day re-run does not fail on the existing backup ref. Same
+          # mechanics as prepare's "Align main to released nightly" step; keep
+          # the two in sync.
+          backup_ref="refs/heads/backup/main-$(date -u +%Y%m%d)"
+          git push --force origin "${FORK_REF}:${backup_ref}"
+
+          # The lease pins main to the exact commit this run started from. The
+          # workflow concurrency group already serializes nightly runs, so a
+          # failed lease means a human pushed main mid-run; fail loudly and let
+          # notify_failure fire rather than promote over their work.
+          git push --force-with-lease="refs/heads/main:${FORK_REF}" \
+            origin "${CANDIDATE_REF}:refs/heads/main"
 
       - name: Update rolling fork features issue
         if: inputs.dry_run != true && steps.fork_features.outputs.generated == 'true'
