@@ -7,6 +7,14 @@ const callbacks = {
   onTextChange: vi.fn(),
   onCancel: vi.fn(),
   onComment: vi.fn(),
+  edit: {
+    active: false,
+    text: "",
+    onStart: vi.fn(),
+    onChange: vi.fn(),
+    onCancel: vi.fn(),
+    onSave: vi.fn(),
+  },
   onDelete: vi.fn(),
 };
 
@@ -71,6 +79,7 @@ describe("DiffCommentAnnotation", () => {
     expect(markup).not.toContain("chat-composer-glass");
     expect(markup).not.toContain("on +78");
     expect(markup).toContain("Please keep this branch explicit.");
+    expect(markup).toContain('aria-label="Edit comment"');
     expect(markup).toContain('aria-label="Delete comment"');
     expect(markup).toContain("border-s-2");
     expect(markup).toContain("bg-primary/[0.045]");
@@ -88,5 +97,21 @@ describe("DiffCommentAnnotation", () => {
     );
 
     expect(markup).toContain("Keep this unsaved draft");
+  });
+
+  it("renders a controlled saved-comment edit", () => {
+    const markup = renderToStaticMarkup(
+      <DiffCommentAnnotation
+        kind="comment"
+        rangeLabel="+78"
+        text="Original comment"
+        {...callbacks}
+        edit={{ ...callbacks.edit, active: true, text: "Revised comment" }}
+      />,
+    );
+
+    expect(markup).toContain("Revised comment");
+    expect(markup).toContain("⌘/Ctrl Enter to save");
+    expect(markup).toContain(">Save</button>");
   });
 });
