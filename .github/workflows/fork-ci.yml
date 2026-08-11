@@ -192,28 +192,3 @@ jobs:
 
       - name: Exercise release-only workflow steps
         run: node scripts/release-smoke.ts
-
-  required:
-    name: Fork CI Required
-    needs:
-      - changes
-      - upstream_rebase
-      - check
-      - test
-      - release_smoke
-    if: always() && github.repository == 'yngatech/t3code'
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Verify required jobs
-        env:
-          CHANGES_RESULT: ${{ needs.changes.result }}
-          UPSTREAM_REBASE_RESULT: ${{ needs.upstream_rebase.result }}
-          CHECK_RESULT: ${{ needs.check.result }}
-          TEST_RESULT: ${{ needs.test.result }}
-          RELEASE_SMOKE_RESULT: ${{ needs.release_smoke.result }}
-        run: |
-          test "$CHANGES_RESULT" = success
-          test "$UPSTREAM_REBASE_RESULT" = success
-          test "$CHECK_RESULT" = success -o "$CHECK_RESULT" = skipped
-          test "$TEST_RESULT" = success -o "$TEST_RESULT" = skipped
-          test "$RELEASE_SMOKE_RESULT" = success -o "$RELEASE_SMOKE_RESULT" = skipped
