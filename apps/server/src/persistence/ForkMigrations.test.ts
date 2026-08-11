@@ -5,6 +5,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import ForkMigration0001 from "./ForkMigrations/001_ComposerDrafts.ts";
 import {
+  forkMigrationEntries,
   forkMigrationManifest,
   repairLegacyForkMigrationHistory,
   runAllMigrations,
@@ -194,6 +195,13 @@ upstreamLayer("ForkMigrations canonical upstream upgrade", (it) => {
       `;
       assert.deepStrictEqual(forkHistory, [{ migration_id: 1, name: "ComposerDrafts" }]);
     }),
+  );
+});
+
+it("keeps fork migration IDs sequential from 1", () => {
+  assert.deepStrictEqual(
+    forkMigrationEntries.map(([id]) => id),
+    forkMigrationEntries.map((_, index) => index + 1),
   );
 });
 
