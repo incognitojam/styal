@@ -10,7 +10,6 @@ import {
 } from "../../session-logic";
 import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../../types";
 import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@t3tools/contracts";
-import { deriveCommandFileReadPresentation } from "@t3tools/shared/toolActivity";
 
 export const MAX_VISIBLE_WORK_LOG_ENTRIES = 1;
 export const TIMELINE_MINIMAP_ITEM_SPACING = 8;
@@ -287,8 +286,6 @@ export function workLogEntryIsLocalCodeSearch(entry: WorkLogEntry): boolean {
 
 export function toolGroupAction(entry: WorkLogEntry): ToolGroupAction {
   if (
-    (entry.itemType === "command_execution" &&
-      deriveCommandFileReadPresentation(entry.command) !== undefined) ||
     entry.requestKind === "file-read" ||
     entry.itemType === "image_view" ||
     (entry.itemType === "dynamic_tool_call" && entry.toolTitle === "Read File")
