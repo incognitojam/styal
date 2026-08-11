@@ -1609,7 +1609,12 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   );
 });
 
-export default function Sidebar() {
+type SidebarProps = {
+  projectScopeKey: string | null;
+  onProjectScopeKeyChange: (projectScopeKey: string | null) => void;
+};
+
+export default function Sidebar({ projectScopeKey, onProjectScopeKeyChange }: SidebarProps) {
   const projects = useProjects();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
@@ -1842,7 +1847,6 @@ export default function Sidebar() {
 
   // Project scope: one menu above the list. Scoping filters the list without
   // making the header width depend on the number or length of project names.
-  const [projectScopeKey, setProjectScopeKey] = useState<string | null>(null);
   const scopedProjectGroup = useMemo(
     () =>
       projectScopeKey === null
@@ -1863,9 +1867,9 @@ export default function Sidebar() {
   );
   useEffect(() => {
     if (projectScopeKey !== null && scopedProjectGroup === null) {
-      setProjectScopeKey(null);
+      onProjectScopeKeyChange(null);
     }
-  }, [projectScopeKey, scopedProjectGroup]);
+  }, [onProjectScopeKeyChange, projectScopeKey, scopedProjectGroup]);
   // Count-only subscription: the parent needs "are there draft rows" for the
   // empty state, while SidebarDraftBlock owns the per-keystroke content
   // subscription. Selecting a number keeps typing in a draft composer from
@@ -3374,7 +3378,7 @@ export default function Sidebar() {
                     <MenuRadioGroup
                       value={projectScopeKey ?? "all"}
                       onValueChange={(value) =>
-                        setProjectScopeKey(value === "all" ? null : (value as string))
+                        onProjectScopeKeyChange(value === "all" ? null : (value as string))
                       }
                     >
                       <MenuRadioItem
