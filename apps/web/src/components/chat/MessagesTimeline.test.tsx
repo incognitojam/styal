@@ -769,35 +769,4 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain('aria-label="Exit code 0"');
     expect(markup).toContain("Exit code 0");
   });
-
-  it("renders command-backed file reads with read-file chrome", () => {
-    const command = "sed -n '1,240p' /workspace/src/app.ts";
-    const markup = renderToStaticMarkup(
-      <MessagesTimeline
-        {...buildProps()}
-        timelineEntries={[
-          {
-            id: "entry-1",
-            kind: "work",
-            createdAt: "2026-03-17T19:12:28.000Z",
-            entry: {
-              id: "work-1",
-              createdAt: "2026-03-17T19:12:28.000Z",
-              label: "Ran command",
-              toolTitle: "Ran command",
-              tone: "tool",
-              itemType: "command_execution",
-              toolLifecycleStatus: "completed",
-              command,
-            },
-          },
-        ]}
-      />,
-    );
-
-    expect(markup).toContain("lucide-eye");
-    expect(markup).toContain("Read file");
-    expect(markup).toContain("/workspace/src/app.ts");
-    expect(markup).not.toContain(command);
-  });
 });

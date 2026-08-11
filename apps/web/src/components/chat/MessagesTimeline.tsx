@@ -17,7 +17,6 @@ import {
 const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
-import { deriveCommandFileReadPresentation } from "@t3tools/shared/toolActivity";
 import {
   createContext,
   Fragment,
@@ -2360,17 +2359,9 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const [expanded, setExpanded] = useState(false);
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
-  const fileRead =
-    workEntry.itemType === "command_execution"
-      ? deriveCommandFileReadPresentation(workEntry.command)
-      : undefined;
-  const entryIconName = showWarningIndicator
-    ? "x"
-    : fileRead
-      ? "eye"
-      : workEntryIconName(workEntry);
-  const heading = fileRead?.summary ?? toolWorkEntryHeading(workEntry);
-  const rawPreview = fileRead?.detail ?? workEntryPreview(workEntry, workspaceRoot);
+  const entryIconName = showWarningIndicator ? "x" : workEntryIconName(workEntry);
+  const heading = toolWorkEntryHeading(workEntry);
+  const rawPreview = workEntryPreview(workEntry, workspaceRoot);
   const preview =
     rawPreview &&
     normalizeCompactToolLabel(rawPreview).toLowerCase() ===
