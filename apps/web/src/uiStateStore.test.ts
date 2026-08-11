@@ -22,6 +22,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     projectExpandedById: {},
     projectOrder: [],
     threadLastVisitedAtById: {},
+    pendingThreadVisitBaselineKeys: [],
     threadChangedFilesExpandedById: {},
     defaultAdvertisedEndpointKey: null,
     ...overrides,
@@ -158,6 +159,12 @@ describe("parsePersistedState", () => {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
         invalid: "not-a-date",
       },
+      pendingThreadVisitBaselineKeys: [
+        "environment:thread-1",
+        "",
+        "environment:thread-1",
+        42 as unknown as string,
+      ],
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
       threadChangedFilesExpansionVersion: 1,
       threadChangedFilesExpandedById: {
@@ -176,6 +183,7 @@ describe("parsePersistedState", () => {
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },
+      pendingThreadVisitBaselineKeys: ["environment:thread-1"],
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
@@ -273,6 +281,7 @@ describe("uiStateStore persistence", () => {
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },
+      pendingThreadVisitBaselineKeys: ["environment:thread-1"],
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
           "turn-1": false,
@@ -295,6 +304,7 @@ describe("uiStateStore persistence", () => {
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },
+      pendingThreadVisitBaselineKeys: ["environment:thread-1"],
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
       threadChangedFilesExpansionVersion: 1,
       threadChangedFilesExpandedById: {
