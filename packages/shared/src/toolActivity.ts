@@ -176,49 +176,6 @@ function extractToolCommand(data: Record<string, unknown> | undefined, title: st
   return extractCommandFromTitle(title);
 }
 
-/**
- * Recognizes the narrow `sed -n '<lines>p' <file>` form agents commonly use
- * as a read primitive. More general sed programs stay command executions.
- */
-export interface FileReadPresentation extends ToolActivityPresentation {
-  readonly requestedRange?: Readonly<{ startLine: number; endLine: number }>;
-}
-
-export function deriveCommandFileReadPresentation(
-  command: string | null | undefined,
-): FileReadPresentation | undefined {
-  const normalized = asTrimmedString(command);
-  if (!normalized) {
-    return undefined;
-  }
-  const match =
-    /^(?:(?:bash|shell|terminal):\s+)?(?:[^\s]*[/\\])?sed\s+-n\s+(?<program>'\d+(?:,\d+)?p'|"\d+(?:,\d+)?p"|\d+(?:,\d+)?p)\s+(?:--\s+)?(?<path>'[^']+'|"[^"$`\\]+"|[^\s'"`$\\;&|<>]+)\s*$/iu.exec(
-      normalized,
-    );
-  const program = match?.groups?.program?.replace(/^['"]|['"]$/gu, "");
-  const matchedPath = match?.groups?.path;
-  const range = program ? /^(?<start>\d+)(?:,(?<end>\d+))?p$/u.exec(program) : null;
-  const startLine = Number(range?.groups?.start);
-  const endLine = Number(range?.groups?.end ?? range?.groups?.start);
-  if (
-    !matchedPath ||
-    !Number.isSafeInteger(startLine) ||
-    !Number.isSafeInteger(endLine) ||
-    startLine < 1 ||
-    endLine < startLine
-  ) {
-    return undefined;
-  }
-  const filePath = /^(['"]).*\1$/u.test(matchedPath) ? matchedPath.slice(1, -1) : matchedPath;
-  if (filePath === "-") return undefined;
-
-  return {
-    summary: "Read file",
-    detail: filePath,
-    requestedRange: { startLine, endLine },
-  };
-}
-
 function maybePathLike(value: string | undefined): string | undefined {
   if (!value) {
     return undefined;
@@ -354,10 +311,6 @@ export function deriveToolActivityPresentation(
   });
 
   if (action === "command") {
-    const fileRead = deriveCommandFileReadPresentation(command);
-    if (fileRead) {
-      return fileRead;
-    }
     return {
       summary: "Ran command",
       ...(command ? { detail: command } : {}),
