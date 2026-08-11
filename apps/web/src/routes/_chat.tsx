@@ -23,7 +23,7 @@ import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { useEnvironmentQuery } from "~/state/query";
 import { vcsEnvironment } from "~/state/vcs";
-import { useViewPullRequest } from "~/lib/viewPullRequest";
+import { useFocusPullRequestTab, useViewPullRequest } from "~/lib/viewPullRequest";
 
 function ChatRouteGlobalShortcuts() {
   const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
@@ -56,6 +56,7 @@ function ChatRouteGlobalShortcuts() {
       : null,
   );
   const { viewPullRequest } = useViewPullRequest(gitStatusQuery.data, routeThreadRef);
+  const { focusPullRequestTab } = useFocusPullRequestTab(gitStatusQuery.data, routeThreadRef);
   const projectGroupCount = useMemo(
     () =>
       buildSidebarProjectSnapshots({
@@ -139,6 +140,13 @@ function ChatRouteGlobalShortcuts() {
         return;
       }
 
+      if (command === "sourceControl.focusPullRequestTab") {
+        event.preventDefault();
+        event.stopPropagation();
+        void focusPullRequestTab();
+        return;
+      }
+
       if (command === "preview.toggle") {
         event.preventDefault();
         event.stopPropagation();
@@ -201,6 +209,7 @@ function ChatRouteGlobalShortcuts() {
     legacySidebarEnabled,
     terminalOpen,
     viewPullRequest,
+    focusPullRequestTab,
   ]);
 
   return null;
