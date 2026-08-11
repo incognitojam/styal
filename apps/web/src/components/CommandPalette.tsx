@@ -31,6 +31,7 @@ import {
   ArrowLeftIcon,
   CircleDotIcon,
   CornerLeftUpIcon,
+  ExternalLinkIcon,
   FileSearchIcon,
   FolderIcon,
   FolderPlusIcon,
@@ -152,7 +153,7 @@ import {
   buildSidebarProjectSnapshots,
 } from "../sidebarProjectGrouping";
 import type { Project } from "../types";
-import { useViewPullRequest } from "../lib/viewPullRequest";
+import { useFocusPullRequestTab, useViewPullRequest } from "../lib/viewPullRequest";
 import { getSourceControlPresentation } from "../sourceControlPresentation";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
@@ -903,6 +904,10 @@ function OpenCommandPaletteDialog(props: {
       : null,
   );
   const { canViewPullRequest, viewPullRequest } = useViewPullRequest(
+    activeThreadGitStatus.data,
+    activeThreadRef,
+  );
+  const { canFocusPullRequestTab, focusPullRequestTab } = useFocusPullRequestTab(
     activeThreadGitStatus.data,
     activeThreadRef,
   );
@@ -1687,25 +1692,49 @@ function OpenCommandPaletteDialog(props: {
 
   actionItems.push({
     kind: "action",
-    value: "action:view-pull-request",
+    value: "action:focus-pull-request-tab",
     searchTerms: [
       "view pull request",
-      "open pr",
+      "focus pr tab",
       "view merge request",
+      "open pr",
+      "open mr",
+      "change request",
+      "source control",
+    ],
+    title: `View ${changeRequestTerminology.shortLabel}`,
+    description: canFocusPullRequestTab
+      ? undefined
+      : isPullRequestStatusLoading
+        ? `Checking ${changeRequestTerminology.singular} status…`
+        : `No open ${changeRequestTerminology.singular} for this thread`,
+    disabled: !canFocusPullRequestTab,
+    icon: <GitPullRequestIcon className={ITEM_ICON_CLASS} />,
+    shortcutCommand: "sourceControl.focusPullRequestTab",
+    run: focusPullRequestTab,
+  });
+
+  actionItems.push({
+    kind: "action",
+    value: "action:view-pull-request",
+    searchTerms: [
+      "open pr in browser",
+      "open pull request in browser",
+      "open merge request in browser",
       "open mr",
       "change request",
       "source control",
       "github",
       "gitlab",
     ],
-    title: `View ${changeRequestTerminology.shortLabel}`,
+    title: `Open ${changeRequestTerminology.shortLabel} in browser`,
     description: canViewPullRequest
       ? undefined
       : isPullRequestStatusLoading
         ? `Checking ${changeRequestTerminology.singular} status…`
         : `No open ${changeRequestTerminology.singular} for this thread`,
     disabled: !canViewPullRequest,
-    icon: <GitPullRequestIcon className={ITEM_ICON_CLASS} />,
+    icon: <ExternalLinkIcon className={ITEM_ICON_CLASS} />,
     shortcutCommand: "sourceControl.viewPullRequest",
     run: viewPullRequest,
   });
