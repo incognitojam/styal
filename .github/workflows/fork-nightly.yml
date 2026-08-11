@@ -108,6 +108,39 @@ jobs:
             echo "upstream_ref=$upstream_ref"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Align main to released nightly
+        if: >-
+          steps.promote_gate.outputs.promote_main == 'true' &&
+          steps.candidate.outputs.has_changes == 'false'
+        shell: bash
+        env:
+          FORK_REF: ${{ steps.candidate.outputs.fork_ref }}
+        run: |
+          set -euo pipefail
+
+          # No new upstream this run, so the release job (and its promotion
+          # step) will not run. The existing origin/nightly commit has a tree
+          # identical to the freshly rebased candidate (that is exactly what
+          # has_changes=false means) and already shipped through a fully
+          # verified release, so align main to it directly without
+          # re-verification.
+          if ! nightly_ref=$(git rev-parse --verify \
+            refs/remotes/origin/nightly 2>/dev/null); then
+            echo "origin/nightly does not exist; nothing to align main to."
+            exit 0
+          fi
+          if [[ "$FORK_REF" == "$nightly_ref" ]]; then
+            echo "main already matches origin/nightly; skipping promotion."
+            exit 0
+          fi
+
+          # Same backup + leased-push mechanics as the release job's "Promote
+          # verified stack to main" step; keep the two in sync.
+          backup_ref="refs/heads/backup/main-$(date -u +%Y%m%d)"
+          git push --force origin "${FORK_REF}:${backup_ref}"
+          git push --force-with-lease="refs/heads/main:${FORK_REF}" \
+            origin "${nightly_ref}:refs/heads/main"
+
       - name: Setup Vite+
         if: steps.candidate.outputs.has_changes == 'true'
         uses: voidzero-dev/setup-vp@v1
@@ -402,7 +435,9 @@ jobs:
           git rev-parse --verify "${CANDIDATE_REF}^{commit}" >/dev/null
 
           # Keep a recoverable snapshot of pre-promotion main. Plain force so a
-          # same-day re-run does not fail on the existing backup ref.
+          # same-day re-run does not fail on the existing backup ref. Same
+          # mechanics as prepare's "Align main to released nightly" step; keep
+          # the two in sync.
           backup_ref="refs/heads/backup/main-$(date -u +%Y%m%d)"
           git push --force origin "${FORK_REF}:${backup_ref}"
 
