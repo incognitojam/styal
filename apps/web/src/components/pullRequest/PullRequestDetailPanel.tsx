@@ -453,9 +453,10 @@ export function PullRequestDetailPanel({
     if (scroller) scroller.scrollTop = Math.max(0, scroller.scrollTop + delta);
   }, [condensed]);
   const [mergeMethod, setMergeMethod] = useState<PullRequestMergeMethod>("merge");
-  const [confirmAction, setConfirmAction] = useState<
-    "merge" | "close" | "enable-auto-merge" | null
-  >(null);
+  const [confirmAction, setConfirmAction] = useState<"merge" | "close" | "enable-auto-merge">(
+    "merge",
+  );
+  const [confirmOpen, setConfirmOpen] = useState(false);
   // Which handoff is preparing, keyed so a per-finding button can say "Preparing..." on itself
   // alone. One at a time whatever the key: they all check the same pull request out.
   const [handoff, setHandoff] = useState<string | null>(null);
@@ -1219,7 +1220,10 @@ export function PullRequestDetailPanel({
                         allowedMergeMethods.length > 0 ? (
                         <MenuItem
                           disabled={actionPending}
-                          onClick={() => setConfirmAction("enable-auto-merge")}
+                          onClick={() => {
+                            setConfirmAction("enable-auto-merge");
+                            setConfirmOpen(true);
+                          }}
                         >
                           <GitMergeIcon className="size-3.5" />
                           Enable auto-merge
@@ -1279,7 +1283,10 @@ export function PullRequestDetailPanel({
                       <MenuItem
                         variant="destructive"
                         disabled={actionPending}
-                        onClick={() => setConfirmAction("close")}
+                        onClick={() => {
+                          setConfirmAction("close");
+                          setConfirmOpen(true);
+                        }}
                       >
                         <GitPullRequestClosedIcon className="size-3.5" />
                         Close pull request
@@ -1369,7 +1376,10 @@ export function PullRequestDetailPanel({
                 <Button
                   size="xs"
                   disabled={actionPending}
-                  onClick={() => setConfirmAction("merge")}
+                  onClick={() => {
+                    setConfirmAction("merge");
+                    setConfirmOpen(true);
+                  }}
                 >
                   {pendingAction === "merge" ? "Merging..." : "Merge"}
                 </Button>
@@ -1849,10 +1859,7 @@ export function PullRequestDetailPanel({
         ) : null}
       </div>
 
-      <AlertDialog
-        open={confirmAction !== null}
-        onOpenChange={(open) => !open && setConfirmAction(null)}
-      >
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogPopup>
           <AlertDialogHeader>
             <AlertDialogTitle>
@@ -1882,12 +1889,11 @@ export function PullRequestDetailPanel({
               variant={confirmAction === "close" ? "destructive" : "default"}
               disabled={actionPending}
               onClick={() => {
-                const action = confirmAction;
-                setConfirmAction(null);
-                if (action === "merge") void perform("merge", selectedMergeMethod);
-                if (action === "enable-auto-merge")
+                setConfirmOpen(false);
+                if (confirmAction === "merge") void perform("merge", selectedMergeMethod);
+                if (confirmAction === "enable-auto-merge")
                   void perform("enable-auto-merge", selectedMergeMethod);
-                if (action === "close") void perform("close");
+                if (confirmAction === "close") void perform("close");
               }}
             >
               {confirmAction === "merge"
