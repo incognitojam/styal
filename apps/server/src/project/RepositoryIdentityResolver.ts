@@ -176,8 +176,8 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
       ? parseCurrentBranchRemoteName(branchRemoteResult.value.stdout)
       : null;
   const remote = pickPrimaryRemote(parseRemoteFetchUrls(remoteResult.value.stdout), [
-    ghDefaultRemoteName,
     branchRemoteName,
+    ghDefaultRemoteName,
     "upstream",
     "origin",
   ]);

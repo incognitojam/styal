@@ -131,7 +131,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 
-  it.effect("uses the current branch remote when gh has no selected default", () =>
+  it.effect("prefers the current branch remote over gh's selected default", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const cwd = yield* fileSystem.makeTempDirectoryScoped({
@@ -145,6 +145,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       yield* git(cwd, ["commit", "--allow-empty", "-m", "Initial commit"]);
       yield* git(cwd, ["remote", "add", "origin", "git@github.com:T3Tools/t3code.git"]);
       yield* git(cwd, ["remote", "add", "fork", "git@github.com:julius/t3code.git"]);
+      yield* git(cwd, ["config", "remote.origin.gh-resolved", "base"]);
       yield* git(cwd, ["config", "branch.feature/branch-target.remote", "fork"]);
       yield* git(cwd, ["config", "branch.feature/branch-target.merge", "refs/heads/main"]);
 
