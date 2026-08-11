@@ -17,11 +17,14 @@ on:
         required: false
         type: boolean
         default: false
-      promote_main:
-        description: Force-push the verified rebased stack to main
+      source_ref:
+        description: >-
+          Publish this ref's patch stack instead of main's. A branch or SHA on
+          origin holding a conflict-resolved stack; it is rebased, verified,
+          released, and promoted to main like any other candidate
         required: false
-        type: boolean
-        default: false
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -39,41 +42,51 @@ jobs:
     outputs:
       has_changes: ${{ steps.candidate.outputs.has_changes }}
       ref: ${{ steps.candidate.outputs.ref }}
+      # The patch stack this run publishes, before the rebase: main's tip, or
+      # source_ref's commit. Release notes enumerate this stack's commits.
       fork_ref: ${{ steps.candidate.outputs.fork_ref }}
+      # main's tip when the run started, which promotion backs up and replaces.
+      # Same commit as fork_ref unless source_ref was given.
+      main_ref: ${{ steps.candidate.outputs.main_ref }}
       upstream_ref: ${{ steps.candidate.outputs.upstream_ref }}
       version: ${{ steps.release_meta.outputs.version }}
       tag: ${{ steps.release_meta.outputs.tag }}
       release_name: ${{ steps.release_meta.outputs.name }}
       previous_tag: ${{ steps.previous_tag.outputs.previous_tag }}
-      promote_main: ${{ steps.promote_gate.outputs.promote_main }}
     steps:
-      - id: promote_gate
-        name: Resolve main promotion gate
+      - name: Validate source ref
+        if: inputs.source_ref != ''
         shell: bash
         env:
-          DRY_RUN: ${{ inputs.dry_run == true }}
-          EVENT_NAME: ${{ github.event_name }}
-          FORCE_PROMOTE: ${{ inputs.promote_main == true }}
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REF: ${{ inputs.source_ref }}
         run: |
           set -euo pipefail
 
-          # Promote main once per day: only the first scheduled run (08:xx UTC)
-          # or an explicit dispatch opt-in. Dry runs never promote anything.
-          promote_main=false
-          if [[ "$DRY_RUN" != "true" ]]; then
-            if [[ "$EVENT_NAME" == "schedule" && "$(date -u +%H)" == "08" ]]; then
-              promote_main=true
-            elif [[ "$EVENT_NAME" == "workflow_dispatch" && "$FORCE_PROMOTE" == "true" ]]; then
-              promote_main=true
-            fi
+          # Checking before checkout turns a typo or an unpushed branch into a
+          # readable first-step failure instead of a checkout error.
+          if ! gh api "repos/${GITHUB_REPOSITORY}/commits/${SOURCE_REF}" \
+            --jq .sha; then
+            echo "source_ref '${SOURCE_REF}' does not resolve to a commit in ${GITHUB_REPOSITORY}; push the stack to origin first." >&2
+            exit 1
           fi
-          echo "promote_main=$promote_main" >> "$GITHUB_OUTPUT"
+
+      - id: app_token
+        name: Mint yngatech-nightly app token
+        # The yngatech-nightly GitHub App is the bypass actor on main's
+        # ruleset, so pushes to protected refs must authenticate as the app.
+        # Minted per job because installation tokens expire after one hour and
+        # the desktop builds run between this job and the release job.
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.YNGATECH_NIGHTLY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.YNGATECH_NIGHTLY_APP_PRIVATE_KEY }}
 
       - name: Checkout fork patch stack
         uses: actions/checkout@v6
         with:
-          token: ${{ secrets.FORK_RELEASE_TOKEN }}
-          ref: main
+          token: ${{ steps.app_token.outputs.token }}
+          ref: ${{ inputs.source_ref || 'main' }}
           fetch-depth: 0
 
       - id: candidate
@@ -81,10 +94,25 @@ jobs:
         shell: bash
         env:
           DRY_RUN: ${{ inputs.dry_run == true }}
+          SOURCE_REF: ${{ inputs.source_ref }}
         run: |
           set -euo pipefail
 
+          # fork_ref is the stack this run publishes: main's tip, or the
+          # maintainer's resolved stack on a source_ref run. main_ref is the
+          # commit promotion replaces, read once here so every later main-side
+          # check compares against the same snapshot.
           fork_ref=$(git rev-parse HEAD)
+          if [[ -n "${SOURCE_REF:-}" ]]; then
+            main_ref=$(git ls-remote origin refs/heads/main | cut -f1)
+            if [[ -z "$main_ref" ]]; then
+              echo "origin has no main branch to promote onto." >&2
+              exit 1
+            fi
+          else
+            main_ref=$fork_ref
+          fi
+
           git fetch origin '+refs/heads/nightly:refs/remotes/origin/nightly' || true
           git fetch origin \
             '+refs/heads/nightly-candidate:refs/remotes/origin/nightly-candidate' || true
@@ -105,16 +133,17 @@ jobs:
             echo "has_changes=$has_changes"
             echo "ref=$candidate_ref"
             echo "fork_ref=$fork_ref"
+            echo "main_ref=$main_ref"
             echo "upstream_ref=$upstream_ref"
           } >> "$GITHUB_OUTPUT"
 
       - name: Align main to released nightly
         if: >-
-          steps.promote_gate.outputs.promote_main == 'true' &&
+          inputs.dry_run != true &&
           steps.candidate.outputs.has_changes == 'false'
         shell: bash
         env:
-          FORK_REF: ${{ steps.candidate.outputs.fork_ref }}
+          MAIN_REF: ${{ steps.candidate.outputs.main_ref }}
         run: |
           set -euo pipefail
 
@@ -123,22 +152,46 @@ jobs:
           # identical to the freshly rebased candidate (that is exactly what
           # has_changes=false means) and already shipped through a fully
           # verified release, so align main to it directly without
-          # re-verification.
+          # re-verification. A source_ref run reaching here resolved to that
+          # same already-released tree, so origin/nightly is still the right
+          # commit to put on main.
           if ! nightly_ref=$(git rev-parse --verify \
             refs/remotes/origin/nightly 2>/dev/null); then
             echo "origin/nightly does not exist; nothing to align main to."
             exit 0
           fi
-          if [[ "$FORK_REF" == "$nightly_ref" ]]; then
+          if [[ "$MAIN_REF" == "$nightly_ref" ]]; then
             echo "main already matches origin/nightly; skipping promotion."
             exit 0
           fi
 
-          # Same backup + leased-push mechanics as the release job's "Promote
-          # verified stack to main" step; keep the two in sync.
+          # A PR merged since this run started moves main; that is normal, not
+          # an error. The next run's candidate will include it.
+          remote_main=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [[ "$remote_main" != "$MAIN_REF" ]]; then
+            echo "main moved during this run; skipping promotion — the next run's candidate will include it."
+            exit 0
+          fi
+
+          # The day's first promotion snapshots pre-promotion main; later
+          # promotions leave the snapshot alone. Same mechanics as the release
+          # job's "Promote verified stack to main" step; keep the two in sync.
           backup_ref="refs/heads/backup/main-$(date -u +%Y%m%d)"
-          git push --force origin "${FORK_REF}:${backup_ref}"
-          git push --force-with-lease="refs/heads/main:${FORK_REF}" \
+          if git ls-remote --exit-code origin "$backup_ref" >/dev/null; then
+            echo "${backup_ref#refs/heads/} already exists; leaving it in place."
+          else
+            status=$?
+            if [[ "$status" -ne 2 ]]; then
+              echo "Checking origin for ${backup_ref} failed (git ls-remote exit ${status})."
+              exit "$status"
+            fi
+            git push origin "${MAIN_REF}:${backup_ref}"
+          fi
+
+          # The lease pins main to the commit this run started from. A failed
+          # lease means main moved in the seconds since the check above; fail
+          # loudly and let notify_failure fire rather than promote over it.
+          git push --force-with-lease="refs/heads/main:${MAIN_REF}" \
             origin "${nightly_ref}:refs/heads/main"
 
       - name: Setup Vite+
@@ -243,10 +296,20 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
+      - id: app_token
+        name: Mint yngatech-nightly app token
+        # Fresh token rather than prepare's: installation tokens expire after
+        # one hour and the desktop builds run between the two jobs. This job's
+        # nightly and main pushes need the app's ruleset bypass too.
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.YNGATECH_NIGHTLY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.YNGATECH_NIGHTLY_APP_PRIVATE_KEY }}
+
       - name: Checkout released source
         uses: actions/checkout@v6
         with:
-          token: ${{ secrets.FORK_RELEASE_TOKEN }}
+          token: ${{ steps.app_token.outputs.token }}
           ref: ${{ needs.prepare.outputs.ref }}
           fetch-depth: 0
           sparse-checkout: |
@@ -422,30 +485,53 @@ jobs:
           git push --force-with-lease origin HEAD:refs/heads/nightly
 
       - name: Promote verified stack to main
-        if: inputs.dry_run != true && needs.prepare.outputs.promote_main == 'true'
+        if: inputs.dry_run != true
         shell: bash
         env:
           CANDIDATE_REF: ${{ needs.prepare.outputs.ref }}
-          FORK_REF: ${{ needs.prepare.outputs.fork_ref }}
+          MAIN_REF: ${{ needs.prepare.outputs.main_ref }}
         run: |
           set -euo pipefail
 
-          git fetch --no-tags origin "$FORK_REF"
-          git rev-parse --verify "${FORK_REF}^{commit}" >/dev/null
+          # Everything here is about main's tip as prepare saw it: the commit
+          # promotion replaces, backs up, and leases against. The published
+          # stack itself is CANDIDATE_REF.
+          git fetch --no-tags origin "$MAIN_REF"
+          git rev-parse --verify "${MAIN_REF}^{commit}" >/dev/null
           git rev-parse --verify "${CANDIDATE_REF}^{commit}" >/dev/null
 
-          # Keep a recoverable snapshot of pre-promotion main. Plain force so a
-          # same-day re-run does not fail on the existing backup ref. Same
-          # mechanics as prepare's "Align main to released nightly" step; keep
-          # the two in sync.
-          backup_ref="refs/heads/backup/main-$(date -u +%Y%m%d)"
-          git push --force origin "${FORK_REF}:${backup_ref}"
+          if [[ "$CANDIDATE_REF" == "$MAIN_REF" ]]; then
+            echo "main already matches the candidate; nothing to promote."
+            exit 0
+          fi
 
-          # The lease pins main to the exact commit this run started from. The
-          # workflow concurrency group already serializes nightly runs, so a
-          # failed lease means a human pushed main mid-run; fail loudly and let
-          # notify_failure fire rather than promote over their work.
-          git push --force-with-lease="refs/heads/main:${FORK_REF}" \
+          # A PR merged while this run was building moves main; that is
+          # normal, not an error. The next run's candidate will include it.
+          remote_main=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [[ "$remote_main" != "$MAIN_REF" ]]; then
+            echo "main moved during this run; skipping promotion — the next run's candidate will include it."
+            exit 0
+          fi
+
+          # The day's first promotion snapshots pre-promotion main; later
+          # promotions leave the snapshot alone. Same mechanics as prepare's
+          # "Align main to released nightly" step; keep the two in sync.
+          backup_ref="refs/heads/backup/main-$(date -u +%Y%m%d)"
+          if git ls-remote --exit-code origin "$backup_ref" >/dev/null; then
+            echo "${backup_ref#refs/heads/} already exists; leaving it in place."
+          else
+            status=$?
+            if [[ "$status" -ne 2 ]]; then
+              echo "Checking origin for ${backup_ref} failed (git ls-remote exit ${status})."
+              exit "$status"
+            fi
+            git push origin "${MAIN_REF}:${backup_ref}"
+          fi
+
+          # The lease pins main to the commit this run started from. A failed
+          # lease means main moved in the seconds since the check above; fail
+          # loudly and let notify_failure fire rather than promote over it.
+          git push --force-with-lease="refs/heads/main:${MAIN_REF}" \
             origin "${CANDIDATE_REF}:refs/heads/main"
 
       - name: Update rolling fork features issue
