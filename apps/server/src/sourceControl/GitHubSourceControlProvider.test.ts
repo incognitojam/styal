@@ -135,6 +135,7 @@ it.effect("uses gh json listing for non-open change request state queries", () =
 
     const changeRequests = yield* provider.listChangeRequests({
       cwd: "/repo",
+      source: { refName: "feature/merged", repository: "pingdotgg/t3code" },
       headSelector: "feature/merged",
       state: "all",
       limit: 10,
@@ -149,6 +150,8 @@ it.effect("uses gh json listing for non-open change request state queries", () =
       "all",
       "--limit",
       "10",
+      "--repo",
+      "pingdotgg/t3code",
       "--json",
       "number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
     ]);

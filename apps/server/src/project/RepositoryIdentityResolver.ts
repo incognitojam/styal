@@ -32,23 +32,34 @@ export class RepositoryIdentityResolver extends Context.Service<
 function parseRemoteFetchUrls(stdout: string): Map<string, string> {
   const remotes = new Map<string, string>();
   for (const line of stdout.split("\n")) {
-    const trimmed = line.trim();
-    if (trimmed.length === 0) continue;
-    const match = /^(\S+)\s+(\S+)\s+\((fetch|push)\)$/.exec(trimmed);
-    if (!match) continue;
-    const [, remoteName = "", remoteUrl = "", direction = ""] = match;
-    if (direction !== "fetch" || remoteName.length === 0 || remoteUrl.length === 0) {
-      continue;
+    const match = /^(\S+)\s+(\S+)\s+\(fetch\)$/u.exec(line.trim());
+    if (match?.[1] && match[2]) {
+      remotes.set(match[1], match[2]);
     }
-    remotes.set(remoteName, remoteUrl);
   }
   return remotes;
 }
 
+function parseGhDefaultRemoteName(stdout: string): string | null {
+  for (const line of stdout.split("\n")) {
+    const match = /^remote\.(.+)\.gh-resolved\s+base$/u.exec(line.trim());
+    if (match?.[1]) return match[1];
+  }
+  return null;
+}
+
+function parseCurrentBranchRemoteName(stdout: string): string | null {
+  const current = stdout.split("\n").find((line) => line.startsWith("*\t"));
+  const remoteName = current?.slice(2).trim() ?? "";
+  return remoteName.length > 0 ? remoteName : null;
+}
+
 function pickPrimaryRemote(
   remotes: ReadonlyMap<string, string>,
+  preferredRemoteNames: ReadonlyArray<string | null>,
 ): { readonly remoteName: string; readonly remoteUrl: string } | null {
-  for (const preferredRemoteName of ["upstream", "origin"] as const) {
+  for (const preferredRemoteName of preferredRemoteNames) {
+    if (preferredRemoteName === null) continue;
     const remoteUrl = remotes.get(preferredRemoteName);
     if (remoteUrl) {
       return { remoteName: preferredRemoteName, remoteUrl };
@@ -120,18 +131,56 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
   cacheKey: string,
 ): Effect.fn.Return<RepositoryIdentity | null, never, ProcessRunner.ProcessRunner> {
   const processRunner = yield* ProcessRunner.ProcessRunner;
-  const remoteResult = yield* processRunner
-    .run({
-      command: "git",
-      args: ["-C", cacheKey, "remote", "-v"],
-      timeoutBehavior: "timedOutResult",
-    })
-    .pipe(Effect.option);
+  const [remoteResult, ghDefaultResult, branchRemoteResult] = yield* Effect.all(
+    [
+      processRunner
+        .run({
+          command: "git",
+          args: ["-C", cacheKey, "remote", "-v"],
+          timeoutBehavior: "timedOutResult",
+        })
+        .pipe(Effect.option),
+      processRunner
+        .run({
+          command: "git",
+          args: ["-C", cacheKey, "config", "--get-regexp", "^remote\\..*\\.gh-resolved$"],
+          timeoutBehavior: "timedOutResult",
+        })
+        .pipe(Effect.option),
+      processRunner
+        .run({
+          command: "git",
+          args: [
+            "-C",
+            cacheKey,
+            "for-each-ref",
+            "--format=%(HEAD)%09%(upstream:remotename)",
+            "refs/heads",
+          ],
+          timeoutBehavior: "timedOutResult",
+        })
+        .pipe(Effect.option),
+    ],
+    { concurrency: "unbounded" },
+  );
   if (remoteResult._tag === "None" || remoteResult.value.code !== 0) {
     return null;
   }
 
-  const remote = pickPrimaryRemote(parseRemoteFetchUrls(remoteResult.value.stdout));
+  const ghDefaultRemoteName =
+    ghDefaultResult._tag === "Some" && ghDefaultResult.value.code === 0
+      ? parseGhDefaultRemoteName(ghDefaultResult.value.stdout)
+      : null;
+  const branchRemoteName =
+    branchRemoteResult._tag === "Some" && branchRemoteResult.value.code === 0
+      ? parseCurrentBranchRemoteName(branchRemoteResult.value.stdout)
+      : null;
+  const remote = pickPrimaryRemote(parseRemoteFetchUrls(remoteResult.value.stdout), [
+    ghDefaultRemoteName,
+    branchRemoteName,
+    "upstream",
+    "origin",
+  ]);
   return remote ? buildRepositoryIdentity({ ...remote, rootPath: cacheKey }) : null;
 });
 

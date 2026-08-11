@@ -505,6 +505,7 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
             "open",
             "--limit",
             String(input.limit ?? 1),
+            ...(input.repository === undefined ? [] : ["--repo", input.repository]),
             "--json",
             "number,title,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
           ],
@@ -1130,7 +1131,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           state: "open",
         });
         expect(ghCalls).toContain(
-          "pr list --head jasonLaster:statemachine --state all --limit 20 --json number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
+          "pr list --head jasonLaster:statemachine --state all --limit 20 --repo jasonLaster/codething-mvp --json number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
         );
       }),
     20_000,

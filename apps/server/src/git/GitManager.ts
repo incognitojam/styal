@@ -1263,6 +1263,12 @@ export const make = Effect.gen(function* () {
     for (const headSelector of headContext.headSelectors) {
       const pullRequests = yield* (yield* sourceControlProvider(cwd)).listChangeRequests({
         cwd,
+        ...(headContext.headRepositoryNameWithOwner !== null && {
+          source: {
+            refName: headContext.headBranch,
+            repository: headContext.headRepositoryNameWithOwner,
+          },
+        }),
         headSelector,
         state: "open",
         limit: 1,
@@ -1297,6 +1303,12 @@ export const make = Effect.gen(function* () {
     for (const headSelector of headContext.headSelectors) {
       const pullRequests = yield* (yield* sourceControlProvider(cwd)).listChangeRequests({
         cwd,
+        ...(headContext.headRepositoryNameWithOwner !== null && {
+          source: {
+            refName: headContext.headBranch,
+            repository: headContext.headRepositoryNameWithOwner,
+          },
+        }),
         headSelector,
         state: "all",
         limit: 20,

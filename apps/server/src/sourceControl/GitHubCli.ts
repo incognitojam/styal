@@ -250,6 +250,7 @@ export class GitHubCli extends Context.Service<
       readonly cwd: string;
       readonly headSelector: string;
       readonly limit?: number;
+      readonly repository?: string;
     }) => Effect.Effect<ReadonlyArray<GitHubPullRequestSummary>, GitHubCliError>;
 
     readonly getPullRequest: (input: {
@@ -384,6 +385,7 @@ export const make = Effect.gen(function* () {
           "open",
           "--limit",
           String(input.limit ?? 1),
+          ...(input.repository === undefined ? [] : ["--repo", input.repository]),
           "--json",
           "number,title,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
         ],
