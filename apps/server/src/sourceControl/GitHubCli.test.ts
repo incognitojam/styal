@@ -193,7 +193,6 @@ describe("GitHubCli.layer", () => {
       const result = yield* gh.listOpenPullRequests({
         cwd: "/repo",
         headSelector: "feature/pr-list",
-        repository: "github.com/octocat/codething-mvp",
       });
 
       assert.deepStrictEqual(result, [
@@ -205,10 +204,6 @@ describe("GitHubCli.layer", () => {
           headRefName: "feature/pr-list",
           state: "open",
         },
-      ]);
-      assert.deepStrictEqual(mockRun.mock.calls[0]?.[0].args.slice(8, 10), [
-        "--repo",
-        "github.com/octocat/codething-mvp",
       ]);
     }).pipe(Effect.provide(layer)),
   );

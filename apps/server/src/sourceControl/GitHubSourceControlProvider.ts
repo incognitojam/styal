@@ -133,9 +133,6 @@ export const make = Effect.gen(function* () {
             cwd: input.cwd,
             headSelector: input.headSelector,
             ...(input.limit !== undefined ? { limit: input.limit } : {}),
-            ...(input.source?.repository !== undefined
-              ? { repository: input.source.repository }
-              : {}),
           })
           .pipe(
             Effect.map((items) => items.map(toChangeRequest)),
@@ -169,7 +166,6 @@ export const make = Effect.gen(function* () {
             stateArg,
             "--limit",
             String(input.limit ?? 20),
-            ...(input.source?.repository === undefined ? [] : ["--repo", input.source.repository]),
             "--json",
             "number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
           ],
