@@ -109,7 +109,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 
-  it.effect("prefers upstream over origin when both remotes are configured", () =>
+  it.effect("uses the remote selected as gh's default repository", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const cwd = yield* fileSystem.makeTempDirectoryScoped({
@@ -119,14 +119,47 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       yield* git(cwd, ["init"]);
       yield* git(cwd, ["remote", "add", "origin", "git@github.com:julius/t3code.git"]);
       yield* git(cwd, ["remote", "add", "upstream", "git@github.com:T3Tools/t3code.git"]);
+      yield* git(cwd, ["config", "remote.origin.gh-resolved", "pingdotgg/t3code"]);
 
       const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
       const identity = yield* resolver.resolve(cwd);
 
       expect(identity).not.toBeNull();
-      expect(identity?.locator.remoteName).toBe("upstream");
-      expect(identity?.canonicalKey).toBe("github.com/t3tools/t3code");
-      expect(identity?.displayName).toBe("t3tools/t3code");
+      expect(identity?.locator.remoteName).toBe("origin");
+      expect(identity?.canonicalKey).toBe("github.com/pingdotgg/t3code");
+      expect(identity?.displayName).toBe("pingdotgg/t3code");
+    }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+  );
+
+  it.effect("follows branch remote changes before gh's selected default", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-repository-identity-branch-remote-test-",
+      });
+
+      yield* git(cwd, ["init"]);
+      yield* git(cwd, ["checkout", "-b", "feature/branch-target"]);
+      yield* git(cwd, ["config", "user.email", "test@example.com"]);
+      yield* git(cwd, ["config", "user.name", "Test User"]);
+      yield* git(cwd, ["commit", "--allow-empty", "-m", "Initial commit"]);
+      yield* git(cwd, ["remote", "add", "origin", "git@github.com:T3Tools/t3code.git"]);
+      yield* git(cwd, ["remote", "add", "fork", "git@github.com:julius/t3code.git"]);
+      yield* git(cwd, ["config", "remote.origin.gh-resolved", "base"]);
+      yield* git(cwd, ["config", "branch.feature/branch-target.remote", "fork"]);
+      yield* git(cwd, ["config", "branch.feature/branch-target.merge", "refs/heads/main"]);
+
+      const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+      const identity = yield* resolver.resolve(cwd);
+
+      expect(identity?.locator.remoteName).toBe("fork");
+      expect(identity?.canonicalKey).toBe("github.com/julius/t3code");
+
+      yield* git(cwd, ["checkout", "-b", "feature/no-branch-target"]);
+
+      const fallbackIdentity = yield* resolver.resolve(cwd);
+      expect(fallbackIdentity?.locator.remoteName).toBe("origin");
+      expect(fallbackIdentity?.canonicalKey).toBe("github.com/t3tools/t3code");
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 
