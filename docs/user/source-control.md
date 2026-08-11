@@ -44,6 +44,11 @@ T3 Code works with the platforms your team already uses:
 - Open the review directly in your browser with one click
 - Check out a teammate's branch to review code locally
 
+When a GitHub project has multiple remotes, the **Pull requests** page follows the current branch's
+tracked remote. If the branch has no tracked remote, it follows the repository selected by
+`gh repo set-default`. The current branch's PR indicator verifies both the branch name and its head
+repository, so a fork checkout does not pick up a same-named branch from `upstream`.
+
 ### Start a Thread from a GitHub Issue
 
 Open the command palette and run **New thread from GitHub issue…** to pick from the current
