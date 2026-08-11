@@ -130,7 +130,7 @@ const DEFAULT_BINDINGS = compile([
   },
   {
     shortcut: modShortcut("g", { shiftKey: true }),
-    command: "sourceControl.viewPullRequest",
+    command: "sourceControl.focusPullRequestTab",
     whenAst: whenNot(whenIdentifier("terminalFocus")),
   },
   {
@@ -541,20 +541,26 @@ describe("chat/editor shortcuts", () => {
     );
   });
 
-  it("matches sourceControl.viewPullRequest shortcut outside terminal focus", () => {
+  it("matches sourceControl.focusPullRequestTab shortcut outside terminal focus", () => {
     assert.strictEqual(
       resolveShortcutCommand(event({ key: "g", metaKey: true, shiftKey: true }), DEFAULT_BINDINGS, {
         platform: "MacIntel",
         context: { terminalFocus: false },
       }),
-      "sourceControl.viewPullRequest",
+      "sourceControl.focusPullRequestTab",
     );
     assert.notStrictEqual(
       resolveShortcutCommand(event({ key: "g", metaKey: true, shiftKey: true }), DEFAULT_BINDINGS, {
         platform: "MacIntel",
         context: { terminalFocus: true },
       }),
-      "sourceControl.viewPullRequest",
+      "sourceControl.focusPullRequestTab",
+    );
+  });
+
+  it("leaves sourceControl.viewPullRequest without a default keybinding", () => {
+    assert.isFalse(
+      DEFAULT_BINDINGS.some((binding) => binding.command === "sourceControl.viewPullRequest"),
     );
   });
 

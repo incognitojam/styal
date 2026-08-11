@@ -66,6 +66,12 @@ it.effect("parses keybinding rules", () =>
     });
     assert.strictEqual(parsedViewPullRequest.command, "sourceControl.viewPullRequest");
 
+    const parsedFocusPullRequestTab = yield* decode(KeybindingRule, {
+      key: "mod+shift+g",
+      command: "sourceControl.focusPullRequestTab",
+    });
+    assert.strictEqual(parsedFocusPullRequestTab.command, "sourceControl.focusPullRequestTab");
+
     const parsedFilePicker = yield* decode(KeybindingRule, {
       key: "mod+p",
       command: "filePicker.toggle",
