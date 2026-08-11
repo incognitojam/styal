@@ -2,7 +2,7 @@ import type { ScopedThreadRef, VcsStatusResult } from "@t3tools/contracts";
 import { useCallback, useMemo } from "react";
 
 import { readLocalApi } from "../localApi";
-import { openPullRequestLink } from "./openPullRequestLink";
+import { openPullRequestLink, useOpenChangeRequestLink } from "./openPullRequestLink";
 import { stackedThreadToast, toastManager, type ThreadToastData } from "../components/ui/toast";
 
 export function useViewPullRequest(
@@ -49,4 +49,34 @@ export function useViewPullRequest(
   }, [pullRequestUrl, threadToastData]);
 
   return { canViewPullRequest: pullRequestUrl !== null, viewPullRequest };
+}
+
+/**
+ * Opens the thread's open change request as a right-panel tab, falling back to the browser when
+ * the environment lacks the pull-request capability or no project matches the repository.
+ */
+export function useFocusPullRequestTab(
+  gitStatus: VcsStatusResult | null,
+  threadRef: ScopedThreadRef | null,
+) {
+  const { canViewPullRequest, viewPullRequest } = useViewPullRequest(gitStatus, threadRef);
+  const openChangeRequestLink = useOpenChangeRequestLink(threadRef ?? undefined);
+  const pullRequestUrl = gitStatus?.pr?.state === "open" ? gitStatus.pr.url : null;
+
+  const focusPullRequestTab = useCallback(async () => {
+    if (pullRequestUrl !== null) {
+      // A shortcut is not a click: the modifiers that would send a click to the browser are
+      // never held here, so the tab is what this opens.
+      const inertEvent = {
+        preventDefault: () => undefined,
+        stopPropagation: () => undefined,
+        metaKey: false,
+        ctrlKey: false,
+      };
+      if (openChangeRequestLink(inertEvent, pullRequestUrl)) return;
+    }
+    await viewPullRequest();
+  }, [openChangeRequestLink, pullRequestUrl, viewPullRequest]);
+
+  return { canFocusPullRequestTab: canViewPullRequest, focusPullRequestTab };
 }
