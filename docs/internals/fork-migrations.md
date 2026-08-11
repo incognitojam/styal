@@ -11,6 +11,10 @@ upstream migrations with lower IDs to be skipped.
 Fork migrations live in `apps/server/src/persistence/ForkMigrations/`. They must be append-only and
 idempotent so upgrades remain safe across rebases and interrupted starts.
 
+CI enforces this rule: `.github/scripts/rebase-onto-upstream.sh` (used by Fork CI's upstream-rebase
+job and Fork Nightly's prepare step) fails when the rebased patch stack touches
+`apps/server/src/persistence/Migrations.ts` or anything under `apps/server/src/persistence/Migrations/`.
+
 The fork previously shipped `39_ComposerDrafts` in the upstream history. Before either migration
 pass, the server recognizes that exact ID and name, applies upstream migration 39's guarded schema
 change, records the composer migration as fork migration `1_ComposerDrafts`, and rewrites migration
