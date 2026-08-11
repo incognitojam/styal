@@ -109,6 +109,7 @@ export function AnnotatableCodeView({
 }: AnnotatableCodeViewProps) {
   const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);
   const removeReviewComment = useComposerDraftStore((store) => store.removeReviewComment);
+  const setReviewComments = useComposerDraftStore((store) => store.setReviewComments);
   const reviewComments = useComposerDraftStore(
     (store) => store.getComposerDraft(composerDraftTarget)?.reviewComments ?? EMPTY_REVIEW_COMMENTS,
   );
@@ -121,6 +122,7 @@ export function AnnotatableCodeView({
     annotation: DiffCommentLineAnnotation;
   } | null>(null);
   const [draftText, setDraftText] = useState("");
+  const [editDraft, setEditDraft] = useState<{ id: string; text: string } | null>(null);
 
   const filesByKey = useMemo(() => new Map(files.map((file) => [file.fileKey, file])), [files]);
   const items = useMemo<CodeViewDiffItem<DiffCommentAnnotationGroup>[]>(
@@ -165,10 +167,13 @@ export function AnnotatableCodeView({
       }),
     [draft, files, reviewComments, sectionId],
   );
+  const activeEditDraft =
+    editDraft && reviewComments.some((comment) => comment.id === editDraft.id) ? editDraft : null;
 
   const removeEntry = useCallback(
     (entryId: string) => {
       setSelectedLines(null);
+      if (editDraft?.id === entryId) setEditDraft(null);
       if (draft?.annotation.metadata.entries.some((entry) => entry.id === entryId)) {
         setDraft(null);
         setDraftText("");
@@ -176,7 +181,7 @@ export function AnnotatableCodeView({
         removeReviewComment(composerDraftTarget, entryId);
       }
     },
-    [composerDraftTarget, draft, removeReviewComment],
+    [composerDraftTarget, draft, editDraft?.id, removeReviewComment],
   );
 
   const submitEntry = useCallback(
@@ -201,6 +206,16 @@ export function AnnotatableCodeView({
       setDraftText("");
     },
     [addReviewComment, composerDraftTarget, draft, filesByKey, sectionId, sectionTitle],
+  );
+
+  const editEntry = useCallback(
+    (entryId: string, text: string) => {
+      setReviewComments(
+        composerDraftTarget,
+        reviewComments.map((comment) => (comment.id === entryId ? { ...comment, text } : comment)),
+      );
+    },
+    [composerDraftTarget, reviewComments, setReviewComments],
   );
 
   const beginComment = useCallback(
@@ -236,7 +251,7 @@ export function AnnotatableCodeView({
     [filesByKey, sectionId, sectionTitle],
   );
 
-  const hasOpenComment = draft !== null;
+  const hasOpenComment = draft !== null || activeEditDraft !== null;
   return (
     <StyledDiffCodeView<DiffCommentAnnotationGroup>
       key={codeViewKey}
@@ -271,6 +286,23 @@ export function AnnotatableCodeView({
                 onTextChange={setDraftText}
                 onCancel={() => removeEntry(entry.id)}
                 onComment={(text) => submitEntry(entry.id, text)}
+                edit={{
+                  active: activeEditDraft?.id === entry.id,
+                  text: activeEditDraft?.id === entry.id ? activeEditDraft.text : entry.text,
+                  onStart: () => {
+                    setSelectedLines(null);
+                    setEditDraft({ id: entry.id, text: entry.text });
+                  },
+                  onChange: (text) =>
+                    setEditDraft((current) =>
+                      current?.id === entry.id ? { ...current, text } : current,
+                    ),
+                  onCancel: () => setEditDraft(null),
+                  onSave: (text) => {
+                    editEntry(entry.id, text);
+                    setEditDraft(null);
+                  },
+                }}
                 onDelete={() => removeEntry(entry.id)}
               />
             ))}
