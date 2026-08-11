@@ -21,6 +21,8 @@ export interface PersistedUiState {
   projectExpandedById?: Record<string, boolean>;
   projectOrder?: string[];
   threadLastVisitedAtById?: Record<string, string>;
+  /** Locally accepted turns waiting for their server-canonical requestedAt. */
+  pendingThreadVisitBaselineKeys?: string[];
   collapsedProjectCwds?: string[];
   expandedProjectCwds?: string[];
   projectOrderCwds?: string[];
@@ -36,6 +38,7 @@ export interface UiProjectState {
 
 export interface UiThreadState {
   threadLastVisitedAtById: Record<string, string>;
+  pendingThreadVisitBaselineKeys: string[];
   threadChangedFilesExpandedById: Record<string, Record<string, boolean>>;
 }
 
@@ -49,6 +52,7 @@ const initialState: UiState = {
   projectExpandedById: {},
   projectOrder: [],
   threadLastVisitedAtById: {},
+  pendingThreadVisitBaselineKeys: [],
   threadChangedFilesExpandedById: {},
   defaultAdvertisedEndpointKey: null,
 };
@@ -126,6 +130,7 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
     projectExpandedById,
     projectOrder,
     threadLastVisitedAtById: sanitizeTimestampRecord(parsed.threadLastVisitedAtById),
+    pendingThreadVisitBaselineKeys: sanitizeStringArray(parsed.pendingThreadVisitBaselineKeys),
     threadChangedFilesExpandedById:
       parsed.threadChangedFilesExpansionVersion === THREAD_CHANGED_FILES_EXPANSION_VERSION
         ? sanitizePersistedThreadChangedFilesExpanded(parsed.threadChangedFilesExpandedById)
@@ -204,6 +209,7 @@ export function persistState(state: UiState): void {
         projectExpandedById,
         projectOrder: state.projectOrder,
         threadLastVisitedAtById: state.threadLastVisitedAtById,
+        pendingThreadVisitBaselineKeys: state.pendingThreadVisitBaselineKeys,
         defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
         threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
         threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
@@ -268,6 +274,42 @@ export function markThreadUnread(
       [threadId]: unreadVisitedAt,
     },
   };
+}
+
+export function queueThreadVisitBaseline(state: UiState, threadKey: string): UiState {
+  if (!threadKey || state.pendingThreadVisitBaselineKeys.includes(threadKey)) {
+    return state;
+  }
+  return {
+    ...state,
+    pendingThreadVisitBaselineKeys: [...state.pendingThreadVisitBaselineKeys, threadKey],
+  };
+}
+
+export function clearThreadVisitBaseline(state: UiState, threadKey: string): UiState {
+  if (!state.pendingThreadVisitBaselineKeys.includes(threadKey)) {
+    return state;
+  }
+  return {
+    ...state,
+    pendingThreadVisitBaselineKeys: state.pendingThreadVisitBaselineKeys.filter(
+      (key) => key !== threadKey,
+    ),
+  };
+}
+
+export function resolveThreadVisitBaseline(
+  state: UiState,
+  threadKey: string,
+  requestedAt: string,
+): UiState {
+  if (!state.pendingThreadVisitBaselineKeys.includes(threadKey)) {
+    return state;
+  }
+  if (!Number.isFinite(Date.parse(requestedAt))) {
+    return state;
+  }
+  return clearThreadVisitBaseline(markThreadVisited(state, threadKey, requestedAt), threadKey);
 }
 
 export function setThreadChangedFilesExpanded(
@@ -384,6 +426,9 @@ export function reorderProjects(
 interface UiStateStore extends UiState {
   markThreadVisited: (threadId: string, visitedAt: string) => void;
   markThreadUnread: (threadId: string, latestTurnCompletedAt: string | null | undefined) => void;
+  queueThreadVisitBaseline: (threadKey: string) => void;
+  clearThreadVisitBaseline: (threadKey: string) => void;
+  resolveThreadVisitBaseline: (threadKey: string, requestedAt: string) => void;
   setThreadChangedFilesExpanded: (threadId: string, turnId: string, expanded: boolean) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
@@ -400,6 +445,12 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) => markThreadVisited(state, threadId, visitedAt)),
   markThreadUnread: (threadId, latestTurnCompletedAt) =>
     set((state) => markThreadUnread(state, threadId, latestTurnCompletedAt)),
+  queueThreadVisitBaseline: (threadKey) =>
+    set((state) => queueThreadVisitBaseline(state, threadKey)),
+  clearThreadVisitBaseline: (threadKey) =>
+    set((state) => clearThreadVisitBaseline(state, threadKey)),
+  resolveThreadVisitBaseline: (threadKey, requestedAt) =>
+    set((state) => resolveThreadVisitBaseline(state, threadKey, requestedAt)),
   setThreadChangedFilesExpanded: (threadId, turnId, expanded) =>
     set((state) => setThreadChangedFilesExpanded(state, threadId, turnId, expanded)),
   setDefaultAdvertisedEndpointKey: (key) =>
