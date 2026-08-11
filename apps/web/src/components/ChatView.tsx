@@ -1289,6 +1289,14 @@ function ChatViewContent(props: ChatViewProps) {
     };
   }, [routeKind, routeThreadRef, routeThreadState]);
   const markThreadVisited = useUiStateStore((store) => store.markThreadVisited);
+  const queueThreadVisitBaseline = useUiStateStore((store) => store.queueThreadVisitBaseline);
+  const clearThreadVisitBaseline = useUiStateStore((store) => store.clearThreadVisitBaseline);
+  const queueAcceptedTurnVisitBaseline = useCallback(
+    (acceptedThreadId: ThreadId) => {
+      queueThreadVisitBaseline(scopedThreadKey(scopeThreadRef(environmentId, acceptedThreadId)));
+    },
+    [environmentId, queueThreadVisitBaseline],
+  );
   const settings = useEnvironmentSettings(environmentId);
   // New-thread defaults live in the primary environment's settings.json (the
   // settings UI never writes to remote environments), so read them from the
@@ -1679,23 +1687,23 @@ function ChatViewContent(props: ChatViewProps) {
     return openTerminalThreadKeys.filter((nextThreadKey) => existingThreadKeys.has(nextThreadKey));
   }, [draftThreadKeys, openTerminalThreadKeys, serverThreadKeys]);
   const activeLatestTurn = activeThread?.latestTurn ?? null;
-  // Reading a finished thread clears the sidebar's Done badge. The visit is
-  // stamped at the turn's completion time — not now/updatedAt — so it clears
-  // exactly the completion the user is looking at: a wake or completion that
-  // lands later still gets its signal (markThreadVisited never moves the
-  // timestamp backwards).
+  // A viewed running turn establishes a prospective read baseline. Once
+  // finished, its completion time clears exactly the Done badge being viewed.
+  // Both timestamps are server-projected and visits never move backwards.
   useEffect(() => {
-    const completedAt = serverThread?.latestTurn?.completedAt;
-    if (!serverThread?.id || !completedAt) return;
-    markThreadVisited(
-      scopedThreadKey(scopeThreadRef(serverThread.environmentId, serverThread.id)),
-      completedAt,
-    );
+    const latestTurn = serverThread?.latestTurn;
+    if (!latestTurn) return;
+    const visitedAt =
+      latestTurn.completedAt ??
+      (latestTurn.state === "running" ? (latestTurn.startedAt ?? latestTurn.requestedAt) : null);
+    if (visitedAt) markThreadVisited(routeThreadKey, visitedAt);
   }, [
     markThreadVisited,
-    serverThread?.environmentId,
-    serverThread?.id,
+    routeThreadKey,
     serverThread?.latestTurn?.completedAt,
+    serverThread?.latestTurn?.requestedAt,
+    serverThread?.latestTurn?.startedAt,
+    serverThread?.latestTurn?.state,
   ]);
   useEffect(() => {
     setMountedTerminalThreadKeys((currentThreadIds) => {
@@ -5296,6 +5304,7 @@ function ChatViewContent(props: ChatViewProps) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
+        queueAcceptedTurnVisitBaseline(threadIdForSend);
         acknowledgeActiveThreadWoke();
       }
     }
@@ -5657,6 +5666,9 @@ function ChatViewContent(props: ChatViewProps) {
           },
         });
         failure = startResult._tag === "Failure" ? startResult : null;
+        if (failure === null) {
+          queueAcceptedTurnVisitBaseline(threadIdForSend);
+        }
       }
 
       if (failure === null) {
@@ -5690,6 +5702,7 @@ function ChatViewContent(props: ChatViewProps) {
       persistThreadSettingsForNextTurn,
       resetLocalDispatch,
       runtimeMode,
+      queueAcceptedTurnVisitBaseline,
       setComposerDraftInteractionMode,
       setThreadError,
       startThreadTurn,
@@ -5785,6 +5798,9 @@ function ChatViewContent(props: ChatViewProps) {
         },
       });
       failure = startResult._tag === "Failure" ? startResult : null;
+      if (failure === null) {
+        queueAcceptedTurnVisitBaseline(nextThreadId);
+      }
     }
 
     if (failure === null) {
@@ -5808,6 +5824,9 @@ function ChatViewContent(props: ChatViewProps) {
     }
 
     if (failure !== null) {
+      clearThreadVisitBaseline(
+        scopedThreadKey(scopeThreadRef(activeThread.environmentId, nextThreadId)),
+      );
       const cleanupResult = await deleteThread({
         environmentId,
         input: {
@@ -5850,6 +5869,8 @@ function ChatViewContent(props: ChatViewProps) {
     navigate,
     resetLocalDispatch,
     runtimeMode,
+    clearThreadVisitBaseline,
+    queueAcceptedTurnVisitBaseline,
     startThreadTurn,
     environmentId,
     composerRef,
