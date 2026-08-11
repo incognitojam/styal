@@ -8,15 +8,18 @@ publishes a GitHub prerelease.
 
 `main` is the fork patch stack, rebased onto upstream. Two paths move it:
 
-- **Automated daily promotion (mechanical rebases only).** Once per day — the first scheduled run
-  (08:xx UTC), or a `workflow_dispatch` with `promote_main` enabled — the nightly promotes the
-  verified rebased stack to `main`. When the run has new changes, promotion happens after the
-  release publishes. When it has none (the candidate tree matches `origin/nightly`), the prepare job
-  instead aligns `main` to the already-released `origin/nightly` commit — same tree, already fully
-  verified — skipping as a no-op when `main` already matches it. Either path first force-pushes the
-  pre-promotion `main` commit to `backup/main-YYYYMMDD`, then force-pushes to `main` with a lease
-  pinned to the commit the run started from, so a manual push landing mid-run fails the step (and
-  the Discord failure notification fires) instead of being overwritten. Dry runs never promote.
+- **Automated promotion (mechanical rebases only).** Every green run promotes the verified rebased
+  stack to `main`; when upstream has not advanced, the push is skipped as a no-op. When the run has
+  new changes, promotion happens after the release publishes. When it has none (the candidate tree
+  matches `origin/nightly`), the prepare job instead aligns `main` to the already-released
+  `origin/nightly` commit — same tree, already fully verified — skipping as a no-op when `main`
+  already matches it. The day's first actual promotion snapshots the pre-promotion `main` to
+  `backup/main-YYYYMMDD`; later promotions that day leave the snapshot alone. If `main` moved while
+  the run was in flight (a PR merge, say), promotion is skipped as expected and the next run's
+  candidate includes the change. The final push carries a lease pinned to the commit the run
+  started from, so a push landing in the last seconds still fails the step loudly (and the Discord
+  failure notification fires), as does any other failure checking or pushing refs. Dry runs never
+  promote.
 - **Maintainer-reviewed manual rebases.** When the rebase onto upstream conflicts, the nightly fails
   in prepare before promoting anything. A human resolves the conflict, verifies the stack, pushes a
   backup branch, and force-pushes `main` — the same procedure as before automation existed.
