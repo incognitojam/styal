@@ -17,7 +17,6 @@ import {
 const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
-import { deriveCommandFileReadPresentation } from "@t3tools/shared/toolActivity";
 import {
   createContext,
   Fragment,
@@ -2737,19 +2736,10 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const [expanded, setExpanded] = useState(false);
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
-  const fileRead =
-    workEntry.itemType === "command_execution"
-      ? deriveCommandFileReadPresentation(workEntry.command)
-      : undefined;
   const showFailedIndicator = workEntryDisplayIndicatesToolFailure(workEntry);
-  const entryIconName = showWarningIndicator || showFailedIndicator
-    ? "x"
-    : fileRead
-      ? "eye"
-      : workEntryIconName(workEntry);
-  const displayText = fileRead
-    ? [fileRead.summary, fileRead.detail].filter(Boolean).join(" - ")
-    : (workEntryPreview(workEntry, workspaceRoot) ?? toolWorkEntryHeading(workEntry));
+  const entryIconName =
+    showWarningIndicator || showFailedIndicator ? "x" : workEntryIconName(workEntry);
+  const displayText = workEntryPreview(workEntry, workspaceRoot) ?? toolWorkEntryHeading(workEntry);
   const fileChangeStat =
     workEntry.fileChangeStat && hasNonZeroStat(workEntry.fileChangeStat)
       ? workEntry.fileChangeStat
