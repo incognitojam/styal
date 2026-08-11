@@ -71,10 +71,21 @@ jobs:
             exit 1
           fi
 
+      - id: app_token
+        name: Mint yngatech-nightly app token
+        # The yngatech-nightly GitHub App is the bypass actor on main's
+        # ruleset, so pushes to protected refs must authenticate as the app.
+        # Minted per job because installation tokens expire after one hour and
+        # the desktop builds run between this job and the release job.
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.YNGATECH_NIGHTLY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.YNGATECH_NIGHTLY_APP_PRIVATE_KEY }}
+
       - name: Checkout fork patch stack
         uses: actions/checkout@v6
         with:
-          token: ${{ secrets.FORK_RELEASE_TOKEN }}
+          token: ${{ steps.app_token.outputs.token }}
           ref: ${{ inputs.source_ref || 'main' }}
           fetch-depth: 0
 
@@ -285,10 +296,20 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
+      - id: app_token
+        name: Mint yngatech-nightly app token
+        # Fresh token rather than prepare's: installation tokens expire after
+        # one hour and the desktop builds run between the two jobs. This job's
+        # nightly and main pushes need the app's ruleset bypass too.
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.YNGATECH_NIGHTLY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.YNGATECH_NIGHTLY_APP_PRIVATE_KEY }}
+
       - name: Checkout released source
         uses: actions/checkout@v6
         with:
-          token: ${{ secrets.FORK_RELEASE_TOKEN }}
+          token: ${{ steps.app_token.outputs.token }}
           ref: ${{ needs.prepare.outputs.ref }}
           fetch-depth: 0
           sparse-checkout: |
