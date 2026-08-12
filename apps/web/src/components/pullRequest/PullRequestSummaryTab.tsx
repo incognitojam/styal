@@ -81,7 +81,8 @@ function reviewStateLabel(state: string): string {
 
 /** What every remark in the conversation needs to be rewritten where it sits. */
 interface CommentEditing {
-  readonly cwd: string;
+  readonly detail: PullRequestDetailView;
+  readonly environmentId: EnvironmentId;
   readonly canEdit: (comment: PullRequestComment) => boolean;
   readonly editingId: string | null;
   readonly saving: boolean;
@@ -107,7 +108,8 @@ function CommentBody({
       <PullRequestMarkdownEditor
         className={className}
         value={comment.body}
-        cwd={editing.cwd}
+        detail={editing.detail}
+        environmentId={editing.environmentId}
         label="Edit comment"
         saving={editing.saving}
         onSave={(body) => editing.onSave(comment, body)}
@@ -117,7 +119,12 @@ function CommentBody({
   }
   return (
     <div className={cn("flex items-start gap-1", className)}>
-      <PullRequestMarkdown className="min-w-0 flex-1" text={comment.body} cwd={editing.cwd} />
+      <PullRequestMarkdown
+        className="min-w-0 flex-1"
+        text={comment.body}
+        detail={editing.detail}
+        environmentId={editing.environmentId}
+      />
       {editing.canEdit(comment) ? (
         <Button
           size="icon-xs"
@@ -428,7 +435,8 @@ export function PullRequestSummaryTab({
   };
 
   const commentEditing: CommentEditing = {
-    cwd: detail.workspaceRoot,
+    detail,
+    environmentId,
     canEdit: (comment) => canEditPullRequestComment(detail, comment),
     editingId: editingCommentId,
     saving: commentSaving,
@@ -544,7 +552,8 @@ export function PullRequestSummaryTab({
               // Empty is a real answer here: saving nothing is how a description is cleared.
               allowEmpty
               value={detail.body}
-              cwd={detail.workspaceRoot}
+              detail={detail}
+              environmentId={environmentId}
               label="Pull request description"
               placeholder="Describe this pull request"
               saving={bodySaving}
@@ -556,7 +565,8 @@ export function PullRequestSummaryTab({
               <PullRequestMarkdown
                 className="min-w-0 flex-1"
                 text={detail.body.trim().length > 0 ? detail.body : "_No description provided._"}
-                cwd={detail.workspaceRoot}
+                detail={detail}
+                environmentId={environmentId}
               />
               {canEditPullRequestChangeRequest(detail) ? (
                 <Button
