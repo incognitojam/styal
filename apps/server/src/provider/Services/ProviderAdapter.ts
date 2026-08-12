@@ -23,6 +23,11 @@ import type {
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
 
+export interface ProviderSessionLaunchInput extends ProviderSessionStartInput {
+  /** Server-authored variables scoped to the session's workspace. */
+  readonly environment?: NodeJS.ProcessEnv;
+}
+
 export type ProviderSessionModelSwitchMode = "in-session" | "unsupported";
 
 export interface ProviderAdapterCapabilities {
@@ -53,7 +58,7 @@ export interface ProviderAdapterShape<TError> {
    * Start a provider-backed session.
    */
   readonly startSession: (
-    input: ProviderSessionStartInput,
+    input: ProviderSessionLaunchInput,
   ) => Effect.Effect<ProviderSession, TError>;
 
   /**
