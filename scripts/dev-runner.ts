@@ -221,10 +221,20 @@ const optionalIntegerConfig = (name: string): Config.Config<number | undefined> 
     Config.option,
     Config.map((value) => Option.getOrUndefined(value)),
   );
-const OffsetConfig = Config.all({
+const PortSelectionConfig = Config.all({
   portOffset: optionalIntegerConfig("T3CODE_PORT_OFFSET"),
   devInstance: optionalStringConfig("T3CODE_DEV_INSTANCE"),
+  workspacePort: optionalPortConfig("T3CODE_WORKSPACE_PORT"),
 });
+
+export function resolveWorkspaceBasePort(config: {
+  readonly workspacePort: number | undefined;
+  readonly portOffset: number | undefined;
+  readonly devInstance: string | undefined;
+}): number | undefined {
+  if (config.portOffset !== undefined || config.devInstance?.trim()) return undefined;
+  return config.workspacePort;
+}
 
 export function resolveOffset(config: {
   readonly portOffset: number | undefined;
@@ -295,6 +305,7 @@ interface CreateDevRunnerEnvInput {
   readonly baseEnv: NodeJS.ProcessEnv;
   readonly serverOffset: number;
   readonly webOffset: number;
+  readonly workspaceBasePort?: number | undefined;
   readonly t3Home: string | undefined;
   readonly browser: boolean | undefined;
   readonly autoBootstrapProjectFromCwd: boolean | undefined;
@@ -309,6 +320,7 @@ export function createDevRunnerEnv({
   baseEnv,
   serverOffset,
   webOffset,
+  workspaceBasePort,
   t3Home,
   browser,
   autoBootstrapProjectFromCwd,
@@ -318,8 +330,9 @@ export function createDevRunnerEnv({
   devUrl,
 }: CreateDevRunnerEnvInput): Effect.Effect<NodeJS.ProcessEnv, never, Path.Path> {
   return Effect.gen(function* () {
-    const serverPort = port ?? BASE_SERVER_PORT + serverOffset;
-    const webPort = BASE_WEB_PORT + webOffset;
+    const serverPort = port ?? workspaceBasePort ?? BASE_SERVER_PORT + serverOffset;
+    const webPort =
+      workspaceBasePort === undefined ? BASE_WEB_PORT + webOffset : workspaceBasePort + 1;
     // Precedence (--home-dir > worktree .t3 > ambient T3CODE_HOME) is resolved
     // by the caller; an unset t3Home here genuinely means "use the default".
     const configuredBaseDir = t3Home?.trim() || undefined;
@@ -632,11 +645,11 @@ interface DevRunnerCliInput {
 
 export function runDevRunnerWithInput(input: DevRunnerCliInput) {
   return Effect.gen(function* () {
-    const { portOffset, devInstance } = yield* OffsetConfig.pipe(
+    const { portOffset, devInstance, workspacePort } = yield* PortSelectionConfig.pipe(
       Effect.mapError(
         (cause) =>
           new DevRunnerConfigurationError({
-            configKeys: ["T3CODE_PORT_OFFSET", "T3CODE_DEV_INSTANCE"],
+            configKeys: ["T3CODE_PORT_OFFSET", "T3CODE_DEV_INSTANCE", "T3CODE_WORKSPACE_PORT"],
             cause,
           }),
       ),
@@ -656,22 +669,30 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
     }
 
     const worktreePath = yield* resolveGitWorktreePath(yield* HostProcessWorkingDirectory);
-
-    const { offset, source } = yield* resolveOffset({
+    const workspaceBasePort = resolveWorkspaceBasePort({
+      workspacePort,
       portOffset,
       devInstance,
-      worktreePath,
     });
+    const resolvedOffset = yield* resolveOffset({ portOffset, devInstance, worktreePath });
+    const { offset } = resolvedOffset;
+    const source =
+      workspaceBasePort === undefined
+        ? resolvedOffset.source
+        : `T3CODE_WORKSPACE_PORT=${workspaceBasePort}`;
 
-    const { serverOffset, webOffset } = yield* resolveModePortOffsets({
-      mode: input.mode,
-      startOffset: offset,
-      hasExplicitServerPort: input.port !== undefined,
-      hasExplicitDevUrl: input.devUrl !== undefined,
-      // A non-loopback bind host decides whether the backend can actually take
-      // the port, so it has to be probed alongside loopback.
-      checkPortAvailability: makeDefaultCheckPortAvailability(input.host),
-    });
+    const { serverOffset, webOffset } =
+      workspaceBasePort === undefined
+        ? yield* resolveModePortOffsets({
+            mode: input.mode,
+            startOffset: offset,
+            hasExplicitServerPort: input.port !== undefined,
+            hasExplicitDevUrl: input.devUrl !== undefined,
+            // A non-loopback bind host decides whether the backend can actually take
+            // the port, so it has to be probed alongside loopback.
+            checkPortAvailability: makeDefaultCheckPortAvailability(input.host),
+          })
+        : { serverOffset: offset, webOffset: offset };
 
     const hostEnvironment = yield* HostProcessEnvironment;
     // A dev server started inside a worktree defaults to that worktree's own
@@ -690,6 +711,7 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
       baseEnv: hostEnvironment,
       serverOffset,
       webOffset,
+      workspaceBasePort,
       t3Home: resolvedT3Home,
       browser: input.browser,
       autoBootstrapProjectFromCwd: input.autoBootstrapProjectFromCwd,
@@ -716,7 +738,7 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
       return;
     }
 
-    const sharedWebPort = BASE_WEB_PORT + webOffset;
+    const sharedWebPort = Number(env.PORT);
     if (input.share) {
       if (input.mode === "dev:server") {
         yield* Effect.logInfo("[dev-runner] --share has no effect for dev:server (no web server).");
