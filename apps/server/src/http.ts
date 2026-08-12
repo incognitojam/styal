@@ -39,6 +39,7 @@ import {
 } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
+import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
@@ -194,34 +195,91 @@ export const otlpTracesProxyRouteLayer = HttpRouter.add(
   ),
 );
 
-export const assetRouteLayer = HttpRouter.add(
-  "GET",
-  `${ASSET_ROUTE_PREFIX}/*`,
+export const assetRouteLayer = Layer.unwrap(
   Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest;
-    const url = HttpServerRequest.toURL(request);
-    if (Option.isNone(url)) {
-      return HttpServerResponse.text("Bad Request", { status: 400 });
-    }
+    const pullRequests = yield* PullRequestService.PullRequestService;
+    return HttpRouter.add(
+      "GET",
+      `${ASSET_ROUTE_PREFIX}/*`,
+      Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest;
+        const url = HttpServerRequest.toURL(request);
+        if (Option.isNone(url)) {
+          return HttpServerResponse.text("Bad Request", { status: 400 });
+        }
 
-    const suffix = url.value.pathname.slice(`${ASSET_ROUTE_PREFIX}/`.length);
-    const separatorIndex = suffix.indexOf("/");
-    if (separatorIndex <= 0) {
-      return HttpServerResponse.text("Not Found", { status: 404 });
-    }
+        const suffix = url.value.pathname.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+        const separatorIndex = suffix.indexOf("/");
+        if (separatorIndex <= 0) {
+          return HttpServerResponse.text("Not Found", { status: 404 });
+        }
 
-    const asset = yield* resolveAsset(
-      suffix.slice(0, separatorIndex),
-      suffix.slice(separatorIndex + 1),
-    );
-    if (!asset) {
-      return HttpServerResponse.text("Not Found", { status: 404 });
-    }
-    return yield* HttpServerResponse.file(asset.path, {
-      status: 200,
-      headers: assetResponseHeaders(asset.path),
-    }).pipe(
-      Effect.orElseSucceed(() => HttpServerResponse.text("Internal Server Error", { status: 500 })),
+        const asset = yield* resolveAsset(
+          suffix.slice(0, separatorIndex),
+          suffix.slice(separatorIndex + 1),
+        );
+        if (!asset) {
+          return HttpServerResponse.text("Not Found", { status: 404 });
+        }
+        if (asset.kind === "pull-request-file") {
+          const file = yield* pullRequests
+            .file({
+              projectId: asset.projectId,
+              repository: asset.repository,
+              number: asset.number,
+              path: asset.path,
+            })
+            .pipe(
+              Effect.tapError((cause) =>
+                Effect.logWarning("Failed to resolve pull request image.", {
+                  projectId: asset.projectId,
+                  repository: asset.repository,
+                  number: asset.number,
+                  path: asset.path,
+                  cause,
+                }),
+              ),
+              Effect.orElseSucceed(() => null),
+            );
+          if (file === null) {
+            return HttpServerResponse.text("Not Found", { status: 404 });
+          }
+          const httpClient = yield* HttpClient.HttpClient;
+          const response = yield* httpClient.get(file.url).pipe(
+            Effect.flatMap(HttpClientResponse.filterStatusOk),
+            Effect.tapError((cause) =>
+              Effect.logWarning("Failed to download pull request image.", {
+                projectId: asset.projectId,
+                repository: asset.repository,
+                number: asset.number,
+                path: asset.path,
+                errorTag: cause._tag,
+              }),
+            ),
+            Effect.orElseSucceed(() => null),
+          );
+          if (response === null) {
+            return HttpServerResponse.text("Not Found", { status: 404 });
+          }
+          return HttpServerResponse.stream(response.stream, {
+            status: 200,
+            contentType: Mime.getType(asset.path) ?? "application/octet-stream",
+            contentLength: file.size,
+            headers: {
+              ...assetResponseHeaders(asset.path),
+              "Cache-Control": "private, max-age=300",
+            },
+          });
+        }
+        return yield* HttpServerResponse.file(asset.path, {
+          status: 200,
+          headers: assetResponseHeaders(asset.path),
+        }).pipe(
+          Effect.orElseSucceed(() =>
+            HttpServerResponse.text("Internal Server Error", { status: 500 }),
+          ),
+        );
+      }),
     );
   }),
 );
