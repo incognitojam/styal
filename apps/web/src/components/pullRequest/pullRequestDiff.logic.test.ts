@@ -1,7 +1,12 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { describe, expect, it } from "vite-plus/test";
 
-import { isFileDiffCollapsed, isLineInFileDiff } from "./pullRequestDiff.logic";
+import {
+  isFileDiffCollapsed,
+  isLineInFileDiff,
+  PULL_REQUEST_DIFF_AUTO_FOLD_LINE_THRESHOLD,
+  shouldAutoFoldFileDiff,
+} from "./pullRequestDiff.logic";
 
 /** Only the hunk ranges matter here; the viewer fills the rest in when it renders. */
 function fileWithHunks(
@@ -48,34 +53,76 @@ describe("isLineInFileDiff", () => {
 });
 
 describe("isFileDiffCollapsed", () => {
-  const NO_TOGGLES: ReadonlySet<string> = new Set();
+  const NO_OVERRIDES: ReadonlyMap<string, boolean> = new Map();
 
   it("opens every file before the reader has touched anything", () => {
-    expect(isFileDiffCollapsed("a.ts", null, NO_TOGGLES)).toBe(false);
-    expect(isFileDiffCollapsed("b.ts", null, NO_TOGGLES)).toBe(false);
+    expect(isFileDiffCollapsed("a.ts", null, NO_OVERRIDES)).toBe(false);
+    expect(isFileDiffCollapsed("b.ts", null, NO_OVERRIDES)).toBe(false);
   });
 
   it("opens every file once the toolbar has asked for it", () => {
-    // Pressing the toolbar clears the reader's own toggles, which is why the set is empty here.
-    expect(isFileDiffCollapsed("a.ts", "expanded", NO_TOGGLES)).toBe(false);
-    expect(isFileDiffCollapsed("b.ts", "expanded", NO_TOGGLES)).toBe(false);
+    // Pressing the toolbar clears the reader's per-file overrides, which is why the map is empty.
+    expect(isFileDiffCollapsed("a.ts", "expanded", NO_OVERRIDES)).toBe(false);
+    expect(isFileDiffCollapsed("b.ts", "expanded", NO_OVERRIDES)).toBe(false);
   });
 
   it("folds every file again on the second press", () => {
-    expect(isFileDiffCollapsed("a.ts", "folded", NO_TOGGLES)).toBe(true);
-    expect(isFileDiffCollapsed("b.ts", "folded", NO_TOGGLES)).toBe(true);
+    expect(isFileDiffCollapsed("a.ts", "folded", NO_OVERRIDES)).toBe(true);
+    expect(isFileDiffCollapsed("b.ts", "folded", NO_OVERRIDES)).toBe(true);
   });
 
   it("keeps a file the reader folded closed as the next slice arrives", () => {
     // The file keys grow with every slice, so the answer for one already folded must not depend
     // on how many of them there are by then.
-    const toggled = new Set(["b.ts"]);
-    expect(isFileDiffCollapsed("b.ts", null, toggled)).toBe(true);
-    expect(isFileDiffCollapsed("c.ts", null, toggled)).toBe(false);
+    const overrides = new Map([["b.ts", true]]);
+    expect(isFileDiffCollapsed("b.ts", null, overrides)).toBe(true);
+    expect(isFileDiffCollapsed("c.ts", null, overrides)).toBe(false);
   });
 
-  it("still answers to a toggle after either toolbar press", () => {
-    expect(isFileDiffCollapsed("a.ts", "expanded", new Set(["a.ts"]))).toBe(true);
-    expect(isFileDiffCollapsed("a.ts", "folded", new Set(["a.ts"]))).toBe(false);
+  it("keeps a later per-file override ahead of either toolbar choice", () => {
+    expect(isFileDiffCollapsed("a.ts", "expanded", new Map([["a.ts", true]]))).toBe(true);
+    expect(isFileDiffCollapsed("a.ts", "folded", new Map([["a.ts", false]]))).toBe(false);
+  });
+
+  it("starts an oversized file folded until the reader opens it", () => {
+    expect(isFileDiffCollapsed("large.ts", null, NO_OVERRIDES, true)).toBe(true);
+    expect(isFileDiffCollapsed("large.ts", null, new Map([["large.ts", false]]), true)).toBe(false);
+  });
+
+  it("lets the toolbar override an oversized file's automatic fold", () => {
+    expect(isFileDiffCollapsed("large.ts", "expanded", NO_OVERRIDES, true)).toBe(false);
+    expect(isFileDiffCollapsed("small.ts", "folded", NO_OVERRIDES, false)).toBe(true);
+  });
+
+  it("does not reverse a manual choice when the automatic default changes", () => {
+    const opened = new Map([["large.ts", false]]);
+    expect(isFileDiffCollapsed("large.ts", null, opened, true)).toBe(false);
+    expect(isFileDiffCollapsed("large.ts", null, opened, false)).toBe(false);
+  });
+});
+
+describe("shouldAutoFoldFileDiff", () => {
+  const fileWithLineCount = (unifiedLineCount: number) =>
+    ({ unifiedLineCount }) as FileDiffMetadata;
+
+  it("folds only files taller than the automatic limit", () => {
+    expect(
+      shouldAutoFoldFileDiff(fileWithLineCount(PULL_REQUEST_DIFF_AUTO_FOLD_LINE_THRESHOLD), false),
+    ).toBe(false);
+    expect(
+      shouldAutoFoldFileDiff(
+        fileWithLineCount(PULL_REQUEST_DIFF_AUTO_FOLD_LINE_THRESHOLD + 1),
+        false,
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps an oversized file open when it carries a review annotation", () => {
+    expect(
+      shouldAutoFoldFileDiff(
+        fileWithLineCount(PULL_REQUEST_DIFF_AUTO_FOLD_LINE_THRESHOLD + 1),
+        true,
+      ),
+    ).toBe(false);
   });
 });
