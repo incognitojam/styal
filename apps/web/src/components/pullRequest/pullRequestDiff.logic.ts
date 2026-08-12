@@ -24,21 +24,30 @@ export function isLineInFileDiff(
 /** What the toolbar last asked of every file at once, null being the reader asking nothing yet. */
 export type DiffFoldOverride = "expanded" | "folded" | null;
 
+/** Past this height, one file stops being a useful part of the surrounding scroll. */
+export const PULL_REQUEST_DIFF_AUTO_FOLD_LINE_THRESHOLD = 1_200;
+
+/** Oversized files stay out of the way, unless a conversation gives the reader a target. */
+export function shouldAutoFoldFileDiff(file: FileDiffMetadata, hasAnnotations: boolean): boolean {
+  return !hasAnnotations && file.unifiedLineCount > PULL_REQUEST_DIFF_AUTO_FOLD_LINE_THRESHOLD;
+}
+
 /**
  * Whether a file is drawn folded.
  *
- * A diff arrives a slice at a time, so the reader's own choices are kept as the difference from
- * what the toolbar last said rather than as the set of folded files: a file that has not loaded
- * yet cannot be in a set, and would otherwise land expanded moments after the reader folded
- * everything. Folded is the starting point whatever the change's size, because laying out every
- * file of it costs the reader the seconds before the tab is usable and buries the file they came
- * for among the ones they did not.
+ * A diff arrives a slice at a time, so the toolbar's choice is kept as the default that later
+ * files inherit. Per-file choices are explicit answers: an annotation can change an oversized
+ * file's automatic default without reversing what the reader already chose. Ordinary files start
+ * open while individually oversized files start folded.
  */
 export function isFileDiffCollapsed(
   fileKey: string,
   foldOverride: DiffFoldOverride,
-  toggledFileKeys: ReadonlySet<string>,
+  fileFoldOverrides: ReadonlyMap<string, boolean>,
+  autoFolded = false,
 ): boolean {
-  const foldedByDefault = foldOverride !== "expanded";
-  return toggledFileKeys.has(fileKey) ? !foldedByDefault : foldedByDefault;
+  const fileOverride = fileFoldOverrides.get(fileKey);
+  if (fileOverride !== undefined) return fileOverride;
+  const foldedByDefault = foldOverride === null ? autoFolded : foldOverride === "folded";
+  return foldedByDefault;
 }
