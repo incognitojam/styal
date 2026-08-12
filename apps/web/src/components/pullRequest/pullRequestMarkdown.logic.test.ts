@@ -1,6 +1,52 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { splitPullRequestBody } from "./pullRequestMarkdown.logic";
+import {
+  resolvePullRequestRepositoryImagePath,
+  splitPullRequestBody,
+} from "./pullRequestMarkdown.logic";
+
+const GITHUB_CONTEXT = {
+  provider: "github",
+  repository: "incognitojam/timeline",
+  url: "https://github.com/incognitojam/timeline/pull/753",
+  headBranch: "add-self-contact-flag",
+};
+
+describe("pull request repository images", () => {
+  it("resolves a GitHub blob image at the pull request branch", () => {
+    expect(
+      resolvePullRequestRepositoryImagePath(
+        "https://github.com/incognitojam/timeline/blob/add-self-contact-flag/web/e2e/contact-detail.png?raw=1",
+        GITHUB_CONTEXT,
+      ),
+    ).toBe("web/e2e/contact-detail.png");
+  });
+
+  it("resolves relative and commit-pinned repository images", () => {
+    expect(resolvePullRequestRepositoryImagePath("./docs/screenshot.png", GITHUB_CONTEXT)).toBe(
+      "docs/screenshot.png",
+    );
+    expect(
+      resolvePullRequestRepositoryImagePath(
+        "https://github.com/incognitojam/timeline/blob/f4913679f3b33ba1848c6bf4934228e9eb71b30f/docs/screenshot.png",
+        GITHUB_CONTEXT,
+      ),
+    ).toBe("docs/screenshot.png");
+  });
+
+  it("leaves external, cross-repository, and unsafe paths alone", () => {
+    expect(
+      resolvePullRequestRepositoryImagePath("https://example.com/screenshot.png", GITHUB_CONTEXT),
+    ).toBeNull();
+    expect(
+      resolvePullRequestRepositoryImagePath(
+        "https://github.com/acme/other/blob/add-self-contact-flag/screenshot.png",
+        GITHUB_CONTEXT,
+      ),
+    ).toBeNull();
+    expect(resolvePullRequestRepositoryImagePath("../secret.png", GITHUB_CONTEXT)).toBeNull();
+  });
+});
 
 describe("pull request body segmentation", () => {
   it("keeps a plain body as a single markdown run", () => {
