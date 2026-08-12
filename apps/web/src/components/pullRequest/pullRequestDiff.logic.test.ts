@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   isFileDiffCollapsed,
   isLineInFileDiff,
+  isPullRequestImageDiff,
   PULL_REQUEST_DIFF_AUTO_FOLD_LINE_THRESHOLD,
   shouldAutoFoldFileDiff,
 } from "./pullRequestDiff.logic";
@@ -124,5 +125,19 @@ describe("shouldAutoFoldFileDiff", () => {
         true,
       ),
     ).toBe(false);
+  });
+});
+
+describe("isPullRequestImageDiff", () => {
+  it("recognizes supported image files whose patch has no hunks", () => {
+    expect(isPullRequestImageDiff({ name: "screenshots/App.PNG", hunks: [] } as never)).toBe(true);
+    expect(isPullRequestImageDiff({ name: "icons/mark.svg", hunks: [] } as never)).toBe(true);
+  });
+
+  it("leaves textual image patches and other binary files with the code viewer", () => {
+    expect(isPullRequestImageDiff({ name: "icons/mark.svg", hunks: [{}] } as never)).toBe(false);
+    expect(isPullRequestImageDiff({ name: "fixtures/archive.zip", hunks: [] } as never)).toBe(
+      false,
+    );
   });
 });

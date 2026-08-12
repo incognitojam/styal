@@ -1,6 +1,13 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 import type { PullRequestDiffSide } from "@t3tools/contracts";
 
+const IMAGE_FILE_EXTENSION = /\.(?:avif|bmp|gif|ico|jpe?g|png|svg|webp)$/i;
+
+/** Raster/rich image entries whose host patch contains no source hunks to render. */
+export function isPullRequestImageDiff(file: FileDiffMetadata): boolean {
+  return file.hunks.length === 0 && IMAGE_FILE_EXTENSION.test(file.name);
+}
+
 /**
  * Whether a conversation's line is really in this file's hunks.
  *

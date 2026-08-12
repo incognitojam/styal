@@ -1155,6 +1155,7 @@ export const make = Effect.gen(function* () {
               host: project.host,
               number: input.number,
               ...(input.commit === undefined ? {} : { commit: input.commit }),
+              ...(input.format === undefined ? {} : { format: input.format }),
               changeType: input.changeType,
               oldPath: input.oldPath,
               newPath: input.newPath,

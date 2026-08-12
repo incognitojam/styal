@@ -338,6 +338,7 @@ export interface PullRequestProviderApi {
     input: ProviderRepositoryRef & {
       readonly number: number;
       readonly commit?: string | undefined;
+      readonly format?: "text" | "image" | undefined;
       readonly changeType: "change" | "rename-pure" | "rename-changed" | "new" | "deleted";
       readonly oldPath: string;
       readonly newPath: string;

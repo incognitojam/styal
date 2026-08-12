@@ -790,6 +790,8 @@ export const PullRequestDiffFileContentsInput = Schema.Struct({
   ...PullRequestRef.fields,
   /** One commit's own comparison; absent means the whole change request. */
   commit: Schema.optional(TrimmedNonEmptyString),
+  /** Text hydrates omitted source lines; image returns display-safe encoded image bytes. */
+  format: Schema.optional(Schema.Literals(["text", "image"])),
   changeType: Schema.Literals(["change", "rename-pure", "rename-changed", "new", "deleted"]),
   oldPath: TrimmedNonEmptyString,
   newPath: TrimmedNonEmptyString,

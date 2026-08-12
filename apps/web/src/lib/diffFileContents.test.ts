@@ -1,10 +1,13 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
-import { EnvironmentId, type ReviewDiffFileContentsResult } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, type ReviewDiffFileContentsResult } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { createGitDiffFileContentsLoader } from "./diffFileContents";
+import {
+  createGitDiffFileContentsLoader,
+  createPullRequestImageDiffContentsLoader,
+} from "./diffFileContents";
 
 const SOURCE = {
   environmentId: EnvironmentId.make("environment-1"),
@@ -14,6 +17,13 @@ const SOURCE = {
   headRef: "feature",
   cacheKey: "comparison-1",
 };
+
+const PULL_REQUEST_SOURCE = {
+  environmentId: EnvironmentId.make("environment-1"),
+  reference: { projectId: ProjectId.make("project-1"), repository: "acme/web", number: 42 },
+  commit: null,
+  cacheKey: "pull-request-42",
+} as const;
 
 function fileDiff(type: FileDiffMetadata["type"] = "rename-changed"): FileDiffMetadata {
   return {
@@ -76,5 +86,35 @@ describe("createGitDiffFileContentsLoader", () => {
     const load = createGitDiffFileContentsLoader(getDiffFileContents, SOURCE);
 
     await expect(load(fileDiff())).rejects.toBe(failure);
+  });
+});
+
+describe("createPullRequestImageDiffContentsLoader", () => {
+  it("requests image contents through the pull request file command", async () => {
+    const getDiffFileContents = vi.fn(async () =>
+      AsyncResult.success({
+        oldContents: "data:image/png;base64,YmVmb3Jl",
+        newContents: "data:image/png;base64,YWZ0ZXI=",
+      }),
+    );
+    const load = createPullRequestImageDiffContentsLoader(getDiffFileContents, PULL_REQUEST_SOURCE);
+
+    await expect(load(fileDiff())).resolves.toEqual({
+      oldImage: "data:image/png;base64,YmVmb3Jl",
+      newImage: "data:image/png;base64,YWZ0ZXI=",
+    });
+    expect(getDiffFileContents).toHaveBeenCalledTimes(1);
+    expect(getDiffFileContents).toHaveBeenCalledWith({
+      environmentId: "environment-1",
+      input: {
+        projectId: "project-1",
+        repository: "acme/web",
+        number: 42,
+        format: "image",
+        changeType: "rename-changed",
+        oldPath: "src/old-name.ts",
+        newPath: "src/new-name.ts",
+      },
+    });
   });
 });

@@ -22,6 +22,7 @@ import {
   type PullRequestThreadComment,
   type PullRequestUpdateMethod,
 } from "@t3tools/contracts";
+import { decodeJsonResult } from "@t3tools/shared/schemaJson";
 
 import * as GitHubCli from "../sourceControl/GitHubCli.ts";
 import {
@@ -81,7 +82,7 @@ import {
   type GitHubReviewThreadPage,
   type GitHubViewerAccess,
 } from "./gitHubPullRequestJson.ts";
-import type { ProviderListCursor } from "./PullRequestProvider.ts";
+import type { ProviderDiffFileContents, ProviderListCursor } from "./PullRequestProvider.ts";
 
 /**
  * Names the read that produced unusable output, so a failure reports the call it came from
@@ -283,6 +284,11 @@ const GitHubPullRequestFileJson = Schema.fromJsonString(
   }),
 );
 const decodePullRequestFileJson = Schema.decodeUnknownOption(GitHubPullRequestFileJson);
+/** Base64 adds a third to the raw image size, plus the small repository-file JSON envelope. */
+const DIFF_IMAGE_FILE_MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
+const decodeImageFile = decodeJsonResult(
+  Schema.Struct({ encoding: Schema.Literal("base64"), content: Schema.String }),
+);
 
 /** A search-free fallback may scan older rows for local filters, but never the whole repository. */
 const PULL_REQUEST_FALLBACK_MAX_ROWS = 1_000;
@@ -440,13 +446,11 @@ export class GitHubPullRequestCli extends Context.Service<
       readonly host: string;
       readonly number: number;
       readonly commit?: string | undefined;
+      readonly format?: "text" | "image" | undefined;
       readonly changeType: "change" | "rename-pure" | "rename-changed" | "new" | "deleted";
       readonly oldPath: string;
       readonly newPath: string;
-    }) => Effect.Effect<
-      { readonly oldContents: string; readonly newContents: string },
-      GitHubPullRequestCliError
-    >;
+    }) => Effect.Effect<ProviderDiffFileContents, GitHubPullRequestCliError>;
 
     readonly getPullRequestFile: (input: {
       readonly cwd: string;
@@ -1128,7 +1132,7 @@ export const make = Effect.gen(function* () {
           });
         }
 
-        const readFile = (revision: string, filePath: string) =>
+        const readTextFile = (revision: string, filePath: string) =>
           github
             .execute({
               cwd: input.cwd,
@@ -1163,10 +1167,68 @@ export const make = Effect.gen(function* () {
               ),
             );
 
+        const readImageFile = Effect.fn("GitHubPullRequestCli.readImageFile")(function* (
+          revision: string,
+          filePath: string,
+        ): Effect.fn.Return<string, GitHubPullRequestCliError> {
+          const result = yield* github.execute({
+            cwd: input.cwd,
+            args: [
+              "api",
+              "--hostname",
+              input.host,
+              `repos/${owner}/${name}/contents/${filePath
+                .split("/")
+                .map(encodeURIComponent)
+                .join("/")}?ref=${encodeURIComponent(revision)}`,
+            ],
+            maxOutputBytes: DIFF_IMAGE_FILE_MAX_OUTPUT_BYTES,
+            timeoutMs: DIFF_TIMEOUT_MS,
+          });
+          if (result.stdoutTruncated) {
+            return yield* new GitHubDiffFileContentsUnavailableError({
+              command: "gh",
+              cwd: input.cwd,
+              path: filePath,
+              reason: "oversized",
+            });
+          }
+          const decoded = decodeImageFile(result.stdout.trim());
+          const mimeType = Mime.getType(filePath)?.toLowerCase();
+          if (!Result.isSuccess(decoded) || mimeType?.startsWith("image/") !== true) {
+            return yield* new GitHubPullRequestReadError({
+              command: "gh",
+              cwd: input.cwd,
+              operation: "getPullRequestDiffFileContents",
+              cause: Result.isSuccess(decoded)
+                ? new Error(`${filePath} is not a browser-renderable image.`)
+                : decoded.failure,
+            });
+          }
+          return `data:${mimeType};base64,${decoded.success.content.replaceAll("\n", "")}`;
+        });
+
+        if (input.format === "image") {
+          const [oldContents, newContents] = yield* Effect.all(
+            [
+              input.changeType === "new" || input.changeType === "rename-pure"
+                ? Effect.succeed("")
+                : readImageFile(baseRef, input.oldPath),
+              input.changeType === "deleted"
+                ? Effect.succeed("")
+                : readImageFile(headRef, input.newPath),
+            ],
+            { concurrency: 2 },
+          );
+          return { oldContents, newContents };
+        }
+
         const [oldContents, newContents] = yield* Effect.all(
           [
-            input.changeType === "new" ? Effect.succeed("") : readFile(baseRef, input.oldPath),
-            input.changeType === "deleted" ? Effect.succeed("") : readFile(headRef, input.newPath),
+            input.changeType === "new" ? Effect.succeed("") : readTextFile(baseRef, input.oldPath),
+            input.changeType === "deleted"
+              ? Effect.succeed("")
+              : readTextFile(headRef, input.newPath),
           ],
           { concurrency: 2 },
         );
@@ -1939,3 +2001,4 @@ export const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(GitHubPullRequestCli, make);
+import Mime from "@effect/platform-node/Mime";

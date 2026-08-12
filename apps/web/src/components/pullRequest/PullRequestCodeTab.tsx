@@ -42,7 +42,10 @@ import {
   type RenderablePatch,
 } from "~/lib/diffRendering";
 import { cn } from "~/lib/utils";
-import { createPullRequestDiffFileContentsLoader } from "~/lib/diffFileContents";
+import {
+  createPullRequestDiffFileContentsLoader,
+  createPullRequestImageDiffContentsLoader,
+} from "~/lib/diffFileContents";
 import { buildDiffReviewComment, type ReviewCommentContext } from "~/reviewCommentContext";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
@@ -68,9 +71,11 @@ import { PullRequestReviewBar } from "./PullRequestReviewBar";
 import {
   isFileDiffCollapsed,
   isLineInFileDiff,
+  isPullRequestImageDiff,
   shouldAutoFoldFileDiff,
   type DiffFoldOverride,
 } from "./pullRequestDiff.logic";
+import { PullRequestImageDiff } from "./PullRequestImageDiff";
 import { PullRequestDiffStat, PullRequestMetaLine } from "./pullRequestPresentation";
 import {
   nextPendingReviewCommentId,
@@ -335,6 +340,16 @@ export function PullRequestCodeTab({
       }),
     [commit, detail.updatedAt, environmentId, getDiffFileContents, reference, referenceKey],
   );
+  const loadImageDiffContents = useMemo(
+    () =>
+      createPullRequestImageDiffContentsLoader(getDiffFileContents, {
+        environmentId,
+        reference,
+        commit,
+        cacheKey: `pull-request:${referenceKey}:${detail.updatedAt}:${commit ?? "all"}:images`,
+      }),
+    [commit, detail.updatedAt, environmentId, getDiffFileContents, reference, referenceKey],
+  );
 
   // What is offered is the intersection of two different questions: what this host can do at
   // all, and what this account may do on this repository. Either one saying no means a control
@@ -386,6 +401,15 @@ export function PullRequestCodeTab({
   const withheldContent =
     loadedSlices.some((slice) => slice.truncated) ||
     parsedSlices.some((parsed) => parsed?.kind === "raw");
+  const supportsImageDiffs = detail.provider === "github";
+  const imageFiles = useMemo(
+    () => (supportsImageDiffs ? files.filter(isPullRequestImageDiff) : []),
+    [files, supportsImageDiffs],
+  );
+  const codeFiles = useMemo(
+    () => (supportsImageDiffs ? files.filter((file) => !isPullRequestImageDiff(file)) : files),
+    [files, supportsImageDiffs],
+  );
 
   // Placing a conversation takes more than its file being in the diff: its line has to fall
   // inside a hunk that was rendered. One that does not is drawn nowhere, so it belongs in the
@@ -414,7 +438,7 @@ export function PullRequestCodeTab({
 
   const items = useMemo<CodeViewDiffItem<ReviewAnnotationGroup>[]>(
     () =>
-      files.map((fileDiff) => {
+      codeFiles.map((fileDiff) => {
         const fileKey = buildFileDiffRenderKey(fileDiff);
         const path = resolveFileDiffPath(fileDiff);
         // One annotation per line, so a line that already carries a conversation shows a new
@@ -504,7 +528,7 @@ export function PullRequestCodeTab({
       commit,
       detail.reviewThreads,
       draft,
-      files,
+      codeFiles,
       foldOverride,
       pendingComments,
       placedThreadIds,
@@ -521,10 +545,13 @@ export function PullRequestCodeTab({
       ),
     [loadedSlices],
   );
-  const fileKeys = useMemo(() => items.map((item) => item.id), [items]);
+  const fileKeys = useMemo(() => files.map(buildFileDiffRenderKey), [files]);
   const collapsedFileKeys = useMemo(
-    () => new Set(items.filter((item) => item.collapsed === true).map((item) => item.id)),
-    [items],
+    () =>
+      new Set(
+        fileKeys.filter((fileKey) => isFileDiffCollapsed(fileKey, foldOverride, fileFoldOverrides)),
+      ),
+    [fileKeys, foldOverride, fileFoldOverrides],
   );
   const allFilesCollapsed = areAllDiffFilesCollapsed(fileKeys, collapsedFileKeys);
 
@@ -667,6 +694,28 @@ export function PullRequestCodeTab({
         </div>
       ),
     [nextCursor, diffQuery.error, diffQuery.isPending, diffQuery.refresh],
+  );
+
+  const renderCodeViewHeader = useCallback(
+    () =>
+      imageFiles.length === 0 ? null : (
+        <div>
+          {imageFiles.map((fileDiff) => {
+            const fileKey = buildFileDiffRenderKey(fileDiff);
+            const collapsed = isFileDiffCollapsed(fileKey, foldOverride, fileFoldOverrides);
+            return (
+              <PullRequestImageDiff
+                key={fileKey}
+                fileDiff={fileDiff}
+                collapsed={collapsed}
+                loadContents={loadImageDiffContents}
+                onToggle={() => toggleFile(fileKey, collapsed)}
+              />
+            );
+          })}
+        </div>
+      ),
+    [fileFoldOverrides, foldOverride, imageFiles, loadImageDiffContents, toggleFile],
   );
 
   const renderHeaderPrefix = useCallback(
@@ -1174,7 +1223,7 @@ export function PullRequestCodeTab({
     );
   }
 
-  if (items.length === 0 && nextCursor === null) {
+  if (files.length === 0 && nextCursor === null) {
     return withReviewBar(
       <p className="px-4 py-5 text-sm text-muted-foreground">
         {commit === null
@@ -1313,6 +1362,9 @@ export function PullRequestCodeTab({
             selectedLines={selectedLines}
             onSelectedLinesChange={setSelectedLines}
             options={diffViewOptions}
+            // Pierre owns the virtualized scroller, so image rows use its full-width header
+            // slot instead of sitting in an overflowing parent that would break row geometry.
+            renderCodeViewHeader={renderCodeViewHeader}
             // The viewer owns the scroll container, so the sentinel that asks for the next slice
             // has to live inside it — at the end of the files, where reaching it means the reader
             // is running out of diff.

@@ -44,6 +44,7 @@ T3 Code works with the platforms your team already uses:
 - View repository-hosted images in GitHub pull request descriptions, including private repositories
 - While working in a thread, open linked reviews in the same compact right-panel tabs without
   leaving the conversation
+- Expand changed images in GitHub and GitLab reviews to compare their revisions side by side
 - Open the review directly in your browser with one click
 - Command-click (Control-click on Windows and Linux) a pull request number in the sidebar to open it in your browser instead of in T3 Code
 - Check out a teammate's branch to review code locally

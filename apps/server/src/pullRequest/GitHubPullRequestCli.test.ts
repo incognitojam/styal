@@ -1448,6 +1448,36 @@ layer("GitHubPullRequestCli.layer", (it) => {
     }),
   );
 
+  it.effect("loads both sides of an image diff as validated base64", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockReturnValueOnce(Effect.succeed(output("a1b2c3d\tb1c2d3e\n")));
+      mockedExecute.mockReturnValueOnce(
+        Effect.succeed(output('{"encoding":"base64","content":"YmVmb3Jl"}')),
+      );
+      mockedExecute.mockReturnValueOnce(
+        Effect.succeed(output('{"encoding":"base64","content":"YWZ0ZXI="}')),
+      );
+      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+
+      const contents = yield* cli.getPullRequestDiffFileContents({
+        cwd: "/w",
+        repository: "acme/web",
+        host: "github.com",
+        number: 7,
+        format: "image",
+        changeType: "change",
+        oldPath: "screenshots/app.png",
+        newPath: "screenshots/app.png",
+      });
+
+      expect(contents).toEqual({
+        oldContents: "data:image/png;base64,YmVmb3Jl",
+        newContents: "data:image/png;base64,YWZ0ZXI=",
+      });
+      expect(callAt(1).args).not.toContain("Accept: application/vnd.github.raw+json");
+    }),
+  );
+
   it.effect("reports unusable diff revisions as a structured error", () =>
     Effect.gen(function* () {
       mockedExecute.mockReturnValueOnce(Effect.succeed(output("not-a-sha\tstill-not-a-sha\n")));

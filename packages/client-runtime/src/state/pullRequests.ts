@@ -90,6 +90,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
             input.repository,
             input.number,
             input.commit ?? null,
+            input.format ?? null,
             input.changeType,
             input.oldPath,
             input.newPath,

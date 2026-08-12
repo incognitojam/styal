@@ -42,6 +42,23 @@ type GetPullRequestDiffFileContents<E> = (request: {
   readonly input: PullRequestDiffFileContentsInput;
 }) => Promise<AtomCommandResult<PullRequestDiffFileContentsResult, E>>;
 
+export interface PullRequestImageDiffContents {
+  readonly oldImage: string | null;
+  readonly newImage: string | null;
+}
+
+export type PullRequestImageDiffContentsLoader = (
+  fileDiff: Parameters<FileDiffContentsLoader>[0],
+) => Promise<PullRequestImageDiffContents>;
+
+function resolveDiffFilePaths(fileDiff: Parameters<FileDiffContentsLoader>[0]) {
+  const newPath = resolveFileDiffPath(fileDiff);
+  const oldPath = fileDiff.prevName
+    ? resolveFileDiffPath({ ...fileDiff, name: fileDiff.prevName })
+    : newPath;
+  return { oldPath, newPath };
+}
+
 function createDiffFileContentsLoader(
   load: (input: {
     readonly changeType: PullRequestDiffFileContentsInput["changeType"];
@@ -51,10 +68,7 @@ function createDiffFileContentsLoader(
   cacheKey: string,
 ): FileDiffContentsLoader {
   return async (fileDiff) => {
-    const newPath = resolveFileDiffPath(fileDiff);
-    const oldPath = fileDiff.prevName
-      ? resolveFileDiffPath({ ...fileDiff, name: fileDiff.prevName })
-      : newPath;
+    const { oldPath, newPath } = resolveDiffFilePaths(fileDiff);
     const contents = await load({ changeType: fileDiff.type, oldPath, newPath });
     const newFile = {
       name: newPath,
@@ -121,4 +135,30 @@ export function createPullRequestDiffFileContentsLoader<E>(
     }
     return result.value;
   }, source.cacheKey);
+}
+
+/** Loads image revisions through the same lazy host-backed request used for text expansion. */
+export function createPullRequestImageDiffContentsLoader<E>(
+  getDiffFileContents: GetPullRequestDiffFileContents<E>,
+  source: PullRequestDiffFileContentsSource,
+): PullRequestImageDiffContentsLoader {
+  return async (fileDiff) => {
+    const { oldPath, newPath } = resolveDiffFilePaths(fileDiff);
+    const result = await getDiffFileContents({
+      environmentId: source.environmentId,
+      input: {
+        ...source.reference,
+        ...(source.commit === null ? {} : { commit: source.commit }),
+        format: "image",
+        changeType: fileDiff.type,
+        oldPath,
+        newPath,
+      },
+    });
+    if (result._tag !== "Success") throw squashAtomCommandFailure(result);
+    return {
+      oldImage: result.value.oldContents || null,
+      newImage: result.value.newContents || null,
+    };
+  };
 }
