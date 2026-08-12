@@ -25,6 +25,13 @@ on:
         required: false
         type: string
         default: ""
+      allow_missing_main_patches:
+        description: >-
+          Allow source_ref when patch-id checks report main patches missing;
+          use only after reviewing intentionally reshaped conflict resolutions
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -93,6 +100,7 @@ jobs:
         name: Rebase candidate onto upstream
         shell: bash
         env:
+          ALLOW_MISSING_MAIN_PATCHES: ${{ inputs.allow_missing_main_patches == true }}
           DRY_RUN: ${{ inputs.dry_run == true }}
           SOURCE_REF: ${{ inputs.source_ref }}
         run: |
@@ -109,6 +117,23 @@ jobs:
               echo "origin has no main branch to promote onto." >&2
               exit 1
             fi
+
+            # Fetch the immutable main snapshot and current upstream before
+            # rebasing. The guard itself is loaded from main so a stale
+            # source_ref cannot omit or roll back the check it must pass.
+            git fetch --no-tags origin "$main_ref"
+            git fetch --no-tags https://github.com/pingdotgg/t3code.git main
+            guard_upstream_ref=$(git rev-parse FETCH_HEAD)
+            guard_script="$RUNNER_TEMP/check-source-stack.sh"
+            if ! git show "${main_ref}:.github/scripts/check-source-stack.sh" > "$guard_script"; then
+              echo "main snapshot ${main_ref} does not contain the source_ref patch guard; update main before dispatching a source_ref run." >&2
+              exit 1
+            fi
+            bash "$guard_script" \
+              "$main_ref" \
+              "$fork_ref" \
+              "$guard_upstream_ref" \
+              "$ALLOW_MISSING_MAIN_PATCHES"
           else
             main_ref=$fork_ref
           fi
