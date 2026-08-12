@@ -22,6 +22,7 @@ import {
   type PullRequestDiffInput,
   type PullRequestDiffResult,
   type PullRequestInvalidateInput,
+  type PullRequestInvalidationScope,
   type PullRequestListEntry,
   type PullRequestListInput,
   type PullRequestListProjectError,
@@ -1505,19 +1506,29 @@ export const make = Effect.gen(function* () {
   // epoch strands every entry made under the old one — no enumerating a cache whose keys
   // (cursors, commits) nothing holds a list of. The counter is shared and monotonic so a
   // scope re-entering `refEpochs` after eviction can never mint a key an old entry still has.
+  // Detail and activity move together; diff is separate so the live detail view can become
+  // current without throwing away a large patch it did not ask to reload.
   let epochCounter = 0;
   let listingsEpoch = 0;
-  const refEpochs = new Map<string, number>();
+  type RefCacheScope = "detail" | "diff";
+  type RefEpochs = Readonly<Record<RefCacheScope, number>>;
+  const refEpochs = new Map<string, RefEpochs>();
   const REF_EPOCH_CAPACITY = 2_048;
   const refScope = (ref: PullRequestRef) => `${ref.projectId} ${ref.repository} ${ref.number}`;
-  const refEpoch = (ref: PullRequestRef) => refEpochs.get(refScope(ref)) ?? 0;
-  const bumpRefEpoch = (ref: PullRequestRef) => {
-    const scope = refScope(ref);
-    if (!refEpochs.has(scope) && refEpochs.size >= REF_EPOCH_CAPACITY) {
+  const refEpoch = (scope: RefCacheScope, ref: PullRequestRef) =>
+    refEpochs.get(refScope(ref))?.[scope] ?? 0;
+  const bumpRefEpoch = (ref: PullRequestRef, scope: PullRequestInvalidationScope = "all") => {
+    const key = refScope(ref);
+    if (!refEpochs.has(key) && refEpochs.size >= REF_EPOCH_CAPACITY) {
       const oldest = refEpochs.keys().next().value;
       if (oldest !== undefined) refEpochs.delete(oldest);
     }
-    refEpochs.set(scope, ++epochCounter);
+    const epoch = ++epochCounter;
+    const previous = refEpochs.get(key) ?? { detail: 0, diff: 0 };
+    refEpochs.set(
+      key,
+      scope === "detail" ? { ...previous, detail: epoch } : { detail: epoch, diff: epoch },
+    );
   };
 
   // Keys serialize positionally and parse back in the lookup, so the cache is the only holder
@@ -1590,7 +1601,12 @@ export const make = Effect.gen(function* () {
     DETAIL_CACHE_CAPACITY,
   );
   const detail: PullRequestService["Service"]["detail"] = (input) => {
-    const key = JSON.stringify([refEpoch(input), input.projectId, input.repository, input.number]);
+    const key = JSON.stringify([
+      refEpoch("detail", input),
+      input.projectId,
+      input.repository,
+      input.number,
+    ]);
     return staleDetail(key, Cache.get(detailCache, key));
   };
 
@@ -1609,7 +1625,12 @@ export const make = Effect.gen(function* () {
     DETAIL_CACHE_CAPACITY,
   );
   const activity: PullRequestService["Service"]["activity"] = (input) => {
-    const key = JSON.stringify([refEpoch(input), input.projectId, input.repository, input.number]);
+    const key = JSON.stringify([
+      refEpoch("detail", input),
+      input.projectId,
+      input.repository,
+      input.number,
+    ]);
     return staleActivity(key, Cache.get(activityCache, key));
   };
 
@@ -1646,7 +1667,7 @@ export const make = Effect.gen(function* () {
   );
   const diff: PullRequestService["Service"]["diff"] = (input) => {
     const key = JSON.stringify([
-      refEpoch(input),
+      refEpoch("diff", input),
       input.projectId,
       input.repository,
       input.number,
@@ -1698,7 +1719,7 @@ export const make = Effect.gen(function* () {
         viewersByHost.clear();
         return;
       }
-      bumpRefEpoch(input.reference);
+      bumpRefEpoch(input.reference, input.scope);
     });
 
   // A mutation's own client re-reads right after it, and every other client's next read must
