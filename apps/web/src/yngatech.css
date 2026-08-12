@@ -1,0 +1,13 @@
+@layer components {
+  /* Keep the fork's Nightly identity stable in the flagship theme while the
+     remaining built-ins follow upstream's pigment-derived palettes. */
+  html[data-theme-id="t3-chat"] .stage-nightly {
+    --stage-night-top: #10484f;
+    --stage-night-mid: #0a2b34;
+    --stage-night-bottom: #05191f;
+    --stage-night-highlight: #38b9c6;
+    --stage-night-secondary: #1a5764;
+    --stage-night-tertiary: #5fe0bf;
+    --stage-night-line: #c4f2ea;
+  }
+}
