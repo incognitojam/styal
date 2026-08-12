@@ -14,6 +14,7 @@ import * as SourceControlProviderRegistry from "../sourceControl/SourceControlPr
 import {
   PullRequestProviderError,
   type ProviderChangeRequest,
+  type ProviderChangeRequestDetail,
   type PullRequestProviderApi,
 } from "./PullRequestProvider.ts";
 import { PullRequestProviderRegistry, fromProviders } from "./PullRequestProviderRegistry.ts";
@@ -72,6 +73,26 @@ function changeRequest(number: number, updatedAt: string): ProviderChangeRequest
     updatedAt,
     reviewRequestLogins: [],
     labels: [],
+  };
+}
+
+function changeRequestDetail(number: number): ProviderChangeRequestDetail {
+  return {
+    ...changeRequest(number, "2026-07-02T00:00:00Z"),
+    body: "Ready before the conversation",
+    changedFiles: 2,
+    mergedAt: null,
+    closedAt: null,
+    reviewers: [],
+    checks: [],
+    mergeCapabilities: { merge: true, squash: true, rebase: true },
+    viewerPermissions: {
+      actions: ["merge"],
+      comment: true,
+      resolve: true,
+      verdicts: ["comment", "approve", "request-changes"],
+      requestReviewers: true,
+    },
   };
 }
 
@@ -2267,6 +2288,61 @@ it.effect("an explicit invalidation makes the next listing ask the host again", 
   }),
 );
 
+it.effect("detail invalidation preserves the cached diff", () =>
+  Effect.gen(function* () {
+    let detailCalls = 0;
+    let activityCalls = 0;
+    let diffCalls = 0;
+    const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+    const service = yield* makeService({
+      projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
+      providers: [
+        fakeProvider("github", {
+          getChangeRequest: () => {
+            detailCalls += 1;
+            return Effect.succeed(changeRequestDetail(1));
+          },
+          getChangeRequestActivity: () => {
+            activityCalls += 1;
+            return Effect.succeed({
+              comments: [],
+              commentCount: 0,
+              commentsTruncated: false,
+              reviewThreads: [],
+              commits: [],
+            });
+          },
+          getDiff: () => {
+            diffCalls += 1;
+            return Effect.succeed({ patch: "diff", truncated: false, nextCursor: null });
+          },
+        }),
+      ],
+    });
+
+    yield* Effect.all([
+      service.detail(reference),
+      service.activity(reference),
+      service.diff(reference),
+    ]);
+    yield* service.invalidate({ reference, scope: "detail" });
+    yield* Effect.all([
+      service.detail(reference),
+      service.activity(reference),
+      service.diff(reference),
+    ]);
+
+    assert.strictEqual(detailCalls, 2);
+    assert.strictEqual(activityCalls, 2);
+    assert.strictEqual(diffCalls, 1);
+
+    // Omitting the scope keeps the manual refresh contract: every read is forgotten.
+    yield* service.invalidate({ reference });
+    yield* service.diff(reference);
+    assert.strictEqual(diffCalls, 2);
+  }),
+);
+
 it.effect("a mutation makes the next listing ask the host again, with no client asking", () =>
   Effect.gen(function* () {
     let hostCalls = 0;
@@ -2651,23 +2727,7 @@ it.effect(
           fakeProvider("github", {
             getChangeRequest: () => {
               coreCalls += 1;
-              return Effect.succeed({
-                ...changeRequest(1, "2026-07-02T00:00:00Z"),
-                body: "Ready before the conversation",
-                changedFiles: 2,
-                mergedAt: null,
-                closedAt: null,
-                reviewers: [],
-                checks: [],
-                mergeCapabilities: { merge: true, squash: true, rebase: true },
-                viewerPermissions: {
-                  actions: ["merge"],
-                  comment: true,
-                  resolve: true,
-                  verdicts: ["comment", "approve", "request-changes"],
-                  requestReviewers: true,
-                },
-              });
+              return Effect.succeed(changeRequestDetail(1));
             },
             getChangeRequestActivity: () => {
               activityCalls += 1;
