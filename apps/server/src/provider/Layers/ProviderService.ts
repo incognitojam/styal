@@ -58,6 +58,7 @@ import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import * as ServerSettings from "../../serverSettings.ts";
+import * as WorkspacePortAllocator from "../../workspace/WorkspacePortAllocator.ts";
 const isModelSelection = Schema.is(ModelSelection);
 
 /**
@@ -76,6 +77,9 @@ export interface ProviderServiceLiveOptions {
   readonly issueMcpCredential?: typeof McpSessionRegistry.issueActiveMcpCredential;
   /** Same seam as `issueMcpCredential`, for observing the deny path's revoke. */
   readonly revokeMcpCredential?: typeof McpSessionRegistry.revokeActiveMcpThread;
+  readonly resolveWorkspaceEnvironment?: (
+    workspacePath: string,
+  ) => Effect.Effect<Record<string, string>, WorkspacePortAllocator.WorkspacePortAllocationError>;
 }
 
 type ProviderServiceMethod<Name extends keyof ProviderService.ProviderService["Service"]> =
@@ -217,11 +221,21 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const analytics = yield* Effect.service(AnalyticsService.AnalyticsService);
   const serverConfig = yield* ServerConfig.ServerConfig;
   const eventLoggers = yield* ProviderEventLoggers.ProviderEventLoggers;
+  const workspacePortAllocator = yield* Effect.serviceOption(
+    WorkspacePortAllocator.WorkspacePortAllocator,
+  );
   // Options-provided logger wins (test overrides); otherwise we take whatever
   // the `ProviderEventLoggers` tag exposes — `undefined` means "no canonical
   // log writer is attached", which downstream code already handles as a
   // no-op.
   const canonicalEventLogger = options?.canonicalEventLogger ?? eventLoggers.canonical;
+  const resolveWorkspaceEnvironment: (
+    workspacePath: string,
+  ) => Effect.Effect<Record<string, string>, WorkspacePortAllocator.WorkspacePortAllocationError> =
+    options?.resolveWorkspaceEnvironment ??
+    (Option.isSome(workspacePortAllocator)
+      ? workspacePortAllocator.value.environmentFor
+      : (_workspacePath: string) => Effect.succeed<Record<string, string>>({}));
 
   const registry = yield* ProviderAdapterRegistry.ProviderAdapterRegistry;
   const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
@@ -451,6 +465,11 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
       const persistedCwd = readPersistedCwd(input.binding.runtimePayload);
       const persistedModelSelection = readPersistedModelSelection(input.binding.runtimePayload);
+      const workspaceEnvironment = persistedCwd
+        ? yield* resolveWorkspaceEnvironment(persistedCwd).pipe(
+            Effect.mapError((cause) => toValidationError(input.operation, cause.message, cause)),
+          )
+        : undefined;
 
       yield* prepareMcpSession(input.binding.threadId, bindingInstanceId);
       const resumed = yield* adapter
@@ -459,6 +478,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           provider: input.binding.provider,
           providerInstanceId: bindingInstanceId,
           ...(persistedCwd ? { cwd: persistedCwd } : {}),
+          ...(workspaceEnvironment ? { environment: workspaceEnvironment } : {}),
           ...(persistedModelSelection ? { modelSelection: persistedModelSelection } : {}),
           ...(hasResumeCursor ? { resumeCursor: input.binding.resumeCursor } : {}),
           runtimeMode: input.binding.runtimeMode ?? "full-access",
@@ -628,6 +648,13 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           (persistedBinding?.providerInstanceId === resolvedInstanceId
             ? readPersistedCwd(persistedBinding.runtimePayload)
             : undefined);
+        const workspaceEnvironment = effectiveCwd
+          ? yield* resolveWorkspaceEnvironment(effectiveCwd).pipe(
+              Effect.mapError((cause) =>
+                toValidationError("ProviderService.startSession", cause.message, cause),
+              ),
+            )
+          : undefined;
         yield* Effect.annotateCurrentSpan({
           "provider.kind": resolvedProvider,
           "provider.resume_cursor.source":
@@ -654,6 +681,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             ...input,
             providerInstanceId: resolvedInstanceId,
             ...(effectiveCwd !== undefined ? { cwd: effectiveCwd } : {}),
+            ...(workspaceEnvironment !== undefined ? { environment: workspaceEnvironment } : {}),
             ...(effectiveResumeCursor !== undefined ? { resumeCursor: effectiveResumeCursor } : {}),
           })
           .pipe(Effect.onError(() => clearMcpSession(threadId)));
