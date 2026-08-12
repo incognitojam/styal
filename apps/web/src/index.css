@@ -325,19 +325,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     display: none;
   }
 
-  .sidebar-brand-stage {
-    display: none;
-  }
-
   @media (min-width: 48rem) {
     .sidebar-brand {
       display: flex;
-    }
-
-    @container sidebar-header (min-width: 15.75rem) {
-      .sidebar-brand-stage {
-        display: inline-flex;
-      }
     }
   }
 
