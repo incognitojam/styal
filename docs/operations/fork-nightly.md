@@ -27,7 +27,12 @@ publishes a GitHub prerelease.
   when it did), verifies it, publishes the release, and promotes it to `main` through the same backup
   and lease mechanics as an automated run. The ruleset blocks force-pushing `main` from the CLI, so
   this dispatch is how a resolved stack reaches `main`. Pair `source_ref` with `dry_run` first to
-  verify a resolution without publishing or promoting anything.
+  verify a resolution without publishing or promoting anything. Prepare compares the supplied
+  stack's patch IDs with every fork patch currently carried by `main` and fails with the missing
+  commit subjects before rebasing or verifying a stale stack. Refresh the resolution from current
+  `main` immediately before dispatching it. Conflict resolution can intentionally reshape a patch
+  enough to change its patch ID; after reviewing every reported commit, set
+  `allow_missing_main_patches` to acknowledge those differences explicitly.
 
 ## Fork features summary
 
