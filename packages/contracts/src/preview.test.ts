@@ -12,6 +12,7 @@ import {
   PreviewAutomationHost,
   PreviewAutomationError,
   PreviewAutomationOpenInput,
+  PreviewAutomationRequest,
   PreviewAutomationResizeInput,
   PreviewAutomationResizeResult,
   PreviewAutomationStatus,
@@ -28,6 +29,7 @@ const decodeResizeResult = Schema.decodeUnknownSync(PreviewAutomationResizeResul
 const decodeAutomationHost = Schema.decodeUnknownSync(PreviewAutomationHost);
 const decodeAutomationError = Schema.decodeUnknownSync(PreviewAutomationError);
 const decodeAutomationStatus = Schema.decodeUnknownSync(PreviewAutomationStatus);
+const decodeAutomationRequest = Schema.decodeUnknownSync(PreviewAutomationRequest);
 
 describe("PreviewAutomationOpenInput", () => {
   it("accepts the inline preview visibility flag", () => {
@@ -36,6 +38,21 @@ describe("PreviewAutomationOpenInput", () => {
 
   it("retains the legacy show visibility alias", () => {
     expect(decodeOpenInput({ show: false })).toEqual({ show: false });
+  });
+});
+
+describe("PreviewAutomationRequest", () => {
+  it("carries an optional host presentation hint", () => {
+    expect(
+      decodeAutomationRequest({
+        requestId: "request-1",
+        threadId: "thread-1",
+        operation: "open",
+        input: { url: "http://localhost:5173" },
+        timeoutMs: 15_000,
+        presentation: "right-panel",
+      }),
+    ).toMatchObject({ presentation: "right-panel" });
   });
 });
 
