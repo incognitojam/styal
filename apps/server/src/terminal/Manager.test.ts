@@ -214,6 +214,7 @@ interface CreateManagerOptions {
   subprocessPollIntervalMs?: number;
   processKillGraceMs?: number;
   maxRetainedInactiveSessions?: number;
+  resolveWorkspaceEnvironment?: (workspacePath: string) => Effect.Effect<Record<string, string>>;
   ptyAdapter?: FakePtyAdapter;
 }
 
@@ -255,6 +256,9 @@ const createManager = (
         processKillGraceMs: options.processKillGraceMs ?? 1,
         ...(options.maxRetainedInactiveSessions !== undefined
           ? { maxRetainedInactiveSessions: options.maxRetainedInactiveSessions }
+          : {}),
+        ...(options.resolveWorkspaceEnvironment !== undefined
+          ? { resolveWorkspaceEnvironment: options.resolveWorkspaceEnvironment }
           : {}),
       });
       const eventsRef = yield* Ref.make<ReadonlyArray<TerminalEvent>>([]);
@@ -1593,6 +1597,29 @@ it.layer(
       assert.equal(spawnInput.env.T3CODE_PROJECT_ROOT, "/repo");
       assert.equal(spawnInput.env.T3CODE_WORKTREE_PATH, "/repo/worktree-a");
       assert.equal(spawnInput.env.CUSTOM_FLAG, "1");
+    }),
+  );
+
+  it.effect("injects the workspace port after client-provided runtime env", () =>
+    Effect.gen(function* () {
+      const resolvedPaths: string[] = [];
+      const { baseDir, manager, ptyAdapter } = yield* createManager(5, {
+        resolveWorkspaceEnvironment: (workspacePath) =>
+          Effect.sync(() => {
+            resolvedPaths.push(workspacePath);
+            return { T3CODE_WORKSPACE_PORT: "24120" };
+          }),
+      });
+      yield* manager.open(
+        openInput({
+          cwd: baseDir,
+          worktreePath: baseDir,
+          env: { T3CODE_WORKSPACE_PORT: "9999" },
+        }),
+      );
+
+      assert.deepStrictEqual(resolvedPaths, [baseDir]);
+      assert.equal(ptyAdapter.spawnInputs[0]?.env.T3CODE_WORKSPACE_PORT, "24120");
     }),
   );
 
