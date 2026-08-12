@@ -1,9 +1,57 @@
-import { ExternalLinkIcon, PaperclipIcon, PlayIcon } from "lucide-react";
+import type { EnvironmentId, PullRequestDetailView } from "@t3tools/contracts";
+import { ExternalLinkIcon, LoaderCircleIcon, PaperclipIcon, PlayIcon } from "lucide-react";
+import { type ComponentPropsWithoutRef, useCallback, useState } from "react";
+import type { ExtraProps } from "react-markdown";
 
+import { useAssetUrlState } from "~/assets/assetUrls";
 import { cn } from "~/lib/utils";
 
 import ChatMarkdown from "../ChatMarkdown";
-import { splitPullRequestBody } from "./pullRequestMarkdown.logic";
+import {
+  resolvePullRequestRepositoryImagePath,
+  splitPullRequestBody,
+} from "./pullRequestMarkdown.logic";
+
+function PullRequestRepositoryImage({
+  detail,
+  environmentId,
+  path,
+  alt,
+  ...props
+}: Omit<ComponentPropsWithoutRef<"img">, "src"> & {
+  detail: PullRequestDetailView;
+  environmentId: EnvironmentId;
+  path: string;
+}) {
+  const assetUrl = useAssetUrlState(environmentId, {
+    _tag: "pull-request-file",
+    projectId: detail.projectId,
+    repository: detail.repository,
+    number: detail.number,
+    path,
+  });
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+
+  if (assetUrl._tag === "Loading") {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+        role="status"
+      >
+        <LoaderCircleIcon aria-hidden className="size-3.5 animate-spin" />
+        Loading image…
+      </span>
+    );
+  }
+  if (assetUrl._tag === "Failure" || failedUrl === assetUrl.url) {
+    return (
+      <span className="text-xs text-muted-foreground" role="img" aria-label={alt || path}>
+        Image unavailable.
+      </span>
+    );
+  }
+  return <img {...props} src={assetUrl.url} alt={alt} onError={() => setFailedUrl(assetUrl.url)} />;
+}
 
 /**
  * A pull request body, rendered with the app's markdown renderer plus a card for each upload
@@ -18,19 +66,51 @@ import { splitPullRequestBody } from "./pullRequestMarkdown.logic";
  */
 export function PullRequestMarkdown({
   text,
-  cwd,
+  detail,
+  environmentId,
   className,
 }: {
   text: string;
-  cwd: string;
+  detail: PullRequestDetailView;
+  environmentId: EnvironmentId;
   className?: string;
 }) {
+  const imageRenderer = useCallback(
+    ({ node: _node, src, ...props }: ComponentPropsWithoutRef<"img"> & ExtraProps) => {
+      const path = src
+        ? resolvePullRequestRepositoryImagePath(src, {
+            provider: detail.provider,
+            repository: detail.repository,
+            url: detail.url,
+            headBranch: detail.headBranch,
+          })
+        : null;
+      return path === null ? (
+        <img {...props} src={src} />
+      ) : (
+        <PullRequestRepositoryImage
+          {...props}
+          detail={detail}
+          environmentId={environmentId}
+          path={path}
+        />
+      );
+    },
+    [detail, environmentId],
+  );
   const segments = splitPullRequestBody(text);
   return (
     <div className={cn("space-y-3", className)}>
       {segments.map((segment) => {
         if (segment.kind === "markdown") {
-          return <ChatMarkdown key={segment.id} text={segment.text} cwd={cwd} />;
+          return (
+            <ChatMarkdown
+              key={segment.id}
+              text={segment.text}
+              cwd={detail.workspaceRoot}
+              imageRenderer={imageRenderer}
+            />
+          );
         }
         const isVideo = segment.media === "video";
         const Icon = isVideo ? PlayIcon : PaperclipIcon;
