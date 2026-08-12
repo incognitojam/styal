@@ -243,7 +243,7 @@ function SidebarUpdateControl() {
               type="button"
               aria-label={tooltip}
               aria-disabled={disabled || isActionPending || undefined}
-              disabled={disabled || isActionPending}
+              disabled={isActionPending || (!isUpdateState && disabled)}
               className={cn(
                 "inline-flex size-8 items-center justify-center rounded-full outline-hidden ring-ring transition-colors enabled:cursor-pointer focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60",
                 isUpdateState
@@ -254,6 +254,8 @@ function SidebarUpdateControl() {
             >
               {action === "install" ? (
                 <RotateCwIcon className="size-4" />
+              ) : isDownloading ? (
+                <RefreshCwIcon className="size-4 animate-spin" />
               ) : isUpdateState ? (
                 <DownloadIcon className="size-4" />
               ) : (
