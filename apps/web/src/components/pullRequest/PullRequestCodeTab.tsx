@@ -708,7 +708,8 @@ export function PullRequestCodeTab({
       <ReviewThreadCard
         key={thread.id}
         thread={thread}
-        workspaceRoot={detail.workspaceRoot}
+        detail={detail}
+        environmentId={environmentId}
         canReply={review.reply}
         canResolve={review.resolve}
         pending={threadPending}
@@ -733,7 +734,7 @@ export function PullRequestCodeTab({
       />
     ),
     [
-      detail.workspaceRoot,
+      detail,
       environmentId,
       onFixFinding,
       pendingFinding,

@@ -1,4 +1,4 @@
-import type { PullRequestActor, PullRequestDetailView } from "@t3tools/contracts";
+import type { EnvironmentId, PullRequestActor, PullRequestDetailView } from "@t3tools/contracts";
 import {
   ChevronDownIcon,
   ExternalLinkIcon,
@@ -29,11 +29,21 @@ import {
   PullRequestMetaLine,
 } from "./pullRequestPresentation";
 
-function TimelineBody({ body, markdown, cwd }: { body: string; markdown: boolean; cwd: string }) {
+function TimelineBody({
+  body,
+  markdown,
+  detail,
+  environmentId,
+}: {
+  body: string;
+  markdown: boolean;
+  detail: PullRequestDetailView;
+  environmentId: EnvironmentId;
+}) {
   return (
     <div className="mt-3">
       {markdown ? (
-        <PullRequestMarkdown text={body} cwd={cwd} />
+        <PullRequestMarkdown text={body} detail={detail} environmentId={environmentId} />
       ) : (
         <p className="whitespace-pre-wrap text-xs text-muted-foreground">{body}</p>
       )}
@@ -130,11 +140,13 @@ function OpenOnHostButton({ url, onOpen }: { url: string | null; onOpen: (url: s
 
 function ConversationCard({
   event,
-  cwd,
+  detail,
+  environmentId,
   onOpen,
 }: {
   event: PullRequestTimelineEvent;
-  cwd: string;
+  detail: PullRequestDetailView;
+  environmentId: EnvironmentId;
   onOpen: (url: string) => void;
 }) {
   return (
@@ -162,7 +174,12 @@ function ConversationCard({
       </div>
       {event.body ? (
         <div className="px-2 pb-2">
-          <TimelineBody body={event.body} markdown={event.markdown} cwd={cwd} />
+          <TimelineBody
+            body={event.body}
+            markdown={event.markdown}
+            detail={detail}
+            environmentId={environmentId}
+          />
         </div>
       ) : null}
     </article>
@@ -180,11 +197,13 @@ function uniqueConversationActors(events: ReadonlyArray<PullRequestTimelineEvent
 
 function ConversationGroup({
   events,
-  cwd,
+  detail,
+  environmentId,
   onOpen,
 }: {
   events: ReadonlyArray<PullRequestTimelineEvent>;
-  cwd: string;
+  detail: PullRequestDetailView;
+  environmentId: EnvironmentId;
   onOpen: (url: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -229,7 +248,13 @@ function ConversationGroup({
             {open ? (
               <div className="mt-1 space-y-1">
                 {events.map((event) => (
-                  <ConversationCard key={event.id} event={event} cwd={cwd} onOpen={onOpen} />
+                  <ConversationCard
+                    key={event.id}
+                    event={event}
+                    detail={detail}
+                    environmentId={environmentId}
+                    onOpen={onOpen}
+                  />
                 ))}
               </div>
             ) : null}
@@ -315,10 +340,12 @@ function LifecycleEvent({ event }: { event: PullRequestTimelineEvent }) {
 
 export function PullRequestTimelineTab({
   detail,
+  environmentId,
   order,
   onOpenCommit,
 }: {
   detail: PullRequestDetailView;
+  environmentId: EnvironmentId;
   order: "newest" | "oldest";
   onOpenCommit: (oid: string) => void;
 }) {
@@ -340,7 +367,8 @@ export function PullRequestTimelineTab({
                 <ConversationGroup
                   key={`comments:${row.events[0]?.id ?? "empty"}`}
                   events={row.events}
-                  cwd={detail.workspaceRoot}
+                  detail={detail}
+                  environmentId={environmentId}
                   onOpen={openOnHost}
                 />
               );
