@@ -460,12 +460,18 @@ export type PullRequestListStatsResult = typeof PullRequestListStatsResult.Type;
 
 /**
  * Forget what the server has cached, so the next read asks the host. With a reference it
- * forgets that one change request's detail and diff; without one it forgets the listings.
- * A separate request rather than a flag on the reads, so an explicit "refresh" one person
- * presses is the only thing that spends host requests — every ordinary read shares.
+ * forgets that one change request; `detail` limits that to its core and activity reads, while
+ * the default also forgets its diff. Without a reference it forgets the listings.
+ *
+ * A separate request rather than a flag on the reads keeps ordinary reads shared. The detail
+ * view uses its narrower scope while it is live; a manual refresh keeps the full default.
  */
+export const PullRequestInvalidationScope = Schema.Literals(["detail", "all"]);
+export type PullRequestInvalidationScope = typeof PullRequestInvalidationScope.Type;
+
 export const PullRequestInvalidateInput = Schema.Struct({
   reference: Schema.optional(PullRequestRef),
+  scope: Schema.optional(PullRequestInvalidationScope),
 });
 export type PullRequestInvalidateInput = typeof PullRequestInvalidateInput.Type;
 
