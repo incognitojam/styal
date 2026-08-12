@@ -5,6 +5,7 @@ import {
   DEFAULT_PREVIEW_AUTOMATION_VIEWPORT,
   previewAutomationDefaultViewport,
   previewAutomationOpenNeedsOverlay,
+  resolvePreviewAutomationPresentation,
   shouldOpenPreviewMiniPlayer,
 } from "./previewAutomationOpenReadiness";
 
@@ -30,6 +31,21 @@ describe("preview automation open readiness", () => {
     ).toBe(true);
   });
 
+  it("uses the requested presentation surface while preserving opt-out", () => {
+    expect(resolvePreviewAutomationPresentation({} as PreviewAutomationOpenInput, undefined)).toBe(
+      "mini-player",
+    );
+    expect(
+      resolvePreviewAutomationPresentation({} as PreviewAutomationOpenInput, "right-panel"),
+    ).toBe("right-panel");
+    expect(
+      resolvePreviewAutomationPresentation(
+        { open: false } as PreviewAutomationOpenInput,
+        "right-panel",
+      ),
+    ).toBeNull();
+  });
+
   it("does not wait for a desktop overlay when opening an empty tab", () => {
     expect(
       previewAutomationOpenNeedsOverlay(
@@ -46,6 +62,16 @@ describe("preview automation open readiness", () => {
         snapshot({ _tag: "Idle" }),
       ),
     ).toBe(true);
+  });
+
+  it("does not block terminal intent on a background thread's unmounted panel", () => {
+    expect(
+      previewAutomationOpenNeedsOverlay(
+        { url: "http://localhost:5173" } as PreviewAutomationOpenInput,
+        snapshot({ _tag: "Idle" }),
+        "right-panel",
+      ),
+    ).toBe(false);
   });
 
   it("waits for existing tabs that already have rendered content", () => {
