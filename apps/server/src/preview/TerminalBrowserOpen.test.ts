@@ -210,12 +210,17 @@ it("captures a real Vite+ --open launch through the OS shim", async () => {
     await closeServer(portReservation);
 
     const shimDir = NodePath.join(tempDir, "bin");
-    const openShimPath = NodePath.join(shimDir, "open");
     const runtimeStatePath = NodePath.join(tempDir, "server-runtime.json");
     await NodeFSP.mkdir(shimDir);
-    await NodeFSP.writeFile(openShimPath, TerminalBrowserOpen.TERMINAL_BROWSER_OPEN_HELPER_SOURCE, {
-      mode: 0o755,
-    });
+    await Promise.all(
+      ["open", "xdg-open"].map((launcher) =>
+        NodeFSP.writeFile(
+          NodePath.join(shimDir, launcher),
+          TerminalBrowserOpen.TERMINAL_BROWSER_OPEN_HELPER_SOURCE,
+          { mode: 0o755 },
+        ),
+      ),
+    );
     await NodeFSP.writeFile(NodePath.join(tempDir, "index.html"), "<title>Vite open test</title>");
     await NodeFSP.writeFile(
       runtimeStatePath,
