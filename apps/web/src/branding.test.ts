@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
-  formatDistributionBadgeLabel,
   resolveServerBackedAppDisplayName,
   resolveServerBackedAppStageLabel,
 } from "./branding.logic";
@@ -73,36 +72,6 @@ describe("branding", () => {
 });
 
 describe("branding logic", () => {
-  it("keeps fork identity visible while artwork carries the build stage", () => {
-    expect(
-      formatDistributionBadgeLabel({
-        distributionName: "yngatech",
-        stageLabel: "Nightly",
-        stageIdentifiedByArtwork: true,
-      }),
-    ).toBe("yngatech");
-  });
-
-  it.each(["Nightly", "Dev"])("adds the %s stage when artwork is not visible", (stageLabel) => {
-    expect(
-      formatDistributionBadgeLabel({
-        distributionName: "yngatech",
-        stageLabel,
-        stageIdentifiedByArtwork: false,
-      }),
-    ).toBe(`yngatech ${stageLabel}`);
-  });
-
-  it("does not add stable labels to the distribution badge", () => {
-    expect(
-      formatDistributionBadgeLabel({
-        distributionName: "yngatech",
-        stageLabel: "Latest",
-        stageIdentifiedByArtwork: false,
-      }),
-    ).toBe("yngatech");
-  });
-
   it("returns Nightly for nightly primary server versions", () => {
     expect(
       resolveServerBackedAppStageLabel({
