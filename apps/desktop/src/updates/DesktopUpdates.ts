@@ -594,7 +594,8 @@ export const make = Effect.gen(function* () {
 
           const checkedAt = yield* currentIsoTimestamp;
           const releaseNotes = normalizeDesktopUpdateReleaseNotes(info.releaseNotes, info.version);
-          yield* setState(
+          yield* Ref.set(
+            updateStateRef,
             reduceDesktopUpdateStateOnUpdateAvailable(state, info.version, checkedAt, releaseNotes),
           );
           yield* Ref.set(lastLoggedDownloadMilestoneRef, -1);
@@ -602,6 +603,7 @@ export const make = Effect.gen(function* () {
             version: info.version,
             releaseNoteGroups: releaseNotes.length,
           });
+          yield* downloadAvailableUpdate;
         }),
       ),
       Effect.catchCause((cause) => {
