@@ -20,6 +20,12 @@ connection will disappear briefly and work that is still running may be interrup
 
 The update does not remove saved threads, settings, or project files.
 
+## Desktop App Updates
+
+The desktop app downloads its own updates in the background. Once an update is ready, select
+**Restart to update** when you are ready to close T3 Code. T3 Code always asks for confirmation
+before restarting, and a failed background download remains available to retry.
+
 ## Choose the Action You See
 
 | Action                     | What to do                                                                                                                                                                  |
