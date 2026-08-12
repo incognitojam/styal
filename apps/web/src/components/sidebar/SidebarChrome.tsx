@@ -7,8 +7,6 @@ import {
 import { memo, useCallback } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 
-import { APP_DISTRIBUTION_NAME, APP_REPOSITORY } from "../../branding";
-import { formatDistributionBadgeLabel } from "../../branding.logic";
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { useEnvironments } from "../../state/environments";
@@ -18,7 +16,6 @@ import {
   SidebarStageBackdrop,
   useEnvironmentStageLabel,
 } from "../SidebarStageBackdrop";
-import { Badge } from "../ui/badge";
 import {
   SidebarFooter,
   SidebarHeader,
@@ -44,21 +41,10 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
     stageLabel,
     environmentIdentificationMode === "artwork",
   );
-  // Distribution axis of the identity system: this fork build's `yngatech`
-  // badge stays visible in every identification mode. When Nightly/Dev artwork
-  // already answers "which build am I in?", the badge carries only the
-  // distribution name; without artwork it absorbs the stage label so the old
-  // stage-only pill is never duplicated.
-  const distributionBadgeLabel = formatDistributionBadgeLabel({
-    distributionName: APP_DISTRIBUTION_NAME,
-    stageLabel,
-    stageIdentifiedByArtwork: backdropVariant !== null,
-  });
-
   return (
     <SidebarHeader
       className={cn(
-        "@container/sidebar-header relative h-[var(--workspace-topbar-height)] shrink-0 flex-row items-center px-3 py-0 md:px-0",
+        "relative h-[var(--workspace-topbar-height)] shrink-0 flex-row items-center px-3 py-0 md:px-0",
         isElectron && "drag-region",
       )}
     >
@@ -72,20 +58,6 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
         )}
       />
       <SidebarBrand onBackdrop={backdropVariant !== null} />
-      <Badge
-        className={cn(
-          "relative z-10 ml-1.5 min-w-0 rounded-full px-1.5 tracking-tight",
-          backdropVariant
-            ? "border-white/25 bg-teal-950/45 text-teal-50 dark:bg-teal-950/45"
-            : "border-teal-700/25 bg-teal-500/8 text-teal-700 dark:border-teal-300/20 dark:bg-teal-400/10 dark:text-teal-300",
-        )}
-        data-distribution-badge={APP_DISTRIBUTION_NAME}
-        size="sm"
-        title={`${APP_REPOSITORY} distribution build`}
-        variant="outline"
-      >
-        <span className="truncate">{distributionBadgeLabel}</span>
-      </Badge>
     </SidebarHeader>
   );
 });
