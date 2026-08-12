@@ -28,6 +28,7 @@ import {
   isBrowserAllowedPort,
   resolveModePortOffsets,
   resolveOffset,
+  resolveWorkspaceBasePort,
   runDevRunnerWithInput,
 } from "./dev-runner.ts";
 
@@ -137,7 +138,89 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
     );
   });
 
+  describe("resolveWorkspaceBasePort", () => {
+    it.effect("uses the workspace range when no legacy selection overrides it", () =>
+      Effect.sync(() => {
+        assert.equal(
+          resolveWorkspaceBasePort({
+            workspacePort: 24_000,
+            portOffset: undefined,
+            devInstance: undefined,
+          }),
+          24_000,
+        );
+      }),
+    );
+
+    it.effect("keeps explicit offset and instance selections authoritative", () =>
+      Effect.sync(() => {
+        assert.equal(
+          resolveWorkspaceBasePort({
+            workspacePort: 24_000,
+            portOffset: 12,
+            devInstance: undefined,
+          }),
+          undefined,
+        );
+        assert.equal(
+          resolveWorkspaceBasePort({
+            workspacePort: 24_000,
+            portOffset: undefined,
+            devInstance: "feature-branch",
+          }),
+          undefined,
+        );
+      }),
+    );
+  });
+
   describe("createDevRunnerEnv", () => {
+    it.effect("maps the workspace range to backend and web ports", () =>
+      Effect.gen(function* () {
+        const env = yield* createDevRunnerEnv({
+          mode: "dev",
+          baseEnv: { T3CODE_WORKSPACE_PORT: "24000" },
+          serverOffset: 0,
+          webOffset: 0,
+          workspaceBasePort: 24_000,
+          t3Home: undefined,
+          browser: undefined,
+          autoBootstrapProjectFromCwd: undefined,
+          logWebSocketEvents: undefined,
+          host: undefined,
+          port: undefined,
+          devUrl: undefined,
+        });
+
+        assert.equal(env.T3CODE_WORKSPACE_PORT, "24000");
+        assert.equal(env.T3CODE_PORT, "24000");
+        assert.equal(env.PORT, "24001");
+        assert.equal(env.VITE_DEV_SERVER_URL, "http://localhost:24001");
+      }),
+    );
+
+    it.effect("keeps an explicit backend port within a workspace-selected run", () =>
+      Effect.gen(function* () {
+        const env = yield* createDevRunnerEnv({
+          mode: "dev",
+          baseEnv: { T3CODE_WORKSPACE_PORT: "24000" },
+          serverOffset: 0,
+          webOffset: 0,
+          workspaceBasePort: 24_000,
+          t3Home: undefined,
+          browser: undefined,
+          autoBootstrapProjectFromCwd: undefined,
+          logWebSocketEvents: undefined,
+          host: undefined,
+          port: 4_222,
+          devUrl: undefined,
+        });
+
+        assert.equal(env.T3CODE_PORT, "4222");
+        assert.equal(env.PORT, "24001");
+      }),
+    );
+
     it.effect("leaves the shared home implicit and disables browser auto-open", () =>
       Effect.gen(function* () {
         const env = yield* createDevRunnerEnv({
@@ -833,11 +916,54 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
         if (error._tag !== "DevRunnerConfigurationError") {
           assert.fail(`Unexpected error: ${error._tag}`);
         }
-        assert.deepStrictEqual(error.configKeys, ["T3CODE_PORT_OFFSET", "T3CODE_DEV_INSTANCE"]);
+        assert.deepStrictEqual(error.configKeys, [
+          "T3CODE_PORT_OFFSET",
+          "T3CODE_DEV_INSTANCE",
+          "T3CODE_WORKSPACE_PORT",
+        ]);
         assert.ok(error.cause !== undefined);
         assert.ok(!error.message.includes(String((error.cause as Error).message)));
       }),
     );
+
+    it.effect("spawns the dev stack on the workspace's first two ports", () => {
+      let capturedEnv: Record<string, string | undefined> | undefined;
+      const spawnerLayer = Layer.succeed(
+        ChildProcessSpawner.ChildProcessSpawner,
+        ChildProcessSpawner.make((command) => {
+          capturedEnv = (
+            command as unknown as {
+              readonly options?: { readonly env?: Record<string, string | undefined> };
+            }
+          ).options?.env;
+          return Effect.succeed(mockProcess(0));
+        }),
+      );
+      const workspaceEnvironment = { T3CODE_WORKSPACE_PORT: "24000" };
+
+      return Effect.gen(function* () {
+        yield* runDevRunnerWithInput({
+          ...devServerInput,
+          mode: "dev",
+          port: undefined,
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              ConfigProvider.layer(ConfigProvider.fromEnv({ env: workspaceEnvironment })),
+              netServiceLayer,
+              spawnerLayer,
+            ),
+          ),
+          Effect.provideService(HostProcessEnvironment, workspaceEnvironment),
+          Effect.provideService(HostProcessPlatform, "linux"),
+        );
+
+        assert.equal(capturedEnv?.T3CODE_WORKSPACE_PORT, "24000");
+        assert.equal(capturedEnv?.T3CODE_PORT, "24000");
+        assert.equal(capturedEnv?.PORT, "24001");
+        assert.equal(capturedEnv?.VITE_DEV_SERVER_URL, "http://localhost:24001");
+      });
+    });
 
     it.effect("preserves process spawn context and the exact platform cause", () => {
       const cause = PlatformError.systemError({
