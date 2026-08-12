@@ -220,7 +220,10 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
           name: "ProjectionProjectFaviconPath",
         },
       ]);
-      assert.deepStrictEqual(migrated.forkHistory, [{ migration_id: 1, name: "ComposerDrafts" }]);
+      assert.deepStrictEqual(migrated.forkHistory, [
+        { migration_id: 1, name: "ComposerDrafts" },
+        { migration_id: 2, name: "WorkspacePortAllocations" },
+      ]);
       assert.deepStrictEqual(migrated.drafts, [{ thread_id: "stopped-thread" }]);
     }),
   );
