@@ -4,6 +4,7 @@
  */
 import type {
   EnvironmentId,
+  PullRequestDetailView,
   PullRequestRef,
   PullRequestReviewThread,
   PullRequestThreadCommentsResult,
@@ -92,11 +93,11 @@ export function PendingReviewCommentCard({
 /** A conversation already on the host, with whatever this host lets the reader do to it. */
 export function ReviewThreadCard({
   thread,
-  workspaceRoot,
+  detail,
+  environmentId,
   canReply,
   canResolve,
   canReact,
-  environmentId,
   reference,
   pending,
   fixPending,
@@ -110,11 +111,11 @@ export function ReviewThreadCard({
   onReacted,
 }: {
   thread: PullRequestReviewThread;
-  workspaceRoot: string;
+  detail: PullRequestDetailView;
+  environmentId: EnvironmentId;
   canReply: boolean;
   canResolve: boolean;
   canReact: boolean;
-  environmentId: EnvironmentId;
   reference: PullRequestRef;
   pending: boolean;
   /** True while this thread's own hand-off is preparing, so only its button says so. */
@@ -272,7 +273,8 @@ export function ReviewThreadCard({
                   <PullRequestMarkdownEditor
                     className="mt-1"
                     value={comment.body}
-                    cwd={workspaceRoot}
+                    detail={detail}
+                    environmentId={environmentId}
                     label="Edit comment"
                     saving={savingEdit}
                     onSave={(body) => void saveEdit(comment.id, body)}
@@ -283,7 +285,8 @@ export function ReviewThreadCard({
                     <PullRequestMarkdown
                       className="min-w-0 flex-1 text-sm"
                       text={comment.body}
-                      cwd={workspaceRoot}
+                      detail={detail}
+                      environmentId={environmentId}
                     />
                     {canEditComment(comment) ? (
                       <Button

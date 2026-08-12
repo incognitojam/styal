@@ -1,5 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { AssetPreviewTypeValidationError, ThreadId } from "@t3tools/contracts";
+import { AssetPreviewTypeValidationError, ProjectId, ThreadId } from "@t3tools/contracts";
 import { PROJECT_FAVICON_FALLBACK_MARKER } from "@t3tools/shared/projectFavicon";
 import { describe, expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
@@ -31,6 +31,31 @@ const testLayer = Layer.mergeAll(
 ).pipe(Layer.provideMerge(NodeServices.layer));
 
 describe("AssetAccess", () => {
+  it.effect("signs pull request file references without exposing provider credentials", () =>
+    Effect.gen(function* () {
+      const result = yield* issueAssetUrl({
+        resource: {
+          _tag: "pull-request-file",
+          projectId: ProjectId.make("project-1"),
+          repository: "acme/web",
+          number: 7,
+          path: "docs/screenshot.png",
+        },
+      });
+      const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+      const separatorIndex = suffix.indexOf("/");
+
+      expect(yield* resolveAsset(suffix.slice(0, separatorIndex), "screenshot.png")).toEqual({
+        kind: "pull-request-file",
+        projectId: "project-1",
+        repository: "acme/web",
+        number: 7,
+        path: "docs/screenshot.png",
+      });
+      expect(result.relativeUrl).not.toContain("acme");
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.effect("issues workspace URLs that resolve the entry file and sibling assets", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
