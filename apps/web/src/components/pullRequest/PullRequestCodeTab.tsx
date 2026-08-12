@@ -777,11 +777,11 @@ export function PullRequestCodeTab({
         // other's conversation.
         key={`${reference.projectId}#${reference.number}:${thread.id}`}
         thread={thread}
-        workspaceRoot={detail.workspaceRoot}
+        detail={detail}
+        environmentId={environmentId}
         canReply={review.reply}
         canResolve={review.resolve}
         canReact={detail.capabilities.reactions === true}
-        environmentId={environmentId}
         reference={reference}
         pending={threadPending}
         fixPending={pendingFinding === pullRequestFindingKey({ kind: "thread", thread })}
