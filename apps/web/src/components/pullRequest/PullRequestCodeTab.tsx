@@ -68,6 +68,7 @@ import { PullRequestReviewBar } from "./PullRequestReviewBar";
 import {
   isFileDiffCollapsed,
   isLineInFileDiff,
+  shouldAutoFoldFileDiff,
   type DiffFoldOverride,
 } from "./pullRequestDiff.logic";
 import { PullRequestDiffStat, PullRequestMetaLine } from "./pullRequestPresentation";
@@ -194,7 +195,9 @@ export function PullRequestCodeTab({
 }) {
   const { resolvedTheme } = useTheme();
   const settings = useClientSettings();
-  const [toggledFiles, setToggledFiles] = useState<ReadonlySet<string>>(() => new Set());
+  const [fileFoldOverrides, setFileFoldOverrides] = useState<ReadonlyMap<string, boolean>>(
+    () => new Map(),
+  );
   // A change of any size can carry hundreds of commits, and a menu that long is a scroll rather
   // than a choice. The rest arrive ten at a time, on request.
   const [visibleCommitCount, setVisibleCommitCount] = useState(COMMIT_PAGE_SIZE);
@@ -231,7 +234,7 @@ export function PullRequestCodeTab({
   useEffect(() => {
     setDraft(null);
     setSelectedLines(null);
-    setToggledFiles(new Set());
+    setFileFoldOverrides(new Map());
     setFoldOverride(null);
     setVisibleCommitCount(COMMIT_PAGE_SIZE);
     setOrphansOpen(false);
@@ -447,7 +450,12 @@ export function PullRequestCodeTab({
         }
         if (draft?.fileKey === fileKey) groupAt(draft.side, draft.line).draft = true;
 
-        const collapsed = isFileDiffCollapsed(fileKey, foldOverride, toggledFiles);
+        const collapsed = isFileDiffCollapsed(
+          fileKey,
+          foldOverride,
+          fileFoldOverrides,
+          shouldAutoFoldFileDiff(fileDiff, groups.size > 0),
+        );
 
         const annotations: ReviewAnnotation[] = [...groups.values()].map((group) => ({
           side: toViewerSide(group.side),
@@ -500,7 +508,7 @@ export function PullRequestCodeTab({
       foldOverride,
       pendingComments,
       placedThreadIds,
-      toggledFiles,
+      fileFoldOverrides,
     ],
   );
   const lineStat = useMemo(() => getDiffLineStat(files), [files]);
@@ -552,13 +560,12 @@ export function PullRequestCodeTab({
   // these render props, so a fresh function here would recreate every visible file's portal on
   // every tab re-render (a line-selection drag, a keystroke in the draft, a review-store update).
   const toggleFile = useCallback(
-    (fileKey: string) =>
-      setToggledFiles((current) => {
-        // The override becomes this file's new default the moment it is folded into the set below,
-        // so nothing has to be re-derived when the reader goes back to choosing one at a time.
-        const next = new Set(current);
-        if (next.has(fileKey)) next.delete(fileKey);
-        else next.add(fileKey);
+    (fileKey: string, collapsed: boolean) =>
+      setFileFoldOverrides((current) => {
+        // Store the answer rather than a toggle from the automatic default: adding a draft or
+        // review annotation can change that default, but must not reverse what the reader chose.
+        const next = new Map(current);
+        next.set(fileKey, !collapsed);
         return next;
       }),
     [],
@@ -569,7 +576,7 @@ export function PullRequestCodeTab({
     // still paging would otherwise bring its next slice in folded, moments after the reader
     // asked for everything to be open.
     setFoldOverride(areAllDiffFilesCollapsed(fileKeys, collapsedFileKeys) ? "expanded" : "folded");
-    setToggledFiles(new Set());
+    setFileFoldOverrides(new Map());
   };
 
   // Newest first: the last commit is the one a reader coming back to a change is looking for.
@@ -677,7 +684,7 @@ export function PullRequestCodeTab({
           )}
           onClick={(event) => {
             event.stopPropagation();
-            toggleFile(item.id);
+            toggleFile(item.id, collapsed);
           }}
         >
           {collapsed ? (
@@ -1287,7 +1294,7 @@ export function PullRequestCodeTab({
                 const item = items.find(
                   (candidate) => resolveFileDiffPath(candidate.fileDiff) === filePath,
                 );
-                if (item !== undefined) toggleFile(item.id);
+                if (item !== undefined) toggleFile(item.id, item.collapsed === true);
                 return;
               }
             }
