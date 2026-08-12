@@ -1,4 +1,4 @@
-import type { AssetResource } from "@t3tools/contracts";
+import type { AssetResource, ProjectId as ProjectIdType } from "@t3tools/contracts";
 import {
   AssetAttachmentNotFoundError,
   AssetPreviewTypeValidationError,
@@ -12,6 +12,8 @@ import {
   AssetWorkspacePathValidationError,
   AssetWorkspaceResolutionError,
   AssetWorkspaceRootNormalizationError,
+  PositiveInt,
+  ProjectId,
 } from "@t3tools/contracts";
 import {
   isWorkspaceImagePreviewPath,
@@ -101,6 +103,15 @@ const AssetClaimsSchema = Schema.Union([
     filePath: Schema.String,
     expiresAt: Schema.Number,
   }),
+  Schema.Struct({
+    version: Schema.Literal(1),
+    kind: Schema.Literal("pull-request-file"),
+    projectId: ProjectId,
+    repository: Schema.String,
+    number: PositiveInt,
+    path: Schema.String,
+    expiresAt: Schema.Number,
+  }),
 ]);
 type AssetClaims = typeof AssetClaimsSchema.Type;
 
@@ -108,13 +119,21 @@ const AssetClaimsJson = Schema.fromJsonString(AssetClaimsSchema);
 const decodeAssetClaims = Schema.decodeUnknownOption(AssetClaimsJson);
 const encodeAssetClaims = Schema.encodeSync(AssetClaimsJson);
 
-export type ResolvedAsset = {
-  readonly kind: "file";
-  readonly path: string;
-  readonly download?: boolean;
-  readonly fileName?: string;
-  readonly mimeType?: string;
-};
+export type ResolvedAsset =
+  | {
+      readonly kind: "file";
+      readonly path: string;
+      readonly download?: boolean;
+      readonly fileName?: string;
+      readonly mimeType?: string;
+    }
+  | {
+      readonly kind: "pull-request-file";
+      readonly projectId: ProjectIdType;
+      readonly repository: string;
+      readonly number: number;
+      readonly path: string;
+    };
 
 function decodeClaims(encodedPayload: string): AssetClaims | null {
   try {
@@ -419,6 +438,19 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
       }
       break;
     }
+    case "pull-request-file": {
+      claims = {
+        version: 1,
+        kind: "pull-request-file",
+        projectId: input.resource.projectId,
+        repository: input.resource.repository,
+        number: input.resource.number,
+        path: input.resource.path,
+        expiresAt,
+      };
+      fileName = path.basename(input.resource.path);
+      break;
+    }
   }
 
   const secretStore = yield* ServerSecretStore.ServerSecretStore;
@@ -516,6 +548,16 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
     return faviconPath === claims.filePath
       ? ({ kind: "file", path: faviconPath } satisfies ResolvedAsset)
       : null;
+  }
+
+  if (claims.kind === "pull-request-file") {
+    return {
+      kind: "pull-request-file",
+      projectId: claims.projectId,
+      repository: claims.repository,
+      number: claims.number,
+      path: claims.path,
+    } satisfies ResolvedAsset;
   }
 
   const decodedPath = decodeRelativePath(relativePath);

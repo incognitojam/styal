@@ -14,6 +14,100 @@ export type PullRequestBodySegment =
       readonly media: "video" | "unknown";
     };
 
+export interface PullRequestImageContext {
+  readonly provider: string;
+  readonly repository: string;
+  readonly url: string;
+  readonly headBranch: string;
+}
+
+function normalizeRepositoryPath(value: string): string | null {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+  if (decoded.startsWith("/") || decoded.includes("\\")) return null;
+  const segments = decoded.split("/").filter((segment) => segment !== "." && segment !== "");
+  if (segments.length === 0 || segments.some((segment) => segment === "..")) return null;
+  const path = segments.join("/");
+  return path.length <= 1_024 ? path : null;
+}
+
+function decodedUrlSegments(url: URL): string[] | null {
+  try {
+    return url.pathname
+      .split("/")
+      .filter(Boolean)
+      .map((segment) => decodeURIComponent(segment));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Finds the repository path behind an image in GitHub-flavoured pull request markdown. Private
+ * repository blob URLs cannot load as cross-site images: the browser does not carry the CLI's
+ * authentication. The caller exchanges this path for a short-lived host URL through the server.
+ */
+export function resolvePullRequestRepositoryImagePath(
+  source: string,
+  context: PullRequestImageContext,
+): string | null {
+  if (context.provider !== "github") return null;
+
+  // A relative image in a pull request body names a file at the pull request head.
+  if (!/^(?:[a-z][a-z\d+.-]*:|\/\/|\/)/iu.test(source)) {
+    return normalizeRepositoryPath(source.split(/[?#]/u, 1)[0] ?? "");
+  }
+
+  let sourceUrl: URL;
+  let pullRequestUrl: URL;
+  try {
+    sourceUrl = new URL(source);
+    pullRequestUrl = new URL(context.url);
+  } catch {
+    return null;
+  }
+  if (sourceUrl.protocol !== "https:" && sourceUrl.protocol !== "http:") return null;
+
+  const repository = context.repository.split("/").filter(Boolean);
+  const head = context.headBranch.split("/").filter(Boolean);
+  const segments = decodedUrlSegments(sourceUrl);
+  if (repository.length !== 2 || head.length === 0 || segments === null) return null;
+
+  let tail: string[] | null = null;
+  if (sourceUrl.host === pullRequestUrl.host) {
+    const markerIndex = repository.length;
+    const marker = segments[markerIndex];
+    if (
+      segments.slice(0, repository.length).join("/") !== repository.join("/") ||
+      (marker !== "blob" && marker !== "raw")
+    ) {
+      return null;
+    }
+    const afterMarker = segments.slice(markerIndex + 1);
+    const matchesHead = head.every((segment, index) => afterMarker[index] === segment);
+    if (matchesHead) {
+      tail = afterMarker.slice(head.length);
+    } else if (/^[a-f\d]{7,64}$/iu.test(afterMarker[0] ?? "")) {
+      // Authors sometimes pin a screenshot to the exact pull request commit.
+      tail = afterMarker.slice(1);
+    }
+  } else if (
+    pullRequestUrl.host === "github.com" &&
+    sourceUrl.host === "raw.githubusercontent.com"
+  ) {
+    const matchesRepository = repository.every((segment, index) => segments[index] === segment);
+    const afterRepository = segments.slice(repository.length);
+    const matchesHead = head.every((segment, index) => afterRepository[index] === segment);
+    if (matchesRepository && matchesHead) tail = afterRepository.slice(head.length);
+  }
+
+  return tail === null ? null : normalizeRepositoryPath(tail.join("/"));
+}
+
 const FENCE_PATTERN = /^\s{0,3}((?:`{3,})|(?:~{3,}))(.*)$/u;
 /**
  * How far a `<video>` tag may reach for its closing tag. Real embeds are one to three lines,
