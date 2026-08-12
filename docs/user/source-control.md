@@ -41,10 +41,13 @@ T3 Code works with the platforms your team already uses:
 - Open several reviews from the **Pull requests** page as tabs in the right panel
 - Read ordinary files expanded by default in **Code changes**; oversized files stay folded until
   opened, while files with review comments remain expanded
+- View repository-hosted images in GitHub pull request descriptions, including private repositories
 - While working in a thread, open linked reviews in the same compact right-panel tabs without
   leaving the conversation
 - Open the review directly in your browser with one click
 - Check out a teammate's branch to review code locally
+
+![A repository-hosted image rendered inside a GitHub pull request description](./images/pull-request-description-image-after.jpg)
 
 When a GitHub project has multiple remotes, the **Pull requests** page follows the current branch's
 tracked remote. If the branch has no tracked remote, it follows the repository selected by

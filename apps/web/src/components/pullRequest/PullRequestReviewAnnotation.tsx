@@ -2,7 +2,11 @@
  * Pull-request-specific annotations: conversations already on the host and comments queued for
  * the review being written. New comment composition uses the shared diff annotation.
  */
-import type { PullRequestReviewThread } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  PullRequestDetailView,
+  PullRequestReviewThread,
+} from "@t3tools/contracts";
 import {
   CheckCircle2Icon,
   CircleIcon,
@@ -79,7 +83,8 @@ export function PendingReviewCommentCard({
 /** A conversation already on the host, with whatever this host lets the reader do to it. */
 export function ReviewThreadCard({
   thread,
-  workspaceRoot,
+  detail,
+  environmentId,
   canReply,
   canResolve,
   pending,
@@ -89,7 +94,8 @@ export function ReviewThreadCard({
   onToggleResolved,
 }: {
   thread: PullRequestReviewThread;
-  workspaceRoot: string;
+  detail: PullRequestDetailView;
+  environmentId: EnvironmentId;
   canReply: boolean;
   canResolve: boolean;
   pending: boolean;
@@ -182,7 +188,8 @@ export function ReviewThreadCard({
                 <PullRequestMarkdown
                   className="mt-1 text-sm"
                   text={comment.body}
-                  cwd={workspaceRoot}
+                  detail={detail}
+                  environmentId={environmentId}
                 />
               </article>
             ))}

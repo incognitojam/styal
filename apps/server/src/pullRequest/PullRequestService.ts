@@ -47,6 +47,7 @@ import * as SourceControlProviderRegistry from "../sourceControl/SourceControlPr
 import {
   type ProviderChangeRequest,
   type ProviderListCursor,
+  type ProviderPullRequestFile,
   type PullRequestProviderApi,
   type PullRequestProviderError,
 } from "./PullRequestProvider.ts";
@@ -134,6 +135,9 @@ export class PullRequestService extends Context.Service<
     readonly diffFileContents: (
       input: PullRequestDiffFileContentsInput,
     ) => Effect.Effect<PullRequestDiffFileContentsResult, PullRequestError>;
+    readonly file: (
+      input: PullRequestRef & { readonly path: string },
+    ) => Effect.Effect<ProviderPullRequestFile, PullRequestError>;
     readonly runAction: (input: PullRequestActionInput) => Effect.Effect<void, PullRequestError>;
     readonly comment: (input: PullRequestCommentInput) => Effect.Effect<void, PullRequestError>;
     readonly submitReview: (
@@ -1062,6 +1066,27 @@ export const make = Effect.gen(function* () {
       }),
     );
 
+  const file: PullRequestService["Service"]["file"] = (input) =>
+    requireProject(input).pipe(
+      Effect.flatMap((project) => {
+        const read = project.api.getFile;
+        return read
+          ? read({
+              cwd: project.project.workspaceRoot,
+              repository: project.repository,
+              host: project.host,
+              number: input.number,
+              path: input.path,
+            }).pipe(Effect.mapError(toPullRequestError("file")))
+          : Effect.fail(
+              new PullRequestOperationError({
+                operation: "file",
+                detail: "This host cannot provide repository images from a change request.",
+              }),
+            );
+      }),
+    );
+
   const runAction: PullRequestService["Service"]["runAction"] = (input) =>
     requireProject(input).pipe(
       Effect.flatMap((project): Effect.Effect<void, PullRequestError> => {
@@ -1746,6 +1771,7 @@ export const make = Effect.gen(function* () {
     activity,
     diff,
     diffFileContents,
+    file,
     runAction: invalidatedByMutation(runAction),
     comment: invalidatedByMutation(comment),
     submitReview: invalidatedByMutation(submitReview),

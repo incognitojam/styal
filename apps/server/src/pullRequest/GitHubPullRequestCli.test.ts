@@ -1245,6 +1245,70 @@ layer("GitHubPullRequestCli.layer", (it) => {
     }),
   );
 
+  it.effect("issues a browser-readable URL for a file at the pull request head", () =>
+    Effect.gen(function* () {
+      const url =
+        "https://raw.githubusercontent.com/acme/web/refs/pull/7/head/docs/screenshot.png?token=file-token";
+      mockedExecute.mockReturnValueOnce(Effect.succeed(output(`{"url":"${url}","size":83785}`)));
+      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+
+      expect(
+        yield* cli.getPullRequestFile({
+          cwd: "/w",
+          repository: "acme/web",
+          host: "github.com",
+          number: 7,
+          path: "docs/screenshots/hello world.png",
+        }),
+      ).toEqual({ url, size: 83_785 });
+
+      expect(callAt(0).args).toContain(
+        "repos/acme/web/contents/docs/screenshots/hello%20world.png?ref=refs%2Fpull%2F7%2Fhead",
+      );
+      expect(callAt(0).args).toContain("{ url: .download_url, size: .size }");
+    }),
+  );
+
+  it.effect("rejects a contents response without a download URL", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockReturnValueOnce(Effect.succeed(output("{}")));
+      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+
+      const error = yield* Effect.flip(
+        cli.getPullRequestFile({
+          cwd: "/w",
+          repository: "acme/web",
+          host: "github.com",
+          number: 7,
+          path: "docs/screenshot.png",
+        }),
+      );
+
+      assert.strictEqual(error._tag, "GitHubPullRequestFileUrlUnavailableError");
+    }),
+  );
+
+  it.effect("rejects an oversized pull request image before proxying it", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockReturnValueOnce(
+        Effect.succeed(output('{"url":"https://raw.example/large.png","size":10485761}')),
+      );
+      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+
+      const error = yield* Effect.flip(
+        cli.getPullRequestFile({
+          cwd: "/w",
+          repository: "acme/web",
+          host: "github.com",
+          number: 7,
+          path: "docs/large.png",
+        }),
+      );
+
+      assert.strictEqual(error._tag, "GitHubPullRequestFileUrlUnavailableError");
+    }),
+  );
+
   it.effect("ends the diff on a page with no files rather than asking for it again", () =>
     Effect.gen(function* () {
       mockedExecute.mockReturnValue(Effect.succeed(output("[]")));
