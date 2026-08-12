@@ -28,8 +28,10 @@ export interface ChangeRecord {
   readonly evidenceId: string;
   readonly operation: "add" | "improve" | "remove";
   readonly outcome: string;
-  readonly surface: string;
+  readonly surface: "application" | "desktop" | "mobile" | "web";
 }
+
+type ChangeSurface = ChangeRecord["surface"];
 
 export interface ChangelogSummaryItem {
   readonly evidenceIds: ReadonlyArray<string>;
@@ -85,7 +87,7 @@ const changeRecordsSchema = {
           operation: { type: "string", enum: ["add", "improve", "remove"] },
           capability: { type: "string" },
           outcome: { type: "string" },
-          surface: { type: "string" },
+          surface: { type: "string", enum: ["application", "desktop", "mobile", "web"] },
         },
         required: ["evidenceId", "operation", "capability", "outcome", "surface"],
         additionalProperties: false,
@@ -421,10 +423,12 @@ A replacement may require both a "remove" record for the superseded behavior and
 "improve" record for its replacement.
 
 Use the same short conceptual capability name for records that affect the same feature. State the
-factual user outcome and product surface; use "application" when the change is not tied to one named
-surface. Pull request descriptions are stronger evidence of intent than commit wording, while later
-evidence is stronger evidence of the resulting behavior. For bug fixes, record the symptom users
-experienced, not the internal correction that resolved it.
+factual user outcome and classify its user-facing surface as exactly one of "application", "desktop",
+"mobile", or "web". Use "mobile" only for changes exclusively visible in the mobile client. Use
+"application" for behavior shared by multiple clients or not tied to one named client. Pull request
+descriptions are stronger evidence of intent than commit wording, while later evidence is stronger
+evidence of the resulting behavior. For bug fixes, record the symptom users experienced, not the
+internal correction that resolved it.
 
 Chronological evidence:
 ${evidenceData}`;
@@ -565,6 +569,19 @@ function parseBoundedString(value: unknown, label: string, maximum: number): str
   return parsed;
 }
 
+function parseChangeSurface(value: unknown, label: string): ChangeSurface {
+  if (value === "application" || value === "desktop" || value === "mobile" || value === "web") {
+    return value;
+  }
+  throw new Error(`Invalid ${label}.`);
+}
+
+export function filterDesktopUpdateRecords(
+  records: ReadonlyArray<ChangeRecord>,
+): ReadonlyArray<ChangeRecord> {
+  return records.filter((record) => record.surface !== "mobile");
+}
+
 export function parseChangeRecords(text: string): ReadonlyArray<ChangeRecord> {
   const parsed: unknown = JSON.parse(text);
   if (!isRecord(parsed) || !Array.isArray(parsed.changes)) {
@@ -588,7 +605,7 @@ export function parseChangeRecords(text: string): ReadonlyArray<ChangeRecord> {
       operation: value.operation,
       capability: parseBoundedString(value.capability, `change record ${index} capability`, 120),
       outcome: parseBoundedString(value.outcome, `change record ${index} outcome`, 500),
-      surface: parseBoundedString(value.surface, `change record ${index} surface`, 120),
+      surface: parseChangeSurface(value.surface, `change record ${index} surface`),
     };
   });
 }
@@ -806,6 +823,7 @@ async function main(): Promise<void> {
   const upstreamRepository = readOption("--upstream-repository");
   const outputPath = readOption("--output");
   const nightlyOutputPath = readOption("--nightly-output");
+  const excludeMobileOnlyNightly = process.argv.includes("--exclude-mobile-only-nightly");
   const model = process.env.OPENAI_CHANGELOG_MODEL ?? DEFAULT_MODEL;
   const comparison = collectForkComparison(resolvedForkRef, resolvedUpstreamRef, forkRepository);
   if (comparison.commits.length === 0) {
@@ -843,9 +861,12 @@ async function main(): Promise<void> {
   const rollingRecords = chronologicalRecords.filter((record) =>
     rollingEvidenceIds.has(record.evidenceId),
   );
-  const nightlyRecords = chronologicalRecords.filter((record) =>
+  const unfilteredNightlyRecords = chronologicalRecords.filter((record) =>
     nightlyEvidenceIds.has(record.evidenceId),
   );
+  const nightlyRecords = excludeMobileOnlyNightly
+    ? filterDesktopUpdateRecords(unfilteredNightlyRecords)
+    : unfilteredNightlyRecords;
   const knownEvidenceIds = new Set(evidence.map((item) => item.id));
   const [rollingSummary, nightlySummary] = (
     await Promise.all([
