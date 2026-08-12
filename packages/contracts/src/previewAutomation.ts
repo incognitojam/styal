@@ -591,6 +591,9 @@ export const PreviewAutomationHostFocus = Schema.Struct({
 });
 export type PreviewAutomationHostFocus = typeof PreviewAutomationHostFocus.Type;
 
+export const PreviewAutomationPresentation = Schema.Literals(["mini-player", "right-panel"]);
+export type PreviewAutomationPresentation = typeof PreviewAutomationPresentation.Type;
+
 export const PreviewAutomationRequest = Schema.Struct({
   requestId: TrimmedNonEmptyString,
   threadId: ThreadId,
@@ -599,6 +602,8 @@ export const PreviewAutomationRequest = Schema.Struct({
   operation: PreviewAutomationOperation,
   input: Schema.Unknown,
   timeoutMs: Schema.Int.check(Schema.isGreaterThan(0)),
+  /** Optional so current servers remain compatible with older desktop hosts. */
+  presentation: Schema.optional(PreviewAutomationPresentation),
 });
 export type PreviewAutomationRequest = typeof PreviewAutomationRequest.Type;
 

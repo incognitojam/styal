@@ -1,6 +1,7 @@
 import {
   FILL_PREVIEW_VIEWPORT,
   type PreviewAutomationOpenInput,
+  type PreviewAutomationPresentation,
   type PreviewSessionSnapshot,
   type PreviewViewportSetting,
 } from "@t3tools/contracts";
@@ -29,10 +30,27 @@ export function shouldOpenPreviewMiniPlayer(
   return input.open ?? input.show ?? autoShowFloatingPreview;
 }
 
+export function resolvePreviewAutomationPresentation(
+  input: PreviewAutomationOpenInput,
+  presentation: PreviewAutomationPresentation | undefined,
+  autoShowFloatingPreview = true,
+): PreviewAutomationPresentation | null {
+  const shouldPresent = shouldOpenPreviewMiniPlayer(
+    input,
+    presentation === "right-panel" ? true : autoShowFloatingPreview,
+  );
+  return shouldPresent ? (presentation ?? "mini-player") : null;
+}
+
 export function previewAutomationOpenNeedsOverlay(
   input: PreviewAutomationOpenInput,
   snapshot: PreviewSessionSnapshot,
+  presentation?: PreviewAutomationPresentation,
 ): boolean {
+  // A terminal browser-open only needs the panel/tab state accepted. The
+  // originating terminal may be in a background thread whose webview cannot
+  // mount until the user returns to it.
+  if (presentation === "right-panel") return false;
   return input.url !== undefined || snapshot.navStatus._tag !== "Idle";
 }
 

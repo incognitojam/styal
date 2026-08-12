@@ -1,7 +1,13 @@
 import { expect, it } from "@effect/vitest";
 import { describe } from "vite-plus/test";
 
-import { assetResponseHeaders, isLoopbackHostname, resolveDevRedirectUrl } from "./http.ts";
+import {
+  assetResponseHeaders,
+  isLoopbackHostname,
+  normalizeTerminalBrowserOpenUrl,
+  resolveDevRedirectUrl,
+  terminalBrowserOpenBearerToken,
+} from "./http.ts";
 
 describe("http dev routing", () => {
   it("treats localhost and loopback addresses as local", () => {
@@ -43,5 +49,22 @@ describe("assetResponseHeaders", () => {
       "Cache-Control": "private, max-age=3600",
       "X-Content-Type-Options": "nosniff",
     });
+  });
+});
+
+describe("terminal browser-open routing", () => {
+  it("accepts a non-empty bearer credential", () => {
+    expect(terminalBrowserOpenBearerToken("Bearer terminal-token")).toBe("terminal-token");
+    expect(terminalBrowserOpenBearerToken("Basic terminal-token")).toBeNull();
+    expect(terminalBrowserOpenBearerToken("Bearer   ")).toBeNull();
+    expect(terminalBrowserOpenBearerToken(undefined)).toBeNull();
+  });
+
+  it("normalizes bounded http URLs and rejects unsupported targets", () => {
+    expect(normalizeTerminalBrowserOpenUrl("http://localhost:5173/app")).toBe(
+      "http://localhost:5173/app",
+    );
+    expect(normalizeTerminalBrowserOpenUrl("file:///tmp/index.html")).toBeNull();
+    expect(normalizeTerminalBrowserOpenUrl(`https://example.com/${"x".repeat(2_100)}`)).toBeNull();
   });
 });
