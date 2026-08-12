@@ -28,6 +28,7 @@ import * as TestClock from "effect/testing/TestClock";
 import { expect } from "vite-plus/test";
 
 import * as ProcessRunner from "../processRunner.ts";
+import type { TerminalBrowserOpenOwner } from "../preview/TerminalBrowserOpen.ts";
 import * as TerminalManager from "./Manager.ts";
 import * as PtyAdapter from "./PtyAdapter.ts";
 
@@ -215,6 +216,8 @@ interface CreateManagerOptions {
   maxRetainedInactiveSessions?: number;
   resolveWorkspaceEnvironment?: (workspacePath: string) => Effect.Effect<Record<string, string>>;
   ptyAdapter?: FakePtyAdapter;
+  registerBrowserOpen?: (input: TerminalBrowserOpenOwner) => Effect.Effect<Record<string, string>>;
+  unregisterBrowserOpen?: (input: TerminalBrowserOpenOwner) => Effect.Effect<void>;
 }
 
 interface ManagerFixture {
@@ -258,6 +261,12 @@ const createManager = (
           : {}),
         ...(options.resolveWorkspaceEnvironment !== undefined
           ? { resolveWorkspaceEnvironment: options.resolveWorkspaceEnvironment }
+          : {}),
+        ...(options.registerBrowserOpen !== undefined
+          ? { registerBrowserOpen: options.registerBrowserOpen }
+          : {}),
+        ...(options.unregisterBrowserOpen !== undefined
+          ? { unregisterBrowserOpen: options.unregisterBrowserOpen }
           : {}),
       });
       const eventsRef = yield* Ref.make<ReadonlyArray<TerminalEvent>>([]);
@@ -1391,6 +1400,62 @@ it.layer(
       // Arbitrary host env vars must pass through — terminals inherit the
       // user's environment apart from the explicit blocklist.
       expect(spawnInput.env.TEST_TERMINAL_KEEP).toBe("keep-me");
+    }),
+  );
+
+  it.effect("injects browser-open capture into terminals and revokes it on exit", () =>
+    Effect.gen(function* () {
+      const registered: TerminalBrowserOpenOwner[] = [];
+      const unregistered: TerminalBrowserOpenOwner[] = [];
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        registerBrowserOpen: (owner) =>
+          Effect.sync(() => {
+            registered.push(owner);
+            return {
+              BROWSER: "/tmp/t3-browser-open.js",
+              T3CODE_TERMINAL_BROWSER_OPEN_SHIM_DIR: "/tmp/t3-browser-open-bin",
+              T3CODE_TERMINAL_BROWSER_OPEN_TOKEN: "terminal-token",
+            };
+          }),
+        unregisterBrowserOpen: (owner) =>
+          Effect.sync(() => {
+            unregistered.push(owner);
+          }),
+      });
+
+      yield* manager.open(openInput());
+      const spawnInput = ptyAdapter.spawnInputs[0];
+      const process = ptyAdapter.processes[0];
+      expect(spawnInput).toBeDefined();
+      expect(process).toBeDefined();
+      if (!spawnInput || !process) return;
+
+      expect(registered).toEqual([{ threadId: "thread-1", terminalId: DEFAULT_TERMINAL_ID }]);
+      expect(spawnInput.env.BROWSER).toBe("/tmp/t3-browser-open.js");
+      expect(spawnInput.env.PATH?.split(":")[0]).toBe("/tmp/t3-browser-open-bin");
+      expect(spawnInput.env.T3CODE_TERMINAL_BROWSER_OPEN_TOKEN).toBe("terminal-token");
+
+      process.emitExit({ exitCode: 0, signal: 0 });
+      yield* waitFor(Effect.sync(() => unregistered.length === 1));
+      expect(unregistered).toEqual([{ threadId: "thread-1", terminalId: DEFAULT_TERMINAL_ID }]);
+    }),
+  );
+
+  it.effect("preserves an explicitly configured browser", () =>
+    Effect.gen(function* () {
+      let registrations = 0;
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        env: { BROWSER: "none" },
+        registerBrowserOpen: () =>
+          Effect.sync(() => {
+            registrations += 1;
+            return { BROWSER: "/tmp/t3-browser-open.js" };
+          }),
+      });
+
+      yield* manager.open(openInput());
+      expect(ptyAdapter.spawnInputs[0]?.env.BROWSER).toBe("none");
+      expect(registrations).toBe(0);
     }),
   );
 
