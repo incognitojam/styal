@@ -274,7 +274,7 @@ describe("DesktopUpdates", () => {
     }).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
-  it.effect("updates and broadcasts state from updater events", () => {
+  it.effect("downloads and broadcasts an available update immediately", () => {
     const harness = makeHarness();
 
     return Effect.scoped(
@@ -286,10 +286,10 @@ describe("DesktopUpdates", () => {
         yield* flushCallbacks;
 
         const state = yield* updates.getState;
-        assert.equal(state.status, "available");
+        assert.equal(state.status, "downloading");
         assert.equal(state.availableVersion, "1.2.4");
         assert.isNotNull(state.checkedAt);
-        assert.equal(harness.sentStates.at(-1)?.status, "available");
+        assert.equal(harness.sentStates.at(-1)?.status, "downloading");
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
@@ -321,7 +321,7 @@ describe("DesktopUpdates", () => {
         yield* flushCallbacks;
 
         const state = yield* updates.getState;
-        assert.equal(state.status, "available");
+        assert.equal(state.status, "downloading");
         assert.deepEqual(state.releaseNotes, [
           {
             version: "1.2.4-nightly.20260709.766",
@@ -407,7 +407,7 @@ describe("DesktopUpdates", () => {
     );
   });
 
-  it.effect("recovers download state after an unexpected setup failure", () => {
+  it.effect("leaves an automatic download available to retry after setup failure", () => {
     let disableDifferentialCalls = 0;
     const harness = makeHarness({
       setDisableDifferentialDownload: Effect.suspend(() => {
@@ -424,10 +424,6 @@ describe("DesktopUpdates", () => {
         yield* updates.configure;
         harness.emit("update-available", { version: "1.2.4" });
         yield* flushCallbacks;
-
-        const result = yield* updates.download;
-        assert.isTrue(result.accepted);
-        assert.isFalse(result.completed);
 
         const failedState = yield* updates.getState;
         assert.equal(failedState.status, "available");
@@ -451,6 +447,9 @@ describe("DesktopUpdates", () => {
             return Effect.void;
           }
           if (disableDifferentialCalls === 2) {
+            return Effect.die(new Error("automatic download setup failed"));
+          }
+          if (disableDifferentialCalls === 3) {
             return Deferred.succeed(actionStarted, undefined).pipe(Effect.andThen(Effect.never));
           }
           return Effect.void;
@@ -470,7 +469,10 @@ describe("DesktopUpdates", () => {
 
           const interruptedState = yield* updates.getState;
           assert.equal(interruptedState.status, "available");
-          assert.isNull(interruptedState.message);
+          assert.equal(
+            interruptedState.message,
+            "Desktop update download action failed unexpectedly.",
+          );
 
           const retry = yield* updates.download;
           assert.isTrue(retry.accepted);
