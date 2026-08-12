@@ -11,25 +11,6 @@ export function formatAppDisplayName(input: {
   return `${input.baseName} (${input.stageLabel})`;
 }
 
-export function formatDistributionBadgeLabel(input: {
-  readonly distributionName: string;
-  readonly stageLabel: string;
-  readonly stageIdentifiedByArtwork: boolean;
-}): string {
-  if (input.stageIdentifiedByArtwork) {
-    return input.distributionName;
-  }
-
-  const normalizedStageLabel = input.stageLabel.trim().toLowerCase();
-  if (normalizedStageLabel === "dev") {
-    return `${input.distributionName} Dev`;
-  }
-  if (normalizedStageLabel === "nightly") {
-    return `${input.distributionName} Nightly`;
-  }
-  return input.distributionName;
-}
-
 export function resolveServerBackedAppStageLabel(input: {
   readonly primaryServerVersion: string | null | undefined;
   readonly fallbackStageLabel: string;
