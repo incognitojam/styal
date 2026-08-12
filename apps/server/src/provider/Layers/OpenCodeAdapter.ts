@@ -1216,6 +1216,9 @@ export function makeOpenCodeAdapter(
 
         const started = yield* Effect.gen(function* () {
           const sessionScope = yield* Scope.make();
+          const sessionEnvironment = input.environment
+            ? { ...(options?.environment ?? process.env), ...input.environment }
+            : options?.environment;
           const startedExit = yield* Effect.exit(
             Effect.gen(function* () {
               // The runtime binds the server's lifetime to the Scope.Scope
@@ -1224,7 +1227,7 @@ export function makeOpenCodeAdapter(
               const server = yield* openCodeRuntime.connectToOpenCodeServer({
                 binaryPath,
                 serverUrl,
-                ...(options?.environment ? { environment: options.environment } : {}),
+                ...(sessionEnvironment ? { environment: sessionEnvironment } : {}),
               });
               const client = openCodeRuntime.createOpenCodeSdkClient({
                 baseUrl: server.url,
