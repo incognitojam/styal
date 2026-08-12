@@ -34,6 +34,7 @@ import {
 } from "@t3tools/contracts";
 import { makeKeyedCoalescingWorker } from "@t3tools/shared/KeyedCoalescingWorker";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { mergePathValues } from "@t3tools/shared/shell";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import * as DateTime from "effect/DateTime";
 import * as Context from "effect/Context";
@@ -59,6 +60,7 @@ import {
 } from "../observability/Metrics.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as PortScanner from "../preview/PortScanner.ts";
+import * as TerminalBrowserOpen from "../preview/TerminalBrowserOpen.ts";
 import * as WorkspacePortAllocator from "../workspace/WorkspacePortAllocator.ts";
 import * as PtyAdapter from "./PtyAdapter.ts";
 
@@ -1201,6 +1203,35 @@ function createTerminalSpawnEnv(
   return stripAppImageRuntimeEnv(spawnEnv);
 }
 
+function hasTerminalEnvKey(
+  env: NodeJS.ProcessEnv,
+  expectedKey: string,
+  platform: NodeJS.Platform,
+): boolean {
+  if (platform !== "win32") return env[expectedKey] !== undefined;
+  const normalizedExpectedKey = expectedKey.toUpperCase();
+  return Object.entries(env).some(
+    ([key, value]) => value !== undefined && key.toUpperCase() === normalizedExpectedKey,
+  );
+}
+
+function prependTerminalPath(
+  env: NodeJS.ProcessEnv,
+  preferredPath: string,
+  platform: NodeJS.Platform,
+): NodeJS.ProcessEnv {
+  const nextEnv = { ...env };
+  let inheritedPath: string | undefined;
+  for (const [key, value] of Object.entries(nextEnv)) {
+    if (key.toUpperCase() !== "PATH") continue;
+    inheritedPath ??= value;
+    delete nextEnv[key];
+  }
+  const mergedPath = mergePathValues(preferredPath, inheritedPath, platform);
+  if (mergedPath !== undefined) nextEnv.PATH = mergedPath;
+  return nextEnv;
+}
+
 function normalizedRuntimeEnv(
   env: Record<string, string> | undefined,
 ): Record<string, string> | null {
@@ -1232,6 +1263,12 @@ interface TerminalManagerOptions {
     readonly threadId: string;
     readonly terminalId: string;
   }) => Effect.Effect<void>;
+  registerBrowserOpen?: (
+    input: TerminalBrowserOpen.TerminalBrowserOpenOwner,
+  ) => Effect.Effect<Record<string, string>>;
+  unregisterBrowserOpen?: (
+    input: TerminalBrowserOpen.TerminalBrowserOpenOwner,
+  ) => Effect.Effect<void>;
 }
 
 export const make = Effect.fn("TerminalManager.make")(function* () {
@@ -1239,12 +1276,15 @@ export const make = Effect.fn("TerminalManager.make")(function* () {
   const ptyAdapter = yield* PtyAdapter.PtyAdapter;
   const portDiscovery = yield* PortScanner.PortDiscovery;
   const workspacePortAllocator = yield* WorkspacePortAllocator.WorkspacePortAllocator;
+  const browserOpen = yield* TerminalBrowserOpen.TerminalBrowserOpen;
   return yield* makeWithOptions({
     logsDir: terminalLogsDir,
     ptyAdapter,
     resolveWorkspaceEnvironment: workspacePortAllocator.environmentFor,
     registerTerminalProcesses: portDiscovery.registerTerminalProcesses,
     unregisterTerminal: portDiscovery.unregisterTerminal,
+    registerBrowserOpen: browserOpen.register,
+    unregisterBrowserOpen: browserOpen.unregister,
   });
 });
 
@@ -1279,6 +1319,9 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     options.maxRetainedInactiveSessions ?? DEFAULT_MAX_RETAINED_INACTIVE_SESSIONS;
   const registerTerminalProcesses = options.registerTerminalProcesses ?? (() => Effect.void);
   const unregisterTerminal = options.unregisterTerminal ?? (() => Effect.void);
+  const registerBrowserOpen =
+    options.registerBrowserOpen ?? (() => Effect.succeed<Record<string, string>>({}));
+  const unregisterBrowserOpen = options.unregisterBrowserOpen ?? (() => Effect.void);
 
   yield* fileSystem.makeDirectory(logsDir, { recursive: true }).pipe(Effect.orDie);
 
@@ -1824,6 +1867,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         threadId: action.threadId,
         terminalId: action.terminalId,
       });
+      yield* unregisterBrowserOpen({
+        threadId: action.threadId,
+        terminalId: action.terminalId,
+      });
       yield* publishEvent({
         type: "exited",
         threadId: action.threadId,
@@ -1859,6 +1906,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
     yield* clearKillFiber(process);
     yield* unregisterTerminal({
+      threadId: session.threadId,
+      terminalId: session.terminalId,
+    });
+    yield* unregisterBrowserOpen({
       threadId: session.threadId,
       terminalId: session.terminalId,
     });
@@ -1967,10 +2018,21 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
             const workspaceEnvironment = options.resolveWorkspaceEnvironment
               ? yield* options.resolveWorkspaceEnvironment(session.worktreePath ?? session.cwd)
               : {};
-            const terminalEnv = createTerminalSpawnEnv(baseEnv, {
+            const baseTerminalEnv = createTerminalSpawnEnv(baseEnv, {
               ...session.runtimeEnv,
               ...workspaceEnvironment,
             });
+            const browserOpenEnv = hasTerminalEnvKey(baseTerminalEnv, "BROWSER", platform)
+              ? {}
+              : yield* registerBrowserOpen({
+                  threadId: session.threadId,
+                  terminalId: session.terminalId,
+                });
+            const mergedTerminalEnv = { ...baseTerminalEnv, ...browserOpenEnv };
+            const shimDir = browserOpenEnv[TerminalBrowserOpen.TERMINAL_BROWSER_OPEN_SHIM_DIR_ENV];
+            const terminalEnv = shimDir
+              ? prependTerminalPath(mergedTerminalEnv, shimDir, platform)
+              : mergedTerminalEnv;
             const spawnResult = yield* trySpawn(
               shellCandidates,
               terminalEnv,
@@ -2044,6 +2106,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         return [undefined, state] as const;
       });
       yield* unregisterTerminal({
+        threadId: session.threadId,
+        terminalId: session.terminalId,
+      });
+      yield* unregisterBrowserOpen({
         threadId: session.threadId,
         terminalId: session.terminalId,
       });
@@ -2222,6 +2288,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         session: TerminalSessionState,
       ) {
         cleanupProcessHandles(session);
+        yield* unregisterBrowserOpen({
+          threadId: session.threadId,
+          terminalId: session.terminalId,
+        });
         if (!session.process) return;
         yield* clearKillFiber(session.process);
         yield* runKillEscalation(session.process, session.threadId, session.terminalId);

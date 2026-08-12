@@ -62,24 +62,28 @@ it.effect("atomically registers a connected host and correlates its response", (
     Effect.gen(function* () {
       const broker = yield* makeBroker;
       const requests = requestsFrom(yield* broker.connect(makeHost()));
-      yield* Stream.runForEach(requests, (request) =>
-        broker.respond({
+      let routedPresentation: PreviewAutomationRequest["presentation"];
+      yield* Stream.runForEach(requests, (request) => {
+        routedPresentation = request.presentation;
+        return broker.respond({
           clientId: "client-1",
           connectionId: request.connectionId,
           requestId: request.requestId,
           ok: true,
           result: { available: true },
-        }),
-      ).pipe(Effect.forkScoped);
+        });
+      }).pipe(Effect.forkScoped);
       yield* Effect.yieldNow;
 
       const result = yield* broker.invoke<{ available: boolean }>({
         scope,
         operation: "open",
         input: {},
+        presentation: "right-panel",
       });
 
       expect(result).toEqual({ available: true });
+      expect(routedPresentation).toBe("right-panel");
     }),
   ),
 );
