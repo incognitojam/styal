@@ -3086,6 +3086,24 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
 
+  const runCodeBlockInTerminal = useCallback(
+    (code: string) => {
+      const command = code.replace(/[\r\n]+$/, "");
+      if (!command.trim()) return;
+      void runProjectScript(
+        {
+          id: "code-block",
+          name: "command",
+          command,
+          icon: "play",
+          runOnWorktreeCreate: false,
+        },
+        { rememberAsLastInvoked: false },
+      );
+    },
+    [runProjectScript],
+  );
+
   const persistProjectScripts = useCallback(
     async (input: {
       projectId: ProjectId;
@@ -6266,6 +6284,7 @@ function ChatViewContent(props: ChatViewProps) {
                 activeThreadEnvironmentId={activeThread.environmentId}
                 routeThreadKey={routeThreadKey}
                 onOpenTurnDiff={onOpenTurnDiff}
+                onRunCodeBlock={activeProject ? runCodeBlockInTerminal : undefined}
                 revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
                 onRevertUserMessage={onRevertUserMessage}
                 isRevertingCheckpoint={isRevertingCheckpoint}
