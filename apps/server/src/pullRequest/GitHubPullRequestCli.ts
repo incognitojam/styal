@@ -1,6 +1,7 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import {
@@ -197,6 +198,24 @@ export class GitHubDiffFileContentsUnavailableError extends Schema.TaggedErrorCl
   }
 }
 
+/** The contents endpoint answered, but did not provide a browser-readable file URL. */
+export class GitHubPullRequestFileUrlUnavailableError extends Schema.TaggedErrorClass<GitHubPullRequestFileUrlUnavailableError>()(
+  "GitHubPullRequestFileUrlUnavailableError",
+  {
+    command: Schema.Literal("gh"),
+    cwd: Schema.String,
+    path: Schema.String,
+  },
+) {
+  get detail(): string {
+    return `The pull request file '${this.path}' reported no usable download URL.`;
+  }
+
+  override get message(): string {
+    return `GitHub CLI failed in getPullRequestFile: ${this.detail}`;
+  }
+}
+
 /**
  * Not a decode failure: a repository was named that cannot go into a search or into a GraphQL
  * document as itself. Every qualifier and every alias below is composed from `owner/name`, so a
@@ -245,6 +264,7 @@ export type GitHubPullRequestCliError =
   | GitHubDiffCommitError
   | GitHubDiffRevisionsUnavailableError
   | GitHubDiffFileContentsUnavailableError
+  | GitHubPullRequestFileUrlUnavailableError
   | GitHubRepositorySelectorError
   | GitHubSubjectScopeError
   | GitHubViewerLoginUnavailableError;
@@ -254,6 +274,15 @@ const DIFF_MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 const DIFF_TIMEOUT_MS = 60_000;
 /** Pierre expansion is for source files, not blobs large enough to stall a review surface. */
 const DIFF_FILE_MAX_OUTPUT_BYTES = 1024 * 1024;
+/** Repository images are shown inline, not used as a path for serving arbitrary large blobs. */
+const PULL_REQUEST_FILE_MAX_BYTES = 10 * 1024 * 1024;
+const GitHubPullRequestFileJson = Schema.fromJsonString(
+  Schema.Struct({
+    url: Schema.URLFromString,
+    size: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: PULL_REQUEST_FILE_MAX_BYTES })),
+  }),
+);
+const decodePullRequestFileJson = Schema.decodeUnknownOption(GitHubPullRequestFileJson);
 
 /** A search-free fallback may scan older rows for local filters, but never the whole repository. */
 const PULL_REQUEST_FALLBACK_MAX_ROWS = 1_000;
@@ -418,6 +447,14 @@ export class GitHubPullRequestCli extends Context.Service<
       { readonly oldContents: string; readonly newContents: string },
       GitHubPullRequestCliError
     >;
+
+    readonly getPullRequestFile: (input: {
+      readonly cwd: string;
+      readonly repository: string;
+      readonly host: string;
+      readonly number: number;
+      readonly path: string;
+    }) => Effect.Effect<{ readonly url: string; readonly size: number }, GitHubPullRequestCliError>;
 
     readonly listReviewThreadComments: (input: {
       readonly cwd: string;
@@ -1136,6 +1173,40 @@ export const make = Effect.gen(function* () {
         return { oldContents, newContents };
       });
 
+  const getPullRequestFile: GitHubPullRequestCli["Service"]["getPullRequestFile"] = (input) =>
+    Effect.gen(function* () {
+      const { owner, name } = parseRepositorySelector(input.repository);
+      const result = yield* github.execute({
+        cwd: input.cwd,
+        args: [
+          "api",
+          "--hostname",
+          input.host,
+          `repos/${owner}/${name}/contents/${input.path
+            .split("/")
+            .map(encodeURIComponent)
+            .join("/")}?ref=${encodeURIComponent(`refs/pull/${input.number}/head`)}`,
+          "--jq",
+          "{ url: .download_url, size: .size }",
+        ],
+        maxOutputBytes: 8_192,
+        timeoutMs: DIFF_TIMEOUT_MS,
+      });
+      const decodedFile = decodePullRequestFileJson(result.stdout.trim());
+      if (
+        result.stdoutTruncated ||
+        Option.isNone(decodedFile) ||
+        (decodedFile.value.url.protocol !== "https:" && decodedFile.value.url.protocol !== "http:")
+      ) {
+        return yield* new GitHubPullRequestFileUrlUnavailableError({
+          command: "gh",
+          cwd: input.cwd,
+          path: input.path,
+        });
+      }
+      return { url: decodedFile.value.url.toString(), size: decodedFile.value.size };
+    });
+
   return GitHubPullRequestCli.of({
     getViewerLogin: (input) =>
       github.execute({ cwd: input.cwd, args: ["api", "user", "--jq", ".login"] }).pipe(
@@ -1437,6 +1508,8 @@ export const make = Effect.gen(function* () {
     },
 
     getPullRequestDiffFileContents,
+
+    getPullRequestFile,
 
     listReviewThreadComments: (input) =>
       Effect.gen(function* () {
