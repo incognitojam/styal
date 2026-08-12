@@ -16,6 +16,7 @@ import {
   PreviewTabId,
   type PreviewAutomationError,
   type PreviewAutomationOperation,
+  type PreviewAutomationPresentation,
   type PreviewAutomationHost,
   type PreviewAutomationHostFocus,
   type PreviewAutomationResponse,
@@ -40,6 +41,7 @@ export interface PreviewAutomationInvokeInput {
   readonly input: unknown;
   readonly tabId?: PreviewTabId;
   readonly timeoutMs?: number;
+  readonly presentation?: PreviewAutomationPresentation;
 }
 
 export class PreviewAutomationBroker extends Context.Service<
@@ -535,6 +537,7 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
           operation: input.operation,
           input: input.input,
           timeoutMs,
+          ...(input.presentation === undefined ? {} : { presentation: input.presentation }),
         },
       });
       if (!offered) {
