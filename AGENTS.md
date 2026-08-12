@@ -104,6 +104,7 @@ An empty database is a bad test. Seed your worktree's `.t3` with a copy of real 
 ## Verifying
 
 - Smallest proof that the change works. `vp test run <files>` for the tests you touched, targeted lint and typecheck for the scope you changed.
+- `git diff --check` is a formatting sanity check, not a test or behavioral check. Do not cite it as proof that behavior works.
 - **Do not run repo-wide checks.** No `vp check`, no `vp run -r test`, no `vp run -r typecheck` unless I ask. CI owns the full suite.
 - Backend behavior changes ship with focused tests for that behavior.
 - The server is event-sourced and its async flows emit typed receipts. Wait on receipts and worker drains, never on sleeps or polling. A test that needs a timeout to pass is wrong.
@@ -115,6 +116,7 @@ An empty database is a bad test. Seed your worktree's `.t3` with a copy of real 
 - Never make a PR unless the developer explicitly asks you to do so.
 - Conventional commit titles, plain language: `fix(web): new threads no longer spike CPU`.
 - Body: the problem in a sentence or two, then how you fixed it. End with the model and harness that did the work.
+- When the pull request body is long, begin it with a `> [!NOTE]` callout containing a TL;DR.
 - **Rebase standalone branches onto latest main before opening.** Stale branches conflict and burn a review round.
 - **Rebasing after main was force-pushed.** This fork's `main` is a patch stack rebased onto upstream and force-pushed after each nightly rebase. Transplant only the branch's own commits: find the commit the branch was cut from (the parent of its first own commit — check `git log --oneline`; do not trust `git merge-base`, which resolves to a stale ancestor here), then `git rebase --onto origin/main <old-base>`.
 - UI changes need before/after images. Motion or timing needs a short video.
