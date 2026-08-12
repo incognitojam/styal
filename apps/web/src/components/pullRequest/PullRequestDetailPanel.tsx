@@ -3,6 +3,7 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import type {
   EnvironmentId,
   PullRequestAction,
+  PullRequestInvalidationScope,
   PullRequestMergeMethod,
   PullRequestUpdateMethod,
   PullRequestRef,
@@ -509,6 +510,17 @@ export function PullRequestDetailPanel({
     detailQuery.refresh();
     activityQuery.refresh();
   }, [activityQuery.refresh, detailQuery.refresh]);
+  const invalidate = useAtomCommand(pullRequestEnvironment.invalidate, { reportFailure: false });
+  const refreshDetailFromHost = useCallback(
+    async (scope: PullRequestInvalidationScope) => {
+      await invalidate({
+        environmentId,
+        input: { reference, ...(scope === "detail" ? { scope } : {}) },
+      });
+      refreshDetail();
+    },
+    [environmentId, invalidate, reference, refreshDetail],
+  );
   useEffect(() => {
     if (!detail) return;
     onStateChange?.({
@@ -521,22 +533,21 @@ export function PullRequestDetailPanel({
   }, [detail, onStateChange]);
   // A pull request changes while it is open in front of somebody — a push lands, a check
   // finishes, a review arrives — so the panel reads it again on the way back to the window and
-  // while a reader sits on it. Keyed by the pull request rather than by the panel, because this
-  // one panel shows a different pull request every time it is opened.
-  useLiveRefresh(refreshDetail, {
+  // while a reader sits on it. These reads invalidate first: an ordinary read is allowed to
+  // return the server's last answer while it revalidates in the background, which would leave
+  // the visible panel one refresh behind. Keyed by the pull request rather than by the panel,
+  // because this one panel shows a different pull request every time it is opened.
+  useLiveRefresh(() => void refreshDetailFromHost("detail"), {
     key: `pull-request:${reference.projectId}:${reference.repository}#${reference.number}`,
   });
-  // The button, on the other hand, goes around the server's cache rather than through it: it is
-  // the answer for a reader who can see that what they are looking at is behind. The
-  // invalidation goes first so the re-reads miss that cache; if it fails, the reads still run
-  // and at worst answer from it.
-  const invalidate = useAtomCommand(pullRequestEnvironment.invalidate, { reportFailure: false });
+  // Manual refresh also advances the Code tab's token. Live refresh deliberately stops at the
+  // detail and activity reads: keeping the potentially large diff current is a separate policy,
+  // while a reader asking for everything on screen expects the patch to be included too.
   const [refreshToken, setRefreshToken] = useState(0);
   const refreshFromHost = useCallback(async () => {
-    await invalidate({ environmentId, input: { reference } });
-    refreshDetail();
+    await refreshDetailFromHost("all");
     setRefreshToken((token) => token + 1);
-  }, [environmentId, invalidate, reference, refreshDetail]);
+  }, [refreshDetailFromHost]);
   // A refresh asked for by the page: the detail, and through the token below, the diff with it.
   const appliedForcedToken = useRef(forcedRefreshToken);
   useEffect(() => {
