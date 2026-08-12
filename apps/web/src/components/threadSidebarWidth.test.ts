@@ -52,4 +52,16 @@ describe("thread sidebar width", () => {
     expect(THREAD_SIDEBAR_MIN_WIDTH).toBe(13 * 16);
     expect(Number(stageLabelThreshold) * 16).toBeGreaterThan(THREAD_SIDEBAR_MIN_WIDTH);
   });
+
+  it("keeps the distribution badge inside a constrained sidebar header", () => {
+    const sidebarChrome = NodeFS.readFileSync(
+      new URL("./sidebar/SidebarChrome.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(sidebarChrome).toContain("md:pr-2 md:pl-0");
+    expect(sidebarChrome).toContain("ml-1.5 min-w-0 shrink overflow-hidden rounded-full");
+    expect(sidebarChrome).toContain('className="block min-w-0 truncate"');
+    expect(sidebarChrome).toContain('"sidebar-brand-stage truncate text-sm');
+  });
 });

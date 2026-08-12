@@ -58,7 +58,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   return (
     <SidebarHeader
       className={cn(
-        "@container/sidebar-header relative h-[var(--workspace-topbar-height)] shrink-0 flex-row items-center px-3 py-0 md:px-0",
+        "@container/sidebar-header relative h-[var(--workspace-topbar-height)] shrink-0 flex-row items-center px-3 py-0 md:pr-2 md:pl-0",
         isElectron && "drag-region",
       )}
     >
@@ -74,7 +74,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
       <SidebarBrand onBackdrop={backdropVariant !== null} />
       <Badge
         className={cn(
-          "relative z-10 ml-1.5 min-w-0 rounded-full px-1.5 tracking-tight",
+          "relative z-10 ml-1.5 min-w-0 shrink overflow-hidden rounded-full px-1.5 tracking-tight",
           backdropVariant
             ? "border-white/25 bg-teal-950/45 text-teal-50 dark:bg-teal-950/45"
             : "border-teal-700/25 bg-teal-500/8 text-teal-700 dark:border-teal-300/20 dark:bg-teal-400/10 dark:text-teal-300",
@@ -84,7 +84,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
         title={`${APP_REPOSITORY} distribution build`}
         variant="outline"
       >
-        <span className="truncate">{distributionBadgeLabel}</span>
+        <span className="block min-w-0 truncate">{distributionBadgeLabel}</span>
       </Badge>
     </SidebarHeader>
   );
@@ -103,7 +103,7 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
       <T3Wordmark />
       <span
         className={cn(
-          "truncate text-sm font-medium tracking-tight",
+          "sidebar-brand-stage truncate text-sm font-medium tracking-tight",
           onBackdrop ? "text-white/70" : "text-muted-foreground",
         )}
       >
