@@ -2,6 +2,7 @@ import type {
   EnvironmentId,
   PullRequestActor,
   PullRequestComment,
+  PullRequestCheck,
   PullRequestDetailView,
   PullRequestRef,
 } from "@t3tools/contracts";
@@ -21,7 +22,6 @@ import { useRef, useState, type ReactNode } from "react";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { cn } from "~/lib/utils";
-import { readLocalApi } from "~/localApi";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 
 import { Button } from "../ui/button";
@@ -364,6 +364,7 @@ export function PullRequestSummaryTab({
   fixFindingLabel = "Fix in a thread",
   fixCheckLabel = "Fix",
   onFixFinding,
+  onOpenCheck,
   onRefresh,
 }: {
   environmentId: EnvironmentId;
@@ -376,6 +377,7 @@ export function PullRequestSummaryTab({
   fixFindingLabel?: string;
   fixCheckLabel?: string;
   onFixFinding?: (finding: PullRequestFinding) => void;
+  onOpenCheck: (check: PullRequestCheck) => void;
   onRefresh: () => void;
 }) {
   // Keyed by the pull request, so opening another one starts at the end of its conversation
@@ -397,10 +399,6 @@ export function PullRequestSummaryTab({
       thread.comments.map((comment) => [comment.id, thread] as const),
     ),
   );
-
-  const openCheck = (url: string) => {
-    void readLocalApi()?.shell.openExternal(url);
-  };
 
   const update = useAtomCommand(pullRequestEnvironment.update, { reportFailure: false });
   const updateComment = useAtomCommand(pullRequestEnvironment.updateComment, {
@@ -610,7 +608,7 @@ export function PullRequestSummaryTab({
                   <button
                     type="button"
                     disabled={!check.url}
-                    onClick={() => check.url && openCheck(check.url)}
+                    onClick={() => check.url && onOpenCheck(check)}
                     className={cn(
                       "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs",
                       check.url ? undefined : "cursor-default",

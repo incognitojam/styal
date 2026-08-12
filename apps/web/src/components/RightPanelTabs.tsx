@@ -6,6 +6,7 @@ import {
   Files,
   GitPullRequest,
   Globe2,
+  ListChecks,
   Plus,
   TerminalSquare,
   X,
@@ -415,6 +416,7 @@ function surfaceTitle(
       return surface.relativePath.slice(surface.relativePath.lastIndexOf("/") + 1);
     case "terminal":
       return (
+        surface.presentationsByTerminalId?.[surface.activeTerminalId]?.title ??
         terminalLabelsById.get(surface.activeTerminalId) ??
         getTerminalLabel(surface.activeTerminalId)
       );
@@ -482,7 +484,12 @@ function SurfaceIcon({
         />
       );
     case "terminal":
-      return <TerminalSquare className="size-3 shrink-0" />;
+      return surface.presentationsByTerminalId?.[surface.activeTerminalId]?.kind ===
+        "github-actions-log" ? (
+        <ListChecks className="size-3 shrink-0" />
+      ) : (
+        <TerminalSquare className="size-3 shrink-0" />
+      );
     case "pull-request": {
       const status = pullRequestStatuses?.[surface.id] ?? null;
       const toneClassName =

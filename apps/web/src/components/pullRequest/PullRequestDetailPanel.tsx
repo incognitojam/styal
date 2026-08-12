@@ -4,6 +4,7 @@ import type {
   EnvironmentId,
   PullRequestAction,
   PullRequestInvalidationScope,
+  PullRequestCheck,
   PullRequestMergeMethod,
   PullRequestUpdateMethod,
   PullRequestRef,
@@ -52,11 +53,13 @@ import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useCopyToClipboard, writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { usePreparePullRequestThreadAction } from "~/lib/sourceControlActions";
-import { cn } from "~/lib/utils";
+import { cn, randomUUID } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
 import { useProjects } from "~/state/entities";
 import { useEnvironments } from "~/state/environments";
+import { useRightPanelStore } from "~/rightPanelStore";
+import { terminalEnvironment } from "~/state/terminal";
 import { useEnvironmentQuery } from "~/state/query";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
 import { pullRequestEnvironment } from "~/state/pullRequests";
@@ -94,6 +97,7 @@ import type { PullRequestAskSelectionInput } from "./PullRequestCodeTab";
 import { openOnHostLabel, showPullRequestLinkContextMenu } from "./pullRequestLinkContextMenu";
 import { PullRequestSummaryTab } from "./PullRequestSummaryTab";
 import { PullRequestTimelineTab } from "./PullRequestTimelineTab";
+import { resolvePullRequestCheckOpenPlan } from "./openPullRequestCheck";
 import {
   buildAskAboutLinesHandoff,
   buildAskAboutPullRequestHandoff,
@@ -349,6 +353,8 @@ export function PullRequestDetailPanel({
   onActed,
   onClose,
   onStateChange,
+  terminalPanelRef = null,
+  terminalThreadRef = null,
   context = "page",
   chromeVariant = "full",
   composerDraftTarget,
@@ -376,6 +382,10 @@ export function PullRequestDetailPanel({
     state: PullRequestState;
     isDraft: boolean;
   }) => void;
+  /** Right-panel store owner when it differs from the terminal session's environment. */
+  terminalPanelRef?: ScopedThreadRef | null;
+  /** The panel owner used for in-app terminals opened from GitHub Actions checks. */
+  terminalThreadRef?: ScopedThreadRef | null;
   /**
    * Beside a thread, the checkout affordance disappears: the panel is showing that thread's
    * own pull request, so the branch is already under the reader's feet — and checking it out
@@ -394,6 +404,8 @@ export function PullRequestDetailPanel({
    */
   composerDraftTarget?: ScopedThreadRef | DraftId;
 }) {
+  const openTerminal = useAtomCommand(terminalEnvironment.open, { reportFailure: false });
+  const writeTerminal = useAtomCommand(terminalEnvironment.write, { reportFailure: false });
   const pullRequestKey = `${reference.projectId}:${reference.repository}#${reference.number}`;
   const [tab, setTab] = useState<DetailTab>("summary");
   const [timelineOrder, setTimelineOrder] = useState<"newest" | "oldest">("newest");
@@ -506,6 +518,70 @@ export function PullRequestDetailPanel({
   );
   const activityPending = activityQuery.isPending && activity === null;
   const activityError = activity === null ? activityQuery.error : null;
+  const terminalSurfaceRef = terminalPanelRef ?? terminalThreadRef;
+  const openCheck = useCallback(
+    (check: PullRequestCheck) => {
+      if (!detail) return;
+      const plan = resolvePullRequestCheckOpenPlan(detail.provider, check);
+      if (plan === null) return;
+      const localApi = readLocalApi();
+      if (plan.kind === "external") {
+        void localApi?.shell.openExternal(plan.url);
+        return;
+      }
+      if (terminalThreadRef === null || terminalSurfaceRef === null) {
+        if (check.url !== null) void localApi?.shell.openExternal(check.url);
+        return;
+      }
+
+      // Check logs must never attach to a restored interactive shell: known-session hydration can
+      // lag a click after reconnect, while a unique id is collision-proof across tabs and devices.
+      const terminalId = `check-${randomUUID()}`;
+      useRightPanelStore
+        .getState()
+        .openTerminal(terminalSurfaceRef, terminalId, plan.presentation, terminalThreadRef);
+
+      void (async () => {
+        const opened = await openTerminal({
+          environmentId,
+          input: {
+            threadId: terminalThreadRef.threadId,
+            terminalId,
+            cwd: detail.workspaceRoot,
+            env: { GH_PAGER: "cat", PAGER: "cat" },
+          },
+        });
+        if (opened._tag === "Failure") {
+          useRightPanelStore.getState().closeSurface(terminalSurfaceRef, `terminal:${terminalId}`);
+          const error = squashAtomCommandFailure(opened);
+          toastManager.add({
+            type: "error",
+            title: "Could not open check logs",
+            description: error instanceof Error ? error.message : "The terminal could not open.",
+          });
+          return;
+        }
+
+        const written = await writeTerminal({
+          environmentId,
+          input: {
+            threadId: terminalThreadRef.threadId,
+            terminalId,
+            data: `${plan.command}\r`,
+          },
+        });
+        if (written._tag === "Failure") {
+          const error = squashAtomCommandFailure(written);
+          toastManager.add({
+            type: "error",
+            title: "Could not load check logs",
+            description: error instanceof Error ? error.message : "The command could not run.",
+          });
+        }
+      })();
+    },
+    [detail, environmentId, openTerminal, terminalSurfaceRef, terminalThreadRef, writeTerminal],
+  );
   const refreshDetail = useCallback(() => {
     detailQuery.refresh();
     activityQuery.refresh();
@@ -1822,6 +1898,7 @@ export function PullRequestDetailPanel({
                   fixFindingLabel={handoffLabels.fixFinding}
                   fixCheckLabel={handoffLabels.fixCheck}
                   onFixFinding={startFixFinding}
+                  onOpenCheck={openCheck}
                   onRefresh={refreshDetail}
                 />
               </div>

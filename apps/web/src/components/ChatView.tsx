@@ -1174,6 +1174,9 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
       onAddTerminalContext={onAddTerminalContext}
       terminalLabelsById={terminalLabelsById}
       terminalLaunchLocationsById={terminalLaunchLocationsById}
+      {...(surface.presentationsByTerminalId
+        ? { terminalPresentationsById: surface.presentationsByTerminalId }
+        : {})}
       keybindings={keybindings}
     />
   );
@@ -6169,6 +6172,7 @@ function ChatViewContent(props: ChatViewProps) {
         }
         chromeVariant="collapse"
         composerDraftTarget={composerDraftTarget}
+        terminalThreadRef={activeThreadRef}
         onStateChange={handlePullRequestTabStatusChange}
       />
     ) : activeRightPanelSurface?.kind === "agents" ? (

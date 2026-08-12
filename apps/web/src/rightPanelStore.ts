@@ -13,6 +13,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import { resolveStorage } from "./lib/storage";
+import type { TerminalOutputPresentation } from "./terminal/terminalOutputPresentation";
 
 export const RIGHT_PANEL_KINDS = [
   "diff",
@@ -35,6 +36,9 @@ export type RightPanelSurface =
       terminalIds: string[];
       activeTerminalId: string;
       splitDirection?: "horizontal" | "vertical";
+      presentationsByTerminalId?: Record<string, TerminalOutputPresentation>;
+      /** Runtime owner when a workspace-level panel renders a terminal from another environment. */
+      terminalRef?: ScopedThreadRef;
     }
   | { id: "diff"; kind: "diff" }
   | { id: "files"; kind: "files" }
@@ -94,7 +98,12 @@ interface RightPanelStoreState {
     ref: ScopedThreadRef,
     target: { environmentId?: string; projectId: string; repository: string; number: number },
   ) => void;
-  openTerminal: (ref: ScopedThreadRef, terminalId: string) => void;
+  openTerminal: (
+    ref: ScopedThreadRef,
+    terminalId: string,
+    presentation?: TerminalOutputPresentation,
+    terminalRef?: ScopedThreadRef,
+  ) => void;
   splitTerminal: (
     ref: ScopedThreadRef,
     surfaceId: string,
@@ -156,13 +165,53 @@ const fileSurface = (
   revealRequestId,
 });
 
-const terminalSurface = (terminalId: string): RightPanelSurface => ({
+const terminalSurface = (
+  terminalId: string,
+  presentation?: TerminalOutputPresentation,
+  terminalRef?: ScopedThreadRef,
+): RightPanelSurface => ({
   id: `terminal:${terminalId}`,
   kind: "terminal",
   resourceId: terminalId,
   terminalIds: [terminalId],
   activeTerminalId: terminalId,
+  ...(presentation ? { presentationsByTerminalId: { [terminalId]: presentation } } : {}),
+  ...(terminalRef ? { terminalRef } : {}),
 });
+
+function normalizeTerminalPresentations(
+  value: unknown,
+  terminalIds: readonly string[],
+): Record<string, TerminalOutputPresentation> | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const terminalIdSet = new Set(terminalIds);
+  const presentations = Object.entries(value).flatMap(([terminalId, presentation]) => {
+    if (
+      !terminalIdSet.has(terminalId) ||
+      !presentation ||
+      typeof presentation !== "object" ||
+      !("kind" in presentation) ||
+      presentation.kind !== "github-actions-log" ||
+      !("title" in presentation) ||
+      typeof presentation.title !== "string" ||
+      !("command" in presentation) ||
+      typeof presentation.command !== "string"
+    ) {
+      return [];
+    }
+    return [
+      [
+        terminalId,
+        {
+          kind: "github-actions-log" as const,
+          title: presentation.title,
+          command: presentation.command,
+        },
+      ] as const,
+    ];
+  });
+  return presentations.length > 0 ? Object.fromEntries(presentations) : undefined;
+}
 
 export type PullRequestSurface = Extract<RightPanelSurface, { kind: "pull-request" }>;
 
@@ -324,11 +373,31 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                       terminalIds.includes(surface.activeTerminalId)
                         ? surface.activeTerminalId
                         : (terminalIds[0] ?? surface.resourceId);
+                    const presentationsByTerminalId = normalizeTerminalPresentations(
+                      "presentationsByTerminalId" in surface
+                        ? surface.presentationsByTerminalId
+                        : undefined,
+                      terminalIds,
+                    );
+                    const terminalRef =
+                      surface.terminalRef &&
+                      typeof surface.terminalRef === "object" &&
+                      typeof surface.terminalRef.environmentId === "string" &&
+                      typeof surface.terminalRef.threadId === "string"
+                        ? surface.terminalRef
+                        : undefined;
+                    const {
+                      presentationsByTerminalId: _persistedPresentations,
+                      terminalRef: _persistedTerminalRef,
+                      ...baseSurface
+                    } = surface;
                     return [
                       {
-                        ...surface,
+                        ...baseSurface,
                         terminalIds: terminalIds.length > 0 ? terminalIds : [surface.resourceId],
                         activeTerminalId,
+                        ...(presentationsByTerminalId ? { presentationsByTerminalId } : {}),
+                        ...(terminalRef ? { terminalRef } : {}),
                       },
                     ];
                   })
@@ -417,10 +486,10 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             };
           }),
         })),
-      openTerminal: (ref, terminalId) =>
+      openTerminal: (ref, terminalId, presentation, terminalRef) =>
         set((state) => ({
           byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) =>
-            upsertSurface(current, terminalSurface(terminalId)),
+            upsertSurface(current, terminalSurface(terminalId, presentation, terminalRef)),
           ),
         })),
       splitTerminal: (ref, surfaceId, terminalId, direction = "horizontal") =>
@@ -483,14 +552,28 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
               ...current,
               surfaces: current.surfaces.map((entry) =>
                 entry.id === surfaceId && entry.kind === "terminal"
-                  ? {
-                      ...entry,
-                      terminalIds,
-                      activeTerminalId:
-                        entry.activeTerminalId === terminalId
-                          ? (terminalIds.at(-1) ?? terminalIds[0]!)
-                          : entry.activeTerminalId,
-                    }
+                  ? (() => {
+                      const nextPresentationsByTerminalId = entry.presentationsByTerminalId
+                        ? Object.fromEntries(
+                            Object.entries(entry.presentationsByTerminalId).filter(
+                              ([id]) => id !== terminalId,
+                            ),
+                          )
+                        : undefined;
+                      const { presentationsByTerminalId: _presentations, ...baseEntry } = entry;
+                      return {
+                        ...baseEntry,
+                        terminalIds,
+                        activeTerminalId:
+                          entry.activeTerminalId === terminalId
+                            ? (terminalIds.at(-1) ?? terminalIds[0]!)
+                            : entry.activeTerminalId,
+                        ...(nextPresentationsByTerminalId &&
+                        Object.keys(nextPresentationsByTerminalId).length > 0
+                          ? { presentationsByTerminalId: nextPresentationsByTerminalId }
+                          : {}),
+                      };
+                    })()
                   : entry,
               ),
             };

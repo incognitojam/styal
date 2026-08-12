@@ -71,6 +71,10 @@ import {
   resolveTerminalFontSizePreference,
   TYPOGRAPHY_ADVANCED_STORAGE_KEY,
 } from "../appearanceFonts";
+import {
+  GitHubActionsLogFormatter,
+  type TerminalOutputPresentation,
+} from "../terminal/terminalOutputPresentation";
 
 const MIN_DRAWER_HEIGHT = 180;
 const MAX_DRAWER_HEIGHT_RATIO = 0.75;
@@ -91,8 +95,13 @@ function writeSystemMessage(terminal: GhosttyTerminalSurface, message: string): 
   terminal.write(`\r\n[terminal] ${message}\r\n`);
 }
 
-function writeTerminalBuffer(terminal: GhosttyTerminalSurface, buffer: string): void {
-  terminal.resetAndWrite(buffer);
+function writeTerminalBuffer(
+  terminal: GhosttyTerminalSurface,
+  buffer: string,
+  formatter: GitHubActionsLogFormatter | null,
+): void {
+  formatter?.reset();
+  terminal.resetAndWrite(formatter ? formatter.write(buffer) : buffer);
 }
 
 function parseTerminalColor(value: string, fallback: GhosttyColor): GhosttyColor {
@@ -274,12 +283,13 @@ interface TerminalViewportProps {
   worktreePath?: string | null;
   runtimeEnv?: Record<string, string>;
   onSessionExited: () => void;
-  onAddTerminalContext: (selection: TerminalContextSelection) => void;
+  onAddTerminalContext?: (selection: TerminalContextSelection) => void;
   focusRequestId: number;
   autoFocus: boolean;
   resizeEpoch: number;
   drawerHeight: number;
   keybindings: ResolvedKeybindingsConfig;
+  outputPresentation?: TerminalOutputPresentation;
 }
 
 interface TerminalLaunchLocation {
@@ -304,6 +314,7 @@ export function TerminalViewport({
   resizeEpoch,
   drawerHeight,
   keybindings,
+  outputPresentation,
 }: TerminalViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<GhosttyTerminalSurface | null>(null);
@@ -331,12 +342,21 @@ export function TerminalViewport({
   const selectionActionTimerRef = useRef<number | null>(null);
   const keybindingsRef = useRef(keybindings);
   const runtimeEnvKey = useMemo(() => runtimeEnvSignature(runtimeEnv), [runtimeEnv]);
+  const outputPresentationCommand =
+    outputPresentation?.kind === "github-actions-log" ? outputPresentation.command : null;
+  const outputFormatter = useMemo(
+    () =>
+      outputPresentationCommand ? new GitHubActionsLogFormatter(outputPresentationCommand) : null,
+    [outputPresentationCommand],
+  );
+  const readOnly = outputPresentation?.kind === "github-actions-log";
   const handleSessionExited = useEffectEvent(() => {
     onSessionExited();
   });
   const handleAddTerminalContext = useEffectEvent((selection: TerminalContextSelection) => {
-    onAddTerminalContext(selection);
+    onAddTerminalContext?.(selection);
   });
+  const canAddTerminalContext = useEffectEvent(() => onAddTerminalContext !== undefined);
   const readTerminalLabel = useEffectEvent(() => terminalLabel);
   const terminalFontFamily = useClientSettings((settings) =>
     resolveTerminalFontPreference({
@@ -454,6 +474,10 @@ export function TerminalViewport({
       terminal.setTheme(terminalThemeFromApp(mount));
       setupTerminal = terminal;
       terminalRef.current = terminal;
+      if (readOnly) {
+        terminal.input.readOnly = true;
+        terminal.input.tabIndex = -1;
+      }
       // Client settings hydrate asynchronously; a font preference that landed
       // while the surface was loading found terminalRef null, so its setFont
       // was dropped. Re-apply whatever is current once the terminal exists.
@@ -463,7 +487,12 @@ export function TerminalViewport({
       }
       const latestSession = latestSessionRef.current;
       previousSessionRef.current = latestSession;
-      if (latestSession.buffer.length > 0) terminal.resetAndWrite(latestSession.buffer);
+      outputFormatter?.reset();
+      if (latestSession.buffer.length > 0) {
+        terminal.resetAndWrite(
+          outputFormatter ? outputFormatter.write(latestSession.buffer) : latestSession.buffer,
+        );
+      }
       if (latestSession.error !== null) writeSystemMessage(terminal, latestSession.error);
       // Attaching to a session that already exited must still run exit handling
       // once, so mount synchronization starts from the empty "closed" state.
@@ -471,7 +500,7 @@ export function TerminalViewport({
       // never started, so only "exited" triggers the message — as with xterm.)
       synchronizedStatusRef.current = "closed";
       synchronizeTerminalStatus(terminal, latestSession.status);
-      if (autoFocus) window.requestAnimationFrame(() => terminal.focus());
+      if (autoFocus && !readOnly) window.requestAnimationFrame(() => terminal.focus());
 
       const clearSelectionAction = () => {
         selectionActionRequestIdRef.current += 1;
@@ -536,7 +565,7 @@ export function TerminalViewport({
         const clicked = await localApi.contextMenu
           .show(
             [
-              { id: "add-to-chat", label: "Add to chat" },
+              ...(canAddTerminalContext() ? [{ id: "add-to-chat", label: "Add to chat" }] : []),
               { id: "copy", label: "Copy" },
             ],
             nextAction.position,
@@ -589,6 +618,7 @@ export function TerminalViewport({
       };
 
       function handleBeforeKey(event: KeyboardEvent): boolean {
+        if (readOnly) return false;
         const currentKeybindings = keybindingsRef.current;
         const options = { context: { terminalFocus: true, terminalOpen: true } };
         if (preventTerminalCloseShortcut(event, currentKeybindings)) {
@@ -680,6 +710,7 @@ export function TerminalViewport({
       }
 
       function handleData(data: string): void {
+        if (readOnly) return;
         void (async () => {
           const result = await writeTerminal(data);
           if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
@@ -785,7 +816,16 @@ export function TerminalViewport({
     };
     // autoFocus is intentionally omitted;
     // it is only read at mount time and must not trigger terminal teardown/recreation.
-  }, [cwd, environmentId, runtimeEnvKey, terminalId, threadId, worktreePath]);
+  }, [
+    cwd,
+    environmentId,
+    outputFormatter,
+    readOnly,
+    runtimeEnvKey,
+    terminalId,
+    threadId,
+    worktreePath,
+  ]);
 
   useEffect(() => {
     const terminal = terminalRef.current;
@@ -810,9 +850,10 @@ export function TerminalViewport({
       current.buffer.length >= previous.buffer.length &&
       current.buffer.startsWith(previous.buffer)
     ) {
-      terminal.write(current.buffer.slice(previous.buffer.length));
+      const appended = current.buffer.slice(previous.buffer.length);
+      terminal.write(outputFormatter ? outputFormatter.write(appended) : appended);
     } else {
-      writeTerminalBuffer(terminal, current.buffer);
+      writeTerminalBuffer(terminal, current.buffer, outputFormatter);
     }
     terminal.clearSelection();
 
@@ -820,16 +861,24 @@ export function TerminalViewport({
       writeSystemMessage(terminal, current.error);
     }
 
-    if (previous.version === 0 && autoFocus) {
+    if (previous.version === 0 && autoFocus && !readOnly) {
       window.requestAnimationFrame(() => {
         terminal.focus();
       });
     }
     previousSessionRef.current = current;
-  }, [autoFocus, terminalBuffer, terminalError, terminalStatus, terminalVersion]);
+  }, [
+    autoFocus,
+    outputFormatter,
+    readOnly,
+    terminalBuffer,
+    terminalError,
+    terminalStatus,
+    terminalVersion,
+  ]);
 
   useEffect(() => {
-    if (!autoFocus) return;
+    if (!autoFocus || readOnly) return;
     const terminal = terminalRef.current;
     if (!terminal) return;
     const frame = window.requestAnimationFrame(() => {
@@ -838,7 +887,7 @@ export function TerminalViewport({
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [autoFocus, focusRequestId]);
+  }, [autoFocus, focusRequestId, readOnly]);
 
   useEffect(() => {
     const terminal = terminalRef.current;
@@ -859,7 +908,7 @@ export function TerminalViewport({
   return (
     <div
       ref={containerRef}
-      className="relative h-full w-full overflow-hidden rounded-[4px] bg-background"
+      className="relative h-full min-h-0 w-full overflow-hidden rounded-[4px] bg-background"
     />
   );
 }
@@ -894,6 +943,7 @@ interface ThreadTerminalDrawerProps {
   terminalLabelsById?: ReadonlyMap<string, string>;
   /** Prefer per-session launch locations when the server already knows a terminal. */
   terminalLaunchLocationsById?: ReadonlyMap<string, TerminalLaunchLocation>;
+  terminalPresentationsById?: Readonly<Record<string, TerminalOutputPresentation>>;
 }
 
 interface TerminalActionButtonProps {
@@ -953,6 +1003,7 @@ export default function ThreadTerminalDrawer({
   keybindings,
   terminalLabelsById,
   terminalLaunchLocationsById,
+  terminalPresentationsById,
 }: ThreadTerminalDrawerProps) {
   const isPanel = mode === "panel";
   const [advancedTypography] = useLocalStorage(
@@ -1104,6 +1155,7 @@ export default function ThreadTerminalDrawer({
   const splitDirection =
     resolvedTerminalGroups[resolvedActiveGroupIndex]?.splitDirection ?? "horizontal";
   const hasTerminalSidebar = normalizedTerminalIds.length > 1;
+  const activeTerminalPresentation = terminalPresentationsById?.[resolvedActiveTerminalId];
   const isSplitView = visibleTerminalIds.length > 1;
   const showGroupHeaders =
     resolvedTerminalGroups.length > 1 ||
@@ -1312,7 +1364,7 @@ export default function ThreadTerminalDrawer({
         />
       ) : null}
 
-      {!hasTerminalSidebar && (
+      {!hasTerminalSidebar && !activeTerminalPresentation && (
         <div className="pointer-events-none absolute right-2 top-2 z-20">
           <div className="pointer-events-auto inline-flex items-center overflow-hidden rounded-md border border-border/80 bg-background shadow-xs">
             <TerminalActionButton
@@ -1415,6 +1467,9 @@ export default function ThreadTerminalDrawer({
                           resizeEpoch={resizeEpoch}
                           drawerHeight={drawerHeight}
                           keybindings={keybindings}
+                          {...(terminalPresentationsById?.[terminalId]
+                            ? { outputPresentation: terminalPresentationsById[terminalId] }
+                            : {})}
                         />
                       </div>
                     </div>
@@ -1444,6 +1499,11 @@ export default function ThreadTerminalDrawer({
                   resizeEpoch={resizeEpoch}
                   drawerHeight={drawerHeight}
                   keybindings={keybindings}
+                  {...(terminalPresentationsById?.[resolvedActiveTerminalId]
+                    ? {
+                        outputPresentation: terminalPresentationsById[resolvedActiveTerminalId],
+                      }
+                    : {})}
                 />
               </div>
             )}

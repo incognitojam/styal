@@ -565,6 +565,61 @@ describe("rightPanelStore", () => {
     expect(state.activeSurfaceId).toBe("terminal:term-2");
   });
 
+  it("keeps a check-log presentation scoped to its terminal", () => {
+    useRightPanelStore.getState().openTerminal(refA, "term-1", {
+      kind: "github-actions-log",
+      title: "Tests",
+      command: "gh api repos/acme/widgets/actions/jobs/34/logs",
+    });
+    useRightPanelStore.getState().splitTerminal(refA, "terminal:term-1", "term-2");
+
+    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      id: "terminal:term-1",
+      kind: "terminal",
+      resourceId: "term-1",
+      terminalIds: ["term-1", "term-2"],
+      activeTerminalId: "term-2",
+      presentationsByTerminalId: {
+        "term-1": {
+          kind: "github-actions-log",
+          title: "Tests",
+          command: "gh api repos/acme/widgets/actions/jobs/34/logs",
+        },
+      },
+    });
+
+    useRightPanelStore.getState().closeTerminal(refA, "terminal:term-1", "term-1");
+    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      id: "terminal:term-1",
+      kind: "terminal",
+      resourceId: "term-1",
+      terminalIds: ["term-2"],
+      activeTerminalId: "term-2",
+    });
+  });
+
+  it("keeps the runtime terminal owner separate from a workspace panel owner", () => {
+    const terminalRef = scopeThreadRef(
+      "env-2" as EnvironmentId,
+      ThreadId.make("pull-requests-panel"),
+    );
+
+    useRightPanelStore.getState().openTerminal(
+      refA,
+      "check-1",
+      {
+        kind: "github-actions-log",
+        title: "Tests",
+        command: "gh api repos/acme/widgets/actions/jobs/34/logs",
+      },
+      terminalRef,
+    );
+
+    expect(
+      selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA),
+    ).toMatchObject({ terminalRef });
+  });
+
   it("tracks split panes and the active pane within a terminal surface", () => {
     useRightPanelStore.getState().openTerminal(refA, "term-1");
     useRightPanelStore.getState().splitTerminal(refA, "terminal:term-1", "term-2");

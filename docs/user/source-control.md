@@ -44,6 +44,10 @@ T3 Code works with the platforms your team already uses:
 - View repository-hosted images in GitHub pull request descriptions, including private repositories
 - While working in a thread, open linked reviews in the same compact right-panel tabs without
   leaving the conversation
+- Select a GitHub Actions check to open its job in a terminal tab beside the review. The terminal
+  presents the selected job's raw log with scannable steps, commands, warnings, and errors. A
+  running job follows its workflow until the log becomes available. Checks from other services
+  open on their host.
 - Open the review directly in your browser with one click
 - Command-click (Control-click on Windows and Linux) a pull request number in the sidebar to open it in your browser instead of in T3 Code
 - Check out a teammate's branch to review code locally
@@ -57,6 +61,10 @@ T3 Code works with the platforms your team already uses:
   comments stay read-only here, as they already were
 
 ![A repository-hosted image rendered inside a GitHub pull request description](./images/pull-request-description-image-after.jpg)
+
+![GitHub Actions checks in a pull request summary](./images/pull-request-check-before.png)
+
+![A selected GitHub Actions job log open in a terminal tab](./images/pull-request-check-terminal.png)
 
 When a GitHub project has multiple remotes, the **Pull requests** page follows the current branch's
 tracked remote. If the branch has no tracked remote, it follows the repository selected by
