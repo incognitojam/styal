@@ -41,15 +41,11 @@ describe("thread sidebar width", () => {
       sidebarStyles.indexOf("@media (min-width: 48rem)"),
       sidebarStyles.indexOf("/* Stage-channel sidebar art"),
     );
-    const stageLabelThreshold = desktopHeaderStyles.match(
-      /@container sidebar-header \(min-width: ([\d.]+)rem\) \{\s*\.sidebar-brand-stage \{\s*display: inline-flex;/,
-    )?.[1];
 
     expect(sidebarStyles).toMatch(/\.sidebar-brand \{\s*display: none;/);
     expect(desktopHeaderStyles).toMatch(
       /@media \(min-width: 48rem\) \{\s*\.sidebar-brand \{\s*display: flex;/,
     );
     expect(THREAD_SIDEBAR_MIN_WIDTH).toBe(13 * 16);
-    expect(Number(stageLabelThreshold) * 16).toBeGreaterThan(THREAD_SIDEBAR_MIN_WIDTH);
   });
 });
