@@ -10,6 +10,7 @@ import {
   MessageSquareWarningIcon,
   Minimize2Icon,
   OctagonAlertIcon,
+  TerminalIcon,
   TriangleAlertIcon,
   WrapTextIcon,
 } from "lucide-react";
@@ -110,11 +111,16 @@ interface ChatMarkdownProps {
   className?: string;
   /** Treat single newlines as hard breaks — chat-style user input. */
   lineBreaks?: boolean;
+  /** Runs completed shell-language fences in the thread terminal. */
+  onRunCodeBlock?: ((code: string) => void) | undefined;
 }
 
 const EMPTY_MARKDOWN_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
 
 const CODE_FENCE_LANGUAGE_REGEX = /(?:^|\s)language-([^\s]+)/;
+const SHELL_CODE_BLOCK_LANGUAGES = new Set(
+  "bash bat batch cmd fish nu nushell powershell ps1 pwsh sh shell shellscript zsh".split(" "),
+);
 const MAX_HIGHLIGHT_CACHE_ENTRIES = 500;
 const MAX_HIGHLIGHT_CACHE_MEMORY_BYTES = 50 * 1024 * 1024;
 
@@ -588,12 +594,14 @@ function MarkdownCodeBlock({
   language,
   fenceTitle,
   theme,
+  onRun,
   children,
 }: {
   code: string;
   language: string;
   fenceTitle: string | null;
   theme: "light" | "dark";
+  onRun?: (() => void) | undefined;
   children: ReactNode;
 }) {
   const [copied, setCopied] = useState(false);
@@ -655,6 +663,25 @@ function MarkdownCodeBlock({
           />
         </span>
         <span className="flex items-center gap-0.5" role="toolbar" aria-label="Code block actions">
+          {onRun ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="chat-markdown-chrome-action"
+                    onClick={onRun}
+                    aria-label="Run in terminal"
+                  />
+                }
+              >
+                <TerminalIcon className="size-3" />
+              </TooltipTrigger>
+              <TooltipPopup side="top">Run in terminal</TooltipPopup>
+            </Tooltip>
+          ) : null}
           <Tooltip>
             <TooltipTrigger
               render={
@@ -1327,6 +1354,7 @@ function ChatMarkdown({
   skills = EMPTY_MARKDOWN_SKILLS,
   className,
   lineBreaks = false,
+  onRunCodeBlock,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
   const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
@@ -1656,12 +1684,20 @@ function ChatMarkdown({
 
         const language = extractFenceLanguage(codeBlock.className);
         const fenceTitle = extractFenceTitle(extractPreCodeMeta(node));
+        const runCodeBlock =
+          !isStreaming &&
+          onRunCodeBlock &&
+          SHELL_CODE_BLOCK_LANGUAGES.has(language.toLowerCase()) &&
+          codeBlock.code.trim().length > 0
+            ? () => onRunCodeBlock(codeBlock.code)
+            : undefined;
         return (
           <MarkdownCodeBlock
             code={codeBlock.code}
             language={language}
             fenceTitle={fenceTitle}
             theme={resolvedTheme}
+            onRun={runCodeBlock}
           >
             <RenderErrorBoundary fallback={<pre {...props}>{children}</pre>}>
               <Suspense fallback={<pre {...props}>{children}</pre>}>
@@ -1685,6 +1721,7 @@ function ChatMarkdown({
     isStreaming,
     markdownFileLinkMetaByHref,
     onTaskListChange,
+    onRunCodeBlock,
     openInPreferredEditor,
     openExternalLinkInPreview,
     openMarkdownFileInPreview,
