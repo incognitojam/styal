@@ -1179,9 +1179,45 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    yield* providerService
-      .sendTurn(sendTurnRequest.value)
-      .pipe(Effect.catchCause(recoverTurnStartFailure), Effect.forkScoped);
+    const activeTurnId = thread.session?.status === "running" ? thread.session.activeTurnId : null;
+
+    yield* providerService.sendTurn(sendTurnRequest.value).pipe(
+      Effect.tap((startedTurn) => {
+        if (
+          activeTurnId === null ||
+          startedTurn.turnId !== activeTurnId ||
+          thread.session === null
+        ) {
+          return Effect.void;
+        }
+
+        // Codex can accept a follow-up as same-turn steering: turn/start
+        // returns the already-active turn id and no second turn.started event
+        // follows. Re-asserting that running session lets the turn projection
+        // adopt and clear the pending start before the shared turn completes.
+        return setThreadSession({
+          threadId: thread.id,
+          session: {
+            ...thread.session,
+            status: "running",
+            activeTurnId,
+            lastError: null,
+            updatedAt: event.payload.createdAt,
+          },
+          createdAt: event.payload.createdAt,
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("provider command reactor failed to adopt same-turn follow-up", {
+              threadId: thread.id,
+              activeTurnId,
+              cause: Cause.pretty(cause),
+            }),
+          ),
+        );
+      }),
+      Effect.catchCause(recoverTurnStartFailure),
+      Effect.forkScoped,
+    );
   });
 
   const processTurnInterruptRequested = Effect.fn("processTurnInterruptRequested")(function* (
