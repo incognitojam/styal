@@ -3,6 +3,7 @@ import * as Migrator from "effect/unstable/sql/Migrator";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import ForkMigration0001 from "./ForkMigrations/001_ComposerDrafts.ts";
+import ForkMigration0002 from "./ForkMigrations/002_WorkspacePortAllocations.ts";
 import UpstreamMigration0039 from "./Migrations/039_ProjectionProjectsDefaultThreadEnvMode.ts";
 import { runMigrations } from "./Migrations.ts";
 
@@ -15,7 +16,10 @@ const UPSTREAM_MIGRATION_0039_NAME = "ProjectionProjectsDefaultThreadEnvMode";
  * Fork migrations have their own append-only history so upstream can keep its
  * numeric migration sequence unchanged across rebases.
  */
-export const forkMigrationEntries = [[1, "ComposerDrafts", ForkMigration0001]] as const;
+export const forkMigrationEntries = [
+  [1, "ComposerDrafts", ForkMigration0001],
+  [2, "WorkspacePortAllocations", ForkMigration0002],
+] as const;
 
 export const forkMigrationManifest = forkMigrationEntries.map(([id, name]) => [id, name] as const);
 
