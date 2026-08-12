@@ -69,6 +69,7 @@ import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolve
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
+import * as WorkspacePortAllocator from "./workspace/WorkspacePortAllocator.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
@@ -259,14 +260,19 @@ const ProviderSessionDirectoryLayerLive = ProviderSessionDirectoryLive.pipe(
 // `create()`; `ProviderEventLoggers.layer` owns the shared native/canonical
 // NDJSON writers and is provided at the outer runtime layer so both
 // `ProviderService` and the per-instance drivers read the same logger pair.
-const ProviderLayerLive = ProviderServiceLive.pipe(
-  Layer.provide(ProviderAdapterRegistryLive),
-  Layer.provideMerge(ProviderSessionDirectoryLayerLive),
-);
-
 const PersistenceLayerLive = Layer.mergeAll(
   SqlitePersistenceLayerLive,
   CommandOutputQuery.layer.pipe(Layer.provide(SqlitePersistenceLayerLive)),
+);
+
+const WorkspacePortAllocatorLayerLive = WorkspacePortAllocator.layer.pipe(
+  Layer.provide(SqlitePersistenceLayerLive),
+);
+
+const ProviderLayerLive = ProviderServiceLive.pipe(
+  Layer.provide(ProviderAdapterRegistryLive),
+  Layer.provideMerge(ProviderSessionDirectoryLayerLive),
+  Layer.provide(WorkspacePortAllocatorLayerLive),
 );
 
 const VcsDriverRegistryLayerLive = VcsDriverRegistry.layer.pipe(
@@ -328,6 +334,7 @@ const PortScannerLayerLive = PortScanner.layer.pipe(Layer.provide(ProcessRunner.
 const TerminalLayerLive = TerminalManager.layer.pipe(
   Layer.provide(PtyAdapterLive),
   Layer.provide(PortScannerLayerLive),
+  Layer.provide(WorkspacePortAllocatorLayerLive),
 );
 
 const PreviewLayerLive = Layer.empty.pipe(

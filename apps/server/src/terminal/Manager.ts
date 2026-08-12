@@ -59,6 +59,7 @@ import {
 } from "../observability/Metrics.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as PortScanner from "../preview/PortScanner.ts";
+import * as WorkspacePortAllocator from "../workspace/WorkspacePortAllocator.ts";
 import * as PtyAdapter from "./PtyAdapter.ts";
 
 export {
@@ -1151,6 +1152,9 @@ interface TerminalManagerOptions {
   subprocessPollIntervalMs?: number;
   processKillGraceMs?: number;
   maxRetainedInactiveSessions?: number;
+  resolveWorkspaceEnvironment?: (
+    workspacePath: string,
+  ) => Effect.Effect<Record<string, string>, WorkspacePortAllocator.WorkspacePortAllocationError>;
   registerTerminalProcesses?: (input: {
     readonly threadId: string;
     readonly terminalId: string;
@@ -1166,9 +1170,11 @@ export const make = Effect.fn("TerminalManager.make")(function* () {
   const { terminalLogsDir } = yield* ServerConfig.ServerConfig;
   const ptyAdapter = yield* PtyAdapter.PtyAdapter;
   const portDiscovery = yield* PortScanner.PortDiscovery;
+  const workspacePortAllocator = yield* WorkspacePortAllocator.WorkspacePortAllocator;
   return yield* makeWithOptions({
     logsDir: terminalLogsDir,
     ptyAdapter,
+    resolveWorkspaceEnvironment: workspacePortAllocator.environmentFor,
     registerTerminalProcesses: portDiscovery.registerTerminalProcesses,
     unregisterTerminal: portDiscovery.unregisterTerminal,
   });
@@ -1905,7 +1911,13 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         Effect.andThen(
           Effect.gen(function* () {
             const shellCandidates = resolveShellCandidates(shellResolver, platform, baseEnv);
-            const terminalEnv = createTerminalSpawnEnv(baseEnv, session.runtimeEnv);
+            const workspaceEnvironment = options.resolveWorkspaceEnvironment
+              ? yield* options.resolveWorkspaceEnvironment(session.worktreePath ?? session.cwd)
+              : {};
+            const terminalEnv = createTerminalSpawnEnv(baseEnv, {
+              ...session.runtimeEnv,
+              ...workspaceEnvironment,
+            });
             const spawnResult = yield* trySpawn(
               shellCandidates,
               terminalEnv,
