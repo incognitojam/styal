@@ -39,6 +39,8 @@ T3 Code works with the platforms your team already uses:
 
 - See if your current branch already has an open PR/MR
 - Open several reviews from the **Pull requests** page as tabs in the right panel
+- Read ordinary files expanded by default in **Code changes**; oversized files stay folded until
+  opened, while files with review comments remain expanded
 - While working in a thread, open linked reviews in the same compact right-panel tabs without
   leaving the conversation
 - Open the review directly in your browser with one click
