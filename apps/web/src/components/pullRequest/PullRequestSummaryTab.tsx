@@ -276,7 +276,8 @@ export function PullRequestSummaryTab({
       <Section title="Description">
         <PullRequestMarkdown
           text={detail.body.trim().length > 0 ? detail.body : "_No description provided._"}
-          cwd={detail.workspaceRoot}
+          detail={detail}
+          environmentId={environmentId}
         />
       </Section>
 
@@ -439,7 +440,8 @@ export function PullRequestSummaryTab({
                       <PullRequestMarkdown
                         className="mt-2"
                         text={comment.body}
-                        cwd={detail.workspaceRoot}
+                        detail={detail}
+                        environmentId={environmentId}
                       />
                     </article>
                   );

@@ -1363,6 +1363,7 @@ export function PullRequestDetailPanel({
                   />
                 ) : (
                   <PullRequestTimelineTab
+                    environmentId={environmentId}
                     detail={detail}
                     order={timelineOrder}
                     onOpenCommit={openCommit}
