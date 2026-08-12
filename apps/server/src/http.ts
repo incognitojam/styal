@@ -6,12 +6,14 @@ import {
 } from "@t3tools/contracts";
 import { isDevProxiedPath } from "@t3tools/shared/devProxy";
 import { decodeOtlpTraceRecords } from "@t3tools/shared/observability";
+import { normalizePreviewUrl } from "@t3tools/shared/preview";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import { cast } from "effect/Function";
 import {
   HttpBody,
@@ -38,6 +40,7 @@ import {
   failEnvironmentInternal,
 } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
+import * as TerminalBrowserOpen from "./preview/TerminalBrowserOpen.ts";
 import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 
@@ -45,6 +48,24 @@ const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
 const DESKTOP_RENDERER_ORIGINS = ["t3code://app", "t3code-dev://app"];
 const SVG_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+const TERMINAL_BROWSER_OPEN_MAX_URL_LENGTH = 2_048;
+const TerminalBrowserOpenBody = Schema.Struct({ url: Schema.String });
+const decodeTerminalBrowserOpenBody = Schema.decodeUnknownOption(TerminalBrowserOpenBody);
+
+export function terminalBrowserOpenBearerToken(authorization: string | undefined): string | null {
+  if (authorization?.startsWith("Bearer ") !== true) return null;
+  const token = authorization.slice("Bearer ".length).trim();
+  return token.length > 0 ? token : null;
+}
+
+export function normalizeTerminalBrowserOpenUrl(rawUrl: string): string | null {
+  if (rawUrl.length > TERMINAL_BROWSER_OPEN_MAX_URL_LENGTH) return null;
+  try {
+    return normalizePreviewUrl(rawUrl);
+  } catch {
+    return null;
+  }
+}
 
 export function assetResponseHeaders(filePath: string): Record<string, string> {
   return {
@@ -193,6 +214,54 @@ export const otlpTracesProxyRouteLayer = HttpRouter.add(
       EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
     }),
   ),
+);
+
+export const terminalBrowserOpenRouteLayer = HttpRouter.add(
+  "POST",
+  TerminalBrowserOpen.TERMINAL_BROWSER_OPEN_PATH,
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const browserOpen = yield* TerminalBrowserOpen.TerminalBrowserOpen;
+    const token = terminalBrowserOpenBearerToken(request.headers.authorization);
+    const owner = token ? yield* browserOpen.resolve(token) : undefined;
+    if (!owner) {
+      return HttpServerResponse.text("Unauthorized", { status: 401 });
+    }
+
+    const rawBody = yield* request.json.pipe(
+      Effect.match({
+        onFailure: () => undefined,
+        onSuccess: (body) => body,
+      }),
+    );
+    const body = decodeTerminalBrowserOpenBody(rawBody);
+    if (Option.isNone(body)) {
+      return HttpServerResponse.text("Bad Request", { status: 400 });
+    }
+    const url = normalizeTerminalBrowserOpenUrl(body.value.url);
+    if (!url) {
+      return HttpServerResponse.text("Bad Request", { status: 400 });
+    }
+
+    const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
+    const environmentId = yield* serverEnvironment.getEnvironmentId;
+    return yield* browserOpen.openInPreview({ environmentId, owner, url }).pipe(
+      Effect.as(HttpServerResponse.empty({ status: 204 })),
+      Effect.catch((cause) =>
+        Effect.logWarning("failed to route terminal browser-open request to preview", {
+          threadId: owner.threadId,
+          terminalId: owner.terminalId,
+          cause,
+        }).pipe(
+          Effect.as(
+            HttpServerResponse.text("Preview host unavailable", {
+              status: 503,
+            }),
+          ),
+        ),
+      ),
+    );
+  }),
 );
 
 export const assetRouteLayer = Layer.unwrap(
