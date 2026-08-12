@@ -6,6 +6,8 @@ import {
   downloadContentDisposition,
   isLoopbackHostname,
   resolveDevRedirectUrl,
+  normalizeTerminalBrowserOpenUrl,
+  terminalBrowserOpenBearerToken,
 } from "./http.ts";
 
 describe("http dev routing", () => {
@@ -134,5 +136,22 @@ describe("downloadContentDisposition", () => {
     expect(downloadContentDisposition("bad\ud800name.pdf")).toBe(
       `attachment; filename="bad_name.pdf"; filename*=UTF-8''bad%EF%BF%BDname.pdf`,
     );
+  });
+});
+
+describe("terminal browser-open routing", () => {
+  it("accepts a non-empty bearer credential", () => {
+    expect(terminalBrowserOpenBearerToken("Bearer terminal-token")).toBe("terminal-token");
+    expect(terminalBrowserOpenBearerToken("Basic terminal-token")).toBeNull();
+    expect(terminalBrowserOpenBearerToken("Bearer   ")).toBeNull();
+    expect(terminalBrowserOpenBearerToken(undefined)).toBeNull();
+  });
+
+  it("normalizes bounded http URLs and rejects unsupported targets", () => {
+    expect(normalizeTerminalBrowserOpenUrl("http://localhost:5173/app")).toBe(
+      "http://localhost:5173/app",
+    );
+    expect(normalizeTerminalBrowserOpenUrl("file:///tmp/index.html")).toBeNull();
+    expect(normalizeTerminalBrowserOpenUrl(`https://example.com/${"x".repeat(2_100)}`)).toBeNull();
   });
 });
