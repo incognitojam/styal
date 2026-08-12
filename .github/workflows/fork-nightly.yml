@@ -381,7 +381,8 @@ jobs:
             --fork-repository "$GITHUB_REPOSITORY" \
             --upstream-repository pingdotgg/t3code \
             --output fork-features.md \
-            --nightly-output nightly-highlights.md
+            --nightly-output nightly-highlights.md \
+            --exclude-mobile-only-nightly
           echo "generated=true" >> "$GITHUB_OUTPUT"
 
       - name: Generate prerelease notes
