@@ -50,11 +50,21 @@ interface ReactionSurface {
   readonly onRefresh: () => void;
 }
 
-function TimelineBody({ body, markdown, cwd }: { body: string; markdown: boolean; cwd: string }) {
+function TimelineBody({
+  body,
+  markdown,
+  detail,
+  environmentId,
+}: {
+  body: string;
+  markdown: boolean;
+  detail: PullRequestDetailView;
+  environmentId: EnvironmentId;
+}) {
   return (
     <div className="mt-3">
       {markdown ? (
-        <PullRequestMarkdown text={body} cwd={cwd} />
+        <PullRequestMarkdown text={body} detail={detail} environmentId={environmentId} />
       ) : (
         <p className="whitespace-pre-wrap text-xs text-muted-foreground">{body}</p>
       )}
@@ -152,14 +162,14 @@ function OpenOnHostButton({ url, onOpen }: { url: string | null; onOpen: (url: s
 function ConversationCard({
   event,
   editable,
-  cwd,
+  detail,
   onOpen,
   reactions,
 }: {
   event: PullRequestTimelineEvent;
   /** The remark behind this entry, only where this reader may rewrite it. */
   editable: PullRequestComment | null;
-  cwd: string;
+  detail: PullRequestDetailView;
   onOpen: (url: string) => void;
   reactions: ReactionSurface;
 }) {
@@ -225,7 +235,8 @@ function ConversationCard({
         <div className="px-2 pb-2 pt-3">
           <PullRequestMarkdownEditor
             value={editable.body}
-            cwd={cwd}
+            detail={detail}
+            environmentId={reactions.environmentId}
             label="Edit comment"
             saving={saving}
             onSave={(body) => void save(body)}
@@ -234,7 +245,12 @@ function ConversationCard({
         </div>
       ) : event.body ? (
         <div className="px-2 pb-2">
-          <TimelineBody body={event.body} markdown={event.markdown} cwd={cwd} />
+          <TimelineBody
+            body={event.body}
+            markdown={event.markdown}
+            detail={detail}
+            environmentId={reactions.environmentId}
+          />
         </div>
       ) : null}
       {reactions.canReact || event.reactions.length > 0 ? (
@@ -265,13 +281,13 @@ function uniqueConversationActors(events: ReadonlyArray<PullRequestTimelineEvent
 function ConversationGroup({
   events,
   editable,
-  cwd,
+  detail,
   onOpen,
   reactions,
 }: {
   events: ReadonlyArray<PullRequestTimelineEvent>;
   editable: ReadonlyMap<string, PullRequestComment>;
-  cwd: string;
+  detail: PullRequestDetailView;
   onOpen: (url: string) => void;
   reactions: ReactionSurface;
 }) {
@@ -324,7 +340,7 @@ function ConversationGroup({
                     key={`${reactions.reference.projectId}#${reactions.reference.number}:${event.id}`}
                     event={event}
                     editable={editable.get(event.id) ?? null}
-                    cwd={cwd}
+                    detail={detail}
                     onOpen={onOpen}
                     reactions={reactions}
                   />
@@ -458,7 +474,7 @@ export function PullRequestTimelineTab({
                   key={`comments:${row.events[0]?.id ?? "empty"}`}
                   events={row.events}
                   editable={editable}
-                  cwd={detail.workspaceRoot}
+                  detail={detail}
                   onOpen={openOnHost}
                   reactions={reactions}
                 />
