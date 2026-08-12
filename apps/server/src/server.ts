@@ -17,6 +17,7 @@ import {
   staticAndDevRouteLayer,
   browserApiCorsLayer,
   httpCompressionLayer,
+  terminalBrowserOpenRouteLayer,
 } from "./http.ts";
 import { guardHttpResponseWriteErrors } from "./httpResponseErrorGuard.ts";
 import { fixPath } from "./os-jank.ts";
@@ -50,6 +51,7 @@ import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
+import * as TerminalBrowserOpen from "./preview/TerminalBrowserOpen.ts";
 import * as ProcessRunner from "./processRunner.ts";
 import * as GitManager from "./git/GitManager.ts";
 import * as Keybindings from "./keybindings.ts";
@@ -333,10 +335,20 @@ const CheckpointingLayerLive = Layer.empty.pipe(
 
 const PortScannerLayerLive = PortScanner.layer.pipe(Layer.provide(ProcessRunner.layer));
 
-const TerminalLayerLive = TerminalManager.layer.pipe(
-  Layer.provide(PtyAdapterLive),
-  Layer.provide(PortScannerLayerLive),
-  Layer.provide(WorkspacePortAllocatorLayerLive),
+const PreviewAutomationBrokerLayerLive = PreviewAutomationBroker.layer;
+
+const TerminalBrowserOpenLayerLive = TerminalBrowserOpen.layer.pipe(
+  Layer.provide(PreviewAutomationBrokerLayerLive),
+);
+
+const TerminalLayerLive = Layer.merge(
+  TerminalBrowserOpenLayerLive,
+  TerminalManager.layer.pipe(
+    Layer.provide(PtyAdapterLive),
+    Layer.provide(PortScannerLayerLive),
+    Layer.provide(WorkspacePortAllocatorLayerLive),
+    Layer.provide(TerminalBrowserOpenLayerLive),
+  ),
 );
 
 const PreviewLayerLive = Layer.empty.pipe(
@@ -388,7 +400,16 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(GitLayerLive),
   Layer.provideMerge(VcsLayerLive),
   Layer.provideMerge(ProviderRuntimeLayerLive),
-  Layer.provideMerge(Layer.mergeAll(TerminalLayerLive, PreviewLayerLive, ComposerDrafts.layer)),
+  Layer.provideMerge(
+    Layer.mergeAll(
+      TerminalLayerLive,
+      PreviewLayerLive,
+      ComposerDrafts.layer,
+      // WebSocket, MCP, and terminal browser-open callbacks must all route through
+      // one broker so focused-host selection and tab assignments stay coherent.
+      PreviewAutomationBrokerLayerLive,
+    ),
+  ),
   Layer.provideMerge(PersistenceLayerLive),
   Layer.provideMerge(Keybindings.layer),
   Layer.provideMerge(ProviderRegistryLive),
@@ -467,16 +488,15 @@ export const makeRoutesLayer = Layer.mergeAll(
       Layer.provide(environmentAuthenticatedAuthLayer),
     ),
     otlpTracesProxyRouteLayer,
+    terminalBrowserOpenRouteLayer,
     assetRouteLayer,
     staticAndDevRouteLayer,
     websocketRpcRouteLayer,
   ),
   McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer)),
 ).pipe(
-  // Both transports consume the same service instance, so caches single-flight across clients
-  // and mutations observed on WebSocket invalidate patches subsequently read over HTTP.
   Layer.provide(PullRequestServiceLive),
-  Layer.provide(PreviewAutomationBroker.layer),
+  Layer.provide(PreviewAutomationBrokerLayerLive),
   Layer.provide(ServerSelfUpdate.layer),
   Layer.provide(commandReadinessLayer),
   Layer.provide(browserApiCorsLayer),
