@@ -122,6 +122,8 @@ interface ChatMarkdownProps {
   parseRawHtml?: boolean;
   /** Runs completed shell-language fences in the thread terminal. */
   onRunCodeBlock?: ((code: string) => void) | undefined;
+  /** A surface-specific image renderer, used when the source needs authenticated resolution. */
+  imageRenderer?: Components["img"] | undefined;
 }
 
 const EMPTY_MARKDOWN_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
@@ -1393,6 +1395,7 @@ function ChatMarkdown({
   lineBreaks = false,
   parseRawHtml = true,
   onRunCodeBlock,
+  imageRenderer,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
   const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
@@ -1584,6 +1587,7 @@ function ChatMarkdown({
     };
 
     return {
+      ...(imageRenderer === undefined ? {} : { img: imageRenderer }),
       p({ node: _node, children, ...props }) {
         return <p {...props}>{renderSkillInlineMarkdownChildren(children, skills)}</p>;
       },
@@ -1807,6 +1811,7 @@ function ChatMarkdown({
     diffThemeName,
     fileLinkParentSuffixByPath,
     inlineCodeFileLinkMetaByText,
+    imageRenderer,
     isStreaming,
     markdownFileLinkMetaByHref,
     onTaskListChange,
