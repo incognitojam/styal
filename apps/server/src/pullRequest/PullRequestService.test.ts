@@ -195,6 +195,55 @@ function makeService(input: {
   );
 }
 
+it.effect("resolves a pull request head file through a provider that supports it", () =>
+  Effect.gen(function* () {
+    const service = yield* makeService({
+      projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
+      providers: [
+        fakeProvider("github", {
+          getFile: (input) =>
+            Effect.succeed({
+              url: `https://raw.example/${input.number}/${input.path}?token=one`,
+              size: 42,
+            }),
+        }),
+      ],
+    });
+
+    assert.deepStrictEqual(
+      yield* service.file({
+        projectId: "p1" as ProjectId,
+        repository: "acme/web",
+        number: 7,
+        path: "docs/screenshot.png",
+      }),
+      {
+        url: "https://raw.example/7/docs/screenshot.png?token=one",
+        size: 42,
+      },
+    );
+  }),
+);
+
+it.effect("refuses pull request files from a provider without file URL support", () =>
+  Effect.gen(function* () {
+    const service = yield* makeService({
+      projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
+      providers: [fakeProvider("github")],
+    });
+
+    const error = yield* Effect.flip(
+      service.file({
+        projectId: "p1" as ProjectId,
+        repository: "acme/web",
+        number: 7,
+        path: "docs/screenshot.png",
+      }),
+    );
+    assert.strictEqual(error._tag, "PullRequestOperationError");
+  }),
+);
+
 it.effect("refines unknown self-hosted GitLab projects before listing merge requests", () =>
   Effect.gen(function* () {
     let refinementCalls = 0;
