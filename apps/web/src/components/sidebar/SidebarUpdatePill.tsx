@@ -313,7 +313,7 @@ function SidebarUpdateControl() {
               type="button"
               aria-label={tooltip}
               aria-disabled={disabled || isActionPending || undefined}
-              disabled={disabled || isActionPending}
+              disabled={isActionPending || (!showUpdateDetails && disabled)}
               className={cn(
                 "inline-flex size-8 items-center justify-center rounded-full outline-hidden ring-ring transition-colors enabled:cursor-pointer focus-visible:ring-2 disabled:cursor-not-allowed",
                 showUpdateIconState
