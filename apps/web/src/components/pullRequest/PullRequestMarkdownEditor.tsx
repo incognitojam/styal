@@ -1,5 +1,5 @@
+import type { EnvironmentId, PullRequestDetailView } from "@t3tools/contracts";
 import { useState } from "react";
-import type { EnvironmentId } from "@t3tools/contracts";
 
 import { cn } from "~/lib/utils";
 
@@ -17,7 +17,7 @@ import { PullRequestMarkdown } from "./PullRequestMarkdown";
  */
 export function PullRequestMarkdownEditor({
   value,
-  cwd,
+  detail,
   environmentId,
   placeholder,
   label,
@@ -28,7 +28,7 @@ export function PullRequestMarkdownEditor({
   onCancel,
 }: {
   readonly value: string;
-  readonly cwd: string;
+  readonly detail: PullRequestDetailView;
   readonly environmentId: EnvironmentId;
   readonly placeholder?: string | undefined;
   readonly label: string;
@@ -84,7 +84,7 @@ export function PullRequestMarkdownEditor({
           {empty ? (
             <p className="text-xs text-muted-foreground">Nothing to preview.</p>
           ) : (
-            <PullRequestMarkdown text={draft} cwd={cwd} environmentId={environmentId} />
+            <PullRequestMarkdown text={draft} detail={detail} environmentId={environmentId} />
           )}
         </div>
       ) : (
