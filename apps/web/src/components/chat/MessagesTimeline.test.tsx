@@ -237,11 +237,45 @@ function buildAssistantTimelineEntry(text: string) {
   };
 }
 
+function renderAssistantMessage(text: string, streaming = false) {
+  const entry = buildUserTimelineEntry(text);
+  return renderToStaticMarkup(
+    <MessagesTimeline
+      {...buildProps()}
+      onRunCodeBlock={() => {}}
+      timelineEntries={[
+        {
+          ...entry,
+          message: {
+            ...entry.message,
+            role: "assistant" as const,
+            turnId: TurnId.make("turn-assistant"),
+            streaming,
+          },
+        },
+      ]}
+    />,
+  );
+}
+
 describe("MessagesTimeline", () => {
   it("sizes expanded tool details with the configured code font size", () => {
     expect(toolCallExpandedBodyClassName).toContain("var(--font-size-code");
     expect(toolCallExpandedBodyClassName).not.toContain("text-[11px]");
   });
+
+  it("only offers completed shell fences as terminal commands", () => {
+    const shellMarkup = renderAssistantMessage("```sh\nbun test\n```");
+
+    expect(shellMarkup).toContain('aria-label="Run in terminal"');
+    expect(shellMarkup).toContain("lucide-terminal");
+    expect(renderAssistantMessage("```ts\nconst answer = 42;\n```")).not.toContain(
+      'aria-label="Run in terminal"',
+    );
+    expect(renderAssistantMessage("```bash\nbun test\n```", true)).not.toContain(
+      'aria-label="Run in terminal"',
+    );
+  }, 20_000);
 
   it("uses the larger leading inset only when the top fade is enabled", () => {
     const timelineEntries = [buildUserTimelineEntry("Hello")];
