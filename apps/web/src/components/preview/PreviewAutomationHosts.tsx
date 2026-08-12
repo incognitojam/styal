@@ -30,6 +30,7 @@ import {
   updatePreviewServerSnapshot,
 } from "~/previewStateStore";
 import { usePreviewMiniPlayerStore } from "~/previewMiniPlayerStore";
+import { useRightPanelStore } from "~/rightPanelStore";
 import { resolveBrowserNavigationTarget } from "~/browser/browserTargetResolver";
 import {
   readActiveBrowserRecordingTargets,
@@ -58,7 +59,7 @@ import {
 import {
   previewAutomationDefaultViewport,
   previewAutomationOpenNeedsOverlay,
-  shouldOpenPreviewMiniPlayer,
+  resolvePreviewAutomationPresentation,
 } from "./previewAutomationOpenReadiness";
 import {
   assertPreviewRuntimeCurrent,
@@ -401,10 +402,10 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
               activeTabId,
             );
             if (activeSnapshot) {
-              const defaultViewport = previewAutomationDefaultViewport(
-                reusedExistingTab,
-                activeSnapshot,
-              );
+              const defaultViewport =
+                request.presentation === "right-panel"
+                  ? null
+                  : previewAutomationDefaultViewport(reusedExistingTab, activeSnapshot);
               if (defaultViewport) {
                 const resizeResult = await runBrowserViewportMutation(
                   activeRuntimeTabId,
@@ -432,14 +433,20 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
                 updatePreviewServerSnapshot(threadRef, resizeResult.value);
               }
             }
-            const shouldPresentPreview = shouldOpenPreviewMiniPlayer(
+            const presentation = resolvePreviewAutomationPresentation(
               input,
+              request.presentation,
               (await resolveBrowserDefaults()).autoShowFloatingPreview,
             );
-            if (shouldPresentPreview) {
+            if (presentation === "mini-player") {
               usePreviewMiniPlayerStore.getState().open(threadRef, activeTabId);
+            } else if (presentation === "right-panel") {
+              useRightPanelStore.getState().openBrowser(threadRef, activeTabId);
             }
-            if (activeSnapshot && previewAutomationOpenNeedsOverlay(input, activeSnapshot)) {
+            if (
+              activeSnapshot &&
+              previewAutomationOpenNeedsOverlay(input, activeSnapshot, request.presentation)
+            ) {
               await waitForDesktopOverlay(
                 threadRef,
                 request.requestId,
@@ -449,7 +456,7 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
                 request.timeoutMs,
               );
             }
-            if (shouldPresentPreview) {
+            if (presentation !== null) {
               // React commits the thread-bound surface asynchronously. Settle
               // briefly so active-thread opens report visible=true, without
               // turning a background thread's offscreen mini player into an
