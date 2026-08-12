@@ -3,6 +3,7 @@ import { assert, describe, it } from "@effect/vitest";
 import {
   collectChangeEvidence,
   extractResponseText,
+  filterDesktopUpdateRecords,
   fitEvidenceToPromptBudget,
   parseChangeRecords,
   parseChangelogSummary,
@@ -46,7 +47,7 @@ const records: ReadonlyArray<ChangeRecord> = [
     operation: "add",
     capability: "GitHub outage status",
     outcome: "Detect GitHub outages and show affected services",
-    surface: "sidebar",
+    surface: "web",
   },
 ];
 
@@ -164,6 +165,34 @@ Show the final result in the timeline.
     });
 
     assert.deepEqual(parseChangeRecords(text), records);
+  });
+
+  it("rejects non-canonical change surfaces", () => {
+    assert.throws(() =>
+      parseChangeRecords(
+        JSON.stringify({ changes: [{ ...records[0], surface: "mobile settings" }] }),
+      ),
+    );
+  });
+
+  it("excludes mobile-only changes from desktop update highlights", () => {
+    const mobileRecord: ChangeRecord = {
+      ...records[0]!,
+      evidenceId: "yngatech/t3code#15",
+      outcome: "Sync composer drafts on mobile",
+      surface: "mobile",
+    };
+    const sharedRecord: ChangeRecord = {
+      ...records[0]!,
+      evidenceId: "yngatech/t3code#16",
+      outcome: "Sync composer drafts across clients",
+      surface: "application",
+    };
+
+    assert.deepEqual(filterDesktopUpdateRecords([...records, mobileRecord, sharedRecord]), [
+      ...records,
+      sharedRecord,
+    ]);
   });
 
   it("normalizes label punctuation and rejects links or multiline output", () => {

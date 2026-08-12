@@ -49,7 +49,10 @@ The generator resolves pull request numbers from commit subjects and loads each 
 falling back to commit metadata when PR evidence is unavailable. It first extracts chronological,
 user-visible change records without combining PRs. A synthesis pass then reconciles additions,
 improvements, replacements, and reverts into the current rolling feature set. A second synthesis pass
-uses only records delivered since the previous nightly to produce release highlights.
+uses only records delivered since the previous nightly to produce release highlights. Because those
+highlights appear in the desktop updater, the workflow excludes changes classified as mobile-only;
+shared changes remain eligible, and the complete GitHub release commit list still includes mobile
+changes.
 
 Generated labels are short, action-oriented capability descriptions. The model writes the `Added`,
 `Improved`, and nightly `Removed` sections. Divergence counts, comparison links, supported targets,
