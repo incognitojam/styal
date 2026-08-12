@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   PullRequestActionInput,
   PullRequestCapabilities,
+  PullRequestInvalidateInput,
   PullRequestListInput,
   PullRequestListResult,
   PullRequestReviewerRequestInput,
@@ -12,6 +13,7 @@ import {
 
 const decodeListResult = Schema.decodeUnknownSync(PullRequestListResult);
 const decodeListInput = Schema.decodeUnknownSync(PullRequestListInput);
+const decodeInvalidateInput = Schema.decodeUnknownSync(PullRequestInvalidateInput);
 const decodeReviewerRequest = Schema.decodeUnknownSync(PullRequestReviewerRequestInput);
 
 const LIST_RESULT: PullRequestListResult = {
@@ -116,6 +118,19 @@ describe("PullRequestListInput", () => {
     const long = (length: number) => ({ "github.com acme/web": "c".repeat(length) });
     expect(decodeListInput({ state: "open", cursors: long(4096) })).toBeDefined();
     expect(() => decodeListInput({ state: "open", cursors: long(4097) })).toThrow();
+  });
+});
+
+describe("PullRequestInvalidateInput", () => {
+  const reference = { projectId: "p1", repository: "acme/web", number: 1 };
+
+  it("can limit invalidation to detail and activity data", () => {
+    expect(decodeInvalidateInput({ reference, scope: "detail" }).scope).toBe("detail");
+  });
+
+  it("keeps the existing full-invalidation shape valid", () => {
+    expect(decodeInvalidateInput({ reference }).scope).toBeUndefined();
+    expect(() => decodeInvalidateInput({ reference, scope: "diff" })).toThrow();
   });
 });
 
