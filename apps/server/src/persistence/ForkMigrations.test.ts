@@ -48,7 +48,7 @@ legacyForkLayer("ForkMigrations legacy fork upgrade", (it) => {
 
       assert.isTrue(result.repairedLegacyHistory);
       assert.deepStrictEqual(result.upstream, [[40, "ProjectionProjectFaviconPath"]]);
-      assert.deepStrictEqual(result.fork, []);
+      assert.deepStrictEqual(result.fork, [[2, "WorkspacePortAllocations"]]);
 
       const upstreamHistory = yield* sql<{
         readonly migration_id: number;
@@ -78,7 +78,10 @@ legacyForkLayer("ForkMigrations legacy fork upgrade", (it) => {
         FROM yngatech_sql_migrations
         ORDER BY migration_id
       `;
-      assert.deepStrictEqual(forkHistory, [{ migration_id: 1, name: "ComposerDrafts" }]);
+      assert.deepStrictEqual(forkHistory, [
+        { migration_id: 1, name: "ComposerDrafts" },
+        { migration_id: 2, name: "WorkspacePortAllocations" },
+      ]);
 
       const projectColumns = yield* sql<{ readonly name: string }>`
         PRAGMA table_info(projection_projects)
@@ -193,7 +196,10 @@ upstreamLayer("ForkMigrations canonical upstream upgrade", (it) => {
         SELECT migration_id, name
         FROM yngatech_sql_migrations
       `;
-      assert.deepStrictEqual(forkHistory, [{ migration_id: 1, name: "ComposerDrafts" }]);
+      assert.deepStrictEqual(forkHistory, [
+        { migration_id: 1, name: "ComposerDrafts" },
+        { migration_id: 2, name: "WorkspacePortAllocations" },
+      ]);
     }),
   );
 });
@@ -210,5 +216,12 @@ it("keeps fork migrations out of the upstream manifest", () => {
     migrationManifest.map(([, name]) => name as string),
     "ComposerDrafts",
   );
-  assert.deepStrictEqual(forkMigrationManifest, [[1, "ComposerDrafts"]]);
+  assert.notInclude(
+    migrationManifest.map(([, name]) => name as string),
+    "WorkspacePortAllocations",
+  );
+  assert.deepStrictEqual(forkMigrationManifest, [
+    [1, "ComposerDrafts"],
+    [2, "WorkspacePortAllocations"],
+  ]);
 });
