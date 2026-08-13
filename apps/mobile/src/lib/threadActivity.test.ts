@@ -181,7 +181,8 @@ describe("buildThreadFeed", () => {
     expect(group).toMatchObject({ type: "activity-group" });
     if (!group || group.type !== "activity-group") return;
     expect(group.activities[0]).toMatchObject({
-      summary: "File change",
+      // The adapters' generic "File change" normalizes to one shared verb.
+      summary: "Edited file",
       detail: "/workspace/main.swift",
       fileChangeStat: { additions: 2, deletions: 1 },
     });
