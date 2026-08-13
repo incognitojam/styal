@@ -71,6 +71,10 @@
       "types": "./src/toolActivity.ts",
       "import": "./src/toolActivity.ts"
     },
+    "./toolRowPresentation": {
+      "types": "./src/toolRowPresentation.ts",
+      "import": "./src/toolRowPresentation.ts"
+    },
     "./Struct": {
       "types": "./src/Struct.ts",
       "import": "./src/Struct.ts"

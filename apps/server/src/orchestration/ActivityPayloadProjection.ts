@@ -137,6 +137,97 @@ function projectCommandData(data: Record<string, unknown>): Record<string, unkno
   return Object.keys(projectedItem).length > 0 ? projectedItem : undefined;
 }
 
+/**
+ * Input fields the clients need to name a tool row and show its one-line
+ * argument (`deriveToolRowPresentation`). Strictly an allowlist of short,
+ * identifying values: the same `input` object also carries `content`,
+ * `new_string`, `old_string`, `prompt` and message bodies, any of which would
+ * put whole file contents back on the wire and undo the payload slimming this
+ * projection exists for. Values are length-capped for the same reason.
+ */
+const TOOL_INPUT_KEPT_FIELDS = [
+  "file_path",
+  "notebook_path",
+  "path",
+  "pattern",
+  "query",
+  "skill",
+  "args",
+  "to",
+  "subject",
+  // Short identifying prose. The long-form siblings (`prompt`, `message`,
+  // `content`) stay off this list; these two are capped like everything else.
+  "summary",
+  "description",
+  "url",
+  "offset",
+  "limit",
+] as const;
+
+const TOOL_INPUT_VALUE_MAX_LENGTH = 200;
+
+function projectToolInputValue(value: unknown): unknown {
+  if (typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  return value.length <= TOOL_INPUT_VALUE_MAX_LENGTH
+    ? value
+    : `${value.slice(0, TOOL_INPUT_VALUE_MAX_LENGTH - 1)}…`;
+}
+
+export function projectToolInput(value: unknown): Record<string, unknown> | undefined {
+  const input = asRecord(value);
+  if (!input) {
+    return undefined;
+  }
+  const projected: Record<string, unknown> = {};
+  for (const key of TOOL_INPUT_KEPT_FIELDS) {
+    if (!(key in input)) {
+      continue;
+    }
+    const projectedValue = projectToolInputValue(input[key]);
+    if (projectedValue !== undefined) {
+      projected[key] = projectedValue;
+    }
+  }
+  return Object.keys(projected).length > 0 ? projected : undefined;
+}
+
+/**
+ * MCP tools declare their own argument names, so an allowlist would blank the
+ * expanded row for every server. Keep the shape and cap the values instead:
+ * the risk here is one oversized argument, not an unbounded field set.
+ */
+const MCP_INPUT_NESTED_MAX_LENGTH = 500;
+
+function projectMcpToolInput(value: unknown): Record<string, unknown> | undefined {
+  const input = asRecord(value);
+  if (!input) {
+    return undefined;
+  }
+  const projected: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(input)) {
+    const primitive = projectToolInputValue(entry);
+    if (primitive !== undefined) {
+      projected[key] = primitive;
+      continue;
+    }
+    if (entry === null || typeof entry !== "object") {
+      continue;
+    }
+    // Structured arguments are worth keeping while they stay small; a large
+    // one is a payload in disguise.
+    const encoded = JSON.stringify(entry);
+    if (encoded !== undefined && encoded.length <= MCP_INPUT_NESTED_MAX_LENGTH) {
+      projected[key] = entry;
+    }
+  }
+  return Object.keys(projected).length > 0 ? projected : undefined;
+}
+
 function summarizeToolTextOutput(value: string): string | null {
   const lines: string[] = [];
   for (const rawLine of value.split(/\r?\n/u)) {
@@ -238,8 +329,9 @@ function projectMcpToolCallData(data: Record<string, unknown>): Record<string, u
   if ("toolName" in data) {
     projectedData.toolName = data.toolName;
   }
-  if ("input" in data) {
-    projectedData.input = data.input;
+  const input = projectMcpToolInput(data.input);
+  if (input) {
+    projectedData.input = input;
   }
   if (!item) {
     const result = summarizeMcpResult(data.result);
@@ -430,6 +522,18 @@ export function projectActivityPayload(
   }
   if ("kind" in data) {
     projectedData.kind = data.kind;
+  }
+
+  // The tool's own name is the only signal that distinguishes a Read from a
+  // Skill from a SendMessage: itemType collapses all three into
+  // `dynamic_tool_call`, and the adapters' titles say "Tool call" for every
+  // one of them. Clients name rows from this (`deriveToolRowPresentation`).
+  if ("toolName" in data) {
+    projectedData.toolName = data.toolName;
+  }
+  const toolInput = projectToolInput(data.input);
+  if (toolInput) {
+    projectedData.input = toolInput;
   }
 
   const rawOutput = projectRawOutput(data.rawOutput, {
