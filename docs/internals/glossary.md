@@ -28,6 +28,10 @@ The root filesystem path for a project. In [the orchestration model][1], it is t
 
 A Git worktree used as an isolated workspace for a thread. If a thread has a `worktreePath` in [the contracts][1], it runs there instead of in the main working tree. Git operations live behind the VCS driver contract in `apps/server/src/vcs/VcsDriver.ts`, implemented by [GitVcsDriverCore.ts][3].
 
+#### Default repository
+
+Which repository a checkout targets when it has more than one remote, stored in the checkout's own git config as `remote.<name>.gh-resolved` — the same key `gh repo set-default` writes, so T3 and the GitHub CLI always agree. `base` means the pinned remote's own repository; any other value names a repository reached through that remote. `SourceControlRepositoryService` reads and writes it (a fork clone pins the repository that was cloned), and `RepositoryIdentityResolver` reads it as the fallback after the current branch's tracked remote, so it decides a checkout's identity — and therefore its sidebar grouping — only while the branch has no upstream.
+
 ### Thread timeline
 
 #### Thread
