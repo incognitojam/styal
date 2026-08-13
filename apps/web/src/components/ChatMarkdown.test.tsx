@@ -1,5 +1,6 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
+import type { Components } from "react-markdown";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => null }));
@@ -34,6 +35,7 @@ import ChatMarkdown, {
   orderedListGutterStyle,
   shouldUseMarkdownFileBrowserPrimaryAction,
 } from "./ChatMarkdown";
+import { createStableMarkdownComponents } from "./chatMarkdownRenderers";
 
 describe("canUseMarkdownFileShellActions", () => {
   const environmentId = EnvironmentId.make("environment-1");
@@ -287,5 +289,35 @@ describe("ChatMarkdown Windows file links", () => {
     expect(html).not.toContain("javascript:");
     expect(html).not.toContain("d:alert");
     expect(html).not.toContain("chat-markdown-file-link");
+  });
+});
+
+describe("createStableMarkdownComponents", () => {
+  it("keeps renderer identities while delegating to the latest implementation", () => {
+    let firstRenderCount = 0;
+    let secondRenderCount = 0;
+    const firstParagraph = () => {
+      firstRenderCount += 1;
+      return <p>first</p>;
+    };
+    const secondParagraph = () => {
+      secondRenderCount += 1;
+      return <p>second</p>;
+    };
+    let latest: Components = { p: firstParagraph };
+    const stable = createStableMarkdownComponents(() => latest);
+    const paragraphRenderer = stable.p;
+
+    expect(typeof paragraphRenderer).toBe("function");
+    if (typeof paragraphRenderer !== "function") return;
+    const renderParagraph = paragraphRenderer as (props: object) => React.ReactNode;
+
+    renderParagraph({ children: "message" });
+    latest = { p: secondParagraph };
+
+    expect(stable.p).toBe(paragraphRenderer);
+    renderParagraph({ children: "updated message" });
+    expect(firstRenderCount).toBe(1);
+    expect(secondRenderCount).toBe(1);
   });
 });
