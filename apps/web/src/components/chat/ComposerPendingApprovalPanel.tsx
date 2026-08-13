@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { deriveToolRowPresentation } from "@t3tools/shared/toolRowPresentation";
 import { type PendingApproval } from "../../session-logic";
 import { cn } from "~/lib/utils";
 
@@ -13,14 +14,24 @@ export const ComposerPendingApprovalPanel = memo(function ComposerPendingApprova
   pendingCount,
   className,
 }: ComposerPendingApprovalPanelProps) {
-  const fallbackLabel =
-    approval.requestKind === "command"
+  // The tool's own name is more honest than the three request buckets, which
+  // route anything that isn't a command or a read to "file change".
+  const presentation = approval.toolName
+    ? deriveToolRowPresentation({
+        toolName: approval.toolName,
+        input: approval.toolInput,
+      })
+    : undefined;
+  const fallbackLabel = presentation
+    ? `${presentation.heading} approval`
+    : approval.requestKind === "command"
       ? "Command approval"
       : approval.requestKind === "file-read"
         ? "File read approval"
         : "File change approval";
-  const detailAriaLabel =
-    approval.requestKind === "command"
+  const detailAriaLabel = presentation
+    ? presentation.heading
+    : approval.requestKind === "command"
       ? "Command"
       : approval.requestKind === "file-read"
         ? "File to read"
