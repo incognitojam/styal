@@ -184,7 +184,9 @@ import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./sett
 import {
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
+  SourceControlDefaultRepositoryState,
   SourceControlDiscoveryResult,
+  SourceControlGetDefaultRepositoryInput,
   SourceControlGetIssueInput,
   SourceControlIssue,
   SourceControlListIssuesInput,
@@ -195,6 +197,7 @@ import {
   SourceControlRepositoryError,
   SourceControlRepositoryInfo,
   SourceControlRepositoryLookupInput,
+  SourceControlSetDefaultRepositoryInput,
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
 import {
@@ -315,6 +318,8 @@ export const WS_METHODS = {
   sourceControlLookupRepository: "sourceControl.lookupRepository",
   sourceControlCloneRepository: "sourceControl.cloneRepository",
   sourceControlPublishRepository: "sourceControl.publishRepository",
+  sourceControlGetDefaultRepository: "sourceControl.getDefaultRepository",
+  sourceControlSetDefaultRepository: "sourceControl.setDefaultRepository",
   sourceControlListIssues: "sourceControl.listIssues",
   sourceControlGetIssue: "sourceControl.getIssue",
 
@@ -638,6 +643,24 @@ export const WsSourceControlPublishRepositoryRpc = Rpc.make(
   {
     payload: SourceControlPublishRepositoryInput,
     success: SourceControlPublishRepositoryResult,
+    error: Schema.Union([SourceControlRepositoryError, EnvironmentAuthorizationError]),
+  },
+);
+
+export const WsSourceControlGetDefaultRepositoryRpc = Rpc.make(
+  WS_METHODS.sourceControlGetDefaultRepository,
+  {
+    payload: SourceControlGetDefaultRepositoryInput,
+    success: SourceControlDefaultRepositoryState,
+    error: Schema.Union([SourceControlRepositoryError, EnvironmentAuthorizationError]),
+  },
+);
+
+export const WsSourceControlSetDefaultRepositoryRpc = Rpc.make(
+  WS_METHODS.sourceControlSetDefaultRepository,
+  {
+    payload: SourceControlSetDefaultRepositoryInput,
+    success: SourceControlDefaultRepositoryState,
     error: Schema.Union([SourceControlRepositoryError, EnvironmentAuthorizationError]),
   },
 );
@@ -1070,6 +1093,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsSourceControlLookupRepositoryRpc,
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,
+  WsSourceControlGetDefaultRepositoryRpc,
+  WsSourceControlSetDefaultRepositoryRpc,
   WsSourceControlListIssuesRpc,
   WsSourceControlGetIssueRpc,
   WsProjectsListEntriesRpc,
