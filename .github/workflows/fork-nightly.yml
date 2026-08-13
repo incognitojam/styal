@@ -44,7 +44,7 @@ jobs:
   prepare:
     name: Prepare and verify candidate
     if: github.repository == 'yngatech/t3code'
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     outputs:
       has_changes: ${{ steps.candidate.outputs.has_changes }}
