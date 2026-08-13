@@ -354,6 +354,16 @@ jobs:
         with:
           node-version-file: package.json
 
+      # Extraction reads every commit the fork carries, so without this each run
+      # re-reads the whole patch stack. Entries are keyed by patch ID, which the
+      # nightly rebase preserves; a miss only costs the extraction it skipped.
+      - name: Restore changelog extraction cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/t3code-changelog
+          key: changelog-records-${{ github.run_id }}
+          restore-keys: changelog-records-
+
       - id: fork_features
         name: Generate fork features and improvements
         continue-on-error: true
@@ -382,6 +392,7 @@ jobs:
             --upstream-repository pingdotgg/t3code \
             --output fork-features.md \
             --nightly-output nightly-highlights.md \
+            --records-cache "$HOME/.cache/t3code-changelog/records.json" \
             --exclude-mobile-only-nightly
           echo "generated=true" >> "$GITHUB_OUTPUT"
 
