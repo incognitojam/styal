@@ -1,7 +1,10 @@
 "use client";
 
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { canCreateProjectInEnvironment } from "@t3tools/client-runtime/operations/projects";
+import {
+  canCreateProjectInEnvironment,
+  getCloneDestinationQuery,
+} from "@t3tools/client-runtime/operations/projects";
 import { connectionStatusText } from "@t3tools/client-runtime/connection";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import {
@@ -849,12 +852,22 @@ function OpenCommandPaletteDialog(props: {
   );
   const isRemoteProjectCloneFlow = addProjectCloneFlow !== null;
   const isRemoteProjectRepositoryStep = addProjectCloneFlow?.step === "repository";
+  const isCloneDestinationStep = addProjectCloneFlow?.step === "confirm";
   const browsePath = useMemo(
-    () => getFilesystemBrowsePath(query, browseEnvironmentPlatform, !isRemoteProjectRepositoryStep),
-    [browseEnvironmentPlatform, isRemoteProjectRepositoryStep, query],
+    () =>
+      getFilesystemBrowsePath(
+        query,
+        browseEnvironmentPlatform,
+        !isRemoteProjectRepositoryStep,
+        isCloneDestinationStep,
+      ),
+    [browseEnvironmentPlatform, isCloneDestinationStep, isRemoteProjectRepositoryStep, query],
   );
   const isBrowsing = browsePath.isBrowsing;
   const browseDirectoryPath = browsePath.directoryPath;
+  // The clone step types the folder to create, so the listing keeps showing the
+  // parent directory and every navigation carries the name along.
+  const cloneDestinationName = browsePath.destinationName;
   const paletteMode = getCommandPaletteMode({ currentView, isBrowsing });
   const getAddProjectInitialQueryForEnvironment = useCallback(
     (environmentId: EnvironmentId | null): string => {
@@ -949,6 +962,7 @@ function OpenCommandPaletteDialog(props: {
     () => filterFilesystemBrowseEntries(browseEntries, browsePath.filterQuery),
     [browseEntries, browsePath.filterQuery],
   );
+  const cloneDestinationExists = browseEntries.some((entry) => entry.name === cloneDestinationName);
 
   const prefetchBrowsePath = useCallback(
     async (
@@ -2051,7 +2065,10 @@ function OpenCommandPaletteDialog(props: {
 
       const provider = remoteProjectSourceProvider(addProjectCloneFlow.source);
       if (!provider) {
-        const destinationPath = getDefaultCloneParentPath(addProjectCloneFlow.environmentId);
+        const destinationPath = getCloneDestinationQuery({
+          parentPath: getDefaultCloneParentPath(addProjectCloneFlow.environmentId),
+          remoteUrl: rawRepository,
+        });
         setAddProjectCloneFlow({
           step: "confirm",
           environmentId: addProjectCloneFlow.environmentId,
@@ -2088,7 +2105,11 @@ function OpenCommandPaletteDialog(props: {
         return;
       }
       const repository = lookupResult.value;
-      const destinationPath = getDefaultCloneParentPath(addProjectCloneFlow.environmentId);
+      const destinationPath = getCloneDestinationQuery({
+        parentPath: getDefaultCloneParentPath(addProjectCloneFlow.environmentId),
+        nameWithOwner: repository.nameWithOwner,
+        remoteUrl: repository.sshUrl,
+      });
       setAddProjectCloneFlow({
         step: "confirm",
         environmentId: addProjectCloneFlow.environmentId,
@@ -2164,7 +2185,7 @@ function OpenCommandPaletteDialog(props: {
 
   const browseTo = useCallback(
     async (name: string): Promise<void> => {
-      const nextQuery = appendBrowsePathSegment(query, name);
+      const nextQuery = `${appendBrowsePathSegment(query, name)}${cloneDestinationName}`;
       await browseNavigation.run(
         () => prefetchBrowsePath(getBrowseDirectoryPath(nextQuery)),
         () => {
@@ -2174,7 +2195,7 @@ function OpenCommandPaletteDialog(props: {
         },
       );
     },
-    [browseNavigation, prefetchBrowsePath, query],
+    [browseNavigation, cloneDestinationName, prefetchBrowsePath, query],
   );
 
   const browseUp = useCallback(async (): Promise<void> => {
@@ -2187,11 +2208,11 @@ function OpenCommandPaletteDialog(props: {
       () => prefetchBrowsePath(parentPath),
       () => {
         setHighlightedItemValue(null);
-        setQuery(parentPath);
+        setQuery(`${parentPath}${cloneDestinationName}`);
         setBrowseGeneration((generation) => generation + 1);
       },
     );
-  }, [browseNavigation, browsePath.parentPath, prefetchBrowsePath]);
+  }, [browseNavigation, browsePath.parentPath, cloneDestinationName, prefetchBrowsePath]);
 
   // Resolve the add-project path from browse data when available. When the
   // query has a trailing separator (e.g. "~/projects/foo/"), parentPath is the
@@ -2250,15 +2271,22 @@ function OpenCommandPaletteDialog(props: {
     isBrowsing &&
     !relativePathNeedsActiveProject &&
     canCreateProjectInEnvironment(browseEnvironment?.connection.phase);
+  // A destination name is checked against the listing it will be created in;
+  // otherwise the query itself is the target directory.
+  const submitPathAlreadyExists =
+    cloneDestinationName.length > 0
+      ? cloneDestinationExists
+      : hasTrailingPathSeparator(query)
+        ? Boolean(browseResult)
+        : exactBrowseEntry !== null;
   const willCreateProjectPath =
     canSubmitBrowsePath &&
     !isBrowsePending &&
     query.trim().length > 0 &&
     !hasHighlightedBrowseItem &&
-    (hasTrailingPathSeparator(query) ? !browseResult : exactBrowseEntry === null);
+    !submitPathAlreadyExists;
   const useMetaForMod = isMacPlatform(navigator.platform);
   const submitModifierLabel = useMetaForMod ? "\u2318" : "Ctrl";
-  const isCloneDestinationStep = addProjectCloneFlow?.step === "confirm";
   const submitActionLabel = isCloneDestinationStep
     ? willCreateProjectPath
       ? "Create & Clone"
