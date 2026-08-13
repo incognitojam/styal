@@ -13,11 +13,25 @@ describe("filesystem browse model", () => {
       isBrowsing: true,
       directoryPath: "~/projects/",
       filterQuery: "t3",
+      destinationName: "",
       parentPath: "~/",
       canBrowseUp: true,
     });
     expect(getFilesystemBrowsePath("C:\\Users\\test", "MacIntel").isBrowsing).toBe(false);
     expect(getFilesystemBrowsePath("~/projects/", "", false).isBrowsing).toBe(false);
+  });
+
+  it("keeps the listing unfiltered when the leaf is a destination name", () => {
+    expect(getFilesystemBrowsePath("~/projects/t3code", "", true, true)).toEqual({
+      isBrowsing: true,
+      directoryPath: "~/projects/",
+      filterQuery: "",
+      destinationName: "t3code",
+      parentPath: "~/",
+      canBrowseUp: true,
+    });
+    // A trailing separator means no name has been typed yet.
+    expect(getFilesystemBrowsePath("~/projects/", "", true, true).destinationName).toBe("");
   });
 
   it("filters names, hidden directories, and exact matches consistently", () => {
