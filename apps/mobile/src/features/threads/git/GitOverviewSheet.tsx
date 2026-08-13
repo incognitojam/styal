@@ -24,6 +24,7 @@ import { AppText as Text } from "../../../components/AppText";
 import { nativeHeaderScrollEdgeEffects } from "../../../native/StackHeader";
 import { tryOpenExternalUrl } from "../../../lib/openExternalUrl";
 import { useEnvironmentQuery } from "../../../state/query";
+import { sourceControlEnvironment } from "../../../state/sourceControl";
 import { useThreadSelection } from "../../../state/use-thread-selection";
 import { useSelectedThreadGitActions } from "../../../state/use-selected-thread-git-actions";
 import { useSelectedThreadGitState } from "../../../state/use-selected-thread-git-state";
@@ -66,6 +67,30 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
         })
       : null,
   );
+
+  // Only a checkout with something to choose between shows the row: a fork
+  // clone, or any repository whose remotes span more than one GitHub repo.
+  const defaultRepository = useEnvironmentQuery(
+    selectedThread !== null && selectedThreadCwd !== null
+      ? sourceControlEnvironment.defaultRepository({
+          environmentId: selectedThread.environmentId,
+          input: { cwd: selectedThreadCwd },
+        })
+      : null,
+  );
+  const defaultRepositoryState = defaultRepository.data ?? null;
+  const canChooseDefaultRepository =
+    defaultRepositoryState !== null &&
+    defaultRepositoryState.remotes.length > 1 &&
+    defaultRepositoryState.remotes.some((remote) => remote.provider === "github");
+  const defaultRepositoryLabel = !defaultRepositoryState
+    ? null
+    : (defaultRepositoryState.defaultRepositoryPath ??
+      defaultRepositoryState.remotes.find(
+        (remote) => remote.remoteName === defaultRepositoryState.defaultRemoteName,
+      )?.nameWithOwner ??
+      defaultRepositoryState.defaultRemoteName ??
+      "Not set");
 
   const currentBranchLabel = gitStatus.data?.refName ?? selectedThread?.branch ?? "Detached HEAD";
   const currentStatusSummary = statusSummary(gitStatus.data);
@@ -271,6 +296,23 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
             );
           }}
         />
+        {canChooseDefaultRepository ? (
+          <>
+            <View className="ml-12 h-px bg-border" />
+            <SheetListRow
+              icon="arrow.triangle.branch"
+              title="Default repository"
+              subtitle={`${defaultRepositoryLabel} — where pull requests and issues go`}
+              disabled={busy || !isRepo}
+              onPress={() =>
+                navigation.navigate("GitDefaultRepository", {
+                  environmentId: String(environmentId),
+                  threadId: String(threadId),
+                })
+              }
+            />
+          </>
+        ) : null}
         <View className="ml-12 h-px bg-border" />
         <SheetListRow
           icon="point.topleft.down.curvedto.point.bottomright.up"

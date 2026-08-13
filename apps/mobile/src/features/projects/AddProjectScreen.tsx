@@ -5,11 +5,13 @@ import {
   buildAddProjectRemoteSourceReadiness,
   buildProjectCreateCommand,
   canCreateProjectInEnvironment,
+  repositoryOwnerAvatarUrl,
   findExistingAddProject,
   getAddProjectInitialQuery,
   getCloneDestinationQuery,
   resolveAddProjectPath,
   sortAddProjectProviderSources,
+  type AddProjectRemoteProviderKind,
   type AddProjectRemoteSource,
 } from "@t3tools/client-runtime/operations/projects";
 import {
@@ -28,11 +30,16 @@ import {
   getBrowseDirectoryPath,
   inferProjectTitleFromPath,
 } from "@t3tools/client-runtime/state/projects";
-import { CommandId, type EnvironmentId, ProjectId } from "@t3tools/contracts";
+import {
+  CommandId,
+  type EnvironmentId,
+  ProjectId,
+  type SourceControlCloneDefaultRepository,
+} from "@t3tools/contracts";
 import { StackActions, useNavigation } from "@react-navigation/native";
 import { SymbolView } from "../../components/AppSymbol";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
+import { ActivityIndicator, Alert, Image, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Arr from "effect/Array";
 import * as Cause from "effect/Cause";
@@ -194,6 +201,45 @@ function ListRow(props: {
       </View>
     </Pressable>
   );
+}
+
+/** Owner avatar for a repository row, falling back to the provider mark. */
+function RepositoryOwnerAvatar(props: {
+  readonly nameWithOwner: string;
+  readonly remoteUrl: string | null;
+  readonly provider: AddProjectRemoteProviderKind;
+}) {
+  const iconColor = useThemeColor("--color-icon");
+  const [hasFailed, setHasFailed] = useState(false);
+  const avatarUrl = props.remoteUrl
+    ? repositoryOwnerAvatarUrl({
+        repositoryUrl: props.remoteUrl,
+        nameWithOwner: props.nameWithOwner,
+        size: 96,
+      })
+    : null;
+
+  if (avatarUrl === null || hasFailed) {
+    return <SourceControlIcon kind={props.provider} size={18} color={String(iconColor)} />;
+  }
+
+  return (
+    <Image
+      source={{ uri: avatarUrl }}
+      className="h-6 w-6 rounded-full bg-border-subtle"
+      onError={() => {
+        setHasFailed(true);
+      }}
+    />
+  );
+}
+
+function SelectedCheckmark(props: { readonly selected: boolean }) {
+  const primaryColor = useThemeColor("--color-primary");
+  if (!props.selected) {
+    return null;
+  }
+  return <SymbolView name="checkmark" size={15} tintColor={primaryColor} type="monochrome" />;
 }
 
 function PrimaryActionButton(props: {
@@ -657,7 +703,11 @@ export function AddProjectRepositoryScreen(props: {
           environmentId: environment.environmentId,
           source,
           remoteUrl: repository.sshUrl,
+          repository: repository.nameWithOwner,
           repositoryTitle: repository.nameWithOwner,
+          ...(repository.parentNameWithOwner
+            ? { parentRepository: repository.parentNameWithOwner }
+            : {}),
         },
       });
     }
@@ -846,8 +896,11 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
 
 export function AddProjectDestinationScreen(props: {
   readonly environmentId?: string | string[];
+  readonly source?: string | string[];
   readonly remoteUrl?: string | string[];
+  readonly repository?: string | string[];
   readonly repositoryTitle?: string | string[];
+  readonly parentRepository?: string | string[];
 }) {
   const cloneRepository = useAtomCommand(sourceControlEnvironment.cloneRepository, {
     reportFailure: false,
@@ -855,7 +908,14 @@ export function AddProjectDestinationScreen(props: {
   const environment = useEnvironmentFromParam(props.environmentId);
   const createProject = useCreateProject(environment);
   const remoteUrl = stringParam(props.remoteUrl);
+  const provider = addProjectRemoteSourceProvider(sourceFromParam(props.source));
+  const repository = stringParam(props.repository);
   const repositoryTitle = stringParam(props.repositoryTitle);
+  const parentRepository = stringParam(props.parentRepository);
+  // Forks pick which repository `gh` targets, the way `gh repo set-default`
+  // does. The fork leads: it is the repository being cloned.
+  const [defaultRepository, setDefaultRepository] =
+    useState<SourceControlCloneDefaultRepository>("cloned");
   const { isBrowseNavigating, navigateToBrowsePath, pathInput, setPathInput } = useBrowsePathInput(
     environment,
     { nameWithOwner: repositoryTitle, remoteUrl },
@@ -876,10 +936,17 @@ export function AddProjectDestinationScreen(props: {
       return;
     }
 
+    // A fork is the only clone that needs its repository named on the server.
+    const isForkClone = provider !== null && repository !== null && parentRepository !== null;
+
     setIsSubmitting(true);
     const cloneResult = await cloneRepository({
       environmentId: environment.environmentId,
       input: {
+        // Only a fork needs naming: it is what lets the server wire up the
+        // upstream remote. Every other clone stays a plain URL clone, with no
+        // second repository lookup on the server.
+        ...(isForkClone ? { provider, repository, defaultRepository } : {}),
         remoteUrl,
         destinationPath: resolved.path,
       },
@@ -887,6 +954,14 @@ export function AddProjectDestinationScreen(props: {
     if (AsyncResult.isFailure(cloneResult)) {
       setError(errorMessage(Cause.squash(cloneResult.cause)));
     } else {
+      // The clone itself succeeded, so this is a warning rather than a failure:
+      // the repository is on disk, just without the remote that was asked for.
+      if (isForkClone && !cloneResult.value.upstream) {
+        Alert.alert(
+          "Upstream remote not added",
+          `Cloned, but ${parentRepository} could not be wired up as a remote.`,
+        );
+      }
       const createResult = await createProject(cloneResult.value.cwd);
       if (createResult && AsyncResult.isFailure(createResult)) {
         setError(errorMessage(Cause.squash(createResult.cause)));
@@ -896,11 +971,15 @@ export function AddProjectDestinationScreen(props: {
   }, [
     cloneRepository,
     createProject,
+    defaultRepository,
     environment,
     isBrowseNavigating,
     isSubmitting,
+    parentRepository,
     pathInput,
+    provider,
     remoteUrl,
+    repository,
   ]);
 
   return (
@@ -910,9 +989,46 @@ export function AddProjectDestinationScreen(props: {
         <View className="rounded-[24px] bg-card px-4 py-3">
           <Text className="text-base font-t3-bold">{repositoryTitle}</Text>
           <Text className="mt-0.5 text-xs text-foreground-muted" numberOfLines={2}>
-            {remoteUrl}
+            {parentRepository ? `forked from ${parentRepository}` : remoteUrl}
           </Text>
         </View>
+      ) : null}
+      {parentRepository && repositoryTitle && provider ? (
+        <>
+          <SectionTitle>Default repository</SectionTitle>
+          <Text className="px-1 text-xs text-foreground-muted">
+            Where pull requests, issues, and releases go
+          </Text>
+          <ListSection>
+            <ListRow
+              isFirst
+              title={repositoryTitle}
+              subtitle="origin"
+              icon={
+                <RepositoryOwnerAvatar
+                  nameWithOwner={repositoryTitle}
+                  provider={provider}
+                  remoteUrl={remoteUrl}
+                />
+              }
+              right={<SelectedCheckmark selected={defaultRepository === "cloned"} />}
+              onPress={() => setDefaultRepository("cloned")}
+            />
+            <ListRow
+              title={parentRepository}
+              subtitle="upstream"
+              icon={
+                <RepositoryOwnerAvatar
+                  nameWithOwner={parentRepository}
+                  provider={provider}
+                  remoteUrl={remoteUrl}
+                />
+              }
+              right={<SelectedCheckmark selected={defaultRepository === "parent"} />}
+              onPress={() => setDefaultRepository("parent")}
+            />
+          </ListSection>
+        </>
       ) : null}
       {environment ? (
         <>

@@ -422,6 +422,50 @@ describe("GitHubCli.layer", () => {
     }).pipe(Effect.provide(layer)),
   );
 
+  it.effect("reports the fork parent when the repository has one", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(
+        Effect.succeed(
+          processOutput(
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            JSON.stringify({
+              nameWithOwner: "octocat/codething-mvp",
+              url: "https://github.com/octocat/codething-mvp",
+              sshUrl: "git@github.com:octocat/codething-mvp.git",
+              // Shape `gh repo view --json parent` really returns, ids included.
+              parent: {
+                id: "R_kgDORLtfbQ",
+                name: "codething-mvp",
+                owner: { id: "MDEyOk9yZ2FuaXphdGlvbg==", login: "codething" },
+              },
+            }),
+          ),
+        ),
+      );
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const result = yield* gh.getRepositoryCloneUrls({
+        cwd: "/repo",
+        repository: "octocat/codething-mvp",
+      });
+
+      assert.strictEqual(result.parentNameWithOwner, "codething/codething-mvp");
+      expect(mockRun).toHaveBeenNthCalledWith(1, {
+        operation: "GitHubCli.execute",
+        command: "gh",
+        args: [
+          "repo",
+          "view",
+          "octocat/codething-mvp",
+          "--json",
+          "nameWithOwner,url,sshUrl,parent",
+        ],
+        cwd: "/repo",
+        timeoutMs: 30_000,
+      });
+    }).pipe(Effect.provide(layer)),
+  );
+
   it.effect("creates repositories and parses clone URLs from create output", () =>
     Effect.gen(function* () {
       mockRun.mockReturnValueOnce(
