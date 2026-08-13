@@ -406,6 +406,10 @@ export function PullRequestDetailPanel({
 }) {
   const openTerminal = useAtomCommand(terminalEnvironment.open, { reportFailure: false });
   const writeTerminal = useAtomCommand(terminalEnvironment.write, { reportFailure: false });
+  const { environments } = useEnvironments();
+  const environmentPlatform =
+    environments.find((entry) => entry.environmentId === environmentId)?.serverConfig?.environment
+      .platform.os ?? "unknown";
   const pullRequestKey = `${reference.projectId}:${reference.repository}#${reference.number}`;
   const [tab, setTab] = useState<DetailTab>("summary");
   const [timelineOrder, setTimelineOrder] = useState<"newest" | "oldest">("newest");
@@ -522,7 +526,7 @@ export function PullRequestDetailPanel({
   const openCheck = useCallback(
     (check: PullRequestCheck) => {
       if (!detail) return;
-      const plan = resolvePullRequestCheckOpenPlan(detail.provider, check);
+      const plan = resolvePullRequestCheckOpenPlan(detail.provider, check, environmentPlatform);
       if (plan === null) return;
       const localApi = readLocalApi();
       if (plan.kind === "external") {
@@ -580,7 +584,15 @@ export function PullRequestDetailPanel({
         }
       })();
     },
-    [detail, environmentId, openTerminal, terminalSurfaceRef, terminalThreadRef, writeTerminal],
+    [
+      detail,
+      environmentId,
+      environmentPlatform,
+      openTerminal,
+      terminalSurfaceRef,
+      terminalThreadRef,
+      writeTerminal,
+    ],
   );
   const refreshDetail = useCallback(() => {
     detailQuery.refresh();
@@ -646,7 +658,6 @@ export function PullRequestDetailPanel({
   const titleDraft = titleScope?.pullRequestKey === pullRequestKey ? titleScope.text : null;
   const [titleSaving, setTitleSaving] = useState(false);
   const newThread = useNewThreadHandler();
-  const { environments } = useEnvironments();
   const projects = useProjects();
   // Beside a thread there is nothing to pick: the hand-offs land in that thread's composer, and
   // the thread is already on one server's copy of the branch.

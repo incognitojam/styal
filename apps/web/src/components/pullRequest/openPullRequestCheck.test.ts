@@ -16,8 +16,6 @@ describe("pull request check opening", () => {
     expect(parseGitHubActionsJobUrl(check().url!)).toEqual({
       hostname: "github.com",
       repository: "acme/widgets",
-      repositoryRef: "acme/widgets",
-      runId: "12",
       jobId: "34",
     });
     expect(
@@ -27,8 +25,6 @@ describe("pull request check opening", () => {
     ).toEqual({
       hostname: "github.example.com",
       repository: "acme/widgets",
-      repositoryRef: "github.example.com/acme/widgets",
-      runId: "12",
       jobId: "34",
     });
   });
@@ -43,51 +39,57 @@ describe("pull request check opening", () => {
     expect(parseGitHubActionsJobUrl("https://example.com/acme/widgets/checks/12")).toBeNull();
   });
 
-  it("opens a completed job's raw log immediately", () => {
-    expect(resolvePullRequestCheckOpenPlan("github", check())).toEqual({
-      kind: "terminal",
-      command: "gh api --allow-escape-sequences repos/acme/widgets/actions/jobs/34/logs",
-      presentation: {
-        kind: "github-actions-log",
-        title: "Test",
-        command: "gh api --allow-escape-sequences repos/acme/widgets/actions/jobs/34/logs",
-      },
-    });
+  it("checks the selected job before downloading its raw log", () => {
+    const plan = resolvePullRequestCheckOpenPlan("github", check({ status: "pending" }));
+
+    expect(plan?.kind).toBe("terminal");
+    if (plan?.kind !== "terminal") return;
+    expect(plan.command.startsWith("sh -c '")).toBe(true);
+    expect(plan.command).toContain("(.steps // [])[]");
+    expect(plan.command).toContain("f=$((f+1))");
+    expect(plan.command).toContain('if [ "$st" = in_progress ];then sleep 10;else sleep 15;fi');
+    expect(plan.command).toContain("&&sleep 2");
+    expect(plan.command).toContain(
+      "gh api --allow-escape-sequences repos/acme/widgets/actions/jobs/34/logs",
+    );
+    // The first command is entered through a canonical PTY, whose input buffer
+    // truncates very long unsubmitted lines on macOS.
+    expect(plan.command.length).toBeLessThan(900);
+    expect(plan.presentation.command).toBe(plan.command);
+
+    const completed = resolvePullRequestCheckOpenPlan("github", check());
+    expect(completed?.kind === "terminal" ? completed.command : null).toBe(plan.command);
   });
 
-  it("watches a pending run before downloading the selected job's raw log", () => {
-    expect(resolvePullRequestCheckOpenPlan("github", check({ status: "pending" }))).toEqual({
-      kind: "terminal",
-      command:
-        "gh run watch 12 --compact -R acme/widgets; gh api --allow-escape-sequences repos/acme/widgets/actions/jobs/34/logs",
-      presentation: {
-        kind: "github-actions-log",
-        title: "Test",
-        command:
-          "gh run watch 12 --compact -R acme/widgets; gh api --allow-escape-sequences repos/acme/widgets/actions/jobs/34/logs",
-      },
-    });
+  it("uses native PowerShell syntax on Windows", () => {
+    const plan = resolvePullRequestCheckOpenPlan("github", check({ status: "pending" }), "windows");
+
+    expect(plan?.kind).toBe("terminal");
+    if (plan?.kind !== "terminal") return;
+    expect(plan.command).toContain("$s = @(");
+    expect(plan.command).toContain("$d = if ($st -eq 'in_progress') { 10 } else { 15 }");
+    expect(plan.command).toContain("Start-Sleep -Seconds $d");
+    expect(plan.command).toContain("Start-Sleep -Seconds 2");
+    expect(plan.command).not.toContain("sh -c");
+    expect(plan.command.length).toBeLessThan(900);
   });
 
   it("targets the originating GitHub Enterprise host", () => {
-    expect(
-      resolvePullRequestCheckOpenPlan(
-        "github",
-        check({
-          url: "https://github.example.com/acme/widgets/actions/runs/12/job/34",
-        }),
-      ),
-    ).toEqual({
-      kind: "terminal",
-      command:
-        "gh api --allow-escape-sequences --hostname github.example.com repos/acme/widgets/actions/jobs/34/logs",
-      presentation: {
-        kind: "github-actions-log",
-        title: "Test",
-        command:
-          "gh api --allow-escape-sequences --hostname github.example.com repos/acme/widgets/actions/jobs/34/logs",
-      },
-    });
+    const plan = resolvePullRequestCheckOpenPlan(
+      "github",
+      check({
+        url: "https://github.example.com/acme/widgets/actions/runs/12/job/34",
+      }),
+    );
+
+    expect(plan?.kind).toBe("terminal");
+    if (plan?.kind !== "terminal") return;
+    expect(plan.command).toContain(
+      "gh api --hostname github.example.com repos/acme/widgets/actions/jobs/34",
+    );
+    expect(plan.command).toContain(
+      "gh api --allow-escape-sequences --hostname github.example.com repos/acme/widgets/actions/jobs/34/logs",
+    );
   });
 
   it("leaves non-Actions and non-GitHub checks to their external pages", () => {

@@ -1,12 +1,21 @@
-import type { PullRequestCheck, SourceControlProviderKind } from "@t3tools/contracts";
+import type {
+  ExecutionEnvironmentPlatformOs,
+  PullRequestCheck,
+  SourceControlProviderKind,
+} from "@t3tools/contracts";
 
-import type { GitHubActionsLogPresentation } from "~/terminal/terminalOutputPresentation";
+import {
+  GITHUB_ACTIONS_JOB,
+  GITHUB_ACTIONS_LOG_BEGIN,
+  GITHUB_ACTIONS_SNAPSHOT_BEGIN,
+  GITHUB_ACTIONS_SNAPSHOT_END,
+  GITHUB_ACTIONS_STEP,
+  type GitHubActionsLogPresentation,
+} from "~/terminal/terminalOutputPresentation";
 
 export interface GitHubActionsJobTarget {
   readonly hostname: string;
   readonly repository: string;
-  readonly repositoryRef: string;
-  readonly runId: string;
   readonly jobId: string;
 }
 
@@ -21,6 +30,9 @@ export type PullRequestCheckOpenPlan =
 const SAFE_REPOSITORY_PART = /^[A-Za-z0-9_.-]+$/u;
 const SAFE_HOST = /^[A-Za-z0-9.-]+$/u;
 const NUMERIC_ID = /^\d+$/u;
+const WAITING_POLL_SECONDS = 15;
+const RUNNING_POLL_SECONDS = 10;
+const LOG_RETRY_SECONDS = 2;
 
 /** Only Actions job links contain everything `gh` needs without another provider-shaped read. */
 export function parseGitHubActionsJobUrl(rawUrl: string): GitHubActionsJobTarget | null {
@@ -54,11 +66,6 @@ export function parseGitHubActionsJobUrl(rawUrl: string): GitHubActionsJobTarget
   return {
     hostname: url.hostname,
     repository: `${owner}/${repository}`,
-    repositoryRef:
-      url.hostname === "github.com"
-        ? `${owner}/${repository}`
-        : `${url.hostname}/${owner}/${repository}`,
-    runId,
     jobId,
   };
 }
@@ -66,6 +73,7 @@ export function parseGitHubActionsJobUrl(rawUrl: string): GitHubActionsJobTarget
 export function resolvePullRequestCheckOpenPlan(
   provider: SourceControlProviderKind,
   check: PullRequestCheck,
+  platform: ExecutionEnvironmentPlatformOs = "unknown",
 ): PullRequestCheckOpenPlan | null {
   if (check.url === null) return null;
   if (provider !== "github") return { kind: "external", url: check.url };
@@ -74,15 +82,11 @@ export function resolvePullRequestCheckOpenPlan(
   if (target === null) return { kind: "external", url: check.url };
 
   const hostArgument = target.hostname === "github.com" ? "" : ` --hostname ${target.hostname}`;
+  const viewJob = `gh api${hostArgument} repos/${target.repository}/actions/jobs/${target.jobId}`;
   const viewLog = `gh api --allow-escape-sequences${hostArgument} repos/${target.repository}/actions/jobs/${target.jobId}/logs`;
-  const command =
-    check.status === "pending"
-      ? `gh run watch ${target.runId} --compact -R ${target.repositoryRef}; ${viewLog}`
-      : viewLog;
+  const command = buildJobLogCommand(viewJob, viewLog, platform);
   return {
     kind: "terminal",
-    // The job-log endpoint is available as soon as this job settles, even while sibling jobs run.
-    // A pending job has no downloadable log yet, so keep the existing honest status view first.
     command,
     presentation: {
       kind: "github-actions-log",
@@ -90,4 +94,23 @@ export function resolvePullRequestCheckOpenPlan(
       command,
     },
   };
+}
+
+function quotePosixShell(value: string): string {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+function buildJobLogCommand(
+  viewJob: string,
+  viewLog: string,
+  platform: ExecutionEnvironmentPlatformOs,
+): string {
+  const snapshotFilter = `(["${GITHUB_ACTIONS_JOB}", .status, (.conclusion // ""), (.started_at // ""), (.completed_at // "")] | @tsv), ((.steps // [])[] | ["${GITHUB_ACTIONS_STEP}", .status, (.conclusion // ""), .name, (.started_at // ""), (.completed_at // "")] | @tsv)`;
+  if (platform === "windows") {
+    return `$s = @(); $st = ''; $f = 0; while ($true) { $s = @(${viewJob} --jq '${snapshotFilter}'); if ($LASTEXITCODE -eq 0) { $f = 0; Write-Output '${GITHUB_ACTIONS_SNAPSHOT_BEGIN}'; $s; Write-Output '${GITHUB_ACTIONS_SNAPSHOT_END}'; $st = ($s[0] -split [char]9)[1]; if ($st -eq 'completed') { break } } else { $f += 1; if ($f -ge 3) { break } }; $d = if ($st -eq 'in_progress') { ${RUNNING_POLL_SECONDS} } else { ${WAITING_POLL_SECONDS} }; Start-Sleep -Seconds $d }; if ($st -eq 'completed') { 1..3 | ForEach-Object { Write-Output '${GITHUB_ACTIONS_LOG_BEGIN}'; ${viewLog}; if ($LASTEXITCODE -eq 0) { break }; Start-Sleep -Seconds ${LOG_RETRY_SECONDS} } }`;
+  }
+
+  const snapshotCommand = `${viewJob} --jq ${quotePosixShell(snapshotFilter)}`;
+  const script = `s=;st=;f=0;while :;do if s="$(${snapshotCommand})";then f=0;printf '${GITHUB_ACTIONS_SNAPSHOT_BEGIN}\\n%s\\n${GITHUB_ACTIONS_SNAPSHOT_END}\\n' "$s";st="$(printf '%s\\n' "$s"|head -n1|cut -f2)";[ "$st" = completed ]&&break;else f=$((f+1));[ "$f" -ge 3 ]&&break;fi;if [ "$st" = in_progress ];then sleep ${RUNNING_POLL_SECONDS};else sleep ${WAITING_POLL_SECONDS};fi;done;if [ "$st" = completed ];then i=0;while [ "$i" -lt 3 ];do printf '${GITHUB_ACTIONS_LOG_BEGIN}\\n';${viewLog}&&break;i=$((i+1));[ "$i" -lt 3 ]&&sleep ${LOG_RETRY_SECONDS};done;fi`;
+  return `sh -c ${quotePosixShell(script)}`;
 }

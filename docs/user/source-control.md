@@ -45,9 +45,9 @@ T3 Code works with the platforms your team already uses:
 - While working in a thread, open linked reviews in the same compact right-panel tabs without
   leaving the conversation
 - Select a GitHub Actions check to open its job in a terminal tab beside the review. The terminal
-  presents the selected job's raw log with scannable steps, commands, warnings, and errors. A
-  running job follows its workflow until the log becomes available. Checks from other services
-  open on their host.
+  presents live step progress while the job is running, then replaces it with the selected job's
+  raw log with scannable steps, commands, warnings, and errors. Checks from other services open on
+  their host.
 - Open the review directly in your browser with one click
 - Command-click (Control-click on Windows and Linux) a pull request number in the sidebar to open it in your browser instead of in T3 Code
 - Check out a teammate's branch to review code locally
