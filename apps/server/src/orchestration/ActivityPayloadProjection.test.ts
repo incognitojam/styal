@@ -126,6 +126,78 @@ describe("projectActivityPayload agent-field survival", () => {
   });
 });
 
+/**
+ * Clients name tool rows from `data.toolName` plus a few argument fields
+ * (`deriveToolRowPresentation`). Shipping those must not become a hole that
+ * puts file contents back on the wire — the whole point of this projection.
+ */
+describe("projectActivityPayload tool identity", () => {
+  it("keeps the tool name and identifying arguments for non-MCP tools", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        title: "Tool call",
+        data: {
+          toolName: "Read",
+          input: { file_path: "/repo/src/app.ts", offset: 120, limit: 40 },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    expect(data.toolName).toBe("Read");
+    expect(data.input).toEqual({ file_path: "/repo/src/app.ts", offset: 120, limit: 40 });
+  });
+
+  it("never ships file contents or message bodies", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "file_change",
+        data: {
+          toolName: "Edit",
+          input: {
+            file_path: "/repo/src/app.ts",
+            old_string: "a".repeat(50_000),
+            new_string: "b".repeat(50_000),
+            content: "c".repeat(50_000),
+            prompt: "d".repeat(50_000),
+            message: "e".repeat(50_000),
+          },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    expect(data.input).toEqual({ file_path: "/repo/src/app.ts" });
+    expect(JSON.stringify(projected).length).toBeLessThan(1_000);
+  });
+
+  it("caps long allowlisted values", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        data: { toolName: "Skill", input: { skill: "x", args: "y".repeat(5_000) } },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    const input = data.input as Record<string, unknown>;
+    expect((input.args as string).length).toBe(200);
+    expect(input.skill).toBe("x");
+  });
+
+  it("caps MCP arguments too", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "mcp_tool_call",
+        data: {
+          toolName: "mcp__t3-code__preview_navigate",
+          input: { url: "https://example.com/".padEnd(5_000, "x") },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    expect(((data.input as Record<string, unknown>).url as string).length).toBe(200);
+  });
+});
+
 describe("projectActivityPayload command exit codes", () => {
   it("hides historical empty terminal polls and strips stdin", () => {
     const projected = projectActivityPayload({
