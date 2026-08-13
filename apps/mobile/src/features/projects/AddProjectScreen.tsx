@@ -7,6 +7,7 @@ import {
   canCreateProjectInEnvironment,
   findExistingAddProject,
   getAddProjectInitialQuery,
+  getCloneDestinationQuery,
   resolveAddProjectPath,
   sortAddProjectProviderSources,
   type AddProjectRemoteSource,
@@ -24,6 +25,7 @@ import {
 import {
   appendBrowsePathSegment,
   ensureBrowseDirectoryPath,
+  getBrowseDirectoryPath,
   inferProjectTitleFromPath,
 } from "@t3tools/client-runtime/state/projects";
 import { CommandId, type EnvironmentId, ProjectId } from "@t3tools/contracts";
@@ -236,12 +238,24 @@ function ProjectPathInput(props: {
   );
 }
 
-function useBrowsePathInput(environment: EnvironmentOption | null) {
+function useBrowsePathInput(
+  environment: EnvironmentOption | null,
+  cloneTarget?: { readonly nameWithOwner: string | null; readonly remoteUrl: string | null },
+) {
   const environmentId = environment?.environmentId ?? null;
   const environmentBaseDirectory = environment?.baseDirectory ?? null;
-  const [pathInput, commitPathInput] = useState(() =>
-    getAddProjectInitialQuery(environmentBaseDirectory),
+  const cloneNameWithOwner = cloneTarget?.nameWithOwner ?? null;
+  const cloneRemoteUrl = cloneTarget?.remoteUrl ?? null;
+  const initialPathFor = useCallback(
+    (baseDirectory: string | null) =>
+      getCloneDestinationQuery({
+        parentPath: getAddProjectInitialQuery(baseDirectory),
+        nameWithOwner: cloneNameWithOwner,
+        remoteUrl: cloneRemoteUrl,
+      }),
+    [cloneNameWithOwner, cloneRemoteUrl],
   );
+  const [pathInput, commitPathInput] = useState(() => initialPathFor(environmentBaseDirectory));
   const previousEnvironmentIdRef = useRef(environmentId);
   const environmentRuntime = useRemoteEnvironmentRuntime(environmentId);
   const loadBrowsePath = useAtomQueryRunner(filesystemEnvironment.browse, {
@@ -266,7 +280,8 @@ function useBrowsePathInput(environment: EnvironmentOption | null) {
           if (environment && canPreloadBrowsePath(environmentRuntime?.connectionState)) {
             await loadBrowsePath({
               environmentId: environment.environmentId,
-              input: { partialPath: path },
+              // The path can carry a destination name the browser never lists.
+              input: { partialPath: getBrowseDirectoryPath(path) },
             });
           }
         },
@@ -283,9 +298,9 @@ function useBrowsePathInput(environment: EnvironmentOption | null) {
   useEffect(() => {
     if (environmentId !== null && environmentId !== previousEnvironmentIdRef.current) {
       previousEnvironmentIdRef.current = environmentId;
-      setPathInput(getAddProjectInitialQuery(environmentBaseDirectory));
+      setPathInput(initialPathFor(environmentBaseDirectory));
     }
-  }, [environmentBaseDirectory, environmentId, setPathInput]);
+  }, [environmentBaseDirectory, environmentId, initialPathFor, setPathInput]);
 
   useEffect(
     () => () => {
@@ -687,11 +702,18 @@ function FolderBrowser(props: {
   readonly pathInput: string;
   readonly setPathInput: (path: string) => void;
   readonly navigateToBrowsePath: (path: string) => Promise<boolean>;
+  readonly leafIsDestinationName?: boolean;
 }) {
   const accentColor = useThemeColor("--color-icon-muted");
   const browsePath = useMemo(
-    () => getFilesystemBrowsePath(props.pathInput, props.environment.platform),
-    [props.environment.platform, props.pathInput],
+    () =>
+      getFilesystemBrowsePath(
+        props.pathInput,
+        props.environment.platform,
+        true,
+        props.leafIsDestinationName ?? false,
+      ),
+    [props.environment.platform, props.leafIsDestinationName, props.pathInput],
   );
   const browseInput = useMemo(
     () => (browsePath.directoryPath.length > 0 ? { partialPath: browsePath.directoryPath } : null),
@@ -735,7 +757,9 @@ function FolderBrowser(props: {
             right={null}
             onPress={() => {
               if (browsePath.parentPath) {
-                void props.navigateToBrowsePath(browsePath.parentPath);
+                void props.navigateToBrowsePath(
+                  `${browsePath.parentPath}${browsePath.destinationName}`,
+                );
               }
             }}
           />
@@ -752,7 +776,7 @@ function FolderBrowser(props: {
                 browsePath.directoryPath.length > 0
                   ? appendBrowsePathSegment(browsePath.directoryPath, entry.name)
                   : ensureBrowseDirectoryPath(entry.fullPath);
-              void props.navigateToBrowsePath(nextPath);
+              void props.navigateToBrowsePath(`${nextPath}${browsePath.destinationName}`);
             }}
           />
         ))}
@@ -832,8 +856,10 @@ export function AddProjectDestinationScreen(props: {
   const createProject = useCreateProject(environment);
   const remoteUrl = stringParam(props.remoteUrl);
   const repositoryTitle = stringParam(props.repositoryTitle);
-  const { isBrowseNavigating, navigateToBrowsePath, pathInput, setPathInput } =
-    useBrowsePathInput(environment);
+  const { isBrowseNavigating, navigateToBrowsePath, pathInput, setPathInput } = useBrowsePathInput(
+    environment,
+    { nameWithOwner: repositoryTitle, remoteUrl },
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -906,6 +932,7 @@ export function AddProjectDestinationScreen(props: {
             navigateToBrowsePath={navigateToBrowsePath}
             pathInput={pathInput}
             setPathInput={setPathInput}
+            leafIsDestinationName
           />
         </>
       ) : (
