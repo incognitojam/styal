@@ -22,6 +22,7 @@ import {
   formatSubagentTokenCount,
 } from "@t3tools/client-runtime/state/subagentRuntime";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { deriveToolRowPresentation } from "@t3tools/shared/toolRowPresentation";
 import { Bot, Braces, Check, ChevronDown, ChevronRight, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -113,6 +114,11 @@ function AgentElapsed({ agent }: { agent: RuntimeSubagent }) {
   );
 }
 
+/** Same vocabulary the timeline uses, from a tool name alone. */
+function agentToolLabel(toolName: string): string {
+  return deriveToolRowPresentation({ toolName })?.heading ?? toolName;
+}
+
 /**
  * Status-dependent activity line. Live rows lead with what is happening now;
  * settled rows lead with the outcome. Errors are the only inline previews on
@@ -124,7 +130,7 @@ function agentActivityText(agent: RuntimeSubagent): string | null {
   if (live) {
     return (
       agent.progress ??
-      (agent.lastToolName ? `▸ ${agent.lastToolName}` : null) ??
+      (agent.lastToolName ? `▸ ${agentToolLabel(agent.lastToolName)}` : null) ??
       agent.result ??
       agent.error
     );
@@ -133,7 +139,7 @@ function agentActivityText(agent: RuntimeSubagent): string | null {
     agent.error ??
     agent.result ??
     agent.progress ??
-    (agent.lastToolName ? `▸ ${agent.lastToolName}` : null)
+    (agent.lastToolName ? `▸ ${agentToolLabel(agent.lastToolName)}` : null)
   );
 }
 
