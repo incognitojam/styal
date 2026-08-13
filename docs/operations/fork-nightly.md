@@ -54,6 +54,38 @@ highlights appear in the desktop updater, the workflow excludes changes classifi
 shared changes remain eligible, and the complete GitHub release commit list still includes mobile
 changes.
 
+Extraction also flags changes that only alter how this build identifies itself — application names,
+icons, artwork, release channels, and screens reporting versions or source repositories. Those changes
+stay in release highlights, which announce what shipped, and are left out of the rolling issue, which
+answers how the fork differs from upstream. The release commit list is rendered from git and always
+lists them.
+
+Extraction covers every commit the fork carries, so it runs in chronological batches, and its results
+are cached per pull request in the Actions cache so only new evidence reaches the model. Batch size is
+set by the records a response may hold rather than by prompt length: the schema caps records per
+response, and a batch that could exceed the cap would lose changes with no error to report. The prompt
+budget is a ceiling on one request that splits a batch early when its changes run unusually large.
+
+Batches run in order rather than concurrently: each is given the capability names every earlier change
+already used, cached or extracted moments ago, which keeps one feature under one name across batch
+boundaries. The cache is written after each batch, so a failed batch resumes from that point on the
+next run instead of re-reading every change.
+
+Each entry is keyed by a hash of the evidence the model reads — PR title, body, and touched files,
+with the patch ID standing in for the diff — combined with a hash of the extraction request, which
+covers the prompt, schema, model, reasoning effort, output limits, and how much of each diff the model
+is shown. The nightly rebase therefore
+keeps its hits, while an edited PR body, an amended patch, or an edited prompt re-extracts the
+affected changes. Commits without a pull request number are keyed by commit SHA and are re-extracted
+after every rebase. A change large enough to exceed the budget on its own still loses its diff to the
+budget fitter, and is then left uncached so a future run can read it whole.
+
+A cold or unreadable cache costs one full extraction and nothing else, and the cache is written
+before synthesis so a failed summary does not discard it. Because a cached record is reused until its
+pull request changes, a wrong summary line outlives the run that produced it: delete the cache
+(`gh cache list --key changelog-records-` then `gh cache delete <id>`) to force a full re-extraction
+on the next nightly.
+
 Generated labels are short, action-oriented capability descriptions. The model writes the `Added`,
 `Improved`, and nightly `Removed` sections. Divergence counts, comparison links, supported targets,
 signing status, and artifact formats are rendered deterministically by
