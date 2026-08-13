@@ -107,6 +107,7 @@ import {
   openUrlInPreview,
   BrowserPreviewUnavailableError,
 } from "../browser/openFileInPreview";
+import { createStableMarkdownComponents } from "./chatMarkdownRenderers";
 
 interface ChatMarkdownProps {
   text: string;
@@ -1826,6 +1827,12 @@ function ChatMarkdown({
     threadRef,
   ]);
   /* eslint-enable react/no-unstable-nested-components */
+  const latestMarkdownComponentsRef = useRef(markdownComponents);
+  latestMarkdownComponentsRef.current = markdownComponents;
+  const stableMarkdownComponents = useMemo(
+    () => createStableMarkdownComponents(() => latestMarkdownComponentsRef.current),
+    [],
+  );
 
   // react-markdown converts unparsed HTML nodes to text when skipHtml is false.
   // Keep that behavior explicit because literal mode depends on escaping the
@@ -1844,7 +1851,7 @@ function ChatMarkdown({
         }
         rehypePlugins={parseRawHtml ? CHAT_MARKDOWN_REHYPE_PLUGINS : undefined}
         skipHtml={false}
-        components={markdownComponents}
+        components={stableMarkdownComponents}
         urlTransform={markdownUrlTransform}
       >
         {text}
