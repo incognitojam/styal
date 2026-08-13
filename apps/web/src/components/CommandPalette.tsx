@@ -4,6 +4,7 @@ import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environ
 import {
   canCreateProjectInEnvironment,
   getCloneDestinationQuery,
+  repositoryOwnerAvatarUrl,
 } from "@t3tools/client-runtime/operations/projects";
 import { connectionStatusText } from "@t3tools/client-runtime/connection";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
@@ -23,6 +24,7 @@ import {
   type EnvironmentId,
   type FilesystemBrowseResult,
   type ProjectId,
+  type SourceControlCloneDefaultRepository,
   type SourceControlDiscoveryResult,
   type SourceControlProviderKind,
   type SourceControlRepositoryInfo,
@@ -161,6 +163,40 @@ import { getSourceControlPresentation } from "../sourceControlPresentation";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
 
+/**
+ * Shows who owns a repository. The avatar is derived from the repository URL, so
+ * a host that does not serve one (or an offline client) falls back to the
+ * provider icon rather than an empty box.
+ */
+function RepositoryOwnerAvatar({
+  fallback,
+  nameWithOwner,
+  repositoryUrl,
+}: {
+  fallback: ReactNode;
+  nameWithOwner: string;
+  repositoryUrl: string;
+}) {
+  const [hasFailed, setHasFailed] = useState(false);
+  const avatarUrl = repositoryOwnerAvatarUrl({ nameWithOwner, repositoryUrl });
+  if (avatarUrl === null || hasFailed) {
+    return fallback;
+  }
+
+  return (
+    <img
+      aria-hidden
+      alt=""
+      src={avatarUrl}
+      loading="lazy"
+      className={cn(ITEM_ICON_CLASS, "shrink-0 rounded-full bg-muted object-cover")}
+      onError={() => {
+        setHasFailed(true);
+      }}
+    />
+  );
+}
+
 function projectFavicon(project: Project) {
   return (
     <ProjectFavicon
@@ -215,6 +251,16 @@ type AddProjectCloneFlow =
       readonly environmentId: EnvironmentId;
       readonly source: AddProjectRemoteSource;
     }
+  /** Forks stop here to choose which repository `gh` should treat as the default. */
+  | {
+      readonly step: "default";
+      readonly environmentId: EnvironmentId;
+      readonly source: AddProjectRemoteSource;
+      readonly repositoryInput: string;
+      readonly repository: SourceControlRepositoryInfo;
+      readonly parentNameWithOwner: string;
+      readonly remoteUrl: string;
+    }
   | {
       readonly step: "confirm";
       readonly environmentId: EnvironmentId;
@@ -222,6 +268,7 @@ type AddProjectCloneFlow =
       readonly repositoryInput: string;
       readonly repository: SourceControlRepositoryInfo | null;
       readonly remoteUrl: string;
+      readonly defaultRepository?: SourceControlCloneDefaultRepository;
     };
 
 const REMOTE_PROJECT_SOURCES: ReadonlyArray<AddProjectRemoteSource> = [
@@ -292,6 +339,7 @@ function remoteProjectSourceIcon(source: AddProjectRemoteSource, className: stri
 function remoteProjectInputPlaceholder(flow: AddProjectCloneFlow | null): string | null {
   if (!flow) return null;
   if (flow.step === "confirm") return null;
+  if (flow.step === "default") return "Choose the default repository";
   if (flow.source === "url") {
     return "Enter Git clone URL";
   }
@@ -850,17 +898,20 @@ function OpenCommandPaletteDialog(props: {
     browseEnvironment?.serverConfig?.environment.platform.os,
   );
   const isRemoteProjectCloneFlow = addProjectCloneFlow !== null;
-  const isRemoteProjectRepositoryStep = addProjectCloneFlow?.step === "repository";
+  const isRemoteProjectDefaultStep = addProjectCloneFlow?.step === "default";
   const isCloneDestinationStep = addProjectCloneFlow?.step === "confirm";
+  // The repository and default-repository steps type into a list, not a path.
+  const isRemoteProjectPathStep =
+    addProjectCloneFlow === null || addProjectCloneFlow.step === "confirm";
   const browsePath = useMemo(
     () =>
       getFilesystemBrowsePath(
         query,
         browseEnvironmentPlatform,
-        !isRemoteProjectRepositoryStep,
+        isRemoteProjectPathStep,
         isCloneDestinationStep,
       ),
-    [browseEnvironmentPlatform, isCloneDestinationStep, isRemoteProjectRepositoryStep, query],
+    [browseEnvironmentPlatform, isCloneDestinationStep, isRemoteProjectPathStep, query],
   );
   const isBrowsing = browsePath.isBrowsing;
   const browseDirectoryPath = browsePath.directoryPath;
@@ -2041,6 +2092,33 @@ function OpenCommandPaletteDialog(props: {
     return getAddProjectInitialQueryForEnvironment(environmentId);
   }
 
+  /** Leaves the fork's default-repository step for the destination step. */
+  function chooseCloneDefaultRepository(
+    defaultRepository: SourceControlCloneDefaultRepository,
+  ): void {
+    if (addProjectCloneFlow?.step !== "default") {
+      return;
+    }
+    setAddProjectCloneFlow({
+      step: "confirm",
+      environmentId: addProjectCloneFlow.environmentId,
+      source: addProjectCloneFlow.source,
+      repositoryInput: addProjectCloneFlow.repositoryInput,
+      repository: addProjectCloneFlow.repository,
+      remoteUrl: addProjectCloneFlow.remoteUrl,
+      defaultRepository,
+    });
+    setHighlightedItemValue(null);
+    setQuery(
+      getCloneDestinationQuery({
+        parentPath: getDefaultCloneParentPath(addProjectCloneFlow.environmentId),
+        nameWithOwner: addProjectCloneFlow.repository.nameWithOwner,
+        remoteUrl: addProjectCloneFlow.remoteUrl,
+      }),
+    );
+    setBrowseGeneration((generation) => generation + 1);
+  }
+
   async function submitAddProjectCloneFlow(destinationPathInput?: string): Promise<void> {
     if (!addProjectCloneFlow) {
       return;
@@ -2104,6 +2182,21 @@ function OpenCommandPaletteDialog(props: {
         return;
       }
       const repository = lookupResult.value;
+      if (repository.parentNameWithOwner) {
+        setAddProjectCloneFlow({
+          step: "default",
+          environmentId: addProjectCloneFlow.environmentId,
+          source: addProjectCloneFlow.source,
+          repositoryInput: rawRepository,
+          repository,
+          parentNameWithOwner: repository.parentNameWithOwner,
+          remoteUrl: repository.sshUrl,
+        });
+        setHighlightedItemValue(null);
+        setQuery("");
+        setBrowseGeneration((generation) => generation + 1);
+        return;
+      }
       const destinationPath = getCloneDestinationQuery({
         parentPath: getDefaultCloneParentPath(addProjectCloneFlow.environmentId),
         nameWithOwner: repository.nameWithOwner,
@@ -2120,6 +2213,11 @@ function OpenCommandPaletteDialog(props: {
       setHighlightedItemValue(null);
       setQuery(destinationPath);
       setBrowseGeneration((generation) => generation + 1);
+      return;
+    }
+
+    // The default-repository step advances by picking a list item, not by submit.
+    if (addProjectCloneFlow.step !== "confirm") {
       return;
     }
 
@@ -2158,10 +2256,28 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
 
+    // A fork is the only clone that needs its repository named on the server.
+    const forkRepository =
+      addProjectCloneFlow.repository?.parentNameWithOwner === undefined
+        ? null
+        : addProjectCloneFlow.repository;
+
     setIsRemoteProjectCloning(true);
     const cloneResult = await cloneRepository({
       environmentId: addProjectCloneFlow.environmentId,
       input: {
+        // Only a fork needs naming: it is what lets the server wire up the
+        // upstream remote. Every other clone stays a plain URL clone, with no
+        // second repository lookup on the server.
+        ...(forkRepository
+          ? {
+              provider: forkRepository.provider,
+              repository: forkRepository.nameWithOwner,
+              ...(addProjectCloneFlow.defaultRepository
+                ? { defaultRepository: addProjectCloneFlow.defaultRepository }
+                : {}),
+            }
+          : {}),
         remoteUrl: addProjectCloneFlow.remoteUrl,
         destinationPath,
       },
@@ -2178,6 +2294,17 @@ function OpenCommandPaletteDialog(props: {
         );
       }
       return;
+    }
+    // The clone itself succeeded, so this is a warning rather than a failure:
+    // the repository is on disk, just without the remote that was asked for.
+    if (forkRepository && !cloneResult.value.upstream) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Upstream remote not added",
+          description: `Cloned, but ${forkRepository.parentNameWithOwner} could not be wired up as a remote.`,
+        }),
+      );
     }
     await handleAddProject(cloneResult.value.cwd);
   }
@@ -2241,20 +2368,84 @@ function OpenCommandPaletteDialog(props: {
   );
 
   const remoteProjectContext = useMemo(() => {
-    if (addProjectCloneFlow?.step !== "confirm") {
+    if (addProjectCloneFlow?.step !== "confirm" && addProjectCloneFlow?.step !== "default") {
       return null;
     }
 
+    const flow = addProjectCloneFlow;
+    const parentNameWithOwner =
+      flow.step === "default" ? flow.parentNameWithOwner : flow.repository?.parentNameWithOwner;
     return {
-      title: addProjectCloneFlow.repository?.nameWithOwner ?? addProjectCloneFlow.repositoryInput,
-      description: addProjectCloneFlow.repository?.url ?? addProjectCloneFlow.remoteUrl,
-      icon: remoteProjectSourceIcon(addProjectCloneFlow.source, ITEM_ICON_CLASS),
+      title: flow.repository?.nameWithOwner ?? flow.repositoryInput,
+      // A fork keeps the same second line across both steps. The clone URL only
+      // stands in where the title is not already the repository's full name.
+      description: parentNameWithOwner
+        ? `forked from ${parentNameWithOwner}`
+        : (flow.repository?.url ?? flow.remoteUrl),
+      icon: remoteProjectSourceIcon(flow.source, ITEM_ICON_CLASS),
     };
+  }, [addProjectCloneFlow]);
+
+  /**
+   * The fork step, modelled on `gh repo set-default`: pick which repository
+   * pull requests, issues, and releases should target once both remotes exist.
+   * The fork leads: it is the repository the user asked to clone, and it keeps
+   * the pin agreeing with the remote a branch on the fork tracks.
+   */
+  const cloneDefaultRepositoryGroups = useMemo((): CommandPaletteView["groups"] => {
+    if (addProjectCloneFlow?.step !== "default") {
+      return [];
+    }
+
+    const flow = addProjectCloneFlow;
+    const options: ReadonlyArray<{
+      readonly choice: SourceControlCloneDefaultRepository;
+      readonly nameWithOwner: string;
+      readonly remoteName: string;
+    }> = [
+      { choice: "cloned", nameWithOwner: flow.repository.nameWithOwner, remoteName: "origin" },
+      { choice: "parent", nameWithOwner: flow.parentNameWithOwner, remoteName: "upstream" },
+    ];
+
+    return [
+      {
+        value: "clone-default-repository",
+        // Reads on its own: the palette title sits above the repository card, too
+        // far away to be read as one sentence with this.
+        label: "Where pull requests, issues, and releases go",
+        items: options.map((option) => ({
+          kind: "action" as const,
+          value: `action:clone-default-repository:${option.choice}`,
+          searchTerms: [option.nameWithOwner, option.choice, option.remoteName],
+          title: option.nameWithOwner,
+          // The remote name says which repository this is without a sentence.
+          titleTrailingContent: (
+            <span className="ml-auto shrink-0 text-muted-foreground/85 text-xs">
+              {option.remoteName}
+            </span>
+          ),
+          icon: (
+            <RepositoryOwnerAvatar
+              fallback={remoteProjectSourceIcon(flow.source, ITEM_ICON_CLASS)}
+              nameWithOwner={option.nameWithOwner}
+              repositoryUrl={flow.repository.url}
+            />
+          ),
+          keepOpen: true,
+          run: async () => {
+            chooseCloneDefaultRepository(option.choice);
+          },
+        })),
+      },
+    ];
+    // `chooseCloneDefaultRepository` reads the same flow state this memo keys on.
   }, [addProjectCloneFlow]);
 
   let displayedGroups: CommandPaletteView["groups"] = filteredGroups;
   if (addProjectCloneFlow?.step === "repository") {
     displayedGroups = [];
+  } else if (addProjectCloneFlow?.step === "default") {
+    displayedGroups = cloneDefaultRepositoryGroups;
   } else if (addProjectCloneFlow?.step === "confirm") {
     displayedGroups = relativePathNeedsActiveProject ? [] : cloneDestinationBrowseGroups;
   } else if (isBrowsing) {
@@ -2626,7 +2817,9 @@ function OpenCommandPaletteDialog(props: {
     <CommandPaletteContent
       key={`${viewStack.length}-${browseGeneration}-${isBrowsing}-${addProjectCloneFlow?.step ?? "none"}`}
       aria-label="Command palette"
-      autoHighlight={isBrowsing || isRemoteProjectCloneFlow ? false : "always"}
+      autoHighlight={
+        !isBrowsing && (!isRemoteProjectCloneFlow || isRemoteProjectDefaultStep) ? "always" : false
+      }
       footerActionLabel={footerActionLabel}
       footerTrailing={footerTrailing}
       inputAccessory={inputAccessory}

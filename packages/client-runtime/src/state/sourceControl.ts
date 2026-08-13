@@ -24,6 +24,10 @@ export function createSourceControlEnvironmentAtoms<R, E>(
       label: "environment-data:source-control:repository",
       tag: WS_METHODS.sourceControlLookupRepository,
     }),
+    defaultRepository: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:source-control:default-repository",
+      tag: WS_METHODS.sourceControlGetDefaultRepository,
+    }),
     issues: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:source-control:issues",
       tag: WS_METHODS.sourceControlListIssues,
@@ -40,6 +44,12 @@ export function createSourceControlEnvironmentAtoms<R, E>(
         mode: "serial",
         key: ({ environmentId }) => environmentId,
       },
+    }),
+    setDefaultRepository: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:source-control:set-default-repository",
+      tag: WS_METHODS.sourceControlSetDefaultRepository,
+      scheduler: vcsCommandScheduler,
+      concurrency: vcsCommandConcurrency,
     }),
     publishRepository: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:source-control:publish-repository",

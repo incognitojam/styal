@@ -2,6 +2,7 @@ import type { RepositoryIdentity } from "@t3tools/contracts";
 import {
   detectSourceControlProviderFromGitRemoteUrl,
   normalizeGitRemoteUrl,
+  parseGitRemoteConfig,
 } from "@t3tools/shared/git";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
@@ -37,24 +38,20 @@ function parseRemoteConfig(stdout: string): {
     readonly repositoryPath: string | null;
   } | null;
 } {
+  const entries = parseGitRemoteConfig(stdout);
   const remotes = new Map<string, string>();
-  let ghDefaultRemote: {
-    readonly remoteName: string;
-    readonly repositoryPath: string | null;
-  } | null = null;
-
-  for (const line of stdout.split("\n")) {
-    const match = /^remote\.(.+)\.(url|gh-resolved)\s+(\S+)$/u.exec(line.trim());
-    if (!match?.[1] || !match[2] || !match[3]) continue;
-    if (match[2] === "url") {
-      if (!remotes.has(match[1])) remotes.set(match[1], match[3]);
-    } else if (ghDefaultRemote === null) {
-      ghDefaultRemote = {
-        remoteName: match[1],
-        repositoryPath: match[3] === "base" ? null : match[3].toLowerCase(),
-      };
-    }
+  for (const entry of entries) {
+    if (entry.url) remotes.set(entry.remoteName, entry.url);
   }
+
+  const pinned = entries.find((entry) => entry.ghResolved !== null);
+  const ghDefaultRemote = pinned?.ghResolved
+    ? {
+        remoteName: pinned.remoteName,
+        repositoryPath: pinned.ghResolved === "base" ? null : pinned.ghResolved.toLowerCase(),
+      }
+    : null;
+
   return { remotes, ghDefaultRemote };
 }
 

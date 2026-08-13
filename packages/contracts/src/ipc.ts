@@ -95,10 +95,13 @@ import type { ClientSettings } from "./settings.ts";
 import type {
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
+  SourceControlDefaultRepositoryState,
+  SourceControlGetDefaultRepositoryInput,
   SourceControlPublishRepositoryInput,
   SourceControlPublishRepositoryResult,
   SourceControlRepositoryInfo,
   SourceControlRepositoryLookupInput,
+  SourceControlSetDefaultRepositoryInput,
 } from "./sourceControl.ts";
 
 export interface ContextMenuItem<T extends string = string> {
@@ -1249,6 +1252,12 @@ export interface EnvironmentApi {
     publishRepository: (
       input: SourceControlPublishRepositoryInput,
     ) => Promise<SourceControlPublishRepositoryResult>;
+    getDefaultRepository: (
+      input: SourceControlGetDefaultRepositoryInput,
+    ) => Promise<SourceControlDefaultRepositoryState>;
+    setDefaultRepository: (
+      input: SourceControlSetDefaultRepositoryInput,
+    ) => Promise<SourceControlDefaultRepositoryState>;
   };
   vcs: {
     listRefs: (input: VcsListRefsInput) => Promise<VcsListRefsResult>;
