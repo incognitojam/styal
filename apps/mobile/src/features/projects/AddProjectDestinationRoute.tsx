@@ -1,4 +1,6 @@
 import type { StaticScreenProps } from "@react-navigation/native";
+import { NativeStackScreenOptions } from "../../native/StackHeader";
+
 import { AddProjectDestinationScreen } from "./AddProjectScreen";
 
 type AddProjectDestinationRouteParams = {
@@ -11,5 +13,10 @@ type AddProjectDestinationRouteParams = {
 export function AddProjectDestinationRoute({
   route,
 }: StaticScreenProps<AddProjectDestinationRouteParams | undefined>) {
-  return <AddProjectDestinationScreen {...(route.params ?? {})} />;
+  return (
+    <>
+      <NativeStackScreenOptions options={{ title: "Destination" }} />
+      <AddProjectDestinationScreen {...(route.params ?? {})} />
+    </>
+  );
 }
