@@ -88,7 +88,8 @@ jobs:
             {
               id: "windows-x64",
               label: "Windows x64",
-              runner: "blacksmith-8vcpu-windows-2025",
+              // Least CPU-bound of the three targets (#51), so it takes the free runner.
+              runner: "windows-2025",
               platform: "win",
               target: "nsis",
               arch: "x64",
