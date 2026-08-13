@@ -25,6 +25,7 @@ import {
 import {
   appendBrowsePathSegment,
   ensureBrowseDirectoryPath,
+  getBrowseDirectoryPath,
   inferProjectTitleFromPath,
 } from "@t3tools/client-runtime/state/projects";
 import { CommandId, type EnvironmentId, ProjectId } from "@t3tools/contracts";
@@ -279,7 +280,8 @@ function useBrowsePathInput(
           if (environment && canPreloadBrowsePath(environmentRuntime?.connectionState)) {
             await loadBrowsePath({
               environmentId: environment.environmentId,
-              input: { partialPath: path },
+              // The path can carry a destination name the browser never lists.
+              input: { partialPath: getBrowseDirectoryPath(path) },
             });
           }
         },
@@ -700,11 +702,18 @@ function FolderBrowser(props: {
   readonly pathInput: string;
   readonly setPathInput: (path: string) => void;
   readonly navigateToBrowsePath: (path: string) => Promise<boolean>;
+  readonly leafIsDestinationName?: boolean;
 }) {
   const accentColor = useThemeColor("--color-icon-muted");
   const browsePath = useMemo(
-    () => getFilesystemBrowsePath(props.pathInput, props.environment.platform),
-    [props.environment.platform, props.pathInput],
+    () =>
+      getFilesystemBrowsePath(
+        props.pathInput,
+        props.environment.platform,
+        true,
+        props.leafIsDestinationName ?? false,
+      ),
+    [props.environment.platform, props.leafIsDestinationName, props.pathInput],
   );
   const browseInput = useMemo(
     () => (browsePath.directoryPath.length > 0 ? { partialPath: browsePath.directoryPath } : null),
@@ -748,7 +757,9 @@ function FolderBrowser(props: {
             right={null}
             onPress={() => {
               if (browsePath.parentPath) {
-                void props.navigateToBrowsePath(browsePath.parentPath);
+                void props.navigateToBrowsePath(
+                  `${browsePath.parentPath}${browsePath.destinationName}`,
+                );
               }
             }}
           />
@@ -765,7 +776,7 @@ function FolderBrowser(props: {
                 browsePath.directoryPath.length > 0
                   ? appendBrowsePathSegment(browsePath.directoryPath, entry.name)
                   : ensureBrowseDirectoryPath(entry.fullPath);
-              void props.navigateToBrowsePath(nextPath);
+              void props.navigateToBrowsePath(`${nextPath}${browsePath.destinationName}`);
             }}
           />
         ))}
@@ -921,6 +932,7 @@ export function AddProjectDestinationScreen(props: {
             navigateToBrowsePath={navigateToBrowsePath}
             pathInput={pathInput}
             setPathInput={setPathInput}
+            leafIsDestinationName
           />
         </>
       ) : (
