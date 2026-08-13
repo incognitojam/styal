@@ -8,6 +8,10 @@ import type {
   SourceControlProviderKind,
   SourceControlRepositoryInfo,
 } from "@t3tools/contracts";
+import {
+  detectSourceControlProviderFromGitRemoteUrl,
+  normalizeGitRemoteUrl,
+} from "@t3tools/shared/git";
 import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";
@@ -103,6 +107,30 @@ export function addProjectRemoteSourceProvider(
   source: AddProjectRemoteSource,
 ): AddProjectRemoteProviderKind | null {
   return source === "url" ? null : source;
+}
+
+/**
+ * GitHub, including Enterprise hosts, serves an owner's avatar at `/<login>.png`,
+ * so one remote URL is enough to show who owns a repository without an API call.
+ * The URL may be either transport, since clone flows carry the SSH one. Other
+ * providers have no such path, so this returns null rather than sending the
+ * client after a guaranteed 404; callers fall back to the provider icon, which
+ * is also what they should do when the image fails to load.
+ */
+export function repositoryOwnerAvatarUrl(input: {
+  readonly repositoryUrl: string;
+  readonly nameWithOwner: string;
+  readonly size?: number;
+}): string | null {
+  if (detectSourceControlProviderFromGitRemoteUrl(input.repositoryUrl)?.kind !== "github") {
+    return null;
+  }
+  const owner = input.nameWithOwner.split("/")[0]?.trim();
+  const host = normalizeGitRemoteUrl(input.repositoryUrl).split("/")[0];
+  if (!owner || !host?.includes(".")) {
+    return null;
+  }
+  return `https://${host}/${owner}.png?size=${input.size ?? 64}`;
 }
 
 export function sortAddProjectProviderSources(

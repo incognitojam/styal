@@ -17,6 +17,7 @@ import type {
   ModelSelection,
   ProviderDriverKind,
   SidebarProjectGroupingMode,
+  SourceControlDefaultRepositoryState,
   T3ProjectFileScript,
   ThreadEnvMode,
 } from "@t3tools/contracts";
@@ -69,7 +70,9 @@ import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environmen
 import { useProjects, useThreadShells } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
 import { primaryServerProvidersAtom, serverEnvironment } from "../../state/server";
+import { sourceControlEnvironment } from "../../state/sourceControl";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { ProjectFavicon } from "../ProjectFavicon";
@@ -143,6 +146,35 @@ export function useSettingsProjectGroups(): SidebarProjectSnapshot[] {
 
 function memberKey(member: { environmentId: string; id: string }): string {
   return `${member.environmentId}:${member.id}`;
+}
+
+/** Sentinel for the Select, which cannot carry a null value. */
+const UNSET_DEFAULT_REPOSITORY_VALUE = "__unset__";
+
+function defaultRepositoryLabel(
+  state: SourceControlDefaultRepositoryState,
+  remoteName: string | null,
+): string {
+  if (remoteName === null) {
+    // Unpinned repositories fall back to the GitHub CLI's own guess, which
+    // prefers a fork's parent once an upstream remote exists.
+    return "Not set (GitHub CLI decides)";
+  }
+  const remote = state.remotes.find((candidate) => candidate.remoteName === remoteName);
+  const label = remote?.nameWithOwner ?? remote?.url ?? remoteName;
+  return remote?.nameWithOwner ? `${label} (${remoteName})` : label;
+}
+
+/**
+ * A pin can name a repository its remote does not point at, which is what the
+ * GitHub CLI writes for a fork cloned without an upstream remote. The trigger
+ * has to show the repository actually targeted, while the options keep
+ * describing the remotes they would switch to.
+ */
+function currentDefaultRepositoryLabel(state: SourceControlDefaultRepositoryState): string {
+  return state.defaultRemoteName && state.defaultRepositoryPath
+    ? `${state.defaultRepositoryPath} (via ${state.defaultRemoteName})`
+    : defaultRepositoryLabel(state, state.defaultRemoteName);
 }
 
 export function ProjectSettingsPage({ projectKey }: { projectKey: string }) {
@@ -471,6 +503,58 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
   );
   const keybindings = selectedServerConfig?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS;
   const scripts = selectedCheckout.scripts;
+
+  // ----- default repository (the config `gh repo set-default` writes) -----
+  const [defaultRepository, setDefaultRepositoryState] =
+    useState<SourceControlDefaultRepositoryState | null>(null);
+  const readDefaultRepository = useAtomQueryRunner(sourceControlEnvironment.defaultRepository, {
+    reportFailure: false,
+  });
+  const writeDefaultRepository = useAtomCommand(sourceControlEnvironment.setDefaultRepository, {
+    reportFailure: false,
+  });
+  const selectedCheckoutRef = useRef(selectedCheckout.workspaceRoot);
+  useEffect(() => {
+    let cancelled = false;
+    selectedCheckoutRef.current = selectedCheckout.workspaceRoot;
+    setDefaultRepositoryState(null);
+    void readDefaultRepository({
+      environmentId: selectedCheckout.environmentId,
+      input: { cwd: selectedCheckout.workspaceRoot },
+    }).then((result) => {
+      if (!cancelled && result._tag === "Success") {
+        setDefaultRepositoryState(result.value);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [readDefaultRepository, selectedCheckout.environmentId, selectedCheckout.workspaceRoot]);
+
+  const updateDefaultRepository = useCallback(
+    async (remoteName: string | null): Promise<void> => {
+      const checkout = selectedCheckout;
+      const result = await writeDefaultRepository({
+        environmentId: checkout.environmentId,
+        input: { cwd: checkout.workspaceRoot, remoteName },
+      });
+      // Switching checkouts mid-write must not drop the old checkout's state
+      // into the new checkout's row.
+      if (result._tag === "Success" && checkout.workspaceRoot === selectedCheckoutRef.current) {
+        setDefaultRepositoryState(result.value);
+      }
+    },
+    [selectedCheckout, writeDefaultRepository],
+  );
+
+  /**
+   * The pin only means something to the GitHub CLI, and only a checkout with
+   * more than one remote (or an existing pin to clear) has a choice to make.
+   */
+  const canChooseDefaultRepository =
+    defaultRepository !== null &&
+    defaultRepository.remotes.some((remote) => remote.provider === "github") &&
+    (defaultRepository.remotes.length > 1 || defaultRepository.defaultRemoteName !== null);
   const [editorRequest, setEditorRequest] = useState<ProjectScriptEditorRequest | null>(null);
   // Script writes replace the whole array, so two overlapping writes computed
   // from the same snapshot would drop each other's changes. One at a time.
@@ -1001,6 +1085,37 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
               </Select>
             }
           />
+          {canChooseDefaultRepository && defaultRepository ? (
+            <SettingsRow
+              title="Default repository"
+              description="Which repository pull requests, issues, and releases target in this checkout, shared with the GitHub CLI's gh repo set-default. Changing it can move this checkout to a different project group."
+              control={
+                <Select
+                  value={defaultRepository.defaultRemoteName ?? UNSET_DEFAULT_REPOSITORY_VALUE}
+                  onValueChange={(value) => {
+                    const remoteName = String(value);
+                    void updateDefaultRepository(
+                      remoteName === UNSET_DEFAULT_REPOSITORY_VALUE ? null : remoteName,
+                    );
+                  }}
+                >
+                  <SelectTrigger aria-label="Default repository">
+                    <SelectValue>{currentDefaultRepositoryLabel(defaultRepository)}</SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
+                    {defaultRepository.remotes.map((remote) => (
+                      <SelectItem hideIndicator key={remote.remoteName} value={remote.remoteName}>
+                        {defaultRepositoryLabel(defaultRepository, remote.remoteName)}
+                      </SelectItem>
+                    ))}
+                    <SelectItem hideIndicator value={UNSET_DEFAULT_REPOSITORY_VALUE}>
+                      {defaultRepositoryLabel(defaultRepository, null)}
+                    </SelectItem>
+                  </SelectPopup>
+                </Select>
+              }
+            />
+          ) : null}
           {group.memberProjects.length > 1 ? (
             <SettingsRow
               title="Remove checkout"

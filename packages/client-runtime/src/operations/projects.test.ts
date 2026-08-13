@@ -14,10 +14,56 @@ import {
   findExistingAddProject,
   getAddProjectInitialQuery,
   getCloneDestinationQuery,
+  repositoryOwnerAvatarUrl,
   resolveAddProjectPath,
   sortAddProjectProviderSources,
 } from "./projects.ts";
 import type { EnvironmentProject } from "../state/models.ts";
+
+describe("repository owner avatars", () => {
+  it("derives an owner avatar from either transport of a GitHub remote", () => {
+    expect(
+      repositoryOwnerAvatarUrl({
+        repositoryUrl: "https://github.com/commaai/openpilot",
+        nameWithOwner: "commaai/openpilot",
+      }),
+    ).toBe("https://github.com/commaai.png?size=64");
+    expect(
+      repositoryOwnerAvatarUrl({
+        repositoryUrl: "git@github.com:commaai/openpilot.git",
+        nameWithOwner: "commaai/openpilot",
+        size: 96,
+      }),
+    ).toBe("https://github.com/commaai.png?size=96");
+  });
+
+  it("keeps GitHub Enterprise hosts", () => {
+    expect(
+      repositoryOwnerAvatarUrl({
+        repositoryUrl: "https://github.example.com/team/service",
+        nameWithOwner: "team/service",
+      }),
+    ).toBe("https://github.example.com/team.png?size=64");
+  });
+
+  it("returns null where no avatar path exists, rather than sending clients after a 404", () => {
+    expect(
+      repositoryOwnerAvatarUrl({
+        repositoryUrl: "https://gitlab.com/group/project",
+        nameWithOwner: "group/project",
+      }),
+    ).toBeNull();
+    expect(
+      repositoryOwnerAvatarUrl({ repositoryUrl: "not a url", nameWithOwner: "owner/repo" }),
+    ).toBeNull();
+    expect(
+      repositoryOwnerAvatarUrl({
+        repositoryUrl: "https://github.com/commaai/openpilot",
+        nameWithOwner: "",
+      }),
+    ).toBeNull();
+  });
+});
 
 describe("add project shared logic", () => {
   it("only allows project creation in connected environments", () => {
