@@ -12,6 +12,7 @@ import {
   deriveToolFileChangeLineStat,
   type ToolFileChangeLineStat,
 } from "@t3tools/shared/toolActivity";
+import { deriveToolRowPresentation } from "@t3tools/shared/toolRowPresentation";
 
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
@@ -77,6 +78,10 @@ interface WorkLogEntry {
   fileChangeStat?: ToolFileChangeLineStat;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
+  /** Display-only provider tool name; never part of the collapse key. */
+  toolName?: string;
+  /** Whitelisted, length-capped tool arguments from the server projection. */
+  toolInput?: Record<string, unknown>;
   itemType?: ToolLifecycleItemType;
   requestKind?: PendingApproval["requestKind"];
   toolLifecycleStatus?: WorkLogToolLifecycleStatus;
@@ -426,6 +431,14 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (title) {
     entry.toolTitle = title;
   }
+  const toolName = asTrimmedString(asRecord(payload?.data)?.toolName);
+  if (toolName) {
+    entry.toolName = toolName;
+  }
+  const toolInput = asRecord(asRecord(payload?.data)?.input);
+  if (toolInput) {
+    entry.toolInput = toolInput;
+  }
   if (itemType === "mcp_tool_call") {
     const data = asRecord(payload?.data);
     if (data?.item !== undefined) {
@@ -532,6 +545,9 @@ function mergeDerivedWorkLogEntries(
   const command = next.command ?? previous.command;
   const rawCommand = next.rawCommand ?? previous.rawCommand;
   const toolTitle = next.toolTitle ?? previous.toolTitle;
+  // Claude stamps `toolName` on every update row but only some completions.
+  const toolName = next.toolName ?? previous.toolName;
+  const toolInput = next.toolInput ?? previous.toolInput;
   const itemType = next.itemType ?? previous.itemType;
   const requestKind = next.requestKind ?? previous.requestKind;
   const collapseKey = next.collapseKey ?? previous.collapseKey;
@@ -547,6 +563,8 @@ function mergeDerivedWorkLogEntries(
     ...(changedFiles.length > 0 ? { changedFiles } : {}),
     ...(fileChangeStat ? { fileChangeStat } : {}),
     ...(toolTitle ? { toolTitle } : {}),
+    ...(toolName ? { toolName } : {}),
+    ...(toolInput ? { toolInput } : {}),
     ...(itemType ? { itemType } : {}),
     ...(requestKind ? { requestKind } : {}),
     ...(collapseKey ? { collapseKey } : {}),
@@ -725,6 +743,22 @@ function memoizeValue<T>(build: () => T): () => T {
   };
 }
 
+/** Shared with web and the agents panel; see `toolRowPresentation`. */
+function toolRowPresentationFor(workEntry: DerivedWorkLogEntry) {
+  if (workEntry.activityKind.startsWith("setup-script.")) {
+    return undefined;
+  }
+  return deriveToolRowPresentation({
+    toolName: workEntry.toolName,
+    itemType: workEntry.itemType,
+    label: workEntry.toolTitle ?? workEntry.label,
+    detail: workEntry.detail,
+    input: workEntry.toolInput,
+    command: workEntry.command,
+    changedFiles: workEntry.changedFiles,
+  });
+}
+
 function workEntryPreview(
   workEntry: Pick<WorkLogEntry, "detail" | "command" | "changedFiles" | "itemType">,
 ): string | null {
@@ -756,6 +790,10 @@ function capitalizePhrase(value: string): string {
 function workEntryHeading(workEntry: DerivedWorkLogEntry): string {
   if (workEntry.activityKind.startsWith("setup-script.")) {
     return capitalizePhrase(workEntry.label);
+  }
+  const presentation = toolRowPresentationFor(workEntry);
+  if (presentation) {
+    return presentation.heading;
   }
   if (!workEntry.toolTitle) {
     return capitalizePhrase(normalizeCompactToolLabel(workEntry.label));
@@ -1587,7 +1625,11 @@ export function buildThreadFeed(
         })
         .map<RawThreadFeedEntry>((entry) => {
           const summary = workEntryHeading(entry);
-          const detail = workEntryPreview(entry);
+          // As on web: a presentation owns its argument, including its absence.
+          const presentation = toolRowPresentationFor(entry);
+          const detail = presentation
+            ? (presentation.argument?.value ?? null)
+            : workEntryPreview(entry);
           const getFullDetail = memoizeValue(() => buildWorkEntryExpandedBody(entry));
           const getCopyText = memoizeValue(() =>
             [summary, detail, getFullDetail()]
