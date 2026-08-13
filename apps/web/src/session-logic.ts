@@ -80,6 +80,15 @@ export interface WorkLogEntry {
   fileChangeStat?: ToolFileChangeLineStat;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
+  /**
+   * The provider's own tool name (Claude only; Codex and ACP rows have none).
+   * Display-only: naming a row from this happens at render time, and it is
+   * deliberately kept out of `deriveToolLifecycleCollapseKey` so client
+   * collapse identity stays byte-identical to the server's.
+   */
+  toolName?: string;
+  /** Whitelisted, length-capped tool arguments from the server projection. */
+  toolInput?: Record<string, unknown>;
   toolData?: unknown;
   itemType?: ToolLifecycleItemType;
   requestKind?: PendingApproval["requestKind"];
@@ -119,6 +128,10 @@ export interface PendingApproval {
   requestKind: "command" | "file-read" | "file-change";
   createdAt: string;
   detail?: string;
+  /** Provider tool name, when the adapter reported one (Claude). */
+  toolName?: string;
+  /** Whitelisted, length-capped tool arguments. */
+  toolInput?: Record<string, unknown>;
 }
 
 export interface PendingUserInput {
@@ -439,11 +452,15 @@ export function derivePendingApprovals(
     const detail = payload && typeof payload.detail === "string" ? payload.detail : undefined;
 
     if (activity.kind === "approval.requested" && requestId && requestKind) {
+      const toolName = asTrimmedString(payload?.toolName);
+      const toolInput = asRecord(payload?.toolInput);
       openByRequestId.set(requestId, {
         requestId,
         requestKind,
         createdAt: activity.createdAt,
         ...(detail ? { detail } : {}),
+        ...(toolName ? { toolName } : {}),
+        ...(toolInput ? { toolInput } : {}),
       });
       continue;
     }
@@ -976,6 +993,14 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (title) {
     entry.toolTitle = title;
   }
+  const toolName = asTrimmedString(asRecord(payload?.data)?.toolName);
+  if (toolName) {
+    entry.toolName = toolName;
+  }
+  const toolInput = asRecord(asRecord(payload?.data)?.input);
+  if (toolInput) {
+    entry.toolInput = toolInput;
+  }
   if (itemType === "mcp_tool_call") {
     const data = asRecord(payload?.data);
     if (data?.item !== undefined) {
@@ -1212,6 +1237,10 @@ function mergeDerivedWorkLogEntries(
   const rawCommand = next.rawCommand ?? previous.rawCommand;
   const exitCode = next.exitCode ?? previous.exitCode;
   const toolTitle = next.toolTitle ?? previous.toolTitle;
+  // Claude stamps `toolName` on every update row but only some completions, so
+  // whichever half of a collapsed pair carries it wins.
+  const toolName = next.toolName ?? previous.toolName;
+  const toolInput = next.toolInput ?? previous.toolInput;
   const itemType = next.itemType ?? previous.itemType;
   const requestKind = next.requestKind ?? previous.requestKind;
   const collapseKey = next.collapseKey ?? previous.collapseKey;
@@ -1229,6 +1258,8 @@ function mergeDerivedWorkLogEntries(
     ...(changedFiles.length > 0 ? { changedFiles } : {}),
     ...(fileChangeStat ? { fileChangeStat } : {}),
     ...(toolTitle ? { toolTitle } : {}),
+    ...(toolName ? { toolName } : {}),
+    ...(toolInput ? { toolInput } : {}),
     ...(itemType ? { itemType } : {}),
     ...(requestKind ? { requestKind } : {}),
     ...(collapseKey ? { collapseKey } : {}),
