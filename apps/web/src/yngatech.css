@@ -1,7 +1,16 @@
 @layer components {
-  /* Keep the fork's Nightly identity stable in the flagship theme while the
-     remaining built-ins follow upstream's pigment-derived palettes. */
-  html[data-theme-id="t3-chat"] .stage-nightly {
+  /* The default T3 Code theme carries no data-theme-id, so the fork's Dev and
+     Nightly identity hangs off its absence. Named built-ins keep following
+     upstream's pigment-derived palettes. Pigments sit on the root so the stage
+     art and the focus rings offset against it stay in the same colorway. */
+  html:not([data-theme-id]) {
+    --stage-art-top: #5cd6ce;
+    --stage-art-mid: #219eae;
+    --stage-art-bottom: #0a5b72;
+    --stage-art-highlight: #dffffa;
+    --stage-art-secondary: #5fe3d6;
+    --stage-art-tertiary: #6fe3c0;
+    --stage-art-line: #ddfbf5;
     --stage-night-top: #10484f;
     --stage-night-mid: #0a2b34;
     --stage-night-bottom: #05191f;
@@ -9,5 +18,11 @@
     --stage-night-secondary: #1a5764;
     --stage-night-tertiary: #5fe0bf;
     --stage-night-line: #c4f2ea;
+  }
+
+  html.dark:not([data-theme-id]) {
+    --stage-art-top: #35939c;
+    --stage-art-mid: #1b6675;
+    --stage-art-bottom: #0b3540;
   }
 }
