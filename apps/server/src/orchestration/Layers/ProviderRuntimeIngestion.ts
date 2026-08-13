@@ -45,6 +45,7 @@ import { forkParked } from "../../serverActivation.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { canReplaceThreadTitle } from "../threadTitles.ts";
 import { commandInteractionSummary } from "../../CommandInteraction.ts";
+import { projectToolInput } from "../ActivityPayloadProjection.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 const providerTaskKey = (threadId: ThreadId, taskId: string) => `${threadId}:${taskId}`;
@@ -359,6 +360,24 @@ function taskLinkageActivityFields(payload: Record<string, unknown>): Record<str
   return fields;
 }
 
+/**
+ * Tool identity for an approval row, from the adapter's `args`. Input is run
+ * through the same allowlist the activity projection uses so an approval never
+ * becomes the one path that ships file contents.
+ */
+function approvalToolFields(args: unknown): Record<string, unknown> {
+  const record =
+    args !== null && typeof args === "object" && !Array.isArray(args)
+      ? (args as Record<string, unknown>)
+      : undefined;
+  const toolName = typeof record?.toolName === "string" ? record.toolName.trim() : "";
+  const input = projectToolInput(record?.input);
+  return {
+    ...(toolName.length > 0 ? { toolName } : {}),
+    ...(input ? { toolInput: input } : {}),
+  };
+}
+
 export function runtimeEventToActivities(
   event: ProviderRuntimeEvent,
   taskTitle?: string,
@@ -394,6 +413,10 @@ export function runtimeEventToActivities(
             ...(requestKind ? { requestKind } : {}),
             requestType: event.payload.requestType,
             ...(event.payload.detail ? { detail: event.payload.detail } : {}),
+            // Lets the approval card name the tool the way the timeline does;
+            // `requestType` only distinguishes command/read/change, so a
+            // TaskCreate prompt otherwise reads as a file change.
+            ...approvalToolFields(event.payload.args),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,
