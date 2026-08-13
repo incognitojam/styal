@@ -249,6 +249,7 @@ export interface GitHubRepositoryCloneUrls {
   readonly nameWithOwner: string;
   readonly url: string;
   readonly sshUrl: string;
+  readonly parentNameWithOwner?: string;
 }
 
 export class GitHubCli extends Context.Service<
@@ -315,10 +316,17 @@ export class GitHubCli extends Context.Service<
   }
 >()("t3/sourceControl/GitHubCli") {}
 
+/** `gh repo view --json parent` reports the fork parent as owner/name, without its URLs. */
+const RawGitHubRepositoryParentSchema = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  owner: Schema.Struct({ login: TrimmedNonEmptyString }),
+});
+
 const RawGitHubRepositoryCloneUrlsSchema = Schema.Struct({
   nameWithOwner: TrimmedNonEmptyString,
   url: TrimmedNonEmptyString,
   sshUrl: TrimmedNonEmptyString,
+  parent: Schema.optional(Schema.NullOr(RawGitHubRepositoryParentSchema)),
 });
 const decodeRawGitHubRepositoryCloneUrls = Schema.decodeEffect(
   Schema.fromJsonString(RawGitHubRepositoryCloneUrlsSchema),
@@ -331,6 +339,7 @@ function normalizeRepositoryCloneUrls(
     nameWithOwner: raw.nameWithOwner,
     url: raw.url,
     sshUrl: raw.sshUrl,
+    ...(raw.parent ? { parentNameWithOwner: `${raw.parent.owner.login}/${raw.parent.name}` } : {}),
   };
 }
 
@@ -524,7 +533,7 @@ export const make = Effect.gen(function* () {
     getRepositoryCloneUrls: (input) =>
       execute({
         cwd: input.cwd,
-        args: ["repo", "view", input.repository, "--json", "nameWithOwner,url,sshUrl"],
+        args: ["repo", "view", input.repository, "--json", "nameWithOwner,url,sshUrl,parent"],
       }).pipe(
         Effect.map((result) => result.stdout.trim()),
         Effect.flatMap((raw) =>

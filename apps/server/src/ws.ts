@@ -1768,6 +1768,22 @@ const makeWsRpcLayer = (
               "rpc.aggregate": "source-control",
             },
           ),
+        [WS_METHODS.sourceControlGetDefaultRepository]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.sourceControlGetDefaultRepository,
+            sourceControlRepositories.getDefaultRepository(input),
+            {
+              "rpc.aggregate": "source-control",
+            },
+          ),
+        [WS_METHODS.sourceControlSetDefaultRepository]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.sourceControlSetDefaultRepository,
+            sourceControlRepositories.setDefaultRepository(input),
+            {
+              "rpc.aggregate": "source-control",
+            },
+          ),
         [WS_METHODS.sourceControlListIssues]: (input) =>
           observeRpcEffect(
             WS_METHODS.sourceControlListIssues,
