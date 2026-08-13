@@ -7,9 +7,6 @@ name: Fork CI
 # See the `runs-on` comments below for why each job landed where it did.
 on:
   pull_request:
-  merge_group:
-    types:
-      - checks_requested
   push:
     branches:
       - main
@@ -37,8 +34,8 @@ jobs:
       - name: Detect non-documentation changes
         id: filter
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           run_ci=true
           changed_files="$RUNNER_TEMP/fork-ci-changed-files.txt"
