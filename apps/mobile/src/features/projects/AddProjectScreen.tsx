@@ -7,6 +7,7 @@ import {
   canCreateProjectInEnvironment,
   findExistingAddProject,
   getAddProjectInitialQuery,
+  getCloneDestinationQuery,
   resolveAddProjectPath,
   sortAddProjectProviderSources,
   type AddProjectRemoteSource,
@@ -236,12 +237,24 @@ function ProjectPathInput(props: {
   );
 }
 
-function useBrowsePathInput(environment: EnvironmentOption | null) {
+function useBrowsePathInput(
+  environment: EnvironmentOption | null,
+  cloneTarget?: { readonly nameWithOwner: string | null; readonly remoteUrl: string | null },
+) {
   const environmentId = environment?.environmentId ?? null;
   const environmentBaseDirectory = environment?.baseDirectory ?? null;
-  const [pathInput, commitPathInput] = useState(() =>
-    getAddProjectInitialQuery(environmentBaseDirectory),
+  const cloneNameWithOwner = cloneTarget?.nameWithOwner ?? null;
+  const cloneRemoteUrl = cloneTarget?.remoteUrl ?? null;
+  const initialPathFor = useCallback(
+    (baseDirectory: string | null) =>
+      getCloneDestinationQuery({
+        parentPath: getAddProjectInitialQuery(baseDirectory),
+        nameWithOwner: cloneNameWithOwner,
+        remoteUrl: cloneRemoteUrl,
+      }),
+    [cloneNameWithOwner, cloneRemoteUrl],
   );
+  const [pathInput, commitPathInput] = useState(() => initialPathFor(environmentBaseDirectory));
   const previousEnvironmentIdRef = useRef(environmentId);
   const environmentRuntime = useRemoteEnvironmentRuntime(environmentId);
   const loadBrowsePath = useAtomQueryRunner(filesystemEnvironment.browse, {
@@ -283,9 +296,9 @@ function useBrowsePathInput(environment: EnvironmentOption | null) {
   useEffect(() => {
     if (environmentId !== null && environmentId !== previousEnvironmentIdRef.current) {
       previousEnvironmentIdRef.current = environmentId;
-      setPathInput(getAddProjectInitialQuery(environmentBaseDirectory));
+      setPathInput(initialPathFor(environmentBaseDirectory));
     }
-  }, [environmentBaseDirectory, environmentId, setPathInput]);
+  }, [environmentBaseDirectory, environmentId, initialPathFor, setPathInput]);
 
   useEffect(
     () => () => {
@@ -832,8 +845,10 @@ export function AddProjectDestinationScreen(props: {
   const createProject = useCreateProject(environment);
   const remoteUrl = stringParam(props.remoteUrl);
   const repositoryTitle = stringParam(props.repositoryTitle);
-  const { isBrowseNavigating, navigateToBrowsePath, pathInput, setPathInput } =
-    useBrowsePathInput(environment);
+  const { isBrowseNavigating, navigateToBrowsePath, pathInput, setPathInput } = useBrowsePathInput(
+    environment,
+    { nameWithOwner: repositoryTitle, remoteUrl },
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

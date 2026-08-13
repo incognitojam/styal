@@ -176,6 +176,35 @@ export function getAddProjectInitialQuery(baseDirectory: string | null | undefin
   return trimmed.length === 0 ? "~/" : ensureBrowseDirectoryPath(trimmed);
 }
 
+function inferCloneDirectoryName(value: string): string {
+  const withoutTrailingSeparators = value.trim().replace(/[/\\]+$/, "");
+  const leaf =
+    withoutTrailingSeparators
+      .replace(/\.git$/i, "")
+      .split(/[/\\:]/)
+      .findLast((segment) => segment.length > 0) ?? "";
+  return leaf === "." || leaf === ".." ? "" : leaf;
+}
+
+/**
+ * Default clone destination: the add-project parent directory with the
+ * repository's own directory name appended, matching the directory `git clone`
+ * would create. The name is left without a trailing separator so browsing still
+ * treats it as a partial leaf the user can edit or replace.
+ */
+export function getCloneDestinationQuery(input: {
+  readonly parentPath: string;
+  readonly nameWithOwner?: string | null;
+  readonly remoteUrl?: string | null;
+}): string {
+  const directoryName =
+    inferCloneDirectoryName(input.nameWithOwner ?? "") ||
+    inferCloneDirectoryName(input.remoteUrl ?? "");
+  return directoryName.length === 0
+    ? input.parentPath
+    : `${ensureBrowseDirectoryPath(input.parentPath)}${directoryName}`;
+}
+
 export function resolveAddProjectPath(input: {
   readonly rawPath: string;
   readonly currentProjectCwd?: string | null;
