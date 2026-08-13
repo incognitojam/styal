@@ -13,17 +13,30 @@ import {
 } from "./projects.ts";
 import { createEnvironmentRpcQueryAtomFamily } from "./runtime.ts";
 
-export function getFilesystemBrowsePath(query: string, platform = "", enabled = true) {
+/**
+ * Splits a browse query into the directory to list and its trailing segment.
+ * The trailing segment normally filters the listing as the user types a name.
+ * Pass `leafIsDestinationName` for flows that create the leaf (cloning): the
+ * listing then stays a full parent picker and callers re-append
+ * `destinationName` when navigating.
+ */
+export function getFilesystemBrowsePath(
+  query: string,
+  platform = "",
+  enabled = true,
+  leafIsDestinationName = false,
+) {
   const isBrowsing = enabled && isFilesystemBrowseQuery(query, platform);
   const directoryPath = isBrowsing ? getBrowseDirectoryPath(query) : "";
-  const filterQuery =
+  const leafSegment =
     isBrowsing && !hasTrailingPathSeparator(query) ? getBrowseLeafPathSegment(query) : "";
   const parentPath = isBrowsing ? getBrowseParentPath(directoryPath) : null;
 
   return {
     isBrowsing,
     directoryPath,
-    filterQuery,
+    filterQuery: leafIsDestinationName ? "" : leafSegment,
+    destinationName: leafIsDestinationName ? leafSegment : "",
     parentPath,
     canBrowseUp: isBrowsing && canNavigateUp(directoryPath),
   };
