@@ -68,7 +68,7 @@ jobs:
             {
               id: "macos-arm64",
               label: "macOS arm64",
-              runner: "blacksmith-6vcpu-macos-15",
+              runner: "macos-15",
               platform: "mac",
               target: "dmg",
               arch: "arm64",
@@ -78,7 +78,7 @@ jobs:
             {
               id: "linux-x64",
               label: "Linux x64",
-              runner: "blacksmith-8vcpu-ubuntu-2404",
+              runner: "ubuntu-24.04",
               platform: "linux",
               target: "AppImage",
               arch: "x64",
@@ -115,7 +115,7 @@ jobs:
     name: Build WSL node-pty x64
     needs: configure
     if: inputs.target == 'all' || inputs.target == 'windows-x64'
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Checkout
