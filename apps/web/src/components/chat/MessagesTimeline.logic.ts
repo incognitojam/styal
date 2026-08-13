@@ -285,6 +285,23 @@ export function workLogEntryIsLocalCodeSearch(entry: WorkLogEntry): boolean {
 }
 
 export function toolGroupAction(entry: WorkLogEntry): ToolGroupAction {
+  switch (entry.toolName) {
+    case "Read":
+      return "read";
+    case "Glob":
+    case "Grep":
+      return "code-search";
+    case "WebFetch":
+    case "WebSearch":
+      return "search";
+    case "SendMessage":
+    case "TaskCreate":
+    case "TaskList":
+    case "TaskUpdate":
+    case "ToolSearch":
+      return "other";
+  }
+
   if (
     entry.requestKind === "file-read" ||
     entry.itemType === "image_view" ||
