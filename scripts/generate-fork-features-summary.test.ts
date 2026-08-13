@@ -411,13 +411,7 @@ describe("extraction cache", () => {
     );
     const otherModel = extractionCacheKeys(evidence, patchIds, "gpt-5.6-mini");
 
-    for (const changed of [
-      editedDescription,
-      editedTitle,
-      movedFiles,
-      amendedPatch,
-      otherModel,
-    ]) {
+    for (const changed of [editedDescription, editedTitle, movedFiles, amendedPatch, otherModel]) {
       assert.notEqual(changed.get("yngatech/t3code#14"), keys.get("yngatech/t3code#14"));
     }
   });
@@ -513,7 +507,13 @@ describe("extraction cache", () => {
       hints.map((names) => names.length),
       [0, 20, 40],
     );
-    assert.deepEqual(hints[1], many.slice(0, 20).map((item) => item.id).sort());
+    assert.deepEqual(
+      hints[1],
+      many
+        .slice(0, 20)
+        .map((item) => item.id)
+        .sort(),
+    );
     assert.deepEqual(handovers, [20, 40, 45]);
     assert.equal(extraction.records.length, 45);
     assert.equal(extraction.cache.size, 45);
@@ -556,6 +556,22 @@ describe("extraction cache", () => {
       parseExtractionCache(
         JSON.stringify({ version: 1, entries: { "yngatech/t3code#14": { key: "abc" } } }),
       ),
+    );
+  });
+});
+
+describe("response completeness", () => {
+  it("names the cause when a response was cut off by the output limit", () => {
+    assert.throws(
+      () =>
+        extractResponseText({
+          status: "incomplete",
+          incomplete_details: { reason: "max_output_tokens" },
+          output: [
+            { type: "message", content: [{ type: "output_text", text: '{"added":[{"text":"Tr' }] },
+          ],
+        }),
+      /incomplete: max_output_tokens/,
     );
   });
 });

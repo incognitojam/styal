@@ -42,8 +42,9 @@ which is the stable view of the fork's current differences from upstream.
 
 Configure the `OPENAI_FORK_CHANGELOG_API_KEY` Actions secret to enable summary generation. The
 workflow maps that purpose-specific secret to `OPENAI_API_KEY` only for the generator process. It uses
-`gpt-5.6-sol` with low reasoning for evidence extraction and medium reasoning for synthesis. Set the
-`OPENAI_CHANGELOG_MODEL` environment variable in the workflow to override the model deliberately.
+`gpt-5.6-terra` with low reasoning for evidence extraction and medium reasoning for synthesis. Set the
+`OPENAI_CHANGELOG_MODEL` environment variable in the workflow to override the model deliberately;
+because the model is part of the cache fingerprint, changing it re-extracts every change once.
 
 The generator resolves pull request numbers from commit subjects and loads each PR title and body,
 falling back to commit metadata when PR evidence is unavailable. It first extracts chronological,
@@ -74,8 +75,7 @@ next run instead of re-reading every change.
 Each entry is keyed by a hash of the evidence the model reads — PR title, body, and touched files,
 with the patch ID standing in for the diff — combined with a hash of the extraction request, which
 covers the prompt, schema, model, reasoning effort, output limits, and how much of each diff the model
-is shown. The nightly rebase therefore
-keeps its hits, while an edited PR body, an amended patch, or an edited prompt re-extracts the
+is shown. The nightly rebase therefore keeps its hits, while an edited PR body, an amended patch, or an edited prompt re-extracts the
 affected changes. Commits without a pull request number are keyed by commit SHA and are re-extracted
 after every rebase. A change large enough to exceed the budget on its own still loses its diff to the
 budget fitter, and is then left uncached so a future run can read it whole.

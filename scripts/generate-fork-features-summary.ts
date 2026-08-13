@@ -82,7 +82,10 @@ interface RenderForkSummaryOptions {
   readonly upstreamRepository: string;
 }
 
-const DEFAULT_MODEL = "gpt-5.6-sol";
+// Chosen over gpt-5.6-sol on repeated sampling: it reproduced the style guidance
+// more faithfully when reconciling a full record set, completed every run where
+// sol truncated or timed out, and costs less per token.
+const DEFAULT_MODEL = "gpt-5.6-terra";
 const EXTRACTION_REASONING_EFFORT = "low";
 const SYNTHESIS_REASONING_EFFORT = "medium";
 const MAX_SOURCE_DESCRIPTION_LENGTH = 2_000;
@@ -105,6 +108,9 @@ const MAX_SUMMARY_ITEMS = 12;
 const MAX_EVIDENCE_IDS_PER_ITEM = 6;
 const GITHUB_REQUEST_CONCURRENCY = 8;
 const EXTRACTION_CACHE_VERSION = 1;
+// Synthesis over a full record set has run past two minutes, and a timeout here
+// costs the release its generated notes.
+const REQUEST_TIMEOUT_MS = 240_000;
 
 const changeRecordsSchema = {
   type: "object",
@@ -648,7 +654,10 @@ export function buildOpenAIRequest(
     reasoning: {
       effort: extraction ? EXTRACTION_REASONING_EFFORT : SYNTHESIS_REASONING_EFFORT,
     },
-    max_output_tokens: extraction ? 8_000 : 4_000,
+    // Reasoning tokens count against this, and synthesis reasons over every record
+    // it must reconcile, so it needs far more room than extraction. A rolling
+    // summary truncated mid-JSON at 4000 and again at 8000.
+    max_output_tokens: extraction ? 8_000 : 16_000,
     text: {
       verbosity: "low",
       format: {
@@ -668,6 +677,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function extractResponseText(response: unknown): string {
   if (!isRecord(response) || !Array.isArray(response.output)) {
     throw new Error("OpenAI response did not contain an output array.");
+  }
+  // A truncated response still carries well-formed output text, so without this
+  // the run fails later on a JSON parse error that names no cause.
+  if (response.status === "incomplete") {
+    const details = isRecord(response.incomplete_details) ? response.incomplete_details : {};
+    throw new Error(`OpenAI response was incomplete: ${String(details.reason)}.`);
   }
 
   for (const output of response.output) {
@@ -1035,7 +1050,7 @@ async function requestStructuredOutput(
       "Content-Type": "application/json",
     },
     body: JSON.stringify(buildOpenAIRequest(model, prompt, stage)),
-    signal: AbortSignal.timeout(120_000),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!response.ok) {
     const detail = (await response.text()).slice(0, 1_000);
