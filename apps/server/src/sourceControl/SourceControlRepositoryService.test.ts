@@ -21,6 +21,22 @@ const CLONE_URLS = {
   sshUrl: "git@github.com:octocat/t3code.git",
 };
 
+const PARENT_URLS = {
+  nameWithOwner: "t3/t3code",
+  url: "https://github.com/t3/t3code",
+  sshUrl: "git@github.com:t3/t3code.git",
+};
+
+const FORK_URLS = { ...CLONE_URLS, parentNameWithOwner: PARENT_URLS.nameWithOwner };
+
+/** Answers the fork lookup and the follow-up parent lookup from one provider mock. */
+function makeForkProvider() {
+  return makeProvider({
+    getRepositoryCloneUrls: (input) =>
+      Effect.succeed(input.repository === PARENT_URLS.nameWithOwner ? PARENT_URLS : FORK_URLS),
+  });
+}
+
 function makeProvider(
   overrides: Partial<SourceControlProvider.SourceControlProvider["Service"]> = {},
 ): SourceControlProvider.SourceControlProvider["Service"] {
@@ -70,6 +86,8 @@ function makeLayer(input: {
       Layer.mock(GitVcsDriver.GitVcsDriver)({
         execute: () => Effect.succeed(processOutput()),
         ensureRemote: () => Effect.succeed("origin"),
+        resolvePrimaryRemoteName: () => Effect.succeed("origin"),
+        fetchRemote: () => Effect.void,
         pushCurrentBranch: () =>
           Effect.succeed({
             status: "pushed" as const,
@@ -181,6 +199,7 @@ it.effect("clones a looked-up repository into the requested destination", () =>
           args: ["clone", CLONE_URLS.url, "t3code"],
         },
       ]);
+      assert.strictEqual("upstream" in result, false);
     }).pipe(
       Effect.provide(
         makeLayer({
@@ -188,6 +207,422 @@ it.effect("clones a looked-up repository into the requested destination", () =>
             execute: (input) =>
               Effect.sync(() => {
                 cloneCalls.push({ cwd: input.cwd, args: input.args });
+                return processOutput();
+              }),
+          },
+        }),
+      ),
+    );
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+/** Answers `git config --get-regexp` for a fork clone that already has both remotes. */
+function forkRemoteConfigStdout(defaultRemoteName: string | null): string {
+  return [
+    `remote.origin.url ${CLONE_URLS.url}`,
+    `remote.upstream.url ${PARENT_URLS.url}`,
+    ...(defaultRemoteName ? [`remote.${defaultRemoteName}.gh-resolved base`] : []),
+  ].join("\n");
+}
+
+it.effect("lists remote candidates and the current default repository", () =>
+  Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const state = yield* service.getDefaultRepository({ cwd: "/workspace" });
+
+    assert.deepStrictEqual(state, {
+      remotes: [
+        {
+          remoteName: "origin",
+          url: CLONE_URLS.url,
+          nameWithOwner: "octocat/t3code",
+          provider: "github",
+        },
+        {
+          remoteName: "upstream",
+          url: PARENT_URLS.url,
+          nameWithOwner: "t3/t3code",
+          provider: "github",
+        },
+      ],
+      defaultRemoteName: "upstream",
+    });
+  }).pipe(
+    Effect.provide(
+      makeLayer({
+        git: {
+          execute: () =>
+            Effect.succeed({ ...processOutput(), stdout: forkRemoteConfigStdout("upstream") }),
+        },
+      }),
+    ),
+  ),
+);
+
+it.effect("moves the default repository pin to the chosen remote", () => {
+  const configCalls: Array<ReadonlyArray<string>> = [];
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    yield* service.setDefaultRepository({ cwd: "/workspace", remoteName: "origin" });
+
+    assert.deepStrictEqual(configCalls, [
+      ["config", "--unset-all", "remote.upstream.gh-resolved"],
+      ["config", "--replace-all", "remote.origin.gh-resolved", "base"],
+    ]);
+  }).pipe(
+    Effect.provide(
+      makeLayer({
+        git: {
+          execute: (input) =>
+            Effect.sync(() => {
+              if (input.args[1] !== "--get-regexp") {
+                configCalls.push(input.args);
+              }
+              return { ...processOutput(), stdout: forkRemoteConfigStdout("upstream") };
+            }),
+        },
+      }),
+    ),
+  );
+});
+
+it.effect("rejects a default repository that is not one of the remotes", () =>
+  Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const error = yield* Effect.flip(
+      service.setDefaultRepository({ cwd: "/workspace", remoteName: "fork" }),
+    );
+
+    assert.strictEqual(error.operation, "setDefaultRepository");
+    assert.strictEqual(error.detail, "Choose a remote that exists in this repository.");
+  }).pipe(
+    Effect.provide(
+      makeLayer({
+        git: {
+          execute: () =>
+            Effect.succeed({ ...processOutput(), stdout: forkRemoteConfigStdout(null) }),
+        },
+      }),
+    ),
+  ),
+);
+
+it.effect("clears every pin when the default repository is unset", () => {
+  const configCalls: Array<ReadonlyArray<string>> = [];
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const state = yield* service.setDefaultRepository({ cwd: "/workspace", remoteName: null });
+
+    assert.deepStrictEqual(configCalls, [["config", "--unset-all", "remote.upstream.gh-resolved"]]);
+    // The mocked config keeps reporting the pin, so this asserts the read-back
+    // shape rather than the cleared value.
+    assert.strictEqual(state.remotes.length, 2);
+  }).pipe(
+    Effect.provide(
+      makeLayer({
+        git: {
+          execute: (input) =>
+            Effect.sync(() => {
+              if (input.args[1] !== "--get-regexp") {
+                configCalls.push(input.args);
+              }
+              return { ...processOutput(), stdout: forkRemoteConfigStdout("upstream") };
+            }),
+        },
+      }),
+    ),
+  );
+});
+
+it.effect("reports the repository a pin names when it is not the remote's own", () =>
+  Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const state = yield* service.getDefaultRepository({ cwd: "/workspace" });
+
+    // What `gh repo set-default` writes for a fork cloned without an upstream
+    // remote: the pin lives on origin but names the parent repository.
+    assert.strictEqual(state.defaultRemoteName, "origin");
+    assert.strictEqual(state.defaultRepositoryPath, PARENT_URLS.nameWithOwner);
+  }).pipe(
+    Effect.provide(
+      makeLayer({
+        git: {
+          execute: () =>
+            Effect.succeed({
+              ...processOutput(),
+              stdout: [
+                `remote.origin.url ${CLONE_URLS.url}`,
+                `remote.origin.gh-resolved ${PARENT_URLS.nameWithOwner}`,
+              ].join("\n"),
+            }),
+        },
+      }),
+    ),
+  ),
+);
+
+it.effect("reads remote names containing dots, and a repository with no remotes", () =>
+  Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const state = yield* service.getDefaultRepository({ cwd: "/workspace" });
+
+    assert.deepStrictEqual(
+      state.remotes.map((remote) => remote.remoteName),
+      ["my.fork"],
+    );
+    assert.strictEqual(state.defaultRemoteName, "my.fork");
+
+    const empty = yield* service.getDefaultRepository({ cwd: "/empty" });
+    assert.deepStrictEqual(empty, { remotes: [], defaultRemoteName: null });
+  }).pipe(
+    Effect.provide(
+      makeLayer({
+        git: {
+          execute: (input) =>
+            Effect.succeed({
+              ...processOutput(),
+              stdout:
+                input.cwd === "/empty"
+                  ? ""
+                  : [
+                      `remote.my.fork.url ${CLONE_URLS.url}`,
+                      "remote.my.fork.gh-resolved base",
+                    ].join("\n"),
+            }),
+        },
+      }),
+    ),
+  ),
+);
+
+it.effect("wires a cloned fork to its parent and pins the fork by default", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const parent = yield* fs.makeTempDirectoryScoped({
+      prefix: "t3-source-control-clone-fork-",
+    });
+    const destinationPath = `${parent}/t3code`;
+    const gitCalls: Array<{ cwd: string; args: ReadonlyArray<string> }> = [];
+    const remoteCalls: Array<{ cwd: string; preferredName: string; url: string }> = [];
+
+    yield* Effect.gen(function* () {
+      const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+      const result = yield* service.cloneRepository({
+        provider: "github",
+        repository: "octocat/t3code",
+        destinationPath,
+        protocol: "https",
+      });
+
+      assert.deepStrictEqual(result.upstream, {
+        remoteName: "upstream",
+        nameWithOwner: PARENT_URLS.nameWithOwner,
+        remoteUrl: PARENT_URLS.url,
+      });
+      assert.deepStrictEqual(remoteCalls, [
+        { cwd: destinationPath, preferredName: "upstream", url: PARENT_URLS.url },
+      ]);
+      assert.deepStrictEqual(gitCalls, [
+        { cwd: parent, args: ["clone", CLONE_URLS.url, "t3code"] },
+        {
+          cwd: destinationPath,
+          args: ["config", "--replace-all", "remote.origin.gh-resolved", "base"],
+        },
+      ]);
+    }).pipe(
+      Effect.provide(
+        makeLayer({
+          provider: makeForkProvider(),
+          git: {
+            execute: (input) =>
+              Effect.sync(() => {
+                gitCalls.push({ cwd: input.cwd, args: input.args });
+                return processOutput();
+              }),
+            ensureRemote: (input) =>
+              Effect.sync(() => {
+                remoteCalls.push(input);
+                return "upstream";
+              }),
+          },
+        }),
+      ),
+    );
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("pins the parent when the clone asks to contribute upstream", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const parent = yield* fs.makeTempDirectoryScoped({
+      prefix: "t3-source-control-clone-fork-parent-",
+    });
+    const destinationPath = `${parent}/t3code`;
+    const gitCalls: Array<{ cwd: string; args: ReadonlyArray<string> }> = [];
+    const remoteCalls: Array<{ cwd: string; preferredName: string; url: string }> = [];
+
+    yield* Effect.gen(function* () {
+      const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+      yield* service.cloneRepository({
+        provider: "github",
+        repository: "octocat/t3code",
+        destinationPath,
+        protocol: "https",
+        defaultRepository: "parent",
+      });
+
+      assert.deepStrictEqual(gitCalls, [
+        { cwd: parent, args: ["clone", CLONE_URLS.url, "t3code"] },
+        {
+          cwd: destinationPath,
+          args: ["config", "--replace-all", "remote.upstream.gh-resolved", "base"],
+        },
+      ]);
+    }).pipe(
+      Effect.provide(
+        makeLayer({
+          provider: makeForkProvider(),
+          git: {
+            execute: (input) =>
+              Effect.sync(() => {
+                gitCalls.push({ cwd: input.cwd, args: input.args });
+                return processOutput();
+              }),
+            ensureRemote: (input) =>
+              Effect.sync(() => {
+                remoteCalls.push(input);
+                return "upstream";
+              }),
+          },
+        }),
+      ),
+    );
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("fetches the upstream remote, and keeps the clone when that fetch fails", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const parent = yield* fs.makeTempDirectoryScoped({
+      prefix: "t3-source-control-clone-fork-fetch-",
+    });
+    const destinationPath = `${parent}/t3code`;
+    const fetchCalls: Array<{ cwd: string; remoteName: string }> = [];
+
+    yield* Effect.gen(function* () {
+      const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+      const result = yield* service.cloneRepository({
+        provider: "github",
+        repository: "octocat/t3code",
+        destinationPath,
+      });
+
+      assert.deepStrictEqual(fetchCalls, [{ cwd: destinationPath, remoteName: "upstream" }]);
+      // The remote is wired up either way, so a failed fetch still reports it.
+      assert.strictEqual(result.upstream?.remoteName, "upstream");
+    }).pipe(
+      Effect.provide(
+        makeLayer({
+          provider: makeForkProvider(),
+          git: {
+            ensureRemote: () => Effect.succeed("upstream"),
+            fetchRemote: (input) =>
+              Effect.sync(() => {
+                fetchCalls.push(input);
+              }).pipe(
+                Effect.andThen(
+                  new GitCommandError({
+                    operation: "GitVcsDriver.fetchRemote",
+                    command: "git fetch upstream",
+                    cwd: input.cwd,
+                    detail: "fatal: could not read from remote repository",
+                  }),
+                ),
+              ),
+          },
+        }),
+      ),
+    );
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("keeps a fork clone when the upstream remote cannot be added", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const parent = yield* fs.makeTempDirectoryScoped({
+      prefix: "t3-source-control-clone-fork-failure-",
+    });
+    const destinationPath = `${parent}/t3code`;
+
+    yield* Effect.gen(function* () {
+      const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+      const result = yield* service.cloneRepository({
+        provider: "github",
+        repository: "octocat/t3code",
+        destinationPath,
+      });
+
+      assert.strictEqual(result.cwd, destinationPath);
+      assert.strictEqual(result.upstream, undefined);
+    }).pipe(
+      Effect.provide(
+        makeLayer({
+          provider: makeForkProvider(),
+          git: {
+            ensureRemote: (input) =>
+              new GitCommandError({
+                operation: "GitVcsDriver.ensureRemote.add",
+                command: "git remote add upstream",
+                cwd: input.cwd,
+                detail: "fatal: could not add remote",
+              }),
+          },
+        }),
+      ),
+    );
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("falls back to the requested clone URL when the repository lookup fails", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const parent = yield* fs.makeTempDirectoryScoped({
+      prefix: "t3-source-control-clone-lookup-failure-",
+    });
+    const destinationPath = `${parent}/t3code`;
+    const cloneCalls: Array<ReadonlyArray<string>> = [];
+
+    yield* Effect.gen(function* () {
+      const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+      const result = yield* service.cloneRepository({
+        provider: "github",
+        repository: "octocat/t3code",
+        remoteUrl: CLONE_URLS.sshUrl,
+        destinationPath,
+      });
+
+      assert.strictEqual(result.repository, null);
+      assert.strictEqual(result.remoteUrl, CLONE_URLS.sshUrl);
+      assert.deepStrictEqual(cloneCalls, [["clone", CLONE_URLS.sshUrl, "t3code"]]);
+    }).pipe(
+      Effect.provide(
+        makeLayer({
+          provider: makeProvider({
+            getRepositoryCloneUrls: (input) =>
+              new SourceControlProviderError({
+                provider: "github",
+                operation: "getRepositoryCloneUrls",
+                cwd: input.cwd,
+                repository: input.repository,
+                detail: "gh is not authenticated",
+              }),
+          }),
+          git: {
+            execute: (input) =>
+              Effect.sync(() => {
+                cloneCalls.push(input.args);
                 return processOutput();
               }),
           },

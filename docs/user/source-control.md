@@ -21,6 +21,15 @@ T3 Code works with the platforms your team already uses:
 - Choose **GitHub repository**, **GitLab repository**, **Bitbucket repository**, **Azure DevOps repository**, or paste any **Git URL**
 - Enter the repository path (`owner/repo`, `group/project`, `workspace/repository`, or `project/repository`) or a full Git URL, pick a destination, and start coding
 
+**Forks come wired up**
+
+- Cloning a GitHub fork also adds the repository it was forked from as an `upstream` remote, so you can fetch from the original project right away
+- Because two remotes means two possible targets, cloning a fork adds one step: choose which repository is the **default repository**. Your fork is offered first; choose the original project instead when you are cloning to contribute upstream.
+- The default repository is where pull requests, issues, and releases go — including the ones T3 Code creates and the **Pull requests** page it lists.
+- Branches keep their own alignment: once a branch tracks a remote, that repository is the one T3 Code treats it as belonging to, so a branch pushed to the original project groups with the original project and a branch on your fork stays with your fork.
+- Change your mind later on web or desktop in **Settings → Projects → Checkout → Default repository**. It is the same setting as the GitHub CLI's `gh repo set-default`, so the two agree in both directions.
+- Fork detection is GitHub-only. Clones from GitLab, Bitbucket, Azure DevOps, or a plain Git URL are untouched.
+
 **Publish local projects to the cloud**
 
 - Have a local Git repository without a remote?

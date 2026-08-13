@@ -108,6 +108,47 @@ export function isTemporaryWorktreeBranch(refName: string): boolean {
   return TEMP_WORKTREE_BRANCH_PATTERN.test(refName.trim().toLowerCase());
 }
 
+export interface GitRemoteConfigEntry {
+  readonly remoteName: string;
+  readonly url: string | null;
+  /**
+   * Value of `remote.<name>.gh-resolved`, or null when the remote carries no
+   * pin. `gh repo set-default` writes `base` when the default repository is the
+   * remote's own, and an `owner/repo` when it is a different one — which is what
+   * a single-remote fork gets when its parent is chosen.
+   */
+  readonly ghResolved: string | null;
+}
+
+/**
+ * Parses `git config --get-regexp ^remote\..*\.(url|gh-resolved)$` output. Both
+ * the source-control service and the repository identity resolver read the same
+ * config, so they share one parse rather than two regexps that can drift.
+ */
+export function parseGitRemoteConfig(stdout: string): ReadonlyArray<GitRemoteConfigEntry> {
+  const entries = new Map<string, { url: string | null; ghResolved: string | null }>();
+
+  for (const line of stdout.split("\n")) {
+    const match = /^remote\.(.+)\.(url|gh-resolved)\s+(\S+)$/u.exec(line.trim());
+    const remoteName = match?.[1];
+    const key = match?.[2];
+    const value = match?.[3];
+    if (!remoteName || !key || !value) continue;
+
+    const entry = entries.get(remoteName) ?? { url: null, ghResolved: null };
+    // A key can repeat (`git config --add`); the first value is the one git
+    // reports for a single-value read, so later ones do not overwrite it.
+    if (key === "url") {
+      entry.url ??= value;
+    } else {
+      entry.ghResolved ??= value;
+    }
+    entries.set(remoteName, entry);
+  }
+
+  return [...entries].map(([remoteName, entry]) => ({ remoteName, ...entry }));
+}
+
 /**
  * Normalize a git remote URL into a stable comparison key.
  */
