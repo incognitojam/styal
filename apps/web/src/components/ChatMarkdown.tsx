@@ -107,6 +107,7 @@ import {
   openUrlInPreview,
   BrowserPreviewUnavailableError,
 } from "../browser/openFileInPreview";
+import { createStableMarkdownComponents } from "./chatMarkdownRenderers";
 
 interface ChatMarkdownProps {
   text: string;
@@ -1818,6 +1819,12 @@ function ChatMarkdown({
     threadRef,
   ]);
   /* eslint-enable react/no-unstable-nested-components */
+  const latestMarkdownComponentsRef = useRef(markdownComponents);
+  latestMarkdownComponentsRef.current = markdownComponents;
+  const stableMarkdownComponents = useMemo(
+    () => createStableMarkdownComponents(() => latestMarkdownComponentsRef.current),
+    [],
+  );
 
   return (
     <div
@@ -1832,7 +1839,7 @@ function ChatMarkdown({
           lineBreaks ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : CHAT_MARKDOWN_REMARK_PLUGINS
         }
         rehypePlugins={CHAT_MARKDOWN_REHYPE_PLUGINS}
-        components={markdownComponents}
+        components={stableMarkdownComponents}
         urlTransform={markdownUrlTransform}
       >
         {text}
