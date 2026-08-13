@@ -13,6 +13,7 @@ import {
   canCreateProjectInEnvironment,
   findExistingAddProject,
   getAddProjectInitialQuery,
+  getCloneDestinationQuery,
   resolveAddProjectPath,
   sortAddProjectProviderSources,
 } from "./projects.ts";
@@ -32,6 +33,42 @@ describe("add project shared logic", () => {
     expect(getAddProjectInitialQuery("")).toBe("~/");
     expect(getAddProjectInitialQuery("/work")).toBe("/work/");
     expect(getAddProjectInitialQuery("C:\\work")).toBe("C:\\work\\");
+  });
+
+  it("appends the repository directory name to the clone destination", () => {
+    expect(
+      getCloneDestinationQuery({
+        parentPath: "~/projects/",
+        nameWithOwner: "yngatech/t3code",
+        remoteUrl: "git@github.com:yngatech/t3code.git",
+      }),
+    ).toBe("~/projects/t3code");
+    expect(
+      getCloneDestinationQuery({
+        parentPath: "C:\\work\\",
+        nameWithOwner: "org/team/repo",
+        remoteUrl: "https://dev.azure.com/org/team/_git/repo",
+      }),
+    ).toBe("C:\\work\\repo");
+  });
+
+  it("derives the clone directory name from the remote url alone", () => {
+    const fromUrl = (remoteUrl: string) =>
+      getCloneDestinationQuery({ parentPath: "/work/", remoteUrl });
+    expect(fromUrl("git@github.com:owner/repo.git")).toBe("/work/repo");
+    expect(fromUrl("https://gitlab.com/group/sub/repo.git")).toBe("/work/repo");
+    expect(fromUrl("ssh://git@example.com:2222/owner/repo")).toBe("/work/repo");
+    expect(fromUrl("https://example.com/owner/repo/")).toBe("/work/repo");
+    expect(fromUrl("/srv/git/repo.git")).toBe("/work/repo");
+  });
+
+  it("keeps the parent path when no directory name can be derived", () => {
+    expect(getCloneDestinationQuery({ parentPath: "~/projects/", remoteUrl: "  " })).toBe(
+      "~/projects/",
+    );
+    expect(getCloneDestinationQuery({ parentPath: "~/projects/", remoteUrl: "../" })).toBe(
+      "~/projects/",
+    );
   });
 
   it("rejects unsupported windows paths on non-windows environments", () => {
