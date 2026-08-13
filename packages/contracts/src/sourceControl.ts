@@ -93,6 +93,8 @@ export const SourceControlRepositoryCloneUrls = Schema.Struct({
   nameWithOwner: TrimmedNonEmptyString,
   url: TrimmedNonEmptyString,
   sshUrl: TrimmedNonEmptyString,
+  /** Repository this one was forked from, when the provider reports a parent. */
+  parentNameWithOwner: Schema.optional(TrimmedNonEmptyString),
 });
 export type SourceControlRepositoryCloneUrls = typeof SourceControlRepositoryCloneUrls.Type;
 
@@ -107,6 +109,8 @@ export const SourceControlRepositoryInfo = Schema.Struct({
   nameWithOwner: TrimmedNonEmptyString,
   url: TrimmedNonEmptyString,
   sshUrl: TrimmedNonEmptyString,
+  /** Repository this one was forked from, when the provider reports a parent. */
+  parentNameWithOwner: Schema.optional(TrimmedNonEmptyString),
 });
 export type SourceControlRepositoryInfo = typeof SourceControlRepositoryInfo.Type;
 
@@ -117,21 +121,79 @@ export const SourceControlRepositoryLookupInput = Schema.Struct({
 });
 export type SourceControlRepositoryLookupInput = typeof SourceControlRepositoryLookupInput.Type;
 
+/**
+ * Which repository a fork clone should treat as its default: the repository
+ * that was cloned, or the one it was forked from. Mirrors the choice
+ * `gh repo set-default` writes, and only applies when the clone is a fork.
+ * Omitted means `parent`, which is what `gh repo clone` picks for a fork.
+ */
+export const SourceControlCloneDefaultRepository = Schema.Literals(["cloned", "parent"]);
+export type SourceControlCloneDefaultRepository = typeof SourceControlCloneDefaultRepository.Type;
+
 export const SourceControlCloneRepositoryInput = Schema.Struct({
   provider: Schema.optional(SourceControlProviderKind),
   repository: Schema.optional(TrimmedNonEmptyString),
   remoteUrl: Schema.optional(TrimmedNonEmptyString),
   destinationPath: TrimmedNonEmptyString,
   protocol: Schema.optional(SourceControlCloneProtocol),
+  defaultRepository: Schema.optional(SourceControlCloneDefaultRepository),
 });
 export type SourceControlCloneRepositoryInput = typeof SourceControlCloneRepositoryInput.Type;
+
+export const SourceControlUpstreamRemote = Schema.Struct({
+  remoteName: TrimmedNonEmptyString,
+  nameWithOwner: TrimmedNonEmptyString,
+  remoteUrl: TrimmedNonEmptyString,
+});
+export type SourceControlUpstreamRemote = typeof SourceControlUpstreamRemote.Type;
 
 export const SourceControlCloneRepositoryResult = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   remoteUrl: TrimmedNonEmptyString,
   repository: Schema.NullOr(SourceControlRepositoryInfo),
+  /** Present when the clone was a fork and its parent was wired up as a remote. */
+  upstream: Schema.optional(SourceControlUpstreamRemote),
 });
 export type SourceControlCloneRepositoryResult = typeof SourceControlCloneRepositoryResult.Type;
+
+/**
+ * One candidate for a project's default repository. `nameWithOwner` is derived
+ * from the remote URL, so listing candidates never needs a provider CLI call.
+ */
+export const SourceControlDefaultRepositoryRemote = Schema.Struct({
+  remoteName: TrimmedNonEmptyString,
+  url: TrimmedNonEmptyString,
+  nameWithOwner: Schema.NullOr(TrimmedNonEmptyString),
+  provider: SourceControlProviderKind,
+});
+export type SourceControlDefaultRepositoryRemote = typeof SourceControlDefaultRepositoryRemote.Type;
+
+export const SourceControlDefaultRepositoryState = Schema.Struct({
+  remotes: Schema.Array(SourceControlDefaultRepositoryRemote),
+  /** Remote currently pinned as the default, or null when nothing is pinned. */
+  defaultRemoteName: Schema.NullOr(TrimmedNonEmptyString),
+  /**
+   * Repository the pin names when it is not the pinned remote's own — what
+   * `gh repo set-default` writes when the default is reachable through a remote
+   * but is not that remote's repository, as for a fork cloned without upstream.
+   */
+  defaultRepositoryPath: Schema.optional(TrimmedNonEmptyString),
+});
+export type SourceControlDefaultRepositoryState = typeof SourceControlDefaultRepositoryState.Type;
+
+export const SourceControlGetDefaultRepositoryInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+});
+export type SourceControlGetDefaultRepositoryInput =
+  typeof SourceControlGetDefaultRepositoryInput.Type;
+
+export const SourceControlSetDefaultRepositoryInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  /** Null clears the pin, the way `gh repo set-default --unset` does. */
+  remoteName: Schema.NullOr(TrimmedNonEmptyString),
+});
+export type SourceControlSetDefaultRepositoryInput =
+  typeof SourceControlSetDefaultRepositoryInput.Type;
 
 export const SourceControlPublishRepositoryInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
