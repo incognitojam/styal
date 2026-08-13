@@ -18,6 +18,10 @@ const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import {
+  deriveToolRowPresentation,
+  type ToolRowArgument,
+} from "@t3tools/shared/toolRowPresentation";
+import {
   createContext,
   Fragment,
   memo,
@@ -2050,6 +2054,36 @@ function workToneIcon(tone: TimelineWorkEntry["tone"]): {
   };
 }
 
+/**
+ * One vocabulary for every provider, derived at render time. See
+ * `toolRowPresentation` for why this must not be written back onto the entry.
+ */
+function toolRowPresentationFor(workEntry: TimelineWorkEntry) {
+  if (workEntry.sourceActivityKind?.startsWith("setup-script.") || workEntry.agentSpawn) {
+    return undefined;
+  }
+  return deriveToolRowPresentation({
+    toolName: workEntry.toolName,
+    itemType: workEntry.itemType,
+    label: workEntry.toolTitle ?? workEntry.label,
+    detail: workEntry.detail,
+    input: workEntry.toolInput,
+    command: workEntry.command,
+    changedFiles: workEntry.changedFiles,
+  });
+}
+
+function formatToolRowArgument(
+  argument: ToolRowArgument,
+  workspaceRoot: string | undefined,
+): string {
+  if (argument.kind !== "path") {
+    return argument.value;
+  }
+  const displayPath = formatWorkspaceRelativePath(argument.value, workspaceRoot);
+  return argument.moreCount ? `${displayPath} +${argument.moreCount} more` : displayPath;
+}
+
 function workEntryPreview(
   workEntry: Pick<TimelineWorkEntry, "detail" | "command" | "changedFiles" | "itemType">,
   workspaceRoot: string | undefined,
@@ -2097,7 +2131,13 @@ function buildToolCallExpandedBody(
   } else if (workEntry.command?.trim()) {
     blocks.push(workEntry.command.trim());
   }
-  if (workEntry.detail?.trim()) {
+  const toolArguments = buildToolArgumentLines(workEntry, workspaceRoot);
+  if (toolArguments) {
+    blocks.push(toolArguments);
+  }
+  // The adapters serialize a tool's whole input into `detail`, so once the
+  // arguments are shown as fields the JSON restates them unreadably.
+  if (workEntry.detail?.trim() && !(toolArguments && detailIsSerializedInput(workEntry))) {
     blocks.push(workEntry.detail.trim());
   }
   const changedFiles = workEntry.changedFiles ?? [];
@@ -2109,6 +2149,58 @@ function buildToolCallExpandedBody(
     );
   }
   return blocks.length > 0 ? blocks.join("\n\n") : null;
+}
+
+/** `Edit: {"file_path":…}` — the adapters' serialized-input detail format. */
+function detailIsSerializedInput(
+  workEntry: Pick<TimelineWorkEntry, "detail" | "toolName">,
+): boolean {
+  const detail = workEntry.detail?.trim();
+  return (
+    detail !== undefined &&
+    workEntry.toolName !== undefined &&
+    detail.startsWith(`${workEntry.toolName}: {`)
+  );
+}
+
+const TOOL_ARGUMENT_LABELS: Readonly<Record<string, string>> = {
+  file_path: "File",
+  notebook_path: "Notebook",
+  path: "Path",
+  pattern: "Pattern",
+  query: "Query",
+  skill: "Skill",
+  args: "Arguments",
+  to: "To",
+  subject: "Subject",
+  url: "URL",
+  offset: "From line",
+  limit: "Lines",
+};
+
+/** Tool arguments as readable fields rather than one serialized blob. */
+function buildToolArgumentLines(
+  workEntry: TimelineWorkEntry,
+  workspaceRoot: string | undefined,
+): string | null {
+  const input = workEntry.toolInput;
+  if (!input) {
+    return null;
+  }
+  const lines: string[] = [];
+  for (const [key, value] of Object.entries(input)) {
+    if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") {
+      continue;
+    }
+    const label = TOOL_ARGUMENT_LABELS[key] ?? key;
+    const rendered =
+      typeof value === "string" &&
+      (key === "file_path" || key === "notebook_path" || key === "path")
+        ? formatWorkspaceRelativePath(value, workspaceRoot)
+        : value.toString();
+    lines.push(`${label}: ${rendered}`);
+  }
+  return lines.length > 0 ? lines.join("\n") : null;
 }
 
 function buildCommandOutputBody(result: OrchestrationGetCommandOutputResult): string {
@@ -2202,14 +2294,36 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   if (workEntry.requestKind === "file-read") return "eye";
   if (workEntry.requestKind === "file-change") return "square-pen";
 
+  // The tool's own name beats itemType where the adapters' substring
+  // classification gets it wrong (TaskCreate reads as a file write).
+  switch (workEntry.toolName) {
+    case "Read":
+      return "eye";
+    case "Grep":
+    case "Glob":
+    case "ToolSearch":
+      return "wrench";
+    case "SendMessage":
+      return "message-circle";
+    case "TaskCreate":
+    case "TaskUpdate":
+    case "TaskList":
+      return "check";
+    case "WebFetch":
+    case "WebSearch":
+      return "globe";
+  }
+
   if (workEntry.itemType === "command_execution" || workEntry.command) {
     return "terminal";
   }
+  // Before the file-change test: viewing an image discovers a path, which
+  // otherwise wins and stamps a read-only row with an edit pencil.
+  if (workEntry.itemType === "image_view") return "eye";
   if (workEntry.itemType === "file_change" || (workEntry.changedFiles?.length ?? 0) > 0) {
     return "square-pen";
   }
   if (workEntry.itemType === "web_search") return "globe";
-  if (workEntry.itemType === "image_view") return "eye";
 
   switch (workEntry.itemType) {
     case "mcp_tool_call":
@@ -2239,6 +2353,10 @@ function capitalizePhrase(value: string): string {
 function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
   if (workEntry.sourceActivityKind?.startsWith("setup-script.")) {
     return capitalizePhrase(workEntry.label);
+  }
+  const presentation = toolRowPresentationFor(workEntry);
+  if (presentation) {
+    return presentation.heading;
   }
   if (!workEntry.toolTitle) {
     return capitalizePhrase(normalizeCompactToolLabel(workEntry.label));
@@ -2365,7 +2483,14 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
   const entryIconName = showWarningIndicator ? "x" : workEntryIconName(workEntry);
   const heading = toolWorkEntryHeading(workEntry);
-  const rawPreview = workEntryPreview(workEntry, workspaceRoot);
+  // A presentation owns its argument, including deciding there isn't one —
+  // falling back here would reinstate the serialized-input detail it dropped.
+  const presentation = toolRowPresentationFor(workEntry);
+  const rawPreview = presentation
+    ? presentation.argument
+      ? formatToolRowArgument(presentation.argument, workspaceRoot)
+      : null
+    : workEntryPreview(workEntry, workspaceRoot);
   const preview =
     rawPreview &&
     normalizeCompactToolLabel(rawPreview).toLowerCase() ===
