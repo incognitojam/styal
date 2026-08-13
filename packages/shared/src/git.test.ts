@@ -7,6 +7,7 @@ import {
   isTemporaryWorktreeBranch,
   normalizeGitRemoteUrl,
   parseGitHubRepositoryNameWithOwnerFromRemoteUrl,
+  parseGitRemoteConfig,
   WORKTREE_BRANCH_PREFIX,
 } from "./git.ts";
 
@@ -161,5 +162,60 @@ describe("applyGitStatusStreamEvent", () => {
       behindCount: 1,
       pr: null,
     });
+  });
+});
+
+describe("parseGitRemoteConfig", () => {
+  it("pairs each remote's url with its gh-resolved pin", () => {
+    expect(
+      parseGitRemoteConfig(
+        [
+          "remote.origin.url git@github.com:incognitojam/openpilot.git",
+          "remote.upstream.url git@github.com:commaai/openpilot.git",
+          "remote.upstream.gh-resolved base",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      {
+        remoteName: "origin",
+        url: "git@github.com:incognitojam/openpilot.git",
+        ghResolved: null,
+      },
+      {
+        remoteName: "upstream",
+        url: "git@github.com:commaai/openpilot.git",
+        ghResolved: "base",
+      },
+    ]);
+  });
+
+  it("keeps an owner/repo pin, which is what a fork cloned without upstream carries", () => {
+    expect(
+      parseGitRemoteConfig(
+        [
+          "remote.origin.url git@github.com:incognitojam/openpilot.git",
+          "remote.origin.gh-resolved commaai/openpilot",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      {
+        remoteName: "origin",
+        url: "git@github.com:incognitojam/openpilot.git",
+        ghResolved: "commaai/openpilot",
+      },
+    ]);
+  });
+
+  it("handles dotted remote names, repeated keys, and empty output", () => {
+    expect(
+      parseGitRemoteConfig(
+        [
+          "remote.my.fork.url https://github.com/o/r",
+          "remote.my.fork.gh-resolved base",
+          "remote.my.fork.gh-resolved o/r",
+        ].join("\n"),
+      ),
+    ).toEqual([{ remoteName: "my.fork", url: "https://github.com/o/r", ghResolved: "base" }]);
+    expect(parseGitRemoteConfig("")).toEqual([]);
   });
 });
