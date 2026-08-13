@@ -2,8 +2,10 @@ import { CheckpointRef, EnvironmentId, MessageId, TurnId } from "@t3tools/contra
 import { codexFeedbackMessage } from "@t3tools/client-runtime/state/threads";
 import { createRef, type ReactNode, type Ref } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeAll, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import type { LegendListRef } from "@legendapp/list/react";
+
+import { MessagesTimeline } from "./MessagesTimeline";
 
 vi.mock("@legendapp/list/react", async () => {
   const legendListTestId = "legend-list";
@@ -126,17 +128,13 @@ vi.mock("@pierre/diffs/react", () => {
   return { FileDiff: MockFileDiff };
 });
 
-function matchMedia() {
-  return {
-    matches: false,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  };
-}
-
-let MessagesTimeline: typeof import("./MessagesTimeline").MessagesTimeline;
-
-beforeAll(async () => {
+// The unit project runs on the node environment, so the module graph needs DOM
+// globals in place before it is evaluated. Stubbing from `vi.hoisted` runs
+// ahead of the imports above, which lets MessagesTimeline be imported
+// statically. Importing it inside a `beforeAll` instead put the module graph's
+// transform cost under a hook timeout, and on a loaded machine that timeout
+// tripped and skipped all 18 tests in this file without failing it.
+vi.hoisted(() => {
   const classList = {
     add: () => {},
     remove: () => {},
@@ -151,7 +149,11 @@ beforeAll(async () => {
     clear: () => {},
   });
   vi.stubGlobal("window", {
-    matchMedia,
+    matchMedia: () => ({
+      matches: false,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }),
     addEventListener: () => {},
     removeEventListener: () => {},
     requestAnimationFrame: (callback: FrameRequestCallback) => {
@@ -167,9 +169,7 @@ beforeAll(async () => {
       offsetHeight: 0,
     },
   });
-
-  ({ MessagesTimeline } = await import("./MessagesTimeline"));
-}, 30_000);
+});
 
 const ACTIVE_THREAD_ENVIRONMENT_ID = EnvironmentId.make("environment-local");
 const MESSAGE_CREATED_AT = "2026-03-17T19:12:28.000Z";
