@@ -1,11 +1,8 @@
 import type { VcsStatusResult } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  prStatusIndicator,
-  resolveThreadPr,
-  settledPrHoverColorClass,
-} from "./ThreadStatusIndicators";
+import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
+import { prStatusIndicator, resolveThreadPr } from "./ThreadStatusIndicators";
 
 function status(overrides: Partial<VcsStatusResult> = {}): VcsStatusResult {
   return {
@@ -79,22 +76,17 @@ describe("prStatusIndicator", () => {
     });
   });
 
-  it("uses red for closed pull requests", () => {
-    const closedPr = status().pr;
-    if (!closedPr) throw new Error("Expected pull request fixture");
+  // A thread's PR badge and the same PR's row on the pull request page have to read as one
+  // thing, so the sidebar borrows that page's ink rather than keeping its own palette.
+  it.each(["open", "merged", "closed"] as const)(
+    "paints a %s pull request the ink the pull request page uses",
+    (state) => {
+      const pr = status().pr;
+      if (!pr) throw new Error("Expected pull request fixture");
 
-    expect(prStatusIndicator({ ...closedPr, state: "closed" }, undefined)?.colorClass).toContain(
-      "text-red-600",
-    );
-  });
-});
-
-describe("settledPrHoverColorClass", () => {
-  it.each([
-    ["open", "text-emerald-600"],
-    ["merged", "text-violet-600"],
-    ["closed", "text-red-600"],
-  ] as const)("restores the %s pull request color on row hover", (state, colorClass) => {
-    expect(settledPrHoverColorClass(state)).toContain(`group-hover/v2-row:${colorClass}`);
-  });
+      expect(prStatusIndicator({ ...pr, state }, undefined)?.colorClass).toBe(
+        resolvePullRequestState({ state, isDraft: false }).toneClassName,
+      );
+    },
+  );
 });

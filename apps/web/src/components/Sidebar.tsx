@@ -145,7 +145,6 @@ import {
   ThreadWorktreeIndicator,
   prStatusIndicator,
   resolveThreadPr,
-  settledPrHoverColorClass,
   terminalStatusFromRunningIds,
   type TerminalStatusIndicator,
 } from "./ThreadStatusIndicators";
@@ -852,7 +851,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     currentGitBranch: gitStatus.data?.refName ?? null,
   });
   const prStatus = prStatusIndicator(pr, gitStatus.data?.sourceControlProvider);
-  const settledPrHoverClass = pr ? settledPrHoverColorClass(pr.state) : undefined;
   // Report the PR state up: the parent partitions rows with effectiveSettled,
   // and a merged/closed PR auto-settles a thread — data only rows have.
   useEffect(() => {
@@ -1100,11 +1098,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
           // Sidebar chrome follows the interface font; tabular digits keep the
           // number from reflowing as PR states stream in.
           "shrink-0 text-xs tabular-nums hover:underline",
-          variant === "slim" && variantAction === "unsettle"
-            ? props.isActive
-              ? "text-secondary-label"
-              : cn("text-secondary-label transition-colors", settledPrHoverClass)
-            : prStatus.colorClass,
+          // State colour everywhere, including the settled tail: green, violet
+          // and red are how the pull request page reads a PR, and a number that
+          // means "merged" in one view cannot mean nothing in the other. The
+          // rest of a settled row still recedes, so the badge is what you scan
+          // the tail for.
+          prStatus.colorClass,
         )}
         aria-label={prStatus.tooltip}
       >
@@ -1129,13 +1128,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       className={cn(
         // Same glyph as the draft-session rows so "unsent draft" reads as
         // one concept, but muted rather than amber: on a thread row it's a
-        // quiet status flag, not a block asking for a decision. Matches the
-        // PR badge's settled treatment: muted at rest so the parked tail
-        // stays quiet, brightening with the row on hover. The glyph has no
-        // state colour of its own, so it lifts to the same foreground the
-        // title does.
+        // quiet status flag, not a block asking for a decision. The glyph has
+        // no state colour of its own, so it lifts to the same foreground the
+        // title does when the row is hovered.
         "inline-flex shrink-0 items-center justify-center text-secondary-label",
-        !props.isActive && "transition-colors group-hover/v2-row:text-foreground",
+        !props.isActive && "transition-colors group-hover/sidebar-row:text-foreground",
       )}
     >
       <SquarePenIcon className="size-3.5" />
