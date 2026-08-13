@@ -1289,6 +1289,44 @@ describe("deriveWorkLogEntries", () => {
     expect(entry && workEntryIndicatesToolFailure(entry)).toBe(true);
   });
 
+  it("carries the tool name from whichever lifecycle row has it", () => {
+    // Claude stamps data.toolName on every tool.updated row but only some
+    // completions, and the two collapse into one entry.
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "tool-updated",
+        kind: "tool.updated",
+        summary: "Tool call",
+        payload: {
+          itemType: "dynamic_tool_call",
+          title: "Tool call",
+          data: {
+            toolCallId: "toolu_1",
+            toolName: "Read",
+            input: { file_path: "/repo/src/app.ts" },
+          },
+        },
+      }),
+      makeActivity({
+        id: "tool-completed",
+        kind: "tool.completed",
+        summary: "Tool call",
+        payload: {
+          itemType: "dynamic_tool_call",
+          title: "Tool call",
+          data: { toolCallId: "toolu_1" },
+        },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.toolName).toBe("Read");
+    expect(entries[0]?.toolInput).toEqual({ file_path: "/repo/src/app.ts" });
+    // Display naming must not disturb the identity rows collapse on.
+    expect(entries[0]?.toolTitle).toBe("Tool call");
+  });
+
   it("extracts changed file paths for file-change tool activities", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
