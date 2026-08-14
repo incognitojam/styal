@@ -14,6 +14,7 @@ import {
   getDesktopUpdateInstallConfirmationMessage,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
+  resolveDesktopUpdateButtonTone,
   shouldShowArm64IntelBuildWarning,
   shouldToastDesktopUpdateActionResult,
 } from "../desktopUpdate.logic";
@@ -51,7 +52,6 @@ function resolveSidebarUpdatePresentation({
   return {
     iconStatus,
     showUpdateDetails,
-    showUpdateIconState: showUpdateDetails && !showCheckIcon,
   } as const;
 }
 
@@ -162,11 +162,12 @@ function SidebarUpdateControl() {
     isChecking: state?.status === "checking",
     prefersReducedMotion,
   });
-  const { iconStatus, showUpdateDetails, showUpdateIconState } = resolveSidebarUpdatePresentation({
+  const { iconStatus, showUpdateDetails } = resolveSidebarUpdatePresentation({
     action,
     isDownloading,
     showCheckIcon,
   });
+  const tone = resolveDesktopUpdateButtonTone(state);
   const tooltip = showUpdateDetails
     ? state
       ? getDesktopUpdateButtonTooltip(state)
@@ -315,19 +316,25 @@ function SidebarUpdateControl() {
               aria-label={tooltip}
               aria-disabled={isInteractionDisabled || undefined}
               className={cn(
-                "inline-flex size-8 items-center justify-center rounded-full outline-hidden ring-ring transition-colors focus-visible:ring-2",
-                isInteractionDisabled ? "cursor-not-allowed" : "cursor-pointer",
-                showUpdateIconState
-                  ? cn(
-                      "bg-update-surface text-update-foreground",
-                      !isInteractionDisabled && "hover:bg-update/12",
-                    )
-                  : cn(
-                      "text-[var(--sidebar-icon-color)]",
-                      !isInteractionDisabled &&
-                        "hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
-                    ),
-                disabled && !showUpdateIconState && "opacity-60",
+                "relative inline-flex size-8 items-center justify-center rounded-full outline-hidden ring-ring transition-colors focus-visible:ring-2",
+                tone === "cta" &&
+                  cn(
+                    "bg-update-surface text-update-foreground",
+                    isInteractionDisabled
+                      ? "cursor-not-allowed opacity-60"
+                      : "cursor-pointer hover:bg-update/12",
+                  ),
+                // A manual retry keeps isActionPending true for the whole download, which
+                // lasts for the whole download. Downloading must look the same either way,
+                // so this branch deliberately stays quiet rather than dimming.
+                tone === "quiet" && "cursor-default text-[var(--sidebar-icon-color)]",
+                tone === "idle" &&
+                  cn(
+                    "text-[var(--sidebar-icon-color)]",
+                    isInteractionDisabled
+                      ? "cursor-not-allowed opacity-60"
+                      : "cursor-pointer hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+                  ),
               )}
               onClick={handleAction}
             >
@@ -352,7 +359,7 @@ function SidebarUpdateControl() {
           }
           side="top"
           style={
-            showUpdateDetails
+            tone === "cta"
               ? {
                   background:
                     "color-mix(in srgb, var(--update) 18%, color-mix(in srgb, var(--popover) var(--glass-opacity), transparent))",
@@ -360,7 +367,7 @@ function SidebarUpdateControl() {
                 }
               : undefined
           }
-          variant={showUpdateDetails ? "glass" : "default"}
+          variant={tone === "cta" ? "glass" : "default"}
         >
           {showUpdateDetails && state ? (
             <SidebarUpdateReleaseNotesTooltip state={state} tooltip={tooltip} />
