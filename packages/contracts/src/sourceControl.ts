@@ -89,6 +89,49 @@ export const SourceControlGetIssueInput = Schema.Struct({
 });
 export type SourceControlGetIssueInput = typeof SourceControlGetIssueInput.Type;
 
+/** One `#123` or `owner/repo#123` from a body, named in full by the time it is asked about. */
+export const SourceControlReference = Schema.Struct({
+  repository: TrimmedNonEmptyString,
+  number: PositiveInt,
+});
+export type SourceControlReference = typeof SourceControlReference.Type;
+
+export const SourceControlReferenceKind = Schema.Literals(["issue", "pull-request"]);
+export type SourceControlReferenceKind = typeof SourceControlReferenceKind.Type;
+
+/** A pull request's `draft` is its own state here, since that is what the badge shows. */
+export const SourceControlReferenceState = Schema.Literals(["open", "draft", "closed", "merged"]);
+export type SourceControlReferenceState = typeof SourceControlReferenceState.Type;
+
+/**
+ * What a reference turned out to be. A null `kind` is the host saying it has nothing under that
+ * number — deleted, never there, or private, which it deliberately does not tell apart. One the
+ * host never answered about is absent entirely: not knowing is not knowing there is nothing.
+ */
+export const SourceControlResolvedReference = Schema.Struct({
+  repository: TrimmedNonEmptyString,
+  number: PositiveInt,
+  kind: Schema.NullOr(SourceControlReferenceKind),
+  title: Schema.NullOr(TrimmedNonEmptyString),
+  state: Schema.NullOr(SourceControlReferenceState),
+  url: Schema.NullOr(Schema.String),
+});
+export type SourceControlResolvedReference = typeof SourceControlResolvedReference.Type;
+
+export const SourceControlResolveReferencesInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  references: Schema.Array(SourceControlReference),
+});
+export type SourceControlResolveReferencesInput = typeof SourceControlResolveReferencesInput.Type;
+
+export const SourceControlResolveReferencesResult = Schema.Struct({
+  provider: SourceControlProviderKind,
+  /** The host these answers came from, named by the checkout rather than the caller. */
+  host: TrimmedNonEmptyString,
+  references: Schema.Array(SourceControlResolvedReference),
+});
+export type SourceControlResolveReferencesResult = typeof SourceControlResolveReferencesResult.Type;
+
 export const SourceControlRepositoryCloneUrls = Schema.Struct({
   nameWithOwner: TrimmedNonEmptyString,
   url: TrimmedNonEmptyString,
