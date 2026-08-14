@@ -10,6 +10,7 @@ import {
   getDesktopUpdateReleaseUrl,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
+  resolveDesktopUpdateButtonTone,
   shouldShowArm64IntelBuildWarning,
   shouldShowDesktopUpdateButton,
   shouldToastDesktopUpdateActionResult,
@@ -105,6 +106,49 @@ describe("desktop update button state", () => {
     expect(shouldShowDesktopUpdateButton(state)).toBe(true);
     expect(isDesktopUpdateButtonDisabled(state)).toBe(true);
     expect(getDesktopUpdateButtonTooltip(state)).toContain("42%");
+  });
+});
+
+describe("resolveDesktopUpdateButtonTone", () => {
+  it("stays quiet while the update downloads in the background", () => {
+    expect(
+      resolveDesktopUpdateButtonTone({
+        ...baseState,
+        status: "downloading",
+        availableVersion: "1.1.0",
+        downloadPercent: 42.5,
+      }),
+    ).toBe("quiet");
+  });
+
+  it("calls for action once the update is downloaded", () => {
+    expect(
+      resolveDesktopUpdateButtonTone({
+        ...baseState,
+        status: "downloaded",
+        availableVersion: "1.1.0",
+        downloadedVersion: "1.1.0",
+      }),
+    ).toBe("cta");
+  });
+
+  it("calls for action when a failed download can be retried", () => {
+    expect(
+      resolveDesktopUpdateButtonTone({
+        ...baseState,
+        status: "available",
+        availableVersion: "1.1.0",
+        message: "network unavailable",
+        errorContext: "download",
+        canRetry: true,
+      }),
+    ).toBe("cta");
+  });
+
+  it("stays idle when there is no update to act on", () => {
+    expect(resolveDesktopUpdateButtonTone(baseState)).toBe("idle");
+    expect(resolveDesktopUpdateButtonTone({ ...baseState, status: "checking" })).toBe("idle");
+    expect(resolveDesktopUpdateButtonTone(null)).toBe("idle");
   });
 });
 
