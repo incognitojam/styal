@@ -1,9 +1,9 @@
-import { CheckIcon, DownloadIcon, RefreshCwIcon, RotateCwIcon } from "lucide-react";
+import { ArrowUpCircleIcon, DownloadIcon, RefreshCwIcon } from "lucide-react";
 import type { AnimationEventHandler } from "react";
 
 import { cn } from "../../lib/utils";
 
-const DOWNLOAD_PROGRESS_RADIUS = 14;
+const DOWNLOAD_PROGRESS_RADIUS = 11;
 const DOWNLOAD_PROGRESS_CIRCUMFERENCE = 2 * Math.PI * DOWNLOAD_PROGRESS_RADIUS;
 
 export type DesktopUpdateStatusIconState =
@@ -12,11 +12,6 @@ export type DesktopUpdateStatusIconState =
   | "available"
   | "downloading"
   | "downloaded";
-
-function normalizeDesktopUpdateDownloadPercent(percent: number | null): number {
-  if (percent === null || !Number.isFinite(percent)) return 0;
-  return Math.min(100, Math.max(0, percent));
-}
 
 export function shouldShowDesktopUpdateCheckIcon({
   isAnimationLatched,
@@ -53,14 +48,19 @@ function DesktopUpdateAvailableIcon() {
 }
 
 function DesktopUpdateDownloadingIcon({ percent }: { readonly percent: number | null }) {
-  const normalizedPercent = normalizeDesktopUpdateDownloadPercent(percent);
-  const progressOffset = DOWNLOAD_PROGRESS_CIRCUMFERENCE * (1 - normalizedPercent / 100);
+  const isDeterminate = typeof percent === "number" && Number.isFinite(percent) && percent > 0;
+  const progressOffset = isDeterminate
+    ? DOWNLOAD_PROGRESS_CIRCUMFERENCE * (1 - Math.min(100, percent) / 100)
+    : DOWNLOAD_PROGRESS_CIRCUMFERENCE * 0.75;
 
   return (
     <span className="relative grid size-8 place-items-center">
       <svg
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 size-full -rotate-90"
+        className={cn(
+          "pointer-events-none absolute inset-0 size-full -rotate-90 transform-gpu",
+          !isDeterminate && "animate-spin motion-reduce:animate-none",
+        )}
         viewBox="0 0 32 32"
       >
         <circle
@@ -68,8 +68,8 @@ function DesktopUpdateDownloadingIcon({ percent }: { readonly percent: number | 
           cy="16"
           r={DOWNLOAD_PROGRESS_RADIUS}
           fill="none"
-          stroke="color-mix(in srgb, currentColor 22%, transparent)"
-          strokeWidth="1.5"
+          stroke="color-mix(in oklab, var(--color-muted-foreground) 24%, transparent)"
+          strokeWidth="2"
         />
         <circle
           cx="16"
@@ -80,24 +80,17 @@ function DesktopUpdateDownloadingIcon({ percent }: { readonly percent: number | 
           strokeDasharray={DOWNLOAD_PROGRESS_CIRCUMFERENCE}
           strokeDashoffset={progressOffset}
           strokeLinecap="round"
-          strokeWidth="1.5"
-          className="transition-[stroke-dashoffset] duration-300 ease-out motion-reduce:transition-none"
+          strokeWidth="2"
+          className="fill-none stroke-current transition-[stroke-dashoffset] duration-500 ease-out motion-reduce:transition-none"
         />
       </svg>
-      <DownloadIcon className="size-4" />
+      <DownloadIcon className="size-3.5" />
     </span>
   );
 }
 
 function DesktopUpdateDownloadedIcon() {
-  return (
-    <span className="relative grid size-4 place-items-center">
-      <RotateCwIcon className="size-4" />
-      <span className="absolute -right-1 -bottom-1 grid size-2.5 place-items-center rounded-full bg-update-foreground text-background ring-2 ring-background">
-        <CheckIcon className="size-2" strokeWidth={3} />
-      </span>
-    </span>
-  );
+  return <ArrowUpCircleIcon className="size-4" />;
 }
 
 export function DesktopUpdateStatusIcon({
