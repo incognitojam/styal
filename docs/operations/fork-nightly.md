@@ -31,8 +31,9 @@ publishes a GitHub prerelease.
   stack's patch IDs with every fork patch currently carried by `main` and fails with the missing
   commit subjects before rebasing or verifying a stale stack. Refresh the resolution from current
   `main` immediately before dispatching it. Conflict resolution can intentionally reshape a patch
-  enough to change its patch ID; after reviewing every reported commit, set
-  `allow_missing_main_patches` to acknowledge those differences explicitly.
+  enough to change its patch ID; after reviewing every reported commit, re-dispatch with those
+  commits listed in `waived_main_patches`. Waivers name the reviewed commits, so any other missing
+  patch — including one that merged to `main` after the review — still fails the dispatch.
 
 ## Fork features summary
 
