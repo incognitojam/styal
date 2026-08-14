@@ -48,6 +48,24 @@ export function shouldShowDesktopUpdateButton(state: DesktopUpdateState | null):
   return resolveDesktopUpdateButtonAction(state) !== "none";
 }
 
+export type DesktopUpdateButtonTone = "cta" | "quiet" | "idle";
+
+/**
+ * The background download needs no input, so it stays quiet. Only a state that
+ * wants a click — install, or retry a failed download — gets call-to-action colour.
+ */
+export function resolveDesktopUpdateButtonTone(
+  state: DesktopUpdateState | null,
+): DesktopUpdateButtonTone {
+  if (state && resolveDesktopUpdateButtonAction(state) !== "none") {
+    return "cta";
+  }
+  if (state?.status === "downloading") {
+    return "quiet";
+  }
+  return "idle";
+}
+
 export function shouldShowArm64IntelBuildWarning(state: DesktopUpdateState | null): boolean {
   return state?.hostArch === "arm64" && state.appArch === "x64";
 }
