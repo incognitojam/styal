@@ -1,4 +1,4 @@
-import { DownloadIcon, RefreshCwIcon, RotateCwIcon, TriangleAlertIcon } from "lucide-react";
+import { ArrowUpCircleIcon, DownloadIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
 import { useCallback, useState } from "react";
 import { isElectron } from "../../env";
 import { cn } from "../../lib/utils";
@@ -13,6 +13,7 @@ import {
   getDesktopUpdateInstallConfirmationMessage,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
+  resolveDesktopUpdateButtonTone,
   shouldShowArm64IntelBuildWarning,
   shouldToastDesktopUpdateActionResult,
 } from "../desktopUpdate.logic";
@@ -83,6 +84,56 @@ function SidebarUpdateReleaseNotesTooltip({
   );
 }
 
+const DOWNLOAD_RING_RADIUS = 11;
+const DOWNLOAD_RING_CIRCUMFERENCE = 2 * Math.PI * DOWNLOAD_RING_RADIUS;
+
+/**
+ * A quiet progress ring for the background download. The main process only
+ * broadcasts progress every 10% (shouldBroadcastDownloadProgress), so the stroke
+ * is transitioned to glide between steps instead of jumping. Until the first
+ * progress event lands the state carries 0, which would draw a zero-length arc,
+ * so that spins a short arc rather than rendering an inert ring.
+ */
+function SidebarUpdateDownloadProgress({ percent }: { readonly percent: number | null }) {
+  const isDeterminate = typeof percent === "number" && percent > 0;
+  const dashOffset = isDeterminate
+    ? DOWNLOAD_RING_CIRCUMFERENCE * (1 - Math.min(100, percent) / 100)
+    : DOWNLOAD_RING_CIRCUMFERENCE * 0.75;
+
+  return (
+    <>
+      <svg
+        aria-hidden="true"
+        className={cn(
+          "absolute inset-0 size-8 -rotate-90 transform-gpu",
+          !isDeterminate && "animate-spin motion-reduce:animate-none",
+        )}
+        viewBox="0 0 32 32"
+      >
+        <circle
+          cx="16"
+          cy="16"
+          fill="none"
+          r={DOWNLOAD_RING_RADIUS}
+          stroke="color-mix(in oklab, var(--color-muted-foreground) 24%, transparent)"
+          strokeWidth="2"
+        />
+        <circle
+          className="fill-none stroke-current transition-[stroke-dashoffset] duration-500 ease-out motion-reduce:transition-none"
+          cx="16"
+          cy="16"
+          r={DOWNLOAD_RING_RADIUS}
+          strokeDasharray={DOWNLOAD_RING_CIRCUMFERENCE}
+          strokeDashoffset={dashOffset}
+          strokeLinecap="round"
+          strokeWidth="2"
+        />
+      </svg>
+      <DownloadIcon className="size-3.5" />
+    </>
+  );
+}
+
 export function SidebarUpdateArchitectureWarning() {
   return isElectron ? <SidebarUpdateArchitectureWarningContent /> : null;
 }
@@ -114,6 +165,7 @@ function SidebarUpdateControl() {
   const action = state ? resolveDesktopUpdateButtonAction(state) : "none";
   const isDownloading = state?.status === "downloading";
   const isUpdateState = action !== "none" || isDownloading;
+  const tone = resolveDesktopUpdateButtonTone(state);
   const tooltip = isUpdateState
     ? state
       ? getDesktopUpdateButtonTooltip(state)
@@ -245,17 +297,22 @@ function SidebarUpdateControl() {
               aria-disabled={disabled || isActionPending || undefined}
               disabled={isActionPending || (!isUpdateState && disabled)}
               className={cn(
-                "inline-flex size-8 items-center justify-center rounded-full outline-hidden ring-ring transition-colors enabled:cursor-pointer focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60",
-                isUpdateState
-                  ? "bg-update-surface text-update-foreground enabled:hover:bg-update/12"
-                  : "text-[var(--sidebar-icon-color)] enabled:hover:bg-sidebar-row-hover enabled:hover:text-sidebar-foreground",
+                "relative inline-flex size-8 items-center justify-center rounded-full outline-hidden ring-ring transition-colors focus-visible:ring-2",
+                tone === "cta" &&
+                  "bg-update-surface text-update-foreground enabled:cursor-pointer enabled:hover:bg-update/12 disabled:cursor-not-allowed disabled:opacity-60",
+                // A manual retry keeps isActionPending true for the whole download, which
+                // natively disables the button. Downloading must look the same either way,
+                // so this branch deliberately omits the disabled dimming.
+                tone === "quiet" && "cursor-default text-[var(--sidebar-icon-color)]",
+                tone === "idle" &&
+                  "text-[var(--sidebar-icon-color)] enabled:cursor-pointer enabled:hover:bg-sidebar-row-hover enabled:hover:text-sidebar-foreground disabled:cursor-not-allowed disabled:opacity-60",
               )}
               onClick={handleAction}
             >
               {action === "install" ? (
-                <RotateCwIcon className="size-4" />
+                <ArrowUpCircleIcon className="size-4" />
               ) : isDownloading ? (
-                <RefreshCwIcon className="size-4 animate-spin" />
+                <SidebarUpdateDownloadProgress percent={state?.downloadPercent ?? null} />
               ) : isUpdateState ? (
                 <DownloadIcon className="size-4" />
               ) : (
@@ -277,7 +334,7 @@ function SidebarUpdateControl() {
           }
           side="top"
           style={
-            isUpdateState
+            tone === "cta"
               ? {
                   background:
                     "color-mix(in srgb, var(--update) 18%, color-mix(in srgb, var(--popover) var(--glass-opacity), transparent))",
@@ -285,7 +342,7 @@ function SidebarUpdateControl() {
                 }
               : undefined
           }
-          variant={isUpdateState ? "glass" : "default"}
+          variant={tone === "cta" ? "glass" : "default"}
         >
           {isUpdateState && state ? (
             <SidebarUpdateReleaseNotesTooltip state={state} tooltip={tooltip} />
