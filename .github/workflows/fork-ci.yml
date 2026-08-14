@@ -3,8 +3,7 @@ name: Fork CI
 # The inherited CI workflow (ci.yml) targets upstream-owned Blacksmith runners
 # and stays disabled in this fork. This fork-owned copy exists so runner choice
 # is ours to make per job: the repository is public, so GitHub-hosted runners
-# are free, and jobs sit on Blacksmith only where the speed is worth paying for.
-# See the `runs-on` comments below for why each job landed where it did.
+# are free, so this fork uses GitHub-hosted runners throughout.
 on:
   pull_request:
   push:
@@ -80,9 +79,10 @@ jobs:
     name: Fork Check
     needs: changes
     if: needs.changes.outputs.run_ci == 'true'
-    # Typecheck peaks at 4-5 cores. Pay for fast PR feedback, while pushes use
-    # the public repository's free GitHub-hosted capacity.
-    runs-on: ${{ github.event_name == 'pull_request' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
+    # This job normally finishes before the server and workspace test suites,
+    # so the public repository's free GitHub-hosted capacity keeps the overall
+    # CI critical path unchanged.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: Checkout
