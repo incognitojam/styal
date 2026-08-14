@@ -128,11 +128,38 @@ jobs:
           grep -nE "desktopBridge|getLocalEnvironmentBootstrap|PICK_FOLDER_CHANNEL|wsUrl" apps/desktop/dist-electron/preload.cjs
           grep -n "__clerk_internal_electron_passkeys" apps/desktop/dist-electron/preload.cjs
 
-  test:
-    name: Fork Test
+  test_server:
+    name: Fork Test (Server)
     needs: changes
     if: needs.changes.outputs.run_ci == 'true'
-    # Largest paid line item, long-poled by apps/server, gates only PR feedback.
+    # The server suite disables Vitest file parallelism for stability. Keep it on
+    # its own runner so its long serial tail overlaps the other workspace tests.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Test server
+        run: vp run --filter t3 test
+
+  test_workspace:
+    name: Fork Test (Workspace)
+    needs: changes
+    if: needs.changes.outputs.run_ci == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -160,7 +187,14 @@ jobs:
 
       - name: Test
         run: |
-          vp run -r test --exclude '**/imageCompression.test.ts'
+          vp run \
+            --filter './apps/*' \
+            --filter './infra/*' \
+            --filter './packages/*' \
+            --filter './oxlint-plugin-t3code' \
+            --filter './scripts' \
+            --filter '!./apps/server' \
+            test --exclude '**/imageCompression.test.ts'
           vp run --filter @t3tools/web test src/lib/imageCompression.test.ts \
             --no-file-parallelism \
             --maxWorkers=1
