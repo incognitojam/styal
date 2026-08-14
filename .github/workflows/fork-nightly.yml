@@ -170,6 +170,7 @@ jobs:
         shell: bash
         env:
           MAIN_REF: ${{ steps.candidate.outputs.main_ref }}
+          SOURCE_REF: ${{ inputs.source_ref }}
         run: |
           set -euo pipefail
 
@@ -191,10 +192,17 @@ jobs:
             exit 0
           fi
 
-          # A PR merged since this run started moves main; that is normal, not
-          # an error. The next run's candidate will include it.
+          # A PR merged since this run started moves main. On a scheduled run
+          # that is normal: skip, and the next candidate includes it. A
+          # source_ref run exists to put the resolution on main, so fail
+          # loudly instead (notify_failure fires) — nothing silently outlives
+          # a resolution that no longer contains main's tip.
           remote_main=$(git ls-remote origin refs/heads/main | cut -f1)
           if [[ "$remote_main" != "$MAIN_REF" ]]; then
+            if [[ -n "${SOURCE_REF:-}" ]]; then
+              echo "main moved during this source_ref run; refresh the resolution from current main and re-dispatch." >&2
+              exit 1
+            fi
             echo "main moved during this run; skipping promotion — the next run's candidate will include it."
             exit 0
           fi
@@ -528,6 +536,7 @@ jobs:
         env:
           CANDIDATE_REF: ${{ needs.prepare.outputs.ref }}
           MAIN_REF: ${{ needs.prepare.outputs.main_ref }}
+          SOURCE_REF: ${{ inputs.source_ref }}
         run: |
           set -euo pipefail
 
@@ -543,10 +552,17 @@ jobs:
             exit 0
           fi
 
-          # A PR merged while this run was building moves main; that is
-          # normal, not an error. The next run's candidate will include it.
+          # A PR merged while this run was building moves main. On a
+          # scheduled run that is normal: skip, and the next candidate
+          # includes it. A source_ref run exists to put the resolution on
+          # main, so fail loudly instead (notify_failure fires). The release
+          # and nightly promotion above already landed and stand either way.
           remote_main=$(git ls-remote origin refs/heads/main | cut -f1)
           if [[ "$remote_main" != "$MAIN_REF" ]]; then
+            if [[ -n "${SOURCE_REF:-}" ]]; then
+              echo "main moved during this source_ref run; the release stands but main was not promoted. Refresh the resolution from current main and re-dispatch." >&2
+              exit 1
+            fi
             echo "main moved during this run; skipping promotion — the next run's candidate will include it."
             exit 0
           fi
