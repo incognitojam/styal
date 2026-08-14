@@ -3,9 +3,9 @@ import type {
   ContextMenuOpenContext as TreeContextMenuOpenContext,
 } from "@pierre/trees";
 import type { EnvironmentId, ProjectEntry } from "@t3tools/contracts";
-import { FileTree, useFileTree, useFileTreeSearch } from "@pierre/trees/react";
+import { FileTree, useFileTree, useFileTreeSearch, useFileTreeSelector } from "@pierre/trees/react";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
-import { RotateCw } from "lucide-react";
+import { ChevronsDownUp, ChevronsUpDown, RotateCw } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 
 import { Button } from "~/components/ui/button";
@@ -246,6 +246,21 @@ export default function FileBrowserPanel({
     search: false,
     unsafeCSS: TREE_UNSAFE_CSS,
   });
+  const shouldCollapseDirectories = useFileTreeSelector(model, (treeModel) =>
+    entries.some((entry) => {
+      const item = entry.kind === "directory" ? treeModel.getItem(entry.path) : null;
+      return item !== null && "isExpanded" in item && item.isExpanded();
+    }),
+  );
+  const toggleAllDirectories = () => {
+    for (const entry of entries) {
+      if (entry.kind !== "directory") continue;
+      const item = model.getItem(entry.path);
+      if (!item || !("isExpanded" in item)) continue;
+      if (shouldCollapseDirectories) item.collapse();
+      else item.expand();
+    }
+  };
   const search = useFileTreeSearch(model);
   const handleSearchValueChange = (value: string) => {
     if (value.trim().length === 0) {
@@ -352,6 +367,26 @@ export default function FileBrowserPanel({
     >
       <div className="surface-subheader gap-1 px-2" data-surface-subheader>
         <RefreshFilesButton isPending={entriesQuery.isPending} onRefresh={entriesQuery.refresh} />
+        {entries.some((entry) => entry.kind === "directory") && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={shouldCollapseDirectories ? "Collapse all files" : "Expand all files"}
+                  onClick={toggleAllDirectories}
+                />
+              }
+            >
+              {shouldCollapseDirectories ? <ChevronsDownUp /> : <ChevronsUpDown />}
+            </TooltipTrigger>
+            <TooltipPopup>
+              {shouldCollapseDirectories ? "Collapse all files" : "Expand all files"}
+            </TooltipPopup>
+          </Tooltip>
+        )}
         <FileSearchField
           name="project-files-search"
           ariaLabel={`Search ${projectName} files`}
