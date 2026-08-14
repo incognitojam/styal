@@ -464,6 +464,8 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       // electron-builder fails on an extraResources source that does not exist.
       // Dictation is absent: the sidecar was not requested for this build, and
       // electron-builder fails on an extraResources source that does not exist.
+      // Dictation is absent: the sidecar was not requested for this build, and
+      // electron-builder fails on an extraResources source that does not exist.
       assert.deepStrictEqual(win.extraResources, [
         {
           from: "apps/desktop/prod-resources/resource-monitor",

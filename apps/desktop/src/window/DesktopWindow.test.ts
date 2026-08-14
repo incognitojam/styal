@@ -71,7 +71,11 @@ function makeFakeBrowserWindow() {
     setZoomLevel: vi.fn((level: number) => {
       zoomLevel = level;
     }),
+    id: 1,
     isLoadingMainFrame: vi.fn(() => false),
+    session: {
+      setPermissionRequestHandler: vi.fn(),
+    },
     on: vi.fn((eventName: string, listener: (...args: readonly unknown[]) => void) => {
       webContentsListeners.set(eventName, listener);
     }),

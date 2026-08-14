@@ -2445,6 +2445,38 @@ export function GeneralSettingsPanel() {
         />
       </SettingsSection>
 
+      <SettingsSection title="Experimental">
+        <p className="px-3 text-sm text-secondary-label sm:px-4">
+          In development, and liable to change or break. Feedback welcome.
+        </p>
+        <SettingsRow
+          {...searchableSetting("dictation")}
+          description="Dictate into the composer with the mic button or its shortcut. Speech is transcribed on your own T3 server; audio never leaves your infrastructure. Requires a transcription model configured on the server."
+          control={
+            <Switch
+              checked={settings.dictationEnabled}
+              onCheckedChange={(checked) => updateSettings({ dictationEnabled: Boolean(checked) })}
+              aria-label="Dictation"
+            />
+          }
+        />
+        {settings.dictationEnabled ? (
+          <SettingsRow
+            {...searchableSetting("dictation-vocabulary")}
+            description="Recover code identifiers in dictated text (“work tree path” becomes worktreePath). Replacements are shown and can be reverted with one tap."
+            control={
+              <Switch
+                checked={settings.dictationVocabularyEnabled}
+                onCheckedChange={(checked) =>
+                  updateSettings({ dictationVocabularyEnabled: Boolean(checked) })
+                }
+                aria-label="Dictation code vocabulary"
+              />
+            }
+          />
+        ) : null}
+      </SettingsSection>
+
       <SettingsSection title="About">
         {isElectron || HOSTED_APP_CHANNEL ? (
           <AboutVersionSection />

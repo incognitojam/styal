@@ -249,7 +249,11 @@ export default defineConfig(() => {
                 {
                   target: devProxyTarget,
                   changeOrigin: true,
-                  ...(prefix === "/ws" ? { ws: true } : {}),
+                  // `/ws` is the app's own RPC socket; `/api` also carries a
+                  // WebSocket at /api/dictation/stream. Without ws:true Vite
+                  // silently drops the upgrade and the connection hangs at
+                  // "pending" forever.
+                  ...(prefix === "/ws" || prefix === "/api" ? { ws: true } : {}),
                 },
               ]),
             ),
