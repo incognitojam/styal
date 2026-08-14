@@ -15,7 +15,6 @@ import {
   ArrowLeftIcon,
   ArrowUpRightIcon,
   BookOpenIcon,
-  CircleDotIcon,
   ChevronDownIcon,
   FileDiffIcon,
   FolderGit2Icon,
@@ -87,11 +86,16 @@ import {
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { toastManager } from "../ui/toast";
 import { GithubReferenceThreadContext } from "../chat/githubReferenceLinks";
-import { PullRequestDetailGhost, PullRequestTimelineGhost } from "./PullRequestGhosts";
+import {
+  PullRequestChecksGhost,
+  PullRequestDetailGhost,
+  PullRequestTimelineGhost,
+} from "./PullRequestGhosts";
 import { PullRequestActivityUnavailableState } from "./PullRequestActivityUnavailableState";
 import { DiffPanelLoadingState } from "../DiffPanelShell";
 import { PullRequestsUnavailableState } from "./PullRequestsUnavailableState";
 import type { PullRequestAskSelectionInput } from "./PullRequestCodeTab";
+import { PullRequestChecksNavButton, PullRequestChecksTab } from "./PullRequestChecksTab";
 import { openOnHostLabel, showPullRequestLinkContextMenu } from "./pullRequestLinkContextMenu";
 import { PullRequestSummaryTab } from "./PullRequestSummaryTab";
 import { PullRequestTimelineTab } from "./PullRequestTimelineTab";
@@ -127,7 +131,7 @@ import {
   summarizePullRequestChecks,
 } from "./pullRequestPresentation";
 
-type DetailTab = "summary" | "timeline" | "code";
+type DetailTab = "summary" | "checks" | "timeline" | "code";
 
 const ACTION_SUCCESS_LABELS: Record<PullRequestAction, string> = {
   merge: "Pull request merged",
@@ -184,8 +188,12 @@ const ACTION_FAILURE_HINTS: Record<PullRequestAction, string> = {
 const UPDATE_BRANCH_REBASE_FAILURE_HINT =
   "The host refused it. A rebase stops at the first commit that does not apply cleanly; updating with a merge commit may still work.";
 
+// Checks sits beside the summary rather than inside it: the state of the runs is its own
+// question, and folding it under the description put it behind a scroll on the way to the
+// conversation. Always offered, checks or none, so the empty answer is findable too.
 const TABS: ReadonlyArray<{ value: DetailTab; label: string }> = [
   { value: "summary", label: "Summary" },
+  { value: "checks", label: "Checks" },
   { value: "timeline", label: "Timeline" },
   { value: "code", label: "Code" },
 ];
@@ -1735,19 +1743,10 @@ function PullRequestDetailPanelBody({
                   </button>
                 ))}
                 {tab === "summary" ? (
-                  <span
-                    className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground"
-                    aria-label={checksSummary ? `Checks: ${checksSummary}` : "Checks"}
-                  >
-                    {/* The rollup icon opens the checks behind the summary; with none reported
-                        there is nothing to open, so the plain glyph stays. */}
-                    {detail && checksState !== null ? (
-                      <PullRequestChecksPopover checks={detail.checks} checksState={checksState} />
-                    ) : (
-                      <CircleDotIcon aria-hidden className="size-3.5" />
-                    )}
-                    {checksSummary}
-                  </span>
+                  <PullRequestChecksNavButton
+                    checks={detail.checks}
+                    onSelect={() => setTab("checks")}
+                  />
                 ) : tab === "timeline" ? (
                   <div className="ml-auto flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
                     <PullRequestMetaLine
@@ -1853,6 +1852,8 @@ function PullRequestDetailPanelBody({
           // does not flash a summary outline under a timeline heading.
           tab === "timeline" ? (
             <PullRequestTimelineGhost />
+          ) : tab === "checks" ? (
+            <PullRequestChecksGhost />
           ) : tab === "code" ? (
             <DiffPanelLoadingState label="Loading pull request diff..." />
           ) : (
@@ -1872,9 +1873,18 @@ function PullRequestDetailPanelBody({
                   activityError={activityError}
                   pendingFinding={handoff}
                   fixFindingLabel={handoffLabels.fixFinding}
-                  fixCheckLabel={handoffLabels.fixCheck}
                   onFixFinding={startFixFinding}
                   onRefresh={refreshDetail}
+                />
+              </div>
+            ) : null}
+            {mountedTabs.has("checks") ? (
+              <div className={cn("absolute inset-0", tab !== "checks" && "invisible")}>
+                <PullRequestChecksTab
+                  checks={detail.checks}
+                  pendingFinding={handoff}
+                  fixCheckLabel={handoffLabels.fixCheck}
+                  onFixFinding={startFixFinding}
                 />
               </div>
             ) : null}
