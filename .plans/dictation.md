@@ -41,7 +41,10 @@ Identifier recovery happens after transcription.
 `native/dictation-spike/parakeet-sidecar/`. PCM on stdin, JSONL on stdout. Clone
 the `native/resource-monitor` pattern for build and packaging:
 
-- staged via `DESKTOP_EXTRA_RESOURCES` in `scripts/build-desktop-artifact.ts:644`
+- staged via `DESKTOP_DICTATION_EXTRA_RESOURCES`, behind the `--dictation` flag
+  (`T3CODE_DESKTOP_DICTATION`). Off by default: `transcribe-cpp` builds ggml from
+  C++ for every target, only macOS arm64 has been proven, and nightly desktop
+  builds should not pay that cost or risk until Windows and Linux are verified
 - path resolution mirroring `resolveResourceMonitorPath`
   (`apps/desktop/src/backend/DesktopBackendConfiguration.ts:144-170`)
 - cross-compile targets alongside `resolveResourceMonitorRustTargets` (`:98`)

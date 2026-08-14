@@ -125,6 +125,7 @@ import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as TerminalBrowserOpen from "./preview/TerminalBrowserOpen.ts";
 import * as BrowserTraceCollector from "./observability/BrowserTraceCollector.ts";
+import * as DictationEngine from "./dictation/DictationEngine.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
@@ -852,6 +853,16 @@ const buildAppUnderTest = (options?: {
         Layer.mock(BrowserTraceCollector.BrowserTraceCollector)({
           record: () => Effect.void,
           ...options?.layers?.browserTraceCollector,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(DictationEngine.DictationEngine)({
+          stream: () => Stream.empty,
+          status: Effect.succeed({
+            available: false,
+            reason: "not available in tests",
+            warm: false,
+          }),
         }),
       ),
       Layer.provide(

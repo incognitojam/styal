@@ -7,6 +7,7 @@ import {
 import { isDevProxiedPath } from "@t3tools/shared/devProxy";
 import { decodeOtlpTraceRecords } from "@t3tools/shared/observability";
 import { normalizePreviewUrl } from "@t3tools/shared/preview";
+import * as Cause from "effect/Cause";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -28,7 +29,11 @@ import {
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 import { OtlpTracer } from "effect/unstable/observability";
 
+import * as Queue from "effect/Queue";
+import * as Stream from "effect/Stream";
+
 import * as ServerConfig from "./config.ts";
+import * as DictationEngine from "./dictation/DictationEngine.ts";
 import { ASSET_ROUTE_PREFIX, resolveAsset } from "./assets/AssetAccess.ts";
 import * as BrowserTraceCollector from "./observability/BrowserTraceCollector.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
@@ -214,6 +219,80 @@ export const otlpTracesProxyRouteLayer = HttpRouter.add(
       EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
     }),
   ),
+);
+
+export const DICTATION_STREAM_PATH = "/api/dictation/stream";
+
+// A WebSocket rather than a streaming POST: browsers only permit streaming
+// fetch request bodies over HTTP/2 (Chrome fails HTTP/1.1 attempts with
+// ERR_ALPN_NEGOTIATION_FAILED), and the local server speaks HTTP/1.1. Binary
+// WS frames carry PCM without the base64 inflation that ruled out the JSON RPC.
+//
+// Protocol: client sends binary frames of 16 kHz mono f32 PCM; any text frame
+// marks end-of-speech and triggers finalize. Server sends JSON text frames
+// (DictationSidecarEvent or {type:"error"}) and closes after "final".
+export const dictationStreamRouteLayer = HttpRouter.add(
+  "GET",
+  DICTATION_STREAM_PATH,
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+    const session = yield* serverAuth.authenticateWebSocketUpgrade(request).pipe(
+      Effect.catchIf(EnvironmentAuth.isServerAuthCredentialError, (error) =>
+        failEnvironmentAuthInvalid(EnvironmentAuth.serverAuthCredentialReason(error)),
+      ),
+      Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (error) =>
+        failEnvironmentInternal("internal_error", error),
+      ),
+    );
+    if (!session.scopes.includes(AuthOrchestrationOperateScope)) {
+      return yield* failEnvironmentScopeRequired(AuthOrchestrationOperateScope);
+    }
+
+    const engine = yield* DictationEngine.DictationEngine;
+    const status = yield* engine.status;
+    if (!status.available) {
+      return HttpServerResponse.jsonUnsafe(
+        { error: "dictation_unavailable", reason: status.reason },
+        { status: 503 },
+      );
+    }
+
+    const socket = yield* request.upgrade;
+    yield* Effect.scoped(
+      Effect.gen(function* () {
+        const write = yield* socket.writer;
+        const pcm = yield* Queue.make<Uint8Array, Cause.Done>();
+
+        // Socket close without an end marker is a cancel: ending the queue lets
+        // the engine finalize, and the closing request scope kills the sidecar.
+        yield* socket
+          .runRaw((frame) =>
+            typeof frame === "string"
+              ? Queue.end(pcm).pipe(Effect.asVoid)
+              : Queue.offer(pcm, frame).pipe(Effect.asVoid),
+          )
+          .pipe(
+            Effect.ensuring(Queue.end(pcm)),
+            Effect.ignore,
+            Effect.forkScoped,
+          );
+
+        yield* engine.stream(Stream.fromQueue(pcm)).pipe(
+          Stream.runForEach((event) => write(`${JSON.stringify(event)}\n`)),
+          Effect.catchCause((cause) =>
+            write(
+              `${JSON.stringify({
+                type: "error",
+                message: Cause.hasInterruptsOnly(cause) ? "interrupted" : Cause.pretty(cause),
+              })}\n`,
+            ).pipe(Effect.ignore),
+          ),
+        );
+      }),
+    );
+    return HttpServerResponse.empty();
+  }),
 );
 
 export const terminalBrowserOpenRouteLayer = HttpRouter.add(

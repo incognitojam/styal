@@ -163,6 +163,7 @@ interface BuildCliInput {
   readonly mockUpdates: Option.Option<boolean>;
   readonly mockUpdateServerPort: Option.Option<number>;
   readonly wslPrebuild: Option.Option<string>;
+  readonly dictation: Option.Option<boolean>;
 }
 
 function detectHostBuildPlatform(hostPlatform: string): typeof BuildPlatform.Type | undefined {
@@ -287,9 +288,10 @@ export class BuildCommandFailedError extends Schema.TaggedErrorClass<BuildComman
   }
 }
 
-export class ResourceMonitorBuildOutputMissingError extends Schema.TaggedErrorClass<ResourceMonitorBuildOutputMissingError>()(
-  "ResourceMonitorBuildOutputMissingError",
+export class SidecarBuildOutputMissingError extends Schema.TaggedErrorClass<SidecarBuildOutputMissingError>()(
+  "SidecarBuildOutputMissingError",
   {
+    crate: Schema.String,
     binaryPath: Schema.String,
     rustTarget: Schema.String,
     platform: BuildPlatform,
@@ -765,6 +767,7 @@ interface ResolvedBuildOptions {
   readonly mockUpdates: boolean;
   readonly mockUpdateServerPort: number | undefined;
   readonly wslPrebuild: string | undefined;
+  readonly dictation: boolean;
 }
 
 interface StagePackageJson {
@@ -837,6 +840,17 @@ export const DESKTOP_EXTRA_RESOURCES = [
   {
     from: "apps/desktop/prod-resources/resource-monitor",
     to: "resource-monitor",
+  },
+] as const;
+
+/**
+ * Only referenced when the dictation sidecar was staged: electron-builder fails
+ * on an extraResources entry whose source directory does not exist.
+ */
+export const DESKTOP_DICTATION_EXTRA_RESOURCES = [
+  {
+    from: "apps/desktop/prod-resources/dictation",
+    to: "dictation",
   },
 ] as const;
 
@@ -1052,10 +1066,25 @@ ${associatedDomains}
     <true/>
     <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
   </dict>
 </plist>
 `;
 }
+
+/**
+ * Info.plist additions for every mac build, signed or not. Without the
+ * microphone usage description, getUserMedia does not prompt — it silently
+ * returns digital silence with no error anywhere in the chain
+ * (native/dictation-spike/README.md finding 4).
+ */
+export const MAC_EXTEND_INFO = {
+  NSMicrophoneUsageDescription:
+    "T3 Code uses the microphone for dictation into the composer. Audio is " +
+    "transcribed on your own machine or self-hosted server and never sent to " +
+    "third parties.",
+} as const;
 
 export function resolveFffNativeDependencies(
   platform: typeof BuildPlatform.Type,
@@ -1240,6 +1269,11 @@ const BuildEnvConfig = Config.all({
   // into the staged node-pty so the WSL backend ships a ready binary and never
   // compiles on the user's machine.
   wslPrebuild: Config.string("T3CODE_DESKTOP_WSL_PREBUILD").pipe(Config.option),
+  // Opt-in: staging the dictation sidecar builds transcribe-cpp (ggml, C++)
+  // for every target. Only macOS arm64 has been built and run so far, and it
+  // adds meaningful time to every desktop build, so nightly stays unaffected
+  // until the Windows and Linux builds are proven.
+  dictation: Config.boolean("T3CODE_DESKTOP_DICTATION").pipe(Config.withDefault(false)),
 });
 
 const MockUpdateServerPortSchema = Schema.NumberFromString.check(
@@ -1320,6 +1354,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
   const verbose = resolveBooleanFlag(input.verbose, env.verbose);
 
   const mockUpdates = resolveBooleanFlag(input.mockUpdates, env.mockUpdates);
+  const dictation = resolveBooleanFlag(input.dictation, env.dictation);
   const configuredMockUpdateServerPort = Option.getOrUndefined(env.mockUpdateServerPort);
   const mockUpdateServerPort =
     Option.getOrUndefined(input.mockUpdateServerPort) ??
@@ -1345,6 +1380,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     signed,
     verbose,
     mockUpdates,
+    dictation,
     mockUpdateServerPort,
     wslPrebuild,
   } satisfies ResolvedBuildOptions;
@@ -1644,17 +1680,21 @@ const verifyPackagedBundleIsSelfContained = Effect.fn("verifyPackagedBundleIsSel
   },
 );
 
-const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input: {
+const stageRustSidecar = Effect.fn("stageRustSidecar")(function* (input: {
   readonly repoRoot: string;
   readonly stageResourcesDir: string;
   readonly platform: typeof BuildPlatform.Type;
   readonly arch: typeof BuildArch.Type;
   readonly verbose: boolean;
+  /** Crate directory under native/, which is also the staged resource name. */
+  readonly crate: string;
+  /** Binary name from the crate's [package].name, without platform suffix. */
+  readonly binaryName: string;
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const manifestPath = path.join(input.repoRoot, "native/resource-monitor/Cargo.toml");
-  const executableName = resourceMonitorExecutableName(input.platform);
+  const manifestPath = path.join(input.repoRoot, `native/${input.crate}/Cargo.toml`);
+  const executableName = input.platform === "win" ? `${input.binaryName}.exe` : input.binaryName;
   const rustTargets = resolveResourceMonitorRustTargets(input.platform, input.arch);
   const builtBinaries: string[] = [];
 
@@ -1674,20 +1714,21 @@ const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input:
         shell: spawnCommand.shell,
       }),
       {
-        label: `cargo build resource monitor (${rustTarget})`,
+        label: `cargo build ${input.crate} (${rustTarget})`,
         verbose: input.verbose,
       },
     );
 
     const binaryPath = path.join(
       input.repoRoot,
-      "native/resource-monitor/target",
+      `native/${input.crate}/target`,
       rustTarget,
       "release",
       executableName,
     );
     if (!(yield* fs.exists(binaryPath))) {
-      return yield* new ResourceMonitorBuildOutputMissingError({
+      return yield* new SidecarBuildOutputMissingError({
+        crate: input.crate,
         binaryPath,
         rustTarget,
         platform: input.platform,
@@ -1697,7 +1738,7 @@ const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input:
     builtBinaries.push(binaryPath);
   }
 
-  const destinationDirectory = path.join(input.stageResourcesDir, "resource-monitor");
+  const destinationDirectory = path.join(input.stageResourcesDir, input.crate);
   const destinationPath = path.join(destinationDirectory, executableName);
   yield* fs.remove(destinationDirectory, { recursive: true, force: true }).pipe(Effect.ignore);
   yield* fs.makeDirectory(destinationDirectory, { recursive: true });
@@ -1708,7 +1749,7 @@ const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input:
     yield* runCommand(
       ChildProcess.make("lipo", ["-create", ...builtBinaries, "-output", destinationPath]),
       {
-        label: "lipo resource monitor universal binary",
+        label: `lipo ${input.crate} universal binary`,
         verbose: input.verbose,
       },
     );
@@ -2038,6 +2079,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   signed: boolean,
   mockUpdates: boolean,
   mockUpdateServerPort: number | undefined,
+  dictation: boolean,
   macPasskeySigning:
     | {
         readonly entitlementsPath: string;
@@ -2060,6 +2102,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     // hand-packed server.asar sidecar (see WINDOWS_SERVER_ASAR_RESOURCE).
     extraResources: [
       ...DESKTOP_EXTRA_RESOURCES,
+      ...(dictation ? DESKTOP_DICTATION_EXTRA_RESOURCES : []),
       ...(platform === "win" ? WINDOWS_SERVER_EXTRA_RESOURCES : []),
     ],
   };
@@ -2081,6 +2124,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
+      extendInfo: MAC_EXTEND_INFO,
       protocols: [
         {
           name: "T3 Code",
@@ -2837,13 +2881,26 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   if (options.platform !== "win") {
     yield* fs.copy(distDirs.serverDist, path.join(stageAppDir, "apps/server/dist"));
   }
-  yield* stageResourceMonitor({
+  yield* stageRustSidecar({
     repoRoot,
     stageResourcesDir,
     platform: options.platform,
     arch: options.arch,
     verbose: options.verbose,
+    crate: "resource-monitor",
+    binaryName: "t3-resource-monitor",
   });
+  if (options.dictation) {
+    yield* stageRustSidecar({
+      repoRoot,
+      stageResourcesDir,
+      platform: options.platform,
+      arch: options.arch,
+      verbose: options.verbose,
+      crate: "dictation",
+      binaryName: "t3-dictation",
+    });
+  }
 
   yield* assertPlatformBuildResources(
     options.platform,
@@ -2930,6 +2987,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       options.signed,
       options.mockUpdates,
       options.mockUpdateServerPort,
+      options.dictation,
       macPasskeySigning && macEntitlementsPath
         ? {
             entitlementsPath: macEntitlementsPath,
@@ -3162,6 +3220,12 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
   ),
   mockUpdates: Flag.boolean("mock-updates").pipe(
     Flag.withDescription("Enable mock updates (env: T3CODE_DESKTOP_MOCK_UPDATES)."),
+    Flag.optional,
+  ),
+  dictation: Flag.boolean("dictation").pipe(
+    Flag.withDescription(
+      "Build and stage the dictation sidecar (env: T3CODE_DESKTOP_DICTATION).",
+    ),
     Flag.optional,
   ),
   mockUpdateServerPort: Flag.integer("mock-update-server-port").pipe(

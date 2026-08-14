@@ -21,6 +21,7 @@ import {
   DESKTOP_ELECTRON_LANGUAGES,
   DESKTOP_FILE_EXCLUSIONS,
   DESKTOP_EXTRA_RESOURCES,
+  DESKTOP_DICTATION_EXTRA_RESOURCES,
   InvalidMacPasskeyRpDomainError,
   InvalidMacPasskeyPublishableKeyError,
   InvalidMockUpdateServerPortError,
@@ -429,6 +430,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         false,
         false,
         undefined,
+        false,
         undefined,
       );
       const linux = yield* createBuildConfig(
@@ -438,6 +440,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         false,
         false,
         undefined,
+        false,
         undefined,
       );
       const win = yield* createBuildConfig(
@@ -447,6 +450,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         false,
         false,
         undefined,
+        false,
         undefined,
       );
 
@@ -456,6 +460,10 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.notProperty(mac, "asarUnpack");
       assert.notProperty(linux, "asarUnpack");
       assert.notProperty(win, "asarUnpack");
+      // Dictation is absent: the sidecar was not requested for this build, and
+      // electron-builder fails on an extraResources source that does not exist.
+      // Dictation is absent: the sidecar was not requested for this build, and
+      // electron-builder fails on an extraResources source that does not exist.
       assert.deepStrictEqual(win.extraResources, [
         {
           from: "apps/desktop/prod-resources/resource-monitor",
@@ -916,6 +924,9 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.include(entitlements, "<string>webcredentials:clerk.example.com</string>");
     assert.include(entitlements, "<string>webcredentials:example.clerk.accounts.dev</string>");
     assert.include(entitlements, "<key>com.apple.security.cs.allow-jit</key>");
+    // Dictation: without this, hardened-runtime builds record digital silence
+    // (native/dictation-spike/README.md finding 4).
+    assert.include(entitlements, "<key>com.apple.security.device.audio-input</key>");
   });
 
   it("rejects incomplete macOS passkey signing configuration", () => {
@@ -1001,7 +1012,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
   it.effect("adds passkey entitlements and both renderer protocols to signed macOS builds", () =>
     Effect.gen(function* () {
-      const config = yield* createBuildConfig("mac", "dmg", "1.2.3", true, false, undefined, {
+      const config = yield* createBuildConfig("mac", "dmg", "1.2.3", true, false, undefined, false, {
         entitlementsPath: "/tmp/entitlements.mac.plist",
         provisioningProfilePath: "/tmp/t3code.provisionprofile",
       });
@@ -1025,6 +1036,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         false,
         false,
         undefined,
+        false,
         undefined,
       );
 
@@ -1044,6 +1056,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         false,
         false,
         undefined,
+        false,
         undefined,
       );
 
@@ -1054,11 +1067,43 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 
-  it("stages the resource monitor as an external executable resource", () => {
+  it.effect("includes the dictation resource only when the sidecar is requested", () =>
+    Effect.gen(function* () {
+      const withDictation = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "1.2.3",
+        false,
+        false,
+        undefined,
+        true,
+        undefined,
+      );
+      assert.deepStrictEqual(withDictation.extraResources, [
+        {
+          from: "apps/desktop/prod-resources/resource-monitor",
+          to: "resource-monitor",
+        },
+        {
+          from: "apps/desktop/prod-resources/dictation",
+          to: "dictation",
+        },
+      ]);
+    }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
+  );
+
+  it("stages the rust sidecars as external executable resources", () => {
     assert.deepStrictEqual(DESKTOP_EXTRA_RESOURCES, [
       {
         from: "apps/desktop/prod-resources/resource-monitor",
         to: "resource-monitor",
+      },
+    ]);
+    // Opt-in: only referenced when the dictation sidecar was staged.
+    assert.deepStrictEqual(DESKTOP_DICTATION_EXTRA_RESOURCES, [
+      {
+        from: "apps/desktop/prod-resources/dictation",
+        to: "dictation",
       },
     ]);
     assert.deepStrictEqual(resolveResourceMonitorRustTargets("mac", "universal"), [
@@ -1181,6 +1226,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         mockUpdates: Option.none(),
         mockUpdateServerPort: Option.none(),
         wslPrebuild: Option.none(),
+      dictation: Option.none(),
       }).pipe(
         Effect.provide(
           Layer.mergeAll(
@@ -1221,6 +1267,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
             mockUpdates: Option.none(),
             mockUpdateServerPort: Option.none(),
             wslPrebuild: Option.none(),
+      dictation: Option.none(),
           }),
         );
 
@@ -1245,6 +1292,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         mockUpdates: Option.some(false),
         mockUpdateServerPort: Option.none(),
         wslPrebuild: Option.none(),
+      dictation: Option.none(),
       }).pipe(
         Effect.provide(
           ConfigProvider.layer(
