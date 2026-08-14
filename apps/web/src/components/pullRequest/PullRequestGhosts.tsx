@@ -90,6 +90,28 @@ export function PullRequestDetailGhost() {
   );
 }
 
+/** The checks tab's own shape: the rollup row, then a status dot, a name and a verdict to each. */
+export function PullRequestChecksGhost({ rows = 5 }: { rows?: number }) {
+  return (
+    <div role="status" aria-label="Loading checks" className="animate-ghost-pulse">
+      <div className="flex items-center gap-2 px-4 py-2.5">
+        <GhostBar className="h-3.5 w-2/5" />
+        <GhostBar className="ml-auto size-3.5 rounded-full" />
+        <GhostBar className="w-20 bg-muted-foreground/10" />
+      </div>
+      <div className="space-y-1.5 px-4 py-3.5">
+        {Array.from({ length: rows }, (_, index) => (
+          <div key={index} className="flex items-center gap-2 px-2 py-1">
+            <GhostBar className="size-3.5 rounded-full" />
+            <GhostBar className={TITLE_WIDTHS[index % TITLE_WIDTHS.length]} />
+            <GhostBar className="ml-auto w-12 bg-muted-foreground/10" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** People-shaped: an avatar and a name, in the reviewer picker's own row height. */
 export function PullRequestPeopleGhost({ rows = 4 }: { rows?: number }) {
   return (
