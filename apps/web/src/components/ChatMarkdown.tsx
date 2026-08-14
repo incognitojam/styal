@@ -51,6 +51,15 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { remarkGithubAlerts } from "../markdown-github-alerts";
+import { remarkGithubReferences } from "../markdown-github-references";
+import {
+  githubReferenceHref,
+  MISSING_GITHUB_REFERENCE_ATTRIBUTE,
+  missingGithubReferenceTitle,
+  useGithubReferenceOpener,
+  useGithubReferenceResolutions,
+  type GithubReferenceSurface,
+} from "./chat/githubReferenceLinks";
 import { renderSkillInlineMarkdownChildren } from "./chat/SkillInlineText";
 import { CHAT_FILE_TAG_CHIP_CLASS_NAME, FileTagChipContent } from "./chat/FileTagChip";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
@@ -156,6 +165,11 @@ interface ChatMarkdownProps {
   onRunCodeBlock?: ((code: string) => void) | undefined;
   /** A surface-specific image renderer, used when the source needs authenticated resolution. */
   imageRenderer?: Components["img"] | undefined;
+  /**
+   * The repository `#123` refers to. Without one, references stay plain text — which is what a
+   * number in a conversation, far likelier a step than an issue, should be.
+   */
+  referenceContext?: GithubReferenceSurface | undefined;
 }
 
 export function canUseMarkdownFileShellActions(
@@ -225,7 +239,6 @@ function findTaskListMarkerOffset(markdown: string, listItemStart: number): numb
   if (!match?.[1]) return null;
   return listItemStart + firstLine.indexOf(match[1]);
 }
-
 /**
  * The default `1.25rem` marker gutter (`.chat-markdown ol`) fits markers up to
  * two characters wide. Once a marker reaches three characters (item 100+),
@@ -277,20 +290,25 @@ function rehypeNormalizeWindowsImageSrc() {
   };
 }
 
-const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
+/**
+ * Exported so plugins that put data attributes on the tree can prove they survive it: one missing
+ * from this allowlist is stripped silently, and the feature reading it stops happening.
+ */
+export const CHAT_MARKDOWN_SANITIZE_SCHEMA: NonNullable<Parameters<typeof rehypeSanitize>[0]> = {
   ...defaultSchema,
   attributes: {
     ...defaultSchema.attributes,
     "*": (defaultSchema.attributes?.["*"] ?? []).filter((attribute) => attribute !== "title"),
     code: [...(defaultSchema.attributes?.code ?? []), "dataCodeMeta", "dataInlineCode"],
     blockquote: [...(defaultSchema.attributes?.blockquote ?? []), "dataAlert"],
+    a: [...(defaultSchema.attributes?.a ?? []), "dataGithubReference"],
   },
   protocols: {
     ...defaultSchema.protocols,
     href: [...(defaultSchema.protocols?.href ?? []), "file"],
     src: [...(defaultSchema.protocols?.src ?? []), "file"],
   },
-} satisfies Parameters<typeof rehypeSanitize>[0];
+};
 
 const CHAT_MARKDOWN_REMARK_PLUGINS = [
   remarkGfm,
@@ -1611,8 +1629,23 @@ function ChatMarkdown({
   parseRawHtml = true,
   onRunCodeBlock,
   imageRenderer,
+  referenceContext,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
+  // Held apart so a caller spelling the context inline does not reparse the body every render.
+  const referenceHost = referenceContext?.host;
+  const referenceRepository = referenceContext?.repository;
+  const remarkPlugins = useMemo(() => {
+    const base = lineBreaks
+      ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS
+      : CHAT_MARKDOWN_REMARK_PLUGINS;
+    if (referenceHost === undefined || referenceRepository === undefined) return base;
+    // After remark-gfm, whose autolink literals are the links this rewrites as shorthand.
+    return [
+      ...base,
+      [remarkGithubReferences, { host: referenceHost, repository: referenceRepository }],
+    ] satisfies NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
+  }, [lineBreaks, referenceHost, referenceRepository]);
   const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
     reportFailure: false,
   });
@@ -1765,6 +1798,12 @@ function ChatMarkdown({
       }
     },
     [resolveThreadPullRequest, threadRef, updateThreadMetadata],
+  );
+  const lookupReference = useGithubReferenceResolutions(referenceContext, text);
+  const openReference = useGithubReferenceOpener(
+    lookupReference,
+    openChangeRequestLink,
+    referenceContext?.threadRef,
   );
   const openExternalLinkInPreview = useCallback(
     (url: string) => {
@@ -1991,6 +2030,31 @@ function ChatMarkdown({
         );
       },
       a({ node, href, children, title: _title, ...props }) {
+        const referenceKey = node?.properties?.dataGithubReference;
+        if (typeof referenceKey === "string" && href) {
+          // A reference already links to the right place; an answer only decides where it opens
+          // and whether it is marked. No favicon or address tooltip: `#123` says where it goes.
+          const resolution = lookupReference(referenceKey);
+          const targetHref = githubReferenceHref(resolution, href);
+          return (
+            <a
+              {...props}
+              href={targetHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              {...(resolution.status === "missing"
+                ? { [MISSING_GITHUB_REFERENCE_ATTRIBUTE]: "" }
+                : {})}
+              title={missingGithubReferenceTitle(resolution, plainHastText(node) || referenceKey)}
+              onClick={(event) => {
+                props.onClick?.(event);
+                openReference(event, referenceKey, href);
+              }}
+            >
+              {children}
+            </a>
+          );
+        }
         const normalizedHref = href ? normalizeMarkdownLinkHrefKey(href) : "";
         const fileLinkMeta = normalizedHref
           ? (markdownFileLinkMetaByHref.get(normalizedHref) ??
@@ -2207,6 +2271,8 @@ function ChatMarkdown({
     openChangeRequestLink,
     openExternalLinkInPreview,
     openMarkdownFileInPreview,
+    lookupReference,
+    openReference,
     preferredEditorMenuLabel,
     resolveThreadPullRequest,
     resolvedTheme,
@@ -2237,9 +2303,7 @@ function ChatMarkdown({
       onCopy={handleCopy}
     >
       <ReactMarkdown
-        remarkPlugins={
-          lineBreaks ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : CHAT_MARKDOWN_REMARK_PLUGINS
-        }
+        remarkPlugins={remarkPlugins}
         rehypePlugins={parseRawHtml ? CHAT_MARKDOWN_REHYPE_PLUGINS : undefined}
         skipHtml={false}
         components={stableMarkdownComponents}
