@@ -179,6 +179,10 @@
       "types": "./src/composerTrigger.ts",
       "import": "./src/composerTrigger.ts"
     },
+    "./dictationMatcher": {
+      "types": "./src/dictationMatcher.ts",
+      "import": "./src/dictationMatcher.ts"
+    },
     "./composerInlineTokens": {
       "types": "./src/composerInlineTokens.ts",
       "import": "./src/composerInlineTokens.ts"
