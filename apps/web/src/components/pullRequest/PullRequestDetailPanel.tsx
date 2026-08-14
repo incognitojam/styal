@@ -15,7 +15,6 @@ import {
   ArrowLeftIcon,
   ArrowUpRightIcon,
   BookOpenIcon,
-  CircleDotIcon,
   ChevronDownIcon,
   FileDiffIcon,
   FolderGit2Icon,
@@ -96,7 +95,7 @@ import { PullRequestActivityUnavailableState } from "./PullRequestActivityUnavai
 import { DiffPanelLoadingState } from "../DiffPanelShell";
 import { PullRequestsUnavailableState } from "./PullRequestsUnavailableState";
 import type { PullRequestAskSelectionInput } from "./PullRequestCodeTab";
-import { PullRequestChecksTab } from "./PullRequestChecksTab";
+import { PullRequestChecksNavButton, PullRequestChecksTab } from "./PullRequestChecksTab";
 import { openOnHostLabel, showPullRequestLinkContextMenu } from "./pullRequestLinkContextMenu";
 import { PullRequestSummaryTab } from "./PullRequestSummaryTab";
 import { PullRequestTimelineTab } from "./PullRequestTimelineTab";
@@ -1712,19 +1711,10 @@ function PullRequestDetailPanelBody({
                   </button>
                 ))}
                 {tab === "summary" ? (
-                  <span
-                    className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground"
-                    aria-label={checksSummary ? `Checks: ${checksSummary}` : "Checks"}
-                  >
-                    {/* The rollup icon opens the checks behind the summary; with none reported
-                        there is nothing to open, so the plain glyph stays. */}
-                    {detail && checksState !== null ? (
-                      <PullRequestChecksPopover checks={detail.checks} checksState={checksState} />
-                    ) : (
-                      <CircleDotIcon aria-hidden className="size-3.5" />
-                    )}
-                    {checksSummary}
-                  </span>
+                  <PullRequestChecksNavButton
+                    checks={detail.checks}
+                    onSelect={() => setTab("checks")}
+                  />
                 ) : tab === "timeline" ? (
                   <div className="ml-auto flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
                     <PullRequestMetaLine

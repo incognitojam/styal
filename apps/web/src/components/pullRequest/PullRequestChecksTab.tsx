@@ -10,7 +10,7 @@
  * behind the other tabs for nothing.
  */
 import type { PullRequestCheck } from "@t3tools/contracts";
-import { ArrowUpRightIcon, CircleDashedIcon, HammerIcon } from "lucide-react";
+import { ArrowUpRightIcon, CircleDashedIcon, CircleDotIcon, HammerIcon } from "lucide-react";
 
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
@@ -28,6 +28,38 @@ import {
 /** A check the reader can act on: the two outcomes that leave something to reproduce. */
 function isFailing(check: PullRequestCheck): boolean {
   return check.status === "failure" || check.status === "cancelled";
+}
+
+/** The tab bar's at-a-glance result doubles as the shortest route into the checks themselves. */
+export function PullRequestChecksNavButton({
+  checks,
+  onSelect,
+}: {
+  checks: ReadonlyArray<PullRequestCheck>;
+  onSelect: () => void;
+}) {
+  const summary = summarizePullRequestChecks(checks);
+  const state = pullRequestChecksState(checks);
+  const presentation = state === null ? null : pullRequestChecksStatePresentation(state);
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-label={`Open checks: ${summary}`}
+      className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {presentation ? (
+        <presentation.Icon
+          aria-hidden
+          className={cn("size-3.5 shrink-0", presentation.toneClassName)}
+        />
+      ) : (
+        <CircleDotIcon aria-hidden className="size-3.5 shrink-0" />
+      )}
+      <span>{summary}</span>
+    </button>
+  );
 }
 
 export function PullRequestChecksTab({
@@ -59,12 +91,11 @@ export function PullRequestChecksTab({
     <div className="h-full overflow-y-auto">
       {rollup ? (
         // The verdict rides the top of the scroll box the way the summary's section headings do,
-        // so a long list of runs never scrolls its own answer out of sight. Opaque, because the
-        // rows pass beneath it.
-        <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-border/60 bg-background px-4 py-2.5">
-          <rollup.Icon aria-hidden className={cn("size-3.5 shrink-0", rollup.toneClassName)} />
+        // so a long list of runs never scrolls its own answer out of sight.
+        <div className="sticky top-0 z-10 flex items-center gap-2 bg-background px-4 py-2.5">
           <span className="min-w-0 flex-1 truncate text-sm font-medium">{rollup.label}</span>
-          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          <span className="inline-flex shrink-0 items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
+            <rollup.Icon aria-hidden className={cn("size-3.5 shrink-0", rollup.toneClassName)} />
             {summarizePullRequestChecks(checks)}
           </span>
         </div>

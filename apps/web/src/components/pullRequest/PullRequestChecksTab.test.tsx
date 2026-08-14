@@ -5,9 +5,9 @@
  */
 import type { PullRequestCheck } from "@t3tools/contracts";
 import { isValidElement, type ReactElement, type ReactNode } from "react";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
-import { PullRequestChecksTab } from "./PullRequestChecksTab";
+import { PullRequestChecksNavButton, PullRequestChecksTab } from "./PullRequestChecksTab";
 import { pullRequestFindingKey } from "./pullRequestDetail.logic";
 
 function textOf(node: ReactNode): string {
@@ -69,5 +69,27 @@ describe("PullRequestChecksTab", () => {
   it("draws no fix button where there is nowhere to hand the failure to", () => {
     const text = render({ checks: [check({ status: "failure" })] });
     expect(text).not.toContain("Fix");
+  });
+});
+
+describe("PullRequestChecksNavButton", () => {
+  it("opens the Checks tab from the tab bar summary", () => {
+    const onSelect = vi.fn();
+    const element = PullRequestChecksNavButton({
+      checks: [check({ status: "failure" }), check({ name: "lint" })],
+      onSelect,
+    });
+    const props = element.props as {
+      readonly onClick: () => void;
+      readonly className: string;
+      readonly "aria-label": string;
+    };
+
+    expect(element.type).toBe("button");
+    expect(props["aria-label"]).toBe("Open checks: 1 of 2 failing");
+    expect(props.className).toContain("hover:bg-accent");
+
+    props.onClick();
+    expect(onSelect).toHaveBeenCalledOnce();
   });
 });
