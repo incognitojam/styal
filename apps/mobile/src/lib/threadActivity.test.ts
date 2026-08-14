@@ -156,6 +156,7 @@ describe("buildThreadFeed", () => {
       id: ThreadId.make("thread-file-change"),
       projectId: ProjectId.make("project-1"),
       title: "File change preview",
+      worktreePath: "/workspace",
       activities: [
         makeActivity({
           id: EventId.make("file-change-completed"),
@@ -183,9 +184,41 @@ describe("buildThreadFeed", () => {
     expect(group.activities[0]).toMatchObject({
       // The adapters' generic "File change" normalizes to one shared verb.
       summary: "Edited file",
-      detail: "/workspace/main.swift",
+      detail: "main.swift",
       fileChangeStat: { additions: 2, deletions: 1 },
     });
+  });
+
+  it("drops a generated worktree name from edited-file paths", () => {
+    const worktreePath = "/Users/cameron/.t3/worktrees/t3code-d9980d37";
+    const filePath = `${worktreePath}/apps/web/src/dictation/dictationSession.ts`;
+    const thread = makeThread({
+      id: ThreadId.make("thread-worktree-file-change"),
+      projectId: ProjectId.make("project-1"),
+      title: "Worktree file change preview",
+      worktreePath,
+      activities: [
+        makeActivity({
+          id: EventId.make("worktree-file-change-completed"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "File change",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          payload: {
+            title: "File change",
+            itemType: "file_change",
+            status: "completed",
+            data: { files: [{ path: filePath }] },
+          },
+        }),
+      ],
+    });
+
+    const group = buildThreadFeed(thread)[0];
+    expect(group).toMatchObject({ type: "activity-group" });
+    if (!group || group.type !== "activity-group") return;
+    expect(group.activities[0]?.detail).toBe("apps/web/src/dictation/dictationSession.ts");
+    expect(group.activities[0]?.getFullDetail()).toBe("apps/web/src/dictation/dictationSession.ts");
   });
 
   it("renders command interactions as compact non-expandable rows", () => {
