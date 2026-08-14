@@ -30,12 +30,12 @@ function checkStack(
   mainRef: string,
   candidateRef: string,
   upstreamRef: string,
-  allowMissing = false,
+  waivedPatches = "",
   env: NodeJS.ProcessEnv = process.env,
 ): NodeChildProcess.SpawnSyncReturns<string> {
   return NodeChildProcess.spawnSync(
     "bash",
-    [helperPath, mainRef, candidateRef, upstreamRef, allowMissing ? "true" : "false"],
+    [helperPath, mainRef, candidateRef, upstreamRef, waivedPatches],
     { cwd, encoding: "utf8", env },
   );
 }
@@ -172,7 +172,7 @@ PATH="$ORIGINAL_PATH" exec git "$@"
       );
       NodeFS.chmodSync(gitWrapper, 0o755);
 
-      const result = checkStack(fixtureRoot, "main", "main", upstreamRef, false, {
+      const result = checkStack(fixtureRoot, "main", "main", upstreamRef, "", {
         ...process.env,
         ORIGINAL_PATH: process.env.PATH,
         PATH: `${wrapperDirectory}:${process.env.PATH}`,
@@ -202,20 +202,88 @@ PATH="$ORIGINAL_PATH" exec git "$@"
     });
   });
 
-  it("requires an explicit override for intentionally reshaped patches", () => {
+  it("requires each intentionally reshaped patch to be waived by commit", () => {
     withRepository((fixtureRoot, upstreamRef) => {
-      commitFile(fixtureRoot, "feature.txt", "original resolution\n", "feat: resolved feature");
+      const reshapedPatch = commitFile(
+        fixtureRoot,
+        "feature.txt",
+        "original resolution\n",
+        "feat: resolved feature",
+      );
 
       runGit(fixtureRoot, "switch", "-c", "candidate", upstreamRef);
       commitFile(fixtureRoot, "feature.txt", "reshaped resolution\n", "feat: resolved feature");
 
+      const shortSha = runGit(fixtureRoot, "rev-parse", "--short=12", reshapedPatch);
       const rejected = checkStack(fixtureRoot, "main", "candidate", upstreamRef);
-      const allowed = checkStack(fixtureRoot, "main", "candidate", upstreamRef, true);
+      const waived = checkStack(fixtureRoot, "main", "candidate", upstreamRef, shortSha);
 
       assert.equal(rejected.status, 1);
-      assert.equal(allowed.status, 0, allowed.stderr);
-      assert.include(allowed.stderr, "feat: resolved feature");
-      assert.include(allowed.stderr, "Missing main patches explicitly allowed");
+      assert.include(rejected.stderr, "waived_main_patches");
+      assert.equal(waived.status, 0, waived.stderr);
+      assert.include(waived.stderr, "feat: resolved feature");
+      assert.include(waived.stderr, "Waived missing main patches");
+    });
+  });
+
+  it("still fails on missing patches the waiver list does not cover", () => {
+    withRepository((fixtureRoot, upstreamRef) => {
+      const reshapedPatch = commitFile(
+        fixtureRoot,
+        "feature.txt",
+        "original resolution\n",
+        "feat: reviewed reshaped patch",
+      );
+      commitFile(fixtureRoot, "late.txt", "late\n", "fix: merged after the review (#96)");
+
+      runGit(fixtureRoot, "switch", "-c", "candidate", upstreamRef);
+      commitFile(
+        fixtureRoot,
+        "feature.txt",
+        "reshaped resolution\n",
+        "feat: reviewed reshaped patch",
+      );
+
+      const result = checkStack(fixtureRoot, "main", "candidate", upstreamRef, reshapedPatch);
+
+      assert.equal(result.status, 1);
+      assert.include(result.stderr, "fix: merged after the review (#96)");
+      assert.include(result.stderr, "Waived missing main patches");
+    });
+  });
+
+  it("rejects a waiver entry that does not resolve to a commit", () => {
+    withRepository((fixtureRoot, upstreamRef) => {
+      commitFile(fixtureRoot, "feature.txt", "original\n", "feat: reshaped patch");
+      runGit(fixtureRoot, "branch", "candidate", upstreamRef);
+
+      const result = checkStack(fixtureRoot, "main", "candidate", upstreamRef, "notacommit");
+
+      assert.equal(result.status, 1);
+      assert.include(result.stderr, "'notacommit' does not resolve to a commit");
+    });
+  });
+
+  it("rejects the retired blanket override with pointers to the waiver list", () => {
+    withRepository((fixtureRoot, upstreamRef) => {
+      const result = checkStack(fixtureRoot, "main", "main", upstreamRef, "true");
+
+      assert.equal(result.status, 1);
+      assert.include(result.stderr, "waived_main_patches");
+    });
+  });
+
+  it("notes waivers that turned out to be unnecessary", () => {
+    withRepository((fixtureRoot, upstreamRef) => {
+      const mainPatch = commitFile(fixtureRoot, "one.txt", "one\n", "feat: carried fork patch");
+
+      runGit(fixtureRoot, "switch", "-c", "candidate", upstreamRef);
+      runGit(fixtureRoot, "cherry-pick", mainPatch);
+
+      const result = checkStack(fixtureRoot, "main", "candidate", upstreamRef, mainPatch);
+
+      assert.equal(result.status, 0, result.stderr);
+      assert.include(result.stderr, "waivers were not needed");
     });
   });
 });
