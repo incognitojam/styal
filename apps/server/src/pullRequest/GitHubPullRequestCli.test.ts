@@ -2203,7 +2203,9 @@ layer("GitHubPullRequestCli.layer", (it) => {
         number: 7,
       });
 
-      assert.strictEqual(mockedExecute.mock.calls.length, 10);
+      // Twenty-five threads per deliberately narrow query, up to the same thousand-thread
+      // traversal ceiling the former hundred-row query provided.
+      assert.strictEqual(mockedExecute.mock.calls.length, 40);
       assert.isTrue(conversation.truncated);
     }),
   );
