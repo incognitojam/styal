@@ -12,6 +12,7 @@ import * as Option from "effect/Option";
 import * as Order from "effect/Order";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import {
   GitActionProgressEvent,
@@ -179,6 +180,8 @@ interface BranchHeadContext {
   headSelectors: ReadonlyArray<string>;
   preferredHeadSelector: string;
   remoteName: string | null;
+  configuredMergeRef: string | null;
+  trackingConfigReadSucceeded: boolean;
   headRemoteUrlKey: string | null;
   headRepositoryNameWithOwner: string | null;
   headRepositoryOwnerLogin: string | null;
@@ -262,6 +265,15 @@ function normalizeOptionalRepositoryNameWithOwner(value: string | null | undefin
 function normalizeOptionalOwnerLogin(value: string | null | undefined): string | null {
   const normalized = normalizeOptionalString(value);
   return normalized ? normalized.toLowerCase() : null;
+}
+
+function branchNameFromConfiguredMergeRef(mergeRef: string | null): string | null {
+  const prefix = "refs/heads/";
+  const normalized = normalizeOptionalString(mergeRef);
+  if (!normalized?.startsWith(prefix)) {
+    return null;
+  }
+  return normalizeOptionalString(normalized.slice(prefix.length));
 }
 
 function resolvePullRequestHeadRepositoryNameWithOwner(
@@ -1153,13 +1165,31 @@ export const make = Effect.gen(function* () {
     cwd: string,
     details: { branch: string; upstreamRef: string | null },
   ) {
-    const remoteName = yield* readConfigValueNullable(cwd, `branch.${details.branch}.remote`);
+    const remoteNameResult = yield* Effect.result(
+      gitCore.readConfigValue(cwd, `branch.${details.branch}.remote`),
+    );
+    const configuredMergeRefResult =
+      details.upstreamRef === null
+        ? yield* Effect.result(gitCore.readConfigValue(cwd, `branch.${details.branch}.merge`))
+        : null;
+    const remoteName = Result.isSuccess(remoteNameResult) ? remoteNameResult.success : null;
+    const configuredMergeRef =
+      configuredMergeRefResult !== null && Result.isSuccess(configuredMergeRefResult)
+        ? configuredMergeRefResult.success
+        : null;
+    const trackingConfigReadSucceeded =
+      Result.isSuccess(remoteNameResult) &&
+      (configuredMergeRefResult === null || Result.isSuccess(configuredMergeRefResult));
     const headBranchFromUpstream = details.upstreamRef
       ? extractBranchNameFromRemoteRef(details.upstreamRef, { remoteName })
       : "";
-    const headBranch = headBranchFromUpstream.length > 0 ? headBranchFromUpstream : details.branch;
-    const shouldProbeLocalBranchSelector =
-      headBranchFromUpstream.length === 0 || headBranch === details.branch;
+    const headBranchFromConfig =
+      remoteName === "." ? null : branchNameFromConfiguredMergeRef(configuredMergeRef);
+    const headBranch =
+      headBranchFromUpstream.length > 0
+        ? headBranchFromUpstream
+        : (headBranchFromConfig ?? details.branch);
+    const shouldProbeLocalBranchSelector = headBranch === details.branch;
 
     const [remoteRepository, originRepository] = yield* Effect.all(
       [
@@ -1214,6 +1244,8 @@ export const make = Effect.gen(function* () {
       preferredHeadSelector:
         ownerHeadSelector && isCrossRepository ? ownerHeadSelector : headBranch,
       remoteName,
+      configuredMergeRef,
+      trackingConfigReadSucceeded,
       headRemoteUrlKey:
         remoteRepository.remoteUrlKey ??
         (remoteName === null ? originRepository.remoteUrlKey : null),
@@ -1224,21 +1256,41 @@ export const make = Effect.gen(function* () {
   });
 
   /**
-   * Whether git has no record of this branch on any remote, so a change request
-   * cannot exist for it and asking the provider is a guaranteed-empty API call.
+   * Whether git has no record that this branch was published, so asking the
+   * provider is a guaranteed-empty API call.
    *
    * `git push` writes the remote-tracking ref even without `-u` (how most
    * terminal and agent pushes land), which makes this a safer "did it ever
    * reach the host" test than looking for upstream config, and the glob spans
-   * every remote so a fork branch still counts. A repository that tracks no
-   * remotes at all cannot answer the question, because then every branch looks
-   * unpublished; it, and any failed probe, keeps the lookup.
+   * every remote so a fork branch still counts. A configured remote upstream
+   * also counts even when its remote-tracking ref is gone: hosts commonly
+   * delete a merged branch, and a pruning fetch removes the ref while leaving
+   * the local branch's remote/merge configuration intact. Local-only upstreams
+   * (`remote = .`) do not count. A repository that tracks no remotes at all
+   * cannot answer the question, because then every branch looks unpublished;
+   * it, and any failed probe or config read, keeps the lookup.
    */
   const isUnpublishedBranch = Effect.fn("isUnpublishedBranch")(function* (
     cwd: string,
-    headContext: Pick<BranchHeadContext, "headBranch">,
+    headContext: Pick<
+      BranchHeadContext,
+      | "headBranch"
+      | "remoteName"
+      | "configuredMergeRef"
+      | "trackingConfigReadSucceeded"
+    >,
   ) {
     if (headContext.headBranch.length === 0) {
+      return false;
+    }
+    if (!headContext.trackingConfigReadSucceeded) {
+      return false;
+    }
+    if (
+      headContext.remoteName !== null &&
+      headContext.remoteName !== "." &&
+      headContext.configuredMergeRef !== null
+    ) {
       return false;
     }
     const matchesRef = (pattern: string) =>
