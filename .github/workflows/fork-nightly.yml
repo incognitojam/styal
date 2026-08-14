@@ -25,13 +25,14 @@ on:
         required: false
         type: string
         default: ""
-      allow_missing_main_patches:
+      waived_main_patches:
         description: >-
-          Allow source_ref when patch-id checks report main patches missing;
-          use only after reviewing intentionally reshaped conflict resolutions
+          Commits from main (space or comma separated SHAs) reviewed as
+          intentionally reshaped by conflict resolution and expected to be
+          missing from source_ref; any other missing patch still fails
         required: false
-        type: boolean
-        default: false
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -100,7 +101,7 @@ jobs:
         name: Rebase candidate onto upstream
         shell: bash
         env:
-          ALLOW_MISSING_MAIN_PATCHES: ${{ inputs.allow_missing_main_patches == true }}
+          WAIVED_MAIN_PATCHES: ${{ inputs.waived_main_patches }}
           DRY_RUN: ${{ inputs.dry_run == true }}
           SOURCE_REF: ${{ inputs.source_ref }}
         run: |
@@ -133,7 +134,7 @@ jobs:
               "$main_ref" \
               "$fork_ref" \
               "$guard_upstream_ref" \
-              "$ALLOW_MISSING_MAIN_PATCHES"
+              "$WAIVED_MAIN_PATCHES"
           else
             main_ref=$fork_ref
           fi
