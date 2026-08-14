@@ -51,6 +51,7 @@ function makeProvider(
     listChangeRequests: () => unsupported("listChangeRequests"),
     listIssues: () => unsupported("listIssues"),
     getIssue: () => unsupported("getIssue"),
+    resolveReferences: () => unsupported("resolveReferences"),
     getChangeRequest: () => unsupported("getChangeRequest"),
     createChangeRequest: () => unsupported("createChangeRequest"),
     getRepositoryCloneUrls: () => Effect.succeed(CLONE_URLS),

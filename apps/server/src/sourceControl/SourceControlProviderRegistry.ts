@@ -169,6 +169,11 @@ function bindProviderContext(
         ...input,
         context: input.context ?? context,
       }),
+    resolveReferences: (input) =>
+      provider.resolveReferences({
+        ...input,
+        context: input.context ?? context,
+      }),
     getChangeRequest: (input) =>
       provider.getChangeRequest({
         ...input,

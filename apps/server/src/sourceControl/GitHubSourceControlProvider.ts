@@ -269,6 +269,26 @@ export const make = Effect.gen(function* () {
             }),
         ),
       ),
+    resolveReferences: (input) =>
+      github
+        .resolveReferences({
+          cwd: input.cwd,
+          host: input.host,
+          references: input.references,
+        })
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new SourceControlProviderError({
+                provider: "github",
+                operation: "resolveReferences",
+                command: error.command,
+                cwd: input.cwd,
+                detail: error.detail,
+                cause: error,
+              }),
+          ),
+        ),
     createChangeRequest: (input) =>
       github
         .createPullRequest({

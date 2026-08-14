@@ -11,7 +11,14 @@ import {
   type VcsError,
 } from "@t3tools/contracts";
 
+import { encodeGraphQlRequestJson } from "../pullRequest/gitHubPullRequestJson.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
+import {
+  buildGitHubReferenceQuery,
+  decodeGitHubReferenceResponseJson,
+  type GitHubReferenceRequest,
+  type GitHubResolvedReference,
+} from "./gitHubReferences.ts";
 import {
   decodeGitHubIssueJson,
   decodeGitHubIssueListJson,
@@ -168,6 +175,19 @@ export class GitHubIssueDecodeError extends Schema.TaggedErrorClass<GitHubIssueD
   }
 }
 
+export class GitHubReferenceDecodeError extends Schema.TaggedErrorClass<GitHubReferenceDecodeError>()(
+  "GitHubReferenceDecodeError",
+  gitHubCliDecodeFields,
+) {
+  get detail(): string {
+    return "GitHub CLI returned invalid reference JSON.";
+  }
+
+  override get message(): string {
+    return `GitHub CLI failed in resolveReferences: ${this.detail}`;
+  }
+}
+
 export class GitHubRepositoryDecodeError extends Schema.TaggedErrorClass<GitHubRepositoryDecodeError>()(
   "GitHubRepositoryDecodeError",
   gitHubCliDecodeFields,
@@ -192,6 +212,7 @@ export const GitHubCliError = Schema.Union([
   GitHubPullRequestDecodeError,
   GitHubIssueListDecodeError,
   GitHubIssueDecodeError,
+  GitHubReferenceDecodeError,
   GitHubRepositoryDecodeError,
 ]);
 export type GitHubCliError = typeof GitHubCliError.Type;
@@ -262,6 +283,8 @@ export class GitHubCli extends Context.Service<
       /** Piped to the child's stdin, for payloads that must never appear in argv. */
       readonly stdin?: string;
       readonly maxOutputBytes?: number;
+      /** Keeps the output of a command whose non-zero exit the caller reads for itself. */
+      readonly allowNonZeroExit?: boolean;
     }) => Effect.Effect<VcsProcess.VcsProcessOutput, GitHubCliError>;
 
     readonly listOpenPullRequests: (input: {
@@ -284,6 +307,13 @@ export class GitHubCli extends Context.Service<
       readonly cwd: string;
       readonly reference: string;
     }) => Effect.Effect<GitHubIssue, GitHubCliError>;
+
+    /** What each `owner/repo#number` turns out to be, asked at once. */
+    readonly resolveReferences: (input: {
+      readonly cwd: string;
+      readonly host: string;
+      readonly references: ReadonlyArray<GitHubReferenceRequest>;
+    }) => Effect.Effect<ReadonlyArray<GitHubResolvedReference>, GitHubCliError>;
 
     readonly getRepositoryCloneUrls: (input: {
       readonly cwd: string;
@@ -393,6 +423,7 @@ export const make = Effect.gen(function* () {
         timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
         ...(input.stdin !== undefined ? { stdin: input.stdin } : {}),
         ...(input.maxOutputBytes !== undefined ? { maxOutputBytes: input.maxOutputBytes } : {}),
+        ...(input.allowNonZeroExit === true ? { allowNonZeroExit: true } : {}),
       })
       .pipe(Effect.mapError((error) => fromVcsError({ command: "gh", cwd: input.cwd }, error)));
 
@@ -530,6 +561,44 @@ export const make = Effect.gen(function* () {
           ),
         ),
       ),
+    resolveReferences: (input) => {
+      const built = buildGitHubReferenceQuery(input.references);
+      if (built === null) return Effect.succeed([]);
+      return execute({
+        cwd: input.cwd,
+        args: ["api", "graphql", "--hostname", input.host, "--input", "-"],
+        // Over stdin: a variable carries a repository path a body wrote, and argv is visible in
+        // process listings and echoed back in process-runner failures.
+        stdin: encodeGraphQlRequestJson({ query: built.query, variables: built.variables }),
+        // `gh` exits non-zero when any part failed — a reference nobody can see is exactly that —
+        // while still printing what did resolve. The exit code is read below, against the body.
+        allowNonZeroExit: true,
+      }).pipe(
+        Effect.flatMap(
+          (result): Effect.Effect<ReadonlyArray<GitHubResolvedReference>, GitHubCliError> => {
+            const decoded = decodeGitHubReferenceResponseJson(result.stdout.trim(), built.aliases);
+            if (Result.isSuccess(decoded)) return Effect.succeed(decoded.success);
+            const context = { command: "gh", cwd: input.cwd } as const;
+            if (result.exitCode === 0) {
+              return Effect.fail(
+                new GitHubReferenceDecodeError({ ...context, cause: decoded.failure }),
+              );
+            }
+            // No answer at all: saying why keeps a rate-limited or logged-out host from reading
+            // as a body full of references that do not exist.
+            const cause = result.stderr;
+            switch (VcsProcess.classifyNonZeroExit("gh", result.stderr)) {
+              case "authentication":
+                return Effect.fail(new GitHubCliAuthenticationError({ ...context, cause }));
+              case "rate-limited":
+                return Effect.fail(new GitHubCliRateLimitError({ ...context, cause }));
+              default:
+                return Effect.fail(new GitHubCliCommandError({ ...context, cause }));
+            }
+          },
+        ),
+      );
+    },
     getRepositoryCloneUrls: (input) =>
       execute({
         cwd: input.cwd,
