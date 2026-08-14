@@ -989,6 +989,7 @@ describe("MessagesTimeline", () => {
     );
 
     expect(markup).toContain("Changed 1 file");
+    expect(markup).not.toContain("t3code/apps/web/src/session-logic.ts");
     expect(markup).not.toContain("C:/Users/mike/dev-stuff/t3code/apps/web/src/session-logic.ts");
   });
 
@@ -1124,6 +1125,44 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain('aria-label="Hidden work includes a failure"');
   });
 
+  it("drops the generated worktree name from Edit and Write tool paths", () => {
+    const worktreeRoot = "/Users/cameron/.t3/worktrees/t3code-d9980d37";
+    const editedPath = "apps/web/src/dictation/dictationSession.ts";
+    const writtenPath = "apps/web/src/dictation/dictationSession.test.ts";
+    const renderTool = (toolName: "Edit" | "Write", relativePath: string) =>
+      renderToStaticMarkup(
+        <MessagesTimeline
+          {...buildProps()}
+          timelineEntries={[
+            {
+              id: `entry-${toolName}`,
+              kind: "work",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              entry: {
+                id: `work-${toolName}`,
+                createdAt: "2026-03-17T19:12:28.000Z",
+                label: "File change",
+                tone: "tool",
+                toolName,
+                itemType: "file_change",
+                toolInput: { file_path: `${worktreeRoot}/${relativePath}` },
+              },
+            },
+          ]}
+          workspaceRoot={worktreeRoot}
+        />,
+      );
+
+    const editedMarkup = renderTool("Edit", editedPath);
+    const writtenMarkup = renderTool("Write", writtenPath);
+    expect(editedMarkup).toContain("Edited file");
+    expect(editedMarkup).toContain(editedPath);
+    expect(editedMarkup).not.toContain(`t3code-d9980d37/${editedPath}`);
+    expect(writtenMarkup).toContain("Wrote file");
+    expect(writtenMarkup).toContain(writtenPath);
+    expect(writtenMarkup).not.toContain(`t3code-d9980d37/${writtenPath}`);
+  });
+
   it("shows structured file-change previews instead of serialized tool input", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
@@ -1150,7 +1189,8 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("workspace/tools/main.swift");
+    expect(markup).toContain("tools/main.swift");
+    expect(markup).not.toContain("workspace/tools/main.swift");
     expect(markup).toContain("2 additions, 1 deletions");
     expect(markup).not.toContain("file_path");
   });
