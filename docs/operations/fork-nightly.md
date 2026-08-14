@@ -16,7 +16,9 @@ publishes a GitHub prerelease.
   already matches it. The day's first actual promotion snapshots the pre-promotion `main` to
   `backup/main-YYYYMMDD`; later promotions that day leave the snapshot alone. If `main` moved while
   the run was in flight (a PR merge, say), promotion is skipped as expected and the next run's
-  candidate includes the change. The final push carries a lease pinned to the commit the run
+  candidate includes the change; a `source_ref` run fails loudly at that point instead, since its
+  purpose was promoting the resolution — refresh it from current `main` and re-dispatch (an already
+  published release stands). The final push carries a lease pinned to the commit the run
   started from, so a push landing in the last seconds still fails the step loudly (and the Discord
   failure notification fires), as does any other failure checking or pushing refs. Dry runs never
   promote.
