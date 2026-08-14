@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import type { LegendListRef } from "@legendapp/list/react";
 
 import { MessagesTimeline } from "./MessagesTimeline";
+import type { WorkLogEntry } from "../../session-logic";
 
 vi.mock("@legendapp/list/react", async () => {
   const legendListTestId = "legend-list";
@@ -707,6 +708,47 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("workspace/tools/main.swift");
     expect(markup).toContain("2 additions, 1 deletions");
     expect(markup).not.toContain("file_path");
+  });
+
+  it("offers a disclosure only for tool rows with something left to show", () => {
+    const workspaceRoot = "/workspace";
+    const renderToolRow = (entry: Omit<WorkLogEntry, "id" | "createdAt" | "tone">) =>
+      renderToStaticMarkup(
+        <MessagesTimeline
+          {...buildProps()}
+          timelineEntries={[
+            {
+              id: "entry-tool",
+              kind: "work",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              entry: {
+                id: "work-tool",
+                createdAt: "2026-03-17T19:12:28.000Z",
+                tone: "tool",
+                ...entry,
+              },
+            },
+          ]}
+          workspaceRoot={workspaceRoot}
+        />,
+      );
+
+    const wroteFile = renderToolRow({
+      label: "File change",
+      toolName: "Write",
+      itemType: "file_change",
+      toolInput: { file_path: `${workspaceRoot}/apps/web/src/app.tsx` },
+      changedFiles: [`${workspaceRoot}/apps/web/src/app.tsx`],
+    });
+    const readRange = renderToolRow({
+      label: "Read file",
+      toolName: "Read",
+      toolInput: { file_path: `${workspaceRoot}/apps/web/src/app.tsx`, offset: 120, limit: 40 },
+    });
+
+    expect(wroteFile).toContain("apps/web/src/app.tsx");
+    expect(wroteFile).not.toContain('role="button"');
+    expect(readRange).toContain('role="button"');
   });
 
   it("renders review comment contexts as structured cards instead of raw tags", () => {

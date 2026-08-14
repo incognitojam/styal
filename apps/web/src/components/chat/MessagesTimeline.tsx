@@ -2122,34 +2122,53 @@ function workEntryRawCommand(
   return rawCommand === workEntry.command.trim() ? null : rawCommand;
 }
 
+/**
+ * What an expanded row adds to the row itself. The row already prints a heading
+ * and one argument, so a block that only restates that argument is dropped —
+ * and a row left with nothing has nothing to disclose, so the caller drops its
+ * toggle rather than open an empty panel. `rowArgument` is the argument as
+ * displayed, so paths compare equal only after the same formatting.
+ */
 function buildToolCallExpandedBody(
   workEntry: TimelineWorkEntry,
   workspaceRoot: string | undefined,
+  rowArgument: string | null,
 ): string | null {
   const blocks: string[] = [];
+  const shown = new Set<string>();
+  const rowText = rowArgument?.trim();
+  if (rowText) {
+    shown.add(rowText);
+  }
+  const append = (value: string | null | undefined) => {
+    const trimmed = value?.trim();
+    if (!trimmed || shown.has(trimmed)) {
+      return;
+    }
+    shown.add(trimmed);
+    blocks.push(trimmed);
+  };
+
   if (workEntry.itemType === "mcp_tool_call" && workEntry.toolData !== undefined) {
-    blocks.push(`MCP call\n${JSON.stringify(workEntry.toolData, null, 2)}`);
+    append(`MCP call\n${JSON.stringify(workEntry.toolData, null, 2)}`);
   }
-  const raw = workEntryRawCommand(workEntry);
-  if (raw?.trim()) {
-    blocks.push(raw.trim());
-  } else if (workEntry.command?.trim()) {
-    blocks.push(workEntry.command.trim());
+  const command = (workEntryRawCommand(workEntry) ?? workEntry.command)?.trim();
+  if (command) {
+    // Commands are exempt from the restatement check: the row shows one
+    // truncated line of what is routinely a multi-line pipeline, so the full
+    // text exists nowhere else.
+    shown.add(command);
+    blocks.push(command);
   }
-  const toolArguments = buildToolArgumentLines(workEntry, workspaceRoot);
-  if (toolArguments) {
-    blocks.push(toolArguments);
-  }
-  // The adapters serialize a tool's whole input into `detail`, so once the
-  // arguments are shown as fields the JSON restates them unreadably.
-  if (workEntry.detail?.trim() && !(toolArguments && detailIsSerializedInput(workEntry))) {
-    blocks.push(workEntry.detail.trim());
+  append(buildToolArgumentLines(workEntry, workspaceRoot, shown));
+  // The adapters serialize a whole tool input into `detail`; wherever the
+  // projection kept that input, the fields above already say it readably.
+  if (!(workEntry.toolInput && detailIsSerializedInput(workEntry))) {
+    append(workEntry.detail);
   }
   const changedFiles = workEntry.changedFiles ?? [];
   if (changedFiles.length > 0) {
-    blocks.push(
-      changedFiles.map((filePath) => formatToolFilePath(filePath, workspaceRoot)).join("\n"),
-    );
+    append(changedFiles.map((filePath) => formatToolFilePath(filePath, workspaceRoot)).join("\n"));
   }
   return blocks.length > 0 ? blocks.join("\n\n") : null;
 }
@@ -2181,10 +2200,16 @@ const TOOL_ARGUMENT_LABELS: Readonly<Record<string, string>> = {
   limit: "Lines",
 };
 
-/** Tool arguments as readable fields rather than one serialized blob. */
+/**
+ * Tool arguments as readable fields rather than one serialized blob. Fields the
+ * row header already prints are skipped: the projection keeps so few input
+ * fields that most rows have exactly one, and repeating it under the row it
+ * came from was the whole of what those rows used to disclose.
+ */
 function buildToolArgumentLines(
   workEntry: TimelineWorkEntry,
   workspaceRoot: string | undefined,
+  shown: ReadonlySet<string>,
 ): string | null {
   const input = workEntry.toolInput;
   if (!input) {
@@ -2201,6 +2226,9 @@ function buildToolArgumentLines(
       (key === "file_path" || key === "notebook_path" || key === "path")
         ? formatToolFilePath(value, workspaceRoot)
         : value.toString();
+    if (shown.has(rendered)) {
+      continue;
+    }
     lines.push(`${label}: ${rendered}`);
   }
   return lines.length > 0 ? lines.join("\n") : null;
@@ -2510,7 +2538,9 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   ]
     .filter(Boolean)
     .join(" ");
-  const expandedBody = buildToolCallExpandedBody(workEntry, workspaceRoot);
+  // The row's own argument is what the expanded body must not repeat, whether
+  // or not it was dropped above for restating the heading.
+  const expandedBody = buildToolCallExpandedBody(workEntry, workspaceRoot, rawPreview);
   const isCommandExecution = workEntry.itemType === "command_execution";
   const canExpand = isCommandExecution || expandedBody !== null;
   const showFailedIndicator = workEntryIndicatesToolFailure(workEntry);
@@ -2575,7 +2605,11 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
             <p className="flex min-w-0 w-full items-baseline gap-1.5 text-[12px] leading-5">
               <span className={cn("min-w-0 shrink truncate", headingClass)}>{heading}</span>
               {preview && (
-                <span className="min-w-0 flex-1 truncate text-secondary-label">{preview}</span>
+                // Rows whose argument is their whole story no longer expand, so
+                // the native tooltip is where a truncated path stays readable.
+                <span className="min-w-0 flex-1 truncate text-secondary-label" title={preview}>
+                  {preview}
+                </span>
               )}
               {fileChangeStat ? (
                 <DiffStatLabel
