@@ -1274,10 +1274,7 @@ export const make = Effect.gen(function* () {
     cwd: string,
     headContext: Pick<
       BranchHeadContext,
-      | "headBranch"
-      | "remoteName"
-      | "configuredMergeRef"
-      | "trackingConfigReadSucceeded"
+      "headBranch" | "remoteName" | "configuredMergeRef" | "trackingConfigReadSucceeded"
     >,
   ) {
     if (headContext.headBranch.length === 0) {
