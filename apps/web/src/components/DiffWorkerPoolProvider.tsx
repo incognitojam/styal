@@ -73,6 +73,7 @@ export function DiffWorkerPoolProvider({ children }: { children?: ReactNode }) {
       }}
       highlighterOptions={{
         theme: diffThemeName,
+        preferredHighlighter: "shiki-wasm",
         tokenizeMaxLineLength: 1_000,
         useTokenTransformer: true,
       }}
