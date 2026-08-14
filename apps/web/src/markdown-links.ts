@@ -48,6 +48,69 @@ export interface MarkdownFileLinkMeta {
   column?: number;
 }
 
+function pathParentSegments(path: string): string[] {
+  const normalized = path.replaceAll("\\", "/");
+  const segments = normalized.split("/").filter((segment) => segment.length > 0);
+  return segments.slice(0, -1);
+}
+
+/**
+ * Builds the shortest useful parent labels for same-named file chips. Paths
+ * inside the active workspace are compared relative to it so a generated
+ * worktree directory never becomes presentation chrome.
+ */
+export function buildMarkdownFileLinkParentSuffixes(
+  links: ReadonlyArray<Pick<MarkdownFileLinkMeta, "filePath" | "workspaceRelativePath">>,
+): Map<string, string> {
+  const groups = new Map<string, Map<string, string>>();
+  for (const link of links) {
+    const basename = basenameOfPath(link.filePath);
+    if (!basename) continue;
+    const group = groups.get(basename) ?? new Map<string, string>();
+    group.set(link.filePath, link.workspaceRelativePath ?? link.filePath);
+    groups.set(basename, group);
+  }
+
+  const suffixByPath = new Map<string, string>();
+  for (const group of groups.values()) {
+    const uniquePaths = [...group.entries()];
+    if (uniquePaths.length < 2) continue;
+
+    const parentSegmentsByPath = new Map(
+      uniquePaths.map(([filePath, displayPath]) => [filePath, pathParentSegments(displayPath)]),
+    );
+    const minUniqueDepthByPath = new Map<string, number>();
+
+    for (const [filePath] of uniquePaths) {
+      const segments = parentSegmentsByPath.get(filePath) ?? [];
+      let resolvedDepth = segments.length;
+      for (let depth = 1; depth <= segments.length; depth += 1) {
+        const candidate = segments.slice(-depth).join("/");
+        const collision = uniquePaths.some(([otherPath]) => {
+          if (otherPath === filePath) return false;
+          const otherSegments = parentSegmentsByPath.get(otherPath) ?? [];
+          return otherSegments.slice(-depth).join("/") === candidate;
+        });
+        if (!collision) {
+          resolvedDepth = depth;
+          break;
+        }
+      }
+      minUniqueDepthByPath.set(filePath, resolvedDepth);
+    }
+
+    for (const [filePath] of uniquePaths) {
+      const segments = parentSegmentsByPath.get(filePath) ?? [];
+      if (segments.length === 0) continue;
+      const minUniqueDepth = minUniqueDepthByPath.get(filePath) ?? 1;
+      const suffixDepth = Math.min(segments.length, Math.max(minUniqueDepth, 2));
+      suffixByPath.set(filePath, segments.slice(-suffixDepth).join("/"));
+    }
+  }
+
+  return suffixByPath;
+}
+
 function safeDecode(value: string): string {
   try {
     return decodeURIComponent(value);
@@ -395,7 +458,7 @@ function buildFileLinkMetaFromTarget(targetPath: string, cwd?: string): Markdown
   return {
     filePath: path,
     targetPath,
-    displayPath: formatWorkspaceRelativePath(targetPath, cwd),
+    displayPath: formatWorkspaceRelativePath(targetPath, cwd, { includeWorkspaceLabel: false }),
     workspaceRelativePath: workspaceRelativePath(path, cwd),
     basename: basenameOfPath(path),
     ...(lineNumber !== undefined ? { line: lineNumber } : {}),
