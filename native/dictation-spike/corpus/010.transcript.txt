@@ -1,0 +1,1 @@
+Read the Fred id from the HTTP request.

@@ -1,0 +1,7 @@
+{
+  "index" : 1,
+  "kind" : "code",
+  "negativeControl" : false,
+  "say" : "Read the worktreePath from the environmentId, then call parseURL on the apiUrl and pass the result to toJSON. The HTTPClient needs the userId before it can send the HTTPRequest. If the response isEmpty, call mapError on the FileSystem layer and check the exitCode. Run forEach over the rows, call toString on each one, and confirm the value isValid before writing createdAt and updatedAt. Remember getUser returns one row but getUsers returns many, and the thread_id lives next to the base64Encode helper in workspaceRoot.",
+  "want" : "Read the worktreePath from the environmentId, then call parseURL on the apiUrl and pass the result to toJSON. The HTTPClient needs the userId before it can send the HTTPRequest. If the response isEmpty, call mapError on the FileSystem layer and check the exitCode. Run forEach over the rows, call toString on each one, and confirm the value isValid before writing createdAt and updatedAt. Remember getUser returns one row but getUsers returns many, and the thread_id lives next to the base64Encode helper in workspaceRoot."
+}

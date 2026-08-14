@@ -1,0 +1,7 @@
+{
+  "index" : 10,
+  "kind" : "code",
+  "negativeControl" : false,
+  "say" : "read the threadId from the HTTPRequest",
+  "want" : "read the threadId from the HTTPRequest"
+}

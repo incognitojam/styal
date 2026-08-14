@@ -1,0 +1,22 @@
+# Short corpus for guest speakers — about 3 minutes, 6 recordings.
+#
+# Run:  t3-dictate corpus --script corpus-page.txt --out corpus-<name>
+#
+# Same markers as corpus-script.txt: CODE lines contain identifiers written as
+# code (say them however comes naturally), PROSE lines are negative controls that
+# must survive untouched, FREE is unscripted speech.
+#
+# Read at a normal pace. Do not over-enunciate, and do not correct stumbles —
+# natural speech is the point.
+
+CODE: Read the worktreePath from the environmentId, then call parseURL on the apiUrl and pass the result to toJSON.
+
+CODE: The HTTPClient needs the userId before it can send the HTTPRequest. If the response isEmpty, call mapError on the FileSystem layer and check the exitCode.
+
+CODE: Run forEach over the rows, call toString on each one, and confirm the value isValid before writing createdAt and updatedAt. Remember getUser returns one row but getUsers returns many, and the thread_id lives next to the base64Encode helper in workspaceRoot.
+
+PROSE: The room is empty so please turn off the lights on your way out. It is valid to change your mind before the deadline, and I had to click through each item to check they were all correct.
+
+PROSE: Map the error back to whoever reported it, then update the result and filter the list so the count comes out right. I called exit. The code path after that never runs.
+
+FREE: Talk for about forty-five seconds about anything at all — a film, the weekend, a holiday. Nothing technical. Just talk naturally.

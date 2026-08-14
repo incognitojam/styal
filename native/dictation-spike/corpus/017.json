@@ -1,0 +1,7 @@
+{
+  "index" : 17,
+  "kind" : "code",
+  "negativeControl" : false,
+  "say" : "getUser returns one row but getUsers returns many",
+  "want" : "getUser returns one row but getUsers returns many"
+}

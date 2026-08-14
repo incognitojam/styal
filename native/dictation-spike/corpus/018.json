@@ -1,0 +1,7 @@
+{
+  "index" : 18,
+  "kind" : "prose",
+  "negativeControl" : true,
+  "say" : "I called exit. The code path after that never runs.",
+  "want" : "I called exit. The code path after that never runs."
+}

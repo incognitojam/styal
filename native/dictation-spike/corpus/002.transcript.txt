@@ -1,0 +1,1 @@
+The handler runs for each item and returns to string.

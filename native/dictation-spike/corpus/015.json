@@ -1,0 +1,7 @@
+{
+  "index" : 15,
+  "kind" : "prose",
+  "negativeControl" : true,
+  "say" : "the filter returns a count of the results",
+  "want" : "the filter returns a count of the results"
+}

@@ -1,0 +1,13 @@
+# Matches RECORDING.md — the handout sent to remote contributors.
+#
+# Two items, because remote speakers record two files rather than working through
+# a prompt at a time. Item 1 carries every identifier; item 2 is the control.
+#
+# Ingest with:
+#   t3-dictate import --audio recording-1.m4a --script corpus-remote.txt --item 1 --out corpus-alice
+#   t3-dictate import --audio recording-2.m4a --script corpus-remote.txt --item 2 --out corpus-alice
+#   t3-dictate eval --corpus corpus-alice --vocab vocab.txt --budget
+
+CODE: Read the worktreePath from the environmentId, then call parseURL on the apiUrl and pass the result to toJSON. The HTTPClient needs the userId before it can send the HTTPRequest. If the response isEmpty, call mapError on the FileSystem layer and check the exitCode. Run forEach over the rows, call toString on each one, and confirm the value isValid before writing createdAt and updatedAt. Remember getUser returns one row but getUsers returns many, and the thread_id lives next to the base64Encode helper in workspaceRoot.
+
+PROSE: The room is empty so please turn off the lights on your way out. It is valid to change your mind before the deadline, and I had to click through each item to check they were all correct. Map the error back to whoever reported it, then update the result and filter the list so the count comes out right. I called exit. The code path after that never runs.

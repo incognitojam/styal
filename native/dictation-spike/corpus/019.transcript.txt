@@ -1,0 +1,1 @@
+Wrap the work tree path in parentheses, then commit.

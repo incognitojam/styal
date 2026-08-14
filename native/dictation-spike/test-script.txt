@@ -1,0 +1,17 @@
+Read this aloud at a normal pace. Don't over-enunciate — speak the way you
+would when dictating to the app. Say identifiers as ordinary words ("worktree
+path"), never spelled out. Pause briefly between numbered lines.
+
+1. Update the worktree path and read the thread ID from the thread ref.
+
+2. Call map error on the file system layer and then check the exit code.
+
+3. The child process spawner needs the provider instance ID and the workspace root.
+
+4. Use callback and use memo both depend on model selection and runtime mode.
+
+5. Check created at and updated at on the environment ID before you flat map the result.
+
+6. Ask Zyglorp to review the Fnorbulator before Quastrix ships.
+
+7. The quick brown fox jumps over the lazy dog near the river bank.

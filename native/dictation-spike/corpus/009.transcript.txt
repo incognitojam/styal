@@ -1,0 +1,1 @@
+The HTTP client needs the user ID and the API URL.
