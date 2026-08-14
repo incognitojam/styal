@@ -979,6 +979,133 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
     }),
   );
 
+  it.effect("status skips the provider lookup for a branch with a local-only upstream", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
+      yield* runGit(repoDir, ["checkout", "-b", "feature/local-tracking"]);
+      yield* runGit(repoDir, ["branch", "--set-upstream-to=main"]);
+
+      const { manager, ghCalls } = yield* makeManager();
+
+      const status = yield* manager.status({ cwd: repoDir });
+
+      expect(status.refName).toBe("feature/local-tracking");
+      expect(status.pr).toBeNull();
+      expect(
+        (yield* runGit(repoDir, ["config", "--get", "branch.feature/local-tracking.remote"]))
+          .stdout,
+      ).toBe(".\n");
+      expect(ghCalls.filter((call) => call.startsWith("pr list "))).toHaveLength(0);
+    }),
+  );
+
+  it.effect("status keeps the PR after its tracked remote branch is pruned", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
+      yield* runGit(repoDir, ["checkout", "-b", "feature/pruned-after-merge"]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "feature/pruned-after-merge"]);
+      yield* runGit(repoDir, ["config", "fetch.prune", "true"]);
+      // Delete only the hosted branch so the local remote-tracking ref still
+      // exists until the status refresh fetches and prunes it.
+      yield* runGit(remoteDir, ["update-ref", "-d", "refs/heads/feature/pruned-after-merge"]);
+
+      const { manager, ghCalls } = yield* makeManager({
+        ghScenario: {
+          prListSequence: [
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            JSON.stringify([
+              {
+                number: 215,
+                title: "Merged PR with deleted branch",
+                url: "https://github.com/pingdotgg/t3code/pull/215",
+                baseRefName: "main",
+                headRefName: "feature/pruned-after-merge",
+                state: "MERGED",
+                mergedAt: "2026-04-02T15:00:00Z",
+                updatedAt: "2026-04-02T15:00:00Z",
+              },
+            ]),
+          ],
+        },
+      });
+
+      const status = yield* manager.status({ cwd: repoDir });
+
+      expect(status.refName).toBe("feature/pruned-after-merge");
+      expect(status.hasUpstream).toBe(false);
+      expect(
+        (yield* runGit(repoDir, ["rev-parse", "--abbrev-ref", "@{upstream}"], true)).exitCode,
+      ).not.toBe(0);
+      expect(status.pr).toEqual({
+        number: 215,
+        title: "Merged PR with deleted branch",
+        url: "https://github.com/pingdotgg/t3code/pull/215",
+        baseRef: "main",
+        headRef: "feature/pruned-after-merge",
+        state: "merged",
+      });
+      expect(ghCalls.filter((call) => call.startsWith("pr list ")).length).toBeGreaterThan(0);
+    }),
+  );
+
+  it.effect("status recovers a differently named PR branch after its remote ref is pruned", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
+      yield* runGit(repoDir, ["checkout", "-b", "feature/local-name"]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "HEAD:feature/hosted-name"]);
+      yield* runGit(repoDir, ["config", "fetch.prune", "true"]);
+      yield* runGit(remoteDir, ["update-ref", "-d", "refs/heads/feature/hosted-name"]);
+
+      const { manager, ghCalls } = yield* makeManager({
+        ghScenario: {
+          prListByHeadSelector: {
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            "feature/hosted-name": JSON.stringify([
+              {
+                number: 216,
+                title: "Merged PR with a differently named head",
+                url: "https://github.com/pingdotgg/t3code/pull/216",
+                baseRefName: "main",
+                headRefName: "feature/hosted-name",
+                state: "MERGED",
+                mergedAt: "2026-04-03T15:00:00Z",
+                updatedAt: "2026-04-03T15:00:00Z",
+              },
+            ]),
+          },
+        },
+      });
+
+      const status = yield* manager.status({ cwd: repoDir });
+
+      expect(status.refName).toBe("feature/local-name");
+      expect(status.hasUpstream).toBe(false);
+      expect(status.pr).toEqual({
+        number: 216,
+        title: "Merged PR with a differently named head",
+        url: "https://github.com/pingdotgg/t3code/pull/216",
+        baseRef: "main",
+        headRef: "feature/hosted-name",
+        state: "merged",
+      });
+      expect(ghCalls).toContain(
+        "pr list --head feature/hosted-name --state all --limit 20 --json number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
+      );
+    }),
+  );
+
   it.effect("status still looks up PRs for a branch pushed without --set-upstream", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
