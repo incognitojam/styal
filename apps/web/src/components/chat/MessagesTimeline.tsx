@@ -2082,8 +2082,13 @@ function formatToolRowArgument(
   if (argument.kind !== "path") {
     return argument.value;
   }
-  const displayPath = formatWorkspaceRelativePath(argument.value, workspaceRoot);
+  const displayPath = formatToolFilePath(argument.value, workspaceRoot);
   return argument.moreCount ? `${displayPath} +${argument.moreCount} more` : displayPath;
+}
+
+/** Tool rows already sit inside a project-scoped thread, so its root label is redundant. */
+function formatToolFilePath(path: string, workspaceRoot: string | undefined): string {
+  return formatWorkspaceRelativePath(path, workspaceRoot, { includeWorkspaceLabel: false });
 }
 
 function workEntryPreview(
@@ -2094,7 +2099,7 @@ function workEntryPreview(
   if (workEntry.itemType === "file_change" && (workEntry.changedFiles?.length ?? 0) > 0) {
     const [firstPath] = workEntry.changedFiles ?? [];
     if (!firstPath) return null;
-    const displayPath = formatWorkspaceRelativePath(firstPath, workspaceRoot);
+    const displayPath = formatToolFilePath(firstPath, workspaceRoot);
     return workEntry.changedFiles!.length === 1
       ? displayPath
       : `${displayPath} +${workEntry.changedFiles!.length - 1} more`;
@@ -2103,7 +2108,7 @@ function workEntryPreview(
   if ((workEntry.changedFiles?.length ?? 0) === 0) return null;
   const [firstPath] = workEntry.changedFiles ?? [];
   if (!firstPath) return null;
-  const displayPath = formatWorkspaceRelativePath(firstPath, workspaceRoot);
+  const displayPath = formatToolFilePath(firstPath, workspaceRoot);
   return workEntry.changedFiles!.length === 1
     ? displayPath
     : `${displayPath} +${workEntry.changedFiles!.length - 1} more`;
@@ -2145,9 +2150,7 @@ function buildToolCallExpandedBody(
   const changedFiles = workEntry.changedFiles ?? [];
   if (changedFiles.length > 0) {
     blocks.push(
-      changedFiles
-        .map((filePath) => formatWorkspaceRelativePath(filePath, workspaceRoot))
-        .join("\n"),
+      changedFiles.map((filePath) => formatToolFilePath(filePath, workspaceRoot)).join("\n"),
     );
   }
   return blocks.length > 0 ? blocks.join("\n\n") : null;
@@ -2198,7 +2201,7 @@ function buildToolArgumentLines(
     const rendered =
       typeof value === "string" &&
       (key === "file_path" || key === "notebook_path" || key === "path")
-        ? formatWorkspaceRelativePath(value, workspaceRoot)
+        ? formatToolFilePath(value, workspaceRoot)
         : value.toString();
     lines.push(`${label}: ${rendered}`);
   }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  buildMarkdownFileLinkParentSuffixes,
   resolveInlineCodeFileLinkMeta,
   resolveMarkdownFileLinkMeta,
   resolveMarkdownFileLinkTarget,
@@ -83,7 +84,7 @@ describe("resolveMarkdownFileLinkTarget", () => {
         "C:/Users/mike/dev-stuff/t3code",
       ),
     ).toMatchObject({
-      displayPath: "t3code/apps/web/src/session-logic.ts:501",
+      displayPath: "apps/web/src/session-logic.ts:501",
       workspaceRelativePath: "apps/web/src/session-logic.ts",
     });
   });
@@ -95,10 +96,34 @@ describe("resolveMarkdownFileLinkTarget", () => {
         "C:/Users/mike/dev-stuff/t3code",
       ),
     ).toMatchObject({
-      displayPath:
-        "t3code/apps/web/src/components/chat/MessagesTimeline.virtualization.browser.tsx",
+      displayPath: "apps/web/src/components/chat/MessagesTimeline.virtualization.browser.tsx",
       workspaceRelativePath:
         "apps/web/src/components/chat/MessagesTimeline.virtualization.browser.tsx",
+    });
+  });
+
+  it("disambiguates same-named files without exposing the active worktree directory", () => {
+    const activePath =
+      "/Users/cameron/.t3/worktrees/t3code-1fc35d1b/apps/web/src/dictation/dictationSession.ts";
+    const illustrativePath =
+      "/Users/cameron/.t3/worktrees/t3code-1fc35d1b/t3code-d9980d37/apps/web/src/dictation/dictationSession.ts";
+
+    expect(
+      Object.fromEntries(
+        buildMarkdownFileLinkParentSuffixes([
+          {
+            filePath: activePath,
+            workspaceRelativePath: "apps/web/src/dictation/dictationSession.ts",
+          },
+          {
+            filePath: illustrativePath,
+            workspaceRelativePath: "t3code-d9980d37/apps/web/src/dictation/dictationSession.ts",
+          },
+        ]),
+      ),
+    ).toEqual({
+      [activePath]: "apps/web/src/dictation",
+      [illustrativePath]: "t3code-d9980d37/apps/web/src/dictation",
     });
   });
 
