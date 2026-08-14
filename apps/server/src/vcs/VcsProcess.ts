@@ -53,7 +53,11 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
 const OUTPUT_TRUNCATED_MARKER = "\n\n[truncated]";
 
-const classifyNonZeroExit = (command: string, stderr: string): VcsProcessExitFailureKind => {
+/**
+ * Exported for callers that allow a non-zero exit to keep the output — `gh api graphql` exits
+ * non-zero for a partial answer it still prints — and so must classify the exit themselves.
+ */
+export const classifyNonZeroExit = (command: string, stderr: string): VcsProcessExitFailureKind => {
   const normalized = stderr.toLowerCase();
 
   if (
