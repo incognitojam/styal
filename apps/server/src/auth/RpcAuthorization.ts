@@ -80,6 +80,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.sourceControlSetDefaultRepository]: AuthOrchestrationOperateScope,
   [WS_METHODS.sourceControlListIssues]: AuthOrchestrationReadScope,
   [WS_METHODS.sourceControlGetIssue]: AuthOrchestrationReadScope,
+  [WS_METHODS.sourceControlResolveReferences]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsListEntries]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsReadFile]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsSearchContents]: AuthOrchestrationReadScope,
