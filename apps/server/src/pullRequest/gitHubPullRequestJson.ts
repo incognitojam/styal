@@ -606,6 +606,16 @@ export const PULL_REQUEST_ACTIVITY_JSON_FIELDS = "author,comments,reviews,commit
 const GRAPHQL_PAGE_SIZE = 100;
 
 /**
+ * Keep the two nested review-thread connections narrow. GitHub prices a GraphQL query from its
+ * declared worst-case shape: putting a connection below 100 threads and 100 comments makes that
+ * inner connection cost ten thousand potential reads even when the pull request is small.
+ * Continuation reads below still walk every page, so these bounds trade round trips on unusually
+ * large conversations for a predictable cost on every ordinary one.
+ */
+const REVIEW_THREAD_PAGE_SIZE = 25;
+const REVIEW_THREAD_INITIAL_COMMENT_PAGE_SIZE = 10;
+
+/**
  * The ceiling on `search`, which refuses anything larger with EXCESSIVE_PAGINATION (measured:
  * `first: 101` is an error, `first: 100` is not).
  */
@@ -679,7 +689,7 @@ export const REVIEW_THREADS_GRAPHQL_QUERY = `query($owner: String!, $name: Strin
   viewer { login }
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
-      reviewThreads(first: ${GRAPHQL_PAGE_SIZE}, after: $cursor) {
+      reviewThreads(first: ${REVIEW_THREAD_PAGE_SIZE}, after: $cursor) {
         totalCount
         pageInfo { hasNextPage endCursor }
         nodes {
@@ -689,7 +699,7 @@ export const REVIEW_THREADS_GRAPHQL_QUERY = `query($owner: String!, $name: Strin
           path
           line
           diffSide
-          comments(first: ${GRAPHQL_PAGE_SIZE}) {
+          comments(first: ${REVIEW_THREAD_INITIAL_COMMENT_PAGE_SIZE}) {
             totalCount
             pageInfo { hasNextPage endCursor }
             nodes { id author { login avatarUrl } body createdAt url ${REACTION_GROUPS_FIELDS} }

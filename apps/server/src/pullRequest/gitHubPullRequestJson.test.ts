@@ -1014,6 +1014,19 @@ describe("REVIEW_THREADS_GRAPHQL_QUERY", () => {
     // The reviews connection is new: only reactions were ever wanted off it.
     expect(REVIEW_THREADS_GRAPHQL_QUERY).toContain("reviews(first:");
   });
+
+  it("bounds the nested review-comment reaction fan-out", () => {
+    const nestedPageSizes = REVIEW_THREADS_GRAPHQL_QUERY.match(
+      /reviewThreads\(first: (\d+),[\s\S]*?comments\(first: (\d+)\)[\s\S]*?reactionGroups/,
+    );
+    expect(nestedPageSizes).not.toBeNull();
+    const threadPageSize = Number(nestedPageSizes?.[1]);
+    const commentPageSize = Number(nestedPageSizes?.[2]);
+
+    // GitHub charges nested connections from their declared worst-case parent fan-out. Keeping
+    // this product bounded prevents one activity refresh from consuming ~100 GraphQL points.
+    expect(threadPageSize * commentPageSize).toBeLessThanOrEqual(250);
+  });
 });
 
 describe("reviewer candidate decoding", () => {
