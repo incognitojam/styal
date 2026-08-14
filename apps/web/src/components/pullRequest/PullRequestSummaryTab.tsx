@@ -21,7 +21,6 @@ import { useRef, useState, type ReactNode } from "react";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { cn } from "~/lib/utils";
-import { readLocalApi } from "~/localApi";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 
 import { Button } from "../ui/button";
@@ -29,12 +28,7 @@ import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collaps
 import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import {
-  PullRequestActorAvatar,
-  PullRequestActorLabel,
-  PullRequestCheckStatusIcon,
-  pullRequestCheckStatusLabel,
-} from "./pullRequestPresentation";
+import { PullRequestActorAvatar, PullRequestActorLabel } from "./pullRequestPresentation";
 import { PullRequestReviewerPicker } from "./PullRequestReviewerPicker";
 import { PullRequestActivityUnavailableState } from "./PullRequestActivityUnavailableState";
 import {
@@ -362,7 +356,6 @@ export function PullRequestSummaryTab({
   activityError,
   pendingFinding,
   fixFindingLabel = "Fix in a thread",
-  fixCheckLabel = "Fix",
   onFixFinding,
   onRefresh,
 }: {
@@ -374,7 +367,6 @@ export function PullRequestSummaryTab({
   /** The hand-off currently preparing, if any, so only the finding it belongs to says so. */
   pendingFinding?: string | null;
   fixFindingLabel?: string;
-  fixCheckLabel?: string;
   onFixFinding?: (finding: PullRequestFinding) => void;
   onRefresh: () => void;
 }) {
@@ -397,10 +389,6 @@ export function PullRequestSummaryTab({
       thread.comments.map((comment) => [comment.id, thread] as const),
     ),
   );
-
-  const openCheck = (url: string) => {
-    void readLocalApi()?.shell.openExternal(url);
-  };
 
   const update = useAtomCommand(pullRequestEnvironment.update, { reportFailure: false });
   const updateComment = useAtomCommand(pullRequestEnvironment.updateComment, {
@@ -590,59 +578,6 @@ export function PullRequestSummaryTab({
             onRefresh={onRefresh}
           />
         </div>
-      </Section>
-
-      <Section title="Checks" count={detail.checks.length}>
-        {detail.checks.length === 0 ? (
-          <p className="text-xs text-muted-foreground">No checks reported.</p>
-        ) : (
-          <div className="space-y-0.5">
-            {detail.checks.map((check, index) => {
-              const finding = { kind: "check", check } as const;
-              const failing = check.status === "failure" || check.status === "cancelled";
-              return (
-                <div
-                  // Position too: the host decides how many runs share a name, and a repeated
-                  // key would be a rendering fault on top of whatever the list already says.
-                  key={`${index}:${check.name}:${check.url ?? ""}`}
-                  className="group flex items-center gap-1 rounded-md pr-1 hover:bg-accent/60"
-                >
-                  <button
-                    type="button"
-                    disabled={!check.url}
-                    onClick={() => check.url && openCheck(check.url)}
-                    className={cn(
-                      "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs",
-                      check.url ? undefined : "cursor-default",
-                    )}
-                  >
-                    <PullRequestCheckStatusIcon status={check.status} />
-                    <span className="min-w-0 flex-1 truncate">{check.name}</span>
-                    <span className="shrink-0 text-muted-foreground">
-                      {pullRequestCheckStatusLabel(check.status)}
-                    </span>
-                  </button>
-                  {/* Only where there is something to fix. A passing check has no failure to
-                      reproduce, and the button would be an invitation to waste a thread. */}
-                  {onFixFinding && failing ? (
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      className="shrink-0"
-                      disabled={pendingFinding !== null && pendingFinding !== undefined}
-                      onClick={() => onFixFinding(finding)}
-                    >
-                      <HammerIcon className="size-3" />
-                      {pendingFinding === pullRequestFindingKey(finding)
-                        ? "Preparing..."
-                        : fixCheckLabel}
-                    </Button>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        )}
       </Section>
 
       <Section
