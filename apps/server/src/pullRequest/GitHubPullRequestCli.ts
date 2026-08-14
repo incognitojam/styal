@@ -292,10 +292,14 @@ const DIFF_FILES_PAGE_SIZE = 100;
 
 /**
  * Pages of review threads to follow before the conversation is reported as truncated. GitHub
- * serves a hundred threads a page, so this is a thousand threads — past anything a pull request
- * a person is reading has, and short of walking a repository-sized conversation forever.
+ * serves twenty-five threads in the deliberately narrow initial query, so forty pages retain the
+ * previous thousand-thread ceiling — past anything a person is reading, and short of walking a
+ * repository-sized conversation forever.
  */
-const REVIEW_THREAD_PAGES = 10;
+const REVIEW_THREAD_PAGES = 40;
+
+/** Dismissals still use GitHub's hundred-row page, so ten pages retain the same ceiling. */
+const REVIEW_DISMISSAL_PAGES = 10;
 
 /**
  * And pages of one thread's own comments, for the rare thread longer than a single page. A
@@ -1590,7 +1594,7 @@ export const make = Effect.gen(function* () {
         // ordinarily accrues. Followed so a review whose event fell past that page still finds
         // its reason.
         let dismissalPage = 0;
-        while (dismissalCursor !== null && dismissalPage < REVIEW_THREAD_PAGES) {
+        while (dismissalCursor !== null && dismissalPage < REVIEW_DISMISSAL_PAGES) {
           const read: {
             readonly dismissalsByReviewId: ReadonlyMap<string, string>;
             readonly nextCursor: string | null;
