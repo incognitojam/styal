@@ -576,6 +576,7 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
           args: ["pr", "checkout", input.reference, ...(input.force ? ["--force"] : [])],
         }).pipe(Effect.asVoid),
       listIssues: () => Effect.succeed([]),
+      resolveReferences: () => Effect.succeed([]),
       getIssue: (input) =>
         Effect.fail(
           new GitHubCli.GitHubIssueDecodeError({

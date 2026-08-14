@@ -1721,6 +1721,12 @@ code {
   margin-top: 0.35rem;
 }
 
+/* A reference the host has nothing under. Keeps the link colour: the mark is the only signal. */
+.chat-markdown a[data-github-reference-missing] {
+  text-decoration: underline wavy var(--destructive);
+  text-underline-offset: 4px;
+}
+
 .chat-markdown a[data-footnote-ref],
 .chat-markdown a[data-footnote-backref] {
   display: inline-flex;

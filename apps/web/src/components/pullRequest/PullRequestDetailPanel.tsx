@@ -86,6 +86,7 @@ import {
 } from "../ui/menu";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { toastManager } from "../ui/toast";
+import { GithubReferenceThreadContext } from "../chat/githubReferenceLinks";
 import { PullRequestDetailGhost, PullRequestTimelineGhost } from "./PullRequestGhosts";
 import { PullRequestActivityUnavailableState } from "./PullRequestActivityUnavailableState";
 import { DiffPanelLoadingState } from "../DiffPanelShell";
@@ -343,17 +344,7 @@ function PullRequestBaseFreshnessWarning({
   );
 }
 
-export function PullRequestDetailPanel({
-  environmentId,
-  reference,
-  refreshToken: forcedRefreshToken = 0,
-  onActed,
-  onClose,
-  onStateChange,
-  context = "page",
-  chromeVariant = "full",
-  composerDraftTarget,
-}: {
+type PullRequestDetailPanelProps = {
   environmentId: EnvironmentId;
   reference: PullRequestRef;
   /**
@@ -394,7 +385,36 @@ export function PullRequestDetailPanel({
    * land here instead of opening a new thread — the branch is already under the reader's feet.
    */
   composerDraftTarget?: ScopedThreadRef | DraftId;
-}) {
+};
+
+/**
+ * A `#123` in any body below opens as a tab beside this panel rather than replacing the page.
+ * Told through a context rather than a prop threaded down through the tabs, and provided out here
+ * so the panel body below is untouched.
+ */
+export function PullRequestDetailPanel(props: PullRequestDetailPanelProps) {
+  // Only where there is a thread to open beside: a draft target names no thread yet.
+  const target = props.context === "thread" ? props.composerDraftTarget : undefined;
+  const threadRef =
+    target !== undefined && typeof target === "object" && "threadId" in target ? target : undefined;
+  return (
+    <GithubReferenceThreadContext.Provider value={threadRef}>
+      <PullRequestDetailPanelBody {...props} />
+    </GithubReferenceThreadContext.Provider>
+  );
+}
+
+function PullRequestDetailPanelBody({
+  environmentId,
+  reference,
+  refreshToken: forcedRefreshToken = 0,
+  onActed,
+  onClose,
+  onStateChange,
+  context = "page",
+  chromeVariant = "full",
+  composerDraftTarget,
+}: PullRequestDetailPanelProps) {
   const pullRequestKey = `${reference.projectId}:${reference.repository}#${reference.number}`;
   const [tab, setTab] = useState<DetailTab>("summary");
   const [timelineOrder, setTimelineOrder] = useState<"newest" | "oldest">("newest");
