@@ -159,6 +159,10 @@
       "types": "./src/path.ts",
       "import": "./src/path.ts"
     },
+    "./filePathDisplay": {
+      "types": "./src/filePathDisplay.ts",
+      "import": "./src/filePathDisplay.ts"
+    },
     "./keybindings": {
       "types": "./src/keybindings.ts",
       "import": "./src/keybindings.ts"
