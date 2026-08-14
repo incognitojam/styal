@@ -577,4 +577,86 @@ describe("GitHubCli.layer", () => {
       assert.notInclude(error.message, "user ID");
     }).pipe(Effect.provide(layer)),
   );
+
+  /**
+   * `gh api graphql` exits non-zero whenever any part of an answer failed, while still printing
+   * the parts that resolved. Reading the body rather than the exit code is what lets one missing
+   * reference travel beside a dozen good ones — and telling that apart from a body that never
+   * arrived is what keeps a logged-out host from reading as a page full of dead references.
+   */
+  it.effect("keeps a partial answer that the host exited non-zero over", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(
+        Effect.succeed({
+          exitCode: ChildProcessSpawner.ExitCode(1),
+          // @effect-diagnostics-next-line preferSchemaOverJson:off
+          stdout: JSON.stringify({
+            data: { r0: { i0: { __typename: "Issue", title: "A bug", url: "u", state: "OPEN" } } },
+            errors: [{ type: "NOT_FOUND", path: ["r0", "i1"] }],
+          }),
+          stderr: "gh: Could not resolve to an issue or pull request with the number of 2.",
+          stdoutTruncated: false,
+          stderrTruncated: false,
+        }),
+      );
+      const github = yield* GitHubCli.GitHubCli;
+
+      const resolved = yield* github.resolveReferences({
+        cwd: "/repo",
+        host: "github.com",
+        references: [
+          { repository: "owner/repo", number: 1 },
+          { repository: "owner/repo", number: 2 },
+        ],
+      });
+
+      assert.deepStrictEqual(
+        resolved.map((reference) => [reference.number, reference.kind]),
+        [
+          [1, "issue"],
+          [2, null],
+        ],
+      );
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("says why an answer never arrived rather than reporting no references", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(
+        Effect.succeed({
+          exitCode: ChildProcessSpawner.ExitCode(4),
+          stdout: "",
+          stderr: "gh: To get started with GitHub CLI, please run: gh auth login",
+          stdoutTruncated: false,
+          stderrTruncated: false,
+        }),
+      );
+      const github = yield* GitHubCli.GitHubCli;
+
+      const failure = yield* github
+        .resolveReferences({
+          cwd: "/repo",
+          host: "github.com",
+          references: [{ repository: "owner/repo", number: 1 }],
+        })
+        .pipe(Effect.flip);
+
+      assert.equal(failure._tag, "GitHubCliAuthenticationError");
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("asks nothing at all when no reference names a repository", () =>
+    Effect.gen(function* () {
+      const github = yield* GitHubCli.GitHubCli;
+
+      const resolved = yield* github.resolveReferences({
+        cwd: "/repo",
+        host: "github.com",
+        references: [{ repository: "notarepository", number: 1 }],
+      });
+
+      assert.deepStrictEqual(resolved, []);
+      assert.equal(mockRun.mock.calls.length, 0);
+    }).pipe(Effect.provide(layer)),
+  );
 });
