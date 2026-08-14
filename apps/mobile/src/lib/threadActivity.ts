@@ -8,11 +8,15 @@ import type {
   UserInputQuestion,
 } from "@t3tools/contracts";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+import { formatWorkspaceRelativePath } from "@t3tools/shared/filePathDisplay";
 import {
   deriveToolFileChangeLineStat,
   type ToolFileChangeLineStat,
 } from "@t3tools/shared/toolActivity";
-import { deriveToolRowPresentation } from "@t3tools/shared/toolRowPresentation";
+import {
+  deriveToolRowPresentation,
+  type ToolRowArgument,
+} from "@t3tools/shared/toolRowPresentation";
 
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
@@ -701,7 +705,14 @@ function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
   return "zap";
 }
 
-function buildWorkEntryExpandedBody(entry: WorkLogEntry): string | null {
+function formatToolFilePath(path: string, workspaceRoot: string | undefined): string {
+  return formatWorkspaceRelativePath(path, workspaceRoot, { includeWorkspaceLabel: false });
+}
+
+function buildWorkEntryExpandedBody(
+  entry: WorkLogEntry,
+  workspaceRoot: string | undefined,
+): string | null {
   const blocks: string[] = [];
   const appendUniqueBlock = (value: string | null | undefined) => {
     const trimmed = value?.trim();
@@ -716,7 +727,9 @@ function buildWorkEntryExpandedBody(entry: WorkLogEntry): string | null {
   appendUniqueBlock(entry.rawCommand ?? entry.command);
   appendUniqueBlock(entry.detail);
   if ((entry.changedFiles?.length ?? 0) > 0) {
-    appendUniqueBlock(entry.changedFiles!.join("\n"));
+    appendUniqueBlock(
+      entry.changedFiles!.map((path) => formatToolFilePath(path, workspaceRoot)).join("\n"),
+    );
   }
 
   return blocks.length > 0 ? blocks.join("\n\n") : null;
@@ -759,24 +772,38 @@ function toolRowPresentationFor(workEntry: DerivedWorkLogEntry) {
   });
 }
 
+function formatToolRowArgument(
+  argument: ToolRowArgument,
+  workspaceRoot: string | undefined,
+): string {
+  if (argument.kind !== "path") {
+    return argument.value;
+  }
+  const displayPath = formatToolFilePath(argument.value, workspaceRoot);
+  return argument.moreCount ? `${displayPath} +${argument.moreCount} more` : displayPath;
+}
+
 function workEntryPreview(
   workEntry: Pick<WorkLogEntry, "detail" | "command" | "changedFiles" | "itemType">,
+  workspaceRoot: string | undefined,
 ): string | null {
   if (workEntry.command) return workEntry.command;
   if (workEntry.itemType === "file_change" && (workEntry.changedFiles?.length ?? 0) > 0) {
     const [firstPath] = workEntry.changedFiles ?? [];
     if (!firstPath) return null;
+    const displayPath = formatToolFilePath(firstPath, workspaceRoot);
     return workEntry.changedFiles!.length === 1
-      ? firstPath
-      : `${firstPath} +${workEntry.changedFiles!.length - 1} more`;
+      ? displayPath
+      : `${displayPath} +${workEntry.changedFiles!.length - 1} more`;
   }
   if (workEntry.detail) return workEntry.detail;
   if ((workEntry.changedFiles?.length ?? 0) === 0) return null;
   const [firstPath] = workEntry.changedFiles ?? [];
   if (!firstPath) return null;
+  const displayPath = formatToolFilePath(firstPath, workspaceRoot);
   return workEntry.changedFiles!.length === 1
-    ? firstPath
-    : `${firstPath} +${workEntry.changedFiles!.length - 1} more`;
+    ? displayPath
+    : `${displayPath} +${workEntry.changedFiles!.length - 1} more`;
 }
 
 function capitalizePhrase(value: string): string {
@@ -1602,6 +1629,7 @@ export function buildThreadFeed(
     readonly loadedMessages?: ReadonlyArray<OrchestrationThread["messages"][number]>;
   },
 ): ThreadFeedEntry[] {
+  const workspaceRoot = thread.worktreePath ?? undefined;
   const loadedMessages = options?.loadedMessages ?? thread.messages;
   const oldestLoadedMessageCreatedAt =
     options?.loadedMessages !== undefined ? (loadedMessages[0]?.createdAt ?? null) : null;
@@ -1628,9 +1656,13 @@ export function buildThreadFeed(
           // As on web: a presentation owns its argument, including its absence.
           const presentation = toolRowPresentationFor(entry);
           const detail = presentation
-            ? (presentation.argument?.value ?? null)
-            : workEntryPreview(entry);
-          const getFullDetail = memoizeValue(() => buildWorkEntryExpandedBody(entry));
+            ? presentation.argument
+              ? formatToolRowArgument(presentation.argument, workspaceRoot)
+              : null
+            : workEntryPreview(entry, workspaceRoot);
+          const getFullDetail = memoizeValue(() =>
+            buildWorkEntryExpandedBody(entry, workspaceRoot),
+          );
           const getCopyText = memoizeValue(() =>
             [summary, detail, getFullDetail()]
               .filter((value, index, values): value is string => {
