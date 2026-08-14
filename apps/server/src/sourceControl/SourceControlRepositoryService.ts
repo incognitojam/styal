@@ -1,4 +1,5 @@
 import * as NodeOS from "node:os";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -25,6 +26,9 @@ import {
   type SourceControlIssue,
   type SourceControlListIssuesInput,
   type SourceControlListIssuesResult,
+  type SourceControlReference,
+  type SourceControlResolveReferencesInput,
+  type SourceControlResolveReferencesResult,
   type SourceControlRepositoryLookupInput,
   type SourceControlSetDefaultRepositoryInput,
 } from "@t3tools/contracts";
@@ -37,6 +41,8 @@ import {
 
 import { ServerConfig } from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import { MAX_REFERENCES_PER_REQUEST } from "./gitHubReferences.ts";
+import { makeReferenceCache } from "./referenceCache.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
 
@@ -75,6 +81,10 @@ export class SourceControlRepositoryService extends Context.Service<
     readonly getIssue: (
       input: SourceControlGetIssueInput,
     ) => Effect.Effect<SourceControlIssue, SourceControlProviderError>;
+    /** What the references in a body turn out to be, answered together. */
+    readonly resolveReferences: (
+      input: SourceControlResolveReferencesInput,
+    ) => Effect.Effect<SourceControlResolveReferencesResult, SourceControlProviderError>;
   }
 >()("t3/sourceControl/SourceControlRepositoryService") {}
 
@@ -559,9 +569,72 @@ export const make = Effect.gen(function* () {
     return yield* provider.getIssue({ cwd: input.cwd, number: input.number });
   });
 
+  /**
+   * The host this checkout is read against. Taken from the remotes rather than the caller: a
+   * hostname is where credentials get sent, which is not a body's text to decide.
+   */
+  const resolveReferenceHost = Effect.fn("SourceControlRepositoryService.resolveReferenceHost")(
+    function* (cwd: string) {
+      const config = yield* readRemoteConfig(cwd).pipe(Effect.orElseSucceed(() => null));
+      const remotes = config?.state.remotes ?? [];
+      const preferred =
+        remotes.find((remote) => remote.remoteName === config?.state.defaultRemoteName) ??
+        remotes.find((remote) => remote.remoteName === "origin") ??
+        remotes[0];
+      const host = preferred ? normalizeGitRemoteUrl(preferred.url).split("/")[0] : undefined;
+      return host && host.length > 0 ? host : "github.com";
+    },
+  );
+
+  const referenceCache = makeReferenceCache();
+
+  const resolveReferences = Effect.fn("SourceControlRepositoryService.resolveReferences")(
+    function* (input: SourceControlResolveReferencesInput) {
+      const provider = yield* providers.resolve({ cwd: input.cwd });
+      // One answer per reference however often a body names it, and a ceiling on the rest.
+      const unique = new Map<string, SourceControlReference>();
+      for (const reference of input.references) {
+        unique.set(`${reference.repository.toLowerCase()}#${reference.number}`, reference);
+        if (unique.size >= MAX_REFERENCES_PER_REQUEST) break;
+      }
+      if (unique.size === 0) {
+        const host = yield* resolveReferenceHost(input.cwd);
+        return {
+          provider: provider.kind,
+          host,
+          references: [],
+        } satisfies SourceControlResolveReferencesResult;
+      }
+
+      const host = yield* resolveReferenceHost(input.cwd);
+      const now = yield* Clock.currentTimeMillis;
+      const { cached, unanswered } = referenceCache.read(now, host, [...unique.values()]);
+      if (unanswered.length === 0) {
+        return {
+          provider: provider.kind,
+          host,
+          references: cached,
+        } satisfies SourceControlResolveReferencesResult;
+      }
+
+      const resolved = yield* provider.resolveReferences({
+        cwd: input.cwd,
+        host,
+        references: unanswered,
+      });
+      referenceCache.write(now, host, resolved);
+      return {
+        provider: provider.kind,
+        host,
+        references: [...cached, ...resolved],
+      } satisfies SourceControlResolveReferencesResult;
+    },
+  );
+
   return SourceControlRepositoryService.of({
     listIssues,
     getIssue,
+    resolveReferences,
     lookupRepository: (input) =>
       lookupRepository(input).pipe(mapRepositoryError("lookupRepository", input.provider)),
     cloneRepository: (input) =>
