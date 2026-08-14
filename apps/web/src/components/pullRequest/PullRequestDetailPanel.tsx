@@ -15,7 +15,6 @@ import {
   ArrowLeftIcon,
   ArrowUpRightIcon,
   BookOpenIcon,
-  CircleDotIcon,
   ChevronDownIcon,
   FileDiffIcon,
   FolderGit2Icon,
@@ -92,11 +91,16 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { GithubReferenceThreadContext } from "../chat/githubReferenceLinks";
-import { PullRequestDetailGhost, PullRequestTimelineGhost } from "./PullRequestGhosts";
+import {
+  PullRequestChecksGhost,
+  PullRequestDetailGhost,
+  PullRequestTimelineGhost,
+} from "./PullRequestGhosts";
 import { PullRequestActivityUnavailableState } from "./PullRequestActivityUnavailableState";
 import { DiffPanelLoadingState } from "../DiffPanelShell";
 import { PullRequestsUnavailableState } from "./PullRequestsUnavailableState";
 import type { PullRequestAgentSelectionInput } from "./PullRequestCodeTab";
+import { PullRequestChecksNavButton, PullRequestChecksTab } from "./PullRequestChecksTab";
 import { openOnHostLabel, showPullRequestLinkContextMenu } from "./pullRequestLinkContextMenu";
 import { PullRequestSummaryTab } from "./PullRequestSummaryTab";
 import { PullRequestTimelineTab } from "./PullRequestTimelineTab";
@@ -126,20 +130,17 @@ import {
   resolvePickableEnvironments,
   type PickableEnvironment,
 } from "./pullRequestProjectAssignment.logic";
-import { PullRequestChecksPopover } from "./PullRequestChecksPopover";
 import {
   PullRequestActorAvatar,
   PullRequestActorLabel,
   PullRequestDiffStat,
   PullRequestMetaLine,
   PullRequestReviewOutcomeIcon,
-  pullRequestChecksState,
   pullRequestReviewOutcomeToneClassName,
   resolvePullRequestState,
-  summarizePullRequestChecks,
 } from "./pullRequestPresentation";
 
-type DetailTab = "summary" | "timeline" | "code";
+type DetailTab = "summary" | "checks" | "timeline" | "code";
 
 const ACTION_SUCCESS_LABELS: Record<PullRequestAction, string> = {
   merge: "Pull request merged",
@@ -204,6 +205,7 @@ const UPDATE_BRANCH_REBASE_FAILURE_HINT =
 
 const TABS: ReadonlyArray<{ value: DetailTab; label: string }> = [
   { value: "summary", label: "Summary" },
+  { value: "checks", label: "Checks" },
   { value: "timeline", label: "Timeline" },
   { value: "code", label: "Code" },
 ];
@@ -1126,8 +1128,6 @@ function PullRequestDetailPanelBody({
   const statePresentation = detail
     ? resolvePullRequestState({ state: detail.state, isDraft: detail.isDraft })
     : null;
-  const checksSummary = detail ? summarizePullRequestChecks(detail.checks) : null;
-  const checksState = detail ? pullRequestChecksState(detail.checks) : null;
   // Approvals that still stand, and only those. A superseded one is dimmed beside the reviewer
   // who gave it, so counting it here would have the header assert in a number what the row next
   // to it has just qualified.
@@ -1825,17 +1825,10 @@ function PullRequestDetailPanelBody({
               ))}
             </ToggleGroup>
             {tab === "summary" ? (
-              <span
-                className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground"
-                aria-label={checksSummary ? `Checks: ${checksSummary}` : "Checks"}
-              >
-                {checksState !== null ? (
-                  <PullRequestChecksPopover checks={detail.checks} checksState={checksState} />
-                ) : (
-                  <CircleDotIcon aria-hidden className="size-3.5" />
-                )}
-                {checksSummary}
-              </span>
+              <PullRequestChecksNavButton
+                checks={detail.checks}
+                onSelect={() => setTab("checks")}
+              />
             ) : tab === "timeline" ? (
               <div className="ml-auto flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
                 <PullRequestMetaLine
@@ -1942,7 +1935,17 @@ function PullRequestDetailPanelBody({
           });
         }}
       >
-        {detailQuery.error && !detail ? (
+        {detailQuery.isPending && !detail ? (
+          tab === "timeline" ? (
+            <PullRequestTimelineGhost />
+          ) : tab === "checks" ? (
+            <PullRequestChecksGhost />
+          ) : tab === "code" ? (
+            <DiffPanelLoadingState label="Loading pull request diff..." />
+          ) : (
+            <PullRequestDetailGhost />
+          )
+        ) : detailQuery.error && !detail ? (
           <PullRequestsUnavailableState error={detailQuery.error} onRetry={refreshDetail} />
         ) : detail ? (
           <>
@@ -1956,9 +1959,18 @@ function PullRequestDetailPanelBody({
                   activityError={activityError}
                   pendingFinding={handoff}
                   fixFindingLabel={handoffLabels.fixFinding}
-                  fixCheckLabel={handoffLabels.fixCheck}
                   onFixFinding={startFixFinding}
                   onRefresh={refreshDetail}
+                />
+              </div>
+            ) : null}
+            {mountedTabs.has("checks") ? (
+              <div className={cn("absolute inset-0", tab !== "checks" && "invisible")}>
+                <PullRequestChecksTab
+                  checks={detail.checks}
+                  pendingFinding={handoff}
+                  fixCheckLabel={handoffLabels.fixCheck}
+                  onFixFinding={startFixFinding}
                 />
               </div>
             ) : null}
