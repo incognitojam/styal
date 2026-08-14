@@ -8,6 +8,8 @@ import type {
   SourceControlProviderKind,
   SourceControlIssue,
   SourceControlIssueSummary,
+  SourceControlReference,
+  SourceControlResolvedReference,
   SourceControlRepositoryCloneUrls,
   SourceControlRepositoryVisibility,
 } from "@t3tools/contracts";
@@ -108,6 +110,12 @@ export class SourceControlProvider extends Context.Service<
       readonly context?: SourceControlProviderContext;
       readonly number: number;
     }) => Effect.Effect<SourceControlIssue, SourceControlProviderError>;
+    readonly resolveReferences: (input: {
+      readonly cwd: string;
+      readonly context?: SourceControlProviderContext;
+      readonly host: string;
+      readonly references: ReadonlyArray<SourceControlReference>;
+    }) => Effect.Effect<ReadonlyArray<SourceControlResolvedReference>, SourceControlProviderError>;
     readonly createChangeRequest: (input: {
       readonly cwd: string;
       readonly context?: SourceControlProviderContext;
@@ -145,12 +153,16 @@ export class SourceControlProvider extends Context.Service<
  * Issue browsing only ships for GitHub today. Every other provider reuses this
  * so the capability gap is a typed, explainable failure instead of a missing
  * method.
+ *
+ * Resolving references belongs here too, answering empty rather than failing: no reference
+ * resolved is exactly right for a host whose bodies do not write GitHub's shorthand.
  */
 export function unsupportedIssueOperations(
   kind: SourceControlProviderKind,
   detail = `Browsing issues is not supported for ${kind} yet.`,
-): Pick<SourceControlProvider["Service"], "listIssues" | "getIssue"> {
+): Pick<SourceControlProvider["Service"], "listIssues" | "getIssue" | "resolveReferences"> {
   return {
+    resolveReferences: () => Effect.succeed([]),
     listIssues: (input) =>
       new SourceControlProviderError({
         provider: kind,
