@@ -222,9 +222,7 @@ const makeFaviconWebContents = (options?: {
       options?.rasterize ? options.rasterize(scripts[0]?.code ?? "") : TEST_FAVICON,
   );
   const reload = vi.fn();
-  let windowOpenHandler:
-    | ((details: { url: string }) => { action: "allow" | "deny" })
-    | undefined;
+  let windowOpenHandler: ((details: { url: string }) => { action: "allow" | "deny" }) | undefined;
   const loadURL = vi.fn(async (url: string) => {
     currentUrl = url;
   });
@@ -420,9 +418,9 @@ describe("PreviewManager", () => {
           action: "deny",
         });
         expect(
-          preview
-            .getWindowOpenHandler()
-            ?.({ url: "vscode://vscode-remote/ssh-remote+example-host/home" }),
+          preview.getWindowOpenHandler()?.({
+            url: "vscode://vscode-remote/ssh-remote+example-host/home",
+          }),
         ).toEqual({ action: "deny" });
         expect(openExternal).not.toHaveBeenCalled();
         expect(preview.loadURL).not.toHaveBeenCalled();
