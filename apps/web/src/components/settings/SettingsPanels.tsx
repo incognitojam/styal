@@ -571,11 +571,11 @@ export function useSettingsRestore(onRestored?: () => void) {
         : []),
       ...(isTextGenerationModelDirty ? ["Text generation model"] : []),
     ],
-      [
-        isTextGenerationModelDirty,
-        isBackgroundActivityDirty,
-        settings.confirmQuit,
-        settings.completionSound,
+    [
+      isTextGenerationModelDirty,
+      isBackgroundActivityDirty,
+      settings.confirmQuit,
+      settings.completionSound,
       settings.confirmThreadArchive,
       settings.confirmThreadDelete,
       settings.addProjectBaseDirectory,
