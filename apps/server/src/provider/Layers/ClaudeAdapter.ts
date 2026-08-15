@@ -661,7 +661,14 @@ function readClaudeResumeState(resumeCursor: unknown): ClaudeResumeState | undef
   };
 }
 
+function isClaudeTaskTool(toolName: string): boolean {
+  return toolName === "TaskCreate" || toolName === "TaskUpdate" || toolName === "TaskList";
+}
+
 function classifyToolItemType(toolName: string): CanonicalItemType {
+  if (isClaudeTaskTool(toolName)) {
+    return "dynamic_tool_call";
+  }
   const normalized = toolName.toLowerCase();
   if (normalized.includes("agent")) {
     return "collab_agent_tool_call";
@@ -758,10 +765,6 @@ function extractPlanStepsFromTodoInput(input: Record<string, unknown>): PlanStep
             ? "inProgress"
             : "pending",
     }));
-}
-
-function isClaudeTaskTool(toolName: string): boolean {
-  return toolName === "TaskCreate" || toolName === "TaskUpdate" || toolName === "TaskList";
 }
 
 function normalizeClaudeTaskStatus(value: unknown): PlanStep["status"] {

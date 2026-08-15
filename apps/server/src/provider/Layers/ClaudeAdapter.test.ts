@@ -3289,7 +3289,7 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
-  it.effect("classifies Agent tools and read-only Claude tools correctly for approvals", () => {
+  it.effect("classifies task, Agent, and read-only Claude tools correctly for approvals", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
       const adapter = yield* ClaudeAdapter;
@@ -3332,6 +3332,32 @@ describe("ClaudeAdapterLive", () => {
       );
       yield* Stream.runHead(adapter.streamEvents);
       yield* Effect.promise(() => agentPermissionPromise);
+
+      for (const toolName of ["TaskCreate", "TaskUpdate", "TaskList"] as const) {
+        const taskPermissionPromise = canUseTool(
+          toolName,
+          { subject: "Synthetic task", description: "Exercise approval routing" },
+          {
+            signal: new AbortController().signal,
+            toolUseID: `tool-${toolName.toLowerCase()}-1`,
+          },
+        );
+
+        const taskRequested = yield* Stream.runHead(adapter.streamEvents);
+        assert.equal(taskRequested._tag, "Some");
+        if (taskRequested._tag !== "Some" || taskRequested.value.type !== "request.opened") {
+          return;
+        }
+        assert.equal(taskRequested.value.payload.requestType, "dynamic_tool_call");
+
+        yield* adapter.respondToRequest(
+          session.threadId,
+          ApprovalRequestId.make(String(taskRequested.value.requestId)),
+          "accept",
+        );
+        yield* Stream.runHead(adapter.streamEvents);
+        yield* Effect.promise(() => taskPermissionPromise);
+      }
 
       const grepPermissionPromise = canUseTool(
         "Grep",
