@@ -29,14 +29,20 @@ import * as SourceControlRateLimit from "../sourceControl/SourceControlRateLimit
 import {
   ACTOR_AVATARS_GRAPHQL_QUERY,
   ADD_REACTION_GRAPHQL_MUTATION,
+  AUTO_MERGE_PERMISSIONS_GRAPHQL_QUERY,
+  BRANCH_PROTECTION_REQUIRED_CHECKS_GRAPHQL_QUERY,
   buildReviewSubmissionJson,
   buildReviewerRequestJson,
   decodeActorAvatarsJson,
+  decodeAutoMergePermissionsJson,
+  decodeBranchProtectionRequiredChecksJson,
   decodePullRequestActivityJson,
   decodePullRequestDetailJson,
   decodePullRequestFilesJson,
   decodePullRequestListJson,
   decodePullRequestNodeIdJson,
+  decodeRequiredChecksJson,
+  decodeRequiredCheckRulesJson,
   decodePullRequestSearchJson,
   decodePullRequestStatsJson,
   decodeReactionSubjectScopeJson,
@@ -77,6 +83,7 @@ import {
   type GitHubPullRequestActivity,
   type GitHubPullRequestListItem,
   type GitHubPullRequestSearchItem,
+  type GitHubRequiredCheck,
   type GitHubReviewThreadComments,
   type GitHubRepositoryAccess,
   type GitHubReviewThreadEntry,
@@ -399,6 +406,22 @@ export class GitHubPullRequestCli extends Context.Service<
       readonly host: string;
       readonly number: number;
     }) => Effect.Effect<GitHubPullRequestDetail, GitHubPullRequestCliError>;
+
+    /** The checks GitHub says repository policy requires for this pull request. */
+    readonly getRequiredChecks: (input: {
+      readonly cwd: string;
+      readonly repository: string;
+      readonly host: string;
+      readonly number: number;
+    }) => Effect.Effect<ReadonlyArray<GitHubRequiredCheck>, GitHubPullRequestCliError>;
+
+    /** Configured required contexts for the base branch, including ones with no reported run. */
+    readonly getRequiredCheckPolicy: (input: {
+      readonly cwd: string;
+      readonly repository: string;
+      readonly host: string;
+      readonly baseBranch: string;
+    }) => Effect.Effect<ReadonlyArray<string>, GitHubPullRequestCliError>;
 
     /**
      * How far the branch trails its base, and whether this viewer may update it. Its own read
@@ -1430,6 +1453,111 @@ export const make = Effect.gen(function* () {
           }),
         ),
 
+    getRequiredChecks: (input) =>
+      github
+        .execute({
+          cwd: input.cwd,
+          args: [
+            "pr",
+            "checks",
+            String(input.number),
+            ...repositoryArgs(input),
+            "--required",
+            "--json",
+            "name,link",
+          ],
+          // `gh pr checks --required` exits one when the branch reports no checks or no required
+          // checks. Those are valid empty answers; the stderr wording distinguishes them below.
+          allowNonZeroExit: true,
+        })
+        .pipe(
+          Effect.flatMap((result) => {
+            const decoded = decodeRequiredChecksJson(result.stdout.trim());
+            if (Result.isSuccess(decoded)) return Effect.succeed(decoded.success);
+            if (
+              result.exitCode !== 0 &&
+              /no (?:required )?checks reported on the .+ branch/iu.test(result.stderr.trim())
+            ) {
+              return Effect.succeed([]);
+            }
+            return Effect.fail(
+              new GitHubPullRequestReadError({
+                command: "gh",
+                cwd: input.cwd,
+                operation: "getRequiredChecks",
+                cause: result.exitCode === 0 ? decoded.failure : result.stderr,
+              }),
+            );
+          }),
+        ),
+
+    getRequiredCheckPolicy: (input) => {
+      const { owner, name } = parseRepositorySelector(input.repository);
+      const rulesetPolicy = github
+        .execute({
+          cwd: input.cwd,
+          args: [
+            "api",
+            "--hostname",
+            input.host,
+            `repos/${owner}/${name}/rules/branches/${encodeURIComponent(input.baseBranch)}`,
+            "--paginate",
+            "--slurp",
+          ],
+        })
+        .pipe(
+          Effect.flatMap((result) => {
+            const decoded = decodeRequiredCheckRulesJson(result.stdout.trim());
+            return Result.isSuccess(decoded)
+              ? Effect.succeed(decoded.success)
+              : Effect.fail(
+                  new GitHubPullRequestReadError({
+                    command: "gh",
+                    cwd: input.cwd,
+                    operation: "getRequiredCheckPolicy.rulesets",
+                    cause: decoded.failure,
+                  }),
+                );
+          }),
+          Effect.map((contexts) => ({ available: true as const, contexts })),
+          // Rulesets do not exist on older GHES releases. That says nothing about classic
+          // protection, so the second source still gets its own chance to answer.
+          Effect.orElseSucceed(() => ({ available: false as const, contexts: [] })),
+        );
+      const classicPolicy = graphqlRead({
+        cwd: input.cwd,
+        host: input.host,
+        operation: "getRequiredCheckPolicy.branchProtection",
+        variables: [
+          ["-f", `owner=${owner}`],
+          ["-f", `name=${name}`],
+          ["-f", `qualifiedName=refs/heads/${input.baseBranch}`],
+        ],
+        query: BRANCH_PROTECTION_REQUIRED_CHECKS_GRAPHQL_QUERY,
+        decode: decodeBranchProtectionRequiredChecksJson,
+      }).pipe(
+        Effect.map((contexts) => ({ available: true as const, contexts })),
+        // A schema without branchProtectionRule, or a policy this viewer cannot read, is unknown
+        // for this source rather than evidence that no classic required checks exist.
+        Effect.orElseSucceed(() => ({ available: false as const, contexts: [] })),
+      );
+      return Effect.all([rulesetPolicy, classicPolicy], { concurrency: 2 }).pipe(
+        Effect.flatMap(([rulesets, classic]) => {
+          if (!rulesets.available && !classic.available) {
+            return Effect.fail(
+              new GitHubPullRequestReadError({
+                command: "gh",
+                cwd: input.cwd,
+                operation: "getRequiredCheckPolicy",
+                cause: new Error("GitHub did not expose ruleset or branch-protection policy."),
+              }),
+            );
+          }
+          return Effect.succeed([...new Set([...rulesets.contexts, ...classic.contexts])]);
+        }),
+      );
+    },
+
     getPullRequestBaseComparison: (input) => {
       const { owner, name } = parseRepositorySelector(input.repository);
       return graphqlRead({
@@ -1718,19 +1846,38 @@ export const make = Effect.gen(function* () {
 
     getViewerAccess: (input) => {
       const { owner, name } = parseRepositorySelector(input.repository);
-      return graphqlRead({
-        cwd: input.cwd,
-        host: input.host,
-        operation: "getViewerAccess",
-        ...(input.allowReserve === true ? { allowReserve: true } : {}),
-        variables: [
-          ["-f", `owner=${owner}`],
-          ["-f", `name=${name}`],
-          ["-F", `number=${input.number}`],
+      const variables = [
+        ["-f", `owner=${owner}`],
+        ["-f", `name=${name}`],
+        ["-F", `number=${input.number}`],
+      ] as const;
+      return Effect.all(
+        [
+          graphqlRead({
+            cwd: input.cwd,
+            host: input.host,
+            operation: "getViewerAccess",
+            ...(input.allowReserve === true ? { allowReserve: true } : {}),
+            variables,
+            query: VIEWER_PERMISSIONS_GRAPHQL_QUERY,
+            decode: decodeViewerPermissionsJson,
+          }),
+          graphqlRead({
+            cwd: input.cwd,
+            host: input.host,
+            operation: "getAutoMergeAccess",
+            ...(input.allowReserve === true ? { allowReserve: true } : {}),
+            variables,
+            query: AUTO_MERGE_PERMISSIONS_GRAPHQL_QUERY,
+            decode: decodeAutoMergePermissionsJson,
+          }).pipe(Effect.orElseSucceed(() => null)),
         ],
-        query: VIEWER_PERMISSIONS_GRAPHQL_QUERY,
-        decode: decodeViewerPermissionsJson,
-      });
+        { concurrency: 2 },
+      ).pipe(
+        Effect.map(([viewer, autoMerge]) =>
+          autoMerge === null ? viewer : { ...viewer, ...autoMerge },
+        ),
+      );
     },
 
     listReviewerCandidates: (input) => {
