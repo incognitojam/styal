@@ -25,3 +25,39 @@ If no compatible desktop Preview is connected, T3 Code delegates the request to 
 machine's normal system browser. An explicitly configured `BROWSER` value is always preserved,
 including values such as `BROWSER=none`. Explicit launcher options such as `open -a Safari` also
 keep using the system launcher.
+
+## Troubleshoot browser opening
+
+T3 Code does not add `BROWSER` to your global shell configuration. It injects browser-opening
+support into each terminal it creates.
+
+In a newly created T3 Code terminal, inspect the browser-opening environment with:
+
+```sh
+env | grep -E '^(BROWSER|T3CODE_TERMINAL_BROWSER_OPEN_)='
+command -v xdg-open
+```
+
+Unless you configured `BROWSER` yourself, the first command should show `BROWSER` and the related
+`T3CODE_TERMINAL_BROWSER_OPEN_*` values. On macOS and Linux, the launcher command should resolve to
+a T3 Code helper directory. The exact paths vary by installation.
+
+If those values are missing:
+
+1. Close the terminal and create a new one. Existing terminals do not gain environment changes
+   from an app or server update.
+2. Confirm that the T3 server which owns the environment is up to date. Updating only the desktop
+   or web client does not update a remote server, and running newer T3 Code source inside a terminal
+   does not update the parent server that created it. See [Keeping app and server in sync](./updating.md).
+3. Check the server output for `failed to install terminal browser-open helper`. Normal local
+   launches write human-readable logs to their standard output and completed traces to
+   `~/.t3/userdata/logs/server.trace.ndjson`. An SSH-managed launch also writes its output under
+   `~/.t3/ssh-launch/<state>/server.log`.
+
+If `BROWSER` shows a value you configured, T3 Code deliberately preserves it and does not install
+its own launcher variables. Remove or change that setting only if you want terminal browser opens
+to use Preview.
+
+When the T3 helper is active, Linux does not need a system `xdg-open` command to route an HTTP or
+HTTPS URL to a connected desktop Preview. A real system browser launcher is still required for the
+fallback behavior when no compatible Preview is connected.
