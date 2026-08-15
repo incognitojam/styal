@@ -70,8 +70,7 @@ export function spokenWords(identifier: string): string[] {
     const startsWord =
       isUpper(character) &&
       current.length > 0 &&
-      (!(previous !== undefined && isUpper(previous)) ||
-        (next !== undefined && isLower(next)));
+      (!(previous !== undefined && isUpper(previous)) || (next !== undefined && isLower(next)));
 
     if (startsWord) {
       words.push(current);
@@ -212,9 +211,39 @@ function editBudget(candidateLength: number, shrinking: boolean): number {
  * "created at" or "created that", so both are load-bearing identifier parts.
  */
 const BOUNDARY_STOPWORDS: ReadonlySet<string> = new Set([
-  "a", "an", "the", "and", "or", "but", "of", "to", "in", "on", "by", "for",
-  "from", "with", "then", "so", "is", "was", "be", "it", "this", "you",
-  "i", "we", "he", "she", "they", "as", "if", "not", "do", "does", "did",
+  "a",
+  "an",
+  "the",
+  "and",
+  "or",
+  "but",
+  "of",
+  "to",
+  "in",
+  "on",
+  "by",
+  "for",
+  "from",
+  "with",
+  "then",
+  "so",
+  "is",
+  "was",
+  "be",
+  "it",
+  "this",
+  "you",
+  "i",
+  "we",
+  "he",
+  "she",
+  "they",
+  "as",
+  "if",
+  "not",
+  "do",
+  "does",
+  "did",
 ]);
 
 /**
@@ -257,9 +286,7 @@ function matchLine(
   outputOffset: number,
 ): DictationMatchResult {
   const tokens = tokenize(text);
-  const candidates = vocabulary.filter(
-    (entry) => entry.squashedLength >= MINIMUM_SQUASHED_LENGTH,
-  );
+  const candidates = vocabulary.filter((entry) => entry.squashedLength >= MINIMUM_SQUASHED_LENGTH);
   const maximumWindow = Math.max(1, ...candidates.map((entry) => entry.wordCount));
 
   const output: string[] = [];
@@ -273,9 +300,7 @@ function matchLine(
   };
 
   while (index < tokens.length) {
-    let best:
-      | { entry: DictationVocabularyEntry; score: number; size: number }
-      | undefined;
+    let best: { entry: DictationVocabularyEntry; score: number; size: number } | undefined;
     let runnerUp = 0;
 
     const largest = Math.min(maximumWindow, tokens.length - index);
@@ -318,10 +343,7 @@ function matchLine(
           continue;
         }
 
-        const distance = levenshtein(
-          phrase.replaceAll(" ", ""),
-          entry.spoken.replaceAll(" ", ""),
-        );
+        const distance = levenshtein(phrase.replaceAll(" ", ""), entry.spoken.replaceAll(" ", ""));
         if (distance > editBudget(entry.squashedLength, windowSize < entry.wordCount)) {
           continue;
         }

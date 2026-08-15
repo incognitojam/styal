@@ -1014,10 +1014,19 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
   it.effect("adds passkey entitlements and both renderer protocols to signed macOS builds", () =>
     Effect.gen(function* () {
-      const config = yield* createBuildConfig("mac", "dmg", "1.2.3", true, false, undefined, false, {
-        entitlementsPath: "/tmp/entitlements.mac.plist",
-        provisioningProfilePath: "/tmp/t3code.provisionprofile",
-      });
+      const config = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "1.2.3",
+        true,
+        false,
+        undefined,
+        false,
+        {
+          entitlementsPath: "/tmp/entitlements.mac.plist",
+          provisioningProfilePath: "/tmp/t3code.provisionprofile",
+        },
+      );
 
       const mac = config.mac as Record<string, unknown>;
       assert.equal(config.appId, "dev.incognitojam.t3code");
@@ -1228,7 +1237,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         mockUpdates: Option.none(),
         mockUpdateServerPort: Option.none(),
         wslPrebuild: Option.none(),
-      dictation: Option.none(),
+        dictation: Option.none(),
       }).pipe(
         Effect.provide(
           Layer.mergeAll(
@@ -1269,7 +1278,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
             mockUpdates: Option.none(),
             mockUpdateServerPort: Option.none(),
             wslPrebuild: Option.none(),
-      dictation: Option.none(),
+            dictation: Option.none(),
           }),
         );
 
@@ -1294,7 +1303,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         mockUpdates: Option.some(false),
         mockUpdateServerPort: Option.none(),
         wslPrebuild: Option.none(),
-      dictation: Option.none(),
+        dictation: Option.none(),
       }).pipe(
         Effect.provide(
           ConfigProvider.layer(

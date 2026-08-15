@@ -1,7 +1,7 @@
 {
-  "index" : 2,
-  "kind" : "code",
-  "negativeControl" : false,
-  "say" : "the handler runs forEach item and returns toString",
-  "want" : "the handler runs forEach item and returns toString"
+  "index": 2,
+  "kind": "code",
+  "negativeControl": false,
+  "say": "the handler runs forEach item and returns toString",
+  "want": "the handler runs forEach item and returns toString"
 }

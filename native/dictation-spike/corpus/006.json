@@ -1,7 +1,7 @@
 {
-  "index" : 6,
-  "kind" : "prose",
-  "negativeControl" : true,
-  "say" : "I had to click through each item to check they were valid",
-  "want" : "I had to click through each item to check they were valid"
+  "index": 6,
+  "kind": "prose",
+  "negativeControl": true,
+  "say": "I had to click through each item to check they were valid",
+  "want": "I had to click through each item to check they were valid"
 }

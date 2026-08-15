@@ -1,7 +1,7 @@
 {
-  "index" : 19,
-  "kind" : "code",
-  "negativeControl" : false,
-  "say" : "wrap the worktreePath in parentheses then commit",
-  "want" : "wrap the worktreePath in parentheses then commit"
+  "index": 19,
+  "kind": "code",
+  "negativeControl": false,
+  "say": "wrap the worktreePath in parentheses then commit",
+  "want": "wrap the worktreePath in parentheses then commit"
 }

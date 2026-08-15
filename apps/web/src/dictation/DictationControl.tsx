@@ -165,11 +165,7 @@ const DictationSubstitutionsChip = memo(function DictationSubstitutionsChip(prop
                 if (index < 0) {
                   return;
                 }
-                handle.replaceRange(
-                  index,
-                  index + substitution.after.length,
-                  substitution.before,
-                );
+                handle.replaceRange(index, index + substitution.after.length, substitution.before);
               }}
             >
               Revert

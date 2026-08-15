@@ -11,8 +11,16 @@ import * as DictationEngine from "./DictationEngine.ts";
 // the real sidecar and model is exercised by the spike's harness
 // (native/dictation-spike/parakeet-sidecar/client.mjs) — it needs a ~600MB
 // model download, which has no place in the unit suite.
+//
+// Both the sidecar and the model path are set explicitly on every test. An
+// earlier version left the sidecar to disk discovery, so it passed locally
+// (where native/dictation is built) and failed in CI (where it is not) with the
+// wrong reason.
 
-const engineWith = (overrides: { dictationModelPath?: string }) =>
+/** Any file that certainly exists, standing in for a built sidecar binary. */
+const PRESENT_BINARY = process.execPath;
+
+const engineWith = (overrides: { dictationModelPath?: string; dictationSidecarPath?: string }) =>
   DictationEngine.layer.pipe(
     Layer.provide(
       Layer.effect(
@@ -33,6 +41,22 @@ const engineWith = (overrides: { dictationModelPath?: string }) =>
   );
 
 describe("DictationEngine", () => {
+  it.effect("reports the missing sidecar when it has not been built", () =>
+    Effect.gen(function* () {
+      const engine = yield* DictationEngine.DictationEngine;
+      const status = yield* engine.status;
+      assert.equal(status.available, false);
+      assert.match(status.reason ?? "", /sidecar not found/);
+    }).pipe(
+      Effect.provide(
+        engineWith({
+          dictationSidecarPath: "/nonexistent/t3-dictation",
+          dictationModelPath: PRESENT_BINARY,
+        }),
+      ),
+    ),
+  );
+
   it.effect("reports unavailable with a reason when no model is configured", () =>
     Effect.gen(function* () {
       const engine = yield* DictationEngine.DictationEngine;
@@ -40,7 +64,7 @@ describe("DictationEngine", () => {
       assert.equal(status.available, false);
       assert.match(status.reason ?? "", /no dictation model configured/);
       assert.equal(status.warm, false);
-    }).pipe(Effect.provide(engineWith({}))),
+    }).pipe(Effect.provide(engineWith({ dictationSidecarPath: PRESENT_BINARY }))),
   );
 
   it.effect("reports unavailable when the configured model file does not exist", () =>
@@ -49,7 +73,30 @@ describe("DictationEngine", () => {
       const status = yield* engine.status;
       assert.equal(status.available, false);
       assert.match(status.reason ?? "", /not found at \/nonexistent\/model.gguf/);
-    }).pipe(Effect.provide(engineWith({ dictationModelPath: "/nonexistent/model.gguf" }))),
+    }).pipe(
+      Effect.provide(
+        engineWith({
+          dictationSidecarPath: PRESENT_BINARY,
+          dictationModelPath: "/nonexistent/model.gguf",
+        }),
+      ),
+    ),
+  );
+
+  it.effect("reports available when both the sidecar and model resolve", () =>
+    Effect.gen(function* () {
+      const engine = yield* DictationEngine.DictationEngine;
+      const status = yield* engine.status;
+      assert.equal(status.available, true);
+      assert.equal(status.reason, undefined);
+    }).pipe(
+      Effect.provide(
+        engineWith({
+          dictationSidecarPath: PRESENT_BINARY,
+          dictationModelPath: PRESENT_BINARY,
+        }),
+      ),
+    ),
   );
 
   it.effect("fails an utterance stream with DictationUnavailable when unconfigured", () =>
@@ -59,6 +106,6 @@ describe("DictationEngine", () => {
         .stream(Stream.make(new Uint8Array(6400)))
         .pipe(Stream.runDrain, Effect.flip);
       assert.equal(result._tag, "DictationUnavailable");
-    }).pipe(Effect.provide(engineWith({}))),
+    }).pipe(Effect.provide(engineWith({ dictationSidecarPath: PRESENT_BINARY }))),
   );
 });

@@ -26,6 +26,8 @@ import * as Stream from "effect/Stream";
 import * as Ndjson from "effect/unstable/encoding/Ndjson";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+
 import { ServerConfig } from "../config.ts";
 
 // --- events ------------------------------------------------------------------
@@ -123,6 +125,7 @@ export const make = Effect.fn("dictation.engine.make")(function* () {
   const path = yield* Path.Path;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const config = yield* ServerConfig;
+  const platform = yield* HostProcessPlatform;
 
   const warm = yield* Ref.make(Option.none<WarmSidecar>());
   const lastUsedAt = yield* Ref.make(0);
@@ -133,14 +136,22 @@ export const make = Effect.fn("dictation.engine.make")(function* () {
   const touch = Effect.flatMap(Clock.currentTimeMillis, (now) => Ref.set(lastUsedAt, now));
 
   /**
-   * Resolution order mirrors ResourceMonitorBinary: explicit override first,
-   * then packaged resources, then in-repo dev builds.
+   * An explicitly configured path is authoritative: if it is wrong, say so
+   * rather than silently running a different binary found on disk. Otherwise
+   * search packaged resources, then in-repo dev builds.
    */
+  const configuredSidecarPath = (): string | undefined => {
+    const configured = process.env["T3CODE_DICTATION_SIDECAR_PATH"] ?? config.dictationSidecarPath;
+    return configured === undefined || configured === "" ? undefined : configured;
+  };
+
   const sidecarCandidates = () => {
-    const executable = sidecarBinaryName(process.platform);
-    const override = process.env["T3CODE_DICTATION_SIDECAR_PATH"];
+    const executable = sidecarBinaryName(platform);
+    const configured = configuredSidecarPath();
+    if (configured !== undefined) {
+      return [configured];
+    }
     return [
-      ...(override !== undefined && override !== "" ? [override] : []),
       path.resolve(import.meta.dirname, "dictation", executable),
       path.resolve(import.meta.dirname, "../dictation", executable),
       path.resolve(import.meta.dirname, "../../../../native/dictation/target/release", executable),
@@ -156,10 +167,13 @@ export const make = Effect.fn("dictation.engine.make")(function* () {
         return candidate;
       }
     }
+    const configured = configuredSidecarPath();
     return yield* new DictationUnavailable({
       reason: "sidecar-missing",
       detail:
-        "t3-dictation sidecar not found; build native/dictation or set T3CODE_DICTATION_SIDECAR_PATH",
+        configured === undefined
+          ? "t3-dictation sidecar not found; build native/dictation or set T3CODE_DICTATION_SIDECAR_PATH"
+          : `t3-dictation sidecar not found at ${configured}`,
     });
   });
 
@@ -168,8 +182,7 @@ export const make = Effect.fn("dictation.engine.make")(function* () {
     if (configured === undefined || configured === "") {
       return yield* new DictationUnavailable({
         reason: "model-missing",
-        detail:
-          "no dictation model configured; set T3CODE_DICTATION_MODEL_PATH to a Parakeet GGUF",
+        detail: "no dictation model configured; set T3CODE_DICTATION_MODEL_PATH to a Parakeet GGUF",
       });
     }
     if (!(yield* fileSystem.exists(configured).pipe(Effect.orElseSucceed(() => false)))) {
@@ -248,9 +261,7 @@ export const make = Effect.fn("dictation.engine.make")(function* () {
     }),
   );
 
-  const stream: DictationEngine["Service"]["stream"] = <E>(
-    pcm: Stream.Stream<Uint8Array, E>,
-  ) =>
+  const stream: DictationEngine["Service"]["stream"] = <E>(pcm: Stream.Stream<Uint8Array, E>) =>
     Stream.unwrap(
       Effect.gen(function* () {
         yield* touch;

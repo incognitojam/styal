@@ -1,7 +1,7 @@
 {
-  "index" : 11,
-  "kind" : "code",
-  "negativeControl" : false,
-  "say" : "the ChildProcessSpawner needs the ProviderInstanceId",
-  "want" : "the ChildProcessSpawner needs the ProviderInstanceId"
+  "index": 11,
+  "kind": "code",
+  "negativeControl": false,
+  "say": "the ChildProcessSpawner needs the ProviderInstanceId",
+  "want": "the ChildProcessSpawner needs the ProviderInstanceId"
 }

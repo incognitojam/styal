@@ -9,26 +9,26 @@
 //
 //   node server.mjs <model.gguf> [port]
 
-import { createServer } from "node:http";
-import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import * as NodeHttp from "node:http";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeURL from "node:url";
+import * as NodePath from "node:path";
 
-const here = dirname(fileURLToPath(import.meta.url));
+const here = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 const [, , modelPath, portArg] = process.argv;
 if (!modelPath) {
   console.error("usage: node server.mjs <model.gguf> [port]");
   process.exit(2);
 }
 const port = Number(portArg ?? 8799);
-const sidecarPath = join(here, "target", "release", "parakeet-sidecar");
+const sidecarPath = NodePath.join(here, "target", "release", "parakeet-sidecar");
 
 // Model load is ~10.7s, so a sidecar is spawned ahead of time and replaced after
 // each utterance. A real implementation would pool these; the point here is that
 // per-request latency must never include a model load.
 let warm = null;
 function spawnWarm() {
-  const sidecar = spawn(sidecarPath, [modelPath]);
+  const sidecar = NodeChildProcess.spawn(sidecarPath, [modelPath]);
   const ready = new Promise((resolve) => {
     const onData = (chunk) => {
       if (chunk.toString().includes('"ready"')) {
@@ -43,7 +43,7 @@ function spawnWarm() {
 }
 spawnWarm().ready.then(() => console.error("[server] sidecar warm"));
 
-createServer((request, response) => {
+NodeHttp.createServer((request, response) => {
   if (request.method !== "POST" || !request.url.startsWith("/dictate")) {
     response.writeHead(404).end();
     return;

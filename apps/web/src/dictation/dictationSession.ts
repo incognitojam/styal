@@ -132,9 +132,7 @@ export async function startDictationSession(
   // MediaStreamAudioSourceNode when the context rate differs from the track's
   // hardware rate, so the 16 kHz the sidecar needs is resampled here instead.
   const audioContext = new AudioContext();
-  const workletUrl = URL.createObjectURL(
-    new Blob([WORKLET_SOURCE], { type: "text/javascript" }),
-  );
+  const workletUrl = URL.createObjectURL(new Blob([WORKLET_SOURCE], { type: "text/javascript" }));
   try {
     await audioContext.audioWorklet.addModule(workletUrl);
   } finally {
@@ -442,7 +440,9 @@ export class LinearResampler {
     // Interpolation window: [previous, samples[0..]] — position is measured
     // with previous at index 0.
     const get = (index: number): number =>
-      index === 0 && this.hasPrevious ? this.previous : samples[index - (this.hasPrevious ? 1 : 0)]!;
+      index === 0 && this.hasPrevious
+        ? this.previous
+        : samples[index - (this.hasPrevious ? 1 : 0)]!;
     const available = samples.length + (this.hasPrevious ? 1 : 0);
     while (this.position + 1 < available) {
       const base = Math.floor(this.position);

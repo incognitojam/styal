@@ -1,7 +1,7 @@
 {
-  "index" : 14,
-  "kind" : "code",
-  "negativeControl" : false,
-  "say" : "call mapError on the FileSystem layer then check the exitCode",
-  "want" : "call mapError on the FileSystem layer then check the exitCode"
+  "index": 14,
+  "kind": "code",
+  "negativeControl": false,
+  "say": "call mapError on the FileSystem layer then check the exitCode",
+  "want": "call mapError on the FileSystem layer then check the exitCode"
 }

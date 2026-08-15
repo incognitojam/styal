@@ -1,7 +1,7 @@
 {
-  "index" : 5,
-  "kind" : "prose",
-  "negativeControl" : true,
-  "say" : "the room is empty so please turn the lights on",
-  "want" : "the room is empty so please turn the lights on"
+  "index": 5,
+  "kind": "prose",
+  "negativeControl": true,
+  "say": "the room is empty so please turn the lights on",
+  "want": "the room is empty so please turn the lights on"
 }

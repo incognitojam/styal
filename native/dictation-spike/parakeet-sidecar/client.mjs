@@ -8,7 +8,7 @@
 //   tailMs         — time from the last audio frame until the final transcript,
 //                    which is the wait after you stop talking
 
-import { spawn } from "node:child_process";
+import * as NodeChildProcess from "node:child_process";
 
 const [, , url, input, ...flags] = process.argv;
 if (!url || !input) {
@@ -20,9 +20,18 @@ const realtime = !flags.includes("--fast");
 const SAMPLE_RATE = 16000;
 const FRAME_BYTES = 1600 * 4;
 
-const ffmpeg = spawn("ffmpeg", [
-  "-v", "error", "-i", input,
-  "-ar", String(SAMPLE_RATE), "-ac", "1", "-f", "f32le", "-",
+const ffmpeg = NodeChildProcess.spawn("ffmpeg", [
+  "-v",
+  "error",
+  "-i",
+  input,
+  "-ar",
+  String(SAMPLE_RATE),
+  "-ac",
+  "1",
+  "-f",
+  "f32le",
+  "-",
 ]);
 const chunks = [];
 for await (const chunk of ffmpeg.stdout) chunks.push(chunk);

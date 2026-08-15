@@ -13,7 +13,8 @@ import { usePromptStashStore } from "../promptStashStore";
 
 export const DICTATION_VOCABULARY_LIMIT = 100;
 
-const IDENTIFIER_PATTERN = /\b[a-z][a-zA-Z0-9]*[A-Z][a-zA-Z0-9]*\b|\b[A-Z][a-zA-Z0-9]*[A-Z][a-zA-Z0-9]*\b|\b[a-z][a-z0-9]*_[a-z][a-z0-9_]*\b/g;
+const IDENTIFIER_PATTERN =
+  /\b[a-z][a-zA-Z0-9]*[A-Z][a-zA-Z0-9]*\b|\b[A-Z][a-zA-Z0-9]*[A-Z][a-zA-Z0-9]*\b|\b[a-z][a-z0-9]*_[a-z][a-z0-9_]*\b/g;
 
 export function extractIdentifiers(text: string): string[] {
   return text.match(IDENTIFIER_PATTERN) ?? [];

@@ -130,9 +130,7 @@ export const ClientSettingsSchema = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed("hold" as const)),
   ),
   /** Apply the identifier matcher to finalized dictation text. */
-  dictationVocabularyEnabled: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(true)),
-  ),
+  dictationVocabularyEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   dismissedProviderUpdateNotificationKeys: Schema.Array(TrimmedNonEmptyString).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),

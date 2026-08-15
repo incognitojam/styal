@@ -272,11 +272,7 @@ export const dictationStreamRouteLayer = HttpRouter.add(
               ? Queue.end(pcm).pipe(Effect.asVoid)
               : Queue.offer(pcm, frame).pipe(Effect.asVoid),
           )
-          .pipe(
-            Effect.ensuring(Queue.end(pcm)),
-            Effect.ignore,
-            Effect.forkScoped,
-          );
+          .pipe(Effect.ensuring(Queue.end(pcm)), Effect.ignore, Effect.forkScoped);
 
         yield* engine.stream(Stream.fromQueue(pcm)).pipe(
           Stream.runForEach((event) => write(`${JSON.stringify(event)}\n`)),

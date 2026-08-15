@@ -1,7 +1,7 @@
 {
-  "index" : 1,
-  "kind" : "code",
-  "negativeControl" : false,
-  "say" : "check if the list isEmpty before you call onClick",
-  "want" : "check if the list isEmpty before you call onClick"
+  "index": 1,
+  "kind": "code",
+  "negativeControl": false,
+  "say": "check if the list isEmpty before you call onClick",
+  "want": "check if the list isEmpty before you call onClick"
 }

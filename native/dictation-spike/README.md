@@ -33,10 +33,10 @@ This is the headline. `SpeechTranscriber` silently ignores the vocabulary;
 Same 45s human recording, "call map error on the file system layer and then
 check the exit code":
 
-| module | output |
-|---|---|
-| `SpeechTranscriber` (any vocab size) | "call map error on the file system layer … check the exit code" |
-| `DictationTranscriber` + vocab | "call **mapError** on the **FileSystem** layer … check the **exitCode**" |
+| module                               | output                                                                   |
+| ------------------------------------ | ------------------------------------------------------------------------ |
+| `SpeechTranscriber` (any vocab size) | "call map error on the file system layer … check the exit code"          |
+| `DictationTranscriber` + vocab       | "call **mapError** on the **FileSystem** layer … check the **exitCode**" |
 
 Across the sample, `DictationTranscriber` + vocabulary correctly recovered
 `worktreePath`, `mapError`, `FileSystem`, `exitCode`, `workspaceRoot`,
@@ -117,10 +117,10 @@ looked like the API was inert. See finding 1.
 
 On a 9.1s sample, warm:
 
-| config | first result | first final | volatile results |
-|---|---|---|---|
-| default | ~75-84ms | ~280-294ms | 41 |
-| `.fastResults` | ~65-66ms | ~308-310ms | 44 |
+| config         | first result | first final | volatile results |
+| -------------- | ------------ | ----------- | ---------------- |
+| default        | ~75-84ms     | ~280-294ms  | 41               |
+| `.fastResults` | ~65-66ms     | ~308-310ms  | 44               |
 
 Roughly 15% off first-token latency and slightly more frequent volatile updates,
 at the cost of a marginally later finalization. Worth having behind a setting;
@@ -153,10 +153,10 @@ hit "dictation does nothing" with no diagnosable cause.
 `clean` runs a raw transcript through a cleanup pass. Same 20-term vocabulary,
 same prompt, two different ASR outputs as input:
 
-| ASR input | post-processed result |
-|---|---|
-| `DictationTranscriber` + contextualStrings | "…needs a ProviderInstanceId **at the end of** workspaceRoot, useCallback and useMemo **both the** modelSelection, a runtimeMode check createdAt… review the **snoop** before **Cotric** ships" |
-| `SpeechTranscriber` (no biasing) | "…needs a ProviderInstanceId **in the** workspaceRoot. useCallback and useMemo **both depend on** modelSelection and runtimeMode. Check createdAt… review the **Fnorbulator** before **Quastrix** ships." |
+| ASR input                                  | post-processed result                                                                                                                                                                                     |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DictationTranscriber` + contextualStrings | "…needs a ProviderInstanceId **at the end of** workspaceRoot, useCallback and useMemo **both the** modelSelection, a runtimeMode check createdAt… review the **snoop** before **Cotric** ships"           |
+| `SpeechTranscriber` (no biasing)           | "…needs a ProviderInstanceId **in the** workspaceRoot. useCallback and useMemo **both depend on** modelSelection and runtimeMode. Check createdAt… review the **Fnorbulator** before **Quastrix** ships." |
 
 **`SpeechTranscriber` + LLM wins, decisively.** Three structural reasons, none
 of them stylistic:
@@ -167,7 +167,7 @@ of them stylistic:
 3. `SpeechTranscriber`'s "finobulator"/"quadric" retained enough phonetic
    information for the LLM to match against the vocabulary and recover
    `Fnorbulator`/`Quastrix`. `DictationTranscriber`'s "snoop"/"Cotric" had
-   destroyed it — biasing made the acoustics *worse* on exactly the words it was
+   destroyed it — biasing made the acoustics _worse_ on exactly the words it was
    supposed to help.
 
 The LLM recovers what biasing missed anyway: "free ID" → `threadId`, "Fred ref" →
@@ -188,14 +188,14 @@ is the heaviest option available (`claude` → `opus[1m]`, `codex` →
 
 Quality, scored on recovering `threadId`, `threadRef`, `Fnorbulator`, `Quastrix`:
 
-| model | recovery | wall |
-|---|---|---|
-| Opus 5 (`opus[1m]`) | all four | 4.9s |
-| Sonnet 5 | all four | 5.5s |
-| Haiku 4.5 | **none** | 67s, then 104s |
-| GPT-5.6 Terra, xhigh | all four | 8.3s |
-| GPT-5.6 Terra, low | all four | 19s |
-| Apple on-device | **none** — returned input verbatim | 4.0s cold, **1.55s prewarmed** |
+| model                | recovery                           | wall                           |
+| -------------------- | ---------------------------------- | ------------------------------ |
+| Opus 5 (`opus[1m]`)  | all four                           | 4.9s                           |
+| Sonnet 5             | all four                           | 5.5s                           |
+| Haiku 4.5            | **none**                           | 67s, then 104s                 |
+| GPT-5.6 Terra, xhigh | all four                           | 8.3s                           |
+| GPT-5.6 Terra, low   | all four                           | 19s                            |
+| Apple on-device      | **none** — returned input verbatim | 4.0s cold, **1.55s prewarmed** |
 
 Two conclusions:
 
@@ -209,7 +209,7 @@ predicts CLI wall time, and the variance (5s to 104s on identical input) is fata
 for an interactive feature.
 
 The on-device model is the only predictable figure, and `prewarm` more than halves
-it — 510ms of warmup that can happen *while the user is still speaking*, leaving
+it — 510ms of warmup that can happen _while the user is still speaking_, leaving
 ~1.5s after speech ends. But it did not perform the substitution at all, returning
 the transcript verbatim. The instruction set (six rules plus an injection guard) is
 likely too much for a small model.
@@ -226,16 +226,16 @@ differences are structural rather than stylistic, so the reasoning holds.
 `t3-dictate probe` walks from trivial to the full task. `probe-guided` repeats the
 failing case with guided generation.
 
-| probe | ms | result |
-|---|---|---|
-| reply "OK" | 380 | correct |
-| upper-case "hello world" | 182 | correct |
-| replace "map error" → mapError | 257 | **"I'm sorry, but I cannot assist with that request."** |
-| vocab substitution, 1 sentence, 3 terms | **259** | **perfect** — "call mapError on the FileSystem layer and then check the exitCode" |
-| filler removal, 1 sentence | 373 | correct text, wrapped in "Sure, here is the corrected text:" |
-| vocab substitution, 2 sentences, 17 terms | 3083 | **hallucinated a Python program** |
-| …same, guided generation | 856 | input returned verbatim, no substitution |
-| …short input, guided generation | 467 | input returned verbatim, no substitution |
+| probe                                     | ms      | result                                                                            |
+| ----------------------------------------- | ------- | --------------------------------------------------------------------------------- |
+| reply "OK"                                | 380     | correct                                                                           |
+| upper-case "hello world"                  | 182     | correct                                                                           |
+| replace "map error" → mapError            | 257     | **"I'm sorry, but I cannot assist with that request."**                           |
+| vocab substitution, 1 sentence, 3 terms   | **259** | **perfect** — "call mapError on the FileSystem layer and then check the exitCode" |
+| filler removal, 1 sentence                | 373     | correct text, wrapped in "Sure, here is the corrected text:"                      |
+| vocab substitution, 2 sentences, 17 terms | 3083    | **hallucinated a Python program**                                                 |
+| …same, guided generation                  | 856     | input returned verbatim, no substitution                                          |
+| …short input, guided generation           | 467     | input returned verbatim, no substitution                                          |
 
 The model is genuinely capable of the exact task — one sentence, small
 vocabulary, free-form output, 259ms. That is ~20x faster than any CLI.
@@ -266,14 +266,14 @@ cleaned while the user is still speaking, the perceived tail is under a second.
 
 The output is worse than useless:
 
-| segment | before | after |
-|---|---|---|
-| 1 | "…read the Fred ID from the Fredreff call map error…" | `worktreePath`, `FileSystem`, `exitCode` fixed; `threadId`, `threadRef`, `mapError` missed |
-| 2 | "The child process phone needs a provider instance ID in the workspace route." | `ProviderInstanceId` fixed; `ChildProcessSpawner`, `workspaceRoot` missed |
-| 3 | "Use callback and use member, both depend on model selection and runtime mode." | **unchanged** — missed all four |
-| 4 | "Check created that and updated that on the environment ID…" | **unchanged** — missed all four |
-| 5 | "…review the finobulator before quadric ships." | **"review the Zyglorp"** — substituted the wrong identifier |
-| 6 | "…near the riverbank." | **"near the \*\*worktreePath\*\*"** — corrupted correct text, and added markdown |
+| segment | before                                                                          | after                                                                                      |
+| ------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| 1       | "…read the Fred ID from the Fredreff call map error…"                           | `worktreePath`, `FileSystem`, `exitCode` fixed; `threadId`, `threadRef`, `mapError` missed |
+| 2       | "The child process phone needs a provider instance ID in the workspace route."  | `ProviderInstanceId` fixed; `ChildProcessSpawner`, `workspaceRoot` missed                  |
+| 3       | "Use callback and use member, both depend on model selection and runtime mode." | **unchanged** — missed all four                                                            |
+| 4       | "Check created that and updated that on the environment ID…"                    | **unchanged** — missed all four                                                            |
+| 5       | "…review the finobulator before quadric ships."                                 | **"review the Zyglorp"** — substituted the wrong identifier                                |
+| 6       | "…near the riverbank."                                                          | **"near the \*\*worktreePath\*\*"** — corrupted correct text, and added markdown           |
 
 Roughly 4 of 17 identifiers recovered, against near-perfect recovery from Sonnet 5
 on the whole transcript. Worse, segments 5 and 6 are actively destructive:
@@ -302,11 +302,11 @@ which is exactly the split the speech model keeps introducing.
 
 At threshold 0.70, on the same fixture, in **4.2ms** (release build):
 
-| approach | recovered | corruptions | time |
-|---|---|---|---|
-| on-device model, per segment | 4 / 20 | **2** | 2570ms |
-| matcher @ 0.70 | **15 / 20** | **0** | **4.2ms** |
-| Sonnet 5, whole transcript | 19 / 20 | 0 | ~5000ms |
+| approach                     | recovered   | corruptions | time      |
+| ---------------------------- | ----------- | ----------- | --------- |
+| on-device model, per segment | 4 / 20      | **2**       | 2570ms    |
+| matcher @ 0.70               | **15 / 20** | **0**       | **4.2ms** |
+| Sonnet 5, whole transcript   | 19 / 20     | 0           | ~5000ms   |
 
 Recovered: `worktreePath`, `mapError`, `FileSystem`, `exitCode`,
 `ChildProcessSpawner`, `ProviderInstanceId`, `workspaceRoot`, `useCallback`,
@@ -355,13 +355,13 @@ and the API URL". The failures were the matcher's.
 Fixing the two structural defects (acronym word-splitting, stopword-prefix
 waiver) moved recall from 45% to 76%:
 
-| acceptance rule | recall | false positives | items damaged |
-|---|---|---|---|
-| ratio 0.60 | 86% (25/29) | 18 | 9 / 24 |
-| ratio 0.65 | 83% (24/29) | 11 | 7 / 24 |
-| ratio 0.70 | 76% (22/29) | 6 | 5 / 24 |
-| ratio 0.80 | 69% (20/29) | 2 | 2 / 24 |
-| **edit budget** | **69% (20/29)** | **2** | **2 / 24** |
+| acceptance rule | recall          | false positives | items damaged |
+| --------------- | --------------- | --------------- | ------------- |
+| ratio 0.60      | 86% (25/29)     | 18              | 9 / 24        |
+| ratio 0.65      | 83% (24/29)     | 11              | 7 / 24        |
+| ratio 0.70      | 76% (22/29)     | 6               | 5 / 24        |
+| ratio 0.80      | 69% (20/29)     | 2               | 2 / 24        |
+| **edit budget** | **69% (20/29)** | **2**           | **2 / 24**    |
 
 The edit budget (≤8 chars → 1 edit, 9-14 → 2, 15+ → 3, minus one when the window
 has fewer words than the identifier) reaches the same operating point as ratio
@@ -381,7 +381,7 @@ It also kills the specific failure the ratio metric could not: "change" and
 ```
 
 Both score 1.0 — the spoken form of the identifier and the English phrase are
-*identical*. No metric can distinguish them, which confirms this needs UI
+_identical_. No metric can distinguish them, which confirms this needs UI
 (marked substitutions, one-tap revert) rather than a better score.
 
 Caveat: one speaker, one accent, one session. These numbers do not transfer to
@@ -392,15 +392,15 @@ other users without re-measuring.
 All defects from the Oracle review and the adversarial probe are fixed, with no
 change to corpus scores (69% recall, 2 false positives).
 
-| defect | fix |
-|---|---|
-| acronyms unmatchable (`HTTPClient` → "h t t p client", 5 words) | `spokenWords` keeps consecutive capitals as one word |
+| defect                                                                      | fix                                                                                   |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| acronyms unmatchable (`HTTPClient` → "h t t p client", 5 words)             | `spokenWords` keeps consecutive capitals as one word                                  |
 | stopword-prefixed identifiers unmatchable (`isEmpty`, `onClick`, `forEach`) | boundary guard waived when the candidate's own spoken form starts/ends with that word |
-| matched across sentence boundaries ("exit. The code" → `exitCode`) | a window may not extend past a token carrying trailing punctuation |
-| interior function words absorbed ("map the error" → `mapError`) | edit budget rejects the extra token |
-| leading punctuation deleted (`(work tree path)` → `worktreePath)`) | tokens keep leading punctuation; substitution re-emits it |
-| newlines fused tokens into `codethe` | matching runs per line, preserving structure |
-| ties resolved by vocabulary order (`getUser`/`getUsers`) | 0.05 margin over the runner-up, else no substitution |
+| matched across sentence boundaries ("exit. The code" → `exitCode`)          | a window may not extend past a token carrying trailing punctuation                    |
+| interior function words absorbed ("map the error" → `mapError`)             | edit budget rejects the extra token                                                   |
+| leading punctuation deleted (`(work tree path)` → `worktreePath)`)          | tokens keep leading punctuation; substitution re-emits it                             |
+| newlines fused tokens into `codethe`                                        | matching runs per line, preserving structure                                          |
+| ties resolved by vocabulary order (`getUser`/`getUsers`)                    | 0.05 margin over the runner-up, else no substitution                                  |
 
 Verification cases now passing:
 
@@ -424,10 +424,10 @@ speaker meant ordinary English. Only context or the user's own eye resolves it.
 
 Same speaker, same script, MacBook built-in mic instead of a ModMic:
 
-| | recall | false positives |
-|---|---|---|
-| ModMic (24-item corpus) | 69% | 2 |
-| MacBook mic (2-item corpus) | 64% | 3 |
+|                             | recall | false positives |
+| --------------------------- | ------ | --------------- |
+| ModMic (24-item corpus)     | 69%    | 2               |
+| MacBook mic (2-item corpus) | 64%    | 3               |
 
 The transcripts degraded far more than the scores suggest — `parseURL` → "partial
 RL", `toJSON` → "a 2 J song", `HTTPClient` → "HTTP kite", `mapError` → "my error",
@@ -450,7 +450,7 @@ applies, because neither is detectable from the text alone.
 
 Incidentally this validated the punctuation rule beyond its original purpose: the
 ASR rendered "I called exit. The code path" as "I called exit**,** the code path",
-and blocking windows that span *any* trailing punctuation still refused
+and blocking windows that span _any_ trailing punctuation still refused
 `exitCode`. A sentence-boundary-only rule would have missed it.
 
 ### 12. Vocabulary must be scoped tightly — repo-scale is unusable
@@ -460,11 +460,11 @@ identifiers being spoken. Realistically the vocabulary comes from the repo. Same
 corpus, same matcher, increasing numbers of irrelevant repo symbols mixed in:
 
 | distractors | vocabulary | recall | false positives | items damaged |
-|---|---|---|---|---|
-| 0 | 29 | 69% | 2 | 2 / 24 |
-| 100 | 129 | 62% | 3 | 3 / 24 |
-| 500 | 529 | 52% | 10 | 8 / 24 |
-| 3000 | 3011 | 52% | 15 | 9 / 24 |
+| ----------- | ---------- | ------ | --------------- | ------------- |
+| 0           | 29         | 69%    | 2               | 2 / 24        |
+| 100         | 129        | 62%    | 3               | 3 / 24        |
+| 500         | 529        | 52%    | 10              | 8 / 24        |
+| 3000        | 3011       | 52%    | 15              | 9 / 24        |
 
 Vocabulary size hurts **both** metrics. Recall falls because distractors win
 matches the correct identifier should have taken; false positives rise because
@@ -505,11 +505,11 @@ second engine at no cost. Handy was running
 
 Same recordings, same matcher, same vocabulary:
 
-| recording | Apple `SpeechTranscriber` | Parakeet 0.6B |
-|---|---|---|
-| ModMic | 82% (18/22), 2 FP | **95% (21/22)**, 2 FP |
-| MacBook, quiet | 77% (17/22), 1 FP | **95% (21/22)**, 2 FP |
-| MacBook, fan noise | 64% (14/22), 3 FP | **95% (21/22)**, 2 FP |
+| recording          | Apple `SpeechTranscriber` | Parakeet 0.6B         |
+| ------------------ | ------------------------- | --------------------- |
+| ModMic             | 82% (18/22), 2 FP         | **95% (21/22)**, 2 FP |
+| MacBook, quiet     | 77% (17/22), 1 FP         | **95% (21/22)**, 2 FP |
+| MacBook, fan noise | 64% (14/22), 3 FP         | **95% (21/22)**, 2 FP |
 
 **Parakeet is unaffected by the audio quality that moved Apple 18 points.** That
 matters more than the headline accuracy: most users dictate on laptop mics in
@@ -517,14 +517,14 @@ imperfect rooms, and finding 11 established we cannot control that.
 
 Word-level comparison on identical audio:
 
-| target | Parakeet | Apple |
-|---|---|---|
-| `parseURL` | "parse URL" | "part u r l" |
-| `apiUrl` | "API URL" | "a p I, URL" |
-| `toJSON` | "to JSON" | "to j salt" |
-| `threadId` | "thread ID" | "Fred ID" |
+| target          | Parakeet         | Apple             |
+| --------------- | ---------------- | ----------------- |
+| `parseURL`      | "parse URL"      | "part u r l"      |
+| `apiUrl`        | "API URL"        | "a p I, URL"      |
+| `toJSON`        | "to JSON"        | "to j salt"       |
+| `threadId`      | "thread ID"      | "Fred ID"         |
 | `workspaceRoot` | "workspace root" | "workspace route" |
-| `mapError` | `mapError` | "map error" |
+| `mapError`      | `mapError`       | "map error"       |
 
 Parakeet emits some identifiers already camelCased, so its training data clearly
 includes code.
@@ -558,11 +558,11 @@ real-time pace and measures what a user would feel.
 true`, Metal backend, 36 incremental updates over a 38.7s utterance. It is not
 restricted to Handy's in-process use.
 
-| | localhost | via Tailscale interface |
-|---|---|---|
-| tail (stop talking → final text) | **153ms** | **120ms** |
-| first text | 2116ms | 2268ms |
-| updates | 36 | 36 |
+|                                  | localhost | via Tailscale interface |
+| -------------------------------- | --------- | ----------------------- |
+| tail (stop talking → final text) | **153ms** | **120ms**               |
+| first text                       | 2116ms    | 2268ms                  |
+| updates                          | 36        | 36                      |
 
 Tailscale overhead is indistinguishable from noise. At 64 kB/s the transport is
 trivial, and because frames pipeline, network RTT adds to the tail roughly once
@@ -595,13 +595,13 @@ The `PROSE` control read by six `say` voices across five English locales
 (`Daniel` en_GB, `Karen` en_AU, `Moira` en_IE, `Rishi` en_IN, `Samantha` and
 `Tessa` en_US), transcribed with Parakeet and run through the matcher:
 
-| voice | substitutions |
-|---|---|
+| voice   | substitutions        |
+| ------- | -------------------- |
 | all six | `isEmpty`, `isValid` |
 
 Transcripts were byte-identical too. Since the matcher is deterministic, this
 follows necessarily: whenever the ASR transcribes "the room is empty" correctly,
-`isEmpty` *must* be substituted.
+`isEmpty` _must_ be substituted.
 
 **So the rate of this false-positive class equals the probability the ASR
 transcribes the phrase faithfully.** As transcription accuracy improves, this
@@ -619,12 +619,12 @@ that still needs human speakers.
 An independent contributor recorded `corpus-remote.txt` (two mp3s, sent remotely
 with no tooling on their side — `RECORDING.md` plus `t3-dictate import`).
 
-| speaker | Apple | Parakeet |
-|---|---|---|
-| Cameron, ModMic | 82% | 95% |
-| Cameron, MacBook quiet | 77% | 95% |
-| Cameron, MacBook + fan | 64% | 95% |
-| **Second speaker** | **73%** | **91%** |
+| speaker                | Apple   | Parakeet |
+| ---------------------- | ------- | -------- |
+| Cameron, ModMic        | 82%     | 95%      |
+| Cameron, MacBook quiet | 77%     | 95%      |
+| Cameron, MacBook + fan | 64%     | 95%      |
+| **Second speaker**     | **73%** | **91%**  |
 
 Parakeet holds at 91% on a voice it was never tuned against, and the engine gap
 holds at 18 points. The headline numbers were not fitted to one speaker.
@@ -632,7 +632,7 @@ holds at 18 points. The headline numbers were not fitted to one speaker.
 **Finding 15 confirmed independently.** Both predicted phrase collisions fired —
 including `isValid` from "**It's** valid", a contraction, in the Apple run.
 
-Parakeet's two misses were both the matcher *refusing* rather than failing:
+Parakeet's two misses were both the matcher _refusing_ rather than failing:
 
 - `isValid` — transcribed "confirm the value **as** valid". "as" is a boundary
   stopword that is not the identifier's first word, so the waiver correctly did
@@ -653,11 +653,11 @@ Parakeet again emitted identifiers directly: `WorktreePath`, `mapError`,
 `parakeet-sidecar --cpu` forces the ggml CPU path, which is the same code a
 GPU-less Linux server would run. Apple M3 Pro, 12 cores, 38.7s utterance:
 
-| configuration | RTF | headroom vs live audio |
-|---|---|---|
-| Metal | 0.18 | 5.5x |
-| CPU, single stream | **0.389** | 2.6x |
-| CPU, 3 concurrent | 0.891 / 1.056 / 1.056 | **at or past the limit** |
+| configuration      | RTF                   | headroom vs live audio   |
+| ------------------ | --------------------- | ------------------------ |
+| Metal              | 0.18                  | 5.5x                     |
+| CPU, single stream | **0.389**             | 2.6x                     |
+| CPU, 3 concurrent  | 0.891 / 1.056 / 1.056 | **at or past the limit** |
 
 RTF must stay under 1.0 to keep pace with live audio. A single CPU stream has
 comfortable headroom; three concurrent streams saturate the machine.

@@ -1,7 +1,7 @@
 {
-  "index" : 21,
-  "kind" : "free",
-  "negativeControl" : false,
-  "say" : "Describe a bug you fixed recently, about 30 seconds. Mention real file or function names as they come up.",
-  "want" : null
+  "index": 21,
+  "kind": "free",
+  "negativeControl": false,
+  "say": "Describe a bug you fixed recently, about 30 seconds. Mention real file or function names as they come up.",
+  "want": null
 }

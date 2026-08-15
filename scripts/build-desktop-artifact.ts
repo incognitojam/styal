@@ -3223,9 +3223,7 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
     Flag.optional,
   ),
   dictation: Flag.boolean("dictation").pipe(
-    Flag.withDescription(
-      "Build and stage the dictation sidecar (env: T3CODE_DESKTOP_DICTATION).",
-    ),
+    Flag.withDescription("Build and stage the dictation sidecar (env: T3CODE_DESKTOP_DICTATION)."),
     Flag.optional,
   ),
   mockUpdateServerPort: Flag.integer("mock-update-server-port").pipe(

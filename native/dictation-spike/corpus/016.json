@@ -1,7 +1,7 @@
 {
-  "index" : 16,
-  "kind" : "prose",
-  "negativeControl" : true,
-  "say" : "I need to update the result before the thread finishes",
-  "want" : "I need to update the result before the thread finishes"
+  "index": 16,
+  "kind": "prose",
+  "negativeControl": true,
+  "say": "I need to update the result before the thread finishes",
+  "want": "I need to update the result before the thread finishes"
 }

@@ -6,7 +6,7 @@
 // --fast feeds as quickly as the pipe accepts, which measures raw compute
 // throughput instead of perceived latency.
 
-import { spawn } from "node:child_process";
+import * as NodeChildProcess from "node:child_process";
 
 const [, , input, ...flags] = process.argv;
 if (!input) {
@@ -19,12 +19,17 @@ const SAMPLE_RATE = 16000;
 const FRAME_SAMPLES = 1600; // 100ms
 const FRAME_BYTES = FRAME_SAMPLES * 4;
 
-const ffmpeg = spawn("ffmpeg", [
-  "-v", "error",
-  "-i", input,
-  "-ar", String(SAMPLE_RATE),
-  "-ac", "1",
-  "-f", "f32le",
+const ffmpeg = NodeChildProcess.spawn("ffmpeg", [
+  "-v",
+  "error",
+  "-i",
+  input,
+  "-ar",
+  String(SAMPLE_RATE),
+  "-ac",
+  "1",
+  "-f",
+  "f32le",
   "-",
 ]);
 ffmpeg.stderr.pipe(process.stderr);
