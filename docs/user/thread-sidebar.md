@@ -33,6 +33,13 @@ To generate a fresh title from the conversation, open a thread's context menu an
 **Regenerate title**. While T3 Code is generating it, the action reads **Regenerating…** and cannot
 be selected again. The option is hidden when the connected environment needs a server update.
 
+## Copying a transcript
+
+To share a conversation or reuse it as context in a new thread, open a thread's context menu and
+choose **Copy transcript**. The conversation is copied as markdown: the user and assistant
+messages under the thread title, without tool activity or replies that are still streaming. The
+transcript is fetched from the server, so it works on threads you have not opened recently.
+
 ## Completion sounds
 
 On web and desktop, choose a **Completion sound** in **Settings → General** to hear when an agent
