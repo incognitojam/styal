@@ -131,6 +131,7 @@ interface CursorSessionContext {
   readonly pendingApprovals: Map<ApprovalRequestId, PendingApproval>;
   readonly pendingUserInputs: Map<ApprovalRequestId, PendingUserInput>;
   readonly turns: Array<{ id: TurnId; items: Array<unknown> }>;
+  additionalInstructionsPending: string | undefined;
   lastPlanFingerprint: string | undefined;
   activeTurnId: TurnId | undefined;
   /** Number of sendTurn prompts currently in flight or being prepared.
@@ -779,6 +780,8 @@ export function makeCursorAdapter(
             pendingApprovals,
             pendingUserInputs,
             turns: [],
+            additionalInstructionsPending:
+              resumeSessionId === undefined ? input.additionalInstructions : undefined,
             lastPlanFingerprint: undefined,
             activeTurnId: undefined,
             promptsInFlight: 0,
@@ -970,6 +973,15 @@ export function makeCursorAdapter(
           }
 
           const promptParts: Array<EffectAcpSchema.ContentBlock> = [];
+          const additionalInstructions =
+            steeringTurnId === undefined ? ctx.additionalInstructionsPending : undefined;
+          if (additionalInstructions) {
+            ctx.additionalInstructionsPending = undefined;
+            promptParts.push({
+              type: "text",
+              text: `<additional_instructions>\n${additionalInstructions}\n</additional_instructions>`,
+            });
+          }
           if (input.input?.trim()) {
             promptParts.push({ type: "text", text: input.input.trim() });
           }
