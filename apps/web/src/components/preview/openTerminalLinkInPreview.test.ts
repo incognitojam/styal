@@ -1,13 +1,14 @@
-import type { LocalApi, PreviewSessionSnapshot, ScopedThreadRef } from "@t3tools/contracts";
+import type { PreviewSessionSnapshot, ScopedThreadRef } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
   openTerminalLinkInPreview,
-  TerminalLinkContextMenuShowError,
   TerminalLinkPreviewOpenError,
 } from "./openTerminalLinkInPreview";
+
+const openBrowser = vi.fn();
 
 vi.mock("~/previewStateStore", () => ({
   applyPreviewServerSnapshot: vi.fn(),
@@ -16,7 +17,7 @@ vi.mock("~/previewStateStore", () => ({
 
 vi.mock("~/rightPanelStore", () => ({
   useRightPanelStore: {
-    getState: () => ({ openBrowser: vi.fn() }),
+    getState: () => ({ openBrowser }),
   },
 }));
 
@@ -36,43 +37,42 @@ const snapshot: PreviewSessionSnapshot = {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  openBrowser.mockClear();
 });
 
 describe("openTerminalLinkInPreview", () => {
-  it("preserves context-menu failures with terminal link context before falling back", async () => {
-    const cause = new Error("menu unavailable");
+  it("opens a loopback link in the integrated browser without asking which browser to use", async () => {
     const fallbackToBrowser = vi.fn();
     const openPreview = vi.fn(async () => AsyncResult.success(snapshot));
-    const reportError = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     await openTerminalLinkInPreview({
-      url: "http://localhost:3000/path?token=secret",
-      position: { x: 12, y: 34 },
+      url: "http://localhost:3000/path",
       threadRef,
       openPreview,
-      localApi: {
-        contextMenu: {
-          show: vi.fn(async () => {
-            throw cause;
-          }),
-        },
-      } as unknown as LocalApi,
+      fallbackToBrowser,
+    });
+
+    expect(openPreview).toHaveBeenCalledWith({
+      environmentId: "local",
+      input: { threadId: "thread-1", url: "http://localhost:3000/path" },
+    });
+    expect(openBrowser).toHaveBeenCalledWith(threadRef, "tab-1");
+    expect(fallbackToBrowser).not.toHaveBeenCalled();
+  });
+
+  it("sends a link the integrated browser cannot reach to the system browser", async () => {
+    const fallbackToBrowser = vi.fn();
+    const openPreview = vi.fn(async () => AsyncResult.success(snapshot));
+
+    await openTerminalLinkInPreview({
+      url: "https://example.com/docs",
+      threadRef,
+      openPreview,
       fallbackToBrowser,
     });
 
     expect(fallbackToBrowser).toHaveBeenCalledOnce();
     expect(openPreview).not.toHaveBeenCalled();
-    expect(reportError).toHaveBeenCalledOnce();
-    const error = reportError.mock.calls[0]?.[0];
-    expect(error).toBeInstanceOf(TerminalLinkContextMenuShowError);
-    expect(error).toMatchObject({
-      environmentId: "local",
-      threadId: "thread-1",
-      targetOrigin: "http://localhost:3000",
-      cause,
-    });
-    expect(error.message).not.toContain("menu unavailable");
-    expect(error.targetOrigin).not.toContain("secret");
   });
 
   it("preserves the complete preview failure cause before falling back", async () => {
@@ -82,15 +82,9 @@ describe("openTerminalLinkInPreview", () => {
     const reportError = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     await openTerminalLinkInPreview({
-      url: "http://127.0.0.1:5173/",
-      position: { x: 12, y: 34 },
+      url: "http://127.0.0.1:5173/path?token=secret",
       threadRef,
       openPreview: async () => AsyncResult.failure(cause),
-      localApi: {
-        contextMenu: {
-          show: vi.fn(async () => "open-in-preview"),
-        },
-      } as unknown as LocalApi,
       fallbackToBrowser,
     });
 
@@ -105,6 +99,7 @@ describe("openTerminalLinkInPreview", () => {
       cause,
     });
     expect(error.message).not.toContain("preview unavailable");
+    expect(error.targetOrigin).not.toContain("secret");
   });
 
   it("does not report or fall back when opening the preview is interrupted", async () => {
@@ -113,14 +108,8 @@ describe("openTerminalLinkInPreview", () => {
 
     await openTerminalLinkInPreview({
       url: "http://localhost:5173/",
-      position: { x: 12, y: 34 },
       threadRef,
       openPreview: async () => AsyncResult.failure(Cause.interrupt()),
-      localApi: {
-        contextMenu: {
-          show: vi.fn(async () => "open-in-preview"),
-        },
-      } as unknown as LocalApi,
       fallbackToBrowser,
     });
 
