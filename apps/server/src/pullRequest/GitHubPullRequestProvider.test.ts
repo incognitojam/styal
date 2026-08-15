@@ -54,6 +54,18 @@ describe("gitHubViewerPermissions", () => {
     });
   });
 
+  it("uses GitHub's per-pull-request auto-merge permissions instead of repository write access", () => {
+    expect(
+      gitHubViewerPermissions({
+        canWrite: true,
+        canUpdate: true,
+        didAuthor: false,
+        canEnableAutoMerge: false,
+        canDisableAutoMerge: true,
+      }).actions,
+    ).toEqual(["merge", "disable-auto-merge", "ready", "draft", "close", "reopen"]);
+  });
+
   it.effect("uses the small viewer-access read for core permissions", () =>
     Effect.gen(function* () {
       const provider = yield* make;
@@ -71,6 +83,22 @@ describe("gitHubViewerPermissions", () => {
         verdicts: ["comment", "approve", "request-changes"],
         requestReviewers: false,
       });
+      expect(detail.checks).toEqual([
+        {
+          name: "build",
+          status: "success",
+          description: null,
+          url: "https://example.test/checks/build",
+          required: true,
+        },
+        {
+          name: "security",
+          status: "expected",
+          description: "Waiting for status to be reported",
+          url: null,
+          required: true,
+        },
+      ]);
     }).pipe(
       Effect.provide(
         Layer.mock(GitHubPullRequestCli.GitHubPullRequestCli)({
@@ -100,7 +128,14 @@ describe("gitHubViewerPermissions", () => {
               changedFiles: 1,
               mergedAt: null,
               closedAt: null,
-              checks: [],
+              checks: [
+                {
+                  name: "build",
+                  status: "success",
+                  description: null,
+                  url: "https://example.test/checks/build",
+                },
+              ],
               comments: [],
               commits: [],
             }),
@@ -111,6 +146,9 @@ describe("gitHubViewerPermissions", () => {
             }),
           getViewerAccess: () =>
             Effect.succeed({ canWrite: false, canUpdate: true, didAuthor: false }),
+          getRequiredChecks: () =>
+            Effect.succeed([{ name: "build", url: "https://example.test/checks/build" }]),
+          getRequiredCheckPolicy: () => Effect.succeed(["build", "security"]),
         }),
       ),
     ),
