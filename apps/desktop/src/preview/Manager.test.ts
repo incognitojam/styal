@@ -399,16 +399,16 @@ describe("PreviewManager", () => {
 
         const handler = preview.getWindowOpenHandler();
         expect(handler).toBeDefined();
-        expect(handler?.({ url: "https://example.com/docs" })).toEqual({ action: "deny" });
+        expect(handler?.({ url: "http://localhost:4173/docs" })).toEqual({ action: "deny" });
         yield* settle(() => openExternal.mock.calls.length === 1);
 
-        expect(openExternal).toHaveBeenCalledWith("https://example.com/docs");
+        expect(openExternal).toHaveBeenCalledWith("http://localhost:4173/docs");
         expect(preview.loadURL).not.toHaveBeenCalled();
       }),
     ),
   );
 
-  effectIt.effect("blocks unsafe preview new-window requests", () =>
+  effectIt.effect("blocks non-web preview new-window requests", () =>
     withManager((manager) =>
       Effect.gen(function* () {
         const preview = makeFaviconWebContents();
@@ -419,6 +419,11 @@ describe("PreviewManager", () => {
         expect(preview.getWindowOpenHandler()?.({ url: "file:///tmp/private.txt" })).toEqual({
           action: "deny",
         });
+        expect(
+          preview
+            .getWindowOpenHandler()
+            ?.({ url: "vscode://vscode-remote/ssh-remote+example-host/home" }),
+        ).toEqual({ action: "deny" });
         expect(openExternal).not.toHaveBeenCalled();
         expect(preview.loadURL).not.toHaveBeenCalled();
       }),

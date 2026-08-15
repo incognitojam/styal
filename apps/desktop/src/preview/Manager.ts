@@ -50,7 +50,7 @@ import * as Scope from "effect/Scope";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
-import { parseSafeExternalUrl } from "../electron/ElectronShell.ts";
+import { parseSafeWebExternalUrl } from "../electron/ElectronShell.ts";
 import { PREVIEW_PICTURE_IN_PICTURE_FRAME_CHANNEL } from "../ipc/channels.ts";
 import * as BrowserSession from "./BrowserSession.ts";
 import {
@@ -1586,7 +1586,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         wc.ipc.on(HUMAN_INPUT_CHANNEL, humanInput);
         wc.ipc.on(MOUSE_NAVIGATE_CHANNEL, mouseNavigate);
         wc.setWindowOpenHandler(({ url }) => {
-          const externalUrl = parseSafeExternalUrl(url);
+          const externalUrl = parseSafeWebExternalUrl(url);
           if (Option.isSome(externalUrl)) {
             runFork(
               attemptPromise(
