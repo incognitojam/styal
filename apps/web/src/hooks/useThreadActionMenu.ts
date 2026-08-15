@@ -31,6 +31,7 @@ import {
 } from "../state/entities";
 import { readLocalApi } from "../localApi";
 import { useUiStateStore } from "../uiStateStore";
+import { useCopyThreadTranscript } from "./useCopyThreadTranscript";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
@@ -98,6 +99,7 @@ export function useThreadActionMenu(input: {
     },
     onError: (error) => failureToast("Failed to copy branch", error),
   });
+  const copyThreadTranscript = useCopyThreadTranscript();
   const { copyToClipboard: copyThreadIdToClipboard } = useCopyToClipboard<{ threadId: ThreadId }>({
     onCopy: ({ threadId }) => {
       toastManager.add({ type: "success", title: "Thread ID copied", description: threadId });
@@ -233,6 +235,9 @@ export function useThreadActionMenu(input: {
           case "mark-unread":
             markThreadUnread(scopedThreadKey(threadRef), thread.latestTurn?.completedAt);
             return;
+          case "copy-transcript":
+            await copyThreadTranscript(threadRef);
+            return;
           case "copy-path": {
             const workspacePath = thread.worktreePath ?? projectCwd;
             if (!workspacePath) {
@@ -318,6 +323,7 @@ export function useThreadActionMenu(input: {
       copyBranchToClipboard,
       copyPathToClipboard,
       copyThreadIdToClipboard,
+      copyThreadTranscript,
       deleteThread,
       handleNewThread,
       markThreadUnread,
