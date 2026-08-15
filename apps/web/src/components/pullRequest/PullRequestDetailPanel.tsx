@@ -122,6 +122,7 @@ import {
   pullRequestHandoffLabels,
   readableFailure,
   resolveBaseFreshness,
+  resolvePullRequestPrimaryAction,
   type PullRequestFinding,
   shouldRefreshPullRequestActivity,
 } from "./pullRequestDetail.logic";
@@ -1089,20 +1090,23 @@ function PullRequestDetailPanelBody({
   const can = (action: PullRequestAction) =>
     detail?.capabilities.actions.includes(action) === true &&
     detail.viewerPermissions.actions.includes(action);
-  // One live action holds the slot. Conflicts take priority because every other completion action
-  // depends on resolving them first, even for a reader who cannot merge on the host themselves.
+  // One live action holds the slot. Conflicts go to resolution; repository-policy blockers go
+  // to Auto-merge only where the host says it can be armed for this pull request.
   const primaryAction =
-    detail === null || detail.state !== "open"
+    detail === null
       ? null
-      : conflicting
-        ? "resolve"
-        : detail.isDraft && can("ready")
-          ? "ready"
-          : !can("merge")
-            ? null
-            : allowedMergeMethods.length > 0
-              ? "merge"
-              : null;
+      : resolvePullRequestPrimaryAction({
+          state: detail.state,
+          isDraft: detail.isDraft,
+          mergeability: detail.mergeability,
+          mergeReadiness: detail.mergeReadiness,
+          autoMergeArmed,
+          isBehind: detail.baseComparison === "behind",
+          canReady: can("ready"),
+          canMerge: can("merge"),
+          canEnableAutoMerge: can("enable-auto-merge"),
+          hasMergeMethod: allowedMergeMethods.length > 0,
+        });
   // What the menu's action group holds. Named once so the separators around it are drawn from
   // the same answer as its contents, rather than on the assumption that it has any.
   const showsDraftToggle =
@@ -1113,6 +1117,7 @@ function PullRequestDetailPanelBody({
     detail?.state === "open" &&
     ((autoMergeArmed && can("disable-auto-merge")) ||
       (!autoMergeArmed &&
+        primaryAction !== "enable-auto-merge" &&
         !detail.isDraft &&
         !conflicting &&
         can("enable-auto-merge") &&
@@ -1344,6 +1349,16 @@ function PullRequestDetailPanelBody({
                 >
                   {pendingAction === "merge" ? "Merging..." : selectedMergeMethodLabel}
                 </Button>
+              ) : primaryAction === "enable-auto-merge" ? (
+                <Button
+                  size="xs"
+                  disabled={actionPending}
+                  onClick={() =>
+                    setConfirmation({ open: true, action: "enable-auto-merge" })
+                  }
+                >
+                  {pendingAction === "enable-auto-merge" ? "Enabling..." : "Auto-merge"}
+                </Button>
               ) : null}
               <Menu>
                 <MenuTrigger
@@ -1428,6 +1443,7 @@ function PullRequestDetailPanelBody({
                           Disable auto-merge
                         </MenuItem>
                       ) : !autoMergeArmed &&
+                        primaryAction !== "enable-auto-merge" &&
                         !detail.isDraft &&
                         !conflicting &&
                         can("enable-auto-merge") &&
@@ -1968,6 +1984,7 @@ function PullRequestDetailPanelBody({
               <div className={cn("absolute inset-0", tab !== "checks" && "invisible")}>
                 <PullRequestChecksTab
                   checks={detail.checks}
+                  mergeReadiness={detail.mergeReadiness}
                   pendingFinding={handoff}
                   fixCheckLabel={handoffLabels.fixCheck}
                   onFixFinding={startFixFinding}
