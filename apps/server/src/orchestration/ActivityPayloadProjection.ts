@@ -99,6 +99,14 @@ function projectCommandData(data: Record<string, unknown>): Record<string, unkno
     projectedItem.exitCode = exitCode;
   }
 
+  const aggregatedOutput = asTrimmedString(item?.aggregatedOutput);
+  if (aggregatedOutput) {
+    const summary = summarizeToolTextOutput(aggregatedOutput);
+    if (summary) {
+      projectedItem.aggregatedOutput = summary;
+    }
+  }
+
   const input = asRecord(item?.input);
   if (input && "command" in input) {
     projectedItem.input = { command: input.command };
@@ -109,6 +117,13 @@ function projectCommandData(data: Record<string, unknown>): Record<string, unkno
     const projectedResult: Record<string, unknown> = {};
     if ("command" in result) {
       projectedResult.command = result.command;
+    }
+    const content = asTrimmedString(result.content);
+    if (content) {
+      const summary = summarizeToolTextOutput(content);
+      if (summary) {
+        projectedResult.content = summary;
+      }
     }
     const resultExitCode = asInteger(result.exitCode);
     if (resultExitCode !== null) {
@@ -356,15 +371,9 @@ function projectMcpToolCallData(data: Record<string, unknown>): Record<string, u
   return projectedData;
 }
 
-function projectRawOutput(
-  value: unknown,
-  options?: { preserveOnlyExitCode?: boolean },
-): Record<string, unknown> | undefined {
+function projectRawOutput(value: unknown): Record<string, unknown> | undefined {
   const direct = asTrimmedString(value);
   if (direct) {
-    if (options?.preserveOnlyExitCode) {
-      return undefined;
-    }
     const summary = summarizeToolTextOutput(direct);
     return summary ? { content: summary } : undefined;
   }
@@ -386,10 +395,6 @@ function projectRawOutput(
       projected.truncated = true;
     }
     return projected;
-  }
-
-  if (options?.preserveOnlyExitCode) {
-    return exitCode !== null ? { exitCode } : undefined;
   }
 
   const content = asTrimmedString(rawOutput.content);
@@ -572,10 +577,7 @@ export function projectActivityPayload(
     projectedData.input = toolInput;
   }
 
-  const rawOutput = projectRawOutput(data.rawOutput, {
-    preserveOnlyExitCode: payload.itemType === "command_execution",
-  }) ??
-    (payload.itemType === "command_execution" ? undefined : projectAcpContent(data.content));
+  const rawOutput = projectRawOutput(data.rawOutput) ?? projectAcpContent(data.content);
   if (rawOutput) {
     projectedData.rawOutput = rawOutput;
   }
