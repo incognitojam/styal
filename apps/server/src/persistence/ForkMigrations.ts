@@ -4,6 +4,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import ForkMigration0001 from "./ForkMigrations/001_ComposerDrafts.ts";
 import ForkMigration0002 from "./ForkMigrations/002_WorkspacePortAllocations.ts";
+import ForkMigration0003 from "./ForkMigrations/003_ProjectAdditionalInstructions.ts";
 import UpstreamMigration0039 from "./Migrations/039_ProjectionProjectsDefaultThreadEnvMode.ts";
 import { runMigrations } from "./Migrations.ts";
 
@@ -19,6 +20,7 @@ const UPSTREAM_MIGRATION_0039_NAME = "ProjectionProjectsDefaultThreadEnvMode";
 export const forkMigrationEntries = [
   [1, "ComposerDrafts", ForkMigration0001],
   [2, "WorkspacePortAllocations", ForkMigration0002],
+  [3, "ProjectAdditionalInstructions", ForkMigration0003],
 ] as const;
 
 export const forkMigrationManifest = forkMigrationEntries.map(([id, name]) => [id, name] as const);
