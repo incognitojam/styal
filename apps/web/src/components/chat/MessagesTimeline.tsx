@@ -57,8 +57,10 @@ import {
   ChevronRightIcon,
   CircleAlertIcon,
   EyeIcon,
+  FoldVerticalIcon,
   GlobeIcon,
   HammerIcon,
+  ImageIcon,
   MessageCircleIcon,
   CircleDotIcon,
   MousePointerClickIcon,
@@ -98,6 +100,8 @@ import {
   type MessagesTimelineRow,
   TIMELINE_MINIMAP_MIN_ITEMS,
   type TimelineLatestTurn,
+  type TurnFoldActivityKind,
+  type TurnFoldActivitySummary,
 } from "./MessagesTimeline.logic";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -1140,9 +1144,73 @@ function RevertUserMessageButton({ messageId }: { messageId: MessageId }) {
   );
 }
 
+const TURN_FOLD_ACTIVITY_LABELS: Record<TurnFoldActivityKind, { one: string; other: string }> = {
+  terminal: { one: "terminal command", other: "terminal commands" },
+  "file-change": { one: "file edited", other: "files edited" },
+  "file-read": { one: "file read", other: "files read" },
+  web: { one: "web lookup", other: "web lookups" },
+  tool: { one: "tool call", other: "tool calls" },
+  image: { one: "image viewed", other: "images viewed" },
+  "context-compaction": { one: "context compaction", other: "context compactions" },
+};
+
+function TurnFoldActivityIcon({
+  kind,
+  className,
+}: {
+  kind: TurnFoldActivityKind;
+  className: string;
+}) {
+  switch (kind) {
+    case "terminal":
+      return <TerminalIcon className={className} aria-hidden />;
+    case "file-change":
+      return <SquarePenIcon className={className} aria-hidden />;
+    case "file-read":
+      return <EyeIcon className={className} aria-hidden />;
+    case "web":
+      return <GlobeIcon className={className} aria-hidden />;
+    case "tool":
+      return <WrenchIcon className={className} aria-hidden />;
+    case "image":
+      return <ImageIcon className={className} aria-hidden />;
+    case "context-compaction":
+      return <FoldVerticalIcon className={className} aria-hidden />;
+  }
+}
+
+/**
+ * One ledger entry in the fold divider: a monochrome glyph plus its count. The
+ * count is duplicated as screen-reader text so the fold button's accessible
+ * name reads "Worked for 42s, 3 terminal commands, 1 file edited".
+ */
+function TurnFoldActivityStat({
+  stat,
+  className,
+}: {
+  stat: TurnFoldActivitySummary;
+  className?: string;
+}) {
+  const labels = TURN_FOLD_ACTIVITY_LABELS[stat.kind];
+  const label = `${stat.count} ${stat.count === 1 ? labels.one : labels.other}`;
+
+  return (
+    <span title={label} className={cn("flex shrink-0 items-center gap-1", className)}>
+      <TurnFoldActivityIcon kind={stat.kind} className="size-3" />
+      <span aria-hidden>{stat.count}</span>
+      <span className="sr-only">{`, ${label}`}</span>
+    </span>
+  );
+}
+
 function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-fold" }> }) {
   const ctx = use(TimelineRowCtx);
   const Icon = row.expanded ? ChevronDownIcon : ChevronRightIcon;
+  // Compaction is the rarest and most notable event, so it is pinned beside the
+  // chevron and stays legible while the busier stats clip away in narrow panes.
+  const compactionStats = row.activitySummary.filter((stat) => stat.kind === "context-compaction");
+  const activityStats = row.activitySummary.filter((stat) => stat.kind !== "context-compaction");
+  const hasSummary = row.activitySummary.length > 0;
 
   return (
     <div className="border-b border-border/60 pb-2 pt-1">
@@ -1151,10 +1219,29 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
         aria-expanded={row.expanded}
         data-scroll-anchor-ignore
         onClick={() => ctx.onToggleTurnFold(row.turnId)}
-        className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-sm leading-relaxed text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+        className="group/turn-fold flex w-full cursor-pointer select-none items-center gap-1 rounded-md px-1 text-sm leading-relaxed text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70 motion-reduce:transition-none"
       >
-        <span>{row.label}</span>
-        <Icon className="size-3.5" />
+        <span className="shrink-0">{row.label}</span>
+        {hasSummary ? (
+          <>
+            <span aria-hidden className="min-w-3 flex-1" />
+            {activityStats.length > 0 ? (
+              <span className="flex min-w-0 items-center gap-2 overflow-hidden">
+                {activityStats.map((stat) => (
+                  <TurnFoldActivityStat key={stat.kind} stat={stat} />
+                ))}
+              </span>
+            ) : null}
+            {compactionStats.map((stat) => (
+              <TurnFoldActivityStat
+                key={stat.kind}
+                stat={stat}
+                className="ms-1 text-primary/70 transition-colors group-hover/turn-fold:text-primary motion-reduce:transition-none"
+              />
+            ))}
+          </>
+        ) : null}
+        <Icon className="size-3.5 shrink-0" />
       </button>
     </div>
   );
