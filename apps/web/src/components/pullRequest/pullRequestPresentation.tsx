@@ -119,6 +119,11 @@ export function PullRequestStateGlyph({
 }
 
 const CHECK_STATUS_PRESENTATION = {
+  expected: {
+    label: "Waiting to be reported",
+    Icon: CircleDotIcon,
+    toneClassName: "text-amber-600 dark:text-amber-400/90",
+  },
   pending: { label: "Running", Icon: LoaderIcon, toneClassName: "animate-spin text-amber-500" },
   success: {
     label: "Passed",
@@ -164,7 +169,7 @@ const CHECKS_STATE_PRESENTATION = {
     toneClassName: "text-destructive",
   },
   pending: {
-    label: "Some checks haven't completed yet",
+    label: "Some checks are still pending",
     Icon: CircleDotIcon,
     toneClassName: "text-amber-600 dark:text-amber-400/90",
   },
@@ -187,10 +192,10 @@ export function pullRequestChecksState(
   checks: ReadonlyArray<PullRequestCheck>,
 ): PullRequestChecksState | null {
   if (checks.length === 0) return null;
-  const statuses = checks.map((check) => check.status);
-  if (statuses.includes("failure") || statuses.includes("cancelled")) return "failing";
-  if (statuses.includes("pending")) return "pending";
-  return statuses.includes("success") ? "passing" : null;
+  const statuses = new Set(checks.map((check) => check.status));
+  if (statuses.has("failure") || statuses.has("cancelled")) return "failing";
+  if (statuses.has("pending") || statuses.has("expected")) return "pending";
+  return statuses.has("success") ? "passing" : null;
 }
 
 /**
@@ -436,9 +441,12 @@ export function summarizePullRequestChecks(checks: ReadonlyArray<PullRequestChec
   const failed = checks.filter(
     (check) => check.status === "failure" || check.status === "cancelled",
   ).length;
-  const pending = checks.filter((check) => check.status === "pending").length;
+  const running = checks.filter((check) => check.status === "pending").length;
+  const expected = checks.filter((check) => check.status === "expected").length;
   const passed = checks.filter((check) => check.status === "success").length;
   if (failed > 0) return `${failed} of ${checks.length} failing`;
-  if (pending > 0) return `${pending} of ${checks.length} running`;
+  if (running > 0 && expected > 0) return `${running + expected} of ${checks.length} pending`;
+  if (running > 0) return `${running} of ${checks.length} running`;
+  if (expected > 0) return `${expected} of ${checks.length} waiting`;
   return passed === checks.length ? "All checks passed" : `${passed} of ${checks.length} passing`;
 }
