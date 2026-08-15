@@ -73,6 +73,14 @@ export type PullRequestChecksState = typeof PullRequestChecksState.Type;
 export const PullRequestMergeability = Schema.Literals(["mergeable", "conflicting", "unknown"]);
 export type PullRequestMergeability = typeof PullRequestMergeability.Type;
 
+/**
+ * Whether the host would accept a merge now after applying repository policy. Separate from
+ * `mergeability`, which only answers whether Git can create the merge cleanly: a conflict-free
+ * pull request can still be blocked on required checks, reviews, or an out-of-date branch.
+ */
+export const PullRequestMergeReadiness = Schema.Literals(["ready", "blocked", "unknown"]);
+export type PullRequestMergeReadiness = typeof PullRequestMergeReadiness.Type;
+
 export const PullRequestMergeMethod = Schema.Literals(["merge", "squash", "rebase"]);
 export type PullRequestMergeMethod = typeof PullRequestMergeMethod.Type;
 
@@ -130,6 +138,8 @@ export const PullRequestLabel = Schema.Struct({
 export type PullRequestLabel = typeof PullRequestLabel.Type;
 
 export const PullRequestCheckStatus = Schema.Literals([
+  /** Repository policy expects this check, but the head commit has not reported it yet. */
+  "expected",
   "pending",
   "success",
   "failure",
@@ -144,6 +154,11 @@ export const PullRequestCheck = Schema.Struct({
   status: PullRequestCheckStatus,
   description: Schema.NullOr(Schema.String),
   url: Schema.NullOr(Schema.String),
+  /**
+   * Whether repository policy requires this check before merging. Absent where the host cannot
+   * answer, which is not the same as optional: only an explicit true or false earns that claim.
+   */
+  required: Schema.optional(Schema.Boolean),
 });
 export type PullRequestCheck = typeof PullRequestCheck.Type;
 
@@ -662,6 +677,11 @@ export const PullRequestDetail = Schema.Struct({
   state: PullRequestState,
   isDraft: Schema.Boolean,
   mergeability: PullRequestMergeability,
+  /**
+   * The host's policy-aware merge verdict. Optional because most hosts expose only whether the
+   * merge can be created cleanly, not whether every repository requirement has been satisfied.
+   */
+  mergeReadiness: Schema.optional(PullRequestMergeReadiness),
   additions: NonNegativeInt,
   deletions: NonNegativeInt,
   changedFiles: NonNegativeInt,
