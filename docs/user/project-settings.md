@@ -15,11 +15,12 @@ each checkout in the project group and appears on your connected clients.
 
 To use automatic detection again, select **Automatic**.
 
-# Use stable workspace ports
+# Stable workspace ports
 
-T3 Code assigns every workspace a persistent range of ten development ports. The first port is
-available as `T3CODE_WORKSPACE_PORT` in that workspace's locally launched agent processes,
-terminals, and project scripts; the remaining ports are the next nine numbers.
+T3 Code automatically assigns every workspace a persistent range of ten development ports. There
+is no setting to enable. The first port is always available as `T3CODE_WORKSPACE_PORT` in that
+workspace's locally launched agent processes, terminals, and project scripts; the remaining ports
+are the next nine numbers.
 
 A worktree keeps the same range when its agent or development server restarts. Threads that reuse
 the same worktree also reuse its range. Local threads share the range assigned to the project's main
