@@ -1,5 +1,6 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import { beforeEach, vi } from "vite-plus/test";
 
 const { openExternalMock, writeTextMock } = vi.hoisted(() => ({
@@ -22,6 +23,24 @@ describe("ElectronShell", () => {
   beforeEach(() => {
     openExternalMock.mockReset();
     writeTextMock.mockReset();
+  });
+
+  it("restricts untrusted web URLs to HTTP(S)", () => {
+    assert.equal(
+      Option.getOrUndefined(ElectronShell.parseSafeWebExternalUrl("http://localhost:4173/docs")),
+      "http://localhost:4173/docs",
+    );
+    assert.equal(
+      Option.getOrUndefined(ElectronShell.parseSafeWebExternalUrl("https://example.com/docs")),
+      "https://example.com/docs",
+    );
+    assert.isTrue(
+      Option.isNone(
+        ElectronShell.parseSafeWebExternalUrl(
+          "vscode://vscode-remote/ssh-remote+example-host/home",
+        ),
+      ),
+    );
   });
 
   it.effect("opens safe external URLs", () =>
