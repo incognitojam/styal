@@ -5,6 +5,7 @@ import type {
   PullRequestCheck,
   PullRequestComment,
   PullRequestDetailView,
+  PullRequestMergeReadiness,
   PullRequestMergeability,
   PullRequestReaction,
   PullRequestReviewThread,
@@ -64,6 +65,38 @@ export function pullRequestActionMenuHasGroup(
   showsMergeMethods: boolean,
 ): boolean {
   return showsDraftToggle || showsAutoMerge || showsMergeMethods;
+}
+
+/**
+ * The one action that earns the header slot. A repository-policy blocker replaces a Merge press
+ * GitHub would refuse with Auto-merge when the host says this viewer may arm it. An absent or
+ * temporarily unknown verdict keeps the historical Merge behavior instead of hiding the action.
+ */
+export function resolvePullRequestPrimaryAction(input: {
+  readonly state: PullRequestState;
+  readonly isDraft: boolean;
+  readonly mergeability: PullRequestMergeability;
+  readonly mergeReadiness?: PullRequestMergeReadiness | undefined;
+  readonly autoMergeArmed: boolean;
+  readonly isBehind: boolean;
+  readonly canReady: boolean;
+  readonly canMerge: boolean;
+  readonly canEnableAutoMerge: boolean;
+  readonly hasMergeMethod: boolean;
+}): "ready" | "resolve" | "merge" | "enable-auto-merge" | null {
+  if (input.state !== "open") return null;
+  if (input.autoMergeArmed) return null;
+  if (input.isDraft && input.canReady) return "ready";
+  if (!input.canMerge) return null;
+  if (input.mergeability === "conflicting") return "resolve";
+  if (!input.hasMergeMethod) return null;
+  if (input.mergeReadiness === "blocked") {
+    // Auto-merge waits for host-controlled requirements; it does not update an out-of-date
+    // branch. The existing freshness control is the useful action for that blocker.
+    if (input.isBehind) return null;
+    return input.canEnableAutoMerge ? "enable-auto-merge" : null;
+  }
+  return "merge";
 }
 
 /** Plain-language state, shown beside the author. Conflicts are a merge signal, not a state. */

@@ -4,6 +4,9 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   buildReviewSubmissionJson,
   buildReviewerRequestJson,
+  applyRequiredCheckPolicy,
+  decodeBranchProtectionRequiredChecksJson,
+  decodeAutoMergePermissionsJson,
   decodeBaseComparisonJson,
   decodePullRequestActivityJson,
   decodePullRequestDetailJson,
@@ -11,11 +14,14 @@ import {
   decodePullRequestListJson,
   decodePullRequestNodeIdJson,
   decodePullRequestSearchJson,
+  decodeRequiredChecksJson,
+  decodeRequiredCheckRulesJson,
   decodeRepositoryAccessJson,
   decodeReviewerCandidatesJson,
   decodeReviewThreadCommentsJson,
   decodeReviewThreadsJson,
   decodeViewerPermissionsJson,
+  markRequiredChecks,
   reviewThreadConversation,
   REVIEW_THREADS_GRAPHQL_QUERY,
 } from "./gitHubPullRequestJson.ts";
@@ -235,6 +241,106 @@ describe("pull request detail decoding", () => {
     expect(armed({ autoMergeRequest: null })).toBe(false);
     // `gh` not answering for the field at all is not GitHub saying the merge is unarmed.
     expect(armed({})).toBeUndefined();
+  });
+
+  it("keeps repository-policy readiness separate from conflict-only mergeability", () => {
+    const raw = JSON.parse(detailJson) as Record<string, unknown>;
+    const readiness = (mergeStateStatus: string) =>
+      expectSuccess(decodePullRequestDetailJson(JSON.stringify({ ...raw, mergeStateStatus })))
+        .mergeReadiness;
+
+    expect(readiness("CLEAN")).toBe("ready");
+    expect(readiness("UNSTABLE")).toBe("ready");
+    expect(readiness("BLOCKED")).toBe("blocked");
+    expect(readiness("BEHIND")).toBe("blocked");
+    expect(readiness("DIRTY")).toBe("unknown");
+  });
+
+  it("marks only the check contexts GitHub reports as required", () => {
+    const checks = expectSuccess(decodePullRequestDetailJson(detailJson)).checks.map((check) =>
+      check.name === "build" ? { ...check, url: "https://example.test/checks/build" } : check,
+    );
+    const required = expectSuccess(
+      decodeRequiredChecksJson(
+        JSON.stringify([
+          // A re-run changed the run URL between the two reads; its stable context name still
+          // identifies it as the same required check.
+          { name: "build", link: "https://example.test/checks/build-rerun" },
+          { name: "ci/legacy", link: null },
+        ]),
+      ),
+    );
+
+    expect(
+      markRequiredChecks(checks, required).map((check) => [check.name, check.required]),
+    ).toEqual([
+      ["build", true],
+      ["test", undefined],
+      ["ci/legacy", true],
+    ]);
+  });
+
+  it("adds an expected row when configured policy has no reported check", () => {
+    const checks = expectSuccess(decodePullRequestDetailJson(detailJson)).checks;
+
+    expect(applyRequiredCheckPolicy(checks, [])).toEqual(checks);
+    expect(applyRequiredCheckPolicy(checks, ["build", "security", "security", " "])).toEqual([
+      { ...checks[0], required: true },
+      checks[1],
+      checks[2],
+      {
+        name: "security",
+        status: "expected",
+        description: "Waiting for status to be reported",
+        url: null,
+        required: true,
+      },
+    ]);
+  });
+
+  it("decodes effective ruleset and classic-protection required contexts", () => {
+    expect(
+      expectSuccess(
+        decodeRequiredCheckRulesJson(
+          JSON.stringify([
+            [
+              { type: "pull_request", parameters: {} },
+              {
+                type: "required_status_checks",
+                parameters: {
+                  required_status_checks: [{ context: "build", integration_id: 1 }, "legacy"],
+                },
+              },
+            ],
+            [
+              {
+                type: "required_status_checks",
+                parameters: {
+                  required_status_checks: [{ context: "build", integration_id: 1 }],
+                },
+              },
+            ],
+          ]),
+        ),
+      ),
+    ).toEqual(["build", "legacy"]);
+    expect(
+      expectSuccess(
+        decodeBranchProtectionRequiredChecksJson(
+          JSON.stringify({
+            data: {
+              repository: {
+                ref: {
+                  branchProtectionRule: {
+                    requiredStatusCheckContexts: ["classic", " classic ", ""],
+                  },
+                },
+              },
+            },
+          }),
+        ),
+      ),
+    ).toEqual(["classic"]);
   });
 
   it("shows a re-running check once, as the run that is happening now", () => {
@@ -758,6 +864,24 @@ describe("viewer permission decoding", () => {
         ),
       ),
     ).toEqual({ canWrite: false, canUpdate: true, didAuthor: true });
+  });
+
+  it("keeps GitHub's exact auto-merge permissions in their optional read", () => {
+    expect(
+      expectSuccess(
+        decodeAutoMergePermissionsJson(
+          viewerJson({
+            pullRequest: {
+              viewerCanEnableAutoMerge: false,
+              viewerCanDisableAutoMerge: true,
+            },
+          }),
+        ),
+      ),
+    ).toEqual({
+      canEnableAutoMerge: false,
+      canDisableAutoMerge: true,
+    });
   });
 
   it("says no to a passer-by on a repository they can only read", () => {
