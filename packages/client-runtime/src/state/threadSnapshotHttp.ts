@@ -4,11 +4,16 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import { HttpClient } from "effect/unstable/http";
+import type { Atom } from "effect/unstable/reactivity";
 
 import type { PreparedConnection } from "../connection/model.ts";
+import type { EnvironmentRegistry } from "../connection/registry.ts";
+import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import { environmentEndpointUrl } from "../environment/endpoint.ts";
 import { ManagedRelayDpopSigner } from "../relay/managedRelay.ts";
+import { createEnvironmentCommand } from "./runtime.ts";
 import {
   executeEnvironmentHttpRequest,
   makeEnvironmentHttpApiClient,
@@ -93,6 +98,33 @@ export class ThreadSnapshotLoader extends Context.Service<
     ) => Effect.Effect<Option.Option<OrchestrationThreadDetailSnapshot>>;
   }
 >()("@t3tools/client-runtime/state/threadSnapshotHttp/ThreadSnapshotLoader") {}
+
+/**
+ * One-shot full-thread reads for actions that need the entire conversation
+ * (e.g. copy transcript). The detail subscription only holds a turn window on
+ * pagination-capable servers, so callers cannot rely on cached state; sending
+ * no window makes the server return the whole thread. Resolves `Option.none()`
+ * when the environment has no prepared connection or the load fails.
+ */
+export function createThreadSnapshotCommands<R, ER>(
+  runtime: Atom.AtomRuntime<EnvironmentRegistry | ThreadSnapshotLoader | R, ER>,
+) {
+  return {
+    fetchFull: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:fetch-full-snapshot",
+      execute: (input: { readonly threadId: ThreadId }) =>
+        Effect.gen(function* () {
+          const supervisor = yield* EnvironmentSupervisor;
+          const loader = yield* ThreadSnapshotLoader;
+          const prepared = yield* SubscriptionRef.get(supervisor.prepared);
+          if (Option.isNone(prepared)) {
+            return Option.none<OrchestrationThreadDetailSnapshot>();
+          }
+          return yield* loader.load(prepared.value, input.threadId);
+        }),
+    }),
+  };
+}
 
 export const threadSnapshotLoaderLayer: Layer.Layer<
   ThreadSnapshotLoader,
