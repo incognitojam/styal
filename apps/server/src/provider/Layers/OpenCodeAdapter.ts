@@ -223,6 +223,7 @@ function isOpenCodeDefaultTitle(title: string): boolean {
 
 interface OpenCodeSessionContext {
   session: ProviderSession;
+  readonly additionalInstructions: string | undefined;
   readonly client: OpencodeClient;
   readonly server: OpenCodeServerConnection;
   readonly directory: string;
@@ -1391,6 +1392,7 @@ export function makeOpenCodeAdapter(
 
         const context: OpenCodeSessionContext = {
           session,
+          additionalInstructions: input.additionalInstructions,
           client: started.client,
           server: started.server,
           directory,
@@ -1508,6 +1510,7 @@ export function makeOpenCodeAdapter(
           model: parsedModel,
           ...(context.activeAgent ? { agent: context.activeAgent } : {}),
           ...(context.activeVariant ? { variant: context.activeVariant } : {}),
+          ...(context.additionalInstructions ? { system: context.additionalInstructions } : {}),
           parts: [...(text ? [{ type: "text" as const, text }] : []), ...fileParts],
         }),
       ).pipe(
