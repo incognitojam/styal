@@ -100,7 +100,11 @@ import { PullRequestActivityUnavailableState } from "./PullRequestActivityUnavai
 import { DiffPanelLoadingState } from "../DiffPanelShell";
 import { PullRequestsUnavailableState } from "./PullRequestsUnavailableState";
 import type { PullRequestAgentSelectionInput } from "./PullRequestCodeTab";
-import { PullRequestChecksNavButton, PullRequestChecksTab } from "./PullRequestChecksTab";
+import {
+  PullRequestChecksNavButton,
+  PullRequestChecksTab,
+  pullRequestMergeVerdict,
+} from "./PullRequestChecksTab";
 import { openOnHostLabel, showPullRequestLinkContextMenu } from "./pullRequestLinkContextMenu";
 import { PullRequestSummaryTab } from "./PullRequestSummaryTab";
 import { PullRequestTimelineTab } from "./PullRequestTimelineTab";
@@ -131,12 +135,14 @@ import {
   resolvePickableEnvironments,
   type PickableEnvironment,
 } from "./pullRequestProjectAssignment.logic";
+import { PullRequestChecksPopover } from "./PullRequestChecksPopover";
 import {
   PullRequestActorAvatar,
   PullRequestActorLabel,
   PullRequestDiffStat,
   PullRequestMetaLine,
   PullRequestReviewOutcomeIcon,
+  pullRequestChecksState,
   pullRequestReviewOutcomeToneClassName,
   resolvePullRequestState,
 } from "./pullRequestPresentation";
@@ -1139,6 +1145,7 @@ function PullRequestDetailPanelBody({
   const statePresentation = detail
     ? resolvePullRequestState({ state: detail.state, isDraft: detail.isDraft })
     : null;
+  const checksState = detail ? pullRequestChecksState(detail.checks) : null;
   // Approvals that still stand, and only those. A superseded one is dimmed beside the reviewer
   // who gave it, so counting it here would have the header assert in a number what the row next
   // to it has just qualified.
@@ -1152,6 +1159,17 @@ function PullRequestDetailPanelBody({
           (entry) => entry.outcome === "approved" && !entry.stale,
         ).length
       : 0;
+  const mergeVerdict = detail
+    ? pullRequestMergeVerdict({
+        checks: detail.checks,
+        mergeReadiness: detail.mergeReadiness,
+        compact: true,
+      })
+    : null;
+  const checksMark =
+    detail && checksState !== null ? (
+      <PullRequestChecksPopover checks={detail.checks} checksState={checksState} />
+    ) : null;
 
   if (detailQuery.isPending && !detail) {
     return <PullRequestDetailGhost />;
@@ -1259,6 +1277,38 @@ function PullRequestDetailPanelBody({
                   />
                   <TooltipPopup side="top">{detail.title}</TooltipPopup>
                 </Tooltip>
+                {conflicting ? (
+                  <Badge
+                    variant="error"
+                    className="h-5 shrink-0 gap-1 rounded px-1.5 text-[10px] text-destructive"
+                  >
+                    <TriangleAlertIcon className="size-3" />
+                    Conflicts
+                  </Badge>
+                ) : mergeVerdict ? (
+                  <span className="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground">
+                    {mergeVerdict.policy === null ? (
+                      checksMark
+                    ) : (
+                      <mergeVerdict.Icon
+                        aria-hidden
+                        className={cn("size-3 shrink-0", mergeVerdict.toneClassName)}
+                      />
+                    )}
+                    <span className={cn(mergeVerdict.policy !== null && "font-medium")}>
+                      {mergeVerdict.label}
+                    </span>
+                    {mergeVerdict.health === null ? null : (
+                      <>
+                        <span aria-hidden className="text-muted-foreground/50">
+                          ·
+                        </span>
+                        {checksMark}
+                        <span className="tabular-nums">{mergeVerdict.health}</span>
+                      </>
+                    )}
+                  </span>
+                ) : null}
               </>
             ) : null}
           </div>
@@ -1849,6 +1899,7 @@ function PullRequestDetailPanelBody({
             {tab === "summary" ? (
               <PullRequestChecksNavButton
                 checks={detail.checks}
+                mergeReadiness={detail.mergeReadiness}
                 onSelect={() => setTab("checks")}
               />
             ) : tab === "timeline" ? (
