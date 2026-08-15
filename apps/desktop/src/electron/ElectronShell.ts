@@ -6,9 +6,11 @@ import * as Option from "effect/Option";
 
 import * as Electron from "electron";
 
+const SAFE_WEB_EXTERNAL_PROTOCOLS = new Set(["http:", "https:"]);
+
 // Remote open-in-editor deep links (`vscode://vscode-remote/ssh-remote+…`)
-// must reach the OS handler; every other non-web scheme stays blocked.
-const SAFE_WEB_PROTOCOLS = new Set(["http:", "https:"]);
+// must reach the OS handler when requested by trusted T3 UI; every other
+// non-web scheme stays blocked.
 const REMOTE_EDITOR_PROTOCOLS = new Set(
   REMOTE_CAPABLE_EDITOR_IDS.flatMap((id) => {
     const scheme = remoteSchemeForEditor(id);
@@ -24,19 +26,29 @@ const isRemoteEditorUrl = (url: URL) =>
   url.pathname.startsWith("/ssh-remote+") &&
   url.pathname.length > "/ssh-remote+".length;
 
-export function parseSafeExternalUrl(rawUrl: unknown): Option.Option<string> {
+function parseUrlWhen(rawUrl: unknown, isAllowed: (url: URL) => boolean): Option.Option<string> {
   if (typeof rawUrl !== "string") {
     return Option.none();
   }
 
   try {
     const url = new URL(rawUrl);
-    return SAFE_WEB_PROTOCOLS.has(url.protocol) || isRemoteEditorUrl(url)
-      ? Option.some(url.href)
-      : Option.none();
+    return isAllowed(url) ? Option.some(url.href) : Option.none();
   } catch {
     return Option.none();
   }
+}
+
+/** Restricts untrusted web content to URLs a system browser can handle. */
+export function parseSafeWebExternalUrl(rawUrl: unknown): Option.Option<string> {
+  return parseUrlWhen(rawUrl, (url) => SAFE_WEB_EXTERNAL_PROTOCOLS.has(url.protocol));
+}
+
+export function parseSafeExternalUrl(rawUrl: unknown): Option.Option<string> {
+  return parseUrlWhen(
+    rawUrl,
+    (url) => SAFE_WEB_EXTERNAL_PROTOCOLS.has(url.protocol) || isRemoteEditorUrl(url),
+  );
 }
 
 export class ElectronShell extends Context.Service<
