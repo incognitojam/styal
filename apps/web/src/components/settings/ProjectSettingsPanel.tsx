@@ -88,6 +88,7 @@ import { cn } from "../../lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { Textarea } from "../ui/textarea";
 import {
   Menu,
   MenuGroup,
@@ -369,6 +370,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
       (member) => member.environmentId === group.environmentId && member.id === group.id,
     ) ?? group.memberProjects[0]!;
   const faviconPath = representative.faviconPath ?? null;
+  const additionalInstructions = representative.additionalInstructions ?? null;
 
   const threadCountByMember = useMemo(() => {
     const counts = new Map<string, number>();
@@ -399,6 +401,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         defaultModelSelection: ModelSelection | null;
         defaultThreadEnvMode: ThreadEnvMode | null;
         faviconPath: string | null;
+        additionalInstructions: string | null;
       }>,
       failureTitle: string,
     ): Promise<AtomCommandResult<void, unknown>> => {
@@ -471,6 +474,15 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
       void updateAllMembers(
         { defaultThreadEnvMode: mode },
         "Failed to update new-thread workspace",
+      ),
+    [updateAllMembers],
+  );
+
+  const setAdditionalInstructions = useCallback(
+    (instructions: string | null) =>
+      void updateAllMembers(
+        { additionalInstructions: instructions },
+        "Failed to update additional instructions",
       ),
     [updateAllMembers],
   );
@@ -992,6 +1004,35 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                   <SelectItem value="local">{resolveEnvModeLabel("local")}</SelectItem>
                 </SelectPopup>
               </Select>
+            }
+          />
+          <SettingsRow
+            title="Additional instructions"
+            description="Included when a new agent session starts for this project; applies to every checkout in this group."
+            resetAction={
+              additionalInstructions !== null ? (
+                <SettingResetButton
+                  label="additional instructions"
+                  onClick={() => setAdditionalInstructions(null)}
+                />
+              ) : null
+            }
+            control={
+              <Textarea
+                key={`${group.projectKey}:${representative.updatedAt}:additional-instructions`}
+                className="min-h-24 w-full sm:w-96"
+                aria-label="Additional instructions"
+                placeholder="For example: Run focused tests after making changes."
+                defaultValue={additionalInstructions ?? ""}
+                maxLength={32_000}
+                onBlur={(event) => {
+                  const nextValue = event.currentTarget.value.trim();
+                  const normalized = nextValue.length > 0 ? nextValue : null;
+                  if (normalized === additionalInstructions) return;
+                  event.currentTarget.value = nextValue;
+                  setAdditionalInstructions(normalized);
+                }}
+              />
             }
           />
         </SettingsSection>

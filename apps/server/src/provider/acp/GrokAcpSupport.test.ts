@@ -33,6 +33,17 @@ describe("buildGrokAcpSpawnInput", () => {
       },
     });
   });
+
+  it("passes additional instructions through Grok's rules option", () => {
+    const spawn = buildGrokAcpSpawnInput(
+      undefined,
+      "/tmp/project",
+      undefined,
+      "Prefer focused tests.",
+    );
+
+    expect(spawn.args).toEqual(["--rules", "Prefer focused tests.", "agent", "stdio"]);
+  });
 });
 
 describe("applyGrokAcpModelSelection", () => {
