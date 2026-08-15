@@ -55,6 +55,7 @@ import {
   createKeybindingsUpdateToastController,
   type KeybindingsUpdateToastController,
 } from "../components/KeybindingsUpdateToast.logic";
+import { bootstrapWelcomeKey, useLaunchNavigationStore } from "../launchNavigationStore";
 
 export const Route = createRootRoute({
   beforeLoad: async ({ location }) => {
@@ -328,7 +329,6 @@ function EventRouter() {
   const serverConfigEvent = useAtomValue(primaryServerConfigEventAtom);
   const serverWelcome = useAtomValue(primaryServerWelcomeAtom);
   const readPathname = useEffectEvent(() => pathname);
-  const handledBootstrapThreadIdRef = useRef<string | null>(null);
   const handledConfigEventRef = useRef(serverConfigEvent);
   const [keybindingsToastController] = useState<KeybindingsUpdateToastController>(() =>
     createKeybindingsUpdateToastController({}),
@@ -357,21 +357,38 @@ function EventRouter() {
         );
       useUiStateStore.getState().setProjectExpanded(bootstrapProjectKey, true);
 
+      const bootstrapKey = bootstrapWelcomeKey(payload);
+      if (bootstrapKey === null) {
+        return;
+      }
+      const launchNavigation = useLaunchNavigationStore.getState();
+      if (launchNavigation.handledBootstrapKey === bootstrapKey) {
+        return;
+      }
       if (readPathname() !== "/") {
+        launchNavigation.markBootstrapHandled(bootstrapKey);
         return;
       }
-      if (handledBootstrapThreadIdRef.current === payload.bootstrapThreadId) {
+      if (!launchNavigation.claim("server-bootstrap")) {
+        // Another automatic route already owns the initial screen. A late
+        // bootstrap welcome is launch guidance, not permission to interrupt
+        // a draft that may already be receiving user input.
+        launchNavigation.markBootstrapHandled(bootstrapKey);
         return;
       }
-      await navigate({
-        to: "/$environmentId/$threadId",
-        params: {
-          environmentId: payload.environment.environmentId,
-          threadId: payload.bootstrapThreadId,
-        },
-        replace: true,
-      });
-      handledBootstrapThreadIdRef.current = payload.bootstrapThreadId;
+      try {
+        await navigate({
+          to: "/$environmentId/$threadId",
+          params: {
+            environmentId: payload.environment.environmentId,
+            threadId: payload.bootstrapThreadId,
+          },
+          replace: true,
+        });
+      } finally {
+        launchNavigation.markBootstrapHandled(bootstrapKey);
+        launchNavigation.release("server-bootstrap");
+      }
     })().catch(() => undefined);
   });
 

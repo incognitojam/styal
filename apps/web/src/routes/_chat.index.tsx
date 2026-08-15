@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { LinkIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
@@ -14,7 +15,9 @@ import {
   useProjects,
   useThreadShells,
 } from "../state/entities";
+import { isBootstrapWelcomePending, useLaunchNavigationStore } from "../launchNavigationStore";
 import { useEnvironments } from "../state/environments";
+import { primaryServerWelcomeAtom } from "../state/server";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { cn } from "~/lib/utils";
@@ -40,32 +43,47 @@ function IndexDraftLanding() {
   const projects = useProjects();
   const threads = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
+  const primaryWelcome = useAtomValue(primaryServerWelcomeAtom);
+  const launchNavigationOwner = useLaunchNavigationStore((store) => store.owner);
+  const handledBootstrapKey = useLaunchNavigationStore((store) => store.handledBootstrapKey);
   const handleNewThread = useNewThreadHandler();
   const startingRef = useRef(false);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
 
+  const bootstrapRoutePending = isBootstrapWelcomePending(primaryWelcome, handledBootstrapKey);
   const mostRecentProject = useMemo(
     () =>
-      bootstrapped
+      bootstrapped && !bootstrapRoutePending
         ? (sortScopedProjectsForSidebar(projects, threads, "updated_at")[0] ?? null)
         : null,
-    [bootstrapped, projects, threads],
+    [bootstrapRoutePending, bootstrapped, projects, threads],
   );
 
   useEffect(() => {
-    if (mostRecentProject === null || startingRef.current) {
+    if (
+      mostRecentProject === null ||
+      startingRef.current ||
+      startState.failed ||
+      launchNavigationOwner !== null
+    ) {
+      return;
+    }
+    const { claim, release } = useLaunchNavigationStore.getState();
+    if (!claim("index-draft")) {
       return;
     }
     startingRef.current = true;
     void handleNewThread(scopeProjectRef(mostRecentProject.environmentId, mostRecentProject.id), {
       replace: true,
-    }).catch(() => {
-      startingRef.current = false;
-      setStartState((state) => ({ ...state, failed: true }));
-    });
-  }, [handleNewThread, mostRecentProject, startState.retryRequest]);
+    })
+      .catch(() => {
+        startingRef.current = false;
+        setStartState((state) => ({ ...state, failed: true }));
+      })
+      .finally(() => release("index-draft"));
+  }, [handleNewThread, launchNavigationOwner, mostRecentProject, startState.failed]);
 
-  if (!bootstrapped) {
+  if (!bootstrapped || bootstrapRoutePending) {
     return null;
   }
   if (mostRecentProject !== null) {
