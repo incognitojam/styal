@@ -176,7 +176,7 @@ describe("projectActivityPayload", () => {
         command: "fallback data",
         toolCallId: "tool-command",
         kind: "execute",
-        rawOutput: { exitCode: 7 },
+        rawOutput: { exitCode: 7, content: "first useful line" },
       },
     });
 
