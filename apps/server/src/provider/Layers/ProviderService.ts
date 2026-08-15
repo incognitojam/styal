@@ -140,6 +140,7 @@ function toRuntimePayloadFromSession(
   session: ProviderSession,
   extra?: {
     readonly modelSelection?: unknown;
+    readonly additionalInstructions?: string;
     readonly lastRuntimeEvent?: string;
     readonly lastRuntimeEventAt?: string;
   },
@@ -150,6 +151,9 @@ function toRuntimePayloadFromSession(
     activeTurnId: session.activeTurnId ?? null,
     lastError: session.lastError ?? null,
     ...(extra?.modelSelection !== undefined ? { modelSelection: extra.modelSelection } : {}),
+    ...(extra?.additionalInstructions !== undefined
+      ? { additionalInstructions: extra.additionalInstructions }
+      : {}),
     ...(extra?.lastRuntimeEvent !== undefined ? { lastRuntimeEvent: extra.lastRuntimeEvent } : {}),
     ...(extra?.lastRuntimeEventAt !== undefined
       ? { lastRuntimeEventAt: extra.lastRuntimeEventAt }
@@ -176,6 +180,19 @@ function readPersistedCwd(
   const rawCwd = "cwd" in runtimePayload ? runtimePayload.cwd : undefined;
   if (typeof rawCwd !== "string") return undefined;
   const trimmed = rawCwd.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function readPersistedAdditionalInstructions(
+  runtimePayload: ProviderSessionDirectory.ProviderRuntimeBinding["runtimePayload"],
+): string | undefined {
+  if (!runtimePayload || typeof runtimePayload !== "object" || Array.isArray(runtimePayload)) {
+    return undefined;
+  }
+  const raw =
+    "additionalInstructions" in runtimePayload ? runtimePayload.additionalInstructions : undefined;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
@@ -331,6 +348,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     threadId: ThreadId,
     extra?: {
       readonly modelSelection?: unknown;
+      readonly additionalInstructions?: string;
       readonly lastRuntimeEvent?: string;
       readonly lastRuntimeEventAt?: string;
     },
@@ -437,6 +455,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       const adapter = yield* registry.getByInstance(bindingInstanceId);
       const hasResumeCursor =
         input.binding.resumeCursor !== null && input.binding.resumeCursor !== undefined;
+      const persistedAdditionalInstructions = readPersistedAdditionalInstructions(
+        input.binding.runtimePayload,
+      );
       const hasActiveSession = yield* adapter.hasSession(input.binding.threadId);
       if (hasActiveSession) {
         const activeSessions = yield* adapter.listSessions();
@@ -447,6 +468,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           yield* upsertSessionBinding(
             { ...existing, providerInstanceId: bindingInstanceId },
             input.binding.threadId,
+            persistedAdditionalInstructions
+              ? { additionalInstructions: persistedAdditionalInstructions }
+              : undefined,
           );
           yield* analytics.record("provider.session.recovered", {
             provider: existing.provider,
@@ -481,6 +505,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           ...(persistedCwd ? { cwd: persistedCwd } : {}),
           ...(workspaceEnvironment ? { environment: workspaceEnvironment } : {}),
           ...(persistedModelSelection ? { modelSelection: persistedModelSelection } : {}),
+          ...(persistedAdditionalInstructions
+            ? { additionalInstructions: persistedAdditionalInstructions }
+            : {}),
           ...(hasResumeCursor ? { resumeCursor: input.binding.resumeCursor } : {}),
           runtimeMode: input.binding.runtimeMode ?? "full-access",
         })
@@ -496,6 +523,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       yield* upsertSessionBinding(
         { ...resumed, providerInstanceId: bindingInstanceId },
         input.binding.threadId,
+        persistedAdditionalInstructions
+          ? { additionalInstructions: persistedAdditionalInstructions }
+          : undefined,
       );
       yield* analytics.record("provider.session.recovered", {
         provider: resumed.provider,
@@ -705,6 +735,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         });
         yield* upsertSessionBinding(sessionWithInstance, threadId, {
           modelSelection: input.modelSelection,
+          ...(input.additionalInstructions
+            ? { additionalInstructions: input.additionalInstructions }
+            : {}),
         });
         yield* analytics.record("provider.session.started", {
           provider: sessionWithInstance.provider,

@@ -216,6 +216,7 @@ export function projectEvent(
             defaultModelSelection: payload.defaultModelSelection,
             defaultThreadEnvMode: null,
             faviconPath: payload.faviconPath ?? null,
+            additionalInstructions: payload.additionalInstructions ?? null,
             scripts: payload.scripts,
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
@@ -253,6 +254,9 @@ export function projectEvent(
                     : {}),
                   ...(payload.faviconPath !== undefined
                     ? { faviconPath: payload.faviconPath }
+                    : {}),
+                  ...(payload.additionalInstructions !== undefined
+                    ? { additionalInstructions: payload.additionalInstructions }
                     : {}),
                   ...(payload.scripts !== undefined ? { scripts: payload.scripts } : {}),
                   updatedAt: payload.updatedAt,

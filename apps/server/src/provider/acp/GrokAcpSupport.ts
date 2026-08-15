@@ -28,20 +28,25 @@ interface GrokAcpRuntimeInput extends Omit<
   readonly grokSettings: GrokAcpRuntimeGrokSettings | null | undefined;
   readonly environment?: NodeJS.ProcessEnv;
   readonly runtimeMode?: RuntimeMode;
+  readonly additionalInstructions?: string;
 }
 
-export function grokAcpSpawnArgs(runtimeMode?: RuntimeMode): ReadonlyArray<string> {
+export function grokAcpSpawnArgs(
+  runtimeMode?: RuntimeMode,
+  additionalInstructions?: string,
+): ReadonlyArray<string> {
+  const rules = additionalInstructions ? ["--rules", additionalInstructions] : [];
   switch (runtimeMode) {
     case "approval-required":
-      return ["--permission-mode", "default", "agent", "stdio"];
+      return [...rules, "--permission-mode", "default", "agent", "stdio"];
     case "auto-accept-edits":
-      return ["--permission-mode", "acceptEdits", "agent", "stdio"];
+      return [...rules, "--permission-mode", "acceptEdits", "agent", "stdio"];
     case "auto":
-      return ["--permission-mode", "auto", "agent", "stdio"];
+      return [...rules, "--permission-mode", "auto", "agent", "stdio"];
     case "full-access":
-      return ["agent", "--always-approve", "stdio"];
+      return [...rules, "agent", "--always-approve", "stdio"];
     default:
-      return ["agent", "stdio"];
+      return [...rules, "agent", "stdio"];
   }
 }
 
@@ -50,10 +55,11 @@ export function buildGrokAcpSpawnInput(
   cwd: string,
   environment?: NodeJS.ProcessEnv,
   runtimeMode?: RuntimeMode,
+  additionalInstructions?: string,
 ): AcpSessionRuntime.AcpSpawnInput {
   return {
     command: grokSettings?.binaryPath || "grok",
-    args: [...grokAcpSpawnArgs(runtimeMode)],
+    args: [...grokAcpSpawnArgs(runtimeMode, additionalInstructions)],
     cwd,
     env: {
       ...environment,
@@ -84,6 +90,7 @@ export const makeGrokAcpRuntime = (
           input.cwd,
           input.environment,
           input.runtimeMode,
+          input.additionalInstructions,
         ),
         authMethodId: resolveGrokAuthMethodId(input.environment),
       }).pipe(

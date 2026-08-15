@@ -244,6 +244,11 @@ export const ProjectFaviconPath = TrimmedNonEmptyString.check(
 );
 export type ProjectFaviconPath = typeof ProjectFaviconPath.Type;
 
+export const ProjectAdditionalInstructions = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(32_000),
+);
+export type ProjectAdditionalInstructions = typeof ProjectAdditionalInstructions.Type;
+
 export const OrchestrationProject = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,
@@ -255,6 +260,8 @@ export const OrchestrationProject = Schema.Struct({
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   // Optional on the wire so cached snapshots from older servers still decode.
   faviconPath: Schema.optional(Schema.NullOr(ProjectFaviconPath)),
+  // Optional on the wire so cached snapshots from older servers still decode.
+  additionalInstructions: Schema.optional(Schema.NullOr(ProjectAdditionalInstructions)),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -466,6 +473,7 @@ export const OrchestrationProjectShell = Schema.Struct({
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   // Optional on the wire so cached snapshots from older servers still decode.
   faviconPath: Schema.optional(Schema.NullOr(ProjectFaviconPath)),
+  additionalInstructions: Schema.optional(Schema.NullOr(ProjectAdditionalInstructions)),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -684,6 +692,7 @@ const ProjectMetaUpdateCommand = Schema.Struct({
   // Absent = leave unchanged; null = clear the override.
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   faviconPath: Schema.optional(Schema.NullOr(ProjectFaviconPath)),
+  additionalInstructions: Schema.optional(Schema.NullOr(ProjectAdditionalInstructions)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
 });
 
@@ -1134,6 +1143,8 @@ export const ProjectCreatedPayload = Schema.Struct({
   defaultModelSelection: Schema.NullOr(ModelSelection),
   // Optional so persisted events from older servers still decode.
   faviconPath: Schema.optional(Schema.NullOr(ProjectFaviconPath)),
+  // Optional so persisted events from older servers still decode.
+  additionalInstructions: Schema.optional(Schema.NullOr(ProjectAdditionalInstructions)),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -1147,6 +1158,7 @@ export const ProjectMetaUpdatedPayload = Schema.Struct({
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   faviconPath: Schema.optional(Schema.NullOr(ProjectFaviconPath)),
+  additionalInstructions: Schema.optional(Schema.NullOr(ProjectAdditionalInstructions)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
   updatedAt: IsoDateTime,
 });
