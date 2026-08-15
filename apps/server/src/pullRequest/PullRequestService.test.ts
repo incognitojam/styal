@@ -2947,6 +2947,27 @@ it.effect("carries an armed auto-merge through to the detail, and silence as sil
   }),
 );
 
+it.effect("carries the host's policy-aware merge readiness through to the detail", () =>
+  Effect.gen(function* () {
+    const service = yield* makeService({
+      projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
+      providers: [
+        fakeProvider("github", {
+          getChangeRequest: () =>
+            Effect.succeed({ ...changeRequestDetail(1), mergeReadiness: "blocked" }),
+        }),
+      ],
+    });
+
+    const detail = yield* service.detail({
+      projectId: "p1" as ProjectId,
+      repository: "acme/web",
+      number: 1,
+    });
+    assert.strictEqual(detail.mergeReadiness, "blocked");
+  }),
+);
+
 it("names an Azure DevOps repository by its own name, not its project path", () => {
   // `az repos pr list --repository` takes a name and detects the organisation and project from
   // the checkout; the recorded `org/project/_git/repo` path is refused, and the repository then

@@ -9,13 +9,22 @@
  * Deliberately hook-free — it draws what the detail already holds, so the panel keeps it mounted
  * behind the other tabs for nothing.
  */
-import type { PullRequestCheck } from "@t3tools/contracts";
-import { ArrowUpRightIcon, CircleDashedIcon, CircleDotIcon, HammerIcon } from "lucide-react";
+import type { PullRequestCheck, PullRequestMergeReadiness } from "@t3tools/contracts";
+import {
+  ArrowUpRightIcon,
+  CircleCheckIcon,
+  CircleDashedIcon,
+  CircleDotIcon,
+  CircleHelpIcon,
+  HammerIcon,
+  ShieldAlertIcon,
+} from "lucide-react";
 
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 
 import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
 import { pullRequestFindingKey, type PullRequestFinding } from "./pullRequestDetail.logic";
 import {
   PullRequestCheckStatusIcon,
@@ -64,11 +73,14 @@ export function PullRequestChecksNavButton({
 
 export function PullRequestChecksTab({
   checks,
+  mergeReadiness,
   pendingFinding,
   fixCheckLabel = "Fix",
   onFixFinding,
 }: {
   checks: ReadonlyArray<PullRequestCheck>;
+  /** The host's repository-policy-aware merge verdict, where it exposes one. */
+  mergeReadiness?: PullRequestMergeReadiness | undefined;
   /** The hand-off currently preparing, if any, so only the check it belongs to says so. */
   pendingFinding?: string | null;
   fixCheckLabel?: string;
@@ -78,6 +90,27 @@ export function PullRequestChecksTab({
   // Null for a set nobody can call passed or failed — every run skipped, say. The list still
   // reads, but there is no verdict to head it with.
   const rollup = state === null ? null : pullRequestChecksStatePresentation(state);
+  const mergePresentation =
+    mergeReadiness === undefined
+      ? null
+      : mergeReadiness === "ready"
+        ? {
+            label: "Ready to merge",
+            Icon: CircleCheckIcon,
+            toneClassName: "text-emerald-600 dark:text-emerald-300/90",
+          }
+        : mergeReadiness === "blocked"
+          ? {
+              label: "Merge blocked by repository requirements",
+              Icon: ShieldAlertIcon,
+              toneClassName: "text-amber-600 dark:text-amber-400/90",
+            }
+          : {
+              label: "Merge status unavailable",
+              Icon: CircleHelpIcon,
+              toneClassName: "text-muted-foreground",
+            };
+  const requiredCount = checks.filter((check) => check.required === true).length;
   const handoffPending = pendingFinding !== null && pendingFinding !== undefined;
   // A host can report the same named run more than once and checks carry no id. Keep the
   // occurrence beside the host-provided fields so repeated rows still receive distinct keys.
@@ -89,15 +122,34 @@ export function PullRequestChecksTab({
 
   return (
     <div className="h-full overflow-y-auto">
-      {rollup ? (
+      {mergePresentation || rollup ? (
         // The verdict rides the top of the scroll box the way the summary's section headings do,
         // so a long list of runs never scrolls its own answer out of sight.
-        <div className="sticky top-0 z-10 flex items-center gap-2 bg-background px-4 py-2.5">
-          <span className="min-w-0 flex-1 truncate text-sm font-medium">{rollup.label}</span>
-          <span className="inline-flex shrink-0 items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
-            <rollup.Icon aria-hidden className={cn("size-3.5 shrink-0", rollup.toneClassName)} />
-            {summarizePullRequestChecks(checks)}
-          </span>
+        <div className="sticky top-0 z-10 space-y-1 bg-background px-4 py-2.5">
+          {mergePresentation ? (
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <mergePresentation.Icon
+                aria-hidden
+                className={cn("size-3.5 shrink-0", mergePresentation.toneClassName)}
+              />
+              <span className="min-w-0 truncate">{mergePresentation.label}</span>
+            </div>
+          ) : null}
+          {rollup ? (
+            <div className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                {rollup.label}
+              </span>
+              <span className="inline-flex shrink-0 items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
+                <rollup.Icon
+                  aria-hidden
+                  className={cn("size-3.5 shrink-0", rollup.toneClassName)}
+                />
+                {requiredCount > 0 ? `${requiredCount} required · ` : null}
+                {summarizePullRequestChecks(checks)}
+              </span>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -127,6 +179,11 @@ export function PullRequestChecksTab({
                 <span className="min-w-0 flex-1 truncate" title={check.description ?? check.name}>
                   {check.name}
                 </span>
+                {check.required === true ? (
+                  <Badge size="sm" variant="warning" className="font-normal">
+                    Required
+                  </Badge>
+                ) : null}
                 <span className="shrink-0 text-muted-foreground">
                   {pullRequestCheckStatusLabel(check.status)}
                 </span>
