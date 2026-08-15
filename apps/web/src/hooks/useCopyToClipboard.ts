@@ -47,6 +47,33 @@ export class ClipboardReadError extends Schema.TaggedErrorClass<ClipboardReadErr
   }
 }
 
+// Monotonic count of clipboard writes observable from inside the app: every
+// successful write through this module, plus any DOM copy (Cmd+C on a
+// selection, copy-on-selection handlers) once tracking is installed. An
+// asynchronous copy captures the epoch when it starts and drops its result if
+// the epoch moved, so a slow fetch can never stomp something copied later.
+let clipboardWriteCount = 0;
+
+export function clipboardWriteEpoch(): number {
+  return clipboardWriteCount;
+}
+
+let copyEventTracked = false;
+
+export function ensureClipboardEpochTracking(): void {
+  if (copyEventTracked || typeof document === "undefined") {
+    return;
+  }
+  copyEventTracked = true;
+  document.addEventListener(
+    "copy",
+    () => {
+      clipboardWriteCount += 1;
+    },
+    true,
+  );
+}
+
 export async function writeTextToClipboard(value: string, target = "text") {
   if (
     typeof window === "undefined" ||
@@ -62,6 +89,7 @@ export async function writeTextToClipboard(value: string, target = "text") {
 
   try {
     await navigator.clipboard.writeText(value);
+    clipboardWriteCount += 1;
     return true;
   } catch (cause) {
     throw new ClipboardWriteError({

@@ -1,58 +1,51 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
-  ClipboardApiUnavailableError,
-  ClipboardWriteError,
+  clipboardWriteEpoch,
+  ensureClipboardEpochTracking,
   writeTextToClipboard,
 } from "./useCopyToClipboard";
 
-describe("writeTextToClipboard", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
+// Tests run in a node environment; stub the browser globals the module reads.
+function stubClipboardWriteText(implementation: () => Promise<void>) {
+  vi.stubGlobal("window", {});
+  vi.stubGlobal("navigator", { clipboard: { writeText: implementation } });
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("clipboardWriteEpoch", () => {
+  it("advances on a successful write and not on a failed one", async () => {
+    stubClipboardWriteText(() => Promise.resolve());
+    const before = clipboardWriteEpoch();
+    await writeTextToClipboard("hello");
+    expect(clipboardWriteEpoch()).toBe(before + 1);
+
+    stubClipboardWriteText(() => Promise.reject(new Error("denied")));
+    await expect(writeTextToClipboard("blocked")).rejects.toThrow();
+    expect(clipboardWriteEpoch()).toBe(before + 1);
   });
 
-  it("reports unavailable clipboard support with structural context", async () => {
-    vi.stubGlobal("window", {});
-    vi.stubGlobal("navigator", {});
-
-    const error = await writeTextToClipboard("plan contents", "plan").then(
-      () => undefined,
-      (cause: unknown) => cause,
-    );
-
-    expect(error).toBeInstanceOf(ClipboardApiUnavailableError);
-    expect(error).toMatchObject({
-      target: "plan",
-    });
-    expect((error as Error).message).not.toContain("plan contents");
+  it("does not advance for an empty value, which is never written", async () => {
+    stubClipboardWriteText(() => Promise.resolve());
+    const before = clipboardWriteEpoch();
+    await writeTextToClipboard("");
+    expect(clipboardWriteEpoch()).toBe(before);
   });
 
-  it("preserves the exact clipboard failure without exposing copied contents", async () => {
-    const cause = new Error("browser clipboard failure");
-    const writeText = vi.fn().mockRejectedValue(cause);
-    vi.stubGlobal("window", {});
-    vi.stubGlobal("navigator", { clipboard: { writeText } });
+  it("advances on DOM copy events once tracking is installed", () => {
+    const documentStub = new EventTarget();
+    vi.stubGlobal("document", documentStub);
+    ensureClipboardEpochTracking();
+    const before = clipboardWriteEpoch();
+    documentStub.dispatchEvent(new Event("copy"));
+    expect(clipboardWriteEpoch()).toBe(before + 1);
 
-    const error = await writeTextToClipboard("secret clipboard contents", "error-message").then(
-      () => undefined,
-      (failure: unknown) => failure,
-    );
-
-    expect(writeText).toHaveBeenCalledWith("secret clipboard contents");
-    expect(error).toBeInstanceOf(ClipboardWriteError);
-    expect(error).toMatchObject({
-      target: "error-message",
-      cause,
-    });
-    expect((error as Error).message).not.toContain("secret clipboard contents");
-  });
-
-  it("keeps empty values as a no-op when clipboard support is available", async () => {
-    const writeText = vi.fn();
-    vi.stubGlobal("window", {});
-    vi.stubGlobal("navigator", { clipboard: { writeText } });
-
-    await expect(writeTextToClipboard("", "plan")).resolves.toBe(false);
-    expect(writeText).not.toHaveBeenCalled();
+    // Installing again must not double-count.
+    ensureClipboardEpochTracking();
+    documentStub.dispatchEvent(new Event("copy"));
+    expect(clipboardWriteEpoch()).toBe(before + 2);
   });
 });
