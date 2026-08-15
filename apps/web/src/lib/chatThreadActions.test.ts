@@ -9,8 +9,20 @@ import {
 } from "./chatThreadActions";
 
 const ENVIRONMENT_ID = EnvironmentId.make("environment-1");
+const REMOTE_ENVIRONMENT_ID = EnvironmentId.make("environment-2");
 const PROJECT_ID = ProjectId.make("project-1");
 const FALLBACK_PROJECT_ID = ProjectId.make("project-2");
+const SCOPED_PROJECT_ID = ProjectId.make("project-3");
+
+/** A filter target whose group spans two environments. */
+const SCOPED_PROJECT_GROUP = {
+  environmentId: ENVIRONMENT_ID,
+  id: SCOPED_PROJECT_ID,
+  memberProjectRefs: [
+    scopeProjectRef(ENVIRONMENT_ID, SCOPED_PROJECT_ID),
+    scopeProjectRef(REMOTE_ENVIRONMENT_ID, SCOPED_PROJECT_ID),
+  ],
+};
 
 function createContext(overrides: Partial<ChatThreadActionContext> = {}): ChatThreadActionContext {
   return {
@@ -72,6 +84,45 @@ describe("chatThreadActions", () => {
     );
 
     expect(projectRef).toEqual(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID));
+  });
+
+  it("prefers the sidebar's project filter over the active thread project", () => {
+    const projectRef = resolveThreadActionProjectRef(
+      createContext({
+        activeThread: {
+          environmentId: ENVIRONMENT_ID,
+          projectId: PROJECT_ID,
+        },
+        scopedProjectGroup: SCOPED_PROJECT_GROUP,
+      }),
+    );
+
+    expect(projectRef).toEqual(scopeProjectRef(ENVIRONMENT_ID, SCOPED_PROJECT_ID));
+  });
+
+  it("stays on the active thread's group member when it belongs to the filtered group", () => {
+    const projectRef = resolveThreadActionProjectRef(
+      createContext({
+        activeThread: {
+          environmentId: REMOTE_ENVIRONMENT_ID,
+          projectId: SCOPED_PROJECT_ID,
+        },
+        scopedProjectGroup: SCOPED_PROJECT_GROUP,
+      }),
+    );
+
+    expect(projectRef).toEqual(scopeProjectRef(REMOTE_ENVIRONMENT_ID, SCOPED_PROJECT_ID));
+  });
+
+  it("uses the filtered project when there is no thread context at all", () => {
+    const projectRef = resolveThreadActionProjectRef(
+      createContext({
+        defaultProjectRef: null,
+        scopedProjectGroup: SCOPED_PROJECT_GROUP,
+      }),
+    );
+
+    expect(projectRef).toEqual(scopeProjectRef(ENVIRONMENT_ID, SCOPED_PROJECT_ID));
   });
 
   it("inherits only the project from context, never branch or worktree state", async () => {

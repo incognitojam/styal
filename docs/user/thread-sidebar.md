@@ -12,6 +12,17 @@ If reordering is unavailable for one environment, update the T3 Code server runn
 environment. Older servers can still pin and unpin threads, but do not understand synced ordering;
 their pinned threads keep the default newest-first order below the ones you have arranged.
 
+## Filtering by project
+
+The menu below the search box narrows the sidebar to a single project. While a project is
+selected, **New thread** creates in that project instead of asking which one you want, so you can
+pick a project once and keep working in it. The filter also decides which project counts as the
+current one for the **new thread in current project** shortcut and the command palette's **New
+thread in** action.
+
+The plain **new thread** shortcut still opens the project chooser, so a filter never takes away
+your ability to start work somewhere else. Choose **All projects** to clear the filter.
+
 ## Environment artwork
 
 Dev and Nightly environments can identify themselves with artwork at the top of the sidebar and in

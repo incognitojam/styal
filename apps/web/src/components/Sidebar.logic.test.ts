@@ -435,16 +435,50 @@ describe("isSidebarNestedLinkClick", () => {
 
 describe("shouldCreateNewThreadInCurrentProject", () => {
   it("creates directly on shift+click in a multi-project setup", () => {
-    expect(shouldCreateNewThreadInCurrentProject(true, 2)).toBe(true);
+    expect(
+      shouldCreateNewThreadInCurrentProject({
+        shiftKey: true,
+        projectGroupCount: 2,
+        hasProjectScope: false,
+      }),
+    ).toBe(true);
   });
 
-  it("opens the picker on a plain click in a multi-project setup", () => {
-    expect(shouldCreateNewThreadInCurrentProject(false, 2)).toBe(false);
+  it("opens the picker on a plain click in an unfiltered multi-project setup", () => {
+    expect(
+      shouldCreateNewThreadInCurrentProject({
+        shiftKey: false,
+        projectGroupCount: 2,
+        hasProjectScope: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("creates directly when the sidebar is filtered to one project", () => {
+    expect(
+      shouldCreateNewThreadInCurrentProject({
+        shiftKey: false,
+        projectGroupCount: 5,
+        hasProjectScope: true,
+      }),
+    ).toBe(true);
   });
 
   it("creates directly on any click with a single project", () => {
-    expect(shouldCreateNewThreadInCurrentProject(false, 1)).toBe(true);
-    expect(shouldCreateNewThreadInCurrentProject(true, 1)).toBe(true);
+    expect(
+      shouldCreateNewThreadInCurrentProject({
+        shiftKey: false,
+        projectGroupCount: 1,
+        hasProjectScope: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldCreateNewThreadInCurrentProject({
+        shiftKey: true,
+        projectGroupCount: 1,
+        hasProjectScope: false,
+      }),
+    ).toBe(true);
   });
 });
 
