@@ -47,7 +47,7 @@ export function PullRequestChecksNavButton({
       type="button"
       onClick={onSelect}
       aria-label={`Open checks: ${summary}`}
-      className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      className="ml-auto inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
     >
       {presentation ? (
         <presentation.Icon

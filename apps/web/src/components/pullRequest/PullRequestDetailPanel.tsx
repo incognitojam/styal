@@ -1733,7 +1733,7 @@ function PullRequestDetailPanelBody({
                     aria-pressed={tab === item.value}
                     onClick={() => setTab(item.value)}
                     className={cn(
-                      "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition-colors",
+                      "inline-flex cursor-pointer items-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition-colors",
                       tab === item.value
                         ? "bg-accent text-foreground"
                         : "text-muted-foreground hover:text-foreground",
