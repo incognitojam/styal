@@ -39,34 +39,96 @@ function isFailing(check: PullRequestCheck): boolean {
   return check.status === "failure" || check.status === "cancelled";
 }
 
+const MERGE_POLICY_PRESENTATION = {
+  ready: {
+    label: "Ready to merge",
+    compactLabel: "Ready",
+    Icon: CircleCheckIcon,
+    toneClassName: "text-emerald-600 dark:text-emerald-300/90",
+  },
+  blocked: {
+    label: "Merge blocked",
+    compactLabel: "Merge blocked",
+    Icon: ShieldAlertIcon,
+    toneClassName: "text-amber-600 dark:text-amber-400/90",
+  },
+} as const;
+
+export function pullRequestMergeVerdict({
+  checks,
+  mergeReadiness,
+  compact = false,
+}: {
+  checks: ReadonlyArray<PullRequestCheck>;
+  mergeReadiness?: PullRequestMergeReadiness | undefined;
+  compact?: boolean;
+}) {
+  const checksSummary = summarizePullRequestChecks(checks);
+  if (mergeReadiness !== "ready" && mergeReadiness !== "blocked") {
+    return { policy: null, label: checksSummary, health: null } as const;
+  }
+
+  const presentation = MERGE_POLICY_PRESENTATION[mergeReadiness];
+  const label = compact ? presentation.compactLabel : presentation.label;
+  const allPassed = checks.every((check) => check.status === "success");
+  const health = allPassed
+    ? null
+    : compact
+      ? checksSummary.replace(/^(\d+) of \d+ /, "$1 ")
+      : checksSummary;
+  return {
+    policy: mergeReadiness,
+    label,
+    Icon: presentation.Icon,
+    toneClassName: presentation.toneClassName,
+    health,
+  } as const;
+}
+
 /** The tab bar's at-a-glance result doubles as the shortest route into the checks themselves. */
 export function PullRequestChecksNavButton({
   checks,
+  mergeReadiness,
   onSelect,
 }: {
   checks: ReadonlyArray<PullRequestCheck>;
+  /** The host's repository-policy-aware merge verdict, where it exposes one. */
+  mergeReadiness?: PullRequestMergeReadiness | undefined;
   onSelect: () => void;
 }) {
-  const summary = summarizePullRequestChecks(checks);
+  const verdict = pullRequestMergeVerdict({ checks, mergeReadiness });
   const state = pullRequestChecksState(checks);
-  const presentation = state === null ? null : pullRequestChecksStatePresentation(state);
+  const checksPresentation = state === null ? null : pullRequestChecksStatePresentation(state);
+  const Icon = verdict.policy === null ? (checksPresentation?.Icon ?? CircleDotIcon) : verdict.Icon;
+  const toneClassName =
+    verdict.policy === null ? checksPresentation?.toneClassName : verdict.toneClassName;
+  const speech = verdict.health === null ? verdict.label : `${verdict.label} · ${verdict.health}`;
 
   return (
     <button
       type="button"
       onClick={onSelect}
-      aria-label={`Open checks: ${summary}`}
-      className="ml-auto inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      aria-label={`Open checks: ${speech}`}
+      className="ml-auto inline-flex min-w-0 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
     >
-      {presentation ? (
-        <presentation.Icon
-          aria-hidden
-          className={cn("size-3.5 shrink-0", presentation.toneClassName)}
-        />
-      ) : (
-        <CircleDotIcon aria-hidden className="size-3.5 shrink-0" />
+      <Icon aria-hidden className={cn("size-3.5 shrink-0", toneClassName)} />
+      <span className={cn("min-w-0 truncate", verdict.policy !== null && "font-medium")}>
+        {verdict.label}
+      </span>
+      {verdict.health === null ? null : (
+        <>
+          <span aria-hidden className="shrink-0 text-muted-foreground/50">
+            ·
+          </span>
+          {checksPresentation === null ? null : (
+            <checksPresentation.Icon
+              aria-hidden
+              className={cn("size-3.5 shrink-0", checksPresentation.toneClassName)}
+            />
+          )}
+          <span className="shrink-0 tabular-nums">{verdict.health}</span>
+        </>
       )}
-      <span>{summary}</span>
     </button>
   );
 }
