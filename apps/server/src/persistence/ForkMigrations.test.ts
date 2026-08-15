@@ -48,7 +48,10 @@ legacyForkLayer("ForkMigrations legacy fork upgrade", (it) => {
 
       assert.isTrue(result.repairedLegacyHistory);
       assert.deepStrictEqual(result.upstream, [[40, "ProjectionProjectFaviconPath"]]);
-      assert.deepStrictEqual(result.fork, [[2, "WorkspacePortAllocations"]]);
+      assert.deepStrictEqual(result.fork, [
+        [2, "WorkspacePortAllocations"],
+        [3, "ProjectAdditionalInstructions"],
+      ]);
 
       const upstreamHistory = yield* sql<{
         readonly migration_id: number;
@@ -81,6 +84,7 @@ legacyForkLayer("ForkMigrations legacy fork upgrade", (it) => {
       assert.deepStrictEqual(forkHistory, [
         { migration_id: 1, name: "ComposerDrafts" },
         { migration_id: 2, name: "WorkspacePortAllocations" },
+        { migration_id: 3, name: "ProjectAdditionalInstructions" },
       ]);
 
       const projectColumns = yield* sql<{ readonly name: string }>`
@@ -88,7 +92,7 @@ legacyForkLayer("ForkMigrations legacy fork upgrade", (it) => {
       `;
       assert.includeMembers(
         projectColumns.map(({ name }) => name),
-        ["default_thread_env_mode", "favicon_path"],
+        ["default_thread_env_mode", "favicon_path", "additional_instructions"],
       );
 
       const draftRows = yield* sql<{
@@ -199,6 +203,7 @@ upstreamLayer("ForkMigrations canonical upstream upgrade", (it) => {
       assert.deepStrictEqual(forkHistory, [
         { migration_id: 1, name: "ComposerDrafts" },
         { migration_id: 2, name: "WorkspacePortAllocations" },
+        { migration_id: 3, name: "ProjectAdditionalInstructions" },
       ]);
     }),
   );
@@ -223,5 +228,6 @@ it("keeps fork migrations out of the upstream manifest", () => {
   assert.deepStrictEqual(forkMigrationManifest, [
     [1, "ComposerDrafts"],
     [2, "WorkspacePortAllocations"],
+    [3, "ProjectAdditionalInstructions"],
   ]);
 });

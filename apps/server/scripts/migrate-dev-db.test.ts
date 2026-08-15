@@ -208,7 +208,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
       );
       assert.includeMembers(
         migrated.projectColumns.map(({ name }) => name),
-        ["default_thread_env_mode", "favicon_path"],
+        ["default_thread_env_mode", "favicon_path", "additional_instructions"],
       );
       assert.deepStrictEqual(migrated.upstreamHistory, [
         {
@@ -223,6 +223,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
       assert.deepStrictEqual(migrated.forkHistory, [
         { migration_id: 1, name: "ComposerDrafts" },
         { migration_id: 2, name: "WorkspacePortAllocations" },
+        { migration_id: 3, name: "ProjectAdditionalInstructions" },
       ]);
       assert.deepStrictEqual(migrated.drafts, [{ thread_id: "stopped-thread" }]);
     }),
