@@ -552,10 +552,11 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.runtimeMode).toBe("approval-required");
   });
 
-  it("adopts a pending follow-up when the provider keeps it on the active turn", async () => {
+  it("adopts a Codex follow-up when the response id differs from the retained active turn", async () => {
     const harness = await createHarness();
     const threadId = ThreadId.make("thread-1");
     const activeTurnId = asTurnId("turn-active");
+    const queuedFollowUpTurnId = asTurnId("turn-follow-up");
     const nextTurnId = asTurnId("turn-next");
     const startedAt = "2026-01-01T00:00:00.000Z";
     const followUpAt = "2026-01-01T00:00:01.000Z";
@@ -595,7 +596,9 @@ describe("ProviderCommandReactor", () => {
     harness.sendTurn.mockReturnValueOnce(
       Effect.succeed({
         threadId,
-        turnId: activeTurnId,
+        // Codex returns the queued response id while its runtime session
+        // deliberately retains the turn that is active right now.
+        turnId: queuedFollowUpTurnId,
       }),
     );
 
