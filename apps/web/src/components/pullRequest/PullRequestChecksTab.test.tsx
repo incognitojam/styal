@@ -87,6 +87,7 @@ describe("PullRequestChecksNavButton", () => {
 
     expect(element.type).toBe("button");
     expect(props["aria-label"]).toBe("Open checks: 1 of 2 failing");
+    expect(props.className).toContain("cursor-pointer");
     expect(props.className).toContain("hover:bg-accent");
 
     props.onClick();
