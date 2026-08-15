@@ -1,6 +1,6 @@
 import type { UsageProviderKind } from "@t3tools/contracts";
-import { CheckIcon, RefreshCwIcon, XIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { CheckIcon, InfoIcon, RefreshCwIcon, XIcon } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import type { DailyTotals, HourlyTotals } from "@t3tools/shared/usageMerge";
 
@@ -8,19 +8,30 @@ import { isElectron } from "../../env";
 import { cn } from "../../lib/utils";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
 import {
+  estimateUsageEmissionsGrams,
   enumerateDays,
   enumerateHourStarts,
   formatCount,
   formatDateTimeShort,
   formatDayShort,
+  formatEmissionsGrams,
   formatHourShort,
   formatPercent,
   formatTokens,
+  formatUsageEmissionsComparison,
   formatUsd,
   makeWindow,
+  USAGE_EMISSIONS_GRAMS_PER_1K_OUTPUT_TOKENS,
 } from "@t3tools/shared/usageFormat";
 import { ScrollArea } from "../ui/scroll-area";
 import { Button } from "../ui/button";
+import {
+  Popover,
+  PopoverDescription,
+  PopoverPopup,
+  PopoverTitle,
+  PopoverTrigger,
+} from "../ui/popover";
 import { SidebarInset } from "../ui/sidebar";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
@@ -83,6 +94,7 @@ export function UsagePage() {
   const periodAverage = activePeriods === 0 ? 0 : merged.totalTokens / activePeriods;
   const observedInput = merged.uncachedInputTokens + merged.cachedInputTokens;
   const cachedShare = observedInput === 0 ? 0 : merged.cachedInputTokens / observedInput;
+  const emissionsGrams = estimateUsageEmissionsGrams(merged.outputTokens);
   const selectWindow = (days: number) => {
     setWindowSelection({
       days,
@@ -278,7 +290,7 @@ export function UsagePage() {
                   </div>
                 </section>
 
-                <section className="grid grid-cols-2 gap-px border-y border-border bg-border md:grid-cols-5">
+                <section className="grid grid-cols-2 gap-px border-y border-border bg-border md:grid-cols-3 lg:grid-cols-6">
                   <Metric
                     label="Processed tokens"
                     value={formatTokens(merged.totalTokens)}
@@ -307,6 +319,12 @@ export function UsagePage() {
                         ? `${(merged.costQuality.cacheSavingsUsd / merged.costUsd).toFixed(1)}x the raw token cost`
                         : "vs full input rates"
                     }
+                  />
+                  <Metric
+                    label="Estimated CO₂"
+                    value={`≈${formatEmissionsGrams(emissionsGrams)}`}
+                    detail={formatUsageEmissionsComparison(emissionsGrams)}
+                    info={<EmissionsMethodology />}
                   />
                 </section>
 
@@ -458,17 +476,60 @@ function Metric({
   label,
   value,
   detail,
+  info,
 }: {
   readonly label: string;
   readonly value: string;
   readonly detail: string;
+  /** Optional affordance rendered beside the label, for figures that need a caveat. */
+  readonly info?: ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-0.5 bg-background px-4 py-3">
-      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+        {label}
+        {info}
+      </span>
       <span className="text-lg text-foreground tabular-nums">{value}</span>
       <span className="text-xs text-muted-foreground">{detail}</span>
     </div>
+  );
+}
+
+/**
+ * The emissions figure is directional, and the comparison under it invites
+ * more trust than a token-level estimate deserves. The assumptions stay one
+ * click away rather than crowding the strip.
+ */
+function EmissionsMethodology() {
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            aria-label="How estimated CO₂ is calculated"
+            className="-m-1 flex cursor-pointer items-center rounded-sm p-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background data-popup-open:text-foreground"
+          />
+        }
+      >
+        <InfoIcon className="size-3.5" aria-hidden />
+      </PopoverTrigger>
+      <PopoverPopup align="start" className="w-72 max-w-full" side="top">
+        <div className="flex flex-col gap-2">
+          <PopoverTitle className="text-sm font-medium leading-none">
+            How this is estimated
+          </PopoverTitle>
+          <PopoverDescription className="text-xs leading-relaxed">
+            Rough estimate based on generated tokens. Uses{" "}
+            {USAGE_EMISSIONS_GRAMS_PER_1K_OUTPUT_TOKENS.toFixed(2)} g CO₂ per 1,000 output tokens.
+            Actual emissions vary by model, hardware, data center, utilization, and energy source.
+            Excludes training, hardware manufacture, networking, local devices, and other lifecycle
+            emissions.
+          </PopoverDescription>
+        </div>
+      </PopoverPopup>
+    </Popover>
   );
 }
 
@@ -625,16 +686,21 @@ function UsageSkeleton({ resolution }: { readonly resolution: "day" | "hour" }) 
         </div>
       </section>
 
-      <section className="grid grid-cols-2 gap-px border-y border-border bg-border md:grid-cols-5">
-        {["Processed tokens", "Cached input", "Uncached input", "Output", "Cache savings"].map(
-          (label) => (
-            <div key={label} className="flex flex-col gap-0.5 bg-background px-4 py-3">
-              <span className="text-xs text-muted-foreground">{label}</span>
-              <div className="my-1 h-5 w-16 rounded-sm bg-muted" />
-              <div className="h-3 w-24 rounded-sm bg-muted" />
-            </div>
-          ),
-        )}
+      <section className="grid grid-cols-2 gap-px border-y border-border bg-border md:grid-cols-3 lg:grid-cols-6">
+        {[
+          "Processed tokens",
+          "Cached input",
+          "Uncached input",
+          "Output",
+          "Cache savings",
+          "Estimated CO₂",
+        ].map((label) => (
+          <div key={label} className="flex flex-col gap-0.5 bg-background px-4 py-3">
+            <span className="text-xs text-muted-foreground">{label}</span>
+            <div className="my-1 h-5 w-16 rounded-sm bg-muted" />
+            <div className="h-3 w-24 rounded-sm bg-muted" />
+          </div>
+        ))}
       </section>
     </>
   );
