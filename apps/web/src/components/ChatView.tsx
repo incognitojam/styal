@@ -121,6 +121,7 @@ import {
   type Thread,
   type TurnDiffSummary,
 } from "../types";
+import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { useTheme } from "../hooks/useTheme";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
@@ -3664,7 +3665,7 @@ function ChatViewContent(props: ChatViewProps) {
       return;
     }
 
-    void navigator.clipboard.writeText(relativePath).then(
+    void writeTextToClipboard(relativePath).then(
       () => {
         toastManager.add({
           type: "success",
