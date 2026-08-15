@@ -95,7 +95,11 @@ import { PullRequestActivityUnavailableState } from "./PullRequestActivityUnavai
 import { DiffPanelLoadingState } from "../DiffPanelShell";
 import { PullRequestsUnavailableState } from "./PullRequestsUnavailableState";
 import type { PullRequestAskSelectionInput } from "./PullRequestCodeTab";
-import { PullRequestChecksNavButton, PullRequestChecksTab } from "./PullRequestChecksTab";
+import {
+  PullRequestChecksNavButton,
+  PullRequestChecksTab,
+  pullRequestMergeVerdict,
+} from "./PullRequestChecksTab";
 import { openOnHostLabel, showPullRequestLinkContextMenu } from "./pullRequestLinkContextMenu";
 import { PullRequestSummaryTab } from "./PullRequestSummaryTab";
 import { PullRequestTimelineTab } from "./PullRequestTimelineTab";
@@ -129,7 +133,6 @@ import {
   PullRequestMetaLine,
   pullRequestChecksState,
   resolvePullRequestState,
-  summarizePullRequestChecks,
 } from "./pullRequestPresentation";
 
 type DetailTab = "summary" | "checks" | "timeline" | "code";
@@ -1104,8 +1107,18 @@ function PullRequestDetailPanelBody({
   const statePresentation = detail
     ? resolvePullRequestState({ state: detail.state, isDraft: detail.isDraft })
     : null;
-  const checksSummary = detail ? summarizePullRequestChecks(detail.checks) : null;
   const checksState = detail ? pullRequestChecksState(detail.checks) : null;
+  const mergeVerdict = detail
+    ? pullRequestMergeVerdict({
+        checks: detail.checks,
+        mergeReadiness: detail.mergeReadiness,
+        compact: true,
+      })
+    : null;
+  const checksMark =
+    detail && checksState !== null ? (
+      <PullRequestChecksPopover checks={detail.checks} checksState={checksState} />
+    ) : null;
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-background">
@@ -1186,12 +1199,28 @@ function PullRequestDetailPanelBody({
                     <TriangleAlertIcon className="size-3" />
                     Conflicts
                   </Badge>
-                ) : checksSummary ? (
+                ) : mergeVerdict ? (
                   <span className="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground">
-                    {detail && checksState !== null ? (
-                      <PullRequestChecksPopover checks={detail.checks} checksState={checksState} />
-                    ) : null}
-                    {checksSummary}
+                    {mergeVerdict.policy === null ? (
+                      checksMark
+                    ) : (
+                      <mergeVerdict.Icon
+                        aria-hidden
+                        className={cn("size-3 shrink-0", mergeVerdict.toneClassName)}
+                      />
+                    )}
+                    <span className={cn(mergeVerdict.policy !== null && "font-medium")}>
+                      {mergeVerdict.label}
+                    </span>
+                    {mergeVerdict.health === null ? null : (
+                      <>
+                        <span aria-hidden className="text-muted-foreground/50">
+                          ·
+                        </span>
+                        {checksMark}
+                        <span className="tabular-nums">{mergeVerdict.health}</span>
+                      </>
+                    )}
                   </span>
                 ) : null}
               </>
@@ -1762,6 +1791,7 @@ function PullRequestDetailPanelBody({
                 {tab === "summary" ? (
                   <PullRequestChecksNavButton
                     checks={detail.checks}
+                    mergeReadiness={detail.mergeReadiness}
                     onSelect={() => setTab("checks")}
                   />
                 ) : tab === "timeline" ? (
