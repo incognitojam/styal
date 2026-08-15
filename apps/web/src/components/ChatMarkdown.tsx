@@ -1410,7 +1410,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
         return;
       }
 
-      void navigator.clipboard.writeText(value).then(
+      void writeTextToClipboard(value).then(
         () => {
           toastManager.add({
             type: "success",

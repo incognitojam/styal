@@ -44,6 +44,13 @@ describe("buildThreadActionMenuItems", () => {
     expect(allIds(baseState)).not.toContain("copy-branch");
   });
 
+  it("nests transcript and metadata actions under Copy", () => {
+    expect(ids(baseState)).toContain("copy");
+    expect(allIds(baseState)).toEqual(
+      expect.arrayContaining(["copy-transcript", "copy-path", "copy-thread-id"]),
+    );
+  });
+
   it("flips lifecycle labels with thread state", () => {
     expect(ids({ ...baseState, isPinned: true, isSettled: true, isSnoozed: true })).toEqual(
       expect.arrayContaining(["unpin", "unsettle", "unsnooze"]),
