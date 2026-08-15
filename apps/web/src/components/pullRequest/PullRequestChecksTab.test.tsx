@@ -7,7 +7,11 @@ import type { PullRequestCheck } from "@t3tools/contracts";
 import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { PullRequestChecksNavButton, PullRequestChecksTab } from "./PullRequestChecksTab";
+import {
+  PullRequestChecksNavButton,
+  PullRequestChecksTab,
+  pullRequestMergeVerdict,
+} from "./PullRequestChecksTab";
 import { pullRequestFindingKey } from "./pullRequestDetail.logic";
 
 function textOf(node: ReactNode): string {
@@ -23,6 +27,22 @@ function check(overrides: Partial<PullRequestCheck> = {}): PullRequestCheck {
 
 function render(props: Parameters<typeof PullRequestChecksTab>[0]): string {
   return textOf(PullRequestChecksTab(props));
+}
+
+/** One failure among nine runs: the pairing the tab bar has to keep both halves of. */
+function nineChecksOneFailing(): ReadonlyArray<PullRequestCheck> {
+  return [
+    check({ name: "typecheck", status: "failure" }),
+    ...Array.from({ length: 8 }, (_, index) => check({ name: `build-${index}` })),
+  ];
+}
+
+function navButton(props: Parameters<typeof PullRequestChecksNavButton>[0]) {
+  const element = PullRequestChecksNavButton(props);
+  return {
+    text: textOf(element),
+    props: element.props as { readonly "aria-label": string },
+  };
 }
 
 describe("PullRequestChecksTab", () => {
@@ -128,5 +148,27 @@ describe("PullRequestChecksNavButton", () => {
 
     props.onClick();
     expect(onSelect).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["ready", nineChecksOneFailing(), "Ready to merge · 1 of 9 failing"],
+    ["blocked", nineChecksOneFailing(), "Merge blocked · 1 of 9 failing"],
+    ["ready", [check()], "Ready to merge"],
+    ["blocked", [check()], "Merge blocked"],
+    ["unknown", nineChecksOneFailing(), "1 of 9 failing"],
+    [undefined, nineChecksOneFailing(), "1 of 9 failing"],
+  ] as const)("pairs %s policy with check health", (mergeReadiness, checks, expected) => {
+    const { props } = navButton({ checks, mergeReadiness, onSelect: () => {} });
+    expect(props["aria-label"]).toBe(`Open checks: ${expected}`);
+  });
+
+  it("compresses the condensed title-row summary", () => {
+    expect(
+      pullRequestMergeVerdict({
+        checks: nineChecksOneFailing(),
+        mergeReadiness: "ready",
+        compact: true,
+      }),
+    ).toMatchObject({ policy: "ready", label: "Ready", health: "1 failing" });
   });
 });
