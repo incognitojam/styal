@@ -41,6 +41,42 @@ describe("PullRequestChecksTab", () => {
     expect(text).toContain("Passed");
   });
 
+  it("distinguishes required checks and reports the policy-aware merge verdict", () => {
+    const text = render({
+      mergeReadiness: "blocked",
+      checks: [check({ required: true }), check({ name: "lint", required: false })],
+    });
+
+    expect(text).toContain("Merge blocked by repository requirements");
+    expect(text).toContain("1 required");
+    expect(text).toContain("Required");
+    expect(text).not.toContain("Optional");
+  });
+
+  it("says when repository policy considers the pull request ready", () => {
+    expect(render({ mergeReadiness: "ready", checks: [check({ required: true })] })).toContain(
+      "Ready to merge",
+    );
+  });
+
+  it("shows a required check that has not reported as waiting, not running", () => {
+    const text = render({
+      checks: [
+        check({
+          name: "security",
+          status: "expected",
+          description: "Waiting for status to be reported",
+          required: true,
+        }),
+      ],
+    });
+
+    expect(text).toContain("Some checks are still pending");
+    expect(text).toContain("1 of 1 waiting");
+    expect(text).toContain("Waiting to be reported");
+    expect(text).toContain("Required");
+  });
+
   it("offers the fix only on the checks that failed", () => {
     const failing = check({ name: "typecheck", status: "failure" });
     const text = render({
