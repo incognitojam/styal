@@ -12,6 +12,12 @@ import { threadSnapshotCommands } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 
+// Shared across hook instances (sidebar and chat header dispatch through
+// separate instances): only the most recent copy request may touch the
+// clipboard. Without this, a slow fetch for one thread lands after a quicker
+// copy of another and silently overwrites it with the wrong transcript.
+let latestRequestId = 0;
+
 /**
  * Copies a thread's conversation to the clipboard as markdown. Fetches a full
  * snapshot on demand instead of reading cached detail state, which only holds
@@ -43,10 +49,16 @@ export function useCopyThreadTranscript() {
 
   return useCallback(
     async (threadRef: ScopedThreadRef) => {
+      const requestId = ++latestRequestId;
       const result = await fetchSnapshot({
         environmentId: threadRef.environmentId,
         input: { threadId: threadRef.threadId },
       });
+      // Superseded by a newer copy while fetching: the newer request owns the
+      // clipboard, so drop this result without writing or toasting.
+      if (requestId !== latestRequestId) {
+        return;
+      }
       if (result._tag === "Failure") {
         if (!isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
