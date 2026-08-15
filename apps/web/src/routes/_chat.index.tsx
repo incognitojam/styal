@@ -15,7 +15,11 @@ import {
   useProjects,
   useThreadShells,
 } from "../state/entities";
-import { isBootstrapWelcomePending, useLaunchNavigationStore } from "../launchNavigationStore";
+import {
+  indexDraftStartNeedsRetry,
+  isBootstrapWelcomePending,
+  useLaunchNavigationStore,
+} from "../launchNavigationStore";
 import { useEnvironments } from "../state/environments";
 import { primaryServerWelcomeAtom } from "../state/server";
 import { APP_DISPLAY_NAME } from "~/branding";
@@ -76,6 +80,13 @@ function IndexDraftLanding() {
     void handleNewThread(scopeProjectRef(mostRecentProject.environmentId, mostRecentProject.id), {
       replace: true,
     })
+      .then((result) => {
+        if (indexDraftStartNeedsRetry(result)) {
+          // A concurrent draft operation won while handleNewThread awaited
+          // defaults. Let its route land, or retry if this index stays mounted.
+          startingRef.current = false;
+        }
+      })
       .catch(() => {
         startingRef.current = false;
         setStartState((state) => ({ ...state, failed: true }));

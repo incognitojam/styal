@@ -55,7 +55,7 @@ import {
   createKeybindingsUpdateToastController,
   type KeybindingsUpdateToastController,
 } from "../components/KeybindingsUpdateToast.logic";
-import { bootstrapWelcomeKey, useLaunchNavigationStore } from "../launchNavigationStore";
+import { decideBootstrapLaunch, useLaunchNavigationStore } from "../launchNavigationStore";
 
 export const Route = createRootRoute({
   beforeLoad: async ({ location }) => {
@@ -357,23 +357,26 @@ function EventRouter() {
         );
       useUiStateStore.getState().setProjectExpanded(bootstrapProjectKey, true);
 
-      const bootstrapKey = bootstrapWelcomeKey(payload);
-      if (bootstrapKey === null) {
-        return;
-      }
       const launchNavigation = useLaunchNavigationStore.getState();
-      if (launchNavigation.handledBootstrapKey === bootstrapKey) {
+      const decision = decideBootstrapLaunch({
+        welcome: payload,
+        handledBootstrapKey: launchNavigation.handledBootstrapKey,
+        pathname: readPathname(),
+        owner: launchNavigation.owner,
+      });
+      if (decision.type === "ignore") {
         return;
       }
-      if (readPathname() !== "/") {
-        launchNavigation.markBootstrapHandled(bootstrapKey);
+      if (decision.type === "mark-handled") {
+        launchNavigation.markBootstrapHandled(decision.bootstrapKey);
         return;
       }
       if (!launchNavigation.claim("server-bootstrap")) {
-        // Another automatic route already owns the initial screen. A late
-        // bootstrap welcome is launch guidance, not permission to interrupt
-        // a draft that may already be receiving user input.
-        launchNavigation.markBootstrapHandled(bootstrapKey);
+        // The server deliberately publishes its cwd bootstrap separately from
+        // the plain welcome. Once cached-state restoration owns the screen,
+        // that later launch hint is best-effort and cannot interrupt a draft
+        // that may already be receiving user input.
+        launchNavigation.markBootstrapHandled(decision.bootstrapKey);
         return;
       }
       try {
@@ -386,7 +389,7 @@ function EventRouter() {
           replace: true,
         });
       } finally {
-        launchNavigation.markBootstrapHandled(bootstrapKey);
+        launchNavigation.markBootstrapHandled(decision.bootstrapKey);
         launchNavigation.release("server-bootstrap");
       }
     })().catch(() => undefined);

@@ -1,7 +1,12 @@
 import type { ServerLifecycleWelcomePayload } from "@t3tools/contracts";
 import { create } from "zustand";
 
-type LaunchNavigationOwner = "index-draft" | "server-bootstrap";
+export type LaunchNavigationOwner = "index-draft" | "server-bootstrap";
+
+export type BootstrapLaunchDecision =
+  | { readonly type: "ignore" }
+  | { readonly type: "mark-handled"; readonly bootstrapKey: string }
+  | { readonly type: "navigate"; readonly bootstrapKey: string };
 
 interface LaunchNavigationState {
   readonly owner: LaunchNavigationOwner | null;
@@ -24,6 +29,30 @@ export function isBootstrapWelcomePending(
 ): boolean {
   const key = bootstrapWelcomeKey(welcome);
   return key !== null && key !== handledBootstrapKey;
+}
+
+export function decideBootstrapLaunch(input: {
+  readonly welcome: ServerLifecycleWelcomePayload | null;
+  readonly handledBootstrapKey: string | null;
+  readonly pathname: string;
+  readonly owner: LaunchNavigationOwner | null;
+}): BootstrapLaunchDecision {
+  const bootstrapKey = bootstrapWelcomeKey(input.welcome);
+  if (bootstrapKey === null || bootstrapKey === input.handledBootstrapKey) {
+    return { type: "ignore" };
+  }
+  if (input.pathname !== "/" || input.owner !== null) {
+    // autoBootstrapProjectFromCwd publishes a later launch hint separately
+    // from the plain welcome. It is intentionally best-effort once cached
+    // restoration owns the root: launch context cannot interrupt user input.
+    return { type: "mark-handled", bootstrapKey };
+  }
+  return { type: "navigate", bootstrapKey };
+}
+
+/** A null result means another draft operation won an await-time race. */
+export function indexDraftStartNeedsRetry(result: unknown): boolean {
+  return result === null;
 }
 
 export const useLaunchNavigationStore = create<LaunchNavigationState>()((set, get) => ({
