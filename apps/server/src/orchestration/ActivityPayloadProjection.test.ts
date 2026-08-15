@@ -370,7 +370,7 @@ describe("projectActivityPayload command exit codes", () => {
     expect(JSON.stringify(projected.payload)).not.toContain("sensitive input");
   });
 
-  it("retains a Codex command exit code while dropping command output", () => {
+  it("retains a Codex command exit code with a compact output summary", () => {
     const projected = projectActivityPayload(
       commandActivity({
         completedAtMs: 1_785_974_254_706,
@@ -388,13 +388,13 @@ describe("projectActivityPayload command exit codes", () => {
         item: {
           command: "/bin/zsh -lc 'echo ping'",
           exitCode: 0,
+          aggregatedOutput: "ping",
         },
       },
     });
-    expect(JSON.stringify(projected.payload)).not.toContain("aggregatedOutput");
   });
 
-  it("retains an ACP command exit code while dropping command output", () => {
+  it("retains an ACP command exit code with a compact output summary", () => {
     const projected = projectActivityPayload(
       commandActivity({
         kind: "execute",
@@ -413,6 +413,7 @@ describe("projectActivityPayload command exit codes", () => {
         command: "bun run check",
         rawOutput: {
           exitCode: 17,
+          content: "check failed",
         },
       },
     });
