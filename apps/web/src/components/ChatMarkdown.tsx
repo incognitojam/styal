@@ -71,6 +71,7 @@ import {
   resolveExternalWebLinkHost,
   showExternalLinkContextMenu,
 } from "./chat/externalLinkContextMenu";
+import { shouldOpenLinkInIntegratedBrowser } from "./chat/loopbackLinkPreview";
 import { hasSpecificPierreIconForFileName, syntheticFileNameForLanguageId } from "../pierre-icons";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { Button } from "./ui/button";
@@ -1825,6 +1826,21 @@ function ChatMarkdown({
     },
     [openPreview, threadRef],
   );
+  // Where a left click opened the integrated browser and it could not be opened, the click still
+  // asked for the link: fall back to the browser the link would have used on its own.
+  const openLinkInIntegratedBrowser = useCallback(
+    async (url: string) => {
+      const result = await openExternalLinkInPreview(url);
+      if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
+      reportMarkdownActionFailure({ operation: "open-link-in-preview", target: url }, result.cause);
+      try {
+        await readLocalApi()?.shell.openExternal(url);
+      } catch (cause) {
+        reportMarkdownActionFailure({ operation: "open-link-external", target: url }, cause);
+      }
+    },
+    [openExternalLinkInPreview],
+  );
   const openMarkdownFileInPreview = useCallback(
     (path: string) => {
       if (!threadRef || preparedConnection._tag === "None") {
@@ -2077,11 +2093,19 @@ function ChatMarkdown({
                   handleMarkdownFragmentClick(event, href);
                   return;
                 }
+                if (!href) return;
                 // A link to a change request in a workspace project opens beside the
                 // conversation instead of in a browser: it is the thing being talked about, and
-                // the panel it opens offers the browser as one of its actions. Anything else is
-                // an ordinary link and keeps the `_blank` the shell already handles.
-                if (href) openChangeRequestLink(event, href);
+                // the panel it opens offers the browser as one of its actions.
+                if (openChangeRequestLink(event, href)) return;
+                // A dev server the agent just started is only reachable from the environment, so
+                // it opens in the integrated browser. Anything else is an ordinary link and keeps
+                // the `_blank` the shell already handles.
+                if (shouldOpenLinkInIntegratedBrowser({ href, event, canOpenInPreview })) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void openLinkInIntegratedBrowser(href);
+                }
               }}
               onContextMenu={(event) => {
                 if (!href || !faviconHost) return;
@@ -2270,6 +2294,7 @@ function ChatMarkdown({
     openInPreferredEditor,
     openChangeRequestLink,
     openExternalLinkInPreview,
+    openLinkInIntegratedBrowser,
     openMarkdownFileInPreview,
     lookupReference,
     openReference,
