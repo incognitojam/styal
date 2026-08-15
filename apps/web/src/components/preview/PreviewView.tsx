@@ -20,6 +20,7 @@ import {
 } from "~/browserHistoryStore";
 import { type ComposerImageAttachment, useComposerDraftStore } from "~/composerDraftStore";
 import { previewAnnotationScreenshotFile } from "~/lib/previewAnnotation";
+import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { ensureLocalApi } from "~/localApi";
 import {
   rememberPreviewUrl,
@@ -325,7 +326,7 @@ export function PreviewView({
                 return;
               }
 
-              void navigator.clipboard.writeText(artifact.path).then(
+              void writeTextToClipboard(artifact.path).then(
                 () => {
                   pathCopied = true;
                   updateRecordingToast();
@@ -462,7 +463,7 @@ export function PreviewView({
               return;
             }
 
-            void navigator.clipboard.writeText(artifact.path).then(
+            void writeTextToClipboard(artifact.path).then(
               () => {
                 pathCopied = true;
                 updateScreenshotToast();
