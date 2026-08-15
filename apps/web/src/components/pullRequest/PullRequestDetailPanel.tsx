@@ -1192,7 +1192,7 @@ function PullRequestDetailPanelBody({
                         onClick={() => void readLocalApi()?.shell.openExternal(detail.url)}
                         onContextMenu={(event) => openNumberContextMenu(event, detail)}
                         className={cn(
-                          "shrink-0 font-medium underline-offset-2 hover:underline",
+                          "shrink-0 cursor-pointer font-medium underline-offset-2 hover:underline",
                           statePresentation.toneClassName,
                         )}
                         aria-label={`Open pull request #${detail.number} on host`}
@@ -1227,7 +1227,7 @@ function PullRequestDetailPanelBody({
                         onClick={() => void readLocalApi()?.shell.openExternal(detail.url)}
                         onContextMenu={(event) => openNumberContextMenu(event, detail)}
                         className={cn(
-                          "shrink-0 font-medium underline-offset-2 hover:underline",
+                          "shrink-0 cursor-pointer font-medium underline-offset-2 hover:underline",
                           statePresentation.toneClassName,
                         )}
                         aria-label={`Open pull request #${detail.number} on host`}
