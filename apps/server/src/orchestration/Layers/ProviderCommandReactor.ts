@@ -1171,29 +1171,43 @@ const make = Effect.gen(function* () {
     const activeTurnId = thread.session?.status === "running" ? thread.session.activeTurnId : null;
 
     yield* providerService.sendTurn(sendTurnRequest.value).pipe(
-      Effect.tap((startedTurn) => {
-        if (
-          activeTurnId === null ||
-          startedTurn.turnId !== activeTurnId ||
-          thread.session === null
-        ) {
-          return Effect.void;
-        }
+      Effect.tap((startedTurn) =>
+        Effect.gen(function* () {
+          if (activeTurnId === null || thread.session === null) {
+            return;
+          }
 
-        // Codex can accept a follow-up as same-turn steering: turn/start
-        // returns the already-active turn id and no second turn.started event
-        // follows. Re-asserting that running session lets the turn projection
-        // adopt and clear the pending start before the shared turn completes.
-        return setThreadSession({
-          threadId: thread.id,
-          session: {
-            ...thread.session,
-            status: "running",
-            activeTurnId,
-            lastError: null,
-            updatedAt: event.payload.createdAt,
-          },
-          createdAt: event.payload.createdAt,
+          // Codex can return a queued response id for same-turn steering while
+          // deliberately retaining the original active turn in its runtime
+          // session. The runtime session is authoritative here: if it still
+          // names the turn we sent into, no replacement turn.started event
+          // will adopt this pending start for us.
+          const followUpStayedOnActiveTurn =
+            startedTurn.turnId === activeTurnId ||
+            (yield* providerService.listSessions()).some(
+              (session) =>
+                session.threadId === thread.id &&
+                session.provider === "codex" &&
+                session.status === "running" &&
+                session.activeTurnId === activeTurnId,
+            );
+          if (!followUpStayedOnActiveTurn) {
+            return;
+          }
+
+          // Re-asserting the running session lets the turn projection adopt
+          // and clear the pending start before the shared turn completes.
+          yield* setThreadSession({
+            threadId: thread.id,
+            session: {
+              ...thread.session,
+              status: "running",
+              activeTurnId,
+              lastError: null,
+              updatedAt: event.payload.createdAt,
+            },
+            createdAt: event.payload.createdAt,
+          });
         }).pipe(
           Effect.catchCause((cause) =>
             Effect.logWarning("provider command reactor failed to adopt same-turn follow-up", {
@@ -1202,8 +1216,8 @@ const make = Effect.gen(function* () {
               cause: Cause.pretty(cause),
             }),
           ),
-        );
-      }),
+        ),
+      ),
       Effect.catchCause(recoverTurnStartFailure),
       Effect.forkScoped,
     );
