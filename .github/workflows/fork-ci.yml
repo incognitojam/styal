@@ -156,6 +156,12 @@ jobs:
       - name: Test server
         run: vp run --filter t3 test
 
+      - name: Fetch previous fork nightly
+        run: git fetch --no-tags origin '+refs/heads/nightly:refs/remotes/origin/nightly'
+
+      - name: Test previous nightly schema upgrade
+        run: vp run --filter t3 test:nightly-upgrade -- origin/nightly
+
   test_workspace:
     name: Fork Test (Workspace)
     needs: changes
