@@ -64,6 +64,7 @@ const {
   fromId,
   getFocusedWebContents,
   mkdir,
+  openExternal,
   showItemInFolder,
   webviewSend,
   writeFile,
@@ -74,6 +75,7 @@ const {
   fromId: vi.fn((_id?: number) => null),
   getFocusedWebContents: vi.fn(() => null),
   mkdir: vi.fn((_path: string) => undefined),
+  openExternal: vi.fn(async (_url: string) => undefined),
   showItemInFolder: vi.fn(),
   webviewSend: vi.fn(),
   writeFile: vi.fn((_path: string, _data: Uint8Array) => undefined),
@@ -89,6 +91,7 @@ vi.mock("electron", () => ({
     createFromPath,
   },
   shell: {
+    openExternal,
     showItemInFolder,
   },
   session: {
@@ -219,6 +222,9 @@ const makeFaviconWebContents = (options?: {
       options?.rasterize ? options.rasterize(scripts[0]?.code ?? "") : TEST_FAVICON,
   );
   const reload = vi.fn();
+  let windowOpenHandler:
+    | ((details: { url: string }) => { action: "allow" | "deny" })
+    | undefined;
   const loadURL = vi.fn(async (url: string) => {
     currentUrl = url;
   });
@@ -245,7 +251,9 @@ const makeFaviconWebContents = (options?: {
     send: webviewSend,
     session: { fetch },
     navigationHistory: { canGoBack: () => false, canGoForward: () => false },
-    setWindowOpenHandler: vi.fn(),
+    setWindowOpenHandler: vi.fn((handler) => {
+      windowOpenHandler = handler;
+    }),
     executeJavaScriptInIsolatedWorld,
     debugger: {
       isAttached: () => false,
@@ -263,6 +271,7 @@ const makeFaviconWebContents = (options?: {
     loadURL,
     off,
     reload,
+    getWindowOpenHandler: () => windowOpenHandler,
     setDestroyed: (value: boolean) => {
       destroyed = value;
     },
@@ -319,6 +328,7 @@ describe("PreviewManager", () => {
     getFocusedWebContents.mockReset();
     getFocusedWebContents.mockReturnValue(null);
     mkdir.mockClear();
+    openExternal.mockClear();
     writeFile.mockClear();
     showItemInFolder.mockClear();
     writeImage.mockClear();
@@ -375,6 +385,42 @@ describe("PreviewManager", () => {
           });
         }
         expect(getType).not.toHaveBeenCalled();
+      }),
+    ),
+  );
+
+  effectIt.effect("opens preview new-window requests in the external browser", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const preview = makeFaviconWebContents();
+        fromId.mockReturnValue(preview.webContents);
+        yield* manager.createTab("tab_external_link");
+        yield* manager.registerWebview("tab_external_link", 42);
+
+        const handler = preview.getWindowOpenHandler();
+        expect(handler).toBeDefined();
+        expect(handler?.({ url: "https://example.com/docs" })).toEqual({ action: "deny" });
+        yield* settle(() => openExternal.mock.calls.length === 1);
+
+        expect(openExternal).toHaveBeenCalledWith("https://example.com/docs");
+        expect(preview.loadURL).not.toHaveBeenCalled();
+      }),
+    ),
+  );
+
+  effectIt.effect("blocks unsafe preview new-window requests", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const preview = makeFaviconWebContents();
+        fromId.mockReturnValue(preview.webContents);
+        yield* manager.createTab("tab_unsafe_external_link");
+        yield* manager.registerWebview("tab_unsafe_external_link", 42);
+
+        expect(preview.getWindowOpenHandler()?.({ url: "file:///tmp/private.txt" })).toEqual({
+          action: "deny",
+        });
+        expect(openExternal).not.toHaveBeenCalled();
+        expect(preview.loadURL).not.toHaveBeenCalled();
       }),
     ),
   );
