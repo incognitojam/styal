@@ -177,6 +177,20 @@ export type TimelineLatestTurn = Pick<
   "turnId" | "state" | "startedAt" | "completedAt"
 >;
 
+export type TurnFoldActivityKind =
+  | "terminal"
+  | "file-change"
+  | "file-read"
+  | "web"
+  | "tool"
+  | "image"
+  | "context-compaction";
+
+export interface TurnFoldActivitySummary {
+  kind: TurnFoldActivityKind;
+  count: number;
+}
+
 export type MessagesTimelineRow =
   | {
       kind: "work";
@@ -213,6 +227,7 @@ export type MessagesTimelineRow =
       createdAt: string;
       turnId: TurnId;
       label: string;
+      activitySummary: ReadonlyArray<TurnFoldActivitySummary>;
       expanded: boolean;
     }
   | {
@@ -494,6 +509,61 @@ interface TurnFold {
   createdAt: string;
   hiddenEntryIds: ReadonlySet<string>;
   label: string;
+  activitySummary: ReadonlyArray<TurnFoldActivitySummary>;
+}
+
+const TURN_FOLD_ACTIVITY_ORDER: ReadonlyArray<TurnFoldActivityKind> = [
+  "terminal",
+  "file-change",
+  "file-read",
+  "web",
+  "tool",
+  "image",
+  "context-compaction",
+];
+
+function turnFoldActivityKind(entry: WorkLogEntry): TurnFoldActivityKind | null {
+  if (entry.sourceActivityKind === "context-compaction") return "context-compaction";
+  if (entry.requestKind === "command") return "terminal";
+  if (entry.requestKind === "file-read") return "file-read";
+  if (entry.requestKind === "file-change") return "file-change";
+
+  switch (entry.toolName) {
+    case "Read":
+      return "file-read";
+    case "WebFetch":
+    case "WebSearch":
+      return "web";
+  }
+
+  if (entry.itemType === "command_execution" || entry.command) return "terminal";
+  if (entry.itemType === "image_view") return "image";
+  if (entry.itemType === "file_change" || (entry.changedFiles?.length ?? 0) > 0) {
+    return "file-change";
+  }
+  if (entry.itemType === "web_search") return "web";
+  if (
+    entry.itemType === "mcp_tool_call" ||
+    entry.itemType === "dynamic_tool_call" ||
+    entry.itemType === "collab_agent_tool_call" ||
+    workLogEntryIsToolLike(entry)
+  ) {
+    return "tool";
+  }
+  return null;
+}
+
+function summarizeTurnFoldActivity(entries: ReadonlyArray<TimelineEntry>) {
+  const counts = new Map<TurnFoldActivityKind, number>();
+  for (const entry of entries) {
+    if (entry.kind !== "work") continue;
+    const kind = turnFoldActivityKind(entry.entry);
+    if (kind) counts.set(kind, (counts.get(kind) ?? 0) + 1);
+  }
+  return TURN_FOLD_ACTIVITY_ORDER.flatMap((kind) => {
+    const count = counts.get(kind);
+    return count ? [{ kind, count }] : [];
+  });
 }
 
 /**
@@ -664,6 +734,9 @@ function deriveTurnFolds(input: {
       createdAt: firstEntry.createdAt,
       hiddenEntryIds,
       label,
+      activitySummary: summarizeTurnFoldActivity(
+        group.entries.filter((entry) => hiddenEntryIds.has(entry.id)),
+      ),
     });
   }
   return foldsByAnchorEntryId;
@@ -829,6 +902,7 @@ export function deriveMessagesTimelineRows(input: {
         createdAt: anchoredTurnFold.createdAt,
         turnId: anchoredTurnFold.turnId,
         label: anchoredTurnFold.label,
+        activitySummary: anchoredTurnFold.activitySummary,
         expanded: input.expandedTurnIds?.has(anchoredTurnFold.turnId) ?? false,
       });
     }
