@@ -12,21 +12,29 @@ import {
   deriveProjectGroupingOverrideKey,
   selectProjectGroupingSettings,
 } from "../../logicalProject";
-import type {
-  ContextMenuItem,
-  ModelSelection,
-  ProviderDriverKind,
-  SidebarProjectGroupingMode,
-  SourceControlDefaultRepositoryState,
-  T3ProjectFileScript,
-  ThreadEnvMode,
+import {
+  resolveProjectKind,
+  type ContextMenuItem,
+  type ModelSelection,
+  type ProviderDriverKind,
+  type SidebarProjectGroupingMode,
+  type SourceControlDefaultRepositoryState,
+  type T3ProjectFileScript,
+  type ThreadEnvMode,
 } from "@t3tools/contracts";
 import { resolveEnvModeLabel } from "../BranchToolbar.logic";
 import { createModelSelection } from "@t3tools/shared/model";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { useCanGoBack, useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
-import { ChevronDownIcon, CopyIcon, PlusIcon, SettingsIcon, Trash2Icon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  CopyIcon,
+  NotebookPenIcon,
+  PlusIcon,
+  SettingsIcon,
+  Trash2Icon,
+} from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -368,6 +376,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
       (member) => member.environmentId === group.environmentId && member.id === group.id,
     ) ?? group.memberProjects[0]!;
   const faviconPath = representative.faviconPath ?? null;
+  const isWorkspaceProject = resolveProjectKind(representative) === "workspace";
 
   const threadCountByMember = useMemo(() => {
     const counts = new Map<string, number>();
@@ -846,7 +855,11 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         <SettingsSection title="Project">
           <SettingsRow
             title="Name"
-            description="The shared name for this project group in the sidebar and thread lists."
+            description={
+              isWorkspaceProject
+                ? "The workspace's name in the sidebar and thread lists."
+                : "The shared name for this project group in the sidebar and thread lists."
+            }
             control={
               <Input
                 key={`${group.projectKey}:${group.displayName}`}
@@ -881,6 +894,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                   cwd={representative.workspaceRoot}
                   faviconPath={faviconPath}
                   className="size-6"
+                  {...(isWorkspaceProject ? { fallbackIcon: NotebookPenIcon } : {})}
                 />
                 <Button
                   size="xs"
@@ -895,12 +909,23 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
               </div>
             }
           />
+          {isWorkspaceProject ? (
+            <SettingsRow
+              title="Type"
+              description="Workspace projects are plain folders without git; branch, worktree, and diff tools stay hidden."
+              control={<span className="text-sm text-muted-foreground">Workspace</span>}
+            />
+          ) : null}
         </SettingsSection>
 
         <SettingsSection title="New threads">
           <SettingsRow
             title="Model"
-            description="New threads in this project start with this model. Applies to every checkout in this group."
+            description={
+              isWorkspaceProject
+                ? "New threads in this workspace start with this model."
+                : "New threads in this project start with this model. Applies to every checkout in this group."
+            }
             resetAction={
               storedSelection !== null ? (
                 <SettingResetButton
@@ -950,79 +975,87 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
               )
             }
           />
-          <SettingsRow
-            title="Workspace"
-            description="Where new threads in this project start. Overrides t3.json and the global default; applies to every checkout in this group."
-            resetAction={
-              storedEnvMode !== null ? (
-                <SettingResetButton
-                  label="project workspace default"
-                  onClick={() => setDefaultThreadEnvMode(null)}
-                />
-              ) : null
-            }
-            control={
-              <Select
-                value={storedEnvMode ?? "inherit"}
-                onValueChange={(value) => {
-                  if (value === "worktree" || value === "local") {
-                    setDefaultThreadEnvMode(value);
-                  } else if (value === "inherit") {
-                    setDefaultThreadEnvMode(null);
-                  }
-                }}
-              >
-                <SelectTrigger aria-label="New-thread workspace">
-                  <SelectValue>
-                    {storedEnvMode === null
-                      ? group.memberProjects.length > 1
-                        ? "Default (per checkout)"
-                        : `Default (${resolveEnvModeLabel(inheritedEnvMode).toLowerCase()})`
-                      : resolveEnvModeLabel(storedEnvMode)}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  <SelectItem value="inherit">
-                    {group.memberProjects.length > 1
-                      ? "Default (each checkout's t3.json or global setting)"
-                      : `Default (${inheritedEnvModeSource}: ${resolveEnvModeLabel(inheritedEnvMode).toLowerCase()})`}
-                  </SelectItem>
-                  <SelectItem value="worktree">{resolveEnvModeLabel("worktree")}</SelectItem>
-                  <SelectItem value="local">{resolveEnvModeLabel("local")}</SelectItem>
-                </SelectPopup>
-              </Select>
-            }
-          />
+          {isWorkspaceProject ? null : (
+            <SettingsRow
+              title="Workspace"
+              description="Where new threads in this project start. Overrides t3.json and the global default; applies to every checkout in this group."
+              resetAction={
+                storedEnvMode !== null ? (
+                  <SettingResetButton
+                    label="project workspace default"
+                    onClick={() => setDefaultThreadEnvMode(null)}
+                  />
+                ) : null
+              }
+              control={
+                <Select
+                  value={storedEnvMode ?? "inherit"}
+                  onValueChange={(value) => {
+                    if (value === "worktree" || value === "local") {
+                      setDefaultThreadEnvMode(value);
+                    } else if (value === "inherit") {
+                      setDefaultThreadEnvMode(null);
+                    }
+                  }}
+                >
+                  <SelectTrigger aria-label="New-thread workspace">
+                    <SelectValue>
+                      {storedEnvMode === null
+                        ? group.memberProjects.length > 1
+                          ? "Default (per checkout)"
+                          : `Default (${resolveEnvModeLabel(inheritedEnvMode).toLowerCase()})`
+                        : resolveEnvModeLabel(storedEnvMode)}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
+                    <SelectItem value="inherit">
+                      {group.memberProjects.length > 1
+                        ? "Default (each checkout's t3.json or global setting)"
+                        : `Default (${inheritedEnvModeSource}: ${resolveEnvModeLabel(inheritedEnvMode).toLowerCase()})`}
+                    </SelectItem>
+                    <SelectItem value="worktree">{resolveEnvModeLabel("worktree")}</SelectItem>
+                    <SelectItem value="local">{resolveEnvModeLabel("local")}</SelectItem>
+                  </SelectPopup>
+                </Select>
+              }
+            />
+          )}
         </SettingsSection>
 
         <SettingsSection
-          title="Checkout"
+          title={isWorkspaceProject ? "Folder" : "Checkout"}
           headerAction={
-            <Select
-              value={selectedCheckout.physicalProjectKey}
-              onValueChange={(value) => setSelectedCheckoutKey(String(value))}
-            >
-              <SelectTrigger className="max-w-64" aria-label="Selected checkout">
-                <SelectValue>{selectedCheckoutLabel}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                {group.memberProjects.map((member) => (
-                  <SelectItem
-                    key={member.physicalProjectKey}
-                    hideIndicator
-                    value={member.physicalProjectKey}
-                  >
-                    {member.environmentLabel ?? "This machine"} · {member.workspaceRoot}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
+            // A workspace is a single plain folder; there is nothing to switch
+            // between, so show the machine it lives on instead of a selector.
+            isWorkspaceProject ? (
+              <span className="text-sm text-muted-foreground">{selectedCheckoutLabel}</span>
+            ) : (
+              <Select
+                value={selectedCheckout.physicalProjectKey}
+                onValueChange={(value) => setSelectedCheckoutKey(String(value))}
+              >
+                <SelectTrigger className="max-w-64" aria-label="Selected checkout">
+                  <SelectValue>{selectedCheckoutLabel}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  {group.memberProjects.map((member) => (
+                    <SelectItem
+                      key={member.physicalProjectKey}
+                      hideIndicator
+                      value={member.physicalProjectKey}
+                    >
+                      {member.environmentLabel ?? "This machine"} · {member.workspaceRoot}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            )
           }
         >
           <div className="px-3 py-2 sm:px-4">
             <div className="flex min-w-0 items-center rounded-lg bg-muted/30 p-1 text-base text-muted-foreground sm:text-sm">
               <button
-                aria-label="Copy checkout path"
+                aria-label={isWorkspaceProject ? "Copy folder path" : "Copy checkout path"}
                 className="group flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left outline-none hover:bg-accent/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                 title="Copy path"
                 type="button"
@@ -1044,52 +1077,56 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
               </div>
             </div>
           </div>
-          <SettingsRow
-            title="Project grouping"
-            description="How this checkout joins project groups in the sidebar. Changing it can move you to a different project group."
-            control={
-              <Select
-                value={selectedCheckoutGrouping}
-                onValueChange={(value) => {
-                  if (
-                    value === "inherit" ||
-                    value === "repository" ||
-                    value === "repository_path" ||
-                    value === "separate"
-                  ) {
-                    updateGroupingPreference(selectedCheckout, value);
-                  }
-                }}
-              >
-                <SelectTrigger aria-label={`Grouping rule for ${selectedCheckoutLabel}`}>
-                  <SelectValue>
-                    {selectedCheckoutGrouping === "inherit"
-                      ? `Default (${PROJECT_GROUPING_MODE_LABELS[projectGroupingSettings.sidebarProjectGroupingMode]})`
-                      : PROJECT_GROUPING_MODE_LABELS[selectedCheckoutGrouping]}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  <SelectItem hideIndicator value="inherit">
-                    Use global default
-                  </SelectItem>
-                  <SelectItem hideIndicator value="repository">
-                    {PROJECT_GROUPING_MODE_LABELS.repository}
-                  </SelectItem>
-                  <SelectItem hideIndicator value="repository_path">
-                    {PROJECT_GROUPING_MODE_LABELS.repository_path}
-                  </SelectItem>
-                  <SelectItem hideIndicator value="separate">
-                    {PROJECT_GROUPING_MODE_LABELS.separate}
-                  </SelectItem>
-                </SelectPopup>
-              </Select>
-            }
-          />
-          {canChooseDefaultRepository && defaultRepository ? (
-            <SettingsRow
-              title="Default repository"
-              description="Which repository pull requests, issues, and releases target in this checkout, shared with the GitHub CLI's gh repo set-default. Changing it can move this checkout to a different project group."
-              control={
+          {/* Grouping rules are repository-derived; a workspace is always its
+              own sidebar entry, so the control would be a no-op. */}
+          {isWorkspaceProject ? null : (
+            <>
+              <SettingsRow
+                title="Project grouping"
+                description="How this checkout joins project groups in the sidebar. Changing it can move you to a different project group."
+                control={
+                  <Select
+                    value={selectedCheckoutGrouping}
+                    onValueChange={(value) => {
+                      if (
+                        value === "inherit" ||
+                        value === "repository" ||
+                        value === "repository_path" ||
+                        value === "separate"
+                      ) {
+                        updateGroupingPreference(selectedCheckout, value);
+                      }
+                    }}
+                  >
+                    <SelectTrigger aria-label={`Grouping rule for ${selectedCheckoutLabel}`}>
+                      <SelectValue>
+                        {selectedCheckoutGrouping === "inherit"
+                          ? `Default (${PROJECT_GROUPING_MODE_LABELS[projectGroupingSettings.sidebarProjectGroupingMode]})`
+                          : PROJECT_GROUPING_MODE_LABELS[selectedCheckoutGrouping]}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup align="end" alignItemWithTrigger={false}>
+                      <SelectItem hideIndicator value="inherit">
+                        Use global default
+                      </SelectItem>
+                      <SelectItem hideIndicator value="repository">
+                        {PROJECT_GROUPING_MODE_LABELS.repository}
+                      </SelectItem>
+                      <SelectItem hideIndicator value="repository_path">
+                        {PROJECT_GROUPING_MODE_LABELS.repository_path}
+                      </SelectItem>
+                      <SelectItem hideIndicator value="separate">
+                        {PROJECT_GROUPING_MODE_LABELS.separate}
+                      </SelectItem>
+                    </SelectPopup>
+                  </Select>
+                }
+              />
+              {canChooseDefaultRepository && defaultRepository ? (
+                <SettingsRow
+                  title="Default repository"
+                  description="Which repository pull requests, issues, and releases target in this checkout, shared with the GitHub CLI's gh repo set-default. Changing it can move this checkout to a different project group."
+                  control={
                 <Select
                   value={defaultRepository.defaultRemoteName ?? UNSET_DEFAULT_REPOSITORY_VALUE}
                   onValueChange={(value) => {
@@ -1113,9 +1150,11 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                     </SelectItem>
                   </SelectPopup>
                 </Select>
-              }
-            />
-          ) : null}
+                  }
+                />
+              ) : null}
+            </>
+          )}
           {group.memberProjects.length > 1 ? (
             <SettingsRow
               title="Remove checkout"
@@ -1190,7 +1229,9 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
           </div>
           {scripts.length === 0 ? (
             <p className="px-3 py-2 text-base text-muted-foreground sm:px-4 sm:text-sm">
-              No actions configured for this checkout.
+              {isWorkspaceProject
+                ? "No actions configured for this workspace."
+                : "No actions configured for this checkout."}
             </p>
           ) : (
             scripts.map((script) => {
@@ -1259,12 +1300,18 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         <SettingsSection title="Danger">
           <SettingsRow
             title={
-              group.memberProjects.length > 1 ? "Remove this project everywhere" : "Remove project"
+              group.memberProjects.length > 1
+                ? "Remove this project everywhere"
+                : isWorkspaceProject
+                  ? "Remove workspace"
+                  : "Remove project"
             }
             description={
               group.memberProjects.length > 1
                 ? `Deletes all ${group.memberProjects.length} checkout entries and their threads on every machine. Files on disk are not touched.`
-                : "Deletes the project entry and its threads. Files on disk are not touched."
+                : isWorkspaceProject
+                  ? "Deletes the workspace entry and its threads. Files on disk are not touched."
+                  : "Deletes the project entry and its threads. Files on disk are not touched."
             }
             control={
               <Button
@@ -1272,7 +1319,11 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                 onClick={() => void removeMembers(group.memberProjects)}
               >
                 <Trash2Icon />
-                {group.memberProjects.length > 1 ? "Remove all entries" : "Remove project"}
+                {group.memberProjects.length > 1
+                  ? "Remove all entries"
+                  : isWorkspaceProject
+                    ? "Remove workspace"
+                    : "Remove project"}
               </Button>
             }
           />

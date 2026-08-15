@@ -250,10 +250,17 @@ export function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
+// Worktrees only exist for git repositories. Workspace-kind projects force
+// "local" by kind alone so a new thread never waits on (or trusts) a runtime
+// git probe; plain repositories fall back to the probe result.
 export function resolveSendEnvMode(input: {
   requestedEnvMode: DraftThreadEnvMode;
   isGitRepo: boolean;
+  isWorkspaceProject?: boolean;
 }): DraftThreadEnvMode {
+  if (input.isWorkspaceProject === true) {
+    return "local";
+  }
   return input.isGitRepo ? input.requestedEnvMode : "local";
 }
 

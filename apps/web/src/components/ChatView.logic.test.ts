@@ -380,6 +380,23 @@ describe("resolveSendEnvMode", () => {
     expect(resolveSendEnvMode({ requestedEnvMode: "worktree", isGitRepo: true })).toBe("worktree");
     expect(resolveSendEnvMode({ requestedEnvMode: "worktree", isGitRepo: false })).toBe("local");
   });
+
+  it("forces local for workspace projects regardless of the git probe", () => {
+    expect(
+      resolveSendEnvMode({
+        requestedEnvMode: "worktree",
+        isGitRepo: true,
+        isWorkspaceProject: true,
+      }),
+    ).toBe("local");
+    expect(
+      resolveSendEnvMode({
+        requestedEnvMode: "worktree",
+        isGitRepo: true,
+        isWorkspaceProject: false,
+      }),
+    ).toBe("worktree");
+  });
 });
 
 describe("branchMismatchKey", () => {

@@ -2833,4 +2833,72 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
       ]);
     }),
   );
+
+  it.effect("persists project kind from project.create and project.meta.update", () =>
+    Effect.gen(function* () {
+      const engine = yield* OrchestrationEngineService;
+      const sql = yield* SqlClient.SqlClient;
+      const createdAt = "2026-01-01T00:00:00.000Z";
+
+      yield* engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("cmd-kind-project-create"),
+        projectId: ProjectId.make("project-kind"),
+        title: "Workspace Project",
+        workspaceRoot: "/tmp/project-kind",
+        kind: "workspace",
+        createdAt,
+      });
+
+      const createdRows = yield* sql<{ readonly kind: string | null }>`
+        SELECT kind
+        FROM projection_projects
+        WHERE project_id = 'project-kind'
+      `;
+      assert.deepEqual(createdRows, [{ kind: "workspace" }]);
+
+      // A kind-less meta.update leaves the stored kind untouched.
+      yield* engine.dispatch({
+        type: "project.meta.update",
+        commandId: CommandId.make("cmd-kind-project-rename"),
+        projectId: ProjectId.make("project-kind"),
+        title: "Renamed Workspace",
+      });
+      const renamedRows = yield* sql<{ readonly kind: string | null }>`
+        SELECT kind
+        FROM projection_projects
+        WHERE project_id = 'project-kind'
+      `;
+      assert.deepEqual(renamedRows, [{ kind: "workspace" }]);
+
+      yield* engine.dispatch({
+        type: "project.meta.update",
+        commandId: CommandId.make("cmd-kind-project-flip"),
+        projectId: ProjectId.make("project-kind"),
+        kind: "repository",
+      });
+      const flippedRows = yield* sql<{ readonly kind: string | null }>`
+        SELECT kind
+        FROM projection_projects
+        WHERE project_id = 'project-kind'
+      `;
+      assert.deepEqual(flippedRows, [{ kind: "repository" }]);
+
+      // Back-compat: a create without kind stores SQL NULL (= repository).
+      yield* engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("cmd-kind-project-legacy"),
+        projectId: ProjectId.make("project-kind-legacy"),
+        title: "Legacy Project",
+        workspaceRoot: "/tmp/project-kind-legacy",
+        createdAt,
+      });
+      const legacyRows = yield* sql<{ readonly kind: string | null }>`
+        SELECT kind
+        FROM projection_projects
+        WHERE project_id = 'project-kind-legacy'
+      `;
+      assert.deepEqual(legacyRows, [{ kind: null }]);
+    }),
+  );
 });

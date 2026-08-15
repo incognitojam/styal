@@ -226,6 +226,20 @@ export const ProjectScript = Schema.Struct({
 });
 export type ProjectScript = typeof ProjectScript.Type;
 
+/**
+ * How the project presents itself. "repository" is the classic checkout with
+ * git chrome (branches, diffs, worktrees). "workspace" is a plain folder used
+ * as an agent scratchpad; clients hide VCS affordances and the server skips
+ * repository-identity probing. Absent means "repository" so snapshots and
+ * events persisted before this field existed keep their behavior.
+ */
+export const ProjectKind = Schema.Literals(["repository", "workspace"]);
+export type ProjectKind = typeof ProjectKind.Type;
+
+export const resolveProjectKind = (project: {
+  readonly kind?: ProjectKind | undefined;
+}): ProjectKind => project.kind ?? "repository";
+
 export const ProjectFaviconPath = TrimmedNonEmptyString.check(
   Schema.isMaxLength(1024),
   Schema.isPattern(/\.(?:avif|gif|ico|jpe?g|png|svg|webp)$/i),
@@ -236,6 +250,8 @@ export const OrchestrationProject = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,
   workspaceRoot: TrimmedNonEmptyString,
+  // Optional on the wire so cached snapshots from older servers still decode.
+  kind: Schema.optional(ProjectKind),
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   // Per-project override for where new threads start. Null/absent means
@@ -435,6 +451,8 @@ export const OrchestrationProjectShell = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,
   workspaceRoot: TrimmedNonEmptyString,
+  // Optional on the wire so cached snapshots from older servers still decode.
+  kind: Schema.optional(ProjectKind),
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
@@ -640,6 +658,7 @@ export const ProjectCreateCommand = Schema.Struct({
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
   workspaceRoot: TrimmedNonEmptyString,
+  kind: Schema.optional(ProjectKind),
   createWorkspaceRootIfMissing: Schema.optional(Schema.Boolean),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   createdAt: IsoDateTime,
@@ -651,6 +670,7 @@ const ProjectMetaUpdateCommand = Schema.Struct({
   projectId: ProjectId,
   title: Schema.optional(TrimmedNonEmptyString),
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  kind: Schema.optional(ProjectKind),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   // Absent = leave unchanged; null = clear the override.
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
@@ -1100,6 +1120,8 @@ export const ProjectCreatedPayload = Schema.Struct({
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
   workspaceRoot: TrimmedNonEmptyString,
+  // Optional so persisted events from older servers still decode.
+  kind: Schema.optional(ProjectKind),
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   // Optional so persisted events from older servers still decode.
@@ -1113,6 +1135,7 @@ export const ProjectMetaUpdatedPayload = Schema.Struct({
   projectId: ProjectId,
   title: Schema.optional(TrimmedNonEmptyString),
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  kind: Schema.optional(ProjectKind),
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),

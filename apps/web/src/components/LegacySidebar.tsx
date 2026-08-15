@@ -7,6 +7,7 @@ import {
   FolderPlusIcon,
   Globe2Icon,
   LoaderIcon,
+  NotebookPenIcon,
   SearchIcon,
   SquarePenIcon,
   TerminalIcon,
@@ -44,6 +45,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   type ContextMenuItem,
   ProjectId,
+  resolveProjectKind,
   type ScopedThreadRef,
   type ResolvedKeybindingsConfig,
   type SidebarProjectGroupingMode,
@@ -2287,6 +2289,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
             environmentId={project.environmentId}
             cwd={project.workspaceRoot}
             faviconPath={project.faviconPath}
+            {...(resolveProjectKind(project) === "workspace"
+              ? { fallbackIcon: NotebookPenIcon }
+              : {})}
           />
           <span className="flex min-w-0 flex-1 items-center gap-2">
             <span className="truncate text-sm font-medium text-sidebar-foreground/90">

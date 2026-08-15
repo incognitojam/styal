@@ -297,6 +297,7 @@ function PullRequestsRouteView() {
             ? `${project.title} · ${environmentLabels.get(project.environmentId) ?? project.environmentId}`
             : project.title,
         workspaceRoot: project.workspaceRoot,
+        kind: project.kind,
       }))
       .toSorted((left, right) => left.title.localeCompare(right.title));
   }, [environmentLabels, projects]);

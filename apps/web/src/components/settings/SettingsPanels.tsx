@@ -1,4 +1,11 @@
-import { ArchiveIcon, ArchiveX, ChevronRightIcon, LoaderIcon, SettingsIcon } from "lucide-react";
+import {
+  ArchiveIcon,
+  ArchiveX,
+  ChevronRightIcon,
+  LoaderIcon,
+  NotebookPenIcon,
+  SettingsIcon,
+} from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import type { CSSProperties, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -7,6 +14,7 @@ import {
   type BackgroundActivityProfile,
   type DesktopUpdateChannel,
   ProviderDriverKind,
+  resolveProjectKind,
   type ScopedThreadRef,
   type SidebarProjectGroupingMode,
 } from "@t3tools/contracts";
@@ -2498,6 +2506,7 @@ export function ArchivedThreadsPanel() {
                 name: project.title,
                 cwd: project.workspaceRoot,
                 faviconPath: project.faviconPath,
+                kind: project.kind,
               },
             ] as const,
         ),
@@ -2624,6 +2633,9 @@ export function ArchivedThreadsPanel() {
                 environmentId={project.environmentId}
                 cwd={project.cwd}
                 faviconPath={project.faviconPath}
+                {...(resolveProjectKind(project) === "workspace"
+                  ? { fallbackIcon: NotebookPenIcon }
+                  : {})}
               />
             }
           >

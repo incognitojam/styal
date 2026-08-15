@@ -30,7 +30,11 @@ import {
   scopeThreadRef,
   scopedThreadKey,
 } from "@t3tools/client-runtime/environment";
-import type { ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import {
+  resolveProjectKind,
+  type ScopedThreadRef,
+  type ThreadId,
+} from "@t3tools/contracts";
 import type { TimestampFormat } from "@t3tools/contracts/settings";
 import {
   AlarmClockIcon,
@@ -45,6 +49,7 @@ import {
   FolderPlusIcon,
   GitBranchIcon,
   MessageSquareIcon,
+  NotebookPenIcon,
   PinIcon,
   PlusIcon,
   SearchIcon,
@@ -256,6 +261,7 @@ function SidebarThreadTooltip({
   projectTitle,
   projectCwd,
   projectFaviconPath,
+  projectIsWorkspace,
   environmentLabel,
   providerEntry,
   showInstanceBadge,
@@ -269,6 +275,7 @@ function SidebarThreadTooltip({
   projectTitle: string | null;
   projectCwd: string | null;
   projectFaviconPath: string | null;
+  projectIsWorkspace: boolean;
   environmentLabel: string | null;
   providerEntry: ProviderInstanceEntry | null;
   showInstanceBadge: boolean;
@@ -302,6 +309,7 @@ function SidebarThreadTooltip({
                 cwd={projectCwd ?? ""}
                 faviconPath={projectFaviconPath}
                 className="size-3 shrink-0 stroke-muted-foreground"
+                {...(projectIsWorkspace ? { fallbackIcon: NotebookPenIcon } : {})}
               />
               <div className="min-w-0 truncate text-foreground/75">{projectTitle}</div>
             </div>
@@ -467,6 +475,7 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
   projectTitle: string | null;
   projectCwd: string | null;
   projectFaviconPath: string | null;
+  projectIsWorkspace: boolean;
   isActive: boolean;
   onNavigate: (draftId: DraftId) => void;
   onDiscard: (draftId: DraftId) => void;
@@ -533,6 +542,7 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
               cwd={props.projectCwd ?? ""}
               faviconPath={props.projectFaviconPath}
               className="size-4 shrink-0"
+              {...(props.projectIsWorkspace ? { fallbackIcon: NotebookPenIcon } : {})}
             />
             <span className="min-w-0 flex-1 truncate text-xs font-medium text-secondary-label">
               {props.projectTitle}
@@ -570,6 +580,7 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
   projectDisplayNameByKey: ReadonlyMap<string, string>;
   projectCwdByKey: ReadonlyMap<string, string>;
   projectFaviconPathByKey: ReadonlyMap<string, string | null | undefined>;
+  workspaceProjectKeys: ReadonlySet<string>;
   scopedProjectKeys: ReadonlySet<string> | null;
   routeDraftId: string | null;
   onNavigateToDraft: (draftId: DraftId) => void;
@@ -665,6 +676,7 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
             projectTitle={props.projectDisplayNameByKey.get(projectKey) ?? null}
             projectCwd={props.projectCwdByKey.get(projectKey) ?? null}
             projectFaviconPath={props.projectFaviconPathByKey.get(projectKey) ?? null}
+            projectIsWorkspace={props.workspaceProjectKeys.has(projectKey)}
             isActive={draftId === props.routeDraftId}
             onNavigate={props.onNavigateToDraft}
             onDiscard={handleDiscard}
@@ -717,6 +729,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   environmentLabel: string | null;
   projectCwd: string | null;
   projectFaviconPath: string | null;
+  projectIsWorkspace: boolean;
   projectTitle: string | null;
   providerEntryByInstanceId: ReadonlyMap<string, ProviderInstanceEntry>;
   timestampFormat: TimestampFormat;
@@ -937,6 +950,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       projectTitle={props.projectTitle}
       projectCwd={props.projectCwd}
       projectFaviconPath={props.projectFaviconPath}
+      projectIsWorkspace={props.projectIsWorkspace}
       environmentLabel={props.environmentLabel}
       providerEntry={providerEntry}
       showInstanceBadge={showInstanceBadge}
@@ -1380,6 +1394,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 cwd={props.projectCwd ?? ""}
                 faviconPath={props.projectFaviconPath}
                 className="size-4 shrink-0"
+                {...(props.projectIsWorkspace ? { fallbackIcon: NotebookPenIcon } : {})}
               />
               {props.projectTitle ? (
                 <span
@@ -1598,6 +1613,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   thread: SidebarThreadSummary;
   projectCwd: string | null;
   projectFaviconPath: string | null;
+  projectIsWorkspace: boolean;
   projectTitle: string | null;
   environmentLabel: string | null;
   providerEntryByInstanceId: ReadonlyMap<string, ProviderInstanceEntry>;
@@ -1686,6 +1702,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
           projectTitle={props.projectTitle}
           projectCwd={props.projectCwd}
           projectFaviconPath={props.projectFaviconPath}
+          projectIsWorkspace={props.projectIsWorkspace}
           environmentLabel={props.environmentLabel}
           providerEntry={providerEntry}
           showInstanceBadge={showInstanceBadge}
@@ -1794,6 +1811,10 @@ export default function Sidebar({ projectScopeKey, onProjectScopeKeyChange }: Si
     () => openCommandPalette({ open: "add-project" }),
     [],
   );
+  const openNewWorkspaceCommandPalette = useCallback(
+    () => openCommandPalette({ open: "new-workspace" }),
+    [],
+  );
   const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const clearSelection = useThreadSelectionStore((s) => s.clearSelection);
@@ -1893,6 +1914,17 @@ export default function Sidebar({ projectScopeKey, onProjectScopeKeyChange }: Si
     () =>
       new Map(
         projects.map((project) => [`${project.environmentId}:${project.id}`, project.faviconPath]),
+      ),
+    [projects],
+  );
+  // Workspace-kind projects fall back to the notebook glyph instead of the
+  // folder wherever a favicon stands for the project itself.
+  const workspaceProjectKeys = useMemo(
+    () =>
+      new Set(
+        projects
+          .filter((project) => resolveProjectKind(project) === "workspace")
+          .map((project) => `${project.environmentId}:${project.id}`),
       ),
     [projects],
   );
@@ -3483,6 +3515,9 @@ export default function Sidebar({ projectScopeKey, onProjectScopeKeyChange }: Si
                         cwd={scopedProjectGroup.workspaceRoot}
                         faviconPath={scopedProjectGroup.faviconPath}
                         className="size-4 shrink-0"
+                        {...(resolveProjectKind(scopedProjectGroup) === "workspace"
+                          ? { fallbackIcon: NotebookPenIcon }
+                          : {})}
                       />
                     ) : (
                       <FolderIcon className="size-4 shrink-0" />
@@ -3521,6 +3556,9 @@ export default function Sidebar({ projectScopeKey, onProjectScopeKeyChange }: Si
                               cwd={project.workspaceRoot}
                               faviconPath={project.faviconPath}
                               className="size-4 shrink-0"
+                              {...(resolveProjectKind(project) === "workspace"
+                                ? { fallbackIcon: NotebookPenIcon }
+                                : {})}
                             />
                             <span className="min-w-0 truncate text-sm">{project.displayName}</span>
                             <Button
@@ -3598,6 +3636,9 @@ export default function Sidebar({ projectScopeKey, onProjectScopeKeyChange }: Si
                             `${thread.environmentId}:${thread.projectId}`,
                           ) ?? null
                         }
+                        projectIsWorkspace={workspaceProjectKeys.has(
+                          `${thread.environmentId}:${thread.projectId}`,
+                        )}
                         projectTitle={
                           projectDisplayNameByKey.get(
                             `${thread.environmentId}:${thread.projectId}`,
@@ -3708,6 +3749,9 @@ export default function Sidebar({ projectScopeKey, onProjectScopeKeyChange }: Si
                             `${thread.environmentId}:${thread.projectId}`,
                           ) ?? null
                         }
+                        projectIsWorkspace={workspaceProjectKeys.has(
+                          `${thread.environmentId}:${thread.projectId}`,
+                        )}
                         projectTitle={
                           projectDisplayNameByKey.get(
                             `${thread.environmentId}:${thread.projectId}`,
@@ -3748,6 +3792,7 @@ export default function Sidebar({ projectScopeKey, onProjectScopeKeyChange }: Si
                       projectDisplayNameByKey={projectDisplayNameByKey}
                       projectCwdByKey={projectCwdByKey}
                       projectFaviconPathByKey={projectFaviconPathByKey}
+                      workspaceProjectKeys={workspaceProjectKeys}
                       scopedProjectKeys={scopedProjectKeys}
                       routeDraftId={routeDraftIdForRows}
                       onNavigateToDraft={navigateToDraft}
@@ -3904,6 +3949,14 @@ export default function Sidebar({ projectScopeKey, onProjectScopeKeyChange }: Si
                   >
                     <PlusIcon className="-mx-0.5 size-3" />
                     Add project
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openNewWorkspaceCommandPalette}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-[11px] font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                  >
+                    <NotebookPenIcon className="-mx-0.5 size-3" />
+                    New workspace
                   </button>
                 </>
               ) : scopedProjectGroup ? (

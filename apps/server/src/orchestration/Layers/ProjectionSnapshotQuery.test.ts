@@ -11,6 +11,7 @@ import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
@@ -1929,6 +1930,122 @@ it.effect(
       assert.deepStrictEqual(resolveCalls.toSorted(), ["/tmp/deleted-root", "/tmp/shared-root"]);
       assert.equal(fullSnapshot.projects.length, 3);
       assert.equal(fullSnapshot.projects[2]?.repositoryIdentity?.rootPath, "/tmp/deleted-root");
+    }).pipe(Effect.provide(layer));
+  },
+);
+
+it.effect(
+  "ProjectionSnapshotQuery exposes project kind and never probes workspace projects for repository identity",
+  () => {
+    const resolveCalls: string[] = [];
+    const layer = OrchestrationProjectionSnapshotQueryLive.pipe(
+      Layer.provide(ThreadBackgroundLiveness.layer),
+      Layer.provide(ThreadPlanProgress.layer),
+      Layer.provideMerge(
+        Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
+          resolve: (cwd: string) =>
+            Effect.sync(() => {
+              resolveCalls.push(cwd);
+              return {
+                canonicalKey: `github.com/acme${cwd}`,
+                locator: {
+                  source: "git-remote" as const,
+                  remoteName: "origin",
+                  remoteUrl: `https://github.com/acme${cwd}.git`,
+                },
+                rootPath: cwd,
+              };
+            }),
+        }),
+      ),
+      Layer.provideMerge(SqlitePersistenceMemory),
+    );
+
+    return Effect.gen(function* () {
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+
+      yield* sql`DELETE FROM projection_projects`;
+      yield* sql`DELETE FROM projection_threads`;
+      yield* sql`DELETE FROM projection_turns`;
+      yield* sql`DELETE FROM projection_state`;
+
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id,
+          title,
+          workspace_root,
+          kind,
+          default_model_selection_json,
+          scripts_json,
+          created_at,
+          updated_at,
+          deleted_at
+        )
+        VALUES
+          (
+            'project-repo',
+            'Repo Project',
+            '/tmp/repo-root',
+            NULL,
+            '{"provider":"codex","model":"gpt-5-codex"}',
+            '[]',
+            '2026-04-04T00:00:00.000Z',
+            '2026-04-04T00:00:01.000Z',
+            NULL
+          ),
+          (
+            'project-workspace',
+            'Workspace Project',
+            '/tmp/workspace-root',
+            'workspace',
+            '{"provider":"codex","model":"gpt-5-codex"}',
+            '[]',
+            '2026-04-04T00:00:02.000Z',
+            '2026-04-04T00:00:03.000Z',
+            NULL
+          )
+      `;
+
+      const shellSnapshot = yield* snapshotQuery.getShellSnapshot();
+      assert.deepStrictEqual(resolveCalls, ["/tmp/repo-root"]);
+      assert.equal(shellSnapshot.projects.length, 2);
+      const shellRepo = shellSnapshot.projects.find((project) => project.id === "project-repo");
+      const shellWorkspace = shellSnapshot.projects.find(
+        (project) => project.id === "project-workspace",
+      );
+      assert.equal(shellRepo?.kind, undefined);
+      assert.equal(shellRepo?.repositoryIdentity?.rootPath, "/tmp/repo-root");
+      assert.equal(shellWorkspace?.kind, "workspace");
+      assert.isNull(shellWorkspace?.repositoryIdentity);
+
+      resolveCalls.length = 0;
+
+      const fullSnapshot = yield* snapshotQuery.getSnapshot();
+      assert.deepStrictEqual(resolveCalls, ["/tmp/repo-root"]);
+      const fullWorkspace = fullSnapshot.projects.find(
+        (project) => project.id === "project-workspace",
+      );
+      assert.equal(fullWorkspace?.kind, "workspace");
+      assert.isNull(fullWorkspace?.repositoryIdentity);
+
+      resolveCalls.length = 0;
+
+      const workspaceShell = yield* snapshotQuery.getProjectShellById(
+        asProjectId("project-workspace"),
+      );
+      assert.deepStrictEqual(resolveCalls, []);
+      const workspaceShellValue = Option.getOrNull(workspaceShell);
+      assert.equal(workspaceShellValue?.kind, "workspace");
+      assert.isNull(workspaceShellValue?.repositoryIdentity);
+
+      const workspaceByRoot = yield* snapshotQuery.getActiveProjectByWorkspaceRoot(
+        "/tmp/workspace-root",
+      );
+      assert.deepStrictEqual(resolveCalls, []);
+      const workspaceByRootValue = Option.getOrNull(workspaceByRoot);
+      assert.equal(workspaceByRootValue?.kind, "workspace");
+      assert.isNull(workspaceByRootValue?.repositoryIdentity);
     }).pipe(Effect.provide(layer));
   },
 );

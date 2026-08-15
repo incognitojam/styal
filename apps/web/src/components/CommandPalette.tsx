@@ -2,6 +2,7 @@
 
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
+  buildWorkspaceDefaultPath,
   canCreateProjectInEnvironment,
   getCloneDestinationBrowsePath,
   getCloneDestinationPath,
@@ -26,11 +27,13 @@ import {
   type EnvironmentId,
   type FilesystemBrowseResult,
   type ProjectId,
+  type ProjectKind,
   type SourceControlCloneDefaultRepository,
   type SourceControlDiscoveryResult,
   type SourceControlProviderKind,
   type SourceControlRepositoryInfo,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
+  resolveProjectKind,
 } from "@t3tools/contracts";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import * as Option from "effect/Option";
@@ -45,6 +48,7 @@ import {
   GitPullRequestIcon,
   LinkIcon,
   MessageSquareIcon,
+  NotebookPenIcon,
   PaletteIcon,
   SettingsIcon,
   SquarePenIcon,
@@ -208,6 +212,7 @@ function projectFavicon(project: Project) {
       cwd={project.workspaceRoot}
       faviconPath={project.faviconPath}
       className={ITEM_ICON_CLASS}
+      {...(resolveProjectKind(project) === "workspace" ? { fallbackIcon: NotebookPenIcon } : {})}
     />
   );
 }
@@ -273,6 +278,21 @@ type AddProjectCloneFlow =
       readonly repository: SourceControlRepositoryInfo | null;
       readonly remoteUrl: string;
       readonly defaultRepository?: SourceControlCloneDefaultRepository;
+    };
+
+// The "New workspace" flow: name the workspace and press Enter to create it
+// at the default home-relative path. Choosing a different folder is opt-in
+// (mod+Enter or the footer action) and reuses the browse UI. Creates a
+// plain-folder project with kind: "workspace" — no git, no clone.
+type AddWorkspaceFlow =
+  | {
+      readonly step: "name";
+      readonly environmentId: EnvironmentId;
+    }
+  | {
+      readonly step: "location";
+      readonly environmentId: EnvironmentId;
+      readonly name: string;
     };
 
 const REMOTE_PROJECT_SOURCES: ReadonlyArray<AddProjectRemoteSource> = [
@@ -733,6 +753,7 @@ function OpenCommandPaletteDialog(props: {
   );
   const [isPickingProjectFolder, setIsPickingProjectFolder] = useState(false);
   const [addProjectCloneFlow, setAddProjectCloneFlow] = useState<AddProjectCloneFlow | null>(null);
+  const [addWorkspaceFlow, setAddWorkspaceFlow] = useState<AddWorkspaceFlow | null>(null);
   const [isRemoteProjectLookingUp, setIsRemoteProjectLookingUp] = useState(false);
   const [isRemoteProjectCloning, setIsRemoteProjectCloning] = useState(false);
   const projectGroupingSettings = useMemo(
@@ -906,6 +927,9 @@ function OpenCommandPaletteDialog(props: {
   // Repository/default steps type into a list; other states browse paths.
   const isRemoteProjectPathStep =
     addProjectCloneFlow === null || addProjectCloneFlow.step === "confirm";
+  const isWorkspaceFlow = addWorkspaceFlow !== null;
+  const isWorkspaceNameStep = addWorkspaceFlow?.step === "name";
+  const isWorkspaceLocationStep = addWorkspaceFlow?.step === "location";
   // The destination step pins the repository folder onto the browsed path, so
   // the proposed clone target is "<chosen folder>/<repo>" instead of the bare
   // folder. A lookup reports "owner/repo"; a pasted clone URL falls back to its
@@ -917,8 +941,13 @@ function OpenCommandPaletteDialog(props: {
         )
       : "";
   const browsePath = useMemo(
-    () => getFilesystemBrowsePath(query, browseEnvironmentPlatform, isRemoteProjectPathStep),
-    [browseEnvironmentPlatform, isRemoteProjectPathStep, query],
+    () =>
+      getFilesystemBrowsePath(
+        query,
+        browseEnvironmentPlatform,
+        isRemoteProjectPathStep && !isWorkspaceNameStep,
+      ),
+    [browseEnvironmentPlatform, isRemoteProjectPathStep, isWorkspaceNameStep, query],
   );
   const isBrowsing = browsePath.isBrowsing;
   const browseDirectoryPath = browsePath.directoryPath;
@@ -963,8 +992,19 @@ function OpenCommandPaletteDialog(props: {
     ? scopeThreadRef(activeThread.environmentId, activeThread.id)
     : null;
   const activeThreadGitCwd = activeThread?.worktreePath ?? currentProjectCwd;
+  // Workspace projects are plain folders by design: skip the git probe
+  // entirely instead of letting it report "not a repo" after the fact.
+  const currentProjectIsWorkspace = useMemo(() => {
+    if (currentProjectId === null) return false;
+    const project = projects.find(
+      (candidate) =>
+        candidate.id === currentProjectId &&
+        candidate.environmentId === currentProjectEnvironmentId,
+    );
+    return project !== undefined && resolveProjectKind(project) === "workspace";
+  }, [currentProjectEnvironmentId, currentProjectId, projects]);
   const activeThreadGitStatus = useEnvironmentQuery(
-    activeThreadRef && activeThreadGitCwd
+    activeThreadRef && activeThreadGitCwd && !currentProjectIsWorkspace
       ? vcsEnvironment.status({
           environmentId: activeThreadRef.environmentId,
           input: { cwd: activeThreadGitCwd },
@@ -1252,6 +1292,7 @@ function OpenCommandPaletteDialog(props: {
   function popView(): void {
     browseNavigation.invalidate();
     setAddProjectCloneFlow(null);
+    setAddWorkspaceFlow(null);
     setIssuePickerEmptyMessage(null);
     if (viewStack.length <= 1) {
       setAddProjectEnvironmentId(null);
@@ -1289,6 +1330,7 @@ function OpenCommandPaletteDialog(props: {
         () => {
           setAddProjectEnvironmentId(environmentId);
           setAddProjectCloneFlow(null);
+          setAddWorkspaceFlow(null);
           pushPaletteView(view);
         },
       );
@@ -1306,6 +1348,7 @@ function OpenCommandPaletteDialog(props: {
     (environmentId: EnvironmentId, source: AddProjectRemoteSource): void => {
       setAddProjectEnvironmentId(environmentId);
       setAddProjectCloneFlow({ step: "repository", environmentId, source });
+      setAddWorkspaceFlow(null);
       pushPaletteView({
         addonIcon: remoteProjectSourceIcon(source, ADDON_ICON_CLASS),
         groups: [],
@@ -1313,6 +1356,32 @@ function OpenCommandPaletteDialog(props: {
       });
     },
     [pushPaletteView],
+  );
+
+  const startAddWorkspaceName = useCallback(
+    (environmentId: EnvironmentId): void => {
+      const environment = environments.find(
+        (candidate) => candidate.environmentId === environmentId,
+      );
+      if (!canCreateProjectInEnvironment(environment?.connection.phase)) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Environment unavailable",
+            description: `${environment?.label ?? "The selected environment"} is not connected.`,
+          }),
+        );
+        return;
+      }
+      setAddProjectEnvironmentId(environmentId);
+      setAddProjectCloneFlow(null);
+      setAddWorkspaceFlow({ step: "name", environmentId });
+      pushPaletteView({
+        addonIcon: <NotebookPenIcon className={ADDON_ICON_CLASS} />,
+        groups: [],
+      });
+    },
+    [environments, pushPaletteView],
   );
 
   const openSourceControlSettings = useCallback(() => {
@@ -1336,6 +1405,18 @@ function OpenCommandPaletteDialog(props: {
           keepOpen: true,
           run: async () => {
             await startAddProjectBrowse(environmentId);
+          },
+        },
+        {
+          kind: "action",
+          value: `action:add-project:${environmentId}:workspace`,
+          searchTerms: ["workspace", "notes", "scratchpad", "plain folder", "no git"],
+          title: "New workspace",
+          description: "Create a plain folder without git",
+          icon: <NotebookPenIcon className={ITEM_ICON_CLASS} />,
+          keepOpen: true,
+          run: async () => {
+            startAddWorkspaceName(environmentId);
           },
         },
       ];
@@ -1411,7 +1492,7 @@ function OpenCommandPaletteDialog(props: {
 
       return [{ value: `sources:${environmentId}`, label: "Sources", items: sourceItems }];
     },
-    [openSourceControlSettings, startAddProjectBrowse, startAddProjectClone],
+    [openSourceControlSettings, startAddProjectBrowse, startAddProjectClone, startAddWorkspaceName],
   );
 
   const startAddProjectSourceSelection = useCallback(
@@ -1431,6 +1512,7 @@ function OpenCommandPaletteDialog(props: {
       }
       setAddProjectEnvironmentId(environmentId);
       setAddProjectCloneFlow(null);
+      setAddWorkspaceFlow(null);
       pushPaletteView({
         addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
         groups: buildAddProjectSourceGroups(
@@ -1642,6 +1724,49 @@ function OpenCommandPaletteDialog(props: {
     startAddProjectSourceSelection,
   ]);
 
+  const openNewWorkspaceFlow = useCallback(() => {
+    if (addProjectEnvironmentOptions.length > 1 || defaultAddProjectEnvironmentId === null) {
+      pushPaletteView({
+        addonIcon: <NotebookPenIcon className={ADDON_ICON_CLASS} />,
+        groups: [
+          {
+            value: "environments",
+            label: "Environments",
+            items: addProjectEnvironmentOptions.map((option) => ({
+              kind: "action",
+              value: `action:new-workspace:environment:${option.environmentId}`,
+              searchTerms: [
+                option.label,
+                option.environmentId,
+                option.isPrimary ? "this device" : "",
+              ],
+              title: option.label,
+              description: option.isConnected
+                ? option.isPrimary
+                  ? "This device"
+                  : option.environmentId
+                : option.status,
+              disabled: !option.isConnected,
+              icon: <NotebookPenIcon className={ITEM_ICON_CLASS} />,
+              keepOpen: true,
+              run: async () => {
+                startAddWorkspaceName(option.environmentId);
+              },
+            })),
+          },
+        ],
+      });
+      return;
+    }
+
+    startAddWorkspaceName(defaultAddProjectEnvironmentId);
+  }, [
+    addProjectEnvironmentOptions,
+    defaultAddProjectEnvironmentId,
+    pushPaletteView,
+    startAddWorkspaceName,
+  ]);
+
   useLayoutEffect(() => {
     if (openIntent?.kind !== "add-project") {
       return;
@@ -1649,6 +1774,14 @@ function OpenCommandPaletteDialog(props: {
     clearOpenIntent();
     openAddProjectFlow();
   }, [clearOpenIntent, openAddProjectFlow, openIntent]);
+
+  useLayoutEffect(() => {
+    if (openIntent?.kind !== "new-workspace") {
+      return;
+    }
+    clearOpenIntent();
+    openNewWorkspaceFlow();
+  }, [clearOpenIntent, openNewWorkspaceFlow, openIntent]);
 
   useLayoutEffect(() => {
     if (openIntent?.kind !== "new-thread-in" || projectThreadItems.length === 0) {
@@ -1845,6 +1978,27 @@ function OpenCommandPaletteDialog(props: {
     },
   });
 
+  actionItems.push({
+    kind: "action",
+    value: "action:new-workspace",
+    searchTerms: [
+      "new workspace",
+      "workspace",
+      "notes",
+      "scratchpad",
+      "plain folder",
+      "no git",
+      "planning",
+    ],
+    title: "New workspace",
+    disabled: defaultAddProjectEnvironmentId === null,
+    icon: <NotebookPenIcon className={ITEM_ICON_CLASS} />,
+    keepOpen: true,
+    run: async () => {
+      openNewWorkspaceFlow();
+    },
+  });
+
   if (wslAddProjectEnvironmentOption) {
     actionItems.push({
       kind: "action",
@@ -1941,6 +2095,8 @@ function OpenCommandPaletteDialog(props: {
       readonly rawCwd: string;
       readonly platform: string;
       readonly currentProjectCwd: string | null;
+      readonly kind?: ProjectKind;
+      readonly title?: string;
     }) => {
       const environment = environments.find(
         (candidate) => candidate.environmentId === input.environmentId,
@@ -2028,8 +2184,9 @@ function OpenCommandPaletteDialog(props: {
         environmentId: input.environmentId,
         input: {
           projectId,
-          title: inferProjectTitleFromPath(cwd),
+          title: input.title?.trim() || inferProjectTitleFromPath(cwd),
           workspaceRoot: cwd,
+          ...(input.kind !== undefined ? { kind: input.kind } : {}),
           createWorkspaceRootIfMissing: true,
           defaultModelSelection: resolveDefaultProviderModelSelection(
             targetEnvironmentProviders,
@@ -2318,6 +2475,61 @@ function OpenCommandPaletteDialog(props: {
     await handleAddProject(cloneResult.value.cwd);
   }
 
+  // Create the workspace immediately at the home-relative default path.
+  // Picking a different folder is the opt-in path, not a required step.
+  function submitAddWorkspaceCreate(): void {
+    if (addWorkspaceFlow?.step !== "name") {
+      return;
+    }
+    const name = query.trim();
+    if (name.length === 0) {
+      return;
+    }
+    void handleAddProjectForEnvironment({
+      environmentId: addWorkspaceFlow.environmentId,
+      rawCwd: buildWorkspaceDefaultPath(name),
+      platform: browseEnvironmentPlatform,
+      currentProjectCwd: currentProjectCwdForBrowse,
+      kind: "workspace",
+      title: name,
+    });
+  }
+
+  // Advance the workspace flow from "name" to "location" with a prefilled
+  // home-relative default path; the location step reuses the browse UI so the
+  // user can point the workspace somewhere else.
+  function startAddWorkspaceLocation(): void {
+    if (addWorkspaceFlow?.step !== "name") {
+      return;
+    }
+    const name = query.trim();
+    if (name.length === 0) {
+      return;
+    }
+    setAddWorkspaceFlow({
+      step: "location",
+      environmentId: addWorkspaceFlow.environmentId,
+      name,
+    });
+    setHighlightedItemValue(null);
+    setQuery(buildWorkspaceDefaultPath(name));
+    setBrowseGeneration((generation) => generation + 1);
+  }
+
+  async function submitAddWorkspaceFlow(destinationPath: string): Promise<void> {
+    if (addWorkspaceFlow?.step !== "location") {
+      return;
+    }
+    await handleAddProjectForEnvironment({
+      environmentId: addWorkspaceFlow.environmentId,
+      rawCwd: destinationPath,
+      platform: browseEnvironmentPlatform,
+      currentProjectCwd: currentProjectCwdForBrowse,
+      kind: "workspace",
+      title: addWorkspaceFlow.name,
+    });
+  }
+
   const browseTo = useCallback(
     async (name: string): Promise<void> => {
       const nextQuery = pinnedCloneDirectoryName
@@ -2387,6 +2599,15 @@ function OpenCommandPaletteDialog(props: {
     () =>
       browseGroups.map((group) =>
         group.value === "directories" ? { ...group, label: "Select where to clone" } : group,
+      ),
+    [browseGroups],
+  );
+  const workspaceLocationBrowseGroups = useMemo(
+    () =>
+      browseGroups.map((group) =>
+        group.value === "directories"
+          ? { ...group, label: "Select where to create the workspace" }
+          : group,
       ),
     [browseGroups],
   );
@@ -2466,18 +2687,21 @@ function OpenCommandPaletteDialog(props: {
   }, [addProjectCloneFlow]);
 
   let displayedGroups: CommandPaletteView["groups"] = filteredGroups;
-  if (addProjectCloneFlow?.step === "repository") {
+  if (addProjectCloneFlow?.step === "repository" || isWorkspaceNameStep) {
     displayedGroups = [];
   } else if (addProjectCloneFlow?.step === "default") {
     displayedGroups = cloneDefaultRepositoryGroups;
   } else if (addProjectCloneFlow?.step === "confirm") {
     displayedGroups = relativePathNeedsActiveProject ? [] : cloneDestinationBrowseGroups;
+  } else if (isWorkspaceLocationStep) {
+    displayedGroups = relativePathNeedsActiveProject ? [] : workspaceLocationBrowseGroups;
   } else if (isBrowsing) {
     displayedGroups = relativePathNeedsActiveProject ? [] : browseGroups;
   }
 
   const inputPlaceholder =
     remoteProjectInputPlaceholder(addProjectCloneFlow) ??
+    (isWorkspaceNameStep ? "Enter workspace name" : null) ??
     getCommandPaletteInputPlaceholder(paletteMode);
   const isSubmenu = paletteMode === "submenu" || paletteMode === "submenu-browse";
   const hasHighlightedBrowseItem = highlightedItemValue?.startsWith("browse:") ?? false;
@@ -2498,24 +2722,37 @@ function OpenCommandPaletteDialog(props: {
     ? willCreateProjectPath
       ? "Create & Clone"
       : "Clone"
-    : willCreateProjectPath
-      ? "Create & Add"
-      : "Add";
+    : isWorkspaceLocationStep
+      ? willCreateProjectPath
+        ? "Create workspace"
+        : "Add workspace"
+      : willCreateProjectPath
+        ? "Create & Add"
+        : "Add";
   const addShortcutLabel = hasHighlightedBrowseItem ? `${submitModifierLabel} Enter` : "Enter";
   const remoteProjectButtonLabel = addProjectCloneFlow
     ? addProjectCloneFlow.source === "url"
       ? "Continue"
       : "Lookup"
-    : null;
+    : isWorkspaceNameStep
+      ? "Create"
+      : null;
   const isRemoteProjectPending = isRemoteProjectLookingUp || isRemoteProjectCloning;
   const canSubmitRemoteProjectFlow =
     addProjectCloneFlow?.step === "repository" &&
     query.trim().length > 0 &&
     canCreateProjectInEnvironment(browseEnvironment?.connection.phase) &&
     !isRemoteProjectPending;
+  const canSubmitWorkspaceName =
+    isWorkspaceNameStep &&
+    query.trim().length > 0 &&
+    canCreateProjectInEnvironment(browseEnvironment?.connection.phase);
   const fileManagerName = getLocalFileManagerName(navigator.platform);
   const canOpenProjectFromFileManager =
     isBrowsing &&
+    // The Finder/Explorer picker adds the picked folder as a regular project,
+    // which would silently drop the workspace kind mid-flow.
+    !isWorkspaceFlow &&
     browseEnvironmentId !== null &&
     // For a desktop-local (WSL) env, only offer the picker once we have resolved
     // its desktop pool instance id. Without it pickFolder can't be routed to the
@@ -2577,6 +2814,16 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
 
+    if (isWorkspaceNameStep && event.key === "Enter") {
+      event.preventDefault();
+      if (isPrimaryModifierPressed(event)) {
+        startAddWorkspaceLocation();
+      } else {
+        submitAddWorkspaceCreate();
+      }
+      return;
+    }
+
     const shouldSubmitBrowsePath =
       canSubmitBrowsePath &&
       event.key === "Enter" &&
@@ -2586,6 +2833,8 @@ function OpenCommandPaletteDialog(props: {
       event.preventDefault();
       if (isCloneDestinationStep) {
         void submitAddProjectCloneFlow(resolvedAddProjectPath);
+      } else if (isWorkspaceLocationStep) {
+        void submitAddWorkspaceFlow(resolvedAddProjectPath);
       } else {
         void handleAddProject(resolvedAddProjectPath);
       }
@@ -2735,7 +2984,7 @@ function OpenCommandPaletteDialog(props: {
   ]);
 
   const inputAccessory =
-    addProjectCloneFlow?.step === "repository" ? (
+    addProjectCloneFlow?.step === "repository" || isWorkspaceNameStep ? (
       <Tooltip>
         <TooltipTrigger
           render={
@@ -2745,11 +2994,15 @@ function OpenCommandPaletteDialog(props: {
               tabIndex={-1}
               className="absolute inset-e-2.5 top-1/2 gap-1.5 pe-1 ps-2 -translate-y-1/2"
               aria-label={`${remoteProjectButtonLabel ?? "Continue"} (Enter)`}
-              disabled={!canSubmitRemoteProjectFlow}
+              disabled={isWorkspaceNameStep ? !canSubmitWorkspaceName : !canSubmitRemoteProjectFlow}
               onMouseDown={(event) => {
                 event.preventDefault();
               }}
               onClick={() => {
+                if (isWorkspaceNameStep) {
+                  submitAddWorkspaceCreate();
+                  return;
+                }
                 void submitAddProjectCloneFlow();
               }}
             />
@@ -2789,6 +3042,8 @@ function OpenCommandPaletteDialog(props: {
                 }
                 if (isCloneDestinationStep) {
                   void submitAddProjectCloneFlow(resolvedAddProjectPath);
+                } else if (isWorkspaceLocationStep) {
+                  void submitAddWorkspaceFlow(resolvedAddProjectPath);
                 } else {
                   void handleAddProject(resolvedAddProjectPath);
                 }
@@ -2810,13 +3065,25 @@ function OpenCommandPaletteDialog(props: {
     ) : null;
 
   const footerActionLabel =
-    addProjectCloneFlow?.step === "repository"
+    addProjectCloneFlow?.step === "repository" || isWorkspaceNameStep
       ? (remoteProjectButtonLabel ?? "Continue")
       : !canSubmitBrowsePath || hasHighlightedBrowseItem
         ? "Select"
         : undefined;
 
-  const footerTrailing = canOpenProjectFromFileManager ? (
+  const footerTrailing = isWorkspaceNameStep ? (
+    <Button
+      variant="ghost"
+      size="xs"
+      className="h-auto px-2 text-muted-foreground text-xs hover:bg-transparent hover:text-foreground"
+      disabled={!canSubmitWorkspaceName}
+      onClick={() => {
+        startAddWorkspaceLocation();
+      }}
+    >
+      {`Choose location (${submitModifierLabel} Enter)`}
+    </Button>
+  ) : canOpenProjectFromFileManager ? (
     <Button
       variant="ghost"
       size="xs"
@@ -2832,10 +3099,14 @@ function OpenCommandPaletteDialog(props: {
 
   return (
     <CommandPaletteContent
-      key={`${viewStack.length}-${browseGeneration}-${isBrowsing}-${addProjectCloneFlow?.step ?? "none"}`}
+      key={`${viewStack.length}-${browseGeneration}-${isBrowsing}-${addProjectCloneFlow?.step ?? "none"}-${addWorkspaceFlow?.step ?? "none"}`}
       aria-label="Command palette"
       autoHighlight={
-        !isBrowsing && (!isRemoteProjectCloneFlow || isRemoteProjectDefaultStep) ? "always" : false
+        !isBrowsing &&
+        (!isRemoteProjectCloneFlow || isRemoteProjectDefaultStep) &&
+        !isWorkspaceFlow
+          ? "always"
+          : false
       }
       footerActionLabel={footerActionLabel}
       footerTrailing={footerTrailing}
@@ -2844,7 +3115,7 @@ function OpenCommandPaletteDialog(props: {
         // The submit button is absolutely positioned over the field, so the
         // inner input must reserve enough room for the full action label.
         className:
-          addProjectCloneFlow?.step === "repository"
+          addProjectCloneFlow?.step === "repository" || isWorkspaceNameStep
             ? "*:data-[slot=autocomplete-input]:pe-32!"
             : isBrowsing
               ? browseInputEndPaddingClass({
@@ -2912,18 +3183,26 @@ function OpenCommandPaletteDialog(props: {
                     ? "Enter a Git clone URL and press Enter to continue."
                     : "Enter a repository path and press Enter to look it up.",
               }
-            : addProjectCloneFlow?.step === "confirm"
-              ? { emptyStateMessage: "Choose a destination path and press Enter to clone." }
-              : relativePathNeedsActiveProject
-                ? { emptyStateMessage: "Relative paths require an active project." }
-                : willCreateProjectPath
-                  ? {
-                      emptyStateMessage:
-                        "Press Enter to create this folder and add it as a project.",
-                    }
-                  : threadSearch.isPending
-                    ? { emptyStateMessage: "Searching thread messages…" }
-                    : {})}
+            : isWorkspaceNameStep
+              ? {
+                  emptyStateMessage:
+                    query.trim().length > 0
+                      ? `Press Enter to create the workspace at ${buildWorkspaceDefaultPath(query.trim())}`
+                      : "Enter a name for the new workspace.",
+                }
+              : addProjectCloneFlow?.step === "confirm"
+                ? { emptyStateMessage: "Choose a destination path and press Enter to clone." }
+                : relativePathNeedsActiveProject
+                  ? { emptyStateMessage: "Relative paths require an active project." }
+                  : willCreateProjectPath
+                    ? {
+                        emptyStateMessage: isWorkspaceLocationStep
+                          ? "Press Enter to create this folder as a workspace."
+                          : "Press Enter to create this folder and add it as a project.",
+                      }
+                    : threadSearch.isPending
+                      ? { emptyStateMessage: "Searching thread messages…" }
+                      : {})}
       />
     </CommandPaletteContent>
   );
