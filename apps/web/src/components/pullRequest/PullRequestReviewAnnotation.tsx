@@ -227,7 +227,7 @@ export function ReviewThreadCard({
         )}
         <button
           type="button"
-          className="hover:text-foreground"
+          className="cursor-pointer hover:text-foreground"
           aria-expanded={expanded}
           onClick={() => setExpanded((current) => !current)}
         >
