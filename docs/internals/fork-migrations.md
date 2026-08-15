@@ -14,6 +14,9 @@ idempotent so upgrades remain safe across rebases and interrupted starts.
 CI enforces this rule: `.github/scripts/rebase-onto-upstream.sh` (used by Fork CI's upstream-rebase
 job and Fork Nightly's prepare step) fails when the rebased patch stack touches
 `apps/server/src/persistence/Migrations.ts` or anything under `apps/server/src/persistence/Migrations/`.
+The server test job and Fork Nightly also build disposable databases with the migration source from
+the released `nightly` branch, then run the candidate's full migration pass. This checks both the
+split upstream/fork histories and the legacy pre-split composer-draft history.
 
 The fork previously shipped `39_ComposerDrafts` in the upstream history. Before either migration
 pass, the server recognizes that exact ID and name, applies upstream migration 39's guarded schema
