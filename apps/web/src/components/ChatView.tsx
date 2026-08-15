@@ -19,6 +19,7 @@ import {
   OrchestrationThreadActivity,
   ProviderInteractionMode,
   ProviderDriverKind,
+  resolveProjectKind,
   RuntimeMode,
   TerminalOpenInput,
 } from "@t3tools/contracts";
@@ -1745,6 +1746,10 @@ function ChatViewContent(props: ChatViewProps) {
     [activeThread?.environmentId, activeThread?.projectId],
   );
   const activeProject = useProject(activeProjectRef);
+  // Workspace projects are plain folders by design; every git affordance is
+  // gated on this instead of waiting for a runtime git probe to say "no repo".
+  const isWorkspaceProject =
+    activeProject !== null && resolveProjectKind(activeProject) === "workspace";
   const handleNewThreadInActiveProject = useCallback(() => {
     startNewThreadForProject(activeProjectRef, handleNewThread);
   }, [activeProjectRef, handleNewThread]);
@@ -2651,7 +2656,7 @@ function ChatViewContent(props: ChatViewProps) {
     : null;
   const gitStatusCwd = activeThread?.worktreePath ?? gitCwd;
   const gitStatusQuery = useEnvironmentQuery(
-    gitStatusCwd === null
+    gitStatusCwd === null || isWorkspaceProject
       ? null
       : vcsEnvironment.status({
           environmentId,
@@ -2703,8 +2708,9 @@ function ChatViewContent(props: ChatViewProps) {
   const activeWorkspaceRoot = activeThreadWorktreePath ?? activeProjectCwd ?? undefined;
   const activeTerminalLaunchContext =
     terminalUiLaunchContext?.threadId === activeThreadId ? terminalUiLaunchContext : null;
-  // Default true while loading to avoid toolbar flicker.
-  const isGitRepo = gitStatusQuery.data?.isRepo ?? true;
+  // Default true while loading to avoid toolbar flicker. Workspace projects
+  // are never repos, decided by kind rather than the (skipped) probe.
+  const isGitRepo = isWorkspaceProject ? false : (gitStatusQuery.data?.isRepo ?? true);
   const showComposerContextStrip = shouldShowComposerContextStrip({
     hasActiveProject: activeProject !== null,
     isGitRepo,
@@ -2740,7 +2746,7 @@ function ChatViewContent(props: ChatViewProps) {
     [keybindings, terminalShortcutLabelOptions],
   );
   const onToggleDiff = useCallback(() => {
-    if (!isServerThread) {
+    if (!isServerThread || !isGitRepo) {
       return;
     }
     if (!diffOpen) {
@@ -2749,7 +2755,7 @@ function ChatViewContent(props: ChatViewProps) {
     if (activeThreadRef) {
       useRightPanelStore.getState().toggle(activeThreadRef, "diff");
     }
-  }, [activeThreadRef, diffOpen, isServerThread, onDiffPanelOpen]);
+  }, [activeThreadRef, diffOpen, isGitRepo, isServerThread, onDiffPanelOpen]);
 
   const envLocked = Boolean(
     activeThread &&
@@ -4143,6 +4149,7 @@ function ChatViewContent(props: ChatViewProps) {
   const sendEnvMode = resolveSendEnvMode({
     requestedEnvMode: envMode,
     isGitRepo,
+    isWorkspaceProject,
   });
   const localCheckoutBranchMismatch = useMemo(
     () =>
@@ -6305,6 +6312,7 @@ function ChatViewContent(props: ChatViewProps) {
             activeProjectName={activeProject?.title}
             activeProjectCwd={activeProject?.workspaceRoot ?? null}
             activeProjectFaviconPath={activeProject?.faviconPath ?? null}
+            activeProjectIsWorkspace={isWorkspaceProject}
             openInCwd={gitCwd}
             activeProjectScripts={activeProject?.scripts}
             preferredScriptId={
@@ -6314,6 +6322,7 @@ function ChatViewContent(props: ChatViewProps) {
             availableEditors={availableEditors}
             rightPanelOpen={rightPanelOpen}
             gitCwd={gitCwd}
+            showGitActions={!isWorkspaceProject}
             onNewThreadInProject={handleNewThreadInActiveProject}
             onRunProjectScript={runProjectScript}
             onAddProjectScript={saveProjectScript}

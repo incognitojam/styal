@@ -213,6 +213,7 @@ export function projectEvent(
             id: payload.projectId,
             title: payload.title,
             workspaceRoot: payload.workspaceRoot,
+            ...(payload.kind !== undefined ? { kind: payload.kind } : {}),
             defaultModelSelection: payload.defaultModelSelection,
             defaultThreadEnvMode: null,
             faviconPath: payload.faviconPath ?? null,
@@ -245,6 +246,7 @@ export function projectEvent(
                   ...(payload.workspaceRoot !== undefined
                     ? { workspaceRoot: payload.workspaceRoot }
                     : {}),
+                  ...(payload.kind !== undefined ? { kind: payload.kind } : {}),
                   ...(payload.defaultModelSelection !== undefined
                     ? { defaultModelSelection: payload.defaultModelSelection }
                     : {}),

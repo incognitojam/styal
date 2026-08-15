@@ -1,6 +1,6 @@
 import type { ScopedProjectRef } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { FolderPlusIcon } from "lucide-react";
+import { FolderPlusIcon, NotebookPenIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
@@ -41,6 +41,7 @@ export function DraftHeroHeadline({
   const projectSortOrder = useClientSettings((settings) => settings.sidebarProjectSortOrder);
   const handleNewThread = useNewThreadHandler();
   const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
+  const openNewWorkspace = useCallback(() => openCommandPalette({ open: "new-workspace" }), []);
 
   const environmentLabelById = useMemo(
     () =>
@@ -137,6 +138,10 @@ export function DraftHeroHeadline({
         <MenuItem onClick={openAddProject}>
           <FolderPlusIcon />
           New project
+        </MenuItem>
+        <MenuItem onClick={openNewWorkspace}>
+          <NotebookPenIcon />
+          New workspace
         </MenuItem>
       </MenuPopup>
     </Menu>

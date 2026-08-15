@@ -48,7 +48,10 @@ legacyForkLayer("ForkMigrations legacy fork upgrade", (it) => {
 
       assert.isTrue(result.repairedLegacyHistory);
       assert.deepStrictEqual(result.upstream, [[40, "ProjectionProjectFaviconPath"]]);
-      assert.deepStrictEqual(result.fork, [[2, "WorkspacePortAllocations"]]);
+      assert.deepStrictEqual(result.fork, [
+        [2, "WorkspacePortAllocations"],
+        [3, "ProjectionProjectsKind"],
+      ]);
 
       const upstreamHistory = yield* sql<{
         readonly migration_id: number;
@@ -81,6 +84,7 @@ legacyForkLayer("ForkMigrations legacy fork upgrade", (it) => {
       assert.deepStrictEqual(forkHistory, [
         { migration_id: 1, name: "ComposerDrafts" },
         { migration_id: 2, name: "WorkspacePortAllocations" },
+        { migration_id: 3, name: "ProjectionProjectsKind" },
       ]);
 
       const projectColumns = yield* sql<{ readonly name: string }>`
@@ -88,7 +92,7 @@ legacyForkLayer("ForkMigrations legacy fork upgrade", (it) => {
       `;
       assert.includeMembers(
         projectColumns.map(({ name }) => name),
-        ["default_thread_env_mode", "favicon_path"],
+        ["default_thread_env_mode", "favicon_path", "kind"],
       );
 
       const draftRows = yield* sql<{
@@ -174,6 +178,15 @@ upstreamLayer("ForkMigrations canonical upstream upgrade", (it) => {
       assert.isFalse(yield* repairLegacyForkMigrationHistory());
       yield* runAllMigrations();
 
+      // A fresh database picks up the fork's projection_projects.kind column.
+      const projectColumns = yield* sql<{ readonly name: string }>`
+        PRAGMA table_info(projection_projects)
+      `;
+      assert.include(
+        projectColumns.map(({ name }) => name),
+        "kind",
+      );
+
       const upstreamMigration = yield* sql<{
         readonly migration_id: number;
         readonly name: string;
@@ -195,10 +208,12 @@ upstreamLayer("ForkMigrations canonical upstream upgrade", (it) => {
       }>`
         SELECT migration_id, name
         FROM yngatech_sql_migrations
+        ORDER BY migration_id
       `;
       assert.deepStrictEqual(forkHistory, [
         { migration_id: 1, name: "ComposerDrafts" },
         { migration_id: 2, name: "WorkspacePortAllocations" },
+        { migration_id: 3, name: "ProjectionProjectsKind" },
       ]);
     }),
   );
@@ -220,8 +235,13 @@ it("keeps fork migrations out of the upstream manifest", () => {
     migrationManifest.map(([, name]) => name as string),
     "WorkspacePortAllocations",
   );
+  assert.notInclude(
+    migrationManifest.map(([, name]) => name as string),
+    "ProjectionProjectsKind",
+  );
   assert.deepStrictEqual(forkMigrationManifest, [
     [1, "ComposerDrafts"],
     [2, "WorkspacePortAllocations"],
+    [3, "ProjectionProjectsKind"],
   ]);
 });

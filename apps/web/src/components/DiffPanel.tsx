@@ -6,7 +6,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
-import type { ScopedThreadRef, TurnId } from "@t3tools/contracts";
+import { resolveProjectKind, type ScopedThreadRef, type TurnId } from "@t3tools/contracts";
 import {
   ArrowRightIcon,
   CheckIcon,
@@ -145,8 +145,12 @@ export default function DiffPanel({
     serverConfig?.availableEditors ?? [],
   );
   const getDiffFileContents = useAtomCommand(reviewEnvironment.diffFileContents);
+  // Workspace projects never probe git; the panel is unreachable for them by
+  // gating in ChatView, so this only defends against stale surfaces.
+  const isWorkspaceProject =
+    activeProject != null && resolveProjectKind(activeProject) === "workspace";
   const gitStatusQuery = useEnvironmentQuery(
-    activeThread !== null && activeThread !== undefined && activeCwd != null
+    activeThread !== null && activeThread !== undefined && activeCwd != null && !isWorkspaceProject
       ? vcsEnvironment.status({
           environmentId: activeThread.environmentId,
           input: { cwd: activeCwd },
@@ -160,7 +164,7 @@ export default function DiffPanel({
       initialGitScope === "unstaged",
     ),
   );
-  const isGitRepo = gitStatusQuery.data?.isRepo ?? true;
+  const isGitRepo = isWorkspaceProject ? false : (gitStatusQuery.data?.isRepo ?? true);
   const { turnDiffSummaries, inferredCheckpointTurnCountByTurnId } =
     useTurnDiffSummaries(activeThread);
   const orderedTurnDiffSummaries = useMemo(

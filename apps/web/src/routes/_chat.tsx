@@ -1,5 +1,6 @@
 import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
+import { resolveProjectKind } from "@t3tools/contracts";
 import { useEffect, useMemo } from "react";
 
 import { isCommandPaletteOpen } from "../commandPaletteBus";
@@ -47,8 +48,11 @@ function ChatRouteGlobalShortcuts() {
     [activeThread, projects],
   );
   const gitCwd = activeThread?.worktreePath ?? activeProject?.workspaceRoot ?? null;
+  // Workspace-kind projects never probe git; the PR shortcut simply stays inert.
+  const isWorkspaceProject =
+    activeProject !== null && resolveProjectKind(activeProject) === "workspace";
   const gitStatusQuery = useEnvironmentQuery(
-    routeThreadRef && gitCwd
+    routeThreadRef && gitCwd && !isWorkspaceProject
       ? vcsEnvironment.status({
           environmentId: routeThreadRef.environmentId,
           input: { cwd: gitCwd },

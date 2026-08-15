@@ -11,7 +11,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { ChangeRequestStateLike } from "@t3tools/client-runtime/state/thread-settled";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, NotebookPenIcon } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -56,6 +56,8 @@ interface ChatHeaderProps {
   activeProjectName: string | undefined;
   activeProjectCwd: string | null;
   activeProjectFaviconPath: string | null;
+  /** Workspace-kind projects fall back to the notebook glyph, not the folder. */
+  activeProjectIsWorkspace: boolean;
   openInCwd: string | null;
   activeProjectScripts: ReadonlyArray<ProjectScript> | undefined;
   preferredScriptId: string | null;
@@ -63,6 +65,8 @@ interface ChatHeaderProps {
   availableEditors: ReadonlyArray<EditorId>;
   rightPanelOpen: boolean;
   gitCwd: string | null;
+  /** False for workspace-kind projects: hides git actions instead of offering "Initialize Git". */
+  showGitActions: boolean;
   readonly onOpenPullRequest?: ((number: number) => void) | undefined;
   onNewThreadInProject: () => void;
   onRunProjectScript: (script: ProjectScript) => void;
@@ -117,6 +121,7 @@ export const ChatHeader = memo(function ChatHeader({
   activeProjectName,
   activeProjectCwd,
   activeProjectFaviconPath,
+  activeProjectIsWorkspace,
   openInCwd,
   activeProjectScripts,
   preferredScriptId,
@@ -124,6 +129,7 @@ export const ChatHeader = memo(function ChatHeader({
   availableEditors,
   rightPanelOpen,
   gitCwd,
+  showGitActions,
   onOpenPullRequest,
   onNewThreadInProject,
   onRunProjectScript,
@@ -252,6 +258,7 @@ export const ChatHeader = memo(function ChatHeader({
                     cwd={activeProjectCwd ?? ""}
                     faviconPath={activeProjectFaviconPath}
                     className="size-3.5"
+                    {...(activeProjectIsWorkspace ? { fallbackIcon: NotebookPenIcon } : {})}
                   />
                   <span className="max-w-40 truncate">{activeProjectName}</span>
                 </TooltipTrigger>
@@ -338,7 +345,7 @@ export const ChatHeader = memo(function ChatHeader({
             openInCwd={openInCwd}
           />
         )}
-        {activeProjectName && (
+        {activeProjectName && showGitActions && (
           <GitActionsControl
             gitCwd={gitCwd}
             activeThreadRef={scopeThreadRef(activeThreadEnvironmentId, activeThreadId)}

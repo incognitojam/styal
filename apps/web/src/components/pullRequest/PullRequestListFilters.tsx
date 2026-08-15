@@ -1,10 +1,12 @@
-import type {
-  EnvironmentId,
-  ProjectId,
-  PullRequestInvolvement,
-  PullRequestListFilters,
-  PullRequestListState,
-  SourceControlProviderKind,
+import {
+  type EnvironmentId,
+  type ProjectId,
+  type ProjectKind,
+  type PullRequestInvolvement,
+  type PullRequestListFilters,
+  type PullRequestListState,
+  resolveProjectKind,
+  type SourceControlProviderKind,
 } from "@t3tools/contracts";
 import {
   CircleCheckIcon,
@@ -17,6 +19,7 @@ import {
   LayersIcon,
   ListFilterIcon,
   LoaderIcon,
+  NotebookPenIcon,
   SearchIcon,
 } from "lucide-react";
 import type { ElementType } from "react";
@@ -225,6 +228,7 @@ export function PullRequestFiltersMenu({
     readonly environmentId: EnvironmentId;
     readonly title: string;
     readonly workspaceRoot: string;
+    readonly kind?: ProjectKind | undefined;
   }>;
   projectId: ProjectId | undefined;
   /**
@@ -386,7 +390,11 @@ export function PullRequestFiltersMenu({
                     <ProjectFavicon
                       environmentId={project.environmentId}
                       cwd={project.workspaceRoot}
-                      fallbackIcon={FolderGit2Icon}
+                      fallbackIcon={
+                        resolveProjectKind(project) === "workspace"
+                          ? NotebookPenIcon
+                          : FolderGit2Icon
+                      }
                       className="size-3.5 shrink-0"
                     />
                     <span className="min-w-0 flex-1 truncate">{project.title}</span>

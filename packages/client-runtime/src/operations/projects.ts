@@ -4,6 +4,7 @@ import type {
   EnvironmentId,
   OrchestrationCommand,
   ProjectId,
+  ProjectKind,
   SourceControlDiscoveryResult,
   SourceControlProviderKind,
   SourceControlRepositoryInfo,
@@ -312,15 +313,43 @@ export function buildProjectCreateCommand(input: {
   readonly projectId: ProjectId;
   readonly workspaceRoot: string;
   readonly createdAt: string;
+  readonly kind?: ProjectKind;
+  readonly title?: string;
 }): Extract<OrchestrationCommand, { type: "project.create" }> {
   return {
     type: "project.create",
     commandId: input.commandId,
     projectId: input.projectId,
-    title: inferProjectTitleFromPath(input.workspaceRoot),
+    title: input.title?.trim() || inferProjectTitleFromPath(input.workspaceRoot),
     workspaceRoot: input.workspaceRoot,
+    ...(input.kind !== undefined ? { kind: input.kind } : {}),
     createWorkspaceRootIfMissing: true,
     defaultModelSelection: null,
     createdAt: input.createdAt,
   };
+}
+
+export const WORKSPACE_DEFAULT_PARENT_PATH = "~/t3-workspaces";
+
+/**
+ * Folder-name slug for a new workspace project, derived from its display
+ * name. Keeps the path portable across environments: lowercase, dashes for
+ * whitespace and path-hostile characters, never empty.
+ */
+export function deriveWorkspaceFolderName(name: string): string {
+  const slug = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^[-.]+|[-.]+$/g, "");
+  return slug.length > 0 ? slug : "workspace";
+}
+
+/**
+ * Default location offered for a new workspace: a home-relative folder the
+ * server expands and creates on `project.create` (createWorkspaceRootIfMissing
+ * mkdirs recursively). The user can still edit the path before confirming.
+ */
+export function buildWorkspaceDefaultPath(name: string): string {
+  return `${WORKSPACE_DEFAULT_PARENT_PATH}/${deriveWorkspaceFolderName(name)}`;
 }

@@ -10,6 +10,7 @@ import {
   IsoDateTime,
   ModelSelection,
   ProjectId,
+  ProjectKind,
   ProjectScript,
   ThreadEnvMode,
 } from "@t3tools/contracts";
@@ -24,6 +25,8 @@ export const ProjectionProject = Schema.Struct({
   projectId: ProjectId,
   title: Schema.String,
   workspaceRoot: Schema.String,
+  // NULL means "repository" (rows written before the fork's kind column).
+  kind: Schema.NullOr(ProjectKind),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   defaultThreadEnvMode: Schema.NullOr(ThreadEnvMode),
   faviconPath: Schema.optional(Schema.NullOr(Schema.String)),

@@ -10,7 +10,9 @@ import * as Option from "effect/Option";
 import {
   buildAddProjectRemoteSourceReadiness,
   buildProjectCreateCommand,
+  buildWorkspaceDefaultPath,
   canCreateProjectInEnvironment,
+  deriveWorkspaceFolderName,
   findExistingAddProject,
   getAddProjectInitialQuery,
   getCloneDestinationBrowsePath,
@@ -271,5 +273,62 @@ describe("add project shared logic", () => {
       createWorkspaceRootIfMissing: true,
       defaultModelSelection: null,
     });
+  });
+
+  it("omits kind unless requested so older servers keep decoding", () => {
+    expect(
+      buildProjectCreateCommand({
+        commandId: CommandId.make("command"),
+        projectId: ProjectId.make("project"),
+        workspaceRoot: "/work/repo",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ).not.toHaveProperty("kind");
+  });
+
+  it("threads workspace kind and a title override into project.create", () => {
+    expect(
+      buildProjectCreateCommand({
+        commandId: CommandId.make("command"),
+        projectId: ProjectId.make("project"),
+        workspaceRoot: "/home/user/t3-workspaces/pc-maintenance",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        kind: "workspace",
+        title: "PC Maintenance",
+      }),
+    ).toMatchObject({
+      type: "project.create",
+      kind: "workspace",
+      title: "PC Maintenance",
+      workspaceRoot: "/home/user/t3-workspaces/pc-maintenance",
+      createWorkspaceRootIfMissing: true,
+    });
+  });
+
+  it("falls back to the inferred title when the override is blank", () => {
+    expect(
+      buildProjectCreateCommand({
+        commandId: CommandId.make("command"),
+        projectId: ProjectId.make("project"),
+        workspaceRoot: "/work/notes",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        kind: "workspace",
+        title: "   ",
+      }).title,
+    ).toBe("notes");
+  });
+});
+
+describe("workspace paths", () => {
+  it("slugs workspace names into portable folder names", () => {
+    expect(deriveWorkspaceFolderName("PC Maintenance")).toBe("pc-maintenance");
+    expect(deriveWorkspaceFolderName("  Planning / Docs  ")).toBe("planning-docs");
+    expect(deriveWorkspaceFolderName("notes.2026")).toBe("notes.2026");
+    expect(deriveWorkspaceFolderName("---")).toBe("workspace");
+    expect(deriveWorkspaceFolderName("")).toBe("workspace");
+  });
+
+  it("builds a home-relative default path", () => {
+    expect(buildWorkspaceDefaultPath("PC Maintenance")).toBe("~/t3-workspaces/pc-maintenance");
   });
 });
