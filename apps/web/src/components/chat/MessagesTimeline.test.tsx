@@ -733,6 +733,63 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("Work Log");
   });
 
+  it("renders folded activity counts with a themed context compaction marker", () => {
+    const turnId = TurnId.make("turn-summary");
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          buildUserTimelineEntry("Summarize this turn"),
+          {
+            id: "command-entry",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:29.000Z",
+            entry: {
+              id: "command-work",
+              createdAt: "2026-03-17T19:12:29.000Z",
+              turnId,
+              label: "Ran command",
+              tone: "tool",
+              itemType: "command_execution",
+            },
+          },
+          {
+            id: "compaction-entry",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:30.000Z",
+            entry: {
+              id: "compaction-work",
+              createdAt: "2026-03-17T19:12:30.000Z",
+              turnId,
+              label: "Context compacted",
+              tone: "info",
+              sourceActivityKind: "context-compaction",
+            },
+          },
+          {
+            id: "assistant-final-entry",
+            kind: "message",
+            createdAt: "2026-03-17T19:12:31.000Z",
+            message: {
+              id: MessageId.make("assistant-summary"),
+              role: "assistant",
+              text: "Done",
+              turnId,
+              createdAt: "2026-03-17T19:12:31.000Z",
+              updatedAt: "2026-03-17T19:12:31.000Z",
+              streaming: false,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('title="1 terminal command"');
+    expect(markup).toContain('title="1 context compaction"');
+    expect(markup).toContain("text-primary/70");
+    expect(markup).toContain('aria-expanded="false"');
+  });
+
   it("keeps the completed state in setup lifecycle labels", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
