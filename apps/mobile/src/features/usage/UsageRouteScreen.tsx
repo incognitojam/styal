@@ -1,22 +1,28 @@
 import { useNavigation } from "@react-navigation/native";
 import type { DailyTotals, MergedUsage } from "@t3tools/shared/usageMerge";
 import {
+  estimateUsageEmissionsGrams,
   enumerateDays,
   enumerateHourStarts,
   formatCount,
   formatDayShort,
+  formatEmissionsGrams,
   formatHourShort,
   formatPercent,
   formatTokens,
+  formatUsageEmissionsComparison,
   formatUsd,
   makeWindow,
+  USAGE_EMISSIONS_GRAMS_PER_1K_OUTPUT_TOKENS,
 } from "@t3tools/shared/usageFormat";
-import { useMemo, useState } from "react";
-import { Platform, Pressable, RefreshControl, ScrollView, View } from "react-native";
+import { useMemo, useState, type ReactNode } from "react";
+import { Alert, Platform, Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
+import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
+import { useThemeColor } from "../../lib/useThemeColor";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
 import { SettingsSection } from "../settings/components/SettingsSection";
@@ -356,6 +362,7 @@ function TotalsSection(props: { readonly merged: MergedUsage; readonly isPast24H
   const periodAverage = activePeriods === 0 ? 0 : merged.totalTokens / activePeriods;
   const observedInput = merged.uncachedInputTokens + merged.cachedInputTokens;
   const cachedShare = observedInput === 0 ? 0 : merged.cachedInputTokens / observedInput;
+  const emissionsGrams = estimateUsageEmissionsGrams(merged.outputTokens);
 
   return (
     <SettingsSection title="Totals" card>
@@ -394,6 +401,13 @@ function TotalsSection(props: { readonly merged: MergedUsage; readonly isPast24H
           value={formatPercent(merged.costQuality.unpricedShare)}
           detail="of records, excluded from cost"
         />
+        <MetricCell
+          label="Estimated CO₂"
+          value={`≈${formatEmissionsGrams(emissionsGrams)}`}
+          detail={formatUsageEmissionsComparison(emissionsGrams)}
+          info={<EmissionsMethodologyButton />}
+          wide
+        />
       </View>
     </SettingsSection>
   );
@@ -403,13 +417,47 @@ function MetricCell(props: {
   readonly label: string;
   readonly value: string;
   readonly detail: string;
+  /** Optional affordance beside the label, for figures that need a caveat. */
+  readonly info?: ReactNode;
+  readonly wide?: boolean;
 }) {
   return (
-    <View className="w-1/2 gap-0.5 p-4">
-      <Text className="text-sm text-foreground-muted">{props.label}</Text>
+    <View className={props.wide === true ? "w-full gap-0.5 p-4" : "w-1/2 gap-0.5 p-4"}>
+      <View className="flex-row items-center gap-1.5">
+        <Text className="text-sm text-foreground-muted">{props.label}</Text>
+        {props.info}
+      </View>
       <Text className="text-xl font-t3-medium tabular-nums text-foreground">{props.value}</Text>
       <Text className="text-xs text-foreground-tertiary">{props.detail}</Text>
     </View>
+  );
+}
+
+const EMISSIONS_METHODOLOGY = [
+  "Rough estimate based on generated tokens.",
+  `Uses ${USAGE_EMISSIONS_GRAMS_PER_1K_OUTPUT_TOKENS.toFixed(2)} g CO₂ per 1,000 output tokens.`,
+  "Actual emissions vary by model, hardware, data center, utilization, and energy source.",
+  "Excludes training, hardware manufacture, networking, local devices,",
+  "and other lifecycle emissions.",
+].join(" ");
+
+/**
+ * The emissions figure is directional, and the comparison under it invites
+ * more trust than a token-level estimate deserves. A system alert is the
+ * lightest native way to keep those assumptions one tap away.
+ */
+function EmissionsMethodologyButton() {
+  const iconColor = useThemeColor("--color-icon-subtle");
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="How estimated CO₂ is calculated"
+      accessibilityHint="Shows the assumptions behind this estimate"
+      hitSlop={12}
+      onPress={() => Alert.alert("How this is estimated", EMISSIONS_METHODOLOGY)}
+    >
+      <SymbolView name="info.circle" size={15} tintColor={iconColor} type="monochrome" />
+    </Pressable>
   );
 }
 
