@@ -1,6 +1,6 @@
 import type { UsageProviderKind } from "@t3tools/contracts";
-import { CheckIcon, RefreshCwIcon, XIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { CheckIcon, InfoIcon, RefreshCwIcon, XIcon } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import type { DailyTotals, HourlyTotals } from "@t3tools/shared/usageMerge";
 
@@ -8,20 +8,31 @@ import { isElectron } from "../../env";
 import { cn } from "../../lib/utils";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
 import {
+  estimateUsageEmissionsGrams,
   enumerateDays,
   enumerateHourStarts,
   formatCount,
   formatDateTimeShort,
   formatDayShort,
+  formatEmissionsGrams,
   formatHourShort,
   formatPercent,
   formatTokens,
+  formatUsageEmissionsComparison,
   formatUsd,
   makeWindow,
+  USAGE_EMISSIONS_GRAMS_PER_1K_OUTPUT_TOKENS,
 } from "@t3tools/shared/usageFormat";
 import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import {
+  Popover,
+  PopoverDescription,
+  PopoverPopup,
+  PopoverTitle,
+  PopoverTrigger,
+} from "../ui/popover";
 import { SidebarInset } from "../ui/sidebar";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import {
@@ -75,6 +86,7 @@ export function UsagePage() {
     [isPast24Hours, merged.daily, merged.hourly],
   );
 
+  const emissionsGrams = estimateUsageEmissionsGrams(merged.outputTokens);
   const selectWindow = (days: number) => {
     setWindowSelection({
       days,
@@ -290,7 +302,7 @@ export function UsagePage() {
 
                 <section className="flex flex-col gap-2">
                   <h2 className="text-sm font-medium text-foreground">Totals</h2>
-                  <div className="grid grid-cols-2 gap-x-6 gap-y-4 py-1 md:grid-cols-5">
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-4 py-1 md:grid-cols-3 lg:grid-cols-6">
                     <Metric label="Processed tokens" value={formatTokens(merged.totalTokens)} />
                     <Metric label="Cached input" value={formatTokens(merged.cachedInputTokens)} />
                     <Metric
@@ -301,6 +313,12 @@ export function UsagePage() {
                     <Metric
                       label="Cache savings"
                       value={formatUsd(merged.costQuality.cacheSavingsUsd)}
+                    />
+                    <Metric
+                      label="Estimated CO₂"
+                      value={`≈${formatEmissionsGrams(emissionsGrams)}`}
+                      detail={formatUsageEmissionsComparison(emissionsGrams)}
+                      info={<EmissionsMethodology />}
                     />
                   </div>
                 </section>
@@ -447,12 +465,63 @@ function ProviderMark({
   return <Mark className={cn("shrink-0", className)} aria-hidden />;
 }
 
-function Metric({ label, value }: { readonly label: string; readonly value: string }) {
+function Metric({
+  label,
+  value,
+  detail,
+  info,
+}: {
+  readonly label: string;
+  readonly value: string;
+  readonly detail?: string;
+  readonly info?: ReactNode;
+}) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
-      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+        {label}
+        {info}
+      </span>
       <span className="text-base font-medium text-foreground tabular-nums">{value}</span>
+      {detail ? <span className="text-xs text-muted-foreground">{detail}</span> : null}
     </div>
+  );
+}
+
+/**
+ * The emissions figure is directional, and the comparison under it invites
+ * more trust than a token-level estimate deserves. The assumptions stay one
+ * click away rather than crowding the strip.
+ */
+function EmissionsMethodology() {
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            aria-label="How estimated CO₂ is calculated"
+            className="-m-1 flex cursor-pointer items-center rounded-sm p-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background data-popup-open:text-foreground"
+          />
+        }
+      >
+        <InfoIcon className="size-3.5" aria-hidden />
+      </PopoverTrigger>
+      <PopoverPopup align="start" className="w-72 max-w-full" side="top">
+        <div className="flex flex-col gap-2">
+          <PopoverTitle className="text-sm font-medium leading-none">
+            How this is estimated
+          </PopoverTitle>
+          <PopoverDescription className="text-xs leading-relaxed">
+            Rough estimate based on generated tokens. Uses{" "}
+            {USAGE_EMISSIONS_GRAMS_PER_1K_OUTPUT_TOKENS.toFixed(2)} g CO₂ per 1,000 output tokens.
+            Actual emissions vary by model, hardware, data center, utilization, and energy source.
+            Excludes training, hardware manufacture, networking, local devices, and other lifecycle
+            emissions.
+          </PopoverDescription>
+        </div>
+      </PopoverPopup>
+    </Popover>
   );
 }
 
@@ -598,15 +667,20 @@ function UsageSkeleton() {
 
       <section className="flex flex-col gap-2">
         <h2 className="text-sm font-medium text-foreground">Totals</h2>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-4 py-1 md:grid-cols-5">
-          {["Processed tokens", "Cached input", "Uncached input", "Output", "Cache savings"].map(
-            (label) => (
-              <div key={label} className="flex flex-col gap-0.5">
-                <span className="text-xs text-muted-foreground">{label}</span>
-                <div className="my-0.5 h-4 w-16 rounded-sm bg-muted" />
-              </div>
-            ),
-          )}
+        <div className="grid grid-cols-2 gap-x-6 gap-y-4 py-1 md:grid-cols-3 lg:grid-cols-6">
+          {[
+            "Processed tokens",
+            "Cached input",
+            "Uncached input",
+            "Output",
+            "Cache savings",
+            "Estimated CO₂",
+          ].map((label) => (
+            <div key={label} className="flex flex-col gap-0.5">
+              <span className="text-xs text-muted-foreground">{label}</span>
+              <div className="my-0.5 h-4 w-16 rounded-sm bg-muted" />
+            </div>
+          ))}
         </div>
       </section>
     </>
