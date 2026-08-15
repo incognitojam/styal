@@ -5,7 +5,10 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 
 import * as GitHubCli from "../sourceControl/GitHubCli.ts";
 import * as GitHubPullRequestCli from "./GitHubPullRequestCli.ts";
-import { BASE_COMPARISON_GRAPHQL_QUERY } from "./gitHubPullRequestJson.ts";
+import {
+  BASE_COMPARISON_GRAPHQL_QUERY,
+  BRANCH_PROTECTION_REQUIRED_CHECKS_GRAPHQL_QUERY,
+} from "./gitHubPullRequestJson.ts";
 
 const mockedExecute = vi.fn<GitHubCli.GitHubCli["Service"]["execute"]>();
 
@@ -2112,9 +2115,187 @@ layer("GitHubPullRequestCli.layer", (it) => {
       expect(detail.body).toBe("Core body");
       expect(activity.author?.login).toBe("octocat");
       expect(callAt(0).args.at(-1)).toBe(
-        "number,title,url,author,headRefName,baseRefName,state,isDraft,mergeable,reviewDecision,additions,deletions,createdAt,updatedAt,mergedAt,reviewRequests,labels,statusCheckRollup,body,changedFiles,closedAt,headRepositoryOwner,autoMergeRequest",
+        "number,title,url,author,headRefName,baseRefName,state,isDraft,mergeable,reviewDecision,additions,deletions,createdAt,updatedAt,mergedAt,reviewRequests,labels,statusCheckRollup,body,changedFiles,closedAt,headRepositoryOwner,autoMergeRequest,mergeStateStatus",
       );
       expect(callAt(1).args.at(-1)).toBe("author,comments,reviews,commits");
+    }),
+  );
+
+  it.effect("reads the required checks through GitHub's policy-aware checks command", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockReturnValue(
+        Effect.succeed(
+          output(
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            JSON.stringify([
+              {
+                name: "build",
+                link: "https://example.test/checks/build",
+              },
+            ]),
+          ),
+        ),
+      );
+      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+
+      const checks = yield* cli.getRequiredChecks({
+        cwd: "/w",
+        repository: "acme/web",
+        host: "github.com",
+        number: 7,
+      });
+
+      expect(checks).toEqual([{ name: "build", url: "https://example.test/checks/build" }]);
+      expect(callAt(0)).toMatchObject({
+        args: [
+          "pr",
+          "checks",
+          "7",
+          "--repo",
+          "github.com/acme/web",
+          "--required",
+          "--json",
+          "name,link",
+        ],
+        allowNonZeroExit: true,
+      });
+    }),
+  );
+
+  it.effect("treats GitHub's no-required-checks exit as an empty policy answer", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockReturnValue(
+        Effect.succeed({
+          ...output(""),
+          exitCode: ChildProcessSpawner.ExitCode(1),
+          stderr: "no required checks reported on the 'feat/page' branch\n",
+        }),
+      );
+      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+
+      const checks = yield* cli.getRequiredChecks({
+        cwd: "/w",
+        repository: "acme/web",
+        host: "github.com",
+        number: 7,
+      });
+
+      expect(checks).toEqual([]);
+    }),
+  );
+
+  it.effect("unions effective ruleset and classic branch-protection required checks", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockImplementation((input) =>
+        Effect.succeed(
+          output(
+            input.args.includes("repos/acme/web/rules/branches/release%2Fnext")
+              ? JSON.stringify([
+                  [
+                    {
+                      type: "required_status_checks",
+                      parameters: {
+                        required_status_checks: [
+                          { context: "build", integration_id: 1 },
+                          { context: "security", integration_id: 2 },
+                        ],
+                      },
+                    },
+                  ],
+                ])
+              : JSON.stringify({
+                  data: {
+                    repository: {
+                      ref: {
+                        branchProtectionRule: {
+                          requiredStatusCheckContexts: ["legacy", "build"],
+                        },
+                      },
+                    },
+                  },
+                }),
+          ),
+        ),
+      );
+      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+
+      const checks = yield* cli.getRequiredCheckPolicy({
+        cwd: "/w",
+        repository: "acme/web",
+        host: "github.example.test",
+        baseBranch: "release/next",
+      });
+
+      expect(checks).toEqual(["build", "security", "legacy"]);
+      expect(mockedExecute.mock.calls.map(([input]) => input.args)).toEqual(
+        expect.arrayContaining([
+          [
+            "api",
+            "--hostname",
+            "github.example.test",
+            "repos/acme/web/rules/branches/release%2Fnext",
+            "--paginate",
+            "--slurp",
+          ],
+          expect.arrayContaining([
+            "api",
+            "graphql",
+            "--hostname",
+            "github.example.test",
+            `query=${BRANCH_PROTECTION_REQUIRED_CHECKS_GRAPHQL_QUERY}`,
+          ]),
+        ]),
+      );
+    }),
+  );
+
+  it.effect("keeps classic protection when the host has no rulesets endpoint", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockImplementation((input) =>
+        input.args.includes("repos/acme/web/rules/branches/main")
+          ? Effect.fail(diffRefused)
+          : Effect.succeed(
+              output(
+                JSON.stringify({
+                  data: {
+                    repository: {
+                      ref: {
+                        branchProtectionRule: { requiredStatusCheckContexts: ["classic"] },
+                      },
+                    },
+                  },
+                }),
+              ),
+            ),
+      );
+      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+
+      expect(
+        yield* cli.getRequiredCheckPolicy({
+          cwd: "/w",
+          repository: "acme/web",
+          host: "github.example.test",
+          baseBranch: "main",
+        }),
+      ).toEqual(["classic"]);
+    }),
+  );
+
+  it.effect("leaves required-check policy unknown when neither source is available", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockReturnValue(Effect.fail(diffRefused));
+      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+
+      const error = yield* Effect.flip(
+        cli.getRequiredCheckPolicy({
+          cwd: "/w",
+          repository: "acme/web",
+          host: "github.example.test",
+          baseBranch: "main",
+        }),
+      );
+
+      expect(error._tag).toBe("GitHubPullRequestReadError");
     }),
   );
 
@@ -2242,23 +2423,24 @@ layer("GitHubPullRequestCli.layer", (it) => {
   );
 
   it.effect(
-    "asks for the reader's standing on the repository and on the pull request at once",
+    "keeps the reader's standing when the optional auto-merge permission read is unavailable",
     () =>
       Effect.gen(function* () {
-        mockedExecute.mockReturnValue(
-          Effect.succeed(
-            output(
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
-              JSON.stringify({
-                data: {
-                  repository: {
-                    viewerPermission: "READ",
-                    pullRequest: { viewerCanUpdate: true, viewerDidAuthor: true },
-                  },
-                },
-              }),
-            ),
-          ),
+        mockedExecute.mockImplementation((input) =>
+          input.args.some((arg) => arg.includes("viewerCanEnableAutoMerge"))
+            ? Effect.fail(diffRefused)
+            : Effect.succeed(
+                output(
+                  JSON.stringify({
+                    data: {
+                      repository: {
+                        viewerPermission: "READ",
+                        pullRequest: { viewerCanUpdate: true, viewerDidAuthor: true },
+                      },
+                    },
+                  }),
+                ),
+              ),
         );
         const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
 
@@ -2269,8 +2451,9 @@ layer("GitHubPullRequestCli.layer", (it) => {
           number: 7,
         });
 
-        // One request, because both answers hang off the same repository object.
-        assert.strictEqual(mockedExecute.mock.calls.length, 1);
+        // The core answer survives the second query failing, as it would on a GitHub Enterprise
+        // schema that predates the auto-merge fields.
+        assert.strictEqual(mockedExecute.mock.calls.length, 2);
         expect(callAt(0).args).toContain("number=7");
         expect(access).toEqual({ canWrite: false, canUpdate: true, didAuthor: true });
       }),

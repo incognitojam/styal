@@ -48,6 +48,10 @@ T3 Code works with the platforms your team already uses:
 
 - See if your current branch already has an open PR/MR
 - Open several reviews from the **Pull requests** page as tabs in the right panel
+- Use **Checks** to see which GitHub checks are required by repository policy, including checks
+  GitHub is still waiting to receive, and whether the pull request is ready to merge or blocked
+- When GitHub is waiting on repository requirements and auto-merge is available, **Auto-merge**
+  replaces the primary **Merge** action and merges the pull request as soon as it becomes ready
 - Read ordinary files expanded by default in **Code changes**; oversized files stay folded until
   opened, while files with review comments remain expanded
 - View repository-hosted images in GitHub pull request descriptions, including private repositories
