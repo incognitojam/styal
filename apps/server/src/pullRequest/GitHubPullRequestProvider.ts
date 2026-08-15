@@ -13,7 +13,11 @@ import {
   type ProviderChangeRequestDetail,
   type PullRequestProviderApi,
 } from "./PullRequestProvider.ts";
-import type { GitHubViewerAccess } from "./gitHubPullRequestJson.ts";
+import {
+  applyRequiredCheckPolicy,
+  markRequiredChecks,
+  type GitHubViewerAccess,
+} from "./gitHubPullRequestJson.ts";
 
 const CAPABILITIES: PullRequestCapabilities = {
   diff: true,
@@ -62,9 +66,12 @@ const CAPABILITIES: PullRequestCapabilities = {
 export function gitHubViewerPermissions(access: GitHubViewerAccess): PullRequestViewerPermissions {
   return {
     actions: [
-      // Arming a merge and taking the arming back are the merge, deferred: whoever may not
-      // merge here may not leave an instruction to merge later either.
-      ...(access.canWrite ? (["merge", "enable-auto-merge", "disable-auto-merge"] as const) : []),
+      ...(access.canWrite ? (["merge"] as const) : []),
+      // GitHub answers these per pull request: enabling also depends on the repository setting
+      // and on there being an unmet requirement, while an author may disable an armed merge even
+      // without repository write access. Older hosts fall back to the write-based approximation.
+      ...((access.canEnableAutoMerge ?? access.canWrite) ? (["enable-auto-merge"] as const) : []),
+      ...((access.canDisableAutoMerge ?? access.canWrite) ? (["disable-auto-merge"] as const) : []),
       ...(access.canUpdate ? (["ready", "draft", "close", "reopen"] as const) : []),
       // Whether this viewer may update the branch is GitHub's own answer, read with the
       // comparison; without it the action is offered to nobody rather than to everybody.
@@ -223,20 +230,33 @@ export const make = Effect.gen(function* () {
         [
           cli.getPullRequestDetail(input).pipe(
             Effect.flatMap((pullRequest) =>
-              // Only an open pull request can be behind anything worth saying so about, and only
-              // one whose head repository is known can be compared at all. A comparison that
-              // fails is left unknown: the banner is an offer, never a blocker.
-              pullRequest.state !== "open" || pullRequest.headRepositoryOwner === null
-                ? Effect.succeed({ pullRequest, comparison: null })
-                : cli
-                    .getPullRequestBaseComparison({
-                      ...input,
-                      headRef: `${pullRequest.headRepositoryOwner}:${pullRequest.headBranch}`,
+              Effect.all(
+                {
+                  // Only an open pull request can be behind anything worth saying so about, and
+                  // only one whose head repository is known can be compared at all. A failed
+                  // comparison is unknown: the banner is an offer, never a blocker.
+                  comparison:
+                    pullRequest.state !== "open" || pullRequest.headRepositoryOwner === null
+                      ? Effect.succeed(null)
+                      : cli
+                          .getPullRequestBaseComparison({
+                            ...input,
+                            headRef: `${pullRequest.headRepositoryOwner}:${pullRequest.headBranch}`,
+                          })
+                          .pipe(Effect.orElseSucceed(() => null)),
+                  // Policy is per base branch, so it follows detail. Failure means no synthetic
+                  // rows; the independently reported required-check read can still decorate runs.
+                  requiredCheckPolicy: cli
+                    .getRequiredCheckPolicy({
+                      cwd: input.cwd,
+                      repository: input.repository,
+                      host: input.host,
+                      baseBranch: pullRequest.baseBranch,
                     })
-                    .pipe(
-                      Effect.map((comparison) => ({ pullRequest, comparison })),
-                      Effect.orElseSucceed(() => ({ pullRequest, comparison: null })),
-                    ),
+                    .pipe(Effect.orElseSucceed(() => null)),
+                },
+                { concurrency: 2 },
+              ).pipe(Effect.map((metadata) => ({ pullRequest, ...metadata }))),
             ),
           ),
           cli.getRepositoryAccess({
@@ -247,13 +267,22 @@ export const make = Effect.gen(function* () {
           // A small permissions query replaces the deeply paginated review-thread walk on the
           // core path. Writes ask again immediately before mutating, so this is presentation.
           cli.getViewerAccess(input),
+          // Required-ness enriches the checks but must not blank the whole detail on a host whose
+          // GraphQL schema predates it. Null means unknown; an empty array is GitHub saying none.
+          cli.getRequiredChecks(input).pipe(Effect.orElseSucceed(() => null)),
         ],
-        { concurrency: 3 },
+        { concurrency: 4 },
       ).pipe(
         Effect.mapError(fail("getChangeRequest")),
         Effect.map(
-          ([detail, repository, viewerAccess]): ProviderChangeRequestDetail => ({
+          ([detail, repository, viewerAccess, requiredChecks]): ProviderChangeRequestDetail => ({
             ...detail.pullRequest,
+            checks: applyRequiredCheckPolicy(
+              requiredChecks === null
+                ? detail.pullRequest.checks
+                : markRequiredChecks(detail.pullRequest.checks, requiredChecks),
+              detail.requiredCheckPolicy ?? [],
+            ),
             reviewers: detail.pullRequest.reviewRequestLogins.map((login) => ({
               login,
               name: null,

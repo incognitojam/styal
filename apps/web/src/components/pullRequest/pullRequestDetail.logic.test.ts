@@ -25,6 +25,7 @@ import {
   pullRequestHandoffLabels,
   readableFailure,
   resolveBaseFreshness,
+  resolvePullRequestPrimaryAction,
   buildPullRequestTimeline,
   describePullRequestState,
 } from "./pullRequestDetail.logic";
@@ -58,6 +59,55 @@ const TIMELINE_SOURCE: Pick<
 describe("pull request action menu", () => {
   it("keeps the group divider when auto-merge is the only action", () => {
     expect(pullRequestActionMenuHasGroup(false, true, false)).toBe(true);
+  });
+});
+
+describe("pull request primary action", () => {
+  const primary = (
+    overrides: Partial<Parameters<typeof resolvePullRequestPrimaryAction>[0]> = {},
+  ) =>
+    resolvePullRequestPrimaryAction({
+      state: "open",
+      isDraft: false,
+      mergeability: "mergeable",
+      mergeReadiness: "ready",
+      autoMergeArmed: false,
+      isBehind: false,
+      canReady: true,
+      canMerge: true,
+      canEnableAutoMerge: true,
+      hasMergeMethod: true,
+      ...overrides,
+    });
+
+  it("promotes auto-merge when repository policy blocks an otherwise clean merge", () => {
+    expect(primary({ mergeReadiness: "blocked" })).toBe("enable-auto-merge");
+  });
+
+  it("withholds a merge the host would refuse when auto-merge is unavailable", () => {
+    expect(primary({ mergeReadiness: "blocked", canEnableAutoMerge: false })).toBeNull();
+  });
+
+  it("keeps Merge for a ready host or one that exposes no policy verdict", () => {
+    expect(primary()).toBe("merge");
+    expect(primary({ mergeReadiness: undefined })).toBe("merge");
+  });
+
+  it("keeps Merge while the host's policy verdict is explicitly unknown", () => {
+    expect(primary({ mergeReadiness: "unknown" })).toBe("merge");
+  });
+
+  it("offers no second merge action once auto-merge is already armed", () => {
+    expect(primary({ mergeReadiness: "blocked", autoMergeArmed: true })).toBeNull();
+  });
+
+  it("leaves an out-of-date branch to the existing update-branch control", () => {
+    expect(primary({ mergeReadiness: "blocked", isBehind: true })).toBeNull();
+  });
+
+  it("keeps conflicts and drafts ahead of the repository-policy verdict", () => {
+    expect(primary({ mergeability: "conflicting", mergeReadiness: "blocked" })).toBe("resolve");
+    expect(primary({ isDraft: true, mergeReadiness: "blocked" })).toBe("ready");
   });
 });
 

@@ -1065,6 +1065,9 @@ export const make = Effect.gen(function* () {
               state: changeRequest.state,
               isDraft: changeRequest.isDraft,
               mergeability: changeRequest.mergeability,
+              ...(changeRequest.mergeReadiness === undefined
+                ? {}
+                : { mergeReadiness: changeRequest.mergeReadiness }),
               additions: changeRequest.additions,
               deletions: changeRequest.deletions,
               changedFiles: changeRequest.changedFiles,
