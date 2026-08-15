@@ -524,6 +524,7 @@ describe("deriveMessagesTimelineRows", () => {
     );
     expect(foldRow?.turnId).toBe("turn-1");
     expect(foldRow?.expanded).toBe(false);
+    expect(foldRow?.activitySummary).toEqual([{ kind: "tool", count: 1 }]);
     // User message boundary (00:00:00) → terminal message updatedAt (00:00:22).
     expect(foldRow?.label).toBe("Worked for 22s");
     expect(collapsedRows.map((row) => row.id)).toEqual([
@@ -613,6 +614,94 @@ describe("deriveMessagesTimelineRows", () => {
       "turn-fold:turn-1",
       "assistant-final-entry",
     ]);
+  });
+
+  it("summarizes folded work by activity category without counting commentary", () => {
+    const timelineEntries = [
+      {
+        id: "user-entry",
+        kind: "message" as const,
+        createdAt: "2026-01-01T00:00:00Z",
+        message: {
+          id: "user-1" as never,
+          role: "user" as const,
+          text: "Do the work",
+          turnId: null,
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+          streaming: false,
+        },
+      },
+      {
+        id: "commentary-entry",
+        kind: "message" as const,
+        createdAt: "2026-01-01T00:00:01Z",
+        message: {
+          id: "commentary-1" as never,
+          role: "assistant" as const,
+          text: "Checking this now.",
+          turnId: "turn-1" as never,
+          createdAt: "2026-01-01T00:00:01Z",
+          updatedAt: "2026-01-01T00:00:01Z",
+          streaming: false,
+        },
+      },
+      ...[
+        { id: "command-1", itemType: "command_execution" as const },
+        { id: "command-2", itemType: "command_execution" as const },
+        { id: "edit-1", itemType: "file_change" as const },
+        { id: "read-1", requestKind: "file-read" as const },
+        { id: "web-1", itemType: "web_search" as const },
+        { id: "image-1", itemType: "image_view" as const },
+        { id: "tool-1", itemType: "mcp_tool_call" as const },
+        { id: "compaction-1", sourceActivityKind: "context-compaction" as const },
+      ].map((entry, index) => ({
+        id: `${entry.id}-entry`,
+        kind: "work" as const,
+        createdAt: `2026-01-01T00:00:${String(index + 2).padStart(2, "0")}Z`,
+        entry: {
+          ...entry,
+          createdAt: `2026-01-01T00:00:${String(index + 2).padStart(2, "0")}Z`,
+          turnId: "turn-1" as never,
+          label: entry.id,
+          tone: entry.id === "compaction-1" ? ("info" as const) : ("tool" as const),
+        },
+      })),
+      {
+        id: "assistant-final-entry",
+        kind: "message" as const,
+        createdAt: "2026-01-01T00:00:12Z",
+        message: {
+          id: "assistant-final" as never,
+          role: "assistant" as const,
+          text: "Done",
+          turnId: "turn-1" as never,
+          createdAt: "2026-01-01T00:00:12Z",
+          updatedAt: "2026-01-01T00:00:12Z",
+          streaming: false,
+        },
+      },
+    ];
+
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries,
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(rows.find((row) => row.kind === "turn-fold")).toMatchObject({
+      activitySummary: [
+        { kind: "terminal", count: 2 },
+        { kind: "file-change", count: 1 },
+        { kind: "file-read", count: 1 },
+        { kind: "web", count: 1 },
+        { kind: "tool", count: 1 },
+        { kind: "image", count: 1 },
+        { kind: "context-compaction", count: 1 },
+      ],
+    });
   });
 
   it("derives a sane duration for a steer-superseded turn with one instant commentary message", () => {
