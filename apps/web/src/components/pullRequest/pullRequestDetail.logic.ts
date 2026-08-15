@@ -6,6 +6,7 @@ import type {
   PullRequestComment,
   PullRequestCommit,
   PullRequestDetailView,
+  PullRequestMergeReadiness,
   PullRequestMergeability,
   PullRequestReaction,
   PullRequestReviewThread,
@@ -112,6 +113,35 @@ export function isStackedPullRequestBase(
     ? defaultRef.name.slice(remotePrefix.length)
     : defaultRef.name;
   return defaultBranch !== baseBranch;
+}
+
+/**
+ * The one action that earns the header slot. A repository-policy blocker replaces a Merge press
+ * the host would refuse with Auto-merge when this viewer may arm it.
+ */
+export function resolvePullRequestPrimaryAction(input: {
+  readonly state: PullRequestState;
+  readonly isDraft: boolean;
+  readonly mergeability: PullRequestMergeability;
+  readonly mergeReadiness?: PullRequestMergeReadiness | undefined;
+  readonly autoMergeArmed: boolean;
+  readonly isBehind: boolean;
+  readonly canReady: boolean;
+  readonly canMerge: boolean;
+  readonly canEnableAutoMerge: boolean;
+  readonly hasMergeMethod: boolean;
+}): "ready" | "resolve" | "merge" | "enable-auto-merge" | null {
+  if (input.state !== "open") return null;
+  if (input.autoMergeArmed) return null;
+  if (input.isDraft && input.canReady) return "ready";
+  if (!input.canMerge) return null;
+  if (input.mergeability === "conflicting") return "resolve";
+  if (!input.hasMergeMethod) return null;
+  if (input.mergeReadiness === "blocked") {
+    if (input.isBehind) return null;
+    return input.canEnableAutoMerge ? "enable-auto-merge" : null;
+  }
+  return "merge";
 }
 
 /** Plain-language state, shown beside the author. Conflicts are a merge signal, not a state. */
