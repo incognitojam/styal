@@ -18,6 +18,7 @@ describe("pullRequestChecksState", () => {
     );
     expect(pullRequestChecksState([check("success"), check("cancelled")])).toBe("failing");
     expect(pullRequestChecksState([check("success"), check("pending")])).toBe("pending");
+    expect(pullRequestChecksState([check("success"), check("expected")])).toBe("pending");
     expect(pullRequestChecksState([check("success")])).toBe("passing");
     // Skipped and neutral are neither a pass nor a failure, so they are no verdict at all.
     expect(pullRequestChecksState([check("skipped"), check("neutral")])).toBe(null);
