@@ -74,6 +74,18 @@ describe("buildGrokAcpSpawnInput", () => {
     );
     expect(spawn.args).toEqual(["--permission-mode", "default", "agent", "stdio"]);
   });
+
+  it("passes additional instructions through Grok's rules option", () => {
+    const spawn = buildGrokAcpSpawnInput(
+      undefined,
+      "/tmp/project",
+      undefined,
+      undefined,
+      "Prefer focused tests.",
+    );
+
+    expect(spawn.args).toEqual(["--rules", "Prefer focused tests.", "agent", "stdio"]);
+  });
 });
 
 describe("isValidGrokReasoningEffortToken", () => {
