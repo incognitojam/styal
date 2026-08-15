@@ -133,11 +133,13 @@ import {
 } from "../rightPanelStore";
 import {
   isPreviewSupportedInRuntime,
+  readThreadPreviewState,
   setActivePreviewTab,
   useThreadPreviewState,
 } from "../previewStateStore";
 import { addBrowserSurface } from "./preview/addBrowserSurface";
 import { closePreviewSession } from "./preview/closePreviewSession";
+import { openScriptPreview, unfinishedSetupScriptStarts } from "./preview/openScriptPreview";
 import { ThreadPreviewMiniPlayer } from "./preview/ThreadPreviewMiniPlayer";
 import { subscribePreviewAction } from "./preview/previewActionBus";
 import { getConfiguredPreviewUrls } from "./preview/previewEmptyStateLogic";
@@ -3084,13 +3086,21 @@ function ChatViewContent(props: ChatViewProps) {
           data: `${script.command}\r`,
         },
       });
-      if (writeResult._tag === "Failure" && !isAtomCommandInterrupted(writeResult)) {
-        const error = squashAtomCommandFailure(writeResult);
-        setThreadError(
-          activeThreadId,
-          error instanceof Error ? error.message : `Failed to run script "${script.name}".`,
-        );
+      if (writeResult._tag === "Failure") {
+        if (!isAtomCommandInterrupted(writeResult)) {
+          const error = squashAtomCommandFailure(writeResult);
+          setThreadError(
+            activeThreadId,
+            error instanceof Error ? error.message : `Failed to run script "${script.name}".`,
+          );
+        }
+        return;
       }
+
+      // The command is running now. Surface whatever it serves if the action
+      // asked for it; deliberately not awaited, so a slow or unreachable
+      // preview target never delays the terminal.
+      void openScriptPreview({ threadRef: activeThreadRef, script, openPreview });
     },
     [
       activeProject,
@@ -3098,6 +3108,7 @@ function ChatViewContent(props: ChatViewProps) {
       activeThreadId,
       activeThreadRef,
       gitCwd,
+      openPreview,
       setTerminalOpen,
       setThreadError,
       storeNewTerminal,
@@ -3112,6 +3123,25 @@ function ChatViewContent(props: ChatViewProps) {
       writeTerminal,
     ],
   );
+
+  // `runOnWorktreeCreate` actions are launched by the server, not by
+  // `runProjectScript`, so their auto-open rides the `setup-script.started`
+  // activity instead. Keyed by activity id: activities are re-delivered on
+  // reconnect and refetch, and one started run must open one preview.
+  const autoOpenedSetupActivityIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!activeThreadRef || !activeProject) return;
+    for (const start of unfinishedSetupScriptStarts(threadActivities)) {
+      if (autoOpenedSetupActivityIds.current.has(start.activityId)) continue;
+      autoOpenedSetupActivityIds.current.add(start.activityId);
+      const script = activeProject.scripts.find((entry) => entry.id === start.scriptId);
+      if (!script) continue;
+      // The setup run is not worth stealing a preview the user is already
+      // using in this thread — mark it handled and leave their tab alone.
+      if (readThreadPreviewState(activeThreadRef).activeTabId !== null) continue;
+      void openScriptPreview({ threadRef: activeThreadRef, script, openPreview });
+    }
+  }, [activeProject, activeThreadRef, openPreview, threadActivities]);
 
   const runCodeBlockInTerminal = useCallback(
     (code: string) => {
