@@ -11,6 +11,7 @@ import type {
   PullRequestCommit,
   PullRequestLabel,
   PullRequestMergeCapabilities,
+  PullRequestMergeReadiness,
   PullRequestOmittedFileStat,
   PullRequestMergeability,
   PullRequestReaction,
@@ -79,6 +80,127 @@ const RawCheckSchema = Schema.Struct({
   startedAt: Schema.optional(Schema.NullOr(Schema.String)),
   completedAt: Schema.optional(Schema.NullOr(Schema.String)),
 });
+
+/** The narrow JSON shape `gh pr checks --required` returns for one required context. */
+const RawRequiredCheckSchema = Schema.Struct({
+  name: Schema.String,
+  link: Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+const decodeRequiredChecks = decodeJsonResult(Schema.Array(RawRequiredCheckSchema));
+
+export interface GitHubRequiredCheck {
+  readonly name: string;
+  readonly url: string | null;
+}
+
+export function decodeRequiredChecksJson(
+  raw: string,
+): Result.Result<ReadonlyArray<GitHubRequiredCheck>, DecodeFailure> {
+  const decoded = decodeRequiredChecks(raw);
+  if (!Result.isSuccess(decoded)) return Result.fail(decoded.failure);
+  return Result.succeed(
+    decoded.success.flatMap((check) => {
+      const name = trimmed(check.name);
+      return name === null ? [] : [{ name, url: trimmed(check.link) }];
+    }),
+  );
+}
+
+/** One required status check inside an effective repository or organization ruleset. */
+const RawRequiredCheckPolicyEntrySchema = Schema.Union([
+  // Kept for older hosts and fixtures that expose the context list without integration metadata.
+  Schema.String,
+  Schema.Struct({
+    context: Schema.String,
+    integration_id: Schema.optional(Schema.NullOr(Schema.Number)),
+  }),
+]);
+
+const RawBranchRuleSchema = Schema.Struct({
+  type: Schema.String,
+  parameters: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        required_status_checks: Schema.optional(Schema.Array(RawRequiredCheckPolicyEntrySchema)),
+      }),
+    ),
+  ),
+});
+
+// `gh api --paginate --slurp` wraps each REST page in this outer array.
+const decodeRequiredCheckRules = decodeJsonResult(Schema.Array(Schema.Array(RawBranchRuleSchema)));
+
+/**
+ * Required check names from every active ruleset GitHub says applies to the base branch. The
+ * endpoint has already resolved repository and organization targeting, so this only normalizes
+ * and deduplicates its contexts.
+ */
+export function decodeRequiredCheckRulesJson(
+  raw: string,
+): Result.Result<ReadonlyArray<string>, DecodeFailure> {
+  const decoded = decodeRequiredCheckRules(raw);
+  if (!Result.isSuccess(decoded)) return Result.fail(decoded.failure);
+  const names = new Set<string>();
+  for (const page of decoded.success) {
+    for (const rule of page) {
+      if (rule.type !== "required_status_checks") continue;
+      for (const entry of rule.parameters?.required_status_checks ?? []) {
+        const name = trimmed(typeof entry === "string" ? entry : entry.context);
+        if (name !== null) names.add(name);
+      }
+    }
+  }
+  return Result.succeed([...names]);
+}
+
+/** Classic branch protection is separate from rulesets, and is most broadly readable in GraphQL. */
+export const BRANCH_PROTECTION_REQUIRED_CHECKS_GRAPHQL_QUERY = `query($owner: String!, $name: String!, $qualifiedName: String!) {
+  repository(owner: $owner, name: $name) {
+    ref(qualifiedName: $qualifiedName) {
+      branchProtectionRule { requiredStatusCheckContexts }
+    }
+  }
+}`;
+
+const RawBranchProtectionRequiredChecksSchema = Schema.Struct({
+  data: Schema.Struct({
+    repository: Schema.NullOr(
+      Schema.Struct({
+        ref: Schema.NullOr(
+          Schema.Struct({
+            branchProtectionRule: Schema.NullOr(
+              Schema.Struct({
+                requiredStatusCheckContexts: Schema.optional(
+                  Schema.NullOr(Schema.Array(Schema.String)),
+                ),
+              }),
+            ),
+          }),
+        ),
+      }),
+    ),
+  }),
+});
+
+const decodeBranchProtectionRequiredChecks = decodeJsonResult(
+  RawBranchProtectionRequiredChecksSchema,
+);
+
+export function decodeBranchProtectionRequiredChecksJson(
+  raw: string,
+): Result.Result<ReadonlyArray<string>, DecodeFailure> {
+  const decoded = decodeBranchProtectionRequiredChecks(raw);
+  if (!Result.isSuccess(decoded)) return Result.fail(decoded.failure);
+  const contexts =
+    decoded.success.data.repository?.ref?.branchProtectionRule?.requiredStatusCheckContexts ?? [];
+  const names = new Set<string>();
+  for (const context of contexts) {
+    const name = trimmed(context);
+    if (name !== null) names.add(name);
+  }
+  return Result.succeed([...names]);
+}
 
 const RawListItemSchema = Schema.Struct({
   number: Schema.Int,
@@ -370,6 +492,8 @@ const RawDetailSchema = Schema.Struct({
    * the question the page asks is whether one exists.
    */
   autoMergeRequest: Schema.optional(Schema.NullOr(Schema.Unknown)),
+  /** GitHub's repository-policy-aware verdict, separate from conflict-only `mergeable`. */
+  mergeStateStatus: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
 const RawActivitySchema = Schema.Struct({
@@ -599,7 +723,7 @@ export function decodeActorAvatarsJson(
 export const PULL_REQUEST_LIST_JSON_FIELDS =
   "number,title,url,author,headRefName,baseRefName,state,isDraft,mergeable,reviewDecision,additions,deletions,createdAt,updatedAt,mergedAt,reviewRequests,labels,statusCheckRollup";
 
-export const PULL_REQUEST_DETAIL_JSON_FIELDS = `${PULL_REQUEST_LIST_JSON_FIELDS},body,changedFiles,closedAt,headRepositoryOwner,autoMergeRequest`;
+export const PULL_REQUEST_DETAIL_JSON_FIELDS = `${PULL_REQUEST_LIST_JSON_FIELDS},body,changedFiles,closedAt,headRepositoryOwner,autoMergeRequest,mergeStateStatus`;
 export const PULL_REQUEST_ACTIVITY_JSON_FIELDS = "author,comments,reviews,commits";
 
 /** GitHub's own ceiling on a connection page, which is what both thread reads ask for. */
@@ -1033,6 +1157,8 @@ export interface GitHubPullRequestDetail extends GitHubPullRequestListItem {
   readonly mergedAt: string | null;
   readonly closedAt: string | null;
   readonly checks: ReadonlyArray<PullRequestCheck>;
+  /** Absent where GitHub did not report its repository-policy-aware verdict. */
+  readonly mergeReadiness?: PullRequestMergeReadiness;
   /** Absent where `gh` did not answer for auto-merge at all, which is not the same as off. */
   readonly autoMergeEnabled?: boolean;
 }
@@ -1119,6 +1245,22 @@ function toMergeability(value: string | null | undefined): PullRequestMergeabili
       return "mergeable";
     case "CONFLICTING":
       return "conflicting";
+    default:
+      return "unknown";
+  }
+}
+
+/** GitHub CLI's own immediate-merge grouping, with policy blockers kept distinct from conflicts. */
+function toMergeReadiness(value: string | null | undefined): PullRequestMergeReadiness {
+  switch (value?.trim().toUpperCase()) {
+    case "CLEAN":
+    case "HAS_HOOKS":
+    // A failing optional check makes a pull request unstable without preventing its merge.
+    case "UNSTABLE":
+      return "ready";
+    case "BLOCKED":
+    case "BEHIND":
+      return "blocked";
     default:
       return "unknown";
   }
@@ -1273,6 +1415,62 @@ function toChecks(
   return dedupeChecks(toCheckEntries(raw));
 }
 
+/**
+ * Attach GitHub's required-context answer to the already deduplicated detail checks. The two
+ * reads race, and a re-run changes its URL between them, so the stable context name is the
+ * fallback identity. Non-matches stay unknown rather than being called optional from absence.
+ */
+export function markRequiredChecks(
+  checks: ReadonlyArray<PullRequestCheck>,
+  requiredChecks: ReadonlyArray<GitHubRequiredCheck>,
+): ReadonlyArray<PullRequestCheck> {
+  const exact = new Set(requiredChecks.map((check) => `${check.name}\u0000${check.url ?? ""}`));
+  const requiredNames = new Set(requiredChecks.map((check) => check.name));
+  return checks.map((check) =>
+    exact.has(`${check.name}\u0000${check.url ?? ""}`) || requiredNames.has(check.name)
+      ? { ...check, required: true }
+      : check,
+  );
+}
+
+/**
+ * Apply configured base-branch policy after the reported check reads have landed. A configured
+ * context with no run becomes the same "Expected" row GitHub shows: policy knows its name, but
+ * there is no run URL or timestamp to attach yet. Name matching is deliberate because the PR
+ * rollup does not expose the ruleset's integration id.
+ */
+export function applyRequiredCheckPolicy(
+  checks: ReadonlyArray<PullRequestCheck>,
+  requiredContexts: ReadonlyArray<string>,
+): ReadonlyArray<PullRequestCheck> {
+  const requiredNames = new Set(
+    requiredContexts.flatMap((name) => {
+      const value = trimmed(name);
+      return value === null ? [] : [value];
+    }),
+  );
+  const reportedNames = new Set(checks.map((check) => check.name));
+  return [
+    ...checks.map((check) =>
+      requiredNames.has(check.name) ? { ...check, required: true as const } : check,
+    ),
+    ...[...requiredNames].flatMap(
+      (name): ReadonlyArray<PullRequestCheck> =>
+        reportedNames.has(name)
+          ? []
+          : [
+              {
+                name,
+                status: "expected",
+                description: "Waiting for status to be reported",
+                url: null,
+                required: true,
+              },
+            ],
+    ),
+  ];
+}
+
 /** The states that are a verdict in themselves, rather than a wrapper around line comments. */
 function isReviewVerdict(reviewState: string | null): boolean {
   switch (reviewState?.toUpperCase()) {
@@ -1379,6 +1577,9 @@ function toDetail(raw: Schema.Schema.Type<typeof RawDetailSchema>): GitHubPullRe
     mergedAt: trimmed(raw.mergedAt),
     closedAt: trimmed(raw.closedAt),
     checks: toChecks(raw.statusCheckRollup),
+    ...(raw.mergeStateStatus === undefined
+      ? {}
+      : { mergeReadiness: toMergeReadiness(raw.mergeStateStatus) }),
     // A JSON null is GitHub saying "nobody armed this"; a missing key is GitHub not saying, and
     // the difference survives here rather than being flattened into false.
     ...(raw.autoMergeRequest === undefined
@@ -2138,6 +2339,9 @@ export interface GitHubViewerAccess {
   /** GitHub's own `viewerCanUpdate`, true for the author as well as for anyone with write. */
   readonly canUpdate: boolean;
   readonly didAuthor: boolean;
+  /** Exact per-pull-request answers, absent on hosts that do not expose auto-merge permissions. */
+  readonly canEnableAutoMerge?: boolean;
+  readonly canDisableAutoMerge?: boolean;
   /**
    * GitHub's own `viewerCanUpdateBranch`, read with the base comparison rather than here: it is
    * false for a branch that is already current, so it answers "may update, and there is
@@ -2182,6 +2386,50 @@ export function decodeViewerPermissionsJson(
   return Result.succeed({
     canWrite: toCanWrite(repository.viewerPermission),
     ...toPullRequestViewerFields(repository.pullRequest),
+  });
+}
+
+/**
+ * Kept in a query of its own because old GitHub Enterprise schemas do not know these fields. A
+ * refusal there must not take down the viewer permissions or the rest of the pull request.
+ */
+export const AUTO_MERGE_PERMISSIONS_GRAPHQL_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) { viewerCanEnableAutoMerge viewerCanDisableAutoMerge }
+  }
+}`;
+
+const RawAutoMergePermissionsSchema = Schema.Struct({
+  data: Schema.Struct({
+    repository: Schema.Struct({
+      pullRequest: Schema.NullOr(
+        Schema.Struct({
+          viewerCanEnableAutoMerge: Schema.optional(Schema.Boolean),
+          viewerCanDisableAutoMerge: Schema.optional(Schema.Boolean),
+        }),
+      ),
+    }),
+  }),
+});
+
+const decodeAutoMergePermissions = decodeJsonResult(RawAutoMergePermissionsSchema);
+
+export function decodeAutoMergePermissionsJson(
+  raw: string,
+): Result.Result<
+  Pick<GitHubViewerAccess, "canEnableAutoMerge" | "canDisableAutoMerge">,
+  DecodeFailure
+> {
+  const decoded = decodeAutoMergePermissions(raw);
+  if (!Result.isSuccess(decoded)) return Result.fail(decoded.failure);
+  const pullRequest = decoded.success.data.repository.pullRequest;
+  return Result.succeed({
+    ...(pullRequest?.viewerCanEnableAutoMerge === undefined
+      ? {}
+      : { canEnableAutoMerge: pullRequest.viewerCanEnableAutoMerge }),
+    ...(pullRequest?.viewerCanDisableAutoMerge === undefined
+      ? {}
+      : { canDisableAutoMerge: pullRequest.viewerCanDisableAutoMerge }),
   });
 }
 
