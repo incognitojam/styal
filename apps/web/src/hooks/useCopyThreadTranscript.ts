@@ -23,9 +23,11 @@ import {
 // the epoch covers transcript-vs-everything-else.
 let latestRequestId = 0;
 
-// Fetches usually settle well under this locally; the loading toast only
-// appears when a large thread or a remote connection makes the wait visible.
-const PENDING_TOAST_DELAY_MS = 400;
+function transcriptFailureToast(description: string) {
+  toastManager.add(
+    stackedThreadToast({ type: "error", title: "Failed to copy transcript", description }),
+  );
+}
 
 /**
  * Copies a thread's conversation to the clipboard as markdown. Fetches a full
@@ -36,28 +38,17 @@ export function useCopyThreadTranscript() {
   const fetchSnapshot = useAtomCommand(threadSnapshotCommands.fetchFull, {
     reportFailure: false,
   });
-  const { copyToClipboard } = useCopyToClipboard<{
-    messageCount: number;
-    closePendingToast: () => void;
-  }>({
+  const { copyToClipboard } = useCopyToClipboard<{ messageCount: number }>({
     target: "transcript",
-    onCopy: ({ messageCount, closePendingToast }) => {
-      closePendingToast();
+    onCopy: ({ messageCount }) => {
       toastManager.add({
         type: "success",
         title: "Transcript copied",
         description: `${messageCount} message${messageCount === 1 ? "" : "s"}`,
       });
     },
-    onError: (error, { closePendingToast }) => {
-      closePendingToast();
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Failed to copy transcript",
-          description: error.message,
-        }),
-      );
+    onError: (error) => {
+      transcriptFailureToast(error.message);
     },
   });
 
@@ -66,60 +57,31 @@ export function useCopyThreadTranscript() {
       ensureClipboardEpochTracking();
       const requestId = ++latestRequestId;
       const epochAtRequest = clipboardWriteEpoch();
-      let pendingToastId: ReturnType<typeof toastManager.add> | null = null;
-      const pendingToastTimer = window.setTimeout(() => {
-        pendingToastId = toastManager.add(
-          stackedThreadToast({ type: "loading", title: "Copying transcript…", timeout: 0 }),
-        );
-      }, PENDING_TOAST_DELAY_MS);
       const result = await fetchSnapshot({
         environmentId: threadRef.environmentId,
         input: { threadId: threadRef.threadId },
       });
-      window.clearTimeout(pendingToastTimer);
-      // A large transcript's clipboard write can itself take a moment, so the
-      // pending toast stays up through the write and closes with its outcome.
-      const closePendingToast = () => {
-        if (pendingToastId !== null) {
-          toastManager.close(pendingToastId);
-        }
-      };
       // Superseded while fetching — by a newer transcript copy or by anything
       // else the user copied — so that write owns the clipboard now. Drop this
       // result without writing or toasting.
       if (requestId !== latestRequestId || clipboardWriteEpoch() !== epochAtRequest) {
-        closePendingToast();
         return;
       }
-      if (result._tag === "Failure") {
-        closePendingToast();
-        if (!isAtomCommandInterrupted(result)) {
-          const error = squashAtomCommandFailure(result);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Failed to copy transcript",
-              description: error instanceof Error ? error.message : "An error occurred.",
-            }),
-          );
-        }
+      if (result._tag === "Failure" && isAtomCommandInterrupted(result)) {
         return;
       }
-      const snapshot = Option.getOrNull(result.value);
+      const snapshot = result._tag === "Failure" ? null : Option.getOrNull(result.value);
       if (snapshot === null) {
-        closePendingToast();
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Failed to copy transcript",
-            description: "Could not load the conversation from the server.",
-          }),
+        const error = result._tag === "Failure" ? squashAtomCommandFailure(result) : null;
+        transcriptFailureToast(
+          error instanceof Error
+            ? error.message
+            : "Could not load the conversation from the server.",
         );
         return;
       }
       const transcript = buildThreadTranscript(snapshot.thread.title, snapshot.thread.messages);
       if (transcript.messageCount === 0) {
-        closePendingToast();
         toastManager.add(
           stackedThreadToast({
             type: "error",
@@ -129,10 +91,7 @@ export function useCopyThreadTranscript() {
         );
         return;
       }
-      copyToClipboard(transcript.text, {
-        messageCount: transcript.messageCount,
-        closePendingToast,
-      });
+      copyToClipboard(transcript.text, { messageCount: transcript.messageCount });
     },
     [copyToClipboard, fetchSnapshot],
   );
