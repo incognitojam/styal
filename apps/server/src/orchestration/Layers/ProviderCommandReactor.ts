@@ -666,6 +666,9 @@ const make = Effect.gen(function* () {
         ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
         ...(thread.title ? { title: thread.title } : {}),
         modelSelection: desiredModelSelection,
+        ...(project?.additionalInstructions
+          ? { additionalInstructions: project.additionalInstructions }
+          : {}),
         ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
         runtimeMode: desiredRuntimeMode,
       });
