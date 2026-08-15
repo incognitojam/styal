@@ -2,12 +2,40 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  estimateUsageEmissionsGrams,
   enumerateHourStarts,
+  formatEmissionsGrams,
   formatDateTimeShort,
   formatHourShort,
   formatRelativeHourShort,
+  formatUsageEmissionsComparison,
   makeWindow,
 } from "./usageFormat.ts";
+
+describe("usage emissions estimate", () => {
+  it("estimates operational emissions from generated tokens", () => {
+    expect(estimateUsageEmissionsGrams(1_000)).toBeCloseTo(0.4288, 4);
+    expect(estimateUsageEmissionsGrams(-1)).toBe(0);
+  });
+
+  it("formats emissions across useful scales", () => {
+    expect(formatEmissionsGrams(0)).toBe("0 g");
+    expect(formatEmissionsGrams(0.4288)).toBe("429 mg");
+    expect(formatEmissionsGrams(428.8)).toBe("429 g");
+    expect(formatEmissionsGrams(4_288)).toBe("4.29 kg");
+    expect(formatEmissionsGrams(4_288_000)).toBe("4.29 t");
+  });
+
+  it("uses phone charges for grams and driving distance for kilograms", () => {
+    expect(formatUsageEmissionsComparison(0)).toBe("No estimated emissions");
+    expect(formatUsageEmissionsComparison(1)).toBe("Less than one phone charge");
+    expect(formatUsageEmissionsComparison(12.4)).toBe("About 1 phone charge");
+    expect(formatUsageEmissionsComparison(660)).toBe("About 53 phone charges");
+    expect(formatUsageEmissionsComparison(4_310)).toBe("About 11 miles driven");
+    expect(formatUsageEmissionsComparison(8_250)).toBe("About 21 miles driven");
+    expect(formatUsageEmissionsComparison(27_600)).toBe("About 70 miles driven");
+  });
+});
 
 describe("hourly usage formatting", () => {
   it("enumerates 24 fixed buckets across a rolling window", () => {

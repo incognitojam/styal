@@ -15,6 +15,19 @@ const CURRENCY = new Intl.NumberFormat("en-US", {
 
 const INTEGER = new Intl.NumberFormat("en-US");
 
+/**
+ * Directional operational-emissions assumptions for frontier-model inference.
+ *
+ * Oviedo et al. estimate 0.31 Wh for a representative query with 300 median
+ * output tokens. The IEA projects global grid intensity of 415 g CO2/kWh for
+ * 2026. Output tokens are the best local proxy because the study finds decode
+ * energy dominates and provider transcripts do not expose measured energy.
+ *
+ * https://arxiv.org/abs/2509.20241
+ * https://www.iea.org/reports/electricity-mid-year-update-2025/emissions-power-generation-co2-emissions-are-plateauing
+ */
+export const USAGE_EMISSIONS_GRAMS_PER_1K_OUTPUT_TOKENS = (0.31 / 300) * 1_000 * (415 / 1_000);
+
 export function formatUsd(value: number): string {
   return CURRENCY.format(value);
 }
@@ -34,6 +47,41 @@ export function formatTokens(value: number): string {
   if (abs >= 1e6) return `${trim(value / 1e6)}M`;
   if (abs >= 1e3) return `${trim(value / 1e3)}K`;
   return INTEGER.format(Math.round(value));
+}
+
+/** Estimated operational CO2 from generated tokens, in grams. */
+export function estimateUsageEmissionsGrams(outputTokens: number): number {
+  return (Math.max(0, outputTokens) / 1_000) * USAGE_EMISSIONS_GRAMS_PER_1K_OUTPUT_TOKENS;
+}
+
+/** Keeps small estimates readable without implying more than three significant figures. */
+export function formatEmissionsGrams(grams: number): string {
+  const normalized = Math.max(0, grams);
+  if (normalized === 0) return "0 g";
+  if (normalized < 1) return `${trim(normalized * 1_000)} mg`;
+  if (normalized < 1_000) return `${trim(normalized)} g`;
+  if (normalized < 1_000_000) return `${trim(normalized / 1_000)} kg`;
+  return `${trim(normalized / 1_000_000)} t`;
+}
+
+/**
+ * A familiar comparison for the estimated emissions total. EPA equivalencies
+ * use 12.4 g CO2 per smartphone charge and 393 g CO2e per mile driven by an
+ * average gasoline passenger vehicle.
+ *
+ * https://www.epa.gov/energy/greenhouse-gas-equivalencies-calculator-calculations-and-references
+ */
+export function formatUsageEmissionsComparison(grams: number): string {
+  const normalized = Math.max(0, grams);
+  if (normalized === 0) return "No estimated emissions";
+  if (normalized < 1_000) {
+    const charges = Math.round(normalized / 12.4);
+    if (charges < 1) return "Less than one phone charge";
+    return `About ${formatCount(charges)} phone ${charges === 1 ? "charge" : "charges"}`;
+  }
+
+  const miles = Math.round(normalized / 393);
+  return `About ${formatCount(miles)} ${miles === 1 ? "mile" : "miles"} driven`;
 }
 
 function trim(value: number): string {
