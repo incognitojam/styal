@@ -552,6 +552,47 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.runtimeMode).toBe("approval-required");
   });
 
+  it("passes project additional instructions when starting a provider session", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "project.meta.update",
+        commandId: CommandId.make("cmd-project-instructions"),
+        projectId: asProjectId("project-1"),
+        additionalInstructions: "Prefer focused tests.",
+      }),
+    );
+    await waitFor(async () =>
+      (await harness.readModel()).projects.some(
+        (project) => project.additionalInstructions === "Prefer focused tests.",
+      ),
+    );
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-instructions"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-instructions"),
+          role: "user",
+          text: "hello reactor",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+      additionalInstructions: "Prefer focused tests.",
+    });
+  });
+
   it("adopts a Codex follow-up when the response id differs from the retained active turn", async () => {
     const harness = await createHarness();
     const threadId = ThreadId.make("thread-1");
