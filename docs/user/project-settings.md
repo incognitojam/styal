@@ -1,3 +1,11 @@
+# Give agents project instructions
+
+Use **Additional instructions** in a project's settings to provide guidance whenever T3 Code
+starts an agent session for that project. The setting is shared by every checkout in the project
+group and works with Codex, Claude, Cursor, Grok, and OpenCode.
+
+Clear the field or select its reset button to stop including the instructions in future sessions.
+
 # Customize a project icon
 
 T3 Code selects a project icon automatically. It checks `t3.json`, common favicon and app icon
