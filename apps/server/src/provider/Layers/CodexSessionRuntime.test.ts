@@ -249,6 +249,23 @@ describe("buildTurnStartParams", () => {
 });
 
 describe("buildCodexDeveloperInstructions", () => {
+  it("appends project instructions in a distinct developer block", () => {
+    const instructions = buildCodexDeveloperInstructions(
+      "default",
+      {
+        model: "gpt-5.4",
+        reasoningEffort: "high",
+      },
+      true,
+      "Prefer focused tests.",
+    );
+
+    NodeAssert.match(
+      instructions,
+      /<additional_instructions>\nPrefer focused tests\.\n<\/additional_instructions>$/,
+    );
+  });
+
   it("appends runtime info after the mode instructions", () => {
     const instructions = buildCodexDeveloperInstructions("default", {
       model: "gpt-5.3-codex",

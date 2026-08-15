@@ -168,6 +168,53 @@ const cursorAdapterTestLayer = it.layer(
 );
 
 cursorAdapterTestLayer("CursorAdapterLive", (it) => {
+  it.effect("prefixes project instructions only on the first fresh Cursor prompt", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CursorAdapter;
+      const settings = yield* ServerSettingsService;
+      const threadId = ThreadId.make("cursor-additional-instructions");
+      const tempDir = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "cursor-acp-instructions-")),
+      );
+      const requestLogPath = NodePath.join(tempDir, "requests.ndjson");
+      const argvLogPath = NodePath.join(tempDir, "argv.txt");
+      yield* Effect.promise(() => NodeFSP.writeFile(requestLogPath, "", "utf8"));
+      const wrapperPath = yield* Effect.promise(() =>
+        makeProbeWrapper(requestLogPath, argvLogPath),
+      );
+      yield* settings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("cursor"),
+        cwd: process.cwd(),
+        additionalInstructions: "Prefer focused tests.",
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({ threadId, input: "First request" });
+      yield* adapter.sendTurn({ threadId, input: "Second request" });
+      yield* adapter.stopSession(threadId);
+
+      const requests = yield* Effect.promise(() => readJsonLines(requestLogPath));
+      const prompts = requests.filter((entry) => entry.method === "session/prompt");
+      const promptBlocks = (entry: Record<string, unknown>) =>
+        (entry.params as { prompt?: Array<{ type?: string; text?: string }> } | undefined)
+          ?.prompt ?? [];
+
+      assert.deepStrictEqual(
+        promptBlocks(prompts[0] ?? {}).map((block) => block.text),
+        [
+          "<additional_instructions>\nPrefer focused tests.\n</additional_instructions>",
+          "First request",
+        ],
+      );
+      assert.deepStrictEqual(
+        promptBlocks(prompts[1] ?? {}).map((block) => block.text),
+        ["Second request"],
+      );
+    }),
+  );
+
   it.effect("starts a session and maps mock ACP prompt flow to runtime events", () =>
     Effect.gen(function* () {
       const adapter = yield* CursorAdapter;
