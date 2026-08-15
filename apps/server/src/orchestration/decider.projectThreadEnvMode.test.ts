@@ -100,4 +100,36 @@ it.layer(NodeServices.layer)("decider project defaultThreadEnvMode", (it) => {
       expect(afterClear.projects[0]?.defaultThreadEnvMode).toBeNull();
     }),
   );
+
+  it.effect("sets and clears project additional instructions", () =>
+    Effect.gen(function* () {
+      const readModel = yield* projectEvent(createEmptyReadModel(now), seedProjectCreated(1));
+
+      const set = yield* decideOrchestrationCommand({
+        command: {
+          type: "project.meta.update",
+          commandId: CommandId.make("cmd-project-instructions-set"),
+          projectId,
+          additionalInstructions: "Always run focused tests.",
+        },
+        readModel,
+      });
+      const setEvent = Array.isArray(set) ? set[0] : set;
+      const afterSet = yield* projectEvent(readModel, { ...setEvent, sequence: 2 });
+      expect(afterSet.projects[0]?.additionalInstructions).toBe("Always run focused tests.");
+
+      const clear = yield* decideOrchestrationCommand({
+        command: {
+          type: "project.meta.update",
+          commandId: CommandId.make("cmd-project-instructions-clear"),
+          projectId,
+          additionalInstructions: null,
+        },
+        readModel: afterSet,
+      });
+      const clearEvent = Array.isArray(clear) ? clear[0] : clear;
+      const afterClear = yield* projectEvent(afterSet, { ...clearEvent, sequence: 3 });
+      expect(afterClear.projects[0]?.additionalInstructions).toBeNull();
+    }),
+  );
 });

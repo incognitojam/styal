@@ -1185,7 +1185,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
     }),
   );
 
-  it.effect("recovers stale sessions for sendTurn using persisted cwd", () =>
+  it.effect("recovers stale sessions using persisted cwd and project instructions", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;
 
@@ -1194,6 +1194,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
         providerInstanceId: codexInstanceId,
         threadId: asThreadId("thread-1"),
         cwd: "/tmp/project-send-turn",
+        additionalInstructions: "Prefer focused tests.",
         runtimeMode: "full-access",
       });
 
@@ -1214,11 +1215,13 @@ routing.layer("ProviderServiceLive routing", (it) => {
         const startPayload = resumedStartInput as {
           provider?: string;
           cwd?: string;
+          additionalInstructions?: string;
           resumeCursor?: unknown;
           threadId?: string;
         };
         assert.equal(startPayload.provider, "codex");
         assert.equal(startPayload.cwd, "/tmp/project-send-turn");
+        assert.equal(startPayload.additionalInstructions, "Prefer focused tests.");
         assert.deepEqual(startPayload.resumeCursor, initial.resumeCursor);
         assert.equal(startPayload.threadId, initial.threadId);
       }
