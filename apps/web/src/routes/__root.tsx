@@ -57,6 +57,7 @@ import {
   createKeybindingsUpdateToastController,
   type KeybindingsUpdateToastController,
 } from "../components/KeybindingsUpdateToast.logic";
+import { decideBootstrapLaunch, useLaunchNavigationStore } from "../launchNavigationStore";
 
 export const Route = createRootRoute({
   beforeLoad: async ({ location }) => {
@@ -342,7 +343,6 @@ function EventRouter() {
   const serverConfigEvent = useAtomValue(primaryServerConfigEventAtom);
   const serverWelcome = useAtomValue(primaryServerWelcomeAtom);
   const readPathname = useEffectEvent(() => pathname);
-  const handledBootstrapThreadIdRef = useRef<string | null>(null);
   const handledConfigEventRef = useRef(serverConfigEvent);
   const [keybindingsToastController] = useState<KeybindingsUpdateToastController>(() =>
     createKeybindingsUpdateToastController({}),
@@ -371,21 +371,41 @@ function EventRouter() {
         );
       useUiStateStore.getState().setProjectExpanded(bootstrapProjectKey, true);
 
-      if (readPathname() !== "/") {
-        return;
-      }
-      if (handledBootstrapThreadIdRef.current === payload.bootstrapThreadId) {
-        return;
-      }
-      await navigate({
-        to: "/$environmentId/$threadId",
-        params: {
-          environmentId: payload.environment.environmentId,
-          threadId: payload.bootstrapThreadId,
-        },
-        replace: true,
+      const launchNavigation = useLaunchNavigationStore.getState();
+      const decision = decideBootstrapLaunch({
+        welcome: payload,
+        handledBootstrapKey: launchNavigation.handledBootstrapKey,
+        pathname: readPathname(),
+        owner: launchNavigation.owner,
       });
-      handledBootstrapThreadIdRef.current = payload.bootstrapThreadId;
+      if (decision.type === "ignore") {
+        return;
+      }
+      if (decision.type === "mark-handled") {
+        launchNavigation.markBootstrapHandled(decision.bootstrapKey);
+        return;
+      }
+      if (!launchNavigation.claim("server-bootstrap")) {
+        // The server deliberately publishes its cwd bootstrap separately from
+        // the plain welcome. Once cached-state restoration owns the screen,
+        // that later launch hint is best-effort and cannot interrupt a draft
+        // that may already be receiving user input.
+        launchNavigation.markBootstrapHandled(decision.bootstrapKey);
+        return;
+      }
+      try {
+        await navigate({
+          to: "/$environmentId/$threadId",
+          params: {
+            environmentId: payload.environment.environmentId,
+            threadId: payload.bootstrapThreadId,
+          },
+          replace: true,
+        });
+      } finally {
+        launchNavigation.markBootstrapHandled(decision.bootstrapKey);
+        launchNavigation.release("server-bootstrap");
+      }
     })().catch(() => undefined);
   });
 
