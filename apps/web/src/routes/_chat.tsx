@@ -9,6 +9,7 @@ import { useProjects } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { selectProjectGroupingSettings } from "../logicalProject";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
+import { useScopedProjectGroup } from "../sidebarProjectScopeStore";
 import { dispatchPreviewAction } from "../components/preview/previewActionBus";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
@@ -57,16 +58,21 @@ function ChatRouteGlobalShortcuts() {
   );
   const { viewPullRequest } = useViewPullRequest(gitStatusQuery.data, routeThreadRef);
   const { focusPullRequestTab } = useFocusPullRequestTab(gitStatusQuery.data, routeThreadRef);
-  const projectGroupCount = useMemo(
+  const projectGroups = useMemo(
     () =>
       buildSidebarProjectSnapshots({
         projects,
         settings: projectGroupingSettings,
         primaryEnvironmentId,
         resolveEnvironmentLabel: () => null,
-      }).length,
+      }),
     [primaryEnvironmentId, projectGroupingSettings, projects],
   );
+  // These commands start a thread beside your current work, so the thread you
+  // are viewing outranks the sidebar's filter. The filter still beats the
+  // fallback default, so with nothing open they land in the project on screen
+  // rather than the top of the project list.
+  const scopedProjectGroup = useScopedProjectGroup(projectGroups);
   const terminalOpen = useTerminalUiStateStore((state) =>
     routeThreadRef
       ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
@@ -110,6 +116,7 @@ function ChatRouteGlobalShortcuts() {
           activeThread: activeThread ?? undefined,
           defaultProjectRef,
           handleNewThread,
+          scopedProjectGroup,
         });
         return;
       }
@@ -119,8 +126,11 @@ function ChatRouteGlobalShortcuts() {
         event.stopPropagation();
         // The default sidebar routes creation through the command palette
         // whenever there is a real choice to make; the legacy sidebar (and
-        // single-project setups) keep the immediate contextual create.
-        if (!legacySidebarEnabled && projectGroupCount > 1) {
+        // single-project setups) keep the immediate contextual create. A
+        // project filter does not suppress the chooser here — chat.newLocal is
+        // already the "create in the current project" command, so collapsing
+        // the two would leave no way to deliberately pick.
+        if (!legacySidebarEnabled && projectGroups.length > 1) {
           openCommandPalette({ open: "new-thread-in" });
           return;
         }
@@ -129,6 +139,7 @@ function ChatRouteGlobalShortcuts() {
           activeThread: activeThread ?? undefined,
           defaultProjectRef,
           handleNewThread,
+          scopedProjectGroup,
         });
         return;
       }
@@ -203,8 +214,9 @@ function ChatRouteGlobalShortcuts() {
     keybindings,
     defaultProjectRef,
     previewOpen,
-    projectGroupCount,
+    projectGroups.length,
     routeThreadRef,
+    scopedProjectGroup,
     selectedThreadKeysSize,
     legacySidebarEnabled,
     terminalOpen,

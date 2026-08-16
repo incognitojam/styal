@@ -302,13 +302,32 @@ export function isSidebarNestedLinkClick(target: EventTarget | null): boolean {
 
 // Shift+click on the new thread button creates directly in the current
 // project, skipping the command palette's project picker. With a single
-// project there is nothing to pick, so a plain click already creates
-// immediately and the modifier changes nothing.
-export function shouldCreateNewThreadInCurrentProject(
-  shiftKey: boolean,
-  projectGroupCount: number,
-): boolean {
-  return shiftKey || projectGroupCount <= 1;
+// project, or with the sidebar filtered to one, the choice is already made —
+// a plain click creates immediately and the modifier changes nothing. The
+// button keeps one behavior per state on purpose; chat.newLocal is the way to
+// start a thread beside the one on screen while the list is filtered.
+export function shouldCreateNewThreadInCurrentProject(input: {
+  shiftKey: boolean;
+  projectGroupCount: number;
+  hasProjectScope: boolean;
+}): boolean {
+  return input.shiftKey || input.hasProjectScope || input.projectGroupCount <= 1;
+}
+
+/**
+ * Whether a project filter names a group that no longer exists and should be
+ * cleared. An empty group list means projects have not arrived yet rather than
+ * that the filter is stale, so the filter waits instead of healing — otherwise
+ * every remount and reconnect would silently drop it.
+ */
+export function shouldClearProjectScope(input: {
+  projectScopeKey: string | null;
+  scopedProjectGroup: unknown | null;
+  projectGroupCount: number;
+}): boolean {
+  if (input.projectScopeKey === null) return false;
+  if (input.projectGroupCount === 0) return false;
+  return input.scopedProjectGroup === null;
 }
 
 export function orderItemsByPreferredIds<TItem, TId>(input: {
