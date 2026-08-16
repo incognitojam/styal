@@ -619,15 +619,26 @@ jobs:
     runs-on: ubuntu-24.04
     permissions: {}
     steps:
-      - uses: tsickert/discord-webhook@b217a69502f52803de774ded2b1ab7c282e99645 # v7.0.0
-        with:
-          webhook-url: ${{ secrets.DISCORD_WEBHOOK_CI }}
-          embed-title: Fork Nightly failed
-          embed-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          embed-description: |
-            `${{ github.sha }}` · `${{ github.actor }}`
-
-            Prepare: `${{ needs.prepare.result }}`
-            Desktop builds: `${{ needs.build_desktop.result }}`
-            Release: `${{ needs.release.result }}`
-          embed-color: 15158332
+      - name: Post failure notification
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_CI }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          PREPARE_RESULT: ${{ needs.prepare.result }}
+          DESKTOP_RESULT: ${{ needs.build_desktop.result }}
+          RELEASE_RESULT: ${{ needs.release.result }}
+        shell: bash
+        run: |
+          # shellcheck disable=SC2016 # Markdown backticks must remain literal.
+          description=$(printf '`%s` · `%s`\n\nPrepare: `%s`\nDesktop builds: `%s`\nRelease: `%s`' \
+            "$COMMIT_SHA" "$ACTOR" "$PREPARE_RESULT" "$DESKTOP_RESULT" "$RELEASE_RESULT")
+          payload=$(jq -n \
+            --arg title 'Fork Nightly failed' \
+            --arg url "$RUN_URL" \
+            --arg description "$description" \
+            '{embeds: [{title: $title, url: $url, description: $description, color: 15158332}]}')
+          curl --fail-with-body --retry 3 --retry-all-errors \
+            --header 'Content-Type: application/json' \
+            --data "$payload" \
+            "$DISCORD_WEBHOOK_URL"
