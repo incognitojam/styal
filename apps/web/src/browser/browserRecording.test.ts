@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 const {
   events,
+  acquireBrowserCaptureSurface,
+  captureSurfaceRelease,
   frameSubscription,
   onFrame,
   registrySet,
@@ -10,6 +12,7 @@ const {
   startScreencast,
   stopScreencast,
   surfaceState,
+  waitForBrowserCaptureSurface,
 } = vi.hoisted(() => {
   const events: string[] = [];
   type Frame = {
@@ -25,8 +28,11 @@ const {
   const surfaceState = {
     byTabId: {} as Record<string, unknown>,
   };
+  const captureSurfaceRelease = vi.fn();
   return {
     events,
+    acquireBrowserCaptureSurface: vi.fn(() => ({ release: captureSurfaceRelease })),
+    captureSurfaceRelease,
     frameSubscription,
     onFrame: vi.fn((listener: (frame: Frame) => void) => {
       frameSubscription.listener = listener;
@@ -66,6 +72,7 @@ const {
     }),
     stopScreencast: vi.fn(async () => undefined),
     surfaceState,
+    waitForBrowserCaptureSurface: vi.fn(async () => true),
   };
 });
 
@@ -79,7 +86,13 @@ vi.mock("~/rpc/atomRegistry", () => ({
   appAtomRegistry: { set: registrySet },
 }));
 
+vi.mock("./browserCaptureSurface", () => ({
+  BROWSER_CAPTURE_SURFACE_TIMEOUT_MS: 5_000,
+  waitForBrowserCaptureSurface,
+}));
+
 vi.mock("./browserSurfaceStore", () => ({
+  acquireBrowserCaptureSurface,
   useBrowserSurfaceStore: {
     getState: () => surfaceState,
   },
@@ -196,10 +209,27 @@ describe("browser recording", () => {
 
     await startBrowserRecording("recording-tab");
 
+    expect(acquireBrowserCaptureSurface).toHaveBeenCalledWith("recording-tab");
+    expect(waitForBrowserCaptureSurface).toHaveBeenCalledWith("recording-tab");
+    expect(captureSurfaceRelease).not.toHaveBeenCalled();
     expect(startScreencast).toHaveBeenCalledWith("recording-tab");
     expect(events).toEqual(["start-screencast", "publish:recording-tab"]);
 
     await stopBrowserRecording("recording-tab");
+    expect(captureSurfaceRelease).toHaveBeenCalledOnce();
+  });
+
+  it("releases the capture surface when presentation fails", async () => {
+    waitForBrowserCaptureSurface.mockResolvedValueOnce(false);
+
+    await expect(startBrowserRecording("recording-tab")).rejects.toMatchObject({
+      operation: "prepare-capture-surface",
+      tabId: "recording-tab",
+    });
+
+    expect(startScreencast).not.toHaveBeenCalled();
+    expect(captureSurfaceRelease).toHaveBeenCalledOnce();
+    expect(readActiveBrowserRecordingTabIds()).toEqual(new Set());
   });
 
   it("fails startup instead of locking a fallback size when no frame arrives", async () => {
@@ -218,6 +248,7 @@ describe("browser recording", () => {
 
     await rejection;
     expect(stopScreencast).toHaveBeenCalledWith("recording-tab");
+    expect(captureSurfaceRelease).toHaveBeenCalledOnce();
     expect(events.at(-1)).toBe("clear");
   });
 
@@ -492,13 +523,35 @@ describe("browser recording", () => {
 
     const stopPromise = stopBrowserRecording("recording-tab");
     expect(stopScreencast).not.toHaveBeenCalled();
+    expect(captureSurfaceRelease).not.toHaveBeenCalled();
     finishStartingScreencast?.();
 
     await startPromise;
     await expect(stopPromise).resolves.toMatchObject({ tabId: "recording-tab" });
+    expect(captureSurfaceRelease).toHaveBeenCalledOnce();
     expect(stopScreencast).toHaveBeenCalledOnce();
     expect(save).toHaveBeenCalledOnce();
     expect(events.at(-1)).toBe("clear");
+  });
+
+  it("lets a stop wait through a slow but healthy startup", async () => {
+    vi.useFakeTimers();
+    const slowStartMs = BROWSER_RECORDING_FIRST_FRAME_SIZE_TIMEOUT_MS + 1_000;
+    startScreencast.mockImplementationOnce(async () => {
+      events.push("start-screencast");
+      await new Promise<void>((resolve) => window.setTimeout(resolve, slowStartMs));
+      emitRecordingFrame();
+    });
+
+    const startPromise = startBrowserRecording("recording-tab");
+    await Promise.resolve();
+    const stopPromise = stopBrowserRecording("recording-tab");
+
+    await vi.advanceTimersByTimeAsync(slowStartMs);
+    await startPromise;
+    await expect(stopPromise).resolves.toMatchObject({ tabId: "recording-tab" });
+    expect(captureSurfaceRelease).toHaveBeenCalledOnce();
+    expect(save).toHaveBeenCalledOnce();
   });
 
   it("does not release the recording slot until a cancelled start settles", async () => {
@@ -556,9 +609,11 @@ describe("browser recording", () => {
     await firstStart;
     await rejectedStop;
     expect(stopScreencast).toHaveBeenCalledOnce();
+    expect(captureSurfaceRelease).toHaveBeenCalledOnce();
 
     await startBrowserRecording("recording-tab");
     await stopBrowserRecording("recording-tab");
+    expect(captureSurfaceRelease).toHaveBeenCalledTimes(2);
   });
 
   it("fails a stop that waits too long for startup without freeing the recording slot", async () => {
@@ -573,6 +628,7 @@ describe("browser recording", () => {
     });
 
     const startPromise = startBrowserRecording("recording-tab");
+    await Promise.resolve();
     expect(startScreencast).toHaveBeenCalledOnce();
 
     const stopPromise = stopBrowserRecording("recording-tab");
@@ -588,6 +644,7 @@ describe("browser recording", () => {
 
     await rejection;
     expect(save).not.toHaveBeenCalled();
+    expect(captureSurfaceRelease).not.toHaveBeenCalled();
     await expect(startBrowserRecording("recording-tab")).rejects.toBeInstanceOf(
       BrowserRecordingConflictError,
     );
@@ -598,6 +655,7 @@ describe("browser recording", () => {
     expect(cleanupResult).toBeNull();
     expect(stopScreencast).toHaveBeenCalledOnce();
     expect(save).not.toHaveBeenCalled();
+    expect(captureSurfaceRelease).toHaveBeenCalledOnce();
     expect(events.at(-1)).toBe("clear");
   });
 });
