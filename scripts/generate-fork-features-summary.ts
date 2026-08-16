@@ -30,11 +30,11 @@ export interface ChangeEvidence {
 export interface ChangeRecord {
   readonly capability: string;
   readonly evidenceId: string;
-  // True when the change only alters how this build identifies itself. Worth
-  // announcing in a release, but not a way the fork differs from upstream.
-  readonly identity: boolean;
   readonly operation: "add" | "improve" | "remove";
   readonly outcome: string;
+  // Worth announcing in the release where it shipped, but not an enduring
+  // product capability to advertise in the rolling fork summary.
+  readonly releaseOnly: boolean;
   readonly surface: "application" | "desktop" | "mobile" | "web";
 }
 
@@ -107,7 +107,7 @@ const MAX_EVIDENCE_PER_BATCH = Math.floor(MAX_CHANGE_RECORDS / MAX_RECORDS_PER_C
 const MAX_SUMMARY_ITEMS = 12;
 const MAX_EVIDENCE_IDS_PER_ITEM = 6;
 const GITHUB_REQUEST_CONCURRENCY = 8;
-const EXTRACTION_CACHE_VERSION = 1;
+const EXTRACTION_CACHE_VERSION = 2;
 // Synthesis over a full record set has run past two minutes, and a timeout here
 // costs the release its generated notes.
 const REQUEST_TIMEOUT_MS = 240_000;
@@ -126,9 +126,9 @@ const changeRecordsSchema = {
           capability: { type: "string" },
           outcome: { type: "string" },
           surface: { type: "string", enum: ["application", "desktop", "mobile", "web"] },
-          identity: { type: "boolean" },
+          releaseOnly: { type: "boolean" },
         },
-        required: ["evidenceId", "operation", "capability", "outcome", "surface", "identity"],
+        required: ["evidenceId", "operation", "capability", "outcome", "surface", "releaseOnly"],
         additionalProperties: false,
       },
     },
@@ -508,7 +508,8 @@ actually changed rather than trusting titles alone.
 
 Return zero or more records for each evidence item. Keep every record tied to exactly one evidenceId;
 do not consolidate separate pull requests in this stage. Exclude tests, documentation-only changes,
-internal refactors, CI, release automation, and implementation details. Use:
+internal refactors, implementation details, and CI or release automation with no user-visible release
+outcome. A new distributable artifact is a release outcome; the jobs that build it are not. Use:
 - "add" when the evidence introduces a user-visible capability.
 - "improve" when it changes or fixes existing user-visible behavior.
 - "remove" when it reverts, replaces, or removes user-visible behavior.
@@ -516,10 +517,12 @@ internal refactors, CI, release automation, and implementation details. Use:
 A replacement may require both a "remove" record for the superseded behavior and an "add" or
 "improve" record for its replacement.
 
-Set "identity" to true when the change only alters how this build identifies itself: application
-names, icons, artwork, release channels, or screens reporting versions, commits, or source
-repositories. Set it to false when a user would notice the change without knowing which build they
-run, such as two applications installing side by side.
+Set "releaseOnly" to true when the change is useful release information but not an enduring
+capability inside the application. This includes application identity and branding; release channels,
+updater metadata, and screens that only report build identity; platform availability and installer
+packaging; and install, upgrade, or migration mechanics such as allowing two builds to install side by
+side. Set it to false for behavior users interact with in the running application, including settings
+that control that behavior.
 
 Use the same short conceptual capability name for records that affect the same feature. State the
 factual user outcome and classify its user-facing surface as exactly one of "application", "desktop",
@@ -544,6 +547,8 @@ function summaryStyleGuidance(): string {
   in the words they would use to report it.
 - When consolidating, describe the capability as the change that introduced it did. A later change
   that only adjusts an icon, colour, or wording must not add nouns of its own to the label.
+- When settings add selection or test controls for a runtime capability, describe what happens at
+  runtime and when it happens. Treat configuration and preview controls as supporting affordances.
 - Each item must make sense to a reader who has not seen the pull request; when the evidence
   offers no concrete user-visible outcome, state the symptom fixed or the plainest description
   the evidence supports.
@@ -561,6 +566,8 @@ function summaryStyleGuidance(): string {
 - Use normal internal punctuation when it improves clarity, but omit terminal punctuation.
 - Start removal items with "Remove" so they read clearly without a section label.
 - Do not add Markdown, links, section labels, or PR references.
+- Within each section, put consequential everyday workflows before preferences, test controls,
+  cosmetic polish, and narrow platform or setup details. Do not merely preserve chronology.
 - When a capability matches a style example below, use its replacement text verbatim.
 
 Return each item as an object: put the label in "text" and list in "evidenceIds" the evidenceId
@@ -570,6 +577,9 @@ records and never mention pull requests, commits, or contributors inside "text".
 Style examples:
 "Opt-in GitHub outage notices appear in the sidebar."
 becomes "Detect GitHub outages and show status in the sidebar"
+
+"Select and test sounds for responses and input requests"
+becomes "Add thread completion sounds when an agent finishes working or needs input"
 
 "New threads can be prefilled with removable context from an open GitHub issue."
 becomes "Start new threads with GitHub issues as context"
@@ -720,14 +730,14 @@ export function filterDesktopUpdateRecords(
 }
 
 /**
- * Drops changes that only alter how this build identifies itself. They belong in a
- * release, which announces what shipped, but not in the rolling issue, which
- * answers how the fork differs from upstream.
+ * Drops release-specific changes such as branding, platform distribution, and
+ * installer migration. They belong in the release where they shipped, but are not
+ * enduring product capabilities for the rolling issue.
  */
 export function filterForkFeatureRecords(
   records: ReadonlyArray<ChangeRecord>,
 ): ReadonlyArray<ChangeRecord> {
-  return records.filter((record) => !record.identity);
+  return records.filter((record) => !record.releaseOnly);
 }
 
 function parseChangeRecord(value: unknown, index: number): ChangeRecord {
@@ -735,15 +745,15 @@ function parseChangeRecord(value: unknown, index: number): ChangeRecord {
   if (value.operation !== "add" && value.operation !== "improve" && value.operation !== "remove") {
     throw new Error(`Change record ${index} had an invalid operation.`);
   }
-  if (typeof value.identity !== "boolean") {
-    throw new Error(`Change record ${index} had an invalid identity flag.`);
+  if (typeof value.releaseOnly !== "boolean") {
+    throw new Error(`Change record ${index} had an invalid releaseOnly flag.`);
   }
   return {
     evidenceId: parseBoundedString(value.evidenceId, `change record ${index} evidenceId`, 200),
-    identity: value.identity,
     operation: value.operation,
     capability: parseBoundedString(value.capability, `change record ${index} capability`, 120),
     outcome: parseBoundedString(value.outcome, `change record ${index} outcome`, 500),
+    releaseOnly: value.releaseOnly,
     surface: parseChangeSurface(value.surface, `change record ${index} surface`),
   };
 }
