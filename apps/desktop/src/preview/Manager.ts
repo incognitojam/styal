@@ -104,7 +104,7 @@ const MAX_EVALUATION_BYTES = 64_000;
 const MAX_VISIBLE_TEXT_LENGTH = 20_000;
 const MAX_INTERACTIVE_ELEMENTS = 200;
 const MAX_SCREENSHOT_WIDTH = 1280;
-const AUTOMATION_CAPTURE_TIMEOUT_MS = 5_000;
+const CAPTURE_PAGE_TIMEOUT_MS = 5_000;
 const RECORDING_FRAME_INTERVAL_MS = Math.ceil(1_000 / 12);
 const RECORDING_JPEG_QUALITY = 80;
 const PICTURE_IN_PICTURE_INITIAL_WIDTH = 480;
@@ -113,6 +113,8 @@ const PICTURE_IN_PICTURE_MIN_WIDTH = 240;
 const PICTURE_IN_PICTURE_MIN_HEIGHT = 160;
 const PICTURE_IN_PICTURE_ASPECT_RATIO_EPSILON = 0.002;
 const DIAGNOSTIC_BUFFER_LIMIT = 200;
+
+class PreviewCaptureTimeoutError extends Error {}
 const MAX_ARTIFACT_SITE_SLUG_LENGTH = 80;
 const AGENT_CURSOR_MOVE_MS = 160;
 const AGENT_CURSOR_CLICK_LEAD_MS = 40;
@@ -513,7 +515,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     { readonly semaphore: Semaphore.Semaphore; users: number }
   >();
   const tabLifecycleGenerations = new Map<string, number>();
-  const automationCapturePromises = new Map<number, Promise<Electron.NativeImage>>();
+  const capturePagePromises = new Map<number, Promise<Electron.NativeImage>>();
 
   const attempt = <A>(errorContext: PreviewOperationContext, evaluate: () => A) =>
     Effect.try({
@@ -528,42 +530,55 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       try: evaluate,
       catch: (cause) => new PreviewOperationError({ ...errorContext, cause }),
     });
-  const captureAutomationPage = (tabId: string, wc: Electron.WebContents) =>
-    attemptPromise(
+  const capturePageSingleFlight = (wc: Electron.WebContents): Promise<Electron.NativeImage> => {
+    const active = capturePagePromises.get(wc.id);
+    if (active) return active;
+    const capture = Promise.resolve().then(() => wc.capturePage());
+    capturePagePromises.set(wc.id, capture);
+    const clear = () => {
+      if (capturePagePromises.get(wc.id) === capture) {
+        capturePagePromises.delete(wc.id);
+      }
+    };
+    void capture.then(clear, clear);
+    return capture;
+  };
+  const capturePageWithTimeout = (operation: string, tabId: string, wc: Electron.WebContents) => {
+    const capture = capturePageSingleFlight(wc);
+    return attemptPromise(
       {
-        operation: "automationSnapshot.capturePage",
+        operation,
         tabId,
         webContentsId: wc.id,
       },
-      () => {
-        const active = automationCapturePromises.get(wc.id);
-        if (active) return active;
-        const capture = Promise.resolve().then(() => wc.capturePage());
-        automationCapturePromises.set(wc.id, capture);
-        const clear = () => {
-          if (automationCapturePromises.get(wc.id) === capture) {
-            automationCapturePromises.delete(wc.id);
-          }
-        };
-        void capture.then(clear, clear);
-        return capture;
-      },
+      () => capture,
     ).pipe(
       Effect.timeoutOrElse({
-        duration: AUTOMATION_CAPTURE_TIMEOUT_MS,
+        duration: CAPTURE_PAGE_TIMEOUT_MS,
         orElse: () =>
-          Effect.fail(
-            new PreviewOperationError({
-              operation: "automationSnapshot.capturePage",
-              tabId,
-              webContentsId: wc.id,
-              cause: new Error(
-                `Preview capture timed out after ${AUTOMATION_CAPTURE_TIMEOUT_MS}ms.`,
+          Effect.sync(() => {
+            if (capturePagePromises.get(wc.id) === capture) {
+              capturePagePromises.delete(wc.id);
+            }
+          }).pipe(
+            Effect.andThen(
+              Effect.fail(
+                new PreviewOperationError({
+                  operation,
+                  tabId,
+                  webContentsId: wc.id,
+                  cause: new PreviewCaptureTimeoutError(
+                    `Preview capture timed out after ${CAPTURE_PAGE_TIMEOUT_MS}ms.`,
+                  ),
+                }),
               ),
-            }),
+            ),
           ),
       }),
     );
+  };
+  const captureAutomationPage = (tabId: string, wc: Electron.WebContents) =>
+    capturePageWithTimeout("automationSnapshot.capturePage", tabId, wc);
   const currentIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
   const currentMillis = Clock.currentTimeMillis;
   const encodeJson = (errorContext: PreviewOperationContext, value: unknown) =>
@@ -1269,7 +1284,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   const detachListeners = Effect.fn("PreviewManager.detachListeners")(function* (
     webContentsId: number,
   ) {
-    automationCapturePromises.delete(webContentsId);
+    capturePagePromises.delete(webContentsId);
     const managed = yield* Ref.modify(attachedRef, (attached) => [
       attached.get(webContentsId),
       replaceMap(attached, (copy) => {
@@ -2334,14 +2349,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     const captureSession = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(tabId);
     if (!captureSession) return;
     const wc = yield* requireWebContents(tabId);
-    const image = yield* attemptPromise(
-      {
-        operation: "frameCapture.capturePage",
-        tabId,
-        webContentsId: wc.id,
-      },
-      () => wc.capturePage(),
-    );
+    const image = yield* capturePageWithTimeout("frameCapture.capturePage", tabId, wc);
     const currentCaptureSession = yield* Effect.all(
       [SynchronizedRef.get(frameCaptureSessionsRef), SynchronizedRef.get(tabsRef)],
       { concurrency: 2 },
@@ -2517,13 +2525,19 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     });
     if (!created) return;
     yield* capturePreviewFrame(tabId).pipe(
-      Effect.catch((error) =>
-        Effect.logWarning("Initial background preview frame was not ready; capture will retry.", {
-          tabId,
-          consumer,
-          error,
-        }),
-      ),
+      Effect.catch((error) => {
+        if (isPreviewOperationError(error) && error.cause instanceof PreviewCaptureTimeoutError) {
+          return stopFrameCapture(tabId, consumer).pipe(Effect.andThen(Effect.fail(error)));
+        }
+        return Effect.logWarning(
+          "Initial background preview frame was not ready; capture will retry.",
+          {
+            tabId,
+            consumer,
+            error,
+          },
+        );
+      }),
     );
   });
 
