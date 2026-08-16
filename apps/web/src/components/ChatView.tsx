@@ -294,7 +294,9 @@ import {
   ThreadErrorBanner,
 } from "./chat/ThreadErrorBanner";
 import {
+  nextThreadChangeRequestMergedSnapshot,
   resolveDisplayedThreadPr,
+  setThreadChangeRequestSnapshot,
   threadChangeRequestSnapshotsAtom,
 } from "./ThreadStatusIndicators";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
@@ -1655,14 +1657,6 @@ function ChatViewContent(props: ChatViewProps) {
   // the tab is found again whether or not that surface was opened with an environment on it.
   const activePullRequestSurfaceId =
     activeRightPanelSurface?.kind === "pull-request" ? activeRightPanelSurface.id : undefined;
-  const handlePullRequestTabStatusChange = useCallback(
-    (status: PullRequestTabStatus) => {
-      const id = activePullRequestSurfaceId;
-      if (id === undefined) return;
-      setPullRequestTabStatuses((current) => updatePullRequestTabStatus(current, id, status));
-    },
-    [activePullRequestSurfaceId],
-  );
   const activeFileSurface =
     activeRightPanelSurface?.kind === "file" ? activeRightPanelSurface : null;
   const activePreviewState = useThreadPreviewState(activeThreadRef);
@@ -4240,6 +4234,43 @@ function ChatViewContent(props: ChatViewProps) {
     snapshot: activeThreadKey ? changeRequestSnapshotByKey.get(activeThreadKey) : undefined,
     retainTerminalOnBranchMismatch: activeThread?.worktreePath === null,
   });
+  const handlePullRequestTabStatusChange = useCallback(
+    (status: PullRequestTabStatus) => {
+      const id = activePullRequestSurfaceId;
+      if (id === undefined) return;
+      setPullRequestTabStatuses((current) => updatePullRequestTabStatus(current, id, status));
+      if (
+        status.state !== "merged" ||
+        activeThreadKey === null ||
+        status.projectId !== activeThread?.projectId
+      ) {
+        return;
+      }
+      const current = changeRequestSnapshotByKey.get(activeThreadKey);
+      const seed =
+        current ??
+        (activeThreadPr?.number === status.number && activeThread?.branch
+          ? {
+              branch: activeThread.branch,
+              pr: activeThreadPr,
+              sourceControlProvider: gitStatusQuery.data?.sourceControlProvider,
+            }
+          : undefined);
+      const next = nextThreadChangeRequestMergedSnapshot(seed, status.number);
+      if (next !== undefined && next !== current) {
+        setThreadChangeRequestSnapshot(activeThreadKey, next);
+      }
+    },
+    [
+      activePullRequestSurfaceId,
+      activeThread?.branch,
+      activeThread?.projectId,
+      activeThreadKey,
+      activeThreadPr,
+      changeRequestSnapshotByKey,
+      gitStatusQuery.data?.sourceControlProvider,
+    ],
+  );
   // The right panel offers the thread's own change request, so it can only offer it once the
   // branch has one; until then the picker says so rather than opening an empty panel.
   const addPullRequestSurface = useCallback(() => {
