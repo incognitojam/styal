@@ -33,6 +33,7 @@ import {
   sortThreadsForSidebar,
   sortProjectsForSidebar,
   sortScopedProjectsForSidebar,
+  shouldClearProjectScope,
   shouldCreateNewThreadInCurrentProject,
   THREAD_JUMP_HINT_SHOW_DELAY_MS,
 } from "./Sidebar.logic";
@@ -435,16 +436,89 @@ describe("isSidebarNestedLinkClick", () => {
 
 describe("shouldCreateNewThreadInCurrentProject", () => {
   it("creates directly on shift+click in a multi-project setup", () => {
-    expect(shouldCreateNewThreadInCurrentProject(true, 2)).toBe(true);
+    expect(
+      shouldCreateNewThreadInCurrentProject({
+        shiftKey: true,
+        projectGroupCount: 2,
+        hasProjectScope: false,
+      }),
+    ).toBe(true);
   });
 
-  it("opens the picker on a plain click in a multi-project setup", () => {
-    expect(shouldCreateNewThreadInCurrentProject(false, 2)).toBe(false);
+  it("opens the picker on a plain click in an unfiltered multi-project setup", () => {
+    expect(
+      shouldCreateNewThreadInCurrentProject({
+        shiftKey: false,
+        projectGroupCount: 2,
+        hasProjectScope: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("creates directly when the sidebar is filtered to one project", () => {
+    expect(
+      shouldCreateNewThreadInCurrentProject({
+        shiftKey: false,
+        projectGroupCount: 5,
+        hasProjectScope: true,
+      }),
+    ).toBe(true);
   });
 
   it("creates directly on any click with a single project", () => {
-    expect(shouldCreateNewThreadInCurrentProject(false, 1)).toBe(true);
-    expect(shouldCreateNewThreadInCurrentProject(true, 1)).toBe(true);
+    expect(
+      shouldCreateNewThreadInCurrentProject({
+        shiftKey: false,
+        projectGroupCount: 1,
+        hasProjectScope: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldCreateNewThreadInCurrentProject({
+        shiftKey: true,
+        projectGroupCount: 1,
+        hasProjectScope: false,
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("shouldClearProjectScope", () => {
+  it("clears a filter whose project group is gone", () => {
+    expect(
+      shouldClearProjectScope({
+        projectScopeKey: "gone",
+        scopedProjectGroup: null,
+        projectGroupCount: 3,
+      }),
+    ).toBe(true);
+  });
+
+  it("waits instead of clearing while projects have not arrived", () => {
+    expect(
+      shouldClearProjectScope({
+        projectScopeKey: "pending",
+        scopedProjectGroup: null,
+        projectGroupCount: 0,
+      }),
+    ).toBe(false);
+  });
+
+  it("leaves a resolved filter and an absent filter alone", () => {
+    expect(
+      shouldClearProjectScope({
+        projectScopeKey: "here",
+        scopedProjectGroup: { projectKey: "here" },
+        projectGroupCount: 2,
+      }),
+    ).toBe(false);
+    expect(
+      shouldClearProjectScope({
+        projectScopeKey: null,
+        scopedProjectGroup: null,
+        projectGroupCount: 0,
+      }),
+    ).toBe(false);
   });
 });
 
