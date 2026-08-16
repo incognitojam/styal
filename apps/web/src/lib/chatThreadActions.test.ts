@@ -154,7 +154,6 @@ describe("chatThreadActions", () => {
     expect(projectRef).toEqual(scopeProjectRef(ENVIRONMENT_ID, SCOPED_PROJECT_ID));
   });
 
-
   it("inherits only the project from context, never branch or worktree state", async () => {
     const handleNewThread = vi.fn<ChatThreadActionContext["handleNewThread"]>(async () => {});
 
