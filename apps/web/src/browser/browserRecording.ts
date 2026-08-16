@@ -9,7 +9,15 @@ import { Atom } from "effect/unstable/reactivity";
 
 import { previewBridge } from "~/components/preview/previewBridge";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
-import { useBrowserSurfaceStore } from "./browserSurfaceStore";
+import {
+  BROWSER_CAPTURE_SURFACE_TIMEOUT_MS,
+  waitForBrowserCaptureSurface,
+} from "./browserCaptureSurface";
+import {
+  acquireBrowserCaptureSurface,
+  type BrowserCaptureSurfaceLease,
+  useBrowserSurfaceStore,
+} from "./browserSurfaceStore";
 
 export class BrowserRecordingUnavailableError extends Schema.TaggedErrorClass<BrowserRecordingUnavailableError>()(
   "BrowserRecordingUnavailableError",
@@ -52,6 +60,7 @@ export class BrowserRecordingOperationError extends Schema.TaggedErrorClass<Brow
   {
     operation: Schema.Literals([
       "initialize-media-recorder",
+      "prepare-capture-surface",
       "subscribe-frames",
       "start-media-recorder",
       "start-screencast",
@@ -94,6 +103,8 @@ interface ActiveRecording {
   readonly startupSettled: Promise<void>;
   readonly firstFrameSize: Promise<"frame" | "cancelled">;
   readonly settleFirstFrameSize: (outcome: "frame" | "cancelled") => void;
+  readonly captureSurfaceLease: BrowserCaptureSurfaceLease;
+  captureSurfaceReleased: boolean;
   recorder: MediaRecorder | null;
   mimeType: string | null;
   frameSizeEstablished: boolean;
@@ -122,8 +133,9 @@ export function useActiveBrowserRecordingTabIds(): ReadonlySet<string> {
 const activeRecordings = new Map<string, ActiveRecording>();
 let unsubscribeFrames: (() => void) | null = null;
 
-export const BROWSER_RECORDING_STARTUP_SETTLE_TIMEOUT_MS = 5_000;
 export const BROWSER_RECORDING_FIRST_FRAME_SIZE_TIMEOUT_MS = 5_000;
+export const BROWSER_RECORDING_STARTUP_SETTLE_TIMEOUT_MS =
+  BROWSER_CAPTURE_SURFACE_TIMEOUT_MS + BROWSER_RECORDING_FIRST_FRAME_SIZE_TIMEOUT_MS + 2_000;
 
 export function readActiveBrowserRecordingTabIds(threadRef?: ScopedThreadRef): ReadonlySet<string> {
   const tabIds = new Set<string>();
@@ -220,7 +232,14 @@ const stopMediaRecorder = async (recorder: MediaRecorder | null): Promise<void> 
   await stopped;
 };
 
+const releaseRecordingCaptureSurface = (recording: ActiveRecording): void => {
+  if (recording.captureSurfaceReleased) return;
+  recording.captureSurfaceReleased = true;
+  recording.captureSurfaceLease.release();
+};
+
 const clearActiveRecording = (recording: ActiveRecording): void => {
+  releaseRecordingCaptureSurface(recording);
   if (activeRecordings.get(recording.tabId) !== recording) return;
   recording.settleFirstFrameSize("cancelled");
   activeRecordings.delete(recording.tabId);
@@ -369,6 +388,8 @@ export async function startBrowserRecording(
     startupSettled,
     firstFrameSize,
     settleFirstFrameSize: (outcome) => settleFirstFrameSize?.(outcome),
+    captureSurfaceLease: acquireBrowserCaptureSurface(tabId),
+    captureSurfaceReleased: false,
     recorder: null,
     mimeType: null,
     frameSizeEstablished: false,
@@ -384,6 +405,19 @@ export async function startBrowserRecording(
       clearActiveRecording(recording);
       throw new BrowserRecordingOperationError({
         operation: "subscribe-frames",
+        tabId,
+        cause,
+      });
+    }
+    try {
+      const presented = await waitForBrowserCaptureSurface(tabId);
+      if (!presented) {
+        throw new Error(`Browser capture surface was not presented for tab ${tabId}.`);
+      }
+    } catch (cause) {
+      clearActiveRecording(recording);
+      throw new BrowserRecordingOperationError({
+        operation: "prepare-capture-surface",
         tabId,
         cause,
       });
@@ -511,6 +545,7 @@ const finalizeBrowserRecording = async (
     await waitForRecordingStartupToSettle(recording);
     try {
       await bridge.recording.stopScreencast(tabId);
+      releaseRecordingCaptureSurface(recording);
     } catch (cause) {
       throw new BrowserRecordingOperationError({
         operation: "stop-screencast",
