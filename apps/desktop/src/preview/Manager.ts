@@ -105,6 +105,7 @@ const MAX_EVALUATION_BYTES = 64_000;
 const MAX_VISIBLE_TEXT_LENGTH = 20_000;
 const MAX_INTERACTIVE_ELEMENTS = 200;
 const MAX_SCREENSHOT_WIDTH = 1280;
+const AUTOMATION_CAPTURE_TIMEOUT_MS = 5_000;
 const RECORDING_FRAME_INTERVAL_MS = Math.ceil(1_000 / 12);
 const RECORDING_JPEG_QUALITY = 80;
 const PICTURE_IN_PICTURE_INITIAL_WIDTH = 480;
@@ -528,6 +529,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     { readonly semaphore: Semaphore.Semaphore; users: number }
   >();
   const tabLifecycleGenerations = new Map<string, number>();
+  const automationCapturePromises = new Map<number, Promise<Electron.NativeImage>>();
 
   const attempt = <A>(errorContext: PreviewOperationContext, evaluate: () => A) =>
     Effect.try({
@@ -542,6 +544,42 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       try: evaluate,
       catch: (cause) => new PreviewOperationError({ ...errorContext, cause }),
     });
+  const captureAutomationPage = (tabId: string, wc: Electron.WebContents) =>
+    attemptPromise(
+      {
+        operation: "automationSnapshot.capturePage",
+        tabId,
+        webContentsId: wc.id,
+      },
+      () => {
+        const active = automationCapturePromises.get(wc.id);
+        if (active) return active;
+        const capture = Promise.resolve().then(() => wc.capturePage());
+        automationCapturePromises.set(wc.id, capture);
+        const clear = () => {
+          if (automationCapturePromises.get(wc.id) === capture) {
+            automationCapturePromises.delete(wc.id);
+          }
+        };
+        void capture.then(clear, clear);
+        return capture;
+      },
+    ).pipe(
+      Effect.timeoutOrElse({
+        duration: AUTOMATION_CAPTURE_TIMEOUT_MS,
+        orElse: () =>
+          Effect.fail(
+            new PreviewOperationError({
+              operation: "automationSnapshot.capturePage",
+              tabId,
+              webContentsId: wc.id,
+              cause: new Error(
+                `Preview capture timed out after ${AUTOMATION_CAPTURE_TIMEOUT_MS}ms.`,
+              ),
+            }),
+          ),
+      }),
+    );
   const currentIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
   const currentMillis = Clock.currentTimeMillis;
   const encodeJson = (errorContext: PreviewOperationContext, value: unknown) =>
@@ -1247,6 +1285,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   const detachListeners = Effect.fn("PreviewManager.detachListeners")(function* (
     webContentsId: number,
   ) {
+    automationCapturePromises.delete(webContentsId);
     const managed = yield* Ref.modify(attachedRef, (attached) => [
       attached.get(webContentsId),
       replaceMap(attached, (copy) => {
@@ -2937,14 +2976,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       );
       const [accessibility, sourceImage, diagnostics, timelines] = yield* Effect.all([
         send("Accessibility.getFullAXTree"),
-        attemptPromise(
-          {
-            operation: "automationSnapshot.capturePage",
-            tabId,
-            webContentsId: wc.id,
-          },
-          () => wc.capturePage(),
-        ),
+        captureAutomationPage(tabId, wc),
         Ref.get(diagnosticsRef),
         Ref.get(actionTimelineRef),
       ]);
