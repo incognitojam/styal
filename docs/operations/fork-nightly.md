@@ -65,11 +65,11 @@ highlights appear in the desktop updater, the workflow excludes changes classifi
 shared changes remain eligible, and the complete GitHub release commit list still includes mobile
 changes.
 
-Extraction also flags changes that only alter how this build identifies itself — application names,
-icons, artwork, release channels, and screens reporting versions or source repositories. Those changes
-stay in release highlights, which announce what shipped, and are left out of the rolling issue, which
-answers how the fork differs from upstream. The release commit list is rendered from git and always
-lists them.
+Extraction also flags release-specific changes that are useful in the release where they ship but are
+not enduring application capabilities. That includes application identity and branding, platform
+distribution and installer packaging, and install or upgrade migration mechanics. Those changes stay
+in release highlights and are left out of the rolling issue, which describes what users can do in the
+running application. The release commit list is rendered from git and always lists them.
 
 Extraction covers every commit the fork carries, so it runs in chronological batches, and its results
 are cached per pull request in the Actions cache so only new evidence reaches the model. Batch size is
