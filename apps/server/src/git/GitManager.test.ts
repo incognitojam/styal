@@ -2703,6 +2703,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           kind: "open_pr",
           label: "View PR",
           url: "https://github.com/pingdotgg/codething-mvp/pull/42",
+          number: 42,
         },
       });
       expect(ghCalls.some((call) => call.startsWith("pr view "))).toBe(false);
@@ -3324,6 +3325,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
             kind: "open_pr",
             label: "View PR",
             url: "https://github.com/pingdotgg/codething-mvp/pull/188",
+            number: 188,
           },
         });
         expect(
