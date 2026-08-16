@@ -1207,6 +1207,9 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
   const Icon = row.expanded ? ChevronDownIcon : ChevronRightIcon;
   // Compaction is the rarest and most notable event, so it is pinned beside the
   // chevron and stays legible while the busier stats clip away in narrow panes.
+  // It earns emphasis from full-strength foreground rather than a hue: the
+  // theme's action color is a solid-control fill, and reading it as text on the
+  // canvas drops below 3:1 in every built-in theme.
   const compactionStats = row.activitySummary.filter((stat) => stat.kind === "context-compaction");
   const activityStats = row.activitySummary.filter((stat) => stat.kind !== "context-compaction");
   const hasSummary = row.activitySummary.length > 0;
@@ -1232,11 +1235,7 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
               </span>
             ) : null}
             {compactionStats.map((stat) => (
-              <TurnFoldActivityStat
-                key={stat.kind}
-                stat={stat}
-                className="ms-1 text-primary/70 transition-colors group-hover/turn-fold:text-primary motion-reduce:transition-none"
-              />
+              <TurnFoldActivityStat key={stat.kind} stat={stat} className="ms-1 text-foreground" />
             ))}
           </>
         ) : null}
