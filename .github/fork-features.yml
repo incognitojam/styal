@@ -1,0 +1,158 @@
+version: 1
+coverage: incremental
+
+# Capabilities, not commits. Follow-up fixes belong to the feature they preserve.
+features:
+  - id: completion-sounds
+    title: Configurable agent completion sounds
+    status: maintained
+    prs: [5, 7, 19, 72]
+    invariants:
+      - Users can select, preview, and disable the sound played when an agent finishes or awaits input.
+      - Sound playback follows persisted client settings without firing repeatedly for the same turn state.
+    implementation_paths:
+      - apps/web/src/components/TurnCompletionSound.tsx
+      - apps/web/src/components/settings/SettingsPanels.tsx
+      - apps/web/src/lib/completionSound.logic.ts
+      - apps/web/src/lib/completionSound.ts
+      - packages/contracts/src/settings.ts
+    upstream_paths:
+      - apps/web/src/AppRoot.tsx
+      - apps/web/src/components/settings/SettingsPanels.tsx
+      - packages/contracts/src/settings.ts
+    tests:
+      - apps/desktop/src/settings/DesktopClientSettings.test.ts
+      - apps/web/src/lib/completionSound.logic.test.ts
+      - apps/web/src/lib/completionSound.test.ts
+      - packages/contracts/src/settings.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream provides configurable completion and awaiting-input sounds with equivalent persistence and playback behavior.
+
+  - id: composer-draft-sync
+    title: Cross-device composer draft synchronization
+    status: maintained
+    prs: [39, 44]
+    invariants:
+      - Existing-thread draft text and attachments survive restarts and synchronize without overwriting newer local edits.
+      - Web, desktop-hosted web, and mobile use the same server-backed draft contract and fork-owned migration history.
+    implementation_paths:
+      - apps/mobile/src/state/use-composer-drafts.ts
+      - apps/server/src/persistence/ComposerDrafts.ts
+      - apps/server/src/persistence/ForkMigrations/001_ComposerDrafts.ts
+      - apps/web/src/composerDraftStore.ts
+      - packages/contracts/src/composerDraft.ts
+    upstream_paths:
+      - apps/server/src/server.ts
+      - apps/server/src/ws.ts
+      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/chat/ChatComposer.tsx
+      - packages/client-runtime/src/rpc/client.ts
+      - packages/contracts/src/rpc.ts
+    tests:
+      - apps/mobile/src/state/use-composer-drafts.test.ts
+      - apps/server/src/persistence/ComposerDrafts.test.ts
+      - apps/server/src/persistence/ForkMigrations.test.ts
+      - apps/web/src/composerDraftStore.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream synchronizes equivalent composer draft state across clients and safely migrates installations carrying the fork schema.
+
+  - id: github-outage-status
+    title: GitHub outage status in the sidebar
+    status: maintained
+    prs: [14, 136]
+    invariants:
+      - Enabled clients distinguish GitHub incidents from missing or malformed status responses.
+      - The sidebar notice reports affected services without blocking ordinary source-control work.
+    implementation_paths:
+      - apps/web/src/components/settings/SettingsPanels.tsx
+      - apps/web/src/components/sidebar/GitHubStatusNotice.tsx
+      - apps/web/src/githubStatus.ts
+      - packages/contracts/src/settings.ts
+    upstream_paths:
+      - apps/web/src/components/settings/SettingsPanels.tsx
+      - apps/web/src/components/sidebar/SidebarChrome.tsx
+      - packages/contracts/src/settings.ts
+    tests:
+      - apps/desktop/src/settings/DesktopClientSettings.test.ts
+      - apps/web/src/githubStatus.test.ts
+      - packages/contracts/src/settings.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream exposes equivalent configurable GitHub incident reporting in the primary navigation.
+
+  - id: integrated-browser-links
+    title: Open local development links in the integrated browser
+    status: maintained
+    prs: [107, 145, 153, 156]
+    invariants:
+      - Loopback links opened from chat or terminal activity resolve on the environment machine in the integrated browser.
+      - Unsupported links retain an external-browser path and never strand the user behind an unavailable preview runtime.
+    implementation_paths:
+      - apps/desktop/src/preview/BrowserSession.ts
+      - apps/server/src/preview/TerminalBrowserOpen.ts
+      - apps/web/src/components/chat/loopbackLinkPreview.ts
+      - apps/web/src/components/preview/openTerminalLinkInPreview.ts
+    upstream_paths:
+      - apps/desktop/src/preview/Manager.ts
+      - apps/server/src/http.ts
+      - apps/server/src/terminal/Manager.ts
+      - apps/web/src/components/ChatMarkdown.tsx
+      - apps/web/src/components/ThreadTerminalDrawer.tsx
+    tests:
+      - apps/desktop/src/preview/BrowserSession.test.ts
+      - apps/server/src/preview/TerminalBrowserOpen.test.ts
+      - apps/web/src/components/chat/loopbackLinkPreview.test.ts
+      - apps/web/src/components/preview/openTerminalLinkInPreview.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream routes local chat and terminal links through an environment-aware integrated browser with an external fallback.
+
+  - id: project-filter-continuity
+    title: Preserve project filters while navigating and creating threads
+    status: maintained
+    prs: [83, 162]
+    invariants:
+      - Reopening the sidebar does not discard the user's project filter.
+      - New-thread actions follow the visible project scope without unexpectedly switching the active thread's project.
+    implementation_paths:
+      - apps/web/src/components/CommandPalette.tsx
+      - apps/web/src/components/Sidebar.tsx
+      - apps/web/src/lib/chatThreadActions.ts
+      - apps/web/src/sidebarProjectScopeStore.ts
+    upstream_paths:
+      - apps/web/src/components/AppSidebarLayout.tsx
+      - apps/web/src/components/CommandPalette.tsx
+      - apps/web/src/components/Sidebar.tsx
+    tests:
+      - apps/web/src/lib/chatThreadActions.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream preserves project scope across sidebar state and every new-thread entry point.
+
+  - id: run-shell-code-blocks
+    title: Run completed shell code blocks in a terminal
+    status: maintained
+    prs: [97]
+    invariants:
+      - Completed recognized shell fences expose a Run in terminal action with the exact displayed command.
+      - Incomplete or non-shell code blocks never expose the terminal action.
+    implementation_paths:
+      - apps/web/src/components/ChatMarkdown.tsx
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+    upstream_paths:
+      - apps/web/src/components/ChatMarkdown.tsx
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+    tests:
+      - apps/web/src/components/ChatMarkdown.test.tsx
+      - apps/web/src/components/chat/MessagesTimeline.test.tsx
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream offers equivalent guarded terminal execution for completed shell code blocks.
