@@ -38,7 +38,7 @@ import {
   stopBrowserRecording,
 } from "~/browser/browserRecording";
 import { resolveBrowserRecordingStopTarget } from "~/browser/browserRecordingScope";
-import { useBrowserSurfaceStore } from "~/browser/browserSurfaceStore";
+import { useBrowserSurfaceStore, withBrowserCaptureSurface } from "~/browser/browserSurfaceStore";
 import { runBrowserViewportMutation } from "~/browser/browserViewportActions";
 import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
 import { isElectron } from "~/env";
@@ -75,6 +75,7 @@ import { isPreviewViewportReady } from "./previewViewportReadiness";
 import { shouldRollbackPreviewViewport } from "./previewViewportRollback";
 
 const PREVIEW_PRESENTATION_SETTLE_TIMEOUT_MS = 500;
+const PREVIEW_CAPTURE_PRESENTATION_TIMEOUT_MS = 5_000;
 
 const waitForPreviewPresentation = async (runtimeTabId: string): Promise<void> => {
   const deadline = Date.now() + PREVIEW_PRESENTATION_SETTLE_TIMEOUT_MS;
@@ -120,6 +121,59 @@ const findPreviewWebview = (tabId: string): ExecutablePreviewWebview | null =>
   Array.from(document.querySelectorAll<ExecutablePreviewWebview>("webview[data-preview-tab]")).find(
     (candidate) => candidate.getAttribute("data-preview-tab") === tabId,
   ) ?? null;
+
+const findPreviewCaptureSurface = (tabId: string): HTMLElement | null =>
+  Array.from(document.querySelectorAll<HTMLElement>("[data-preview-capture-surface]")).find(
+    (candidate) => candidate.getAttribute("data-preview-viewport") === tabId,
+  ) ?? null;
+
+const waitForPreviewCaptureSurface = async (
+  threadRef: ScopedThreadRef,
+  request: PreviewAutomationRequest,
+  tabId: string,
+  runtimeTabId: string,
+): Promise<void> => {
+  const timeoutMs = Math.min(request.timeoutMs, PREVIEW_CAPTURE_PRESENTATION_TIMEOUT_MS);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() <= deadline) {
+    assertPreviewRuntimeCurrent(threadRef, tabId, runtimeTabId, request);
+    const surface = findPreviewCaptureSurface(runtimeTabId);
+    const webview = findPreviewWebview(runtimeTabId);
+    if (surface && webview) {
+      const remainingMs = Math.max(0, deadline - Date.now());
+      const painted = await new Promise<boolean>((resolve) => {
+        let settled = false;
+        const settle = (value: boolean) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timeout);
+          resolve(value);
+        };
+        const timeout = window.setTimeout(() => settle(false), remainingMs);
+        void webview
+          .executeJavaScript(
+            "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))",
+          )
+          .then(
+            () => settle(true),
+            () => settle(false),
+          );
+      });
+      if (painted) {
+        assertPreviewRuntimeCurrent(threadRef, tabId, runtimeTabId, request);
+        return;
+      }
+    }
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 16));
+  }
+  throw new PreviewAutomationViewportTimeoutError({
+    requestId: request.requestId,
+    environmentId: threadRef.environmentId,
+    threadId: threadRef.threadId,
+    tabId,
+    timeoutMs,
+  });
+};
 
 const readWebviewViewport = async (
   webview: ExecutablePreviewWebview,
@@ -583,7 +637,12 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           }
           case "snapshot": {
             const ready = await requireReadyTab();
-            return await ready.bridge.automation.snapshot(ready.runtimeTabId);
+            return await withBrowserCaptureSurface(
+              ready.runtimeTabId,
+              () =>
+                waitForPreviewCaptureSurface(threadRef, request, ready.tabId, ready.runtimeTabId),
+              () => ready.bridge.automation.snapshot(ready.runtimeTabId),
+            );
           }
           case "click": {
             const ready = await requireReadyTab();

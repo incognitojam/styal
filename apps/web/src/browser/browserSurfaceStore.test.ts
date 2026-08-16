@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
+  acquireBrowserCaptureSurface,
   acquireBrowserSurface,
   resolveBrowserSurfacePanelRect,
   useBrowserSurfaceStore,
+  withBrowserCaptureSurface,
 } from "./browserSurfaceStore";
 
 describe("browserSurfaceStore", () => {
@@ -95,6 +97,7 @@ describe("browserSurfaceStore", () => {
           hidden: {
             rect: staleRect,
             visible: false,
+            captureCount: 0,
             content: null,
             fittedSourceContent: null,
             fitSourceContent: false,
@@ -105,6 +108,7 @@ describe("browserSurfaceStore", () => {
           active: {
             rect: liveRect,
             visible: true,
+            captureCount: 0,
             content: null,
             fittedSourceContent: null,
             fitSourceContent: false,
@@ -171,5 +175,48 @@ describe("browserSurfaceStore", () => {
       owner: null,
       visible: false,
     });
+  });
+
+  it("reference-counts background capture leases independently of visibility", () => {
+    const tabId = "background-capture-surface";
+    const first = acquireBrowserCaptureSurface(tabId);
+    const second = acquireBrowserCaptureSurface(tabId);
+
+    expect(useBrowserSurfaceStore.getState().byTabId[tabId]).toMatchObject({
+      captureCount: 2,
+      visible: false,
+    });
+
+    first.release();
+    first.release();
+    expect(useBrowserSurfaceStore.getState().byTabId[tabId]?.captureCount).toBe(1);
+
+    second.release();
+    expect(useBrowserSurfaceStore.getState().byTabId[tabId]?.captureCount).toBe(0);
+  });
+
+  it("releases a background capture surface when readiness or capture fails", async () => {
+    const tabId = "failed-background-capture";
+    await expect(
+      withBrowserCaptureSurface(
+        tabId,
+        async () => undefined,
+        async () => {
+          throw new Error("capture failed");
+        },
+      ),
+    ).rejects.toThrow("capture failed");
+    expect(useBrowserSurfaceStore.getState().byTabId[tabId]?.captureCount).toBe(0);
+
+    await expect(
+      withBrowserCaptureSurface(
+        tabId,
+        async () => {
+          throw new Error("presentation failed");
+        },
+        async () => "unreachable",
+      ),
+    ).rejects.toThrow("presentation failed");
+    expect(useBrowserSurfaceStore.getState().byTabId[tabId]?.captureCount).toBe(0);
   });
 });
