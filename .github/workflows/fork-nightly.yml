@@ -167,6 +167,7 @@ jobs:
             echo "ref=$candidate_ref"
             echo "fork_ref=$fork_ref"
             echo "main_ref=$main_ref"
+            echo "old_upstream_ref=$OLD_UPSTREAM_REF"
             echo "upstream_ref=$upstream_ref"
           } >> "$GITHUB_OUTPUT"
 
@@ -236,6 +237,20 @@ jobs:
           node-version-file: package.json
           cache: true
           run-install: true
+
+      - name: Review upstream overlap with fork features
+        if: steps.candidate.outputs.has_changes == 'true'
+        continue-on-error: true
+        env:
+          OLD_UPSTREAM_REF: ${{ steps.candidate.outputs.old_upstream_ref }}
+          UPSTREAM_REF: ${{ steps.candidate.outputs.upstream_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed_paths="$RUNNER_TEMP/upstream-changed-paths.txt"
+          git diff --name-only --no-renames \
+            "$OLD_UPSTREAM_REF..$UPSTREAM_REF" > "$changed_paths"
+          vp run --filter @t3tools/scripts ledger:check -- --changed-paths "$changed_paths"
 
       - name: Ensure Electron runtime is installed
         if: steps.candidate.outputs.has_changes == 'true'

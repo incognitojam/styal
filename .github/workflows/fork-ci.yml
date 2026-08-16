@@ -113,6 +113,9 @@ jobs:
       - name: Check
         run: vp check
 
+      - name: Check fork feature ledger
+        run: vp run --filter @t3tools/scripts ledger:check
+
       - name: Typecheck
         run: vpr typecheck
 
