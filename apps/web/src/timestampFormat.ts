@@ -188,7 +188,11 @@ export function formatRelativeTime(isoDate: string): RelativeTimeParts | null {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return { value: `${hours}h`, suffix: "ago" };
   const days = Math.floor(hours / 24);
-  return { value: `${days}d`, suffix: "ago" };
+  if (days < 30) return { value: `${days}d`, suffix: "ago" };
+  const months = Math.floor(days / 30);
+  if (months < 12) return { value: `${months}mo`, suffix: "ago" };
+  const years = Math.floor(months / 12);
+  return { value: `${years}y`, suffix: "ago" };
 }
 
 export function formatRelativeTimeLabel(isoDate: string) {
