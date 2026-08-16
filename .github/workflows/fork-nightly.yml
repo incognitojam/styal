@@ -153,6 +153,11 @@ jobs:
           # shellcheck disable=SC1090 # The source_ref path is loaded from main_ref above.
           source "$rebase_script"
           upstream_ref=$UPSTREAM_REF
+          # A resolved source_ref is already based on current upstream, so its
+          # merge-base cannot describe what changed since the last promoted
+          # stack. Always anchor ledger review to the main snapshot this run
+          # will replace.
+          old_upstream_ref=$(git merge-base "$main_ref" "$upstream_ref")
 
           candidate_ref=$(git rev-parse HEAD)
           has_changes=true
@@ -167,7 +172,7 @@ jobs:
             echo "ref=$candidate_ref"
             echo "fork_ref=$fork_ref"
             echo "main_ref=$main_ref"
-            echo "old_upstream_ref=$OLD_UPSTREAM_REF"
+            echo "old_upstream_ref=$old_upstream_ref"
             echo "upstream_ref=$upstream_ref"
           } >> "$GITHUB_OUTPUT"
 

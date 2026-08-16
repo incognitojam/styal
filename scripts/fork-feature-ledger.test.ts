@@ -129,7 +129,7 @@ features: []
     }
   });
 
-  it("wires rename-aware advisory overlap review into Fork Nightly", () => {
+  it("wires source-ref-safe advisory overlap review into Fork Nightly", () => {
     const workflow = parse(NodeFS.readFileSync(nightlyWorkflowPath, "utf8")) as {
       readonly jobs: {
         readonly prepare: {
@@ -147,7 +147,12 @@ features: []
       (step) => step.name === "Review upstream overlap with fork features",
     );
 
-    assert.include(candidate?.run ?? "", 'echo "old_upstream_ref=$OLD_UPSTREAM_REF"');
+    assert.include(
+      candidate?.run ?? "",
+      'old_upstream_ref=$(git merge-base "$main_ref" "$upstream_ref")',
+    );
+    assert.include(candidate?.run ?? "", 'echo "old_upstream_ref=$old_upstream_ref"');
+    assert.notInclude(candidate?.run ?? "", 'echo "old_upstream_ref=$OLD_UPSTREAM_REF"');
     assert.equal(review?.["continue-on-error"], true);
     assert.include(review?.run ?? "", "git diff --name-only --no-renames");
     assert.include(review?.run ?? "", "ledger:check -- --changed-paths");
