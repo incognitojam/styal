@@ -16,12 +16,13 @@ their pinned threads keep the default newest-first order below the ones you have
 
 The menu below the search box narrows the sidebar to a single project. While a project is
 selected, **New thread** creates in that project instead of asking which one you want, so you can
-pick a project once and keep working in it. The filter also decides which project counts as the
-current one for the **new thread in current project** shortcut and the command palette's **New
-thread in** action.
+pick a project once and keep working in it. Threads you start this way always appear in the list
+you are looking at.
 
-The plain **new thread** shortcut still opens the project chooser, so a filter never takes away
-your ability to start work somewhere else. Choose **All projects** to clear the filter.
+The keyboard keeps both doors open. The **new thread in current project** shortcut starts a thread
+beside the one you have open, even when the sidebar is narrowed to somewhere else — with nothing
+open it uses the filtered project. The plain **new thread** shortcut still opens the project
+chooser. Choose **All projects** to clear the filter.
 
 ## Environment artwork
 

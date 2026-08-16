@@ -101,7 +101,7 @@ import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { openCommandPalette } from "../commandPaletteBus";
-import { startNewThreadFromContext } from "../lib/chatThreadActions";
+import { newThreadOriginsAgree, startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useClientSettings } from "../hooks/useSettings";
 import { useCopyThreadTranscript } from "../hooks/useCopyThreadTranscript";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
@@ -3327,10 +3327,20 @@ export default function Sidebar() {
     autoAnimate(node, { duration: 150, easing: "ease-out" });
   }, []);
 
-  // New thread defaults to the filtered project, falling back to the project
-  // you're in (active thread's project, then the top project) — same
-  // resolution the command palette uses. The command palette already offers a
-  // "New thread in..." submenu for multi-project setups.
+  // This button belongs to the filtered list, so it creates in the filtered
+  // project and only falls back to the project you're in. chat.newLocal is
+  // the other way round — it starts a thread beside your current work — and
+  // the command palette offers a "New thread in..." submenu for picking.
+  const threadActionContext = useMemo(
+    () => ({
+      activeDraftThread: newThreadContext.activeDraftThread,
+      activeThread: newThreadContext.activeThread ?? undefined,
+      defaultProjectRef: newThreadContext.defaultProjectRef,
+      handleNewThread: newThreadContext.handleNewThread,
+      scopedProjectGroup,
+    }),
+    [newThreadContext, scopedProjectGroup],
+  );
   const handleNewThreadClick = useCallback(
     (event?: ReactMouseEvent) => {
       // One project, or a filtered list: nothing left to pick, create
@@ -3344,19 +3354,13 @@ export default function Sidebar() {
         })
       ) {
         if (isMobile) setOpenMobile(false);
-        void startNewThreadFromContext({
-          activeDraftThread: newThreadContext.activeDraftThread,
-          activeThread: newThreadContext.activeThread ?? undefined,
-          defaultProjectRef: newThreadContext.defaultProjectRef,
-          handleNewThread: newThreadContext.handleNewThread,
-          scopedProjectGroup,
-        });
+        void startNewThreadFromContext(threadActionContext, "sidebar");
         return;
       }
       if (isMobile) setOpenMobile(false);
       openCommandPalette({ open: "new-thread-in" });
     },
-    [isMobile, newThreadContext, projectGroups.length, scopedProjectGroup, setOpenMobile],
+    [isMobile, projectGroups.length, scopedProjectGroup, setOpenMobile, threadActionContext],
   );
 
   const newThreadPicksProject = !shouldCreateNewThreadInCurrentProject({
@@ -3364,18 +3368,22 @@ export default function Sidebar() {
     projectGroupCount: projectGroups.length,
     hasProjectScope: scopedProjectGroup !== null,
   });
-  // The tooltip must not advertise a shortcut that does something other than
+  // The tooltip must not advertise a shortcut that lands somewhere other than
   // the button. chat.new matches while there is still a project to pick, and
   // with a single project where both commands create directly (chat.newLocal
   // stands in there when chat.new is unbound, but never while the picker is
-  // in play, which would advertise one shortcut for two behaviors). A filter
-  // is the case where the two diverge: the button creates in place while
-  // chat.new still opens the chooser, so the label follows chat.newLocal.
+  // in play, which would advertise one shortcut for two behaviors). Once a
+  // filter makes the button create directly it matches chat.newLocal — but
+  // only while both land in the same project. Filtering to something other
+  // than the thread you are viewing splits them, and then the button has no
+  // keyboard twin to name.
   const newThreadShortcutLabel =
     newThreadPicksProject || projectGroups.length <= 1
       ? (shortcutLabelForCommand(keybindings, "chat.new") ??
         (newThreadPicksProject ? undefined : shortcutLabelForCommand(keybindings, "chat.newLocal")))
-      : shortcutLabelForCommand(keybindings, "chat.newLocal");
+      : newThreadOriginsAgree(threadActionContext)
+        ? shortcutLabelForCommand(keybindings, "chat.newLocal")
+        : undefined;
   // The second tooltip line advertises shift+click and its keyboard twin
   // chat.newLocal for direct create, and is pointless once a plain click
   // already creates in place.

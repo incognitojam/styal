@@ -68,8 +68,10 @@ function ChatRouteGlobalShortcuts() {
       }),
     [primaryEnvironmentId, projectGroupingSettings, projects],
   );
-  // chat.newLocal means "new thread in the current project", and a project
-  // filter is the most explicit statement of which project that is.
+  // These commands start a thread beside your current work, so the thread you
+  // are viewing outranks the sidebar's filter. The filter still beats the
+  // fallback default, so with nothing open they land in the project on screen
+  // rather than the top of the project list.
   const scopedProjectGroup = useScopedProjectGroup(projectGroups);
   const terminalOpen = useTerminalUiStateStore((state) =>
     routeThreadRef

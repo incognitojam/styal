@@ -2,6 +2,7 @@ import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import {
+  newThreadOriginsAgree,
   resolveThreadActionProjectRef,
   resolveNewDraftStartFromOrigin,
   startNewThreadFromContext,
@@ -86,7 +87,7 @@ describe("chatThreadActions", () => {
     expect(projectRef).toEqual(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID));
   });
 
-  it("prefers the sidebar's project filter over the active thread project", () => {
+  it("prefers the sidebar's project filter over the active thread for the sidebar button", () => {
     const projectRef = resolveThreadActionProjectRef(
       createContext({
         activeThread: {
@@ -95,6 +96,33 @@ describe("chatThreadActions", () => {
         },
         scopedProjectGroup: SCOPED_PROJECT_GROUP,
       }),
+      "sidebar",
+    );
+
+    expect(projectRef).toEqual(scopeProjectRef(ENVIRONMENT_ID, SCOPED_PROJECT_ID));
+  });
+
+  it("keeps contextual commands on the active thread's project despite the filter", () => {
+    const projectRef = resolveThreadActionProjectRef(
+      createContext({
+        activeThread: {
+          environmentId: ENVIRONMENT_ID,
+          projectId: PROJECT_ID,
+        },
+        scopedProjectGroup: SCOPED_PROJECT_GROUP,
+      }),
+      "contextual",
+    );
+
+    expect(projectRef).toEqual(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID));
+  });
+
+  it("lets the filter beat the fallback default for contextual commands", () => {
+    const projectRef = resolveThreadActionProjectRef(
+      createContext({
+        scopedProjectGroup: SCOPED_PROJECT_GROUP,
+      }),
+      "contextual",
     );
 
     expect(projectRef).toEqual(scopeProjectRef(ENVIRONMENT_ID, SCOPED_PROJECT_ID));
@@ -109,6 +137,7 @@ describe("chatThreadActions", () => {
         },
         scopedProjectGroup: SCOPED_PROJECT_GROUP,
       }),
+      "sidebar",
     );
 
     expect(projectRef).toEqual(scopeProjectRef(REMOTE_ENVIRONMENT_ID, SCOPED_PROJECT_ID));
@@ -120,9 +149,27 @@ describe("chatThreadActions", () => {
         defaultProjectRef: null,
         scopedProjectGroup: SCOPED_PROJECT_GROUP,
       }),
+      "sidebar",
     );
 
     expect(projectRef).toEqual(scopeProjectRef(ENVIRONMENT_ID, SCOPED_PROJECT_ID));
+  });
+
+  it("reports the origins agreeing unless the filter names another project", () => {
+    const viewingScopedGroup = createContext({
+      activeThread: { environmentId: REMOTE_ENVIRONMENT_ID, projectId: SCOPED_PROJECT_ID },
+      scopedProjectGroup: SCOPED_PROJECT_GROUP,
+    });
+    const viewingElsewhere = createContext({
+      activeThread: { environmentId: ENVIRONMENT_ID, projectId: PROJECT_ID },
+      scopedProjectGroup: SCOPED_PROJECT_GROUP,
+    });
+    const nothingOpen = createContext({ scopedProjectGroup: SCOPED_PROJECT_GROUP });
+
+    expect(newThreadOriginsAgree(createContext())).toBe(true);
+    expect(newThreadOriginsAgree(viewingScopedGroup)).toBe(true);
+    expect(newThreadOriginsAgree(nothingOpen)).toBe(true);
+    expect(newThreadOriginsAgree(viewingElsewhere)).toBe(false);
   });
 
   it("inherits only the project from context, never branch or worktree state", async () => {

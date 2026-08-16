@@ -43,6 +43,23 @@ export function resolveNewDraftStartFromOrigin(input: {
   return input.envMode === "worktree" && input.newWorktreesStartFromOrigin;
 }
 
+/**
+ * Which affordance is asking, because the sidebar's project filter outranks
+ * different things for each.
+ *
+ * `"sidebar"` is the new thread button inside the filtered list: the filter
+ * beats the thread you are viewing, so the new draft always appears in the
+ * list you are looking at.
+ *
+ * `"contextual"` is chat.newLocal and its command palette twin — "start
+ * another one right here". The thread you are viewing beats the filter, or
+ * there would be no way to open a thread beside your current work while the
+ * sidebar is narrowed elsewhere. The filter still beats the fallback default,
+ * so with nothing open these land in the project on screen.
+ */
+export type NewThreadOrigin = "sidebar" | "contextual";
+
+/** The project you are looking at, ignoring both filter and fallback. */
 function resolveContextualProjectRef(context: ChatThreadActionContext): ScopedProjectRef | null {
   if (context.activeThread) {
     return scopeProjectRef(context.activeThread.environmentId, context.activeThread.projectId);
@@ -53,22 +70,16 @@ function resolveContextualProjectRef(context: ChatThreadActionContext): ScopedPr
       context.activeDraftThread.projectId,
     );
   }
-  return context.defaultProjectRef;
+  return null;
 }
 
-export function resolveThreadActionProjectRef(
-  context: ChatThreadActionContext,
-): ScopedProjectRef | null {
-  const contextualProjectRef = resolveContextualProjectRef(context);
+/** The filtered project, holding the member you are already in when the group
+    spans environments so the same project local and remote does not snap back
+    to its representative. */
+function resolveScopedProjectRef(context: ChatThreadActionContext): ScopedProjectRef | null {
   const scopedProjectGroup = context.scopedProjectGroup ?? null;
-  if (scopedProjectGroup === null) {
-    return contextualProjectRef;
-  }
-  // A project filter outranks the thread being viewed: filtering is the later
-  // and more deliberate choice, and a list showing one project that spawns
-  // threads elsewhere is a lie. Within the filtered group the contextual
-  // member still wins, so a group spanning environments (the same project
-  // local and remote) does not snap back to its representative.
+  if (scopedProjectGroup === null) return null;
+  const contextualProjectRef = resolveContextualProjectRef(context);
   const isContextualRefInScope =
     contextualProjectRef !== null &&
     scopedProjectGroup.memberProjectRefs.some(
@@ -81,6 +92,35 @@ export function resolveThreadActionProjectRef(
     : scopeProjectRef(scopedProjectGroup.environmentId, scopedProjectGroup.id);
 }
 
+export function resolveThreadActionProjectRef(
+  context: ChatThreadActionContext,
+  origin: NewThreadOrigin = "contextual",
+): ScopedProjectRef | null {
+  const scopedProjectRef = resolveScopedProjectRef(context);
+  if (origin === "sidebar" && scopedProjectRef !== null) {
+    return scopedProjectRef;
+  }
+  return resolveContextualProjectRef(context) ?? scopedProjectRef ?? context.defaultProjectRef;
+}
+
+/**
+ * Whether the sidebar button and the contextual commands land in the same
+ * project. They part ways only when the filter names a project other than the
+ * one you are viewing; that is the case where the button has no keyboard twin
+ * and its tooltip must not claim one.
+ */
+export function newThreadOriginsAgree(context: ChatThreadActionContext): boolean {
+  const sidebarProjectRef = resolveThreadActionProjectRef(context, "sidebar");
+  const contextualProjectRef = resolveThreadActionProjectRef(context, "contextual");
+  if (sidebarProjectRef === null || contextualProjectRef === null) {
+    return sidebarProjectRef === contextualProjectRef;
+  }
+  return (
+    sidebarProjectRef.environmentId === contextualProjectRef.environmentId &&
+    sidebarProjectRef.projectId === contextualProjectRef.projectId
+  );
+}
+
 // New threads inherit only the *project* from the current context. Branch,
 // worktree, and env mode always come from the user's configured defaults —
 // carrying them over from the viewed thread meant "new thread" silently
@@ -89,8 +129,9 @@ export function resolveThreadActionProjectRef(
 // directly instead.
 export async function startNewThreadFromContext(
   context: ChatThreadActionContext,
+  origin: NewThreadOrigin = "contextual",
 ): Promise<boolean> {
-  const projectRef = resolveThreadActionProjectRef(context);
+  const projectRef = resolveThreadActionProjectRef(context, origin);
   if (!projectRef) {
     return false;
   }
