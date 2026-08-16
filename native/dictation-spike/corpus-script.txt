@@ -1,0 +1,70 @@
+# Corpus script for the dictation matcher.
+#
+# CODE:  read aloud. Contains identifiers written as they appear in code —
+#        say them however you naturally would. The line as written IS the
+#        expected output.
+# PROSE: read aloud. Plain English, no identifiers. NEGATIVE CONTROL — the
+#        matcher must leave these completely alone.
+# FREE:  speak freely on the topic. No ground truth; used to hunt false
+#        positives on realistic rambling speech.
+#
+# Identifiers are shown in code form deliberately. Spelling them out phonetically
+# ("to string", "to jason") would dictate the pronunciation, which is the thing
+# we are trying to measure rather than assume.
+#
+# Stumble freely. Restarts, filler words and self-corrections are useful data —
+# the previous recording was clean reading, which is the easy case.
+
+# --- identifiers beginning with a stopword (currently all unmatchable) ---
+
+CODE: check if the list isEmpty before you call onClick
+CODE: the handler runs forEach item and returns toString
+CODE: make sure isValid passes before onChange fires
+CODE: we call useState at the top of the component
+
+# --- negative controls using those same words ---
+
+PROSE: the room is empty so please turn the lights on
+PROSE: I had to click through each item to check they were valid
+PROSE: it is valid to change your mind before the deadline
+
+# --- acronyms (currently all unmatchable) ---
+
+CODE: call parseURL and then toJSON on the response
+CODE: the HTTPClient needs the userId and the apiUrl
+CODE: read the threadId from the HTTPRequest
+
+# --- multi-word identifiers ---
+
+CODE: the ChildProcessSpawner needs the ProviderInstanceId
+CODE: update the worktreePath and check the workspaceRoot
+CODE: read createdAt and updatedAt from the environmentId
+CODE: call mapError on the FileSystem layer then check the exitCode
+
+# --- identifiers that are also ordinary English words ---
+
+PROSE: the filter returns a count of the results
+PROSE: I need to update the result before the thread finishes
+
+# --- ambiguity: near-miss pair in one breath ---
+
+CODE: getUser returns one row but getUsers returns many
+
+# --- punctuation and sentence boundaries ---
+
+PROSE: I called exit. The code path after that never runs.
+CODE: wrap the worktreePath in parentheses then commit
+
+# --- snake_case and digits ---
+
+CODE: the thread_id is stored next to the base64Encode helper
+
+# --- free-form: what people actually dictate ---
+
+FREE: Describe a bug you fixed recently, about 30 seconds. Mention real file or function names as they come up.
+
+FREE: Explain what you want an agent to do next in this repo, about 45 seconds. Ramble — restarts and false starts are useful.
+
+FREE: Describe the dictation feature we have been designing, about 45 seconds.
+
+FREE: Talk for about 30 seconds about something with no code in it at all — weekend plans, a film, anything. Pure negative control.

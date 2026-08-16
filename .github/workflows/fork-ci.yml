@@ -122,6 +122,9 @@ jobs:
       - name: Check resource monitor formatting
         run: cargo fmt --manifest-path native/resource-monitor/Cargo.toml -- --check
 
+      - name: Check dictation sidecar formatting
+        run: cargo fmt --manifest-path native/dictation/Cargo.toml -- --check
+
       - name: Build desktop pipeline
         run: vp run build:desktop
 

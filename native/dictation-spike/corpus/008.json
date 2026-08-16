@@ -1,0 +1,7 @@
+{
+  "index": 8,
+  "kind": "code",
+  "negativeControl": false,
+  "say": "call parseURL and then toJSON on the response",
+  "want": "call parseURL and then toJSON on the response"
+}

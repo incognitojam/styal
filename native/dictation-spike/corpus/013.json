@@ -1,0 +1,7 @@
+{
+  "index": 13,
+  "kind": "code",
+  "negativeControl": false,
+  "say": "read createdAt and updatedAt from the environmentId",
+  "want": "read createdAt and updatedAt from the environmentId"
+}

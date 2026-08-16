@@ -1,0 +1,7 @@
+{
+  "index": 12,
+  "kind": "code",
+  "negativeControl": false,
+  "say": "update the worktreePath and check the workspaceRoot",
+  "want": "update the worktreePath and check the workspaceRoot"
+}

@@ -199,6 +199,8 @@ function ComposerCommandMenuLayer(props: { anchor: HTMLElement | null; children:
   );
 }
 import { Button } from "../ui/button";
+import { DictationControl } from "../../dictation/DictationControl";
+import { toggleDictation } from "../../dictation/dictationBus";
 import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
@@ -462,6 +464,12 @@ export interface ChatComposerHandle {
   focusAt: (cursor: number) => void;
   addDroppedFiles: (files: File[]) => void;
   insertTextAtEnd: (text: string, options?: { ensureLeadingBoundary?: boolean }) => boolean;
+  /**
+   * Replaces a collapsed-prompt range (offsets into `readSnapshot().value`).
+   * Used by dictation's substitution revert. Returns false when the composer
+   * is not accepting edits.
+   */
+  replaceRange: (start: number, end: number, replacement: string) => boolean;
   openModelPicker: () => void;
   toggleModelPicker: () => void;
   isModelPickerOpen: () => boolean;
@@ -2306,6 +2314,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           modelPickerOpen: isComposerModelPickerOpen,
         },
       });
+      if (command === "composer.dictate") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!isCommandPaletteOpen()) {
+          toggleDictation();
+        }
+        return;
+      }
       if (command !== "composer.stash") return;
       // Always claim the shortcut so the browser save dialog never opens,
       // even when the composer is in a state that can't stash.
@@ -2467,6 +2483,23 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
   };
 
+  const replaceComposerRange = (start: number, end: number, replacement: string): boolean => {
+    if (isConnecting || isComposerApprovalState || pendingUserInputs.length > 0) {
+      return false;
+    }
+    const prompt = promptRef.current;
+    if (start < 0 || end > prompt.length || start > end) {
+      return false;
+    }
+    // applyPromptReplacement operates on expanded offsets; collapsed offsets
+    // only coincide when no inline tokens sit before the range.
+    return applyPromptReplacement(
+      expandCollapsedComposerCursor(prompt, start),
+      expandCollapsedComposerCursor(prompt, end),
+      replacement,
+    );
+  };
+
   // File-tree drags land as mentions. Handled in the capture phase so the
   // editor never sees the drop; the load-bearing rules (native stop, "move"
   // effect, no eager focus) live in makeComposerMentionDragHandlers.
@@ -2570,6 +2603,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         focusComposer();
       },
       insertTextAtEnd: insertComposerTextAtEnd,
+      replaceRange: replaceComposerRange,
       openModelPicker: () => {
         setIsComposerModelPickerOpen(true);
       },
@@ -3231,6 +3265,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     />
                   </>
                 )}
+                <DictationControl />
               </div>
 
               {/* Right side: send / stop button */}

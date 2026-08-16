@@ -124,6 +124,13 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  dictationEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Hold the shortcut while speaking, or press once to start and again to stop. */
+  dictationMode: Schema.Literals(["hold", "toggle"]).pipe(
+    Schema.withDecodingDefault(Effect.succeed("hold" as const)),
+  ),
+  /** Apply the identifier matcher to finalized dictation text. */
+  dictationVocabularyEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   dismissedProviderUpdateNotificationKeys: Schema.Array(TrimmedNonEmptyString).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
@@ -771,6 +778,9 @@ export const ClientSettingsPatch = Schema.Struct({
   completionSound: Schema.optionalKey(CompletionSound),
   confirmThreadArchive: Schema.optionalKey(Schema.Boolean),
   confirmThreadDelete: Schema.optionalKey(Schema.Boolean),
+  dictationEnabled: Schema.optionalKey(Schema.Boolean),
+  dictationMode: Schema.optionalKey(Schema.Literals(["hold", "toggle"])),
+  dictationVocabularyEnabled: Schema.optionalKey(Schema.Boolean),
   diffIgnoreWhitespace: Schema.optionalKey(Schema.Boolean),
   environmentIdentificationMode: Schema.optionalKey(EnvironmentIdentificationMode),
   glassOpacity: Schema.optionalKey(GlassOpacity),

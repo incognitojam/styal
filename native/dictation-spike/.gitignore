@@ -1,0 +1,19 @@
+# Voice recordings — personal audio, tens of megabytes.
+# Regenerate with: t3-dictate corpus --script corpus-script.txt --out corpus
+#
+# Transcripts and metadata under corpus*/ are deliberately NOT ignored: they are
+# small, and they are the regression fixtures the matcher is measured against.
+*.wav
+*.aiff
+*.aif
+*.m4a
+*.mp3
+*.caf
+*.flac
+
+# Trained custom language models (6.5MB each, and they do nothing — see README).
+*.lm
+training.bin
+
+# Rust sidecar build output.
+parakeet-sidecar/target/

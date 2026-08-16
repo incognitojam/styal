@@ -1,0 +1,7 @@
+{
+  "index": 3,
+  "kind": "code",
+  "negativeControl": false,
+  "say": "make sure isValid passes before onChange fires",
+  "want": "make sure isValid passes before onChange fires"
+}

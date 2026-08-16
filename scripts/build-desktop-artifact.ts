@@ -287,9 +287,10 @@ export class BuildCommandFailedError extends Schema.TaggedErrorClass<BuildComman
   }
 }
 
-export class ResourceMonitorBuildOutputMissingError extends Schema.TaggedErrorClass<ResourceMonitorBuildOutputMissingError>()(
-  "ResourceMonitorBuildOutputMissingError",
+export class SidecarBuildOutputMissingError extends Schema.TaggedErrorClass<SidecarBuildOutputMissingError>()(
+  "SidecarBuildOutputMissingError",
   {
+    crate: Schema.String,
     binaryPath: Schema.String,
     rustTarget: Schema.String,
     platform: BuildPlatform,
@@ -838,6 +839,10 @@ export const DESKTOP_EXTRA_RESOURCES = [
     from: "apps/desktop/prod-resources/resource-monitor",
     to: "resource-monitor",
   },
+  {
+    from: "apps/desktop/prod-resources/dictation",
+    to: "dictation",
+  },
 ] as const;
 
 export interface MacPasskeySigningConfiguration {
@@ -1052,10 +1057,25 @@ ${associatedDomains}
     <true/>
     <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
   </dict>
 </plist>
 `;
 }
+
+/**
+ * Info.plist additions for every mac build, signed or not. Without the
+ * microphone usage description, getUserMedia does not prompt — it silently
+ * returns digital silence with no error anywhere in the chain
+ * (native/dictation-spike/README.md finding 4).
+ */
+export const MAC_EXTEND_INFO = {
+  NSMicrophoneUsageDescription:
+    "T3 Code uses the microphone for dictation into the composer. Audio is " +
+    "transcribed on your own machine or self-hosted server and never sent to " +
+    "third parties.",
+} as const;
 
 export function resolveFffNativeDependencies(
   platform: typeof BuildPlatform.Type,
@@ -1644,17 +1664,21 @@ const verifyPackagedBundleIsSelfContained = Effect.fn("verifyPackagedBundleIsSel
   },
 );
 
-const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input: {
+const stageRustSidecar = Effect.fn("stageRustSidecar")(function* (input: {
   readonly repoRoot: string;
   readonly stageResourcesDir: string;
   readonly platform: typeof BuildPlatform.Type;
   readonly arch: typeof BuildArch.Type;
   readonly verbose: boolean;
+  /** Crate directory under native/, which is also the staged resource name. */
+  readonly crate: string;
+  /** Binary name from the crate's [package].name, without platform suffix. */
+  readonly binaryName: string;
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const manifestPath = path.join(input.repoRoot, "native/resource-monitor/Cargo.toml");
-  const executableName = resourceMonitorExecutableName(input.platform);
+  const manifestPath = path.join(input.repoRoot, `native/${input.crate}/Cargo.toml`);
+  const executableName = input.platform === "win" ? `${input.binaryName}.exe` : input.binaryName;
   const rustTargets = resolveResourceMonitorRustTargets(input.platform, input.arch);
   const builtBinaries: string[] = [];
 
@@ -1674,20 +1698,21 @@ const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input:
         shell: spawnCommand.shell,
       }),
       {
-        label: `cargo build resource monitor (${rustTarget})`,
+        label: `cargo build ${input.crate} (${rustTarget})`,
         verbose: input.verbose,
       },
     );
 
     const binaryPath = path.join(
       input.repoRoot,
-      "native/resource-monitor/target",
+      `native/${input.crate}/target`,
       rustTarget,
       "release",
       executableName,
     );
     if (!(yield* fs.exists(binaryPath))) {
-      return yield* new ResourceMonitorBuildOutputMissingError({
+      return yield* new SidecarBuildOutputMissingError({
+        crate: input.crate,
         binaryPath,
         rustTarget,
         platform: input.platform,
@@ -1697,7 +1722,7 @@ const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input:
     builtBinaries.push(binaryPath);
   }
 
-  const destinationDirectory = path.join(input.stageResourcesDir, "resource-monitor");
+  const destinationDirectory = path.join(input.stageResourcesDir, input.crate);
   const destinationPath = path.join(destinationDirectory, executableName);
   yield* fs.remove(destinationDirectory, { recursive: true, force: true }).pipe(Effect.ignore);
   yield* fs.makeDirectory(destinationDirectory, { recursive: true });
@@ -1708,7 +1733,7 @@ const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input:
     yield* runCommand(
       ChildProcess.make("lipo", ["-create", ...builtBinaries, "-output", destinationPath]),
       {
-        label: "lipo resource monitor universal binary",
+        label: `lipo ${input.crate} universal binary`,
         verbose: input.verbose,
       },
     );
@@ -2081,6 +2106,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
+      extendInfo: MAC_EXTEND_INFO,
       protocols: [
         {
           name: "T3 Code",
@@ -2837,12 +2863,23 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   if (options.platform !== "win") {
     yield* fs.copy(distDirs.serverDist, path.join(stageAppDir, "apps/server/dist"));
   }
-  yield* stageResourceMonitor({
+  yield* stageRustSidecar({
     repoRoot,
     stageResourcesDir,
     platform: options.platform,
     arch: options.arch,
     verbose: options.verbose,
+    crate: "resource-monitor",
+    binaryName: "t3-resource-monitor",
+  });
+  yield* stageRustSidecar({
+    repoRoot,
+    stageResourcesDir,
+    platform: options.platform,
+    arch: options.arch,
+    verbose: options.verbose,
+    crate: "dictation",
+    binaryName: "t3-dictation",
   });
 
   yield* assertPlatformBuildResources(

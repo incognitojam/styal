@@ -1,0 +1,7 @@
+{
+  "index": 22,
+  "kind": "free",
+  "negativeControl": false,
+  "say": "Explain what you want an agent to do next in this repo, about 45 seconds. Ramble — restarts and false starts are useful.",
+  "want": null
+}

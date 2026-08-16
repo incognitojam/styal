@@ -458,6 +458,24 @@ export const make = Effect.gen(function* () {
     flushMainWindowBounds = flushBoundsPersist;
 
     yield* previewManager.setMainWindow(window);
+
+    // Microphone access for dictation. Only the app's own renderer origin is
+    // granted, and only the main window's session — the preview partitions
+    // (BrowserSession.ts) run untrusted web content and deliberately withhold
+    // media. Without an explicit grant, packaged macOS builds record digital
+    // silence with no error anywhere (dictation spike finding 4).
+    const appOrigin = new URL(getDesktopUrl(environment.isDevelopment)).origin;
+    window.webContents.session.setPermissionRequestHandler(
+      (webContents, permission, callback, details) => {
+        callback(
+          permission === "media" &&
+            webContents !== null &&
+            webContents.id === window.webContents.id &&
+            new URL(details.requestingUrl).origin === appOrigin,
+        );
+      },
+    );
+
     window.webContents.on("will-attach-webview", (event, webPreferences, params) => {
       if (
         typeof params.partition !== "string" ||
