@@ -2854,6 +2854,12 @@ function OpenCommandPaletteDialog(props: {
       }
       footerActionLabel={footerActionLabel}
       footerTrailing={footerTrailing}
+      // While browsing, a highlighted row changes what Enter does: it descends
+      // into that folder instead of adding the typed path. Hover must not arm
+      // that silently -- the palette keeps the highlight after the pointer
+      // leaves, so a stray mouse pass would rebind Enter for good. Only arrow
+      // keys should choose "open" over "add".
+      highlightItemOnHover={!isBrowsing}
       inputAccessory={inputAccessory}
       inputProps={{
         // The submit button is absolutely positioned over the field, so the
