@@ -70,7 +70,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
-import { useClientSettings } from "../hooks/useSettings";
+import { useClientSettings, useLegacySidebarEnabled } from "../hooks/useSettings";
 import { useTheme } from "../hooks/useTheme";
 import { readLocalApi } from "../localApi";
 import { desktopLocalBackendId } from "../connection/desktopLocal";
@@ -168,6 +168,7 @@ import {
   buildSidebarProjectPickerEntries,
   buildSidebarProjectSnapshots,
 } from "../sidebarProjectGrouping";
+import { useScopedProjectGroup } from "../sidebarProjectScopeStore";
 import type { Project } from "../types";
 import { useFocusPullRequestTab, useViewPullRequest } from "../lib/viewPullRequest";
 import { getSourceControlPresentation } from "../sourceControlPresentation";
@@ -653,6 +654,7 @@ function OpenCommandPaletteDialog(props: {
   const isActionsOnly = deferredQuery.startsWith(">");
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
   const clientSettings = useClientSettings();
+  const legacySidebarEnabled = useLegacySidebarEnabled();
   const createProject = useAtomCommand(projectEnvironment.create, {
     reportFailure: false,
   });
@@ -808,6 +810,9 @@ function OpenCommandPaletteDialog(props: {
       ),
     [clientSettings.sidebarProjectSortOrder, threads, unsortedProjectGroups],
   );
+  // The sidebar's project filter feeds this, so the palette's "New thread in
+  // X" action names — and creates in — the project the sidebar is showing.
+  const scopedProjectGroup = useScopedProjectGroup(projectGroups);
   const contextualProjectRef = useMemo(
     () =>
       resolveThreadActionProjectRef({
@@ -815,8 +820,9 @@ function OpenCommandPaletteDialog(props: {
         activeThread: activeThread ?? undefined,
         defaultProjectRef,
         handleNewThread,
+        scopedProjectGroup,
       }),
-    [activeDraftThread, activeThread, defaultProjectRef, handleNewThread],
+    [activeDraftThread, activeThread, defaultProjectRef, handleNewThread, scopedProjectGroup],
   );
   const projectPickerEntries = useMemo(
     () =>
@@ -1744,6 +1750,13 @@ function OpenCommandPaletteDialog(props: {
     const activeProjectTitle =
       projectPickerEntries.find((entry) => entry.isPreferred)?.group.displayName ??
       (currentProjectId ? (projectTitleById.get(currentProjectId) ?? null) : null);
+    // Which command each item is a twin of. Mirrors the chat.new branch in
+    // the chat route: with the default sidebar and several projects chat.new
+    // opens this picker, so it belongs on the submenu and the named
+    // create-here item belongs to chat.newLocal. Otherwise chat.new creates
+    // directly, so it sits on the named item and the submenu advertises
+    // nothing.
+    const picksProject = !legacySidebarEnabled && projectGroups.length > 1;
 
     if (activeProjectTitle) {
       actionItems.push({
@@ -1756,13 +1769,14 @@ function OpenCommandPaletteDialog(props: {
           </>
         ),
         icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
-        shortcutCommand: "chat.new",
+        shortcutCommand: picksProject ? "chat.newLocal" : "chat.new",
         run: async () => {
           await startNewThreadFromContext({
             activeDraftThread,
             activeThread: activeThread ?? undefined,
             defaultProjectRef,
             handleNewThread,
+            scopedProjectGroup,
           });
         },
       });
@@ -1785,6 +1799,7 @@ function OpenCommandPaletteDialog(props: {
       title: "New thread in...",
       icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
+      ...(picksProject ? { shortcutCommand: "chat.new" as const } : {}),
       groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
     });
   }
