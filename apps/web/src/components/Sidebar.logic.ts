@@ -7,6 +7,7 @@ import {
   toSortableTimestamp,
   type ThreadSortInput,
 } from "../lib/threadSort";
+import type { NewThreadOrigin } from "../lib/chatThreadActions";
 import type { SidebarThreadSummary, Thread } from "../types";
 import type { ThreadRouteTarget } from "../threadRoutes";
 import { cn } from "../lib/utils";
@@ -295,13 +296,38 @@ export function isSidebarNestedLinkClick(target: EventTarget | null): boolean {
 // Shift+click on the new thread button creates directly in the current
 // project, skipping the command palette's project picker. With a single
 // project, or with the sidebar filtered to one, the choice is already made —
-// a plain click creates immediately and the modifier changes nothing.
+// a plain click creates immediately and the modifier only decides which
+// project counts as current (see newThreadOriginForSidebarClick).
 export function shouldCreateNewThreadInCurrentProject(input: {
   shiftKey: boolean;
   projectGroupCount: number;
   hasProjectScope: boolean;
 }): boolean {
   return input.shiftKey || input.hasProjectScope || input.projectGroupCount <= 1;
+}
+
+// Shift+click is the mouse twin of chat.newLocal — "new thread in the current
+// project" — so it resolves like that command and lands beside the thread you
+// are viewing. Letting a filter capture it too would leave the button with two
+// ways to reach the filtered project and none to reach the one on screen.
+export function newThreadOriginForSidebarClick(shiftKey: boolean): NewThreadOrigin {
+  return shiftKey ? "contextual" : "sidebar";
+}
+
+/**
+ * Whether a project filter names a group that no longer exists and should be
+ * cleared. An empty group list means projects have not arrived yet rather than
+ * that the filter is stale, so the filter waits instead of healing — otherwise
+ * every remount and reconnect would silently drop it.
+ */
+export function shouldClearProjectScope(input: {
+  projectScopeKey: string | null;
+  scopedProjectGroup: unknown | null;
+  projectGroupCount: number;
+}): boolean {
+  if (input.projectScopeKey === null) return false;
+  if (input.projectGroupCount === 0) return false;
+  return input.scopedProjectGroup === null;
 }
 
 export function orderItemsByPreferredIds<TItem, TId>(input: {

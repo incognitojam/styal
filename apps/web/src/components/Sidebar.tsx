@@ -136,6 +136,8 @@ import {
   resolveSettledTimestamp,
   resolveSidebarThreadStatus,
   searchSidebarThreadsByTitle,
+  newThreadOriginForSidebarClick,
+  shouldClearProjectScope,
   shouldCreateNewThreadInCurrentProject,
   resolveWorkingStartedAt,
   sortLogicalProjectsForSidebar,
@@ -1935,10 +1937,16 @@ export default function Sidebar() {
     [scopedProjectGroup],
   );
   useEffect(() => {
-    if (projectScopeKey !== null && scopedProjectGroup === null) {
+    if (
+      shouldClearProjectScope({
+        projectScopeKey,
+        scopedProjectGroup,
+        projectGroupCount: projectGroups.length,
+      })
+    ) {
       onProjectScopeKeyChange(null);
     }
-  }, [onProjectScopeKeyChange, projectScopeKey, scopedProjectGroup]);
+  }, [onProjectScopeKeyChange, projectGroups.length, projectScopeKey, scopedProjectGroup]);
   // Count-only subscription: the parent needs "are there draft rows" for the
   // empty state, while SidebarDraftBlock owns the per-keystroke content
   // subscription. Selecting a number keeps typing in a draft composer from
@@ -3346,15 +3354,19 @@ export default function Sidebar() {
       // One project, or a filtered list: nothing left to pick, create
       // immediately. Shift+click creates directly in the current project even
       // with several projects, skipping the palette picker.
+      const shiftKey = event?.shiftKey ?? false;
       if (
         shouldCreateNewThreadInCurrentProject({
-          shiftKey: event?.shiftKey ?? false,
+          shiftKey,
           projectGroupCount: projectGroups.length,
           hasProjectScope: scopedProjectGroup !== null,
         })
       ) {
         if (isMobile) setOpenMobile(false);
-        void startNewThreadFromContext(threadActionContext, "sidebar");
+        void startNewThreadFromContext(
+          threadActionContext,
+          newThreadOriginForSidebarClick(shiftKey),
+        );
         return;
       }
       if (isMobile) setOpenMobile(false);
@@ -3368,25 +3380,30 @@ export default function Sidebar() {
     projectGroupCount: projectGroups.length,
     hasProjectScope: scopedProjectGroup !== null,
   });
+  // Whether a plain click and the contextual commands land in the same
+  // project. They split only when the filter names a project other than the
+  // one on screen.
+  const newThreadOriginsMatch = newThreadOriginsAgree(threadActionContext);
   // The tooltip must not advertise a shortcut that lands somewhere other than
   // the button. chat.new matches while there is still a project to pick, and
   // with a single project where both commands create directly (chat.newLocal
   // stands in there when chat.new is unbound, but never while the picker is
   // in play, which would advertise one shortcut for two behaviors). Once a
   // filter makes the button create directly it matches chat.newLocal — but
-  // only while both land in the same project. Filtering to something other
-  // than the thread you are viewing splits them, and then the button has no
-  // keyboard twin to name.
+  // only while the two agree; when they split the button has no keyboard twin
+  // to name, and the second line explains the difference instead.
   const newThreadShortcutLabel =
     newThreadPicksProject || projectGroups.length <= 1
       ? (shortcutLabelForCommand(keybindings, "chat.new") ??
         (newThreadPicksProject ? undefined : shortcutLabelForCommand(keybindings, "chat.newLocal")))
-      : newThreadOriginsAgree(threadActionContext)
+      : newThreadOriginsMatch
         ? shortcutLabelForCommand(keybindings, "chat.newLocal")
         : undefined;
   // The second tooltip line advertises shift+click and its keyboard twin
-  // chat.newLocal for direct create, and is pointless once a plain click
-  // already creates in place.
+  // chat.newLocal, and earns its space exactly when the modifier changes where
+  // the thread lands: while the picker is in play, or while the filter points
+  // somewhere other than the thread you are viewing.
+  const showNewThreadInProjectHint = newThreadPicksProject || !newThreadOriginsMatch;
   const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
   return (
     <>
@@ -3465,7 +3482,7 @@ export default function Sidebar() {
                     />
                   </TooltipTrigger>
                   <TooltipPopup side="right">
-                    {newThreadPicksProject ? (
+                    {showNewThreadInProjectHint ? (
                       <span className="flex flex-col gap-0.5">
                         <span>
                           {newThreadShortcutLabel

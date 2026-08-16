@@ -33,6 +33,8 @@ import {
   sortThreadsForSidebar,
   sortProjectsForSidebar,
   sortScopedProjectsForSidebar,
+  newThreadOriginForSidebarClick,
+  shouldClearProjectScope,
   shouldCreateNewThreadInCurrentProject,
   THREAD_JUMP_HINT_SHOW_DELAY_MS,
 } from "./Sidebar.logic";
@@ -479,6 +481,55 @@ describe("shouldCreateNewThreadInCurrentProject", () => {
         hasProjectScope: false,
       }),
     ).toBe(true);
+  });
+});
+
+describe("newThreadOriginForSidebarClick", () => {
+  it("treats shift+click as the mouse twin of chat.newLocal", () => {
+    expect(newThreadOriginForSidebarClick(true)).toBe("contextual");
+  });
+
+  it("lets a plain click follow the sidebar's filter", () => {
+    expect(newThreadOriginForSidebarClick(false)).toBe("sidebar");
+  });
+});
+
+describe("shouldClearProjectScope", () => {
+  it("clears a filter whose project group is gone", () => {
+    expect(
+      shouldClearProjectScope({
+        projectScopeKey: "gone",
+        scopedProjectGroup: null,
+        projectGroupCount: 3,
+      }),
+    ).toBe(true);
+  });
+
+  it("waits instead of clearing while projects have not arrived", () => {
+    expect(
+      shouldClearProjectScope({
+        projectScopeKey: "pending",
+        scopedProjectGroup: null,
+        projectGroupCount: 0,
+      }),
+    ).toBe(false);
+  });
+
+  it("leaves a resolved filter and an absent filter alone", () => {
+    expect(
+      shouldClearProjectScope({
+        projectScopeKey: "here",
+        scopedProjectGroup: { projectKey: "here" },
+        projectGroupCount: 2,
+      }),
+    ).toBe(false);
+    expect(
+      shouldClearProjectScope({
+        projectScopeKey: null,
+        scopedProjectGroup: null,
+        projectGroupCount: 0,
+      }),
+    ).toBe(false);
   });
 });
 
