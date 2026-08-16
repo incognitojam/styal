@@ -170,32 +170,26 @@ jobs:
             echo "upstream_ref=$upstream_ref"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Align main to released nightly
+      - name: Promote tree-equivalent candidate to main
         if: >-
           inputs.dry_run != true &&
           steps.candidate.outputs.has_changes == 'false'
         shell: bash
         env:
+          CANDIDATE_REF: ${{ steps.candidate.outputs.ref }}
           MAIN_REF: ${{ steps.candidate.outputs.main_ref }}
           SOURCE_REF: ${{ inputs.source_ref }}
         run: |
           set -euo pipefail
 
-          # No new upstream this run, so the release job (and its promotion
-          # step) will not run. The existing origin/nightly commit has a tree
-          # identical to the freshly rebased candidate (that is exactly what
-          # has_changes=false means) and already shipped through a fully
-          # verified release, so align main to it directly without
-          # re-verification. A source_ref run reaching here resolved to that
-          # same already-released tree, so origin/nightly is still the right
-          # commit to put on main.
-          if ! nightly_ref=$(git rev-parse --verify \
-            refs/remotes/origin/nightly 2>/dev/null); then
-            echo "origin/nightly does not exist; nothing to align main to."
-            exit 0
-          fi
-          if [[ "$MAIN_REF" == "$nightly_ref" ]]; then
-            echo "main already matches origin/nightly; skipping promotion."
+          # has_changes=false means the candidate tree is identical to the
+          # fully verified released nightly, so no release or repeated test
+          # pass is needed. Its history can still carry a newer upstream base
+          # or a reviewed patch retirement; promote that stack instead of
+          # restoring the older nightly history.
+          git rev-parse --verify "${CANDIDATE_REF}^{commit}" >/dev/null
+          if [[ "$MAIN_REF" == "$CANDIDATE_REF" ]]; then
+            echo "main already matches the tree-equivalent candidate; skipping promotion."
             exit 0
           fi
 
@@ -233,7 +227,7 @@ jobs:
           # lease means main moved in the seconds since the check above; fail
           # loudly and let notify_failure fire rather than promote over it.
           git push --force-with-lease="refs/heads/main:${MAIN_REF}" \
-            origin "${nightly_ref}:refs/heads/main"
+            origin "${CANDIDATE_REF}:refs/heads/main"
 
       - name: Setup Vite+
         if: steps.candidate.outputs.has_changes == 'true'
@@ -580,7 +574,7 @@ jobs:
 
           # The day's first promotion snapshots pre-promotion main; later
           # promotions leave the snapshot alone. Same mechanics as prepare's
-          # "Align main to released nightly" step; keep the two in sync.
+          # tree-equivalent promotion step; keep the two in sync.
           backup_ref="refs/heads/backup/main-$(date -u +%Y%m%d)"
           if git ls-remote --exit-code origin "$backup_ref" >/dev/null; then
             echo "${backup_ref#refs/heads/} already exists; leaving it in place."

@@ -9,11 +9,16 @@ publishes a GitHub prerelease.
 `main` is the fork patch stack, rebased onto upstream. Two paths move it:
 
 - **Automated promotion (mechanical rebases only).** Every green run promotes the verified rebased
-  stack to `main`; when upstream has not advanced, the push is skipped as a no-op. When the run has
-  new changes, promotion happens after the release publishes. When it has none (the candidate tree
-  matches `origin/nightly`), the prepare job instead aligns `main` to the already-released
-  `origin/nightly` commit — same tree, already fully verified — skipping as a no-op when `main`
-  already matches it. The day's first actual promotion snapshots the pre-promotion `main` to
+  stack to `main`; when upstream has not advanced, the push is skipped as a no-op. A rebase stops
+  when a fork patch becomes empty, including when upstream accepts an identical change, so retiring
+  that patch always receives maintainer review through the `source_ref` path. Each successful rebase
+  writes a patch `range-diff` to the workflow summary. When the run has new changes, promotion happens
+  after the release publishes. When it has none (the candidate tree matches `origin/nightly`), the
+  prepare job skips the release but still promotes the candidate when its history advanced. The tree
+  is already fully verified, while the candidate preserves the newer upstream ancestry or reviewed
+  patch retirement instead of restoring the old nightly history. The `nightly` ref remains pinned to
+  the source of the last published artifact, so it can be behind `main` in history while retaining the
+  same tree. The day's first actual promotion snapshots the pre-promotion `main` to
   `backup/main-YYYYMMDD`; later promotions that day leave the snapshot alone. If `main` moved while
   the run was in flight (a PR merge, say), promotion is skipped as expected and the next run's
   candidate includes the change; a `source_ref` run fails loudly at that point instead, since its
@@ -22,12 +27,14 @@ publishes a GitHub prerelease.
   started from, so a push landing in the last seconds still fails the step loudly (and the Discord
   failure notification fires), as does any other failure checking or pushing refs. Dry runs never
   promote.
-- **Maintainer-reviewed manual rebases.** When the rebase onto upstream conflicts, the nightly fails
-  in prepare before promoting anything. A human resolves the conflict locally and pushes the
-  resolved stack to a scratch branch on origin, then dispatches the workflow with `source_ref` set to
-  that branch: the run rebases it onto upstream (a no-op when nothing moved since, a loud failure
-  when it did), verifies it, publishes the release, and promotes it to `main` through the same backup
-  and lease mechanics as an automated run. The ruleset blocks force-pushing `main` from the CLI, so
+- **Maintainer-reviewed manual rebases.** When the rebase onto upstream conflicts or a fork patch
+  becomes empty, the nightly fails in prepare before promoting anything. A human resolves the
+  conflict locally, or verifies that upstream made the empty patch redundant before skipping it,
+  and pushes the resolved stack to a scratch branch on origin. Dispatching the workflow with
+  `source_ref` set to that branch rebases it onto upstream (a no-op when nothing moved since, a loud
+  failure when it did), verifies it, publishes a release when its tree changed, and promotes it to
+  `main` through the same backup and lease mechanics as an automated run. The ruleset blocks
+  force-pushing `main` from the CLI, so
   this dispatch is how a resolved stack reaches `main`. Pair `source_ref` with `dry_run` first to
   verify a resolution without publishing or promoting anything. Prepare compares the supplied
   stack's patch IDs with every fork patch currently carried by `main` and fails with the missing
