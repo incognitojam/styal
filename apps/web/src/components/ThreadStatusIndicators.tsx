@@ -194,6 +194,16 @@ export function setThreadChangeRequestSnapshot(
   });
 }
 
+export function nextThreadChangeRequestMergedSnapshot(
+  snapshot: ThreadChangeRequestSnapshot | undefined,
+  number: number,
+): ThreadChangeRequestSnapshot | undefined {
+  if (snapshot === undefined || snapshot.pr.number !== number || snapshot.pr.state === "merged") {
+    return snapshot;
+  }
+  return { ...snapshot, pr: { ...snapshot.pr, state: "merged" } };
+}
+
 /**
  * Authoritative snapshot update from live VCS status.
  * - `undefined`: missing status, or a local checkout retaining a terminal PR — leave the map alone
@@ -229,6 +239,13 @@ export function nextThreadChangeRequestSnapshot(input: {
       return undefined;
     }
     return null;
+  }
+  if (
+    snapshot?.pr.number === gitStatus.pr.number &&
+    snapshot.pr.state === "merged" &&
+    gitStatus.pr.state !== "merged"
+  ) {
+    return undefined;
   }
   return {
     branch: threadBranch,
