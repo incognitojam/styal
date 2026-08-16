@@ -247,6 +247,24 @@ describe("getRelativeTimeState", () => {
       suffix: "ago",
     });
   });
+
+  it("uses months and years for older timestamps", () => {
+    expect(getRelativeTimeState("2026-03-08T12:00:00.000Z")).toEqual({
+      status: "relative",
+      value: "1mo",
+      suffix: "ago",
+    });
+    expect(getRelativeTimeState("2025-04-13T12:00:00.000Z")).toEqual({
+      status: "relative",
+      value: "11mo",
+      suffix: "ago",
+    });
+    expect(getRelativeTimeState("2025-04-12T12:00:00.000Z")).toEqual({
+      status: "relative",
+      value: "1y",
+      suffix: "ago",
+    });
+  });
 });
 
 describe("formatElapsedDurationLabel", () => {
