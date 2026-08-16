@@ -1434,9 +1434,13 @@ export default function GitActionsControl({
         toastActionProps = {
           children: toastCta.label,
           onClick: () => {
+            closeResultToast();
+            if (onOpenPullRequest) {
+              onOpenPullRequest(toastCta.number);
+              return;
+            }
             const api = readLocalApi();
             if (!api) return;
-            closeResultToast();
             void api.shell.openExternal(toastCta.url);
           },
         };
