@@ -57,10 +57,10 @@ const evidence: ReadonlyArray<ChangeEvidence> = [
 const records: ReadonlyArray<ChangeRecord> = [
   {
     evidenceId: "yngatech/t3code#14",
-    identity: false,
     operation: "add",
     capability: "GitHub outage status",
     outcome: "Detect GitHub outages and show affected services",
+    releaseOnly: false,
     surface: "web",
   },
 ];
@@ -244,26 +244,36 @@ Show the final result in the timeline.
     ]);
   });
 
-  it("keeps identity changes in a release but out of the fork features summary", () => {
+  it("keeps release-specific changes out of the rolling fork features summary", () => {
     const brandingRecord: ChangeRecord = {
       ...records[0]!,
       evidenceId: "yngatech/t3code#3",
       capability: "Application branding",
       outcome: "Show the fork's own application name and icon",
-      identity: true,
+      releaseOnly: true,
+    };
+    const installerRecord: ChangeRecord = {
+      ...records[0]!,
+      evidenceId: "yngatech/t3code#49",
+      capability: "Windows installer coexistence",
+      outcome: "Install fork and upstream Windows builds separately",
+      releaseOnly: true,
     };
 
-    assert.deepEqual(filterForkFeatureRecords([...records, brandingRecord]), [...records]);
-    assert.deepEqual(filterDesktopUpdateRecords([...records, brandingRecord]), [
+    assert.deepEqual(filterForkFeatureRecords([...records, brandingRecord, installerRecord]), [
+      ...records,
+    ]);
+    assert.deepEqual(filterDesktopUpdateRecords([...records, brandingRecord, installerRecord]), [
       ...records,
       brandingRecord,
+      installerRecord,
     ]);
   });
 
-  it("rejects a change record without an identity flag", () => {
-    const { identity: _identity, ...withoutIdentity } = records[0]!;
+  it("rejects a change record without a releaseOnly flag", () => {
+    const { releaseOnly: _releaseOnly, ...withoutReleaseOnly } = records[0]!;
 
-    assert.throws(() => parseChangeRecords(JSON.stringify({ changes: [withoutIdentity] })));
+    assert.throws(() => parseChangeRecords(JSON.stringify({ changes: [withoutReleaseOnly] })));
   });
 
   it("normalizes label punctuation and rejects links or multiline output", () => {
@@ -551,10 +561,10 @@ describe("extraction cache", () => {
 
   it("round-trips through the cache file and rejects a foreign shape", () => {
     assert.deepEqual(parseExtractionCache(serializeExtractionCache(cache)), cache);
-    assert.throws(() => parseExtractionCache(JSON.stringify({ version: 0, entries: {} })));
+    assert.throws(() => parseExtractionCache(JSON.stringify({ version: 1, entries: {} })));
     assert.throws(() =>
       parseExtractionCache(
-        JSON.stringify({ version: 1, entries: { "yngatech/t3code#14": { key: "abc" } } }),
+        JSON.stringify({ version: 2, entries: { "yngatech/t3code#14": { key: "abc" } } }),
       ),
     );
   });
