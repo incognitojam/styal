@@ -12,6 +12,7 @@ export interface HostedBrowserWebviewWrapperStyle {
   readonly height: number;
   readonly zIndex: number;
   readonly pointerEvents: "auto" | "none";
+  readonly opacity?: number;
   readonly borderRadius?: number;
   readonly visibility?: "visible";
 }
@@ -20,11 +21,12 @@ export const HIDDEN_BROWSER_WEBVIEW_OFFSET = -100_000;
 
 export function resolveHostedBrowserWebviewWrapperStyle(input: {
   readonly active: boolean;
+  readonly captureActive?: boolean;
   readonly cornerRadius?: number;
   readonly rect: BrowserSurfaceRect | null;
   readonly hiddenSize: HostedBrowserWebviewSize;
 }): HostedBrowserWebviewWrapperStyle {
-  const { active, cornerRadius = 0, hiddenSize, rect } = input;
+  const { active, captureActive = false, cornerRadius = 0, hiddenSize, rect } = input;
   if (active && rect) {
     return {
       left: rect.x,
@@ -34,6 +36,21 @@ export function resolveHostedBrowserWebviewWrapperStyle(input: {
       zIndex: 30,
       pointerEvents: "auto",
       ...(cornerRadius > 0 ? { borderRadius: cornerRadius } : {}),
+    };
+  }
+
+  if (captureActive) {
+    // Electron cannot capture a guest parked outside the compositor. Lease an
+    // in-window surface for the target tab without exposing it to the human.
+    return {
+      left: 0,
+      top: 0,
+      width: hiddenSize.width,
+      height: hiddenSize.height,
+      zIndex: 30,
+      pointerEvents: "none",
+      opacity: 0,
+      visibility: "visible",
     };
   }
 
