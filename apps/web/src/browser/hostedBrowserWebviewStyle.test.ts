@@ -57,4 +57,42 @@ describe("resolveHostedBrowserWebviewWrapperStyle", () => {
       visibility: "visible",
     });
   });
+
+  it("leases an invisible in-window compositor surface for background capture", () => {
+    expect(
+      resolveHostedBrowserWebviewWrapperStyle({
+        active: false,
+        captureActive: true,
+        rect: null,
+        hiddenSize: { width: 1280, height: 800 },
+      }),
+    ).toEqual({
+      left: 0,
+      top: 0,
+      width: 1280,
+      height: 800,
+      zIndex: 30,
+      pointerEvents: "none",
+      opacity: 0,
+      visibility: "visible",
+    });
+  });
+
+  it("does not conceal a human-visible surface while capture is active", () => {
+    expect(
+      resolveHostedBrowserWebviewWrapperStyle({
+        active: true,
+        captureActive: true,
+        rect: { x: 12, y: 34, width: 800, height: 600 },
+        hiddenSize: { width: 1280, height: 800 },
+      }),
+    ).toEqual({
+      left: 12,
+      top: 34,
+      width: 800,
+      height: 600,
+      zIndex: 30,
+      pointerEvents: "auto",
+    });
+  });
 });
