@@ -120,14 +120,19 @@ jobs:
             fi
 
             # Fetch the immutable main snapshot and current upstream before
-            # rebasing. The guard itself is loaded from main so a stale
-            # source_ref cannot omit or roll back the check it must pass.
+            # rebasing. Both policy scripts are loaded from main so a stale
+            # source_ref cannot omit or roll back the checks it must pass.
             git fetch --no-tags origin "$main_ref"
             git fetch --no-tags https://github.com/pingdotgg/t3code.git main
             guard_upstream_ref=$(git rev-parse FETCH_HEAD)
             guard_script="$RUNNER_TEMP/check-source-stack.sh"
             if ! git show "${main_ref}:.github/scripts/check-source-stack.sh" > "$guard_script"; then
               echo "main snapshot ${main_ref} does not contain the source_ref patch guard; update main before dispatching a source_ref run." >&2
+              exit 1
+            fi
+            rebase_script="$RUNNER_TEMP/rebase-onto-upstream.sh"
+            if ! git show "${main_ref}:.github/scripts/rebase-onto-upstream.sh" > "$rebase_script"; then
+              echo "main snapshot ${main_ref} does not contain the upstream rebase policy; update main before dispatching a source_ref run." >&2
               exit 1
             fi
             bash "$guard_script" \
@@ -137,6 +142,7 @@ jobs:
               "$WAIVED_MAIN_PATCHES"
           else
             main_ref=$fork_ref
+            rebase_script=.github/scripts/rebase-onto-upstream.sh
           fi
 
           git fetch origin '+refs/heads/nightly:refs/remotes/origin/nightly' || true
@@ -144,7 +150,8 @@ jobs:
             '+refs/heads/nightly-candidate:refs/remotes/origin/nightly-candidate' || true
 
           git switch -C nightly-candidate HEAD
-          source .github/scripts/rebase-onto-upstream.sh
+          # shellcheck disable=SC1090 # The source_ref path is loaded from main_ref above.
+          source "$rebase_script"
           upstream_ref=$UPSTREAM_REF
 
           candidate_ref=$(git rev-parse HEAD)
