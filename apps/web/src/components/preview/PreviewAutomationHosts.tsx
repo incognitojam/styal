@@ -33,6 +33,11 @@ import { usePreviewMiniPlayerStore } from "~/previewMiniPlayerStore";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { resolveBrowserNavigationTarget } from "~/browser/browserTargetResolver";
 import {
+  type ExecutableBrowserWebview,
+  findBrowserWebview,
+  waitForBrowserCaptureSurface,
+} from "~/browser/browserCaptureSurface";
+import {
   readActiveBrowserRecordingTargets,
   startBrowserRecording,
   stopBrowserRecording,
@@ -114,20 +119,6 @@ const waitForDesktopOverlay = async (
   });
 };
 
-interface ExecutablePreviewWebview extends Element {
-  readonly executeJavaScript: (code: string, userGesture?: boolean) => Promise<unknown>;
-}
-
-const findPreviewWebview = (tabId: string): ExecutablePreviewWebview | null =>
-  Array.from(document.querySelectorAll<ExecutablePreviewWebview>("webview[data-preview-tab]")).find(
-    (candidate) => candidate.getAttribute("data-preview-tab") === tabId,
-  ) ?? null;
-
-const findPreviewCaptureSurface = (tabId: string): HTMLElement | null =>
-  Array.from(document.querySelectorAll<HTMLElement>("[data-preview-capture-surface]")).find(
-    (candidate) => candidate.getAttribute("data-preview-viewport") === tabId,
-  ) ?? null;
-
 const waitForPreviewCaptureSurface = async (
   threadRef: ScopedThreadRef,
   request: PreviewAutomationRequest,
@@ -135,38 +126,11 @@ const waitForPreviewCaptureSurface = async (
   runtimeTabId: string,
 ): Promise<void> => {
   const timeoutMs = Math.min(request.timeoutMs, PREVIEW_CAPTURE_PRESENTATION_TIMEOUT_MS);
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() <= deadline) {
-    assertPreviewRuntimeCurrent(threadRef, tabId, runtimeTabId, request);
-    const surface = findPreviewCaptureSurface(runtimeTabId);
-    const webview = findPreviewWebview(runtimeTabId);
-    if (surface && webview) {
-      const remainingMs = Math.max(0, deadline - Date.now());
-      const painted = await new Promise<boolean>((resolve) => {
-        let settled = false;
-        const settle = (value: boolean) => {
-          if (settled) return;
-          settled = true;
-          window.clearTimeout(timeout);
-          resolve(value);
-        };
-        const timeout = window.setTimeout(() => settle(false), remainingMs);
-        void webview
-          .executeJavaScript(
-            "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))",
-          )
-          .then(
-            () => settle(true),
-            () => settle(false),
-          );
-      });
-      if (painted) {
-        assertPreviewRuntimeCurrent(threadRef, tabId, runtimeTabId, request);
-        return;
-      }
-    }
-    await new Promise<void>((resolve) => window.setTimeout(resolve, 16));
-  }
+  const presented = await waitForBrowserCaptureSurface(runtimeTabId, {
+    timeoutMs,
+    assertCurrent: () => assertPreviewRuntimeCurrent(threadRef, tabId, runtimeTabId, request),
+  });
+  if (presented) return;
   throw new PreviewAutomationViewportTimeoutError({
     requestId: request.requestId,
     environmentId: threadRef.environmentId,
@@ -177,7 +141,7 @@ const waitForPreviewCaptureSurface = async (
 };
 
 const readWebviewViewport = async (
-  webview: ExecutablePreviewWebview,
+  webview: ExecutableBrowserWebview,
 ): Promise<PreviewRenderedViewportSize | null> => {
   const value = await webview.executeJavaScript(
     "({ width: window.innerWidth, height: window.innerHeight })",
@@ -197,13 +161,13 @@ const readWebviewViewport = async (
 const readRenderedViewport = async (
   runtimeTabId: string,
 ): Promise<PreviewRenderedViewportSize | null> => {
-  const webview = findPreviewWebview(runtimeTabId);
+  const webview = findBrowserWebview(runtimeTabId);
   if (!webview) return null;
   return await readWebviewViewport(webview);
 };
 
 const readDeclaredViewport = (
-  webview: ExecutablePreviewWebview | null,
+  webview: ExecutableBrowserWebview | null,
 ): PreviewRenderedViewportSize | null => {
   const width = Number(webview?.getAttribute("data-preview-css-width"));
   const height = Number(webview?.getAttribute("data-preview-css-height"));
@@ -229,7 +193,7 @@ const waitForRenderedViewport = async (
   while (Date.now() <= deadline) {
     assertPreviewRuntimeCurrent(threadRef, tabId, runtimeTabId, context);
     try {
-      const webview = findPreviewWebview(runtimeTabId);
+      const webview = findBrowserWebview(runtimeTabId);
       const appliedSettingKey = webview?.getAttribute("data-preview-viewport-key") ?? null;
       const declaredViewport = readDeclaredViewport(webview);
       const renderedViewport = webview ? await readWebviewViewport(webview) : null;
