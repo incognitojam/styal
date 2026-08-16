@@ -365,6 +365,98 @@ describe("PreviewManager", () => {
     ),
   );
 
+  effectIt.effect("bounds a stuck automation snapshot without overlapping native captures", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const capturePage = vi.fn(() => new Promise<never>(() => undefined));
+        let debuggerAttached = false;
+        const sendCommand = vi.fn(async (method: string) => {
+          if (method === "Runtime.evaluate") {
+            return {
+              result: {
+                value: {
+                  url: "https://example.com",
+                  title: "Example",
+                  loading: false,
+                  visibleText: "Example",
+                  interactiveElements: [],
+                },
+              },
+            };
+          }
+          if (method === "Accessibility.getFullAXTree") return { nodes: [] };
+          return undefined;
+        });
+        fromId.mockReturnValue({
+          id: 42,
+          isDestroyed: () => false,
+          getType: () => "webview",
+          getURL: () => "https://example.com",
+          getTitle: () => "Example",
+          isLoading: () => false,
+          isDevToolsOpened: () => false,
+          getZoomFactor: () => 1,
+          setZoomFactor: vi.fn(),
+          on: vi.fn(),
+          off: vi.fn(),
+          ipc: { on: vi.fn(), off: vi.fn() },
+          send: webviewSend,
+          navigationHistory: { canGoBack: () => false, canGoForward: () => false },
+          setWindowOpenHandler: vi.fn(),
+          debugger: {
+            isAttached: () => debuggerAttached,
+            attach: vi.fn(() => {
+              debuggerAttached = true;
+            }),
+            detach: vi.fn(() => {
+              debuggerAttached = false;
+            }),
+            sendCommand,
+            on: vi.fn(),
+            off: vi.fn(),
+          },
+          capturePage,
+        } as never);
+
+        yield* manager.createTab("tab_snapshot_timeout");
+        yield* manager.registerWebview("tab_snapshot_timeout", 42);
+
+        const first = yield* manager
+          .automationSnapshot("tab_snapshot_timeout")
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* settle(() => capturePage.mock.calls.length === 1);
+        yield* TestClock.adjust(5_000);
+        const firstExit = yield* Fiber.await(first);
+
+        expect(Exit.isFailure(firstExit)).toBe(true);
+        if (Exit.isSuccess(firstExit)) return;
+        expect(Option.getOrThrow(Cause.findErrorOption(firstExit.cause))).toMatchObject({
+          _tag: "PreviewOperationError",
+          operation: "automationSnapshot.capturePage",
+          tabId: "tab_snapshot_timeout",
+          webContentsId: 42,
+        });
+
+        const accessibilityCallsBeforeSecond = sendCommand.mock.calls.filter(
+          ([method]) => method === "Accessibility.getFullAXTree",
+        ).length;
+        const second = yield* manager
+          .automationSnapshot("tab_snapshot_timeout")
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* settle(
+          () =>
+            sendCommand.mock.calls.filter(([method]) => method === "Accessibility.getFullAXTree")
+              .length > accessibilityCallsBeforeSecond,
+        );
+        yield* TestClock.adjust(5_000);
+        const secondExit = yield* Fiber.await(second);
+
+        expect(Exit.isFailure(secondExit)).toBe(true);
+        expect(capturePage).toHaveBeenCalledOnce();
+      }),
+    ),
+  );
+
   effectIt.effect("rejects a destroyed webview during registration", () =>
     withManager((manager) =>
       Effect.gen(function* () {
