@@ -29,15 +29,19 @@ if ! git rebase --reapply-cherry-picks --empty=stop "$UPSTREAM_REF"; then
 fi
 
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
-  {
+  if ! range_diff=$(git range-diff --no-color --no-patch \
+    "$OLD_UPSTREAM_REF..$FORK_REF" \
+    "$UPSTREAM_REF..HEAD"); then
+    echo "::warning title=Fork patch range-diff unavailable::The rebase succeeded, but its patch mapping could not be generated." >&2
+  elif ! {
     echo "## Fork patch range-diff"
     echo
     echo '```text'
-    git range-diff --no-color --no-patch \
-      "$OLD_UPSTREAM_REF..$FORK_REF" \
-      "$UPSTREAM_REF..HEAD"
+    echo "$range_diff"
     echo '```'
-  } >> "$GITHUB_STEP_SUMMARY"
+  } >> "$GITHUB_STEP_SUMMARY"; then
+    echo "::warning title=Fork patch range-diff unavailable::The rebase succeeded, but its patch mapping could not be added to the workflow summary." >&2
+  fi
 fi
 
 # The patch stack must never touch upstream's migration manifest or migration

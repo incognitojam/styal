@@ -174,6 +174,45 @@ describe("fork upstream rebase policy", () => {
     });
   });
 
+  it("keeps a successful rebase when range-diff reporting fails", () => {
+    withRepository((fixtureRoot, baseRef) => {
+      commitFile(fixtureRoot, "fork.txt", "fork\n", "feat: retained despite report failure");
+
+      runGit(fixtureRoot, "switch", "-c", "upstream-next", baseRef);
+      const upstreamRef = commitFile(
+        fixtureRoot,
+        "upstream.txt",
+        "upstream\n",
+        "feat: upstream before report failure",
+      );
+      runGit(fixtureRoot, "switch", "main");
+      const wrapperDirectory = NodePath.join(fixtureRoot, "bin");
+      const gitWrapper = NodePath.join(wrapperDirectory, "git");
+      NodeFS.mkdirSync(wrapperDirectory);
+      NodeFS.writeFileSync(
+        gitWrapper,
+        `#!/bin/sh
+if [ "$1" = "range-diff" ]; then
+  exit 42
+fi
+PATH="$ORIGINAL_PATH" exec git "$@"
+`,
+      );
+      NodeFS.chmodSync(gitWrapper, 0o755);
+
+      const result = runRebase(fixtureRoot, upstreamRef, {
+        ...process.env,
+        GITHUB_STEP_SUMMARY: NodePath.join(fixtureRoot, "summary.md"),
+        ORIGINAL_PATH: process.env.PATH,
+        PATH: `${wrapperDirectory}:${process.env.PATH}`,
+      });
+
+      assert.equal(result.status, 0, result.stderr);
+      assert.include(result.stderr, "Fork patch range-diff unavailable");
+      assert.equal(NodeFS.readFileSync(NodePath.join(fixtureRoot, "fork.txt"), "utf8"), "fork\n");
+    });
+  });
+
   it("promotes a tree-equivalent candidate instead of restoring nightly history", () => {
     withRepository((fixtureRoot, mainRef) => {
       const remoteRoot = NodePath.join(fixtureRoot, "origin.git");

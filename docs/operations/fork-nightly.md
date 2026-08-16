@@ -16,8 +16,9 @@ publishes a GitHub prerelease.
   after the release publishes. When it has none (the candidate tree matches `origin/nightly`), the
   prepare job skips the release but still promotes the candidate when its history advanced. The tree
   is already fully verified, while the candidate preserves the newer upstream ancestry or reviewed
-  patch retirement instead of restoring the old nightly history. The day's first actual promotion
-  snapshots the pre-promotion `main` to
+  patch retirement instead of restoring the old nightly history. The `nightly` ref remains pinned to
+  the source of the last published artifact, so it can be behind `main` in history while retaining the
+  same tree. The day's first actual promotion snapshots the pre-promotion `main` to
   `backup/main-YYYYMMDD`; later promotions that day leave the snapshot alone. If `main` moved while
   the run was in flight (a PR merge, say), promotion is skipped as expected and the next run's
   candidate includes the change; a `source_ref` run fails loudly at that point instead, since its
