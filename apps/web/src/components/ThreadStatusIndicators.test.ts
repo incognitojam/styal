@@ -7,6 +7,7 @@ import { AtomRegistry } from "effect/unstable/reactivity";
 
 import {
   nextThreadChangeRequestSnapshot,
+  nextThreadChangeRequestMergedSnapshot,
   prStatusIndicator,
   resolveDisplayedThreadPr,
   resolveDisplayedThreadPrProvider,
@@ -452,6 +453,32 @@ describe("threadChangeRequestSnapshotsAtom", () => {
       registry.dispose();
     }),
   );
+});
+
+describe("nextThreadChangeRequestMergedSnapshot", () => {
+  const open = snapshotFor("feature/current", { ...mergedFeaturePr(), state: "open" });
+
+  it("applies panel state to the matching pull request", () => {
+    expect(nextThreadChangeRequestMergedSnapshot(open, 42)?.pr.state).toBe("merged");
+  });
+
+  it("ignores another pull request and an already merged request", () => {
+    expect(nextThreadChangeRequestMergedSnapshot(open, 99)).toBe(open);
+    const merged = snapshotFor("feature/current", mergedFeaturePr());
+    expect(nextThreadChangeRequestMergedSnapshot(merged, 42)).toBe(merged);
+  });
+
+  it("keeps the panel merge when stale VCS status still reports open", () => {
+    const merged = nextThreadChangeRequestMergedSnapshot(open, 42);
+    expect(
+      nextThreadChangeRequestSnapshot({
+        threadBranch: "feature/current",
+        gitStatus: status(),
+        snapshot: merged,
+        retainTerminalOnBranchMismatch: true,
+      }),
+    ).toBeUndefined();
+  });
 });
 
 describe("prStatusIndicator", () => {
