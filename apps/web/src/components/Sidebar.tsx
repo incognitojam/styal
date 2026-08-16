@@ -101,7 +101,7 @@ import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { openCommandPalette } from "../commandPaletteBus";
-import { newThreadOriginsAgree, startNewThreadFromContext } from "../lib/chatThreadActions";
+import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useClientSettings } from "../hooks/useSettings";
 import { useCopyThreadTranscript } from "../hooks/useCopyThreadTranscript";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
@@ -136,7 +136,6 @@ import {
   resolveSettledTimestamp,
   resolveSidebarThreadStatus,
   searchSidebarThreadsByTitle,
-  newThreadOriginForSidebarClick,
   shouldClearProjectScope,
   shouldCreateNewThreadInCurrentProject,
   resolveWorkingStartedAt,
@@ -3354,19 +3353,15 @@ export default function Sidebar() {
       // One project, or a filtered list: nothing left to pick, create
       // immediately. Shift+click creates directly in the current project even
       // with several projects, skipping the palette picker.
-      const shiftKey = event?.shiftKey ?? false;
       if (
         shouldCreateNewThreadInCurrentProject({
-          shiftKey,
+          shiftKey: event?.shiftKey ?? false,
           projectGroupCount: projectGroups.length,
           hasProjectScope: scopedProjectGroup !== null,
         })
       ) {
         if (isMobile) setOpenMobile(false);
-        void startNewThreadFromContext(
-          threadActionContext,
-          newThreadOriginForSidebarClick(shiftKey),
-        );
+        void startNewThreadFromContext(threadActionContext, "sidebar");
         return;
       }
       if (isMobile) setOpenMobile(false);
@@ -3380,30 +3375,21 @@ export default function Sidebar() {
     projectGroupCount: projectGroups.length,
     hasProjectScope: scopedProjectGroup !== null,
   });
-  // Whether a plain click and the contextual commands land in the same
-  // project. They split only when the filter names a project other than the
-  // one on screen.
-  const newThreadOriginsMatch = newThreadOriginsAgree(threadActionContext);
   // The tooltip must not advertise a shortcut that lands somewhere other than
   // the button. chat.new matches while there is still a project to pick, and
   // with a single project where both commands create directly (chat.newLocal
   // stands in there when chat.new is unbound, but never while the picker is
-  // in play, which would advertise one shortcut for two behaviors). Once a
-  // filter makes the button create directly it matches chat.newLocal — but
-  // only while the two agree; when they split the button has no keyboard twin
-  // to name, and the second line explains the difference instead.
+  // in play, which would advertise one shortcut for two behaviors). A filter
+  // leaves the button with no twin at all — chat.new still opens the chooser
+  // and chat.newLocal follows the thread on screen — so it names none.
   const newThreadShortcutLabel =
     newThreadPicksProject || projectGroups.length <= 1
       ? (shortcutLabelForCommand(keybindings, "chat.new") ??
         (newThreadPicksProject ? undefined : shortcutLabelForCommand(keybindings, "chat.newLocal")))
-      : newThreadOriginsMatch
-        ? shortcutLabelForCommand(keybindings, "chat.newLocal")
-        : undefined;
+      : undefined;
   // The second tooltip line advertises shift+click and its keyboard twin
-  // chat.newLocal, and earns its space exactly when the modifier changes where
-  // the thread lands: while the picker is in play, or while the filter points
-  // somewhere other than the thread you are viewing.
-  const showNewThreadInProjectHint = newThreadPicksProject || !newThreadOriginsMatch;
+  // chat.newLocal for direct create, and is pointless once a plain click
+  // already creates in place.
   const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
   return (
     <>
@@ -3482,7 +3468,7 @@ export default function Sidebar() {
                     />
                   </TooltipTrigger>
                   <TooltipPopup side="right">
-                    {showNewThreadInProjectHint ? (
+                    {newThreadPicksProject ? (
                       <span className="flex flex-col gap-0.5">
                         <span>
                           {newThreadShortcutLabel

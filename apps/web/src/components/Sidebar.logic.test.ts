@@ -33,7 +33,6 @@ import {
   sortThreadsForSidebar,
   sortProjectsForSidebar,
   sortScopedProjectsForSidebar,
-  newThreadOriginForSidebarClick,
   shouldClearProjectScope,
   shouldCreateNewThreadInCurrentProject,
   THREAD_JUMP_HINT_SHOW_DELAY_MS,
@@ -481,16 +480,6 @@ describe("shouldCreateNewThreadInCurrentProject", () => {
         hasProjectScope: false,
       }),
     ).toBe(true);
-  });
-});
-
-describe("newThreadOriginForSidebarClick", () => {
-  it("treats shift+click as the mouse twin of chat.newLocal", () => {
-    expect(newThreadOriginForSidebarClick(true)).toBe("contextual");
-  });
-
-  it("lets a plain click follow the sidebar's filter", () => {
-    expect(newThreadOriginForSidebarClick(false)).toBe("sidebar");
   });
 });
 

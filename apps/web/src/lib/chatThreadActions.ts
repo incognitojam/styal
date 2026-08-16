@@ -103,24 +103,6 @@ export function resolveThreadActionProjectRef(
   return resolveContextualProjectRef(context) ?? scopedProjectRef ?? context.defaultProjectRef;
 }
 
-/**
- * Whether the sidebar button and the contextual commands land in the same
- * project. They part ways only when the filter names a project other than the
- * one you are viewing; that is the case where the button has no keyboard twin
- * and its tooltip must not claim one.
- */
-export function newThreadOriginsAgree(context: ChatThreadActionContext): boolean {
-  const sidebarProjectRef = resolveThreadActionProjectRef(context, "sidebar");
-  const contextualProjectRef = resolveThreadActionProjectRef(context, "contextual");
-  if (sidebarProjectRef === null || contextualProjectRef === null) {
-    return sidebarProjectRef === contextualProjectRef;
-  }
-  return (
-    sidebarProjectRef.environmentId === contextualProjectRef.environmentId &&
-    sidebarProjectRef.projectId === contextualProjectRef.projectId
-  );
-}
-
 // New threads inherit only the *project* from the current context. Branch,
 // worktree, and env mode always come from the user's configured defaults —
 // carrying them over from the viewed thread meant "new thread" silently

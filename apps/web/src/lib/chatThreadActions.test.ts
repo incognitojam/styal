@@ -2,7 +2,6 @@ import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import {
-  newThreadOriginsAgree,
   resolveThreadActionProjectRef,
   resolveNewDraftStartFromOrigin,
   startNewThreadFromContext,
@@ -155,22 +154,6 @@ describe("chatThreadActions", () => {
     expect(projectRef).toEqual(scopeProjectRef(ENVIRONMENT_ID, SCOPED_PROJECT_ID));
   });
 
-  it("reports the origins agreeing unless the filter names another project", () => {
-    const viewingScopedGroup = createContext({
-      activeThread: { environmentId: REMOTE_ENVIRONMENT_ID, projectId: SCOPED_PROJECT_ID },
-      scopedProjectGroup: SCOPED_PROJECT_GROUP,
-    });
-    const viewingElsewhere = createContext({
-      activeThread: { environmentId: ENVIRONMENT_ID, projectId: PROJECT_ID },
-      scopedProjectGroup: SCOPED_PROJECT_GROUP,
-    });
-    const nothingOpen = createContext({ scopedProjectGroup: SCOPED_PROJECT_GROUP });
-
-    expect(newThreadOriginsAgree(createContext())).toBe(true);
-    expect(newThreadOriginsAgree(viewingScopedGroup)).toBe(true);
-    expect(newThreadOriginsAgree(nothingOpen)).toBe(true);
-    expect(newThreadOriginsAgree(viewingElsewhere)).toBe(false);
-  });
 
   it("inherits only the project from context, never branch or worktree state", async () => {
     const handleNewThread = vi.fn<ChatThreadActionContext["handleNewThread"]>(async () => {});

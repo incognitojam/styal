@@ -7,7 +7,6 @@ import {
   toSortableTimestamp,
   type ThreadSortInput,
 } from "../lib/threadSort";
-import type { NewThreadOrigin } from "../lib/chatThreadActions";
 import type { SidebarThreadSummary, Thread } from "../types";
 import type { ThreadRouteTarget } from "../threadRoutes";
 import { cn } from "../lib/utils";
@@ -296,22 +295,15 @@ export function isSidebarNestedLinkClick(target: EventTarget | null): boolean {
 // Shift+click on the new thread button creates directly in the current
 // project, skipping the command palette's project picker. With a single
 // project, or with the sidebar filtered to one, the choice is already made —
-// a plain click creates immediately and the modifier only decides which
-// project counts as current (see newThreadOriginForSidebarClick).
+// a plain click creates immediately and the modifier changes nothing. The
+// button keeps one behavior per state on purpose; chat.newLocal is the way to
+// start a thread beside the one on screen while the list is filtered.
 export function shouldCreateNewThreadInCurrentProject(input: {
   shiftKey: boolean;
   projectGroupCount: number;
   hasProjectScope: boolean;
 }): boolean {
   return input.shiftKey || input.hasProjectScope || input.projectGroupCount <= 1;
-}
-
-// Shift+click is the mouse twin of chat.newLocal — "new thread in the current
-// project" — so it resolves like that command and lands beside the thread you
-// are viewing. Letting a filter capture it too would leave the button with two
-// ways to reach the filtered project and none to reach the one on screen.
-export function newThreadOriginForSidebarClick(shiftKey: boolean): NewThreadOrigin {
-  return shiftKey ? "contextual" : "sidebar";
 }
 
 /**
