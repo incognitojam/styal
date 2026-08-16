@@ -365,7 +365,7 @@ describe("PreviewManager", () => {
     ),
   );
 
-  effectIt.effect("bounds a stuck automation snapshot without overlapping native captures", () =>
+  effectIt.effect("bounds a stuck automation snapshot and allows a fresh attempt", () =>
     withManager((manager) =>
       Effect.gen(function* () {
         const capturePage = vi.fn(() => new Promise<never>(() => undefined));
@@ -452,7 +452,7 @@ describe("PreviewManager", () => {
         const secondExit = yield* Fiber.await(second);
 
         expect(Exit.isFailure(secondExit)).toBe(true);
-        expect(capturePage).toHaveBeenCalledOnce();
+        expect(capturePage).toHaveBeenCalledTimes(2);
       }),
     ),
   );
@@ -2646,6 +2646,46 @@ describe("PreviewManager", () => {
         ]);
 
         yield* manager.stopRecording("tab_cold_capture");
+      }),
+    ),
+  );
+
+  effectIt.effect("bounds a hung initial recording capture and allows a fresh capture", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const recoveredImage: TestCapturedPreviewImage = {
+          toJPEG: () => Buffer.from("recovered-after-timeout"),
+          getSize: () => ({ width: 1280, height: 720 }),
+        };
+        const capturePage = vi
+          .fn<() => Promise<TestCapturedPreviewImage>>()
+          .mockImplementationOnce(() => new Promise<TestCapturedPreviewImage>(() => undefined))
+          .mockResolvedValue(recoveredImage);
+        fromId.mockReturnValue(makeTestPreviewWebContents(capturePage));
+
+        yield* manager.createTab("tab_hung_capture");
+        yield* manager.registerWebview("tab_hung_capture", 42);
+        const startFiber = yield* manager
+          .startRecording("tab_hung_capture")
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* settle(() => capturePage.mock.calls.length === 1);
+
+        yield* TestClock.adjust(5_000);
+        const startExit = yield* Fiber.await(startFiber);
+
+        expect(Exit.isFailure(startExit)).toBe(true);
+        if (Exit.isSuccess(startExit)) return;
+        expect(Option.getOrThrow(Cause.findErrorOption(startExit.cause))).toMatchObject({
+          _tag: "PreviewOperationError",
+          operation: "frameCapture.capturePage",
+          tabId: "tab_hung_capture",
+          webContentsId: 42,
+        });
+        expect(capturePage).toHaveBeenCalledOnce();
+
+        yield* manager.startRecording("tab_hung_capture");
+        expect(capturePage).toHaveBeenCalledTimes(2);
+        yield* manager.stopRecording("tab_hung_capture");
       }),
     ),
   );
