@@ -10,6 +10,7 @@ export interface BrowserSurfaceRect {
 export interface BrowserSurfacePresentation {
   readonly rect: BrowserSurfaceRect | null;
   readonly visible: boolean;
+  readonly captureCount: number;
   readonly content: BrowserSurfaceContentPresentation | null;
   readonly fittedSourceContent: BrowserSurfaceContentPresentation | null;
   readonly fitSourceContent: boolean;
@@ -39,11 +40,17 @@ interface BrowserSurfaceStoreState {
     cornerRadius: number,
   ) => void;
   readonly presentContent: (tabId: string, content: BrowserSurfaceContentPresentation) => void;
+  readonly beginCapture: (tabId: string) => void;
+  readonly endCapture: (tabId: string) => void;
   readonly release: (tabId: string, owner: symbol) => void;
 }
 
 export interface BrowserSurfaceLease {
   readonly present: (rect: BrowserSurfaceRect, visible: boolean, cornerRadius?: number) => boolean;
+  readonly release: () => void;
+}
+
+export interface BrowserCaptureSurfaceLease {
   readonly release: () => void;
 }
 
@@ -74,6 +81,7 @@ export const useBrowserSurfaceStore = create<BrowserSurfaceStoreState>()((set) =
           [tabId]: {
             rect: current?.rect ?? null,
             visible: false,
+            captureCount: current?.captureCount ?? 0,
             content: current?.content ?? null,
             fittedSourceContent: fitSourceContent ? (current?.content ?? null) : null,
             fitSourceContent,
@@ -113,6 +121,7 @@ export const useBrowserSurfaceStore = create<BrowserSurfaceStoreState>()((set) =
             [tabId]: {
               rect: null,
               visible: false,
+              captureCount: 0,
               content,
               fittedSourceContent: null,
               fitSourceContent: false,
@@ -146,6 +155,48 @@ export const useBrowserSurfaceStore = create<BrowserSurfaceStoreState>()((set) =
               current.fitSourceContent && current.fittedSourceContent === null
                 ? content
                 : current.fittedSourceContent,
+            updatedAt: Date.now(),
+          },
+        },
+      };
+    }),
+  beginCapture: (tabId) =>
+    set((state) => {
+      const current = state.byTabId[tabId];
+      return {
+        byTabId: {
+          ...state.byTabId,
+          [tabId]: current
+            ? {
+                ...current,
+                captureCount: (current.captureCount ?? 0) + 1,
+                updatedAt: Date.now(),
+              }
+            : {
+                rect: null,
+                visible: false,
+                captureCount: 1,
+                content: null,
+                fittedSourceContent: null,
+                fitSourceContent: false,
+                cornerRadius: 0,
+                updatedAt: Date.now(),
+                owner: null,
+              },
+        },
+      };
+    }),
+  endCapture: (tabId) =>
+    set((state) => {
+      const current = state.byTabId[tabId];
+      const captureCount = current?.captureCount ?? 0;
+      if (!current || captureCount === 0) return state;
+      return {
+        byTabId: {
+          ...state.byTabId,
+          [tabId]: {
+            ...current,
+            captureCount: captureCount - 1,
             updatedAt: Date.now(),
           },
         },
@@ -192,4 +243,30 @@ export function acquireBrowserSurface(
       useBrowserSurfaceStore.getState().release(tabId, owner);
     },
   };
+}
+
+export function acquireBrowserCaptureSurface(tabId: string): BrowserCaptureSurfaceLease {
+  let released = false;
+  useBrowserSurfaceStore.getState().beginCapture(tabId);
+  return {
+    release: () => {
+      if (released) return;
+      released = true;
+      useBrowserSurfaceStore.getState().endCapture(tabId);
+    },
+  };
+}
+
+export async function withBrowserCaptureSurface<A>(
+  tabId: string,
+  waitUntilPresented: () => Promise<void>,
+  capture: () => Promise<A>,
+): Promise<A> {
+  const lease = acquireBrowserCaptureSurface(tabId);
+  try {
+    await waitUntilPresented();
+    return await capture();
+  } finally {
+    lease.release();
+  }
 }
