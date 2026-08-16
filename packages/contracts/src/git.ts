@@ -58,6 +58,7 @@ const GitRunStackedActionToastCta = Schema.Union([
     kind: Schema.Literal("open_pr"),
     label: TrimmedNonEmptyStringSchema,
     url: Schema.String,
+    number: PositiveInt,
   }),
   Schema.Struct({
     kind: Schema.Literal("run_action"),
