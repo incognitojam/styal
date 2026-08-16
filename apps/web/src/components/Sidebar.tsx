@@ -96,6 +96,7 @@ import {
 } from "../sidebarProjectGrouping";
 import { useComposerThreadHasDraftContent } from "../composerDraftStore";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
+import { useScopedProjectGroup, useSidebarProjectScopeStore } from "../sidebarProjectScopeStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
@@ -135,6 +136,7 @@ import {
   resolveSettledTimestamp,
   resolveSidebarThreadStatus,
   searchSidebarThreadsByTitle,
+  shouldClearProjectScope,
   shouldCreateNewThreadInCurrentProject,
   resolveWorkingStartedAt,
   sortLogicalProjectsForSidebar,
@@ -1721,12 +1723,9 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   );
 });
 
-type SidebarProps = {
-  projectScopeKey: string | null;
-  onProjectScopeKeyChange: (projectScopeKey: string | null) => void;
-};
-
-export default function Sidebar({ projectScopeKey, onProjectScopeKeyChange }: SidebarProps) {
+export default function Sidebar() {
+  const projectScopeKey = useSidebarProjectScopeStore((state) => state.projectScopeKey);
+  const onProjectScopeKeyChange = useSidebarProjectScopeStore((state) => state.setProjectScopeKey);
   const projects = useProjects();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
@@ -1944,13 +1943,7 @@ export default function Sidebar({ projectScopeKey, onProjectScopeKeyChange }: Si
 
   // Project scope: one menu above the list. Scoping filters the list without
   // making the header width depend on the number or length of project names.
-  const scopedProjectGroup = useMemo(
-    () =>
-      projectScopeKey === null
-        ? null
-        : (projectGroups.find((project) => project.projectKey === projectScopeKey) ?? null),
-    [projectGroups, projectScopeKey],
-  );
+  const scopedProjectGroup = useScopedProjectGroup(projectGroups);
   const scopedProjectKeys = useMemo(
     () =>
       scopedProjectGroup === null
@@ -1963,10 +1956,16 @@ export default function Sidebar({ projectScopeKey, onProjectScopeKeyChange }: Si
     [scopedProjectGroup],
   );
   useEffect(() => {
-    if (projectScopeKey !== null && scopedProjectGroup === null) {
+    if (
+      shouldClearProjectScope({
+        projectScopeKey,
+        scopedProjectGroup,
+        projectGroupCount: projectGroups.length,
+      })
+    ) {
       onProjectScopeKeyChange(null);
     }
-  }, [onProjectScopeKeyChange, projectScopeKey, scopedProjectGroup]);
+  }, [onProjectScopeKeyChange, projectGroups.length, projectScopeKey, scopedProjectGroup]);
   // Count-only subscription: the parent needs "are there draft rows" for the
   // empty state, while SidebarDraftBlock owns the per-keystroke content
   // subscription. Selecting a number keeps typing in a draft composer from
@@ -3355,42 +3354,62 @@ export default function Sidebar({ projectScopeKey, onProjectScopeKeyChange }: Si
     autoAnimate(node, { duration: 150, easing: "ease-out" });
   }, []);
 
-  // New thread defaults to the project you're in (active thread's project,
-  // falling back to the top project) — same resolution the command palette
-  // uses. The command palette already offers a "New thread in..." submenu
-  // for multi-project setups.
+  // This button belongs to the filtered list, so it creates in the filtered
+  // project and only falls back to the project you're in. chat.newLocal is
+  // the other way round — it starts a thread beside your current work — and
+  // the command palette offers a "New thread in..." submenu for picking.
+  const threadActionContext = useMemo(
+    () => ({
+      activeDraftThread: newThreadContext.activeDraftThread,
+      activeThread: newThreadContext.activeThread ?? undefined,
+      defaultProjectRef: newThreadContext.defaultProjectRef,
+      handleNewThread: newThreadContext.handleNewThread,
+      scopedProjectGroup,
+    }),
+    [newThreadContext, scopedProjectGroup],
+  );
   const handleNewThreadClick = useCallback(
     (event?: ReactMouseEvent) => {
-      // One project: nothing to pick, create immediately. Shift+click creates
-      // directly in the current project even with several projects, skipping
-      // the palette picker.
-      if (shouldCreateNewThreadInCurrentProject(event?.shiftKey ?? false, projectGroups.length)) {
+      // One project, or a filtered list: nothing left to pick, create
+      // immediately. Shift+click creates directly in the current project even
+      // with several projects, skipping the palette picker.
+      if (
+        shouldCreateNewThreadInCurrentProject({
+          shiftKey: event?.shiftKey ?? false,
+          projectGroupCount: projectGroups.length,
+          hasProjectScope: scopedProjectGroup !== null,
+        })
+      ) {
         if (isMobile) setOpenMobile(false);
-        void startNewThreadFromContext({
-          activeDraftThread: newThreadContext.activeDraftThread,
-          activeThread: newThreadContext.activeThread ?? undefined,
-          defaultProjectRef: newThreadContext.defaultProjectRef,
-          handleNewThread: newThreadContext.handleNewThread,
-        });
+        void startNewThreadFromContext(threadActionContext, "sidebar");
         return;
       }
       if (isMobile) setOpenMobile(false);
       openCommandPalette({ open: "new-thread-in" });
     },
-    [isMobile, newThreadContext, projectGroups.length, setOpenMobile],
+    [isMobile, projectGroups.length, scopedProjectGroup, setOpenMobile, threadActionContext],
   );
 
-  // The button mirrors chat.new: in multi-project setups both route through
-  // the command palette's "New thread in..." picker, and in single-project
-  // setups both create immediately. In multi-project setups the label is only
-  // the picker's shortcut: falling back to chat.newLocal would advertise the
-  // same shortcut for both the picker and direct create. In single-project
-  // setups both commands create directly, so chat.newLocal is a valid
-  // fallback. The second tooltip line (multi-project only) advertises
-  // shift+click and its keyboard twin chat.newLocal for direct create.
+  const newThreadPicksProject = !shouldCreateNewThreadInCurrentProject({
+    shiftKey: false,
+    projectGroupCount: projectGroups.length,
+    hasProjectScope: scopedProjectGroup !== null,
+  });
+  // The tooltip must not advertise a shortcut that lands somewhere other than
+  // the button. chat.new matches while there is still a project to pick, and
+  // with a single project where both commands create directly (chat.newLocal
+  // stands in there when chat.new is unbound, but never while the picker is
+  // in play, which would advertise one shortcut for two behaviors). A filter
+  // leaves the button with no twin at all — chat.new still opens the chooser
+  // and chat.newLocal follows the thread on screen — so it names none.
   const newThreadShortcutLabel =
-    shortcutLabelForCommand(keybindings, "chat.new") ??
-    (projectGroups.length <= 1 ? shortcutLabelForCommand(keybindings, "chat.newLocal") : undefined);
+    newThreadPicksProject || projectGroups.length <= 1
+      ? (shortcutLabelForCommand(keybindings, "chat.new") ??
+        (newThreadPicksProject ? undefined : shortcutLabelForCommand(keybindings, "chat.newLocal")))
+      : undefined;
+  // The second tooltip line advertises shift+click and its keyboard twin
+  // chat.newLocal for direct create, and is pointless once a plain click
+  // already creates in place.
   const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
   return (
     <>
@@ -3469,7 +3488,7 @@ export default function Sidebar({ projectScopeKey, onProjectScopeKeyChange }: Si
                     />
                   </TooltipTrigger>
                   <TooltipPopup side="right">
-                    {projectGroups.length > 1 ? (
+                    {newThreadPicksProject ? (
                       <span className="flex flex-col gap-0.5">
                         <span>
                           {newThreadShortcutLabel

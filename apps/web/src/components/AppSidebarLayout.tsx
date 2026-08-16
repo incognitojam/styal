@@ -139,11 +139,6 @@ function ProjectProjectionRetention() {
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const legacySidebarEnabled = useLegacySidebarEnabled();
-  // The responsive Sidebar swaps its desktop container for a mobile sheet at
-  // the breakpoint, which remounts its contents. Keep the selected project
-  // scope above that boundary so resizing or closing the sheet does not clear
-  // the user's filter.
-  const [sidebarProjectScopeKey, setSidebarProjectScopeKey] = useState<string | null>(null);
   // Settings routes show the settings nav in place of whichever thread
   // sidebar is active.
   const pathname = useLocation({ select: (location) => location.pathname });
@@ -239,10 +234,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         ) : legacySidebarEnabled ? (
           <LegacyThreadSidebar />
         ) : (
-          <ThreadSidebar
-            projectScopeKey={sidebarProjectScopeKey}
-            onProjectScopeKeyChange={setSidebarProjectScopeKey}
-          />
+          <ThreadSidebar />
         )}
         <SidebarRail onDoubleClick={resetSidebarWidth} />
       </Sidebar>
