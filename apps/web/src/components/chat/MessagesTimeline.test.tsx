@@ -821,7 +821,7 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("Work Log");
   });
 
-  it("renders folded activity counts with a themed context compaction marker", () => {
+  it("renders folded activity counts with an emphasized context compaction marker", () => {
     const turnId = TurnId.make("turn-summary");
     const markup = renderToStaticMarkup(
       <MessagesTimeline
@@ -874,7 +874,14 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain('title="1 terminal command"');
     expect(markup).toContain('title="1 context compaction"');
-    expect(markup).toContain("text-primary/70");
+    // The marker earns its emphasis from full-strength foreground. Solid-control
+    // fills such as the theme action color read below 3:1 as text on the canvas,
+    // which left the marker dimmer than the muted stats it is meant to outrank.
+    const compactionClasses = /<span title="1 context compaction" class="([^"]*)"/.exec(
+      markup,
+    )?.[1];
+    expect(compactionClasses).toContain("text-foreground");
+    expect(compactionClasses).not.toContain("text-primary");
     expect(markup).toContain('aria-expanded="false"');
   });
 
