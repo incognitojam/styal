@@ -1408,9 +1408,12 @@ export const make = Effect.gen(function* () {
     }
 
     const explicitResultPr =
-      (result.pr.status === "created" || result.pr.status === "opened_existing") && result.pr.url
+      (result.pr.status === "created" || result.pr.status === "opened_existing") &&
+      result.pr.url &&
+      result.pr.number
         ? {
             url: result.pr.url,
+            number: result.pr.number,
             state: "open" as const,
           }
         : null;
@@ -1453,6 +1456,7 @@ export const make = Effect.gen(function* () {
               kind: "open_pr" as const,
               label: `View ${terms.shortLabel}`,
               url: openPr.url,
+              number: openPr.number,
             }
           : (result.action === "push" || result.action === "commit_push") &&
               result.push.status === "pushed" &&
