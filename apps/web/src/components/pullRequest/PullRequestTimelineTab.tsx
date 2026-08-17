@@ -445,7 +445,7 @@ function ReviewVerdictEvent({
   event,
   outcome,
   stale,
-  cwd,
+  detail,
   onOpen,
   reactions,
 }: {
@@ -453,7 +453,7 @@ function ReviewVerdictEvent({
   outcome: PullRequestReviewOutcome;
   /** Commits landed after this verdict, so it speaks for code the branch no longer has. */
   stale: boolean;
-  cwd: string;
+  detail: PullRequestDetailView;
   onOpen: (url: string) => void;
   reactions: ReactionSurface;
 }) {
@@ -521,7 +521,12 @@ function ReviewVerdictEvent({
           {/* An approval usually carries no words. When it does they are the review, so they stay
               visible rather than being folded away with the ordinary conversation. */}
           {event.body ? (
-            <TimelineBody body={event.body} markdown={event.markdown} cwd={cwd} />
+            <TimelineBody
+              body={event.body}
+              markdown={event.markdown}
+              detail={detail}
+              environmentId={reactions.environmentId}
+            />
           ) : null}
         </div>
         <OpenOnHostButton url={event.url} onOpen={onOpen} />
@@ -596,7 +601,7 @@ export function PullRequestTimelineTab({
                   event={event}
                   outcome={outcome}
                   stale={isPullRequestVerdictStale(event.at, newestCommitAt)}
-                  cwd={detail.workspaceRoot}
+                  detail={detail}
                   onOpen={openOnHost}
                   reactions={reactions}
                 />
