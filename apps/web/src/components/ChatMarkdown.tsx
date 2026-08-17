@@ -1663,7 +1663,11 @@ function ChatMarkdown({
           // and whether it is marked. No favicon or address tooltip: `#123` says where it goes.
           const resolution = lookupReference(referenceKey);
           const targetHref = githubReferenceHref(resolution, href);
-          return (
+          const missingTitle = missingGithubReferenceTitle(
+            resolution,
+            plainHastText(node) || referenceKey,
+          );
+          const referenceLink = (linkChildren: ReactNode) => (
             <a
               {...props}
               href={targetHref}
@@ -1672,14 +1676,21 @@ function ChatMarkdown({
               {...(resolution.status === "missing"
                 ? { [MISSING_GITHUB_REFERENCE_ATTRIBUTE]: "" }
                 : {})}
-              title={missingGithubReferenceTitle(resolution, plainHastText(node) || referenceKey)}
               onClick={(event) => {
                 props.onClick?.(event);
                 openReference(event, referenceKey, href);
               }}
             >
-              {children}
+              {linkChildren}
             </a>
+          );
+          return missingTitle ? (
+            <Tooltip>
+              <TooltipTrigger render={referenceLink(null)}>{children}</TooltipTrigger>
+              <TooltipPopup>{missingTitle}</TooltipPopup>
+            </Tooltip>
+          ) : (
+            referenceLink(children)
           );
         }
         const normalizedHref = href ? normalizeMarkdownLinkHrefKey(href) : "";

@@ -1182,11 +1182,16 @@ function TurnFoldActivityStat({
   const label = `${stat.count} ${stat.count === 1 ? labels.one : labels.other}`;
 
   return (
-    <span title={label} className={cn("flex shrink-0 items-center gap-1", className)}>
-      <TurnFoldActivityIcon kind={stat.kind} className="size-3" />
-      <span aria-hidden>{stat.count}</span>
-      <span className="sr-only">{`, ${label}`}</span>
-    </span>
+    <Tooltip>
+      <TooltipTrigger
+        render={<span className={cn("flex shrink-0 items-center gap-1", className)} />}
+      >
+        <TurnFoldActivityIcon kind={stat.kind} className="size-3" />
+        <span aria-hidden>{stat.count}</span>
+        <span className="sr-only">{`, ${label}`}</span>
+      </TooltipTrigger>
+      <TooltipPopup>{label}</TooltipPopup>
+    </Tooltip>
   );
 }
 
