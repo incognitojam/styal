@@ -241,23 +241,27 @@ features:
       retire_when: Upstream keeps the visible pull request current without stale responses, unnecessary activity reads, or invalidating cached diffs.
 
   - id: pull-request-required-checks
-    title: Show required pull request checks and merge readiness
+    title: Separate pull request checks and show merge readiness
     status: maintained
-    prs: [151]
+    prs: [138, 151, 159]
     invariants:
-      - The Checks tab distinguishes host-required checks from optional jobs and represents required checks that have not reported yet.
-      - The primary action follows GitHub merge readiness, offering auto-merge when requirements block an otherwise mergeable pull request.
+      - Pull request checks have a dedicated tab that distinguishes host-required checks from optional jobs and represents required checks that have not reported yet.
+      - The summary and primary action lead with GitHub merge readiness, offering auto-merge when requirements block an otherwise mergeable pull request while retaining check health as supporting context.
     implementation_paths:
       - apps/server/src/pullRequest/GitHubPullRequestCli.ts
       - apps/server/src/pullRequest/GitHubPullRequestProvider.ts
       - apps/web/src/components/pullRequest/PullRequestChecksTab.tsx
+      - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
       - apps/web/src/components/pullRequest/pullRequestDetail.logic.ts
     upstream_paths:
       - apps/server/src/pullRequest/GitHubPullRequestCli.ts
       - apps/server/src/pullRequest/GitHubPullRequestProvider.ts
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
+      - apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx
+      - apps/web/src/components/pullRequest/PullRequestTimelineTab.tsx
       - apps/web/src/components/pullRequest/pullRequestDetail.logic.ts
+      - apps/web/src/components/pullRequest/pullRequestPresentation.tsx
       - packages/contracts/src/pullRequest.ts
     tests:
       - apps/server/src/pullRequest/GitHubPullRequestCli.test.ts
@@ -265,9 +269,10 @@ features:
       - apps/web/src/components/pullRequest/PullRequestChecksTab.test.tsx
       - apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts
     upstream:
-      status: unassessed
-      tracking: []
-      retire_when: Upstream exposes repository-policy-aware required checks and equivalent merge or auto-merge guidance in pull request details.
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/7077
+      retire_when: Upstream provides a dedicated checks view with repository-policy-aware required checks and equivalent merge or auto-merge guidance in pull request details.
 
   - id: run-shell-code-blocks
     title: Run completed shell code blocks in a terminal
