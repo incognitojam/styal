@@ -253,7 +253,10 @@ function AboutBuildProvenance() {
       <span aria-hidden className="text-muted-foreground/50">
         ·
       </span>
-      <span title={APP_COMMIT_HASH}>commit {commitLabel}</span>
+      <Tooltip>
+        <TooltipTrigger render={<span>commit {commitLabel}</span>} />
+        <TooltipPopup>{APP_COMMIT_HASH}</TooltipPopup>
+      </Tooltip>
     </span>
   );
 }
