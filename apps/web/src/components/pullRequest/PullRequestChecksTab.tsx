@@ -25,6 +25,7 @@ import { readLocalApi } from "~/localApi";
 
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { pullRequestFindingKey, type PullRequestFinding } from "./pullRequestDetail.logic";
 import {
   PullRequestCheckStatusIcon,
@@ -238,9 +239,7 @@ export function PullRequestChecksTab({
             const body = (
               <>
                 <PullRequestCheckStatusIcon status={check.status} />
-                <span className="min-w-0 flex-1 truncate" title={check.description ?? check.name}>
-                  {check.name}
-                </span>
+                <span className="min-w-0 flex-1 truncate">{check.name}</span>
                 {check.required === true ? (
                   <Badge size="sm" variant="warning" className="font-normal">
                     Required
@@ -259,25 +258,39 @@ export function PullRequestChecksTab({
                 {check.url === null ? (
                   // Nothing to open, so nothing to press: a row the host gave no link for stays
                   // out of the tab order rather than sitting in it as a dead button.
-                  <div className={rowClassName}>{body}</div>
+                  <Tooltip>
+                    <TooltipTrigger render={<div className={rowClassName} />}>
+                      {body}
+                    </TooltipTrigger>
+                    <TooltipPopup>{check.description ?? check.name}</TooltipPopup>
+                  </Tooltip>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => openCheck(check.url ?? "")}
-                    title={`Open ${check.name} on the host`}
-                    className={cn(
-                      rowClassName,
-                      "cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    )}
-                  >
-                    {body}
-                    {/* The one mark of a row that leads somewhere. Kept quiet until the row is
-                        pointed at or focused, so a green list stays a green list. */}
-                    <ArrowUpRightIcon
-                      aria-hidden
-                      className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 motion-reduce:transition-none"
-                    />
-                  </button>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          aria-label={`Open ${check.name} on the host`}
+                          onClick={() => openCheck(check.url ?? "")}
+                          className={cn(
+                            rowClassName,
+                            "cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          )}
+                        />
+                      }
+                    >
+                      {body}
+                      {/* The one mark of a row that leads somewhere. Kept quiet until the row is
+                          pointed at or focused, so a green list stays a green list. */}
+                      <ArrowUpRightIcon
+                        aria-hidden
+                        className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 motion-reduce:transition-none"
+                      />
+                    </TooltipTrigger>
+                    <TooltipPopup>
+                      {check.description ?? `Open ${check.name} on the host`}
+                    </TooltipPopup>
+                  </Tooltip>
                 )}
                 {/* Only where there is something to fix. A passing check has no failure to
                     reproduce, and the button would be an invitation to waste a thread. */}
