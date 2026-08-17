@@ -51,11 +51,7 @@ describe("preview automation open readiness", () => {
       resolvePreviewAutomationPresentation({} as PreviewAutomationOpenInput, undefined, false),
     ).toBeNull();
     expect(
-      resolvePreviewAutomationPresentation(
-        {} as PreviewAutomationOpenInput,
-        "right-panel",
-        false,
-      ),
+      resolvePreviewAutomationPresentation({} as PreviewAutomationOpenInput, "right-panel", false),
     ).toBe("right-panel");
   });
 
