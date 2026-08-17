@@ -251,7 +251,7 @@ function AboutBuildProvenance() {
         ·
       </span>
       <Tooltip>
-        <TooltipTrigger render={<span>commit {commitLabel}</span>} />
+        <TooltipTrigger render={<span />}>commit {commitLabel}</TooltipTrigger>
         <TooltipPopup>{APP_COMMIT_HASH}</TooltipPopup>
       </Tooltip>
     </span>
