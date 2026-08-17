@@ -7,10 +7,7 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import * as GitHubCli from "../sourceControl/GitHubCli.ts";
 import * as GitHubGraphQlBudget from "../sourceControl/githubGraphQlBudget.ts";
 import * as GitHubPullRequestCli from "./GitHubPullRequestCli.ts";
-import {
-  BASE_COMPARISON_GRAPHQL_QUERY,
-  BRANCH_PROTECTION_REQUIRED_CHECKS_GRAPHQL_QUERY,
-} from "./gitHubPullRequestJson.ts";
+import { BASE_COMPARISON_GRAPHQL_QUERY } from "./gitHubPullRequestJson.ts";
 
 const mockedExecute = vi.fn<GitHubCli.GitHubCli["Service"]["execute"]>();
 
@@ -2272,25 +2269,21 @@ layer("GitHubPullRequestCli.layer", (it) => {
       });
 
       expect(checks).toEqual(["build", "security", "legacy"]);
-      expect(mockedExecute.mock.calls.map(([input]) => input.args)).toEqual(
-        expect.arrayContaining([
-          [
-            "api",
-            "--hostname",
-            "github.example.test",
-            "repos/acme/web/rules/branches/release%2Fnext",
-            "--paginate",
-            "--slurp",
-          ],
-          expect.arrayContaining([
-            "api",
-            "graphql",
-            "--hostname",
-            "github.example.test",
-            `query=${BRANCH_PROTECTION_REQUIRED_CHECKS_GRAPHQL_QUERY}`,
-          ]),
-        ]),
+      const calls = mockedExecute.mock.calls.map(([input]) => input.args);
+      expect(calls).toContainEqual([
+        "api",
+        "--hostname",
+        "github.example.test",
+        "repos/acme/web/rules/branches/release%2Fnext",
+        "--paginate",
+        "--slurp",
+      ]);
+      const graphQlArgs = calls.find((args) => args.includes("graphql"));
+      expect(graphQlArgs).toEqual(
+        expect.arrayContaining(["api", "graphql", "--hostname", "github.example.test"]),
       );
+      expect(graphQlArgs?.at(-1)).toContain("branchProtectionRule { requiredStatusCheckContexts }");
+      expect(graphQlArgs?.at(-1)).toContain("rateLimit { cost limit remaining resetAt }");
     }),
   );
 
@@ -2693,6 +2686,16 @@ layer("GitHubPullRequestCli.layer", (it) => {
               }),
             ),
           ),
+        )
+        .mockReturnValueOnce(
+          Effect.succeed(
+            output(
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
+              JSON.stringify({
+                data: { repository: { pullRequest: {} } },
+              }),
+            ),
+          ),
         );
       const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
 
@@ -2711,7 +2714,7 @@ layer("GitHubPullRequestCli.layer", (it) => {
         allowReserve: true,
       });
 
-      assert.strictEqual(mockedExecute.mock.calls.length, 2);
+      assert.strictEqual(mockedExecute.mock.calls.length, 3);
       expect(access).toEqual({ canWrite: false, canUpdate: true, didAuthor: true });
       yield* TestClock.setTime(Date.parse("2100-01-01T00:00:00Z"));
     }),
