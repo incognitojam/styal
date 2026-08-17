@@ -95,8 +95,8 @@ export function GitHubStatusNotice() {
             className={cn(
               "flex h-7 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-xs font-medium transition-colors",
               notice.tone === "error"
-                ? "bg-destructive/12 text-destructive hover:bg-destructive/18"
-                : "bg-warning/12 text-warning hover:bg-warning/18",
+                ? "bg-destructive/12 text-destructive-foreground hover:bg-destructive/18"
+                : "bg-warning/12 text-warning-foreground hover:bg-warning/18",
             )}
             onClick={openGitHubStatus}
           >
