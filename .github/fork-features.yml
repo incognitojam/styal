@@ -85,6 +85,58 @@ features:
       tracking: []
       retire_when: Upstream exposes equivalent configurable GitHub incident reporting in the primary navigation.
 
+  - id: github-pull-request-query-budget
+    title: Bound GitHub pull request query cost
+    status: maintained
+    prs: [131]
+    invariants:
+      - Opening and refreshing a pull request cannot exhaust the GitHub GraphQL quota through unbounded nested review-thread connections.
+      - Large review conversations remain pageable up to the maintained safety ceiling instead of being silently truncated to the cheap initial query.
+    implementation_paths:
+      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/gitHubPullRequestJson.ts
+    upstream_paths:
+      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/GitHubPullRequestProvider.ts
+      - apps/server/src/pullRequest/PullRequestService.ts
+      - apps/server/src/pullRequest/gitHubPullRequestJson.ts
+    tests:
+      - apps/server/src/pullRequest/GitHubPullRequestCli.test.ts
+      - apps/server/src/pullRequest/gitHubPullRequestJson.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/6466
+      retire_when: Upstream bounds nested GitHub review-thread query fan-out while retaining equivalent pagination and provider-budget protection.
+
+  - id: github-reference-links
+    title: Resolve GitHub references across chat and pull requests
+    status: maintained
+    prs: [31, 134]
+    invariants:
+      - GitHub issue, pull request, commit, and repository references resolve against the project remote and become navigable links in chat and pull request Markdown.
+      - Reference resolution is environment-scoped, authorized, and cached without leaking repository context across projects.
+    implementation_paths:
+      - apps/server/src/sourceControl/gitHubReferences.ts
+      - apps/server/src/sourceControl/referenceCache.ts
+      - apps/web/src/components/chat/githubReferenceLinks.ts
+      - apps/web/src/markdown-github-references.ts
+    upstream_paths:
+      - apps/server/src/ws.ts
+      - apps/web/src/components/ChatMarkdown.tsx
+      - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
+      - apps/web/src/components/pullRequest/PullRequestMarkdown.tsx
+      - packages/contracts/src/rpc.ts
+    tests:
+      - apps/server/src/sourceControl/gitHubReferences.test.ts
+      - apps/server/src/sourceControl/referenceCache.test.ts
+      - apps/web/src/components/chat/githubReferenceLinks.test.ts
+      - apps/web/src/markdown-github-references.test.tsx
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream resolves equivalent environment-scoped GitHub references in chat and pull request Markdown with the same navigation behavior.
+
   - id: integrated-browser-links
     title: Open local development links in the integrated browser
     status: maintained
@@ -96,6 +148,7 @@ features:
       - apps/desktop/src/preview/BrowserSession.ts
       - apps/server/src/preview/TerminalBrowserOpen.ts
       - apps/web/src/components/chat/loopbackLinkPreview.ts
+      - apps/web/src/components/preview/PreviewAutomationHosts.tsx
       - apps/web/src/components/preview/openTerminalLinkInPreview.ts
     upstream_paths:
       - apps/desktop/src/preview/Manager.ts
@@ -103,6 +156,7 @@ features:
       - apps/server/src/terminal/Manager.ts
       - apps/web/src/components/ChatMarkdown.tsx
       - apps/web/src/components/ThreadTerminalDrawer.tsx
+      - apps/web/src/components/preview/PreviewAutomationHosts.tsx
     tests:
       - apps/desktop/src/preview/BrowserSession.test.ts
       - apps/server/src/preview/TerminalBrowserOpen.test.ts
@@ -112,6 +166,31 @@ features:
       status: unassessed
       tracking: []
       retire_when: Upstream routes local chat and terminal links through an environment-aware integrated browser with an external fallback.
+
+  - id: preview-hidden-tab-capture
+    title: Capture hidden preview tabs reliably
+    status: maintained
+    prs: [172, 174]
+    invariants:
+      - Screenshot and recording operations can capture a background preview tab without making it visibly active.
+      - Capture leases are bounded, single-flight, and always released so a failed native capture cannot strand or overlap compositor work.
+    implementation_paths:
+      - apps/desktop/src/preview/Manager.ts
+      - apps/web/src/browser/HostedBrowserWebview.tsx
+      - apps/web/src/browser/browserSurfaceStore.ts
+      - apps/web/src/components/preview/PreviewAutomationHosts.tsx
+    upstream_paths:
+      - apps/desktop/src/preview/Manager.ts
+      - apps/web/src/browser/HostedBrowserWebview.tsx
+      - apps/web/src/components/preview/PreviewAutomationHosts.tsx
+    tests:
+      - apps/desktop/src/preview/Manager.test.ts
+      - apps/web/src/browser/browserSurfaceStore.test.ts
+      - apps/web/src/browser/hostedBrowserWebviewStyle.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream reliably captures hidden preview tabs with bounded native work and no user-visible activation.
 
   - id: project-filter-continuity
     title: Preserve project filters while navigating and creating threads
@@ -135,6 +214,60 @@ features:
       status: unassessed
       tracking: []
       retire_when: Upstream preserves project scope across sidebar state and every new-thread entry point.
+
+  - id: pull-request-live-refresh
+    title: Keep open pull request details current
+    status: maintained
+    prs: [101]
+    invariants:
+      - An open pull request refreshes core host state without leaving the visible panel one stale response behind.
+      - Automatic refresh preserves cached diffs and fetches heavier activity only after the pull request revision changes, while manual refresh reloads all visible data.
+    implementation_paths:
+      - apps/server/src/pullRequest/PullRequestService.ts
+      - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
+      - packages/contracts/src/pullRequest.ts
+    upstream_paths:
+      - apps/server/src/pullRequest/PullRequestService.ts
+      - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
+      - packages/contracts/src/pullRequest.ts
+    tests:
+      - apps/server/src/pullRequest/PullRequestService.test.ts
+      - apps/web/src/hooks/useLiveRefresh.test.ts
+      - packages/contracts/src/pullRequest.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/6466
+      retire_when: Upstream keeps the visible pull request current without stale responses, unnecessary activity reads, or invalidating cached diffs.
+
+  - id: pull-request-required-checks
+    title: Show required pull request checks and merge readiness
+    status: maintained
+    prs: [151]
+    invariants:
+      - The Checks tab distinguishes host-required checks from optional jobs and represents required checks that have not reported yet.
+      - The primary action follows GitHub merge readiness, offering auto-merge when requirements block an otherwise mergeable pull request.
+    implementation_paths:
+      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/GitHubPullRequestProvider.ts
+      - apps/web/src/components/pullRequest/PullRequestChecksTab.tsx
+      - apps/web/src/components/pullRequest/pullRequestDetail.logic.ts
+    upstream_paths:
+      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/GitHubPullRequestProvider.ts
+      - apps/server/src/pullRequest/PullRequestService.ts
+      - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
+      - apps/web/src/components/pullRequest/pullRequestDetail.logic.ts
+      - packages/contracts/src/pullRequest.ts
+    tests:
+      - apps/server/src/pullRequest/GitHubPullRequestCli.test.ts
+      - apps/server/src/pullRequest/GitHubPullRequestProvider.test.ts
+      - apps/web/src/components/pullRequest/PullRequestChecksTab.test.tsx
+      - apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream exposes repository-policy-aware required checks and equivalent merge or auto-merge guidance in pull request details.
 
   - id: run-shell-code-blocks
     title: Run completed shell code blocks in a terminal
