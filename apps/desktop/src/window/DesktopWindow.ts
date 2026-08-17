@@ -501,6 +501,7 @@ export const make = Effect.gen(function* () {
       webPreferences.nodeIntegration = false;
       webPreferences.nodeIntegrationInSubFrames = false;
       webPreferences.contextIsolation = false;
+      webPreferences.focusOnNavigation = false;
     });
 
     window.webContents.on("context-menu", (event, params) => {

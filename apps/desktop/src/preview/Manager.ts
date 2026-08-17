@@ -65,7 +65,10 @@ import {
 } from "./GuestProtocol.ts";
 import { isPreviewAnnotationPayload } from "./PickedElementPayload.ts";
 import { playwrightInjectedRuntimeInstallExpression } from "./PlaywrightInjectedRuntime.ts";
-import { makePreviewAutomationKeySequence } from "./PreviewKeyboard.ts";
+import {
+  makePreviewAutomationKeySequence,
+  type PreviewAutomationEditingCommand,
+} from "./PreviewKeyboard.ts";
 import { captureFavicon, safeHttpOrigin, selectFaviconCandidates } from "./FaviconCapture.ts";
 
 export type PreviewNavStatus =
@@ -126,6 +129,47 @@ class PreviewCaptureTimeoutError extends Error {}
 const MAX_ARTIFACT_SITE_SLUG_LENGTH = 80;
 const AGENT_CURSOR_MOVE_MS = 160;
 const AGENT_CURSOR_CLICK_LEAD_MS = 40;
+
+const previewAutomationEditingCommandExpression = (
+  command: PreviewAutomationEditingCommand,
+  pasteTextJson = "undefined",
+): string => {
+  switch (command) {
+    case "copy":
+    case "cut":
+    case "redo":
+    case "selectAll":
+    case "undo":
+      return `document.execCommand(${JSON.stringify(command)})`;
+    case "paste":
+      return `document.execCommand("insertText", false, ${pasteTextJson})`;
+    case "deleteToBeginningOfLine":
+      return `(() => {
+        const selection = globalThis.getSelection();
+        if (!selection) return false;
+        const active = document.activeElement;
+        const hasControlSelection = active && "selectionStart" in active && "selectionEnd" in active && active.selectionStart !== active.selectionEnd;
+        if (!hasControlSelection && selection.isCollapsed) selection.modify("extend", "backward", "lineboundary");
+        return document.execCommand("delete");
+      })()`;
+    case "moveToBeginningOfDocument":
+      return `globalThis.getSelection()?.modify("move", "backward", "documentboundary")`;
+    case "moveToEndOfDocument":
+      return `globalThis.getSelection()?.modify("move", "forward", "documentboundary")`;
+    case "moveToLeftEndOfLine":
+      return `globalThis.getSelection()?.modify("move", "left", "lineboundary")`;
+    case "moveToRightEndOfLine":
+      return `globalThis.getSelection()?.modify("move", "right", "lineboundary")`;
+    case "moveToBeginningOfDocumentAndModifySelection":
+      return `globalThis.getSelection()?.modify("extend", "backward", "documentboundary")`;
+    case "moveToEndOfDocumentAndModifySelection":
+      return `globalThis.getSelection()?.modify("extend", "forward", "documentboundary")`;
+    case "moveToLeftEndOfLineAndModifySelection":
+      return `globalThis.getSelection()?.modify("extend", "left", "lineboundary")`;
+    case "moveToRightEndOfLineAndModifySelection":
+      return `globalThis.getSelection()?.modify("extend", "right", "lineboundary")`;
+  }
+};
 const encodeUnknownJson = Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 const DEFAULT_ANNOTATION_THEME: DesktopPreviewAnnotationTheme = {
   colorScheme: "light",
@@ -1171,6 +1215,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     method: string,
     commandParams?: Record<string, unknown>,
   ) => Effect.Effect<unknown, PreviewManagerError>;
+  type SendKeyboardInput = (
+    input: Electron.KeyboardInputEvent,
+  ) => Effect.Effect<void, PreviewManagerError>;
 
   const prepareAutomationInput = Effect.fn("PreviewManager.prepareAutomationInput")(function* (
     send: SendCommand,
@@ -1189,7 +1236,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     tabId: string,
     wc: Electron.WebContents,
     action: string,
-    use: (send: SendCommand, sendCleanup: SendCommand) => Effect.Effect<A, PreviewManagerError>,
+    use: (
+      send: SendCommand,
+      sendCleanup: SendCommand,
+      sendKeyboardInput: SendKeyboardInput,
+      sendKeyboardCleanup: SendKeyboardInput,
+    ) => Effect.Effect<A, PreviewManagerError>,
   ) {
     const sequence = yield* nextCounter(actionSequenceRef);
     const startedAt = yield* currentIso;
@@ -1245,7 +1297,39 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           );
         },
       );
-      return yield* use(send, sendCleanup);
+      const sendKeyboardInput: SendKeyboardInput = Effect.fn("PreviewManager.sendKeyboardInput")(
+        function* (input) {
+          const before = (yield* Ref.get(controlEpochRef)).get(tabId) ?? 0;
+          if (before !== epoch) {
+            return yield* new PreviewAutomationControlInterruptedError({
+              operation: action,
+              tabId,
+              webContentsId: wc.id,
+            });
+          }
+          yield* attempt(
+            { operation: `${action}.sendInputEvent`, tabId, webContentsId: wc.id },
+            () => wc.sendInputEvent(input),
+          );
+          const after = (yield* Ref.get(controlEpochRef)).get(tabId) ?? 0;
+          if (after !== epoch) {
+            return yield* new PreviewAutomationControlInterruptedError({
+              operation: action,
+              tabId,
+              webContentsId: wc.id,
+            });
+          }
+        },
+      );
+      const sendKeyboardCleanup: SendKeyboardInput = Effect.fn(
+        "PreviewManager.sendKeyboardCleanup",
+      )((input) =>
+        attempt(
+          { operation: `${action}.cleanup.sendInputEvent`, tabId, webContentsId: wc.id },
+          () => wc.sendInputEvent(input),
+        ),
+      );
+      return yield* use(send, sendCleanup, sendKeyboardInput, sendKeyboardCleanup);
     });
     const finalize = Effect.fn("PreviewManager.finalizeControlAction")(function* (
       exit: Exit.Exit<A, PreviewManagerError>,
@@ -3393,6 +3477,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     tabId: string,
     input: PreviewAutomationClickInput,
     send: SendCommand,
+    sendCleanup: SendCommand,
   ) {
     yield* prepareAutomationInput(send, true);
     const point = yield* resolveClickPoint(tabId, send, input);
@@ -3411,39 +3496,52 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         viewportHeight: viewport.height,
       });
     }
-    const moveSequence = yield* nextCounter(pointerSequenceRef);
-    const moveCreatedAt = yield* currentIso;
-    yield* emitPointerEvent({
-      tabId,
-      phase: "move",
-      ...point,
-      sequence: moveSequence,
-      createdAt: moveCreatedAt,
-    });
-    yield* Effect.sleep(AGENT_CURSOR_MOVE_MS);
-    const clickSequence = yield* nextCounter(pointerSequenceRef);
-    const clickCreatedAt = yield* currentIso;
-    yield* emitPointerEvent({
-      tabId,
-      phase: "click",
-      ...point,
-      sequence: clickSequence,
-      createdAt: clickCreatedAt,
-    });
-    yield* Effect.sleep(AGENT_CURSOR_CLICK_LEAD_MS);
-    yield* expectAgentInput(tabId, { kind: "pointer", ...point, button: 0 });
-    yield* send("Input.dispatchMouseEvent", {
-      type: "mousePressed",
-      ...point,
-      button: "left",
-      clickCount: 1,
-    });
-    yield* send("Input.dispatchMouseEvent", {
-      type: "mouseReleased",
-      ...point,
-      button: "left",
-      clickCount: 1,
-    });
+    // A CDP mouse press can otherwise focus the guest render widget, which
+    // makes its host <webview> the embedder's active element and blurs the T3
+    // control the user is typing in. Focus emulation gives the page a focused
+    // frame for normal hover/mousedown/focus behavior without requiring an
+    // explicit WebContents focus; the renderer also guards against delayed
+    // host <webview> activation from Electron.
+    yield* send("Emulation.setFocusEmulationEnabled", { enabled: true });
+    yield* Effect.gen(function* () {
+      const moveSequence = yield* nextCounter(pointerSequenceRef);
+      const moveCreatedAt = yield* currentIso;
+      yield* emitPointerEvent({
+        tabId,
+        phase: "move",
+        ...point,
+        sequence: moveSequence,
+        createdAt: moveCreatedAt,
+      });
+      yield* Effect.sleep(AGENT_CURSOR_MOVE_MS);
+      const clickSequence = yield* nextCounter(pointerSequenceRef);
+      const clickCreatedAt = yield* currentIso;
+      yield* emitPointerEvent({
+        tabId,
+        phase: "click",
+        ...point,
+        sequence: clickSequence,
+        createdAt: clickCreatedAt,
+      });
+      yield* Effect.sleep(AGENT_CURSOR_CLICK_LEAD_MS);
+      yield* expectAgentInput(tabId, { kind: "pointer", ...point, button: 0 });
+      yield* send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        ...point,
+        button: "left",
+        clickCount: 1,
+      });
+      yield* send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        ...point,
+        button: "left",
+        clickCount: 1,
+      });
+    }).pipe(
+      Effect.ensuring(
+        sendCleanup("Emulation.setFocusEmulationEnabled", { enabled: false }).pipe(Effect.ignore),
+      ),
+    );
   });
 
   const automationClick = Effect.fn("PreviewManager.automationClick")(function* (
@@ -3451,8 +3549,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     input: PreviewAutomationClickInput,
   ) {
     const wc = yield* requireWebContents(tabId);
-    yield* withControlSession(tabId, wc, "click", (send) =>
-      performAutomationClick(tabId, input, send),
+    yield* withControlSession(tabId, wc, "click", (send, sendCleanup) =>
+      performAutomationClick(tabId, input, send, sendCleanup),
     );
   });
 
@@ -3584,53 +3682,58 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
 
   const performAutomationPress = Effect.fn("PreviewManager.performAutomationPress")(function* (
     tabId: string,
-    wc: Electron.WebContents,
     input: PreviewAutomationPressInput,
     send: SendCommand,
     sendCleanup: SendCommand,
+    sendKeyboardInput: SendKeyboardInput,
+    sendKeyboardCleanup: SendKeyboardInput,
   ) {
     yield* prepareAutomationInput(send, false);
     const keySequence = makePreviewAutomationKeySequence(input, {
       isMac: hostPlatform === "darwin",
     });
-    const previouslyFocused = yield* attempt(
-      { operation: "automationPress.getFocusedWebContents", tabId, webContentsId: wc.id },
-      () => webContents.getFocusedWebContents(),
-    );
     let keyDownAttempted = false;
     const releaseInput = Effect.gen(function* () {
       if (keyDownAttempted) {
-        yield* sendCleanup("Input.dispatchKeyEvent", keySequence.keyUp).pipe(Effect.ignore);
+        yield* sendKeyboardCleanup(keySequence.keyUp).pipe(Effect.ignore);
       }
       yield* sendCleanup("Emulation.setFocusEmulationEnabled", { enabled: false }).pipe(
         Effect.ignore,
       );
-      if (previouslyFocused && previouslyFocused.id !== wc.id && !previouslyFocused.isDestroyed()) {
-        yield* attempt(
-          {
-            operation: "automationPress.restoreFocusedWebContents",
-            tabId,
-            webContentsId: previouslyFocused.id,
-          },
-          () => previouslyFocused.focus(),
-        ).pipe(Effect.ignore);
-      }
     });
 
-    // Focus the guest WebContents itself, not its containing BrowserWindow. This
-    // activates native keyboard behavior for hidden/background previews without
-    // changing which thread is mounted in the UI. Restore the previous renderer
-    // after dispatch so automation never leaves the app's input focus behind.
+    // CDP dispatches keyboard events to Chromium's outermost focused widget. For an
+    // unfocused <webview>, that can be T3's composer instead of the preview guest.
+    // Electron forwards sendInputEvent directly to this guest's render widget, while
+    // focus emulation lets its active element receive the key without real app focus.
     yield* Effect.gen(function* () {
-      yield* attempt(
-        { operation: "automationPress.focusWebContents", tabId, webContentsId: wc.id },
-        () => wc.focus(),
-      );
-      yield* send("Page.bringToFront");
       yield* send("Emulation.setFocusEmulationEnabled", { enabled: true });
       yield* expectAgentInput(tabId, keySequence.signal);
       keyDownAttempted = true;
-      yield* send("Input.dispatchKeyEvent", keySequence.keyDown);
+      yield* sendKeyboardInput(keySequence.keyDown);
+      if (keySequence.editingCommand) {
+        // Electron's direct input path skips the macOS selector actions behind
+        // Command shortcuts. Run the equivalent edit in the guest runtime so
+        // the shortcut works without focusing its host <webview>.
+        const pasteTextJson =
+          keySequence.editingCommand === "paste"
+            ? yield* attempt({ operation: "automationPress.readClipboard", tabId }, () =>
+                clipboard.readText(),
+              ).pipe(
+                Effect.flatMap((text) =>
+                  encodeJson({ operation: "automationPress.encodeClipboard", tabId }, text),
+                ),
+              )
+            : undefined;
+        yield* evaluateWithDebugger(
+          tabId,
+          send,
+          previewAutomationEditingCommandExpression(keySequence.editingCommand, pasteTextJson),
+          true,
+        );
+      } else if (keySequence.char) {
+        yield* sendKeyboardInput(keySequence.char);
+      }
     }).pipe(Effect.ensuring(releaseInput));
   });
 
@@ -3639,8 +3742,19 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     input: PreviewAutomationPressInput,
   ) {
     const wc = yield* requireWebContents(tabId);
-    yield* withControlSession(tabId, wc, "press", (send, sendCleanup) =>
-      performAutomationPress(tabId, wc, input, send, sendCleanup),
+    yield* withControlSession(
+      tabId,
+      wc,
+      "press",
+      (send, sendCleanup, sendKeyboardInput, sendKeyboardCleanup) =>
+        performAutomationPress(
+          tabId,
+          input,
+          send,
+          sendCleanup,
+          sendKeyboardInput,
+          sendKeyboardCleanup,
+        ),
     );
   });
 

@@ -1,37 +1,44 @@
 import type { PreviewAutomationPressInput } from "@t3tools/contracts";
+import type { KeyboardInputEvent } from "electron";
 
 interface KeyDefinition {
   readonly code: string;
   readonly key: string;
   readonly keyCode: number;
+  readonly accelerator?: string;
   readonly text?: string;
   readonly location?: number;
   readonly shiftedKey?: string;
 }
 
-export interface PreviewAutomationKeyEvent {
-  readonly [key: string]: unknown;
-  readonly type: "keyDown" | "rawKeyDown" | "keyUp";
-  readonly key: string;
-  readonly code: string;
-  readonly modifiers: number;
-  readonly windowsVirtualKeyCode: number;
-  readonly location: number;
-  readonly isKeypad: boolean;
-  readonly text?: string;
-  readonly unmodifiedText?: string;
-  readonly commands?: ReadonlyArray<string>;
-}
-
 export interface PreviewAutomationKeySequence {
-  readonly keyDown: PreviewAutomationKeyEvent;
-  readonly keyUp: PreviewAutomationKeyEvent;
+  readonly keyDown: KeyboardInputEvent;
+  readonly char?: KeyboardInputEvent;
+  readonly keyUp: KeyboardInputEvent;
+  readonly editingCommand?: PreviewAutomationEditingCommand;
   readonly signal: {
     readonly kind: "key";
     readonly key: string;
     readonly code: string;
   };
 }
+
+export type PreviewAutomationEditingCommand =
+  | "copy"
+  | "cut"
+  | "deleteToBeginningOfLine"
+  | "moveToBeginningOfDocument"
+  | "moveToBeginningOfDocumentAndModifySelection"
+  | "moveToEndOfDocument"
+  | "moveToEndOfDocumentAndModifySelection"
+  | "moveToLeftEndOfLine"
+  | "moveToLeftEndOfLineAndModifySelection"
+  | "moveToRightEndOfLine"
+  | "moveToRightEndOfLineAndModifySelection"
+  | "paste"
+  | "redo"
+  | "selectAll"
+  | "undo";
 
 const NAMED_KEYS: Readonly<Record<string, KeyDefinition>> = {
   Escape: { code: "Escape", key: "Escape", keyCode: 27 },
@@ -43,15 +50,15 @@ const NAMED_KEYS: Readonly<Record<string, KeyDefinition>> = {
   Alt: { code: "AltLeft", key: "Alt", keyCode: 18, location: 1 },
   Meta: { code: "MetaLeft", key: "Meta", keyCode: 91, location: 1 },
   CapsLock: { code: "CapsLock", key: "CapsLock", keyCode: 20 },
-  Space: { code: "Space", key: " ", keyCode: 32, text: " " },
+  Space: { code: "Space", key: " ", keyCode: 32, accelerator: "Space", text: " " },
   PageUp: { code: "PageUp", key: "PageUp", keyCode: 33 },
   PageDown: { code: "PageDown", key: "PageDown", keyCode: 34 },
   End: { code: "End", key: "End", keyCode: 35 },
   Home: { code: "Home", key: "Home", keyCode: 36 },
-  ArrowLeft: { code: "ArrowLeft", key: "ArrowLeft", keyCode: 37 },
-  ArrowUp: { code: "ArrowUp", key: "ArrowUp", keyCode: 38 },
-  ArrowRight: { code: "ArrowRight", key: "ArrowRight", keyCode: 39 },
-  ArrowDown: { code: "ArrowDown", key: "ArrowDown", keyCode: 40 },
+  ArrowLeft: { code: "ArrowLeft", key: "ArrowLeft", keyCode: 37, accelerator: "Left" },
+  ArrowUp: { code: "ArrowUp", key: "ArrowUp", keyCode: 38, accelerator: "Up" },
+  ArrowRight: { code: "ArrowRight", key: "ArrowRight", keyCode: 39, accelerator: "Right" },
+  ArrowDown: { code: "ArrowDown", key: "ArrowDown", keyCode: 40, accelerator: "Down" },
   Insert: { code: "Insert", key: "Insert", keyCode: 45 },
   Delete: { code: "Delete", key: "Delete", keyCode: 46 },
 };
@@ -80,12 +87,8 @@ const PRINTABLE_KEYS: ReadonlyArray<KeyDefinition> = [
   { code: "Slash", key: "/", shiftedKey: "?", keyCode: 191 },
 ];
 
-/**
- * Chromium does not infer macOS editing commands from synthetic Meta chords.
- * Keep the common browser editing/navigation shortcuts explicit so dispatched
- * key events behave like their physical-key equivalents.
- */
-const MAC_EDITING_COMMANDS: Readonly<Record<string, string>> = {
+/** Editing actions macOS normally resolves through native selector handling. */
+const MAC_EDITING_COMMANDS: Readonly<Record<string, PreviewAutomationEditingCommand>> = {
   "Meta+Backspace": "deleteToBeginningOfLine",
   "Meta+ArrowUp": "moveToBeginningOfDocument",
   "Meta+ArrowDown": "moveToEndOfDocument",
@@ -104,31 +107,41 @@ const MAC_EDITING_COMMANDS: Readonly<Record<string, string>> = {
 };
 const SHORTCUT_MODIFIER_ORDER = ["Shift", "Control", "Alt", "Meta"] as const;
 
-const macEditingCommands = (
+const macEditingCommand = (
   code: string,
   modifiers: PreviewAutomationPressInput["modifiers"],
-): ReadonlyArray<string> => {
+): PreviewAutomationEditingCommand | undefined => {
   const shortcut = [
     ...SHORTCUT_MODIFIER_ORDER.filter((modifier) => modifiers?.includes(modifier)),
     code,
   ].join("+");
-  const command = MAC_EDITING_COMMANDS[shortcut];
-  return command ? [command] : [];
+  return MAC_EDITING_COMMANDS[shortcut];
 };
 
-const modifierMask = (modifiers: PreviewAutomationPressInput["modifiers"]): number =>
-  (modifiers ?? []).reduce((value, modifier) => {
+const electronModifiers = (
+  modifiers: PreviewAutomationPressInput["modifiers"],
+  implicitShift: boolean,
+): NonNullable<KeyboardInputEvent["modifiers"]> => {
+  const values = new Set<NonNullable<KeyboardInputEvent["modifiers"]>[number]>();
+  for (const modifier of modifiers ?? []) {
     switch (modifier) {
       case "Alt":
-        return value | 1;
+        values.add("alt");
+        break;
       case "Control":
-        return value | 2;
+        values.add("control");
+        break;
       case "Meta":
-        return value | 4;
+        values.add("meta");
+        break;
       case "Shift":
-        return value | 8;
+        values.add("shift");
+        break;
     }
-  }, 0);
+  }
+  if (implicitShift) values.add("shift");
+  return [...values];
+};
 
 function resolveKeyDefinition(input: PreviewAutomationPressInput): KeyDefinition {
   const named = NAMED_KEYS[input.key];
@@ -167,37 +180,42 @@ function resolveKeyDefinition(input: PreviewAutomationPressInput): KeyDefinition
   };
 }
 
-/**
- * Build Chromium CDP key packets using the same required fields and down-event
- * choice as Playwright's pinned Chromium keyboard implementation.
- */
+/** Build Electron input packets that target the preview guest's render widget. */
 export function makePreviewAutomationKeySequence(
   input: PreviewAutomationPressInput,
   options?: { readonly isMac?: boolean },
 ): PreviewAutomationKeySequence {
   const definition = resolveKeyDefinition(input);
-  const modifiers = modifierMask(input.modifiers);
+  const implicitShift =
+    (/^[A-Z]$/.test(input.key) || definition.shiftedKey === input.key) &&
+    !input.modifiers?.includes("Shift");
+  const modifiers = electronModifiers(input.modifiers, implicitShift);
   const suppressText = input.modifiers?.some((modifier) => modifier !== "Shift") ?? false;
   const text = suppressText ? "" : (definition.text ?? "");
-  const location = definition.location ?? 0;
-  const commands = options?.isMac ? macEditingCommands(definition.code, input.modifiers) : [];
-  const shared = {
-    key: definition.key,
-    code: definition.code,
-    modifiers,
-    windowsVirtualKeyCode: definition.keyCode,
-    location,
-    isKeypad: location === 3,
-  };
+  const printableDefinition = PRINTABLE_KEYS.find(
+    (candidate) => candidate.code === definition.code,
+  );
+  const keyCode =
+    definition.accelerator ??
+    (/^Key[A-Z]$/.test(definition.code)
+      ? definition.code.slice(3)
+      : (printableDefinition?.key ?? definition.key));
+  const shared = modifiers.length === 0 ? { keyCode } : { keyCode, modifiers };
+  const char =
+    text.length === 0
+      ? undefined
+      : modifiers.length === 0
+        ? { type: "char" as const, keyCode: text }
+        : { type: "char" as const, keyCode: text, modifiers };
+  const editingCommand = options?.isMac
+    ? macEditingCommand(definition.code, input.modifiers)
+    : undefined;
 
   return {
-    keyDown: {
-      type: text ? "keyDown" : "rawKeyDown",
-      ...shared,
-      ...(text ? { text, unmodifiedText: text } : {}),
-      ...(commands.length > 0 ? { commands } : {}),
-    },
+    keyDown: { type: "keyDown", ...shared },
+    ...(char ? { char } : {}),
     keyUp: { type: "keyUp", ...shared },
+    ...(editingCommand ? { editingCommand } : {}),
     signal: { kind: "key", key: definition.key, code: definition.code },
   };
 }

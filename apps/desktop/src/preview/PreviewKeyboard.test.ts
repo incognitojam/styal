@@ -3,95 +3,86 @@ import { describe, expect, it } from "vite-plus/test";
 import { makePreviewAutomationKeySequence } from "./PreviewKeyboard.ts";
 
 describe("preview keyboard packets", () => {
-  it("includes the Chromium virtual key code and Enter text", () => {
+  it("sends Enter directly to the guest with a char event", () => {
     expect(makePreviewAutomationKeySequence({ key: "Enter" })).toEqual({
-      keyDown: {
-        type: "keyDown",
-        key: "Enter",
-        code: "Enter",
-        modifiers: 0,
-        windowsVirtualKeyCode: 13,
-        location: 0,
-        isKeypad: false,
-        text: "\r",
-        unmodifiedText: "\r",
-      },
-      keyUp: {
-        type: "keyUp",
-        key: "Enter",
-        code: "Enter",
-        modifiers: 0,
-        windowsVirtualKeyCode: 13,
-        location: 0,
-        isKeypad: false,
-      },
+      keyDown: { type: "keyDown", keyCode: "Enter" },
+      char: { type: "char", keyCode: "\r" },
+      keyUp: { type: "keyUp", keyCode: "Enter" },
       signal: { kind: "key", key: "Enter", code: "Enter" },
     });
   });
 
-  it("dispatches printable keys as text key-down events", () => {
+  it("dispatches printable keys with a char event", () => {
     const sequence = makePreviewAutomationKeySequence({ key: "z" });
-    expect(sequence.keyDown).toMatchObject({
-      type: "keyDown",
-      key: "z",
-      code: "KeyZ",
-      windowsVirtualKeyCode: 90,
-      text: "z",
-    });
-    expect(sequence.keyUp).not.toHaveProperty("text");
+    expect(sequence.keyDown).toEqual({ type: "keyDown", keyCode: "Z" });
+    expect(sequence.char).toEqual({ type: "char", keyCode: "z" });
+    expect(sequence.keyUp).toEqual({ type: "keyUp", keyCode: "Z" });
+    expect(sequence.signal).toEqual({ kind: "key", key: "z", code: "KeyZ" });
   });
 
-  it("suppresses text and uses raw key-down for shortcuts", () => {
-    expect(
-      makePreviewAutomationKeySequence({ key: "a", modifiers: ["Meta"] }, { isMac: true }).keyDown,
-    ).toEqual({
-      type: "rawKeyDown",
-      key: "a",
-      code: "KeyA",
-      modifiers: 4,
-      windowsVirtualKeyCode: 65,
-      location: 0,
-      isKeypad: false,
-      commands: ["selectAll"],
-    });
+  it("suppresses char events for shortcuts", () => {
+    const sequence = makePreviewAutomationKeySequence({ key: "a", modifiers: ["Meta"] });
+    expect(sequence.keyDown).toEqual({ type: "keyDown", keyCode: "A", modifiers: ["meta"] });
+    expect(sequence.char).toBeUndefined();
+    expect(sequence.keyUp).toEqual({ type: "keyUp", keyCode: "A", modifiers: ["meta"] });
+    expect(sequence.editingCommand).toBeUndefined();
   });
 
-  it("maps common macOS editing shortcuts without changing other platforms", () => {
+  it.each([
+    ["a", ["Meta"], "selectAll"],
+    ["c", ["Meta"], "copy"],
+    ["x", ["Meta"], "cut"],
+    ["v", ["Meta"], "paste"],
+    ["z", ["Meta"], "undo"],
+    ["z", ["Shift", "Meta"], "redo"],
+    ["Backspace", ["Meta"], "deleteToBeginningOfLine"],
+    ["ArrowUp", ["Meta"], "moveToBeginningOfDocument"],
+    ["ArrowDown", ["Meta"], "moveToEndOfDocument"],
+    ["ArrowLeft", ["Meta"], "moveToLeftEndOfLine"],
+    ["ArrowRight", ["Meta"], "moveToRightEndOfLine"],
+    ["ArrowUp", ["Shift", "Meta"], "moveToBeginningOfDocumentAndModifySelection"],
+    ["ArrowDown", ["Shift", "Meta"], "moveToEndOfDocumentAndModifySelection"],
+    ["ArrowLeft", ["Shift", "Meta"], "moveToLeftEndOfLineAndModifySelection"],
+    ["ArrowRight", ["Shift", "Meta"], "moveToRightEndOfLineAndModifySelection"],
+  ] as const)("maps macOS %s with %s to %s", (key, modifiers, editingCommand) => {
     expect(
-      makePreviewAutomationKeySequence({ key: "z", modifiers: ["Shift", "Meta"] }, { isMac: true })
-        .keyDown.commands,
-    ).toEqual(["redo"]);
-    expect(
-      makePreviewAutomationKeySequence({ key: "a", modifiers: ["Meta"] }).keyDown,
-    ).not.toHaveProperty("commands");
+      makePreviewAutomationKeySequence({ key, modifiers: [...modifiers] }, { isMac: true })
+        .editingCommand,
+    ).toBe(editingCommand);
   });
 
   it("resolves shifted printable keys to their browser values", () => {
     const sequence = makePreviewAutomationKeySequence({ key: "1", modifiers: ["Shift"] });
-    expect(sequence.keyDown).toMatchObject({
-      key: "!",
-      code: "Digit1",
-      modifiers: 8,
-      windowsVirtualKeyCode: 49,
-      text: "!",
-    });
+    expect(sequence.keyDown).toEqual({ type: "keyDown", keyCode: "1", modifiers: ["shift"] });
+    expect(sequence.char).toEqual({ type: "char", keyCode: "!", modifiers: ["shift"] });
     expect(sequence.signal).toEqual({ kind: "key", key: "!", code: "Digit1" });
   });
 
-  it("keeps shifted key values while suppressing text for modified chords", () => {
+  it("adds the physical Shift modifier for shifted characters", () => {
+    const sequence = makePreviewAutomationKeySequence({ key: "!" });
+    expect(sequence.keyDown).toEqual({ type: "keyDown", keyCode: "1", modifiers: ["shift"] });
+    expect(sequence.char).toEqual({ type: "char", keyCode: "!", modifiers: ["shift"] });
+    expect(sequence.signal).toEqual({ kind: "key", key: "!", code: "Digit1" });
+  });
+
+  it("keeps shifted key values while suppressing char events for modified chords", () => {
     const sequence = makePreviewAutomationKeySequence({
       key: "1",
       modifiers: ["Control", "Shift"],
     });
     expect(sequence.keyDown).toEqual({
-      type: "rawKeyDown",
-      key: "!",
-      code: "Digit1",
-      modifiers: 10,
-      windowsVirtualKeyCode: 49,
-      location: 0,
-      isKeypad: false,
+      type: "keyDown",
+      keyCode: "1",
+      modifiers: ["control", "shift"],
     });
+    expect(sequence.char).toBeUndefined();
     expect(sequence.signal).toEqual({ kind: "key", key: "!", code: "Digit1" });
+  });
+
+  it("uses Electron accelerator names for arrow keys", () => {
+    expect(makePreviewAutomationKeySequence({ key: "ArrowLeft" }).keyDown).toEqual({
+      type: "keyDown",
+      keyCode: "Left",
+    });
   });
 });
