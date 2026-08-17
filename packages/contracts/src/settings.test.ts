@@ -129,24 +129,6 @@ describe("ClientSettings completion sound", () => {
   });
 });
 
-describe("ClientSettings GitHub status alerts", () => {
-  it("defaults the beta on", () => {
-    expect(decodeClientSettings({}).githubStatusAlertsEnabled).toBe(true);
-  });
-
-  it("accepts the setting in stored settings and patches", () => {
-    expect(
-      decodeClientSettings({ githubStatusAlertsEnabled: true }).githubStatusAlertsEnabled,
-    ).toBe(true);
-    expect(decodeClientSettingsPatch({ githubStatusAlertsEnabled: true })).toEqual({
-      githubStatusAlertsEnabled: true,
-    });
-    expect(
-      decodeClientSettings({ githubStatusAlertsEnabled: false }).githubStatusAlertsEnabled,
-    ).toBe(false);
-  });
-});
-
 describe("ClientSettings Claude status alerts", () => {
   it("defaults the alerts on", () => {
     expect(decodeClientSettings({}).claudeStatusAlertsEnabled).toBe(true);
