@@ -993,14 +993,15 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain('title="1 terminal command"');
-    expect(markup).toContain('title="1 context compaction"');
+    expect(markup).not.toContain('title="1 terminal command"');
+    expect(markup).not.toContain('title="1 context compaction"');
+    expect(markup).toContain(", 1 terminal command");
+    expect(markup).toContain(", 1 context compaction");
+    expect(markup).toContain("data-base-ui-tooltip-trigger");
     // The marker earns its emphasis from full-strength foreground. Solid-control
     // fills such as the theme action color read below 3:1 as text on the canvas,
     // which left the marker dimmer than the muted stats it is meant to outrank.
-    const compactionClasses = /<span title="1 context compaction" class="([^"]*)"/.exec(
-      markup,
-    )?.[1];
+    const compactionClasses = /<span class="([^"]*ms-1[^"]*)"/.exec(markup)?.[1];
     expect(compactionClasses).toContain("text-foreground");
     expect(compactionClasses).not.toContain("text-primary");
     expect(markup).toContain('aria-expanded="false"');
