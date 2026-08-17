@@ -446,6 +446,7 @@ function withRateLimitBackoff(
     ...(api.getDiffFileContents === undefined
       ? {}
       : { getDiffFileContents: wrap("getDiffFileContents", api.getDiffFileContents) }),
+    ...(api.getFile === undefined ? {} : { getFile: wrap("getFile", api.getFile) }),
     runAction: interactive("runAction", api.runAction),
     ...(api.updateChangeRequest === undefined
       ? {}
