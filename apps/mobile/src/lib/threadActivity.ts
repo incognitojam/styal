@@ -15,6 +15,7 @@ import {
 } from "@t3tools/shared/toolActivity";
 import {
   deriveToolRowPresentation,
+  normalizeKnownToolName,
   type ToolRowArgument,
 } from "@t3tools/shared/toolRowPresentation";
 
@@ -629,6 +630,7 @@ function toolDetailTextLooksLikeFailure(text: string): boolean {
     normalized.includes("no such file") ||
     normalized.includes("commandnotfoundexception") ||
     normalized.includes("command not found") ||
+    normalized.includes("could not find oldstring in the file") ||
     (normalized.includes("cannot find path") && normalized.includes("because it does not exist")) ||
     (normalized.includes("is not recognized") && normalized.includes("the term '")) ||
     normalized.includes("is not recognized as the name of a cmdlet") ||
@@ -691,6 +693,23 @@ function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
   if (entry.requestKind === "command") return "command";
   if (entry.requestKind === "file-read") return "eye";
   if (entry.requestKind === "file-change") return "edit";
+  switch (entry.toolName ? normalizeKnownToolName(entry.toolName) : undefined) {
+    case "Read":
+      return "eye";
+    case "Grep":
+    case "Glob":
+    case "ToolSearch":
+      return "wrench";
+    case "SendMessage":
+      return "message";
+    case "TaskCreate":
+    case "TaskUpdate":
+    case "TaskList":
+      return "check";
+    case "WebFetch":
+    case "WebSearch":
+      return "globe";
+  }
   if (entry.itemType === "command_execution" || entry.command) return "command";
   if (entry.itemType === "file_change" || (entry.changedFiles?.length ?? 0) > 0) return "edit";
   if (entry.itemType === "web_search") return "globe";
@@ -769,6 +788,7 @@ function toolRowPresentationFor(workEntry: DerivedWorkLogEntry) {
     input: workEntry.toolInput,
     command: workEntry.command,
     changedFiles: workEntry.changedFiles,
+    failed: workEntryIndicatesToolFailure(workEntry),
   });
 }
 
