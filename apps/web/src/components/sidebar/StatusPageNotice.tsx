@@ -3,18 +3,86 @@ import { useCallback, useEffect, useState, type ComponentType, type SVGProps } f
 
 import { cn } from "../../lib/utils";
 import { readLocalApi } from "../../localApi";
-import type { StatusPageNotice as StatusPageNoticeView } from "../../statusPage";
+import {
+  isStatusPageSummary,
+  type StatusPageNotice as StatusPageNoticeView,
+} from "../../statusPage";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 const STATUS_POLL_INTERVAL_MS = 60_000;
+const STATUS_COMPONENTS_TIMEOUT_MS = 5_000;
+
+type StatusPageNoticeResolver = (
+  summary: unknown,
+  components?: unknown,
+) => StatusPageNoticeView | null;
 
 interface StatusPageNoticeProps {
+  readonly componentsUrl?: string;
   readonly enabled: boolean;
   readonly icon: ComponentType<SVGProps<SVGSVGElement>>;
   readonly pageName: string;
   readonly pageUrl: string;
-  readonly resolveNotice: (input: unknown) => StatusPageNoticeView | null;
+  readonly resolveNotice: StatusPageNoticeResolver;
   readonly summaryUrl: string;
+}
+
+interface StatusPageNoticeFetchOptions {
+  readonly componentsUrl: string | undefined;
+  readonly resolveNotice: StatusPageNoticeResolver;
+  readonly signal: AbortSignal;
+  readonly summaryUrl: string;
+}
+
+interface StatusPageNoticeLoad {
+  readonly notice: StatusPageNoticeView | null;
+  readonly enrichment: Promise<StatusPageNoticeView | null | undefined> | undefined;
+}
+
+function fetchOptionalStatusPageJson(url: string, signal: AbortSignal): Promise<unknown> {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (signal.aborted) controller.abort();
+  else signal.addEventListener("abort", abort, { once: true });
+  const timeout = globalThis.setTimeout(() => controller.abort(), STATUS_COMPONENTS_TIMEOUT_MS);
+
+  return fetch(url, {
+    headers: { Accept: "application/json" },
+    signal: controller.signal,
+  })
+    .then((response) => (response.ok ? response.json() : undefined))
+    .catch((): undefined => undefined)
+    .finally(() => {
+      globalThis.clearTimeout(timeout);
+      signal.removeEventListener("abort", abort);
+    });
+}
+
+/** Returns undefined when the summary is unusable, preserving the last known notice. */
+export async function fetchStatusPageNotice({
+  componentsUrl,
+  resolveNotice,
+  signal,
+  summaryUrl,
+}: StatusPageNoticeFetchOptions): Promise<StatusPageNoticeLoad | undefined> {
+  const response = await fetch(summaryUrl, {
+    headers: { Accept: "application/json" },
+    signal,
+  });
+  if (!response.ok) return undefined;
+
+  const summary: unknown = await response.json();
+  if (!isStatusPageSummary(summary)) return undefined;
+  const notice = resolveNotice(summary);
+
+  return {
+    notice,
+    enrichment: componentsUrl
+      ? fetchOptionalStatusPageJson(componentsUrl, signal).then((components) =>
+          components === undefined ? undefined : resolveNotice(summary, components),
+        )
+      : undefined,
+  };
 }
 
 function componentKey(name: string): string {
@@ -98,6 +166,7 @@ function StatusPageTooltip({
 }
 
 export function StatusPageNotice({
+  componentsUrl,
   enabled,
   icon: Icon,
   pageName,
@@ -115,22 +184,36 @@ export function StatusPageNotice({
     let activeRequest: AbortController | undefined;
 
     const refresh = async () => {
-      activeRequest = new AbortController();
+      const request = new AbortController();
+      activeRequest = request;
+      let enrichmentStarted = false;
       try {
-        const response = await fetch(summaryUrl, {
-          headers: { Accept: "application/json" },
-          signal: activeRequest.signal,
+        const loaded = await fetchStatusPageNotice({
+          componentsUrl,
+          resolveNotice,
+          signal: request.signal,
+          summaryUrl,
         });
-        if (!response.ok) return;
-        const summary: unknown = await response.json();
-        if (!cancelled) {
-          setNotice(resolveNotice(summary));
+        if (!cancelled && loaded !== undefined) {
+          setNotice(loaded.notice);
+          if (loaded.enrichment) {
+            enrichmentStarted = true;
+            void loaded.enrichment
+              .then((enrichedNotice) => {
+                if (!cancelled && enrichedNotice !== undefined) {
+                  setNotice(enrichedNotice);
+                }
+              })
+              .finally(() => {
+                if (activeRequest === request) activeRequest = undefined;
+              });
+          }
         }
       } catch {
         // A missing status response is not evidence of an outage. Keep the
         // most recent known state and quietly try again on the next tick.
       } finally {
-        activeRequest = undefined;
+        if (!enrichmentStarted && activeRequest === request) activeRequest = undefined;
         if (!cancelled) {
           nextRefresh = window.setTimeout(refresh, STATUS_POLL_INTERVAL_MS);
         }
@@ -143,7 +226,7 @@ export function StatusPageNotice({
       activeRequest?.abort();
       if (nextRefresh !== undefined) window.clearTimeout(nextRefresh);
     };
-  }, [enabled, resolveNotice, summaryUrl]);
+  }, [componentsUrl, enabled, resolveNotice, summaryUrl]);
 
   const openStatusPage = useCallback(() => {
     void readLocalApi()

@@ -165,6 +165,24 @@ describe("ClientSettings Claude status alerts", () => {
   });
 });
 
+describe("ClientSettings OpenAI/Codex status alerts", () => {
+  it("defaults the alerts on", () => {
+    expect(decodeClientSettings({}).openaiStatusAlertsEnabled).toBe(true);
+  });
+
+  it("accepts the setting in stored settings and patches", () => {
+    expect(
+      decodeClientSettings({ openaiStatusAlertsEnabled: true }).openaiStatusAlertsEnabled,
+    ).toBe(true);
+    expect(decodeClientSettingsPatch({ openaiStatusAlertsEnabled: true })).toEqual({
+      openaiStatusAlertsEnabled: true,
+    });
+    expect(
+      decodeClientSettings({ openaiStatusAlertsEnabled: false }).openaiStatusAlertsEnabled,
+    ).toBe(false);
+  });
+});
+
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   it("defaults text generation to Luna at low reasoning effort", () => {
     expect(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection).toEqual({
