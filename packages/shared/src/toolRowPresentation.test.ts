@@ -21,6 +21,54 @@ describe("deriveToolRowPresentation", () => {
     expect(claude?.argument).toEqual({ kind: "command", value: "vp test run" });
   });
 
+  it("treats OpenCode's raw tool title as identity, not presentation", () => {
+    expect(
+      deriveToolRowPresentation({
+        toolName: "edit",
+        itemType: "file_change",
+        label: "edit",
+        input: { file_path: "/repo/src/app.ts" },
+      }),
+    ).toEqual({
+      heading: "Edited file",
+      argument: { kind: "path", value: "/repo/src/app.ts" },
+    });
+  });
+
+  it("normalizes OpenCode read and grep names", () => {
+    expect(
+      deriveToolRowPresentation({
+        toolName: "read",
+        itemType: "dynamic_tool_call",
+        label: "read",
+        input: { file_path: "/repo/src/app.ts" },
+      }),
+    ).toEqual({ heading: "Read", argument: { kind: "path", value: "/repo/src/app.ts" } });
+    expect(
+      deriveToolRowPresentation({
+        toolName: "grep",
+        itemType: "dynamic_tool_call",
+        label: "grep",
+        input: { pattern: "worker" },
+      }),
+    ).toEqual({ heading: "Grep", argument: { kind: "text", value: "worker" } });
+  });
+
+  it("describes failed edits as failures", () => {
+    expect(
+      deriveToolRowPresentation({
+        toolName: "edit",
+        itemType: "file_change",
+        label: "edit",
+        input: { file_path: "/repo/src/app.ts" },
+        failed: true,
+      }),
+    ).toEqual({
+      heading: "Edit failed",
+      argument: { kind: "path", value: "/repo/src/app.ts" },
+    });
+  });
+
   it("names unknown tools after themselves instead of 'Tool call'", () => {
     expect(
       deriveToolRowPresentation({
