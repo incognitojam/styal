@@ -92,6 +92,7 @@ function makePoolLayer(
           handleBackendReady: () => Effect.void,
           handleBackendNotReady: Effect.void,
           flushMainWindowBounds: Effect.void,
+          closeMainForShutdown: Effect.void,
           dispatchMenuAction: () => Effect.die("unexpected menu action"),
           zoomMain: () => Effect.die("unexpected zoom"),
           syncAppearance: Effect.void,

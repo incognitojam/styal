@@ -81,6 +81,10 @@ export class ElectronApp extends Context.Service<
       eventName: string,
       listener: (...args: Args) => void,
     ) => Effect.Effect<void, never, Scope.Scope>;
+    readonly once: <Args extends ReadonlyArray<unknown>>(
+      eventName: string,
+      listener: (...args: Args) => void,
+    ) => Effect.Effect<void>;
   }
 >()("@t3tools/desktop/electron/ElectronApp") {}
 
@@ -208,6 +212,10 @@ export const make = ElectronApp.of({
       Electron.app.commandLine.removeSwitch(switchName);
     }),
   on: addScopedAppListener,
+  once: (eventName, listener) =>
+    Effect.sync(() => {
+      Electron.app.once(eventName as any, listener as any);
+    }),
 });
 
 export const layer = Layer.succeed(ElectronApp, make);
