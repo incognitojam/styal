@@ -1,17 +1,17 @@
 import * as Schema from "effect/Schema";
 
+const StatusPageComponentSchema = Schema.Struct({
+  name: Schema.String,
+  status: Schema.String,
+  showcase: Schema.optional(Schema.Boolean),
+});
+
 const StatusPageSummarySchema = Schema.Struct({
   status: Schema.Struct({
     description: Schema.String,
     indicator: Schema.String,
   }),
-  components: Schema.Array(
-    Schema.Struct({
-      name: Schema.String,
-      status: Schema.String,
-      showcase: Schema.optional(Schema.Boolean),
-    }),
-  ),
+  components: Schema.Array(StatusPageComponentSchema),
   incidents: Schema.optional(
     Schema.Array(
       Schema.Struct({
@@ -32,6 +32,13 @@ const StatusPageSummarySchema = Schema.Struct({
 });
 
 const decodeStatusPageSummary = Schema.decodeUnknownOption(StatusPageSummarySchema);
+const decodeStatusPageComponents = Schema.decodeUnknownOption(
+  Schema.Struct({ components: Schema.Array(StatusPageComponentSchema) }),
+);
+
+export function isStatusPageSummary(input: unknown): boolean {
+  return decodeStatusPageSummary(input)._tag === "Some";
+}
 
 export type StatusPageNoticeTone = "warning" | "error";
 
@@ -57,6 +64,19 @@ export interface StatusPageNotice {
   readonly tone: StatusPageNoticeTone;
 }
 
+/**
+ * Applies a complete component listing to a status summary. Some status pages
+ * omit recently added components from `summary.json` while exposing them from
+ * `components.json`.
+ */
+export function withStatusPageComponents(summaryInput: unknown, componentsInput: unknown): unknown {
+  const summary = decodeStatusPageSummary(summaryInput);
+  const components = decodeStatusPageComponents(componentsInput);
+  if (summary._tag === "None" || components._tag === "None") return null;
+
+  return { ...summary.value, components: components.value.components };
+}
+
 function componentStatusLabel(status: string): string {
   switch (status) {
     case "degraded_performance":
@@ -74,6 +94,29 @@ function componentStatusLabel(status: string): string {
 
 function isErrorStatus(status: string): boolean {
   return status === "partial_outage" || status === "major_outage";
+}
+
+function componentStatusSeverity(status: string): number {
+  switch (status) {
+    case "major_outage":
+      return 4;
+    case "partial_outage":
+      return 3;
+    case "degraded_performance":
+      return 2;
+    case "under_maintenance":
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+function componentNameKey(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function deduplicateNames(names: ReadonlyArray<string>): ReadonlyArray<string> {
+  return [...new Map(names.map((name) => [componentNameKey(name), name])).values()];
 }
 
 function incidentStatusLabel(status: string): string {
@@ -110,24 +153,35 @@ export function resolveStatusPageNotice(
     .filter((incident) => isActiveIncidentStatus(incident.status))
     .map(
       (incident): StatusPageIncidentIssue => ({
-        affectedComponents: (incident.components ?? [])
-          .filter((component) => component.showcase !== false)
-          .map((component) => component.name),
+        affectedComponents: deduplicateNames(
+          (incident.components ?? [])
+            .filter((component) => component.showcase !== false)
+            .map((component) => component.name),
+        ),
         impact: incident.impact,
         name: incident.name,
         status: incident.status,
         statusLabel: incidentStatusLabel(incident.status),
       }),
     );
-  const affectedComponents = summary.components
-    .filter((component) => component.showcase !== false && component.status !== "operational")
-    .map(
-      (component): StatusPageComponentIssue => ({
-        name: component.name,
-        status: component.status,
-        statusLabel: componentStatusLabel(component.status),
-      }),
-    );
+  const affectedComponentsByName = new Map<string, StatusPageComponentIssue>();
+  for (const component of summary.components) {
+    if (component.showcase === false || component.status === "operational") continue;
+    const issue: StatusPageComponentIssue = {
+      name: component.name,
+      status: component.status,
+      statusLabel: componentStatusLabel(component.status),
+    };
+    const key = componentNameKey(component.name);
+    const existing = affectedComponentsByName.get(key);
+    if (
+      !existing ||
+      componentStatusSeverity(issue.status) > componentStatusSeverity(existing.status)
+    ) {
+      affectedComponentsByName.set(key, issue);
+    }
+  }
+  const affectedComponents = [...affectedComponentsByName.values()];
 
   if (
     summary.status.indicator === "none" &&

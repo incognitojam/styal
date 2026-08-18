@@ -2020,6 +2020,20 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
+          {...searchableSetting("openai-codex-outage-alerts")}
+          description="Shows affected services in the sidebar during incidents, based on OpenAI's official status page."
+          control={
+            <Switch
+              checked={settings.openaiStatusAlertsEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ openaiStatusAlertsEnabled: Boolean(checked) })
+              }
+              aria-label="Enable OpenAI outage alerts"
+            />
+          }
+        />
+
+        <SettingsRow
           {...searchableSetting("time-format")}
           description="System default follows your browser or OS clock preference."
           resetAction={
