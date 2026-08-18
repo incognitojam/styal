@@ -218,6 +218,11 @@ export function BrowserDeviceToolbar({
       <form
         className="m-0 flex min-w-0 shrink-0 items-center gap-0.5 border-0 p-0"
         aria-label="Viewport dimensions"
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+          event.preventDefault();
+          applyCustomSize();
+        }}
         onSubmit={(event) => {
           event.preventDefault();
           applyCustomSize();
