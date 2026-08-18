@@ -70,6 +70,7 @@ function collectChangedFiles(
     "item",
     "result",
     "input",
+    "state",
     "data",
     "changes",
     "files",
@@ -227,6 +228,31 @@ export function projectToolInput(value: unknown): Record<string, unknown> | unde
     }
   }
   return Object.keys(projected).length > 0 ? projected : undefined;
+}
+
+function projectToolIdentity(data: Record<string, unknown>): Record<string, unknown> {
+  const toolName = asTrimmedString(data.toolName) ?? asTrimmedString(data.tool);
+  const input = projectToolInput(data.input ?? asRecord(data.state)?.input);
+  return {
+    ...(toolName ? { toolName } : {}),
+    ...(input ? { input } : {}),
+  };
+}
+
+function toolLifecycleStatusFromProviderState(
+  data: Record<string, unknown>,
+): "inProgress" | "completed" | "failed" | undefined {
+  switch (asTrimmedString(asRecord(data.state)?.status)) {
+    case "pending":
+    case "running":
+      return "inProgress";
+    case "completed":
+      return "completed";
+    case "error":
+      return "failed";
+    default:
+      return undefined;
+  }
 }
 
 /**
@@ -590,17 +616,9 @@ export function projectActivityPayload(
     projectedData.kind = data.kind;
   }
 
-  // The tool's own name is the only signal that distinguishes a Read from a
-  // Skill from a SendMessage: itemType collapses all three into
-  // `dynamic_tool_call`, and the adapters' titles say "Tool call" for every
-  // one of them. Clients name rows from this (`deriveToolRowPresentation`).
-  if ("toolName" in data) {
-    projectedData.toolName = data.toolName;
-  }
-  const toolInput = projectToolInput(data.input);
-  if (toolInput) {
-    projectedData.input = toolInput;
-  }
+  // The tool's own name distinguishes calls that share an item type. This
+  // also normalizes legacy OpenCode `{ tool, state: { input } }` payloads.
+  Object.assign(projectedData, projectToolIdentity(data));
 
   const rawOutput = projectRawOutput(data.rawOutput) ?? projectAcpContent(data.content);
   if (rawOutput) {
@@ -611,6 +629,12 @@ export function projectActivityPayload(
     ...payload,
     data: projectedData,
   };
+  if (!("status" in payload)) {
+    const status = toolLifecycleStatusFromProviderState(data);
+    if (status) {
+      projectedPayload.status = status;
+    }
+  }
   if (payload.itemType === "command_execution") {
     const state = asRecord(data.state);
     if (payload.detail === state?.output || payload.detail === state?.error) {
