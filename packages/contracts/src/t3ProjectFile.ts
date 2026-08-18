@@ -42,18 +42,6 @@ export const T3ProjectFileScript = Schema.Struct({
         "When true, the script runs automatically after a worktree is created for a new thread.",
     }),
   ),
-  previewUrl: Schema.optionalKey(
-    trimmedNonEmpty({
-      description:
-        "URL opened in the in-app browser preview when this script runs. Only honored on the desktop build.",
-    }),
-  ),
-  autoOpenPreview: Schema.optionalKey(
-    Schema.Boolean.annotate({
-      description:
-        "When true, automatically open the preview panel at `previewUrl` the moment the script starts.",
-    }),
-  ),
 }).annotate({
   description: "A project script that team members can import into T3 Code.",
 });
