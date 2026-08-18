@@ -227,3 +227,10 @@ If the preset needs different Claude files, give it a different `CLAUDE_CONFIG_D
 different API keys, base URLs, or router settings, use Environment variables.
 
 Do not put environment variable assignments in `Launch arguments`.
+
+## Claude Is Unexpectedly Failing
+
+**Claude outage alerts** are enabled by default and can be managed in **Settings → Beta**. When
+Anthropic reports a Claude service disruption, T3 Code shows the affected services above
+**Settings** in the web and desktop sidebar. Select the notice to open the official Claude Status
+page.
