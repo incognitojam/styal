@@ -47,6 +47,7 @@ function makeElectronAppLayer(
     removeCommandLineSwitch: () => Effect.void,
     onBeforeQuitForUpdate: () => Effect.void,
     on: () => Effect.void,
+    once: () => Effect.void,
   } satisfies ElectronApp.ElectronApp["Service"]);
 }
 

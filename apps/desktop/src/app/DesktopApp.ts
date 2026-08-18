@@ -1,4 +1,5 @@
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -65,6 +66,8 @@ const { logInfo: logBootstrapInfo, logWarning: logBootstrapWarning } =
 
 const { logInfo: logStartupInfo, logError: logStartupError } =
   DesktopObservability.makeComponentLogger("desktop-startup");
+
+const { logInfo: logShutdownInfo } = DesktopObservability.makeComponentLogger("desktop-shutdown");
 
 const resolveDesktopBackendPort = Effect.fn("resolveDesktopBackendPort")(function* (
   configuredPort: Option.Option<number>,
@@ -307,10 +310,36 @@ const scopedProgram = Effect.scoped(
         // finalizer means it gets hard-killed by the OS instead of
         // receiving SIGTERM + grace. Stops run concurrently.
         const instances = yield* pool.list;
-        yield* Effect.forEach(instances, (instance) => instance.stop(), {
-          concurrency: "unbounded",
+        const shutdownStartedAt = yield* Clock.currentTimeMillis;
+        yield* logShutdownInfo("stopping desktop backends", {
+          instanceIds: instances.map((instance) => instance.id),
         });
-      }).pipe(Effect.ensuring(shutdown.markComplete)),
+        yield* Effect.forEach(
+          instances,
+          (instance) =>
+            Effect.gen(function* () {
+              const stopStartedAt = yield* Clock.currentTimeMillis;
+              yield* logShutdownInfo("stopping desktop backend", { instanceId: instance.id });
+              yield* instance.stop();
+              yield* logShutdownInfo("desktop backend stopped", {
+                instanceId: instance.id,
+                elapsedMs: (yield* Clock.currentTimeMillis) - stopStartedAt,
+              });
+            }).pipe(
+              Effect.withSpan("desktop.app.shutdownBackend", {
+                attributes: { instanceId: instance.id },
+              }),
+            ),
+          { concurrency: "unbounded" },
+        );
+        yield* logShutdownInfo("desktop backends stopped", {
+          elapsedMs: (yield* Clock.currentTimeMillis) - shutdownStartedAt,
+        });
+      }).pipe(
+        Effect.withSpan("desktop.app.shutdownBackends"),
+        Effect.andThen(DesktopObservability.flushTrace),
+        Effect.ensuring(shutdown.markComplete),
+      ),
     );
 
     yield* startup;

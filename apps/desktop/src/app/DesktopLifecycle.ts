@@ -1,3 +1,4 @@
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -8,7 +9,7 @@ import * as Scope from "effect/Scope";
 import type * as Electron from "electron";
 
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
-import { makeComponentLogger } from "./DesktopObservability.ts";
+import * as DesktopObservability from "./DesktopObservability.ts";
 import * as DesktopShutdown from "./DesktopShutdown.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
@@ -30,6 +31,7 @@ export class DesktopLifecycleRelaunchError extends Schema.TaggedErrorClass<Deskt
 
 export type DesktopLifecycleRuntimeServices =
   | DesktopEnvironment.DesktopEnvironment
+  | DesktopObservability.DesktopTrace
   | DesktopShutdown.DesktopShutdown
   | DesktopState.DesktopState
   | DesktopWindow.DesktopWindow
@@ -41,7 +43,7 @@ type DesktopLifecycleRegistrationServices =
   | ElectronWindow.ElectronWindow;
 
 /**
- * @effect-expect-leaking DesktopEnvironment | DesktopShutdown | DesktopState | DesktopWindow | ElectronApp | ElectronTheme | ElectronWindow
+ * @effect-expect-leaking DesktopEnvironment | DesktopShutdown | DesktopState | DesktopTrace | DesktopWindow | ElectronApp | ElectronTheme | ElectronWindow
  */
 export class DesktopLifecycle extends Context.Service<
   DesktopLifecycle,
@@ -58,7 +60,7 @@ export class DesktopLifecycle extends Context.Service<
 >()("@t3tools/desktop/app/DesktopLifecycle") {}
 
 const { logInfo: logLifecycleInfo, logError: logLifecycleError } =
-  makeComponentLogger("desktop-lifecycle");
+  DesktopObservability.makeComponentLogger("desktop-lifecycle");
 
 function addScopedListener<Args extends ReadonlyArray<unknown>>(
   target: unknown,
@@ -83,14 +85,75 @@ function addScopedListener<Args extends ReadonlyArray<unknown>>(
 
 const requestDesktopShutdownAndWait = Effect.fn("desktop.lifecycle.requestShutdownAndWait")(
   function* (
-    afterBoundsFlush: Effect.Effect<void> = Effect.void,
-  ): Effect.fn.Return<void, never, DesktopShutdown.DesktopShutdown | DesktopWindow.DesktopWindow> {
+    afterMainWindowClose: Effect.Effect<void> = Effect.void,
+  ): Effect.fn.Return<
+    number,
+    never,
+    DesktopShutdown.DesktopShutdown | DesktopWindow.DesktopWindow
+  > {
     const shutdown = yield* DesktopShutdown.DesktopShutdown;
     const desktopWindow = yield* DesktopWindow.DesktopWindow;
+    const shutdownStartedAt = yield* Clock.currentTimeMillis;
+    yield* logLifecycleInfo("desktop shutdown requested");
     yield* desktopWindow.flushMainWindowBounds;
-    yield* afterBoundsFlush;
+    yield* logLifecycleInfo("desktop shutdown window bounds flushed", {
+      elapsedMs: (yield* Clock.currentTimeMillis) - shutdownStartedAt,
+    });
+    yield* desktopWindow.closeMainForShutdown;
+    yield* logLifecycleInfo("desktop shutdown main window closed", {
+      elapsedMs: (yield* Clock.currentTimeMillis) - shutdownStartedAt,
+    });
+    yield* afterMainWindowClose;
     yield* shutdown.request;
-    yield* shutdown.awaitComplete;
+    yield* logLifecycleInfo("desktop shutdown waiting for application cleanup", {
+      elapsedMs: (yield* Clock.currentTimeMillis) - shutdownStartedAt,
+    });
+    yield* shutdown.awaitComplete.pipe(Effect.withSpan("desktop.lifecycle.awaitShutdownComplete"));
+    yield* logLifecycleInfo("desktop shutdown application cleanup complete", {
+      elapsedMs: (yield* Clock.currentTimeMillis) - shutdownStartedAt,
+    });
+    return shutdownStartedAt;
+  },
+);
+
+const recordQuitMilestone = Effect.fnUntraced(function* (
+  phase: "requesting-electron-quit" | "electron-quit-request-returned" | "electron-will-quit",
+  message: string,
+  shutdownStartedAt: number | undefined,
+) {
+  const now = yield* Clock.currentTimeMillis;
+  const timing =
+    shutdownStartedAt === undefined
+      ? { shutdownStartedAtKnown: false }
+      : { shutdownStartedAtKnown: true, elapsedMs: now - shutdownStartedAt };
+  yield* logLifecycleInfo(message, timing).pipe(
+    Effect.withSpan("desktop.lifecycle.quitMilestone", {
+      attributes: { phase, ...timing },
+    }),
+  );
+  yield* DesktopObservability.flushTrace;
+});
+
+const quitElectronAfterShutdown = Effect.fn("desktop.lifecycle.quitElectronAfterShutdown")(
+  function* (
+    shutdownStartedAt: number | undefined,
+    runSync: <A, E>(effect: Effect.Effect<A, E, DesktopLifecycleRuntimeServices>) => A,
+  ) {
+    const electronApp = yield* ElectronApp.ElectronApp;
+    yield* electronApp.once("will-quit", () => {
+      runSync(recordQuitMilestone("electron-will-quit", "Electron will quit", shutdownStartedAt));
+    });
+    yield* recordQuitMilestone(
+      "requesting-electron-quit",
+      "requesting Electron quit",
+      shutdownStartedAt,
+    );
+    yield* electronApp.quit;
+    yield* recordQuitMilestone(
+      "electron-quit-request-returned",
+      "Electron quit request returned",
+      shutdownStartedAt,
+    );
   },
 );
 
@@ -99,6 +162,7 @@ function handleBeforeQuit(
   runEffect: <A, E>(
     effect: Effect.Effect<A, E, DesktopLifecycleRegistrationServices>,
   ) => Promise<A>,
+  runSync: <A, E>(effect: Effect.Effect<A, E, DesktopLifecycleRuntimeServices>) => A,
   allowQuit: () => boolean,
   markQuitAllowed: () => void,
 ): void {
@@ -114,27 +178,26 @@ function handleBeforeQuit(
   }
 
   event.preventDefault();
-  void runEffect(
-    Effect.gen(function* () {
-      const state = yield* DesktopState.DesktopState;
-      const electronWindow = yield* ElectronWindow.ElectronWindow;
-      yield* Ref.set(state.quitting, true);
-      yield* logLifecycleInfo("before-quit received");
-      yield* requestDesktopShutdownAndWait(
-        electronWindow.destroyAll.pipe(
-          Effect.catchCause((cause) =>
-            logLifecycleError("failed to destroy windows before shutdown", { cause }),
-          ),
+  let shutdownStartedAt: number | undefined;
+  const shutdownEffect = Effect.gen(function* () {
+    const state = yield* DesktopState.DesktopState;
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    yield* Ref.set(state.quitting, true);
+    yield* logLifecycleInfo("before-quit received");
+    shutdownStartedAt = yield* requestDesktopShutdownAndWait(
+      electronWindow.destroyAll.pipe(
+        Effect.catchCause((cause) =>
+          logLifecycleError("failed to destroy remaining windows before shutdown", { cause }),
         ),
-      );
-    }).pipe(Effect.withSpan("desktop.lifecycle.beforeQuit")),
-  ).finally(() => {
+      ),
+    );
+  }).pipe(Effect.withSpan("desktop.lifecycle.beforeQuit"));
+  void runEffect(Effect.andThen(shutdownEffect, DesktopObservability.flushTrace)).finally(() => {
     markQuitAllowed();
     void runEffect(
-      Effect.gen(function* () {
-        const electronApp = yield* ElectronApp.ElectronApp;
-        yield* electronApp.quit;
-      }).pipe(Effect.withSpan("desktop.lifecycle.quitAfterShutdown")),
+      quitElectronAfterShutdown(shutdownStartedAt, runSync).pipe(
+        Effect.andThen(DesktopObservability.flushTrace),
+      ),
     );
   });
 }
@@ -144,18 +207,23 @@ function quitFromSignal(
   runEffect: <A, E>(
     effect: Effect.Effect<A, E, DesktopLifecycleRegistrationServices>,
   ) => Promise<A>,
+  runSync: <A, E>(effect: Effect.Effect<A, E, DesktopLifecycleRuntimeServices>) => A,
+  markQuitAllowed: () => void,
 ): void {
   void runEffect(
     Effect.gen(function* () {
       yield* Effect.annotateCurrentSpan({ signal });
-      const electronApp = yield* ElectronApp.ElectronApp;
       const state = yield* DesktopState.DesktopState;
       const wasQuitting = yield* Ref.getAndSet(state.quitting, true);
       if (wasQuitting) return;
       yield* logLifecycleInfo("process signal received", { signal });
-      yield* requestDesktopShutdownAndWait();
-      yield* electronApp.quit;
-    }).pipe(Effect.withSpan("desktop.lifecycle.processSignal")),
+      const shutdownStartedAt = yield* requestDesktopShutdownAndWait();
+      markQuitAllowed();
+      yield* quitElectronAfterShutdown(shutdownStartedAt, runSync);
+    }).pipe(
+      Effect.withSpan("desktop.lifecycle.processSignal"),
+      Effect.andThen(DesktopObservability.flushTrace),
+    ),
   );
 }
 
@@ -169,6 +237,7 @@ export const make = DesktopLifecycle.of({
       yield* Effect.yieldNow;
       yield* Ref.set(state.quitting, true);
       yield* requestDesktopShutdownAndWait();
+      yield* DesktopObservability.flushTrace;
       if (environment.isDevelopment) {
         yield* electronApp.exit(75);
         return;
@@ -194,6 +263,7 @@ export const make = DesktopLifecycle.of({
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const context = yield* Effect.context<DesktopLifecycleRegistrationServices>();
     const runEffect = Effect.runPromiseWith(context);
+    const runSync = Effect.runSyncWith(context);
     let quitAllowed = false;
     let updaterQuitAllowed = false;
     yield* electronTheme.onUpdated(() => {
@@ -216,6 +286,7 @@ export const make = DesktopLifecycle.of({
       handleBeforeQuit(
         event,
         runEffect,
+        runSync,
         () => quitAllowed || updaterQuitAllowed,
         () => {
           quitAllowed = true;
@@ -245,10 +316,14 @@ export const make = DesktopLifecycle.of({
 
     if (environment.platform !== "win32") {
       yield* addScopedListener(process, "SIGINT", () => {
-        quitFromSignal("SIGINT", runEffect);
+        quitFromSignal("SIGINT", runEffect, runSync, () => {
+          quitAllowed = true;
+        });
       });
       yield* addScopedListener(process, "SIGTERM", () => {
-        quitFromSignal("SIGTERM", runEffect);
+        quitFromSignal("SIGTERM", runEffect, runSync, () => {
+          quitAllowed = true;
+        });
       });
     }
   }).pipe(Effect.withSpan("desktop.lifecycle.register")),
