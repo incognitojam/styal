@@ -16,6 +16,7 @@ import {
   CircleDashedIcon,
   CircleDotIcon,
   CircleHelpIcon,
+  GitPullRequestDraftIcon,
   HammerIcon,
   ShieldAlertIcon,
 } from "lucide-react";
@@ -41,6 +42,12 @@ function isFailing(check: PullRequestCheck): boolean {
 }
 
 const MERGE_POLICY_PRESENTATION = {
+  draft: {
+    label: "Draft",
+    compactLabel: "Draft",
+    Icon: GitPullRequestDraftIcon,
+    toneClassName: "text-zinc-500 dark:text-zinc-400/80",
+  },
   ready: {
     label: "Ready to merge",
     compactLabel: "Ready",
@@ -57,14 +64,32 @@ const MERGE_POLICY_PRESENTATION = {
 
 export function pullRequestMergeVerdict({
   checks,
+  isDraft = false,
   mergeReadiness,
   compact = false,
 }: {
   checks: ReadonlyArray<PullRequestCheck>;
+  isDraft?: boolean;
   mergeReadiness?: PullRequestMergeReadiness | undefined;
   compact?: boolean;
 }) {
   const checksSummary = summarizePullRequestChecks(checks);
+  if (isDraft) {
+    const presentation = MERGE_POLICY_PRESENTATION.draft;
+    const allPassed = checks.every((check) => check.status === "success");
+    const health = allPassed
+      ? null
+      : compact
+        ? checksSummary.replace(/^(\d+) of \d+ /, "$1 ")
+        : checksSummary;
+    return {
+      policy: "draft",
+      label: compact ? presentation.compactLabel : presentation.label,
+      Icon: presentation.Icon,
+      toneClassName: presentation.toneClassName,
+      health,
+    } as const;
+  }
   if (mergeReadiness !== "ready" && mergeReadiness !== "blocked") {
     return { policy: null, label: checksSummary, health: null } as const;
   }
@@ -89,15 +114,17 @@ export function pullRequestMergeVerdict({
 /** The tab bar's at-a-glance result doubles as the shortest route into the checks themselves. */
 export function PullRequestChecksNavButton({
   checks,
+  isDraft = false,
   mergeReadiness,
   onSelect,
 }: {
   checks: ReadonlyArray<PullRequestCheck>;
+  isDraft?: boolean;
   /** The host's repository-policy-aware merge verdict, where it exposes one. */
   mergeReadiness?: PullRequestMergeReadiness | undefined;
   onSelect: () => void;
 }) {
-  const verdict = pullRequestMergeVerdict({ checks, mergeReadiness });
+  const verdict = pullRequestMergeVerdict({ checks, isDraft, mergeReadiness });
   const state = pullRequestChecksState(checks);
   const checksPresentation = state === null ? null : pullRequestChecksStatePresentation(state);
   const Icon = verdict.policy === null ? (checksPresentation?.Icon ?? CircleDotIcon) : verdict.Icon;
@@ -136,12 +163,14 @@ export function PullRequestChecksNavButton({
 
 export function PullRequestChecksTab({
   checks,
+  isDraft = false,
   mergeReadiness,
   pendingFinding,
   fixCheckLabel = "Fix",
   onFixFinding,
 }: {
   checks: ReadonlyArray<PullRequestCheck>;
+  isDraft?: boolean;
   /** The host's repository-policy-aware merge verdict, where it exposes one. */
   mergeReadiness?: PullRequestMergeReadiness | undefined;
   /** The hand-off currently preparing, if any, so only the check it belongs to says so. */
@@ -153,8 +182,9 @@ export function PullRequestChecksTab({
   // Null for a set nobody can call passed or failed — every run skipped, say. The list still
   // reads, but there is no verdict to head it with.
   const rollup = state === null ? null : pullRequestChecksStatePresentation(state);
-  const mergePresentation =
-    mergeReadiness === undefined
+  const mergePresentation = isDraft
+    ? MERGE_POLICY_PRESENTATION.draft
+    : mergeReadiness === undefined
       ? null
       : mergeReadiness === "ready"
         ? {
