@@ -437,6 +437,11 @@ describe("application mouse reporting", () => {
       motionData: "\u001b[<35;8;4M",
     });
   });
+
+  it("only shows link hover when the link activation modifier is held", () => {
+    expect(shouldShowTerminalLinkHover(false)).toBe(false);
+    expect(shouldShowTerminalLinkHover(true)).toBe(true);
+  });
 });
 
 describe("terminal font resolution", () => {
