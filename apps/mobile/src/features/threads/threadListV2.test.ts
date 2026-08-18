@@ -316,6 +316,15 @@ describe("sortThreadsForListV2", () => {
     ]);
     expect(sorted.map((thread) => thread.id)).toEqual(["old-unsettled", "newest", "middle"]);
   });
+
+  it("clusters same-worktree threads at the newest member's slot, original first — parity with web", () => {
+    const sorted = sortThreadsForListV2([
+      { id: "feature", createdAt: "2026-06-01T08:00:00.000Z", worktreePath: "/wt/feature" },
+      { id: "unrelated", createdAt: "2026-06-01T10:00:00.000Z" },
+      { id: "review", createdAt: "2026-06-01T12:00:00.000Z", worktreePath: "/wt/feature" },
+    ]);
+    expect(sorted.map((thread) => thread.id)).toEqual(["feature", "review", "unrelated"]);
+  });
 });
 
 describe("buildThreadListV2Items", () => {
