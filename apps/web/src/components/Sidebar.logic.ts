@@ -550,19 +550,19 @@ export function firstValidTimestamp(
   return null;
 }
 
-// Sidebar sort: static creation order, newest thread on top. Activity NEVER
-// reorders the list — a row holds its position from open until settled, so
-// the screen only moves at lifecycle transitions. Status (including pending
-// approval) is carried by each card's edge strip, not by position.
-export function sortThreadsForSidebar<
-  T extends { readonly id: string; readonly createdAt: string },
->(threads: readonly T[]): T[] {
-  return [...threads].toSorted(
-    (left, right) =>
-      parseTimestampMs(right.createdAt) - parseTimestampMs(left.createdAt) ||
-      left.id.localeCompare(right.id),
-  );
-}
+// Sidebar sort: static creation order, newest thread on top, with
+// same-workspace threads (shared worktree, or an explicitly picked branch on
+// the local checkout) clustered together — the original thread first,
+// spawned follow-ups beneath it. Activity NEVER reorders the list — a row
+// holds its position from open until settled, so the screen only moves at
+// lifecycle transitions (and when the user creates a sibling thread, which
+// pulls the family up beside it). Status (including pending approval) is
+// carried by each card's edge strip, not by position. Lives in
+// client-runtime so web and mobile compute identical inbox orders.
+export {
+  sortThreadsByWorkspaceCluster as sortThreadsForSidebar,
+  threadWorkspaceKey,
+} from "@t3tools/client-runtime/state/thread-sort";
 
 // Pinned-reorder key math and the keyed sort live in client-runtime
 // (state/thread-sort) so web and mobile compute identical pinned orders.

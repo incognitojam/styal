@@ -143,6 +143,7 @@ import {
   sortPinnedThreadsForSidebar,
   sortSettledThreadsForSidebar,
   sortThreadsForSidebar,
+  threadWorkspaceKey,
 } from "./Sidebar.logic";
 import { resolveLocalCheckoutBranchMismatch } from "./BranchToolbar.logic";
 import {
@@ -714,6 +715,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // sortable bag applied to the card root so the whole card drags (the
   // pointer sensor's distance constraint keeps plain clicks working).
   sortable?: SortablePinnedRowBag | undefined;
+  // Active-inbox workspace clusters: a child row shares its worktree/branch
+  // with the row above (spawned code review, follow-up fix) and renders
+  // indented behind a gutter line so the family reads as one body of work.
+  // The line bridges downward only while the next row is the same family.
+  clusterChild?: boolean;
+  clusterContinuesBelow?: boolean;
   // Compact wake countdown ("2h") for rows in the snoozed shelf.
   snoozeWakeLabelText: string | null;
   // When a snooze ended (timer or early wake); drives the Woke pill until
@@ -1370,8 +1377,19 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       className={cn(
         "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_96px]",
         sortable?.isDragging && "z-20 opacity-80",
+        props.clusterChild && "relative pl-3",
       )}
     >
+      {props.clusterChild ? (
+        <span
+          aria-hidden
+          data-testid="sidebar-cluster-connector"
+          className={cn(
+            "pointer-events-none absolute left-[5px] -top-0.5 w-px bg-sidebar-border",
+            props.clusterContinuesBelow ? "-bottom-0.5" : "bottom-1",
+          )}
+        />
+      ) : null}
       <Tooltip>
         <TooltipTrigger
           render={
@@ -3680,6 +3698,7 @@ export default function Sidebar() {
                     thread: EnvironmentThreadShell,
                     section: "pinned" | "active" | "snoozed" | "settled",
                     sortable?: SortablePinnedRowBag,
+                    cluster?: { child: boolean; continuesBelow: boolean },
                   ) => {
                     const threadKey = scopedThreadKey(
                       scopeThreadRef(thread.environmentId, thread.id),
@@ -3726,6 +3745,8 @@ export default function Sidebar() {
                         }
                         isPinned={section === "pinned"}
                         sortable={sortable}
+                        clusterChild={cluster?.child === true}
+                        clusterContinuesBelow={cluster?.continuesBelow === true}
                         snoozeWakeLabelText={
                           section === "snoozed" && thread.snoozedUntil != null
                             ? snoozeWakeLabel(thread.snoozedUntil, {
@@ -3836,8 +3857,17 @@ export default function Sidebar() {
                       />,
                     );
                   }
-                  for (const thread of activeThreads) {
-                    items.push(renderThreadRow(thread, "active"));
+                  // Workspace clusters arrive contiguous from the sort;
+                  // adjacency alone identifies a follow-up row (same key as
+                  // the row above) and whether the connector line continues.
+                  const activeClusterKeys = activeThreads.map(threadWorkspaceKey);
+                  for (const [index, thread] of activeThreads.entries()) {
+                    const key = activeClusterKeys[index] ?? null;
+                    const child = key !== null && key === activeClusterKeys[index - 1];
+                    const continuesBelow = key !== null && key === activeClusterKeys[index + 1];
+                    items.push(
+                      renderThreadRow(thread, "active", undefined, { child, continuesBelow }),
+                    );
                   }
                   // Snoozed shelf: between the inbox and Settled — out of the
                   // way, never gone. The header always renders while anything
