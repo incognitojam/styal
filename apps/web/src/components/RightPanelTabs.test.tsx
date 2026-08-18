@@ -46,6 +46,7 @@ function overlay(icon: DesktopPreviewFavicon | null) {
     canGoForward: false,
     loading: false,
     zoomFactor: 1,
+    viewportFallback: false,
     pictureInPicture: false,
     colorScheme: "system" as const,
     controller: "none" as const,
