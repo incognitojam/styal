@@ -908,6 +908,22 @@ describe("sortThreadsForSidebar", () => {
 
     expect(sorted.map((thread) => thread.id)).toEqual(["newest", "stale-stamp"]);
   });
+
+  it("clusters same-worktree threads at the newest member's slot, original first", () => {
+    const sorted = sortThreadsForSidebar([
+      {
+        ...sortable({ id: "feature", createdAt: "2026-03-09T08:00:00.000Z" }),
+        worktreePath: "/wt/feature",
+      },
+      sortable({ id: "unrelated", createdAt: "2026-03-09T10:00:00.000Z" }),
+      {
+        ...sortable({ id: "review", createdAt: "2026-03-09T12:00:00.000Z" }),
+        worktreePath: "/wt/feature",
+      },
+    ]);
+
+    expect(sorted.map((thread) => thread.id)).toEqual(["feature", "review", "unrelated"]);
+  });
 });
 
 describe("pinOrderKeyBetween", () => {
