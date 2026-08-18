@@ -230,6 +230,10 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
 });
 
 describe("ServerSettings worktree defaults", () => {
+  it("defaults new threads to a worktree for legacy configs", () => {
+    expect(decodeServerSettings({}).defaultThreadEnvMode).toBe("worktree");
+  });
+
   it("defaults start-from-origin on for legacy configs", () => {
     expect(decodeServerSettings({}).newWorktreesStartFromOrigin).toBe(true);
   });
