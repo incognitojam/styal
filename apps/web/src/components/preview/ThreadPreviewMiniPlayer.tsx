@@ -45,6 +45,8 @@ interface Props {
   readonly bottomInset: number;
 }
 
+const MINI_PLAYER_CONTENT_RADIUS = 13;
+
 export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props) {
   const rootRef = useRef<HTMLElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -316,29 +318,29 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
       </div>
 
       <div className="relative h-full min-h-0">
-        <div className="absolute inset-0 z-[29] rounded-xl bg-muted shadow-2xl/35" />
+        <div className="absolute inset-0 z-[29] rounded-[14px] bg-muted shadow-2xl/35" />
         <BrowserSurfaceSlot
           tabId={runtimeTabId}
           visible={Boolean(desktopOverlay?.hasWebContents)}
-          cornerRadius={12}
+          cornerRadius={MINI_PLAYER_CONTENT_RADIUS}
           fitSourceContent
           layoutVersion={
             position
               ? `${position.x}:${position.y}`
               : `initial:${bottomInset}:${defaultLayoutVersion}`
           }
-          className="absolute inset-0"
+          className="absolute inset-px"
         />
-        <div className="pointer-events-none absolute inset-0 z-[31] rounded-xl ring-1 ring-inset ring-border/80" />
+        <div className="pointer-events-none absolute inset-0 z-[31] rounded-[14px] ring-1 ring-inset ring-border/80" />
         {!desktopOverlay?.hasWebContents ? (
-          <div className="pointer-events-none absolute inset-0 z-[32] flex items-center justify-center rounded-xl bg-muted text-xs text-muted-foreground">
+          <div className="pointer-events-none absolute inset-0 z-[32] flex items-center justify-center rounded-[14px] bg-muted text-xs text-muted-foreground">
             Reconnecting preview…
           </div>
         ) : null}
         <button
           type="button"
           aria-label="Resize floating preview"
-          className="pointer-events-auto absolute bottom-0 right-0 z-[33] size-5 cursor-nwse-resize rounded-br-xl after:absolute after:bottom-1 after:right-1 after:size-2 after:border-b after:border-r after:border-foreground/45"
+          className="pointer-events-auto absolute bottom-0 right-0 z-[33] size-5 cursor-nwse-resize rounded-br-[14px] after:absolute after:bottom-1 after:right-1 after:size-2 after:border-b after:border-r after:border-foreground/45"
           onPointerDown={handleResizePointerDown}
           onPointerMove={handleResizePointerMove}
           onPointerUp={endResize}
