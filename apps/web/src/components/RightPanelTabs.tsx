@@ -13,6 +13,7 @@ import {
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactElement,
   type ReactNode,
   useCallback,
@@ -518,6 +519,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   const ownsDesktopTitleBar = isElectron && props.mode === "inline";
   const { resolvedTheme } = useTheme();
   const tabListRef = useRef<HTMLDivElement>(null);
+  const surfaceContentRef = useRef<HTMLDivElement>(null);
+  const focusSurfaceAfterMenuCloseRef = useRef(false);
 
   const handleTabContextMenu = useCallback(
     async (event: ReactMouseEvent, surface: RightPanelSurface) => {
@@ -580,6 +583,16 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     if (event.button !== 1) return;
     event.preventDefault();
   }, []);
+  const handleSurfacePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!(event.target instanceof Element)) return;
+    const focusableTarget = event.target.closest(
+      "a,button,input,select,textarea,webview,[contenteditable='true'],[tabindex]",
+    );
+    if (focusableTarget && focusableTarget !== event.currentTarget) {
+      return;
+    }
+    event.currentTarget.focus({ preventScroll: true });
+  }, []);
   const handleTabAuxClick = useCallback(
     (event: ReactMouseEvent, surface: RightPanelSurface) => {
       if (event.button !== 1) return;
@@ -589,6 +602,21 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     },
     [props],
   );
+  // Launcher controls unmount when their surface opens. Move focus to their
+  // stable parent so the panel keeps owning shortcuts such as mod+w.
+  const addSurfaceAndKeepFocus = useCallback((addSurface: () => void) => {
+    addSurface();
+    surfaceContentRef.current?.focus({ preventScroll: true });
+  }, []);
+  const addSurfaceFromMenu = useCallback((addSurface: () => void) => {
+    focusSurfaceAfterMenuCloseRef.current = true;
+    addSurface();
+  }, []);
+  const handleAddMenuOpenChangeComplete = useCallback((open: boolean) => {
+    if (open || !focusSurfaceAfterMenuCloseRef.current) return;
+    focusSurfaceAfterMenuCloseRef.current = false;
+    surfaceContentRef.current?.focus({ preventScroll: true });
+  }, []);
 
   useEffect(() => {
     const activeTab = tabListRef.current?.querySelector<HTMLElement>("[data-active-tab='true']");
@@ -613,6 +641,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           props.mode === "inline" && props.maximized && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
         )}
         data-right-panel-tabbar
+        data-right-panel-focus-boundary
       >
         <ScrollArea
           ref={tabListRef}
@@ -681,7 +710,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
               );
             })}
             {props.surfaces.length > 0 ? (
-              <Menu>
+              <Menu onOpenChangeComplete={handleAddMenuOpenChangeComplete}>
                 <MenuTrigger
                   render={
                     <Button
@@ -698,7 +727,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   <SurfaceMenuItem
                     available={props.browserAvailable}
                     disabledReason={SURFACE_DISABLED_REASONS.browser}
-                    onClick={props.onAddBrowser}
+                    onClick={() => addSurfaceFromMenu(props.onAddBrowser)}
                   >
                     <Globe2 />
                     Browser
@@ -706,7 +735,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   <SurfaceMenuItem
                     available={props.terminalAvailable}
                     disabledReason={SURFACE_DISABLED_REASONS.terminal}
-                    onClick={props.onAddTerminal}
+                    onClick={() => addSurfaceFromMenu(props.onAddTerminal)}
                   >
                     <TerminalSquare />
                     Terminal
@@ -714,7 +743,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   <SurfaceMenuItem
                     available={props.filesAvailable}
                     disabledReason={SURFACE_DISABLED_REASONS.files}
-                    onClick={props.onAddFiles}
+                    onClick={() => addSurfaceFromMenu(props.onAddFiles)}
                   >
                     <Files />
                     Files
@@ -722,7 +751,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   <SurfaceMenuItem
                     available={props.diffAvailable}
                     disabledReason={SURFACE_DISABLED_REASONS.diff}
-                    onClick={props.onAddDiff}
+                    onClick={() => addSurfaceFromMenu(props.onAddDiff)}
                   >
                     <FileDiff />
                     Diff
@@ -730,7 +759,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   <SurfaceMenuItem
                     available={props.pullRequestAvailable}
                     disabledReason={SURFACE_DISABLED_REASONS.pullRequest}
-                    onClick={props.onAddPullRequest}
+                    onClick={() => addSurfaceFromMenu(props.onAddPullRequest)}
                   >
                     <GitPullRequest />
                     Pull request
@@ -738,7 +767,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   <SurfaceMenuItem
                     available={props.agentsAvailable}
                     disabledReason={SURFACE_DISABLED_REASONS.agents}
-                    onClick={props.onAddAgents}
+                    onClick={() => addSurfaceFromMenu(props.onAddAgents)}
                   >
                     <Bot />
                     Agents
@@ -750,15 +779,22 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         </ScrollArea>
         {props.layoutControls}
       </div>
-      <div className="flex min-h-0 flex-1 flex-col" data-right-panel-surface-content>
+      <div
+        ref={surfaceContentRef}
+        className="flex min-h-0 flex-1 flex-col outline-none"
+        data-right-panel-focus-boundary
+        data-right-panel-surface-content
+        onPointerDown={handleSurfacePointerDown}
+        tabIndex={-1}
+      >
         {props.activeSurfaceId === null ? (
           <RightPanelEmptyState
-            onAddBrowser={props.onAddBrowser}
-            onAddTerminal={props.onAddTerminal}
-            onAddDiff={props.onAddDiff}
-            onAddFiles={props.onAddFiles}
-            onAddPullRequest={props.onAddPullRequest}
-            onAddAgents={props.onAddAgents}
+            onAddBrowser={() => addSurfaceAndKeepFocus(props.onAddBrowser)}
+            onAddTerminal={() => addSurfaceAndKeepFocus(props.onAddTerminal)}
+            onAddDiff={() => addSurfaceAndKeepFocus(props.onAddDiff)}
+            onAddFiles={() => addSurfaceAndKeepFocus(props.onAddFiles)}
+            onAddPullRequest={() => addSurfaceAndKeepFocus(props.onAddPullRequest)}
+            onAddAgents={() => addSurfaceAndKeepFocus(props.onAddAgents)}
             browserAvailable={props.browserAvailable}
             terminalAvailable={props.terminalAvailable}
             diffAvailable={props.diffAvailable}

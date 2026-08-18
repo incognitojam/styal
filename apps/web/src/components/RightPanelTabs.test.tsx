@@ -92,6 +92,12 @@ function renderTabs(first: DesktopPreviewFavicon | null, second?: DesktopPreview
 }
 
 describe("RightPanelTabs preview favicon", () => {
+  it("marks its tab bar and content as right-panel focus boundaries", () => {
+    const html = renderTabs(null);
+    expect(html.match(/data-right-panel-focus-boundary/g)).toHaveLength(2);
+    expect(html).toContain('tabindex="-1"');
+  });
+
   it("prefers a live capture and never asks Google about a private hostname", () => {
     const captured = renderTabs(favicon("data:image/png;base64,AAAA", "http://24x.xf.local/"));
     expect(captured).toContain("data:image/png;base64,AAAA");
