@@ -113,6 +113,7 @@ function makeFakeBrowserWindow() {
 
   return {
     window: window as unknown as Electron.BrowserWindow,
+    close: window.close,
     getBounds: window.getBounds,
     getNormalBounds: window.getNormalBounds,
     isDestroyed: window.isDestroyed,
@@ -992,6 +993,42 @@ describe("DesktopWindow", () => {
             height: 930,
           },
         ]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("waits for the main window to close during shutdown", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const closeCompleted = yield* Deferred.make<void>();
+        const closeFiber = yield* desktopWindow.closeMainForShutdown.pipe(
+          Effect.andThen(Deferred.succeed(closeCompleted, undefined)),
+          Effect.forkChild({ startImmediately: true }),
+        );
+        yield* Effect.yieldNow;
+
+        assert.equal(fakeWindow.close.mock.calls.length, 1);
+        assert.isFalse(yield* Deferred.isDone(closeCompleted));
+
+        const closed = fakeWindow.windowListeners.get("closed");
+        if (!closed) {
+          return yield* Effect.die("window closed listener was not registered");
+        }
+        closed();
+        yield* Deferred.await(closeCompleted);
+        yield* Fiber.join(closeFiber);
       }).pipe(Effect.provide(layer));
     }),
   );
