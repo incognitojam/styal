@@ -147,6 +147,24 @@ describe("ClientSettings GitHub status alerts", () => {
   });
 });
 
+describe("ClientSettings Claude status alerts", () => {
+  it("defaults the alerts on", () => {
+    expect(decodeClientSettings({}).claudeStatusAlertsEnabled).toBe(true);
+  });
+
+  it("accepts the setting in stored settings and patches", () => {
+    expect(
+      decodeClientSettings({ claudeStatusAlertsEnabled: true }).claudeStatusAlertsEnabled,
+    ).toBe(true);
+    expect(decodeClientSettingsPatch({ claudeStatusAlertsEnabled: true })).toEqual({
+      claudeStatusAlertsEnabled: true,
+    });
+    expect(
+      decodeClientSettings({ claudeStatusAlertsEnabled: false }).claudeStatusAlertsEnabled,
+    ).toBe(false);
+  });
+});
+
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   it("defaults text generation to Luna at low reasoning effort", () => {
     expect(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection).toEqual({
