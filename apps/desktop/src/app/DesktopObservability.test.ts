@@ -133,6 +133,43 @@ describe("DesktopObservability", () => {
     ),
   );
 
+  it.effect("flushes completed desktop spans before observability teardown", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-desktop-observability-flush-test-",
+      });
+      const environmentLayer = makeEnvironmentLayer(baseDir);
+      const tracePath = yield* Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        return environment.path.join(environment.logDir, "desktop.trace.ndjson");
+      }).pipe(Effect.provide(environmentLayer));
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          yield* Effect.logInfo("flush before teardown").pipe(
+            Effect.withSpan("desktop-observability-explicit-flush-test"),
+          );
+          yield* DesktopObservability.flushTrace;
+
+          const records = (yield* fileSystem.readFileString(tracePath))
+            .trim()
+            .split("\n")
+            .filter((line) => line.length > 0)
+            .map((line) => decodeTraceRecordLine(line));
+          assert.isTrue(
+            records.some((record) => record.name === "desktop-observability-explicit-flush-test"),
+          );
+        }).pipe(
+          Effect.provide(DesktopObservability.layer.pipe(Layer.provideMerge(environmentLayer))),
+        ),
+      );
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeHttpClient.layerUndici)),
+    ),
+  );
+
   it.effect("buffers backend child output and persists it only when a failure is reported", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

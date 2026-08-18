@@ -25,6 +25,7 @@
 
 import * as Brand from "effect/Brand";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -649,8 +650,11 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
   const state = yield* Ref.make(initialState);
   const mutex = yield* Semaphore.make(1);
 
-  const { logWarning: logInstanceWarning, logError: logInstanceError } =
-    DesktopObservability.makeComponentLogger(`desktop-backend-instance:${spec.id}`);
+  const {
+    logInfo: logInstanceInfo,
+    logWarning: logInstanceWarning,
+    logError: logInstanceError,
+  } = DesktopObservability.makeComponentLogger(`desktop-backend-instance:${spec.id}`);
 
   const updateActiveRun = (runId: number, f: (run: ActiveBackendRun) => ActiveBackendRun) =>
     Ref.update(state, withActiveRun(runId, f));
@@ -1031,9 +1035,10 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
     });
   });
 
-  const stop = Effect.fn("desktop.backendInstance.stop")(function* (options?: {
-    readonly timeout?: Duration.Duration;
-  }) {
+  const stop = Effect.fn("desktop.backendInstance.stop", {
+    attributes: { id: spec.id },
+  })(function* (options?: { readonly timeout?: Duration.Duration }) {
+    const stopStartedAt = yield* Clock.currentTimeMillis;
     const { active, restartFiber, notifyShutdown } = yield* mutex.withPermits(1)(
       Effect.gen(function* () {
         const result = yield* Ref.modify(state, (latest) => {
@@ -1058,6 +1063,14 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
         return result;
       }),
     );
+    yield* logInstanceInfo("backend stop state settled", {
+      elapsedMs: (yield* Clock.currentTimeMillis) - stopStartedAt,
+      activePid: Option.match(active, {
+        onNone: () => null,
+        onSome: (run) => Option.getOrNull(run.pid),
+      }),
+      restartWasScheduled: Option.isSome(restartFiber),
+    });
 
     if (notifyShutdown) {
       yield* (spec.onShutdown?.() ?? Effect.void).pipe(Effect.ignore);
@@ -1070,7 +1083,16 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
       onNone: () => Effect.void,
       onSome: (run) =>
         Effect.gen(function* () {
+          const closeStartedAt = yield* Clock.currentTimeMillis;
+          yield* logInstanceInfo("backend stop closing active run", {
+            pid: Option.getOrNull(run.pid),
+          });
           const closed = yield* closeRun(run, parentScope, options);
+          yield* logInstanceInfo("backend stop active run closed", {
+            elapsedMs: (yield* Clock.currentTimeMillis) - closeStartedAt,
+            completedWithinTimeout: closed,
+            pid: Option.getOrNull(run.pid),
+          });
           if (!closed) {
             return;
           }
