@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { deriveToolRowPresentation } from "./toolRowPresentation.ts";
+import { deriveToolRowPresentation, isPreviewToolName } from "./toolRowPresentation.ts";
 
 describe("deriveToolRowPresentation", () => {
   it("names the well-typed actions identically across providers", () => {
@@ -150,11 +150,179 @@ describe("deriveToolRowPresentation", () => {
   it("renders MCP tools as server · tool", () => {
     expect(
       deriveToolRowPresentation({
-        toolName: "mcp__t3-code__preview_snapshot",
+        toolName: "mcp__linear__create_issue",
         itemType: "mcp_tool_call",
         label: "MCP tool call",
       })?.heading,
-    ).toBe("t3-code · preview_snapshot");
+    ).toBe("linear · create_issue");
+  });
+
+  describe("T3 preview tools", () => {
+    const PREVIEW_HEADINGS = [
+      ["preview_status", "Checked preview status"],
+      ["preview_open", "Opened preview"],
+      ["preview_navigate", "Navigated preview"],
+      ["preview_resize", "Resized preview"],
+      ["preview_set_appearance", "Set preview appearance"],
+      ["preview_snapshot", "Inspected page"],
+      ["preview_click", "Clicked"],
+      ["preview_type", "Typed"],
+      ["preview_press", "Pressed"],
+      ["preview_scroll", "Scrolled"],
+      ["preview_evaluate", "Ran JS in preview"],
+      ["preview_wait_for", "Waited for condition"],
+      ["preview_recording_start", "Started recording preview"],
+      ["preview_recording_stop", "Stopped recording preview"],
+    ] as const;
+
+    const preview = (toolName: string, input: Record<string, unknown> = {}, failed = false) =>
+      deriveToolRowPresentation({
+        toolName: `mcp__t3-code__${toolName}`,
+        itemType: "mcp_tool_call",
+        label: "MCP tool call",
+        input,
+        failed,
+      });
+
+    it("names the action instead of server · tool", () => {
+      expect(preview("preview_open", { url: "http://localhost:5173" })).toEqual({
+        heading: "Opened preview",
+        argument: { kind: "text", value: "http://localhost:5173" },
+      });
+      expect(preview("preview_navigate", { url: "http://localhost:5173" })?.heading).toBe(
+        "Navigated preview",
+      );
+      expect(preview("preview_snapshot")?.heading).toBe("Inspected page");
+      expect(preview("preview_status")?.heading).toBe("Checked preview status");
+    });
+
+    it("renders dev-server navigation targets", () => {
+      expect(
+        preview("preview_navigate", { target: { kind: "environment-port", port: 5173 } })?.argument,
+      ).toEqual({ kind: "text", value: "dev server :5173" });
+      expect(
+        preview("preview_navigate", {
+          target: { kind: "environment-port", port: 5173, path: "/settings?tab=account" },
+        })?.argument,
+      ).toEqual({ kind: "text", value: "dev server :5173/settings?tab=account" });
+      expect(
+        preview("preview_navigate", {
+          target: { kind: "url", url: "https://t3.chat/settings" },
+        })?.argument,
+      ).toEqual({ kind: "text", value: "https://t3.chat/settings" });
+    });
+
+    it("shows the interaction target, not session noise", () => {
+      expect(
+        preview("preview_click", {
+          tabId: "preview-thread-1",
+          locator: "role=button[name='Send']",
+          timeoutMs: 15000,
+        }),
+      ).toEqual({
+        heading: "Clicked",
+        argument: { kind: "text", value: "role=button[name='Send']" },
+      });
+      expect(preview("preview_click", { x: 10, y: 20 })?.argument).toEqual({
+        kind: "text",
+        value: "10, 20",
+      });
+      expect(preview("preview_type", { text: "Hello there" })?.argument).toEqual({
+        kind: "text",
+        value: "“Hello there”",
+      });
+      expect(
+        preview("preview_press", { key: "Enter", modifiers: ["Meta", "Shift"] })?.argument,
+      ).toEqual({ kind: "text", value: "Meta+Shift+Enter" });
+      expect(preview("preview_scroll", { deltaY: 300, deltaX: -50 })?.argument).toEqual({
+        kind: "text",
+        value: "down 300px left 50px",
+      });
+      expect(preview("preview_scroll", { deltaY: -80 })?.argument).toEqual({
+        kind: "text",
+        value: "up 80px",
+      });
+      expect(preview("preview_wait_for", { text: "Ready" })?.argument).toEqual({
+        kind: "text",
+        value: "Ready",
+      });
+      expect(preview("preview_evaluate", { expression: "document.title" })?.argument).toEqual({
+        kind: "text",
+        value: "document.title",
+      });
+    });
+
+    it("composes resize and appearance arguments", () => {
+      expect(
+        preview("preview_resize", { mode: "freeform", width: 1024, height: 768 })?.argument,
+      ).toEqual({ kind: "text", value: "1024×768" });
+      expect(
+        preview("preview_resize", {
+          mode: "preset",
+          preset: "iphone-12-pro",
+          orientation: "landscape",
+        })?.argument,
+      ).toEqual({ kind: "text", value: "iphone-12-pro landscape" });
+      expect(preview("preview_set_appearance", { colorScheme: "dark" })?.argument).toEqual({
+        kind: "text",
+        value: "dark",
+      });
+    });
+
+    it("omits the argument when the call had none worth showing", () => {
+      expect(preview("preview_snapshot", { tabId: "preview-thread-1" })).toEqual({
+        heading: "Inspected page",
+      });
+      expect(preview("preview_open", { open: true, show: true })).toEqual({
+        heading: "Opened preview",
+      });
+      expect(preview("preview_scroll", { selector: "main" })).toEqual({ heading: "Scrolled" });
+    });
+
+    it("gives every tool in the family a curated heading", () => {
+      // Membership is derived from the spec table's keys, so a tool that
+      // reaches the row without a heading would fall back to `t3-code · …`.
+      for (const [tool, heading] of PREVIEW_HEADINGS) {
+        expect(isPreviewToolName(`mcp__t3-code__${tool}`)).toBe(true);
+        expect(preview(tool)?.heading).toBe(heading);
+      }
+    });
+
+    it("describes a fill-mode resize as fitting the panel", () => {
+      expect(preview("preview_resize", { mode: "fill" })?.argument).toEqual({
+        kind: "text",
+        value: "fit preview panel",
+      });
+    });
+
+    it("matches bare preview names as well as the MCP-qualified form", () => {
+      expect(
+        deriveToolRowPresentation({
+          toolName: "preview_navigate",
+          itemType: "dynamic_tool_call",
+          label: "preview_navigate",
+          input: { url: "https://t3.chat" },
+        })?.heading,
+      ).toBe("Navigated preview");
+    });
+
+    it("keeps every heading readable without its argument", () => {
+      // The timeline row renders `heading - argument`, and the agents panel
+      // has only a tool name, so a heading ending in a preposition breaks both.
+      for (const [, heading] of PREVIEW_HEADINGS) {
+        expect(heading).not.toMatch(/\b(?:to|for|with|in|at|from|into)$/u);
+      }
+    });
+
+    it("describes failures as failures", () => {
+      expect(preview("preview_click", { locator: "role=button" }, true)).toEqual({
+        heading: "Failed to click",
+        argument: { kind: "text", value: "role=button" },
+      });
+      expect(preview("preview_navigate", { url: "https://t3.chat" }, true)?.heading).toBe(
+        "Failed to navigate",
+      );
+    });
   });
 
   it("counts multi-file edits", () => {

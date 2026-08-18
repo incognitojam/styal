@@ -111,6 +111,198 @@ function mcpHeading(toolName: string): string | undefined {
   return server && tool ? `${server} · ${tool}` : undefined;
 }
 
+function previewNavigateArgument(input: Record<string, unknown>): ToolRowArgument | undefined {
+  const url = asTrimmedString(input?.url);
+  if (url) {
+    return { kind: "text", value: inline(url) };
+  }
+  const target = asRecord(input?.target);
+  if (target?.kind === "url") {
+    const targetUrl = asTrimmedString(target.url);
+    return targetUrl ? { kind: "text", value: inline(targetUrl) } : undefined;
+  }
+  if (target?.kind === "environment-port" && typeof target.port === "number") {
+    // The path is the interesting half of a dev-server hop, so keep it.
+    const path = asTrimmedString(target.path) ?? "";
+    const suffix = path && !path.startsWith("/") ? `/${path}` : path;
+    return { kind: "text", value: inline(`dev server :${target.port.toString()}${suffix}`) };
+  }
+  return undefined;
+}
+
+function previewResizeArgument(input: Record<string, unknown>): ToolRowArgument | undefined {
+  if (typeof input?.width === "number" && typeof input?.height === "number") {
+    return { kind: "text", value: `${input.width}×${input.height}` };
+  }
+  const preset = asTrimmedString(input?.preset);
+  if (preset) {
+    const orientation = asTrimmedString(input?.orientation);
+    return orientation && orientation !== "portrait"
+      ? { kind: "text", value: `${preset} ${orientation}` }
+      : { kind: "text", value: preset };
+  }
+  return input?.mode === "fill" ? { kind: "text", value: "fit preview panel" } : undefined;
+}
+
+function previewClickArgument(input: Record<string, unknown>): ToolRowArgument | undefined {
+  const target = asTrimmedString(input?.locator) ?? asTrimmedString(input?.selector);
+  if (target) {
+    return { kind: "text", value: inline(target) };
+  }
+  if (typeof input?.x === "number" && typeof input?.y === "number") {
+    return { kind: "text", value: `${input.x}, ${input.y}` };
+  }
+  return undefined;
+}
+
+function previewTypeArgument(input: Record<string, unknown>): ToolRowArgument | undefined {
+  const text = asTrimmedString(input?.text);
+  return text ? { kind: "text", value: inline(`“${text}”`) } : undefined;
+}
+
+function previewPressArgument(input: Record<string, unknown>): ToolRowArgument | undefined {
+  const key = asTrimmedString(input?.key);
+  if (!key) {
+    return undefined;
+  }
+  const modifiers = Array.isArray(input?.modifiers)
+    ? input.modifiers.filter((m): m is string => typeof m === "string")
+    : [];
+  return modifiers.length > 0
+    ? { kind: "text", value: `${modifiers.join("+")}+${key}` }
+    : { kind: "text", value: key };
+}
+
+function previewScrollArgument(input: Record<string, unknown>): ToolRowArgument | undefined {
+  const parts: string[] = [];
+  const deltaY = typeof input?.deltaY === "number" ? input.deltaY : 0;
+  const deltaX = typeof input?.deltaX === "number" ? input.deltaX : 0;
+  if (deltaY !== 0) {
+    parts.push(deltaY > 0 ? `down ${deltaY.toString()}px` : `up ${(-deltaY).toString()}px`);
+  }
+  if (deltaX !== 0) {
+    parts.push(deltaX > 0 ? `right ${deltaX.toString()}px` : `left ${(-deltaX).toString()}px`);
+  }
+  return parts.length > 0 ? { kind: "text", value: parts.join(" ") } : undefined;
+}
+
+function previewWaitForArgument(input: Record<string, unknown>): ToolRowArgument | undefined {
+  const condition = asTrimmedString(input?.text) ?? asTrimmedString(input?.urlIncludes);
+  if (condition) {
+    return { kind: "text", value: inline(condition) };
+  }
+  const target = asTrimmedString(input?.locator) ?? asTrimmedString(input?.selector);
+  return target ? { kind: "text", value: inline(target) } : undefined;
+}
+
+interface PreviewToolSpec {
+  readonly heading: string;
+  readonly failedHeading: string;
+  readonly argument?: (input: Record<string, unknown>) => ToolRowArgument | undefined;
+}
+
+/**
+ * The T3 preview tools are a product-native browser family, so their rows get
+ * a curated vocabulary instead of the generic `t3-code · preview_*` MCP form:
+ * a verb for the action and only the argument that matters, with session noise
+ * (`tabId`, `timeoutMs`, `open`/`show`) dropped.
+ *
+ * This table is the only list of the family; membership is derived from its
+ * keys, so a tool added here is recognized everywhere without a second edit.
+ */
+const PREVIEW_TOOL_SPECS: Readonly<Record<string, PreviewToolSpec>> = {
+  preview_status: {
+    heading: "Checked preview status",
+    failedHeading: "Failed to check preview status",
+  },
+  preview_open: {
+    heading: "Opened preview",
+    failedHeading: "Failed to open preview",
+    argument: (input) => {
+      const url = asTrimmedString(input?.url);
+      return url ? { kind: "text", value: inline(url) } : undefined;
+    },
+  },
+  preview_navigate: {
+    heading: "Navigated preview",
+    failedHeading: "Failed to navigate",
+    argument: previewNavigateArgument,
+  },
+  preview_resize: {
+    heading: "Resized preview",
+    failedHeading: "Failed to resize preview",
+    argument: previewResizeArgument,
+  },
+  preview_set_appearance: {
+    heading: "Set preview appearance",
+    failedHeading: "Failed to set appearance",
+    argument: (input) => {
+      const colorScheme = asTrimmedString(input?.colorScheme);
+      return colorScheme ? { kind: "text", value: colorScheme } : undefined;
+    },
+  },
+  preview_snapshot: { heading: "Inspected page", failedHeading: "Failed to inspect page" },
+  preview_click: {
+    heading: "Clicked",
+    failedHeading: "Failed to click",
+    argument: previewClickArgument,
+  },
+  preview_type: {
+    heading: "Typed",
+    failedHeading: "Failed to type",
+    argument: previewTypeArgument,
+  },
+  preview_press: {
+    heading: "Pressed",
+    failedHeading: "Failed to press key",
+    argument: previewPressArgument,
+  },
+  preview_scroll: {
+    heading: "Scrolled",
+    failedHeading: "Failed to scroll",
+    argument: previewScrollArgument,
+  },
+  preview_evaluate: {
+    heading: "Ran JS in preview",
+    failedHeading: "Failed to run JS",
+    argument: (input) => {
+      const expression = asTrimmedString(input?.expression);
+      return expression ? { kind: "text", value: inline(expression) } : undefined;
+    },
+  },
+  preview_wait_for: {
+    heading: "Waited for condition",
+    failedHeading: "Failed to wait for condition",
+    argument: previewWaitForArgument,
+  },
+  preview_recording_start: {
+    heading: "Started recording preview",
+    failedHeading: "Failed to start recording",
+  },
+  preview_recording_stop: {
+    heading: "Stopped recording preview",
+    failedHeading: "Failed to stop recording",
+  },
+};
+
+const PREVIEW_TOOL_NAMES: ReadonlySet<string> = new Set(Object.keys(PREVIEW_TOOL_SPECS));
+
+/** Accepts both the MCP-qualified name (`mcp__t3-code__preview_navigate`)
+ * and bare names (`preview_navigate`) so every provider matches. */
+function previewToolNameOf(value: string): string | undefined {
+  const trimmed = value.trim();
+  if (PREVIEW_TOOL_NAMES.has(trimmed)) {
+    return trimmed;
+  }
+  const match = /^mcp__[^_]+(?:_[^_]+)*?__(?<tool>preview_[a-z_]+)$/u.exec(trimmed);
+  const tool = match?.groups?.tool;
+  return tool && PREVIEW_TOOL_NAMES.has(tool) ? tool : undefined;
+}
+
+export function isPreviewToolName(value: string): boolean {
+  return previewToolNameOf(value) !== undefined;
+}
+
 /**
  * `select:a,b,c` is ToolSearch's exact-name form and reads as noise in full;
  * show the names themselves. Free-text queries pass through.
@@ -414,6 +606,21 @@ function deriveBaseToolRowPresentation(
     // used to print an unshortened absolute path.
     argumentForItemType(itemType, { command, detail, changedFiles, filePath, toolName });
 
+  // The product-native browser family outranks the generic MCP form: the
+  // verbs are the vocabulary, and the failed heading is already chosen here
+  // because the generic " … failed" suffix reads poorly after a past tense.
+  if (rawToolName) {
+    const previewTool = previewToolNameOf(rawToolName);
+    const spec = previewTool ? PREVIEW_TOOL_SPECS[previewTool] : undefined;
+    if (spec) {
+      const previewArgument = spec.argument?.(toolInput ?? {});
+      return {
+        heading: input.failed ? spec.failedHeading : spec.heading,
+        ...(previewArgument ? { argument: previewArgument } : {}),
+      };
+    }
+  }
+
   // MCP names itself best: the server is the useful half, and Codex already
   // renders `server · tool` this way.
   if (toolName) {
@@ -477,6 +684,10 @@ export function deriveToolRowPresentation(
     return presentation;
   }
   const toolName = asTrimmedString(input.toolName);
+  if (toolName && isPreviewToolName(toolName)) {
+    // Preview failures carry their own heading ("Failed to click").
+    return presentation;
+  }
   const normalizedToolName = toolName ? normalizeKnownToolName(toolName) : undefined;
   const heading =
     input.itemType === "command_execution"
