@@ -925,6 +925,82 @@ index 40e87cda8c9bc79a889e5542f29af429a24b24d4..2d556eecb0bafe2f54084c809f82144c
        onScroll: onScrollHandler,
        recycleItems,
        refreshControl: refreshControlElement ? stylePaddingTopState > 0 ? React2.cloneElement(refreshControlElement, {
+diff --git a/react-native.web.js b/react-native.web.js
+index 914d2dafaafa001c9ab6791a0a0581659295e333..8c7951e4a01059eeec3d647e2e37f29900451767 100644
+--- a/react-native.web.js
++++ b/react-native.web.js
+@@ -6446,8 +6446,13 @@ function ScrollAdjust() {
+               window.getComputedStyle(contentNode)[axis.paddingEndProp]
+             );
+             const temporaryPaddingEnd = `${(currentPaddingEnd || 0) + pad}px`;
+-            temporaryPaddingRef.current = { baseline: baselinePaddingEnd, value: temporaryPaddingEnd };
+             contentNode.style[axis.paddingEndProp] = temporaryPaddingEnd;
++            temporaryPaddingRef.current = {
++              baseline: baselinePaddingEnd,
++              // CSSOM can normalize fractional pixel strings. Keep the
++              // serialized value so the next-frame equality check can reset it.
++              value: contentNode.style[axis.paddingEndProp]
++            };
+             void contentNode.offsetHeight;
+             scrollBy();
+             if (resetPaddingRafRef.current !== void 0) {
+diff --git a/react-native.web.mjs b/react-native.web.mjs
+index 95465f2ab89ce41a10553f58af83618f7310e83c..356b4f5d48cdb027377607129ea3f02e76730065 100644
+--- a/react-native.web.mjs
++++ b/react-native.web.mjs
+@@ -6425,8 +6425,13 @@ function ScrollAdjust() {
+               window.getComputedStyle(contentNode)[axis.paddingEndProp]
+             );
+             const temporaryPaddingEnd = `${(currentPaddingEnd || 0) + pad}px`;
+-            temporaryPaddingRef.current = { baseline: baselinePaddingEnd, value: temporaryPaddingEnd };
+             contentNode.style[axis.paddingEndProp] = temporaryPaddingEnd;
++            temporaryPaddingRef.current = {
++              baseline: baselinePaddingEnd,
++              // CSSOM can normalize fractional pixel strings. Keep the
++              // serialized value so the next-frame equality check can reset it.
++              value: contentNode.style[axis.paddingEndProp]
++            };
+             void contentNode.offsetHeight;
+             scrollBy();
+             if (resetPaddingRafRef.current !== void 0) {
+diff --git a/react.js b/react.js
+index 914d2dafaafa001c9ab6791a0a0581659295e333..8c7951e4a01059eeec3d647e2e37f29900451767 100644
+--- a/react.js
++++ b/react.js
+@@ -6446,8 +6446,13 @@ function ScrollAdjust() {
+               window.getComputedStyle(contentNode)[axis.paddingEndProp]
+             );
+             const temporaryPaddingEnd = `${(currentPaddingEnd || 0) + pad}px`;
+-            temporaryPaddingRef.current = { baseline: baselinePaddingEnd, value: temporaryPaddingEnd };
+             contentNode.style[axis.paddingEndProp] = temporaryPaddingEnd;
++            temporaryPaddingRef.current = {
++              baseline: baselinePaddingEnd,
++              // CSSOM can normalize fractional pixel strings. Keep the
++              // serialized value so the next-frame equality check can reset it.
++              value: contentNode.style[axis.paddingEndProp]
++            };
+             void contentNode.offsetHeight;
+             scrollBy();
+             if (resetPaddingRafRef.current !== void 0) {
+diff --git a/react.mjs b/react.mjs
+index 95465f2ab89ce41a10553f58af83618f7310e83c..356b4f5d48cdb027377607129ea3f02e76730065 100644
+--- a/react.mjs
++++ b/react.mjs
+@@ -6425,8 +6425,13 @@ function ScrollAdjust() {
+               window.getComputedStyle(contentNode)[axis.paddingEndProp]
+             );
+             const temporaryPaddingEnd = `${(currentPaddingEnd || 0) + pad}px`;
+-            temporaryPaddingRef.current = { baseline: baselinePaddingEnd, value: temporaryPaddingEnd };
+             contentNode.style[axis.paddingEndProp] = temporaryPaddingEnd;
++            temporaryPaddingRef.current = {
++              baseline: baselinePaddingEnd,
++              // CSSOM can normalize fractional pixel strings. Keep the
++              // serialized value so the next-frame equality check can reset it.
++              value: contentNode.style[axis.paddingEndProp]
++            };
+             void contentNode.offsetHeight;
+             scrollBy();
+             if (resetPaddingRafRef.current !== void 0) {
 diff --git a/reanimated.d.ts b/reanimated.d.ts
 index e5043320700b12f34f4c0babbc341f85ca8135c1..2ce63830a28636b21937a0741fd0e613dae950fe 100644
 --- a/reanimated.d.ts
