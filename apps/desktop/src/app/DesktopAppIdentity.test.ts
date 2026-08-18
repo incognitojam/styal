@@ -67,6 +67,7 @@ const makeElectronAppLayer = (calls: ElectronAppCalls) =>
     onBeforeQuitForUpdate: () => Effect.void,
     removeCommandLineSwitch: () => Effect.void,
     on: () => Effect.void,
+    once: () => Effect.void,
   } satisfies ElectronApp.ElectronApp["Service"]);
 
 const makeAssetsLayer = (png: Option.Option<string>) =>

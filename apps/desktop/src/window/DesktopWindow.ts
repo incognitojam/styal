@@ -99,6 +99,7 @@ export class DesktopWindow extends Context.Service<
     // produce a stranded window pointing at nothing.
     readonly handleBackendNotReady: Effect.Effect<void>;
     readonly flushMainWindowBounds: Effect.Effect<void>;
+    readonly closeMainForShutdown: Effect.Effect<void>;
     readonly dispatchMenuAction: (action: string) => Effect.Effect<void, DesktopWindowError>;
     // Zooms the main window's own webContents. The Electron `zoomIn`/`zoomOut`
     // menu roles act on whichever webContents has keyboard focus, so with an
@@ -313,6 +314,36 @@ export const make = Effect.gen(function* () {
 
   const currentMainWindow = electronWindow.currentMainOrFirst.pipe(Effect.flatMap(withoutSplash));
   const focusedMainWindow = electronWindow.focusedMainOrFirst.pipe(Effect.flatMap(withoutSplash));
+
+  const closeMainForShutdown = currentMainWindow.pipe(
+    Effect.flatMap(
+      Option.match({
+        onNone: () => Effect.void,
+        onSome: (window) =>
+          Effect.callback<void>((resume) => {
+            if (window.isDestroyed()) {
+              resume(Effect.void);
+              return;
+            }
+            let completed = false;
+            const complete = () => {
+              if (completed) return;
+              completed = true;
+              resume(Effect.void);
+            };
+            window.once("closed", complete);
+            try {
+              window.close();
+            } catch (cause) {
+              window.removeListener("closed", complete);
+              completed = true;
+              resume(Effect.die(cause));
+            }
+          }),
+      }),
+    ),
+    Effect.withSpan("desktop.window.closeMainForShutdown"),
+  );
 
   const createWindow = Effect.fn("desktop.window.createWindow")(function* (): Effect.fn.Return<
     Electron.BrowserWindow,
@@ -588,7 +619,20 @@ export const make = Effect.gen(function* () {
     window.on("maximize", scheduleBoundsPersist);
     window.on("unmaximize", scheduleBoundsPersist);
     window.on("close", () => {
-      runFork(flushBoundsPersist);
+      runFork(
+        Effect.all([logWindowInfo("main window close requested"), flushBoundsPersist], {
+          discard: true,
+        }),
+      );
+    });
+    window.webContents.on("will-prevent-unload", () => {
+      runFork(logWindowWarning("main window renderer prevented unload"));
+    });
+    window.webContents.once("destroyed", () => {
+      runFork(logWindowInfo("main window web contents destroyed"));
+    });
+    window.webContents.on("devtools-closed", () => {
+      runFork(logWindowInfo("main window developer tools closed"));
     });
 
     if (environment.platform === "darwin") {
@@ -742,7 +786,12 @@ export const make = Effect.gen(function* () {
     window.on("closed", () => {
       clearDevelopmentLoadRetry();
       clearBoundsPersist();
-      void runPromise(electronWindow.clearMain(Option.some(window)));
+      void runPromise(
+        Effect.all(
+          [logWindowInfo("main window closed"), electronWindow.clearMain(Option.some(window))],
+          { discard: true },
+        ),
+      );
     });
 
     return window;
@@ -861,6 +910,7 @@ export const make = Effect.gen(function* () {
     flushMainWindowBounds: Effect.suspend(() => flushMainWindowBounds).pipe(
       Effect.withSpan("desktop.window.flushMainWindowBounds"),
     ),
+    closeMainForShutdown,
     dispatchMenuAction: Effect.fn("desktop.window.dispatchMenuAction")(function* (action) {
       yield* Effect.annotateCurrentSpan({ action });
       const existingWindow = yield* focusedMainWindow;
