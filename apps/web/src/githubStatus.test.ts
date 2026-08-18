@@ -43,6 +43,7 @@ describe("GitHub status notice", () => {
         }),
       ),
     ).toEqual({
+      activeIncidents: [],
       affectedComponents: [
         { name: "Actions", status: "major_outage", statusLabel: "Major outage" },
         {
@@ -84,6 +85,7 @@ describe("GitHub status notice", () => {
         }),
       ),
     ).toEqual({
+      activeIncidents: [],
       affectedComponents: [],
       description: "Minor Service Outage",
       label: "GitHub Outage: service disruption",

@@ -2006,6 +2006,20 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
+          {...searchableSetting("claude-outage-alerts")}
+          description="Shows affected Claude services in the sidebar during incidents, based on Anthropic's official status page."
+          control={
+            <Switch
+              checked={settings.claudeStatusAlertsEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ claudeStatusAlertsEnabled: Boolean(checked) })
+              }
+              aria-label="Enable Claude outage alerts"
+            />
+          }
+        />
+
+        <SettingsRow
           {...searchableSetting("time-format")}
           description="System default follows your browser or OS clock preference."
           resetAction={
