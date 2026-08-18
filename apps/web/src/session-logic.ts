@@ -234,6 +234,9 @@ function toolDetailTextLooksLikeFailure(text: string): boolean {
   if (t.includes("command not found")) {
     return true;
   }
+  if (t.includes("could not find oldstring in the file")) {
+    return true;
+  }
   if (/<exited with exit code\s+[1-9]\d*\s*>/i.test(text)) {
     return true;
   }
