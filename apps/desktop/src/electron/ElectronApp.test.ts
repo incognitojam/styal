@@ -12,6 +12,7 @@ const {
   getVersionMock,
   isDefaultProtocolClientMock,
   onMock,
+  onceMock,
   quitMock,
   relaunchMock,
   removeListenerMock,
@@ -34,6 +35,7 @@ const {
   getVersionMock: vi.fn(() => "1.2.3"),
   isDefaultProtocolClientMock: vi.fn(() => false),
   onMock: vi.fn(),
+  onceMock: vi.fn(),
   quitMock: vi.fn(),
   relaunchMock: vi.fn(),
   removeListenerMock: vi.fn(),
@@ -68,6 +70,7 @@ vi.mock("electron", () => ({
     isPackaged: true,
     name: "T3 Code",
     on: onMock,
+    once: onceMock,
     quit: quitMock,
     relaunch: relaunchMock,
     removeListener: removeListenerMock,
@@ -92,6 +95,7 @@ describe("ElectronApp", () => {
     autoUpdaterRemoveListenerMock.mockClear();
     exitMock.mockClear();
     onMock.mockClear();
+    onceMock.mockClear();
     quitMock.mockClear();
     relaunchMock.mockClear();
     removeListenerMock.mockClear();
@@ -182,6 +186,17 @@ describe("ElectronApp", () => {
 
       assert.deepEqual(onMock.mock.calls, [["activate", listener]]);
       assert.deepEqual(removeListenerMock.mock.calls, [["activate", listener]]);
+    }).pipe(Effect.provide(ElectronApp.layer)),
+  );
+
+  it.effect("registers one-shot app event listeners", () =>
+    Effect.gen(function* () {
+      const electronApp = yield* ElectronApp.ElectronApp;
+      const listener = vi.fn();
+
+      yield* electronApp.once("will-quit", listener);
+
+      assert.deepEqual(onceMock.mock.calls, [["will-quit", listener]]);
     }).pipe(Effect.provide(ElectronApp.layer)),
   );
 

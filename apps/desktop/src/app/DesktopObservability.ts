@@ -60,6 +60,15 @@ export class DesktopBackendOutputLogFactory extends Context.Service<
   }
 >()("@t3tools/desktop/app/DesktopObservability/DesktopBackendOutputLogFactory") {}
 
+export class DesktopTrace extends Context.Service<
+  DesktopTrace,
+  {
+    readonly flush: Effect.Effect<void>;
+  }
+>()("@t3tools/desktop/app/DesktopObservability/DesktopTrace") {}
+
+export const flushTrace = DesktopTrace.pipe(Effect.flatMap((trace) => trace.flush));
+
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
@@ -601,7 +610,15 @@ const tracerLayer = Layer.unwrap(
       ...(delegate ? { delegate } : {}),
     });
 
-    return Layer.succeed(Tracer.Tracer, tracer);
+    return Layer.mergeAll(
+      Layer.succeed(Tracer.Tracer, tracer),
+      Layer.succeed(
+        DesktopTrace,
+        DesktopTrace.of({
+          flush: sink.flush.pipe(Effect.asVoid),
+        }),
+      ),
+    );
   }),
 ).pipe(Layer.provide(OtlpExporter.layerFlusher), Layer.provideMerge(OtlpSerialization.layerJson));
 
