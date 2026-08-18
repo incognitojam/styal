@@ -640,6 +640,20 @@ function CommandPaletteDialog(props: {
   );
 }
 
+/**
+ * Fully handle a key press in the palette input. Base UI merges our `onKeyDown`
+ * ahead of its own and then runs its own too, unless the event is explicitly
+ * claimed -- `preventDefault` alone does not stop it. Without this the same
+ * Enter that adds a project also lets the autocomplete activate the
+ * highlighted row and navigate into that folder.
+ */
+function consumeKeyEvent(event: KeyboardEvent<HTMLInputElement>): void {
+  event.preventDefault();
+  (
+    event as KeyboardEvent<HTMLInputElement> & { preventBaseUIHandler?: () => void }
+  ).preventBaseUIHandler?.();
+}
+
 function OpenCommandPaletteDialog(props: {
   readonly openIntent: CommandPaletteOpenIntent | null;
   readonly setOpen: (open: boolean) => void;
@@ -2580,7 +2594,7 @@ function OpenCommandPaletteDialog(props: {
         .flatMap((group) => group.items)
         .find((item) => item.shortcutCommand === command);
       if (matchingItem) {
-        event.preventDefault();
+        consumeKeyEvent(event);
         event.stopPropagation();
         executeItem(matchingItem);
         return;
@@ -2588,7 +2602,7 @@ function OpenCommandPaletteDialog(props: {
     }
 
     if (addProjectCloneFlow?.step === "repository" && event.key === "Enter") {
-      event.preventDefault();
+      consumeKeyEvent(event);
       void submitAddProjectCloneFlow();
       return;
     }
@@ -2598,7 +2612,7 @@ function OpenCommandPaletteDialog(props: {
     // which keeps highlighting a row (by arrow key or hover) purely a way of
     // saying "this is the one" rather than a hidden mode switch.
     if (canSubmitBrowsePath && event.key === "Enter") {
-      event.preventDefault();
+      consumeKeyEvent(event);
       if (isCloneDestinationStep) {
         void submitAddProjectCloneFlow(resolvedAddProjectPath);
       } else {
@@ -2609,20 +2623,20 @@ function OpenCommandPaletteDialog(props: {
 
     if (isBrowsing && event.key === "Tab" && !event.shiftKey) {
       if (highlightedItemValue === "browse:up" && canBrowseUp) {
-        event.preventDefault();
+        consumeKeyEvent(event);
         void browseUp();
         return;
       }
       const openTarget = highlightedBrowseEntry ?? exactBrowseEntry;
       if (openTarget) {
-        event.preventDefault();
+        consumeKeyEvent(event);
         void browseTo(openTarget.name);
         return;
       }
     }
 
     if (event.key === "Backspace" && query === "" && isSubmenu) {
-      event.preventDefault();
+      consumeKeyEvent(event);
       popView();
     }
   }
