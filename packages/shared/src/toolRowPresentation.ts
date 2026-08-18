@@ -62,6 +62,32 @@ export interface ToolRowPresentationInput {
   readonly input?: unknown;
   readonly command?: string | null | undefined;
   readonly changedFiles?: ReadonlyArray<string> | null | undefined;
+  readonly failed?: boolean | undefined;
+}
+
+const KNOWN_TOOL_NAMES: Readonly<Record<string, string>> = {
+  bash: "Bash",
+  bashoutput: "BashOutput",
+  edit: "Edit",
+  glob: "Glob",
+  grep: "Grep",
+  killshell: "KillShell",
+  notebookedit: "NotebookEdit",
+  read: "Read",
+  sendmessage: "SendMessage",
+  taskcreate: "TaskCreate",
+  tasklist: "TaskList",
+  taskupdate: "TaskUpdate",
+  toolsearch: "ToolSearch",
+  webfetch: "WebFetch",
+  websearch: "WebSearch",
+  write: "Write",
+};
+
+/** Gives provider-specific casing one stable vocabulary without renaming unknown tools. */
+export function normalizeKnownToolName(value: string): string {
+  const trimmed = value.trim();
+  return KNOWN_TOOL_NAMES[trimmed.toLowerCase()] ?? trimmed;
 }
 
 /**
@@ -362,10 +388,11 @@ function cleanLabel(label: string | undefined): string | undefined {
   return GENERIC_LABELS.has(stripped.toLowerCase()) ? undefined : stripped;
 }
 
-export function deriveToolRowPresentation(
+function deriveBaseToolRowPresentation(
   input: ToolRowPresentationInput,
 ): ToolRowPresentation | undefined {
-  const toolName = asTrimmedString(input.toolName);
+  const rawToolName = asTrimmedString(input.toolName);
+  const toolName = rawToolName ? normalizeKnownToolName(rawToolName) : undefined;
   const itemType =
     input.itemType ?? (toolName ? ITEM_TYPE_BY_TOOL_NAME[toolName] : undefined) ?? undefined;
   const toolInput = asRecord(input.input);
@@ -411,7 +438,14 @@ export function deriveToolRowPresentation(
 
   // A title the provider chose for this specific call says more than any verb
   // derived from its item type.
-  const specificLabel = cleanLabel(asTrimmedString(input.label));
+  const cleanedLabel = cleanLabel(asTrimmedString(input.label));
+  // OpenCode uses the raw tool name as its lifecycle title (`edit`, `bash`,
+  // and so on). That is identity, not a call-specific description, so let the
+  // canonical item-type verb win just as it does for Claude and Codex.
+  const specificLabel =
+    cleanedLabel && cleanedLabel.toLowerCase() !== toolName?.toLowerCase()
+      ? cleanedLabel
+      : undefined;
   if (specificLabel) {
     return { heading: specificLabel, ...(argument ? { argument } : {}) };
   }
@@ -433,4 +467,24 @@ export function deriveToolRowPresentation(
   }
 
   return undefined;
+}
+
+export function deriveToolRowPresentation(
+  input: ToolRowPresentationInput,
+): ToolRowPresentation | undefined {
+  const presentation = deriveBaseToolRowPresentation(input);
+  if (!presentation || !input.failed) {
+    return presentation;
+  }
+  const toolName = asTrimmedString(input.toolName);
+  const normalizedToolName = toolName ? normalizeKnownToolName(toolName) : undefined;
+  const heading =
+    input.itemType === "command_execution"
+      ? "Command failed"
+      : input.itemType === "file_change"
+        ? normalizedToolName === "Write"
+          ? "Write failed"
+          : "Edit failed"
+        : `${presentation.heading} failed`;
+  return { ...presentation, heading };
 }

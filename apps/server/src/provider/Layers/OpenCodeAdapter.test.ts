@@ -1175,6 +1175,74 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
     }),
   );
 
+  it.effect("emits canonical tool identity and input for OpenCode edits", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-edit-presentation");
+      runtimeMock.state.subscribedEvents = [
+        {
+          type: "message.part.updated",
+          properties: {
+            sessionID: "http://127.0.0.1:9999/session",
+            part: {
+              id: "part-edit",
+              sessionID: "http://127.0.0.1:9999/session",
+              messageID: "msg-edit",
+              type: "tool",
+              callID: "call-edit",
+              tool: "edit",
+              state: {
+                status: "error",
+                input: {
+                  file_path: "/repo/src/app.ts",
+                  old_string: "before",
+                  new_string: "after",
+                },
+                error: "Could not find oldString in the file.",
+                metadata: {},
+                time: { start: 1, end: 2 },
+              },
+            },
+          },
+        },
+      ];
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.threadId === threadId),
+        Stream.take(3),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("1 second")));
+      const completed = events.find((event) => event.type === "item.completed");
+      NodeAssert.equal(completed?.type, "item.completed");
+      if (completed?.type === "item.completed") {
+        NodeAssert.equal(completed.payload.status, "failed");
+        NodeAssert.deepEqual(completed.payload.data, {
+          toolName: "edit",
+          toolCallId: "call-edit",
+          state: {
+            status: "error",
+            input: {
+              file_path: "/repo/src/app.ts",
+              old_string: "before",
+              new_string: "after",
+            },
+            error: "Could not find oldString in the file.",
+            metadata: {},
+            time: { start: 1, end: 2 },
+          },
+        });
+      }
+    }),
+  );
+
   it.effect("lets OpenCode own session title generation and emits title metadata updates", () =>
     Effect.gen(function* () {
       const adapter = yield* OpenCodeAdapter;
