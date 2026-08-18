@@ -103,6 +103,91 @@ export function getLatestThreadForProject<
   );
 }
 
+// ── Workspace clustering: keep same-worktree threads adjacent ──────────
+// Threads spawned onto an existing workspace (a code review on a worktree,
+// a follow-up fix on the same branch) are one body of work; the inbox keeps
+// them adjacent instead of scattering them by creation time. Siblinghood is
+// derived by matching workspace fields — the same rule worktree cleanup
+// uses — not by a persisted parent link.
+
+export interface WorkspaceClusterThread {
+  readonly id: string;
+  readonly createdAt: string;
+  readonly environmentId?: string | undefined;
+  readonly projectId?: string | undefined;
+  readonly branch?: string | null | undefined;
+  readonly worktreePath?: string | null | undefined;
+}
+
+/**
+ * The key under which threads cluster in the inbox, or null for a thread
+ * that stands alone. A worktree is a physical workspace, so its path (per
+ * environment) is the key. Local-checkout threads cluster by branch within
+ * a project — branch is only ever set by an explicit choice (the composer's
+ * branch picker, "New thread on <branch>"), so plain local threads, which
+ * carry branch: null, never cluster by accident.
+ */
+export function threadWorkspaceKey(thread: WorkspaceClusterThread): string | null {
+  const environmentId = thread.environmentId ?? "";
+  if (thread.worktreePath != null) {
+    return `${environmentId}\0worktree\0${thread.worktreePath}`;
+  }
+  if (thread.branch != null) {
+    return `${environmentId}\0${thread.projectId ?? ""}\0branch\0${thread.branch}`;
+  }
+  return null;
+}
+
+/**
+ * Inbox sort: static creation order, newest on top, with same-workspace
+ * threads clustered — the original thread first, spawned follow-ups beneath
+ * it in creation order. A cluster sits where its newest member would:
+ * activity still never reorders the list (createdAt is immutable), but
+ * spawning a sibling pulls the family up next to the new thread, which is
+ * exactly the moment they need to be adjacent. Shared by web and mobile so
+ * both render identical inbox orders.
+ */
+export function sortThreadsByWorkspaceCluster<T extends WorkspaceClusterThread>(
+  threads: readonly T[],
+): T[] {
+  const createdAtMs = (thread: T) => {
+    const ms = Date.parse(thread.createdAt);
+    return Number.isNaN(ms) ? 0 : ms;
+  };
+  const identityTiebreak = (left: T, right: T) =>
+    left.id.localeCompare(right.id) ||
+    (left.environmentId ?? "").localeCompare(right.environmentId ?? "");
+
+  const families = new Map<string, T[]>();
+  for (const [index, thread] of threads.entries()) {
+    const key = threadWorkspaceKey(thread) ?? `\0solo\0${index}`;
+    const members = families.get(key);
+    if (members) {
+      members.push(thread);
+    } else {
+      families.set(key, [thread]);
+    }
+  }
+
+  // .sort() on copies, not .toSorted(): Hermes doesn't ship the ES2023
+  // change-by-copy array methods.
+  const familyList = [...families.values()];
+  for (const members of familyList) {
+    members.sort(
+      (left, right) => createdAtMs(left) - createdAtMs(right) || identityTiebreak(left, right),
+    );
+  }
+  familyList.sort((left, right) => {
+    const leftAnchor = left.at(-1)!;
+    const rightAnchor = right.at(-1)!;
+    return (
+      createdAtMs(rightAnchor) - createdAtMs(leftAnchor) ||
+      identityTiebreak(leftAnchor, rightAnchor)
+    );
+  });
+  return familyList.flat();
+}
+
 // ── Pinned reorder: fractional index keys ──────────────────────────────
 // Pinned threads carry an optional pinOrderKey (a base-26 string). The
 // pinned block sorts keyed threads by plain string comparison, so a drag
