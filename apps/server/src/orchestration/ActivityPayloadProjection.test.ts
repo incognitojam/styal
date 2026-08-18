@@ -240,6 +240,27 @@ describe("projectActivityPayload tool identity", () => {
     expect(data.input).toEqual({ file_path: "/repo/src/app.ts", offset: 120, limit: 40 });
   });
 
+  it("normalizes legacy OpenCode tool identity and arguments", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "file_change",
+        data: {
+          tool: "edit",
+          state: {
+            status: "error",
+            input: { file_path: "/repo/src/app.ts", old_string: "old", new_string: "new" },
+            error: "Could not find oldString in the file.",
+          },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    expect(data.toolName).toBe("edit");
+    expect(data.input).toEqual({ file_path: "/repo/src/app.ts" });
+    expect(data.files).toEqual([{ path: "/repo/src/app.ts" }]);
+    expect((projected.payload as Record<string, unknown>).status).toBe("failed");
+  });
+
   it("never ships file contents or message bodies", () => {
     const projected = projectActivityPayload(
       activity({

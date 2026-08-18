@@ -19,6 +19,7 @@ import {
   type OrchestrationCommand,
   ProjectId,
   ProviderItemId,
+  RuntimeItemId,
   type ServerSettings,
   ThreadId,
   TurnId,
@@ -47,7 +48,10 @@ import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import * as ThreadBackgroundLiveness from "../ThreadBackgroundLiveness.ts";
 import * as ThreadPlanProgress from "../ThreadPlanProgress.ts";
-import { ProviderRuntimeIngestionLive } from "./ProviderRuntimeIngestion.ts";
+import {
+  ProviderRuntimeIngestionLive,
+  runtimeEventToActivities,
+} from "./ProviderRuntimeIngestion.ts";
 import { DEFAULT_THREAD_TITLE } from "../threadTitles.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeIngestion.ts";
@@ -86,6 +90,28 @@ type LegacyTurnCompletedEvent = LegacyProviderRuntimeEvent & {
   readonly status: "completed" | "failed" | "interrupted" | "cancelled";
   readonly errorMessage?: string | undefined;
 };
+
+describe("runtimeEventToActivities", () => {
+  it("preserves a failed terminal tool status", () => {
+    const [activity] = runtimeEventToActivities({
+      type: "item.completed",
+      eventId: asEventId("event-failed-edit"),
+      provider: ProviderDriverKind.make("opencode"),
+      createdAt: "2026-08-18T12:00:00.000Z",
+      threadId: asThreadId("thread-failed-edit"),
+      itemId: RuntimeItemId.make("item-failed-edit"),
+      payload: {
+        itemType: "file_change",
+        status: "failed",
+        title: "edit",
+        detail: "Could not find oldString in the file.",
+      },
+    });
+
+    expect(activity?.kind).toBe("tool.completed");
+    expect(activity?.payload).toMatchObject({ status: "failed" });
+  });
+});
 
 function isLegacyTurnCompletedEvent(
   event: LegacyProviderRuntimeEvent,

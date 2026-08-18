@@ -847,6 +847,19 @@ describe("workEntryIndicatesToolFailure", () => {
     ).toBe(true);
   });
 
+  it("detects OpenCode edit mismatch output even without explicit failed status", () => {
+    expect(
+      workEntryIndicatesToolFailure({
+        ...base,
+        tone: "tool",
+        itemType: "file_change",
+        toolLifecycleStatus: "completed",
+        detail:
+          "Could not find oldString in the file. It must match exactly, including whitespace, indentation, and line endings.",
+      }),
+    ).toBe(true);
+  });
+
   it("detects glob no files and PowerShell command errors", () => {
     expect(
       workEntryIndicatesToolFailure({
