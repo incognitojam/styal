@@ -127,7 +127,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "openai-codex-outage-alerts",
-    title: "OpenAI/Codex outage alerts",
+    title: "OpenAI outage alerts",
     to: "/settings/general",
   },
   {

@@ -165,7 +165,7 @@ describe("ClientSettings Claude status alerts", () => {
   });
 });
 
-describe("ClientSettings OpenAI/Codex status alerts", () => {
+describe("ClientSettings OpenAI status alerts", () => {
   it("defaults the alerts on", () => {
     expect(decodeClientSettings({}).openaiStatusAlertsEnabled).toBe(true);
   });

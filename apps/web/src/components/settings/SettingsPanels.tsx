@@ -1998,14 +1998,14 @@ export function GeneralSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("openai-codex-outage-alerts")}
-          description="Shows affected OpenAI and Codex services in the sidebar during incidents, based on OpenAI's official status page."
+          description="Shows affected services in the sidebar during incidents, based on OpenAI's official status page."
           control={
             <Switch
               checked={settings.openaiStatusAlertsEnabled}
               onCheckedChange={(checked) =>
                 updateSettings({ openaiStatusAlertsEnabled: Boolean(checked) })
               }
-              aria-label="Enable OpenAI and Codex outage alerts"
+              aria-label="Enable OpenAI outage alerts"
             />
           }
         />

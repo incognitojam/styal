@@ -16,5 +16,5 @@ export function resolveOpenAIStatusNotice(
 ): OpenAIStatusNotice | null {
   const completeSummary =
     components === undefined ? null : withStatusPageComponents(summary, components);
-  return resolveStatusPageNotice(completeSummary ?? summary, "OpenAI/Codex");
+  return resolveStatusPageNotice(completeSummary ?? summary, "OpenAI");
 }

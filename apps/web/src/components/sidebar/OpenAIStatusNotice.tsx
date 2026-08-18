@@ -16,7 +16,7 @@ export function OpenAIStatusNotice() {
       componentsUrl={OPENAI_STATUS_COMPONENTS_URL}
       enabled={enabled}
       icon={OpenAI}
-      pageName="OpenAI/Codex"
+      pageName="OpenAI"
       pageUrl={OPENAI_STATUS_PAGE_URL}
       resolveNotice={resolveOpenAIStatusNotice}
       summaryUrl={OPENAI_STATUS_SUMMARY_URL}

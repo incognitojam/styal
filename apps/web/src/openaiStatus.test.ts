@@ -31,7 +31,7 @@ function statusSummary(input?: {
   };
 }
 
-describe("OpenAI/Codex status notice", () => {
+describe("OpenAI status notice", () => {
   it("stays hidden while OpenAI reports all systems operational", () => {
     expect(resolveOpenAIStatusNotice(statusSummary())).toBeNull();
   });
@@ -60,7 +60,7 @@ describe("OpenAI/Codex status notice", () => {
         },
       ],
       description: "Partial System Outage",
-      label: "OpenAI/Codex Outage: Codex Web, ChatGPT",
+      label: "OpenAI Outage: Codex Web, ChatGPT",
       tone: "error",
     });
   });
@@ -91,7 +91,7 @@ describe("OpenAI/Codex status notice", () => {
       ],
       affectedComponents: [],
       description: "1 active incident",
-      label: "OpenAI/Codex Incident: Elevated errors in Codex",
+      label: "OpenAI Incident: Elevated errors in Codex",
       tone: "warning",
     });
   });
@@ -115,7 +115,7 @@ describe("OpenAI/Codex status notice", () => {
         { name: "Codex API", status: "partial_outage" },
         { name: "CLI", status: "degraded_performance" },
       ],
-      label: "OpenAI/Codex Outage: Codex API, CLI",
+      label: "OpenAI Outage: Codex API, CLI",
       tone: "error",
     });
   });
@@ -130,7 +130,7 @@ describe("OpenAI/Codex status notice", () => {
       }),
     ).toMatchObject({
       affectedComponents: [{ name: "Login", status: "major_outage" }],
-      label: "OpenAI/Codex Outage: Login",
+      label: "OpenAI Outage: Login",
       tone: "error",
     });
   });
