@@ -402,11 +402,9 @@ describe("application mouse reporting", () => {
     expect([0, 1, 2, 3, 4, 5].map(ghosttyMouseButton)).toEqual([1, 3, 2, 4, 5, null]);
   });
 
-  it("only shows link hover during mouse tracking when the link modifier is held", () => {
-    expect(shouldShowTerminalLinkHover(false, false)).toBe(true);
-    expect(shouldShowTerminalLinkHover(false, true)).toBe(true);
-    expect(shouldShowTerminalLinkHover(true, false)).toBe(false);
-    expect(shouldShowTerminalLinkHover(true, true)).toBe(true);
+  it("only shows link hover when the link activation modifier is held", () => {
+    expect(shouldShowTerminalLinkHover(false)).toBe(false);
+    expect(shouldShowTerminalLinkHover(true)).toBe(true);
   });
 });
 
