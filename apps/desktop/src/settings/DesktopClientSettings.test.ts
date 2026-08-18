@@ -37,6 +37,7 @@ const clientSettings: ClientSettings = {
   fontSmoothing: true,
   githubStatusAlertsEnabled: false,
   glassOpacity: 80,
+  openaiStatusAlertsEnabled: false,
   planModeEnabled: false,
   providerModelPreferences: {},
   sidebarAutoSettleAfterDays: 3,
