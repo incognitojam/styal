@@ -409,11 +409,8 @@ export function isTerminalLinkPointerGesture(
     : event.ctrlKey && !event.metaKey;
 }
 
-export function shouldShowTerminalLinkHover(
-  mouseTracking: boolean,
-  linkModifierActive: boolean,
-): boolean {
-  return !mouseTracking || linkModifierActive;
+export function shouldShowTerminalLinkHover(linkModifierActive: boolean): boolean {
+  return linkModifierActive;
 }
 
 export function ghosttyMouseButton(button: number): number | null {
@@ -1305,7 +1302,7 @@ export class GhosttyTerminalSurface {
   private refreshHoveredLink(): void {
     const pointer = this.hoverPointer;
     const link =
-      pointer && shouldShowTerminalLinkHover(this.core.isMouseTracking(), this.linkModifierActive)
+      pointer && shouldShowTerminalLinkHover(this.linkModifierActive)
         ? this.linkAt(pointer.x, pointer.y)
         : null;
     this.setHoveredLink(link);
