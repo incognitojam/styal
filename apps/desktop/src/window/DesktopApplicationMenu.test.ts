@@ -49,6 +49,7 @@ const electronAppLayer = Layer.succeed(ElectronApp.ElectronApp, {
   onBeforeQuitForUpdate: () => Effect.void,
   removeCommandLineSwitch: () => Effect.void,
   on: () => Effect.void,
+  once: () => Effect.void,
 } satisfies ElectronApp.ElectronApp["Service"]);
 
 const electronDialogLayer = Layer.succeed(ElectronDialog.ElectronDialog, {
@@ -80,6 +81,7 @@ const makeDesktopWindowLayer = (selectedAction: Deferred.Deferred<string>) =>
     handleBackendReady: () => Effect.void,
     handleBackendNotReady: Effect.void,
     flushMainWindowBounds: Effect.void,
+    closeMainForShutdown: Effect.void,
     dispatchMenuAction: (action) => Deferred.succeed(selectedAction, action).pipe(Effect.asVoid),
     zoomMain: (direction) =>
       Deferred.succeed(selectedAction, `zoom-${direction}`).pipe(Effect.asVoid),
