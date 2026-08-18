@@ -18,6 +18,7 @@ const clientSettings: ClientSettings = {
   browserDefaultZoomFactor: 1.25,
   browserDefaultAppearance: "dark",
   browserAutoShowFloatingPreview: false,
+  claudeStatusAlertsEnabled: false,
   confirmQuit: true,
   completionSound: "none",
   confirmThreadArchive: true,
