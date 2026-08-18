@@ -314,6 +314,20 @@ describe("deriveToolRowPresentation", () => {
       }
     });
 
+    it("leaves another server's preview tools as generic MCP rows", () => {
+      // The vocabulary describes T3's browser; it would misdescribe anyone
+      // else's tool that happens to share the name.
+      expect(isPreviewToolName("mcp__playwright__preview_click")).toBe(false);
+      expect(
+        deriveToolRowPresentation({
+          toolName: "mcp__playwright__preview_click",
+          itemType: "mcp_tool_call",
+          label: "MCP tool call",
+          input: { locator: "role=button" },
+        })?.heading,
+      ).toBe("playwright · preview_click");
+    });
+
     it("describes failures as failures", () => {
       expect(preview("preview_click", { locator: "role=button" }, true)).toEqual({
         heading: "Failed to click",

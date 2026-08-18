@@ -287,16 +287,21 @@ const PREVIEW_TOOL_SPECS: Readonly<Record<string, PreviewToolSpec>> = {
 
 const PREVIEW_TOOL_NAMES: ReadonlySet<string> = new Set(Object.keys(PREVIEW_TOOL_SPECS));
 
-/** Accepts both the MCP-qualified name (`mcp__t3-code__preview_navigate`)
- * and bare names (`preview_navigate`) so every provider matches. */
+/**
+ * Every adapter registers this MCP server as `t3-code`, so the qualified name
+ * is an exact prefix rather than a pattern. Claude sends the qualified form and
+ * the other providers send the bare wire name, so both are accepted — but a
+ * `preview_*` tool from some other server keeps the generic MCP row, because
+ * this vocabulary describes T3's browser and would misdescribe anyone else's.
+ */
+const QUALIFIED_PREVIEW_PREFIX = "mcp__t3-code__";
+
 function previewToolNameOf(value: string): string | undefined {
   const trimmed = value.trim();
-  if (PREVIEW_TOOL_NAMES.has(trimmed)) {
-    return trimmed;
-  }
-  const match = /^mcp__[^_]+(?:_[^_]+)*?__(?<tool>preview_[a-z_]+)$/u.exec(trimmed);
-  const tool = match?.groups?.tool;
-  return tool && PREVIEW_TOOL_NAMES.has(tool) ? tool : undefined;
+  const bare = trimmed.startsWith(QUALIFIED_PREVIEW_PREFIX)
+    ? trimmed.slice(QUALIFIED_PREVIEW_PREFIX.length)
+    : trimmed;
+  return PREVIEW_TOOL_NAMES.has(bare) ? bare : undefined;
 }
 
 export function isPreviewToolName(value: string): boolean {
