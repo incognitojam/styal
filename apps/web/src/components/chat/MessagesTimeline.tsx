@@ -19,6 +19,7 @@ const NOOP_OPEN_AGENTS = () => {};
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import {
   deriveToolRowPresentation,
+  normalizeKnownToolName,
   type ToolRowArgument,
 } from "@t3tools/shared/toolRowPresentation";
 import {
@@ -2167,6 +2168,7 @@ function toolRowPresentationFor(workEntry: TimelineWorkEntry) {
     input: workEntry.toolInput,
     command: workEntry.command,
     changedFiles: workEntry.changedFiles,
+    failed: workEntryIndicatesToolFailure(workEntry),
   });
 }
 
@@ -2397,7 +2399,7 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
 
   // The tool's own name beats itemType where the adapters' substring
   // classification gets it wrong (TaskCreate reads as a file write).
-  switch (workEntry.toolName) {
+  switch (workEntry.toolName ? normalizeKnownToolName(workEntry.toolName) : undefined) {
     case "Read":
       return "eye";
     case "Grep":
