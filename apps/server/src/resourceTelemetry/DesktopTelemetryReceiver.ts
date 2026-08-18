@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
+import * as NodeNet from "node:net";
 
 import * as NodeStream from "@effect/platform-node/NodeStream";
 import {
@@ -208,6 +209,15 @@ export function initialDesktopTelemetryContactAt(
   nowMs: number,
 ): Option.Option<number> {
   return desktopTelemetryFd === undefined ? Option.none() : Option.some(nowMs);
+}
+
+/** Opens the inherited IPC pipe with cancellable socket reads for scoped shutdown. */
+export function openDesktopTelemetryInputStream(fd: number): NodeNet.Socket {
+  return new NodeNet.Socket({
+    fd,
+    readable: true,
+    writable: false,
+  });
 }
 
 export const recordDesktopTelemetrySampleHealth = Effect.fn(
@@ -438,11 +448,7 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
     const fd = config.desktopTelemetryFd;
     const readable = yield* Effect.acquireRelease(
       Effect.try({
-        try: () =>
-          NodeFS.createReadStream("", {
-            fd,
-            autoClose: true,
-          }),
+        try: () => openDesktopTelemetryInputStream(fd),
         catch: (cause) => new DesktopTelemetryStreamFailed({ fd, cause }),
       }),
       (stream) =>
