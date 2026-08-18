@@ -7,6 +7,7 @@ import * as Schema from "effect/Schema";
 
 import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
 import * as DesktopLifecycle from "../../app/DesktopLifecycle.ts";
+import * as DesktopObservability from "../../app/DesktopObservability.ts";
 import * as DesktopShutdown from "../../app/DesktopShutdown.ts";
 import * as DesktopState from "../../app/DesktopState.ts";
 import * as ElectronApp from "../../electron/ElectronApp.ts";
@@ -53,6 +54,10 @@ function makeLifecycleLayer(relaunchReasons: Array<string>) {
 }
 
 const unusedLifecycleRuntimeLayer = Layer.mergeAll(
+  Layer.succeed(
+    DesktopObservability.DesktopTrace,
+    DesktopObservability.DesktopTrace.of({ flush: Effect.void }),
+  ),
   DesktopShutdown.layer,
   DesktopState.layer,
   Layer.succeed(
