@@ -4,7 +4,10 @@ import {
   planPinnedMove,
   sortPinnedThreadsByOrderKey,
   sortThreads,
+  sortThreadsByWorkspaceCluster,
+  threadWorkspaceKey,
   type ThreadSortInput,
+  type WorkspaceClusterThread,
 } from "./threadSort.ts";
 
 type TestThread = { readonly id: string } & ThreadSortInput;
@@ -138,5 +141,113 @@ describe("sortPinnedThreadsByOrderKey", () => {
       },
     ]);
     expect(sorted.map((thread) => thread.environmentId)).toEqual(["env-a", "env-b"]);
+  });
+});
+
+describe("sortThreadsByWorkspaceCluster", () => {
+  const workspaceThread = (
+    overrides: Partial<WorkspaceClusterThread> & { id: string; createdAt: string },
+  ): WorkspaceClusterThread => ({
+    environmentId: "env-1",
+    projectId: "project-1",
+    branch: null,
+    worktreePath: null,
+    ...overrides,
+  });
+
+  it("orders unclustered threads by creation time, newest first", () => {
+    const sorted = sortThreadsByWorkspaceCluster([
+      workspaceThread({ id: "oldest", createdAt: "2026-08-01T08:00:00.000Z" }),
+      workspaceThread({ id: "newest", createdAt: "2026-08-01T12:00:00.000Z" }),
+      workspaceThread({ id: "middle", createdAt: "2026-08-01T10:00:00.000Z" }),
+    ]);
+    expect(sorted.map((thread) => thread.id)).toEqual(["newest", "middle", "oldest"]);
+  });
+
+  it("breaks creation-time ties by id so the order is stable", () => {
+    const sorted = sortThreadsByWorkspaceCluster([
+      workspaceThread({ id: "b", createdAt: "2026-08-01T10:00:00.000Z" }),
+      workspaceThread({ id: "a", createdAt: "2026-08-01T10:00:00.000Z" }),
+    ]);
+    expect(sorted.map((thread) => thread.id)).toEqual(["a", "b"]);
+  });
+
+  it("keeps same-worktree threads adjacent, original first, at the newest member's slot", () => {
+    const sorted = sortThreadsByWorkspaceCluster([
+      workspaceThread({
+        id: "feature",
+        createdAt: "2026-08-01T08:00:00.000Z",
+        worktreePath: "/wt/feature",
+      }),
+      workspaceThread({ id: "unrelated", createdAt: "2026-08-01T10:00:00.000Z" }),
+      // Spawned review pulls the whole family above the unrelated thread.
+      workspaceThread({
+        id: "review",
+        createdAt: "2026-08-01T12:00:00.000Z",
+        worktreePath: "/wt/feature",
+      }),
+    ]);
+    expect(sorted.map((thread) => thread.id)).toEqual(["feature", "review", "unrelated"]);
+  });
+
+  it("clusters local-checkout threads only by an explicitly set branch", () => {
+    const sorted = sortThreadsByWorkspaceCluster([
+      workspaceThread({ id: "plain-old", createdAt: "2026-08-01T06:00:00.000Z" }),
+      workspaceThread({
+        id: "branch-old",
+        createdAt: "2026-08-01T08:00:00.000Z",
+        branch: "feature-x",
+      }),
+      // branch: null threads never cluster with each other.
+      workspaceThread({ id: "plain-new", createdAt: "2026-08-01T10:00:00.000Z" }),
+      workspaceThread({
+        id: "branch-new",
+        createdAt: "2026-08-01T12:00:00.000Z",
+        branch: "feature-x",
+      }),
+    ]);
+    expect(sorted.map((thread) => thread.id)).toEqual([
+      "branch-old",
+      "branch-new",
+      "plain-new",
+      "plain-old",
+    ]);
+  });
+
+  it("scopes branch families to their project and worktree families to their environment", () => {
+    expect(
+      threadWorkspaceKey(
+        workspaceThread({ id: "a", createdAt: "2026-08-01T08:00:00.000Z", branch: "main" }),
+      ),
+    ).not.toEqual(
+      threadWorkspaceKey(
+        workspaceThread({
+          id: "b",
+          createdAt: "2026-08-01T08:00:00.000Z",
+          branch: "main",
+          projectId: "project-2",
+        }),
+      ),
+    );
+    expect(
+      threadWorkspaceKey(
+        workspaceThread({ id: "a", createdAt: "2026-08-01T08:00:00.000Z", worktreePath: "/wt/x" }),
+      ),
+    ).not.toEqual(
+      threadWorkspaceKey(
+        workspaceThread({
+          id: "b",
+          createdAt: "2026-08-01T08:00:00.000Z",
+          worktreePath: "/wt/x",
+          environmentId: "env-2",
+        }),
+      ),
+    );
+  });
+
+  it("returns null keys for threads without a worktree or branch", () => {
+    expect(
+      threadWorkspaceKey(workspaceThread({ id: "a", createdAt: "2026-08-01T08:00:00.000Z" })),
+    ).toBeNull();
   });
 });
