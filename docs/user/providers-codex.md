@@ -157,3 +157,11 @@ Use a totally separate `CODEX_HOME path` only when you want a separate Codex wor
 
 That means separate sessions and less account switching inside old threads. Most dual-account users
 should use the shared-home plus shadow-home setup instead.
+
+## Codex Is Unexpectedly Failing
+
+**OpenAI outage alerts** are enabled by default and can be managed in **Settings**. When OpenAI
+reports a disruption, T3 Code shows affected services above **Settings** in the web and desktop
+sidebar. The alert includes Codex API, CLI, Codex Web, and the VS Code extension alongside the
+OpenAI API services developers commonly use. Select the notice to open the official OpenAI Status
+page.
