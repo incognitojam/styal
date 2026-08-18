@@ -45,7 +45,7 @@ interface Props {
   readonly bottomInset: number;
 }
 
-const MINI_PLAYER_CORNER_RADIUS = 14;
+const MINI_PLAYER_CONTENT_RADIUS = 13;
 
 export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props) {
   const rootRef = useRef<HTMLElement | null>(null);
@@ -322,14 +322,14 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
         <BrowserSurfaceSlot
           tabId={runtimeTabId}
           visible={Boolean(desktopOverlay?.hasWebContents)}
-          cornerRadius={MINI_PLAYER_CORNER_RADIUS}
+          cornerRadius={MINI_PLAYER_CONTENT_RADIUS}
           fitSourceContent
           layoutVersion={
             position
               ? `${position.x}:${position.y}`
               : `initial:${bottomInset}:${defaultLayoutVersion}`
           }
-          className="absolute inset-0"
+          className="absolute inset-px"
         />
         <div className="pointer-events-none absolute inset-0 z-[31] rounded-[14px] ring-1 ring-inset ring-border/80" />
         {!desktopOverlay?.hasWebContents ? (
