@@ -79,6 +79,12 @@ describe("PullRequestChecksTab", () => {
     );
   });
 
+  it("shows draft status ahead of a ready merge verdict", () => {
+    const text = render({ isDraft: true, mergeReadiness: "ready", checks: [check()] });
+    expect(text).toContain("Draft");
+    expect(text).not.toContain("Ready to merge");
+  });
+
   it("shows a required check that has not reported as waiting, not running", () => {
     const text = render({
       checks: [
@@ -170,5 +176,23 @@ describe("PullRequestChecksNavButton", () => {
         compact: true,
       }),
     ).toMatchObject({ policy: "ready", label: "Ready", health: "1 failing" });
+  });
+
+  it("keeps draft ahead of a ready policy verdict in every summary", () => {
+    const { props } = navButton({
+      checks: nineChecksOneFailing(),
+      isDraft: true,
+      mergeReadiness: "ready",
+      onSelect: () => {},
+    });
+    expect(props["aria-label"]).toBe("Open checks: Draft · 1 of 9 failing");
+    expect(
+      pullRequestMergeVerdict({
+        checks: nineChecksOneFailing(),
+        isDraft: true,
+        mergeReadiness: "ready",
+        compact: true,
+      }),
+    ).toMatchObject({ policy: "draft", label: "Draft", health: "1 failing" });
   });
 });
