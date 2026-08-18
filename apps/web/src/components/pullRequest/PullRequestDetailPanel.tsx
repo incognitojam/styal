@@ -1162,6 +1162,7 @@ function PullRequestDetailPanelBody({
   const mergeVerdict = detail
     ? pullRequestMergeVerdict({
         checks: detail.checks,
+        isDraft: detail.isDraft,
         mergeReadiness: detail.mergeReadiness,
         compact: true,
       })
@@ -1899,6 +1900,7 @@ function PullRequestDetailPanelBody({
             {tab === "summary" ? (
               <PullRequestChecksNavButton
                 checks={detail.checks}
+                isDraft={detail.isDraft}
                 mergeReadiness={detail.mergeReadiness}
                 onSelect={() => setTab("checks")}
               />
@@ -2045,6 +2047,7 @@ function PullRequestDetailPanelBody({
               <div className={cn("absolute inset-0", tab !== "checks" && "invisible")}>
                 <PullRequestChecksTab
                   checks={detail.checks}
+                  isDraft={detail.isDraft}
                   mergeReadiness={detail.mergeReadiness}
                   pendingFinding={handoff}
                   fixCheckLabel={handoffLabels.fixCheck}
