@@ -11,6 +11,7 @@ import { useActivePreviewSessions } from "~/previewStateStore";
 import { readPreviewAnnotationTheme } from "./annotationTheme";
 import { useBrowserPointerStore } from "./browserPointerStore";
 import { HostedBrowserWebview } from "./HostedBrowserWebview";
+import { notifyPreviewHumanInput } from "./previewAutomationFocus";
 import { previewRuntimeTabId } from "./previewRuntimeTabId";
 
 export function ElectronBrowserHost() {
@@ -70,6 +71,14 @@ export function ElectronBrowserHost() {
       headObserver.disconnect();
     };
   }, [resolvedTheme]);
+
+  useEffect(() => {
+    const preview = window.desktopBridge?.preview;
+    if (!preview) return;
+    return preview.onHumanInput((event) => {
+      notifyPreviewHumanInput(event.tabId);
+    });
+  }, []);
 
   useEffect(() => {
     const preview = window.desktopBridge?.preview;

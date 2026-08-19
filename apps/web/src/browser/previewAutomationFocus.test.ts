@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { withPreservedPreviewAutomationFocus } from "./previewAutomationFocus";
+import {
+  notifyPreviewHumanInput,
+  withPreservedPreviewAutomationFocus,
+} from "./previewAutomationFocus";
 
 class MockHTMLElement {
   isConnected = true;
@@ -51,7 +54,6 @@ function setupFocusDocument(runtimeTabIds: ReadonlyArray<string> = ["runtime-tab
     return webview;
   });
   const focusInListeners = new Set<() => void>();
-  const pointerDownListeners = new Set<(event: PointerEvent) => void>();
   const emitFocusIn = () => {
     for (const listener of Array.from(focusInListeners)) listener();
   };
@@ -61,15 +63,9 @@ function setupFocusDocument(runtimeTabIds: ReadonlyArray<string> = ["runtime-tab
     querySelectorAll: vi.fn(() => webviews),
     addEventListener: vi.fn((type: string, listener: EventListener) => {
       if (type === "focusin") focusInListeners.add(listener as () => void);
-      if (type === "pointerdown") {
-        pointerDownListeners.add(listener as (event: PointerEvent) => void);
-      }
     }),
     removeEventListener: vi.fn((type: string, listener: EventListener) => {
       if (type === "focusin") focusInListeners.delete(listener as () => void);
-      if (type === "pointerdown") {
-        pointerDownListeners.delete(listener as (event: PointerEvent) => void);
-      }
     }),
   };
   const focus = vi.fn(() => {
@@ -77,6 +73,14 @@ function setupFocusDocument(runtimeTabIds: ReadonlyArray<string> = ["runtime-tab
     emitFocusIn();
   });
   Object.assign(composer, { focus });
+  for (const webview of webviews) {
+    Object.assign(webview, {
+      focus: vi.fn(() => {
+        documentStub.activeElement = webview as unknown as Element;
+        emitFocusIn();
+      }),
+    });
+  }
 
   globalThis.HTMLElement = MockHTMLElement as unknown as typeof HTMLElement;
   globalThis.document = documentStub as unknown as Document;
@@ -93,10 +97,6 @@ function setupFocusDocument(runtimeTabIds: ReadonlyArray<string> = ["runtime-tab
     focus,
     documentStub,
     emitFocusIn,
-    emitPointerDown: (target: MockHTMLElement) => {
-      const event = { isTrusted: true, composedPath: () => [target] } as unknown as PointerEvent;
-      for (const listener of Array.from(pointerDownListeners)) listener(event);
-    },
   };
 }
 
@@ -149,7 +149,7 @@ describe("withPreservedPreviewAutomationFocus", () => {
     expect(fixture.focus).not.toHaveBeenCalled();
   });
 
-  it("allows an intentional user pointer interaction with the automated webview", async () => {
+  it("allows trusted guest input to reclaim focus from the automation guard", async () => {
     const fixture = setupFocusDocument();
     let finishOperation: (() => void) | undefined;
     const guarded = withPreservedPreviewAutomationFocus(
@@ -160,7 +160,30 @@ describe("withPreservedPreviewAutomationFocus", () => {
         }),
     );
 
-    fixture.emitPointerDown(fixture.webview);
+    fixture.documentStub.activeElement = fixture.webview as unknown as Element;
+    fixture.emitFocusIn();
+    expect(fixture.documentStub.activeElement).toBe(fixture.composer);
+
+    notifyPreviewHumanInput("runtime-tab");
+    finishOperation?.();
+    await guarded;
+
+    expect(fixture.focus).toHaveBeenCalledOnce();
+    expect(fixture.documentStub.activeElement).toBe(fixture.webview);
+  });
+
+  it("cancels restoration when trusted guest input arrives before guest focus", async () => {
+    const fixture = setupFocusDocument();
+    let finishOperation: (() => void) | undefined;
+    const guarded = withPreservedPreviewAutomationFocus(
+      "runtime-tab",
+      () =>
+        new Promise<void>((resolve) => {
+          finishOperation = resolve;
+        }),
+    );
+
+    notifyPreviewHumanInput("runtime-tab");
     fixture.documentStub.activeElement = fixture.webview as unknown as Element;
     fixture.emitFocusIn();
     finishOperation?.();

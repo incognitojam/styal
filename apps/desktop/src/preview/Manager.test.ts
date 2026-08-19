@@ -3004,6 +3004,11 @@ describe("PreviewManager", () => {
             activity.push(event.phase);
           }),
         );
+        yield* manager.subscribeHumanInput((event) =>
+          Effect.sync(() => {
+            activity.push(`human:${event.tabId}`);
+          }),
+        );
         yield* manager.createTab("tab_1");
         yield* manager.registerWebview("tab_1", 42);
         const click = yield* manager
@@ -3299,6 +3304,7 @@ describe("PreviewManager", () => {
     withManager((manager) =>
       Effect.gen(function* () {
         let humanInput: ((_event: unknown, signal: unknown) => void) | undefined;
+        const humanInputEvents: string[] = [];
         const sendCommand = vi.fn(async (method: string, params?: Record<string, unknown>) => {
           if (method === "Runtime.evaluate") {
             return {
@@ -3344,6 +3350,11 @@ describe("PreviewManager", () => {
 
         yield* manager.createTab("tab_1");
         yield* manager.registerWebview("tab_1", 42);
+        yield* manager.subscribeHumanInput((event) =>
+          Effect.sync(() => {
+            humanInputEvents.push(event.tabId);
+          }),
+        );
 
         const click = yield* manager
           .automationClick("tab_1", { x: 120, y: 80 })
@@ -3353,6 +3364,7 @@ describe("PreviewManager", () => {
         expect(sendCommand).toHaveBeenCalledWith("Emulation.setFocusEmulationEnabled", {
           enabled: false,
         });
+        expect(humanInputEvents).toEqual(["tab_1"]);
         if (Exit.isSuccess(exit)) return;
         const error = Option.getOrThrow(Cause.findErrorOption(exit.cause));
         expect(error).toMatchObject({

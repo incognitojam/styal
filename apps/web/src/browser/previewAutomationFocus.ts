@@ -5,6 +5,7 @@ const PREVIEW_AUTOMATION_FOCUS_SETTLE_MS = 250;
 interface ActivePreviewAutomationFocusGuard {
   readonly runtimeTabId: string;
   readonly previouslyFocused: HTMLElement;
+  readonly acceptHumanInput: () => void;
 }
 
 const activeFocusGuards = new Set<ActivePreviewAutomationFocusGuard>();
@@ -15,6 +16,16 @@ const isActiveAutomationWebview = (element: Element | null): boolean => {
     (guard) => findBrowserWebview(guard.runtimeTabId) === element,
   );
 };
+
+/**
+ * Accept a trusted guest-input signal after the desktop manager has excluded
+ * automation-generated packets.
+ */
+export function notifyPreviewHumanInput(runtimeTabId: string): void {
+  for (const guard of Array.from(activeFocusGuards)) {
+    if (guard.runtimeTabId === runtimeTabId) guard.acceptHumanInput();
+  }
+}
 
 /**
  * Preserve the user's active T3 control when Electron delivers delayed guest
@@ -40,16 +51,15 @@ export async function withPreservedPreviewAutomationFocus<A>(
   }
 
   let focusSuperseded = false;
+  let restoredAutomationFocus = false;
   let listening = true;
-  const guard: ActivePreviewAutomationFocusGuard = { runtimeTabId, previouslyFocused };
-  activeFocusGuards.add(guard);
+  let guard: ActivePreviewAutomationFocusGuard;
 
   const cleanup = () => {
     if (!listening) return;
     listening = false;
     activeFocusGuards.delete(guard);
     document.removeEventListener("focusin", onFocusIn, true);
-    document.removeEventListener("pointerdown", onPointerDown, true);
   };
   const restore = () => {
     if (focusSuperseded || !previouslyFocused.isConnected) return;
@@ -57,6 +67,7 @@ export async function withPreservedPreviewAutomationFocus<A>(
     if (!currentWebview || document.activeElement !== currentWebview) return;
     try {
       previouslyFocused.focus({ preventScroll: true });
+      restoredAutomationFocus = document.activeElement === previouslyFocused;
     } catch {
       // The prior control can become unfocusable while an async action settles.
     }
@@ -72,19 +83,23 @@ export async function withPreservedPreviewAutomationFocus<A>(
     focusSuperseded = true;
     cleanup();
   };
-  const onPointerDown = (event: PointerEvent) => {
-    if (!event.isTrusted) return;
-    const currentWebview = findBrowserWebview(runtimeTabId);
-    if (!currentWebview || !event.composedPath().includes(currentWebview)) return;
-    // A real pointer event in the embedder means the user chose the preview.
-    // Cancel before Electron transfers focus so the automation guard cannot
-    // bounce intentional interaction back to the previous T3 control.
+  const acceptHumanInput = () => {
     focusSuperseded = true;
     cleanup();
+    if (!restoredAutomationFocus || document.activeElement !== previouslyFocused) return;
+    const currentWebview = findBrowserWebview(runtimeTabId);
+    if (!(currentWebview instanceof HTMLElement)) return;
+    try {
+      currentWebview.focus({ preventScroll: true });
+    } catch {
+      // The guest can detach between its input signal and renderer delivery.
+    }
   };
 
+  guard = { runtimeTabId, previouslyFocused, acceptHumanInput };
+  activeFocusGuards.add(guard);
+
   document.addEventListener("focusin", onFocusIn, true);
-  document.addEventListener("pointerdown", onPointerDown, true);
   try {
     return await operation();
   } finally {
