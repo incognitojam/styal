@@ -67,7 +67,8 @@ describe("Claude status notice", () => {
         },
       ],
       description: "Partial System Outage",
-      label: "Claude Outage: Claude API (api.anthropic.com), Claude Code",
+      accessibleLabel: "Claude Outage: API, Claude Code",
+      label: "Outage: API, Claude Code",
       tone: "error",
     });
   });
@@ -109,9 +110,71 @@ describe("Claude status notice", () => {
       ],
       affectedComponents: [],
       description: "1 active incident",
-      label: "Claude Incident: Degraded performance for Claude Opus 5, Claude Sonnet 5",
+      accessibleLabel: "Claude Incident: 4 services",
+      label: "Incident: 4 services",
       tone: "warning",
     });
+  });
+
+  it("drops the vendor word only where what follows is generic", () => {
+    const label = (name: string) =>
+      resolveClaudeStatusNotice(
+        statusSummary({
+          indicator: "minor",
+          components: [{ name, status: "degraded_performance", showcase: true }],
+        }),
+      )?.label;
+
+    // Generic: the icon already says whose API it is, and the hostname goes too.
+    expect(label("Claude API (api.anthropic.com)")).toBe("Outage: API");
+    expect(label("Claude Console (platform.claude.com)")).toBe("Outage: Console");
+    // Product names keep the vendor word; "Code" alone is not a product.
+    expect(label("Claude Code")).toBe("Outage: Claude Code");
+    expect(label("Claude Cowork")).toBe("Outage: Claude Cowork");
+    expect(label("Claude for Government")).toBe("Outage: Claude for Government");
+    expect(label("claude.ai")).toBe("Outage: claude.ai");
+  });
+
+  it("falls back to the incident count when a single incident names no service", () => {
+    const notice = resolveClaudeStatusNotice(
+      statusSummary({
+        incidents: [
+          {
+            components: [{ name: "Internal rollup", showcase: false }],
+            impact: "minor",
+            name: "Elevated error rates",
+            status: "investigating",
+          },
+        ],
+      }),
+    );
+
+    expect(notice?.label).toBe("1 active incident");
+    expect(notice?.accessibleLabel).toBe("Claude: 1 active incident");
+  });
+
+  it("counts concurrent incidents rather than naming their overlapping scopes", () => {
+    const notice = resolveClaudeStatusNotice(
+      statusSummary({
+        incidents: [
+          {
+            components: [{ name: "Claude Code", showcase: true }],
+            impact: "minor",
+            name: "Elevated error rates",
+            status: "investigating",
+          },
+          {
+            components: [{ name: "Claude Code", showcase: true }],
+            impact: "minor",
+            name: "Degraded performance for Claude Opus 5",
+            status: "monitoring",
+          },
+        ],
+      }),
+    );
+
+    expect(notice?.label).toBe("2 active incidents");
+    expect(notice?.accessibleLabel).toBe("Claude: 2 active incidents");
   });
 
   it("ignores malformed responses", () => {

@@ -40,7 +40,7 @@ describe("fetchStatusPageNotice", () => {
     ).resolves.toMatchObject({
       notice: {
         affectedComponents: [{ name: "Codex Web", status: "major_outage" }],
-        label: "OpenAI Outage: Codex Web",
+        label: "Outage: Codex Web",
       },
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -60,11 +60,11 @@ describe("fetchStatusPageNotice", () => {
     });
     expect(loaded?.notice).toMatchObject({
       affectedComponents: [{ name: "Codex Web", status: "major_outage" }],
-      label: "OpenAI Outage: Codex Web",
+      label: "Outage: Codex Web",
     });
     await expect(loaded?.enrichment).resolves.toMatchObject({
       affectedComponents: [{ name: "Codex Web", status: "major_outage" }],
-      label: "OpenAI Outage: Codex Web",
+      label: "Outage: Codex Web",
     });
   });
 
@@ -117,7 +117,7 @@ describe("fetchStatusPageNotice", () => {
       summaryUrl: OPENAI_STATUS_SUMMARY_URL,
     });
 
-    expect(loaded?.notice).toMatchObject({ label: "OpenAI Outage: Codex Web" });
+    expect(loaded?.notice).toMatchObject({ label: "Outage: Codex Web" });
     await vi.advanceTimersByTimeAsync(5_000);
     await expect(loaded?.enrichment).resolves.toBeUndefined();
   });
