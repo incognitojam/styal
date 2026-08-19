@@ -60,7 +60,8 @@ describe("OpenAI status notice", () => {
         },
       ],
       description: "Partial System Outage",
-      label: "OpenAI Outage: Codex Web, ChatGPT",
+      accessibleLabel: "OpenAI Outage: Codex Web, ChatGPT",
+      label: "Outage: Codex Web, ChatGPT",
       tone: "error",
     });
   });
@@ -91,7 +92,8 @@ describe("OpenAI status notice", () => {
       ],
       affectedComponents: [],
       description: "1 active incident",
-      label: "OpenAI Incident: Elevated errors in Codex",
+      accessibleLabel: "OpenAI Incident: Codex Web",
+      label: "Incident: Codex Web",
       tone: "warning",
     });
   });
@@ -115,7 +117,8 @@ describe("OpenAI status notice", () => {
         { name: "Codex API", status: "partial_outage" },
         { name: "CLI", status: "degraded_performance" },
       ],
-      label: "OpenAI Outage: Codex API, CLI",
+      accessibleLabel: "OpenAI Outage: Codex API, CLI",
+      label: "Outage: Codex API, CLI",
       tone: "error",
     });
   });
@@ -130,7 +133,8 @@ describe("OpenAI status notice", () => {
       }),
     ).toMatchObject({
       affectedComponents: [{ name: "Login", status: "major_outage" }],
-      label: "OpenAI Outage: Login",
+      accessibleLabel: "OpenAI Outage: Login",
+      label: "Outage: Login",
       tone: "error",
     });
   });

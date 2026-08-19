@@ -57,6 +57,8 @@ export interface StatusPageIncidentIssue {
 }
 
 export interface StatusPageNotice {
+  /** Spoken form of `label`, which names the service the icon stands in for. */
+  readonly accessibleLabel: string;
   readonly activeIncidents: ReadonlyArray<StatusPageIncidentIssue>;
   readonly affectedComponents: ReadonlyArray<StatusPageComponentIssue>;
   readonly description: string;
@@ -131,10 +133,39 @@ function isErrorImpact(impact: string): boolean {
   return impact === "major" || impact === "critical";
 }
 
-function affectedServicesLabel(components: ReadonlyArray<StatusPageComponentIssue>): string {
-  if (components.length === 0) return "service disruption";
-  if (components.length <= 2) return components.map((component) => component.name).join(", ");
-  return `${components.length} services affected`;
+/**
+ * Words that read as plain infrastructure once the vendor is known from the
+ * icon, so "Claude API" can shorten to "API". Everything else keeps its vendor
+ * word, because in "Claude Code" and "Claude Cowork" it names the product
+ * rather than namespacing it. Unlisted means untouched, so a new component can
+ * only ever be too long, never renamed into something that does not exist.
+ */
+const GENERIC_COMPONENT_NAMES = new Set(["api", "console", "dashboard", "platform"]);
+
+/**
+ * Shortens a component name for the pill: the hostname a status page appends
+ * for disambiguation always goes, the vendor word only when what follows is
+ * generic. The tooltip shows the name exactly as the status page wrote it.
+ */
+function shortComponentName(name: string, serviceName: string): string {
+  const withoutHost = name.replace(/\s*\([^()]*\)$/, "").trim();
+  const base = withoutHost.length > 0 ? withoutHost : name;
+  const prefix = `${serviceName} `;
+  if (!base.toLowerCase().startsWith(prefix.toLowerCase())) return base;
+  const remainder = base.slice(prefix.length);
+  return GENERIC_COMPONENT_NAMES.has(remainder.toLowerCase()) ? remainder : base;
+}
+
+/**
+ * Names the disrupted services for the sidebar pill, which fits about thirty
+ * characters. Two names generally fit now that the pill no longer repeats the
+ * vendor; past two only the count does.
+ */
+function affectedServicesLabel(names: ReadonlyArray<string>, serviceName: string): string {
+  if (names.length === 0) return "service disruption";
+  if (names.length <= 2)
+    return names.map((name) => shortComponentName(name, serviceName)).join(", ");
+  return `${names.length} services`;
 }
 
 function activeIncidentsDescription(incidents: ReadonlyArray<StatusPageIncidentIssue>): string {
@@ -199,23 +230,42 @@ export function resolveStatusPageNotice(
       ? "error"
       : "warning";
 
-  const label =
+  // A lone incident still names its scope, which says far more than a bare count
+  // about whether the disruption touches your work. Past one incident the titles
+  // and scopes overlap, so the count is the honest summary.
+  const incidentScope =
+    activeIncidents.length === 1 ? (activeIncidents[0]?.affectedComponents ?? []) : [];
+
+  // The pill drops the service name because its icon already carries it; that
+  // buys back roughly a third of the row. `separator` rejoins the two for the
+  // accessible name, where there is no icon to lean on.
+  const rendered =
     affectedComponents.length > 0
-      ? `${serviceName} Outage: ${affectedServicesLabel(affectedComponents)}`
-      : activeIncidents.length === 1
-        ? `${serviceName} Incident: ${activeIncidents[0]?.name}`
-        : activeIncidents.length > 1
-          ? `${serviceName}: ${activeIncidents.length} active incidents`
-          : `${serviceName} Outage: service disruption`;
+      ? {
+          label: `Outage: ${affectedServicesLabel(
+            affectedComponents.map((component) => component.name),
+            serviceName,
+          )}`,
+          separator: " ",
+        }
+      : incidentScope.length > 0
+        ? {
+            label: `Incident: ${affectedServicesLabel(incidentScope, serviceName)}`,
+            separator: " ",
+          }
+        : activeIncidents.length > 0
+          ? { label: activeIncidentsDescription(activeIncidents), separator: ": " }
+          : { label: "Outage: service disruption", separator: " " };
 
   return {
+    accessibleLabel: `${serviceName}${rendered.separator}${rendered.label}`,
     activeIncidents,
     affectedComponents,
     description:
       summary.status.indicator === "none" && affectedComponents.length === 0
         ? activeIncidentsDescription(activeIncidents)
         : summary.status.description,
-    label,
+    label: rendered.label,
     tone,
   };
 }
