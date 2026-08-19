@@ -17,6 +17,7 @@ import {
 import {
   applyRequiredCheckPolicy,
   markRequiredChecks,
+  narrowMergeCapabilities,
   type GitHubViewerAccess,
 } from "./gitHubPullRequestJson.ts";
 
@@ -250,9 +251,10 @@ export const make = Effect.gen(function* () {
                           })
                           .pipe(Effect.orElseSucceed(() => null)),
                   // Policy is per base branch, so it follows detail. Failure means no synthetic
-                  // rows; the independently reported required-check read can still decorate runs.
-                  requiredCheckPolicy: cli
-                    .getRequiredCheckPolicy({
+                  // rows and no narrowing of the strategies on offer; the independently reported
+                  // required-check read can still decorate runs.
+                  branchPolicy: cli
+                    .getBranchPolicy({
                       cwd: input.cwd,
                       repository: input.repository,
                       host: input.host,
@@ -289,14 +291,17 @@ export const make = Effect.gen(function* () {
               requiredChecks === null
                 ? detail.pullRequest.checks
                 : markRequiredChecks(detail.pullRequest.checks, requiredChecks),
-              detail.requiredCheckPolicy ?? [],
+              detail.branchPolicy?.requiredChecks ?? [],
             ),
             reviewers: detail.pullRequest.reviewRequestLogins.map((login) => ({
               login,
               name: null,
               avatarUrl: null,
             })),
-            mergeCapabilities: repository.mergeCapabilities,
+            mergeCapabilities: narrowMergeCapabilities(
+              repository.mergeCapabilities,
+              detail.branchPolicy?.allowedMergeMethods ?? null,
+            ),
             viewerPermissions: gitHubViewerPermissions({
               ...viewerAccess,
               canUpdateBranch: detail.comparison?.viewerCanUpdate === true,
