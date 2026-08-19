@@ -24,6 +24,7 @@ import { mergeGitStatusParts } from "@t3tools/shared/git";
 
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
+import type * as GitVcsDriver from "./GitVcsDriver.ts";
 
 const DEFAULT_VCS_STATUS_REFRESH_INTERVAL = Duration.seconds(30);
 const VCS_STATUS_REFRESH_FAILURE_BASE_DELAY = Duration.seconds(30);
@@ -139,6 +140,10 @@ interface StreamStatusOptions {
   readonly automaticRemoteRefreshInterval?: Effect.Effect<Duration.Duration, never>;
 }
 
+export interface VcsStatusRefreshOptions extends GitVcsDriver.GitRemoteStatusOptions {
+  readonly invalidatePullRequest?: boolean | "if-missing";
+}
+
 export function remoteRefreshFailureDelay(
   consecutiveFailures: number,
   configuredInterval: Duration.Duration,
@@ -162,7 +167,10 @@ export class VcsStatusBroadcaster extends Context.Service<
     readonly refreshLocalStatus: (
       cwd: string,
     ) => Effect.Effect<VcsStatusLocalResult, GitManagerServiceError>;
-    readonly refreshStatus: (cwd: string) => Effect.Effect<VcsStatusResult, GitManagerServiceError>;
+    readonly refreshStatus: (
+      cwd: string,
+      options?: VcsStatusRefreshOptions,
+    ) => Effect.Effect<VcsStatusResult, GitManagerServiceError>;
     readonly streamStatus: (
       input: VcsStatusInput,
       options?: StreamStatusOptions,
@@ -367,13 +375,26 @@ export const make = Effect.gen(function* () {
 
   const refreshStatus: VcsStatusBroadcaster["Service"]["refreshStatus"] = Effect.fn(
     "VcsStatusBroadcaster.refreshStatus",
-  )(function* (rawCwd) {
+  )(function* (rawCwd, options) {
     const cwd = yield* withFileSystem(normalizeCwd(rawCwd));
-    // invalidateStatus (not the two partial invalidations) so an explicit
-    // refresh also bypasses GitManager's slow PR-lookup cache.
-    yield* workflow.invalidateStatus(cwd);
+    const cachedRemote = (yield* getCachedStatus(cwd))?.remote;
+    const shouldInvalidatePullRequest =
+      options?.invalidatePullRequest === "if-missing"
+        ? cachedRemote?.value?.pr === null
+        : options?.invalidatePullRequest !== false;
+    if (!shouldInvalidatePullRequest) {
+      yield* Effect.all(
+        [workflow.invalidateLocalStatus(cwd), workflow.invalidateRemoteStatus(cwd)],
+        { concurrency: "unbounded" },
+      );
+    } else {
+      // Explicit refreshes and Git actions always bypass the slower PR lookup
+      // cache. Turn completion only bypasses a cached miss: once associated,
+      // the PR keeps the normal cache cadence.
+      yield* workflow.invalidateStatus(cwd);
+    }
     const [local, remote] = yield* Effect.all(
-      [workflow.localStatus({ cwd }), workflow.remoteStatus({ cwd })],
+      [workflow.localStatus({ cwd }), workflow.remoteStatus({ cwd }, options)],
       { concurrency: "unbounded" },
     );
     return yield* updateCachedStatus(cwd, local, remote, { publish: true });
