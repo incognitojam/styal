@@ -236,13 +236,17 @@ export function StatusPageNotice({
 
   if (!enabled || !notice) return null;
 
+  const ariaLabel = notice.accessibleLabel.endsWith(notice.description)
+    ? `${notice.accessibleLabel}. Open ${pageName} Status.`
+    : `${notice.accessibleLabel}. ${notice.description}. Open ${pageName} Status.`;
+
   return (
     <Tooltip>
       <TooltipTrigger
         render={
           <button
             type="button"
-            aria-label={`${notice.label}. ${notice.description}. Open ${pageName} Status.`}
+            aria-label={ariaLabel}
             className={cn(
               "flex h-7 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-sidebar",
               notice.tone === "error"
