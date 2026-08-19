@@ -37,13 +37,13 @@ import {
   decodeActorAvatarsJson,
   decodeAutoMergePermissionsJson,
   decodeBranchProtectionRequiredChecksJson,
+  decodeBranchRulesJson,
   decodePullRequestActivityJson,
   decodePullRequestDetailJson,
   decodePullRequestFilesJson,
   decodePullRequestListJson,
   decodePullRequestNodeIdJson,
   decodeRequiredChecksJson,
-  decodeRequiredCheckRulesJson,
   decodePullRequestSearchJson,
   decodePullRequestStatsJson,
   decodeReactionSubjectScopeJson,
@@ -82,6 +82,7 @@ import {
   VIEWER_PERMISSIONS_GRAPHQL_QUERY,
   decodeViewerPermissionsJson,
   type GitHubBaseComparison,
+  type GitHubBranchRulePolicy,
   type GitHubPullRequestDetail,
   type GitHubPullRequestActivity,
   type GitHubPullRequestListItem,
@@ -418,13 +419,16 @@ export class GitHubPullRequestCli extends Context.Service<
       readonly number: number;
     }) => Effect.Effect<ReadonlyArray<GitHubRequiredCheck>, GitHubPullRequestCliError>;
 
-    /** Configured required contexts for the base branch, including ones with no reported run. */
-    readonly getRequiredCheckPolicy: (input: {
+    /**
+     * What the base branch's own policy demands: its configured required contexts, including ones
+     * with no reported run, and the merge strategies its rulesets leave open.
+     */
+    readonly getBranchPolicy: (input: {
       readonly cwd: string;
       readonly repository: string;
       readonly host: string;
       readonly baseBranch: string;
-    }) => Effect.Effect<ReadonlyArray<string>, GitHubPullRequestCliError>;
+    }) => Effect.Effect<GitHubBranchRulePolicy, GitHubPullRequestCliError>;
 
     /**
      * How far the branch trails its base, and whether this viewer may update it. Its own read
@@ -1506,7 +1510,7 @@ export const make = Effect.gen(function* () {
           }),
         ),
 
-    getRequiredCheckPolicy: (input) => {
+    getBranchPolicy: (input) => {
       const { owner, name } = parseRepositorySelector(input.repository);
       const rulesetPolicy = github
         .execute({
@@ -1522,27 +1526,35 @@ export const make = Effect.gen(function* () {
         })
         .pipe(
           Effect.flatMap((result) => {
-            const decoded = decodeRequiredCheckRulesJson(result.stdout.trim());
+            const decoded = decodeBranchRulesJson(result.stdout.trim());
             return Result.isSuccess(decoded)
               ? Effect.succeed(decoded.success)
               : Effect.fail(
                   new GitHubPullRequestReadError({
                     command: "gh",
                     cwd: input.cwd,
-                    operation: "getRequiredCheckPolicy.rulesets",
+                    operation: "getBranchPolicy.rulesets",
                     cause: decoded.failure,
                   }),
                 );
           }),
-          Effect.map((contexts) => ({ available: true as const, contexts })),
+          Effect.map((policy) => ({
+            available: true as const,
+            contexts: policy.requiredChecks,
+            allowedMergeMethods: policy.allowedMergeMethods,
+          })),
           // Rulesets do not exist on older GHES releases. That says nothing about classic
           // protection, so the second source still gets its own chance to answer.
-          Effect.orElseSucceed(() => ({ available: false as const, contexts: [] })),
+          Effect.orElseSucceed(() => ({
+            available: false as const,
+            contexts: [],
+            allowedMergeMethods: null,
+          })),
         );
       const classicPolicy = graphqlRead({
         cwd: input.cwd,
         host: input.host,
-        operation: "getRequiredCheckPolicy.branchProtection",
+        operation: "getBranchPolicy.branchProtection",
         variables: [
           ["-f", `owner=${owner}`],
           ["-f", `name=${name}`],
@@ -1563,12 +1575,17 @@ export const make = Effect.gen(function* () {
               new GitHubPullRequestReadError({
                 command: "gh",
                 cwd: input.cwd,
-                operation: "getRequiredCheckPolicy",
+                operation: "getBranchPolicy",
                 cause: new Error("GitHub did not expose ruleset or branch-protection policy."),
               }),
             );
           }
-          return Effect.succeed([...new Set([...rulesets.contexts, ...classic.contexts])]);
+          // Classic protection has no say over strategies — that half of the answer is the
+          // rulesets' alone, and a host without them narrows nothing.
+          return Effect.succeed({
+            requiredChecks: [...new Set([...rulesets.contexts, ...classic.contexts])],
+            allowedMergeMethods: rulesets.allowedMergeMethods,
+          });
         }),
       );
     },

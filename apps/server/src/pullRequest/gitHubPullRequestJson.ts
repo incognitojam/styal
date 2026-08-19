@@ -11,6 +11,7 @@ import type {
   PullRequestCommit,
   PullRequestLabel,
   PullRequestMergeCapabilities,
+  PullRequestMergeMethod,
   PullRequestMergeReadiness,
   PullRequestOmittedFileStat,
   PullRequestMergeability,
@@ -124,35 +125,98 @@ const RawBranchRuleSchema = Schema.Struct({
     Schema.NullOr(
       Schema.Struct({
         required_status_checks: Schema.optional(Schema.Array(RawRequiredCheckPolicyEntrySchema)),
+        allowed_merge_methods: Schema.optional(Schema.NullOr(Schema.Array(Schema.String))),
       }),
     ),
   ),
 });
 
 // `gh api --paginate --slurp` wraps each REST page in this outer array.
-const decodeRequiredCheckRules = decodeJsonResult(Schema.Array(Schema.Array(RawBranchRuleSchema)));
+const decodeBranchRules = decodeJsonResult(Schema.Array(Schema.Array(RawBranchRuleSchema)));
+
+/** What the rulesets in force on a base branch demand of a merge into it. */
+export interface GitHubBranchRulePolicy {
+  readonly requiredChecks: ReadonlyArray<string>;
+  /**
+   * Null where no ruleset narrows the strategy, which is not the same as narrowing it to none:
+   * a branch nobody has ruled on leaves the repository's own settings as the only word.
+   */
+  readonly allowedMergeMethods: ReadonlyArray<PullRequestMergeMethod> | null;
+}
+
+function toMergeMethod(value: string): PullRequestMergeMethod | null {
+  switch (value.trim().toLowerCase()) {
+    case "merge":
+      return "merge";
+    case "squash":
+      return "squash";
+    case "rebase":
+      return "rebase";
+    default:
+      return null;
+  }
+}
 
 /**
- * Required check names from every active ruleset GitHub says applies to the base branch. The
- * endpoint has already resolved repository and organization targeting, so this only normalizes
- * and deduplicates its contexts.
+ * What every active ruleset GitHub says applies to the base branch asks of a merge into it: the
+ * check contexts it requires, and the strategies its pull-request rules leave open. The endpoint
+ * has already resolved repository and organization targeting, so this only normalizes the answer.
+ *
+ * Rules stack rather than override, so two rulesets that each name a strategy list agree only on
+ * their intersection — a merge has to satisfy both of them to land.
  */
-export function decodeRequiredCheckRulesJson(
+export function decodeBranchRulesJson(
   raw: string,
-): Result.Result<ReadonlyArray<string>, DecodeFailure> {
-  const decoded = decodeRequiredCheckRules(raw);
+): Result.Result<GitHubBranchRulePolicy, DecodeFailure> {
+  const decoded = decodeBranchRules(raw);
   if (!Result.isSuccess(decoded)) return Result.fail(decoded.failure);
   const names = new Set<string>();
+  let allowedMergeMethods: ReadonlyArray<PullRequestMergeMethod> | null = null;
   for (const page of decoded.success) {
     for (const rule of page) {
-      if (rule.type !== "required_status_checks") continue;
-      for (const entry of rule.parameters?.required_status_checks ?? []) {
-        const name = trimmed(typeof entry === "string" ? entry : entry.context);
-        if (name !== null) names.add(name);
+      if (rule.type === "required_status_checks") {
+        for (const entry of rule.parameters?.required_status_checks ?? []) {
+          const name = trimmed(typeof entry === "string" ? entry : entry.context);
+          if (name !== null) names.add(name);
+        }
+        continue;
       }
+      // A pull-request rule that says nothing about strategies has not narrowed them.
+      if (rule.type !== "pull_request") continue;
+      const methods = rule.parameters?.allowed_merge_methods;
+      if (methods === undefined || methods === null) continue;
+      const allowed = methods.flatMap((value) => {
+        const method = toMergeMethod(value);
+        return method === null ? [] : [method];
+      });
+      // GitHub does not offer a rule that forbids every strategy, so a list this reads as empty
+      // is a list of names this version does not know. Narrowing to none would strand the merge.
+      if (allowed.length === 0) continue;
+      allowedMergeMethods =
+        allowedMergeMethods === null
+          ? allowed
+          : allowedMergeMethods.filter((method) => allowed.includes(method));
     }
   }
-  return Result.succeed([...names]);
+  return Result.succeed({ requiredChecks: [...names], allowedMergeMethods });
+}
+
+/**
+ * What the repository allows, narrowed by what the base branch's rulesets allow. The repository
+ * setting is the wider of the two: a ruleset can forbid a strategy the repository offers, and
+ * offering it anyway spends the press on a merge the host always refuses.
+ */
+export function narrowMergeCapabilities(
+  capabilities: PullRequestMergeCapabilities,
+  allowed: ReadonlyArray<PullRequestMergeMethod> | null,
+): PullRequestMergeCapabilities {
+  return allowed === null
+    ? capabilities
+    : {
+        merge: capabilities.merge && allowed.includes("merge"),
+        squash: capabilities.squash && allowed.includes("squash"),
+        rebase: capabilities.rebase && allowed.includes("rebase"),
+      };
 }
 
 /** Classic branch protection is separate from rulesets, and is most broadly readable in GraphQL. */
