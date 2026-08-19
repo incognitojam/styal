@@ -311,6 +311,13 @@ export function shouldHandleTerminalExit(
   );
 }
 
+export function shouldRetainExitedTerminal(
+  terminalId: string,
+  status: TerminalSessionState["status"],
+): boolean {
+  return status === "exited" && terminalId.startsWith("setup-");
+}
+
 interface TerminalViewportProps {
   advancedTypography: boolean;
   threadRef: ScopedThreadRef;
@@ -437,11 +444,13 @@ export function TerminalViewport({
       } else if (shouldHandleTerminalExit(status, synchronized, hasHandledExitRef.current)) {
         hasHandledExitRef.current = true;
         writeSystemMessage(terminal, status === "closed" ? "Terminal closed" : "Process exited");
-        window.setTimeout(() => {
-          if (hasHandledExitRef.current) {
-            handleSessionExited();
-          }
-        }, 0);
+        if (!shouldRetainExitedTerminal(terminalId, status)) {
+          window.setTimeout(() => {
+            if (hasHandledExitRef.current) {
+              handleSessionExited();
+            }
+          }, 0);
+        }
       }
       synchronizedStatusRef.current = status;
     },
