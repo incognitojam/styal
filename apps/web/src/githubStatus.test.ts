@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolveGitHubStatusNotice } from "./githubStatus";
+import { hasGitHubProject, resolveGitHubStatusNotice } from "./githubStatus";
 
 function statusSummary(input?: {
   readonly indicator?: string;
@@ -24,6 +24,23 @@ function statusSummary(input?: {
 }
 
 describe("GitHub status notice", () => {
+  it("is relevant only when at least one project uses GitHub", () => {
+    expect(hasGitHubProject([])).toBe(false);
+    expect(
+      hasGitHubProject([
+        {},
+        { repositoryIdentity: null },
+        { repositoryIdentity: { provider: "gitlab" } },
+      ]),
+    ).toBe(false);
+    expect(
+      hasGitHubProject([
+        { repositoryIdentity: { provider: "gitlab" } },
+        { repositoryIdentity: { provider: "github" } },
+      ]),
+    ).toBe(true);
+  });
+
   it("stays hidden while GitHub reports all systems operational", () => {
     expect(resolveGitHubStatusNotice(statusSummary())).toBeNull();
   });
