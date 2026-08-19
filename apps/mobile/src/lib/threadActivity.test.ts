@@ -661,6 +661,57 @@ describe("buildThreadFeed", () => {
     expect(group.activities[0]?.getFullDetail()).toContain("repository.search");
   });
 
+  it("shows preview tool calls as browser work", () => {
+    const turnId = TurnId.make("turn-preview");
+    const thread = makeThread({
+      id: ThreadId.make("thread-preview"),
+      projectId: ProjectId.make("project-1"),
+      title: "Preview automation",
+      latestTurn: {
+        turnId,
+        state: "completed",
+        requestedAt: "2026-04-01T00:00:00.000Z",
+        startedAt: "2026-04-01T00:00:01.000Z",
+        completedAt: "2026-04-01T00:00:03.000Z",
+        assistantMessageId: null,
+      },
+      activities: [
+        makeActivity({
+          id: EventId.make("preview-completed"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "Call preview tool",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          turnId,
+          payload: {
+            title: "Call preview tool",
+            itemType: "mcp_tool_call",
+            status: "completed",
+            data: {
+              toolName: "mcp__t3-code__preview_click",
+              item: {
+                server: "t3-code",
+                tool: "preview_click",
+                arguments: { locator: "role=button[name='Send']" },
+              },
+            },
+          },
+        }),
+      ],
+    });
+
+    const group = buildThreadFeed(thread)[0];
+    expect(group).toMatchObject({ type: "activity-group" });
+    if (!group || group.type !== "activity-group") {
+      return;
+    }
+
+    // Web renders the same row with a globe; mobile must not fall back to the
+    // generic MCP wrench.
+    expect(group.activities[0]?.icon).toBe("globe");
+    expect(group.activities[0]?.summary).toBe("Clicked");
+  });
+
   it("defers large tool output expansion until a work row is opened or copied", () => {
     let serializedToolOutputs = 0;
     const activities = Array.from({ length: 5_000 }, (_, index) =>
