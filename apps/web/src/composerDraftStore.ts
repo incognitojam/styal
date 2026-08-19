@@ -461,6 +461,12 @@ interface ComposerDraftStoreState {
   ) => void;
   /** Marks a draft session as being promoted to a real server thread. */
   markDraftThreadPromoting: (threadRef: ComposerThreadTarget, promotedTo?: ScopedThreadRef) => void;
+  /** Keeps draft content but reserves a fresh server thread after promotion fails. */
+  resetDraftThreadAfterFailedPromotion: (
+    threadRef: ComposerThreadTarget,
+    nextThreadId: ThreadId,
+    createdAt: string,
+  ) => void;
   /** Removes draft-session metadata after promotion is complete. */
   finalizePromotedDraftThread: (threadRef: ComposerThreadTarget) => void;
   clearDraftThread: (threadRef: ComposerThreadTarget) => void;
@@ -2718,6 +2724,55 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             };
           });
         },
+        resetDraftThreadAfterFailedPromotion: (threadRef, nextThreadId, createdAt) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef);
+          if (!threadKey) {
+            return;
+          }
+          set((state) => {
+            const existing = state.draftThreadsByThreadKey[threadKey];
+            if (!existing) {
+              return state;
+            }
+            const existingDraft = state.draftsByThreadKey[threadKey];
+            const nextDraft = existingDraft
+              ? {
+                  ...existingDraft,
+                  terminalContexts: existingDraft.terminalContexts.map((context) => ({
+                    ...context,
+                    threadId: nextThreadId,
+                  })),
+                  elementContexts: existingDraft.elementContexts.map((context) => ({
+                    ...context,
+                    threadId: nextThreadId,
+                  })),
+                  issueContexts: existingDraft.issueContexts.map((context) => ({
+                    ...context,
+                    threadId: nextThreadId,
+                  })),
+                }
+              : undefined;
+            return {
+              ...(nextDraft
+                ? {
+                    draftsByThreadKey: {
+                      ...state.draftsByThreadKey,
+                      [threadKey]: nextDraft,
+                    },
+                  }
+                : {}),
+              draftThreadsByThreadKey: {
+                ...state.draftThreadsByThreadKey,
+                [threadKey]: {
+                  ...existing,
+                  threadId: nextThreadId,
+                  createdAt,
+                  promotedTo: null,
+                },
+              },
+            };
+          });
+        },
         finalizePromotedDraftThread: (threadRef) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
           if (threadKey.length === 0) {
@@ -3381,12 +3436,13 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
         },
         setElementContexts: (threadRef, contexts) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef);
-          if (!threadKey) return;
+          const threadId = resolveComposerThreadId(get(), threadRef);
+          if (!threadKey || !threadId) return;
           set((state) => {
             const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
             const nextDraft: ComposerThreadDraftState = {
               ...existing,
-              elementContexts: [...contexts],
+              elementContexts: contexts.map((context) => ({ ...context, threadId })),
             };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
             if (shouldRemoveDraft(nextDraft)) {
@@ -3450,12 +3506,13 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
         },
         setIssueContexts: (threadRef, contexts) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef);
-          if (!threadKey) return;
+          const threadId = resolveComposerThreadId(get(), threadRef);
+          if (!threadKey || !threadId) return;
           set((state) => {
             const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
             const nextDraft: ComposerThreadDraftState = {
               ...existing,
-              issueContexts: [...contexts],
+              issueContexts: contexts.map((context) => ({ ...context, threadId })),
             };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
             if (shouldRemoveDraft(nextDraft)) {
