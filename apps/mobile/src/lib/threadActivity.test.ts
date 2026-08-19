@@ -542,7 +542,11 @@ describe("buildThreadFeed", () => {
           kind: "setup-script.requested",
           summary: "Starting setup script",
           createdAt: "2026-04-01T00:00:01.000Z",
-          payload: { runId: "setup-run-1" },
+          payload: {
+            runId: "setup-run-1",
+            scriptName: "Install dependencies",
+            scriptIcon: "configure",
+          },
         }),
         makeActivity({
           id: EventId.make("unrelated-work"),
@@ -555,7 +559,11 @@ describe("buildThreadFeed", () => {
           kind: "setup-script.started",
           summary: "Setup script started",
           createdAt: "2026-04-01T00:00:03.000Z",
-          payload: { runId: "setup-run-1" },
+          payload: {
+            runId: "setup-run-1",
+            scriptName: "Install dependencies",
+            scriptIcon: "configure",
+          },
         }),
         makeActivity({
           id: EventId.make("setup-failed"),
@@ -563,7 +571,12 @@ describe("buildThreadFeed", () => {
           tone: "error",
           summary: "Setup script failed",
           createdAt: "2026-04-01T00:00:04.000Z",
-          payload: { runId: "setup-run-1", exitCode: 1 },
+          payload: {
+            runId: "setup-run-1",
+            scriptName: "Install dependencies",
+            scriptIcon: "configure",
+            exitCode: 1,
+          },
         }),
       ],
     });
@@ -576,17 +589,50 @@ describe("buildThreadFeed", () => {
     expect(activities[0]).toMatchObject({
       id: "setup-requested",
       createdAt: "2026-04-01T00:00:01.000Z",
-      summary: "Setup script failed",
+      summary: "Install dependencies failed",
+      icon: "configure",
       status: "failure",
     });
     expect(activities[1]?.summary).toBe("Created worktree");
   });
 
-  it("uses a command icon while a setup script is running", () => {
+  it("uses the configured action icon while a setup script is running", () => {
     const thread = makeThread({
       id: ThreadId.make("thread-setup-running"),
       projectId: ProjectId.make("project-1"),
       title: "Setup running",
+      activities: [
+        makeActivity({
+          id: EventId.make("setup-started"),
+          kind: "setup-script.started",
+          summary: "Setup script started",
+          createdAt: "2026-04-01T00:00:01.000Z",
+          payload: {
+            runId: "setup-run-1",
+            scriptName: "Install dependencies",
+            scriptIcon: "configure",
+          },
+        }),
+      ],
+    });
+
+    const activities = buildThreadFeed(thread).flatMap((entry) =>
+      entry.type === "activity-group" ? entry.activities : [],
+    );
+
+    expect(activities).toHaveLength(1);
+    expect(activities[0]).toMatchObject({
+      summary: "Install dependencies running",
+      icon: "configure",
+      status: null,
+    });
+  });
+
+  it("uses a generic command icon when historical setup identity is unknown", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-legacy-setup-running"),
+      projectId: ProjectId.make("project-1"),
+      title: "Legacy setup running",
       activities: [
         makeActivity({
           id: EventId.make("setup-started"),
@@ -602,11 +648,95 @@ describe("buildThreadFeed", () => {
       entry.type === "activity-group" ? entry.activities : [],
     );
 
-    expect(activities).toHaveLength(1);
     expect(activities[0]).toMatchObject({
       summary: "Setup script started",
       icon: "command",
       status: null,
+    });
+  });
+
+  it("uses failure reasons for launch and stopped setup states", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-setup-failure-reasons"),
+      projectId: ProjectId.make("project-1"),
+      title: "Setup failure reasons",
+      activities: [
+        makeActivity({
+          id: EventId.make("setup-launch-failed"),
+          kind: "setup-script.failed",
+          tone: "error",
+          summary: "Setup script failed",
+          createdAt: "2026-04-01T00:00:01.000Z",
+          payload: {
+            runId: "setup-run-launch",
+            scriptName: "Install dependencies",
+            scriptIcon: "configure",
+            failureReason: "launch-error",
+          },
+        }),
+        makeActivity({
+          id: EventId.make("setup-stopped"),
+          kind: "setup-script.failed",
+          tone: "error",
+          summary: "Setup script stopped",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          payload: {
+            runId: "setup-run-stopped",
+            scriptName: "Verify workspace",
+            scriptIcon: "test",
+            failureReason: "terminal-closed",
+          },
+        }),
+      ],
+    });
+
+    const activities = buildThreadFeed(thread).flatMap((entry) =>
+      entry.type === "activity-group" ? entry.activities : [],
+    );
+
+    expect(activities).toMatchObject([
+      {
+        summary: "Install dependencies failed to start",
+        icon: "configure",
+        status: "failure",
+      },
+      {
+        summary: "Verify workspace stopped",
+        icon: "flask",
+        status: "stopped",
+      },
+    ]);
+  });
+
+  it("keeps the action icon and adds a completed state when setup finishes", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-setup-completed"),
+      projectId: ProjectId.make("project-1"),
+      title: "Setup completed",
+      activities: [
+        makeActivity({
+          id: EventId.make("setup-completed"),
+          kind: "setup-script.completed",
+          summary: "Setup script completed",
+          createdAt: "2026-04-01T00:00:01.000Z",
+          payload: {
+            runId: "setup-run-1",
+            scriptName: "Verify workspace",
+            scriptIcon: "test",
+          },
+        }),
+      ],
+    });
+
+    const activities = buildThreadFeed(thread).flatMap((entry) =>
+      entry.type === "activity-group" ? entry.activities : [],
+    );
+
+    expect(activities).toHaveLength(1);
+    expect(activities[0]).toMatchObject({
+      summary: "Verify workspace completed",
+      icon: "flask",
+      status: "success",
     });
   });
 

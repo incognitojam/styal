@@ -1,9 +1,15 @@
 import {
   ApprovalRequestId,
   isToolLifecycleItemType,
+  ProjectScriptIcon,
   ProviderApprovalOption,
   ProviderRequestKind,
 } from "@t3tools/contracts";
+import {
+  setupScriptActivityLabel,
+  setupScriptActivityState,
+  type SetupScriptState,
+} from "@t3tools/client-runtime/state/setup-script-activity";
 import type {
   OrchestrationLatestTurn,
   OrchestrationThread,
@@ -65,24 +71,28 @@ export interface ThreadFeedActivity {
   readonly icon:
     | "agent"
     | "alert"
+    | "bug"
     | "check"
+    | "checklist"
     | "command"
+    | "configure"
     | "edit"
     | "eye"
+    | "flask"
     | "globe"
     | "hammer"
     | "message"
+    | "play"
     | "warning"
     | "wrench"
     | "zap";
   readonly toolLike: boolean;
-  readonly status: "success" | "failure" | "neutral" | null;
+  readonly status: "success" | "failure" | "neutral" | "stopped" | null;
 }
 
 const MAX_VISIBLE_WORK_LOG_ENTRIES = 1;
 
 type WorkLogToolLifecycleStatus = "inProgress" | "completed" | "failed" | "declined" | "stopped";
-
 interface WorkLogEntry {
   id: string;
   createdAt: string;
@@ -103,6 +113,10 @@ interface WorkLogEntry {
   requestKind?: PendingApproval["requestKind"];
   toolLifecycleStatus?: WorkLogToolLifecycleStatus;
   toolData?: unknown;
+  /** Setup action icon captured when the run began, so historical rows stay stable. */
+  setupScriptIcon?: ProjectScriptIcon;
+  /** Setup lifecycle state derived from the durable activity kind and failure reason. */
+  setupScriptState?: SetupScriptState;
 }
 
 interface DerivedWorkLogEntry extends WorkLogEntry {
@@ -112,6 +126,21 @@ interface DerivedWorkLogEntry extends WorkLogEntry {
   /** Grouping key for subagent lifecycle rows (one row per agent). */
   taskId?: string;
 }
+
+const isProjectScriptIcon = Schema.is(ProjectScriptIcon);
+
+/**
+ * Configured project actions keep their editor identity in the work log: the
+ * glyph picked for the script names the row that ran, in every lifecycle state.
+ */
+const SETUP_ACTION_ICON: Record<ProjectScriptIcon, ThreadFeedActivity["icon"]> = {
+  play: "play",
+  test: "flask",
+  lint: "checklist",
+  configure: "configure",
+  build: "hammer",
+  debug: "bug",
+};
 
 type RawThreadFeedEntry =
   | {
@@ -421,12 +450,13 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
     isTaskActivity && typeof payload?.taskId === "string" && payload.taskId.length > 0
       ? payload.taskId
       : undefined;
+  const setupScriptState = setupScriptActivityState(activity, payload);
   const entry: DerivedWorkLogEntry = {
     id: activity.id,
     createdAt: activity.createdAt,
     turnId: activity.turnId,
     ...(taskId ? { taskId } : {}),
-    label: taskLabel || activity.summary,
+    label: taskLabel || setupScriptActivityLabel(activity, payload),
     tone:
       activity.kind === "task.progress"
         ? "thinking"
@@ -434,6 +464,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
           ? "info"
           : activity.tone,
     activityKind: activity.kind,
+    ...(setupScriptState ? { setupScriptState } : {}),
   };
   const requestKind = extractWorkLogRequestKind(payload);
   if (
@@ -484,6 +515,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (activity.kind.startsWith("setup-script.") && typeof payload?.runId === "string") {
     entry.setupRunId = payload.runId;
+    if (isProjectScriptIcon(payload.scriptIcon)) {
+      entry.setupScriptIcon = payload.scriptIcon;
+    }
   }
   let toolLifecycleStatus = extractWorkLogToolLifecycleStatus(payload);
   if (!toolLifecycleStatus && activity.kind === "tool.completed") {
@@ -585,6 +619,8 @@ function mergeDerivedWorkLogEntries(
   const toolLifecycleStatus = next.toolLifecycleStatus ?? previous.toolLifecycleStatus;
   const toolData = next.toolData ?? previous.toolData;
   const setupRunId = next.setupRunId ?? previous.setupRunId;
+  const setupScriptIcon = next.setupScriptIcon ?? previous.setupScriptIcon;
+  const setupScriptState = next.setupScriptState ?? previous.setupScriptState;
   return {
     ...previous,
     ...next,
@@ -602,6 +638,8 @@ function mergeDerivedWorkLogEntries(
     ...(toolLifecycleStatus ? { toolLifecycleStatus } : {}),
     ...(toolData !== undefined ? { toolData } : {}),
     ...(setupRunId !== undefined ? { setupRunId } : {}),
+    ...(setupScriptIcon !== undefined ? { setupScriptIcon } : {}),
+    ...(setupScriptState !== undefined ? { setupScriptState } : {}),
   };
 }
 
@@ -695,7 +733,10 @@ function workEntryIndicatesToolSuccess(entry: WorkLogEntry): boolean {
   );
 }
 
-function workEntryStatus(entry: WorkLogEntry): ThreadFeedActivity["status"] {
+function workEntryStatus(entry: DerivedWorkLogEntry): ThreadFeedActivity["status"] {
+  if (entry.setupScriptState === "completed") return "success";
+  if (entry.setupScriptState === "stopped") return "stopped";
+  if (entry.setupScriptState === "failed") return "failure";
   if (!workLogEntryIsToolLike(entry)) {
     return null;
   }
@@ -715,10 +756,13 @@ function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
   ) {
     return "message";
   }
-  if (
-    entry.activityKind === "setup-script.requested" ||
-    entry.activityKind === "setup-script.started"
-  ) {
+  // Setup rows are named by the action that ran, in every lifecycle state:
+  // the left icon says *which* action, the right indicator says how it ended.
+  if (entry.activityKind.startsWith("setup-script.")) {
+    if (entry.setupScriptIcon) {
+      return SETUP_ACTION_ICON[entry.setupScriptIcon];
+    }
+    // Historical rows do not carry configured identity, but they did run a command.
     return "command";
   }
   if (entry.activityKind === "runtime.warning") return "warning";

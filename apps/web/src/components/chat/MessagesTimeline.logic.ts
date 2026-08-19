@@ -221,6 +221,9 @@ export type MessagesTimelineRow =
       summary: string | null;
       summaryKind: ToolGroupSummaryKind | null;
       hasFailure: boolean;
+      summaryEntry?: WorkLogEntry;
+      fileChangeStat?: NonNullable<WorkLogEntry["fileChangeStat"]>;
+      exitCode?: number;
     }
   | {
       kind: "turn-fold";
@@ -394,6 +397,21 @@ export function summarizeToolGroup(entries: ReadonlyArray<WorkLogEntry>): string
   if (sentenceLabels.length < 2) return sentenceLabels[0] ?? "";
   if (sentenceLabels.length === 2) return sentenceLabels.join(" and ");
   return `${sentenceLabels.slice(0, -1).join(", ")}, and ${sentenceLabels.at(-1)}`;
+}
+
+function summarizeToolGroupFileChangeStat(
+  entries: ReadonlyArray<WorkLogEntry>,
+): NonNullable<WorkLogEntry["fileChangeStat"]> | undefined {
+  let additions = 0;
+  let deletions = 0;
+  let found = false;
+  for (const entry of entries) {
+    if (!entry.fileChangeStat) continue;
+    found = true;
+    additions += entry.fileChangeStat.additions;
+    deletions += entry.fileChangeStat.deletions;
+  }
+  return found ? { additions, deletions } : undefined;
 }
 
 function omitSupersededLifecycleMarkers<T>(
@@ -985,6 +1003,9 @@ export function deriveMessagesTimelineRows(input: {
           const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
           const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
           const summaryKind = toolGroupSummaryKind(visibleGroupedEntries);
+          const summaryEntry =
+            visibleGroupedEntries.length === 1 ? visibleGroupedEntries[0] : undefined;
+          const fileChangeStat = summarizeToolGroupFileChangeStat(visibleGroupedEntries);
           nextRows.push({
             kind: "work-toggle",
             id: `work-toggle:${timelineEntry.id}`,
@@ -996,6 +1017,9 @@ export function deriveMessagesTimelineRows(input: {
             summary: summarizeToolGroup(visibleGroupedEntries),
             summaryKind,
             hasFailure: workEntryDisplayIndicatesToolFailure(visibleGroupedEntries.at(-1)!),
+            ...(summaryEntry ? { summaryEntry } : {}),
+            ...(fileChangeStat ? { fileChangeStat } : {}),
+            ...(summaryEntry?.exitCode !== undefined ? { exitCode: summaryEntry.exitCode } : {}),
           });
           if (expanded) {
             for (const [entryIndex, workEntry] of visibleGroupedEntries.entries()) {
