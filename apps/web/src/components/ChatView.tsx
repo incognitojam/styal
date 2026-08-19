@@ -198,6 +198,7 @@ import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
 import { confirmTerminalClose, isTerminalCloseConfirmPending } from "../lib/terminalCloseConfirm";
 import { getTerminalFocusOwner } from "../lib/terminalFocus";
+import { isRightPanelFocused } from "../lib/rightPanelFocus";
 import {
   preventRepeatedTerminalCloseShortcut,
   preventTerminalCloseShortcut,
@@ -4853,6 +4854,7 @@ function ChatViewContent(props: ChatViewProps) {
       const shortcutContext = {
         terminalFocus: terminalFocusOwner !== null,
         terminalOpen: Boolean(terminalUiState.terminalOpen),
+        rightPanelFocus: isRightPanelFocused(),
         modelPickerOpen: composerRef.current?.isModelPickerOpen() ?? false,
       };
 
@@ -4891,6 +4893,15 @@ function ChatViewContent(props: ChatViewProps) {
         event.preventDefault();
         event.stopPropagation();
         toggleRightPanelMaximized();
+        return;
+      }
+
+      if (command === "rightPanel.closeActive") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (activeRightPanelSurface) {
+          closeRightPanelSurface(activeRightPanelSurface);
+        }
         return;
       }
 
@@ -4981,6 +4992,7 @@ function ChatViewContent(props: ChatViewProps) {
     activeThreadId,
     requestCloseTerminal,
     requestClosePanelTerminal,
+    closeRightPanelSurface,
     createNewTerminal,
     setTerminalOpen,
     runProjectScript,
