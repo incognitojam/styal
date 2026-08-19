@@ -148,7 +148,11 @@ describe("gitHubViewerPermissions", () => {
             Effect.succeed({ canWrite: false, canUpdate: true, didAuthor: false }),
           getRequiredChecks: () =>
             Effect.succeed([{ name: "build", url: "https://example.test/checks/build" }]),
-          getRequiredCheckPolicy: () => Effect.succeed(["build", "security"]),
+          getBranchPolicy: () =>
+            Effect.succeed({
+              requiredChecks: ["build", "security"],
+              allowedMergeMethods: null,
+            }),
           getPullRequestStack: () => Effect.succeed(null),
         }),
       ),
@@ -352,7 +356,7 @@ describe("getChangeRequest stacks", () => {
         }),
       getViewerAccess: () => Effect.succeed({ canWrite: true, canUpdate: true, didAuthor: false }),
       getRequiredChecks: () => Effect.succeed([]),
-      getRequiredCheckPolicy: () => Effect.succeed([]),
+      getBranchPolicy: () => Effect.succeed({ requiredChecks: [], allowedMergeMethods: null }),
       getPullRequestStack: () => read,
     });
 
