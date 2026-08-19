@@ -87,6 +87,7 @@ export interface PreviewTabState {
   canGoBack: boolean;
   canGoForward: boolean;
   zoomFactor: number;
+  viewportFallback: boolean;
   pictureInPicture: boolean;
   colorScheme: DesktopPreviewColorScheme;
   /** User intent to silence this tab. Re-applied to each guest that attaches. */
@@ -96,6 +97,12 @@ export interface PreviewTabState {
   controller: "human" | "agent" | "none";
   favicon?: DesktopPreviewFavicon;
   updatedAt: string;
+}
+
+interface ViewportPresentation {
+  readonly width: number;
+  readonly height: number;
+  readonly scale: number;
 }
 
 /** Discrete zoom levels mirroring Chrome's preset list. */
@@ -299,41 +306,18 @@ const normalizeCaptureRect = (value: unknown): PreviewAnnotationRect | null => {
   };
 };
 
-const captureAnnotationScreenshot = (
-  tabId: string,
-  wc: Electron.WebContents,
+const makeAnnotationScreenshot = (
+  image: Electron.NativeImage,
   cropRect: PreviewAnnotationRect | null,
-): Effect.Effect<PreviewAnnotationPayload["screenshot"], PreviewManagerError> =>
-  Effect.tryPromise({
-    try: () =>
-      wc.capturePage(
-        cropRect
-          ? {
-              x: cropRect.x,
-              y: cropRect.y,
-              width: cropRect.width,
-              height: cropRect.height,
-            }
-          : undefined,
-      ),
-    catch: (cause) =>
-      new PreviewOperationError({
-        operation: "captureAnnotationScreenshot",
-        tabId,
-        webContentsId: wc.id,
-        cause,
-      }),
-  }).pipe(
-    Effect.map((image) => {
-      const size = image.getSize();
-      return {
-        dataUrl: image.toDataURL(),
-        width: size.width,
-        height: size.height,
-        cropRect: cropRect ?? { x: 0, y: 0, width: size.width, height: size.height },
-      };
-    }),
-  );
+): PreviewAnnotationPayload["screenshot"] => {
+  const size = image.getSize();
+  return {
+    dataUrl: image.toDataURL(),
+    width: size.width,
+    height: size.height,
+    cropRect: cropRect ?? { x: 0, y: 0, width: size.width, height: size.height },
+  };
+};
 
 const findZoomStep = (current: number): number => {
   const index = ZOOM_LEVELS.findIndex(
@@ -402,6 +386,7 @@ interface BrowserControlSession {
   readonly webContentsId: number;
   readonly semaphore: Semaphore.Semaphore;
   readonly scope: Scope.Closeable;
+  readonly onDetach: (event: Electron.Event, reason: string) => void;
   readonly onMessage: (
     event: Electron.Event,
     method: string,
@@ -528,6 +513,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     ReadonlyMap<string, PictureInPictureSession>
   >(new Map());
   const pictureInPictureAspectRatiosRef = yield* Ref.make<ReadonlyMap<string, number>>(new Map());
+  const viewportPresentationsRef = yield* Ref.make<ReadonlyMap<string, ViewportPresentation>>(
+    new Map(),
+  );
   const pictureInPictureMutationSemaphore = yield* Semaphore.make(1);
   const closingTabIdsRef = yield* Ref.make<ReadonlySet<string>>(new Set());
   let frameCaptureWindowOpen = true;
@@ -600,8 +588,28 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       }),
     );
   };
-  const captureAutomationPage = (tabId: string, wc: Electron.WebContents) =>
-    capturePageWithTimeout("automationSnapshot.capturePage", tabId, wc);
+  const captureWithTimeout = <A, E, R>(
+    operation: string,
+    tabId: string,
+    wc: Electron.WebContents,
+    capture: Effect.Effect<A, E, R>,
+  ): Effect.Effect<A, E | PreviewOperationError, R> =>
+    capture.pipe(
+      Effect.timeoutOrElse({
+        duration: CAPTURE_PAGE_TIMEOUT_MS,
+        orElse: () =>
+          Effect.fail(
+            new PreviewOperationError({
+              operation,
+              tabId,
+              webContentsId: wc.id,
+              cause: new PreviewCaptureTimeoutError(
+                `Preview capture timed out after ${CAPTURE_PAGE_TIMEOUT_MS}ms.`,
+              ),
+            }),
+          ),
+      }),
+    );
   const currentIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
   const currentMillis = Clock.currentTimeMillis;
   const encodeJson = (errorContext: PreviewOperationContext, value: unknown) =>
@@ -1020,27 +1028,40 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
 
   const detachControlSession = Effect.fn("PreviewManager.detachControlSession")(function* (
     webContentsId: number,
+    expected?: BrowserControlSession,
   ) {
-    const control = yield* SynchronizedRef.modify(controlSessionsRef, (sessions) => [
-      sessions.get(webContentsId),
-      replaceMap(sessions, (copy) => {
-        copy.delete(webContentsId);
-      }),
-    ]);
+    const control = yield* SynchronizedRef.modify(controlSessionsRef, (sessions) => {
+      const current = sessions.get(webContentsId);
+      if (expected && current !== expected) return [undefined, sessions] as const;
+      return [
+        current,
+        current
+          ? replaceMap(sessions, (copy) => {
+              copy.delete(webContentsId);
+            })
+          : sessions,
+      ] as const;
+    });
     if (control) {
       yield* Scope.close(control.scope, Exit.void).pipe(Effect.ignore);
-      return;
+      return true;
     }
+    if (expected) return false;
     yield* Ref.update(diagnosticsRef, (diagnostics) =>
       replaceMap(diagnostics, (copy) => {
         copy.delete(webContentsId);
       }),
     );
+    return false;
   });
 
   const ensureControlSession = Effect.fn("PreviewManager.ensureControlSession")(function* (
     wc: Electron.WebContents,
   ) {
+    const existing = (yield* SynchronizedRef.get(controlSessionsRef)).get(wc.id);
+    if (existing && !wc.debugger.isAttached()) {
+      yield* detachControlSession(wc.id, existing);
+    }
     return yield* SynchronizedRef.modifyEffect(
       controlSessionsRef,
       (
@@ -1118,6 +1139,24 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           const onMessage: BrowserControlSession["onMessage"] = (_event, method, params) => {
             runFork(handleDebuggerMessage(method, params));
           };
+          let control: BrowserControlSession;
+          const onDetach: BrowserControlSession["onDetach"] = () => {
+            runFork(
+              Effect.gen(function* () {
+                // An old detach can arrive after a new session attaches. Only
+                // the listener's own session is allowed to remove itself.
+                const removed = yield* detachControlSession(wc.id, control);
+                if (!removed || wc.isDestroyed()) return;
+                const tabId = yield* tabIdForWebContents(wc.id);
+                if (!tabId) return;
+                if (wc.isDevToolsOpened()) {
+                  yield* update(tabId, { viewportFallback: true });
+                } else {
+                  yield* restoreControlSession(tabId, wc);
+                }
+              }),
+            );
+          };
           yield* Scope.addFinalizer(
             scope,
             Effect.all(
@@ -1129,16 +1168,18 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                 ),
                 attempt({ operation: "detachControlSession", webContentsId: wc.id }, () => {
                   wc.debugger.off("message", onMessage);
+                  wc.debugger.off("detach", onDetach);
                   if (wc.debugger.isAttached()) wc.debugger.detach();
                 }).pipe(Effect.ignore),
               ],
               { discard: true },
             ),
           );
-          const control: BrowserControlSession = {
+          control = {
             webContentsId: wc.id,
             semaphore,
             scope,
+            onDetach,
             onMessage,
           };
           const initialize = Effect.fn("PreviewManager.initializeControlSession")(function* () {
@@ -1153,6 +1194,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             );
             yield* attempt({ operation: "attachDebuggerListeners", webContentsId: wc.id }, () => {
               wc.debugger.on("message", onMessage);
+              wc.debugger.on("detach", onDetach);
               wc.debugger.attach("1.3");
             });
             yield* Effect.all(
@@ -1178,6 +1220,31 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         });
         return createControlSession();
       },
+    );
+  });
+
+  const sendViewportPresentation = Effect.fn("PreviewManager.sendViewportPresentation")(function* (
+    tabId: string,
+    wc: Electron.WebContents,
+    presentation: ViewportPresentation,
+  ) {
+    if (presentation.scale >= 1) {
+      yield* attemptPromise(
+        { operation: "clearViewportPresentation", tabId, webContentsId: wc.id },
+        () => wc.debugger.sendCommand("Emulation.clearDeviceMetricsOverride"),
+      );
+      return;
+    }
+    yield* attemptPromise(
+      { operation: "setViewportPresentation", tabId, webContentsId: wc.id },
+      () =>
+        wc.debugger.sendCommand("Emulation.setDeviceMetricsOverride", {
+          width: presentation.width,
+          height: presentation.height,
+          deviceScaleFactor: 0,
+          mobile: false,
+          scale: presentation.scale,
+        }),
     );
   });
 
@@ -1312,6 +1379,155 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       if (tabs.has(tabId)) yield* update(tabId, { controller: "none" });
     });
     return yield* control.semaphore.withPermit(execute().pipe(Effect.onExit(finalize)));
+  });
+
+  const captureLogicalViewportWithSend = Effect.fn("PreviewManager.captureLogicalViewportWithSend")(
+    function* (
+      tabId: string,
+      wc: Electron.WebContents,
+      send: SendCommand,
+      presentation: ViewportPresentation,
+      cropRect?: PreviewAnnotationRect,
+    ) {
+      const metrics = (yield* send("Page.getLayoutMetrics")) as {
+        readonly cssVisualViewport?: { readonly pageX?: number; readonly pageY?: number };
+      };
+      const pageX = metrics.cssVisualViewport?.pageX ?? 0;
+      const pageY = metrics.cssVisualViewport?.pageY ?? 0;
+      const response = (yield* send("Page.captureScreenshot", {
+        format: "png",
+        fromSurface: true,
+        captureBeyondViewport: true,
+        clip: {
+          x: pageX + (cropRect?.x ?? 0),
+          y: pageY + (cropRect?.y ?? 0),
+          width: cropRect?.width ?? presentation.width,
+          height: cropRect?.height ?? presentation.height,
+          scale: 1,
+        },
+      })) as { readonly data?: unknown };
+      if (typeof response.data !== "string") {
+        return yield* new PreviewOperationError({
+          operation: "captureLogicalViewport.decode",
+          tabId,
+          webContentsId: wc.id,
+          cause: new Error("Chromium returned an invalid preview screenshot."),
+        });
+      }
+      const screenshotData = response.data;
+      return yield* attempt(
+        { operation: "captureLogicalViewport.decode", tabId, webContentsId: wc.id },
+        () => nativeImage.createFromBuffer(Buffer.from(screenshotData, "base64")),
+      );
+    },
+  );
+
+  const captureNativeViewportPage = (
+    operation: string,
+    tabId: string,
+    wc: Electron.WebContents,
+    cropRect?: PreviewAnnotationRect,
+  ) =>
+    cropRect
+      ? captureWithTimeout(
+          operation,
+          tabId,
+          wc,
+          attemptPromise({ operation, tabId, webContentsId: wc.id }, () =>
+            wc.capturePage(cropRect),
+          ),
+        )
+      : capturePageWithTimeout(operation, tabId, wc);
+
+  const captureFallbackViewportPage = Effect.fn("PreviewManager.captureFallbackViewportPage")(
+    function* (
+      operation: string,
+      tabId: string,
+      wc: Electron.WebContents,
+      presentation: ViewportPresentation | undefined,
+      cropRect?: PreviewAnnotationRect,
+    ) {
+      const image = yield* capturePageWithTimeout(operation, tabId, wc);
+      if (!cropRect || !presentation) return image;
+
+      return yield* attempt({ operation: `${operation}.crop`, tabId, webContentsId: wc.id }, () => {
+        const size = image.getSize();
+        // Electron rejects capturePage(cropRect) while the guest is CSS-scaled.
+        // Crop the valid full-surface capture in its actual pixel coordinates.
+        const scaleX = size.width / presentation.width;
+        const scaleY = size.height / presentation.height;
+        const x = Math.max(0, Math.floor(cropRect.x * scaleX));
+        const y = Math.max(0, Math.floor(cropRect.y * scaleY));
+        const right = Math.min(size.width, Math.ceil((cropRect.x + cropRect.width) * scaleX));
+        const bottom = Math.min(size.height, Math.ceil((cropRect.y + cropRect.height) * scaleY));
+        return image.crop({
+          x,
+          y,
+          width: Math.max(1, right - x),
+          height: Math.max(1, bottom - y),
+        });
+      });
+    },
+  );
+
+  const captureViewportPageWithSend = Effect.fn("PreviewManager.captureViewportPageWithSend")(
+    function* (
+      operation: string,
+      tabId: string,
+      wc: Electron.WebContents,
+      send: SendCommand,
+      cropRect?: PreviewAnnotationRect,
+    ) {
+      const presentation = (yield* Ref.get(viewportPresentationsRef)).get(tabId);
+      const viewportFallback = (yield* SynchronizedRef.get(tabsRef)).get(tabId)?.viewportFallback;
+      if (viewportFallback) {
+        return yield* captureFallbackViewportPage(operation, tabId, wc, presentation, cropRect);
+      }
+      if (presentation?.scale !== undefined && presentation.scale < 1) {
+        return yield* captureWithTimeout(
+          operation,
+          tabId,
+          wc,
+          captureLogicalViewportWithSend(tabId, wc, send, presentation, cropRect),
+        );
+      }
+      return yield* captureNativeViewportPage(operation, tabId, wc, cropRect);
+    },
+  );
+
+  const captureViewportPage = Effect.fn("PreviewManager.captureViewportPage")(function* (
+    operation: string,
+    tabId: string,
+    wc: Electron.WebContents,
+    cropRect?: PreviewAnnotationRect,
+  ) {
+    const presentation = (yield* Ref.get(viewportPresentationsRef)).get(tabId);
+    const viewportFallback = (yield* SynchronizedRef.get(tabsRef)).get(tabId)?.viewportFallback;
+    if (viewportFallback) {
+      return yield* captureFallbackViewportPage(operation, tabId, wc, presentation, cropRect);
+    }
+    if (!presentation || presentation.scale >= 1) {
+      return yield* captureNativeViewportPage(operation, tabId, wc, cropRect);
+    }
+    const control = yield* ensureControlSession(wc);
+    return yield* captureWithTimeout(
+      operation,
+      tabId,
+      wc,
+      control.semaphore.withPermit(
+        captureLogicalViewportWithSend(
+          tabId,
+          wc,
+          (method, commandParams) =>
+            attemptPromise(
+              { operation: `${operation}.${method}`, tabId, webContentsId: wc.id },
+              () => wc.debugger.sendCommand(method, commandParams),
+            ),
+          presentation,
+          cropRect,
+        ),
+      ),
+    );
   });
 
   const evaluateWithDebugger = <A = unknown>(
@@ -1836,6 +2052,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           canGoBack: false,
           canGoForward: false,
           zoomFactor: normalizeZoomFactor(defaults?.zoomFactor),
+          viewportFallback: false,
           pictureInPicture: false,
           colorScheme: defaults?.colorScheme ?? "system",
           audioMuted: false,
@@ -1889,6 +2106,11 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       ] as const;
     });
     if (Option.isNone(tab)) return;
+    yield* Ref.update(viewportPresentationsRef, (presentations) =>
+      replaceMap(presentations, (copy) => {
+        copy.delete(tabId);
+      }),
+    );
     const closedTab = tab.value;
     if (closedTab.webContentsId != null) {
       yield* Effect.all(
@@ -1904,6 +2126,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       canGoBack: false,
       canGoForward: false,
       zoomFactor: DEFAULT_ZOOM_FACTOR,
+      viewportFallback: false,
       pictureInPicture: false,
       colorScheme: "system",
       audioMuted: false,
@@ -2033,6 +2256,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           canGoBack: wc.navigationHistory.canGoBack(),
           canGoForward: wc.navigationHistory.canGoForward(),
           audible: attachedAudible,
+          viewportFallback: false,
           updatedAt: registeredAt,
         };
         return [
@@ -2117,6 +2341,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         canGoBack: current?.canGoBack ?? false,
         canGoForward: current?.canGoForward ?? false,
         zoomFactor: current?.zoomFactor ?? DEFAULT_ZOOM_FACTOR,
+        viewportFallback: current?.viewportFallback ?? false,
         pictureInPicture: current?.pictureInPicture ?? false,
         colorScheme: current?.colorScheme ?? "system",
         // Both carry across navigation. Mute is user intent, and the old
@@ -2225,7 +2450,6 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       );
       return;
     }
-    yield* detachControlSession(wc.id);
     yield* attempt({ operation: "openDevTools", tabId, webContentsId: wc.id }, () => {
       wc.once("devtools-closed", () => {
         if (!wc.isDestroyed()) runFork(restoreControlSession(tabId, wc));
@@ -2317,11 +2541,24 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           const cropRect = normalizeCaptureRect(args[1]);
           const submission = args[2] === "send" ? "send" : "attach";
           runFork(
-            captureAnnotationScreenshot(tabId, wc, cropRect).pipe(
+            captureViewportPage(
+              "captureAnnotationScreenshot",
+              tabId,
+              wc,
+              cropRect ?? undefined,
+            ).pipe(
               Effect.matchEffect({
                 onFailure: () => Effect.sync(() => settle({ annotation: payload, submission })),
-                onSuccess: (screenshot) =>
-                  Effect.sync(() => settle({ annotation: { ...payload, screenshot }, submission })),
+                onSuccess: (image) =>
+                  Effect.sync(() =>
+                    settle({
+                      annotation: {
+                        ...payload,
+                        screenshot: makeAnnotationScreenshot(image, cropRect),
+                      },
+                      submission,
+                    }),
+                  ),
               }),
               Effect.ensuring(
                 attempt(
@@ -2422,33 +2659,96 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     );
   });
 
-  // Re-establish the control session after a detach, restoring any
-  // color-scheme override the tab carries. The scheme is read after the
-  // session attaches so a concurrent setColorScheme is not overwritten with
-  // a stale snapshot.
+  // Re-establish the control session after a detach, restoring the tab's
+  // emulation overrides. Values are read after the session attaches so a
+  // concurrent renderer update is not overwritten with a stale snapshot.
   const restoreControlSession = (tabId: string, wc: Electron.WebContents) =>
     Effect.gen(function* () {
       const beforeAttach = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
       if (beforeAttach?.webContentsId !== wc.id) return;
-      yield* ensureControlSession(wc);
+      const control = yield* ensureControlSession(wc);
       const afterAttach = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
       if (afterAttach?.webContentsId !== wc.id) {
         yield* detachControlSession(wc.id);
         return;
       }
-      if (afterAttach.colorScheme !== "system") {
-        yield* attemptPromise({ operation: "applyColorScheme", tabId, webContentsId: wc.id }, () =>
-          wc.debugger.sendCommand("Emulation.setEmulatedMedia", {
-            features: [
-              {
-                name: "prefers-color-scheme",
-                value: afterAttach.colorScheme,
-              },
-            ],
+      yield* control.semaphore.withPermit(
+        Effect.gen(function* () {
+          const current = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
+          if (current?.webContentsId !== wc.id) return;
+          const presentation = (yield* Ref.get(viewportPresentationsRef)).get(tabId);
+          if (presentation) {
+            yield* sendViewportPresentation(tabId, wc, presentation);
+          }
+          if (current.colorScheme !== "system") {
+            yield* attemptPromise(
+              { operation: "applyColorScheme", tabId, webContentsId: wc.id },
+              () =>
+                wc.debugger.sendCommand("Emulation.setEmulatedMedia", {
+                  features: [
+                    {
+                      name: "prefers-color-scheme",
+                      value: current.colorScheme,
+                    },
+                  ],
+                }),
+            );
+          }
+          yield* attempt({ operation: "restoreTabZoom", tabId, webContentsId: wc.id }, () =>
+            wc.setZoomFactor(current.zoomFactor),
+          );
+          if (
+            !wc.debugger.isAttached() ||
+            (yield* SynchronizedRef.get(controlSessionsRef)).get(wc.id) !== control
+          ) {
+            return;
+          }
+          if (current.viewportFallback) {
+            yield* update(tabId, { viewportFallback: false });
+          }
+        }),
+      );
+    }).pipe(Effect.ignore);
+
+  const setViewportPresentation = Effect.fn("PreviewManager.setViewportPresentation")(function* (
+    tabId: string,
+    presentation: ViewportPresentation,
+  ) {
+    const expectedGeneration = tabLifecycleGenerations.get(tabId);
+    yield* withTabLifecycleLock(
+      tabId,
+      Effect.gen(function* () {
+        if (
+          !(yield* SynchronizedRef.get(tabsRef)).has(tabId) ||
+          tabLifecycleGenerations.get(tabId) !== expectedGeneration ||
+          (yield* Ref.get(closingTabIdsRef)).has(tabId)
+        ) {
+          return yield* new PreviewTabNotFoundError({ tabId });
+        }
+        yield* Ref.update(viewportPresentationsRef, (presentations) =>
+          replaceMap(presentations, (copy) => {
+            copy.set(tabId, presentation);
           }),
         );
-      }
-    }).pipe(Effect.ignore);
+      }),
+    );
+    const webContentsId = (yield* SynchronizedRef.get(tabsRef)).get(tabId)?.webContentsId;
+    if (webContentsId == null) return;
+    const wc = webContents.fromId(webContentsId);
+    if (!wc || wc.isDestroyed()) return;
+    if (wc.isDevToolsOpened() && !wc.debugger.isAttached()) {
+      return;
+    }
+    const control = yield* ensureControlSession(wc);
+    yield* control.semaphore.withPermit(
+      Effect.gen(function* () {
+        const currentTab = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
+        const latest = (yield* Ref.get(viewportPresentationsRef)).get(tabId);
+        if (currentTab?.webContentsId !== wc.id || latest !== presentation) return;
+        yield* sendViewportPresentation(tabId, wc, presentation);
+      }),
+    );
+  });
 
   const setColorScheme = Effect.fn("PreviewManager.setColorScheme")(function* (
     tabId: string,
@@ -2513,14 +2813,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     const [createdAt, millis, image] = yield* Effect.all([
       currentIso,
       currentMillis,
-      attemptPromise(
-        {
-          operation: "captureScreenshot.capturePage",
-          tabId,
-          webContentsId: wc.id,
-        },
-        () => wc.capturePage(),
-      ),
+      captureViewportPage("captureScreenshot.capturePage", tabId, wc),
     ]);
     const id = `browser-screenshot-${artifactSiteSlug(wc.getURL())}-${millis.toString(36)}`;
     const artifactPath = path.join(resolvedArtifactDirectory, `${id}.png`);
@@ -2565,7 +2858,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     const captureSession = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(tabId);
     if (!captureSession) return;
     const wc = yield* requireWebContents(tabId);
-    const image = yield* capturePageWithTimeout("frameCapture.capturePage", tabId, wc);
+    const image = captureSession.consumers.has("recording")
+      ? yield* captureViewportPage("frameCapture.capturePage", tabId, wc)
+      : yield* capturePageWithTimeout("frameCapture.capturePage", tabId, wc);
     const currentCaptureSession = yield* Effect.all(
       [SynchronizedRef.get(frameCaptureSessionsRef), SynchronizedRef.get(tabsRef)],
       { concurrency: 2 },
@@ -3192,7 +3487,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       );
       const [accessibility, sourceImage, diagnostics, timelines] = yield* Effect.all([
         send("Accessibility.getFullAXTree"),
-        captureAutomationPage(tabId, wc),
+        captureViewportPageWithSend("automationSnapshot.capturePage", tabId, wc, send),
         Ref.get(diagnosticsRef),
         Ref.get(actionTimelineRef),
       ]);
@@ -3798,6 +4093,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     setAnnotationTheme,
     setAudioMuted,
     setColorScheme,
+    setViewportPresentation,
     setMainWindow,
     startRecording,
     closePictureInPicture,
@@ -4095,6 +4391,10 @@ export class PreviewManager extends Context.Service<
       tabId: string,
       webContentsId: number,
     ) => Effect.Effect<void, PreviewManagerError>;
+    readonly setViewportPresentation: (
+      tabId: string,
+      presentation: ViewportPresentation,
+    ) => Effect.Effect<void, PreviewManagerError>;
     readonly navigate: (tabId: string, url: string) => Effect.Effect<void, PreviewManagerError>;
     readonly goBack: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
     readonly goForward: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
@@ -4202,6 +4502,7 @@ export const make = Effect.gen(function* PreviewManagerMake() {
     createTab: operations.createTab,
     closeTab: operations.closeTab,
     registerWebview: operations.registerWebview,
+    setViewportPresentation: operations.setViewportPresentation,
     navigate: operations.navigate,
     goBack: operations.goBack,
     goForward: operations.goForward,

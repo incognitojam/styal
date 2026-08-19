@@ -2,8 +2,43 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   HIDDEN_BROWSER_WEBVIEW_OFFSET,
+  resolveHostedBrowserContentStyle,
   resolveHostedBrowserWebviewWrapperStyle,
 } from "./hostedBrowserWebviewStyle";
+
+describe("resolveHostedBrowserContentStyle", () => {
+  it("uses layout zoom to preserve a logical viewport while DevTools owns CDP", () => {
+    expect(
+      resolveHostedBrowserContentStyle({
+        left: 48,
+        top: 30,
+        width: 320,
+        height: 180,
+        scale: 1 / 6,
+        viewportFallback: true,
+      }),
+    ).toEqual({
+      left: 288,
+      top: 180,
+      width: 1920,
+      height: 1080,
+      zoom: 1 / 6,
+    });
+  });
+
+  it("keeps the matched physical surface while CDP owns presentation", () => {
+    expect(
+      resolveHostedBrowserContentStyle({
+        left: 48,
+        top: 30,
+        width: 320,
+        height: 180,
+        scale: 1 / 6,
+        viewportFallback: false,
+      }),
+    ).toEqual({ left: 48, top: 30, width: 320, height: 180 });
+  });
+});
 
 describe("resolveHostedBrowserWebviewWrapperStyle", () => {
   it("places an active webview on its presented surface", () => {
