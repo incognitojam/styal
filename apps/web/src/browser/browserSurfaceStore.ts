@@ -245,6 +245,15 @@ export function acquireBrowserSurface(
   };
 }
 
+export function tryAcquireBrowserSurface(
+  tabId: string,
+  fitSourceContent = false,
+): BrowserSurfaceLease | null {
+  const owner = useBrowserSurfaceStore.getState().byTabId[tabId]?.owner;
+  if (owner !== null && owner !== undefined) return null;
+  return acquireBrowserSurface(tabId, fitSourceContent);
+}
+
 export function acquireBrowserCaptureSurface(tabId: string): BrowserCaptureSurfaceLease {
   let released = false;
   useBrowserSurfaceStore.getState().beginCapture(tabId);
