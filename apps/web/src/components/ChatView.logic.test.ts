@@ -26,6 +26,7 @@ import {
   isBranchMismatchDismissedForSession,
   reconcileMountedTerminalThreadIds,
   reconcileRetainedMountedThreadIds,
+  resolveProjectScriptBaseTerminalId,
   resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
   scheduleEnvironmentReconnectWarning,
@@ -38,6 +39,28 @@ const environmentId = EnvironmentId.make("environment-local");
 const projectId = ProjectId.make("project-1");
 const threadId = ThreadId.make("thread-1");
 const now = "2026-03-29T00:00:00.000Z";
+
+describe("project script terminal selection", () => {
+  it("does not reuse the finite setup-script terminal", () => {
+    expect(
+      resolveProjectScriptBaseTerminalId({
+        activeTerminalId: "setup-setup-worktree",
+        knownTerminalIds: ["setup-setup-worktree"],
+        defaultTerminalId: "term-1",
+      }),
+    ).toBe("term-1");
+  });
+
+  it("continues to reuse an active interactive terminal", () => {
+    expect(
+      resolveProjectScriptBaseTerminalId({
+        activeTerminalId: "term-2",
+        knownTerminalIds: ["setup-setup-worktree", "term-2"],
+        defaultTerminalId: "term-1",
+      }),
+    ).toBe("term-2");
+  });
+});
 
 describe("environment reconnect warning grace", () => {
   afterEach(() => vi.useRealTimers());

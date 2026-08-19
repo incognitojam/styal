@@ -333,6 +333,7 @@ import {
   deriveLockedProvider,
   readFileAsDataUrl,
   reconcileMountedTerminalThreadIds,
+  resolveProjectScriptBaseTerminalId,
   resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
   revokeBlobPreviewUrl,
@@ -1474,7 +1475,6 @@ function ChatViewContent(props: ChatViewProps) {
   const storeSplitTerminal = useTerminalUiStateStore((s) => s.splitTerminal);
   const storeSplitTerminalVertical = useTerminalUiStateStore((s) => s.splitTerminalVertical);
   const storeNewTerminal = useTerminalUiStateStore((s) => s.newTerminal);
-  const storeSetActiveTerminal = useTerminalUiStateStore((s) => s.setActiveTerminal);
   const storeCloseTerminal = useTerminalUiStateStore((s) => s.closeTerminal);
   const serverThreadRefs = useThreadRefs();
   const serverThreadKeys = useMemo(() => serverThreadRefs.map(scopedThreadKey), [serverThreadRefs]);
@@ -3026,8 +3026,11 @@ function ChatViewContent(props: ChatViewProps) {
         });
       }
       const targetCwd = options?.cwd ?? gitCwd ?? activeProject.workspaceRoot;
-      const baseTerminalId =
-        terminalUiState.activeTerminalId || activeKnownTerminalIds[0] || DEFAULT_THREAD_TERMINAL_ID;
+      const baseTerminalId = resolveProjectScriptBaseTerminalId({
+        activeTerminalId: terminalUiState.activeTerminalId,
+        knownTerminalIds: activeKnownTerminalIds,
+        defaultTerminalId: DEFAULT_THREAD_TERMINAL_ID,
+      });
       const isBaseTerminalBusy = runningTerminalIds.includes(baseTerminalId);
       const wantsNewTerminal = Boolean(options?.preferNewTerminal) || isBaseTerminalBusy;
       const shouldCreateNewTerminal = wantsNewTerminal;
@@ -3038,7 +3041,6 @@ function ChatViewContent(props: ChatViewProps) {
         cwd: targetCwd,
         worktreePath: targetWorktreePath,
       });
-      setTerminalOpen(true);
       if (!activeThreadRef) {
         return;
       }
@@ -3075,7 +3077,7 @@ function ChatViewContent(props: ChatViewProps) {
       if (shouldCreateNewTerminal) {
         storeNewTerminal(activeThreadRef, targetTerminalId);
       } else {
-        storeSetActiveTerminal(activeThreadRef, targetTerminalId);
+        storeEnsureTerminal(activeThreadRef, targetTerminalId, { open: true });
       }
 
       const openResult = await openTerminal({ environmentId, input: openTerminalInput });
@@ -3112,10 +3114,9 @@ function ChatViewContent(props: ChatViewProps) {
       activeThreadId,
       activeThreadRef,
       gitCwd,
-      setTerminalOpen,
       setThreadError,
       storeNewTerminal,
-      storeSetActiveTerminal,
+      storeEnsureTerminal,
       setLastInvokedScriptByProjectId,
       environmentId,
       openTerminal,
