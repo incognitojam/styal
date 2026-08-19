@@ -798,7 +798,7 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain('aria-expanded="false"');
   });
 
-  it("keeps the completed state in setup lifecycle labels", () => {
+  it("keeps the action icon and adds a completed state when setup finishes", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
         {...buildProps()}
@@ -810,19 +810,80 @@ describe("MessagesTimeline", () => {
             entry: {
               id: "setup-work",
               createdAt: "2026-03-17T19:12:28.000Z",
-              label: "Setup script completed",
+              label: "Verify workspace completed",
               tone: "info",
               sourceActivityKind: "setup-script.completed",
+              setupScriptIcon: "test",
+              setupScriptState: "completed",
             },
           },
         ]}
       />,
     );
 
-    expect(markup).toContain("Setup script completed");
+    expect(markup).toContain("Verify workspace completed");
+    expect(markup).toContain("lucide-flask-conical");
+    expect(markup).toContain('aria-label="Setup action completed"');
   });
 
-  it("uses a terminal icon while a setup script is running", () => {
+  it("uses the configured action icon without a completed state while setup runs", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "setup-entry",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "setup-work",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "Install dependencies running",
+              tone: "info",
+              sourceActivityKind: "setup-script.started",
+              setupScriptIcon: "configure",
+              setupScriptState: "running",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Install dependencies running");
+    expect(markup).toContain("lucide-wrench");
+    expect(markup).not.toContain("lucide-check");
+    expect(markup).not.toContain("Setup action completed");
+  });
+
+  it("keeps the action icon and adds a failed state when setup fails", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "setup-entry",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "setup-work",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "Install dependencies failed",
+              tone: "error",
+              sourceActivityKind: "setup-script.failed",
+              setupScriptIcon: "configure",
+              setupScriptState: "failed",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Install dependencies failed");
+    expect(markup).toContain("lucide-wrench");
+    expect(markup).toContain('aria-label="Setup action failed"');
+  });
+
+  it("uses a generic terminal icon when historical setup identity is unknown", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
         {...buildProps()}
@@ -837,14 +898,51 @@ describe("MessagesTimeline", () => {
               label: "Setup script started",
               tone: "info",
               sourceActivityKind: "setup-script.started",
+              setupScriptState: "running",
             },
           },
         ]}
       />,
     );
 
+    expect(markup).toContain("Setup script started");
     expect(markup).toContain("lucide-terminal");
     expect(markup).not.toContain("lucide-check");
+  });
+
+  it("shows stopped setup actions as neutral rather than failed", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "setup-entry",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "setup-work",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "Verify workspace stopped",
+              tone: "error",
+              sourceActivityKind: "setup-script.failed",
+              setupScriptIcon: "test",
+              setupScriptState: "stopped",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Verify workspace stopped");
+    expect(markup).toContain("lucide-flask-conical");
+    expect(markup).toContain("lucide-minus");
+    expect(markup).toContain('aria-label="Setup action stopped"');
+    expect(markup).not.toContain('aria-label="Setup action failed"');
+    const iconWrapperClasses = /<span class="([^"]*)"><svg[^>]*lucide-flask-conical/.exec(
+      markup,
+    )?.[1];
+    expect(iconWrapperClasses).toContain("text-icon-muted");
+    expect(iconWrapperClasses).not.toContain("text-foreground");
   });
 
   it("formats changed file paths from the workspace root", () => {

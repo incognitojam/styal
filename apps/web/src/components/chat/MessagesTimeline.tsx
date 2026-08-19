@@ -3,6 +3,7 @@ import {
   EventId,
   type MessageId,
   type OrchestrationGetCommandOutputResult,
+  type ProjectScriptIcon,
   type ScopedThreadRef,
   type ServerProviderSkill,
   type TurnId,
@@ -55,20 +56,24 @@ import {
 import ChatMarkdown from "../ChatMarkdown";
 import {
   BotIcon,
+  BugIcon,
   CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CircleAlertIcon,
   EyeIcon,
+  FlaskConicalIcon,
   FoldVerticalIcon,
   GlobeIcon,
   HammerIcon,
   ImageIcon,
+  ListChecksIcon,
   MessageCircleIcon,
   CircleDotIcon,
   MousePointerClickIcon,
   PaintbrushIcon,
   MinusIcon,
+  PlayIcon,
   SquarePenIcon,
   TerminalIcon,
   Undo2Icon,
@@ -2084,32 +2089,57 @@ function formatWorkingTimerNow(startIso: string): string {
 
 type WorkEntryIconName =
   | "bot"
+  | "bug"
   | "check"
   | "circle-alert"
   | "eye"
+  | "flask-conical"
   | "globe"
   | "hammer"
+  | "list-checks"
   | "message-circle"
+  | "play"
   | "square-pen"
   | "terminal"
   | "wrench"
   | "x"
   | "zap";
 
+/**
+ * Configured project actions keep their editor identity in the work log: the
+ * same glyph the user picked in the script editor names the row that ran.
+ */
+const SETUP_ACTION_ICON_NAME: Record<ProjectScriptIcon, WorkEntryIconName> = {
+  play: "play",
+  test: "flask-conical",
+  lint: "list-checks",
+  configure: "wrench",
+  build: "hammer",
+  debug: "bug",
+};
+
 function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; className: string }) {
   switch (name) {
     case "bot":
       return <BotIcon className={className} aria-hidden />;
+    case "bug":
+      return <BugIcon className={className} aria-hidden />;
     case "check":
       return <CheckIcon className={className} aria-hidden />;
     case "circle-alert":
       return <CircleAlertIcon className={className} aria-hidden />;
     case "eye":
       return <EyeIcon className={className} aria-hidden />;
+    case "flask-conical":
+      return <FlaskConicalIcon className={className} aria-hidden />;
     case "globe":
       return <GlobeIcon className={className} aria-hidden />;
     case "hammer":
       return <HammerIcon className={className} aria-hidden />;
+    case "list-checks":
+      return <ListChecksIcon className={className} aria-hidden />;
+    case "play":
+      return <PlayIcon className={className} aria-hidden />;
     case "message-circle":
       return <MessageCircleIcon className={className} aria-hidden />;
     case "square-pen":
@@ -2394,10 +2424,13 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   ) {
     return "message-circle";
   }
-  if (
-    workEntry.sourceActivityKind === "setup-script.requested" ||
-    workEntry.sourceActivityKind === "setup-script.started"
-  ) {
+  // Setup rows are named by the action that ran, in every lifecycle state:
+  // the left icon says *which* action, the right indicator says how it ended.
+  if (workEntry.sourceActivityKind?.startsWith("setup-script.")) {
+    if (workEntry.setupScriptIcon) {
+      return SETUP_ACTION_ICON_NAME[workEntry.setupScriptIcon];
+    }
+    // Historical rows do not carry configured identity, but they did run a command.
     return "terminal";
   }
   if (workEntry.requestKind === "command") return "terminal";
@@ -2623,7 +2656,9 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const expandedBody = buildToolCallExpandedBody(workEntry, workspaceRoot);
   const isCommandExecution = workEntry.itemType === "command_execution";
   const canExpand = isCommandExecution || expandedBody !== null;
-  const showFailedIndicator = workEntryIndicatesToolFailure(workEntry);
+  const isStoppedSetupAction = workEntry.setupScriptState === "stopped";
+  const isSetupActionRow = workEntry.sourceActivityKind?.startsWith("setup-script.") === true;
+  const showFailedIndicator = !isStoppedSetupAction && workEntryIndicatesToolFailure(workEntry);
   const exitCodeLabel =
     workEntry.exitCode === undefined ? null : `Exit code ${workEntry.exitCode.toString()}`;
   const showDestructiveRowStyle =
@@ -2633,11 +2668,13 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     "flex size-5 shrink-0 items-center justify-center",
     showWarningIndicator
       ? "text-destructive"
-      : showDestructiveRowStyle
-        ? "text-destructive"
-        : workEntry.tone === "tool" || showFailedIndicator
-          ? "text-icon-muted"
-          : iconConfig.className,
+      : isSetupActionRow
+        ? "text-icon-muted"
+        : showDestructiveRowStyle
+          ? "text-destructive"
+          : workEntry.tone === "tool" || showFailedIndicator
+            ? "text-icon-muted"
+            : iconConfig.className,
   );
   const headingClass = showWarningIndicator
     ? "font-medium text-warning"
@@ -2645,10 +2682,18 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       ? "font-medium text-destructive"
       : "font-medium text-foreground";
   const turnSettled = !activity.activeTurnInProgress;
-  const showNeutralIndicator = !turnSettled && workEntryIndicatesToolNeutralStatus(workEntry);
+  const showNeutralIndicator =
+    isStoppedSetupAction || (!turnSettled && workEntryIndicatesToolNeutralStatus(workEntry));
+  // Setup terminal events own their outcome independently of the shared tool
+  // classifier; requested/started rows stay indicator-free while they run.
   const showSuccessIndicator =
+    workEntry.setupScriptState === "completed" ||
     workEntryIndicatesToolSuccess(workEntry) ||
     (turnSettled && workEntryIndicatesToolNeutralStatus(workEntry));
+  const failedIndicatorLabel =
+    exitCodeLabel ?? (isSetupActionRow ? "Setup action failed" : "Tool call failed");
+  const successIndicatorLabel =
+    exitCodeLabel ?? (isSetupActionRow ? "Setup action completed" : "Tool call completed");
   const rowToggleProps = canExpand
     ? {
         role: "button" as const,
@@ -2719,7 +2764,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
                     render={
                       <span
                         className="flex size-4 items-center justify-center"
-                        aria-label={exitCodeLabel ?? "Tool call failed"}
+                        aria-label={failedIndicatorLabel}
                       />
                     }
                   >
@@ -2733,7 +2778,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
                     render={
                       <span
                         className="flex size-4 items-center justify-center"
-                        aria-label={exitCodeLabel ?? "Tool call completed"}
+                        aria-label={successIndicatorLabel}
                       />
                     }
                   >
@@ -2750,11 +2795,16 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
               ) : showNeutralIndicator ? (
                 <Tooltip>
                   <TooltipTrigger
-                    render={<span className="flex size-4 items-center justify-center" />}
+                    render={
+                      <span
+                        className="flex size-4 items-center justify-center"
+                        aria-label={isStoppedSetupAction ? "Setup action stopped" : undefined}
+                      />
+                    }
                   >
                     <MinusIcon className="block size-3 shrink-0 opacity-70" aria-hidden />
                   </TooltipTrigger>
-                  <TooltipPopup>Empty</TooltipPopup>
+                  <TooltipPopup>{isStoppedSetupAction ? "Stopped" : "Empty"}</TooltipPopup>
                 </Tooltip>
               ) : null}
             </span>
