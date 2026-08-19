@@ -8,6 +8,7 @@ import {
   decodeBranchProtectionRequiredChecksJson,
   decodeAutoMergePermissionsJson,
   decodeBaseComparisonJson,
+  decodePullRequestStackJson,
   decodePullRequestActivityJson,
   decodePullRequestDetailJson,
   decodePullRequestFilesJson,
@@ -1496,5 +1497,83 @@ describe("how far a branch trails its base", () => {
 
   it("refuses a body that is not the answer to this question", () => {
     expect(Result.isSuccess(decodeBaseComparisonJson("{"))).toBe(false);
+  });
+});
+
+describe("the stack a pull request is one layer of", () => {
+  const answer = (stack: unknown) =>
+    JSON.stringify({ data: { repository: { pullRequest: { stack } } } });
+  const layer = (position: number, pullRequest: unknown) => ({ position, pullRequest });
+  const rung = (position: number, number: number, state: string, isDraft = false) =>
+    layer(position, {
+      number,
+      title: `Layer ${number}`,
+      url: `https://github.com/acme/web/pull/${number}`,
+      headRefName: `layer-${number}`,
+      state,
+      isDraft,
+    });
+
+  it("reads the ladder in base-first order whatever order GitHub answered in", () => {
+    const decoded = expectSuccess(
+      decodePullRequestStackJson(
+        answer({
+          baseRefName: "main",
+          size: 3,
+          entries: {
+            nodes: [rung(2, 58, "OPEN"), rung(3, 59, "OPEN", true), rung(1, 57, "MERGED")],
+          },
+        }),
+      ),
+    );
+    expect(decoded?.baseBranch).toBe("main");
+    expect(decoded?.size).toBe(3);
+    expect(decoded?.entries.map((entry) => entry.number)).toEqual([57, 58, 59]);
+    expect(decoded?.entries.map((entry) => entry.state)).toEqual(["merged", "open", "open"]);
+    expect(decoded?.entries[2]?.isDraft).toBe(true);
+  });
+
+  it("counts the whole stack, not the rungs that arrived", () => {
+    // A layer this viewer cannot see is counted by the host and named to nobody, so a page
+    // reading the size off the entries would tell the reader the ladder is shorter than it is.
+    const decoded = expectSuccess(
+      decodePullRequestStackJson(
+        answer({
+          baseRefName: "main",
+          size: 7,
+          entries: { nodes: [rung(1, 57, "MERGED"), rung(2, 58, "OPEN"), layer(3, null)] },
+        }),
+      ),
+    );
+    expect(decoded?.size).toBe(7);
+    expect(decoded?.entries).toHaveLength(2);
+  });
+
+  it("reads a pull request that stands alone as no stack at all", () => {
+    expect(expectSuccess(decodePullRequestStackJson(answer(null)))).toBeNull();
+    expect(
+      expectSuccess(
+        decodePullRequestStackJson(JSON.stringify({ data: { repository: { pullRequest: {} } } })),
+      ),
+    ).toBeNull();
+  });
+
+  it("shows no ladder where every visible rung is this pull request itself", () => {
+    // A sibling out of this viewer's sight arrives as a null pull request on a real position.
+    expect(
+      expectSuccess(
+        decodePullRequestStackJson(
+          answer({
+            baseRefName: "main",
+            size: 2,
+            entries: { nodes: [rung(1, 57, "OPEN"), layer(2, null)] },
+          }),
+        ),
+      ),
+    ).toBeNull();
+  });
+
+  it("refuses a body that is not the answer to this question", () => {
+    expect(Result.isSuccess(decodePullRequestStackJson("{"))).toBe(false);
   });
 });
