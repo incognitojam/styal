@@ -529,32 +529,49 @@ const make = Effect.gen(function* () {
     },
   );
 
-  const refreshLocalGitStatusFromTurnCompletion = Effect.fn(
-    "refreshLocalGitStatusFromTurnCompletion",
-  )(function* (event: Extract<ProviderRuntimeEvent, { type: "turn.completed" }>) {
-    const sessionRuntime = yield* resolveSessionRuntimeForThread(event.threadId);
-    if (Option.isNone(sessionRuntime)) {
-      return;
-    }
+  const refreshGitStatusFromTurnCompletion = Effect.fn("refreshGitStatusFromTurnCompletion")(
+    function* (event: Extract<ProviderRuntimeEvent, { type: "turn.completed" }>) {
+      const sessionRuntime = yield* resolveSessionRuntimeForThread(event.threadId);
+      if (Option.isNone(sessionRuntime)) {
+        return;
+      }
 
-    const local = yield* vcsStatusBroadcaster.refreshLocalStatus(sessionRuntime.value.cwd).pipe(
-      Effect.catch((error) =>
-        Effect.logWarning("failed to refresh local git status after turn completion", {
+      const cwd = sessionRuntime.value.cwd;
+      const local = yield* vcsStatusBroadcaster
+        .refreshStatus(cwd, {
+          refreshUpstream: false,
+          invalidatePullRequest: "if-missing",
+        })
+        .pipe(
+          Effect.catch((error) =>
+            Effect.logWarning(
+              "failed to refresh git and change request status after turn completion; falling back to local status",
+              {
+                threadId: event.threadId,
+                turnId: event.turnId ?? null,
+                cwd,
+                detail: error.message,
+              },
+            ).pipe(Effect.andThen(vcsStatusBroadcaster.refreshLocalStatus(cwd))),
+          ),
+          Effect.catch((error) =>
+            Effect.logWarning("failed to refresh local git status after turn completion", {
+              threadId: event.threadId,
+              turnId: event.turnId ?? null,
+              cwd,
+              detail: error.message,
+            }).pipe(Effect.as(null)),
+          ),
+        );
+      if (local !== null) {
+        yield* followWorktreeBranchDrift({
           threadId: event.threadId,
-          turnId: event.turnId ?? null,
-          cwd: sessionRuntime.value.cwd,
-          detail: error.message,
-        }).pipe(Effect.as(null)),
-      ),
-    );
-    if (local !== null) {
-      yield* followWorktreeBranchDrift({
-        threadId: event.threadId,
-        cwd: sessionRuntime.value.cwd,
-        local,
-      });
-    }
-  });
+          cwd,
+          local,
+        });
+      }
+    },
+  );
 
   // A `git checkout` run inside a thread's dedicated worktree (by an agent or
   // the user) bypasses T3's commands, so the thread's recorded branch goes
@@ -870,7 +887,7 @@ const make = Effect.gen(function* () {
 
     if (event.type === "turn.completed") {
       const turnId = toTurnId(event.turnId);
-      yield* refreshLocalGitStatusFromTurnCompletion(event);
+      yield* refreshGitStatusFromTurnCompletion(event);
       yield* captureCheckpointFromTurnCompletion(event).pipe(
         Effect.catch((error) =>
           Effect.flatMap(nowIso, (createdAt) =>
