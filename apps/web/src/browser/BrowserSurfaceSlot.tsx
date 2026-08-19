@@ -2,7 +2,7 @@
 
 import { useLayoutEffect, useRef } from "react";
 
-import { acquireBrowserSurface } from "./browserSurfaceStore";
+import { acquireBrowserSurface, tryAcquireBrowserSurface } from "./browserSurfaceStore";
 
 export function BrowserSurfaceSlot(props: {
   readonly tabId: string;
@@ -43,7 +43,11 @@ export function BrowserSurfaceSlot(props: {
       );
       if (presentation.visible && !presented) {
         lease.release();
-        lease = acquireBrowserSurface(tabId, fitSourceContent);
+        // A newer slot owns an in-flight surface handoff. Yield to it instead
+        // of letting layout updates from this stale slot steal the browser back.
+        const recoveredLease = tryAcquireBrowserSurface(tabId, fitSourceContent);
+        if (!recoveredLease) return;
+        lease = recoveredLease;
         lease.present(
           {
             x: Math.round(rect.x),
