@@ -301,6 +301,21 @@ type EventBaseInput = {
   readonly raw?: unknown;
 };
 
+/**
+ * T3 attaches its MCP server to OpenCode as `t3-code`, and OpenCode names MCP
+ * tools `<server>_<tool>` — `t3-code_preview_type`. Rewrite that to the
+ * canonical `mcp__<server>__<tool>` the other providers use, which both gives
+ * the clients one identity to match and routes the row to `mcp_tool_call`, so
+ * its arguments skip the allowlist that is meant for built-in tools.
+ */
+const OPENCODE_T3_MCP_PREFIX = "t3-code_";
+
+function canonicalOpenCodeToolName(tool: string): string {
+  return tool.startsWith(OPENCODE_T3_MCP_PREFIX)
+    ? `mcp__t3-code__${tool.slice(OPENCODE_T3_MCP_PREFIX.length)}`
+    : tool;
+}
+
 function toToolLifecycleItemType(toolName: string): ToolLifecycleItemType {
   const normalized = toolName.toLowerCase();
   if (normalized.includes("bash") || normalized.includes("command")) {
@@ -916,7 +931,8 @@ export function makeOpenCodeAdapter(
           }
 
           if (part.type === "tool") {
-            const itemType = toToolLifecycleItemType(part.tool);
+            const toolName = canonicalOpenCodeToolName(part.tool);
+            const itemType = toToolLifecycleItemType(toolName);
             const title =
               part.state.status === "running" ? (part.state.title ?? part.tool) : part.tool;
             const detail = detailFromToolPart(part);
@@ -934,7 +950,7 @@ export function makeOpenCodeAdapter(
                 // projection. Keep OpenCode's state as the single source of
                 // input and output so large edit strings are not persisted
                 // twice; projection exposes its compact identifying fields.
-                toolName: part.tool,
+                toolName,
                 toolCallId: part.callID,
                 state: part.state,
               },

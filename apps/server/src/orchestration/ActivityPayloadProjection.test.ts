@@ -257,6 +257,57 @@ describe("projectActivityPayload tool identity", () => {
     expect(input.skill).toBe("x");
   });
 
+  it("names Codex MCP calls from the item, which carries no toolName", () => {
+    // Codex and the ACP adapters put identity on the item, and the clients
+    // only read data.toolName, so without this they render an anonymous row.
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "mcp_tool_call",
+        data: {
+          item: {
+            type: "mcpToolCall",
+            server: "t3-code",
+            tool: "preview_click",
+            arguments: { locator: "role=button[name='Send']" },
+          },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    expect(data.toolName).toBe("mcp__t3-code__preview_click");
+    // The clients read data.input, so the item's arguments have to be lifted
+    // there or the row renders a heading with nothing after it.
+    expect((data.input as Record<string, unknown>).locator).toBe("role=button[name='Send']");
+  });
+
+  it("keeps an adapter's own toolName ahead of the synthesized one", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "mcp_tool_call",
+        data: {
+          toolName: "mcp__t3-code__preview_snapshot",
+          item: { type: "mcpToolCall", server: "other", tool: "something_else" },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    expect(data.toolName).toBe("mcp__t3-code__preview_snapshot");
+  });
+
+  it("reads MCP input from OpenCode's state shape", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "mcp_tool_call",
+        data: {
+          toolName: "mcp__t3-code__preview_press",
+          state: { input: { key: "Enter", modifiers: ["Meta"] } },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    expect((data.input as Record<string, unknown>).key).toBe("Enter");
+  });
+
   it("caps MCP arguments too", () => {
     const projected = projectActivityPayload(
       activity({

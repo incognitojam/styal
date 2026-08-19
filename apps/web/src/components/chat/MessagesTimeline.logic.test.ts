@@ -592,6 +592,11 @@ describe("deriveMessagesTimelineRows", () => {
         { id: "web-1", itemType: "web_search" as const },
         { id: "image-1", itemType: "image_view" as const },
         { id: "tool-1", itemType: "mcp_tool_call" as const },
+        {
+          id: "preview-1",
+          itemType: "mcp_tool_call" as const,
+          toolName: "mcp__t3-code__preview_navigate" as const,
+        },
         { id: "compaction-1", sourceActivityKind: "context-compaction" as const },
       ].map((entry, index) => ({
         id: `${entry.id}-entry`,
@@ -634,7 +639,7 @@ describe("deriveMessagesTimelineRows", () => {
         { kind: "terminal", count: 2 },
         { kind: "file-change", count: 1 },
         { kind: "file-read", count: 1 },
-        { kind: "web", count: 1 },
+        { kind: "web", count: 2 },
         { kind: "tool", count: 1 },
         { kind: "image", count: 1 },
         { kind: "context-compaction", count: 1 },
