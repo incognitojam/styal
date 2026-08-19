@@ -20,6 +20,7 @@ import {
 } from "@t3tools/shared/toolActivity";
 import {
   deriveToolRowPresentation,
+  isPreviewToolName,
   normalizeKnownToolName,
   type ToolRowArgument,
 } from "@t3tools/shared/toolRowPresentation";
@@ -724,6 +725,10 @@ function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
   if (entry.requestKind === "command") return "command";
   if (entry.requestKind === "file-read") return "eye";
   if (entry.requestKind === "file-change") return "edit";
+
+  // The product-native browser family reads as a web surface, not a wrench.
+  if (entry.toolName && isPreviewToolName(entry.toolName)) return "globe";
+
   switch (entry.toolName ? normalizeKnownToolName(entry.toolName) : undefined) {
     case "Read":
       return "eye";
