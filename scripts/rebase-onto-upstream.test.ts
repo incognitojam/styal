@@ -94,6 +94,15 @@ describe("fork upstream rebase policy", () => {
         NodeFS.readFileSync(NodePath.join(fixtureRoot, "upstream.txt"), "utf8"),
         "upstream\n",
       );
+      assert.equal(runGit(fixtureRoot, "config", "--local", "user.name"), "Fork Rebase Test");
+      assert.equal(
+        runGit(fixtureRoot, "config", "--local", "user.email"),
+        "fork-rebase@example.com",
+      );
+      assert.equal(
+        runGit(fixtureRoot, "show", "--no-patch", "--format=%cn <%ce>", "HEAD"),
+        "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+      );
     });
   });
 
