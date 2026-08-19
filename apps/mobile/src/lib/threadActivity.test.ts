@@ -429,6 +429,34 @@ describe("buildThreadFeed", () => {
     expect(activities[1]?.summary).toBe("Created worktree");
   });
 
+  it("uses a command icon while a setup script is running", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-setup-running"),
+      projectId: ProjectId.make("project-1"),
+      title: "Setup running",
+      activities: [
+        makeActivity({
+          id: EventId.make("setup-started"),
+          kind: "setup-script.started",
+          summary: "Setup script started",
+          createdAt: "2026-04-01T00:00:01.000Z",
+          payload: { runId: "setup-run-1" },
+        }),
+      ],
+    });
+
+    const activities = buildThreadFeed(thread).flatMap((entry) =>
+      entry.type === "activity-group" ? entry.activities : [],
+    );
+
+    expect(activities).toHaveLength(1);
+    expect(activities[0]).toMatchObject({
+      summary: "Setup script started",
+      icon: "command",
+      status: null,
+    });
+  });
+
   it("keeps separate setup runs and preserves completed labels", () => {
     const thread = makeThread({
       id: ThreadId.make("thread-separate-setup-runs"),
