@@ -119,6 +119,7 @@ export function projectDesktopState(state: DesktopPreviewTabState): DesktopPrevi
     canGoForward: state.canGoForward,
     loading: state.navStatus.kind === "Loading",
     zoomFactor: state.zoomFactor,
+    viewportFallback: state.viewportFallback,
     pictureInPicture: state.pictureInPicture,
     colorScheme: state.colorScheme,
     audioMuted: state.audioMuted,

@@ -69,6 +69,7 @@ function overlay(
     canGoForward: false,
     loading: false,
     zoomFactor: 1,
+    viewportFallback: false,
     pictureInPicture: false,
     colorScheme: "system" as const,
     audioMuted: audio?.audioMuted ?? false,
