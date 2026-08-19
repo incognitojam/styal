@@ -714,6 +714,12 @@ function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
   ) {
     return "message";
   }
+  if (
+    entry.activityKind === "setup-script.requested" ||
+    entry.activityKind === "setup-script.started"
+  ) {
+    return "command";
+  }
   if (entry.activityKind === "runtime.warning") return "warning";
   if (entry.requestKind === "command") return "command";
   if (entry.requestKind === "file-read") return "eye";
