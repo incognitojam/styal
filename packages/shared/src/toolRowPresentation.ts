@@ -288,20 +288,21 @@ const PREVIEW_TOOL_SPECS: Readonly<Record<string, PreviewToolSpec>> = {
 const PREVIEW_TOOL_NAMES: ReadonlySet<string> = new Set(Object.keys(PREVIEW_TOOL_SPECS));
 
 /**
- * Every adapter registers this MCP server as `t3-code`, so the qualified name
- * is an exact prefix rather than a pattern. Claude sends the qualified form and
- * the other providers send the bare wire name, so both are accepted — but a
- * `preview_*` tool from some other server keeps the generic MCP row, because
- * this vocabulary describes T3's browser and would misdescribe anyone else's.
+ * Every adapter registers this MCP server as `t3-code`, and the payload
+ * projection gives providers that carry identity on the item a synthesized
+ * `mcp__<server>__<tool>`, so the qualified name is the one form that reaches
+ * presentation. Requiring it is what keeps this vocabulary — which describes
+ * T3's browser specifically — off an unrelated server's `preview_*` tool.
  */
 const QUALIFIED_PREVIEW_PREFIX = "mcp__t3-code__";
 
 function previewToolNameOf(value: string): string | undefined {
   const trimmed = value.trim();
-  const bare = trimmed.startsWith(QUALIFIED_PREVIEW_PREFIX)
-    ? trimmed.slice(QUALIFIED_PREVIEW_PREFIX.length)
-    : trimmed;
-  return PREVIEW_TOOL_NAMES.has(bare) ? bare : undefined;
+  if (!trimmed.startsWith(QUALIFIED_PREVIEW_PREFIX)) {
+    return undefined;
+  }
+  const tool = trimmed.slice(QUALIFIED_PREVIEW_PREFIX.length);
+  return PREVIEW_TOOL_NAMES.has(tool) ? tool : undefined;
 }
 
 export function isPreviewToolName(value: string): boolean {

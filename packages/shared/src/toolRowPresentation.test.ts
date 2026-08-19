@@ -295,7 +295,11 @@ describe("deriveToolRowPresentation", () => {
       });
     });
 
-    it("matches bare preview names as well as the MCP-qualified form", () => {
+    it("requires the qualified name, because a bare one has no provenance", () => {
+      // The payload projection synthesizes `mcp__<server>__<tool>` for the
+      // providers that carry identity on the item, so every real preview row
+      // arrives qualified. A bare name could be anyone's tool.
+      expect(isPreviewToolName("preview_navigate")).toBe(false);
       expect(
         deriveToolRowPresentation({
           toolName: "preview_navigate",
@@ -303,7 +307,7 @@ describe("deriveToolRowPresentation", () => {
           label: "preview_navigate",
           input: { url: "https://t3.chat" },
         })?.heading,
-      ).toBe("Navigated preview");
+      ).not.toBe("Navigated preview");
     });
 
     it("keeps every heading readable without its argument", () => {
