@@ -1,3 +1,6 @@
+import * as NodeTimersPromises from "node:timers/promises";
+import * as NodeVM from "node:vm";
+
 import { it as effectIt } from "@effect/vitest";
 import type { DesktopPreviewRecordingFrame } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
@@ -67,6 +70,8 @@ const {
   getFocusedWebContents,
   mkdir,
   openExternal,
+  readHTML,
+  readText,
   showItemInFolder,
   webviewSend,
   writeFile,
@@ -88,6 +93,8 @@ const {
   getFocusedWebContents: vi.fn(() => null),
   mkdir: vi.fn((_path: string) => undefined),
   openExternal: vi.fn(async (_url: string) => undefined),
+  readHTML: vi.fn(() => "<strong>synthetic clipboard</strong>"),
+  readText: vi.fn(() => "synthetic clipboard"),
   showItemInFolder: vi.fn(),
   webviewSend: vi.fn(),
   writeFile: vi.fn((_path: string, _data: Uint8Array) => undefined),
@@ -97,6 +104,8 @@ const {
 vi.mock("electron", () => ({
   BrowserWindow: browserWindowConstructor,
   clipboard: {
+    readHTML,
+    readText,
     writeImage,
   },
   nativeImage: {
@@ -341,6 +350,8 @@ describe("PreviewManager", () => {
     getFocusedWebContents.mockReturnValue(null);
     mkdir.mockClear();
     openExternal.mockClear();
+    readText.mockClear();
+    readText.mockReturnValue("synthetic clipboard");
     writeFile.mockClear();
     showItemInFolder.mockClear();
     writeImage.mockClear();
@@ -2993,6 +3004,11 @@ describe("PreviewManager", () => {
             activity.push(event.phase);
           }),
         );
+        yield* manager.subscribeHumanInput((event) =>
+          Effect.sync(() => {
+            activity.push(`human:${event.tabId}`);
+          }),
+        );
         yield* manager.createTab("tab_1");
         yield* manager.registerWebview("tab_1", 42);
         const click = yield* manager
@@ -3016,38 +3032,87 @@ describe("PreviewManager", () => {
           button: "left",
           clickCount: 1,
         });
+        const calls = sendCommand.mock.calls;
+        const focusOnIndex = calls.findIndex(
+          ([method, params]) =>
+            method === "Emulation.setFocusEmulationEnabled" && params?.["enabled"] === true,
+        );
+        const mouseDownIndex = calls.findIndex(
+          ([method, params]) =>
+            method === "Input.dispatchMouseEvent" && params?.["type"] === "mousePressed",
+        );
+        const mouseUpIndex = calls.findIndex(
+          ([method, params]) =>
+            method === "Input.dispatchMouseEvent" && params?.["type"] === "mouseReleased",
+        );
+        const focusOffIndex = calls.findIndex(
+          ([method, params]) =>
+            method === "Emulation.setFocusEmulationEnabled" && params?.["enabled"] === false,
+        );
+        expect(focusOnIndex).toBeLessThan(mouseDownIndex);
+        expect(mouseDownIndex).toBeLessThan(mouseUpIndex);
+        expect(mouseUpIndex).toBeLessThan(focusOffIndex);
+        expect(getFocusedWebContents).not.toHaveBeenCalled();
       }),
     ),
   );
 
-  effectIt.effect("types in background webviews and enables native key input", () =>
+  effectIt.effect("types and presses keys in background webviews without changing app focus", () =>
     withManager((manager) =>
       Effect.gen(function* () {
         let failKeyDown = false;
+        let interruptKeyDown = false;
+        let runEditingExpression = false;
+        let preventShortcutDefault = false;
         let humanInput: ((_event: unknown, signal: unknown) => void) | undefined;
-        const sendCommand = vi.fn(async (method: string, params?: Record<string, unknown>) => {
-          if (
-            failKeyDown &&
-            method === "Input.dispatchKeyEvent" &&
-            (params?.["type"] === "keyDown" || params?.["type"] === "rawKeyDown")
-          ) {
-            throw new Error("key dispatch failed");
-          }
-          if (
-            method === "Input.dispatchKeyEvent" &&
-            (params?.["type"] === "keyDown" || params?.["type"] === "rawKeyDown")
-          ) {
-            humanInput?.(
-              {},
-              {
-                kind: "key",
-                key: params["key"],
-                code: params["code"] ?? "Digit1",
-              },
-            );
-          }
+        const editingKeydownListeners = new Set<(event: Record<string, unknown>) => void>();
+        const execCommand = vi.fn(() => true);
+        const editingContext: Record<string, unknown> = {
+          document: { execCommand },
+          addEventListener: (type: string, listener: (event: Record<string, unknown>) => void) => {
+            if (type === "keydown") editingKeydownListeners.add(listener);
+          },
+          removeEventListener: (
+            type: string,
+            listener: (event: Record<string, unknown>) => void,
+          ) => {
+            if (type === "keydown") editingKeydownListeners.delete(listener);
+          },
+          setTimeout,
+          clearTimeout,
+        };
+        editingContext["globalThis"] = editingContext;
+        const sendCommand = vi.fn(async (method: string, _params?: Record<string, unknown>) => {
           return method === "Runtime.evaluate" ? { result: { value: { ok: true } } } : undefined;
         });
+        const sendInputEvent = vi.fn((input: Electron.KeyboardInputEvent) => {
+          if (failKeyDown && input.type === "keyDown") throw new Error("key dispatch failed");
+          if (interruptKeyDown && input.type === "keyDown") {
+            humanInput?.({}, { kind: "key", key: "q", code: "KeyQ" });
+          }
+          if (runEditingExpression && input.type === "keyDown") {
+            const event = {
+              isTrusted: true,
+              code: "KeyA",
+              shiftKey: false,
+              ctrlKey: false,
+              altKey: false,
+              metaKey: true,
+              defaultPrevented: false,
+            };
+            for (const listener of Array.from(editingKeydownListeners)) listener(event);
+            event.defaultPrevented = preventShortcutDefault;
+          }
+        });
+        const executeFocusedFrameJavaScript = vi.fn(async (expression: string) => {
+          if (runEditingExpression) NodeVM.runInNewContext(expression, editingContext);
+          return true;
+        });
+        const executeMainFrameJavaScript = vi.fn(async (_expression: string) => true);
+        const focusedFrame = {
+          isDestroyed: () => false,
+          executeJavaScript: executeFocusedFrameJavaScript,
+        };
         const restoreFocus = vi.fn();
         const focus = vi.fn();
         getFocusedWebContents.mockReturnValue({
@@ -3063,7 +3128,13 @@ describe("PreviewManager", () => {
           getTitle: () => "Example",
           isLoading: () => false,
           isDevToolsOpened: () => false,
+          focusedFrame,
+          mainFrame: {
+            isDestroyed: () => false,
+            executeJavaScript: executeMainFrameJavaScript,
+          },
           focus,
+          sendInputEvent,
           getZoomFactor: () => 1,
           setZoomFactor: vi.fn(),
           on: vi.fn(),
@@ -3090,7 +3161,7 @@ describe("PreviewManager", () => {
         yield* manager.registerWebview("tab_input", 42);
         yield* manager.automationType("tab_input", { text: "hello", clear: true });
         yield* manager.automationType("tab_input", { text: "", clear: true });
-        yield* manager.automationPress("tab_input", { key: "x" });
+        yield* manager.automationPress("tab_input", { key: "Enter" });
 
         const calls = sendCommand.mock.calls;
         const methods = calls.map(([method]) => method);
@@ -3098,13 +3169,6 @@ describe("PreviewManager", () => {
         const focusOnIndex = calls.findIndex(
           ([method, params]) =>
             method === "Emulation.setFocusEmulationEnabled" && params?.["enabled"] === true,
-        );
-        const keyDownIndex = calls.findIndex(
-          ([method, params]) =>
-            method === "Input.dispatchKeyEvent" && params?.["type"] === "keyDown",
-        );
-        const keyUpIndex = calls.findIndex(
-          ([method, params]) => method === "Input.dispatchKeyEvent" && params?.["type"] === "keyUp",
         );
         const focusOffIndex = calls.findIndex(
           ([method, params]) =>
@@ -3132,71 +3196,116 @@ describe("PreviewManager", () => {
         );
         expect(clearOnlyEvaluation).toBeDefined();
         expect(methods).not.toContain("Input.insertText");
+        expect(methods).not.toContain("Input.dispatchKeyEvent");
         expect(enableIndex).toBeGreaterThanOrEqual(0);
-        expect(focus).toHaveBeenCalledOnce();
-        expect(restoreFocus).toHaveBeenCalledOnce();
-        expect(methods).toContain("Page.bringToFront");
+        expect(getFocusedWebContents).not.toHaveBeenCalled();
+        expect(focus).not.toHaveBeenCalled();
+        expect(restoreFocus).not.toHaveBeenCalled();
+        expect(methods).not.toContain("Page.bringToFront");
         expect(enableIndex).toBeLessThan(focusOnIndex);
-        expect(focusOnIndex).toBeLessThan(keyDownIndex);
-        expect(keyDownIndex).toBeLessThan(keyUpIndex);
-        expect(keyUpIndex).toBeLessThan(focusOffIndex);
-        expect(
-          calls.filter(
-            ([method, params]) =>
-              method === "Input.dispatchKeyEvent" && params?.["type"] === "keyUp",
-          ),
-        ).toHaveLength(1);
+        expect(focusOnIndex).toBeLessThan(focusOffIndex);
+        expect(sendInputEvent.mock.calls.map(([event]) => event)).toEqual([
+          { type: "keyDown", keyCode: "Enter" },
+          { type: "char", keyCode: "\r" },
+          { type: "keyUp", keyCode: "Enter" },
+        ]);
         expect(sendCommand).toHaveBeenCalledWith("Input.setIgnoreInputEvents", { ignore: false });
 
         sendCommand.mockClear();
+        sendInputEvent.mockClear();
         failKeyDown = true;
         const failedPress = yield* Effect.exit(manager.automationPress("tab_input", { key: "y" }));
 
         expect(Exit.isFailure(failedPress)).toBe(true);
-        expect(sendCommand).toHaveBeenCalledWith("Input.dispatchKeyEvent", {
-          type: "keyUp",
-          key: "y",
-          code: "KeyY",
-          modifiers: 0,
-          windowsVirtualKeyCode: 89,
-          location: 0,
-          isKeypad: false,
-        });
         expect(sendCommand).toHaveBeenCalledWith("Emulation.setFocusEmulationEnabled", {
           enabled: false,
         });
-        expect(restoreFocus).toHaveBeenCalledTimes(2);
-        expect(
-          sendCommand.mock.calls.filter(
-            ([method, params]) =>
-              method === "Input.dispatchKeyEvent" && params?.["type"] === "keyUp",
-          ),
-        ).toHaveLength(1);
+        expect(restoreFocus).not.toHaveBeenCalled();
+        expect(sendInputEvent.mock.calls.map(([event]) => event)).toEqual([
+          { type: "keyDown", keyCode: "Y" },
+        ]);
 
         sendCommand.mockClear();
+        sendInputEvent.mockClear();
         failKeyDown = false;
+        interruptKeyDown = true;
+        const interruptedPress = yield* Effect.exit(
+          manager.automationPress("tab_input", { key: "y" }),
+        );
+
+        expect(Exit.isFailure(interruptedPress)).toBe(true);
+        expect(sendInputEvent.mock.calls.map(([event]) => event)).toEqual([
+          { type: "keyDown", keyCode: "Y" },
+          { type: "keyUp", keyCode: "Y" },
+        ]);
+
+        sendCommand.mockClear();
+        sendInputEvent.mockClear();
+        interruptKeyDown = false;
         yield* manager.automationPress("tab_input", { key: "!" });
-        expect(sendCommand).toHaveBeenCalledWith("Input.dispatchKeyEvent", {
-          type: "keyDown",
-          key: "!",
-          code: "Digit1",
-          modifiers: 0,
-          windowsVirtualKeyCode: 49,
-          location: 0,
-          isKeypad: false,
-          text: "!",
-          unmodifiedText: "!",
-        });
-        expect(restoreFocus).toHaveBeenCalledTimes(3);
+        expect(sendInputEvent.mock.calls.map(([event]) => event)).toEqual([
+          { type: "keyDown", keyCode: "1", modifiers: ["shift"] },
+          { type: "char", keyCode: "!", modifiers: ["shift"] },
+          { type: "keyUp", keyCode: "1", modifiers: ["shift"] },
+        ]);
+        expect(restoreFocus).not.toHaveBeenCalled();
+
+        sendCommand.mockClear();
+        sendInputEvent.mockClear();
+        yield* manager.automationPress("tab_input", { key: "a", modifiers: ["Meta"] });
+        expect(sendInputEvent.mock.calls.map(([event]) => event)).toEqual([
+          { type: "keyDown", keyCode: "A", modifiers: ["meta"] },
+          { type: "keyUp", keyCode: "A", modifiers: ["meta"] },
+        ]);
+        expect(executeFocusedFrameJavaScript).toHaveBeenCalledWith(
+          expect.stringContaining('document.execCommand("selectAll")'),
+          true,
+        );
+        expect(executeFocusedFrameJavaScript).toHaveBeenCalledWith(
+          expect.stringContaining("event.defaultPrevented"),
+          true,
+        );
+        expect(executeMainFrameJavaScript).not.toHaveBeenCalled();
+        expect(focus).not.toHaveBeenCalled();
+
+        runEditingExpression = true;
+        preventShortcutDefault = true;
+        execCommand.mockClear();
+        yield* manager.automationPress("tab_input", { key: "a", modifiers: ["Meta"] });
+        yield* Effect.promise(() => NodeTimersPromises.setTimeout(0));
+        expect(execCommand).not.toHaveBeenCalled();
+
+        preventShortcutDefault = false;
+        yield* manager.automationPress("tab_input", { key: "a", modifiers: ["Meta"] });
+        yield* Effect.promise(() => NodeTimersPromises.setTimeout(0));
+        expect(execCommand).toHaveBeenCalledWith("selectAll");
+        runEditingExpression = false;
+
+        sendCommand.mockClear();
+        sendInputEvent.mockClear();
+        executeFocusedFrameJavaScript.mockClear();
+        yield* manager.automationPress("tab_input", { key: "v", modifiers: ["Meta"] });
+        expect(readText).toHaveBeenCalled();
+        expect(readHTML).toHaveBeenCalled();
+        expect(executeFocusedFrameJavaScript).toHaveBeenCalledWith(
+          expect.stringContaining('new ClipboardEvent("paste"'),
+          true,
+        );
+        expect(executeFocusedFrameJavaScript).toHaveBeenCalledWith(
+          expect.stringContaining("<strong>synthetic clipboard</strong>"),
+          true,
+        );
+        expect(focus).not.toHaveBeenCalled();
       }),
     ),
   );
 
-  effectIt.effect("still interrupts agent control for a different human pointer event", () =>
+  effectIt.effect("disables focus emulation when human input interrupts its enable command", () =>
     withManager((manager) =>
       Effect.gen(function* () {
         let humanInput: ((_event: unknown, signal: unknown) => void) | undefined;
-        const sendCommand = vi.fn(async (method: string) => {
+        const humanInputEvents: string[] = [];
+        const sendCommand = vi.fn(async (method: string, params?: Record<string, unknown>) => {
           if (method === "Runtime.evaluate") {
             return {
               result: {
@@ -3204,7 +3313,7 @@ describe("PreviewManager", () => {
               },
             };
           }
-          if (method === "Input.dispatchMouseEvent") {
+          if (method === "Emulation.setFocusEmulationEnabled" && params?.enabled === true) {
             humanInput?.({}, { kind: "pointer", x: 400, y: 300, button: 0 });
           }
           return undefined;
@@ -3241,13 +3350,21 @@ describe("PreviewManager", () => {
 
         yield* manager.createTab("tab_1");
         yield* manager.registerWebview("tab_1", 42);
+        yield* manager.subscribeHumanInput((event) =>
+          Effect.sync(() => {
+            humanInputEvents.push(event.tabId);
+          }),
+        );
 
         const click = yield* manager
           .automationClick("tab_1", { x: 120, y: 80 })
           .pipe(Effect.forkChild({ startImmediately: true }));
-        yield* TestClock.adjust(200);
         const exit = yield* Fiber.await(click);
         expect(Exit.isFailure(exit)).toBe(true);
+        expect(sendCommand).toHaveBeenCalledWith("Emulation.setFocusEmulationEnabled", {
+          enabled: false,
+        });
+        expect(humanInputEvents).toEqual(["tab_1"]);
         if (Exit.isSuccess(exit)) return;
         const error = Option.getOrThrow(Cause.findErrorOption(exit.cause));
         expect(error).toMatchObject({

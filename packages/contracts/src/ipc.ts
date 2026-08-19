@@ -627,6 +627,15 @@ export const DesktopPreviewPointerEventSchema: Schema.Codec<DesktopPreviewPointe
     createdAt: Schema.String,
   });
 
+export interface DesktopPreviewHumanInputEvent {
+  tabId: string;
+}
+
+export const DesktopPreviewHumanInputEventSchema: Schema.Codec<DesktopPreviewHumanInputEvent> =
+  Schema.Struct({
+    tabId: DesktopPreviewTabIdSchema,
+  });
+
 /**
  * Static config a renderer needs to mount a preview `<webview>`. Returned
  * atomically by `DesktopPreviewBridge.getPreviewConfig()` so the renderer
@@ -1212,6 +1221,7 @@ export interface DesktopPreviewBridge {
     waitFor: (tabId: string, input: PreviewAutomationWaitForInput) => Promise<void>;
   };
   onStateChange: (listener: (tabId: string, state: DesktopPreviewTabState) => void) => () => void;
+  onHumanInput: (listener: (event: DesktopPreviewHumanInputEvent) => void) => () => void;
   onPointerEvent: (listener: (event: DesktopPreviewPointerEvent) => void) => () => void;
 }
 

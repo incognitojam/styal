@@ -464,6 +464,35 @@ describe("DesktopWindow", () => {
     }),
   );
 
+  it.effect("does not focus preview webviews when they navigate", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const willAttachWebview = fakeWindow.webContentsListeners.get("will-attach-webview");
+        if (!willAttachWebview) {
+          return yield* Effect.die("will-attach-webview listener was not registered");
+        }
+        const webPreferences = {} as Electron.WebPreferences;
+        willAttachWebview({ preventDefault: vi.fn() }, webPreferences, {
+          partition: "persist:t3code-preview-test",
+        });
+
+        assert.isFalse(webPreferences.focusOnNavigation);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
   it.effect("blocks only repeated Cmd+W input before it reaches the native window menu", () =>
     Effect.gen(function* () {
       const fakeWindow = makeFakeBrowserWindow();

@@ -44,6 +44,7 @@ import {
 } from "~/browser/browserRecording";
 import { resolveBrowserRecordingStopTarget } from "~/browser/browserRecordingScope";
 import { browserDefaultOpenViewport, resolveBrowserDefaults } from "~/browser/browserDefaults";
+import { withPreservedPreviewAutomationFocus } from "~/browser/previewAutomationFocus";
 import { useBrowserSurfaceStore, withBrowserCaptureSurface } from "~/browser/browserSurfaceStore";
 import { runBrowserViewportMutation } from "~/browser/browserViewportActions";
 import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
@@ -482,8 +483,11 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
               await waitForPreviewPresentation(activeRuntimeTabId);
             }
             if (reusedExistingTab && resolvedInputUrl && previewBridge) {
+              const bridge = previewBridge;
               assertPreviewRuntimeCurrent(threadRef, activeTabId, activeRuntimeTabId, request);
-              await previewBridge.navigate(activeRuntimeTabId, resolvedInputUrl);
+              await withPreservedPreviewAutomationFocus(activeRuntimeTabId, () =>
+                bridge.navigate(activeRuntimeTabId, resolvedInputUrl),
+              );
               await waitForNavigationReadiness(
                 threadRef,
                 request.requestId,
@@ -506,7 +510,9 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
                 url: input.url!,
               },
             );
-            await ready.bridge.navigate(ready.runtimeTabId, resolution.resolvedUrl);
+            await withPreservedPreviewAutomationFocus(ready.runtimeTabId, () =>
+              ready.bridge.navigate(ready.runtimeTabId, resolution.resolvedUrl),
+            );
             await waitForNavigationReadiness(
               threadRef,
               request.requestId,
@@ -618,9 +624,11 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           }
           case "click": {
             const ready = await requireReadyTab();
-            return await ready.bridge.automation.click(
-              ready.runtimeTabId,
-              request.input as Parameters<typeof ready.bridge.automation.click>[1],
+            return await withPreservedPreviewAutomationFocus(ready.runtimeTabId, () =>
+              ready.bridge.automation.click(
+                ready.runtimeTabId,
+                request.input as Parameters<typeof ready.bridge.automation.click>[1],
+              ),
             );
           }
           case "type": {
