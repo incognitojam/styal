@@ -19,6 +19,7 @@ import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as BrowserSession from "./BrowserSession.ts";
+import { ELEMENT_PICKED_CHANNEL } from "./GuestProtocol.ts";
 import * as PreviewManager from "./Manager.ts";
 
 describe("fitPictureInPictureContentSize", () => {
@@ -60,6 +61,7 @@ describe("isPreviewRefreshShortcut", () => {
 
 const {
   browserWindowConstructor,
+  createFromBuffer,
   createFromPath,
   fromId,
   getFocusedWebContents,
@@ -71,6 +73,16 @@ const {
   writeImage,
 } = vi.hoisted(() => ({
   browserWindowConstructor: vi.fn(),
+  createFromBuffer: vi.fn(() => {
+    const image = {
+      getSize: () => ({ width: 2560, height: 1600 }),
+      resize: vi.fn(() => image),
+      toDataURL: () => "data:image/png;base64,c2NyZWVuc2hvdA==",
+      toJPEG: () => Buffer.from("jpeg"),
+      toPNG: () => Buffer.from("png"),
+    };
+    return image;
+  }),
   createFromPath: vi.fn((): { readonly isEmpty: () => boolean } => ({ isEmpty: () => false })),
   fromId: vi.fn((_id?: number) => null),
   getFocusedWebContents: vi.fn(() => null),
@@ -88,6 +100,7 @@ vi.mock("electron", () => ({
     writeImage,
   },
   nativeImage: {
+    createFromBuffer,
     createFromPath,
   },
   shell: {
@@ -171,6 +184,7 @@ const makeTestPreviewWebContents = (
     getURL: () => "https://example.com",
     getTitle: () => "Example",
     isLoading: () => false,
+    isDevToolsOpened: () => false,
     getZoomFactor: () => 1,
     setZoomFactor: vi.fn(),
     setAudioMuted: vi.fn(),
@@ -397,6 +411,8 @@ describe("PreviewManager", () => {
           isDevToolsOpened: () => false,
           getZoomFactor: () => 1,
           setZoomFactor: vi.fn(),
+          setAudioMuted: vi.fn(),
+          isCurrentlyAudible: () => false,
           on: vi.fn(),
           off: vi.fn(),
           ipc: { on: vi.fn(), off: vi.fn() },
@@ -1339,6 +1355,82 @@ describe("PreviewManager", () => {
     ),
   );
 
+  effectIt.effect(
+    "renders fitted viewports through device metrics instead of a CSS transform",
+    () =>
+      withManager((manager) =>
+        Effect.gen(function* () {
+          const first = makeTestPreviewWebContents(async () => ({
+            toJPEG: () => Buffer.from("viewport"),
+            getSize: () => ({ width: 800, height: 500 }),
+          }));
+          const firstSendCommand = (
+            first as unknown as {
+              readonly debugger: { readonly sendCommand: ReturnType<typeof vi.fn> };
+            }
+          ).debugger.sendCommand;
+          fromId.mockReturnValue(first);
+
+          yield* manager.createTab("tab_viewport_presentation");
+          yield* manager.registerWebview("tab_viewport_presentation", 42);
+          yield* manager.setViewportPresentation("tab_viewport_presentation", {
+            width: 1280,
+            height: 800,
+            scale: 0.625,
+          });
+
+          expect(firstSendCommand).toHaveBeenCalledWith("Emulation.setDeviceMetricsOverride", {
+            width: 1280,
+            height: 800,
+            deviceScaleFactor: 0,
+            mobile: false,
+            scale: 0.625,
+          });
+
+          yield* manager.setViewportPresentation("tab_viewport_presentation", {
+            width: 800,
+            height: 500,
+            scale: 1,
+          });
+
+          expect(firstSendCommand).toHaveBeenCalledWith("Emulation.clearDeviceMetricsOverride");
+
+          yield* manager.setViewportPresentation("tab_viewport_presentation", {
+            width: 1440,
+            height: 900,
+            scale: 0.5,
+          });
+
+          const replacement = makeTestPreviewWebContents(
+            async () => ({
+              toJPEG: () => Buffer.from("replacement"),
+              getSize: () => ({ width: 800, height: 500 }),
+            }),
+            43,
+          );
+          const replacementSendCommand = (
+            replacement as unknown as {
+              readonly debugger: { readonly sendCommand: ReturnType<typeof vi.fn> };
+            }
+          ).debugger.sendCommand;
+          fromId.mockReturnValue(replacement);
+          yield* manager.registerWebview("tab_viewport_presentation", 43);
+          yield* Effect.yieldNow;
+
+          expect(replacementSendCommand).toHaveBeenCalledWith(
+            "Emulation.setDeviceMetricsOverride",
+            {
+              width: 1440,
+              height: 900,
+              deviceScaleFactor: 0,
+              mobile: false,
+              scale: 0.5,
+            },
+          );
+        }),
+      ),
+  );
+
   effectIt.effect("emulates prefers-color-scheme and re-applies it across webview swaps", () =>
     withManager((manager) =>
       Effect.gen(function* () {
@@ -1695,6 +1787,308 @@ describe("PreviewManager", () => {
     ),
   );
 
+  effectIt.effect("signals CSS zoom fallback when DevTools detaches responsive emulation", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        let debuggerAttached = false;
+        let devToolsOpen = false;
+        let onDebuggerDetach: ((event: unknown, reason: string) => void) | undefined;
+        let onDevToolsClosed: (() => void) | undefined;
+        let onElementPicked: ((event: unknown, ...args: unknown[]) => void) | undefined;
+        const setZoomFactor = vi.fn();
+        const debuggerAttach = vi.fn(() => {
+          debuggerAttached = true;
+        });
+        const debuggerDetach = vi.fn(() => {
+          debuggerAttached = false;
+        });
+        const openDevTools = vi.fn(() => {
+          devToolsOpen = true;
+          debuggerAttached = false;
+          onDebuggerDetach?.({}, "DevTools opened");
+        });
+        const sendCommand = vi.fn(async (method: string) =>
+          method === "Runtime.evaluate" ? { result: { value: 1280 } } : undefined,
+        );
+        const crop = vi.fn();
+        const fallbackImage = {
+          toDataURL: () => "data:image/png;base64,ZmFsbGJhY2s=",
+          toJPEG: () => Buffer.from("fallback-frame"),
+          toPNG: () => Buffer.from("fallback-screenshot"),
+          getSize: () => ({ width: 400, height: 225 }),
+          crop,
+        };
+        crop.mockReturnValue(fallbackImage);
+        const capturePage = vi.fn(async () => fallbackImage);
+        const states: PreviewManager.PreviewTabState[] = [];
+        const frames: DesktopPreviewRecordingFrame[] = [];
+        fromId.mockReturnValue({
+          ...(makeTestPreviewWebContents(capturePage) as unknown as Record<string, unknown>),
+          setZoomFactor,
+          isFocused: () => true,
+          focus: vi.fn(),
+          isDevToolsOpened: () => devToolsOpen,
+          once: vi.fn((event: string, listener: () => void) => {
+            if (event === "devtools-closed") onDevToolsClosed = listener;
+          }),
+          openDevTools,
+          ipc: {
+            on: vi.fn((channel: string, listener: typeof onElementPicked) => {
+              if (channel === ELEMENT_PICKED_CHANNEL) onElementPicked = listener;
+            }),
+            off: vi.fn(),
+            removeListener: vi.fn(),
+          },
+          debugger: {
+            isAttached: () => debuggerAttached,
+            attach: debuggerAttach,
+            detach: debuggerDetach,
+            sendCommand,
+            on: vi.fn((event: string, listener: typeof onDebuggerDetach) => {
+              if (event === "detach") onDebuggerDetach = listener;
+            }),
+            off: vi.fn((event: string, listener: typeof onDebuggerDetach) => {
+              if (event === "detach" && onDebuggerDetach === listener) onDebuggerDetach = undefined;
+            }),
+          },
+        } as never);
+        yield* manager.subscribeStateChanges((_tabId, state) =>
+          Effect.sync(() => {
+            states.push(state);
+          }),
+        );
+        yield* manager.subscribeRecordingFrames((frame) =>
+          Effect.sync(() => {
+            frames.push(frame);
+          }),
+        );
+
+        yield* manager.createTab("tab_devtools_viewport");
+        yield* manager.registerWebview("tab_devtools_viewport", 42);
+        yield* manager.setViewportPresentation("tab_devtools_viewport", {
+          width: 1280,
+          height: 800,
+          scale: 0.5,
+        });
+        const detachedSessionListener = onDebuggerDetach;
+
+        yield* manager.openDevTools("tab_devtools_viewport");
+        yield* Effect.yieldNow;
+
+        expect(openDevTools).toHaveBeenCalledWith({ mode: "detach" });
+        expect(debuggerDetach).not.toHaveBeenCalled();
+        expect(debuggerAttached).toBe(false);
+        expect(states.at(-1)?.viewportFallback).toBe(true);
+
+        yield* manager.setViewportPresentation("tab_devtools_viewport", {
+          width: 1600,
+          height: 900,
+          scale: 0.25,
+        });
+        expect(states.at(-1)?.viewportFallback).toBe(true);
+        expect(debuggerAttach).toHaveBeenCalledTimes(1);
+
+        yield* manager.captureScreenshot("tab_devtools_viewport");
+        const pick = yield* manager.pickElement("tab_devtools_viewport").pipe(Effect.forkChild);
+        yield* Effect.yieldNow;
+        onElementPicked?.(
+          {},
+          {
+            id: "annotation_fallback",
+            pageUrl: "https://example.com/",
+            pageTitle: "Example",
+            comment: "Clarify this panel",
+            elements: [],
+            regions: [],
+            strokes: [],
+            styleChanges: [],
+            screenshot: null,
+            createdAt: "2026-08-18T00:00:00.000Z",
+          },
+          { x: 800, y: 400, width: 240, height: 120 },
+          "attach",
+        );
+        const annotation = yield* Fiber.join(pick);
+        expect(annotation?.annotation.screenshot?.cropRect).toEqual({
+          x: 800,
+          y: 400,
+          width: 240,
+          height: 120,
+        });
+        expect(capturePage).toHaveBeenNthCalledWith(2);
+        expect(crop).toHaveBeenCalledWith({
+          x: 200,
+          y: 100,
+          width: 60,
+          height: 30,
+        });
+        yield* manager.startRecording("tab_devtools_viewport");
+        expect(capturePage).toHaveBeenCalledTimes(3);
+        expect(frames).toEqual([
+          expect.objectContaining({
+            tabId: "tab_devtools_viewport",
+            data: Buffer.from("fallback-frame").toString("base64"),
+            width: 400,
+            height: 225,
+          }),
+        ]);
+        expect(sendCommand).not.toHaveBeenCalledWith("Page.captureScreenshot", expect.anything());
+        yield* manager.stopRecording("tab_devtools_viewport");
+
+        devToolsOpen = false;
+        onDevToolsClosed?.();
+        yield* Effect.yieldNow;
+
+        expect(debuggerAttached).toBe(true);
+        expect(debuggerAttach).toHaveBeenCalledTimes(2);
+        expect(sendCommand).toHaveBeenCalledWith("Emulation.setDeviceMetricsOverride", {
+          width: 1600,
+          height: 900,
+          deviceScaleFactor: 0,
+          mobile: false,
+          scale: 0.25,
+        });
+        expect(setZoomFactor).toHaveBeenLastCalledWith(1);
+        expect(states.at(-1)?.viewportFallback).toBe(false);
+        detachedSessionListener?.({}, "late detach event");
+        yield* Effect.yieldNow;
+        expect(debuggerAttached).toBe(true);
+        expect(
+          yield* manager.automationEvaluate("tab_devtools_viewport", {
+            expression: "window.innerWidth",
+          }),
+        ).toBe(1280);
+      }),
+    ),
+  );
+
+  effectIt.effect("captures fitted viewports in logical page coordinates", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const capturePage = vi.fn(async () => ({
+          getSize: () => ({ width: 640, height: 400 }),
+          toJPEG: () => Buffer.from("physical"),
+          toPNG: () => Buffer.from("physical"),
+        }));
+        const preview = makeTestPreviewWebContents(capturePage);
+        const sendCommand = (
+          preview as unknown as {
+            readonly debugger: { readonly sendCommand: ReturnType<typeof vi.fn> };
+          }
+        ).debugger.sendCommand;
+        sendCommand.mockImplementation(async (method: string) => {
+          if (method === "Page.getLayoutMetrics") {
+            return { cssVisualViewport: { pageX: 12, pageY: 34 } };
+          }
+          if (method === "Page.captureScreenshot") {
+            return { data: Buffer.from("logical viewport").toString("base64") };
+          }
+          return undefined;
+        });
+        fromId.mockReturnValue(preview);
+        createFromBuffer.mockClear();
+
+        yield* manager.createTab("tab_logical_capture");
+        yield* manager.registerWebview("tab_logical_capture", 42);
+        yield* manager.setViewportPresentation("tab_logical_capture", {
+          width: 1280,
+          height: 800,
+          scale: 0.25,
+        });
+        yield* manager.captureScreenshot("tab_logical_capture");
+
+        expect(capturePage).not.toHaveBeenCalled();
+        expect(sendCommand).toHaveBeenCalledWith("Page.captureScreenshot", {
+          format: "png",
+          fromSurface: true,
+          captureBeyondViewport: true,
+          clip: { x: 12, y: 34, width: 1280, height: 800, scale: 1 },
+        });
+        expect(createFromBuffer).toHaveBeenCalledWith(Buffer.from("logical viewport"));
+      }),
+    ),
+  );
+
+  effectIt.effect("captures fitted annotation crops in logical page coordinates", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        let onElementPicked: ((event: unknown, ...args: unknown[]) => void) | undefined;
+        const preview = makeTestPreviewWebContents(async () => ({
+          getSize: () => ({ width: 640, height: 400 }),
+          toJPEG: () => Buffer.from("physical"),
+          toPNG: () => Buffer.from("physical"),
+        }));
+        const sendCommand = (
+          preview as unknown as {
+            readonly debugger: { readonly sendCommand: ReturnType<typeof vi.fn> };
+          }
+        ).debugger.sendCommand;
+        sendCommand.mockImplementation(async (method: string) => {
+          if (method === "Page.getLayoutMetrics") {
+            return { cssVisualViewport: { pageX: 12, pageY: 34 } };
+          }
+          if (method === "Page.captureScreenshot") {
+            return { data: Buffer.from("logical crop").toString("base64") };
+          }
+          return undefined;
+        });
+        Object.assign(preview as object, {
+          isFocused: () => true,
+          once: vi.fn(),
+          ipc: {
+            on: vi.fn((channel: string, listener: typeof onElementPicked) => {
+              if (channel === ELEMENT_PICKED_CHANNEL) onElementPicked = listener;
+            }),
+            off: vi.fn(),
+            removeListener: vi.fn(),
+          },
+        });
+        fromId.mockReturnValue(preview);
+
+        yield* manager.createTab("tab_logical_annotation");
+        yield* manager.registerWebview("tab_logical_annotation", 42);
+        yield* manager.setViewportPresentation("tab_logical_annotation", {
+          width: 1280,
+          height: 800,
+          scale: 0.25,
+        });
+        const pick = yield* manager.pickElement("tab_logical_annotation").pipe(Effect.forkChild);
+        yield* Effect.yieldNow;
+        onElementPicked?.(
+          {},
+          {
+            id: "annotation_1",
+            pageUrl: "https://example.com/",
+            pageTitle: "Example",
+            comment: "Clarify this panel",
+            elements: [],
+            regions: [],
+            strokes: [],
+            styleChanges: [],
+            screenshot: null,
+            createdAt: "2026-08-18T00:00:00.000Z",
+          },
+          { x: 800, y: 400, width: 240, height: 120 },
+          "attach",
+        );
+        const result = yield* Fiber.join(pick);
+
+        expect(sendCommand).toHaveBeenCalledWith("Page.captureScreenshot", {
+          format: "png",
+          fromSurface: true,
+          captureBeyondViewport: true,
+          clip: { x: 812, y: 434, width: 240, height: 120, scale: 1 },
+        });
+        expect(result?.annotation.screenshot?.cropRect).toEqual({
+          x: 800,
+          y: 400,
+          width: 240,
+          height: 120,
+        });
+      }),
+    ),
+  );
+
   effectIt.effect("blocks late webview and capture starts during tab close", () =>
     withManager((manager) =>
       Effect.gen(function* () {
@@ -1743,6 +2137,13 @@ describe("PreviewManager", () => {
         const registrationFiber = yield* manager
           .registerWebview("tab_close_register_race", 43)
           .pipe(Effect.forkChild({ startImmediately: true }));
+        const presentationFiber = yield* manager
+          .setViewportPresentation("tab_close_register_race", {
+            width: 1280,
+            height: 800,
+            scale: 0.5,
+          })
+          .pipe(Effect.forkChild({ startImmediately: true }));
         yield* Effect.yieldNow;
         expect(replacementListenerSpies.on).not.toHaveBeenCalled();
         yield* manager.closeTab("tab_close_register_race");
@@ -1751,8 +2152,9 @@ describe("PreviewManager", () => {
         yield* Fiber.join(closeFiber);
         const recreated = yield* Fiber.join(recreateFiber);
         const registrationExit = yield* Fiber.await(registrationFiber);
+        const presentationExit = yield* Fiber.await(presentationFiber);
 
-        for (const exit of [registrationExit, recordingExit]) {
+        for (const exit of [registrationExit, presentationExit, recordingExit]) {
           expect(Exit.isFailure(exit)).toBe(true);
           if (Exit.isSuccess(exit)) continue;
           expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toMatchObject({
