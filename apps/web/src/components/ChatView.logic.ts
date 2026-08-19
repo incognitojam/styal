@@ -104,6 +104,19 @@ export function resolveDraftPromotionNavigationTarget(input: {
   return input.serverThreadStarted ? input.serverThreadRef : null;
 }
 
+export function resolveProjectScriptBaseTerminalId(input: {
+  activeTerminalId: string;
+  knownTerminalIds: ReadonlyArray<string>;
+  defaultTerminalId: string;
+}): string {
+  const reusableTerminalIds = input.knownTerminalIds.filter(
+    (terminalId) => !terminalId.startsWith("setup-"),
+  );
+  return reusableTerminalIds.includes(input.activeTerminalId)
+    ? input.activeTerminalId
+    : (reusableTerminalIds[0] ?? input.defaultTerminalId);
+}
+
 export function scheduleEnvironmentReconnectWarning(showWarning: () => void): () => void {
   const timeoutId = globalThis.setTimeout(showWarning, ENVIRONMENT_RECONNECT_WARNING_GRACE_MS);
   return () => globalThis.clearTimeout(timeoutId);
