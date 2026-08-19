@@ -1243,6 +1243,63 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
     }),
   );
 
+  it.effect("rewrites OpenCode's MCP tool names to the canonical form", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-mcp-identity");
+      runtimeMock.state.subscribedEvents = [
+        {
+          type: "message.part.updated",
+          properties: {
+            sessionID: "http://127.0.0.1:9999/session",
+            part: {
+              id: "part-preview",
+              sessionID: "http://127.0.0.1:9999/session",
+              messageID: "msg-preview",
+              type: "tool",
+              callID: "call-preview",
+              // OpenCode names MCP tools `<server>_<tool>`; this is the exact
+              // shape a real session produced for T3's browser.
+              tool: "t3-code_preview_type",
+              state: {
+                status: "completed",
+                input: { text: "Hello there" },
+                output: "",
+                metadata: {},
+                time: { start: 1, end: 2 },
+              },
+            },
+          },
+        },
+      ];
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.threadId === threadId),
+        Stream.take(3),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("1 second")));
+      const completed = events.find((event) => event.type === "item.completed");
+      NodeAssert.equal(completed?.type, "item.completed");
+      if (completed?.type === "item.completed") {
+        // The canonical name is what routes the row to mcp_tool_call, whose
+        // projection keeps every argument instead of the built-in allowlist.
+        NodeAssert.equal(completed.payload.itemType, "mcp_tool_call");
+        NodeAssert.equal(
+          (completed.payload.data as { toolName?: unknown }).toolName,
+          "mcp__t3-code__preview_type",
+        );
+      }
+    }),
+  );
+
   it.effect("lets OpenCode own session title generation and emits title metadata updates", () =>
     Effect.gen(function* () {
       const adapter = yield* OpenCodeAdapter;
