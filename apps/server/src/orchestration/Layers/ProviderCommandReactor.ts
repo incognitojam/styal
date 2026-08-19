@@ -1250,12 +1250,20 @@ const make = Effect.gen(function* () {
             return;
           }
 
+          const currentThread = yield* resolveThread(thread.id);
+          if (
+            currentThread?.session?.status !== "running" ||
+            currentThread.session.activeTurnId !== activeTurnId
+          ) {
+            return;
+          }
+
           // Re-asserting the running session lets the turn projection adopt
           // and clear the pending start before the shared turn completes.
           yield* setThreadSession({
             threadId: thread.id,
             session: {
-              ...thread.session,
+              ...currentThread.session,
               status: "running",
               activeTurnId,
               lastError: null,
