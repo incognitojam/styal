@@ -16,7 +16,8 @@ import {
   decodePullRequestNodeIdJson,
   decodePullRequestSearchJson,
   decodeRequiredChecksJson,
-  decodeRequiredCheckRulesJson,
+  decodeBranchRulesJson,
+  narrowMergeCapabilities,
   decodeRepositoryAccessJson,
   decodeReviewerCandidatesJson,
   decodeReviewThreadCommentsJson,
@@ -302,7 +303,7 @@ describe("pull request detail decoding", () => {
   it("decodes effective ruleset and classic-protection required contexts", () => {
     expect(
       expectSuccess(
-        decodeRequiredCheckRulesJson(
+        decodeBranchRulesJson(
           JSON.stringify([
             [
               { type: "pull_request", parameters: {} },
@@ -324,7 +325,7 @@ describe("pull request detail decoding", () => {
           ]),
         ),
       ),
-    ).toEqual(["build", "legacy"]);
+    ).toEqual({ requiredChecks: ["build", "legacy"], allowedMergeMethods: null });
     expect(
       expectSuccess(
         decodeBranchProtectionRequiredChecksJson(
@@ -342,6 +343,50 @@ describe("pull request detail decoding", () => {
         ),
       ),
     ).toEqual(["classic"]);
+  });
+
+  it("reads the strategies a base branch's rulesets leave open", () => {
+    const decoded = expectSuccess(
+      decodeBranchRulesJson(
+        JSON.stringify([
+          [
+            {
+              type: "pull_request",
+              parameters: { allowed_merge_methods: ["squash", "REBASE", "cherry_pick"] },
+            },
+          ],
+          [{ type: "pull_request", parameters: { allowed_merge_methods: ["merge", "squash"] } }],
+        ]),
+      ),
+    );
+
+    // Both rules apply, so only the strategy they agree on survives.
+    expect(decoded).toEqual({ requiredChecks: [], allowedMergeMethods: ["squash"] });
+  });
+
+  it("treats a branch no rule speaks for as unnarrowed", () => {
+    for (const rules of [
+      [],
+      [[{ type: "pull_request", parameters: {} }]],
+      [[{ type: "pull_request", parameters: { allowed_merge_methods: null } }]],
+      // Every name unknown to this version reads as empty, which must not forbid all three.
+      [[{ type: "pull_request", parameters: { allowed_merge_methods: ["telepathy"] } }]],
+    ]) {
+      expect(expectSuccess(decodeBranchRulesJson(JSON.stringify(rules))).allowedMergeMethods).toBe(
+        null,
+      );
+    }
+  });
+
+  it("narrows repository merge capabilities by the branch's rules", () => {
+    const repository = { merge: true, squash: true, rebase: false };
+
+    expect(narrowMergeCapabilities(repository, null)).toEqual(repository);
+    expect(narrowMergeCapabilities(repository, ["squash", "rebase"])).toEqual({
+      merge: false,
+      squash: true,
+      rebase: false,
+    });
   });
 
   it("shows a re-running check once, as the run that is happening now", () => {
