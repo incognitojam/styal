@@ -74,6 +74,7 @@ function makeTestLayer(state: {
   remoteStatusCalls: number;
   localInvalidationCalls: number;
   remoteInvalidationCalls: number;
+  statusInvalidationCalls?: number;
   remoteStatusRefreshUpstreamValues?: Array<boolean | undefined>;
 }) {
   return VcsStatusBroadcaster.layer.pipe(
@@ -104,6 +105,7 @@ function makeTestLayer(state: {
           Effect.sync(() => {
             state.localInvalidationCalls += 1;
             state.remoteInvalidationCalls += 1;
+            state.statusInvalidationCalls = (state.statusInvalidationCalls ?? 0) + 1;
           }),
       }),
     ),
@@ -205,6 +207,67 @@ describe("VcsStatusBroadcaster", () => {
       assert.equal(state.remoteStatusCalls, 2);
       assert.equal(state.localInvalidationCalls, 1);
       assert.equal(state.remoteInvalidationCalls, 1);
+    }).pipe(Effect.provide(makeTestLayer(state)));
+  });
+
+  it.effect("bypasses a cached PR miss without fetching upstream", () => {
+    const state = {
+      currentLocalStatus: baseLocalStatus,
+      currentRemoteStatus: baseRemoteStatus,
+      localStatusCalls: 0,
+      remoteStatusCalls: 0,
+      localInvalidationCalls: 0,
+      remoteInvalidationCalls: 0,
+      statusInvalidationCalls: 0,
+      remoteStatusRefreshUpstreamValues: [] as Array<boolean | undefined>,
+    };
+
+    return Effect.gen(function* () {
+      const broadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
+      const initial = yield* broadcaster.getStatus({ cwd: "/repo" });
+
+      state.currentRemoteStatus = remoteStatusWithPr;
+      const refreshed = yield* broadcaster.refreshStatus("/repo", {
+        refreshUpstream: false,
+        invalidatePullRequest: "if-missing",
+      });
+
+      assert.isNull(initial.pr);
+      assert.deepStrictEqual(refreshed.pr, remoteStatusWithPr.pr);
+      assert.deepStrictEqual(state.remoteStatusRefreshUpstreamValues, [undefined, false]);
+      assert.equal(state.localInvalidationCalls, 1);
+      assert.equal(state.remoteInvalidationCalls, 1);
+      assert.equal(state.statusInvalidationCalls, 1);
+    }).pipe(Effect.provide(makeTestLayer(state)));
+  });
+
+  it.effect("preserves the PR cache after a branch is associated", () => {
+    const state = {
+      currentLocalStatus: baseLocalStatus,
+      currentRemoteStatus: remoteStatusWithPr,
+      localStatusCalls: 0,
+      remoteStatusCalls: 0,
+      localInvalidationCalls: 0,
+      remoteInvalidationCalls: 0,
+      statusInvalidationCalls: 0,
+      remoteStatusRefreshUpstreamValues: [] as Array<boolean | undefined>,
+    };
+
+    return Effect.gen(function* () {
+      const broadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
+      yield* broadcaster.getStatus({ cwd: "/repo" });
+
+      state.currentRemoteStatus = { ...remoteStatusWithPr, aheadCount: 2 };
+      const refreshed = yield* broadcaster.refreshStatus("/repo", {
+        refreshUpstream: false,
+        invalidatePullRequest: "if-missing",
+      });
+
+      assert.equal(refreshed.aheadCount, 2);
+      assert.deepStrictEqual(state.remoteStatusRefreshUpstreamValues, [undefined, false]);
+      assert.equal(state.localInvalidationCalls, 1);
+      assert.equal(state.remoteInvalidationCalls, 1);
+      assert.equal(state.statusInvalidationCalls, 0);
     }).pipe(Effect.provide(makeTestLayer(state)));
   });
 
