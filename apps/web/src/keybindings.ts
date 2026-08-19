@@ -30,6 +30,7 @@ export interface ShortcutModifierStateLike {
 export interface ShortcutMatchContext {
   terminalFocus: boolean;
   terminalOpen: boolean;
+  rightPanelFocus: boolean;
   previewFocus: boolean;
   previewOpen: boolean;
   [key: string]: boolean;
@@ -124,6 +125,7 @@ function resolveContext(options: ShortcutMatchOptions | undefined): ShortcutMatc
   return {
     terminalFocus: false,
     terminalOpen: false,
+    rightPanelFocus: false,
     previewFocus: false,
     previewOpen: false,
     ...options?.context,

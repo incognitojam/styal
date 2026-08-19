@@ -1713,6 +1713,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           ...(input.shift ? (["shift"] as const) : []),
           ...(input.control ? (["control"] as const) : []),
           ...(input.alt ? (["alt"] as const) : []),
+          ...(input.isAutoRepeat ? (["isautorepeat"] as const) : []),
         ],
       });
     });

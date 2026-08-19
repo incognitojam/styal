@@ -48,6 +48,13 @@ it.effect("parses keybinding rules", () =>
     });
     assert.strictEqual(parsedRightPanelToggleMaximized.command, "rightPanel.toggleMaximized");
 
+    const parsedRightPanelClose = yield* decode(KeybindingRule, {
+      key: "mod+w",
+      command: "rightPanel.closeActive",
+      when: "rightPanelFocus && !terminalFocus",
+    });
+    assert.strictEqual(parsedRightPanelClose.command, "rightPanel.closeActive");
+
     const parsedClose = yield* decode(KeybindingRule, {
       key: "mod+w",
       command: "terminal.close",
