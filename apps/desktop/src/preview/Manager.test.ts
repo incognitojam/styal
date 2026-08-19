@@ -1,3 +1,6 @@
+import * as NodeTimersPromises from "node:timers/promises";
+import * as NodeVM from "node:vm";
+
 import { it as effectIt } from "@effect/vitest";
 import type { DesktopPreviewRecordingFrame } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
@@ -67,6 +70,7 @@ const {
   getFocusedWebContents,
   mkdir,
   openExternal,
+  readHTML,
   readText,
   showItemInFolder,
   webviewSend,
@@ -89,6 +93,7 @@ const {
   getFocusedWebContents: vi.fn(() => null),
   mkdir: vi.fn((_path: string) => undefined),
   openExternal: vi.fn(async (_url: string) => undefined),
+  readHTML: vi.fn(() => "<strong>synthetic clipboard</strong>"),
   readText: vi.fn(() => "synthetic clipboard"),
   showItemInFolder: vi.fn(),
   webviewSend: vi.fn(),
@@ -99,6 +104,7 @@ const {
 vi.mock("electron", () => ({
   BrowserWindow: browserWindowConstructor,
   clipboard: {
+    readHTML,
     readText,
     writeImage,
   },
@@ -3050,12 +3056,58 @@ describe("PreviewManager", () => {
     withManager((manager) =>
       Effect.gen(function* () {
         let failKeyDown = false;
+        let interruptKeyDown = false;
+        let runEditingExpression = false;
+        let preventShortcutDefault = false;
+        let humanInput: ((_event: unknown, signal: unknown) => void) | undefined;
+        const editingKeydownListeners = new Set<(event: Record<string, unknown>) => void>();
+        const execCommand = vi.fn(() => true);
+        const editingContext: Record<string, unknown> = {
+          document: { execCommand },
+          addEventListener: (type: string, listener: (event: Record<string, unknown>) => void) => {
+            if (type === "keydown") editingKeydownListeners.add(listener);
+          },
+          removeEventListener: (
+            type: string,
+            listener: (event: Record<string, unknown>) => void,
+          ) => {
+            if (type === "keydown") editingKeydownListeners.delete(listener);
+          },
+          setTimeout,
+          clearTimeout,
+        };
+        editingContext["globalThis"] = editingContext;
         const sendCommand = vi.fn(async (method: string, _params?: Record<string, unknown>) => {
           return method === "Runtime.evaluate" ? { result: { value: { ok: true } } } : undefined;
         });
         const sendInputEvent = vi.fn((input: Electron.KeyboardInputEvent) => {
           if (failKeyDown && input.type === "keyDown") throw new Error("key dispatch failed");
+          if (interruptKeyDown && input.type === "keyDown") {
+            humanInput?.({}, { kind: "key", key: "q", code: "KeyQ" });
+          }
+          if (runEditingExpression && input.type === "keyDown") {
+            const event = {
+              isTrusted: true,
+              code: "KeyA",
+              shiftKey: false,
+              ctrlKey: false,
+              altKey: false,
+              metaKey: true,
+              defaultPrevented: false,
+            };
+            for (const listener of Array.from(editingKeydownListeners)) listener(event);
+            event.defaultPrevented = preventShortcutDefault;
+          }
         });
+        const executeFocusedFrameJavaScript = vi.fn(async (expression: string) => {
+          if (runEditingExpression) NodeVM.runInNewContext(expression, editingContext);
+          return true;
+        });
+        const executeMainFrameJavaScript = vi.fn(async (_expression: string) => true);
+        const focusedFrame = {
+          isDestroyed: () => false,
+          executeJavaScript: executeFocusedFrameJavaScript,
+        };
         const restoreFocus = vi.fn();
         const focus = vi.fn();
         getFocusedWebContents.mockReturnValue({
@@ -3071,6 +3123,11 @@ describe("PreviewManager", () => {
           getTitle: () => "Example",
           isLoading: () => false,
           isDevToolsOpened: () => false,
+          focusedFrame,
+          mainFrame: {
+            isDestroyed: () => false,
+            executeJavaScript: executeMainFrameJavaScript,
+          },
           focus,
           sendInputEvent,
           getZoomFactor: () => 1,
@@ -3078,7 +3135,9 @@ describe("PreviewManager", () => {
           on: vi.fn(),
           off: vi.fn(),
           ipc: {
-            on: vi.fn(),
+            on: vi.fn((channel: string, listener: typeof humanInput) => {
+              if (channel === "preview:human-input") humanInput = listener;
+            }),
             off: vi.fn(),
           },
           send: webviewSend,
@@ -3153,11 +3212,23 @@ describe("PreviewManager", () => {
         const failedPress = yield* Effect.exit(manager.automationPress("tab_input", { key: "y" }));
 
         expect(Exit.isFailure(failedPress)).toBe(true);
-        expect(sendInputEvent).toHaveBeenCalledWith({ type: "keyUp", keyCode: "Y" });
         expect(sendCommand).toHaveBeenCalledWith("Emulation.setFocusEmulationEnabled", {
           enabled: false,
         });
         expect(restoreFocus).not.toHaveBeenCalled();
+        expect(sendInputEvent.mock.calls.map(([event]) => event)).toEqual([
+          { type: "keyDown", keyCode: "Y" },
+        ]);
+
+        sendCommand.mockClear();
+        sendInputEvent.mockClear();
+        failKeyDown = false;
+        interruptKeyDown = true;
+        const interruptedPress = yield* Effect.exit(
+          manager.automationPress("tab_input", { key: "y" }),
+        );
+
+        expect(Exit.isFailure(interruptedPress)).toBe(true);
         expect(sendInputEvent.mock.calls.map(([event]) => event)).toEqual([
           { type: "keyDown", keyCode: "Y" },
           { type: "keyUp", keyCode: "Y" },
@@ -3165,7 +3236,7 @@ describe("PreviewManager", () => {
 
         sendCommand.mockClear();
         sendInputEvent.mockClear();
-        failKeyDown = false;
+        interruptKeyDown = false;
         yield* manager.automationPress("tab_input", { key: "!" });
         expect(sendInputEvent.mock.calls.map(([event]) => event)).toEqual([
           { type: "keyDown", keyCode: "1", modifiers: ["shift"] },
@@ -3181,36 +3252,54 @@ describe("PreviewManager", () => {
           { type: "keyDown", keyCode: "A", modifiers: ["meta"] },
           { type: "keyUp", keyCode: "A", modifiers: ["meta"] },
         ]);
-        expect(sendCommand).toHaveBeenCalledWith(
-          "Runtime.evaluate",
-          expect.objectContaining({
-            expression: 'document.execCommand("selectAll")',
-            userGesture: true,
-          }),
+        expect(executeFocusedFrameJavaScript).toHaveBeenCalledWith(
+          expect.stringContaining('document.execCommand("selectAll")'),
+          true,
         );
+        expect(executeFocusedFrameJavaScript).toHaveBeenCalledWith(
+          expect.stringContaining("event.defaultPrevented"),
+          true,
+        );
+        expect(executeMainFrameJavaScript).not.toHaveBeenCalled();
         expect(focus).not.toHaveBeenCalled();
+
+        runEditingExpression = true;
+        preventShortcutDefault = true;
+        execCommand.mockClear();
+        yield* manager.automationPress("tab_input", { key: "a", modifiers: ["Meta"] });
+        yield* Effect.promise(() => NodeTimersPromises.setTimeout(0));
+        expect(execCommand).not.toHaveBeenCalled();
+
+        preventShortcutDefault = false;
+        yield* manager.automationPress("tab_input", { key: "a", modifiers: ["Meta"] });
+        yield* Effect.promise(() => NodeTimersPromises.setTimeout(0));
+        expect(execCommand).toHaveBeenCalledWith("selectAll");
+        runEditingExpression = false;
 
         sendCommand.mockClear();
         sendInputEvent.mockClear();
+        executeFocusedFrameJavaScript.mockClear();
         yield* manager.automationPress("tab_input", { key: "v", modifiers: ["Meta"] });
         expect(readText).toHaveBeenCalled();
-        expect(sendCommand).toHaveBeenCalledWith(
-          "Runtime.evaluate",
-          expect.objectContaining({
-            expression: 'document.execCommand("insertText", false, "synthetic clipboard")',
-            userGesture: true,
-          }),
+        expect(readHTML).toHaveBeenCalled();
+        expect(executeFocusedFrameJavaScript).toHaveBeenCalledWith(
+          expect.stringContaining('new ClipboardEvent("paste"'),
+          true,
+        );
+        expect(executeFocusedFrameJavaScript).toHaveBeenCalledWith(
+          expect.stringContaining("<strong>synthetic clipboard</strong>"),
+          true,
         );
         expect(focus).not.toHaveBeenCalled();
       }),
     ),
   );
 
-  effectIt.effect("still interrupts agent control for a different human pointer event", () =>
+  effectIt.effect("disables focus emulation when human input interrupts its enable command", () =>
     withManager((manager) =>
       Effect.gen(function* () {
         let humanInput: ((_event: unknown, signal: unknown) => void) | undefined;
-        const sendCommand = vi.fn(async (method: string) => {
+        const sendCommand = vi.fn(async (method: string, params?: Record<string, unknown>) => {
           if (method === "Runtime.evaluate") {
             return {
               result: {
@@ -3218,7 +3307,7 @@ describe("PreviewManager", () => {
               },
             };
           }
-          if (method === "Input.dispatchMouseEvent") {
+          if (method === "Emulation.setFocusEmulationEnabled" && params?.enabled === true) {
             humanInput?.({}, { kind: "pointer", x: 400, y: 300, button: 0 });
           }
           return undefined;
@@ -3259,7 +3348,6 @@ describe("PreviewManager", () => {
         const click = yield* manager
           .automationClick("tab_1", { x: 120, y: 80 })
           .pipe(Effect.forkChild({ startImmediately: true }));
-        yield* TestClock.adjust(200);
         const exit = yield* Fiber.await(click);
         expect(Exit.isFailure(exit)).toBe(true);
         expect(sendCommand).toHaveBeenCalledWith("Emulation.setFocusEmulationEnabled", {

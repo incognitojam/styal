@@ -49,6 +49,7 @@ export async function withPreservedPreviewAutomationFocus<A>(
     listening = false;
     activeFocusGuards.delete(guard);
     document.removeEventListener("focusin", onFocusIn, true);
+    document.removeEventListener("pointerdown", onPointerDown, true);
   };
   const restore = () => {
     if (focusSuperseded || !previouslyFocused.isConnected) return;
@@ -71,8 +72,19 @@ export async function withPreservedPreviewAutomationFocus<A>(
     focusSuperseded = true;
     cleanup();
   };
+  const onPointerDown = (event: PointerEvent) => {
+    if (!event.isTrusted) return;
+    const currentWebview = findBrowserWebview(runtimeTabId);
+    if (!currentWebview || !event.composedPath().includes(currentWebview)) return;
+    // A real pointer event in the embedder means the user chose the preview.
+    // Cancel before Electron transfers focus so the automation guard cannot
+    // bounce intentional interaction back to the previous T3 control.
+    focusSuperseded = true;
+    cleanup();
+  };
 
   document.addEventListener("focusin", onFocusIn, true);
+  document.addEventListener("pointerdown", onPointerDown, true);
   try {
     return await operation();
   } finally {

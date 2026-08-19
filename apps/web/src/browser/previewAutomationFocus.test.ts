@@ -51,6 +51,7 @@ function setupFocusDocument(runtimeTabIds: ReadonlyArray<string> = ["runtime-tab
     return webview;
   });
   const focusInListeners = new Set<() => void>();
+  const pointerDownListeners = new Set<(event: PointerEvent) => void>();
   const emitFocusIn = () => {
     for (const listener of Array.from(focusInListeners)) listener();
   };
@@ -58,11 +59,17 @@ function setupFocusDocument(runtimeTabIds: ReadonlyArray<string> = ["runtime-tab
     activeElement: composer as unknown as Element,
     body,
     querySelectorAll: vi.fn(() => webviews),
-    addEventListener: vi.fn((_type: string, listener: () => void) => {
-      focusInListeners.add(listener);
+    addEventListener: vi.fn((type: string, listener: EventListener) => {
+      if (type === "focusin") focusInListeners.add(listener as () => void);
+      if (type === "pointerdown") {
+        pointerDownListeners.add(listener as (event: PointerEvent) => void);
+      }
     }),
-    removeEventListener: vi.fn((_type: string, listener: () => void) => {
-      focusInListeners.delete(listener);
+    removeEventListener: vi.fn((type: string, listener: EventListener) => {
+      if (type === "focusin") focusInListeners.delete(listener as () => void);
+      if (type === "pointerdown") {
+        pointerDownListeners.delete(listener as (event: PointerEvent) => void);
+      }
     }),
   };
   const focus = vi.fn(() => {
@@ -86,6 +93,10 @@ function setupFocusDocument(runtimeTabIds: ReadonlyArray<string> = ["runtime-tab
     focus,
     documentStub,
     emitFocusIn,
+    emitPointerDown: (target: MockHTMLElement) => {
+      const event = { isTrusted: true, composedPath: () => [target] } as unknown as PointerEvent;
+      for (const listener of Array.from(pointerDownListeners)) listener(event);
+    },
   };
 }
 
@@ -136,6 +147,27 @@ describe("withPreservedPreviewAutomationFocus", () => {
     fixture.emitFocusIn();
 
     expect(fixture.focus).not.toHaveBeenCalled();
+  });
+
+  it("allows an intentional user pointer interaction with the automated webview", async () => {
+    const fixture = setupFocusDocument();
+    let finishOperation: (() => void) | undefined;
+    const guarded = withPreservedPreviewAutomationFocus(
+      "runtime-tab",
+      () =>
+        new Promise<void>((resolve) => {
+          finishOperation = resolve;
+        }),
+    );
+
+    fixture.emitPointerDown(fixture.webview);
+    fixture.documentStub.activeElement = fixture.webview as unknown as Element;
+    fixture.emitFocusIn();
+    finishOperation?.();
+    await guarded;
+
+    expect(fixture.focus).not.toHaveBeenCalled();
+    expect(fixture.documentStub.activeElement).toBe(fixture.webview);
   });
 
   it("does not restore a control that disconnected while automation ran", async () => {

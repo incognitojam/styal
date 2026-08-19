@@ -51,6 +51,20 @@ describe("preview keyboard packets", () => {
     ).toBe(editingCommand);
   });
 
+  it("includes implicit Shift when resolving uppercase macOS shortcuts", () => {
+    const sequence = makePreviewAutomationKeySequence(
+      { key: "Z", modifiers: ["Meta"] },
+      { isMac: true },
+    );
+
+    expect(sequence.keyDown).toEqual({
+      type: "keyDown",
+      keyCode: "Z",
+      modifiers: ["meta", "shift"],
+    });
+    expect(sequence.editingCommand).toBe("redo");
+  });
+
   it("resolves shifted printable keys to their browser values", () => {
     const sequence = makePreviewAutomationKeySequence({ key: "1", modifiers: ["Shift"] });
     expect(sequence.keyDown).toEqual({ type: "keyDown", keyCode: "1", modifiers: ["shift"] });

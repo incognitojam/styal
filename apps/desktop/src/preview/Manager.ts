@@ -129,10 +129,12 @@ class PreviewCaptureTimeoutError extends Error {}
 const MAX_ARTIFACT_SITE_SLUG_LENGTH = 80;
 const AGENT_CURSOR_MOVE_MS = 160;
 const AGENT_CURSOR_CLICK_LEAD_MS = 40;
+const PREVIEW_AUTOMATION_EDITING_GUARD_KEY = "__t3PreviewAutomationEditingGuard";
 
-const previewAutomationEditingCommandExpression = (
+const previewAutomationEditingFallbackExpression = (
   command: PreviewAutomationEditingCommand,
   pasteTextJson = "undefined",
+  pasteHtmlJson = "undefined",
 ): string => {
   switch (command) {
     case "copy":
@@ -142,7 +144,35 @@ const previewAutomationEditingCommandExpression = (
     case "undo":
       return `document.execCommand(${JSON.stringify(command)})`;
     case "paste":
-      return `document.execCommand("insertText", false, ${pasteTextJson})`;
+      return `(() => {
+        const target = document.activeElement ?? document.body;
+        if (!target) return false;
+        const text = ${pasteTextJson};
+        const html = ${pasteHtmlJson};
+        const data = new DataTransfer();
+        data.setData("text/plain", text);
+        if (html) data.setData("text/html", html);
+        let event;
+        try {
+          event = new ClipboardEvent("paste", {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            clipboardData: data,
+          });
+        } catch {
+          event = new Event("paste", { bubbles: true, cancelable: true, composed: true });
+          Object.defineProperty(event, "clipboardData", { value: data });
+        }
+        if (!target.dispatchEvent(event)) return true;
+        const textControl =
+          target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement;
+        return document.execCommand(
+          !textControl && target.isContentEditable && html ? "insertHTML" : "insertText",
+          false,
+          !textControl && target.isContentEditable && html ? html : text,
+        );
+      })()`;
     case "deleteToBeginningOfLine":
       return `(() => {
         const selection = globalThis.getSelection();
@@ -170,6 +200,53 @@ const previewAutomationEditingCommandExpression = (
       return `globalThis.getSelection()?.modify("extend", "right", "lineboundary")`;
   }
 };
+
+const previewAutomationEditingGuardExpression = (
+  command: PreviewAutomationEditingCommand,
+  code: string,
+  modifiers: Electron.KeyboardInputEvent["modifiers"],
+  pasteTextJson?: string,
+  pasteHtmlJson?: string,
+): string => {
+  const activeModifiers = new Set(modifiers ?? []);
+  const matchesEvent = [
+    `event.code === ${JSON.stringify(code)}`,
+    `event.shiftKey === ${activeModifiers.has("shift")}`,
+    `event.ctrlKey === ${activeModifiers.has("control")}`,
+    `event.altKey === ${activeModifiers.has("alt")}`,
+    `event.metaKey === ${activeModifiers.has("meta")}`,
+  ].join(" && ");
+  const fallback = previewAutomationEditingFallbackExpression(
+    command,
+    pasteTextJson,
+    pasteHtmlJson,
+  );
+  return `(() => {
+    const stateKey = ${JSON.stringify(PREVIEW_AUTOMATION_EDITING_GUARD_KEY)};
+    globalThis[stateKey]?.cleanup();
+    const listener = (event) => {
+      if (!event.isTrusted || !(${matchesEvent})) return;
+      cleanup();
+      setTimeout(() => {
+        if (!event.defaultPrevented) ${fallback};
+      }, 0);
+    };
+    const timeout = setTimeout(() => cleanup(), 1000);
+    const cleanup = () => {
+      clearTimeout(timeout);
+      globalThis.removeEventListener("keydown", listener, true);
+      if (globalThis[stateKey]?.listener === listener) delete globalThis[stateKey];
+    };
+    globalThis[stateKey] = { listener, cleanup };
+    globalThis.addEventListener("keydown", listener, true);
+    return true;
+  })()`;
+};
+
+const previewAutomationEditingGuardCleanupExpression = `(() => {
+  const stateKey = ${JSON.stringify(PREVIEW_AUTOMATION_EDITING_GUARD_KEY)};
+  globalThis[stateKey]?.cleanup();
+})()`;
 const encodeUnknownJson = Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 const DEFAULT_ANNOTATION_THEME: DesktopPreviewAnnotationTheme = {
   colorScheme: "light",
@@ -1217,7 +1294,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   ) => Effect.Effect<unknown, PreviewManagerError>;
   type SendKeyboardInput = (
     input: Electron.KeyboardInputEvent,
+    onDispatched?: () => void,
   ) => Effect.Effect<void, PreviewManagerError>;
+  type CheckControl = () => Effect.Effect<void, PreviewManagerError>;
 
   const prepareAutomationInput = Effect.fn("PreviewManager.prepareAutomationInput")(function* (
     send: SendCommand,
@@ -1241,6 +1320,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       sendCleanup: SendCommand,
       sendKeyboardInput: SendKeyboardInput,
       sendKeyboardCleanup: SendKeyboardInput,
+      checkControl: CheckControl,
     ) => Effect.Effect<A, PreviewManagerError>,
   ) {
     const sequence = yield* nextCounter(actionSequenceRef);
@@ -1257,28 +1337,24 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     const control = yield* ensureControlSession(wc);
     const execute = Effect.fn("PreviewManager.executeControlAction")(function* () {
       yield* update(tabId, { controller: "agent" });
+      const checkControl: CheckControl = Effect.fn("PreviewManager.checkControl")(function* () {
+        const current = (yield* Ref.get(controlEpochRef)).get(tabId) ?? 0;
+        if (current !== epoch) {
+          return yield* new PreviewAutomationControlInterruptedError({
+            operation: action,
+            tabId,
+            webContentsId: wc.id,
+          });
+        }
+      });
       const send: SendCommand = Effect.fn("PreviewManager.sendCommand")(
         function* (method, commandParams) {
-          const before = (yield* Ref.get(controlEpochRef)).get(tabId) ?? 0;
-          if (before !== epoch) {
-            return yield* new PreviewAutomationControlInterruptedError({
-              operation: action,
-              tabId,
-              webContentsId: wc.id,
-            });
-          }
+          yield* checkControl();
           const result = yield* attemptPromise(
             { operation: `${action}.${method}`, tabId, webContentsId: wc.id },
             () => wc.debugger.sendCommand(method, commandParams),
           );
-          const after = (yield* Ref.get(controlEpochRef)).get(tabId) ?? 0;
-          if (after !== epoch) {
-            return yield* new PreviewAutomationControlInterruptedError({
-              operation: action,
-              tabId,
-              webContentsId: wc.id,
-            });
-          }
+          yield* checkControl();
           return result;
         },
       );
@@ -1298,27 +1374,16 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         },
       );
       const sendKeyboardInput: SendKeyboardInput = Effect.fn("PreviewManager.sendKeyboardInput")(
-        function* (input) {
-          const before = (yield* Ref.get(controlEpochRef)).get(tabId) ?? 0;
-          if (before !== epoch) {
-            return yield* new PreviewAutomationControlInterruptedError({
-              operation: action,
-              tabId,
-              webContentsId: wc.id,
-            });
-          }
+        function* (input, onDispatched) {
+          yield* checkControl();
           yield* attempt(
             { operation: `${action}.sendInputEvent`, tabId, webContentsId: wc.id },
-            () => wc.sendInputEvent(input),
+            () => {
+              wc.sendInputEvent(input);
+              onDispatched?.();
+            },
           );
-          const after = (yield* Ref.get(controlEpochRef)).get(tabId) ?? 0;
-          if (after !== epoch) {
-            return yield* new PreviewAutomationControlInterruptedError({
-              operation: action,
-              tabId,
-              webContentsId: wc.id,
-            });
-          }
+          yield* checkControl();
         },
       );
       const sendKeyboardCleanup: SendKeyboardInput = Effect.fn(
@@ -1329,7 +1394,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           () => wc.sendInputEvent(input),
         ),
       );
-      return yield* use(send, sendCleanup, sendKeyboardInput, sendKeyboardCleanup);
+      return yield* use(send, sendCleanup, sendKeyboardInput, sendKeyboardCleanup, checkControl);
     });
     const finalize = Effect.fn("PreviewManager.finalizeControlAction")(function* (
       exit: Exit.Exit<A, PreviewManagerError>,
@@ -3502,8 +3567,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     // frame for normal hover/mousedown/focus behavior without requiring an
     // explicit WebContents focus; the renderer also guards against delayed
     // host <webview> activation from Electron.
-    yield* send("Emulation.setFocusEmulationEnabled", { enabled: true });
     yield* Effect.gen(function* () {
+      yield* send("Emulation.setFocusEmulationEnabled", { enabled: true });
       const moveSequence = yield* nextCounter(pointerSequenceRef);
       const moveCreatedAt = yield* currentIso;
       yield* emitPointerEvent({
@@ -3682,20 +3747,33 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
 
   const performAutomationPress = Effect.fn("PreviewManager.performAutomationPress")(function* (
     tabId: string,
+    wc: Electron.WebContents,
     input: PreviewAutomationPressInput,
     send: SendCommand,
     sendCleanup: SendCommand,
     sendKeyboardInput: SendKeyboardInput,
     sendKeyboardCleanup: SendKeyboardInput,
+    checkControl: CheckControl,
   ) {
     yield* prepareAutomationInput(send, false);
     const keySequence = makePreviewAutomationKeySequence(input, {
       isMac: hostPlatform === "darwin",
     });
-    let keyDownAttempted = false;
+    let keyDownDispatched = false;
+    let editingFrame: Electron.WebFrameMain | null = null;
     const releaseInput = Effect.gen(function* () {
-      if (keyDownAttempted) {
+      if (keyDownDispatched) {
         yield* sendKeyboardCleanup(keySequence.keyUp).pipe(Effect.ignore);
+      }
+      if (editingFrame && !keyDownDispatched && !editingFrame.isDestroyed()) {
+        yield* attemptPromise(
+          {
+            operation: "automationPress.cleanupEditingGuard",
+            tabId,
+            webContentsId: wc.id,
+          },
+          () => editingFrame!.executeJavaScript(previewAutomationEditingGuardCleanupExpression),
+        ).pipe(Effect.ignore);
       }
       yield* sendCleanup("Emulation.setFocusEmulationEnabled", { enabled: false }).pipe(
         Effect.ignore,
@@ -3708,30 +3786,50 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     // focus emulation lets its active element receive the key without real app focus.
     yield* Effect.gen(function* () {
       yield* send("Emulation.setFocusEmulationEnabled", { enabled: true });
-      yield* expectAgentInput(tabId, keySequence.signal);
-      keyDownAttempted = true;
-      yield* sendKeyboardInput(keySequence.keyDown);
       if (keySequence.editingCommand) {
-        // Electron's direct input path skips the macOS selector actions behind
-        // Command shortcuts. Run the equivalent edit in the guest runtime so
-        // the shortcut works without focusing its host <webview>.
-        const pasteTextJson =
+        editingFrame = wc.focusedFrame ?? wc.mainFrame;
+        const pastePayload =
           keySequence.editingCommand === "paste"
-            ? yield* attempt({ operation: "automationPress.readClipboard", tabId }, () =>
-                clipboard.readText(),
-              ).pipe(
-                Effect.flatMap((text) =>
-                  encodeJson({ operation: "automationPress.encodeClipboard", tabId }, text),
-                ),
-              )
+            ? yield* attempt({ operation: "automationPress.readClipboard", tabId }, () => ({
+                text: clipboard.readText(),
+                html: clipboard.readHTML(),
+              }))
             : undefined;
-        yield* evaluateWithDebugger(
-          tabId,
-          send,
-          previewAutomationEditingCommandExpression(keySequence.editingCommand, pasteTextJson),
-          true,
+        const pasteTextJson = pastePayload
+          ? yield* encodeJson(
+              { operation: "automationPress.encodeClipboardText", tabId },
+              pastePayload.text,
+            )
+          : undefined;
+        const pasteHtmlJson = pastePayload
+          ? yield* encodeJson(
+              { operation: "automationPress.encodeClipboardHtml", tabId },
+              pastePayload.html,
+            )
+          : undefined;
+        const expression = previewAutomationEditingGuardExpression(
+          keySequence.editingCommand,
+          keySequence.signal.code,
+          keySequence.keyDown.modifiers,
+          pasteTextJson,
+          pasteHtmlJson,
         );
-      } else if (keySequence.char) {
+        yield* checkControl();
+        yield* attemptPromise(
+          {
+            operation: "automationPress.installEditingGuard",
+            tabId,
+            webContentsId: wc.id,
+          },
+          () => editingFrame!.executeJavaScript(expression, true),
+        );
+        yield* checkControl();
+      }
+      yield* expectAgentInput(tabId, keySequence.signal);
+      yield* sendKeyboardInput(keySequence.keyDown, () => {
+        keyDownDispatched = true;
+      });
+      if (!keySequence.editingCommand && keySequence.char) {
         yield* sendKeyboardInput(keySequence.char);
       }
     }).pipe(Effect.ensuring(releaseInput));
@@ -3746,14 +3844,16 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       tabId,
       wc,
       "press",
-      (send, sendCleanup, sendKeyboardInput, sendKeyboardCleanup) =>
+      (send, sendCleanup, sendKeyboardInput, sendKeyboardCleanup, checkControl) =>
         performAutomationPress(
           tabId,
+          wc,
           input,
           send,
           sendCleanup,
           sendKeyboardInput,
           sendKeyboardCleanup,
+          checkControl,
         ),
     );
   });

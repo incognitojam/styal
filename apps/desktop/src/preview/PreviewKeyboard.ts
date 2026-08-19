@@ -110,9 +110,12 @@ const SHORTCUT_MODIFIER_ORDER = ["Shift", "Control", "Alt", "Meta"] as const;
 const macEditingCommand = (
   code: string,
   modifiers: PreviewAutomationPressInput["modifiers"],
+  implicitShift: boolean,
 ): PreviewAutomationEditingCommand | undefined => {
+  const effectiveModifiers = new Set(modifiers ?? []);
+  if (implicitShift) effectiveModifiers.add("Shift");
   const shortcut = [
-    ...SHORTCUT_MODIFIER_ORDER.filter((modifier) => modifiers?.includes(modifier)),
+    ...SHORTCUT_MODIFIER_ORDER.filter((modifier) => effectiveModifiers.has(modifier)),
     code,
   ].join("+");
   return MAC_EDITING_COMMANDS[shortcut];
@@ -208,7 +211,7 @@ export function makePreviewAutomationKeySequence(
         ? { type: "char" as const, keyCode: text }
         : { type: "char" as const, keyCode: text, modifiers };
   const editingCommand = options?.isMac
-    ? macEditingCommand(definition.code, input.modifiers)
+    ? macEditingCommand(definition.code, input.modifiers, implicitShift)
     : undefined;
 
   return {
