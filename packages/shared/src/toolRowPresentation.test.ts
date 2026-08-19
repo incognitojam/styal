@@ -332,6 +332,20 @@ describe("deriveToolRowPresentation", () => {
       ).toBe("playwright · preview_click");
     });
 
+    it("renders a Codex row once projection lifts the item's arguments", () => {
+      // Codex carries identity and arguments on `data.item`; the projection
+      // republishes both as toolName/input, which is the shape presentation
+      // sees. This is that post-projection shape.
+      expect(
+        deriveToolRowPresentation({
+          toolName: "mcp__t3-code__preview_press",
+          itemType: "mcp_tool_call",
+          label: "MCP tool call",
+          input: { key: "Enter", modifiers: ["Meta"] },
+        }),
+      ).toEqual({ heading: "Pressed", argument: { kind: "text", value: "Meta+Enter" } });
+    });
+
     it("describes failures as failures", () => {
       expect(preview("preview_click", { locator: "role=button" }, true)).toEqual({
         heading: "Failed to click",

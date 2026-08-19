@@ -275,6 +275,9 @@ describe("projectActivityPayload tool identity", () => {
     );
     const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
     expect(data.toolName).toBe("mcp__t3-code__preview_click");
+    // The clients read data.input, so the item's arguments have to be lifted
+    // there or the row renders a heading with nothing after it.
+    expect((data.input as Record<string, unknown>).locator).toBe("role=button[name='Send']");
   });
 
   it("keeps an adapter's own toolName ahead of the synthesized one", () => {
