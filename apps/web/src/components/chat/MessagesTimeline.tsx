@@ -2771,6 +2771,12 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   ) {
     return "message-circle";
   }
+  if (
+    workEntry.sourceActivityKind === "setup-script.requested" ||
+    workEntry.sourceActivityKind === "setup-script.started"
+  ) {
+    return "terminal";
+  }
   // The tool's own name beats itemType where the adapters' substring
   // classification gets it wrong (TaskCreate reads as a file write).
   switch (workEntry.toolName ? normalizeKnownToolName(workEntry.toolName) : undefined) {
