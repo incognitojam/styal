@@ -30,6 +30,8 @@ export function ElectronBrowserHost() {
                 snapshot.tabId,
               ),
               zoomFactor: previewState.desktopByTabId[snapshot.tabId]?.zoomFactor ?? 1,
+              viewportFallback:
+                previewState.desktopByTabId[snapshot.tabId]?.viewportFallback ?? false,
             }))
           : [];
       }),
@@ -80,7 +82,7 @@ export function ElectronBrowserHost() {
   if (!isElectron) return null;
   return (
     <div className="contents" data-electron-browser-host>
-      {sessions.map(({ threadRef, snapshot, runtimeTabId, zoomFactor }) => {
+      {sessions.map(({ threadRef, snapshot, runtimeTabId, zoomFactor, viewportFallback }) => {
         const url = snapshot.navStatus._tag === "Idle" ? null : snapshot.navStatus.url;
         return (
           <HostedBrowserWebview
@@ -91,6 +93,7 @@ export function ElectronBrowserHost() {
             initialUrl={url}
             viewport={snapshot.viewport ?? FILL_PREVIEW_VIEWPORT}
             zoomFactor={zoomFactor}
+            viewportFallback={viewportFallback}
           />
         );
       })}

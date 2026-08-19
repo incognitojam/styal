@@ -17,7 +17,10 @@ import {
 import { BrowserDeviceToolbar } from "./BrowserDeviceToolbar";
 import { BrowserViewportResizeHandles } from "./BrowserViewportResizeHandles";
 import { acquireDesktopTab, type AcquiredDesktopTab } from "./desktopTabLifetime";
-import { resolveHostedBrowserWebviewWrapperStyle } from "./hostedBrowserWebviewStyle";
+import {
+  resolveHostedBrowserContentStyle,
+  resolveHostedBrowserWebviewWrapperStyle,
+} from "./hostedBrowserWebviewStyle";
 import { usePreviewWebviewConfig } from "./previewWebviewConfigState";
 import { useBrowserViewportResize } from "./useBrowserViewportResize";
 import {
@@ -48,8 +51,10 @@ export function HostedBrowserWebview(props: {
   readonly initialUrl: string | null;
   readonly viewport: PreviewViewportSetting;
   readonly zoomFactor: number;
+  readonly viewportFallback: boolean;
 }) {
-  const { threadRef, tabId, runtimeTabId, initialUrl, viewport, zoomFactor } = props;
+  const { threadRef, tabId, runtimeTabId, initialUrl, viewport, zoomFactor, viewportFallback } =
+    props;
   const config = usePreviewWebviewConfig(threadRef.environmentId);
   const [initialSrc] = useState(() => initialUrl ?? "about:blank");
   const tabLeaseRef = useRef<AcquiredDesktopTab | null>(null);
@@ -204,6 +209,36 @@ export function HostedBrowserWebview(props: {
     fittedSourceViewport && lastRect
       ? resolveBrowserViewportLayout(lastRect, fittedSourceViewport, normalizedZoomFactor)
       : viewportLayout;
+  const logicalViewportWidth = fittedSourceViewport
+    ? fittedSourceViewport.width
+    : effectiveViewport._tag === "fill"
+      ? Math.max(1, Math.round(layout.viewportWidth / normalizedZoomFactor))
+      : effectiveViewport.width;
+  const logicalViewportHeight = fittedSourceViewport
+    ? fittedSourceViewport.height
+    : effectiveViewport._tag === "fill"
+      ? Math.max(1, Math.round(layout.viewportHeight / normalizedZoomFactor))
+      : effectiveViewport.height;
+
+  useEffect(() => {
+    const bridge = previewBridge;
+    const lease = tabLeaseRef.current;
+    if (!bridge || !lease) return;
+    let disposed = false;
+    void lease.ready
+      .then(async () => {
+        if (disposed || tabLeaseRef.current !== lease) return;
+        await bridge.setViewportPresentation(runtimeTabId, {
+          width: logicalViewportWidth,
+          height: logicalViewportHeight,
+          scale: layout.viewportScale,
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      disposed = true;
+    };
+  }, [layout.viewportScale, logicalViewportHeight, logicalViewportWidth, runtimeTabId]);
 
   const syncContentPresentation = useCallback(() => {
     const wrapper = wrapperRef.current;
@@ -239,6 +274,15 @@ export function HostedBrowserWebview(props: {
     rect: lastRect,
     hiddenSize,
   });
+  const useCssZoomFallback = viewportFallback && layout.viewportScale < 1;
+  const webviewStyle = resolveHostedBrowserContentStyle({
+    left: layout.viewportX,
+    top: layout.viewportY,
+    width: layout.viewportWidth,
+    height: layout.viewportHeight,
+    scale: layout.viewportScale,
+    viewportFallback,
+  });
 
   return (
     <div
@@ -259,45 +303,31 @@ export function HostedBrowserWebview(props: {
             onChange={commitViewportChange}
           />
         ) : null}
-        <webview
-          key={webviewGeneration}
-          ref={setWebviewRef}
-          src={webviewGeneration === 0 ? initialSrc : recoverySrc}
-          partition={config.partition}
-          webpreferences={config.webPreferences}
-          {...(config.preloadUrl ? { preload: config.preloadUrl } : {})}
-          data-preview-tab={runtimeTabId}
-          data-preview-server-tab={tabId}
-          data-preview-viewport-mode={effectiveViewport._tag}
-          data-preview-viewport-key={browserViewportSettingKey(effectiveViewport)}
-          data-preview-css-width={
-            fittedSourceViewport
-              ? fittedSourceViewport.width
-              : effectiveViewport._tag === "fill"
-                ? Math.max(1, Math.round(layout.viewportWidth / normalizedZoomFactor))
-                : effectiveViewport.width
-          }
-          data-preview-css-height={
-            fittedSourceViewport
-              ? fittedSourceViewport.height
-              : effectiveViewport._tag === "fill"
-                ? Math.max(1, Math.round(layout.viewportHeight / normalizedZoomFactor))
-                : effectiveViewport.height
-          }
-          aria-hidden={active ? undefined : true}
+        <div
           className={cn(
-            "absolute flex overflow-hidden bg-background",
+            "absolute overflow-hidden bg-background",
             active && !layout.fillsPanel && "ring-1 ring-border/70 shadow-sm",
           )}
-          style={{
-            left: layout.viewportX,
-            top: layout.viewportY,
-            width: layout.viewportWidth / layout.viewportScale,
-            height: layout.viewportHeight / layout.viewportScale,
-            transform: layout.viewportScale < 1 ? `scale(${layout.viewportScale})` : undefined,
-            transformOrigin: "top left",
-          }}
-        />
+          style={webviewStyle}
+        >
+          <webview
+            key={webviewGeneration}
+            ref={setWebviewRef}
+            src={webviewGeneration === 0 ? initialSrc : recoverySrc}
+            partition={config.partition}
+            webpreferences={config.webPreferences}
+            {...(config.preloadUrl ? { preload: config.preloadUrl } : {})}
+            data-preview-tab={runtimeTabId}
+            data-preview-server-tab={tabId}
+            data-preview-viewport-mode={effectiveViewport._tag}
+            data-preview-viewport-key={browserViewportSettingKey(effectiveViewport)}
+            data-preview-css-width={logicalViewportWidth}
+            data-preview-css-height={logicalViewportHeight}
+            data-preview-presentation={useCssZoomFallback ? "css-zoom" : "cdp"}
+            aria-hidden={active ? undefined : true}
+            className="flex size-full"
+          />
+        </div>
         {active && effectiveViewport._tag !== "fill" && !fittedSourceViewport ? (
           <>
             <BrowserViewportResizeHandles
