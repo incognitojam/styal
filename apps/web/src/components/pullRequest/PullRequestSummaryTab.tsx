@@ -66,14 +66,14 @@ function reviewerKey(login: string): string {
 }
 
 /**
- * Where the open layer stands in its ladder, e.g. "2 of 3". The bare size where this pull
- * request is somehow not among the visible layers, which still says how tall the ladder is.
+ * Where the open layer stands in its ladder, e.g. "2 of 3", counted against the whole stack
+ * rather than the rungs on screen — a layer this viewer cannot see is still a layer under them.
+ * The bare size where this pull request is not among the visible layers, which says how tall the
+ * ladder is without claiming to know where the reader stands on it.
  */
 function stackPositionLabel(stack: PullRequestStack, currentNumber: number): string | number {
   const current = stack.entries.find((entry) => entry.number === currentNumber);
-  return current === undefined
-    ? stack.entries.length
-    : `${current.position} of ${stack.entries.length}`;
+  return current === undefined ? stack.size : `${current.position} of ${stack.size}`;
 }
 
 /**
@@ -87,6 +87,7 @@ function StackLadder({ stack, currentNumber }: { stack: PullRequestStack; curren
   const threadRef = useContext(GithubReferenceThreadContext);
   const openPrLink = useOpenPrLink(threadRef);
   const layers = stack.entries.toSorted((left, right) => right.position - left.position);
+  const hidden = Math.max(0, stack.size - stack.entries.length);
   return (
     <ol className="text-xs">
       {layers.map((entry) => {
@@ -144,6 +145,15 @@ function StackLadder({ stack, currentNumber }: { stack: PullRequestStack; curren
           </li>
         );
       })}
+      {/* Said out loud rather than left to a count that does not add up: the host counts layers
+          it will not name to this viewer, and a ladder taller than one read keeps its far end. */}
+      {hidden > 0 ? (
+        <li className="px-2 py-1.5 text-muted-foreground">
+          {hidden === 1
+            ? "1 more layer is not shown here."
+            : `${hidden} more layers are not shown here.`}
+        </li>
+      ) : null}
       <li className="flex items-center gap-2 px-2 py-1.5">
         <span
           aria-hidden

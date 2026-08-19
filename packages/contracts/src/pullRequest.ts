@@ -684,6 +684,14 @@ export type PullRequestStackEntry = typeof PullRequestStackEntry.Type;
 export const PullRequestStack = Schema.Struct({
   /** The branch the bottom of the stack lands on, e.g. `main`. */
   baseBranch: TrimmedNonEmptyString,
+  /**
+   * How many layers the host counts in the whole stack, which is the number a surface showing a
+   * position has to count against. `entries` falls short of it for two reasons that have nothing
+   * to do with each other: a layer this viewer may not see is counted by the host and named to
+   * nobody, and a ladder taller than one read keeps only the rungs that arrived. Equal to what
+   * `entries` holds wherever the whole stack was read and every layer is visible.
+   */
+  size: PositiveInt,
   entries: Schema.Array(PullRequestStackEntry),
 });
 export type PullRequestStack = typeof PullRequestStack.Type;

@@ -317,6 +317,7 @@ describe("getChangeRequest stacks", () => {
 
   const stack = {
     baseBranch: "main",
+    size: 2,
     entries: [
       {
         number: 57,
