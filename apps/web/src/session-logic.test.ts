@@ -941,7 +941,11 @@ describe("deriveWorkLogEntries", () => {
         createdAt: "2026-02-23T00:00:01.000Z",
         kind: "setup-script.requested",
         summary: "Starting setup script",
-        payload: { runId: "setup-run-1" },
+        payload: {
+          runId: "setup-run-1",
+          scriptName: "Install dependencies",
+          scriptIcon: "configure",
+        },
       }),
       makeActivity({
         id: "unrelated-work",
@@ -954,14 +958,24 @@ describe("deriveWorkLogEntries", () => {
         createdAt: "2026-02-23T00:00:03.000Z",
         kind: "setup-script.started",
         summary: "Setup script started",
-        payload: { runId: "setup-run-1" },
+        payload: {
+          runId: "setup-run-1",
+          scriptName: "Install dependencies",
+          scriptIcon: "configure",
+        },
       }),
       makeActivity({
         id: "setup-completed",
         createdAt: "2026-02-23T00:00:04.000Z",
         kind: "setup-script.completed",
         summary: "Setup script completed",
-        payload: { runId: "setup-run-1", durationMs: 3_000, exitCode: 0 },
+        payload: {
+          runId: "setup-run-1",
+          scriptName: "Install dependencies",
+          scriptIcon: "configure",
+          durationMs: 3_000,
+          exitCode: 0,
+        },
       }),
     ];
 
@@ -971,11 +985,51 @@ describe("deriveWorkLogEntries", () => {
     expect(entries[0]).toMatchObject({
       id: "setup-requested",
       createdAt: "2026-02-23T00:00:01.000Z",
-      label: "Setup script completed",
+      label: "Install dependencies completed",
+      setupScriptIcon: "configure",
+      setupScriptState: "completed",
       sourceActivityKind: "setup-script.completed",
     });
     expect(entries[0]).not.toHaveProperty("setupRunId");
     expect(entries[1]?.label).toBe("Created worktree");
+  });
+
+  it("derives launch failures and interrupted setup runs from failure reasons", () => {
+    const entries = deriveWorkLogEntries([
+      makeActivity({
+        id: "setup-launch-failed",
+        kind: "setup-script.failed",
+        tone: "error",
+        summary: "Setup script failed",
+        payload: {
+          runId: "setup-run-launch",
+          scriptName: "Install dependencies",
+          failureReason: "launch-error",
+        },
+      }),
+      makeActivity({
+        id: "setup-stopped",
+        kind: "setup-script.failed",
+        tone: "error",
+        summary: "Setup script stopped",
+        payload: {
+          runId: "setup-run-stopped",
+          scriptName: "Verify workspace",
+          failureReason: "terminal-closed",
+        },
+      }),
+    ]);
+
+    expect(entries).toMatchObject([
+      {
+        label: "Install dependencies failed to start",
+        setupScriptState: "failed",
+      },
+      {
+        label: "Verify workspace stopped",
+        setupScriptState: "stopped",
+      },
+    ]);
   });
 
   it("does not collapse separate setup runs", () => {

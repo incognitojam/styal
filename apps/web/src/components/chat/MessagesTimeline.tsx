@@ -3,6 +3,7 @@ import {
   EventId,
   type MessageId,
   type OrchestrationGetCommandOutputResult,
+  type ProjectScriptIcon,
   type ScopedThreadRef,
   type ServerProviderSkill,
   type TurnId,
@@ -43,6 +44,7 @@ import { FileDiff } from "@pierre/diffs/react";
 import {
   deriveTimelineEntries,
   workEntryDisplayIndicatesToolFailure,
+  workEntryIndicatesToolFailure,
   workLogEntryIsToolLike,
 } from "../../session-logic";
 import { type TurnDiffSummary } from "../../types";
@@ -54,19 +56,24 @@ import {
 import ChatMarkdown from "../ChatMarkdown";
 import {
   BotIcon,
+  BugIcon,
   CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CircleAlertIcon,
   EyeIcon,
+  FlaskConicalIcon,
   FoldVerticalIcon,
   GlobeIcon,
   HammerIcon,
   ImageIcon,
+  ListChecksIcon,
   MessageCircleIcon,
   CircleDotIcon,
   MousePointerClickIcon,
   PaintbrushIcon,
+  MinusIcon,
+  PlayIcon,
   SearchIcon,
   SquarePenIcon,
   TerminalIcon,
@@ -1668,28 +1675,72 @@ function WorkGroupToggleTimelineRow({
 }) {
   const ctx = use(TimelineRowCtx);
   if (row.onlyToolEntries && row.summary) {
+    const presentation =
+      row.summaryEntry?.toolName || row.summaryEntry?.itemType
+        ? toolRowPresentationFor(row.summaryEntry)
+        : undefined;
+    const preview =
+      presentation?.argument && row.summaryEntry
+        ? formatToolRowArgument(presentation.argument, ctx.workspaceRoot)
+        : null;
+    const displaySummary = presentation
+      ? preview
+        ? `${presentation.heading} - ${preview}`
+        : presentation.heading
+      : row.summary;
+    const fileChangeStat =
+      row.fileChangeStat && hasNonZeroStat(row.fileChangeStat) ? row.fileChangeStat : null;
+    const exitCodeLabel =
+      row.exitCode === undefined ? null : `Exit code ${row.exitCode.toString()}`;
+    const accessibleSummary = [
+      displaySummary,
+      row.hasFailure ? "tool call failed" : null,
+      exitCodeLabel,
+    ]
+      .filter((part): part is string => part !== null)
+      .join(", ");
+    const summaryIcon = (
+      <span
+        className={cn(
+          "flex size-6 shrink-0 items-center justify-center",
+          row.hasFailure ? "text-destructive" : "text-icon-muted",
+        )}
+        role={row.hasFailure || exitCodeLabel ? "img" : undefined}
+        aria-label={exitCodeLabel ?? (row.hasFailure ? "Tool call failed" : undefined)}
+      >
+        <WorkEntryIconSvg
+          name={row.hasFailure ? "x" : toolGroupSummaryIconName(row.summaryKind)}
+          className="size-4 shrink-0 stroke-[1.8] opacity-70"
+        />
+      </span>
+    );
     return (
       <button
         type="button"
         className="group/tool-group flex min-h-6 w-full cursor-pointer items-center gap-1.5 rounded-md px-0.5 py-0.5 text-left text-sm leading-relaxed transition-colors duration-150 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-        aria-label={row.hasFailure ? `${row.summary}, tool call failed` : undefined}
+        aria-label={row.hasFailure || exitCodeLabel ? accessibleSummary : undefined}
         aria-expanded={row.expanded}
         onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
       >
-        <span
-          className={cn(
-            "flex size-6 shrink-0 items-center justify-center",
-            row.hasFailure ? "text-destructive" : "text-icon-muted",
-          )}
-          role={row.hasFailure ? "img" : undefined}
-          aria-label={row.hasFailure ? "Tool call failed" : undefined}
-        >
-          <WorkEntryIconSvg
-            name={row.hasFailure ? "x" : toolGroupSummaryIconName(row.summaryKind)}
-            className="size-4 shrink-0 stroke-[1.8] opacity-70"
-          />
+        {exitCodeLabel ? (
+          <Tooltip>
+            <TooltipTrigger render={summaryIcon} />
+            <TooltipPopup>{exitCodeLabel}</TooltipPopup>
+          </Tooltip>
+        ) : (
+          summaryIcon
+        )}
+        <span className="flex min-w-0 flex-1 items-baseline gap-1.5 text-secondary-label">
+          <span className="min-w-0 flex-1 truncate">{displaySummary}</span>
+          {fileChangeStat ? (
+            <DiffStatLabel
+              additions={fileChangeStat.additions}
+              deletions={fileChangeStat.deletions}
+              layout="inline"
+              className="shrink-0 text-[11px]"
+            />
+          ) : null}
         </span>
-        <span className="min-w-0 flex-1 truncate text-secondary-label">{row.summary}</span>
       </button>
     );
   }
@@ -2286,12 +2337,16 @@ function formatWorkingTimerNow(startIso: string): string {
 
 type WorkEntryIconName =
   | "bot"
+  | "bug"
   | "check"
   | "circle-alert"
   | "eye"
+  | "flask-conical"
   | "globe"
   | "hammer"
+  | "list-checks"
   | "message-circle"
+  | "play"
   | "search"
   | "square-pen"
   | "terminal"
@@ -2299,20 +2354,41 @@ type WorkEntryIconName =
   | "x"
   | "zap";
 
+/**
+ * Configured project actions keep their editor identity in the work log: the
+ * same glyph the user picked in the script editor names the row that ran.
+ */
+const SETUP_ACTION_ICON_NAME: Record<ProjectScriptIcon, WorkEntryIconName> = {
+  play: "play",
+  test: "flask-conical",
+  lint: "list-checks",
+  configure: "wrench",
+  build: "hammer",
+  debug: "bug",
+};
+
 function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; className: string }) {
   switch (name) {
     case "bot":
       return <BotIcon className={className} aria-hidden />;
+    case "bug":
+      return <BugIcon className={className} aria-hidden />;
     case "check":
       return <CheckIcon className={className} aria-hidden />;
     case "circle-alert":
       return <CircleAlertIcon className={className} aria-hidden />;
     case "eye":
       return <EyeIcon className={className} aria-hidden />;
+    case "flask-conical":
+      return <FlaskConicalIcon className={className} aria-hidden />;
     case "globe":
       return <GlobeIcon className={className} aria-hidden />;
     case "hammer":
       return <HammerIcon className={className} aria-hidden />;
+    case "list-checks":
+      return <ListChecksIcon className={className} aria-hidden />;
+    case "play":
+      return <PlayIcon className={className} aria-hidden />;
     case "message-circle":
       return <MessageCircleIcon className={className} aria-hidden />;
     case "search":
@@ -2785,10 +2861,13 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   ) {
     return "message-circle";
   }
-  if (
-    workEntry.sourceActivityKind === "setup-script.requested" ||
-    workEntry.sourceActivityKind === "setup-script.started"
-  ) {
+  // Setup rows are named by the action that ran, in every lifecycle state:
+  // the left icon says *which* action, the right indicator says how it ended.
+  if (workEntry.sourceActivityKind?.startsWith("setup-script.")) {
+    if (workEntry.setupScriptIcon) {
+      return SETUP_ACTION_ICON_NAME[workEntry.setupScriptIcon];
+    }
+    // Historical rows do not carry configured identity, but they did run a command.
     return "terminal";
   }
   // The product-native browser family reads as a web surface, not a wrench.
@@ -2980,9 +3059,14 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const [expanded, setExpanded] = useState(false);
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
-  const showFailedIndicator = workEntryDisplayIndicatesToolFailure(workEntry);
+  const isStoppedSetupAction = workEntry.setupScriptState === "stopped";
+  const isSetupActionRow = workEntry.sourceActivityKind?.startsWith("setup-script.") === true;
+  const showFailedIndicator =
+    !isStoppedSetupAction && workEntryDisplayIndicatesToolFailure(workEntry);
   const entryIconName =
-    showWarningIndicator || showFailedIndicator ? "x" : workEntryIconName(workEntry);
+    showWarningIndicator || (showFailedIndicator && !isSetupActionRow)
+      ? "x"
+      : workEntryIconName(workEntry);
   const presentation = toolRowPresentationFor(workEntry);
   const heading = presentation?.heading ?? toolWorkEntryHeading(workEntry);
   // A presentation owns its argument, including deciding there isn't one —
@@ -3013,13 +3097,15 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     (workEntry.sourceActivityKind === "runtime.error" || !workLogEntryIsToolLike(workEntry));
   const iconWrapperClass = cn(
     "flex size-6 shrink-0 items-center justify-center",
-    showWarningIndicator || showFailedIndicator
+    showWarningIndicator
       ? "text-destructive"
-      : showDestructiveRowStyle
-        ? "text-destructive"
-        : workEntry.tone === "tool" || showFailedIndicator
-          ? "text-icon-muted"
-          : iconConfig.className,
+      : isSetupActionRow
+        ? "text-icon-muted"
+        : showDestructiveRowStyle
+          ? "text-destructive"
+          : workEntry.tone === "tool" || showFailedIndicator
+            ? "text-icon-muted"
+            : iconConfig.className,
   );
   const headingClass = showWarningIndicator
     ? "font-medium text-warning"
@@ -3029,10 +3115,22 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
         ? "text-secondary-label"
         : "text-foreground/80";
   const showEntryIcon =
-    !isExpandedToolGroupEntry || showWarningIndicator || showFailedIndicator || exitCodeLabel !== null;
+    !isExpandedToolGroupEntry ||
+    isSetupActionRow ||
+    showWarningIndicator ||
+    showFailedIndicator ||
+    exitCodeLabel !== null;
+  const setupStatusLabel =
+    workEntry.setupScriptState === "completed"
+      ? "Setup action completed"
+      : workEntry.setupScriptState === "failed"
+        ? "Setup action failed"
+        : workEntry.setupScriptState === "stopped"
+          ? "Setup action stopped"
+          : null;
   const accessibleDisplayText = [
     displayText,
-    showFailedIndicator ? "tool call failed" : null,
+    setupStatusLabel ?? (showFailedIndicator ? "tool call failed" : null),
     exitCodeLabel,
   ]
     .filter((part): part is string => part !== null)
@@ -3110,20 +3208,56 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
               ) : null}
             </p>
           </div>
-          <span
-            className={cn(
-              "flex size-4 shrink-0 items-center justify-center",
-              !canExpand && "invisible",
-            )}
-            aria-hidden
-          >
-            <ChevronDownIcon
+          <div className="flex shrink-0 items-center gap-px text-icon-muted">
+            <span
               className={cn(
-                "size-3 shrink-0 text-icon-muted opacity-70 transition-transform duration-200",
-                expanded && "rotate-180",
+                "flex size-4 shrink-0 items-center justify-center",
+                !canExpand && "invisible",
               )}
-            />
-          </span>
+              aria-hidden
+            >
+              <ChevronDownIcon
+                className={cn(
+                  "size-3 shrink-0 opacity-70 transition-transform duration-200",
+                  expanded && "rotate-180",
+                )}
+              />
+            </span>
+            {setupStatusLabel ? (
+              <span className="flex size-4 shrink-0 items-center justify-center">
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <span
+                        className="flex size-4 items-center justify-center"
+                        aria-label={setupStatusLabel}
+                      />
+                    }
+                  >
+                    {workEntry.setupScriptState === "failed" ? (
+                      <XIcon className="block size-3 shrink-0 text-destructive" aria-hidden />
+                    ) : workEntry.setupScriptState === "completed" ? (
+                      <CheckIcon
+                        className="block size-3 shrink-0 stroke-current"
+                        stroke="currentColor"
+                        aria-hidden
+                      />
+                    ) : (
+                      <MinusIcon className="block size-3 shrink-0 opacity-70" aria-hidden />
+                    )}
+                  </TooltipTrigger>
+                  <TooltipPopup>
+                    {exitCodeLabel ??
+                      (workEntry.setupScriptState === "completed"
+                        ? "Completed"
+                        : workEntry.setupScriptState === "failed"
+                          ? "Failed"
+                          : "Stopped")}
+                  </TooltipPopup>
+                </Tooltip>
+              </span>
+            ) : null}
+          </div>
         </div>
       </div>
       {expanded && canExpand ? (
