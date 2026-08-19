@@ -1,4 +1,4 @@
-import { CommandId, EventId, ProjectId, ThreadId } from "@t3tools/contracts";
+import { CommandId, EventId, ProjectId, ProjectScriptIcon, ThreadId } from "@t3tools/contracts";
 import { projectScriptRuntimeEnv, setupProjectScript } from "@t3tools/shared/projectScripts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -46,6 +46,7 @@ const SetupRunActivityPayload = Schema.Struct({
   runId: Schema.String,
   scriptId: Schema.String,
   scriptName: Schema.String,
+  scriptIcon: Schema.optionalKey(ProjectScriptIcon),
   command: Schema.String,
   terminalId: Schema.String,
   worktreePath: Schema.String,
@@ -57,6 +58,7 @@ interface ActiveSetupRun {
   readonly threadId: string;
   readonly scriptId: string;
   readonly scriptName: string;
+  readonly scriptIcon?: ProjectScriptIcon;
   readonly command: string;
   readonly terminalId: string;
   readonly worktreePath: string;
@@ -224,6 +226,7 @@ export const make = Effect.gen(function* () {
         runId: run.runId,
         scriptId: run.scriptId,
         scriptName: run.scriptName,
+        ...(run.scriptIcon ? { scriptIcon: run.scriptIcon } : {}),
         command: run.command,
         terminalId: run.terminalId,
         worktreePath: run.worktreePath,
@@ -408,6 +411,7 @@ export const make = Effect.gen(function* () {
       threadId: input.threadId,
       scriptId: script.id,
       scriptName: script.name,
+      scriptIcon: script.icon,
       command: script.command,
       terminalId,
       worktreePath: input.worktreePath,
@@ -431,6 +435,7 @@ export const make = Effect.gen(function* () {
         runId,
         scriptId: script.id,
         scriptName: script.name,
+        scriptIcon: script.icon,
         command: script.command,
         terminalId,
         worktreePath: input.worktreePath,
@@ -507,6 +512,7 @@ export const make = Effect.gen(function* () {
         runId,
         scriptId: script.id,
         scriptName: script.name,
+        scriptIcon: script.icon,
         command: script.command,
         terminalId,
         worktreePath: input.worktreePath,
