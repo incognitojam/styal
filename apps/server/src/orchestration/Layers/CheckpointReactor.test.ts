@@ -285,7 +285,11 @@ describe("CheckpointReactor", () => {
     readonly localStatusRefName?: string | null;
     readonly providerSessionCwd?: string;
     readonly providerName?: ProviderDriverKind;
-    readonly gitStatusRefreshCalls?: Array<string>;
+    readonly gitStatusRefreshCalls?: Array<{
+      readonly cwd: string;
+      readonly refreshUpstream: boolean | undefined;
+      readonly invalidatePullRequest: boolean | "if-missing" | undefined;
+    }>;
   }) {
     const cwd = createGitRepository();
     tempDirs.push(cwd);
@@ -317,9 +321,22 @@ describe("CheckpointReactor", () => {
     });
     const vcsStatusBroadcasterLayer = Layer.succeed(VcsStatusBroadcaster, {
       getStatus: () => Effect.die("getStatus should not be called in this test"),
-      refreshLocalStatus: (cwd: string) =>
+      refreshLocalStatus: (_cwd: string) =>
+        Effect.succeed({
+          isRepo: true,
+          hasPrimaryRemote: false,
+          isDefaultRef: true,
+          refName: options?.localStatusRefName !== undefined ? options.localStatusRefName : "main",
+          hasWorkingTreeChanges: false,
+          workingTree: { files: [], insertions: 0, deletions: 0 },
+        }),
+      refreshStatus: (cwd, refreshOptions) =>
         Effect.sync(() => {
-          options?.gitStatusRefreshCalls?.push(cwd);
+          options?.gitStatusRefreshCalls?.push({
+            cwd,
+            refreshUpstream: refreshOptions?.refreshUpstream,
+            invalidatePullRequest: refreshOptions?.invalidatePullRequest,
+          });
         }).pipe(
           Effect.as({
             isRepo: true,
@@ -329,9 +346,12 @@ describe("CheckpointReactor", () => {
               options?.localStatusRefName !== undefined ? options.localStatusRefName : "main",
             hasWorkingTreeChanges: false,
             workingTree: { files: [], insertions: 0, deletions: 0 },
+            hasUpstream: false,
+            aheadCount: 0,
+            behindCount: 0,
+            pr: null,
           }),
         ),
-      refreshStatus: () => Effect.die("refreshStatus should not be called in this test"),
       streamStatus: () => Stream.empty,
     });
 
@@ -530,8 +550,12 @@ describe("CheckpointReactor", () => {
     ).toBe("v2\n");
   });
 
-  it("refreshes local git status state on turn completion using the session cwd", async () => {
-    const gitStatusRefreshCalls: string[] = [];
+  it("refreshes change request status on turn completion without fetching upstream", async () => {
+    const gitStatusRefreshCalls: Array<{
+      readonly cwd: string;
+      readonly refreshUpstream: boolean | undefined;
+      readonly invalidatePullRequest: boolean | "if-missing" | undefined;
+    }> = [];
     const harness = await createHarness({
       seedFilesystemCheckpoints: false,
       gitStatusRefreshCalls,
@@ -549,7 +573,13 @@ describe("CheckpointReactor", () => {
 
     await harness.drain();
 
-    expect(gitStatusRefreshCalls).toEqual([harness.cwd]);
+    expect(gitStatusRefreshCalls).toEqual([
+      {
+        cwd: harness.cwd,
+        refreshUpstream: false,
+        invalidatePullRequest: "if-missing",
+      },
+    ]);
   });
 
   it("adopts a drifted checkout as the thread branch on a dedicated worktree", async () => {
