@@ -122,11 +122,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
-    id: "github-outage-alerts",
-    title: "GitHub outage alerts",
-    to: "/settings/general",
-  },
-  {
     id: "claude-outage-alerts",
     title: "Claude outage alerts",
     to: "/settings/general",
