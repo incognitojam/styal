@@ -910,6 +910,31 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("Setup script completed");
   });
 
+  it("uses a terminal icon while a setup script is running", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "setup-entry",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "setup-work",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "Setup script started",
+              tone: "info",
+              sourceActivityKind: "setup-script.started",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("lucide-terminal");
+    expect(markup).not.toContain("lucide-check");
+  });
+
   it("summarizes changed files in one line", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
