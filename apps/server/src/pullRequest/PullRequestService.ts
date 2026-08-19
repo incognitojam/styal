@@ -1191,6 +1191,7 @@ export const make = Effect.gen(function* () {
               ...(changeRequest.autoMergeEnabled === undefined
                 ? {}
                 : { autoMergeEnabled: changeRequest.autoMergeEnabled }),
+              ...(changeRequest.stack === undefined ? {} : { stack: changeRequest.stack }),
             }),
           ),
         ),
