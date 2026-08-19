@@ -19,6 +19,7 @@ import {
   type PullRequestReviewVerdict,
   type PullRequestReviewerCandidateList,
   type PullRequestReviewerKind,
+  type PullRequestStack,
   type PullRequestThreadCommentsResult,
   type PullRequestUpdateMethod,
 } from "@t3tools/contracts";
@@ -58,6 +59,8 @@ import {
   PULL_REQUEST_ACTIVITY_JSON_FIELDS,
   BASE_COMPARISON_GRAPHQL_QUERY,
   decodeBaseComparisonJson,
+  PULL_REQUEST_STACK_GRAPHQL_QUERY,
+  decodePullRequestStackJson,
   PULL_REQUEST_DETAIL_JSON_FIELDS,
   PULL_REQUEST_LIST_JSON_FIELDS,
   PULL_REQUEST_NODE_ID_GRAPHQL_QUERY,
@@ -438,6 +441,18 @@ export class GitHubPullRequestCli extends Context.Service<
       /** Manual action checks may use the quota held back from automatic reads. */
       readonly allowReserve?: boolean | undefined;
     }) => Effect.Effect<GitHubBaseComparison, GitHubPullRequestCliError>;
+
+    /**
+     * The stack this pull request is one layer of, or null where it stands alone. Null is also
+     * what a host that predates the preview field answers through the caller's own fallback,
+     * since its GraphQL schema refuses the query outright.
+     */
+    readonly getPullRequestStack: (input: {
+      readonly cwd: string;
+      readonly repository: string;
+      readonly host: string;
+      readonly number: number;
+    }) => Effect.Effect<PullRequestStack | null, GitHubPullRequestCliError>;
 
     readonly getPullRequestActivity: (input: {
       readonly cwd: string;
@@ -1573,6 +1588,22 @@ export const make = Effect.gen(function* () {
         ],
         query: BASE_COMPARISON_GRAPHQL_QUERY,
         decode: decodeBaseComparisonJson,
+      });
+    },
+
+    getPullRequestStack: (input) => {
+      const { owner, name } = parseRepositorySelector(input.repository);
+      return graphqlRead({
+        cwd: input.cwd,
+        host: input.host,
+        operation: "getPullRequestStack",
+        variables: [
+          ["-f", `owner=${owner}`],
+          ["-f", `name=${name}`],
+          ["-F", `number=${input.number}`],
+        ],
+        query: PULL_REQUEST_STACK_GRAPHQL_QUERY,
+        decode: decodePullRequestStackJson,
       });
     },
 

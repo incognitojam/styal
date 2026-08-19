@@ -55,6 +55,10 @@ T3 Code works with the platforms your team already uses:
 - Read ordinary files expanded by default in **Code changes**; oversized files stay folded until
   opened, while files with review comments remain expanded
 - View repository-hosted images in GitHub pull request descriptions, including private repositories
+- See the whole ladder of a GitHub [stacked pull request](https://docs.github.com/en/pull-requests/get-started/about-stacked-prs)
+  in the **Stack** section of its Summary tab — every layer with its state, top of the stack
+  first, down to the base branch. Click another layer to open it in T3 Code, or
+  command-click (Control-click on Windows and Linux) to open it on GitHub
 - While working in a thread, open linked reviews in the same compact right-panel tabs without
   leaving the conversation
 - Open the review directly in your browser with one click
