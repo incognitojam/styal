@@ -49,26 +49,49 @@ function workRowSymbolName(icon: ThreadFeedActivity["icon"]): AppSymbolName {
       return { ios: "sparkles", android: "auto_awesome" };
     case "alert":
       return { ios: "exclamationmark.triangle", android: "error" };
+    case "bug":
+      return { ios: "ladybug", android: "bug_report" };
     case "check":
       return { ios: "checkmark", android: "check" };
+    case "checklist":
+      return { ios: "checklist", android: "checklist" };
     case "command":
       return { ios: "terminal", android: "terminal" };
+    case "configure":
+      // Match projectScriptMenuIcon without changing generic tool/search rows.
+      return { ios: "wrench.and.screwdriver", android: "build" };
     case "edit":
       return { ios: "square.and.pencil", android: "edit" };
     case "eye":
       return { ios: "eye", android: "visibility" };
+    case "flask":
+      return { ios: "flask", android: "science" };
     case "globe":
       return { ios: "globe", android: "public" };
     case "hammer":
       return { ios: "hammer", android: "construction" };
     case "message":
       return { ios: "bubble.left", android: "chat_bubble" };
+    case "play":
+      return { ios: "play", android: "play_arrow" };
     case "warning":
       return { ios: "xmark", android: "close" };
     case "wrench":
       return { ios: "wrench", android: "build" };
     case "zap":
       return { ios: "bolt", android: "bolt" };
+  }
+}
+
+function workRowStatusSymbolName(status: NonNullable<ThreadFeedActivity["status"]>): AppSymbolName {
+  switch (status) {
+    case "failure":
+      return { ios: "xmark", android: "close" };
+    case "success":
+      return { ios: "checkmark", android: "check" };
+    case "neutral":
+    case "stopped":
+      return { ios: "minus", android: "remove" };
   }
 }
 
@@ -161,6 +184,7 @@ export function ThreadWorkLog(props: {
           const fileChangeStat = statText ? row.fileChangeStat : undefined;
           const displayText = [row.summary, row.detail, statText].filter(Boolean).join(" ");
           const iconIsDestructive = row.icon === "alert" || row.icon === "warning";
+          const rowIconName = workRowSymbolName(row.icon);
 
           return (
             <Animated.View
@@ -192,7 +216,7 @@ export function ThreadWorkLog(props: {
                 <View className="min-h-8 flex-row items-center gap-1.5">
                   <View className="h-[18px] w-5 shrink-0 items-center justify-center">
                     <SymbolView
-                      name={workRowSymbolName(row.icon)}
+                      name={rowIconName}
                       size={13}
                       weight="medium"
                       tintColor={iconIsDestructive ? "#e11d48" : props.iconSubtleColor}
@@ -247,13 +271,7 @@ export function ThreadWorkLog(props: {
                     <View className="h-4 w-4 items-center justify-center">
                       {row.status ? (
                         <SymbolView
-                          name={
-                            row.status === "failure"
-                              ? { ios: "xmark", android: "close" }
-                              : row.status === "success"
-                                ? { ios: "checkmark", android: "check" }
-                                : { ios: "minus", android: "remove" }
-                          }
+                          name={workRowStatusSymbolName(row.status)}
                           size={11}
                           tintColor={props.iconSubtleColor}
                           type="monochrome"
