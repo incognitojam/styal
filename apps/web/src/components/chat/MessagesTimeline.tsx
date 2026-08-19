@@ -2393,6 +2393,12 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   ) {
     return "message-circle";
   }
+  if (
+    workEntry.sourceActivityKind === "setup-script.requested" ||
+    workEntry.sourceActivityKind === "setup-script.started"
+  ) {
+    return "terminal";
+  }
   if (workEntry.requestKind === "command") return "terminal";
   if (workEntry.requestKind === "file-read") return "eye";
   if (workEntry.requestKind === "file-change") return "square-pen";
