@@ -137,6 +137,9 @@ export const make = Effect.gen(function* () {
     const zoomClick = (direction: DesktopWindow.MainWindowZoomDirection) => () => {
       runMenuEffect(`zoom-${direction}`, zoomMainWindow(direction));
     };
+    const closeWindowClick: Electron.MenuItemConstructorOptions["click"] = (_menuItem, window) => {
+      window?.close();
+    };
     const template: Electron.MenuItemConstructorOptions[] = [];
 
     if (environment.platform === "darwin") {
@@ -180,7 +183,9 @@ export const make = Effect.gen(function* () {
                 },
                 { type: "separator" as const },
               ]),
-          { role: environment.platform === "darwin" ? "close" : "quit" },
+          environment.platform === "darwin"
+            ? { label: "Close Window", click: closeWindowClick }
+            : { role: "quit" },
         ],
       },
       { role: "editMenu" },
@@ -210,7 +215,17 @@ export const make = Effect.gen(function* () {
           { role: "togglefullscreen" },
         ],
       },
-      { role: "windowMenu" },
+      {
+        role: "windowMenu",
+        label: "Window",
+        submenu: [
+          { role: "minimize" },
+          { role: "zoom" },
+          ...(environment.platform === "darwin"
+            ? ([{ type: "separator" }, { role: "front" }] as const)
+            : []),
+        ],
+      },
       {
         role: "help",
         submenu: [
