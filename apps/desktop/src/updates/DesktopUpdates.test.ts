@@ -393,9 +393,17 @@ describe("DesktopUpdates", () => {
         yield* flushCallbacks;
 
         const state = yield* updates.getState;
-        assert.equal(state.status, "available");
+        assert.equal(state.status, "downloading");
         assert.equal(state.availableVersion, "1.2.5");
         assert.isNull(state.downloadedVersion);
+
+        harness.emit("update-downloaded", { version: "1.2.5" });
+        yield* flushCallbacks;
+
+        const downloadedState = yield* updates.getState;
+        assert.equal(downloadedState.status, "downloaded");
+        assert.equal(downloadedState.availableVersion, "1.2.5");
+        assert.equal(downloadedState.downloadedVersion, "1.2.5");
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
