@@ -2261,14 +2261,14 @@ layer("GitHubPullRequestCli.layer", (it) => {
       );
       const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
 
-      const checks = yield* cli.getRequiredCheckPolicy({
+      const policy = yield* cli.getBranchPolicy({
         cwd: "/w",
         repository: "acme/web",
         host: "github.example.test",
         baseBranch: "release/next",
       });
 
-      expect(checks).toEqual(["build", "security", "legacy"]);
+      expect(policy.requiredChecks).toEqual(["build", "security", "legacy"]);
       const calls = mockedExecute.mock.calls.map(([input]) => input.args);
       expect(calls).toContainEqual([
         "api",
@@ -2309,12 +2309,12 @@ layer("GitHubPullRequestCli.layer", (it) => {
       const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
 
       expect(
-        yield* cli.getRequiredCheckPolicy({
+        (yield* cli.getBranchPolicy({
           cwd: "/w",
           repository: "acme/web",
           host: "github.example.test",
           baseBranch: "main",
-        }),
+        })).requiredChecks,
       ).toEqual(["classic"]);
     }),
   );
@@ -2325,7 +2325,7 @@ layer("GitHubPullRequestCli.layer", (it) => {
       const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
 
       const error = yield* Effect.flip(
-        cli.getRequiredCheckPolicy({
+        cli.getBranchPolicy({
           cwd: "/w",
           repository: "acme/web",
           host: "github.example.test",
