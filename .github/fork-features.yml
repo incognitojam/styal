@@ -33,7 +33,7 @@ features:
   - id: composer-draft-sync
     title: Cross-device composer draft synchronization
     status: maintained
-    prs: [39, 44]
+    prs: [39, 44, 195]
     invariants:
       - Existing-thread draft text and attachments survive restarts and synchronize without overwriting newer local edits.
       - Web, desktop-hosted web, and mobile use the same server-backed draft contract and fork-owned migration history.
@@ -60,17 +60,76 @@ features:
       tracking: []
       retire_when: Upstream synchronizes equivalent composer draft state across clients and safely migrates installations carrying the fork schema.
 
-  - id: github-outage-status
-    title: GitHub outage status in the sidebar
+  - id: desktop-graceful-shutdown
+    title: Bounded graceful desktop shutdown
     status: maintained
-    prs: [14, 136]
+    prs: [203]
     invariants:
-      - Enabled clients distinguish GitHub incidents from missing or malformed status responses.
-      - The sidebar notice reports affected services without blocking ordinary source-control work.
+      - Quitting flushes settings and gracefully closes the main window before destroying remaining windows and terminating the backend.
+      - Cleanup is bounded and observable so a stuck close, telemetry flush, or backend request cannot indefinitely delay process exit.
     implementation_paths:
+      - apps/desktop/src/app/DesktopLifecycle.ts
+      - apps/desktop/src/app/DesktopObservability.ts
+      - apps/desktop/src/window/DesktopWindow.ts
+    upstream_paths:
+      - apps/desktop/src/app/DesktopLifecycle.ts
+      - apps/desktop/src/backend/DesktopBackendManager.ts
+      - apps/desktop/src/electron/ElectronWindow.ts
+      - apps/desktop/src/window/DesktopWindow.ts
+    tests:
+      - apps/desktop/src/app/DesktopLifecycle.test.ts
+      - apps/desktop/src/app/DesktopObservability.test.ts
+      - apps/desktop/src/window/DesktopWindow.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/6562
+      retire_when: Upstream performs the same ordered, bounded, and observable graceful shutdown before destroying windows and terminating the backend.
+
+  - id: focused-panel-tab-close
+    title: Close the focused panel tab with Mod+W
+    status: maintained
+    prs: [192]
+    invariants:
+      - Mod+W closes the focused terminal, browser, or diff panel tab without closing unrelated application content.
+      - Opening a panel menu or launcher preserves panel focus ownership so the next close shortcut targets the panel predictably.
+    implementation_paths:
+      - apps/web/src/components/RightPanelTabs.tsx
+      - apps/web/src/keybindings.ts
+      - apps/web/src/lib/rightPanelFocus.ts
+    upstream_paths:
+      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/RightPanelTabs.tsx
+      - apps/web/src/keybindings.ts
+      - packages/contracts/src/keybindings.ts
+    tests:
+      - apps/desktop/src/window/DesktopApplicationMenu.test.ts
+      - apps/server/src/keybindings.test.ts
+      - apps/web/src/components/RightPanelTabs.test.tsx
+      - apps/web/src/keybindings.test.ts
+      - packages/contracts/src/keybindings.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream closes focused panel tabs with the platform Mod+W shortcut and preserves focus ownership across panel menus and launchers.
+
+  - id: github-outage-status
+    title: Provider outage status in the sidebar
+    status: maintained
+    prs: [14, 136, 180, 183, 196, 200, 212]
+    invariants:
+      - Enabled clients distinguish GitHub, Claude, and OpenAI incidents from missing or malformed status responses.
+      - Sidebar notices are scoped to relevant projects or providers and remain readable without blocking ordinary work.
+    implementation_paths:
+      - apps/web/src/claudeStatus.ts
       - apps/web/src/components/settings/SettingsPanels.tsx
+      - apps/web/src/components/sidebar/ClaudeStatusNotice.tsx
       - apps/web/src/components/sidebar/GitHubStatusNotice.tsx
+      - apps/web/src/components/sidebar/OpenAIStatusNotice.tsx
+      - apps/web/src/components/sidebar/StatusPageNotice.tsx
       - apps/web/src/githubStatus.ts
+      - apps/web/src/openaiStatus.ts
+      - apps/web/src/statusPage.ts
       - packages/contracts/src/settings.ts
     upstream_paths:
       - apps/web/src/components/settings/SettingsPanels.tsx
@@ -78,12 +137,15 @@ features:
       - packages/contracts/src/settings.ts
     tests:
       - apps/desktop/src/settings/DesktopClientSettings.test.ts
+      - apps/web/src/claudeStatus.test.ts
+      - apps/web/src/components/sidebar/StatusPageNotice.test.ts
       - apps/web/src/githubStatus.test.ts
+      - apps/web/src/openaiStatus.test.ts
       - packages/contracts/src/settings.test.ts
     upstream:
       status: unassessed
       tracking: []
-      retire_when: Upstream exposes equivalent configurable GitHub incident reporting in the primary navigation.
+      retire_when: Upstream exposes equivalent configurable, context-aware GitHub, Claude, and OpenAI incident reporting in the primary navigation.
 
   - id: github-pull-request-query-budget
     title: Bound GitHub pull request query cost
@@ -140,7 +202,7 @@ features:
   - id: integrated-browser-links
     title: Open local development links in the integrated browser
     status: maintained
-    prs: [107, 145, 153, 156]
+    prs: [107, 145, 153, 156, 181]
     invariants:
       - Loopback links opened from chat or terminal activity resolve on the environment machine in the integrated browser.
       - Unsupported links retain an external-browser path and never strand the user behind an unavailable preview runtime.
@@ -150,6 +212,7 @@ features:
       - apps/web/src/components/chat/loopbackLinkPreview.ts
       - apps/web/src/components/preview/PreviewAutomationHosts.tsx
       - apps/web/src/components/preview/openTerminalLinkInPreview.ts
+      - apps/web/src/terminal/ghostty/surface.ts
     upstream_paths:
       - apps/desktop/src/preview/Manager.ts
       - apps/server/src/http.ts
@@ -162,6 +225,7 @@ features:
       - apps/server/src/preview/TerminalBrowserOpen.test.ts
       - apps/web/src/components/chat/loopbackLinkPreview.test.ts
       - apps/web/src/components/preview/openTerminalLinkInPreview.test.ts
+      - apps/web/src/terminal/ghostty/surface.test.ts
     upstream:
       status: unassessed
       tracking: []
@@ -192,6 +256,40 @@ features:
       tracking: []
       retire_when: Upstream reliably captures hidden preview tabs with bounded native work and no user-visible activation.
 
+  - id: preview-surface-continuity
+    title: Preserve responsive preview presentation and ownership
+    status: maintained
+    prs: [193, 197, 198, 217]
+    invariants:
+      - Fitted previews apply logical viewport dimensions through device metrics while preserving sharp presentation scaling and a working DevTools fallback.
+      - Hiding, reopening, or moving a preview preserves its owning surface and viewport state, and screenshots and annotation crops use logical page coordinates.
+    implementation_paths:
+      - apps/desktop/src/preview/Manager.ts
+      - apps/web/src/browser/BrowserSurfaceSlot.tsx
+      - apps/web/src/browser/HostedBrowserWebview.tsx
+      - apps/web/src/browser/browserSurfaceStore.ts
+      - apps/web/src/browser/hostedBrowserWebviewStyle.ts
+      - apps/web/src/components/preview/usePreviewBridge.ts
+      - apps/web/src/previewStateStore.ts
+    upstream_paths:
+      - apps/desktop/src/preview/Manager.ts
+      - apps/web/src/browser/ElectronBrowserHost.tsx
+      - apps/web/src/browser/HostedBrowserWebview.tsx
+      - apps/web/src/components/RightPanelTabs.tsx
+      - apps/web/src/components/preview/usePreviewBridge.ts
+    tests:
+      - apps/desktop/src/preview/Manager.test.ts
+      - apps/web/src/browser/browserSurfaceStore.test.ts
+      - apps/web/src/browser/hostedBrowserWebviewStyle.test.ts
+      - apps/web/src/components/RightPanelTabs.test.tsx
+      - apps/web/src/components/preview/usePreviewBridge.test.ts
+      - apps/web/src/previewStateStore.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/7445
+      retire_when: Upstream preserves equivalent responsive device metrics, logical capture coordinates, DevTools fallback behavior, and surface ownership across panel visibility changes.
+
   - id: project-filter-continuity
     title: Preserve project filters while navigating and creating threads
     status: maintained
@@ -214,6 +312,33 @@ features:
       status: unassessed
       tracking: []
       retire_when: Upstream preserves project scope across sidebar state and every new-thread entry point.
+
+  - id: pull-request-association-continuity
+    title: Keep worktrees associated with the correct pull request
+    status: maintained
+    prs: [79, 125, 211]
+    invariants:
+      - Repository and pull request identity follow the branch tracking remote or selected GitHub repository without matching a same-named branch from another fork.
+      - Pull request association survives hosted branch pruning and refreshes after a turn creates a previously missing pull request.
+    implementation_paths:
+      - apps/server/src/git/GitManager.ts
+      - apps/server/src/orchestration/Layers/CheckpointReactor.ts
+      - apps/server/src/project/RepositoryIdentityResolver.ts
+      - apps/server/src/vcs/VcsStatusBroadcaster.ts
+    upstream_paths:
+      - apps/server/src/git/GitManager.ts
+      - apps/server/src/orchestration/Layers/CheckpointReactor.ts
+      - apps/server/src/project/RepositoryIdentityResolver.ts
+      - apps/server/src/vcs/VcsStatusBroadcaster.ts
+    tests:
+      - apps/server/src/git/GitManager.test.ts
+      - apps/server/src/orchestration/Layers/CheckpointReactor.test.ts
+      - apps/server/src/project/RepositoryIdentityResolver.test.ts
+      - apps/server/src/vcs/VcsStatusBroadcaster.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream keeps repository-scoped pull request association correct across multiple remotes, branch pruning, and pull requests created during a turn.
 
   - id: pull-request-live-refresh
     title: Keep open pull request details current
@@ -243,13 +368,14 @@ features:
   - id: pull-request-required-checks
     title: Separate pull request checks and show merge readiness
     status: maintained
-    prs: [138, 151, 159]
+    prs: [138, 151, 159, 185, 209]
     invariants:
       - Pull request checks have a dedicated tab that distinguishes host-required checks from optional jobs and represents required checks that have not reported yet.
       - The summary and primary action lead with GitHub merge readiness, offering auto-merge when requirements block an otherwise mergeable pull request while retaining check health as supporting context.
     implementation_paths:
       - apps/server/src/pullRequest/GitHubPullRequestCli.ts
       - apps/server/src/pullRequest/GitHubPullRequestProvider.ts
+      - apps/server/src/pullRequest/gitHubPullRequestJson.ts
       - apps/web/src/components/pullRequest/PullRequestChecksTab.tsx
       - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
       - apps/web/src/components/pullRequest/pullRequestDetail.logic.ts
@@ -266,6 +392,7 @@ features:
     tests:
       - apps/server/src/pullRequest/GitHubPullRequestCli.test.ts
       - apps/server/src/pullRequest/GitHubPullRequestProvider.test.ts
+      - apps/server/src/pullRequest/gitHubPullRequestJson.test.ts
       - apps/web/src/components/pullRequest/PullRequestChecksTab.test.tsx
       - apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts
     upstream:
@@ -294,3 +421,117 @@ features:
       status: unassessed
       tracking: []
       retire_when: Upstream offers equivalent guarded terminal execution for completed shell code blocks.
+
+  - id: same-turn-follow-up-lifecycle
+    title: Keep follow-up turn lifecycle state truthful
+    status: maintained
+    prs: [65, 106, 206]
+    invariants:
+      - A queued replacement turn keeps the thread active across provider completion without briefly presenting completed work.
+      - A follow-up absorbed into the active provider turn is adopted and cleared so the session settles instead of remaining falsely stuck on Working.
+    implementation_paths:
+      - apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
+      - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
+    upstream_paths:
+      - apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
+      - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
+    tests:
+      - apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts
+      - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream distinguishes replacement-turn handoffs from same-turn follow-ups and settles both without false ready or Working states.
+
+  - id: setup-script-observability
+    title: Keep setup script progress and output inspectable
+    status: maintained
+    prs: [40, 207, 208, 214, 216]
+    invariants:
+      - Web and mobile work logs identify the configured setup action and truthfully distinguish requested, running, completed, failed, and stopped states.
+      - Setup terminal output remains inspectable after exit, and later toolbar actions start on the first click without reusing the finite setup session.
+    implementation_paths:
+      - apps/mobile/src/features/threads/thread-work-log.tsx
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/server/src/project/ProjectSetupScriptRunner.ts
+      - apps/web/src/components/ChatView.logic.ts
+      - apps/web/src/components/ThreadTerminalDrawer.tsx
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/session-logic.ts
+      - packages/client-runtime/src/state/setupScriptActivity.ts
+    upstream_paths:
+      - apps/mobile/src/features/threads/thread-work-log.tsx
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/server/src/project/ProjectSetupScriptRunner.ts
+      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/ThreadTerminalDrawer.tsx
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/session-logic.ts
+    tests:
+      - apps/mobile/src/lib/threadActivity.test.ts
+      - apps/server/src/project/ProjectSetupScriptRunner.test.ts
+      - apps/web/src/components/ChatView.logic.test.ts
+      - apps/web/src/components/ThreadTerminalDrawer.test.ts
+      - apps/web/src/components/chat/MessagesTimeline.test.tsx
+      - apps/web/src/session-logic.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream exposes equivalent cross-client setup action lifecycle detail, retained output, and isolation from later interactive terminal actions.
+
+  - id: stacked-pull-request-navigation
+    title: Show GitHub pull request stack relationships
+    status: maintained
+    prs: [194]
+    invariants:
+      - Pull request details show the current GitHub pull request within its contiguous base and head stack when relationships are available.
+      - Stack discovery is bounded and degrades without blocking ordinary pull request details when related pull requests cannot be resolved.
+    implementation_paths:
+      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/GitHubPullRequestProvider.ts
+      - apps/server/src/pullRequest/PullRequestProvider.ts
+      - apps/server/src/pullRequest/PullRequestService.ts
+      - apps/server/src/pullRequest/gitHubPullRequestJson.ts
+      - apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx
+      - packages/contracts/src/pullRequest.ts
+    upstream_paths:
+      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/GitHubPullRequestProvider.ts
+      - apps/server/src/pullRequest/PullRequestProvider.ts
+      - apps/server/src/pullRequest/PullRequestService.ts
+      - apps/server/src/pullRequest/gitHubPullRequestJson.ts
+      - apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx
+      - packages/contracts/src/pullRequest.ts
+    tests:
+      - apps/server/src/pullRequest/GitHubPullRequestProvider.test.ts
+      - apps/server/src/pullRequest/gitHubPullRequestJson.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream shows equivalent bounded GitHub pull request stack relationships in pull request details.
+
+  - id: workspace-thread-organization
+    title: Organize threads around isolated workspaces
+    status: maintained
+    prs: [199, 202]
+    invariants:
+      - New threads default to isolated worktrees unless a user explicitly chooses another workspace mode.
+      - Web and mobile keep threads from the same workspace adjacent while preserving lifecycle and recency ordering between workspace groups.
+    implementation_paths:
+      - apps/mobile/src/features/threads/threadListV2.ts
+      - apps/web/src/components/Sidebar.logic.ts
+      - packages/client-runtime/src/state/threadSort.ts
+      - packages/contracts/src/settings.ts
+    upstream_paths:
+      - apps/mobile/src/features/threads/threadListV2.ts
+      - apps/web/src/components/Sidebar.tsx
+      - packages/contracts/src/settings.ts
+    tests:
+      - apps/mobile/src/features/threads/threadListV2.test.ts
+      - apps/web/src/components/Sidebar.logic.test.ts
+      - packages/client-runtime/src/state/threadSort.test.ts
+      - packages/contracts/src/settings.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream defaults new threads to isolated worktrees and groups same-workspace threads consistently across web and mobile.
