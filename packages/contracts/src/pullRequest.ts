@@ -660,6 +660,42 @@ export const PullRequestInvalidateInput = Schema.Struct({
 });
 export type PullRequestInvalidateInput = typeof PullRequestInvalidateInput.Type;
 
+/**
+ * One layer of the stack a change request belongs to, including the layer being looked at, so a
+ * page can draw the whole ladder without asking the host once per rung.
+ */
+export const PullRequestStackEntry = Schema.Struct({
+  number: PositiveInt,
+  title: TrimmedNonEmptyString,
+  url: TrimmedNonEmptyString,
+  headBranch: TrimmedNonEmptyString,
+  state: PullRequestState,
+  isDraft: Schema.Boolean,
+  /** Where this layer stands, where 1 is the layer closest to the base branch. */
+  position: PositiveInt,
+});
+export type PullRequestStackEntry = typeof PullRequestStackEntry.Type;
+
+/**
+ * The ordered stack a change request is one layer of. GitHub's stacked pull requests are the
+ * only host feature shaped like this so far: each layer targets the one below it, and the whole
+ * ladder lands on `baseBranch`.
+ */
+export const PullRequestStack = Schema.Struct({
+  /** The branch the bottom of the stack lands on, e.g. `main`. */
+  baseBranch: TrimmedNonEmptyString,
+  /**
+   * How many layers the host counts in the whole stack, which is the number a surface showing a
+   * position has to count against. `entries` falls short of it for two reasons that have nothing
+   * to do with each other: a layer this viewer may not see is counted by the host and named to
+   * nobody, and a ladder taller than one read keeps only the rungs that arrived. Equal to what
+   * `entries` holds wherever the whole stack was read and every layer is visible.
+   */
+  size: PositiveInt,
+  entries: Schema.Array(PullRequestStackEntry),
+});
+export type PullRequestStack = typeof PullRequestStack.Type;
+
 export const PullRequestDetail = Schema.Struct({
   provider: SourceControlProviderKind,
   capabilities: PullRequestCapabilities,
@@ -716,6 +752,12 @@ export const PullRequestDetail = Schema.Struct({
    * arm something that is already armed, and a second arming is a write nobody asked for.
    */
   autoMergeEnabled: Schema.optional(Schema.Boolean),
+  /**
+   * The stack this change request is one layer of. Absent where the host has no such notion,
+   * where this change request stands alone, or where the stack could not be read — all of which
+   * a page draws the same way, as no stack to show.
+   */
+  stack: Schema.optional(PullRequestStack),
 });
 export type PullRequestDetail = typeof PullRequestDetail.Type;
 
