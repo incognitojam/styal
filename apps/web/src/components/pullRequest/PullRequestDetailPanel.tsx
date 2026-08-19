@@ -477,7 +477,7 @@ function PullRequestDetailPanelBody({
   useEffect(() => {
     setChromeCondensed(chromeStateByTab.current[tab] ?? false);
   }, [tab]);
-  const condensed = chromeCondensed;
+  const condensed = chromeVariant === "collapse" && chromeCondensed;
   const scrollerRef = useRef<HTMLElement | null>(null);
   const foldRef = useRef<HTMLDivElement | null>(null);
   const condensedRowRef = useRef<HTMLDivElement | null>(null);
@@ -1410,9 +1410,7 @@ function PullRequestDetailPanelBody({
                 <Button
                   size="xs"
                   disabled={actionPending}
-                  onClick={() =>
-                    setConfirmation({ open: true, action: "enable-auto-merge" })
-                  }
+                  onClick={() => setConfirmation({ open: true, action: "enable-auto-merge" })}
                 >
                   {pendingAction === "enable-auto-merge" ? "Enabling..." : "Auto-merge"}
                 </Button>
@@ -1986,6 +1984,7 @@ function PullRequestDetailPanelBody({
       <div
         className="relative min-h-0 flex-1 overflow-hidden"
         onScrollCapture={(event) => {
+          if (chromeVariant !== "collapse") return;
           const scroller = event.target as HTMLElement;
           scrollerRef.current = scroller;
           const top = scroller.scrollTop;
