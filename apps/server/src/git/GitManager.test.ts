@@ -1525,6 +1525,46 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
     }),
   );
 
+  it.effect("explicit invalidation discovers a PR on an already-published branch", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
+      yield* runGit(repoDir, ["checkout", "-b", "feature/pr-created-during-turn"]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "feature/pr-created-during-turn"]);
+
+      const createdPr = {
+        number: 217,
+        title: "PR created during turn",
+        url: "https://github.com/pingdotgg/codething-mvp/pull/217",
+        baseRefName: "main",
+        headRefName: "feature/pr-created-during-turn",
+        state: "OPEN",
+        updatedAt: "2026-02-02T10:00:00Z",
+      };
+      const { manager } = yield* makeManager({
+        ghScenario: {
+          // @effect-diagnostics-next-line preferSchemaOverJson:off
+          prListSequence: [JSON.stringify([]), JSON.stringify([createdPr])],
+        },
+      });
+
+      const beforeCreation = yield* manager.status({ cwd: repoDir });
+      const stillCached = yield* manager.status({ cwd: repoDir });
+      yield* manager.invalidateStatus(repoDir);
+      const afterCreation = yield* manager.remoteStatus(
+        { cwd: repoDir },
+        { refreshUpstream: false },
+      );
+
+      expect(beforeCreation.pr).toBeNull();
+      expect(stillCached.pr).toBeNull();
+      expect(afterCreation?.pr?.number).toBe(217);
+    }),
+  );
+
   it.effect("status logs actionable provider detail without exposing the upstream cause", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
