@@ -26,6 +26,7 @@ export interface DesktopPreviewOverlay {
   canGoForward: boolean;
   loading: boolean;
   zoomFactor: number;
+  viewportFallback: boolean;
   pictureInPicture: boolean;
   colorScheme: DesktopPreviewColorScheme;
   controller: "human" | "agent" | "none";
