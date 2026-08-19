@@ -11,7 +11,7 @@ import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessExecutablePath, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 import * as ExternalLauncher from "./externalLauncher.ts";
 
@@ -37,6 +37,7 @@ function makeMockDetachedHandle(onUnref: () => void = () => undefined) {
 const testLayer = (input: {
   readonly platform: NodeJS.Platform;
   readonly env?: Record<string, string>;
+  readonly nodeExecutablePath?: string;
   readonly resolveExecutable?: (command: string) => string | undefined;
   readonly onSpawn?: (command: ChildProcess.StandardCommand) => void;
   readonly onUnref?: () => void;
@@ -58,6 +59,7 @@ const testLayer = (input: {
   return Layer.mergeAll(
     ExternalLauncher.layer.pipe(Layer.provide(Layer.merge(NodeServices.layer, spawnerLayer))),
     Layer.succeed(HostProcessPlatform, input.platform),
+    Layer.succeed(HostProcessExecutablePath, input.nodeExecutablePath ?? process.execPath),
     Layer.succeed(
       SpawnExecutableResolution,
       (command) => input.resolveExecutable?.(command) ?? command,
@@ -93,6 +95,77 @@ it.effect("launches the default browser through the platform command", () => {
     ),
   );
 });
+
+const PAIRING_URL = "http://localhost:6633/pair";
+
+const launchBrowserWith = (input: {
+  readonly platform: NodeJS.Platform;
+  readonly env: Record<string, string>;
+  readonly nodeExecutablePath?: string;
+}) =>
+  Effect.suspend(() => {
+    let spawned: ChildProcess.StandardCommand | undefined;
+    return Effect.gen(function* () {
+      const launcher = yield* ExternalLauncher.ExternalLauncher;
+      yield* launcher.launchBrowser(PAIRING_URL);
+      return spawned;
+    }).pipe(
+      Effect.provide(
+        testLayer({
+          ...input,
+          onSpawn: (command) => {
+            spawned = command;
+          },
+        }),
+      ),
+    );
+  });
+
+it.effect("prefers $BROWSER over the platform command", () =>
+  Effect.gen(function* () {
+    const spawned = yield* launchBrowserWith({
+      platform: "darwin",
+      env: { BROWSER: "/opt/bin/my-browser", BROWSER_ARGS: "--new-window" },
+    });
+
+    assert.equal(spawned?.command, "/opt/bin/my-browser");
+    assert.deepEqual(spawned?.args, ["--new-window", PAIRING_URL]);
+  }),
+);
+
+it.effect("runs a $BROWSER script handler under Node", () =>
+  Effect.gen(function* () {
+    const spawned = yield* launchBrowserWith({
+      platform: "linux",
+      env: { BROWSER: "/home/dev/terminal-browser-open.js" },
+      nodeExecutablePath: "/usr/local/bin/node",
+    });
+
+    assert.equal(spawned?.command, "/usr/local/bin/node");
+    assert.deepEqual(spawned?.args, ["/home/dev/terminal-browser-open.js", PAIRING_URL]);
+  }),
+);
+
+it.effect("runs a Windows $BROWSER shim through a shell", () =>
+  Effect.gen(function* () {
+    const spawned = yield* launchBrowserWith({
+      platform: "win32",
+      env: { BROWSER: "C:\\t3\\terminal-browser-open.cmd" },
+    });
+
+    assert.equal(spawned?.command, '^"C:\\t3\\terminal-browser-open.cmd^"');
+    assert.deepEqual(spawned?.args, [`^"${PAIRING_URL}^"`]);
+    assert.equal(spawned?.options.shell, true);
+  }),
+);
+
+it.effect("opens nothing when $BROWSER is none", () =>
+  Effect.gen(function* () {
+    const spawned = yield* launchBrowserWith({ platform: "darwin", env: { BROWSER: "none" } });
+
+    assert.equal(spawned, undefined);
+  }),
+);
 
 it.effect("launches an installed editor with platform-safe arguments", () =>
   Effect.gen(function* () {

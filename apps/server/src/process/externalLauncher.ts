@@ -17,7 +17,7 @@ import {
   type EditorId,
   type LaunchEditorInput,
 } from "@t3tools/contracts";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessExecutablePath, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { isCommandAvailable, resolveSpawnCommand } from "@t3tools/shared/shell";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
@@ -92,6 +92,8 @@ const compactEnv = (input: Record<string, Option.Option<string>>): NodeJS.Proces
   );
 
 const BrowserLaunchEnvConfig = Config.all({
+  BROWSER: Config.string("BROWSER").pipe(Config.option),
+  BROWSER_ARGS: Config.string("BROWSER_ARGS").pipe(Config.option),
   SYSTEMROOT: Config.string("SYSTEMROOT").pipe(Config.option),
   windir: Config.string("windir").pipe(Config.option),
   WSL_DISTRO_NAME: Config.string("WSL_DISTRO_NAME").pipe(Config.option),
@@ -108,7 +110,9 @@ const CommandLookupEnvConfig = Config.all({
   PATHEXT: Config.string("PATHEXT").pipe(Config.option),
 }).pipe(Config.map(compactEnv));
 
-const readBrowserLaunchEnv = BrowserLaunchEnvConfig.pipe(Effect.orElseSucceed(() => ({})));
+const readBrowserLaunchEnv = BrowserLaunchEnvConfig.pipe(
+  Effect.orElseSucceed((): NodeJS.ProcessEnv => ({})),
+);
 const readCommandLookupEnv = CommandLookupEnvConfig.pipe(Effect.orElseSucceed(() => ({})));
 
 function parseTargetPathAndPosition(target: string): Option.Option<TargetPathAndPosition> {
@@ -234,6 +238,23 @@ function fileManagerCommandForPlatform(platform: NodeJS.Platform): string {
   }
 }
 
+function buildConfiguredBrowserLaunch(
+  browser: string,
+  target: string,
+  env: NodeJS.ProcessEnv,
+  nodeExecutablePath: string,
+): ProcessLaunch {
+  const extraArgs = (env.BROWSER_ARGS ?? "").split(/\s+/u).filter((arg) => arg.length > 0);
+  // A `.js` value names a script rather than an executable, so it runs under our own Node binary,
+  // as it does for Vite. That is the form T3 Code's own terminal helper takes.
+  const runsUnderNode = browser.toLowerCase().endsWith(".js");
+  return {
+    command: runsUnderNode ? nodeExecutablePath : browser,
+    args: runsUnderNode ? [browser, ...extraArgs, target] : [...extraArgs, target],
+    options: DETACHED_IGNORE_STDIO_OPTIONS,
+  };
+}
+
 function buildBrowserLaunch(
   target: string,
   platform: NodeJS.Platform,
@@ -286,12 +307,33 @@ const buildAvailableEditors = Effect.fn("externalLauncher.buildAvailableEditors"
   return available;
 });
 
+// `$BROWSER` wins over the platform launcher, as it does for Vite and friends. T3 Code points it at
+// its terminal browser-open helper, so honouring it is what lands a URL this server opens in the
+// Preview of the terminal that started it. `None` is the documented opt-out, `BROWSER=none`.
 const resolveBrowserLaunch = Effect.fn("externalLauncher.resolveBrowserLaunch")(function* (
   target: string,
-) {
+): Effect.fn.Return<Option.Option<ProcessLaunch>> {
   const platform = yield* HostProcessPlatform;
   const env = yield* readBrowserLaunchEnv;
-  return buildBrowserLaunch(target, platform, env);
+  const browser = env.BROWSER?.trim();
+  if (!browser) return Option.some(buildBrowserLaunch(target, platform, env));
+  if (browser.toLowerCase() === "none") return Option.none();
+
+  const launch = buildConfiguredBrowserLaunch(
+    browser,
+    target,
+    env,
+    yield* HostProcessExecutablePath,
+  );
+  // The value may name a `.cmd` shim, which Node refuses to spawn without a shell on Windows.
+  const spawnCommand = yield* resolveSpawnCommand(launch.command, launch.args, {
+    env: yield* readCommandLookupEnv,
+  });
+  return Option.some({
+    command: spawnCommand.command,
+    args: spawnCommand.args,
+    options: { ...DETACHED_IGNORE_STDIO_OPTIONS, shell: spawnCommand.shell },
+  });
 });
 
 const resolveAvailableEditors = Effect.fn("externalLauncher.resolveAvailableEditors")(function* () {
@@ -402,7 +444,9 @@ const launchAndUnref = Effect.fn("externalLauncher.launchAndUnref")(function* (
 const launchBrowser = Effect.fn("externalLauncher.launchBrowser")(function* (
   target: string,
 ): Effect.fn.Return<void, ExternalLauncherError, ChildProcessSpawner.ChildProcessSpawner> {
-  const launch = yield* resolveBrowserLaunch(target);
+  const resolved = yield* resolveBrowserLaunch(target);
+  if (Option.isNone(resolved)) return;
+  const launch = resolved.value;
   return yield* launchAndUnref(
     launch,
     (cause) =>

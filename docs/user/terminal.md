@@ -15,7 +15,9 @@ blocks remain copy-only.
 
 Commands run in a T3 Code terminal can open their browser target in the desktop Preview. This
 includes development servers that support flags such as `--open`, whether they honor the standard
-`BROWSER` environment variable or use the normal macOS or Linux URL launcher.
+`BROWSER` environment variable or use the normal macOS or Linux URL launcher. A T3 Code server
+started from a T3 Code terminal takes the same path, so the pairing URL it opens at startup arrives
+in Preview.
 
 T3 Code opens the requested HTTP or HTTPS URL in the Preview panel for that terminal's thread. For
 a remote environment, loopback URLs such as `http://localhost:5173` are resolved against that
