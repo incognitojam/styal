@@ -1170,6 +1170,32 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(draftByKey(draftId)?.prompt).toBe("promote me");
   });
 
+  it("preserves a failed draft and ignores stale promotion for its discarded thread id", () => {
+    const store = useComposerDraftStore.getState();
+    const retryThreadId = ThreadId.make("thread-retry");
+    const retryCreatedAt = "2026-01-02T00:00:00.000Z";
+    const failedThreadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    store.setPrompt(draftId, "retry this prompt");
+    markPromotedDraftThread(threadId);
+
+    store.resetDraftThreadAfterFailedPromotion(draftId, retryThreadId, retryCreatedAt);
+    markPromotedDraftThreadByRef(failedThreadRef);
+
+    expect(useComposerDraftStore.getState().getDraftThreadByProjectRef(projectRef)).toMatchObject({
+      threadId: retryThreadId,
+      createdAt: retryCreatedAt,
+      promotedTo: null,
+    });
+    expect(useComposerDraftStore.getState().getDraftThreadByRef(failedThreadRef)).toBeNull();
+    expect(
+      useComposerDraftStore
+        .getState()
+        .getDraftThreadByRef(scopeThreadRef(TEST_ENVIRONMENT_ID, retryThreadId)),
+    ).not.toBeNull();
+    expect(draftByKey(draftId)?.prompt).toBe("retry this prompt");
+  });
+
   it("reads local draft composer state through a scoped thread ref", () => {
     const store = useComposerDraftStore.getState();
     const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
