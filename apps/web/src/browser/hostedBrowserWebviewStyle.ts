@@ -19,6 +19,25 @@ export interface HostedBrowserWebviewWrapperStyle {
 
 export const HIDDEN_BROWSER_WEBVIEW_OFFSET = -100_000;
 
+export function resolveHostedBrowserContentStyle(input: {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+  readonly scale: number;
+  readonly viewportFallback: boolean;
+}) {
+  const { left, top, width, height, scale, viewportFallback } = input;
+  if (!viewportFallback || scale >= 1) return { left, top, width, height };
+  return {
+    left: left / scale,
+    top: top / scale,
+    width: width / scale,
+    height: height / scale,
+    zoom: scale,
+  };
+}
+
 export function resolveHostedBrowserWebviewWrapperStyle(input: {
   readonly active: boolean;
   readonly captureActive?: boolean;
