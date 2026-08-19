@@ -70,7 +70,8 @@ describe("GitHub status notice", () => {
         },
       ],
       description: "Partial System Outage",
-      label: "GitHub Outage: Actions, Pages",
+      accessibleLabel: "GitHub Outage: Actions, Pages",
+      label: "Outage: Actions, Pages",
       tone: "error",
     });
   });
@@ -88,7 +89,8 @@ describe("GitHub status notice", () => {
       }),
     );
 
-    expect(notice?.label).toBe("GitHub Outage: 3 services affected");
+    expect(notice?.label).toBe("Outage: 3 services");
+    expect(notice?.accessibleLabel).toBe("GitHub Outage: 3 services");
     expect(notice?.tone).toBe("warning");
   });
 
@@ -105,7 +107,8 @@ describe("GitHub status notice", () => {
       activeIncidents: [],
       affectedComponents: [],
       description: "Minor Service Outage",
-      label: "GitHub Outage: service disruption",
+      accessibleLabel: "GitHub Outage: service disruption",
+      label: "Outage: service disruption",
       tone: "warning",
     });
   });
