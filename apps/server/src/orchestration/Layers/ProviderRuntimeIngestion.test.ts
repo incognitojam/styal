@@ -1754,6 +1754,85 @@ describe("ProviderRuntimeIngestion", () => {
       }),
   );
 
+  effectIt.effect(
+    "settles a same-turn follow-up when the provider completes before sendTurn returns",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* Effect.promise(() => createHarness());
+        const threadId = asThreadId("thread-1");
+        const turnId = asTurnId("turn-with-follow-up");
+
+        harness.setProviderSession({
+          provider: ProviderDriverKind.make("cursor"),
+          status: "running",
+          runtimeMode: "approval-required",
+          threadId,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          activeTurnId: turnId,
+        });
+        harness.emit({
+          type: "turn.started",
+          eventId: asEventId("evt-turn-started-with-follow-up"),
+          provider: ProviderDriverKind.make("cursor"),
+          createdAt: "2026-01-01T00:00:00.000Z",
+          threadId,
+          turnId,
+        });
+        yield* Effect.promise(() => harness.drain());
+
+        yield* harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make("cmd-same-turn-follow-up"),
+          threadId,
+          message: {
+            messageId: asMessageId("msg-same-turn-follow-up"),
+            role: "user",
+            text: "also inspect the related behavior",
+            attachments: [],
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt: "2026-01-01T00:00:01.000Z",
+        });
+
+        harness.emit({
+          type: "turn.completed",
+          eventId: asEventId("evt-turn-completed-with-follow-up"),
+          provider: ProviderDriverKind.make("cursor"),
+          createdAt: "2026-01-01T00:00:02.000Z",
+          threadId,
+          turnId,
+          status: "completed",
+        });
+        yield* Effect.promise(() => harness.drain());
+
+        let thread = (yield* Effect.promise(() => harness.readModel())).threads.find(
+          (entry) => entry.id === threadId,
+        );
+        expect(thread?.session?.status).toBe("ready");
+        expect(thread?.session?.activeTurnId).toBeNull();
+        expect(thread?.latestTurn?.turnId).toBe(turnId);
+        expect(thread?.latestTurn?.state).toBe("completed");
+        expect(thread?.latestTurn?.completedAt).toBe("2026-01-01T00:00:02.000Z");
+
+        harness.emit({
+          type: "session.state.changed",
+          eventId: asEventId("evt-ready-after-same-turn-follow-up"),
+          provider: ProviderDriverKind.make("cursor"),
+          createdAt: "2026-01-01T00:00:03.000Z",
+          threadId,
+          payload: { state: "ready" },
+        });
+        yield* Effect.promise(() => harness.drain());
+
+        thread = (yield* Effect.promise(() => harness.readModel())).threads.find(
+          (entry) => entry.id === threadId,
+        );
+        expect(thread?.session?.status).toBe("ready");
+      }),
+  );
+
   it("does not mark the source proposed plan implemented for an unrelated turn.started when no thread active turn is tracked", async () => {
     const harness = await createHarness();
     const sourceThreadId = asThreadId("thread-plan");
