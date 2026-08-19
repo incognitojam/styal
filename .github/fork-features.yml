@@ -60,6 +60,38 @@ features:
       tracking: []
       retire_when: Upstream synchronizes equivalent composer draft state across clients and safely migrates installations carrying the fork schema.
 
+  - id: desktop-background-updates
+    title: Download desktop updates in the background
+    status: maintained
+    prs: [110, 128]
+    invariants:
+      - Available desktop updates download automatically while preserving accurate available, downloading, downloaded, install, and retry state across updater events and pre-install refreshes.
+      - The sidebar reports background download progress quietly, then clearly offers restart and install or retry without losing a queued installer after check, download, or background errors.
+    implementation_paths:
+      - apps/desktop/src/updates/DesktopUpdates.ts
+      - apps/desktop/src/updates/updateMachine.ts
+      - apps/web/src/components/desktopUpdate.logic.ts
+      - apps/web/src/components/sidebar/DesktopUpdateStatusIcon.tsx
+      - apps/web/src/components/sidebar/SidebarUpdatePill.tsx
+      - packages/contracts/src/ipc.ts
+    upstream_paths:
+      - apps/desktop/src/updates/DesktopUpdates.ts
+      - apps/desktop/src/updates/updateMachine.ts
+      - apps/web/src/components/desktopUpdate.logic.ts
+      - apps/web/src/components/sidebar/DesktopUpdateStatusIcon.tsx
+      - apps/web/src/components/sidebar/SidebarUpdatePill.tsx
+      - packages/contracts/src/ipc.ts
+    tests:
+      - apps/desktop/src/updates/DesktopUpdates.test.ts
+      - apps/desktop/src/updates/updateMachine.test.ts
+      - apps/web/src/components/desktopUpdate.logic.test.ts
+      - apps/web/src/state/desktopUpdate.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/6269
+      retire_when: Upstream automatically downloads desktop updates and exposes equivalent progress, queued-installer preservation, retry, and install state through the client UI.
+
   - id: desktop-graceful-shutdown
     title: Bounded graceful desktop shutdown
     status: maintained
@@ -509,6 +541,58 @@ features:
       status: unassessed
       tracking: []
       retire_when: Upstream shows equivalent bounded GitHub pull request stack relationships in pull request details.
+
+  - id: thread-transcript-export
+    title: Copy a complete thread transcript
+    status: maintained
+    prs: [143]
+    invariants:
+      - The shared thread action menu offers Transcript inside its Copy submenu on both sidebar and chat-header surfaces.
+      - Copying fetches a complete server snapshot, emits readable user and assistant Markdown without partial streaming messages or injected context, and never overwrites a newer clipboard action when requests race.
+    implementation_paths:
+      - apps/web/src/components/threadActionMenu.logic.ts
+      - apps/web/src/hooks/useCopyThreadTranscript.ts
+      - apps/web/src/hooks/useThreadActionMenu.ts
+      - apps/web/src/lib/threadTranscript.ts
+      - packages/client-runtime/src/state/threadSnapshotHttp.ts
+    upstream_paths:
+      - apps/web/src/components/threadActionMenu.logic.ts
+      - apps/web/src/hooks/useThreadActionMenu.ts
+      - packages/client-runtime/src/state/threadSnapshotHttp.ts
+      - packages/contracts/src/ipc.ts
+    tests:
+      - apps/web/src/components/threadActionMenu.logic.test.ts
+      - apps/web/src/hooks/useCopyToClipboard.test.ts
+      - apps/web/src/lib/threadTranscript.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/7476
+      retire_when: Upstream provides equivalent full-snapshot transcript export from every thread action surface with safe clipboard ordering.
+
+  - id: usage-carbon-estimate
+    title: Estimate operational carbon emissions from usage
+    status: maintained
+    prs: [161]
+    invariants:
+      - Web and mobile usage views estimate operational CO₂ from generated tokens with consistent formatting and an understandable real-world comparison.
+      - The estimate remains clearly qualified with its factor, source assumptions, exclusions, and approximate methodology instead of presenting provider-measured emissions.
+    implementation_paths:
+      - apps/mobile/src/features/usage/UsageRouteScreen.tsx
+      - apps/web/src/components/usage/UsagePage.tsx
+      - packages/shared/src/usageFormat.ts
+    upstream_paths:
+      - apps/mobile/src/features/usage/UsageRouteScreen.tsx
+      - apps/web/src/components/usage/UsagePage.tsx
+      - packages/shared/src/usageFormat.ts
+      - packages/shared/src/usageMerge.ts
+    tests:
+      - packages/shared/src/usageFormat.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/7147
+      retire_when: Upstream presents an equivalent cross-client operational carbon estimate with transparent methodology and appropriately qualified comparisons.
 
   - id: workspace-thread-organization
     title: Organize threads around isolated workspaces
