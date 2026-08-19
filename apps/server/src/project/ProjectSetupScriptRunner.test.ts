@@ -151,6 +151,8 @@ describe("ProjectSetupScriptRunner", () => {
         startedActivityRecorded: true,
       },
     ]);
+    expect(runs[0]).not.toHaveProperty("scriptIcon");
+    expect(runs[1]).not.toHaveProperty("scriptIcon");
   });
 
   it.effect("returns no-script when no setup script exists", () => {
@@ -228,6 +230,14 @@ describe("ProjectSetupScriptRunner", () => {
           command.type === "thread.activity.append" ? [command.activity.kind] : [],
         ),
       ).toEqual(["setup-script.requested", "setup-script.started"]);
+      expect(
+        commands.flatMap((command) =>
+          command.type === "thread.activity.append" ? [command.activity.payload] : [],
+        ),
+      ).toEqual([
+        expect.objectContaining({ scriptName: "Setup", scriptIcon: "configure" }),
+        expect.objectContaining({ scriptName: "Setup", scriptIcon: "configure" }),
+      ]);
     }).pipe(Effect.provide(testLayer(project, { openCommand }, commands)));
   });
 
@@ -273,6 +283,7 @@ describe("ProjectSetupScriptRunner", () => {
       expect(activities.at(-1)?.payload).toMatchObject({
         outcome: "failed",
         failureReason: "command-exit",
+        scriptIcon: "configure",
         exitCode: 7,
         exitSignal: null,
         command: "bun install",
