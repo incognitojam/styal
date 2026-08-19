@@ -1560,6 +1560,15 @@ const make = Effect.gen(function* () {
       // turn is still running: providers can report that old turn ready or
       // completed before they announce the replacement turn.
       const hasPendingTurnStart = Option.isSome(pendingTurnStart);
+      const pendingFollowUpStayedOnActiveTurn =
+        event.type === "turn.completed" &&
+        hasPendingTurnStart &&
+        activeTurnId !== null &&
+        eventTurnId !== undefined &&
+        sameId(activeTurnId, eventTurnId) &&
+        sameId(yield* getExpectedProviderTurnIdForThread(thread.id), eventTurnId);
+      const hasPendingReplacementTurnStart =
+        hasPendingTurnStart && !pendingFollowUpStayedOnActiveTurn;
 
       const conflictsWithActiveTurn =
         activeTurnId !== null && eventTurnId !== undefined && !sameId(activeTurnId, eventTurnId);
@@ -1622,11 +1631,38 @@ const make = Effect.gen(function* () {
         event.type === "turn.started" ||
         event.type === "turn.completed"
       ) {
+        if (pendingFollowUpStayedOnActiveTurn && shouldApplyThreadLifecycle) {
+          // Some providers merge a follow-up into the active turn and only
+          // return from sendTurn after emitting turn.completed. Adopt that
+          // pending request here so completion cannot leave the session in
+          // "starting" while no replacement turn exists.
+          yield* orchestrationEngine.dispatch({
+            type: "thread.session.set",
+            commandId: yield* providerCommandId(event, "same-turn-follow-up-adopt"),
+            threadId: thread.id,
+            session: {
+              threadId: thread.id,
+              status: "running",
+              providerName: event.provider,
+              ...(event.providerInstanceId !== undefined
+                ? { providerInstanceId: event.providerInstanceId }
+                : {}),
+              runtimeMode: thread.session?.runtimeMode ?? "full-access",
+              activeTurnId,
+              lastError: null,
+              updatedAt: now,
+            },
+            createdAt: now,
+          });
+        }
+
         const status = (() => {
           switch (event.type) {
             case "session.state.changed": {
               const runtimeStatus = orchestrationSessionStatusFromRuntimeState(event.payload.state);
-              return hasPendingTurnStart && runtimeStatus === "ready" ? "starting" : runtimeStatus;
+              return hasPendingReplacementTurnStart && runtimeStatus === "ready"
+                ? "starting"
+                : runtimeStatus;
             }
             case "turn.started":
               return "running";
@@ -1635,14 +1671,18 @@ const make = Effect.gen(function* () {
             case "turn.completed":
               return normalizeRuntimeTurnState(event.payload.state) === "failed"
                 ? "error"
-                : hasPendingTurnStart
+                : hasPendingReplacementTurnStart
                   ? "starting"
                   : "ready";
             case "session.started":
             case "thread.started":
               // Provider thread/session start notifications can arrive during an
               // active or pending turn; preserve that lifecycle state.
-              return activeTurnId !== null ? "running" : hasPendingTurnStart ? "starting" : "ready";
+              return activeTurnId !== null
+                ? "running"
+                : hasPendingReplacementTurnStart
+                  ? "starting"
+                  : "ready";
           }
         })();
         const nextActiveTurnId =
