@@ -9,6 +9,7 @@ import {
 } from "../../session-logic";
 import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../../types";
 import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@t3tools/contracts";
+import { isPreviewToolName } from "@t3tools/shared/toolRowPresentation";
 
 export const MAX_VISIBLE_WORK_LOG_ENTRIES = 1;
 export const TIMELINE_MINIMAP_ITEM_SPACING = 8;
@@ -323,6 +324,10 @@ function turnFoldActivityKind(entry: WorkLogEntry): TurnFoldActivityKind | null 
   if (entry.requestKind === "command") return "terminal";
   if (entry.requestKind === "file-read") return "file-read";
   if (entry.requestKind === "file-change") return "file-change";
+
+  // The T3 preview tools drive the in-app browser, so they read as web
+  // activity rather than generic tool calls.
+  if (entry.toolName && isPreviewToolName(entry.toolName)) return "web";
 
   switch (entry.toolName) {
     case "Read":

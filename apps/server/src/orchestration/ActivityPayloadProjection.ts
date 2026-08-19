@@ -369,8 +369,23 @@ function projectMcpToolCallData(data: Record<string, unknown>): Record<string, u
 
   if ("toolName" in data) {
     projectedData.toolName = data.toolName;
+  } else {
+    // Codex carries MCP identity on the item rather than as a top-level
+    // toolName, and the clients only read data.toolName. Synthesize the
+    // qualified name so every provider presents one identity, keeping the
+    // server half so provenance survives. (The ACP adapters are not covered:
+    // their tool calls arrive as `dynamic_tool_call` with no server or tool
+    // field at all, so they need identity at their own boundary.)
+    const server = asTrimmedString(item?.server);
+    const tool = asTrimmedString(item?.tool);
+    if (server && tool) {
+      projectedData.toolName = `mcp__${server}__${tool}`;
+    }
   }
-  const input = projectMcpToolInput(data.input);
+  // Three shapes for one idea: Claude sends `input`, OpenCode nests it under
+  // `state`, and Codex puts it on the item. An MCP row is the one place all
+  // three land, so it has to read all three or the row loses its argument.
+  const input = projectMcpToolInput(data.input ?? asRecord(data.state)?.input ?? item?.arguments);
   if (input) {
     projectedData.input = input;
   }

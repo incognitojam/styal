@@ -219,6 +219,10 @@ describe("projectActivityPayload", () => {
           tool: "search",
           arguments: { query: "activity projection" },
         },
+        // Synthesized for providers that carry identity on the item, and
+        // lifted to input because the clients only read data.input.
+        toolName: "mcp__repository__search",
+        input: { query: "activity projection" },
       },
     });
   });

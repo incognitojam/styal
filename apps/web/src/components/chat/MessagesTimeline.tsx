@@ -19,6 +19,7 @@ const NOOP_OPEN_AGENTS = () => {};
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import {
   deriveToolRowPresentation,
+  isPreviewToolName,
   normalizeKnownToolName,
   type ToolRowArgument,
 } from "@t3tools/shared/toolRowPresentation";
@@ -2402,6 +2403,9 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   if (workEntry.requestKind === "command") return "terminal";
   if (workEntry.requestKind === "file-read") return "eye";
   if (workEntry.requestKind === "file-change") return "square-pen";
+
+  // The product-native browser family reads as a web surface, not a wrench.
+  if (workEntry.toolName && isPreviewToolName(workEntry.toolName)) return "globe";
 
   // The tool's own name beats itemType where the adapters' substring
   // classification gets it wrong (TaskCreate reads as a file write).
