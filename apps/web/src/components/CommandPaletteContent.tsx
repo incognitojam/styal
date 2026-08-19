@@ -13,6 +13,7 @@ type CommandPaletteContentProps = Omit<ComponentProps<typeof Command>, "children
   readonly inputProps: ComponentProps<typeof CommandInput>;
   readonly panelClassName?: string;
   readonly showBackHint?: boolean;
+  readonly showOpenFolderHint?: boolean;
   readonly testId?: string;
 };
 
@@ -30,6 +31,7 @@ export function CommandPaletteContent({
   inputProps,
   panelClassName,
   showBackHint,
+  showOpenFolderHint,
   testId,
   ...commandProps
 }: CommandPaletteContentProps) {
@@ -56,6 +58,12 @@ export function CommandPaletteContent({
               <KbdGroup className="items-center gap-1.5">
                 <Kbd>Enter</Kbd>
                 <span>{footerActionLabel}</span>
+              </KbdGroup>
+            ) : null}
+            {showOpenFolderHint ? (
+              <KbdGroup className="items-center gap-1.5">
+                <Kbd>Tab</Kbd>
+                <span>Open folder</span>
               </KbdGroup>
             ) : null}
             {showBackHint ? (

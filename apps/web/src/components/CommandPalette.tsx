@@ -640,6 +640,20 @@ function CommandPaletteDialog(props: {
   );
 }
 
+/**
+ * Fully handle a key press in the palette input. Base UI merges our `onKeyDown`
+ * ahead of its own and then runs its own too, unless the event is explicitly
+ * claimed -- `preventDefault` alone does not stop it. Without this the same
+ * Enter that adds a project also lets the autocomplete activate the
+ * highlighted row and navigate into that folder.
+ */
+function consumeKeyEvent(event: KeyboardEvent<HTMLInputElement>): void {
+  event.preventDefault();
+  (
+    event as KeyboardEvent<HTMLInputElement> & { preventBaseUIHandler?: () => void }
+  ).preventBaseUIHandler?.();
+}
+
 function OpenCommandPaletteDialog(props: {
   readonly openIntent: CommandPaletteOpenIntent | null;
   readonly setOpen: (open: boolean) => void;
@@ -2379,8 +2393,17 @@ function OpenCommandPaletteDialog(props: {
     );
   }, [browseNavigation, browsePath.parentPath, pinnedCloneDirectoryName, prefetchBrowsePath]);
 
-  // Resolve the add-project path from browse data when available. When the
-  // query has a trailing separator (e.g. "~/projects/foo/"), parentPath is the
+  // Directory behind the highlighted row, if any. Browse item values are
+  // `browse:<fullPath>`; the ".." row has no entry and stays null so it keeps
+  // resolving against the typed query.
+  const highlightedBrowseEntry =
+    visibleBrowseEntries.find((entry) => `browse:${entry.fullPath}` === highlightedItemValue) ??
+    null;
+
+  // Resolve the add-project path from the input alone, never from the
+  // highlighted row: the path the user can see is the path that gets added, so
+  // neither a stray hover nor an arrow key can retarget Enter. When the query
+  // has a trailing separator (e.g. "~/projects/foo/"), parentPath is the
   // directory itself. Otherwise the user typed a partial leaf name, so we need
   // the exact browse entry's fullPath or fall back to the raw query.
   const resolvedAddProjectPath = hasTrailingPathSeparator(query)
@@ -2495,7 +2518,6 @@ function OpenCommandPaletteDialog(props: {
     remoteProjectInputPlaceholder(addProjectCloneFlow) ??
     getCommandPaletteInputPlaceholder(paletteMode);
   const isSubmenu = paletteMode === "submenu" || paletteMode === "submenu-browse";
-  const hasHighlightedBrowseItem = highlightedItemValue?.startsWith("browse:") ?? false;
   const canSubmitBrowsePath =
     isBrowsing &&
     !relativePathNeedsActiveProject &&
@@ -2504,10 +2526,7 @@ function OpenCommandPaletteDialog(props: {
     canSubmitBrowsePath &&
     !isBrowsePending &&
     query.trim().length > 0 &&
-    !hasHighlightedBrowseItem &&
     (hasTrailingPathSeparator(query) ? !browseResult : exactBrowseEntry === null);
-  const useMetaForMod = isMacPlatform(navigator.platform);
-  const submitModifierLabel = useMetaForMod ? "\u2318" : "Ctrl";
   const isCloneDestinationStep = addProjectCloneFlow?.step === "confirm";
   const submitActionLabel = isCloneDestinationStep
     ? willCreateProjectPath
@@ -2516,7 +2535,7 @@ function OpenCommandPaletteDialog(props: {
     : willCreateProjectPath
       ? "Create & Add"
       : "Add";
-  const addShortcutLabel = hasHighlightedBrowseItem ? `${submitModifierLabel} Enter` : "Enter";
+  const addShortcutLabel = "Enter";
   const remoteProjectButtonLabel = addProjectCloneFlow
     ? addProjectCloneFlow.source === "url"
       ? "Continue"
@@ -2565,10 +2584,6 @@ function OpenCommandPaletteDialog(props: {
     query,
   ]);
 
-  function isPrimaryModifierPressed(event: KeyboardEvent<HTMLInputElement>): boolean {
-    return useMetaForMod ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
-  }
-
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
     const command = resolveShortcutCommand(event, keybindings, {
       platform: navigator.platform,
@@ -2579,7 +2594,7 @@ function OpenCommandPaletteDialog(props: {
         .flatMap((group) => group.items)
         .find((item) => item.shortcutCommand === command);
       if (matchingItem) {
-        event.preventDefault();
+        consumeKeyEvent(event);
         event.stopPropagation();
         executeItem(matchingItem);
         return;
@@ -2587,18 +2602,17 @@ function OpenCommandPaletteDialog(props: {
     }
 
     if (addProjectCloneFlow?.step === "repository" && event.key === "Enter") {
-      event.preventDefault();
+      consumeKeyEvent(event);
       void submitAddProjectCloneFlow();
       return;
     }
 
-    const shouldSubmitBrowsePath =
-      canSubmitBrowsePath &&
-      event.key === "Enter" &&
-      (!hasHighlightedBrowseItem || isPrimaryModifierPressed(event));
-
-    if (shouldSubmitBrowsePath) {
-      event.preventDefault();
+    // Enter always commits the resolved path so the shortcut hint can never
+    // change meaning under the user. Descending into a folder is Tab's job,
+    // which keeps highlighting a row (by arrow key or hover) purely a way of
+    // saying "this is the one" rather than a hidden mode switch.
+    if (canSubmitBrowsePath && event.key === "Enter") {
+      consumeKeyEvent(event);
       if (isCloneDestinationStep) {
         void submitAddProjectCloneFlow(resolvedAddProjectPath);
       } else {
@@ -2607,8 +2621,22 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
 
+    if (isBrowsing && event.key === "Tab" && !event.shiftKey) {
+      if (highlightedItemValue === "browse:up" && canBrowseUp) {
+        consumeKeyEvent(event);
+        void browseUp();
+        return;
+      }
+      const openTarget = highlightedBrowseEntry ?? exactBrowseEntry;
+      if (openTarget) {
+        consumeKeyEvent(event);
+        void browseTo(openTarget.name);
+        return;
+      }
+    }
+
     if (event.key === "Backspace" && query === "" && isSubmenu) {
-      event.preventDefault();
+      consumeKeyEvent(event);
       popView();
     }
   }
@@ -2785,10 +2813,7 @@ function OpenCommandPaletteDialog(props: {
               variant="outline"
               size="xs"
               tabIndex={-1}
-              className={cn(
-                "absolute inset-e-2.5 top-1/2 pe-1 ps-2 -translate-y-1/2",
-                hasHighlightedBrowseItem ? "gap-1" : "gap-1.5",
-              )}
+              className="absolute inset-e-2.5 top-1/2 gap-1.5 pe-1 ps-2 -translate-y-1/2"
               aria-label={`${submitActionLabel} (${addShortcutLabel})`}
               disabled={
                 !canCreateProjectInEnvironment(browseEnvironment?.connection.phase) ||
@@ -2815,7 +2840,7 @@ function OpenCommandPaletteDialog(props: {
             {isCloneDestinationStep && isRemoteProjectPending ? "Cloning" : submitActionLabel}
           </span>
           <KbdGroup className="pointer-events-none -me-0.5 items-center gap-1">
-            <Kbd>{hasHighlightedBrowseItem ? `${submitModifierLabel} Enter` : "Enter"}</Kbd>
+            <Kbd>{addShortcutLabel}</Kbd>
           </KbdGroup>
         </TooltipTrigger>
         <TooltipPopup side="top">
@@ -2827,7 +2852,7 @@ function OpenCommandPaletteDialog(props: {
   const footerActionLabel =
     addProjectCloneFlow?.step === "repository"
       ? (remoteProjectButtonLabel ?? "Continue")
-      : !canSubmitBrowsePath || hasHighlightedBrowseItem
+      : !canSubmitBrowsePath
         ? "Select"
         : undefined;
 
@@ -2862,10 +2887,7 @@ function OpenCommandPaletteDialog(props: {
           addProjectCloneFlow?.step === "repository"
             ? "*:data-[slot=autocomplete-input]:pe-32!"
             : isBrowsing
-              ? browseInputEndPaddingClass({
-                  willCreateProjectPath,
-                  hasHighlightedBrowseItem,
-                })
+              ? browseInputEndPaddingClass({ willCreateProjectPath })
               : undefined,
         placeholder: inputPlaceholder,
         wrapperClassName: isSubmenu
@@ -2896,6 +2918,7 @@ function OpenCommandPaletteDialog(props: {
       onValueChange={handleQueryChange}
       panelClassName="max-h-[min(28rem,70vh)]"
       showBackHint={isSubmenu}
+      showOpenFolderHint={isBrowsing && !relativePathNeedsActiveProject}
       value={query}
     >
       {remoteProjectContext ? (
