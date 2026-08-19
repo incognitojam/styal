@@ -259,8 +259,11 @@ export const make = Effect.gen(function* () {
                       baseBranch: pullRequest.baseBranch,
                     })
                     .pipe(Effect.orElseSucceed(() => null)),
+                  // The stack field is in public preview, so a host that has never heard of it
+                  // refuses the query — the same nothing as a pull request that stands alone.
+                  stack: cli.getPullRequestStack(input).pipe(Effect.orElseSucceed(() => null)),
                 },
-                { concurrency: 2 },
+                { concurrency: 3 },
               ).pipe(Effect.map((metadata) => ({ pullRequest, ...metadata }))),
             ),
           ),
@@ -307,6 +310,7 @@ export const make = Effect.gen(function* () {
             ...(detail.comparison?.behindBy == null
               ? {}
               : { behindBy: detail.comparison.behindBy }),
+            ...(detail.stack === null ? {} : { stack: detail.stack }),
           }),
         ),
       ),
