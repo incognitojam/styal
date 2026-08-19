@@ -3,16 +3,18 @@ import { GithubIcon } from "lucide-react";
 import {
   GITHUB_STATUS_PAGE_URL,
   GITHUB_STATUS_SUMMARY_URL,
+  hasGitHubProject,
   resolveGitHubStatusNotice,
 } from "../../githubStatus";
-import { useClientSettings } from "../../hooks/useSettings";
+import { useProjects } from "../../state/entities";
 import { StatusPageNotice } from "./StatusPageNotice";
 
 export function GitHubStatusNotice() {
-  const enabled = useClientSettings((settings) => settings.githubStatusAlertsEnabled);
+  const projects = useProjects();
+  const hasRelevantProject = hasGitHubProject(projects);
   return (
     <StatusPageNotice
-      enabled={enabled}
+      enabled={hasRelevantProject}
       icon={GithubIcon}
       pageName="GitHub"
       pageUrl={GITHUB_STATUS_PAGE_URL}
