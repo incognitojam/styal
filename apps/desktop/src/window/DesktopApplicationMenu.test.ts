@@ -101,6 +101,7 @@ const makeElectronMenuLayer = (
 const configureMenu = (
   selectedAction: Deferred.Deferred<string>,
   applicationMenuTemplate: Deferred.Deferred<readonly Electron.MenuItemConstructorOptions[]>,
+  platform: NodeJS.Platform = "linux",
 ) =>
   Effect.gen(function* () {
     const menu = yield* DesktopApplicationMenu.DesktopApplicationMenu;
@@ -114,7 +115,7 @@ const configureMenu = (
         Layer.provideMerge(electronDialogLayer),
         Layer.provideMerge(electronAppLayer),
         Layer.provideMerge(
-          DesktopEnvironment.layer(environmentInput).pipe(
+          DesktopEnvironment.layer({ ...environmentInput, platform }).pipe(
             Layer.provide(Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({}))),
           ),
         ),
@@ -123,6 +124,46 @@ const configureMenu = (
   );
 
 describe("DesktopApplicationMenu", () => {
+  it.effect("does not register CmdOrCtrl+W as a window-close accelerator", () =>
+    Effect.gen(function* () {
+      for (const platform of ["darwin", "linux"] as const) {
+        const selectedAction = yield* Deferred.make<string>();
+        const applicationMenuTemplate =
+          yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+
+        yield* configureMenu(selectedAction, applicationMenuTemplate, platform);
+
+        const template = yield* Deferred.await(applicationMenuTemplate);
+        const windowMenu = template.find((item) => item.label === "Window");
+        assert.isDefined(windowMenu);
+        if (!Array.isArray(windowMenu.submenu)) {
+          throw new Error("Expected Window menu submenu to be an array.");
+        }
+        assert.isUndefined(windowMenu.submenu.find((item) => item.role === "close"));
+
+        if (platform === "darwin") {
+          const fileMenu = template.find((item) => item.label === "File");
+          assert.isDefined(fileMenu);
+          if (!Array.isArray(fileMenu.submenu)) {
+            throw new Error("Expected File menu submenu to be an array.");
+          }
+          const closeWindow = fileMenu.submenu.find((item) => item.label === "Close Window");
+          assert.isDefined(closeWindow);
+          assert.isUndefined(closeWindow.role);
+          assert.isUndefined(closeWindow.accelerator);
+
+          let closeCount = 0;
+          closeWindow.click?.(
+            {} as Electron.MenuItem,
+            { close: () => (closeCount += 1) } as unknown as Electron.BrowserWindow,
+            {} as KeyboardEvent,
+          );
+          assert.equal(closeCount, 1);
+        }
+      }
+    }),
+  );
+
   it.effect("installs the native menu and routes Settings through DesktopWindow", () =>
     Effect.gen(function* () {
       const selectedAction = yield* Deferred.make<string>();

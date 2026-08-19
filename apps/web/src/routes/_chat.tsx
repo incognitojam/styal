@@ -14,6 +14,7 @@ import { dispatchPreviewAction } from "../components/preview/previewActionBus";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
+import { isRightPanelFocused } from "../lib/rightPanelFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { resolveShortcutCommand } from "../keybindings";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
@@ -93,6 +94,7 @@ function ChatRouteGlobalShortcuts() {
         context: {
           terminalFocus: isTerminalFocused(),
           terminalOpen,
+          rightPanelFocus: isRightPanelFocused(),
           previewFocus: isPreviewFocused(),
           previewOpen,
         },
