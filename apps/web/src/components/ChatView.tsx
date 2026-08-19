@@ -1420,6 +1420,9 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const clearComposerDraftContent = useComposerDraftStore((store) => store.clearComposerContent);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
+  const resetDraftThreadAfterFailedPromotion = useComposerDraftStore(
+    (store) => store.resetDraftThreadAfterFailedPromotion,
+  );
   const getDraftSessionByLogicalProjectKey = useComposerDraftStore(
     (store) => store.getDraftSessionByLogicalProjectKey,
   );
@@ -5979,6 +5982,13 @@ function ChatViewContent(props: ChatViewProps) {
           clearBackgroundDraftSubmissionByRef(backgroundThreadRef);
         }
         failure = startResult;
+        if (isLocalDraftThread && !isAtomCommandInterrupted(startResult)) {
+          resetDraftThreadAfterFailedPromotion(
+            composerDraftTarget,
+            newThreadId(),
+            new Date().toISOString(),
+          );
+        }
       } else {
         turnStartSucceeded = true;
         if (supportsAttachmentUploads) {
