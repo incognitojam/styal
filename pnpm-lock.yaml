@@ -48,6 +48,10 @@ overrides:
   '@clerk/clerk-js>@wallet-standard/core': '-'
   '@clerk/electron': 0.0.34-canary.v20260819050620
   '@clerk/electron-passkeys': 0.0.4-canary.v20260819050620
+  '@clerk/electron-passkeys>@clerk/electron-passkeys-darwin-arm64': 0.0.3
+  '@clerk/electron-passkeys>@clerk/electron-passkeys-darwin-x64': 0.0.3
+  '@clerk/electron-passkeys>@clerk/electron-passkeys-win32-arm64-msvc': 0.0.3
+  '@clerk/electron-passkeys>@clerk/electron-passkeys-win32-x64-msvc': 0.0.3
   '@clerk/expo': 4.2.0
   '@clerk/react': 6.14.4
   '@clerk/shared': 4.29.2
@@ -1721,23 +1725,23 @@ packages:
     resolution: {integrity: sha512-4i4RE+ZQ0hKDDFSRKCISQPBy07SfFeFAhBUhNj2j01Nx2n4pqV+5iyg2Vf27+NKFNkgq7kdmZGvtug24D++8WQ==}
     engines: {node: '>=20.9.0'}
 
-  '@clerk/electron-passkeys-darwin-arm64@0.0.4-canary.v20260819050620':
-    resolution: {integrity: sha512-avxygtEfWBD3YPkxws4lB5mL/75SQvVBMQCg+b1gjFsQInnVOgAqAv4wHR8wgUsEbXY2zEkvqaYjFSnEveC0VA==}
+  '@clerk/electron-passkeys-darwin-arm64@0.0.3':
+    resolution: {integrity: sha512-oAlrd+GLqP0oREP3hNRc6yNZhXGaQgJss9iCWRQqXjpw1yZD1ZU+L+E2Gfg84vMj/NSUhxbU0Djy0RXhmeUwgg==}
     cpu: [arm64]
     os: [darwin]
 
-  '@clerk/electron-passkeys-darwin-x64@0.0.4-canary.v20260819050620':
-    resolution: {integrity: sha512-clShldbwDcC2ek6gJT85QKsMfaPyOhEgfz61u2n3YKivbeui33XjJu261d+LO20mqDjXZy3flLGPTIh/Kii80g==}
+  '@clerk/electron-passkeys-darwin-x64@0.0.3':
+    resolution: {integrity: sha512-0UPAWQEni7o8gjWwd2sP97fPshJmT2w5b8eV/jOPVSP8NqIcFCm5yIFSEx1SfB53LGfzB01A4iEGi2pxiCHqyQ==}
     cpu: [x64]
     os: [darwin]
 
-  '@clerk/electron-passkeys-win32-arm64-msvc@0.0.4-canary.v20260819050620':
-    resolution: {integrity: sha512-alIfXJSxyeulnNeHoT4X7+qO0o9/EBhiRWMhCXwKJIbWfwzqnnVrRH1P7HfYRnDepKhqRzsUaBuYTqQzisHG+A==}
+  '@clerk/electron-passkeys-win32-arm64-msvc@0.0.3':
+    resolution: {integrity: sha512-bbRvifm9A/gfPkwC1UyMyF9sYGEs0aen7J2kCcaOIW3K0PXcAbHtsR/gnx4dT0bjFdd21vSa2zlIdERvHc1BiA==}
     cpu: [arm64]
     os: [win32]
 
-  '@clerk/electron-passkeys-win32-x64-msvc@0.0.4-canary.v20260819050620':
-    resolution: {integrity: sha512-QSKKMCdV9AhOt74ls8ExdwR+2ikoLGgN2LdWIjBgNk6epJVs2L1FXVZOM0ZqfVHFSl5y7vLmlOACR6WyJ2eoLg==}
+  '@clerk/electron-passkeys-win32-x64-msvc@0.0.3':
+    resolution: {integrity: sha512-gFaVqKlOKTF2SJ3lMwkZ0oonycQn93p1qSrp5kzzeZBeQ+tGB3gQnjXecrhQy21AzDUyWqVJJ8KrP2HRAwifWg==}
     cpu: [x64]
     os: [win32]
 
@@ -11580,24 +11584,24 @@ snapshots:
       - react
       - react-dom
 
-  '@clerk/electron-passkeys-darwin-arm64@0.0.4-canary.v20260819050620':
+  '@clerk/electron-passkeys-darwin-arm64@0.0.3':
     optional: true
 
-  '@clerk/electron-passkeys-darwin-x64@0.0.4-canary.v20260819050620':
+  '@clerk/electron-passkeys-darwin-x64@0.0.3':
     optional: true
 
-  '@clerk/electron-passkeys-win32-arm64-msvc@0.0.4-canary.v20260819050620':
+  '@clerk/electron-passkeys-win32-arm64-msvc@0.0.3':
     optional: true
 
-  '@clerk/electron-passkeys-win32-x64-msvc@0.0.4-canary.v20260819050620':
+  '@clerk/electron-passkeys-win32-x64-msvc@0.0.3':
     optional: true
 
   '@clerk/electron-passkeys@0.0.4-canary.v20260819050620':
     optionalDependencies:
-      '@clerk/electron-passkeys-darwin-arm64': 0.0.4-canary.v20260819050620
-      '@clerk/electron-passkeys-darwin-x64': 0.0.4-canary.v20260819050620
-      '@clerk/electron-passkeys-win32-arm64-msvc': 0.0.4-canary.v20260819050620
-      '@clerk/electron-passkeys-win32-x64-msvc': 0.0.4-canary.v20260819050620
+      '@clerk/electron-passkeys-darwin-arm64': 0.0.3
+      '@clerk/electron-passkeys-darwin-x64': 0.0.3
+      '@clerk/electron-passkeys-win32-arm64-msvc': 0.0.3
+      '@clerk/electron-passkeys-win32-x64-msvc': 0.0.3
 
   '@clerk/electron@0.0.34-canary.v20260819050620(@clerk/electron-passkeys@0.0.4-canary.v20260819050620)(electron-store@8.2.0)(electron@41.5.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:

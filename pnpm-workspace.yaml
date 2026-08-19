@@ -77,10 +77,6 @@ minimumReleaseAgeExclude:
   - alchemy@2.0.0-beta.65
   - effect@4.0.0-beta.103
   - "@legendapp/list@3.3.5"
-  - "@clerk/electron-passkeys-darwin-arm64@0.0.4-canary.v20260819050620"
-  - "@clerk/electron-passkeys-darwin-x64@0.0.4-canary.v20260819050620"
-  - "@clerk/electron-passkeys-win32-arm64-msvc@0.0.4-canary.v20260819050620"
-  - "@clerk/electron-passkeys-win32-x64-msvc@0.0.4-canary.v20260819050620"
 
 overrides:
   "@clerk/backend": "catalog:"
@@ -93,6 +89,12 @@ overrides:
   "@clerk/clerk-js>@wallet-standard/core": "-"
   "@clerk/electron": "catalog:"
   "@clerk/electron-passkeys": "catalog:"
+  # The 0.0.4 canary native tarballs omit their declared .node binaries. The
+  # wrapper is unchanged from 0.0.3, so retain its complete native payloads.
+  "@clerk/electron-passkeys>@clerk/electron-passkeys-darwin-arm64": 0.0.3
+  "@clerk/electron-passkeys>@clerk/electron-passkeys-darwin-x64": 0.0.3
+  "@clerk/electron-passkeys>@clerk/electron-passkeys-win32-arm64-msvc": 0.0.3
+  "@clerk/electron-passkeys>@clerk/electron-passkeys-win32-x64-msvc": 0.0.3
   "@clerk/expo": "catalog:"
   "@clerk/react": "catalog:"
   "@clerk/shared": "catalog:"
