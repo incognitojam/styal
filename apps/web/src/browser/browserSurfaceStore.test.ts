@@ -4,6 +4,7 @@ import {
   acquireBrowserCaptureSurface,
   acquireBrowserSurface,
   resolveBrowserSurfacePanelRect,
+  tryAcquireBrowserSurface,
   useBrowserSurfaceStore,
   withBrowserCaptureSurface,
 } from "./browserSurfaceStore";
@@ -137,6 +138,34 @@ describe("browserSurfaceStore", () => {
     expect(useBrowserSurfaceStore.getState().byTabId[tabId]).toMatchObject({
       rect: liveRect,
       visible: true,
+    });
+  });
+
+  it("does not let a stale surface reclaim a newer presentation", () => {
+    const tabId = "surface-handoff";
+    const staleLease = acquireBrowserSurface(tabId, true);
+    const liveLease = acquireBrowserSurface(tabId);
+    const liveRect = { x: 10, y: 20, width: 900, height: 640 };
+    liveLease.present(liveRect, true);
+    const liveOwner = useBrowserSurfaceStore.getState().byTabId[tabId]?.owner;
+
+    expect(staleLease.present(liveRect, true)).toBe(false);
+    expect(tryAcquireBrowserSurface(tabId, true)).toBeNull();
+    expect(useBrowserSurfaceStore.getState().byTabId[tabId]?.owner).toBe(liveOwner);
+    expect(useBrowserSurfaceStore.getState().byTabId[tabId]).toMatchObject({
+      rect: liveRect,
+      visible: true,
+      fitSourceContent: false,
+    });
+
+    liveLease.release();
+    const recoveredLease = tryAcquireBrowserSurface(tabId, true);
+    expect(recoveredLease).not.toBeNull();
+    expect(recoveredLease?.present(liveRect, true)).toBe(true);
+    expect(useBrowserSurfaceStore.getState().byTabId[tabId]).toMatchObject({
+      rect: liveRect,
+      visible: true,
+      fitSourceContent: true,
     });
   });
 
