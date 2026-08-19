@@ -4,8 +4,6 @@
 # the same upstream remote and rebase mechanics.
 set -euo pipefail
 
-git config user.name "github-actions[bot]"
-git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 FORK_REF=$(git rev-parse HEAD)
 
 # Tests pass an already-fetched ref so they exercise the production rebase
@@ -23,7 +21,10 @@ OLD_UPSTREAM_REF=$(git merge-base "$FORK_REF" "$UPSTREAM_REF")
 # Reapply patches already found upstream so they become explicit empty-patch
 # stops. Retiring a fork patch is a maintainer decision, even when upstream has
 # accepted an identical change.
-if ! git rebase --reapply-cherry-picks --empty=stop "$UPSTREAM_REF"; then
+if ! git \
+  -c user.name="github-actions[bot]" \
+  -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+  rebase --reapply-cherry-picks --empty=stop "$UPSTREAM_REF"; then
   echo "::error title=Fork patch rebase needs review::Resolve conflicts or explicitly retire any fork patch that became empty, then use a source_ref run." >&2
   exit 1
 fi
