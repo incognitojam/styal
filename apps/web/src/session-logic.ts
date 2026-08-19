@@ -1,6 +1,12 @@
 import * as Option from "effect/Option";
 import * as Arr from "effect/Array";
+import * as Schema from "effect/Schema";
 import { isBackgroundTaskActivity } from "@t3tools/client-runtime/state/subagentRuntime";
+import {
+  setupScriptActivityLabel,
+  setupScriptActivityState,
+  type SetupScriptState,
+} from "@t3tools/client-runtime/state/setup-script-activity";
 import {
   deriveToolFileChangeLineStat,
   type ToolFileChangeLineStat,
@@ -8,6 +14,7 @@ import {
 import {
   ApprovalRequestId,
   isToolLifecycleItemType,
+  ProjectScriptIcon,
   type OrchestrationLatestTurn,
   type OrchestrationThreadActivity,
   type OrchestrationProposedPlanId,
@@ -96,6 +103,10 @@ export interface WorkLogEntry {
   toolLifecycleStatus?: WorkLogToolLifecycleStatus;
   /** Originating orchestration activity kind (e.g. `user-input.requested`) for row chrome. */
   sourceActivityKind?: OrchestrationThreadActivity["kind"];
+  /** Setup action icon captured when the run began, so historical rows stay stable. */
+  setupScriptIcon?: ProjectScriptIcon;
+  /** Setup lifecycle state derived from the durable activity kind and failure reason. */
+  setupScriptState?: SetupScriptState;
   /** Grouping key for subagent lifecycle rows (one row per agent). */
   taskId?: string;
   /** Agent role (subagent_type) for labeled timeline rows. */
@@ -122,6 +133,8 @@ interface DerivedWorkLogEntry extends WorkLogEntry {
   /** Shell/monitor/plan tasks: ordinary work-log rows, never spawn CTAs. */
   isBackgroundTask?: boolean;
 }
+
+const isProjectScriptIcon = Schema.is(ProjectScriptIcon);
 
 export interface PendingApproval {
   requestId: ApprovalRequestId;
@@ -960,11 +973,12 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       : null
     : extractToolDetail(payload, title ?? activity.summary);
   const toolCallId = isTaskActivity ? null : extractToolCallId(payload);
+  const setupScriptState = setupScriptActivityState(activity, payload);
   const entry: DerivedWorkLogEntry = {
     id: activity.id,
     createdAt: activity.createdAt,
     turnId: activity.turnId,
-    label: taskLabel || activity.summary,
+    label: taskLabel || setupScriptActivityLabel(activity, payload),
     tone:
       activity.kind === "task.progress"
         ? "thinking"
@@ -972,6 +986,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
           ? "info"
           : activity.tone,
     activityKind: activity.kind,
+    ...(setupScriptState ? { setupScriptState } : {}),
   };
   const requestKind = extractWorkLogRequestKind(payload);
   const exitCode = itemType === "command_execution" ? extractToolExitCode(payload) : null;
@@ -1021,6 +1036,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (activity.kind.startsWith("setup-script.") && typeof payload?.runId === "string") {
     entry.setupRunId = payload.runId;
+    if (isProjectScriptIcon(payload.scriptIcon)) {
+      entry.setupScriptIcon = payload.scriptIcon;
+    }
   }
   let toolLifecycleStatus = extractWorkLogToolLifecycleStatus(payload);
   if (!toolLifecycleStatus && activity.kind === "tool.completed") {
@@ -1251,6 +1269,8 @@ function mergeDerivedWorkLogEntries(
   const toolLifecycleStatus = next.toolLifecycleStatus ?? previous.toolLifecycleStatus;
   const toolData = next.toolData ?? previous.toolData;
   const setupRunId = next.setupRunId ?? previous.setupRunId;
+  const setupScriptIcon = next.setupScriptIcon ?? previous.setupScriptIcon;
+  const setupScriptState = next.setupScriptState ?? previous.setupScriptState;
   return {
     ...previous,
     ...next,
@@ -1270,6 +1290,8 @@ function mergeDerivedWorkLogEntries(
     ...(toolLifecycleStatus !== undefined ? { toolLifecycleStatus } : {}),
     ...(toolData !== undefined ? { toolData } : {}),
     ...(setupRunId !== undefined ? { setupRunId } : {}),
+    ...(setupScriptIcon !== undefined ? { setupScriptIcon } : {}),
+    ...(setupScriptState !== undefined ? { setupScriptState } : {}),
   };
 }
 
