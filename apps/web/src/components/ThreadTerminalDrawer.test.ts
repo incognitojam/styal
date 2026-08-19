@@ -4,6 +4,7 @@ import {
   resolveTerminalSelectionActionPosition,
   shouldHandleTerminalExit,
   shouldHandleTerminalSelectionMouseUp,
+  shouldRetainExitedTerminal,
   terminalSelectionActionDelayForClickCount,
   terminalSelectionLineRange,
 } from "./ThreadTerminalDrawer";
@@ -88,5 +89,11 @@ describe("resolveTerminalSelectionActionPosition", () => {
     expect(shouldHandleTerminalExit("exited", "running", false)).toBe(true);
     expect(shouldHandleTerminalExit("exited", "exited", false)).toBe(false);
     expect(shouldHandleTerminalExit("closed", "running", true)).toBe(false);
+  });
+
+  it("retains completed setup terminals for inspection", () => {
+    expect(shouldRetainExitedTerminal("setup-setup-worktree", "exited")).toBe(true);
+    expect(shouldRetainExitedTerminal("setup-setup-worktree", "closed")).toBe(false);
+    expect(shouldRetainExitedTerminal("term-1", "exited")).toBe(false);
   });
 });
