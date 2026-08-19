@@ -24,6 +24,7 @@ import type {
   PullRequestReviewerCandidate,
   PullRequestReviewerCandidateList,
   PullRequestReviewerKind,
+  PullRequestStack,
   PullRequestState,
   PullRequestThreadComment,
 } from "@t3tools/contracts";
@@ -2196,6 +2197,120 @@ export function decodeBaseComparisonJson(
     behindBy: typeof behindBy === "number" && behindBy >= 0 ? behindBy : null,
     viewerCanUpdate: pullRequest?.viewerCanUpdateBranch === true,
   });
+}
+
+/**
+ * The stack this pull request is one layer of, in one read: GitHub reports the whole ladder from
+ * any of its rungs, so the page never asks once per sibling. A page of layers rather than a walk
+ * of them, because no stack anybody writes is a hundred deep — and `size` is read beside them so
+ * a ladder that somehow is says how many it has rather than miscounting the ones that arrived.
+ *
+ * The field is in public preview, so a host that has never heard of it answers with a GraphQL
+ * error — which the caller treats the same as a pull request that stands alone.
+ */
+export const PULL_REQUEST_STACK_GRAPHQL_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      stack {
+        baseRefName
+        size
+        entries(first: ${GRAPHQL_PAGE_SIZE}) {
+          nodes {
+            position
+            pullRequest { number title url headRefName state isDraft }
+          }
+        }
+      }
+    }
+  }
+}`;
+
+const RawStackSchema = Schema.Struct({
+  data: Schema.Struct({
+    repository: Schema.NullOr(
+      Schema.Struct({
+        pullRequest: Schema.NullOr(
+          Schema.Struct({
+            stack: Schema.optional(
+              Schema.NullOr(
+                Schema.Struct({
+                  baseRefName: Schema.String,
+                  /** The host's own count of the whole stack, layers this viewer cannot see
+                      and any beyond this page included. */
+                  size: Schema.Number,
+                  entries: Schema.Struct({
+                    nodes: Schema.Array(
+                      Schema.NullOr(
+                        Schema.Struct({
+                          position: Schema.Number,
+                          /** Null where a layer's pull request is out of this viewer's sight. */
+                          pullRequest: Schema.NullOr(
+                            Schema.Struct({
+                              number: Schema.Number,
+                              title: Schema.String,
+                              url: Schema.String,
+                              headRefName: Schema.String,
+                              state: Schema.String,
+                              isDraft: Schema.Boolean,
+                            }),
+                          ),
+                        }),
+                      ),
+                    ),
+                  }),
+                }),
+              ),
+            ),
+          }),
+        ),
+      }),
+    ),
+  }),
+});
+
+const decodeStack = decodeJsonResult(RawStackSchema);
+
+export function decodePullRequestStackJson(
+  raw: string,
+): Result.Result<PullRequestStack | null, DecodeFailure> {
+  const decoded = decodeStack(raw);
+  if (!Result.isSuccess(decoded)) return Result.fail(decoded.failure);
+  const stack = decoded.success.data.repository?.pullRequest?.stack;
+  if (stack == null) return Result.succeed(null);
+  const baseBranch = trimmed(stack.baseRefName);
+  if (baseBranch === null) return Result.succeed(null);
+  const entries = stack.entries.nodes
+    .flatMap((node) => {
+      if (node === null || node.pullRequest === null) return [];
+      const title = trimmed(node.pullRequest.title);
+      const url = trimmed(node.pullRequest.url);
+      const headBranch = trimmed(node.pullRequest.headRefName);
+      if (
+        title === null ||
+        url === null ||
+        headBranch === null ||
+        node.pullRequest.number < 1 ||
+        node.position < 1
+      ) {
+        return [];
+      }
+      return [
+        {
+          number: node.pullRequest.number,
+          title,
+          url,
+          headBranch,
+          state: toState({ state: node.pullRequest.state }),
+          isDraft: node.pullRequest.isDraft,
+          position: node.position,
+        },
+      ];
+    })
+    .toSorted((left, right) => left.position - right.position);
+  // A one-layer answer names no siblings, and a ladder with one rung is not a ladder: GitHub
+  // itself draws no stack on such a pull request.
+  if (entries.length < 2) return Result.succeed(null);
+  return Result.succeed({ baseBranch, size: stack.size, entries });
 }
 
 export const REVIEWER_CANDIDATES_GRAPHQL_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
