@@ -28,6 +28,7 @@ import {
   reconcileRetainedMountedThreadIds,
   resolveBackgroundDraftWorkspaceOptions,
   resolveDraftPromotionNavigationTarget,
+  resolveProjectScriptBaseTerminalId,
   resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
   resolveDraftHeroState,
@@ -183,6 +184,28 @@ describe("shouldReleaseTimelineAnchorForToolActivity", () => {
     expect(shouldReleaseTimelineAnchorForToolActivity({ ...input, runningTurnId: null })).toBe(
       false,
     );
+  });
+});
+
+describe("project script terminal selection", () => {
+  it("does not reuse the finite setup-script terminal", () => {
+    expect(
+      resolveProjectScriptBaseTerminalId({
+        activeTerminalId: "setup-setup-worktree",
+        knownTerminalIds: ["setup-setup-worktree"],
+        defaultTerminalId: "term-1",
+      }),
+    ).toBe("term-1");
+  });
+
+  it("continues to reuse an active interactive terminal", () => {
+    expect(
+      resolveProjectScriptBaseTerminalId({
+        activeTerminalId: "term-2",
+        knownTerminalIds: ["setup-setup-worktree", "term-2"],
+        defaultTerminalId: "term-1",
+      }),
+    ).toBe("term-2");
   });
 });
 
