@@ -1060,6 +1060,48 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("C:/Users/mike/dev-stuff/t3code/apps/web/src/session-logic.ts");
   });
 
+  it("shows that summarized tool activity can be expanded", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "command-entry-1",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "command-work-1",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "Command run",
+              tone: "tool",
+              itemType: "command_execution",
+              toolLifecycleStatus: "completed",
+              command: "vp test run",
+            },
+          },
+          {
+            id: "command-entry-2",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:29.000Z",
+            entry: {
+              id: "command-work-2",
+              createdAt: "2026-03-17T19:12:29.000Z",
+              label: "Command run",
+              tone: "tool",
+              itemType: "command_execution",
+              toolLifecycleStatus: "failed",
+              command: "rg missing src",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Ran 2 commands");
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).toContain("lucide-chevron-down");
+  });
+
   it("drops the generated worktree name from Edit and Write tool paths", () => {
     const worktreeRoot = "/Users/cameron/.t3/worktrees/t3code-d9980d37";
     const editedPath = "apps/web/src/dictation/dictationSession.ts";
