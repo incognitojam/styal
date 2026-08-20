@@ -13,6 +13,7 @@ import {
   type PermissionMode,
   type PermissionResult,
   type PermissionUpdate,
+  type SDKAssistantMessageError,
   type SDKMessage,
   type SDKControlGetContextUsageResponse,
   type SDKResultMessage,
@@ -274,6 +275,7 @@ interface ClaudeSessionContext {
   readonly liveTaskIds: Set<string>;
   turnState: ClaudeTurnState | undefined;
   suppressNextIdleStreamFailure: boolean;
+  turnAssistantError: SDKAssistantMessageError | undefined;
   lastKnownContextWindow: number | undefined;
   lastKnownTokenUsage: ThreadTokenUsageSnapshot | undefined;
   lastKnownTotalProcessedTokens: number | undefined;
@@ -1321,7 +1323,33 @@ function turnStatusFromResult(result: SDKResultMessage): ProviderRuntimeTurnStat
   return "failed";
 }
 
-function claudeResultFailureMessage(result: SDKResultMessage): string {
+function claudeResultFailureMessage(
+  result: SDKResultMessage,
+  assistantError: SDKAssistantMessageError | undefined,
+): string {
+  switch (assistantError) {
+    case "authentication_failed":
+      return "Claude authentication failed. Check the configured credentials.";
+    case "oauth_org_not_allowed":
+      return "The selected Claude organization does not allow OAuth access.";
+    case "billing_error":
+      return "Claude billing or account credits prevented the request. Check the account billing status.";
+    case "rate_limit":
+      return "Claude usage limit reached. Try again later.";
+    case "overloaded":
+      return "Claude is temporarily overloaded. Try again.";
+    case "invalid_request":
+      return "Claude rejected the request as invalid.";
+    case "model_not_found":
+      return "The selected Claude model is unavailable. Choose another model.";
+    case "server_error":
+      return "Claude service error. Try again.";
+    case "max_output_tokens":
+      return "Claude reached the maximum output length.";
+    case "unknown":
+      break;
+  }
+
   if (result.subtype === "error_max_turns" || result.terminal_reason === "max_turns") {
     return "Claude reached the maximum turn limit.";
   }
@@ -1347,26 +1375,7 @@ function claudeResultFailureMessage(result: SDKResultMessage): string {
       return "A Claude hook stopped the turn.";
   }
 
-  const apiErrorStatus = (
-    result as SDKResultMessage & {
-      readonly api_error_status?: number | null;
-    }
-  ).api_error_status;
-  switch (apiErrorStatus) {
-    case 401:
-    case 403:
-      return "Claude authentication failed. Check the configured credentials.";
-    case 402:
-      return "Claude account has insufficient credits.";
-    case 429:
-      return "Claude usage limit reached. Try again later.";
-    case 529:
-      return "Claude is temporarily overloaded. Try again.";
-    default:
-      return typeof apiErrorStatus === "number" && apiErrorStatus >= 500
-        ? "Claude service error. Try again."
-        : "Claude turn failed.";
-  }
+  return "Claude turn failed.";
 }
 
 function streamKindFromDeltaType(deltaType: string): ClaudeTextStreamKind {
@@ -2930,6 +2939,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     // an active turn (e.g., background agent/subagent responses between user prompts).
     if (!context.turnState) {
       context.suppressNextIdleStreamFailure = false;
+      context.turnAssistantError = undefined;
       const turnId = TurnId.make(yield* randomUUIDv4);
       const startedAt = yield* nowIso;
       context.turnState = {
@@ -2967,6 +2977,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           payload: {},
         },
       });
+    }
+
+    if (message.error !== undefined) {
+      context.turnAssistantError = message.error;
     }
 
     const content = message.message?.content;
@@ -3016,8 +3030,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     const status = turnStatusFromResult(message);
+    const assistantError = context.turnAssistantError;
+    context.turnAssistantError = undefined;
     const terminalResultError =
-      status === "failed" ? claudeResultFailureMessage(message) : undefined;
+      status === "failed" ? claudeResultFailureMessage(message, assistantError) : undefined;
     context.suppressNextIdleStreamFailure = terminalResultError !== undefined;
 
     if (terminalResultError !== undefined) {
@@ -4330,6 +4346,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         liveTaskIds,
         turnState: undefined,
         suppressNextIdleStreamFailure: false,
+        turnAssistantError: undefined,
         lastKnownContextWindow: initialContextWindow,
         lastKnownTokenUsage: undefined,
         lastKnownTotalProcessedTokens: undefined,
@@ -4473,6 +4490,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     const turnId = steeringTurnState?.turnId ?? TurnId.make(yield* randomUUIDv4);
     if (steeringTurnState === null) {
       context.suppressNextIdleStreamFailure = false;
+      context.turnAssistantError = undefined;
       const turnState: ClaudeTurnState = {
         turnId,
         startedAt: yield* nowIso,

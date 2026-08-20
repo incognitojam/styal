@@ -8,7 +8,10 @@ import type {
   Options as ClaudeQueryOptions,
   PermissionMode,
   PermissionResult,
+  SDKAssistantMessage,
+  SDKAssistantMessageError,
   SDKMessage,
+  SDKResultError,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import {
@@ -1981,9 +1984,9 @@ describe("ClaudeAdapterLive", () => {
       });
 
       const cases: ReadonlyArray<{
-        readonly subtype: string;
-        readonly terminalReason?: string;
-        readonly apiErrorStatus?: number;
+        readonly subtype: SDKResultError["subtype"];
+        readonly terminalReason?: NonNullable<SDKResultError["terminal_reason"]>;
+        readonly assistantError?: SDKAssistantMessageError;
         readonly expected: string;
       }> = [
         {
@@ -1998,13 +2001,54 @@ describe("ClaudeAdapterLive", () => {
         },
         {
           subtype: "error_during_execution",
-          apiErrorStatus: 401,
+          assistantError: "authentication_failed",
           expected: "Claude authentication failed. Check the configured credentials.",
         },
         {
           subtype: "error_during_execution",
-          apiErrorStatus: 429,
+          assistantError: "oauth_org_not_allowed",
+          expected: "The selected Claude organization does not allow OAuth access.",
+        },
+        {
+          subtype: "error_during_execution",
+          assistantError: "billing_error",
+          expected:
+            "Claude billing or account credits prevented the request. Check the account billing status.",
+        },
+        {
+          subtype: "error_during_execution",
+          assistantError: "rate_limit",
           expected: "Claude usage limit reached. Try again later.",
+        },
+        {
+          subtype: "error_during_execution",
+          assistantError: "overloaded",
+          expected: "Claude is temporarily overloaded. Try again.",
+        },
+        {
+          subtype: "error_during_execution",
+          assistantError: "invalid_request",
+          expected: "Claude rejected the request as invalid.",
+        },
+        {
+          subtype: "error_during_execution",
+          assistantError: "model_not_found",
+          expected: "The selected Claude model is unavailable. Choose another model.",
+        },
+        {
+          subtype: "error_during_execution",
+          assistantError: "server_error",
+          expected: "Claude service error. Try again.",
+        },
+        {
+          subtype: "error_during_execution",
+          assistantError: "max_output_tokens",
+          expected: "Claude reached the maximum output length.",
+        },
+        {
+          subtype: "error_during_execution",
+          assistantError: "unknown",
+          expected: "Claude turn failed.",
         },
         {
           subtype: "error_during_execution",
@@ -2023,16 +2067,76 @@ describe("ClaudeAdapterLive", () => {
           (event) => event.type === "runtime.error",
         ).pipe(Stream.runHead, Effect.forkChild);
 
-        harness.query.emit({
+        if (testCase.assistantError !== undefined) {
+          const assistantMessage: SDKAssistantMessage = {
+            type: "assistant",
+            error: testCase.assistantError,
+            parent_tool_use_id: null,
+            message: {
+              id: `assistant-message-safe-error-${index + 1}`,
+              container: null,
+              content: [],
+              context_management: null,
+              model: "claude-sonnet-4-6",
+              role: "assistant",
+              stop_details: null,
+              stop_reason: null,
+              stop_sequence: null,
+              type: "message",
+              usage: {
+                cache_creation: null,
+                cache_creation_input_tokens: null,
+                cache_read_input_tokens: null,
+                inference_geo: null,
+                input_tokens: 0,
+                iterations: null,
+                output_tokens: 0,
+                server_tool_use: null,
+                service_tier: null,
+                speed: null,
+              },
+            },
+            session_id: `sdk-session-safe-error-${index + 1}`,
+            uuid: "00000000-0000-4000-8000-000000000001",
+          };
+          harness.query.emit(assistantMessage);
+        }
+
+        const resultMessage: SDKResultError = {
           type: "result",
           subtype: testCase.subtype,
           is_error: true,
+          duration_ms: 1,
+          duration_api_ms: 1,
+          num_turns: 1,
+          stop_reason: null,
+          total_cost_usd: 0,
+          usage: {
+            cache_creation: {
+              ephemeral_1h_input_tokens: 0,
+              ephemeral_5m_input_tokens: 0,
+            },
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            inference_geo: "unknown",
+            input_tokens: 0,
+            iterations: [],
+            output_tokens: 0,
+            server_tool_use: {
+              web_fetch_requests: 0,
+              web_search_requests: 0,
+            },
+            service_tier: "standard",
+            speed: "standard",
+          },
+          modelUsage: {},
+          permission_denials: [],
           errors: ["provider diagnostic that must not reach the client"],
           ...(testCase.terminalReason ? { terminal_reason: testCase.terminalReason } : {}),
-          ...(testCase.apiErrorStatus ? { api_error_status: testCase.apiErrorStatus } : {}),
           session_id: `sdk-session-safe-error-${index + 1}`,
-          uuid: `result-safe-error-${index + 1}`,
-        } as unknown as SDKMessage);
+          uuid: "00000000-0000-4000-8000-000000000002",
+        };
+        harness.query.emit(resultMessage);
 
         const runtimeError = yield* Fiber.join(runtimeErrorFiber);
         assert.equal(runtimeError._tag, "Some");
