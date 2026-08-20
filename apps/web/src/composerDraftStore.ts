@@ -127,6 +127,12 @@ export interface ComposerFileAttachment extends ChatFileAttachment {
 
 export type ComposerAttachment = ComposerImageAttachment | ComposerFileAttachment;
 
+export interface AddComposerAttachmentsResult {
+  readonly added: ReadonlyArray<ComposerAttachment>;
+  readonly rejectedByCount: ReadonlyArray<ComposerAttachment>;
+  readonly rejectedByTotalBytes: ReadonlyArray<ComposerAttachment>;
+}
+
 const PersistedTerminalContextDraft = Schema.Struct({
   id: Schema.String,
   threadId: ThreadId,
@@ -540,7 +546,14 @@ interface ComposerDraftStoreState {
     interactionMode: ProviderInteractionMode | null | undefined,
   ) => void;
   addImage: (threadRef: ComposerThreadTarget, image: ComposerAttachment) => void;
-  addImages: (threadRef: ComposerThreadTarget, images: ComposerAttachment[]) => void;
+  addImages: (
+    threadRef: ComposerThreadTarget,
+    images: ComposerAttachment[],
+    limits?: {
+      readonly maxCount?: number;
+      readonly maxTotalBytes?: number;
+    },
+  ) => AddComposerAttachmentsResult;
   removeImage: (threadRef: ComposerThreadTarget, imageId: string) => void;
   insertTerminalContext: (
     threadRef: ComposerThreadTarget,
@@ -3232,10 +3245,15 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             image,
           ]);
         },
-        addImages: (threadRef, images) => {
+        addImages: (threadRef, images, limits) => {
+          let result: AddComposerAttachmentsResult = {
+            added: [],
+            rejectedByCount: [],
+            rejectedByTotalBytes: [],
+          };
           const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
           if (threadKey.length === 0 || images.length === 0) {
-            return;
+            return result;
           }
           set((state) => {
             const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
@@ -3249,6 +3267,12 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               ),
             );
             const dedupedIncoming: ComposerAttachment[] = [];
+            const rejectedByCount: ComposerAttachment[] = [];
+            const rejectedByTotalBytes: ComposerAttachment[] = [];
+            let totalBytes = existing.images.reduce(
+              (total, attachment) => total + attachment.sizeBytes,
+              0,
+            );
             for (const image of images) {
               const dedupKey = composerAttachmentDedupKey(image);
               if (existingIds.has(image.id) || existingDedupKeys.has(dedupKey)) {
@@ -3258,11 +3282,37 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 }
                 continue;
               }
+              if (
+                limits?.maxCount !== undefined &&
+                existing.images.length + dedupedIncoming.length >= limits.maxCount
+              ) {
+                rejectedByCount.push(image);
+                if (image.type === "image" && !acceptedPreviewUrls.has(image.previewUrl)) {
+                  revokeObjectPreviewUrl(image.previewUrl);
+                }
+                continue;
+              }
+              if (
+                limits?.maxTotalBytes !== undefined &&
+                totalBytes + image.sizeBytes > limits.maxTotalBytes
+              ) {
+                rejectedByTotalBytes.push(image);
+                if (image.type === "image" && !acceptedPreviewUrls.has(image.previewUrl)) {
+                  revokeObjectPreviewUrl(image.previewUrl);
+                }
+                continue;
+              }
               dedupedIncoming.push(image);
+              totalBytes += image.sizeBytes;
               existingIds.add(image.id);
               existingDedupKeys.add(dedupKey);
               if (image.type === "image") acceptedPreviewUrls.add(image.previewUrl);
             }
+            result = {
+              added: dedupedIncoming,
+              rejectedByCount,
+              rejectedByTotalBytes,
+            };
             if (dedupedIncoming.length === 0) {
               return state;
             }
@@ -3276,6 +3326,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               },
             };
           });
+          return result;
         },
         removeImage: (threadRef, imageId) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";

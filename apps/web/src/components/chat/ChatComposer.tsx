@@ -12,7 +12,6 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 import {
-  isProviderSendTurnSupportedImageMimeType,
   ProviderDriverKind,
   ProviderInstanceId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
@@ -45,7 +44,11 @@ import {
   shouldSubmitComposerOnEnter,
 } from "../../composer-logic";
 import { DISCONNECTED_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
-import { deriveComposerSendState, readFileAsDataUrl } from "../ChatView.logic";
+import {
+  composerAttachmentTypeForMime,
+  deriveComposerSendState,
+  readFileAsDataUrl,
+} from "../ChatView.logic";
 import {
   dataTransferHasComposerMention,
   makeComposerMentionDragHandlers,
@@ -711,7 +714,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const nonPersistedComposerImageIds = composerDraft.nonPersistedImageIds;
 
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
-  const addComposerDraftImage = useComposerDraftStore((store) => store.addImage);
   const addComposerDraftImages = useComposerDraftStore((store) => store.addImages);
   const removeComposerDraftImage = useComposerDraftStore((store) => store.removeImage);
   const insertComposerDraftTerminalContext = useComposerDraftStore(
@@ -1289,16 +1291,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [composerDraftTarget, setComposerDraftPrompt],
   );
 
-  const addComposerAttachment = useCallback(
-    (image: ComposerAttachment) => {
-      addComposerDraftImage(composerDraftTarget, image);
-    },
-    [composerDraftTarget, addComposerDraftImage],
-  );
-
   const addComposerAttachmentsToDraft = useCallback(
-    (images: ComposerAttachment[]) => {
-      addComposerDraftImages(composerDraftTarget, images);
+    (
+      images: ComposerAttachment[],
+      limits?: {
+        readonly maxCount?: number;
+        readonly maxTotalBytes?: number;
+      },
+    ) => {
+      return addComposerDraftImages(composerDraftTarget, images, limits);
     },
     [composerDraftTarget, addComposerDraftImages],
   );
@@ -2393,11 +2394,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const acceptedFiles: File[] = [];
     let error: string | null = null;
     for (const file of files) {
-      const isImage = file.type.startsWith("image/");
-      if (isImage && !isProviderSendTurnSupportedImageMimeType(file.type)) {
-        error = `'${file.name}' is not a supported image type. Attach GIF, JPEG, PNG, or WebP images.`;
-        continue;
-      }
+      const isImage = composerAttachmentTypeForMime(file.type) === "image";
       if (!isImage && (file.size === 0 || file.size > PROVIDER_SEND_TURN_MAX_FILE_BYTES)) {
         error = `'${file.name}' must be larger than 0 bytes and no more than 10 MB.`;
         continue;
@@ -2417,7 +2414,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       const nextAttachments: ComposerAttachment[] = [];
       let compressionError: string | null = null;
       for (const file of acceptedFiles) {
-        if (!file.type.startsWith("image/")) {
+        if (composerAttachmentTypeForMime(file.type) === "file") {
           nextAttachments.push({
             type: "file",
             id: randomUUID(),
@@ -2450,24 +2447,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           file: attachmentFile,
         });
       }
-      const existingBytes = composerAttachmentsRef.current.reduce(
-        (total, attachment) => total + attachment.sizeBytes,
-        0,
-      );
-      let admittedBytes = existingBytes;
-      const admittedAttachments = nextAttachments.filter((attachment) => {
-        if (admittedBytes + attachment.sizeBytes > PROVIDER_SEND_TURN_MAX_TOTAL_ATTACHMENT_BYTES) {
-          compressionError = "Attachments can total up to 20 MB per message.";
-          if (attachment.type === "image") URL.revokeObjectURL(attachment.previewUrl);
-          return false;
-        }
-        admittedBytes += attachment.sizeBytes;
-        return true;
+      const admission = addComposerAttachmentsToDraft(nextAttachments, {
+        maxCount: PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+        maxTotalBytes: PROVIDER_SEND_TURN_MAX_TOTAL_ATTACHMENT_BYTES,
       });
-      if (admittedAttachments.length === 1 && admittedAttachments[0]) {
-        addComposerAttachment(admittedAttachments[0]);
-      } else if (admittedAttachments.length > 1) {
-        addComposerAttachmentsToDraft(admittedAttachments);
+      if (admission.rejectedByCount.length > 0) {
+        compressionError = `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} files per message.`;
+      }
+      if (admission.rejectedByTotalBytes.length > 0) {
+        compressionError = "Attachments can total up to 20 MB per message.";
       }
       // Only failures are reported here. Success must not pass `null`: by
       // now other work (a failed send, an overlapping paste) may have set a
