@@ -59,28 +59,47 @@ describe("attachmentStore", () => {
     ).toBe("thread-1-attachment/checkout failure.png");
   });
 
+  it("forces the inferred image extension instead of trusting the uploaded name", () => {
+    expect(
+      attachmentRelativePath({
+        type: "image",
+        id: "thread-1-attachment",
+        name: "payload.html",
+        mimeType: "image/png",
+        sizeBytes: 5,
+      }),
+    ).toBe("thread-1-attachment/payload.png");
+  });
+
   it("sanitizes cross-platform basenames and preserves extensions when truncating", () => {
     expect(
       toSafeAttachmentBasename({
         name: String.raw`C:\temp\report:final?.png`,
-        fallbackExtension: ".png",
+        extension: ".png",
       }),
     ).toBe("report_final_.png");
     expect(
       toSafeAttachmentBasename({
         name: `${"🖼️".repeat(100)}.png`,
-        fallbackExtension: ".png",
+        extension: ".png",
       }),
     ).toMatch(/\.png$/);
     expect(
       Buffer.byteLength(
         toSafeAttachmentBasename({
           name: `${"🖼️".repeat(100)}.png`,
-          fallbackExtension: ".png",
+          extension: ".png",
         }),
       ),
     ).toBeLessThanOrEqual(180);
   });
+
+  it.each(["COM¹.png", "COM².png", "COM³.png", "LPT¹.png", "LPT².png", "LPT³.png"])(
+    "prefixes the Windows reserved device name %s",
+    (name) => {
+      expect(toSafeAttachmentBasename({ name, extension: ".png" })).toBe(`_${name}`);
+    },
+  );
 
   it("resolves the named layout from attachment metadata and id", () => {
     const attachmentsDir = NodeFS.mkdtempSync(

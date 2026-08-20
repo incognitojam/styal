@@ -68,10 +68,10 @@ function truncateUtf8(value: string, maxBytes: number): string {
   return result;
 }
 
-/** Keeps the user-facing name while making it safe as one cross-platform path segment. */
+/** Keeps the user-facing stem with a trusted extension as one cross-platform path segment. */
 export function toSafeAttachmentBasename(input: {
   readonly name: string;
-  readonly fallbackExtension: string;
+  readonly extension: string;
 }): string {
   const basename = NodePath.posix.basename(input.name.replace(/\\/g, "/"));
   const invalidCharacters = new Set('<>:"/\\|?*');
@@ -86,20 +86,20 @@ export function toSafeAttachmentBasename(input: {
     .replace(/[. ]+$/g, "")
     .trim();
   const usable = sanitized.length > 0 && sanitized !== "." && sanitized !== "..";
-  const candidate = usable ? sanitized : `attachment${input.fallbackExtension}`;
-  const reservedStem = candidate.split(".", 1)[0]?.toLowerCase() ?? "";
-  const windowsSafe = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/.test(reservedStem)
-    ? `_${candidate}`
+  const candidate = usable ? sanitized : "attachment";
+  const originalExtension = NodePath.extname(candidate);
+  const originalStem = originalExtension
+    ? candidate.slice(0, -originalExtension.length)
     : candidate;
-  const extension = NodePath.extname(windowsSafe);
-  if (/^\.[a-z0-9]{1,16}$/i.test(extension)) {
-    const stem = windowsSafe.slice(0, -extension.length);
-    return `${truncateUtf8(
-      stem,
-      ATTACHMENT_BASENAME_MAX_BYTES - Buffer.byteLength(extension),
-    )}${extension}`;
-  }
-  return truncateUtf8(windowsSafe, ATTACHMENT_BASENAME_MAX_BYTES);
+  const reservedStem = originalStem.split(".", 1)[0]?.toLowerCase() ?? "";
+  const windowsSafeStem = /^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])$/.test(reservedStem)
+    ? `_${originalStem}`
+    : originalStem;
+  const extension = /^\.[a-z0-9]{1,16}$/i.test(input.extension) ? input.extension : ".bin";
+  return `${truncateUtf8(
+    windowsSafeStem,
+    ATTACHMENT_BASENAME_MAX_BYTES - Buffer.byteLength(extension),
+  )}${extension}`;
 }
 
 function imageAttachmentRelativePaths(attachment: ChatAttachment): [string, string] {
@@ -109,7 +109,7 @@ function imageAttachmentRelativePaths(attachment: ChatAttachment): [string, stri
   });
   const basename = toSafeAttachmentBasename({
     name: attachment.name,
-    fallbackExtension: extension,
+    extension,
   });
   return [`${attachment.id}/${basename}`, `${attachment.id}${extension}`];
 }
