@@ -1475,6 +1475,74 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("normalizes rate limit snapshots into canonical windows", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const eventsFiber = yield* Stream.take(adapter.streamEvents, 2).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* runtime.emit({
+        id: asEventId("evt-codex-rate-limits-full"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "account/rateLimits/updated",
+        payload: {
+          rateLimits: {
+            credits: { balance: "0", hasCredits: false, unlimited: false },
+            individualLimit: null,
+            limitId: "codex",
+            limitName: null,
+            planType: "pro",
+            primary: { resetsAt: 1_787_581_395, usedPercent: 3, windowDurationMins: 10_080 },
+            rateLimitReachedType: null,
+            secondary: null,
+            spendControlReached: null,
+          },
+        },
+      } satisfies ProviderEvent);
+
+      // Sparse rolling update: one window, all account metadata unavailable.
+      yield* runtime.emit({
+        id: asEventId("evt-codex-rate-limits-sparse"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        createdAt: "2026-01-01T00:00:01.000Z",
+        method: "account/rateLimits/updated",
+        payload: {
+          rateLimits: {
+            primary: { usedPercent: 4 },
+          },
+        },
+      } satisfies ProviderEvent);
+
+      const events = Array.from(yield* Fiber.join(eventsFiber));
+      NodeAssert.equal(events[0]?.type, "account.rate-limits.updated");
+      if (events[0]?.type === "account.rate-limits.updated") {
+        NodeAssert.deepEqual(events[0].payload, {
+          windows: [
+            { id: "primary", usedPercent: 3, resetsAt: 1_787_581_395, windowMinutes: 10_080 },
+          ],
+          limitId: "codex",
+          planType: "pro",
+          credits: { balance: "0", hasCredits: false, unlimited: false },
+        });
+      }
+      NodeAssert.equal(events[1]?.type, "account.rate-limits.updated");
+      if (events[1]?.type === "account.rate-limits.updated") {
+        NodeAssert.deepEqual(events[1].payload, {
+          windows: [{ id: "primary", usedPercent: 4 }],
+        });
+      }
+    }),
+  );
+
   // Production calls startSession from a request fiber that finishes as soon as
   // the session exists. `Effect.forkChild` made the runtime event consumer a
   // child of that fiber, and Effect interrupts a fiber's children when it

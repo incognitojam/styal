@@ -110,6 +110,27 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
     yield* Ref.set(enrichmentFiberRef, fiber);
   });
 
+  /**
+   * Carry the last known subscription quota into a refreshed snapshot.
+   *
+   * Quota reads are best effort — a driver that fails or times out that one
+   * call still reports a healthy account — so treating "absent" as "cleared"
+   * would blank the UI on any transient hiccup. Only carried while the same
+   * instance is still enabled and authenticated: a signed-out or disabled
+   * provider has no quota to speak of.
+   */
+  function withCarriedRateLimits(previous: ServerProvider, next: ServerProvider): ServerProvider {
+    if (next.rateLimits !== undefined || previous.rateLimits === undefined) {
+      return next;
+    }
+    if (previous.instanceId !== next.instanceId || !next.enabled) {
+      return next;
+    }
+    return next.auth.status === "authenticated"
+      ? { ...next, rateLimits: previous.rateLimits }
+      : next;
+  }
+
   const applySnapshotBase = Effect.fn("applySnapshot")(function* (
     nextSettings: Settings,
     options?: { readonly forceRefresh?: boolean },
@@ -121,15 +142,16 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
       return yield* Ref.get(snapshotStateRef).pipe(Effect.map((state) => state.snapshot));
     }
 
-    const nextSnapshot = yield* input.checkProvider;
-    const nextGeneration = yield* Ref.modify(snapshotStateRef, (state) => {
+    const checkedSnapshot = yield* input.checkProvider;
+    const [nextGeneration, nextSnapshot] = yield* Ref.modify(snapshotStateRef, (state) => {
       const generation = input.enrichSnapshot
         ? state.enrichmentGeneration + 1
         : state.enrichmentGeneration;
+      const snapshot = withCarriedRateLimits(state.snapshot, checkedSnapshot);
       return [
-        generation,
+        [generation, snapshot] as const,
         {
-          snapshot: nextSnapshot,
+          snapshot,
           enrichmentGeneration: generation,
         },
       ] as const;

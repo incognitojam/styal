@@ -1118,6 +1118,83 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("normalizes rate limit events into canonical windows", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const runtimeEventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil((event) => event.type === "session.exited"),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      // Past the warning threshold the SDK reports utilization as a fraction.
+      harness.query.emit({
+        type: "rate_limit_event",
+        rate_limit_info: {
+          status: "allowed_warning",
+          resetsAt: 1_786_989_600,
+          rateLimitType: "seven_day",
+          utilization: 0.8,
+          isUsingOverage: false,
+          surpassedThreshold: 0.75,
+        },
+        session_id: "sdk-session-1",
+        uuid: "rate-limit-warning",
+      } as unknown as SDKMessage);
+
+      // Below the threshold the SDK omits utilization entirely.
+      harness.query.emit({
+        type: "rate_limit_event",
+        rate_limit_info: {
+          status: "allowed",
+          resetsAt: 1_786_995_000,
+          rateLimitType: "five_hour",
+          isUsingOverage: false,
+        },
+        session_id: "sdk-session-1",
+        uuid: "rate-limit-allowed",
+      } as unknown as SDKMessage);
+
+      // No rateLimitType means no window to key on; the event is dropped.
+      harness.query.emit({
+        type: "rate_limit_event",
+        rate_limit_info: { status: "allowed" },
+        session_id: "sdk-session-1",
+        uuid: "rate-limit-untyped",
+      } as unknown as SDKMessage);
+
+      harness.query.finish();
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      const rateLimitEvents = runtimeEvents.filter(
+        (event) => event.type === "account.rate-limits.updated",
+      );
+      assert.equal(rateLimitEvents.length, 2);
+      const [warning, allowed] = rateLimitEvents;
+      if (warning?.type === "account.rate-limits.updated") {
+        assert.deepEqual(warning.payload, {
+          windows: [{ id: "seven_day", usedPercent: 80, resetsAt: 1_786_989_600 }],
+        });
+      }
+      if (allowed?.type === "account.rate-limits.updated") {
+        assert.deepEqual(allowed.payload, {
+          windows: [{ id: "five_hour", resetsAt: 1_786_995_000 }],
+        });
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("steers a running turn instead of opening a new one on mid-turn sendTurn", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

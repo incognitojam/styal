@@ -16,6 +16,7 @@ import {
   type SDKAssistantMessageError,
   type SDKMessage,
   type SDKControlGetContextUsageResponse,
+  type SDKRateLimitInfo,
   type SDKResultMessage,
   type SettingSource,
   type SDKUserMessage,
@@ -23,6 +24,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import { parseCliArgs } from "@t3tools/shared/cliArgs";
 import {
+  type AccountRateLimitsUpdatedPayload,
   ApprovalRequestId,
   type CanonicalItemType,
   type CanonicalRequestType,
@@ -382,6 +384,29 @@ function normalizeClaudeStreamMessages(
 
   const squashed = toMessage(Cause.squash(cause), "").trim();
   return squashed.length > 0 ? [squashed] : [];
+}
+
+// The SDK reports utilization as a 0-1 fraction and omits it entirely while
+// status is "allowed"; the canonical payload uses 0-100 percent and treats the
+// absent value as "not reported". Events without a rateLimitType carry nothing
+// a consumer could key a window on, so they normalize to undefined.
+function normalizeClaudeRateLimits(
+  info: SDKRateLimitInfo,
+): AccountRateLimitsUpdatedPayload | undefined {
+  if (!info.rateLimitType) {
+    return undefined;
+  }
+  return {
+    windows: [
+      {
+        id: info.rateLimitType,
+        ...(info.utilization !== undefined
+          ? { usedPercent: Math.round(info.utilization * 1000) / 10 }
+          : {}),
+        ...(info.resetsAt !== undefined ? { resetsAt: info.resetsAt } : {}),
+      },
+    ],
+  };
 }
 
 function getEffectiveClaudeAgentEffort(
@@ -3621,13 +3646,14 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     if (message.type === "rate_limit_event") {
-      yield* offerRuntimeEvent({
-        ...base,
-        type: "account.rate-limits.updated",
-        payload: {
-          rateLimits: message,
-        },
-      });
+      const payload = normalizeClaudeRateLimits(message.rate_limit_info);
+      if (payload) {
+        yield* offerRuntimeEvent({
+          ...base,
+          type: "account.rate-limits.updated",
+          payload,
+        });
+      }
       return;
     }
   });

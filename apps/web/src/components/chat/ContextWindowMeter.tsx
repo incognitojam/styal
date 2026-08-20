@@ -3,6 +3,8 @@ import { type ContextWindowSnapshot, formatContextWindowTokens } from "~/lib/con
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { formatContextWindowCompactionMessage } from "./ContextWindowMeter.logic";
 import { Minimize2Icon } from "lucide-react";
+import { deriveProviderRateLimitRows } from "~/lib/providerRateLimits";
+import type { ServerProvider } from "@t3tools/contracts";
 
 function formatPercentage(value: number | null): string | null {
   if (value === null || !Number.isFinite(value)) {
@@ -14,14 +16,27 @@ function formatPercentage(value: number | null): string | null {
   return `${Math.round(value)}%`;
 }
 
+/**
+ * Colour a quota bar by how close it is to exhaustion, matching the ring's
+ * language: muted while there is room, warning past three quarters, error
+ * once the window is nearly spent.
+ */
+function rateLimitColor(usedPercent: number | null): string {
+  if (usedPercent !== null && usedPercent > 90) return "var(--color-error)";
+  if (usedPercent !== null && usedPercent > 75) return "var(--color-warning)";
+  return "color-mix(in oklab, var(--color-muted-foreground) 72%, transparent)";
+}
+
 export function ContextWindowMeter(props: {
   usage: ContextWindowSnapshot;
   modelDisplayName?: string | null;
   onCompact?: (() => void) | undefined;
   compactDisabled?: boolean | undefined;
   compactDisabledReason?: string | null | undefined;
+  rateLimits?: ServerProvider["rateLimits"];
 }) {
   const { usage, modelDisplayName, onCompact, compactDisabled, compactDisabledReason } = props;
+  const rateLimitRows = deriveProviderRateLimitRows(props.rateLimits, Date.now());
   const usedPercentage = formatPercentage(usage.usedPercentage);
   const normalizedPercentage = Math.max(0, Math.min(100, usage.usedPercentage ?? 0));
   const radius = 9.75;
@@ -133,6 +148,47 @@ export function ContextWindowMeter(props: {
           {usage.compactsAutomatically ? (
             <div className="mt-1 text-pretty text-secondary-label text-[11px] font-medium">
               {formatContextWindowCompactionMessage(modelDisplayName, usage.autoCompactThreshold)}
+            </div>
+          ) : null}
+          {rateLimitRows.length > 0 ? (
+            <div className="mt-1 flex flex-col gap-2 border-t border-border/60 pt-2">
+              <div className="font-medium text-muted-foreground text-xs">Plan usage limits</div>
+              {rateLimitRows.map((row) => {
+                const percent =
+                  row.usedPercent === null ? null : Math.max(0, Math.min(100, row.usedPercent));
+                return (
+                  <div key={row.id} className="flex flex-col gap-1">
+                    <div className="flex items-baseline justify-between gap-2 text-[11px] leading-4">
+                      <span className="min-w-0 truncate text-secondary-label">{row.name}</span>
+                      <span className="shrink-0 text-secondary-label tabular-nums">
+                        {row.resetText}
+                        {row.resetText && percent !== null ? <span className="mx-1">·</span> : null}
+                        {percent === null ? null : (
+                          <span className="font-medium">{`${Math.round(percent)}%`}</span>
+                        )}
+                      </span>
+                    </div>
+                    {percent === null ? null : (
+                      <div
+                        className="h-1.5 w-full overflow-hidden rounded-full bg-muted/60"
+                        role="progressbar"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={Math.round(percent)}
+                        aria-label={`${row.name} usage`}
+                      >
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${percent}%`,
+                            backgroundColor: rateLimitColor(row.usedPercent),
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           ) : null}
           {onCompact ? (
