@@ -8,7 +8,10 @@ import type {
   Options as ClaudeQueryOptions,
   PermissionMode,
   PermissionResult,
+  SDKAssistantMessage,
+  SDKAssistantMessageError,
   SDKMessage,
+  SDKResultError,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import {
@@ -1578,7 +1581,7 @@ describe("ClaudeAdapterLive", () => {
       if (turnCompleted?.type === "turn.completed") {
         assert.equal(String(turnCompleted.turnId), String(turn.turnId));
         assert.equal(turnCompleted.payload.state, "interrupted");
-        assert.equal(turnCompleted.payload.errorMessage, "Error: Request was aborted.");
+        assert.equal(turnCompleted.payload.errorMessage, undefined);
         assert.equal(turnCompleted.payload.stopReason, "tool_use");
       }
     }).pipe(
@@ -2257,6 +2260,339 @@ describe("ClaudeAdapterLive", () => {
         assert.equal(completed.payload.state, "failed");
         assert.equal(completed.payload.errorMessage, "Claude runtime stream failed.");
       }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("maps typed Claude failures to safe actionable messages", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      const cases: ReadonlyArray<{
+        readonly subtype: SDKResultError["subtype"];
+        readonly terminalReason?: NonNullable<SDKResultError["terminal_reason"]>;
+        readonly assistantError?: SDKAssistantMessageError;
+        readonly expected: string;
+      }> = [
+        {
+          subtype: "error_max_turns",
+          expected: "Claude reached the maximum turn limit.",
+        },
+        {
+          subtype: "error_during_execution",
+          terminalReason: "prompt_too_long",
+          expected:
+            "Claude could not continue because the conversation exceeds the context limit. Start a new thread or shorten the prompt.",
+        },
+        {
+          subtype: "error_during_execution",
+          assistantError: "authentication_failed",
+          expected: "Claude authentication failed. Check the configured credentials.",
+        },
+        {
+          subtype: "error_during_execution",
+          assistantError: "oauth_org_not_allowed",
+          expected: "The selected Claude organization does not allow OAuth access.",
+        },
+        {
+          subtype: "error_during_execution",
+          assistantError: "billing_error",
+          expected:
+            "Claude billing or account credits prevented the request. Check the account billing status.",
+        },
+        {
+          subtype: "error_during_execution",
+          assistantError: "rate_limit",
+          expected: "Claude usage limit reached. Try again later.",
+        },
+        {
+          subtype: "error_during_execution",
+          assistantError: "overloaded",
+          expected: "Claude is temporarily overloaded. Try again.",
+        },
+        {
+          subtype: "error_during_execution",
+          assistantError: "invalid_request",
+          expected: "Claude rejected the request as invalid.",
+        },
+        {
+          subtype: "error_during_execution",
+          assistantError: "model_not_found",
+          expected: "The selected Claude model is unavailable. Choose another model.",
+        },
+        {
+          subtype: "error_during_execution",
+          assistantError: "server_error",
+          expected: "Claude service error. Try again.",
+        },
+        {
+          subtype: "error_during_execution",
+          assistantError: "max_output_tokens",
+          expected: "Claude reached the maximum output length.",
+        },
+        {
+          subtype: "error_during_execution",
+          assistantError: "unknown",
+          expected: "Claude turn failed.",
+        },
+        {
+          subtype: "error_during_execution",
+          expected: "Claude turn failed.",
+        },
+      ];
+
+      for (const [index, testCase] of cases.entries()) {
+        yield* adapter.sendTurn({
+          threadId: THREAD_ID,
+          input: `turn ${index + 1}`,
+          attachments: [],
+        });
+        const runtimeErrorFiber = yield* Stream.filter(
+          adapter.streamEvents,
+          (event) => event.type === "runtime.error",
+        ).pipe(Stream.runHead, Effect.forkChild);
+
+        if (testCase.assistantError !== undefined) {
+          const assistantMessage: SDKAssistantMessage = {
+            type: "assistant",
+            error: testCase.assistantError,
+            parent_tool_use_id: null,
+            message: {
+              id: `assistant-message-safe-error-${index + 1}`,
+              container: null,
+              content: [],
+              context_management: null,
+              model: "claude-sonnet-4-6",
+              role: "assistant",
+              stop_details: null,
+              stop_reason: null,
+              stop_sequence: null,
+              type: "message",
+              usage: {
+                cache_creation: null,
+                cache_creation_input_tokens: null,
+                cache_read_input_tokens: null,
+                inference_geo: null,
+                input_tokens: 0,
+                iterations: null,
+                output_tokens: 0,
+                server_tool_use: null,
+                service_tier: null,
+                speed: null,
+              },
+            },
+            session_id: `sdk-session-safe-error-${index + 1}`,
+            uuid: "00000000-0000-4000-8000-000000000001",
+          };
+          harness.query.emit(assistantMessage);
+        }
+
+        const resultMessage: SDKResultError = {
+          type: "result",
+          subtype: testCase.subtype,
+          is_error: true,
+          duration_ms: 1,
+          duration_api_ms: 1,
+          num_turns: 1,
+          stop_reason: null,
+          total_cost_usd: 0,
+          usage: {
+            cache_creation: {
+              ephemeral_1h_input_tokens: 0,
+              ephemeral_5m_input_tokens: 0,
+            },
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            inference_geo: "unknown",
+            input_tokens: 0,
+            iterations: [],
+            output_tokens: 0,
+            server_tool_use: {
+              web_fetch_requests: 0,
+              web_search_requests: 0,
+            },
+            service_tier: "standard",
+            speed: "standard",
+          },
+          modelUsage: {},
+          permission_denials: [],
+          errors: ["provider diagnostic that must not reach the client"],
+          ...(testCase.terminalReason ? { terminal_reason: testCase.terminalReason } : {}),
+          session_id: `sdk-session-safe-error-${index + 1}`,
+          uuid: "00000000-0000-4000-8000-000000000002",
+        };
+        harness.query.emit(resultMessage);
+
+        const runtimeError = yield* Fiber.join(runtimeErrorFiber);
+        assert.equal(runtimeError._tag, "Some");
+        if (runtimeError._tag === "Some" && runtimeError.value.type === "runtime.error") {
+          assert.equal(runtimeError.value.payload.message, testCase.expected);
+        }
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("keeps a terminal result error in the native log without surfacing it", () => {
+    const nativeEvents: Array<{
+      event?: {
+        method?: string;
+        payload?: unknown;
+      };
+    }> = [];
+    const harness = makeHarness({
+      nativeEventLogger: {
+        filePath: "memory://claude-native-events",
+        write: (event) => {
+          nativeEvents.push(event as (typeof nativeEvents)[number]);
+          return Effect.void;
+        },
+        close: () => Effect.void,
+      },
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const runtimeEvents: Array<ProviderRuntimeEvent> = [];
+      const runtimeEventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
+        Effect.sync(() => {
+          runtimeEvents.push(event);
+        }),
+      ).pipe(Effect.forkChild);
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      const turn = yield* adapter.sendTurn({
+        threadId: THREAD_ID,
+        input: "hello",
+        attachments: [],
+      });
+
+      const terminalError = 'Path "/workspace/moved-project" does not exist';
+      harness.query.emit({
+        type: "result",
+        subtype: "error_during_execution",
+        is_error: true,
+        errors: [terminalError],
+        session_id: "sdk-session-missing-workspace",
+        uuid: "result-missing-workspace",
+      } as unknown as SDKMessage);
+
+      yield* Effect.yieldNow;
+      yield* Effect.yieldNow;
+      harness.query.fail(new Error("stream closed after terminal result"));
+      yield* Effect.yieldNow;
+      yield* Effect.yieldNow;
+      yield* Effect.yieldNow;
+      runtimeEventsFiber.interruptUnsafe();
+
+      const runtimeErrors = runtimeEvents.filter((event) => event.type === "runtime.error");
+      assert.deepEqual(
+        runtimeErrors.map((event) => event.payload.message),
+        ["Claude turn failed."],
+      );
+
+      const completed = runtimeEvents.find((event) => event.type === "turn.completed");
+      assert.equal(completed?.type, "turn.completed");
+      if (completed?.type === "turn.completed") {
+        assert.equal(String(completed.turnId), String(turn.turnId));
+        assert.equal(completed.payload.state, "failed");
+        assert.equal(completed.payload.errorMessage, "Claude turn failed.");
+      }
+      assert.equal(runtimeEvents.at(-1)?.type, "session.exited");
+
+      const nativeResult = nativeEvents.find(
+        (record) => record.event?.method === "claude/result/error_during_execution",
+      );
+      assert.deepEqual((nativeResult?.event?.payload as { errors?: unknown })?.errors, [
+        terminalError,
+      ]);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("reports a stream failure after a failed result starts a synthetic turn", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const runtimeEvents: Array<ProviderRuntimeEvent> = [];
+      const runtimeEventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
+        Effect.sync(() => {
+          runtimeEvents.push(event);
+        }),
+      ).pipe(Effect.forkChild);
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({
+        threadId: THREAD_ID,
+        input: "hello",
+        attachments: [],
+      });
+
+      harness.query.emit({
+        type: "result",
+        subtype: "error_during_execution",
+        is_error: true,
+        errors: ["first turn failed"],
+        session_id: "sdk-session-synthetic-failure",
+        uuid: "result-before-synthetic-turn",
+      } as unknown as SDKMessage);
+      yield* Effect.yieldNow;
+      yield* Effect.yieldNow;
+
+      harness.query.emit({
+        type: "assistant",
+        session_id: "sdk-session-synthetic-failure",
+        uuid: "assistant-synthetic-after-failure",
+        parent_tool_use_id: null,
+        message: {
+          id: "assistant-message-synthetic-after-failure",
+          content: [{ type: "text", text: "Background result" }],
+        },
+      } as unknown as SDKMessage);
+      yield* Effect.yieldNow;
+      yield* Effect.yieldNow;
+
+      const sessions = yield* adapter.listSessions();
+      assert.equal(sessions[0]?.status, "running");
+
+      harness.query.fail(new Error("stream failed during synthetic turn"));
+      yield* Effect.yieldNow;
+      yield* Effect.yieldNow;
+      yield* Effect.yieldNow;
+      runtimeEventsFiber.interruptUnsafe();
+
+      assert.deepEqual(
+        runtimeEvents
+          .filter((event) => event.type === "runtime.error")
+          .map((event) => event.payload.message),
+        ["Claude turn failed.", "Claude runtime stream failed."],
+      );
+      const completedTurns = runtimeEvents.filter((event) => event.type === "turn.completed");
+      assert.deepEqual(
+        completedTurns.map((event) => event.payload.state),
+        ["failed", "failed"],
+      );
+      assert.equal(completedTurns.at(-1)?.payload.errorMessage, "Claude runtime stream failed.");
+      assert.equal(runtimeEvents.at(-1)?.type, "session.exited");
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),
