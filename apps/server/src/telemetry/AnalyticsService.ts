@@ -29,6 +29,8 @@ interface BufferedAnalyticsEvent {
   readonly capturedAt: string;
 }
 
+const T3_CODE_REPOSITORY = "yngatech/t3code";
+
 const TelemetryEnvConfig = Config.all({
   posthogKey: Config.string("T3CODE_POSTHOG_KEY").pipe(
     Config.withDefault("phc_XOWci4oZP4VvLiEyrFqkFjP4CZn55mjYYBMREK5Wd6m"),
@@ -136,6 +138,7 @@ export const make = Effect.gen(function* () {
           wsl: Option.getOrUndefined(telemetryConfig.wslDistroName),
           arch: hostArchitecture,
           t3CodeVersion: packageJson.version,
+          t3CodeRepository: T3_CODE_REPOSITORY,
           clientType,
           serverOs: serverOsFromNodePlatform(hostPlatform),
           serverArch: hostArchitecture,
