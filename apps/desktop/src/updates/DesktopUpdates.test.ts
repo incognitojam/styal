@@ -27,6 +27,7 @@ interface UpdatesHarnessOptions {
     void,
     ElectronUpdater.ElectronUpdaterCheckForUpdatesError
   >;
+  readonly downloadUpdate?: Effect.Effect<void, ElectronUpdater.ElectronUpdaterDownloadUpdateError>;
   readonly beforeSetUpdateChannel?: Effect.Effect<void>;
   readonly setUpdateChannelError?: DesktopAppSettings.DesktopSettingsWriteError;
   readonly setDisableDifferentialDownload?: Effect.Effect<void>;
@@ -38,6 +39,7 @@ const flushCallbacks = Effect.yieldNow;
 
 function makeHarness(options: UpdatesHarnessOptions = {}) {
   let checkCount = 0;
+  let downloadCount = 0;
   let allowDowngrade = false;
   let fullChangelog = false;
   const feedUrls: ElectronUpdater.ElectronUpdaterFeedUrl[] = [];
@@ -83,7 +85,9 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
     checkForUpdates: Effect.sync(() => {
       checkCount += 1;
     }).pipe(Effect.andThen(options.checkForUpdates ?? Effect.void)),
-    downloadUpdate: Effect.void,
+    downloadUpdate: Effect.sync(() => {
+      downloadCount += 1;
+    }).pipe(Effect.andThen(options.downloadUpdate ?? Effect.void)),
     quitAndInstall: () => Effect.void,
     on: (eventName, listener) =>
       Effect.acquireRelease(
@@ -211,6 +215,7 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
   return {
     layer,
     checkCount: () => checkCount,
+    downloadCount: () => downloadCount,
     feedUrls: () => feedUrls,
     fullChangelog: () => fullChangelog,
     listenerCount: () =>
@@ -314,6 +319,170 @@ describe("DesktopUpdates", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
+  it.effect("hands an in-flight update check off to the automatic download", () =>
+    Effect.gen(function* () {
+      const checkStarted = yield* Deferred.make<void>();
+      const releaseCheck = yield* Deferred.make<void>();
+      const downloadStarted = yield* Deferred.make<void>();
+      const releaseDownload = yield* Deferred.make<void>();
+      const harness = makeHarness({
+        checkForUpdates: Deferred.succeed(checkStarted, undefined).pipe(
+          Effect.andThen(Deferred.await(releaseCheck)),
+        ),
+        downloadUpdate: Deferred.succeed(downloadStarted, undefined).pipe(
+          Effect.andThen(Deferred.await(releaseDownload)),
+        ),
+      });
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          yield* updates.configure;
+
+          const checkFiber = yield* updates.check("manual").pipe(Effect.forkScoped);
+          yield* Deferred.await(checkStarted);
+
+          harness.emit("update-available", { version: "1.2.4" });
+          yield* Deferred.await(downloadStarted);
+
+          const state = yield* updates.getState;
+          assert.equal(state.status, "downloading");
+          assert.equal(state.availableVersion, "1.2.4");
+          assert.equal(harness.sentStates.at(-1)?.status, "downloading");
+          assert.equal(harness.downloadCount(), 1);
+
+          yield* Deferred.succeed(releaseCheck, undefined);
+          const result = yield* Fiber.join(checkFiber);
+          assert.isTrue(result.checked);
+
+          const blockedChannelChange = yield* Effect.exit(updates.setChannel("nightly"));
+          assert.equal(blockedChannelChange._tag, "Failure");
+          if (blockedChannelChange._tag === "Failure") {
+            const error = Cause.squash(blockedChannelChange.cause);
+            assert.instanceOf(error, DesktopUpdates.DesktopUpdateActionInProgressError);
+            assert.equal(error.action, "download");
+          }
+
+          yield* Deferred.succeed(releaseDownload, undefined);
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    }),
+  );
+
+  it.effect("hands a channel-change check off to the automatic download", () =>
+    Effect.gen(function* () {
+      const checkStarted = yield* Deferred.make<void>();
+      const releaseCheck = yield* Deferred.make<void>();
+      const harness = makeHarness({
+        checkForUpdates: Deferred.succeed(checkStarted, undefined).pipe(
+          Effect.andThen(Deferred.await(releaseCheck)),
+        ),
+      });
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          yield* updates.configure;
+
+          const channelFiber = yield* updates.setChannel("nightly").pipe(Effect.forkScoped);
+          yield* Deferred.await(checkStarted);
+
+          harness.emit("update-available", {
+            version: "1.2.4-nightly.20260820.1",
+          });
+          yield* flushCallbacks;
+
+          const state = yield* updates.getState;
+          assert.equal(state.status, "downloading");
+          assert.equal(state.availableVersion, "1.2.4-nightly.20260820.1");
+          assert.equal(harness.sentStates.at(-1)?.status, "downloading");
+
+          yield* Deferred.succeed(releaseCheck, undefined);
+          const channelState = yield* Fiber.join(channelFiber);
+          assert.equal(channelState.status, "downloading");
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    }),
+  );
+
+  it.effect("broadcasts an already-downloaded version discovered during a check", () =>
+    Effect.gen(function* () {
+      const checkStarted = yield* Deferred.make<void>();
+      const releaseCheck = yield* Deferred.make<void>();
+      const harness = makeHarness({
+        checkForUpdates: Deferred.succeed(checkStarted, undefined).pipe(
+          Effect.andThen(Deferred.await(releaseCheck)),
+        ),
+      });
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          yield* updates.configure;
+          harness.emit("update-available", { version: "1.2.4" });
+          yield* flushCallbacks;
+          harness.emit("update-downloaded", { version: "1.2.4" });
+          yield* flushCallbacks;
+
+          const checkFiber = yield* updates.check("manual").pipe(Effect.forkScoped);
+          yield* Deferred.await(checkStarted);
+          assert.equal(harness.sentStates.at(-1)?.status, "checking");
+
+          harness.emit("update-available", { version: "1.2.4" });
+          yield* flushCallbacks;
+
+          const state = yield* updates.getState;
+          assert.equal(state.status, "downloaded");
+          assert.equal(harness.sentStates.at(-1)?.status, "downloaded");
+          assert.equal(harness.downloadCount(), 1);
+
+          yield* Deferred.succeed(releaseCheck, undefined);
+          const result = yield* Fiber.join(checkFiber);
+          assert.isTrue(result.checked);
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    }),
+  );
+
+  it.effect("broadcasts availability without stealing an install reservation", () =>
+    Effect.gen(function* () {
+      const installStarted = yield* Deferred.make<void>();
+      const releaseInstall = yield* Deferred.make<void>();
+      const harness = makeHarness({
+        stopBackend: Deferred.succeed(installStarted, undefined).pipe(
+          Effect.andThen(Deferred.await(releaseInstall)),
+        ),
+      });
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          yield* updates.configure;
+          harness.emit("update-available", { version: "1.2.4" });
+          yield* flushCallbacks;
+          harness.emit("update-downloaded", { version: "1.2.4" });
+          yield* flushCallbacks;
+
+          const installFiber = yield* updates.install.pipe(Effect.forkScoped);
+          yield* Deferred.await(installStarted);
+
+          harness.emit("update-available", { version: "1.2.5" });
+          yield* flushCallbacks;
+
+          const state = yield* updates.getState;
+          assert.equal(state.status, "available");
+          assert.equal(state.availableVersion, "1.2.5");
+          assert.equal(harness.sentStates.at(-1)?.status, "available");
+          assert.equal(harness.downloadCount(), 1);
+
+          yield* Deferred.succeed(releaseInstall, undefined);
+          const result = yield* Fiber.join(installFiber);
+          assert.isTrue(result.accepted);
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    }),
+  );
+
   it.effect("enables nightly full changelog release notes and broadcasts summaries", () => {
     const harness = makeHarness();
 
@@ -385,6 +554,7 @@ describe("DesktopUpdates", () => {
         assert.deepEqual(unchangedState.releaseNotes, [
           { version: "1.2.4", items: ["fix: queued update"] },
         ]);
+        assert.equal(harness.sentStates.at(-1)?.status, "downloaded");
 
         const nextResult = yield* updates.check("poll");
         assert.isTrue(nextResult.checked);
