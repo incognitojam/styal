@@ -3,6 +3,7 @@ import { useCallback } from "react";
 import {
   confirmTerminalClose,
   resolveTerminalCloseConfirmationIds,
+  runTerminalCloseConfirmationFlow,
   type TerminalCloseTarget,
 } from "~/lib/terminalCloseConfirm";
 import { terminalEnvironment } from "~/state/terminal";
@@ -19,18 +20,20 @@ export function useTerminalCloseConfirmation() {
       readonly threadId: ThreadId;
       readonly targets: readonly [TerminalCloseTarget, ...TerminalCloseTarget[]];
     }): Promise<boolean> => {
-      const result = await closePreflight({
-        environmentId: input.environmentId,
-        input: {
-          threadId: input.threadId,
-          terminalIds: input.targets.map(({ terminalId }) => terminalId),
-        },
+      return runTerminalCloseConfirmationFlow(async () => {
+        const result = await closePreflight({
+          environmentId: input.environmentId,
+          input: {
+            threadId: input.threadId,
+            terminalIds: input.targets.map(({ terminalId }) => terminalId),
+          },
+        });
+        const confirmationTerminalIds = resolveTerminalCloseConfirmationIds(
+          input.targets,
+          result._tag === "Success" ? result.value.confirmationTerminalIds : null,
+        );
+        return confirmTerminalClose(input.targets, confirmationTerminalIds);
       });
-      const confirmationTerminalIds = resolveTerminalCloseConfirmationIds(
-        input.targets,
-        result._tag === "Success" ? result.value.confirmationTerminalIds : null,
-      );
-      return confirmTerminalClose(input.targets, confirmationTerminalIds);
     },
     [closePreflight],
   );

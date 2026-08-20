@@ -20,6 +20,7 @@ import {
   confirmTerminalClose,
   isTerminalCloseConfirmPending,
   resolveTerminalCloseConfirmationIds,
+  runTerminalCloseConfirmationFlow,
 } from "./terminalCloseConfirm";
 
 const activeTerminal = {
@@ -47,7 +48,9 @@ describe("terminal close confirmation", () => {
 
     expect(isTerminalCloseConfirmPending()).toBe(false);
 
-    const confirmation = confirmTerminalClose([activeTerminal], new Set(["term-1"]));
+    const confirmation = runTerminalCloseConfirmationFlow(() =>
+      confirmTerminalClose([activeTerminal], new Set(["term-1"])),
+    );
     expect(isTerminalCloseConfirmPending()).toBe(true);
 
     settle(true);
@@ -64,11 +67,29 @@ describe("terminal close confirmation", () => {
         }),
     );
 
-    const confirmation = confirmTerminalClose([activeTerminal], new Set(["term-1"]));
+    const confirmation = runTerminalCloseConfirmationFlow(() =>
+      confirmTerminalClose([activeTerminal], new Set(["term-1"])),
+    );
     expect(isTerminalCloseConfirmPending()).toBe(true);
 
     reject(new Error("dialog failed"));
     await expect(confirmation).resolves.toBe(false);
+    expect(isTerminalCloseConfirmPending()).toBe(false);
+  });
+
+  it("deduplicates rapid confirmation requests while preflight is pending", async () => {
+    let settlePreflight: (value: boolean) => void = () => undefined;
+    const preflight = vi.fn(() => new Promise<boolean>((resolve) => (settlePreflight = resolve)));
+
+    const first = runTerminalCloseConfirmationFlow(preflight);
+    const duplicate = runTerminalCloseConfirmationFlow(preflight);
+
+    expect(isTerminalCloseConfirmPending()).toBe(true);
+    await expect(duplicate).resolves.toBe(false);
+    expect(preflight).toHaveBeenCalledTimes(1);
+
+    settlePreflight(true);
+    await expect(first).resolves.toBe(true);
     expect(isTerminalCloseConfirmPending()).toBe(false);
   });
 
