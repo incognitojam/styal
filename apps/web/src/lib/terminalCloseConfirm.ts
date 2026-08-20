@@ -1,27 +1,17 @@
-import type { TerminalSessionState } from "@t3tools/client-runtime/state/terminal";
 import { readLocalApi } from "~/localApi";
 
 let pendingConfirmations = 0;
 
-export type TerminalCloseState = Pick<
-  TerminalSessionState,
-  "status" | "hasRunningSubprocess"
->;
-
 export interface TerminalCloseTarget {
   readonly terminalId: string;
   readonly label: string;
-  readonly state: TerminalCloseState | null;
 }
 
-function hasActiveWork({ terminalId, state }: TerminalCloseTarget): boolean {
-  // An interactive shell remains "running" while idle, whereas setup terminals
-  // run one finite command as the root PTY process and may have no child subprocess.
-  return (
-    state?.hasRunningSubprocess === true ||
-    (terminalId.startsWith("setup-") &&
-      (state?.status === "starting" || state?.status === "running"))
-  );
+export function resolveTerminalCloseConfirmationIds(
+  targets: readonly TerminalCloseTarget[],
+  preflightTerminalIds: readonly string[] | null,
+): ReadonlySet<string> {
+  return new Set(preflightTerminalIds ?? targets.map(({ terminalId }) => terminalId));
 }
 
 /** Whether a terminal-close confirmation is currently waiting on the user. */
@@ -37,8 +27,9 @@ export function isTerminalCloseConfirmPending(): boolean {
  */
 export async function confirmTerminalClose(
   targets: readonly [TerminalCloseTarget, ...TerminalCloseTarget[]],
+  confirmationTerminalIds: ReadonlySet<string>,
 ): Promise<boolean> {
-  const activeTargets = targets.filter(hasActiveWork);
+  const activeTargets = targets.filter(({ terminalId }) => confirmationTerminalIds.has(terminalId));
   if (activeTargets.length === 0) return true;
 
   const localApi = readLocalApi();

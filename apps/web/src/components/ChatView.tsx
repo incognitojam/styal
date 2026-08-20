@@ -196,7 +196,8 @@ import {
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
-import { confirmTerminalClose, isTerminalCloseConfirmPending } from "../lib/terminalCloseConfirm";
+import { isTerminalCloseConfirmPending } from "../lib/terminalCloseConfirm";
+import { useTerminalCloseConfirmation } from "../hooks/useTerminalCloseConfirmation";
 import { getTerminalFocusOwner } from "../lib/terminalFocus";
 import { isRightPanelFocused } from "../lib/rightPanelFocus";
 import {
@@ -738,15 +739,6 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
     }
     return next;
   }, [drawerTerminalSessions]);
-  const terminalCloseStatesById = useMemo(
-    () =>
-      new Map(
-        drawerTerminalSessions.map(
-          (session) => [session.target.terminalId, session.state] as const,
-        ),
-      ),
-    [drawerTerminalSessions],
-  );
   const terminalLaunchLocationsById = useMemo(() => {
     const next = new Map<
       string,
@@ -1033,7 +1025,6 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
         onHeightChange={setTerminalHeight}
         onAddTerminalContext={handleAddTerminalContext}
         terminalLabelsById={terminalLabelsById}
-        terminalCloseStatesById={terminalCloseStatesById}
         terminalLaunchLocationsById={terminalLaunchLocationsById}
       />
     </div>
@@ -1125,15 +1116,6 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
     }
     return labels;
   }, [knownTerminalSessions, surface.terminalIds]);
-  const terminalCloseStatesById = useMemo(
-    () =>
-      new Map(
-        knownTerminalSessions.map(
-          (session) => [session.target.terminalId, session.state] as const,
-        ),
-      ),
-    [knownTerminalSessions],
-  );
   const terminalLaunchLocationsById = useMemo(() => {
     const locations = new Map<
       string,
@@ -1212,7 +1194,6 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
       onHeightChange={() => undefined}
       onAddTerminalContext={onAddTerminalContext}
       terminalLabelsById={terminalLabelsById}
-      terminalCloseStatesById={terminalCloseStatesById}
       terminalLaunchLocationsById={terminalLaunchLocationsById}
       keybindings={keybindings}
     />
@@ -1256,6 +1237,7 @@ function ChatViewContent(props: ChatViewProps) {
   const openTerminal = useAtomCommand(terminalEnvironment.open, "terminal open");
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
   const closeTerminalMutation = useAtomCommand(terminalEnvironment.close, "terminal close");
+  const requestTerminalCloseConfirmation = useTerminalCloseConfirmation();
   const createThread = useAtomCommand(threadEnvironment.create, { reportFailure: false });
   const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
@@ -1642,15 +1624,6 @@ function ChatViewContent(props: ChatViewProps) {
     }
     return labels;
   }, [activeThreadKnownSessions]);
-  const activeTerminalCloseStatesById = useMemo(
-    () =>
-      new Map(
-        activeThreadKnownSessions.map(
-          (session) => [session.target.terminalId, session.state] as const,
-        ),
-      ),
-    [activeThreadKnownSessions],
-  );
   const activeThreadRef = useMemo(
     () =>
       activeThreadEnvironmentId && activeThreadId
@@ -3521,32 +3494,35 @@ function ChatViewContent(props: ChatViewProps) {
   const requestCloseTerminal = useCallback(
     (terminalId: string) => {
       const label = activeTerminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId);
-      void confirmTerminalClose([
-        {
-          terminalId,
-          label,
-          state: activeTerminalCloseStatesById.get(terminalId) ?? null,
-        },
-      ]).then((confirmed) => {
+      if (!activeThreadRef) return;
+      void requestTerminalCloseConfirmation({
+        environmentId: activeThreadRef.environmentId,
+        threadId: activeThreadRef.threadId,
+        targets: [{ terminalId, label }],
+      }).then((confirmed) => {
         if (confirmed) closeTerminal(terminalId);
       });
     },
-    [activeTerminalCloseStatesById, activeTerminalLabelsById, closeTerminal],
+    [activeTerminalLabelsById, activeThreadRef, closeTerminal, requestTerminalCloseConfirmation],
   );
   const requestClosePanelTerminal = useCallback(
     (terminalId: string) => {
       const label = activeTerminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId);
-      void confirmTerminalClose([
-        {
-          terminalId,
-          label,
-          state: activeTerminalCloseStatesById.get(terminalId) ?? null,
-        },
-      ]).then((confirmed) => {
+      if (!activeThreadRef) return;
+      void requestTerminalCloseConfirmation({
+        environmentId: activeThreadRef.environmentId,
+        threadId: activeThreadRef.threadId,
+        targets: [{ terminalId, label }],
+      }).then((confirmed) => {
         if (confirmed) closePanelTerminal(terminalId);
       });
     },
-    [activeTerminalCloseStatesById, activeTerminalLabelsById, closePanelTerminal],
+    [
+      activeTerminalLabelsById,
+      activeThreadRef,
+      closePanelTerminal,
+      requestTerminalCloseConfirmation,
+    ],
   );
   const activateRightPanelSurface = useCallback(
     (surface: RightPanelSurface) => {
@@ -3643,20 +3619,20 @@ function ChatViewContent(props: ChatViewProps) {
       const closeTarget = (terminalId: string) => ({
         terminalId,
         label: activeTerminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId),
-        state: activeTerminalCloseStatesById.get(terminalId) ?? null,
       });
-      void confirmTerminalClose([
-        closeTarget(firstTerminalId),
-        ...otherTerminalIds.map(closeTarget),
-      ]).then((confirmed) => {
+      void requestTerminalCloseConfirmation({
+        environmentId: activeThreadRef.environmentId,
+        threadId: activeThreadRef.threadId,
+        targets: [closeTarget(firstTerminalId), ...otherTerminalIds.map(closeTarget)],
+      }).then((confirmed) => {
         if (confirmed) finishClose();
       });
     },
     [
       activeThreadRef,
-      activeTerminalCloseStatesById,
       activeTerminalLabelsById,
       cleanupRightPanelSurfaces,
+      requestTerminalCloseConfirmation,
       syncActivePreviewSurface,
     ],
   );

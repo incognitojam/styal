@@ -16,12 +16,15 @@ vi.mock("~/localApi", () => ({
   readLocalApi: () => readLocalApiMock(),
 }));
 
-import { confirmTerminalClose, isTerminalCloseConfirmPending } from "./terminalCloseConfirm";
+import {
+  confirmTerminalClose,
+  isTerminalCloseConfirmPending,
+  resolveTerminalCloseConfirmationIds,
+} from "./terminalCloseConfirm";
 
 const activeTerminal = {
   terminalId: "term-1",
   label: "Terminal 1",
-  state: { status: "running" as const, hasRunningSubprocess: true },
 };
 
 describe("terminal close confirmation", () => {
@@ -31,13 +34,20 @@ describe("terminal close confirmation", () => {
     readLocalApiMock.mockReturnValue({ dialogs: { confirm: confirmMock } });
   });
 
+  it("fails closed when the server preflight is unavailable", () => {
+    expect(resolveTerminalCloseConfirmationIds([activeTerminal], null)).toEqual(
+      new Set(["term-1"]),
+    );
+    expect(resolveTerminalCloseConfirmationIds([activeTerminal], [])).toEqual(new Set());
+  });
+
   it("tracks pending state until the confirmation settles", async () => {
     let settle: (value: boolean) => void = () => undefined;
     confirmMock.mockImplementation(() => new Promise<boolean>((resolve) => (settle = resolve)));
 
     expect(isTerminalCloseConfirmPending()).toBe(false);
 
-    const confirmation = confirmTerminalClose([activeTerminal]);
+    const confirmation = confirmTerminalClose([activeTerminal], new Set(["term-1"]));
     expect(isTerminalCloseConfirmPending()).toBe(true);
 
     settle(true);
@@ -54,7 +64,7 @@ describe("terminal close confirmation", () => {
         }),
     );
 
-    const confirmation = confirmTerminalClose([activeTerminal]);
+    const confirmation = confirmTerminalClose([activeTerminal], new Set(["term-1"]));
     expect(isTerminalCloseConfirmPending()).toBe(true);
 
     reject(new Error("dialog failed"));
@@ -66,14 +76,16 @@ describe("terminal close confirmation", () => {
     confirmMock.mockResolvedValue(true);
 
     await expect(
-      confirmTerminalClose([
-        activeTerminal,
-        {
-          terminalId: "term-2",
-          label: "Development server",
-          state: { status: "running", hasRunningSubprocess: true },
-        },
-      ]),
+      confirmTerminalClose(
+        [
+          activeTerminal,
+          {
+            terminalId: "term-2",
+            label: "Development server",
+          },
+        ],
+        new Set(["term-1", "term-2"]),
+      ),
     ).resolves.toBe(true);
     expect(confirmMock).toHaveBeenCalledWith(
       [
@@ -84,43 +96,17 @@ describe("terminal close confirmation", () => {
     );
   });
 
-  it("closes an idle shell without prompting", async () => {
+  it("closes without prompting when the preflight reports no active work", async () => {
     await expect(
-      confirmTerminalClose([
-        {
-          terminalId: "term-1",
-          label: "Terminal 1",
-          state: { status: "running", hasRunningSubprocess: false },
-        },
-      ]),
-    ).resolves.toBe(true);
-    expect(confirmMock).not.toHaveBeenCalled();
-  });
-
-  it("confirms an active finite setup command", async () => {
-    confirmMock.mockResolvedValue(true);
-
-    await expect(
-      confirmTerminalClose([
-        {
-          terminalId: "setup-worktree",
-          label: "Setup worktree",
-          state: { status: "running", hasRunningSubprocess: false },
-        },
-      ]),
-    ).resolves.toBe(true);
-    expect(confirmMock).toHaveBeenCalledOnce();
-  });
-
-  it("closes an exited setup terminal without prompting", async () => {
-    await expect(
-      confirmTerminalClose([
-        {
-          terminalId: "setup-worktree",
-          label: "Setup worktree",
-          state: { status: "exited", hasRunningSubprocess: false },
-        },
-      ]),
+      confirmTerminalClose(
+        [
+          {
+            terminalId: "term-1",
+            label: "Terminal 1",
+          },
+        ],
+        new Set(),
+      ),
     ).resolves.toBe(true);
     expect(confirmMock).not.toHaveBeenCalled();
   });
@@ -129,14 +115,16 @@ describe("terminal close confirmation", () => {
     confirmMock.mockResolvedValue(true);
 
     await expect(
-      confirmTerminalClose([
-        activeTerminal,
-        {
-          terminalId: "term-2",
-          label: "Idle shell",
-          state: { status: "running", hasRunningSubprocess: false },
-        },
-      ]),
+      confirmTerminalClose(
+        [
+          activeTerminal,
+          {
+            terminalId: "term-2",
+            label: "Idle shell",
+          },
+        ],
+        new Set(["term-1"]),
+      ),
     ).resolves.toBe(true);
     expect(confirmMock).toHaveBeenCalledWith(
       [
@@ -150,7 +138,7 @@ describe("terminal close confirmation", () => {
   it("closes without prompting when no local API is available", async () => {
     readLocalApiMock.mockReturnValue(undefined);
 
-    await expect(confirmTerminalClose([activeTerminal])).resolves.toBe(true);
+    await expect(confirmTerminalClose([activeTerminal], new Set(["term-1"]))).resolves.toBe(true);
     expect(confirmMock).not.toHaveBeenCalled();
   });
 });

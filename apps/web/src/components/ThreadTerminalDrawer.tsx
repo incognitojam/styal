@@ -59,10 +59,7 @@ import {
   type ThreadTerminalGroup,
 } from "../types";
 import { readLocalApi } from "~/localApi";
-import {
-  confirmTerminalClose,
-  type TerminalCloseState,
-} from "~/lib/terminalCloseConfirm";
+import { useTerminalCloseConfirmation } from "~/hooks/useTerminalCloseConfirmation";
 import { useClientSettings } from "../hooks/useSettings";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useAttachedTerminalSession } from "../state/terminalSessions";
@@ -1021,8 +1018,6 @@ interface ThreadTerminalDrawerProps {
   keybindings: ResolvedKeybindingsConfig;
   /** Prefer server-provided tab titles when present (e.g. active subprocess name). */
   terminalLabelsById?: ReadonlyMap<string, string>;
-  /** Server-reported liveness used to avoid warning when closing idle terminals. */
-  terminalCloseStatesById?: ReadonlyMap<string, TerminalCloseState>;
   /** Prefer per-session launch locations when the server already knows a terminal. */
   terminalLaunchLocationsById?: ReadonlyMap<string, TerminalLaunchLocation>;
 }
@@ -1083,10 +1078,10 @@ export default function ThreadTerminalDrawer({
   onAddTerminalContext,
   keybindings,
   terminalLabelsById,
-  terminalCloseStatesById,
   terminalLaunchLocationsById,
 }: ThreadTerminalDrawerProps) {
   const isPanel = mode === "panel";
+  const requestTerminalCloseConfirmation = useTerminalCloseConfirmation();
   const [advancedTypography] = useLocalStorage(
     TYPOGRAPHY_ADVANCED_STORAGE_KEY,
     false,
@@ -1290,17 +1285,15 @@ export default function ThreadTerminalDrawer({
   const confirmCloseTerminal = useCallback(
     (terminalId: string) => {
       const label = terminalLabelById.get(terminalId) ?? getTerminalLabel(terminalId);
-      void confirmTerminalClose([
-        {
-          terminalId,
-          label,
-          state: terminalCloseStatesById?.get(terminalId) ?? null,
-        },
-      ]).then((confirmed) => {
+      void requestTerminalCloseConfirmation({
+        environmentId: threadRef.environmentId,
+        threadId,
+        targets: [{ terminalId, label }],
+      }).then((confirmed) => {
         if (confirmed) onCloseTerminal(terminalId);
       });
     },
-    [onCloseTerminal, terminalCloseStatesById, terminalLabelById],
+    [onCloseTerminal, requestTerminalCloseConfirmation, terminalLabelById, threadId, threadRef],
   );
 
   useEffect(() => {
