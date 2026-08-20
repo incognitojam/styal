@@ -83,6 +83,12 @@ export function createTerminalEnvironmentAtoms<R, E>(
       scheduler: lifecycleScheduler,
       concurrency: lifecycleConcurrency,
     }),
+    closePreflight: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:terminal:close-preflight",
+      tag: WS_METHODS.terminalClosePreflight,
+      scheduler: lifecycleScheduler,
+      concurrency: lifecycleConcurrency,
+    }),
     close: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:terminal:close",
       tag: WS_METHODS.terminalClose,

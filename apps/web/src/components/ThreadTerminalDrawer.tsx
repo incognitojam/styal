@@ -60,7 +60,7 @@ import {
   type ThreadTerminalGroup,
 } from "../types";
 import { readLocalApi } from "~/localApi";
-import { confirmTerminalClose } from "~/lib/terminalCloseConfirm";
+import { useTerminalCloseConfirmation } from "~/hooks/useTerminalCloseConfirmation";
 import { useClientSettings } from "../hooks/useSettings";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useAttachedTerminalSession } from "../state/terminalSessions";
@@ -1082,6 +1082,7 @@ export default function ThreadTerminalDrawer({
   terminalLaunchLocationsById,
 }: ThreadTerminalDrawerProps) {
   const isPanel = mode === "panel";
+  const requestTerminalCloseConfirmation = useTerminalCloseConfirmation();
   const [advancedTypography] = useLocalStorage(
     TYPOGRAPHY_ADVANCED_STORAGE_KEY,
     false,
@@ -1285,11 +1286,15 @@ export default function ThreadTerminalDrawer({
   const confirmCloseTerminal = useCallback(
     (terminalId: string) => {
       const label = terminalLabelById.get(terminalId) ?? getTerminalLabel(terminalId);
-      void confirmTerminalClose([label]).then((confirmed) => {
+      void requestTerminalCloseConfirmation({
+        environmentId: threadRef.environmentId,
+        threadId,
+        targets: [{ terminalId, label }],
+      }).then((confirmed) => {
         if (confirmed) onCloseTerminal(terminalId);
       });
     },
-    [onCloseTerminal, terminalLabelById],
+    [onCloseTerminal, requestTerminalCloseConfirmation, terminalLabelById, threadId, threadRef],
   );
 
   useEffect(() => {
