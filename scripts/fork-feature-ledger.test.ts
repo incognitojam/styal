@@ -44,42 +44,49 @@ features: []
 
   it("rejects duplicate identities and unsorted evidence", () => {
     const ledger = loadForkFeatureLedger(repoRoot);
-    const first = ledger.features[0]!;
-    const second = ledger.features[1]!;
+    const evidenceIndex = ledger.features.findIndex((feature) => feature.prs.length >= 2);
+    assert.isAtLeast(evidenceIndex, 0);
+    const evidence = ledger.features[evidenceIndex]!;
+    const duplicateIndex = evidenceIndex === 0 ? 1 : 0;
     const invalid = {
       ...ledger,
-      features: [
-        { ...first, prs: first.prs.toReversed() },
-        { ...second, id: first.id },
-        ...ledger.features.slice(2),
-      ],
+      features: ledger.features.map((feature, index) => {
+        if (index === evidenceIndex) return { ...feature, prs: feature.prs.toReversed() };
+        if (index === duplicateIndex) return { ...feature, id: evidence.id };
+        return feature;
+      }),
     } satisfies ForkFeatureLedger;
 
     const errors = validate(invalid);
 
-    assert.include(errors, `Duplicate feature id: ${first.id}`);
-    assert.include(errors, `${first.id}.prs must be sorted.`);
+    assert.include(errors, `Duplicate feature id: ${evidence.id}`);
+    assert.include(errors, `${evidence.id}.prs must be sorted.`);
   });
 
   it("rejects missing evidence files and unsupported upstream assessments", () => {
     const ledger = loadForkFeatureLedger(repoRoot);
-    const first = ledger.features[0]!;
+    const featureIndex = ledger.features.findIndex(
+      (feature) => feature.upstream.status === "unassessed",
+    );
+    assert.isAtLeast(featureIndex, 0);
+    const feature = ledger.features[featureIndex]!;
     const invalid = {
       ...ledger,
-      features: [
-        {
-          ...first,
-          tests: ["apps/web/src/removed-feature.test.ts"],
-          upstream: { ...first.upstream, status: "tracking" as const },
-        },
-        ...ledger.features.slice(1),
-      ],
+      features: ledger.features.map((candidate, index) =>
+        index === featureIndex
+          ? {
+              ...candidate,
+              tests: ["apps/web/src/removed-feature.test.ts"],
+              upstream: { ...candidate.upstream, status: "tracking" as const },
+            }
+          : candidate,
+      ),
     } satisfies ForkFeatureLedger;
 
     const errors = validate(invalid);
 
-    assert.include(errors, `${first.id}.tests does not name an existing file`);
-    assert.include(errors, `${first.id}.upstream.tracking must cite evidence`);
+    assert.include(errors, `${feature.id}.tests does not name an existing file`);
+    assert.include(errors, `${feature.id}.upstream.tracking must cite evidence`);
   });
 
   it("maps changed upstream paths to the capabilities needing review", () => {
