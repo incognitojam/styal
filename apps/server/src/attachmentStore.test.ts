@@ -6,13 +6,16 @@ import * as NodePath from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  attachmentRelativePath,
   createAttachmentId,
   createPendingAttachmentId,
   parseAttachmentUuid,
   planAttachmentClaim,
   parseThreadSegmentFromAttachmentId,
+  resolveAttachmentPath,
   resolveAttachmentPathById,
   sweepStalePendingAttachments,
+  toSafeAttachmentBasename,
 } from "./attachmentStore.ts";
 
 describe("attachmentStore", () => {
@@ -56,6 +59,120 @@ describe("attachmentStore", () => {
     expect(parseThreadSegmentFromAttachmentId(createAttachmentId("pending_thread")!)).toBe(
       "pending_thread",
     );
+  });
+
+  it("preserves a safe image basename below its attachment id", () => {
+    expect(
+      attachmentRelativePath({
+        type: "image",
+        id: "thread-1-attachment",
+        name: "screenshots/checkout failure.png",
+        mimeType: "image/png",
+        sizeBytes: 5,
+      }),
+    ).toBe("thread-1-attachment/checkout failure.png");
+  });
+
+  it("forces the inferred image extension instead of trusting the uploaded name", () => {
+    expect(
+      attachmentRelativePath({
+        type: "image",
+        id: "thread-1-attachment",
+        name: "payload.html",
+        mimeType: "image/png",
+        sizeBytes: 5,
+      }),
+    ).toBe("thread-1-attachment/payload.png");
+  });
+
+  it("preserves a safe extension for generic files", () => {
+    expect(
+      attachmentRelativePath({
+        type: "file",
+        id: "thread-1-attachment",
+        name: "docs/design spec.PDF",
+        mimeType: "application/pdf",
+        sizeBytes: 5,
+      }),
+    ).toBe("thread-1-attachment/design spec.pdf");
+  });
+
+  it("sanitizes cross-platform basenames and preserves extensions when truncating", () => {
+    expect(
+      toSafeAttachmentBasename({
+        name: String.raw`C:\temp\report:final?.png`,
+        extension: ".png",
+      }),
+    ).toBe("report_final_.png");
+    expect(
+      toSafeAttachmentBasename({
+        name: `${"🖼️".repeat(100)}.png`,
+        extension: ".png",
+      }),
+    ).toMatch(/\.png$/);
+    expect(
+      Buffer.byteLength(
+        toSafeAttachmentBasename({
+          name: `${"🖼️".repeat(100)}.png`,
+          extension: ".png",
+        }),
+      ),
+    ).toBeLessThanOrEqual(180);
+  });
+
+  it.each(["COM¹.png", "COM².png", "COM³.png", "LPT¹.png", "LPT².png", "LPT³.png"])(
+    "prefixes the Windows reserved device name %s",
+    (name) => {
+      expect(toSafeAttachmentBasename({ name, extension: ".png" })).toBe(`_${name}`);
+    },
+  );
+
+  it("resolves the named layout from attachment metadata and id", () => {
+    const attachmentsDir = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3code-attachment-store-"),
+    );
+    try {
+      const attachment = {
+        type: "image" as const,
+        id: "thread-1-attachment",
+        name: "checkout failure.png",
+        mimeType: "image/png",
+        sizeBytes: 5,
+      };
+      const namedPath = NodePath.join(attachmentsDir, attachment.id, attachment.name);
+      NodeFS.mkdirSync(NodePath.dirname(namedPath), { recursive: true });
+      NodeFS.writeFileSync(namedPath, Buffer.from("hello"));
+
+      expect(resolveAttachmentPath({ attachmentsDir, attachment })).toBe(namedPath);
+      expect(resolveAttachmentPathById({ attachmentsDir, attachmentId: attachment.id })).toBe(
+        namedPath,
+      );
+    } finally {
+      NodeFS.rmSync(attachmentsDir, { recursive: true, force: true });
+    }
+  });
+
+  it("selects the named path for a new attachment and falls back for legacy images", () => {
+    const attachmentsDir = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3code-attachment-store-"),
+    );
+    try {
+      const attachment = {
+        type: "image" as const,
+        id: "thread-1-attachment",
+        name: "checkout failure.png",
+        mimeType: "image/png",
+        sizeBytes: 5,
+      };
+      const namedPath = NodePath.join(attachmentsDir, attachment.id, attachment.name);
+      expect(resolveAttachmentPath({ attachmentsDir, attachment })).toBe(namedPath);
+
+      const legacyPath = NodePath.join(attachmentsDir, `${attachment.id}.png`);
+      NodeFS.writeFileSync(legacyPath, Buffer.from("hello"));
+      expect(resolveAttachmentPath({ attachmentsDir, attachment })).toBe(legacyPath);
+    } finally {
+      NodeFS.rmSync(attachmentsDir, { recursive: true, force: true });
+    }
   });
 
   it("resolves attachment path by id using the extension that exists on disk", () => {
@@ -104,7 +221,13 @@ describe("attachmentStore", () => {
       const claim = planAttachmentClaim({
         attachmentsDir,
         threadId: "thread-1",
-        attachmentId: `pending-${uuid}`,
+        attachment: {
+          type: "image",
+          id: `pending-${uuid}`,
+          name: "screenshot.png",
+          mimeType: "image/png",
+          sizeBytes: 6,
+        },
       });
       expect(claim).toMatchObject({
         ok: true,
@@ -115,7 +238,7 @@ describe("attachmentStore", () => {
       }
       expect(parseThreadSegmentFromAttachmentId(claim.finalId)).toBe("thread-1");
       expect(parseAttachmentUuid(claim.finalId)).not.toBe(uuid);
-      expect(claim.finalPath).toBe(NodePath.join(attachmentsDir, `${claim.finalId}.png`));
+      expect(claim.finalPath).toBe(NodePath.join(attachmentsDir, claim.finalId, "screenshot.png"));
     } finally {
       NodeFS.rmSync(attachmentsDir, { recursive: true, force: true });
     }
@@ -129,7 +252,19 @@ describe("attachmentStore", () => {
       const attachmentId = "a-b-00000000-0000-4000-8000-000000000003";
       NodeFS.writeFileSync(NodePath.join(attachmentsDir, `${attachmentId}.png`), "pixels");
 
-      expect(planAttachmentClaim({ attachmentsDir, threadId: "a b", attachmentId })).toEqual({
+      expect(
+        planAttachmentClaim({
+          attachmentsDir,
+          threadId: "a b",
+          attachment: {
+            type: "image",
+            id: attachmentId,
+            name: "screenshot.png",
+            mimeType: "image/png",
+            sizeBytes: 6,
+          },
+        }),
+      ).toEqual({
         ok: false,
         reason: "attachment must be a pending upload",
       });
@@ -158,6 +293,22 @@ describe("attachmentStore", () => {
       expect(NodeFS.existsSync(pendingPath)).toBe(false);
       expect(NodeFS.existsSync(partialPath)).toBe(false);
       expect(NodeFS.existsSync(threadPath)).toBe(true);
+    } finally {
+      NodeFS.rmSync(attachmentsDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not expose generic files through the image asset lookup", () => {
+    const attachmentsDir = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3code-attachment-store-"),
+    );
+    try {
+      const attachmentId = "thread-1-attachment";
+      const attachmentPath = NodePath.join(attachmentsDir, attachmentId, "notes.md");
+      NodeFS.mkdirSync(NodePath.dirname(attachmentPath), { recursive: true });
+      NodeFS.writeFileSync(attachmentPath, Buffer.from("# Notes"));
+
+      expect(resolveAttachmentPathById({ attachmentsDir, attachmentId })).toBeNull();
     } finally {
       NodeFS.rmSync(attachmentsDir, { recursive: true, force: true });
     }

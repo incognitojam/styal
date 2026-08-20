@@ -14,6 +14,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import * as ServerConfig from "../config.ts";
+import { resolveAttachmentPath } from "../attachmentStore.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import { cleanupFailedUploadedAttachments, normalizeDispatchCommand } from "./Normalizer.ts";
 
@@ -68,7 +69,12 @@ describe("normalizeDispatchCommand attachments", () => {
       const attachment = normalized.message.attachments[0]!;
       expect(attachment.id.startsWith("thread-1-")).toBe(true);
       expect(
-        NodeFS.readFileSync(NodePath.join(config.attachmentsDir, `${attachment.id}.png`)),
+        NodeFS.readFileSync(
+          resolveAttachmentPath({
+            attachmentsDir: config.attachmentsDir,
+            attachment,
+          })!,
+        ),
       ).toEqual(Buffer.from("pixels"));
     }).pipe(Effect.provide(testLayer)),
   );
@@ -93,9 +99,61 @@ describe("normalizeDispatchCommand attachments", () => {
       expect(attachmentId.startsWith("thread-1-")).toBe(true);
       expect(attachmentId).not.toBe(`thread-1-${attachmentUuid}`);
       expect(NodeFS.existsSync(pendingPath)).toBe(true);
-      expect(NodeFS.existsSync(NodePath.join(config.attachmentsDir, `${attachmentId}.png`))).toBe(
-        true,
+      expect(
+        NodeFS.existsSync(
+          resolveAttachmentPath({
+            attachmentsDir: config.attachmentsDir,
+            attachment: normalized.message.attachments[0]!,
+          })!,
+        ),
+      ).toBe(true);
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("claims generic file uploads into the named attachment layout", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const pendingPath = NodePath.join(config.attachmentsDir, `pending-${attachmentUuid}.bin`);
+      NodeFS.writeFileSync(pendingPath, Buffer.from("# Notes"));
+      const baseCommand = turnStartCommand({ attachments: [] });
+      if (baseCommand.type !== "thread.turn.start") {
+        throw new Error("Expected a thread.turn.start command.");
+      }
+
+      const normalized = yield* normalizeDispatchCommand({
+        ...baseCommand,
+        message: {
+          ...baseCommand.message,
+          attachments: [
+            {
+              type: "file",
+              id: `pending-${attachmentUuid}`,
+              name: "notes.md",
+              mimeType: "text/markdown",
+              sizeBytes: 7,
+            },
+          ],
+        },
+      });
+      if (normalized.type !== "thread.turn.start") {
+        throw new Error("Expected a thread.turn.start command.");
+      }
+
+      const attachment = normalized.message.attachments[0]!;
+      expect(attachment.type).toBe("file");
+      expect(resolveAttachmentPath({ attachmentsDir: config.attachmentsDir, attachment })).toBe(
+        NodePath.join(config.attachmentsDir, attachment.id, "notes.md"),
       );
+      expect(
+        NodeFS.readFileSync(
+          resolveAttachmentPath({
+            attachmentsDir: config.attachmentsDir,
+            attachment,
+          })!,
+          "utf8",
+        ),
+      ).toBe("# Notes");
+      expect(NodeFS.existsSync(pendingPath)).toBe(true);
     }).pipe(Effect.provide(testLayer)),
   );
 
@@ -142,7 +200,10 @@ describe("normalizeDispatchCommand attachments", () => {
         throw new Error("Expected a thread.turn.start command.");
       }
       NodeFS.rmSync(
-        NodePath.join(config.attachmentsDir, `${first.message.attachments[0]!.id}.png`),
+        resolveAttachmentPath({
+          attachmentsDir: config.attachmentsDir,
+          attachment: first.message.attachments[0]!,
+        })!,
       );
 
       const retried = yield* normalizeDispatchCommand(
@@ -174,14 +235,14 @@ describe("normalizeDispatchCommand attachments", () => {
         throw new Error("Expected a thread.turn.start command.");
       }
 
-      const inlinePath = NodePath.join(
-        config.attachmentsDir,
-        `${normalized.message.attachments[0]!.id}.png`,
-      );
-      const claimedPath = NodePath.join(
-        config.attachmentsDir,
-        `${normalized.message.attachments[1]!.id}.png`,
-      );
+      const inlinePath = resolveAttachmentPath({
+        attachmentsDir: config.attachmentsDir,
+        attachment: normalized.message.attachments[0]!,
+      })!;
+      const claimedPath = resolveAttachmentPath({
+        attachmentsDir: config.attachmentsDir,
+        attachment: normalized.message.attachments[1]!,
+      })!;
       yield* cleanupFailedUploadedAttachments(command, normalized);
 
       expect(NodeFS.existsSync(pendingPath)).toBe(true);
@@ -203,10 +264,10 @@ describe("normalizeDispatchCommand attachments", () => {
         throw new Error("Expected a thread.turn.start command.");
       }
 
-      const claimedPath = NodePath.join(
-        config.attachmentsDir,
-        `${normalized.message.attachments[0]!.id}.png`,
-      );
+      const claimedPath = resolveAttachmentPath({
+        attachmentsDir: config.attachmentsDir,
+        attachment: normalized.message.attachments[0]!,
+      })!;
       NodeFS.rmSync(pendingPath);
 
       yield* cleanupFailedUploadedAttachments(command, normalized);
@@ -232,14 +293,14 @@ describe("normalizeDispatchCommand attachments", () => {
         throw new Error("Expected thread.turn.start commands.");
       }
 
-      const failedPath = NodePath.join(
-        config.attachmentsDir,
-        `${failed.message.attachments[0]!.id}.png`,
-      );
-      const succeededPath = NodePath.join(
-        config.attachmentsDir,
-        `${succeeded.message.attachments[0]!.id}.png`,
-      );
+      const failedPath = resolveAttachmentPath({
+        attachmentsDir: config.attachmentsDir,
+        attachment: failed.message.attachments[0]!,
+      })!;
+      const succeededPath = resolveAttachmentPath({
+        attachmentsDir: config.attachmentsDir,
+        attachment: succeeded.message.attachments[0]!,
+      })!;
       expect(failedPath).not.toBe(succeededPath);
 
       yield* cleanupFailedUploadedAttachments(command, failed);

@@ -1089,8 +1089,10 @@ it.layer(
       });
 
       const keepPath = path.join(attachmentsDir, `${keepAttachmentId}.png`);
-      const removePath = path.join(attachmentsDir, `${removeAttachmentId}.png`);
+      const removeDirectory = path.join(attachmentsDir, removeAttachmentId);
+      const removePath = path.join(removeDirectory, "remove.png");
       yield* fileSystem.makeDirectory(attachmentsDir, { recursive: true });
+      yield* fileSystem.makeDirectory(removeDirectory, { recursive: true });
       yield* fileSystem.writeFileString(keepPath, "keep");
       yield* fileSystem.writeFileString(removePath, "remove");
       const otherThreadPath = path.join(attachmentsDir, `${otherThreadAttachmentId}.png`);
@@ -1117,6 +1119,7 @@ it.layer(
 
       assert.isTrue(yield* exists(keepPath));
       assert.isFalse(yield* exists(removePath));
+      assert.isFalse(yield* exists(removeDirectory));
       assert.isTrue(yield* exists(otherThreadPath));
     }),
   );
@@ -1221,12 +1224,14 @@ it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-projection-atta
           },
         });
 
-        const threadAttachmentPath = path.join(attachmentsDir, `${attachmentId}.png`);
+        const threadAttachmentDirectory = path.join(attachmentsDir, attachmentId);
+        const threadAttachmentPath = path.join(threadAttachmentDirectory, "delete.png");
         const otherThreadAttachmentPath = path.join(
           attachmentsDir,
           `${otherThreadAttachmentId}.png`,
         );
         yield* fileSystem.makeDirectory(attachmentsDir, { recursive: true });
+        yield* fileSystem.makeDirectory(threadAttachmentDirectory, { recursive: true });
         yield* fileSystem.writeFileString(threadAttachmentPath, "delete");
         yield* fileSystem.writeFileString(otherThreadAttachmentPath, "other-thread");
         assert.isTrue(yield* exists(threadAttachmentPath));
@@ -1249,6 +1254,7 @@ it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-projection-atta
         });
 
         assert.isFalse(yield* exists(threadAttachmentPath));
+        assert.isFalse(yield* exists(threadAttachmentDirectory));
         assert.isTrue(yield* exists(otherThreadAttachmentPath));
       }),
     );

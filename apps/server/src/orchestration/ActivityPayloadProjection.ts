@@ -578,7 +578,7 @@ export function projectActivityPayload(
   }
 
   const itemStatus = asRecord(data.item)?.status;
-  const projectedPayload =
+  const statusProjectedPayload =
     payload.status === "completed" && (itemStatus === "failed" || itemStatus === "declined")
       ? { ...payload, status: itemStatus }
       : payload;
@@ -587,7 +587,7 @@ export function projectActivityPayload(
     return {
       ...activity,
       payload: {
-        ...projectedPayload,
+        ...statusProjectedPayload,
         data: projectMcpToolCallData(data),
       },
     };
@@ -641,10 +641,10 @@ export function projectActivityPayload(
   }
 
   const projectedPayload: Record<string, unknown> = {
-    ...payload,
+    ...statusProjectedPayload,
     data: projectedData,
   };
-  if (!("status" in payload)) {
+  if (!("status" in statusProjectedPayload)) {
     const status = toolLifecycleStatusFromProviderState(data);
     if (status) {
       projectedPayload.status = status;

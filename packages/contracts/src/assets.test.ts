@@ -2,7 +2,10 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
 import { AttachmentCreateUploadUrlInput } from "./assets.ts";
-import { PROVIDER_SEND_TURN_MAX_IMAGE_BYTES } from "./orchestration.ts";
+import {
+  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+} from "./orchestration.ts";
 
 const isUploadInput = Schema.is(AttachmentCreateUploadUrlInput);
 
@@ -19,6 +22,25 @@ describe("AttachmentCreateUploadUrlInput", () => {
 
   it("rejects image types that providers do not support", () => {
     expect(isUploadInput({ ...uploadInput, mimeType: "image/svg+xml" })).toBe(false);
+  });
+
+  it("accepts bounded generic file attachments", () => {
+    expect(
+      isUploadInput({
+        type: "file",
+        name: "notes.md",
+        mimeType: "text/markdown",
+        sizeBytes: 3,
+      }),
+    ).toBe(true);
+    expect(
+      isUploadInput({
+        type: "file",
+        name: "notes.md",
+        mimeType: "text/markdown",
+        sizeBytes: PROVIDER_SEND_TURN_MAX_FILE_BYTES + 1,
+      }),
+    ).toBe(false);
   });
 
   it("rejects empty and oversized uploads", () => {

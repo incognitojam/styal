@@ -1,7 +1,7 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import type { ComposerImageAttachment } from "../composerDraftStore";
+import type { ComposerFileAttachment, ComposerImageAttachment } from "../composerDraftStore";
 
 const mocks = vi.hoisted(() => ({
   createUploadUrl: Symbol("create-upload-url"),
@@ -110,6 +110,18 @@ function makeImage(id: string): ComposerImageAttachment {
   };
 }
 
+function makeFile(id: string): ComposerFileAttachment {
+  const file = new File([new Uint8Array([1, 2, 3])], `${id}.md`, { type: "text/markdown" });
+  return {
+    type: "file",
+    id,
+    name: file.name,
+    mimeType: file.type,
+    sizeBytes: file.size,
+    file,
+  };
+}
+
 describe("attachmentUploadQueue", () => {
   beforeEach(() => {
     TestXmlHttpRequest.requests = [];
@@ -187,6 +199,40 @@ describe("attachmentUploadQueue", () => {
       },
       expect.anything(),
     );
+  });
+
+  it("uploads generic files through the same queue", async () => {
+    const file = makeFile("file-1");
+    startAttachmentUpload({ environmentId: firstEnvironment, image: file });
+    await Promise.resolve();
+
+    expect(mocks.runAtomCommand).toHaveBeenCalledWith(
+      expect.anything(),
+      mocks.createUploadUrl,
+      {
+        environmentId: firstEnvironment,
+        input: {
+          type: "file",
+          name: "file-1.md",
+          mimeType: "text/markdown",
+          sizeBytes: 3,
+        },
+      },
+      expect.anything(),
+    );
+    const settled = awaitAttachmentUploads([file.id]);
+    TestXmlHttpRequest.requests[0]!.complete();
+    await settled;
+
+    expect(getUploadedAttachments({ environmentId: firstEnvironment, images: [file] })).toEqual([
+      {
+        type: "file",
+        id: "pending-environment-1-file-1.md",
+        name: "file-1.md",
+        mimeType: "text/markdown",
+        sizeBytes: 3,
+      },
+    ]);
   });
 
   it("retries rejected uploads", async () => {

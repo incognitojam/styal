@@ -108,6 +108,29 @@ describe("AttachmentUpload", () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  it.effect("stores generic files as opaque pending uploads", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const issued = yield* issueAttachmentUploadUrl({
+        type: "file",
+        name: "notes.md",
+        mimeType: "text/markdown",
+        sizeBytes: 6,
+      });
+      const token = issued.relativeUrl.slice(`${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/`.length);
+      const claims = yield* validateAttachmentUploadToken(token);
+      if (!claims) {
+        throw new Error("Expected valid upload claims.");
+      }
+
+      expect(claims.type).toBe("file");
+      expect(yield* storeAttachmentUpload(claims, new Uint8Array(6))).toEqual({ ok: true });
+      expect(
+        NodeFS.existsSync(NodePath.join(config.attachmentsDir, `${issued.attachmentId}.bin`)),
+      ).toBe(true);
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.effect("deletes pending uploads without deleting thread-owned copies", () =>
     Effect.gen(function* () {
       const config = yield* ServerConfig.ServerConfig;

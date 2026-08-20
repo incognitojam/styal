@@ -42,6 +42,7 @@ const AttachmentUploadClaims = Schema.Struct({
   version: Schema.Literal(1),
   kind: Schema.Literal("attachment-upload"),
   attachmentId: Schema.String,
+  type: Schema.optionalKey(Schema.Literals(["image", "file"])),
   name: Schema.String,
   mimeType: Schema.String,
   sizeBytes: Schema.Number,
@@ -96,6 +97,7 @@ export const issueAttachmentUploadUrl = Effect.fn("AttachmentUpload.issueUrl")(f
       version: 1,
       kind: "attachment-upload",
       attachmentId,
+      type: input.type ?? "image",
       name: input.name,
       mimeType: input.mimeType,
       sizeBytes: input.sizeBytes,
@@ -152,7 +154,10 @@ export const storeAttachmentUpload = Effect.fn("AttachmentUpload.store")(functio
   }
 
   const config = yield* ServerConfig.ServerConfig;
-  const extension = inferImageExtension({ mimeType: claims.mimeType, fileName: claims.name });
+  const extension =
+    (claims.type ?? "image") === "image"
+      ? inferImageExtension({ mimeType: claims.mimeType, fileName: claims.name })
+      : ".bin";
   const relativePath = `${claims.attachmentId}${extension}`;
   const finalPath = resolveAttachmentRelativePath({
     attachmentsDir: config.attachmentsDir,

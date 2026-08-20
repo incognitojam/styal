@@ -292,6 +292,17 @@ function ThreadMarkdownImageView(props: {
   );
 }
 
+function MessageAttachmentFile(props: { readonly name: string; readonly tintColor: ColorValue }) {
+  return (
+    <View className="max-w-full flex-row items-center gap-2 rounded-[12px] bg-white/10 px-2.5 py-2">
+      <SymbolView name="doc.text" size={15} tintColor={props.tintColor} type="monochrome" />
+      <Text className="min-w-0 flex-1 font-t3-medium text-xs" numberOfLines={1}>
+        {props.name}
+      </Text>
+    </View>
+  );
+}
+
 function ThreadMarkdownImageRequest(props: {
   readonly uri: string;
   readonly onLoad: (sourceSize: { width: number; height: number }) => void;
@@ -360,7 +371,6 @@ function ThreadMarkdownImageUnavailable(props: { readonly alt: string | null }) 
     />
   );
 }
-
 const MARKDOWN_MONO_FONT = Platform.select({
   ios: "ui-monospace",
   android: "monospace",
@@ -1088,13 +1098,19 @@ function renderFeedEntry(
               />
             ) : null}
             {attachments.map((attachment) => {
-              return (
+              return attachment.type === "image" ? (
                 <MessageAttachmentImage
                   key={attachment.id}
                   environmentId={props.environmentId}
                   attachmentId={attachment.id}
                   className="aspect-[1.3] w-full rounded-[14px] bg-white/15"
                   onPressImage={props.onPressImage}
+                />
+              ) : (
+                <MessageAttachmentFile
+                  key={attachment.id}
+                  name={attachment.name}
+                  tintColor={iconSubtleColor}
                 />
               );
             })}
@@ -1150,13 +1166,19 @@ function renderFeedEntry(
           )
         ) : null}
         {attachments.map((attachment) => {
-          return (
+          return attachment.type === "image" ? (
             <MessageAttachmentImage
               key={attachment.id}
               environmentId={props.environmentId}
               attachmentId={attachment.id}
               className="mt-1.5 aspect-[1.3] w-full rounded-[18px] bg-neutral-200 dark:bg-neutral-800"
               onPressImage={props.onPressImage}
+            />
+          ) : (
+            <MessageAttachmentFile
+              key={attachment.id}
+              name={attachment.name}
+              tintColor={iconSubtleColor}
             />
           );
         })}
