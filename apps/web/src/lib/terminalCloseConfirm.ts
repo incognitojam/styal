@@ -1,6 +1,28 @@
+import type { TerminalSessionState } from "@t3tools/client-runtime/state/terminal";
 import { readLocalApi } from "~/localApi";
 
 let pendingConfirmations = 0;
+
+export type TerminalCloseState = Pick<
+  TerminalSessionState,
+  "status" | "hasRunningSubprocess"
+>;
+
+export interface TerminalCloseTarget {
+  readonly terminalId: string;
+  readonly label: string;
+  readonly state: TerminalCloseState | null;
+}
+
+function hasActiveWork({ terminalId, state }: TerminalCloseTarget): boolean {
+  // An interactive shell remains "running" while idle, whereas setup terminals
+  // run one finite command as the root PTY process and may have no child subprocess.
+  return (
+    state?.hasRunningSubprocess === true ||
+    (terminalId.startsWith("setup-") &&
+      (state?.status === "starting" || state?.status === "running"))
+  );
+}
 
 /** Whether a terminal-close confirmation is currently waiting on the user. */
 export function isTerminalCloseConfirmPending(): boolean {
@@ -14,10 +36,15 @@ export function isTerminalCloseConfirmPending(): boolean {
  * directly.
  */
 export async function confirmTerminalClose(
-  labels: readonly [string, ...string[]],
+  targets: readonly [TerminalCloseTarget, ...TerminalCloseTarget[]],
 ): Promise<boolean> {
+  const activeTargets = targets.filter(hasActiveWork);
+  if (activeTargets.length === 0) return true;
+
   const localApi = readLocalApi();
   if (!localApi) return true;
+  const labels = targets.map(({ label }) => label);
+  const activeLabels = activeTargets.map(({ label }) => `"${label}"`).join(", ");
   pendingConfirmations += 1;
   try {
     return await localApi.dialogs.confirm(
@@ -28,9 +55,7 @@ export async function confirmTerminalClose(
           ].join("\n")
         : [
             `Close ${labels.length} terminals?`,
-            `This stops their running processes and clears their histories: ${labels
-              .map((label) => `"${label}"`)
-              .join(", ")}.`,
+            `This stops running processes in ${activeLabels} and clears all ${labels.length} terminal histories.`,
           ].join("\n"),
       { variant: "destructive" },
     );

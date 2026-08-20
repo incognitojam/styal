@@ -59,7 +59,10 @@ import {
   type ThreadTerminalGroup,
 } from "../types";
 import { readLocalApi } from "~/localApi";
-import { confirmTerminalClose } from "~/lib/terminalCloseConfirm";
+import {
+  confirmTerminalClose,
+  type TerminalCloseState,
+} from "~/lib/terminalCloseConfirm";
 import { useClientSettings } from "../hooks/useSettings";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useAttachedTerminalSession } from "../state/terminalSessions";
@@ -1018,6 +1021,8 @@ interface ThreadTerminalDrawerProps {
   keybindings: ResolvedKeybindingsConfig;
   /** Prefer server-provided tab titles when present (e.g. active subprocess name). */
   terminalLabelsById?: ReadonlyMap<string, string>;
+  /** Server-reported liveness used to avoid warning when closing idle terminals. */
+  terminalCloseStatesById?: ReadonlyMap<string, TerminalCloseState>;
   /** Prefer per-session launch locations when the server already knows a terminal. */
   terminalLaunchLocationsById?: ReadonlyMap<string, TerminalLaunchLocation>;
 }
@@ -1078,6 +1083,7 @@ export default function ThreadTerminalDrawer({
   onAddTerminalContext,
   keybindings,
   terminalLabelsById,
+  terminalCloseStatesById,
   terminalLaunchLocationsById,
 }: ThreadTerminalDrawerProps) {
   const isPanel = mode === "panel";
@@ -1284,11 +1290,17 @@ export default function ThreadTerminalDrawer({
   const confirmCloseTerminal = useCallback(
     (terminalId: string) => {
       const label = terminalLabelById.get(terminalId) ?? getTerminalLabel(terminalId);
-      void confirmTerminalClose([label]).then((confirmed) => {
+      void confirmTerminalClose([
+        {
+          terminalId,
+          label,
+          state: terminalCloseStatesById?.get(terminalId) ?? null,
+        },
+      ]).then((confirmed) => {
         if (confirmed) onCloseTerminal(terminalId);
       });
     },
-    [onCloseTerminal, terminalLabelById],
+    [onCloseTerminal, terminalCloseStatesById, terminalLabelById],
   );
 
   useEffect(() => {
@@ -1683,7 +1695,7 @@ export default function ThreadTerminalDrawer({
                                   if (event.button !== 1) return;
                                   event.preventDefault();
                                   event.stopPropagation();
-                                  onCloseTerminal(terminalId);
+                                  confirmCloseTerminal(terminalId);
                                 }}
                               >
                                 <TerminalSquare className="size-3 shrink-0" />

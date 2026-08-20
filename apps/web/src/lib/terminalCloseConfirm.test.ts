@@ -18,6 +18,12 @@ vi.mock("~/localApi", () => ({
 
 import { confirmTerminalClose, isTerminalCloseConfirmPending } from "./terminalCloseConfirm";
 
+const activeTerminal = {
+  terminalId: "term-1",
+  label: "Terminal 1",
+  state: { status: "running" as const, hasRunningSubprocess: true },
+};
+
 describe("terminal close confirmation", () => {
   beforeEach(() => {
     confirmMock.mockReset();
@@ -31,7 +37,7 @@ describe("terminal close confirmation", () => {
 
     expect(isTerminalCloseConfirmPending()).toBe(false);
 
-    const confirmation = confirmTerminalClose(["Terminal 1"]);
+    const confirmation = confirmTerminalClose([activeTerminal]);
     expect(isTerminalCloseConfirmPending()).toBe(true);
 
     settle(true);
@@ -48,7 +54,7 @@ describe("terminal close confirmation", () => {
         }),
     );
 
-    const confirmation = confirmTerminalClose(["Terminal 1"]);
+    const confirmation = confirmTerminalClose([activeTerminal]);
     expect(isTerminalCloseConfirmPending()).toBe(true);
 
     reject(new Error("dialog failed"));
@@ -59,11 +65,83 @@ describe("terminal close confirmation", () => {
   it("names every terminal in a multi-terminal close", async () => {
     confirmMock.mockResolvedValue(true);
 
-    await expect(confirmTerminalClose(["Terminal 1", "Development server"])).resolves.toBe(true);
+    await expect(
+      confirmTerminalClose([
+        activeTerminal,
+        {
+          terminalId: "term-2",
+          label: "Development server",
+          state: { status: "running", hasRunningSubprocess: true },
+        },
+      ]),
+    ).resolves.toBe(true);
     expect(confirmMock).toHaveBeenCalledWith(
       [
         "Close 2 terminals?",
-        'This stops their running processes and clears their histories: "Terminal 1", "Development server".',
+        'This stops running processes in "Terminal 1", "Development server" and clears all 2 terminal histories.',
+      ].join("\n"),
+      { variant: "destructive" },
+    );
+  });
+
+  it("closes an idle shell without prompting", async () => {
+    await expect(
+      confirmTerminalClose([
+        {
+          terminalId: "term-1",
+          label: "Terminal 1",
+          state: { status: "running", hasRunningSubprocess: false },
+        },
+      ]),
+    ).resolves.toBe(true);
+    expect(confirmMock).not.toHaveBeenCalled();
+  });
+
+  it("confirms an active finite setup command", async () => {
+    confirmMock.mockResolvedValue(true);
+
+    await expect(
+      confirmTerminalClose([
+        {
+          terminalId: "setup-worktree",
+          label: "Setup worktree",
+          state: { status: "running", hasRunningSubprocess: false },
+        },
+      ]),
+    ).resolves.toBe(true);
+    expect(confirmMock).toHaveBeenCalledOnce();
+  });
+
+  it("closes an exited setup terminal without prompting", async () => {
+    await expect(
+      confirmTerminalClose([
+        {
+          terminalId: "setup-worktree",
+          label: "Setup worktree",
+          state: { status: "exited", hasRunningSubprocess: false },
+        },
+      ]),
+    ).resolves.toBe(true);
+    expect(confirmMock).not.toHaveBeenCalled();
+  });
+
+  it("names only active terminals when a surface mixes active and idle terminals", async () => {
+    confirmMock.mockResolvedValue(true);
+
+    await expect(
+      confirmTerminalClose([
+        activeTerminal,
+        {
+          terminalId: "term-2",
+          label: "Idle shell",
+          state: { status: "running", hasRunningSubprocess: false },
+        },
+      ]),
+    ).resolves.toBe(true);
+    expect(confirmMock).toHaveBeenCalledWith(
+      [
+        "Close 2 terminals?",
+        'This stops running processes in "Terminal 1" and clears all 2 terminal histories.',
       ].join("\n"),
       { variant: "destructive" },
     );
@@ -72,7 +150,7 @@ describe("terminal close confirmation", () => {
   it("closes without prompting when no local API is available", async () => {
     readLocalApiMock.mockReturnValue(undefined);
 
-    await expect(confirmTerminalClose(["Terminal 1"])).resolves.toBe(true);
+    await expect(confirmTerminalClose([activeTerminal])).resolves.toBe(true);
     expect(confirmMock).not.toHaveBeenCalled();
   });
 });
