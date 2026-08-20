@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   isProviderDriverKind,
   resolveProviderInstanceEnabled,
@@ -44,6 +44,7 @@ import { ProviderInstanceIcon, providerInstanceInitials } from "../chat/Provider
 import { ProviderAccentColorPicker } from "./ProviderAccentColorPicker";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import {
+  getProviderRateLimitLines,
   getProviderVersionAdvisoryPresentation,
   PROVIDER_STATUS_STYLES,
   getProviderSummary,
@@ -606,6 +607,18 @@ export function ProviderInstanceCard({
   const versionCodeNode = versionLabel ? (
     <code className="text-xs text-muted-foreground">{versionLabel}</code>
   ) : null;
+  const rateLimitLines = getProviderRateLimitLines(liveProvider?.rateLimits, Date.now());
+  const rateLimitsNode =
+    rateLimitLines.length > 0 ? (
+      <p className="flex min-w-0 flex-wrap items-center gap-x-2 text-xs leading-[1.45] text-muted-foreground">
+        {rateLimitLines.map((line, index) => (
+          <Fragment key={line.id}>
+            {index > 0 ? <span className="text-muted-foreground/40">|</span> : null}
+            <span>{line.text}</span>
+          </Fragment>
+        ))}
+      </p>
+    ) : null;
 
   if (mode === "list") {
     return (
@@ -769,6 +782,7 @@ export function ProviderInstanceCard({
               {summary.detail ? <span>· {summary.detail}</span> : null}
             </p>
           ) : null}
+          {rateLimitsNode}
         </div>
       </div>
 
