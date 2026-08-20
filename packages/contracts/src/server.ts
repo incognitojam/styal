@@ -20,6 +20,7 @@ import {
 import { EditorId, FileManagerRevealKind, RemoteOpenTarget } from "./editor.ts";
 import { ModelCapabilities } from "./model.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
+import { AccountRateLimitWindow } from "./providerRuntime.ts";
 import { ServerSettings } from "./settings.ts";
 
 const KeybindingsMalformedConfigIssue = Schema.Struct({
@@ -158,6 +159,15 @@ export const ServerProviderUpdateState = Schema.Struct({
 });
 export type ServerProviderUpdateState = typeof ServerProviderUpdateState.Type;
 
+// Last-known subscription quota windows for the account behind this provider
+// instance, refreshed on the provider health cadence. Absent when the driver
+// has no quota source or the account has not reported any.
+export const ServerProviderRateLimits = Schema.Struct({
+  windows: Schema.Array(AccountRateLimitWindow),
+  updatedAt: IsoDateTime,
+});
+export type ServerProviderRateLimits = typeof ServerProviderRateLimits.Type;
+
 export const ServerProvider = Schema.Struct({
   // Routing key for the configured instance this snapshot represents. This
   // is the only stable identity consumers may use for provider routing.
@@ -194,6 +204,7 @@ export const ServerProvider = Schema.Struct({
   skills: Schema.Array(ServerProviderSkill).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   versionAdvisory: Schema.optionalKey(ServerProviderVersionAdvisory),
   updateState: Schema.optionalKey(ServerProviderUpdateState),
+  rateLimits: Schema.optionalKey(ServerProviderRateLimits),
 });
 export type ServerProvider = typeof ServerProvider.Type;
 
