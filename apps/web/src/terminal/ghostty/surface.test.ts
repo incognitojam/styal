@@ -20,6 +20,7 @@ import {
   resolveTerminalMouseTrackingState,
   shouldBlinkTerminalCursor,
   shouldReportTerminalMouse,
+  shouldShowTerminalLinkHover,
   terminalGridCellAt,
   terminalScrollbarGeometry,
   terminalScrollbarOffsetAtPointer,

@@ -1135,7 +1135,10 @@ routing.layer("ProviderServiceLive routing", (it) => {
       assert.equal(typeof turnInput.input, "string");
       const turnText = turnInput.input ?? "";
       assert.equal(turnText.startsWith("use this screenshot"), true);
-      assert.include(turnText, '[Attached image "screenshot.png" is saved at: ');
+      assert.include(
+        turnText,
+        '[Attached image "screenshot.png" (image/png, 123 bytes) is saved at: ',
+      );
       assert.equal(turnText.endsWith(`${attachment.id}.png]`), true);
 
       // An attachment-only turn stays valid and the injected line becomes the
@@ -1163,7 +1166,10 @@ routing.layer("ProviderServiceLive routing", (it) => {
         attachments: [attachment, fileAttachment],
       });
       const mixedInput = routing.codex.sendTurn.mock.calls[0]?.[0] as ProviderSendTurnInput;
-      assert.include(mixedInput.input ?? "", '[Attached file "report.pdf" is saved at: ');
+      assert.include(
+        mixedInput.input ?? "",
+        '[Attached file "report.pdf" (application/pdf, 456 bytes) is saved at: ',
+      );
       assert.include(mixedInput.input ?? "", `${fileAttachment.id}.pdf]`);
       // Every attachment reaches the adapter; each adapter decides what its
       // provider ingests natively.
@@ -1172,7 +1178,10 @@ routing.layer("ProviderServiceLive routing", (it) => {
       routing.codex.sendTurn.mockClear();
       yield* provider.sendTurn({ threadId: session.threadId, attachments: [fileAttachment] });
       const fileOnlyInput = routing.codex.sendTurn.mock.calls[0]?.[0] as ProviderSendTurnInput;
-      assert.include(fileOnlyInput.input ?? "", '[Attached file "report.pdf" is saved at: ');
+      assert.include(
+        fileOnlyInput.input ?? "",
+        '[Attached file "report.pdf" (application/pdf, 456 bytes) is saved at: ',
+      );
       assert.deepEqual(fileOnlyInput.attachments, [fileAttachment]);
 
       yield* provider.stopSession({ threadId: session.threadId });

@@ -16,6 +16,7 @@ import {
   buildExpiredTerminalContextToastCopy,
   buildLoadingThreadFromShell,
   buildThreadTurnInterruptInput,
+  composerAttachmentTypeForMime,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
   dismissBranchMismatchForSession,
@@ -184,6 +185,19 @@ describe("shouldReleaseTimelineAnchorForToolActivity", () => {
     expect(shouldReleaseTimelineAnchorForToolActivity({ ...input, runningTurnId: null })).toBe(
       false,
     );
+  });
+});
+
+describe("composer attachment classification", () => {
+  it("keeps supported preview formats as images", () => {
+    expect(composerAttachmentTypeForMime("image/png")).toBe("image");
+    expect(composerAttachmentTypeForMime("image/webp")).toBe("image");
+  });
+
+  it("falls back to opaque files for unsupported image formats", () => {
+    expect(composerAttachmentTypeForMime("image/svg+xml")).toBe("file");
+    expect(composerAttachmentTypeForMime("image/bmp")).toBe("file");
+    expect(composerAttachmentTypeForMime("image/tiff")).toBe("file");
   });
 });
 
