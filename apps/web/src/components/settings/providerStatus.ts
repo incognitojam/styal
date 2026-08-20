@@ -1,5 +1,7 @@
 import type { ServerProvider, ServerProviderVersionAdvisory } from "@t3tools/contracts";
 
+import { deriveProviderRateLimitRows } from "../../lib/providerRateLimits";
+
 /**
  * Visual treatment for each server-reported provider status. Centralized so
  * the default-driver card and per-instance cards share the same language.
@@ -88,6 +90,22 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
 export function getProviderVersionLabel(version: string | null | undefined) {
   if (!version) return null;
   return version.startsWith("v") ? version : `v${version}`;
+}
+
+/**
+ * Derive one display line per subscription quota window a provider reported,
+ * e.g. `Weekly limit · 7% used · Resets in 6 days`.
+ */
+export function getProviderRateLimitLines(
+  rateLimits: ServerProvider["rateLimits"],
+  now: number,
+): ReadonlyArray<{ readonly id: string; readonly text: string }> {
+  return deriveProviderRateLimitRows(rateLimits, now).map((row) => {
+    const parts = [row.name];
+    if (row.usedPercent !== null) parts.push(`${Math.round(row.usedPercent)}% used`);
+    if (row.resetText) parts.push(row.resetText);
+    return { id: row.id, text: parts.join(" · ") };
+  });
 }
 
 export function getProviderVersionAdvisoryPresentation(

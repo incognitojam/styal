@@ -709,8 +709,34 @@ const AccountUpdatedPayload = Schema.Struct({
 });
 export type AccountUpdatedPayload = typeof AccountUpdatedPayload.Type;
 
+/**
+ * One provider-reported quota window, normalized by the adapter. `usedPercent`
+ * is 0-100; `resetsAt` is unix seconds. Absent fields were not reported in
+ * this update, not cleared: providers send sparse rolling updates that
+ * consumers merge into the last full snapshot.
+ */
+export const AccountRateLimitWindow = Schema.Struct({
+  id: TrimmedNonEmptyStringSchema,
+  label: Schema.optional(TrimmedNonEmptyStringSchema),
+  usedPercent: Schema.optional(Schema.Number),
+  resetsAt: Schema.optional(Schema.Number),
+  windowMinutes: Schema.optional(Schema.Number),
+});
+export type AccountRateLimitWindow = typeof AccountRateLimitWindow.Type;
+
+const AccountRateLimitCredits = Schema.Struct({
+  balance: Schema.optional(TrimmedNonEmptyStringSchema),
+  hasCredits: Schema.optional(Schema.Boolean),
+  unlimited: Schema.optional(Schema.Boolean),
+});
+export type AccountRateLimitCredits = typeof AccountRateLimitCredits.Type;
+
 const AccountRateLimitsUpdatedPayload = Schema.Struct({
-  rateLimits: Schema.Unknown,
+  windows: Schema.Array(AccountRateLimitWindow),
+  limitId: Schema.optional(TrimmedNonEmptyStringSchema),
+  limitName: Schema.optional(TrimmedNonEmptyStringSchema),
+  planType: Schema.optional(TrimmedNonEmptyStringSchema),
+  credits: Schema.optional(AccountRateLimitCredits),
 });
 export type AccountRateLimitsUpdatedPayload = typeof AccountRateLimitsUpdatedPayload.Type;
 
