@@ -942,6 +942,89 @@ it.layer(
     }),
   );
 
+  it.effect("checks subprocess liveness on demand before close confirmation", () =>
+    Effect.gen(function* () {
+      let inspect = {
+        hasRunningSubprocess: false,
+        childCommand: null as string | null,
+        processIds: [] as ReadonlyArray<number>,
+      };
+      const { manager } = yield* createManager(5, {
+        subprocessInspector: () => Effect.succeed(inspect),
+        subprocessPollIntervalMs: 60_000,
+      });
+      yield* manager.open(openInput());
+
+      const idle = yield* manager.closePreflight({
+        threadId: "thread-1",
+        terminalIds: [DEFAULT_TERMINAL_ID],
+      });
+      expect(idle.confirmationTerminalIds).toEqual([]);
+
+      inspect = {
+        hasRunningSubprocess: true,
+        childCommand: "sleep",
+        processIds: [9000, 9001],
+      };
+      const active = yield* manager.closePreflight({
+        threadId: "thread-1",
+        terminalIds: [DEFAULT_TERMINAL_ID],
+      });
+      expect(active.confirmationTerminalIds).toEqual([DEFAULT_TERMINAL_ID]);
+    }),
+  );
+
+  it.effect("confirms running finite commands but not exited finite commands", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        subprocessInspector: () =>
+          Effect.succeed({
+            hasRunningSubprocess: false,
+            childCommand: null,
+            processIds: [],
+          }),
+      });
+      yield* manager.openCommand({
+        ...openInput({ terminalId: "setup-preview" }),
+        command: "synthetic setup command",
+      });
+
+      const running = yield* manager.closePreflight({
+        threadId: "thread-1",
+        terminalIds: ["setup-preview"],
+      });
+      expect(running.confirmationTerminalIds).toEqual(["setup-preview"]);
+
+      const exited = yield* Deferred.make<void>();
+      const unsubscribe = yield* manager.subscribe((event) =>
+        event.type === "exited" && event.terminalId === "setup-preview"
+          ? Deferred.succeed(exited, undefined).pipe(Effect.asVoid)
+          : Effect.void,
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+
+      ptyAdapter.processes[0]?.emitExit({ exitCode: 0, signal: null });
+      yield* Deferred.await(exited);
+
+      const afterExit = yield* manager.closePreflight({
+        threadId: "thread-1",
+        terminalIds: ["setup-preview"],
+      });
+      expect(afterExit.confirmationTerminalIds).toEqual([]);
+    }),
+  );
+
+  it.effect("fails closed when close preflight cannot find a terminal session", () =>
+    Effect.gen(function* () {
+      const { manager } = yield* createManager();
+      const result = yield* manager.closePreflight({
+        threadId: "thread-1",
+        terminalIds: ["missing-terminal"],
+      });
+      expect(result.confirmationTerminalIds).toEqual(["missing-terminal"]);
+    }),
+  );
+
   it.effect("does not invoke subprocess polling until a terminal session is running", () =>
     Effect.gen(function* () {
       let checks = 0;

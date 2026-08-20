@@ -196,7 +196,8 @@ import {
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
-import { confirmTerminalClose, isTerminalCloseConfirmPending } from "../lib/terminalCloseConfirm";
+import { isTerminalCloseConfirmPending } from "../lib/terminalCloseConfirm";
+import { useTerminalCloseConfirmation } from "../hooks/useTerminalCloseConfirmation";
 import { getTerminalFocusOwner } from "../lib/terminalFocus";
 import { isRightPanelFocused } from "../lib/rightPanelFocus";
 import {
@@ -1240,6 +1241,7 @@ function ChatViewContent(props: ChatViewProps) {
   const openTerminal = useAtomCommand(terminalEnvironment.open, "terminal open");
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
   const closeTerminalMutation = useAtomCommand(terminalEnvironment.close, "terminal close");
+  const requestTerminalCloseConfirmation = useTerminalCloseConfirmation();
   const createThread = useAtomCommand(threadEnvironment.create, { reportFailure: false });
   const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
@@ -3499,20 +3501,35 @@ function ChatViewContent(props: ChatViewProps) {
   const requestCloseTerminal = useCallback(
     (terminalId: string) => {
       const label = activeTerminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId);
-      void confirmTerminalClose([label]).then((confirmed) => {
+      if (!activeThreadRef) return;
+      void requestTerminalCloseConfirmation({
+        environmentId: activeThreadRef.environmentId,
+        threadId: activeThreadRef.threadId,
+        targets: [{ terminalId, label }],
+      }).then((confirmed) => {
         if (confirmed) closeTerminal(terminalId);
       });
     },
-    [activeTerminalLabelsById, closeTerminal],
+    [activeTerminalLabelsById, activeThreadRef, closeTerminal, requestTerminalCloseConfirmation],
   );
   const requestClosePanelTerminal = useCallback(
     (terminalId: string) => {
       const label = activeTerminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId);
-      void confirmTerminalClose([label]).then((confirmed) => {
+      if (!activeThreadRef) return;
+      void requestTerminalCloseConfirmation({
+        environmentId: activeThreadRef.environmentId,
+        threadId: activeThreadRef.threadId,
+        targets: [{ terminalId, label }],
+      }).then((confirmed) => {
         if (confirmed) closePanelTerminal(terminalId);
       });
     },
-    [activeTerminalLabelsById, closePanelTerminal],
+    [
+      activeTerminalLabelsById,
+      activeThreadRef,
+      closePanelTerminal,
+      requestTerminalCloseConfirmation,
+    ],
   );
   const activateRightPanelSurface = useCallback(
     (surface: RightPanelSurface) => {
@@ -3597,15 +3614,24 @@ function ChatViewContent(props: ChatViewProps) {
         finishClose();
         return;
       }
-      const activeLabel =
-        activeTerminalLabelsById.get(surface.activeTerminalId) ??
-        getTerminalLabel(surface.activeTerminalId);
-      const otherLabels = surface.terminalIds
-        .filter((terminalId) => terminalId !== surface.activeTerminalId)
-        .map(
-          (terminalId) => activeTerminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId),
-        );
-      void confirmTerminalClose([activeLabel, ...otherLabels]).then((confirmed) => {
+      const orderedTerminalIds = [
+        surface.activeTerminalId,
+        ...surface.terminalIds.filter((terminalId) => terminalId !== surface.activeTerminalId),
+      ];
+      const [firstTerminalId, ...otherTerminalIds] = orderedTerminalIds;
+      if (!firstTerminalId) {
+        finishClose();
+        return;
+      }
+      const closeTarget = (terminalId: string) => ({
+        terminalId,
+        label: activeTerminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId),
+      });
+      void requestTerminalCloseConfirmation({
+        environmentId: activeThreadRef.environmentId,
+        threadId: activeThreadRef.threadId,
+        targets: [closeTarget(firstTerminalId), ...otherTerminalIds.map(closeTarget)],
+      }).then((confirmed) => {
         if (confirmed) finishClose();
       });
     },
@@ -3613,6 +3639,7 @@ function ChatViewContent(props: ChatViewProps) {
       activeThreadRef,
       activeTerminalLabelsById,
       cleanupRightPanelSurfaces,
+      requestTerminalCloseConfirmation,
       syncActivePreviewSurface,
     ],
   );
@@ -4852,17 +4879,31 @@ function ChatViewContent(props: ChatViewProps) {
         event.stopPropagation();
         return;
       }
+      const terminalFocusOwner = getTerminalFocusOwner();
+      const focusedTerminalId =
+        terminalFocusOwner === "right-panel" && activeRightPanelSurface?.kind === "terminal"
+          ? activeRightPanelSurface.activeTerminalId
+          : terminalFocusOwner === "drawer" && terminalUiState.terminalOpen
+            ? terminalUiState.activeTerminalId
+            : null;
       // While a close confirmation is open, terminal focus has moved to the
       // dialog, so a deliberate second close shortcut would otherwise fall
       // through to the native window/tab close accelerator.
-      if (isTerminalCloseConfirmPending() && preventTerminalCloseShortcut(event, keybindings)) {
+      if (
+        activeThreadRef &&
+        isTerminalCloseConfirmPending({
+          environmentId: activeThreadRef.environmentId,
+          threadId: activeThreadRef.threadId,
+          ...(focusedTerminalId ? { terminalIds: [focusedTerminalId] } : {}),
+        }) &&
+        preventTerminalCloseShortcut(event, keybindings)
+      ) {
         event.stopPropagation();
         return;
       }
       if (!activeThreadId || isCommandPaletteOpen()) {
         return;
       }
-      const terminalFocusOwner = getTerminalFocusOwner();
       if (event.defaultPrevented && terminalFocusOwner === null) {
         return;
       }
@@ -5001,6 +5042,7 @@ function ChatViewContent(props: ChatViewProps) {
   }, [
     activeProject,
     activeRightPanelSurface,
+    activeThreadRef,
     addTerminalSurface,
     terminalUiState.terminalOpen,
     terminalUiState.activeTerminalId,
