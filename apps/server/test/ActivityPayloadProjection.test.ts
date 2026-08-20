@@ -202,7 +202,10 @@ describe("projectActivityPayload", () => {
       title: "command_execution",
       status: "completed",
       requestKind: "command",
-      data: { item: { input: { command: "bun test" } } },
+      data: {
+        item: { input: { command: "bun test" } },
+        command: "bun test",
+      },
     });
   });
 
