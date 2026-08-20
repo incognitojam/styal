@@ -320,6 +320,21 @@ export const make = Effect.gen(function* () {
       Option.isSome(activeAction) ? [false, activeAction] : [true, Option.some(action)],
     );
 
+  // electron-updater emits `update-available` before its check promise
+  // settles. Transfer that check's reservation to the automatic download so
+  // the event can continue the same updater operation without opening a gap
+  // for an install, channel change, or second download.
+  const tryStartAutomaticDownload = Ref.modify(activeUpdateActionRef, (activeAction) => {
+    if (
+      Option.isNone(activeAction) ||
+      activeAction.value === "check" ||
+      activeAction.value === "channel"
+    ) {
+      return [true, Option.some<UpdateAction>("download")];
+    }
+    return [false, activeAction];
+  });
+
   const tryStartChannelChange = Ref.modify(activeUpdateActionRef, (activeAction) =>
     Option.isSome(activeAction)
       ? [activeAction, activeAction]
@@ -399,13 +414,18 @@ export const make = Effect.gen(function* () {
       : check.pipe(Effect.ensuring(finishUpdateAction("check")));
   });
 
-  const downloadAvailableUpdate = Effect.gen(function* () {
+  const downloadAvailableUpdate = Effect.fn("desktop.updates.downloadAvailableUpdate")(function* (
+    reservation: "acquire" | "handoff" = "acquire",
+  ) {
     const state = yield* Ref.get(updateStateRef);
     if (!(yield* Ref.get(updaterConfiguredRef)) || state.status !== "available") {
       return { accepted: false, completed: false };
     }
 
-    if (!(yield* tryStartUpdateAction("download"))) {
+    const acquired = yield* reservation === "handoff"
+      ? tryStartAutomaticDownload
+      : tryStartUpdateAction("download");
+    if (!acquired) {
       return { accepted: false, completed: false };
     }
 
@@ -455,7 +475,7 @@ export const make = Effect.gen(function* () {
       }),
       Effect.ensuring(finishUpdateAction("download")),
     );
-  }).pipe(Effect.withSpan("desktop.updates.downloadAvailableUpdate"));
+  });
 
   const resetInstallAction = Effect.all(
     [finishUpdateAction("install"), Ref.set(desktopState.quitting, false)],
@@ -603,7 +623,14 @@ export const make = Effect.gen(function* () {
             version: info.version,
             releaseNoteGroups: releaseNotes.length,
           });
-          yield* downloadAvailableUpdate;
+          const download = yield* downloadAvailableUpdate("handoff");
+          if (!download.accepted) {
+            // The available state is stored silently to avoid flashing it
+            // immediately before `downloading`. If no download begins (for
+            // example, this version is already downloaded), clients still
+            // need the terminal state instead of remaining on `checking`.
+            yield* emitState;
+          }
         }),
       ),
       Effect.catchCause((cause) => {
@@ -846,7 +873,7 @@ export const make = Effect.gen(function* () {
       };
     }),
     download: Effect.gen(function* () {
-      const result = yield* downloadAvailableUpdate;
+      const result = yield* downloadAvailableUpdate();
       return {
         accepted: result.accepted,
         completed: result.completed,
