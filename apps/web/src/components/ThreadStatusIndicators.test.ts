@@ -526,9 +526,9 @@ describe("prStatusIndicator", () => {
   });
 
   it("uses red for closed pull requests", () => {
-    expect(
-      prStatusIndicator({ ...prFixture(), state: "closed" }, undefined)?.colorClass,
-    ).toContain("text-red-600");
+    expect(prStatusIndicator({ ...prFixture(), state: "closed" }, undefined)?.colorClass).toContain(
+      "text-red-600",
+    );
   });
 
   it("mutes a draft instead of showing it as ready for review", () => {
@@ -543,8 +543,7 @@ describe("prStatusIndicator", () => {
   it("keeps a terminal state ahead of the draft flag", () => {
     // A draft that lands is merged. Reporting it as a draft would bury the outcome.
     expect(
-      prStatusIndicator({ ...prFixture(), state: "merged", isDraft: true }, undefined)
-        ?.tooltipLead,
+      prStatusIndicator({ ...prFixture(), state: "merged", isDraft: true }, undefined)?.tooltipLead,
     ).toBe("PR #42 - Merged");
   });
 });
