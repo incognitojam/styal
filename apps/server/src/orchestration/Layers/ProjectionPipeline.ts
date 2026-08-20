@@ -49,7 +49,7 @@ import {
   type OrchestrationProjectionPipelineShape,
 } from "../Services/ProjectionPipeline.ts";
 import {
-  attachmentRelativePath,
+  attachmentRelativePaths,
   parseAttachmentIdFromRelativePath,
   parseThreadSegmentFromAttachmentId,
   toSafeThreadAttachmentSegment,
@@ -338,14 +338,13 @@ function collectThreadAttachmentRelativePaths(
   const relativePaths = new Set<string>();
   for (const message of messages) {
     for (const attachment of message.attachments ?? []) {
-      if (attachment.type !== "image") {
-        continue;
-      }
       const attachmentThreadSegment = parseThreadSegmentFromAttachmentId(attachment.id);
       if (!attachmentThreadSegment || attachmentThreadSegment !== threadSegment) {
         continue;
       }
-      relativePaths.add(attachmentRelativePath(attachment));
+      for (const relativePath of attachmentRelativePaths(attachment)) {
+        relativePaths.add(relativePath);
+      }
     }
   }
   return relativePaths;
@@ -379,6 +378,7 @@ const runAttachmentSideEffects = Effect.fn("runAttachmentSideEffects")(function*
       }
       yield* fileSystem.remove(path.join(attachmentsRootDir, normalizedEntry), {
         force: true,
+        recursive: true,
       });
     },
   );
@@ -406,7 +406,7 @@ const runAttachmentSideEffects = Effect.fn("runAttachmentSideEffects")(function*
 
   const pruneThreadAttachmentEntry = Effect.fn("pruneThreadAttachmentEntry")(function* (
     threadSegment: string,
-    keptThreadRelativePaths: Set<string>,
+    keptRootEntries: Set<string>,
     entry: string,
   ) {
     const relativePath = entry.replace(/^[/\\]+/, "").replace(/\\/g, "/");
@@ -424,12 +424,12 @@ const runAttachmentSideEffects = Effect.fn("runAttachmentSideEffects")(function*
 
     const absolutePath = path.join(attachmentsRootDir, relativePath);
     const fileInfo = yield* fileSystem.stat(absolutePath).pipe(Effect.orElseSucceed(() => null));
-    if (!fileInfo || fileInfo.type !== "File") {
+    if (!fileInfo || (fileInfo.type !== "File" && fileInfo.type !== "Directory")) {
       return;
     }
 
-    if (!keptThreadRelativePaths.has(relativePath)) {
-      yield* fileSystem.remove(absolutePath, { force: true });
+    if (!keptRootEntries.has(relativePath)) {
+      yield* fileSystem.remove(absolutePath, { force: true, recursive: true });
     }
   });
 
@@ -448,9 +448,12 @@ const runAttachmentSideEffects = Effect.fn("runAttachmentSideEffects")(function*
     }
 
     const entries = yield* readAttachmentRootEntries;
+    const keptRootEntries = new Set(
+      [...keptThreadRelativePaths].map((relativePath) => relativePath.split("/", 1)[0]!),
+    );
     yield* Effect.forEach(
       entries,
-      (entry) => pruneThreadAttachmentEntry(threadSegment, keptThreadRelativePaths, entry),
+      (entry) => pruneThreadAttachmentEntry(threadSegment, keptRootEntries, entry),
       { concurrency: 1 },
     );
   });
