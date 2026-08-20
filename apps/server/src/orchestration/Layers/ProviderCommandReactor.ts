@@ -47,6 +47,7 @@ import {
 } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
+import * as WorkspacePaths from "../../workspace/WorkspacePaths.ts";
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 
@@ -278,6 +279,20 @@ function stalePendingRequestDetail(
   return `Stale pending ${requestKind} request: ${requestId}. Provider callback state does not survive app restarts or recovered sessions. Restart the turn to continue.`;
 }
 
+function workspaceUnavailableDetail(
+  cause: WorkspacePaths.WorkspacePathsError,
+  label: "Project folder" | "Thread worktree",
+): string {
+  switch (cause._tag) {
+    case "WorkspaceRootNotExistsError":
+      return `${label} not found: ${cause.normalizedWorkspaceRoot}. It may have been moved or deleted.`;
+    case "WorkspaceRootNotDirectoryError":
+      return `${label} is not a directory: ${cause.normalizedWorkspaceRoot}.`;
+    default:
+      return cause.message;
+  }
+}
+
 function buildGeneratedWorktreeBranchName(raw: string): string {
   const normalized = raw
     .trim()
@@ -312,6 +327,7 @@ const make = Effect.gen(function* () {
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
   const textGeneration = yield* TextGeneration;
   const serverSettingsService = yield* ServerSettingsService;
+  const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
   const serverCommandId = (tag: string) =>
     crypto.randomUUIDv4.pipe(Effect.map((uuid) => CommandId.make(`server:${tag}:${uuid}`)));
   const serverEventId = () => crypto.randomUUIDv4.pipe(Effect.map(EventId.make));
@@ -650,10 +666,29 @@ const make = Effect.gen(function* () {
       }
     }
     const project = yield* resolveProject(thread.projectId);
-    const effectiveCwd = resolveThreadWorkspaceCwd({
+    const resolvedCwd = resolveThreadWorkspaceCwd({
       thread,
       projects: project ? [project] : [],
     });
+    if (!resolvedCwd) {
+      return yield* new ProviderAdapterRequestError({
+        provider: preferredProvider,
+        method: "thread.turn.start",
+        detail: `Thread '${threadId}' has no workspace folder.`,
+      });
+    }
+    const workspaceLabel = thread.worktreePath ? "Thread worktree" : "Project folder";
+    const effectiveCwd = yield* workspacePaths.normalizeWorkspaceRoot(resolvedCwd).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ProviderAdapterRequestError({
+            provider: preferredProvider,
+            method: "thread.turn.start",
+            detail: workspaceUnavailableDetail(cause, workspaceLabel),
+            cause,
+          }),
+      ),
+    );
 
     const startProviderSession = (input?: {
       readonly resumeCursor?: unknown;
