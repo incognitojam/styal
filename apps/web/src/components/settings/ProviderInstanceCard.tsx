@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
-import { useState, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import {
   isProviderDriverKind,
   resolveProviderInstanceEnabled,
@@ -47,6 +47,7 @@ import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import {
   getProviderVersionAdvisoryPresentation,
   PROVIDER_STATUS_STYLES,
+  getProviderRateLimitLines,
   getProviderSummary,
   getProviderVersionLabel,
   type ProviderStatusKey,
@@ -598,6 +599,19 @@ export function ProviderInstanceCard({
     <code className="text-xs text-muted-foreground">{versionLabel}</code>
   ) : null;
 
+  const rateLimitLines = getProviderRateLimitLines(liveProvider?.rateLimits, Date.now());
+  const rateLimitsNode =
+    rateLimitLines.length > 0 ? (
+      <p className="flex min-w-0 flex-wrap items-center gap-x-2 text-[13px] leading-[1.45] text-muted-foreground/80">
+        {rateLimitLines.map((line, index) => (
+          <Fragment key={line.id}>
+            {index > 0 ? <span className="text-muted-foreground/40">|</span> : null}
+            <span>{line.text}</span>
+          </Fragment>
+        ))}
+      </p>
+    ) : null;
+
   return (
     <div className="rounded-xl transition-colors hover:bg-muted/20">
       <div className="px-3 py-3 sm:px-4">
@@ -704,6 +718,7 @@ export function ProviderInstanceCard({
               {titleTailNode}
             </div>
             {authRowNode}
+            {rateLimitsNode}
           </div>
           <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
             <Button

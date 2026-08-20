@@ -67,6 +67,9 @@ export const hydrateCachedProvider = (input: {
     checkedAt: input.cachedProvider.checkedAt,
     slashCommands: input.cachedProvider.slashCommands,
     skills: input.cachedProvider.skills,
+    // Quota cannot be recomputed without a live probe, so a restart keeps
+    // showing the last known windows until one succeeds.
+    ...(input.cachedProvider.rateLimits ? { rateLimits: input.cachedProvider.rateLimits } : {}),
   };
 
   return input.cachedProvider.message
