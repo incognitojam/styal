@@ -1532,7 +1532,7 @@ describe("ClaudeAdapterLive", () => {
       if (turnCompleted?.type === "turn.completed") {
         assert.equal(String(turnCompleted.turnId), String(turn.turnId));
         assert.equal(turnCompleted.payload.state, "interrupted");
-        assert.equal(turnCompleted.payload.errorMessage, "Error: Request was aborted.");
+        assert.equal(turnCompleted.payload.errorMessage, undefined);
         assert.equal(turnCompleted.payload.stopReason, "tool_use");
       }
     }).pipe(
@@ -1964,6 +1964,88 @@ describe("ClaudeAdapterLive", () => {
         assert.equal(completed.payload.state, "failed");
         assert.equal(completed.payload.errorMessage, "Claude runtime stream failed.");
       }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("keeps a terminal result error in the native log without surfacing it", () => {
+    const nativeEvents: Array<{
+      event?: {
+        method?: string;
+        payload?: unknown;
+      };
+    }> = [];
+    const harness = makeHarness({
+      nativeEventLogger: {
+        filePath: "memory://claude-native-events",
+        write: (event) => {
+          nativeEvents.push(event as (typeof nativeEvents)[number]);
+          return Effect.void;
+        },
+        close: () => Effect.void,
+      },
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const runtimeEvents: Array<ProviderRuntimeEvent> = [];
+      const runtimeEventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
+        Effect.sync(() => {
+          runtimeEvents.push(event);
+        }),
+      ).pipe(Effect.forkChild);
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      const turn = yield* adapter.sendTurn({
+        threadId: THREAD_ID,
+        input: "hello",
+        attachments: [],
+      });
+
+      const terminalError = 'Path "/workspace/moved-project" does not exist';
+      harness.query.emit({
+        type: "result",
+        subtype: "error_during_execution",
+        is_error: true,
+        errors: [terminalError],
+        session_id: "sdk-session-missing-workspace",
+        uuid: "result-missing-workspace",
+      } as unknown as SDKMessage);
+
+      yield* Effect.yieldNow;
+      yield* Effect.yieldNow;
+      harness.query.fail(new Error("stream closed after terminal result"));
+      yield* Effect.yieldNow;
+      yield* Effect.yieldNow;
+      yield* Effect.yieldNow;
+      runtimeEventsFiber.interruptUnsafe();
+
+      const runtimeErrors = runtimeEvents.filter((event) => event.type === "runtime.error");
+      assert.deepEqual(
+        runtimeErrors.map((event) => event.payload.message),
+        ["Claude turn failed."],
+      );
+
+      const completed = runtimeEvents.find((event) => event.type === "turn.completed");
+      assert.equal(completed?.type, "turn.completed");
+      if (completed?.type === "turn.completed") {
+        assert.equal(String(completed.turnId), String(turn.turnId));
+        assert.equal(completed.payload.state, "failed");
+        assert.equal(completed.payload.errorMessage, "Claude turn failed.");
+      }
+      assert.equal(runtimeEvents.at(-1)?.type, "session.exited");
+
+      const nativeResult = nativeEvents.find(
+        (record) => record.event?.method === "claude/result/error_during_execution",
+      );
+      assert.deepEqual((nativeResult?.event?.payload as { errors?: unknown })?.errors, [
+        terminalError,
+      ]);
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

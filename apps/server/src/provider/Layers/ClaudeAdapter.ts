@@ -273,6 +273,7 @@ interface ClaudeSessionContext {
   /** Task ids that have started and not yet reached a terminal state. */
   readonly liveTaskIds: Set<string>;
   turnState: ClaudeTurnState | undefined;
+  terminalResultError: string | undefined;
   lastKnownContextWindow: number | undefined;
   lastKnownTokenUsage: ThreadTokenUsageSnapshot | undefined;
   lastKnownTotalProcessedTokens: number | undefined;
@@ -380,18 +381,6 @@ function resultErrorsText(result: SDKResultMessage): string {
   return "errors" in result && Array.isArray(result.errors)
     ? result.errors.join(" ").toLowerCase()
     : "";
-}
-
-/**
- * First user-facing error from a non-success result. "[ede_diagnostic] ..."
- * entries are CLI-internal telemetry (the CLI hides them from its own UI too),
- * so they must never become the error banner.
- */
-function resultUserFacingError(result: SDKResultMessage): string | undefined {
-  if (result.subtype === "success" || !Array.isArray(result.errors)) {
-    return undefined;
-  }
-  return result.errors.find((error) => !error.startsWith("[ede_diagnostic]"));
 }
 
 function isInterruptedResult(result: SDKResultMessage): boolean {
@@ -2978,13 +2967,14 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     const status = turnStatusFromResult(message);
-    const errorMessage = resultUserFacingError(message);
+    const terminalResultError = status === "failed" ? "Claude turn failed." : undefined;
+    context.terminalResultError = terminalResultError;
 
-    if (status === "failed") {
-      yield* emitRuntimeError(context, errorMessage ?? "Claude turn failed.");
+    if (terminalResultError !== undefined) {
+      yield* emitRuntimeError(context, terminalResultError);
     }
 
-    yield* completeTurn(context, status, errorMessage, message);
+    yield* completeTurn(context, status, terminalResultError, message);
   });
 
   /**
@@ -3614,15 +3604,22 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           yield* completeTurn(context, "interrupted", "Claude runtime interrupted.");
         }
       } else {
-        const failures = exit.cause.reasons.flatMap((reason) =>
-          Cause.isFailReason(reason) ? [reason.error] : [],
-        );
-        const message = failures[0]?.detail ?? "Claude runtime stream failed.";
-        yield* emitRuntimeError(context, message, {
-          failureCount: failures.length,
-          failureTags: failures.map((failure) => failure._tag),
-        });
-        yield* completeTurn(context, "failed", message);
+        if (context.terminalResultError !== undefined) {
+          yield* Effect.logInfo("claude.stream.failed-after-terminal-result", {
+            threadId: context.session.threadId,
+            errorMessage: context.terminalResultError,
+          });
+        } else {
+          const failures = exit.cause.reasons.flatMap((reason) =>
+            Cause.isFailReason(reason) ? [reason.error] : [],
+          );
+          const message = failures[0]?.detail ?? "Claude runtime stream failed.";
+          yield* emitRuntimeError(context, message, {
+            failureCount: failures.length,
+            failureTags: failures.map((failure) => failure._tag),
+          });
+          yield* completeTurn(context, "failed", message);
+        }
       }
     } else if (context.turnState) {
       yield* completeTurn(context, "interrupted", "Claude runtime stream ended.");
@@ -4280,6 +4277,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         workflowMemberFingerprints,
         liveTaskIds,
         turnState: undefined,
+        terminalResultError: undefined,
         lastKnownContextWindow: initialContextWindow,
         lastKnownTokenUsage: undefined,
         lastKnownTotalProcessedTokens: undefined,
@@ -4422,6 +4420,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
     const turnId = steeringTurnState?.turnId ?? TurnId.make(yield* randomUUIDv4);
     if (steeringTurnState === null) {
+      context.terminalResultError = undefined;
       const turnState: ClaudeTurnState = {
         turnId,
         startedAt: yield* nowIso,
