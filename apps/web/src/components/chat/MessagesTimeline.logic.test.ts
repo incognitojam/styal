@@ -1576,6 +1576,100 @@ describe("computeStableMessagesTimelineRows", () => {
     expect(repeated.result[0]).toBe(initial.result[0]);
   });
 
+  it("refreshes a collapsed tool row when its single-entry presentation changes", () => {
+    const createRows = (command: string, exitCode?: number) =>
+      deriveMessagesTimelineRows({
+        timelineEntries: [
+          {
+            id: "entry-command",
+            kind: "work" as const,
+            createdAt: "2026-01-01T00:00:00Z",
+            entry: {
+              id: "work-command",
+              createdAt: "2026-01-01T00:00:00Z",
+              label: "Ran command",
+              tone: "tool" as const,
+              toolName: "Bash",
+              itemType: "command_execution" as const,
+              command,
+              ...(exitCode === undefined ? {} : { exitCode }),
+            },
+          },
+        ],
+        isWorking: false,
+        activeTurnStartedAt: null,
+        turnDiffSummaryByAssistantMessageId: new Map(),
+        revertTurnCountByUserMessageId: new Map(),
+      });
+
+    const initial = computeStableMessagesTimelineRows(createRows("printf old"), {
+      byId: new Map(),
+      result: [],
+    });
+    const refreshed = computeStableMessagesTimelineRows(createRows("printf new", 0), initial);
+    const row = refreshed.result[0];
+
+    expect(refreshed).not.toBe(initial);
+    expect(row).not.toBe(initial.result[0]);
+    expect(row?.kind).toBe("work-toggle");
+    if (row?.kind !== "work-toggle") throw new Error("Expected a collapsed tool row");
+    expect(row.exitCode).toBe(0);
+    expect(row.summaryEntry?.command).toBe("printf new");
+  });
+
+  it("refreshes a multi-entry tool row when its aggregate diff stat changes", () => {
+    const createRows = (secondAdditions: number) =>
+      deriveMessagesTimelineRows({
+        timelineEntries: [
+          {
+            id: "entry-edit-1",
+            kind: "work" as const,
+            createdAt: "2026-01-01T00:00:00Z",
+            entry: {
+              id: "work-edit-1",
+              createdAt: "2026-01-01T00:00:00Z",
+              label: "Edited file",
+              tone: "tool" as const,
+              itemType: "file_change" as const,
+              changedFiles: ["one.ts"],
+              fileChangeStat: { additions: 1, deletions: 0 },
+            },
+          },
+          {
+            id: "entry-edit-2",
+            kind: "work" as const,
+            createdAt: "2026-01-01T00:00:01Z",
+            entry: {
+              id: "work-edit-2",
+              createdAt: "2026-01-01T00:00:01Z",
+              label: "Edited file",
+              tone: "tool" as const,
+              itemType: "file_change" as const,
+              changedFiles: ["two.ts"],
+              fileChangeStat: { additions: secondAdditions, deletions: 1 },
+            },
+          },
+        ],
+        isWorking: false,
+        activeTurnStartedAt: null,
+        turnDiffSummaryByAssistantMessageId: new Map(),
+        revertTurnCountByUserMessageId: new Map(),
+      });
+
+    const initial = computeStableMessagesTimelineRows(createRows(1), {
+      byId: new Map(),
+      result: [],
+    });
+    const refreshed = computeStableMessagesTimelineRows(createRows(4), initial);
+    const row = refreshed.result[0];
+
+    expect(refreshed).not.toBe(initial);
+    expect(row?.kind).toBe("work-toggle");
+    if (row?.kind !== "work-toggle") throw new Error("Expected a collapsed tool row");
+    expect(row.summaryEntry).toBeUndefined();
+    expect(row.fileChangeStat).toEqual({ additions: 5, deletions: 1 });
+  });
+
   it("returns a new result when row order changes without content changes", () => {
     const firstUserMessage = {
       id: "user-1" as never,
