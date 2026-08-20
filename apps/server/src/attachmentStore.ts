@@ -114,11 +114,22 @@ function imageAttachmentRelativePaths(attachment: ChatAttachment): [string, stri
   return [`${attachment.id}/${basename}`, `${attachment.id}${extension}`];
 }
 
+function fileAttachmentRelativePath(attachment: ChatAttachment): string {
+  const originalExtension = NodePath.extname(attachment.name);
+  const extension = /^\.[a-z0-9]{1,16}$/i.test(originalExtension)
+    ? originalExtension.toLowerCase()
+    : ".bin";
+  const basename = toSafeAttachmentBasename({ name: attachment.name, extension });
+  return `${attachment.id}/${basename}`;
+}
+
 export function attachmentRelativePath(attachment: ChatAttachment): string {
   switch (attachment.type) {
     case "image": {
       return imageAttachmentRelativePaths(attachment)[0];
     }
+    case "file":
+      return fileAttachmentRelativePath(attachment);
   }
 }
 
@@ -127,6 +138,8 @@ export function attachmentRelativePaths(attachment: ChatAttachment): ReadonlyArr
   switch (attachment.type) {
     case "image":
       return imageAttachmentRelativePaths(attachment);
+    case "file":
+      return [fileAttachmentRelativePath(attachment)];
   }
 }
 
@@ -172,7 +185,14 @@ export function resolveAttachmentPathById(input: {
             attachmentsDir: input.attachmentsDir,
             relativePath: `${normalizedId}/${entries[0]!}`,
           });
-          if (namedPath && NodeFS.lstatSync(namedPath).isFile()) return namedPath;
+          const extension = NodePath.extname(namedPath ?? "").toLowerCase();
+          if (
+            namedPath &&
+            SAFE_IMAGE_FILE_EXTENSIONS.has(extension) &&
+            NodeFS.lstatSync(namedPath).isFile()
+          ) {
+            return namedPath;
+          }
         }
       }
     } catch {

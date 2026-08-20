@@ -36,7 +36,12 @@ import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model"
 import { useMemo } from "react";
 import { getLocalStorageItem } from "./hooks/useLocalStorage";
 import { resolveAppModelSelection, resolveAppModelSelectionForInstance } from "./modelSelection";
-import { DEFAULT_INTERACTION_MODE, DEFAULT_RUNTIME_MODE, type ChatImageAttachment } from "./types";
+import {
+  DEFAULT_INTERACTION_MODE,
+  DEFAULT_RUNTIME_MODE,
+  type ChatFileAttachment,
+  type ChatImageAttachment,
+} from "./types";
 import {
   type TerminalContextDraft,
   ensureInlineTerminalContextPlaceholders,
@@ -89,19 +94,38 @@ if (typeof window !== "undefined" && typeof window.addEventListener === "functio
   });
 }
 
-export const PersistedComposerImageAttachment = Schema.Struct({
+const PersistedComposerImageAttachmentSchema = Schema.Struct({
+  type: Schema.optionalKey(Schema.Literal("image")),
   id: Schema.String,
   name: Schema.String,
   mimeType: Schema.String,
   sizeBytes: Schema.Number,
   dataUrl: Schema.String,
 });
-export type PersistedComposerImageAttachment = typeof PersistedComposerImageAttachment.Type;
+const PersistedComposerFileAttachment = Schema.Struct({
+  type: Schema.Literal("file"),
+  id: Schema.String,
+  name: Schema.String,
+  mimeType: Schema.String,
+  sizeBytes: Schema.Number,
+  dataUrl: Schema.String,
+});
+export const PersistedComposerAttachment = Schema.Union([
+  PersistedComposerImageAttachmentSchema,
+  PersistedComposerFileAttachment,
+]);
+export type PersistedComposerAttachment = typeof PersistedComposerAttachment.Type;
 
 export interface ComposerImageAttachment extends Omit<ChatImageAttachment, "previewUrl"> {
   previewUrl: string;
   file: File;
 }
+
+export interface ComposerFileAttachment extends ChatFileAttachment {
+  file: File;
+}
+
+export type ComposerAttachment = ComposerImageAttachment | ComposerFileAttachment;
 
 const PersistedTerminalContextDraft = Schema.Struct({
   id: Schema.String,
@@ -159,7 +183,7 @@ type PersistedIssueContextDraft = typeof PersistedIssueContextDraft.Type;
 
 const PersistedComposerThreadDraftState = Schema.Struct({
   prompt: Schema.String,
-  attachments: Schema.Array(PersistedComposerImageAttachment),
+  attachments: Schema.Array(PersistedComposerAttachment),
   terminalContexts: Schema.optionalKey(Schema.Array(PersistedTerminalContextDraft)),
   elementContexts: Schema.optionalKey(Schema.Array(PersistedElementContextDraft)),
   issueContexts: Schema.optionalKey(Schema.Array(PersistedIssueContextDraft)),
@@ -282,9 +306,9 @@ const PersistedComposerDraftStoreStorage = Schema.Struct({
  */
 export interface ComposerThreadDraftState {
   prompt: string;
-  images: ComposerImageAttachment[];
+  images: ComposerAttachment[];
   nonPersistedImageIds: string[];
-  persistedAttachments: PersistedComposerImageAttachment[];
+  persistedAttachments: PersistedComposerAttachment[];
   terminalContexts: TerminalContextDraft[];
   /**
    * Element-pick attachments captured from the in-app preview browser. The
@@ -515,8 +539,8 @@ interface ComposerDraftStoreState {
     threadRef: ComposerThreadTarget,
     interactionMode: ProviderInteractionMode | null | undefined,
   ) => void;
-  addImage: (threadRef: ComposerThreadTarget, image: ComposerImageAttachment) => void;
-  addImages: (threadRef: ComposerThreadTarget, images: ComposerImageAttachment[]) => void;
+  addImage: (threadRef: ComposerThreadTarget, image: ComposerAttachment) => void;
+  addImages: (threadRef: ComposerThreadTarget, images: ComposerAttachment[]) => void;
   removeImage: (threadRef: ComposerThreadTarget, imageId: string) => void;
   insertTerminalContext: (
     threadRef: ComposerThreadTarget,
@@ -579,7 +603,7 @@ interface ComposerDraftStoreState {
   clearPersistedAttachments: (threadRef: ComposerThreadTarget) => void;
   syncPersistedAttachments: (
     threadRef: ComposerThreadTarget,
-    attachments: PersistedComposerImageAttachment[],
+    attachments: PersistedComposerAttachment[],
   ) => void;
   clearComposerContent: (threadRef: ComposerThreadTarget) => void;
   /**
@@ -663,9 +687,9 @@ const EMPTY_PERSISTED_DRAFT_STORE_STATE = Object.freeze<PersistedComposerDraftSt
   stickyActiveProvider: null,
 });
 
-const EMPTY_IMAGES: ComposerImageAttachment[] = [];
+const EMPTY_IMAGES: ComposerAttachment[] = [];
 const EMPTY_IDS: string[] = [];
-const EMPTY_PERSISTED_ATTACHMENTS: PersistedComposerImageAttachment[] = [];
+const EMPTY_PERSISTED_ATTACHMENTS: PersistedComposerAttachment[] = [];
 const EMPTY_TERMINAL_CONTEXTS: TerminalContextDraft[] = [];
 const EMPTY_ELEMENT_CONTEXTS: ElementContextDraft[] = [];
 const EMPTY_ISSUE_CONTEXTS: IssueContextDraft[] = [];
@@ -725,7 +749,7 @@ export function createEmptyThreadDraft(): ComposerThreadDraftState {
   };
 }
 
-function composerImageDedupKey(image: ComposerImageAttachment): string {
+function composerAttachmentDedupKey(image: ComposerAttachment): string {
   // Keep this independent from File.lastModified so dedupe is stable for hydrated
   // images reconstructed from localStorage (which get a fresh lastModified value).
   return `${image.mimeType}\u0000${image.sizeBytes}\u0000${image.name}`;
@@ -1150,11 +1174,11 @@ function revokeDraftThreadPreviewUrls(draft: ComposerThreadDraftState | undefine
     return;
   }
   for (const image of draft.images) {
-    revokeObjectPreviewUrl(image.previewUrl);
+    if (image.type === "image") revokeObjectPreviewUrl(image.previewUrl);
   }
 }
 
-function normalizePersistedAttachment(value: unknown): PersistedComposerImageAttachment | null {
+function normalizePersistedAttachment(value: unknown): PersistedComposerAttachment | null {
   if (!value || typeof value !== "object") {
     return null;
   }
@@ -1164,6 +1188,7 @@ function normalizePersistedAttachment(value: unknown): PersistedComposerImageAtt
   const mimeType = candidate.mimeType;
   const sizeBytes = candidate.sizeBytes;
   const dataUrl = candidate.dataUrl;
+  const type = candidate.type === "file" ? "file" : "image";
   if (
     typeof id !== "string" ||
     typeof name !== "string" ||
@@ -1177,6 +1202,7 @@ function normalizePersistedAttachment(value: unknown): PersistedComposerImageAtt
     return null;
   }
   return {
+    type,
     id,
     name,
     mimeType,
@@ -2234,7 +2260,7 @@ function readPersistedAttachmentIdsFromStorage(threadKey: string): string[] {
 
 function verifyPersistedAttachments(
   threadKey: string,
-  attachments: PersistedComposerImageAttachment[],
+  attachments: PersistedComposerAttachment[],
   set: (
     partial:
       | ComposerDraftStoreState
@@ -2282,9 +2308,7 @@ function verifyPersistedAttachments(
   });
 }
 
-function hydratePersistedComposerImageAttachment(
-  attachment: PersistedComposerImageAttachment,
-): File | null {
+function hydratePersistedComposerAttachment(attachment: PersistedComposerAttachment): File | null {
   const commaIndex = attachment.dataUrl.indexOf(",");
   const header = commaIndex === -1 ? attachment.dataUrl : attachment.dataUrl.slice(0, commaIndex);
   const payload = commaIndex === -1 ? "" : attachment.dataUrl.slice(commaIndex + 1);
@@ -2314,25 +2338,36 @@ function hydratePersistedComposerImageAttachment(
   }
 }
 
-export function hydrateImagesFromPersisted(
-  attachments: ReadonlyArray<PersistedComposerImageAttachment>,
-): ComposerImageAttachment[] {
-  return attachments.flatMap((attachment) => {
-    const file = hydratePersistedComposerImageAttachment(attachment);
-    if (!file) return [];
+export function hydrateAttachmentsFromPersisted(
+  attachments: ReadonlyArray<PersistedComposerAttachment>,
+): ComposerAttachment[] {
+  const hydrated: ComposerAttachment[] = [];
+  for (const attachment of attachments) {
+    const file = hydratePersistedComposerAttachment(attachment);
+    if (!file) continue;
 
-    return [
-      {
-        type: "image" as const,
+    if (attachment.type === "file") {
+      hydrated.push({
+        type: "file",
         id: attachment.id,
         name: attachment.name,
         mimeType: attachment.mimeType,
         sizeBytes: attachment.sizeBytes,
-        previewUrl: attachment.dataUrl,
         file,
-      } satisfies ComposerImageAttachment,
-    ];
-  });
+      });
+      continue;
+    }
+    hydrated.push({
+      type: "image",
+      id: attachment.id,
+      name: attachment.name,
+      mimeType: attachment.mimeType,
+      sizeBytes: attachment.sizeBytes,
+      previewUrl: attachment.dataUrl,
+      file,
+    });
+  }
+  return hydrated;
 }
 
 function toHydratedThreadDraft(
@@ -2345,7 +2380,7 @@ function toHydratedThreadDraft(
 
   return {
     prompt: persistedDraft.prompt,
-    images: hydrateImagesFromPersisted(persistedDraft.attachments),
+    images: hydrateAttachmentsFromPersisted(persistedDraft.attachments),
     nonPersistedImageIds: [],
     persistedAttachments: [...persistedDraft.attachments],
     terminalContexts:
@@ -3206,15 +3241,19 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
             const existingIds = new Set(existing.images.map((image) => image.id));
             const existingDedupKeys = new Set(
-              existing.images.map((image) => composerImageDedupKey(image)),
+              existing.images.map((image) => composerAttachmentDedupKey(image)),
             );
-            const acceptedPreviewUrls = new Set(existing.images.map((image) => image.previewUrl));
-            const dedupedIncoming: ComposerImageAttachment[] = [];
+            const acceptedPreviewUrls = new Set(
+              existing.images.flatMap((image) =>
+                image.type === "image" ? [image.previewUrl] : [],
+              ),
+            );
+            const dedupedIncoming: ComposerAttachment[] = [];
             for (const image of images) {
-              const dedupKey = composerImageDedupKey(image);
+              const dedupKey = composerAttachmentDedupKey(image);
               if (existingIds.has(image.id) || existingDedupKeys.has(dedupKey)) {
                 // Avoid revoking a blob URL that's still referenced by an accepted image.
-                if (!acceptedPreviewUrls.has(image.previewUrl)) {
+                if (image.type === "image" && !acceptedPreviewUrls.has(image.previewUrl)) {
                   revokeObjectPreviewUrl(image.previewUrl);
                 }
                 continue;
@@ -3222,7 +3261,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               dedupedIncoming.push(image);
               existingIds.add(image.id);
               existingDedupKeys.add(dedupKey);
-              acceptedPreviewUrls.add(image.previewUrl);
+              if (image.type === "image") acceptedPreviewUrls.add(image.previewUrl);
             }
             if (dedupedIncoming.length === 0) {
               return state;
@@ -3248,7 +3287,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             return;
           }
           const removedImage = existing.images.find((image) => image.id === imageId);
-          if (removedImage) {
+          if (removedImage?.type === "image") {
             revokeObjectPreviewUrl(removedImage.previewUrl);
           }
           set((state) => {
@@ -3791,7 +3830,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               return state;
             }
             for (const image of current.images) {
-              revokeObjectPreviewUrl(image.previewUrl);
+              if (image.type === "image") revokeObjectPreviewUrl(image.previewUrl);
             }
             const nextDraft: ComposerThreadDraftState = {
               ...current,

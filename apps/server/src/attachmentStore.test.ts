@@ -71,6 +71,18 @@ describe("attachmentStore", () => {
     ).toBe("thread-1-attachment/payload.png");
   });
 
+  it("preserves a safe extension for generic files", () => {
+    expect(
+      attachmentRelativePath({
+        type: "file",
+        id: "thread-1-attachment",
+        name: "docs/design spec.PDF",
+        mimeType: "application/pdf",
+        sizeBytes: 5,
+      }),
+    ).toBe("thread-1-attachment/design spec.pdf");
+  });
+
   it("sanitizes cross-platform basenames and preserves extensions when truncating", () => {
     expect(
       toSafeAttachmentBasename({
@@ -178,6 +190,22 @@ describe("attachmentStore", () => {
         attachmentId: "thread-1-missing",
       });
       expect(resolved).toBeNull();
+    } finally {
+      NodeFS.rmSync(attachmentsDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not expose generic files through the image asset lookup", () => {
+    const attachmentsDir = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3code-attachment-store-"),
+    );
+    try {
+      const attachmentId = "thread-1-attachment";
+      const attachmentPath = NodePath.join(attachmentsDir, attachmentId, "notes.md");
+      NodeFS.mkdirSync(NodePath.dirname(attachmentPath), { recursive: true });
+      NodeFS.writeFileSync(attachmentPath, Buffer.from("# Notes"));
+
+      expect(resolveAttachmentPathById({ attachmentsDir, attachmentId })).toBeNull();
     } finally {
       NodeFS.rmSync(attachmentsDir, { recursive: true, force: true });
     }
