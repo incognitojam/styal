@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
 
 import type { ChatAttachment } from "@t3tools/contracts";
 
@@ -12,6 +13,7 @@ import { inferImageExtension, SAFE_IMAGE_FILE_EXTENSIONS } from "./imageMime.ts"
 
 const ATTACHMENT_FILENAME_EXTENSIONS = [...SAFE_IMAGE_FILE_EXTENSIONS, ".bin"];
 const ATTACHMENT_ID_THREAD_SEGMENT_MAX_CHARS = 80;
+const ATTACHMENT_BASENAME_MAX_BYTES = 180;
 const ATTACHMENT_ID_THREAD_SEGMENT_PATTERN = "[a-z0-9_]+(?:-[a-z0-9_]+)*";
 const ATTACHMENT_ID_UUID_PATTERN = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const ATTACHMENT_ID_PATTERN = new RegExp(
@@ -54,15 +56,77 @@ export function parseThreadSegmentFromAttachmentId(attachmentId: string): string
   return match[1]?.toLowerCase() ?? null;
 }
 
+function truncateUtf8(value: string, maxBytes: number): string {
+  let result = "";
+  let bytes = 0;
+  for (const character of value) {
+    const characterBytes = Buffer.byteLength(character);
+    if (bytes + characterBytes > maxBytes) break;
+    result += character;
+    bytes += characterBytes;
+  }
+  return result;
+}
+
+/** Keeps the user-facing name while making it safe as one cross-platform path segment. */
+export function toSafeAttachmentBasename(input: {
+  readonly name: string;
+  readonly fallbackExtension: string;
+}): string {
+  const basename = NodePath.posix.basename(input.name.replace(/\\/g, "/"));
+  const invalidCharacters = new Set('<>:"/\\|?*');
+  const sanitized = [...basename]
+    .map((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint <= 0x1f || codePoint === 0x7f || invalidCharacters.has(character)
+        ? "_"
+        : character;
+    })
+    .join("")
+    .replace(/[. ]+$/g, "")
+    .trim();
+  const usable = sanitized.length > 0 && sanitized !== "." && sanitized !== "..";
+  const candidate = usable ? sanitized : `attachment${input.fallbackExtension}`;
+  const reservedStem = candidate.split(".", 1)[0]?.toLowerCase() ?? "";
+  const windowsSafe = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/.test(reservedStem)
+    ? `_${candidate}`
+    : candidate;
+  const extension = NodePath.extname(windowsSafe);
+  if (/^\.[a-z0-9]{1,16}$/i.test(extension)) {
+    const stem = windowsSafe.slice(0, -extension.length);
+    return `${truncateUtf8(
+      stem,
+      ATTACHMENT_BASENAME_MAX_BYTES - Buffer.byteLength(extension),
+    )}${extension}`;
+  }
+  return truncateUtf8(windowsSafe, ATTACHMENT_BASENAME_MAX_BYTES);
+}
+
+function imageAttachmentRelativePaths(attachment: ChatAttachment): [string, string] {
+  const extension = inferImageExtension({
+    mimeType: attachment.mimeType,
+    fileName: attachment.name,
+  });
+  const basename = toSafeAttachmentBasename({
+    name: attachment.name,
+    fallbackExtension: extension,
+  });
+  return [`${attachment.id}/${basename}`, `${attachment.id}${extension}`];
+}
+
 export function attachmentRelativePath(attachment: ChatAttachment): string {
   switch (attachment.type) {
     case "image": {
-      const extension = inferImageExtension({
-        mimeType: attachment.mimeType,
-        fileName: attachment.name,
-      });
-      return `${attachment.id}${extension}`;
+      return imageAttachmentRelativePaths(attachment)[0];
     }
+  }
+}
+
+/** Current and legacy paths that may represent the same persisted attachment. */
+export function attachmentRelativePaths(attachment: ChatAttachment): ReadonlyArray<string> {
+  switch (attachment.type) {
+    case "image":
+      return imageAttachmentRelativePaths(attachment);
   }
 }
 
@@ -70,10 +134,21 @@ export function resolveAttachmentPath(input: {
   readonly attachmentsDir: string;
   readonly attachment: ChatAttachment;
 }): string | null {
-  return resolveAttachmentRelativePath({
+  const relativePaths = attachmentRelativePaths(input.attachment);
+  const preferredPath = resolveAttachmentRelativePath({
     attachmentsDir: input.attachmentsDir,
-    relativePath: attachmentRelativePath(input.attachment),
+    relativePath: relativePaths[0]!,
   });
+  if (!preferredPath || NodeFS.existsSync(preferredPath)) return preferredPath;
+
+  for (const relativePath of relativePaths.slice(1)) {
+    const legacyPath = resolveAttachmentRelativePath({
+      attachmentsDir: input.attachmentsDir,
+      relativePath,
+    });
+    if (legacyPath && NodeFS.existsSync(legacyPath)) return legacyPath;
+  }
+  return preferredPath;
 }
 
 export function resolveAttachmentPathById(input: {
@@ -83,6 +158,26 @@ export function resolveAttachmentPathById(input: {
   const normalizedId = normalizeAttachmentRelativePath(input.attachmentId);
   if (!normalizedId || normalizedId.includes("/") || normalizedId.includes(".")) {
     return null;
+  }
+  const namedDirectory = resolveAttachmentRelativePath({
+    attachmentsDir: input.attachmentsDir,
+    relativePath: normalizedId,
+  });
+  if (namedDirectory) {
+    try {
+      if (NodeFS.lstatSync(namedDirectory).isDirectory()) {
+        const entries = NodeFS.readdirSync(namedDirectory);
+        if (entries.length === 1) {
+          const namedPath = resolveAttachmentRelativePath({
+            attachmentsDir: input.attachmentsDir,
+            relativePath: `${normalizedId}/${entries[0]!}`,
+          });
+          if (namedPath && NodeFS.lstatSync(namedPath).isFile()) return namedPath;
+        }
+      }
+    } catch {
+      // Fall through to the legacy flat-file layout.
+    }
   }
   for (const extension of ATTACHMENT_FILENAME_EXTENSIONS) {
     const maybePath = resolveAttachmentRelativePath({
@@ -100,6 +195,9 @@ export function parseAttachmentIdFromRelativePath(relativePath: string): string 
   const normalized = normalizeAttachmentRelativePath(relativePath);
   if (!normalized || normalized.includes("/")) {
     return null;
+  }
+  if (ATTACHMENT_ID_PATTERN.test(normalized)) {
+    return normalized;
   }
   const extensionIndex = normalized.lastIndexOf(".");
   if (extensionIndex <= 0) {

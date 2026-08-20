@@ -6,9 +6,12 @@ import * as NodePath from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  attachmentRelativePath,
   createAttachmentId,
   parseThreadSegmentFromAttachmentId,
+  resolveAttachmentPath,
   resolveAttachmentPathById,
+  toSafeAttachmentBasename,
 } from "./attachmentStore.ts";
 
 describe("attachmentStore", () => {
@@ -42,6 +45,89 @@ describe("attachmentStore", () => {
       return;
     }
     expect(parseThreadSegmentFromAttachmentId(attachmentId)).toBe("thread-foo");
+  });
+
+  it("preserves a safe image basename below its attachment id", () => {
+    expect(
+      attachmentRelativePath({
+        type: "image",
+        id: "thread-1-attachment",
+        name: "screenshots/checkout failure.png",
+        mimeType: "image/png",
+        sizeBytes: 5,
+      }),
+    ).toBe("thread-1-attachment/checkout failure.png");
+  });
+
+  it("sanitizes cross-platform basenames and preserves extensions when truncating", () => {
+    expect(
+      toSafeAttachmentBasename({
+        name: String.raw`C:\temp\report:final?.png`,
+        fallbackExtension: ".png",
+      }),
+    ).toBe("report_final_.png");
+    expect(
+      toSafeAttachmentBasename({
+        name: `${"🖼️".repeat(100)}.png`,
+        fallbackExtension: ".png",
+      }),
+    ).toMatch(/\.png$/);
+    expect(
+      Buffer.byteLength(
+        toSafeAttachmentBasename({
+          name: `${"🖼️".repeat(100)}.png`,
+          fallbackExtension: ".png",
+        }),
+      ),
+    ).toBeLessThanOrEqual(180);
+  });
+
+  it("resolves the named layout from attachment metadata and id", () => {
+    const attachmentsDir = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3code-attachment-store-"),
+    );
+    try {
+      const attachment = {
+        type: "image" as const,
+        id: "thread-1-attachment",
+        name: "checkout failure.png",
+        mimeType: "image/png",
+        sizeBytes: 5,
+      };
+      const namedPath = NodePath.join(attachmentsDir, attachment.id, attachment.name);
+      NodeFS.mkdirSync(NodePath.dirname(namedPath), { recursive: true });
+      NodeFS.writeFileSync(namedPath, Buffer.from("hello"));
+
+      expect(resolveAttachmentPath({ attachmentsDir, attachment })).toBe(namedPath);
+      expect(resolveAttachmentPathById({ attachmentsDir, attachmentId: attachment.id })).toBe(
+        namedPath,
+      );
+    } finally {
+      NodeFS.rmSync(attachmentsDir, { recursive: true, force: true });
+    }
+  });
+
+  it("selects the named path for a new attachment and falls back for legacy images", () => {
+    const attachmentsDir = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3code-attachment-store-"),
+    );
+    try {
+      const attachment = {
+        type: "image" as const,
+        id: "thread-1-attachment",
+        name: "checkout failure.png",
+        mimeType: "image/png",
+        sizeBytes: 5,
+      };
+      const namedPath = NodePath.join(attachmentsDir, attachment.id, attachment.name);
+      expect(resolveAttachmentPath({ attachmentsDir, attachment })).toBe(namedPath);
+
+      const legacyPath = NodePath.join(attachmentsDir, `${attachment.id}.png`);
+      NodeFS.writeFileSync(legacyPath, Buffer.from("hello"));
+      expect(resolveAttachmentPath({ attachmentsDir, attachment })).toBe(legacyPath);
+    } finally {
+      NodeFS.rmSync(attachmentsDir, { recursive: true, force: true });
+    }
   });
 
   it("resolves attachment path by id using the extension that exists on disk", () => {
