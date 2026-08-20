@@ -116,6 +116,7 @@ function normalizeFakePullRequestSummary(raw: unknown): GitHubCli.GitHubPullRequ
           ? "closed"
           : "merged"
       : undefined;
+  const isDraft = record.isDraft === true;
   const isCrossRepository =
     typeof record.isCrossRepository === "boolean" ? record.isCrossRepository : undefined;
   const headRepositoryNameWithOwner =
@@ -137,6 +138,7 @@ function normalizeFakePullRequestSummary(raw: unknown): GitHubCli.GitHubPullRequ
     url,
     baseRefName,
     headRefName,
+    isDraft,
     ...(state ? { state } : {}),
     ...(isCrossRepository !== undefined ? { isCrossRepository } : {}),
     ...(headRepositoryNameWithOwner ? { headRepositoryNameWithOwner } : {}),
@@ -508,7 +510,7 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
             "--limit",
             String(input.limit ?? 1),
             "--json",
-            "number,title,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
+            "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
           ],
         }).pipe(
           Effect.map((result) => JSON.parse(result.stdout) as unknown[]),
@@ -552,7 +554,7 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
             "view",
             input.reference,
             "--json",
-            "number,title,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
+            "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
           ],
         }).pipe(
           Effect.map((result) => JSON.parse(result.stdout) as GitHubCli.GitHubPullRequestSummary),
@@ -727,6 +729,48 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         baseRef: "main",
         headRef: "feature/status-open-pr",
         state: "open",
+        isDraft: false,
+        updatedAt: null,
+      });
+    }),
+  );
+
+  it.effect("status reports a draft PR as a draft", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      yield* runGit(repoDir, ["checkout", "-b", "feature/status-draft-pr"]);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "feature/status-draft-pr"]);
+
+      const { manager } = yield* makeManager({
+        ghScenario: {
+          prListSequence: [
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            JSON.stringify([
+              {
+                number: 18,
+                title: "Draft PR",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/18",
+                baseRefName: "main",
+                headRefName: "feature/status-draft-pr",
+                isDraft: true,
+              },
+            ]),
+          ],
+        },
+      });
+
+      const status = yield* manager.status({ cwd: repoDir });
+      expect(status.pr).toEqual({
+        number: 18,
+        title: "Draft PR",
+        url: "https://github.com/pingdotgg/codething-mvp/pull/18",
+        baseRef: "main",
+        headRef: "feature/status-draft-pr",
+        state: "open",
+        isDraft: true,
         updatedAt: null,
       });
     }),
@@ -767,6 +811,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         baseRef: "main",
         headRef: "feature/status-trimmed-pr",
         state: "open",
+        isDraft: false,
         updatedAt: null,
       });
     }),
@@ -820,6 +865,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         baseRef: "main",
         headRef: "feature/status-valid-pr-entry",
         state: "open",
+        isDraft: false,
         updatedAt: null,
       });
     }),
@@ -871,6 +917,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         baseRef: "main",
         headRef: "feature/status-lowercase-state",
         state: "merged",
+        isDraft: false,
         updatedAt: "2026-01-02T00:00:00.000Z",
       });
     }),
@@ -1125,6 +1172,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         baseRef: "main",
         headRef: "feature/pruned-after-merge",
         state: "merged",
+        isDraft: false,
         updatedAt: "2026-04-02T15:00:00.000Z",
       });
       expect(ghCalls.filter((call) => call.startsWith("pr list ")).length).toBeGreaterThan(0);
@@ -1174,10 +1222,11 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         baseRef: "main",
         headRef: "feature/hosted-name",
         state: "merged",
+        isDraft: false,
         updatedAt: "2026-04-03T15:00:00.000Z",
       });
       expect(ghCalls).toContain(
-        "pr list --head feature/hosted-name --state all --limit 20 --json number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
+        "pr list --head feature/hosted-name --state all --limit 20 --json number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
       );
     }),
   );
@@ -1333,10 +1382,11 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           baseRef: "main",
           headRef: "statemachine",
           state: "open",
+          isDraft: false,
           updatedAt: "2026-03-10T07:00:00.000Z",
         });
         expect(ghCalls).toContain(
-          "pr list --head jasonLaster:statemachine --state all --limit 20 --json number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
+          "pr list --head jasonLaster:statemachine --state all --limit 20 --json number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
         );
       }),
     20_000,
@@ -1399,10 +1449,11 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           baseRef: "main",
           headRef: "main",
           state: "open",
+          isDraft: false,
           updatedAt: "2026-03-10T07:00:00.000Z",
         });
         expect(ghCalls).toContain(
-          "pr list --head contributor:main --state all --limit 20 --json number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
+          "pr list --head contributor:main --state all --limit 20 --json number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
         );
       }),
     20_000,
@@ -1508,6 +1559,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           baseRef: "main",
           headRef: "effect-atom",
           state: "open",
+          isDraft: false,
           updatedAt: "2026-03-01T10:00:00.000Z",
         });
         expect(ghCalls.some((call) => call.includes("pr list --head upstream/effect-atom "))).toBe(
@@ -1560,6 +1612,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         baseRef: "main",
         headRef: "feature/status-merged-pr",
         state: "merged",
+        isDraft: false,
         updatedAt: "2026-01-30T10:00:00.000Z",
       });
     }),
@@ -1677,6 +1730,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         baseRef: "main",
         headRef: "feature/status-open-over-merged",
         state: "open",
+        isDraft: false,
         updatedAt: "2026-01-30T10:00:00.000Z",
       });
     }),
@@ -3112,6 +3166,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
             baseRefName: "main",
             headRefName: "statemachine",
             state: "open",
+            isDraft: false,
             updatedAt: Option.none(),
             isCrossRepository: false,
             headRepositoryNameWithOwner: "pingdotgg/codething-mvp",
@@ -3130,6 +3185,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
             baseRefName: "main",
             headRefName: "statemachine",
             state: "open",
+            isDraft: false,
             updatedAt: Option.none(),
             isCrossRepository: true,
             headRepositoryNameWithOwner: "pingdotgg/codething-mvp",
@@ -3159,6 +3215,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
             baseRefName: "main",
             headRefName: "t3code/git-audit-stability",
             state: "open",
+            isDraft: false,
             updatedAt: Option.none(),
             isCrossRepository: true,
             headRepositoryNameWithOwner: "justsomelegs/t3code",
