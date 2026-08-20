@@ -273,7 +273,7 @@ interface ClaudeSessionContext {
   /** Task ids that have started and not yet reached a terminal state. */
   readonly liveTaskIds: Set<string>;
   turnState: ClaudeTurnState | undefined;
-  terminalResultError: string | undefined;
+  suppressNextIdleStreamFailure: boolean;
   lastKnownContextWindow: number | undefined;
   lastKnownTokenUsage: ThreadTokenUsageSnapshot | undefined;
   lastKnownTotalProcessedTokens: number | undefined;
@@ -1319,6 +1319,54 @@ function turnStatusFromResult(result: SDKResultMessage): ProviderRuntimeTurnStat
     return "cancelled";
   }
   return "failed";
+}
+
+function claudeResultFailureMessage(result: SDKResultMessage): string {
+  if (result.subtype === "error_max_turns" || result.terminal_reason === "max_turns") {
+    return "Claude reached the maximum turn limit.";
+  }
+  if (result.subtype === "error_max_budget_usd") {
+    return "Claude reached the configured spending limit.";
+  }
+  if (result.subtype === "error_max_structured_output_retries") {
+    return "Claude could not produce valid structured output.";
+  }
+
+  switch (result.terminal_reason) {
+    case "prompt_too_long":
+      return "Claude could not continue because the conversation exceeds the context limit. Start a new thread or shorten the prompt.";
+    case "blocking_limit":
+    case "rapid_refill_breaker":
+      return "Claude usage limit reached. Try again later.";
+    case "image_error":
+      return "Claude could not process an attached image.";
+    case "model_error":
+      return "Claude service error. Try again.";
+    case "stop_hook_prevented":
+    case "hook_stopped":
+      return "A Claude hook stopped the turn.";
+  }
+
+  const apiErrorStatus = (
+    result as SDKResultMessage & {
+      readonly api_error_status?: number | null;
+    }
+  ).api_error_status;
+  switch (apiErrorStatus) {
+    case 401:
+    case 403:
+      return "Claude authentication failed. Check the configured credentials.";
+    case 402:
+      return "Claude account has insufficient credits.";
+    case 429:
+      return "Claude usage limit reached. Try again later.";
+    case 529:
+      return "Claude is temporarily overloaded. Try again.";
+    default:
+      return typeof apiErrorStatus === "number" && apiErrorStatus >= 500
+        ? "Claude service error. Try again."
+        : "Claude turn failed.";
+  }
 }
 
 function streamKindFromDeltaType(deltaType: string): ClaudeTextStreamKind {
@@ -2881,6 +2929,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     // Auto-start a synthetic turn for assistant messages that arrive without
     // an active turn (e.g., background agent/subagent responses between user prompts).
     if (!context.turnState) {
+      context.suppressNextIdleStreamFailure = false;
       const turnId = TurnId.make(yield* randomUUIDv4);
       const startedAt = yield* nowIso;
       context.turnState = {
@@ -2967,8 +3016,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     const status = turnStatusFromResult(message);
-    const terminalResultError = status === "failed" ? "Claude turn failed." : undefined;
-    context.terminalResultError = terminalResultError;
+    const terminalResultError =
+      status === "failed" ? claudeResultFailureMessage(message) : undefined;
+    context.suppressNextIdleStreamFailure = terminalResultError !== undefined;
 
     if (terminalResultError !== undefined) {
       yield* emitRuntimeError(context, terminalResultError);
@@ -3604,10 +3654,12 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           yield* completeTurn(context, "interrupted", "Claude runtime interrupted.");
         }
       } else {
-        if (context.terminalResultError !== undefined) {
+        const suppressStreamFailure =
+          context.turnState === undefined && context.suppressNextIdleStreamFailure;
+        context.suppressNextIdleStreamFailure = false;
+        if (suppressStreamFailure) {
           yield* Effect.logInfo("claude.stream.failed-after-terminal-result", {
             threadId: context.session.threadId,
-            errorMessage: context.terminalResultError,
           });
         } else {
           const failures = exit.cause.reasons.flatMap((reason) =>
@@ -4277,7 +4329,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         workflowMemberFingerprints,
         liveTaskIds,
         turnState: undefined,
-        terminalResultError: undefined,
+        suppressNextIdleStreamFailure: false,
         lastKnownContextWindow: initialContextWindow,
         lastKnownTokenUsage: undefined,
         lastKnownTotalProcessedTokens: undefined,
@@ -4420,7 +4472,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
     const turnId = steeringTurnState?.turnId ?? TurnId.make(yield* randomUUIDv4);
     if (steeringTurnState === null) {
-      context.terminalResultError = undefined;
+      context.suppressNextIdleStreamFailure = false;
       const turnState: ClaudeTurnState = {
         turnId,
         startedAt: yield* nowIso,

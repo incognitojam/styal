@@ -1970,6 +1970,82 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("maps typed Claude failures to safe actionable messages", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      const cases: ReadonlyArray<{
+        readonly subtype: string;
+        readonly terminalReason?: string;
+        readonly apiErrorStatus?: number;
+        readonly expected: string;
+      }> = [
+        {
+          subtype: "error_max_turns",
+          expected: "Claude reached the maximum turn limit.",
+        },
+        {
+          subtype: "error_during_execution",
+          terminalReason: "prompt_too_long",
+          expected:
+            "Claude could not continue because the conversation exceeds the context limit. Start a new thread or shorten the prompt.",
+        },
+        {
+          subtype: "error_during_execution",
+          apiErrorStatus: 401,
+          expected: "Claude authentication failed. Check the configured credentials.",
+        },
+        {
+          subtype: "error_during_execution",
+          apiErrorStatus: 429,
+          expected: "Claude usage limit reached. Try again later.",
+        },
+        {
+          subtype: "error_during_execution",
+          expected: "Claude turn failed.",
+        },
+      ];
+
+      for (const [index, testCase] of cases.entries()) {
+        yield* adapter.sendTurn({
+          threadId: THREAD_ID,
+          input: `turn ${index + 1}`,
+          attachments: [],
+        });
+        const runtimeErrorFiber = yield* Stream.filter(
+          adapter.streamEvents,
+          (event) => event.type === "runtime.error",
+        ).pipe(Stream.runHead, Effect.forkChild);
+
+        harness.query.emit({
+          type: "result",
+          subtype: testCase.subtype,
+          is_error: true,
+          errors: ["provider diagnostic that must not reach the client"],
+          ...(testCase.terminalReason ? { terminal_reason: testCase.terminalReason } : {}),
+          ...(testCase.apiErrorStatus ? { api_error_status: testCase.apiErrorStatus } : {}),
+          session_id: `sdk-session-safe-error-${index + 1}`,
+          uuid: `result-safe-error-${index + 1}`,
+        } as unknown as SDKMessage);
+
+        const runtimeError = yield* Fiber.join(runtimeErrorFiber);
+        assert.equal(runtimeError._tag, "Some");
+        if (runtimeError._tag === "Some" && runtimeError.value.type === "runtime.error") {
+          assert.equal(runtimeError.value.payload.message, testCase.expected);
+        }
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("keeps a terminal result error in the native log without surfacing it", () => {
     const nativeEvents: Array<{
       event?: {
@@ -2046,6 +2122,80 @@ describe("ClaudeAdapterLive", () => {
       assert.deepEqual((nativeResult?.event?.payload as { errors?: unknown })?.errors, [
         terminalError,
       ]);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("reports a stream failure after a failed result starts a synthetic turn", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const runtimeEvents: Array<ProviderRuntimeEvent> = [];
+      const runtimeEventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
+        Effect.sync(() => {
+          runtimeEvents.push(event);
+        }),
+      ).pipe(Effect.forkChild);
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({
+        threadId: THREAD_ID,
+        input: "hello",
+        attachments: [],
+      });
+
+      harness.query.emit({
+        type: "result",
+        subtype: "error_during_execution",
+        is_error: true,
+        errors: ["first turn failed"],
+        session_id: "sdk-session-synthetic-failure",
+        uuid: "result-before-synthetic-turn",
+      } as unknown as SDKMessage);
+      yield* Effect.yieldNow;
+      yield* Effect.yieldNow;
+
+      harness.query.emit({
+        type: "assistant",
+        session_id: "sdk-session-synthetic-failure",
+        uuid: "assistant-synthetic-after-failure",
+        parent_tool_use_id: null,
+        message: {
+          id: "assistant-message-synthetic-after-failure",
+          content: [{ type: "text", text: "Background result" }],
+        },
+      } as unknown as SDKMessage);
+      yield* Effect.yieldNow;
+      yield* Effect.yieldNow;
+
+      const sessions = yield* adapter.listSessions();
+      assert.equal(sessions[0]?.status, "running");
+
+      harness.query.fail(new Error("stream failed during synthetic turn"));
+      yield* Effect.yieldNow;
+      yield* Effect.yieldNow;
+      yield* Effect.yieldNow;
+      runtimeEventsFiber.interruptUnsafe();
+
+      assert.deepEqual(
+        runtimeEvents
+          .filter((event) => event.type === "runtime.error")
+          .map((event) => event.payload.message),
+        ["Claude turn failed.", "Claude runtime stream failed."],
+      );
+      const completedTurns = runtimeEvents.filter((event) => event.type === "turn.completed");
+      assert.deepEqual(
+        completedTurns.map((event) => event.payload.state),
+        ["failed", "failed"],
+      );
+      assert.equal(completedTurns.at(-1)?.payload.errorMessage, "Claude runtime stream failed.");
+      assert.equal(runtimeEvents.at(-1)?.type, "session.exited");
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),
