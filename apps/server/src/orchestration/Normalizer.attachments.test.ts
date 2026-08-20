@@ -8,6 +8,7 @@ import {
   type ClientOrchestrationCommand,
   CommandId,
   MessageId,
+  PROVIDER_SEND_TURN_MAX_TOTAL_ATTACHMENT_BYTES,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -70,6 +71,40 @@ describe("normalizeDispatchCommand attachments", () => {
       expect(
         NodeFS.readFileSync(NodePath.join(config.attachmentsDir, `${attachment.id}.png`)),
       ).toEqual(Buffer.from("pixels"));
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("rejects the aggregate attachment size before claiming uploads", () =>
+    Effect.gen(function* () {
+      const command = turnStartCommand({ attachments: [] });
+      if (command.type !== "thread.turn.start") {
+        throw new Error("Expected a thread.turn.start command.");
+      }
+      const sizeBytes = Math.floor(PROVIDER_SEND_TURN_MAX_TOTAL_ATTACHMENT_BYTES / 2) + 1;
+      const failure = yield* normalizeDispatchCommand({
+        ...command,
+        message: {
+          ...command.message,
+          attachments: [
+            {
+              type: "file",
+              id: `pending-${attachmentUuid}-pdf`,
+              name: "first.pdf",
+              mimeType: "application/pdf",
+              sizeBytes,
+            },
+            {
+              type: "file",
+              id: "pending-00000000-0000-4000-8000-0000000000bb-pdf",
+              name: "second.pdf",
+              mimeType: "application/pdf",
+              sizeBytes,
+            },
+          ],
+        },
+      }).pipe(Effect.flip);
+
+      expect(failure.message).toContain("total size limit");
     }).pipe(Effect.provide(testLayer)),
   );
 

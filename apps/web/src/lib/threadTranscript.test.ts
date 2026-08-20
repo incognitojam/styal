@@ -47,21 +47,30 @@ describe("buildThreadTranscript", () => {
     expect(transcript.text).not.toContain("1 failed");
   });
 
-  it("summarizes image attachments instead of dropping them", () => {
-    const attachment = {
+  it("summarizes attachments instead of dropping them", () => {
+    const imageAttachment = {
       type: "image" as const,
       id: "att-1",
       name: "screenshot.png",
       mimeType: "image/png",
       sizeBytes: 1024,
     };
+    const fileAttachment = {
+      type: "file" as const,
+      id: "att-2",
+      name: "notes.md",
+      mimeType: "text/markdown",
+      sizeBytes: 128,
+    };
     const transcript = buildThreadTranscript("Title", [
-      message({ text: "See attached.", attachments: [attachment] }),
-      message({ text: "", attachments: [attachment] }),
+      message({ text: "See attached.", attachments: [imageAttachment, fileAttachment] }),
+      message({ text: "", attachments: [imageAttachment] }),
     ]);
     expect(transcript.messageCount).toBe(2);
-    expect(transcript.text).toContain("See attached.\n\n[Attached image: screenshot.png]");
-    expect(transcript.text).toContain("## User\n\n[Attached image: screenshot.png]");
+    expect(transcript.text).toContain(
+      "See attached.\n\n[Attached files: screenshot.png, notes.md]",
+    );
+    expect(transcript.text).toContain("## User\n\n[Attached file: screenshot.png]");
   });
 
   it("returns an empty transcript when nothing survives filtering", () => {

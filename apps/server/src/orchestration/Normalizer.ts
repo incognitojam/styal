@@ -8,6 +8,7 @@ import {
   type OrchestrationCommand,
   OrchestrationDispatchCommandError,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+  PROVIDER_SEND_TURN_MAX_TOTAL_ATTACHMENT_BYTES,
 } from "@t3tools/contracts";
 
 import {
@@ -131,6 +132,16 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
 
     if (canonicalCommand.type !== "thread.turn.start") {
       return canonicalCommand as OrchestrationCommand;
+    }
+
+    const totalAttachmentBytes = canonicalCommand.message.attachments.reduce(
+      (total, attachment) => total + attachment.sizeBytes,
+      0,
+    );
+    if (totalAttachmentBytes > PROVIDER_SEND_TURN_MAX_TOTAL_ATTACHMENT_BYTES) {
+      return yield* new OrchestrationDispatchCommandError({
+        message: "Attachments exceed the total size limit for one message.",
+      });
     }
 
     const claimedAttachmentPaths: string[] = [];

@@ -1,5 +1,6 @@
 import type {
   ChatAttachment as ContractChatAttachment,
+  ChatFileAttachment as ContractChatFileAttachment,
   ChatImageAttachment as ContractChatImageAttachment,
   OrchestrationCheckpointFile,
   OrchestrationCheckpointSummary,
@@ -36,11 +37,17 @@ export interface ChatImageAttachment extends ContractChatImageAttachment {
   readonly previewUrl?: string;
 }
 
-// Non-image members pass through with the contract shape. The web UI renders
-// them once it grows file support; until then they only need to typecheck.
+export type ChatFileAttachment = ContractChatFileAttachment;
+
+// Unknown future members pass through with the contract shape while known
+// files render as file chips and images retain their client preview URL.
 export type ChatAttachment =
   | ChatImageAttachment
-  | Exclude<ContractChatAttachment, ContractChatImageAttachment>;
+  | ChatFileAttachment
+  | Exclude<
+      ContractChatAttachment,
+      ContractChatImageAttachment | ContractChatFileAttachment
+    >;
 
 // The union has an open member (`type: string`), so a literal comparison does
 // not narrow. Use this guard wherever image-only fields are read.

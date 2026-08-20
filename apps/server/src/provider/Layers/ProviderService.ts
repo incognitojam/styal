@@ -803,7 +803,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       });
       return attachmentPath === null
         ? []
-        : [`[Attached ${attachment.type} "${attachment.name}" is saved at: ${attachmentPath}]`];
+        : [
+            `[Attached ${attachment.type} ${JSON.stringify(attachment.name)} (${attachment.mimeType}, ${attachment.sizeBytes} bytes) is saved at: ${attachmentPath}]`,
+          ];
     });
     const inputTextWithAttachmentPaths =
       attachmentPathLines.length === 0
