@@ -16,6 +16,7 @@ import {
   buildExpiredTerminalContextToastCopy,
   buildLoadingThreadFromShell,
   buildThreadTurnInterruptInput,
+  composerAttachmentTypeForMime,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
   dismissBranchMismatchForSession,
@@ -39,6 +40,19 @@ const environmentId = EnvironmentId.make("environment-local");
 const projectId = ProjectId.make("project-1");
 const threadId = ThreadId.make("thread-1");
 const now = "2026-03-29T00:00:00.000Z";
+
+describe("composer attachment classification", () => {
+  it("keeps supported preview formats as images", () => {
+    expect(composerAttachmentTypeForMime("image/png")).toBe("image");
+    expect(composerAttachmentTypeForMime("image/webp")).toBe("image");
+  });
+
+  it("falls back to opaque files for unsupported image formats", () => {
+    expect(composerAttachmentTypeForMime("image/svg+xml")).toBe("file");
+    expect(composerAttachmentTypeForMime("image/bmp")).toBe("file");
+    expect(composerAttachmentTypeForMime("image/tiff")).toBe("file");
+  });
+});
 
 describe("project script terminal selection", () => {
   it("does not reuse the finite setup-script terminal", () => {

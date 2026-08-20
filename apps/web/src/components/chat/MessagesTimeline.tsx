@@ -62,6 +62,7 @@ import {
   ChevronRightIcon,
   CircleAlertIcon,
   EyeIcon,
+  FileIcon,
   FlaskConicalIcon,
   FoldVerticalIcon,
   GlobeIcon,
@@ -943,6 +944,10 @@ function TimelineMinimap({
 
 type TimelineEntry = ReturnType<typeof deriveTimelineEntries>[number];
 type TimelineMessage = Extract<TimelineEntry, { kind: "message" }>["message"];
+type TimelineImageAttachment = Extract<
+  NonNullable<TimelineMessage["attachments"]>[number],
+  { type: "image" }
+>;
 type TimelineWorkEntry = Extract<MessagesTimelineRow, { kind: "work" }>["groupedEntries"][number];
 type TimelineRow = MessagesTimelineRow;
 
@@ -981,7 +986,11 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
 
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
-  const userImages = row.message.attachments ?? [];
+  const attachments = row.message.attachments ?? [];
+  const userImages = attachments.filter(
+    (attachment): attachment is TimelineImageAttachment => attachment.type === "image",
+  );
+  const userFiles = attachments.filter((attachment) => attachment.type === "file");
   const displayedUserMessage = deriveDisplayedUserMessageState(row.message.text);
   const terminalContexts = displayedUserMessage.contexts;
   const previewAnnotations: ParsedPreviewAnnotation[] = [];
@@ -1007,7 +1016,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground">
         {regularImages.length > 0 && (
           <div className="mb-2 grid max-w-[420px] grid-cols-2 gap-2">
-            {regularImages.map((image: NonNullable<TimelineMessage["attachments"]>[number]) => (
+            {regularImages.map((image) => (
               <div
                 key={image.id}
                 className="overflow-hidden rounded-lg border border-border/80 bg-background/70"
@@ -1038,6 +1047,19 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             ))}
           </div>
         )}
+        {userFiles.length > 0 ? (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {userFiles.map((file) => (
+              <div
+                key={file.id}
+                className="flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-border/70 bg-background/55 px-2 py-1.5 text-xs"
+              >
+                <FileIcon className="size-3.5 shrink-0 text-secondary-label" aria-hidden />
+                <span className="truncate">{file.name}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
         {previewAnnotations.map((annotation, index) => (
           <UserMessagePreviewAnnotationCard
             key={annotation.id}
@@ -1679,7 +1701,7 @@ const UserMessageIssueContextChip = memo(function UserMessageIssueContextChip(pr
 
 function UserMessagePreviewAnnotationCard(props: {
   annotation: ParsedPreviewAnnotation;
-  image: NonNullable<TimelineMessage["attachments"]>[number] | null;
+  image: TimelineImageAttachment | null;
 }) {
   const ctx = use(TimelineRowCtx);
   return (
