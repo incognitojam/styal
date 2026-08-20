@@ -6,6 +6,8 @@ import {
   TerminalAttachInput,
   TerminalClearInput,
   TerminalCloseInput,
+  TerminalClosePreflightInput,
+  TerminalClosePreflightResult,
   TerminalEvent,
   TerminalOpenInput,
   TerminalResizeInput,
@@ -206,6 +208,31 @@ describe("TerminalCloseInput", () => {
         deleteHistory: true,
       }),
     ).toBe(true);
+  });
+});
+
+describe("TerminalClosePreflight", () => {
+  it("accepts a bounded non-empty terminal list and result", () => {
+    expect(
+      decodes(TerminalClosePreflightInput, {
+        threadId: "thread-1",
+        terminalIds: ["term-1", "term-2"],
+      }),
+    ).toBe(true);
+    expect(
+      decodes(TerminalClosePreflightResult, {
+        confirmationTerminalIds: ["term-2"],
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects an empty terminal list", () => {
+    expect(
+      decodes(TerminalClosePreflightInput, {
+        threadId: "thread-1",
+        terminalIds: [],
+      }),
+    ).toBe(false);
   });
 });
 
