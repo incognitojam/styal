@@ -63,6 +63,7 @@ import * as Clock from "effect/Clock";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
+import * as WorkspacePaths from "../../workspace/WorkspacePaths.ts";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asApprovalRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.make(value);
@@ -158,6 +159,10 @@ describe("ProviderCommandReactor", () => {
     const baseDir =
       input?.baseDir ?? NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3code-reactor-"));
     createdBaseDirs.add(baseDir);
+    const workspaceRoot = NodePath.join(baseDir, "provider-project");
+    const worktreePath = NodePath.join(baseDir, "provider-project-worktree");
+    NodeFS.mkdirSync(workspaceRoot, { recursive: true });
+    NodeFS.mkdirSync(worktreePath, { recursive: true });
     const { stateDir } = deriveServerPathsSync(baseDir, undefined);
     createdStateDirs.add(stateDir);
     const runtimeEventPubSub = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
@@ -414,6 +419,7 @@ describe("ProviderCommandReactor", () => {
       ),
       Layer.provideMerge(ServerSettingsService.layerTest()),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
+      Layer.provideMerge(WorkspacePaths.layer),
       Layer.provideMerge(NodeServices.layer),
     );
     runtime = ManagedRuntime.make(layer);
@@ -429,7 +435,7 @@ describe("ProviderCommandReactor", () => {
         commandId: CommandId.make("cmd-project-create"),
         projectId: asProjectId("project-1"),
         title: "Provider Project",
-        workspaceRoot: "/tmp/provider-project",
+        workspaceRoot,
         defaultModelSelection: modelSelection,
         createdAt: now,
       }),
@@ -503,6 +509,8 @@ describe("ProviderCommandReactor", () => {
       generateBranchName,
       generateThreadTitle,
       runtimeSessions,
+      workspaceRoot,
+      worktreePath,
       stateDir,
       drain,
       runEffect,
@@ -537,7 +545,7 @@ describe("ProviderCommandReactor", () => {
     await waitFor(() => harness.sendTurn.mock.calls.length === 1);
     expect(harness.startSession.mock.calls[0]?.[0]).toEqual(ThreadId.make("thread-1"));
     expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
-      cwd: "/tmp/provider-project",
+      cwd: harness.workspaceRoot,
       modelSelection: {
         instanceId: ProviderInstanceId.make("codex"),
         model: "gpt-5-codex",
@@ -550,6 +558,67 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.threadId).toBe("thread-1");
     expect(thread?.session?.status).toBe("starting");
     expect(thread?.session?.runtimeMode).toBe("approval-required");
+  });
+
+  it("blocks a follow-up before the provider when the project folder disappeared", async () => {
+    const harness = await createHarness();
+    const firstTurnAt = "2026-01-01T00:00:00.000Z";
+    const secondTurnAt = "2026-01-01T00:00:01.000Z";
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-before-workspace-move"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-before-workspace-move"),
+          role: "user",
+          text: "first",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: firstTurnAt,
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+
+    NodeFS.rmSync(harness.workspaceRoot, { recursive: true, force: true });
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-after-workspace-move"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-after-workspace-move"),
+          role: "user",
+          text: "second",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: secondTurnAt,
+      }),
+    );
+
+    await waitFor(async () => {
+      const readModel = await harness.readModel();
+      const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+      return thread?.session?.status === "error";
+    });
+
+    const expectedError = `Project folder not found: ${harness.workspaceRoot}. It may have been moved or deleted.`;
+    expect(harness.startSession).toHaveBeenCalledTimes(1);
+    expect(harness.sendTurn).toHaveBeenCalledTimes(1);
+    const readModel = await harness.readModel();
+    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    expect(thread?.session?.lastError).toBe(expectedError);
+    expect(
+      thread?.activities.find((activity) => activity.kind === "provider.turn.start.failed"),
+    ).toMatchObject({
+      payload: { detail: expectedError },
+    });
   });
 
   it("passes project additional instructions when starting a provider session", async () => {
@@ -609,7 +678,7 @@ describe("ProviderCommandReactor", () => {
       status: "running",
       runtimeMode: "approval-required",
       threadId,
-      cwd: "/tmp/provider-project",
+      cwd: harness.workspaceRoot,
       model: "gpt-5-codex",
       activeTurnId,
       resumeCursor: { opaque: "resume-active" },
@@ -919,7 +988,7 @@ describe("ProviderCommandReactor", () => {
 
     expect(harness.generateThreadTitle).toHaveBeenCalledTimes(1);
     expect(harness.generateThreadTitle.mock.calls[0]?.[0]).toMatchObject({
-      cwd: "/tmp/provider-project",
+      cwd: harness.workspaceRoot,
       previousTitle: "Investigate reconnect regressions",
       message: [
         "USER:",
@@ -1610,7 +1679,7 @@ describe("ProviderCommandReactor", () => {
         commandId: CommandId.make("cmd-thread-branch"),
         threadId: ThreadId.make("thread-1"),
         branch: "t3code/1234abcd",
-        worktreePath: "/tmp/provider-project-worktree",
+        worktreePath: harness.worktreePath,
       }),
     );
 
@@ -1651,7 +1720,7 @@ describe("ProviderCommandReactor", () => {
     expect(harness.generateBranchName.mock.calls[0]?.[0]).toMatchObject({
       message: "Add a safer reconnect backoff.",
     });
-    expect(harness.refreshStatus.mock.calls[0]?.[0]).toBe("/tmp/provider-project-worktree");
+    expect(harness.refreshStatus.mock.calls[0]?.[0]).toBe(harness.worktreePath);
   });
 
   it("forwards codex model options through session start and turn send", async () => {
@@ -2192,7 +2261,7 @@ describe("ProviderCommandReactor", () => {
     await waitFor(() => harness.startSession.mock.calls.length === 1);
     await waitFor(() => harness.sendTurn.mock.calls.length === 1);
     expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
-      cwd: "/tmp/provider-project",
+      cwd: harness.workspaceRoot,
     });
 
     await Effect.runPromise(
@@ -2200,7 +2269,7 @@ describe("ProviderCommandReactor", () => {
         type: "thread.meta.update",
         commandId: CommandId.make("cmd-thread-worktree-change"),
         threadId: ThreadId.make("thread-1"),
-        worktreePath: "/tmp/provider-project-worktree",
+        worktreePath: harness.worktreePath,
       }),
     );
 
@@ -2226,7 +2295,7 @@ describe("ProviderCommandReactor", () => {
     expect(harness.stopSession.mock.calls.length).toBe(0);
     expect(harness.startSession.mock.calls[1]?.[1]).toMatchObject({
       threadId: ThreadId.make("thread-1"),
-      cwd: "/tmp/provider-project-worktree",
+      cwd: harness.worktreePath,
       resumeCursor: { opaque: "resume-1" },
       modelSelection: {
         instanceId: ProviderInstanceId.make("claudeAgent"),
@@ -2759,7 +2828,7 @@ describe("ProviderCommandReactor", () => {
       status: "ready",
       runtimeMode: "approval-required",
       threadId: ThreadId.make("thread-1"),
-      cwd: "/tmp/provider-project",
+      cwd: harness.workspaceRoot,
       resumeCursor: { opaque: "resume-without-instance" },
       createdAt: now,
       updatedAt: now,
