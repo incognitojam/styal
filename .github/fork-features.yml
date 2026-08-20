@@ -6,7 +6,7 @@ features:
   - id: active-terminal-close-confirmation
     title: Confirm closing terminals only while work is active
     status: maintained
-    prs: [226]
+    prs: [22, 226]
     invariants:
       - Closing a terminal prompts only while a foreground subprocess or finite setup command is still active; idle shells and exited setup terminals close immediately.
       - Drawer, panel, shortcut, surface, and middle-click close paths share the same server-reported liveness decision instead of inferring activity from client state.
@@ -112,20 +112,23 @@ features:
   - id: composer-draft-sync
     title: Cross-device composer draft synchronization
     status: maintained
-    prs: [39, 44, 195]
+    prs: [23, 39, 44, 195]
     invariants:
       - Existing-thread draft text and attachments survive restarts and synchronize without overwriting newer local edits.
       - Web, desktop-hosted web, and mobile use the same server-backed draft contract and fork-owned migration history.
+      - Sidebar thread rows indicate unsent text or attachments without treating settings-only state as a user draft.
     implementation_paths:
       - apps/mobile/src/state/use-composer-drafts.ts
       - apps/server/src/persistence/ComposerDrafts.ts
       - apps/server/src/persistence/ForkMigrations/001_ComposerDrafts.ts
+      - apps/web/src/components/Sidebar.tsx
       - apps/web/src/composerDraftStore.ts
       - packages/contracts/src/composerDraft.ts
     upstream_paths:
       - apps/server/src/server.ts
       - apps/server/src/ws.ts
       - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/Sidebar.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
       - packages/client-runtime/src/rpc/client.ts
       - packages/contracts/src/rpc.ts
@@ -197,6 +200,53 @@ features:
         - https://github.com/pingdotgg/t3code/pull/6562
       retire_when: Upstream performs the same ordered, bounded, and observable graceful shutdown before destroying windows and terminating the backend.
 
+  - id: editable-diff-comments
+    title: Edit anchored diff comments in place
+    status: maintained
+    prs: [88]
+    invariants:
+      - Saved diff comments can be edited and replaced without changing their selected-line anchor or ordering.
+      - Editing reuses the inline composer with Save, Cancel, Escape, and Mod+Enter controls, and its draft survives annotation collapse or virtualization rerenders.
+    implementation_paths:
+      - apps/web/src/components/diffs/AnnotatableCodeView.tsx
+      - apps/web/src/components/diffs/DiffCommentAnnotation.tsx
+    upstream_paths:
+      - apps/web/src/components/diffs/AnnotatableCodeView.tsx
+      - apps/web/src/components/diffs/DiffCommentAnnotation.tsx
+    tests:
+      - apps/web/src/components/diffs/AnnotatableCodeView.test.tsx
+      - apps/web/src/components/diffs/DiffCommentAnnotation.test.tsx
+      - apps/web/src/components/diffs/commentSubmitShortcut.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream supports equivalent in-place editing of anchored diff comments with stable drafts and keyboard controls.
+
+  - id: first-turn-unread-state
+    title: Mark first thread completions unread
+    status: maintained
+    prs: [76]
+    invariants:
+      - A new thread visited before its server shell exists receives a persisted environment-scoped visit baseline so its first completion becomes unread after the user navigates away.
+      - Visit baselines use server-projected request timestamps, clear on creation rollback, and do not mark historical threads unread without a locally established baseline.
+    implementation_paths:
+      - apps/web/src/AppRoot.tsx
+      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/ThreadVisitBaselineObserver.tsx
+      - apps/web/src/uiStateStore.ts
+    upstream_paths:
+      - apps/web/src/AppRoot.tsx
+      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/uiStateStore.ts
+    tests:
+      - apps/web/src/AppRoot.test.tsx
+      - apps/web/src/threadUnreadCompletion.flow.test.ts
+      - apps/web/src/uiStateStore.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream establishes equivalent first-turn visit baselines so completion state remains truthful when users navigate away before thread creation settles.
+
   - id: focused-panel-tab-close
     title: Close the focused panel tab with Mod+W
     status: maintained
@@ -241,6 +291,37 @@ features:
       status: unassessed
       tracking: []
       retire_when: Upstream provides a first-class distribution identity that includes the producing repository on every analytics event.
+
+  - id: fork-distribution-identity
+    title: Keep fork desktop builds distinctly identifiable
+    status: maintained
+    prs: [3, 27, 29, 49, 56]
+    invariants:
+      - Packaged fork builds use a distinct application identifier and channel-aware yngatech product, process, repository, and About-panel identity instead of presenting as upstream.
+      - Windows fork packages install under their own package directory without colliding with upstream, while Alpha and Nightly builds remain visibly distinguishable.
+    implementation_paths:
+      - apps/desktop/package.json
+      - apps/desktop/resources/installer.nsh
+      - apps/desktop/src/app/DesktopEnvironment.ts
+      - apps/web/src/branding.logic.ts
+      - apps/web/src/branding.ts
+      - apps/web/src/components/settings/SettingsPanels.tsx
+      - scripts/build-desktop-artifact.ts
+    upstream_paths:
+      - apps/desktop/package.json
+      - apps/desktop/src/app/DesktopEnvironment.ts
+      - apps/web/src/branding.logic.ts
+      - apps/web/src/branding.ts
+      - apps/web/src/components/settings/SettingsPanels.tsx
+      - scripts/build-desktop-artifact.ts
+    tests:
+      - apps/desktop/src/app/DesktopAppIdentity.test.ts
+      - apps/web/src/branding.test.ts
+      - scripts/build-desktop-artifact.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream supports first-class downstream distribution identity with equivalent app, package, process, repository, and channel separation.
 
   - id: github-outage-status
     title: Provider outage status in the sidebar
@@ -331,16 +412,21 @@ features:
   - id: inspectable-tool-activity
     title: Keep tool activity concise and inspectable
     status: maintained
-    prs: [4, 36, 117, 230]
+    prs: [4, 11, 36, 58, 60, 66, 117, 158, 168, 190, 204, 230]
     invariants:
       - Web and mobile name supported tool calls by their action with a concise useful argument, while agent panels and approval rows use the same vocabulary instead of raw provider names or serialized input.
       - Completed web command rows reveal the full raw command and retrieve persisted output only after expansion, keeping routine timeline activity payloads bounded.
       - Collapsed web tool groups expand into their individual named calls, with failure, exit-code, diff, and disclosure signals remaining independently visible.
+      - Meaningful running-command interactions are shown with fixed sanitized summaries while empty polls and raw terminal input remain hidden.
+      - Claude, Codex, and OpenCode file edits retain structured paths, line statistics, lifecycle state, and provider-independent presentation without sending full diffs to clients.
+      - Folded completed turns summarize their activity categories and keep context-compaction status legible across themes.
     implementation_paths:
+      - apps/mobile/src/features/threads/thread-work-log.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/server/src/orchestration/ActivityPayloadProjection.ts
       - apps/server/src/orchestration/CommandOutputQuery.ts
       - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
+      - apps/server/src/provider/Layers/OpenCodeAdapter.ts
       - apps/server/src/ws.ts
       - apps/web/src/components/AgentsPanel.tsx
       - apps/web/src/components/chat/ComposerPendingApprovalPanel.tsx
@@ -351,11 +437,14 @@ features:
       - packages/client-runtime/src/state/orchestration.ts
       - packages/contracts/src/orchestration.ts
       - packages/contracts/src/rpc.ts
+      - packages/shared/src/toolActivity.ts
       - packages/shared/src/toolRowPresentation.ts
     upstream_paths:
+      - apps/mobile/src/features/threads/thread-work-log.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/server/src/orchestration/ActivityPayloadProjection.ts
       - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
+      - apps/server/src/provider/Layers/OpenCodeAdapter.ts
       - apps/server/src/ws.ts
       - apps/web/src/components/AgentsPanel.tsx
       - apps/web/src/components/chat/ComposerPendingApprovalPanel.tsx
@@ -371,11 +460,13 @@ features:
       - apps/server/src/orchestration/ActivityPayloadProjection.test.ts
       - apps/server/src/orchestration/CommandOutputQuery.test.ts
       - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts
+      - apps/server/src/provider/Layers/OpenCodeAdapter.test.ts
       - apps/web/src/components/chat/ComposerPendingApprovalPanel.test.tsx
       - apps/web/src/components/chat/MessagesTimeline.logic.test.ts
       - apps/web/src/components/chat/MessagesTimeline.test.tsx
       - apps/web/src/session-logic.command-output.test.ts
       - apps/web/src/session-logic.test.ts
+      - packages/shared/src/toolActivity.test.ts
       - packages/shared/src/toolRowPresentation.test.ts
     upstream:
       status: partial
@@ -495,6 +586,57 @@ features:
         - https://github.com/pingdotgg/t3code/pull/7445
       retire_when: Upstream preserves equivalent responsive device metrics, logical capture coordinates, DevTools fallback behavior, and surface ownership across panel visibility changes.
 
+  - id: project-agent-instructions
+    title: Apply project instructions to every agent session
+    status: maintained
+    prs: [157]
+    invariants:
+      - Additional instructions are persisted per logical project, shared across grouped checkouts, visible and clearable in Project Settings, and retained through projection recovery.
+      - Fresh and recovered Codex, Claude, Cursor, Grok, and OpenCode sessions receive the instructions through native channels where available, with Cursor receiving them once in its first prompt.
+      - Projects without additional instructions preserve the ordinary upstream provider prompt and session behavior.
+    implementation_paths:
+      - apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
+      - apps/server/src/persistence/ForkMigrations/003_ProjectAdditionalInstructions.ts
+      - apps/server/src/provider/CodexDeveloperInstructions.ts
+      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/server/src/provider/Layers/CodexAdapter.ts
+      - apps/server/src/provider/Layers/CodexSessionRuntime.ts
+      - apps/server/src/provider/Layers/CursorAdapter.ts
+      - apps/server/src/provider/Layers/GrokAdapter.ts
+      - apps/server/src/provider/Layers/OpenCodeAdapter.ts
+      - apps/server/src/provider/Layers/ProviderService.ts
+      - apps/web/src/components/settings/ProjectSettingsPanel.tsx
+      - packages/contracts/src/orchestration.ts
+      - packages/contracts/src/provider.ts
+    upstream_paths:
+      - apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
+      - apps/server/src/provider/CodexDeveloperInstructions.ts
+      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/server/src/provider/Layers/CodexAdapter.ts
+      - apps/server/src/provider/Layers/CodexSessionRuntime.ts
+      - apps/server/src/provider/Layers/CursorAdapter.ts
+      - apps/server/src/provider/Layers/GrokAdapter.ts
+      - apps/server/src/provider/Layers/OpenCodeAdapter.ts
+      - apps/server/src/provider/Layers/ProviderService.ts
+      - apps/web/src/components/settings/ProjectSettingsPanel.tsx
+      - packages/contracts/src/orchestration.ts
+      - packages/contracts/src/provider.ts
+    tests:
+      - apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts
+      - apps/server/src/orchestration/decider.projectThreadEnvMode.test.ts
+      - apps/server/src/persistence/ForkMigrations/003_ProjectAdditionalInstructions.test.ts
+      - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
+      - apps/server/src/provider/Layers/CodexAdapter.test.ts
+      - apps/server/src/provider/Layers/CodexSessionRuntime.test.ts
+      - apps/server/src/provider/Layers/CursorAdapter.test.ts
+      - apps/server/src/provider/Layers/GrokAdapter.test.ts
+      - apps/server/src/provider/Layers/OpenCodeAdapter.test.ts
+      - apps/server/src/provider/Layers/ProviderService.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream persists equivalent project instructions and applies them safely to fresh and recovered sessions for every supported provider without duplicating prompt content.
+
   - id: project-filter-continuity
     title: Preserve project filters while navigating and creating threads
     status: maintained
@@ -590,6 +732,57 @@ features:
       tracking: []
       retire_when: Upstream keeps repository-scoped pull request association correct across multiple remotes, branch pruning, and pull requests created during a turn.
 
+  - id: pull-request-description-images
+    title: Render repository images in pull request descriptions
+    status: maintained
+    prs: [103]
+    invariants:
+      - Repository-relative, GitHub blob, and GitHub raw image references resolve against the pull request head and render through a bounded short-lived same-origin asset URL.
+      - Private repository images use the environment's authorized GitHub CLI, while external and unsupported image URLs continue through the ordinary Markdown path.
+    implementation_paths:
+      - apps/server/src/assets/AssetAccess.ts
+      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/PullRequestService.ts
+      - apps/web/src/components/pullRequest/PullRequestMarkdown.tsx
+      - apps/web/src/components/pullRequest/pullRequestMarkdown.logic.ts
+      - packages/contracts/src/assets.ts
+    upstream_paths:
+      - apps/server/src/assets/AssetAccess.ts
+      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/PullRequestService.ts
+      - apps/web/src/components/pullRequest/PullRequestMarkdown.tsx
+      - apps/web/src/components/pullRequest/pullRequestMarkdown.logic.ts
+      - packages/contracts/src/assets.ts
+    tests:
+      - apps/server/src/assets/AssetAccess.test.ts
+      - apps/server/src/pullRequest/GitHubPullRequestCli.test.ts
+      - apps/server/src/pullRequest/PullRequestService.test.ts
+      - apps/web/src/components/pullRequest/pullRequestMarkdown.logic.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream renders authenticated repository-backed pull request images through an equivalently bounded and environment-scoped asset path.
+
+  - id: pull-request-diff-expansion
+    title: Open reviewable pull request diffs by default
+    status: maintained
+    prs: [105]
+    invariants:
+      - Ordinary pull request files open expanded, while individually oversized files start folded so one generated or lock file cannot dominate the review scroll.
+      - Annotated files remain open, explicit per-file choices remain stable, and expand or collapse all controls govern files loaded by later pagination.
+    implementation_paths:
+      - apps/web/src/components/pullRequest/PullRequestCodeTab.tsx
+      - apps/web/src/components/pullRequest/pullRequestDiff.logic.ts
+    upstream_paths:
+      - apps/web/src/components/pullRequest/PullRequestCodeTab.tsx
+      - apps/web/src/components/pullRequest/pullRequestDiff.logic.ts
+    tests:
+      - apps/web/src/components/pullRequest/pullRequestDiff.logic.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream provides equivalent review-oriented default expansion with oversized-file protection and stable explicit choices across annotations and pagination.
+
   - id: pull-request-draft-status
     title: Show draft pull request status consistently
     status: maintained
@@ -660,6 +853,41 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/pull/6466
       retire_when: Upstream keeps the visible pull request current without stale responses, unnecessary activity reads, or invalidating cached diffs.
+
+  - id: pull-request-open-entry-points
+    title: Open associated pull requests from every workflow
+    status: maintained
+    prs: [46, 166]
+    invariants:
+      - The command palette and keybinding expose provider-appropriate pull request navigation only when the current thread has an associated change request, then open it in the in-app panel.
+      - Pull request result toasts include the created pull request number and open the corresponding in-app panel when available, retaining the external URL as a fallback.
+    implementation_paths:
+      - apps/server/src/git/GitManager.ts
+      - apps/web/src/components/CommandPalette.tsx
+      - apps/web/src/components/GitActionsControl.tsx
+      - apps/web/src/lib/viewPullRequest.ts
+      - apps/web/src/routes/_chat.tsx
+      - packages/contracts/src/git.ts
+      - packages/contracts/src/keybindings.ts
+      - packages/shared/src/keybindings.ts
+    upstream_paths:
+      - apps/server/src/git/GitManager.ts
+      - apps/web/src/components/CommandPalette.tsx
+      - apps/web/src/components/GitActionsControl.tsx
+      - apps/web/src/routes/_chat.tsx
+      - packages/contracts/src/git.ts
+      - packages/contracts/src/keybindings.ts
+      - packages/shared/src/keybindings.ts
+    tests:
+      - apps/server/src/git/GitManager.test.ts
+      - apps/web/src/components/CommandPalette.logic.test.ts
+      - apps/web/src/components/GitActionsControl.logic.test.ts
+      - apps/web/src/keybindings.test.ts
+      - packages/contracts/src/keybindings.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream exposes equivalent in-app pull request navigation from command, keybinding, and result-toast entry points with an external fallback.
 
   - id: pull-request-required-checks
     title: Separate pull request checks and show merge readiness
@@ -795,6 +1023,46 @@ features:
       tracking: []
       retire_when: Upstream distinguishes attention-required Approval and Input rows from dimmable Working and Monitoring background activity with equivalent precedence behavior.
 
+  - id: source-control-fork-remotes
+    title: Configure fork remotes and default repositories
+    status: maintained
+    prs: [123]
+    invariants:
+      - Cloning a GitHub fork offers a default repository choice, keeps the fork as `origin`, and adds and fetches the parent as `upstream` without changing non-fork clone behavior.
+      - T3 Code and the GitHub CLI share the selected default through `remote.<name>.gh-resolved`, and web and mobile allow that choice to be inspected, changed, or cleared after cloning.
+      - Branch tracking remotes continue to take precedence for repository identity, while the default repository resolves otherwise ambiguous untracked branches.
+    implementation_paths:
+      - apps/mobile/src/features/projects/AddProjectScreen.tsx
+      - apps/mobile/src/features/threads/git/GitDefaultRepositorySheet.tsx
+      - apps/server/src/project/RepositoryIdentityResolver.ts
+      - apps/server/src/sourceControl/GitHubCli.ts
+      - apps/server/src/sourceControl/SourceControlRepositoryService.ts
+      - apps/web/src/components/CommandPalette.tsx
+      - apps/web/src/components/settings/ProjectSettingsPanel.tsx
+      - packages/client-runtime/src/operations/projects.ts
+      - packages/contracts/src/sourceControl.ts
+      - packages/shared/src/git.ts
+    upstream_paths:
+      - apps/mobile/src/features/projects/AddProjectScreen.tsx
+      - apps/server/src/project/RepositoryIdentityResolver.ts
+      - apps/server/src/sourceControl/GitHubCli.ts
+      - apps/server/src/sourceControl/SourceControlRepositoryService.ts
+      - apps/web/src/components/CommandPalette.tsx
+      - apps/web/src/components/settings/ProjectSettingsPanel.tsx
+      - packages/client-runtime/src/operations/projects.ts
+      - packages/contracts/src/sourceControl.ts
+      - packages/shared/src/git.ts
+    tests:
+      - apps/server/src/project/RepositoryIdentityResolver.test.ts
+      - apps/server/src/sourceControl/GitHubCli.test.ts
+      - apps/server/src/sourceControl/SourceControlRepositoryService.test.ts
+      - packages/client-runtime/src/operations/projects.test.ts
+      - packages/shared/src/git.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream configures fork and parent remotes with an equivalent cross-client default-repository choice that remains consistent with GitHub CLI resolution and branch tracking.
+
   - id: stable-workspace-ports
     title: Assign stable development ports per workspace
     status: maintained
@@ -859,6 +1127,27 @@ features:
       tracking: []
       retire_when: Upstream shows equivalent bounded GitHub pull request stack relationships in pull request details.
 
+  - id: startup-navigation-continuity
+    title: Prevent late startup project switches
+    status: maintained
+    prs: [152]
+    invariants:
+      - Cached index-draft navigation and server bootstrap restoration share a one-shot owner so a late bootstrap route cannot switch projects after the composer becomes editable.
+      - Bootstrap targets are handled once per environment and thread, while later Home visits retain normal draft navigation and failed startup ownership cannot strand the route.
+    implementation_paths:
+      - apps/web/src/launchNavigationStore.ts
+      - apps/web/src/routes/__root.tsx
+      - apps/web/src/routes/_chat.index.tsx
+    upstream_paths:
+      - apps/web/src/routes/__root.tsx
+      - apps/web/src/routes/_chat.index.tsx
+    tests:
+      - apps/web/src/launchNavigationStore.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream coordinates startup and cached-draft navigation so late bootstrap resolution never moves users away from an editable composer.
+
   - id: thread-transcript-export
     title: Copy a complete thread transcript
     status: maintained
@@ -910,6 +1199,40 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/pull/7147
       retire_when: Upstream presents an equivalent cross-client operational carbon estimate with transparent methodology and appropriately qualified comparisons.
+
+  - id: workspace-path-presentation
+    title: Keep workspace file paths concise and actionable
+    status: maintained
+    prs: [89, 129]
+    invariants:
+      - Scoped tool activity and Markdown file chips on web and mobile omit generated worktree directory names and display workspace-relative paths, while paths outside the workspace remain absolute.
+      - Opening a file still uses its full resolved target, while visible labels and Copy relative path actions retain the scoped path.
+      - Open-in-editor menus can copy their resolved project, worktree, or file target and report clipboard success or failure.
+    implementation_paths:
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/web/src/components/ChatMarkdown.tsx
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/OpenInPicker.tsx
+      - apps/web/src/filePathDisplay.ts
+      - apps/web/src/markdown-links.ts
+      - packages/shared/src/filePathDisplay.ts
+    upstream_paths:
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/web/src/components/ChatMarkdown.tsx
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/OpenInPicker.tsx
+      - apps/web/src/filePathDisplay.ts
+      - apps/web/src/markdown-links.ts
+    tests:
+      - apps/mobile/src/lib/threadActivity.test.ts
+      - apps/web/src/components/chat/ChatHeader.test.ts
+      - apps/web/src/components/chat/MessagesTimeline.test.tsx
+      - apps/web/src/filePathDisplay.test.ts
+      - apps/web/src/markdown-links.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream presents equivalent workspace-scoped paths across clients while preserving full file targets and copy actions.
 
   - id: workspace-thread-organization
     title: Organize threads around isolated workspaces
