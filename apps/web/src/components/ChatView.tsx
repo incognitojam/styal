@@ -4865,17 +4865,31 @@ function ChatViewContent(props: ChatViewProps) {
         event.stopPropagation();
         return;
       }
+      const terminalFocusOwner = getTerminalFocusOwner();
+      const focusedTerminalId =
+        terminalFocusOwner === "right-panel" && activeRightPanelSurface?.kind === "terminal"
+          ? activeRightPanelSurface.activeTerminalId
+          : terminalFocusOwner === "drawer" && terminalUiState.terminalOpen
+            ? terminalUiState.activeTerminalId
+            : null;
       // While a close confirmation is open, terminal focus has moved to the
       // dialog, so a deliberate second close shortcut would otherwise fall
       // through to the native window/tab close accelerator.
-      if (isTerminalCloseConfirmPending() && preventTerminalCloseShortcut(event, keybindings)) {
+      if (
+        activeThreadRef &&
+        isTerminalCloseConfirmPending({
+          environmentId: activeThreadRef.environmentId,
+          threadId: activeThreadRef.threadId,
+          ...(focusedTerminalId ? { terminalIds: [focusedTerminalId] } : {}),
+        }) &&
+        preventTerminalCloseShortcut(event, keybindings)
+      ) {
         event.stopPropagation();
         return;
       }
       if (!activeThreadId || isCommandPaletteOpen()) {
         return;
       }
-      const terminalFocusOwner = getTerminalFocusOwner();
       if (event.defaultPrevented && terminalFocusOwner === null) {
         return;
       }
@@ -5014,6 +5028,7 @@ function ChatViewContent(props: ChatViewProps) {
   }, [
     activeProject,
     activeRightPanelSurface,
+    activeThreadRef,
     addTerminalSurface,
     terminalUiState.terminalOpen,
     terminalUiState.activeTerminalId,

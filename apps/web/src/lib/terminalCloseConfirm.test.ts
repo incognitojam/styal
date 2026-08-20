@@ -28,6 +28,12 @@ const activeTerminal = {
   label: "Terminal 1",
 };
 
+const terminalScope = (terminalId: string) => ({
+  environmentId: "env-1",
+  threadId: "thread-1",
+  terminalIds: [terminalId] as [string],
+});
+
 describe("terminal close confirmation", () => {
   beforeEach(() => {
     confirmMock.mockReset();
@@ -48,7 +54,7 @@ describe("terminal close confirmation", () => {
 
     expect(isTerminalCloseConfirmPending()).toBe(false);
 
-    const confirmation = runTerminalCloseConfirmationFlow(() =>
+    const confirmation = runTerminalCloseConfirmationFlow(terminalScope("term-1"), () =>
       confirmTerminalClose([activeTerminal], new Set(["term-1"])),
     );
     expect(isTerminalCloseConfirmPending()).toBe(true);
@@ -67,7 +73,7 @@ describe("terminal close confirmation", () => {
         }),
     );
 
-    const confirmation = runTerminalCloseConfirmationFlow(() =>
+    const confirmation = runTerminalCloseConfirmationFlow(terminalScope("term-1"), () =>
       confirmTerminalClose([activeTerminal], new Set(["term-1"])),
     );
     expect(isTerminalCloseConfirmPending()).toBe(true);
@@ -77,16 +83,22 @@ describe("terminal close confirmation", () => {
     expect(isTerminalCloseConfirmPending()).toBe(false);
   });
 
-  it("deduplicates rapid confirmation requests while preflight is pending", async () => {
+  it("deduplicates matching requests while allowing distinct terminals", async () => {
     let settlePreflight: (value: boolean) => void = () => undefined;
     const preflight = vi.fn(() => new Promise<boolean>((resolve) => (settlePreflight = resolve)));
+    const otherPreflight = vi.fn(async () => true);
 
-    const first = runTerminalCloseConfirmationFlow(preflight);
-    const duplicate = runTerminalCloseConfirmationFlow(preflight);
+    const first = runTerminalCloseConfirmationFlow(terminalScope("term-1"), preflight);
+    const duplicate = runTerminalCloseConfirmationFlow(terminalScope("term-1"), preflight);
 
     expect(isTerminalCloseConfirmPending()).toBe(true);
+    expect(isTerminalCloseConfirmPending(terminalScope("term-1"))).toBe(true);
+    expect(isTerminalCloseConfirmPending(terminalScope("term-2"))).toBe(false);
+    const distinct = runTerminalCloseConfirmationFlow(terminalScope("term-2"), otherPreflight);
     await expect(duplicate).resolves.toBe(false);
+    await expect(distinct).resolves.toBe(true);
     expect(preflight).toHaveBeenCalledTimes(1);
+    expect(otherPreflight).toHaveBeenCalledTimes(1);
 
     settlePreflight(true);
     await expect(first).resolves.toBe(true);

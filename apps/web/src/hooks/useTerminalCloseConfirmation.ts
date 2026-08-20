@@ -20,20 +20,32 @@ export function useTerminalCloseConfirmation() {
       readonly threadId: ThreadId;
       readonly targets: readonly [TerminalCloseTarget, ...TerminalCloseTarget[]];
     }): Promise<boolean> => {
-      return runTerminalCloseConfirmationFlow(async () => {
-        const result = await closePreflight({
+      const [firstTarget, ...otherTargets] = input.targets;
+      const terminalIds = [
+        firstTarget.terminalId,
+        ...otherTargets.map(({ terminalId }) => terminalId),
+      ] as const;
+      return runTerminalCloseConfirmationFlow(
+        {
           environmentId: input.environmentId,
-          input: {
-            threadId: input.threadId,
-            terminalIds: input.targets.map(({ terminalId }) => terminalId),
-          },
-        });
-        const confirmationTerminalIds = resolveTerminalCloseConfirmationIds(
-          input.targets,
-          result._tag === "Success" ? result.value.confirmationTerminalIds : null,
-        );
-        return confirmTerminalClose(input.targets, confirmationTerminalIds);
-      });
+          threadId: input.threadId,
+          terminalIds,
+        },
+        async () => {
+          const result = await closePreflight({
+            environmentId: input.environmentId,
+            input: {
+              threadId: input.threadId,
+              terminalIds,
+            },
+          });
+          const confirmationTerminalIds = resolveTerminalCloseConfirmationIds(
+            input.targets,
+            result._tag === "Success" ? result.value.confirmationTerminalIds : null,
+          );
+          return confirmTerminalClose(input.targets, confirmationTerminalIds);
+        },
+      );
     },
     [closePreflight],
   );
