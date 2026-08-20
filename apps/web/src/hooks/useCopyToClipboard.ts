@@ -20,7 +20,10 @@ export class ClipboardWriteError extends Schema.TaggedErrorClass<ClipboardWriteE
   },
 ) {
   override get message(): string {
-    return `Failed to copy ${this.target} to the clipboard.`;
+    const causeMessage = this.cause instanceof Error ? this.cause.message.trim() : "";
+    return causeMessage
+      ? `Failed to copy ${this.target} to the clipboard: ${causeMessage}`
+      : `Failed to copy ${this.target} to the clipboard.`;
   }
 }
 
