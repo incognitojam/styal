@@ -90,6 +90,17 @@ export const TerminalCloseInput = Schema.Struct({
 });
 export type TerminalCloseInput = typeof TerminalCloseInput.Type;
 
+export const TerminalClosePreflightInput = Schema.Struct({
+  ...TerminalThreadInput.fields,
+  terminalIds: Schema.Array(TerminalIdSchema).check(Schema.isMinLength(1), Schema.isMaxLength(64)),
+});
+export type TerminalClosePreflightInput = typeof TerminalClosePreflightInput.Type;
+
+export const TerminalClosePreflightResult = Schema.Struct({
+  confirmationTerminalIds: Schema.Array(TerminalIdSchema).check(Schema.isMaxLength(64)),
+});
+export type TerminalClosePreflightResult = typeof TerminalClosePreflightResult.Type;
+
 export const TerminalSessionStatus = Schema.Literals(["starting", "running", "exited", "error"]);
 export type TerminalSessionStatus = typeof TerminalSessionStatus.Type;
 
