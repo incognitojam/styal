@@ -3,6 +3,85 @@ coverage: incremental
 
 # Capabilities, not commits. Follow-up fixes belong to the feature they preserve.
 features:
+  - id: active-terminal-close-confirmation
+    title: Confirm closing terminals only while work is active
+    status: maintained
+    prs: [226]
+    invariants:
+      - Closing a terminal prompts only while a foreground subprocess or finite setup command is still active; idle shells and exited setup terminals close immediately.
+      - Drawer, panel, shortcut, surface, and middle-click close paths share the same server-reported liveness decision instead of inferring activity from client state.
+    implementation_paths:
+      - apps/server/src/terminal/Manager.ts
+      - apps/server/src/ws.ts
+      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/ThreadTerminalDrawer.tsx
+      - apps/web/src/hooks/useTerminalCloseConfirmation.ts
+      - apps/web/src/lib/terminalCloseConfirm.ts
+      - packages/client-runtime/src/state/terminal.ts
+      - packages/contracts/src/rpc.ts
+      - packages/contracts/src/terminal.ts
+    upstream_paths:
+      - apps/server/src/terminal/Manager.ts
+      - apps/server/src/ws.ts
+      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/ThreadTerminalDrawer.tsx
+      - apps/web/src/lib/terminalCloseConfirm.ts
+      - packages/client-runtime/src/state/terminal.ts
+      - packages/contracts/src/rpc.ts
+      - packages/contracts/src/terminal.ts
+    tests:
+      - apps/server/src/project/ProjectSetupScriptRunner.test.ts
+      - apps/server/src/terminal/Manager.test.ts
+      - apps/web/src/components/ThreadTerminalDrawer.test.ts
+      - apps/web/src/lib/terminalCloseConfirm.test.ts
+      - packages/contracts/src/terminal.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/7592
+      retire_when: Upstream uses server-reported terminal liveness to limit close confirmation to active foreground or setup work across every terminal close path.
+
+  - id: arbitrary-file-attachments
+    title: Attach arbitrary files to agent messages
+    status: maintained
+    prs: [228]
+    invariants:
+      - Web and mobile can attach generic files while supported images retain native provider handling, and every provider receives a safe persisted local path with MIME type and size.
+      - Attachment count and aggregate-byte limits are enforced atomically, generic files render in message history, and legacy image attachments remain readable.
+    implementation_paths:
+      - apps/mobile/src/features/threads/ThreadFeed.tsx
+      - apps/server/src/attachmentStore.ts
+      - apps/server/src/orchestration/Normalizer.ts
+      - apps/server/src/provider/Layers/ProviderService.ts
+      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/chat/ChatComposer.tsx
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/composerDraftStore.ts
+      - packages/contracts/src/orchestration.ts
+    upstream_paths:
+      - apps/mobile/src/features/threads/ThreadFeed.tsx
+      - apps/server/src/attachmentStore.ts
+      - apps/server/src/orchestration/Normalizer.ts
+      - apps/server/src/provider/Layers/ProviderService.ts
+      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/chat/ChatComposer.tsx
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/composerDraftStore.ts
+      - packages/contracts/src/orchestration.ts
+    tests:
+      - apps/server/src/assets/AssetAccess.test.ts
+      - apps/server/src/attachmentStore.test.ts
+      - apps/server/src/orchestration/Normalizer.test.ts
+      - apps/server/src/provider/Layers/ProviderService.test.ts
+      - apps/web/src/components/ChatView.logic.test.ts
+      - apps/web/src/composerDraftStore.test.ts
+      - apps/web/src/lib/threadTranscript.test.ts
+      - packages/contracts/src/orchestration.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream supports generic persisted file attachments across clients and providers with equivalent admission limits, rendering, and backward compatibility.
+
   - id: completion-sounds
     title: Configurable agent completion sounds
     status: maintained
@@ -145,6 +224,24 @@ features:
       tracking: []
       retire_when: Upstream closes focused panel tabs with the platform Mod+W shortcut and preserves focus ownership across panel menus and launchers.
 
+  - id: fork-analytics-identity
+    title: Identify fork builds in analytics
+    status: maintained
+    prs: [227]
+    invariants:
+      - Every analytics event emitted by a fork build identifies the repository that produced the distribution.
+      - Repository identity is attached by the shared analytics service so individual event producers cannot omit it.
+    implementation_paths:
+      - apps/server/src/telemetry/AnalyticsService.ts
+    upstream_paths:
+      - apps/server/src/telemetry/AnalyticsService.ts
+    tests:
+      - apps/server/src/telemetry/AnalyticsService.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream provides a first-class distribution identity that includes the producing repository on every analytics event.
+
   - id: github-outage-status
     title: Provider outage status in the sidebar
     status: maintained
@@ -263,6 +360,27 @@ features:
       tracking: []
       retire_when: Upstream routes local chat and terminal links through an environment-aware integrated browser with an external fallback.
 
+  - id: missing-workspace-provider-guard
+    title: Fail provider startup clearly for missing workspaces
+    status: maintained
+    prs: [222]
+    invariants:
+      - Provider startup validates the resolved project or worktree path before launching a session and reports a controlled actionable error when the workspace is missing.
+      - Raw provider failure details remain in native logs while clients receive a bounded message instead of a provider-specific or replacement stream failure.
+    implementation_paths:
+      - apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
+      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+    upstream_paths:
+      - apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
+      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+    tests:
+      - apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts
+      - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream validates missing project and worktree paths before every provider starts and preserves equivalent actionable client errors and bounded provider failure details.
+
   - id: preview-hidden-tab-capture
     title: Capture hidden preview tabs reliably
     status: maintained
@@ -345,6 +463,51 @@ features:
       tracking: []
       retire_when: Upstream preserves project scope across sidebar state and every new-thread entry point.
 
+  - id: provider-subscription-limits
+    title: Show provider subscription usage limits
+    status: maintained
+    prs: [225]
+    invariants:
+      - Provider-reported subscription windows are normalized into generic named limits, retain sparse or cached values safely, and disappear when expired, disabled, or associated with a different account.
+      - Codex limits refresh on the existing provider health cadence and appear in the composer usage popover and provider settings without an extra client transport or misleading unsupported-provider state.
+    implementation_paths:
+      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/server/src/provider/Layers/CodexAdapter.ts
+      - apps/server/src/provider/Layers/CodexProvider.ts
+      - apps/server/src/provider/makeManagedServerProvider.ts
+      - apps/server/src/provider/providerStatusCache.ts
+      - apps/web/src/components/chat/ChatComposer.tsx
+      - apps/web/src/components/chat/ContextWindowMeter.tsx
+      - apps/web/src/components/settings/ProviderInstanceCard.tsx
+      - apps/web/src/components/settings/providerStatus.ts
+      - apps/web/src/lib/providerRateLimits.ts
+      - packages/contracts/src/providerRuntime.ts
+      - packages/contracts/src/server.ts
+    upstream_paths:
+      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/server/src/provider/Layers/CodexAdapter.ts
+      - apps/server/src/provider/Layers/CodexProvider.ts
+      - apps/server/src/provider/makeManagedServerProvider.ts
+      - apps/server/src/provider/providerStatusCache.ts
+      - apps/web/src/components/chat/ChatComposer.tsx
+      - apps/web/src/components/chat/ContextWindowMeter.tsx
+      - apps/web/src/components/settings/ProviderInstanceCard.tsx
+      - apps/web/src/components/settings/providerStatus.ts
+      - packages/contracts/src/providerRuntime.ts
+      - packages/contracts/src/server.ts
+    tests:
+      - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
+      - apps/server/src/provider/Layers/CodexAdapter.test.ts
+      - apps/server/src/provider/Layers/CodexProvider.test.ts
+      - apps/server/src/provider/makeManagedServerProvider.test.ts
+      - apps/server/src/provider/providerStatusCache.test.ts
+      - apps/web/src/components/settings/providerStatus.test.ts
+      - apps/web/src/lib/providerRateLimits.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream normalizes and surfaces generic provider subscription limits with equivalent refresh, cache, account-lifecycle, expiry, and unsupported-provider behavior.
+
   - id: pull-request-association-continuity
     title: Keep worktrees associated with the correct pull request
     status: maintained
@@ -371,6 +534,52 @@ features:
       status: unassessed
       tracking: []
       retire_when: Upstream keeps repository-scoped pull request association correct across multiple remotes, branch pruning, and pull requests created during a turn.
+
+  - id: pull-request-draft-status
+    title: Show draft pull request status consistently
+    status: maintained
+    prs: [219]
+    invariants:
+      - Draft state propagates through GitHub, GitLab, Bitbucket, and Azure DevOps change-request status without making older servers or absent provider fields claim a pull request is ready.
+      - The web sidebar renders drafts with a muted Draft label and refreshes when readiness changes, while merged and closed states continue to take precedence.
+    implementation_paths:
+      - apps/server/src/git/GitManager.ts
+      - apps/server/src/sourceControl/AzureDevOpsSourceControlProvider.ts
+      - apps/server/src/sourceControl/BitbucketSourceControlProvider.ts
+      - apps/server/src/sourceControl/GitHubCli.ts
+      - apps/server/src/sourceControl/GitHubSourceControlProvider.ts
+      - apps/server/src/sourceControl/GitLabCli.ts
+      - apps/server/src/sourceControl/GitLabSourceControlProvider.ts
+      - apps/web/src/components/Sidebar.tsx
+      - apps/web/src/components/ThreadStatusIndicators.tsx
+      - packages/contracts/src/git.ts
+      - packages/contracts/src/sourceControl.ts
+    upstream_paths:
+      - apps/server/src/git/GitManager.ts
+      - apps/server/src/sourceControl/AzureDevOpsSourceControlProvider.ts
+      - apps/server/src/sourceControl/BitbucketSourceControlProvider.ts
+      - apps/server/src/sourceControl/GitHubCli.ts
+      - apps/server/src/sourceControl/GitHubSourceControlProvider.ts
+      - apps/server/src/sourceControl/GitLabCli.ts
+      - apps/server/src/sourceControl/GitLabSourceControlProvider.ts
+      - apps/web/src/components/Sidebar.tsx
+      - apps/web/src/components/ThreadStatusIndicators.tsx
+      - packages/contracts/src/git.ts
+      - packages/contracts/src/sourceControl.ts
+    tests:
+      - apps/server/src/git/GitManager.test.ts
+      - apps/server/src/sourceControl/AzureDevOpsSourceControlProvider.test.ts
+      - apps/server/src/sourceControl/BitbucketSourceControlProvider.test.ts
+      - apps/server/src/sourceControl/GitHubCli.test.ts
+      - apps/server/src/sourceControl/GitHubSourceControlProvider.test.ts
+      - apps/server/src/sourceControl/GitLabCli.test.ts
+      - apps/server/src/sourceControl/GitLabSourceControlProvider.test.ts
+      - apps/web/src/components/ThreadStatusIndicators.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/7148
+      retire_when: Upstream propagates draft state through every supported source-control adapter and presents it consistently in both pull request details and thread status.
 
   - id: pull-request-live-refresh
     title: Keep open pull request details current
@@ -510,6 +719,26 @@ features:
       status: unassessed
       tracking: []
       retire_when: Upstream exposes equivalent cross-client setup action lifecycle detail, retained output, and isolation from later interactive terminal actions.
+
+  - id: sidebar-attention-prominence
+    title: Keep threads awaiting input visually prominent
+    status: maintained
+    prs: [224]
+    invariants:
+      - Inactive threads awaiting approval or user input remain at full visual prominence because they require immediate attention.
+      - Working and Monitoring threads may recede as background activity without changing active, selected, unread, woke, ready, or failed presentation.
+    implementation_paths:
+      - apps/web/src/components/Sidebar.logic.ts
+      - apps/web/src/components/Sidebar.tsx
+    upstream_paths:
+      - apps/web/src/components/Sidebar.logic.ts
+      - apps/web/src/components/Sidebar.tsx
+    tests:
+      - apps/web/src/components/Sidebar.logic.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream distinguishes attention-required Approval and Input rows from dimmable Working and Monitoring background activity with equivalent precedence behavior.
 
   - id: stacked-pull-request-navigation
     title: Show GitHub pull request stack relationships
