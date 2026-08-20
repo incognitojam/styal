@@ -2321,6 +2321,14 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.terminalRestart, terminalManager.restart(input), {
             "rpc.aggregate": "terminal",
           }),
+        [WS_METHODS.terminalClosePreflight]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.terminalClosePreflight,
+            terminalManager.closePreflight(input),
+            {
+              "rpc.aggregate": "terminal",
+            },
+          ),
         [WS_METHODS.terminalClose]: (input) =>
           observeRpcEffect(WS_METHODS.terminalClose, terminalManager.close(input), {
             "rpc.aggregate": "terminal",
