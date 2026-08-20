@@ -65,6 +65,7 @@ import {
   markPromotedDraftThreadByRef,
   markPromotedDraftThreads,
   markPromotedDraftThreadsByRef,
+  type ComposerFileAttachment,
   type ComposerImageAttachment,
   useComposerDraftStore,
   DraftId,
@@ -101,6 +102,27 @@ function makeImage(input: {
     mimeType,
     sizeBytes: file.size,
     previewUrl: input.previewUrl,
+    file,
+  };
+}
+
+function makeFile(input: {
+  id: string;
+  name?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+}): ComposerFileAttachment {
+  const name = input.name ?? "notes.md";
+  const mimeType = input.mimeType ?? "text/markdown";
+  const file = new File([new Uint8Array(input.sizeBytes ?? 4).fill(1)], name, {
+    type: mimeType,
+  });
+  return {
+    type: "file",
+    id: input.id,
+    name,
+    mimeType,
+    sizeBytes: file.size,
     file,
   };
 }
@@ -288,6 +310,32 @@ describe("composerDraftStore addImages", () => {
     const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
     expect(draft?.images.map((image) => image.id)).toEqual(["img-shared"]);
     expect(revokeSpy).not.toHaveBeenCalledWith("blob:shared");
+  });
+
+  it("atomically rejects additions that would exceed the total byte limit", () => {
+    const first = makeFile({ id: "file-1", sizeBytes: 12 });
+    const second = makeFile({ id: "file-2", name: "other-notes.md", sizeBytes: 12 });
+    const store = useComposerDraftStore.getState();
+
+    expect(store.addImages(threadRef, [first], { maxTotalBytes: 20 }).added).toEqual([first]);
+    const secondAdmission = store.addImages(threadRef, [second], { maxTotalBytes: 20 });
+
+    expect(secondAdmission.added).toEqual([]);
+    expect(secondAdmission.rejectedByTotalBytes).toEqual([second]);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.images).toEqual([first]);
+  });
+
+  it("atomically rejects additions that would exceed the attachment count", () => {
+    const first = makeFile({ id: "count-file-1" });
+    const second = makeFile({ id: "count-file-2", name: "other.md" });
+    const store = useComposerDraftStore.getState();
+
+    expect(store.addImages(threadRef, [first], { maxCount: 1 }).added).toEqual([first]);
+    const secondAdmission = store.addImages(threadRef, [second], { maxCount: 1 });
+
+    expect(secondAdmission.added).toEqual([]);
+    expect(secondAdmission.rejectedByCount).toEqual([second]);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.images).toEqual([first]);
   });
 });
 

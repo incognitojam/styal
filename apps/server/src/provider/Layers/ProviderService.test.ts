@@ -12,7 +12,6 @@ import type {
 } from "@t3tools/contracts";
 import {
   ApprovalRequestId,
-  EnvironmentId,
   EventId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -976,8 +975,11 @@ routing.layer("ProviderServiceLive routing", (it) => {
       assert.equal(typeof turnInput.input, "string");
       const turnText = turnInput.input ?? "";
       assert.equal(turnText.startsWith("use this screenshot"), true);
-      assert.include(turnText, '[Attached image "screenshot.png" is saved at: ');
-      assert.equal(turnText.endsWith(`${attachment.id}.png]`), true);
+      assert.include(
+        turnText,
+        '[Attached image "screenshot.png" (image/png, 123 bytes) is saved at: ',
+      );
+      assert.equal(turnText.endsWith(`${attachment.id}/screenshot.png]`), true);
 
       // An attachment-only turn stays valid and the injected line becomes the
       // whole input text, so the agent still learns the path.
@@ -988,6 +990,31 @@ routing.layer("ProviderServiceLive routing", (it) => {
       });
       const imageOnlyInput = routing.codex.sendTurn.mock.calls[0]?.[0] as ProviderSendTurnInput;
       assert.equal(imageOnlyInput.input?.startsWith('[Attached image "screenshot.png"'), true);
+
+      routing.codex.sendTurn.mockClear();
+      yield* provider.sendTurn({
+        threadId: session.threadId,
+        attachments: [
+          {
+            type: "file",
+            id: "thread-attach-22345678-1234-1234-1234-123456789abc",
+            name: "design notes.md",
+            mimeType: "text/markdown",
+            sizeBytes: 456,
+          },
+        ],
+      });
+      const fileOnlyInput = routing.codex.sendTurn.mock.calls[0]?.[0] as ProviderSendTurnInput;
+      assert.include(
+        fileOnlyInput.input ?? "",
+        '[Attached file "design notes.md" (text/markdown, 456 bytes) is saved at: ',
+      );
+      assert.equal(
+        fileOnlyInput.input?.endsWith(
+          "thread-attach-22345678-1234-1234-1234-123456789abc/design notes.md]",
+        ),
+        true,
+      );
 
       yield* provider.stopSession({ threadId: session.threadId });
     }),

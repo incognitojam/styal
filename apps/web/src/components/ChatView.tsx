@@ -212,6 +212,7 @@ import {
 import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
 import { buildDraftThreadRouteParams } from "../threadRoutes";
 import {
+  type ComposerAttachment,
   type ComposerImageAttachment,
   type DraftThreadEnvMode,
   useComposerDraftStore,
@@ -1370,7 +1371,7 @@ function ChatViewContent(props: ChatViewProps) {
     (store) => store.setLogicalProjectDraftThreadId,
   );
   const promptRef = useRef("");
-  const composerImagesRef = useRef<ComposerImageAttachment[]>([]);
+  const composerAttachmentsRef = useRef<ComposerAttachment[]>([]);
   const composerTerminalContextsRef = useRef<TerminalContextDraft[]>([]);
   const composerElementContextsRef = useRef<ElementContextDraft[]>([]);
   const composerIssueContextsRef = useRef<IssueContextDraft[]>([]);
@@ -2420,7 +2421,7 @@ function ChatViewContent(props: ChatViewProps) {
     const attachmentIds = new Set<string>();
     for (const message of serverMessages ?? []) {
       for (const attachment of message.attachments ?? []) {
-        attachmentIds.add(attachment.id);
+        if (attachment.type === "image") attachmentIds.add(attachment.id);
       }
     }
     return [...attachmentIds];
@@ -2453,6 +2454,7 @@ function ChatViewContent(props: ChatViewProps) {
       return {
         ...message,
         attachments: message.attachments.map((attachment) => {
+          if (attachment.type !== "image") return attachment;
           const previewUrl = serverAttachmentUrlById.get(attachment.id);
           return previewUrl ? { ...attachment, previewUrl } : attachment;
         }),
@@ -5143,7 +5145,7 @@ function ChatViewContent(props: ChatViewProps) {
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
     } = sendCtx;
-    const composerImages =
+    const composerAttachments =
       directAnnotation?.image &&
       !sendContextImages.some((image) => image.id === directAnnotation.image?.id)
         ? [...sendContextImages, directAnnotation.image]
@@ -5171,7 +5173,7 @@ function ChatViewContent(props: ChatViewProps) {
       hasSendableContent,
     } = deriveComposerSendState({
       prompt: promptForSend,
-      imageCount: composerImages.length,
+      imageCount: composerAttachments.length,
       terminalContexts: composerTerminalContexts,
       elementContextCount:
         composerElementContexts.length +
@@ -5207,7 +5209,7 @@ function ChatViewContent(props: ChatViewProps) {
     // otherwise they send as plain text like any other message.
     const standaloneSlashCommand =
       settings.planModeEnabled &&
-      composerImages.length === 0 &&
+      composerAttachments.length === 0 &&
       sendableComposerTerminalContexts.length === 0 &&
       composerElementContexts.length === 0 &&
       composerIssueContexts.length === 0 &&
@@ -5264,7 +5266,7 @@ function ChatViewContent(props: ChatViewProps) {
       return;
     }
 
-    const composerImagesSnapshot = [...composerImages];
+    const composerAttachmentsSnapshot = [...composerAttachments];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
     const composerElementContextsSnapshot = [...composerElementContexts];
     const composerIssueContextsSnapshot = [...composerIssueContexts];
@@ -5320,22 +5322,32 @@ function ChatViewContent(props: ChatViewProps) {
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
     const turnAttachmentsPromise = Promise.all(
-      composerImagesSnapshot.map(async (image) => ({
-        type: "image" as const,
-        name: image.name,
-        mimeType: image.mimeType,
-        sizeBytes: image.sizeBytes,
-        dataUrl: await readFileAsDataUrl(image.file),
+      composerAttachmentsSnapshot.map(async (attachment) => ({
+        type: attachment.type,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+        dataUrl: await readFileAsDataUrl(attachment.file),
       })),
     );
-    const optimisticAttachments = composerImagesSnapshot.map((image) => ({
-      type: "image" as const,
-      id: image.id,
-      name: image.name,
-      mimeType: image.mimeType,
-      sizeBytes: image.sizeBytes,
-      previewUrl: image.previewUrl,
-    }));
+    const optimisticAttachments = composerAttachmentsSnapshot.map((attachment) =>
+      attachment.type === "image"
+        ? {
+            type: "image" as const,
+            id: attachment.id,
+            name: attachment.name,
+            mimeType: attachment.mimeType,
+            sizeBytes: attachment.sizeBytes,
+            previewUrl: attachment.previewUrl,
+          }
+        : {
+            type: "file" as const,
+            id: attachment.id,
+            name: attachment.name,
+            mimeType: attachment.mimeType,
+            sizeBytes: attachment.sizeBytes,
+          },
+    );
     // Sending always returns to the live edge. The new row becomes the
     // anchored end-space target so it lands near the top while the response
     // streams into the reserved space below it.
@@ -5383,17 +5395,19 @@ function ChatViewContent(props: ChatViewProps) {
     if (isServerThread) markComposerDraftSent(routeThreadRef);
     composerRef.current?.resetCursorState();
 
-    let firstComposerImageName: string | null = null;
-    if (composerImagesSnapshot.length > 0) {
-      const firstComposerImage = composerImagesSnapshot[0];
-      if (firstComposerImage) {
-        firstComposerImageName = firstComposerImage.name;
+    let firstComposerAttachmentName: string | null = null;
+    let firstComposerAttachmentType: ComposerAttachment["type"] | null = null;
+    if (composerAttachmentsSnapshot.length > 0) {
+      const firstComposerAttachment = composerAttachmentsSnapshot[0];
+      if (firstComposerAttachment) {
+        firstComposerAttachmentName = firstComposerAttachment.name;
+        firstComposerAttachmentType = firstComposerAttachment.type;
       }
     }
     let titleSeed = trimmed;
     if (!titleSeed) {
-      if (firstComposerImageName) {
-        titleSeed = `Image: ${firstComposerImageName}`;
+      if (firstComposerAttachmentName) {
+        titleSeed = `${firstComposerAttachmentType === "image" ? "Image" : "File"}: ${firstComposerAttachmentName}`;
       } else if (composerTerminalContextsSnapshot.length > 0) {
         titleSeed = formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!);
       } else if (composerElementContextsSnapshot.length > 0) {
@@ -5518,7 +5532,7 @@ function ChatViewContent(props: ChatViewProps) {
     if (failure !== null) {
       if (
         promptRef.current.length === 0 &&
-        composerImagesRef.current.length === 0 &&
+        composerAttachmentsRef.current.length === 0 &&
         composerTerminalContextsRef.current.length === 0 &&
         composerElementContextsRef.current.length === 0 &&
         composerIssueContextsRef.current.length === 0 &&
@@ -5536,13 +5550,15 @@ function ChatViewContent(props: ChatViewProps) {
           return next.length === existing.length ? existing : next;
         });
         promptRef.current = promptForSend;
-        const retryComposerImages = composerImagesSnapshot.map(cloneComposerImageForRetry);
-        composerImagesRef.current = retryComposerImages;
+        const retryComposerAttachments = composerAttachmentsSnapshot.map((attachment) =>
+          attachment.type === "image" ? cloneComposerImageForRetry(attachment) : attachment,
+        );
+        composerAttachmentsRef.current = retryComposerAttachments;
         composerTerminalContextsRef.current = composerTerminalContextsSnapshot;
         composerElementContextsRef.current = composerElementContextsSnapshot;
         composerIssueContextsRef.current = composerIssueContextsSnapshot;
         setComposerDraftPrompt(composerDraftTarget, promptForSend);
-        addComposerDraftImages(composerDraftTarget, retryComposerImages);
+        addComposerDraftImages(composerDraftTarget, retryComposerAttachments);
         setComposerDraftTerminalContexts(composerDraftTarget, composerTerminalContextsSnapshot);
         setComposerDraftElementContexts(composerDraftTarget, composerElementContextsSnapshot);
         setComposerDraftIssueContexts(composerDraftTarget, composerIssueContextsSnapshot);
@@ -6667,7 +6683,7 @@ function ChatViewContent(props: ChatViewProps) {
                             terminalOpen={Boolean(terminalUiState.terminalOpen)}
                             gitCwd={gitCwd}
                             promptRef={promptRef}
-                            composerImagesRef={composerImagesRef}
+                            composerAttachmentsRef={composerAttachmentsRef}
                             composerTerminalContextsRef={composerTerminalContextsRef}
                             composerElementContextsRef={composerElementContextsRef}
                             composerIssueContextsRef={composerIssueContextsRef}
