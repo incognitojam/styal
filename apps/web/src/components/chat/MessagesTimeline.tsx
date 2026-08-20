@@ -1753,6 +1753,14 @@ function WorkGroupToggleTimelineRow({
             />
           ) : null}
         </span>
+        <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
+          <ChevronDownIcon
+            className={cn(
+              "size-3 shrink-0 text-icon-muted opacity-70",
+              row.expanded && "rotate-180",
+            )}
+          />
+        </span>
       </button>
     );
   }
