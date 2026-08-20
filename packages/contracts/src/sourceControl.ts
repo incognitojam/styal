@@ -30,6 +30,12 @@ export const ChangeRequest = Schema.Struct({
   headRefName: TrimmedNonEmptyString,
   state: ChangeRequestState,
   updatedAt: Schema.Option(Schema.DateTimeUtc),
+  /**
+   * Whether the change request is still a draft. A modifier on `open` rather
+   * than a fourth state: a draft that merges is merged, not merged-and-draft.
+   * Optional because a provider whose listing omits it must not read as "ready".
+   */
+  isDraft: Schema.optional(Schema.Boolean),
   isCrossRepository: Schema.optional(Schema.Boolean),
   headRepositoryNameWithOwner: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   headRepositoryOwnerLogin: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
