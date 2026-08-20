@@ -795,6 +795,39 @@ features:
       tracking: []
       retire_when: Upstream distinguishes attention-required Approval and Input rows from dimmable Working and Monitoring background activity with equivalent precedence behavior.
 
+  - id: stable-workspace-ports
+    title: Assign stable development ports per workspace
+    status: maintained
+    prs: [100]
+    invariants:
+      - Each normalized workspace receives a persistent non-overlapping range of ten development ports that is reused across server restarts and threads sharing that workspace.
+      - The first port is exposed as `T3CODE_WORKSPACE_PORT` to terminal children, project scripts, and fresh or resumed Codex, Claude, Cursor, Grok, and OpenCode sessions.
+      - The repository dev runner uses the workspace base port for the server and the next port for Vite while preserving explicit port, offset, instance, and development URL overrides.
+    implementation_paths:
+      - apps/server/src/persistence/ForkMigrations/002_WorkspacePortAllocations.ts
+      - apps/server/src/provider/Layers/ProviderService.ts
+      - apps/server/src/server.ts
+      - apps/server/src/terminal/Manager.ts
+      - apps/server/src/workspace/WorkspacePortAllocator.ts
+      - scripts/dev-runner.ts
+      - t3.json
+    upstream_paths:
+      - apps/server/src/provider/Layers/ProviderService.ts
+      - apps/server/src/terminal/Manager.ts
+      - scripts/dev-runner.ts
+      - t3.json
+    tests:
+      - apps/server/integration/workspacePortEnvironment.integration.test.ts
+      - apps/server/src/persistence/ForkMigrations.test.ts
+      - apps/server/src/provider/Layers/ProviderService.test.ts
+      - apps/server/src/terminal/Manager.test.ts
+      - apps/server/src/workspace/WorkspacePortAllocator.test.ts
+      - scripts/dev-runner.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream assigns equivalent persistent workspace port ranges across every process surface and safely preserves existing installations carrying the fork allocation schema.
+
   - id: stacked-pull-request-navigation
     title: Show GitHub pull request stack relationships
     status: maintained
