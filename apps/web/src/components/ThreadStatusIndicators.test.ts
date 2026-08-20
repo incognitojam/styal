@@ -14,6 +14,7 @@ import {
   resolveThreadPr,
   settledPrHoverColorClass,
   threadChangeRequestSnapshotsAtom,
+  threadChangeRequestSnapshotsEqual,
   type ThreadChangeRequestSnapshot,
 } from "./ThreadStatusIndicators";
 
@@ -574,6 +575,34 @@ describe("threadChangeRequestSnapshotsAtom", () => {
   );
 });
 
+describe("threadChangeRequestSnapshotsEqual", () => {
+  const openPr = () => {
+    const pr = status().pr;
+    if (!pr) throw new Error("Expected pull request fixture");
+    return pr;
+  };
+
+  it("treats a draft marked ready for review as a change", () => {
+    // Rows read their tone from this map, so missing the flip would leave a
+    // ready pull request muted until something else moved the snapshot.
+    expect(
+      threadChangeRequestSnapshotsEqual(
+        snapshotFor("feature/current", { ...openPr(), isDraft: true }),
+        snapshotFor("feature/current", { ...openPr(), isDraft: false }),
+      ),
+    ).toBe(false);
+  });
+
+  it("treats an absent flag and an explicit false as the same", () => {
+    expect(
+      threadChangeRequestSnapshotsEqual(
+        snapshotFor("feature/current", openPr()),
+        snapshotFor("feature/current", { ...openPr(), isDraft: false }),
+      ),
+    ).toBe(true);
+  });
+});
+
 describe("nextThreadChangeRequestMergedSnapshot", () => {
   const open = snapshotFor("feature/current", { ...mergedFeaturePr(), state: "open" });
 
@@ -601,6 +630,12 @@ describe("nextThreadChangeRequestMergedSnapshot", () => {
 });
 
 describe("prStatusIndicator", () => {
+  function prFixture(): NonNullable<VcsStatusResult["pr"]> {
+    const pr = status().pr;
+    if (!pr) throw new Error("Expected pull request fixture");
+    return pr;
+  }
+
   it("formats PR tooltips with number, uppercase status, and title", () => {
     expect(prStatusIndicator(status().pr, undefined)).toMatchObject({
       tooltip: "PR #42 - Open: PR branch",
@@ -610,21 +645,48 @@ describe("prStatusIndicator", () => {
   });
 
   it("uses red for closed pull requests", () => {
-    const closedPr = status().pr;
-    if (!closedPr) throw new Error("Expected pull request fixture");
-
-    expect(prStatusIndicator({ ...closedPr, state: "closed" }, undefined)?.colorClass).toContain(
+    expect(prStatusIndicator({ ...prFixture(), state: "closed" }, undefined)?.colorClass).toContain(
       "text-red-600",
     );
+  });
+
+  it("mutes a draft instead of showing it as ready for review", () => {
+    const draft = prStatusIndicator({ ...prFixture(), isDraft: true }, undefined);
+
+    expect(draft?.colorClass).toContain("text-zinc-500");
+    expect(draft?.colorClass).not.toContain("emerald");
+    expect(draft?.label).toBe("PR draft");
+    expect(draft?.tooltipLead).toBe("PR #42 - Draft");
+  });
+
+  it("keeps a terminal state ahead of the draft flag", () => {
+    // A draft that lands is merged. Reporting it as a draft would bury the outcome.
+    expect(
+      prStatusIndicator({ ...prFixture(), state: "merged", isDraft: true }, undefined)?.tooltipLead,
+    ).toBe("PR #42 - Merged");
   });
 });
 
 describe("settledPrHoverColorClass", () => {
+  function prWith(overrides: Partial<NonNullable<VcsStatusResult["pr"]>>) {
+    const pr = status().pr;
+    if (!pr) throw new Error("Expected pull request fixture");
+    return { ...pr, ...overrides };
+  }
+
   it.each([
     ["open", "text-emerald-600"],
     ["merged", "text-violet-600"],
     ["closed", "text-red-600"],
   ] as const)("restores the %s pull request color on row hover", (state, colorClass) => {
-    expect(settledPrHoverColorClass(state)).toContain(`group-hover/v2-row:${colorClass}`);
+    expect(settledPrHoverColorClass(prWith({ state }))).toContain(
+      `group-hover/v2-row:${colorClass}`,
+    );
+  });
+
+  it("stays muted on hover for a draft", () => {
+    expect(settledPrHoverColorClass(prWith({ isDraft: true }))).toContain(
+      "group-hover/v2-row:text-zinc-500",
+    );
   });
 });

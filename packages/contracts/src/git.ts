@@ -199,6 +199,12 @@ const VcsStatusChangeRequest = Schema.Struct({
   headRef: TrimmedNonEmptyStringSchema,
   state: VcsStatusChangeRequestState,
   /**
+   * Whether the change request is still a draft, which clients tone down rather
+   * than showing it as ready for review. Optional for old servers and providers
+   * whose lookups do not report it; absent means "not known to be a draft".
+   */
+  isDraft: Schema.optional(Schema.Boolean),
+  /**
    * Last provider-side activity (ISO). For a merged/closed change request
    * this bounds when it reached that state, so clients can tell a PR that
    * terminated during a thread's life from one that was already history

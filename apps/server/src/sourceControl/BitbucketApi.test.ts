@@ -24,6 +24,7 @@ const bitbucketPullRequest = {
   id: 42,
   title: "Add Bitbucket provider",
   state: "OPEN",
+  draft: true,
   updated_on: "2026-01-02T00:00:00.000Z",
   links: {
     html: {
@@ -186,6 +187,7 @@ it.effect("parses pull request responses from the Bitbucket REST API", () => {
       baseRefName: "main",
       headRefName: "feature/source-control",
       state: "open",
+      isDraft: true,
       updatedAt: Option.some(DateTime.makeUnsafe("2026-01-02T00:00:00.000Z")),
       isCrossRepository: true,
       headRepositoryNameWithOwner: "octocat/t3code",

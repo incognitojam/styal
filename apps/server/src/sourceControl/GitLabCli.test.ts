@@ -47,6 +47,7 @@ layer("GitLabCli.layer", (it) => {
               target_branch: "main",
               source_branch: "feature/mr-threads",
               state: "opened",
+              work_in_progress: true,
               source_project_id: 101,
               target_project_id: 100,
               source_project: {
@@ -72,6 +73,7 @@ layer("GitLabCli.layer", (it) => {
         baseRefName: "main",
         headRefName: "feature/mr-threads",
         state: "open",
+        isDraft: true,
         isCrossRepository: true,
         headRepositoryNameWithOwner: "octocat/t3code",
         headRepositoryOwnerLogin: "octocat",
@@ -130,6 +132,7 @@ layer("GitLabCli.layer", (it) => {
           baseRefName: "main",
           headRefName: "feature/mr-list",
           state: "merged",
+          isDraft: false,
         },
       ]);
       expect(mockedRun).toHaveBeenCalledWith(
