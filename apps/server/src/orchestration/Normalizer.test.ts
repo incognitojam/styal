@@ -1,4 +1,9 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { it as effectIt } from "@effect/vitest";
 import { describe, expect, it } from "vite-plus/test";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
 import {
   CommandId,
   type ClientOrchestrationCommand,
@@ -8,10 +13,20 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 
-import { canonicalizeClientCommandTimestamps } from "./Normalizer.ts";
+import * as ServerConfig from "../config.ts";
+import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
+import { canonicalizeClientCommandTimestamps, normalizeDispatchCommand } from "./Normalizer.ts";
 
 const clientCreatedAt = "2031-01-01T00:00:00.000Z";
 const serverReceivedAt = "2026-07-18T00:00:00.000Z";
+
+const NormalizerTestLayer = Layer.mergeAll(
+  NodeServices.layer,
+  ServerConfig.layerTest(process.cwd(), { prefix: "t3code-normalizer-" }).pipe(
+    Layer.provide(NodeServices.layer),
+  ),
+  WorkspacePaths.layer.pipe(Layer.provide(NodeServices.layer)),
+);
 
 describe("canonicalizeClientCommandTimestamps", () => {
   it("replaces a client command timestamp with the server receipt timestamp", () => {
@@ -70,4 +85,48 @@ describe("canonicalizeClientCommandTimestamps", () => {
     expect(result.createdAt).toBe(serverReceivedAt);
     expect(result.bootstrap?.createThread?.createdAt).toBe(serverReceivedAt);
   });
+});
+
+effectIt.layer(NormalizerTestLayer)("normalizeDispatchCommand", (it) => {
+  it.effect("persists a generic file and replaces its upload payload with metadata", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const config = yield* ServerConfig.ServerConfig;
+      const normalized = yield* normalizeDispatchCommand({
+        type: "thread.turn.start",
+        commandId: CommandId.make("command-file"),
+        threadId: ThreadId.make("thread-file"),
+        message: {
+          messageId: MessageId.make("message-file"),
+          role: "user",
+          text: "Read this",
+          attachments: [
+            {
+              type: "file",
+              name: "notes.md",
+              mimeType: "text/markdown",
+              sizeBytes: 7,
+              dataUrl: "data:text/markdown;base64,IyBOb3Rlcw==",
+            },
+          ],
+        },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        createdAt: clientCreatedAt,
+      });
+
+      expect(normalized.type).toBe("thread.turn.start");
+      if (normalized.type !== "thread.turn.start") return;
+      const attachment = normalized.message.attachments[0];
+      expect(attachment).toMatchObject({
+        type: "file",
+        name: "notes.md",
+        mimeType: "text/markdown",
+        sizeBytes: 7,
+      });
+      if (!attachment) return;
+      const persistedPath = `${config.attachmentsDir}/${attachment.id}/notes.md`;
+      expect(yield* fileSystem.readFileString(persistedPath)).toBe("# Notes");
+    }),
+  );
 });
