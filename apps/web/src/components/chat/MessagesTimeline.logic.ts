@@ -1235,7 +1235,10 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.onlyToolEntries === bw.onlyToolEntries &&
         a.summary === bw.summary &&
         a.summaryKind === bw.summaryKind &&
-        a.hasFailure === bw.hasFailure
+        a.hasFailure === bw.hasFailure &&
+        a.exitCode === bw.exitCode &&
+        Equal.equals(a.summaryEntry, bw.summaryEntry) &&
+        Equal.equals(a.fileChangeStat, bw.fileChangeStat)
       );
     }
 
