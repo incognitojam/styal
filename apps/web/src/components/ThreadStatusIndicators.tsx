@@ -17,6 +17,7 @@ import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { vcsEnvironment } from "../state/vcs";
 import { useUiStateStore } from "../uiStateStore";
 import { resolveChangeRequestPresentation } from "../sourceControlPresentation";
+import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { resolveThreadStatusPill, type ThreadStatusPill } from "./Sidebar.logic";
 import type { SidebarThreadSummary } from "../types";
 import { formatWorktreePathForDisplay } from "../worktreeCleanup";
@@ -77,8 +78,16 @@ export function useLinkedThreadPullRequest(
   );
 }
 
-export function settledPrHoverColorClass(state: NonNullable<ThreadPr>["state"]): string {
-  switch (state) {
+/**
+ * The tone a settled row's number returns to on hover, which is the one the change request
+ * wears everywhere else. A draft has no louder tone to restore — muted is already its own
+ * colour — so hovering one deliberately barely moves.
+ */
+export function settledPrHoverColorClass(pr: NonNullable<ThreadPr>): string {
+  if (pr.state === "open" && pr.isDraft === true) {
+    return "group-hover/v2-row:text-zinc-500 dark:group-hover/v2-row:text-zinc-400/80";
+  }
+  switch (pr.state) {
     case "open":
       return "group-hover/v2-row:text-emerald-600 dark:group-hover/v2-row:text-emerald-300/90";
     case "merged":
@@ -88,54 +97,28 @@ export function settledPrHoverColorClass(state: NonNullable<ThreadPr>["state"]):
   }
 }
 
+/**
+ * How a change request reads on a thread row. State and tone come from the same resolver the
+ * pull request panel uses, so a draft cannot be muted in one place and emerald in the other.
+ * The panel's conflict arm stays out of reach here: VCS status carries no mergeability.
+ */
 export function prStatusIndicator(
   pr: ThreadPr,
   provider: VcsStatusResult["sourceControlProvider"] | null | undefined,
 ): PrStatusIndicator | null {
-  function formatPrState(state: NonNullable<ThreadPr>["state"]): string {
-    return state.charAt(0).toUpperCase() + state.slice(1);
-  }
-
-  function formatPrStatusLead(pr: NonNullable<ThreadPr>, changeRequestShortName: string): string {
-    return `${changeRequestShortName} #${pr.number} - ${formatPrState(pr.state)}`;
-  }
   if (!pr) return null;
   const presentation = resolveChangeRequestPresentation(provider);
+  const state = resolvePullRequestState({ state: pr.state, isDraft: pr.isDraft === true });
 
-  const tooltipLead = formatPrStatusLead(pr, presentation.shortName);
-  const tooltip = `${tooltipLead}: ${pr.title}`;
-
-  if (pr.state === "open") {
-    return {
-      label: `${presentation.shortName} open`,
-      colorClass: "text-emerald-600 dark:text-emerald-300/90",
-      tooltip,
-      tooltipLead,
-      tooltipTitle: pr.title,
-      url: pr.url,
-    };
-  }
-  if (pr.state === "closed") {
-    return {
-      label: `${presentation.shortName} closed`,
-      colorClass: "text-red-600 dark:text-red-300/90",
-      tooltip,
-      tooltipLead,
-      tooltipTitle: pr.title,
-      url: pr.url,
-    };
-  }
-  if (pr.state === "merged") {
-    return {
-      label: `${presentation.shortName} merged`,
-      colorClass: "text-violet-600 dark:text-violet-300/90",
-      tooltip,
-      tooltipLead,
-      tooltipTitle: pr.title,
-      url: pr.url,
-    };
-  }
-  return null;
+  const tooltipLead = `${presentation.shortName} #${pr.number} - ${state.label}`;
+  return {
+    label: `${presentation.shortName} ${state.label.toLowerCase()}`,
+    colorClass: state.toneClassName,
+    tooltip: `${tooltipLead}: ${pr.title}`,
+    tooltipLead,
+    tooltipTitle: pr.title,
+    url: pr.url,
+  };
 }
 
 export function ChangeRequestStatusIcon({ className }: { className?: string }) {
@@ -223,6 +206,7 @@ export function threadChangeRequestSnapshotsEqual(
     left.pr.baseRef === right.pr.baseRef &&
     left.pr.headRef === right.pr.headRef &&
     left.pr.state === right.pr.state &&
+    (left.pr.isDraft ?? false) === (right.pr.isDraft ?? false) &&
     (left.pr.updatedAt ?? null) === (right.pr.updatedAt ?? null) &&
     sourceControlProvidersEqual(left.sourceControlProvider, right.sourceControlProvider) &&
     linkedPullRequestsEqual(left.linkedPullRequest, right.linkedPullRequest)
