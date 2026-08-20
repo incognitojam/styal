@@ -19,6 +19,7 @@ import {
   resolveSidebarStageBadgeLabel,
   resolveThreadRowClassName,
   resolveSidebarThreadStatus,
+  resolveSidebarThreadVisualState,
   resolveThreadStatusPill,
   resolveWorkingStartedAt,
   searchSidebarThreadsByTitle,
@@ -806,6 +807,46 @@ describe("resolveSidebarThreadStatus", () => {
 
   it("defaults to ready with no session", () => {
     expect(resolveSidebarThreadStatus({ ...idle, session: null })).toBe("ready");
+  });
+});
+
+describe("resolveSidebarThreadVisualState", () => {
+  const visualState = (status: Parameters<typeof resolveSidebarThreadVisualState>[0]["status"]) =>
+    resolveSidebarThreadVisualState({
+      status,
+      isUnread: false,
+      isWoke: false,
+      isActive: false,
+      isSelected: false,
+    });
+
+  it("keeps human-attention states at full prominence", () => {
+    expect(visualState("approval")).toEqual({ shouldRecede: false, shouldFade: false });
+    expect(visualState("input")).toEqual({ shouldRecede: false, shouldFade: false });
+    expect(visualState("failed")).toEqual({ shouldRecede: false, shouldFade: false });
+  });
+
+  it("recedes background activity", () => {
+    expect(visualState("working")).toEqual({ shouldRecede: true, shouldFade: true });
+    expect(visualState("monitoring")).toEqual({ shouldRecede: true, shouldFade: true });
+  });
+
+  it("recedes read ready threads without fading the whole row", () => {
+    expect(visualState("ready")).toEqual({ shouldRecede: true, shouldFade: false });
+  });
+
+  it("does not recede the active or selected background thread", () => {
+    const base = {
+      status: "working" as const,
+      isUnread: false,
+      isWoke: false,
+    };
+    expect(resolveSidebarThreadVisualState({ ...base, isActive: true, isSelected: false })).toEqual(
+      { shouldRecede: false, shouldFade: false },
+    );
+    expect(resolveSidebarThreadVisualState({ ...base, isActive: false, isSelected: true })).toEqual(
+      { shouldRecede: false, shouldFade: false },
+    );
   });
 });
 
