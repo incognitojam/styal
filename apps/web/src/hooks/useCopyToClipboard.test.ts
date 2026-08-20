@@ -49,3 +49,23 @@ describe("clipboardWriteEpoch", () => {
     expect(clipboardWriteEpoch()).toBe(before + 2);
   });
 });
+
+describe("writeTextToClipboard", () => {
+  it("includes the browser failure reason in the surfaced error", async () => {
+    const cause = new Error("Document is not focused.");
+    stubClipboardWriteText(() => Promise.reject(cause));
+
+    await expect(writeTextToClipboard("hello")).rejects.toMatchObject({
+      message: "Failed to copy text to the clipboard: Document is not focused.",
+      cause,
+    });
+  });
+
+  it("keeps the generic message when the rejection has no useful detail", async () => {
+    stubClipboardWriteText(() => Promise.reject(undefined));
+
+    await expect(writeTextToClipboard("hello")).rejects.toMatchObject({
+      message: "Failed to copy text to the clipboard.",
+    });
+  });
+});
