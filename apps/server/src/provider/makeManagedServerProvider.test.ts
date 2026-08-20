@@ -355,6 +355,57 @@ describe("makeManagedServerProvider", () => {
     ).pipe(Effect.provide(AlwaysRunTestLayer)),
   );
 
+  it.effect("keeps the last known rate limits when a refresh reports none", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const withRateLimits: ServerProvider = {
+          ...refreshedSnapshot,
+          rateLimits: {
+            windows: [{ id: "primary", usedPercent: 7, windowMinutes: 10_080 }],
+            updatedAt: "2026-04-10T00:00:01.000Z",
+          },
+        };
+        // The account is still fine here; only the quota read failed, so the
+        // driver reports no windows at all.
+        const withoutRateLimits: ServerProvider = {
+          ...refreshedSnapshot,
+          checkedAt: "2026-04-10T00:00:05.000Z",
+        };
+        const signedOut: ServerProvider = {
+          ...withoutRateLimits,
+          checkedAt: "2026-04-10T00:00:09.000Z",
+          auth: { status: "unauthenticated" },
+        };
+        // Returning whatever the ref currently holds keeps the fake immune to
+        // however the constructor's own initial refresh interleaves.
+        const nextCheck = yield* Ref.make(withRateLimits);
+        const provider = yield* makeManagedServerProvider<TestSettings>({
+          maintenanceCapabilities,
+          getSettings: Effect.succeed({ enabled: true }),
+          streamSettings: Stream.empty,
+          haveSettingsChanged: () => true,
+          initialSnapshot: () => Effect.succeed(initialSnapshot),
+          checkProvider: Ref.get(nextCheck),
+          refreshInterval: "1 hour",
+        });
+
+        yield* provider.refresh;
+        assert.deepStrictEqual((yield* provider.getSnapshot).rateLimits, withRateLimits.rateLimits);
+
+        yield* Ref.set(nextCheck, withoutRateLimits);
+        yield* provider.refresh;
+        const carried = yield* provider.getSnapshot;
+        assert.deepStrictEqual(carried.rateLimits, withRateLimits.rateLimits);
+        assert.strictEqual(carried.checkedAt, withoutRateLimits.checkedAt);
+
+        // Signing out ends the account those windows belonged to.
+        yield* Ref.set(nextCheck, signedOut);
+        yield* provider.refresh;
+        assert.strictEqual((yield* provider.getSnapshot).rateLimits, undefined);
+      }),
+    ).pipe(Effect.provide(AlwaysRunTestLayer)),
+  );
+
   it.effect("streams supplemental snapshot updates after the base provider check completes", () =>
     Effect.scoped(
       Effect.gen(function* () {
