@@ -68,6 +68,11 @@ import { PullRequestListEmptyState } from "../components/pullRequest/PullRequest
 import { PullRequestListGhost } from "../components/pullRequest/PullRequestGhosts";
 import { PullRequestRow } from "../components/pullRequest/PullRequestRow";
 import { PullRequestsUnavailableState } from "../components/pullRequest/PullRequestsUnavailableState";
+import {
+  readPullRequestSearchSelection,
+  restorePullRequestSearchSelection,
+  type PullRequestSearchSelection,
+} from "../components/pullRequest/pullRequestSearchSelection";
 import { RightPanelTabs, type PullRequestTabStatus } from "../components/RightPanelTabs";
 import {
   WorkspaceBreadcrumb,
@@ -223,6 +228,12 @@ export const Route = createFileRoute("/_chat/pull-requests")({
 function PullRequestsRouteView() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
+  const routeSearchQuery = search.q ?? "";
+  // Keep the keystroke synchronous with the controlled input. Navigation updates the URL
+  // asynchronously; controlling the input from that delayed value makes React rewrite the
+  // text after a mid-query edit and collapse the caret to the end.
+  const [searchQuery, setSearchQuery] = useState(routeSearchQuery);
+  useEffect(() => setSearchQuery(routeSearchQuery), [routeSearchQuery]);
   const { environments } = useEnvironments();
   // Every connected environment that has said it can list pull requests. Sorted, so the query
   // keys, the scope key and the stored snapshot all read the same whichever order the
@@ -1286,9 +1297,12 @@ function PullRequestsRouteView() {
 
   const searchInput = (
     <PullRequestSearchInput
-      value={search.q ?? ""}
+      value={searchQuery}
       busy={typedQuery.length > 0 && (!querySettled || showingCarried)}
-      onChange={(query) => updateSearch({ q: query || undefined })}
+      onChange={(query) => {
+        setSearchQuery(query);
+        updateSearch({ q: query || undefined });
+      }}
     />
   );
   const panelToggleControls = (
@@ -1484,7 +1498,7 @@ function PullRequestsRouteView() {
   const columnProps = {
     refreshing,
     onRefresh: () => void refreshFromHost(),
-    searchValue: search.q ?? "",
+    searchValue: searchQuery,
     involvement: search.involvement,
     state: search.state,
     host: search.host,
@@ -1789,12 +1803,27 @@ function PullRequestsColumn({
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const markerRef = useRef<HTMLDivElement | null>(null);
+  const topbarSearchFocusedRef = useRef(false);
+  const topbarSearchContainerRef = useRef<HTMLDivElement | null>(null);
+  const pendingSearchSelectionRef = useRef<PullRequestSearchSelection | null>(null);
+  const inFlowSearchRef = useRef<HTMLDivElement | null>(null);
   const [condensed, setCondensed] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchFocusToken, setSearchFocusToken] = useState(0);
   useEffect(() => {
     const marker = markerRef.current;
     if (!marker) return;
     const observer = new IntersectionObserver(
-      ([entry]) => setCondensed(entry ? !entry.isIntersecting : false),
+      ([entry]) => {
+        const nextCondensed = entry ? !entry.isIntersecting : false;
+        if (!nextCondensed) {
+          const input = topbarSearchContainerRef.current?.querySelector("input");
+          if (input && document.activeElement === input) {
+            pendingSearchSelectionRef.current = readPullRequestSearchSelection(input);
+          }
+        }
+        setCondensed(nextCondensed);
+      },
       { root: scrollRef.current },
     );
     observer.observe(marker);
@@ -1803,11 +1832,7 @@ function PullRequestsColumn({
   // Typing into the topbar search narrows the list, and a short enough list un-scrolls the
   // page — which dissolves the condensed topbar and unmounts the very input being typed in.
   // The two inputs are one search to the reader, so the focus follows the value into the
-  // in-flow bar, caret at the end, and the sentence continues.
-  const topbarSearchFocusedRef = useRef(false);
-  const inFlowSearchRef = useRef<HTMLDivElement | null>(null);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
+  // in-flow bar with the same caret or selection, and the edit continues in place.
   // Mod+F belongs to this page's own search: the desktop shell binds no find-in-page, so the
   // shortcut would otherwise do nothing. Condensed, it unfolds the topbar search; at the top,
   // it focuses the in-flow bar and selects the query the way a find field would.
@@ -1834,12 +1859,14 @@ function PullRequestsColumn({
     // The fold-out is gone from the chrome; forgetting it open keeps the next condensing
     // from starting with an empty expanded search nobody asked for.
     setSearchOpen(false);
+    const selection = pendingSearchSelectionRef.current;
+    pendingSearchSelectionRef.current = null;
     if (!topbarSearchFocusedRef.current) return;
     topbarSearchFocusedRef.current = false;
     const input = inFlowSearchRef.current?.querySelector("input");
     if (!input) return;
     input.focus();
-    input.setSelectionRange(input.value.length, input.value.length);
+    restorePullRequestSearchSelection(input, selection);
   }, [condensed]);
 
   return (
@@ -1900,7 +1927,7 @@ function PullRequestsColumn({
         )}
         <div className="min-w-0 flex-1" />
         {condensed ? (
-          <div className="flex shrink-0 items-center gap-1.5">
+          <div ref={topbarSearchContainerRef} className="flex shrink-0 items-center gap-1.5">
             <ExpandableSearch
               searchInput={searchInput}
               searchValue={searchValue}
