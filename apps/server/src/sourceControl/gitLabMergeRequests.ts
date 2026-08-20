@@ -14,6 +14,7 @@ export interface NormalizedGitLabMergeRequestRecord {
   readonly baseRefName: string;
   readonly headRefName: string;
   readonly state: "open" | "closed" | "merged";
+  readonly isDraft: boolean;
   readonly updatedAt: Option.Option<DateTime.Utc>;
   readonly isCrossRepository?: boolean;
   readonly headRepositoryNameWithOwner?: string | null;
@@ -41,6 +42,9 @@ const GitLabMergeRequestSchema = Schema.Struct({
   source_branch: TrimmedNonEmptyString,
   target_branch: TrimmedNonEmptyString,
   state: Schema.optional(Schema.NullOr(Schema.String)),
+  // `work_in_progress` is the pre-14.0 spelling; both still appear in the wild.
+  draft: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  work_in_progress: Schema.optional(Schema.NullOr(Schema.Boolean)),
   updated_at: Schema.optional(Schema.OptionFromNullOr(Schema.DateTimeUtcFromString)),
   source_project_id: Schema.optional(Schema.NullOr(Schema.Number)),
   target_project_id: Schema.optional(Schema.NullOr(Schema.Number)),
@@ -108,6 +112,7 @@ function normalizeGitLabMergeRequestRecord(
     baseRefName: raw.target_branch,
     headRefName: raw.source_branch,
     state: normalizeGitLabMergeRequestState(raw.state),
+    isDraft: raw.draft ?? raw.work_in_progress ?? false,
     updatedAt: raw.updated_at ?? Option.none(),
     ...(typeof isCrossRepository === "boolean" ? { isCrossRepository } : {}),
     ...(sourceProjectPath ? { headRepositoryNameWithOwner: sourceProjectPath } : {}),
