@@ -22,6 +22,8 @@ import {
   type TerminalAttachStreamEvent,
   type TerminalClearInput,
   type TerminalCloseInput,
+  type TerminalClosePreflightInput,
+  type TerminalClosePreflightResult,
   type TerminalEvent,
   type TerminalMetadataStreamEvent,
   type TerminalOpenInput,
@@ -181,6 +183,11 @@ export class TerminalManager extends Context.Service<
     readonly restart: (
       input: TerminalRestartInput,
     ) => Effect.Effect<TerminalSessionSnapshot, TerminalError>;
+
+    /** Inspect current process state immediately before a user-requested close. */
+    readonly closePreflight: (
+      input: TerminalClosePreflightInput,
+    ) => Effect.Effect<TerminalClosePreflightResult, TerminalError>;
 
     /**
      * Close an active terminal session.
@@ -2120,6 +2127,92 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     }
   });
 
+  const closePreflightLocked = Effect.fn("terminal.closePreflightLocked")(function* (
+    input: TerminalClosePreflightInput,
+  ): Effect.fn.Return<TerminalClosePreflightResult> {
+    const terminalIds = [...new Set(input.terminalIds)];
+    const confirmationTerminalIds = new Set<string>();
+    const inspectableSessions: Array<TerminalSessionState & { pid: number }> = [];
+
+    for (const terminalId of terminalIds) {
+      const session = yield* getSession(input.threadId, terminalId);
+      if (Option.isNone(session)) {
+        confirmationTerminalIds.add(terminalId);
+        continue;
+      }
+
+      const current = session.value;
+      if (current.status === "exited" || current.status === "error") continue;
+
+      // Finite-command terminals run the command as the root PTY process, so
+      // they do not necessarily have a child process for the inspector to find.
+      if (current.launchCommand !== null) {
+        confirmationTerminalIds.add(terminalId);
+        continue;
+      }
+
+      if (current.status !== "running" || !current.process || !Number.isInteger(current.pid)) {
+        confirmationTerminalIds.add(terminalId);
+        continue;
+      }
+
+      inspectableSessions.push(current as TerminalSessionState & { pid: number });
+    }
+
+    if (inspectableSessions.length > 0) {
+      const subprocessInspector = yield* acquireSubprocessInspector.pipe(
+        Effect.map(Option.some),
+        Effect.catch((reason) =>
+          Effect.logWarning("failed to inspect terminal close liveness", { reason }).pipe(
+            Effect.as(Option.none<TerminalSubprocessInspector>()),
+          ),
+        ),
+      );
+
+      if (Option.isNone(subprocessInspector)) {
+        for (const session of inspectableSessions) {
+          confirmationTerminalIds.add(session.terminalId);
+        }
+      } else {
+        yield* Effect.forEach(
+          inspectableSessions,
+          (session) =>
+            subprocessInspector.value(session.pid).pipe(
+              Effect.tap((result) =>
+                Effect.sync(() => {
+                  if (result.hasRunningSubprocess) {
+                    confirmationTerminalIds.add(session.terminalId);
+                  }
+                }),
+              ),
+              Effect.catch((reason) =>
+                Effect.logWarning("failed to inspect terminal close liveness", {
+                  threadId: session.threadId,
+                  terminalId: session.terminalId,
+                  terminalPid: session.pid,
+                  reason,
+                }).pipe(
+                  Effect.tap(() =>
+                    Effect.sync(() => confirmationTerminalIds.add(session.terminalId)),
+                  ),
+                ),
+              ),
+            ),
+          { concurrency: "unbounded", discard: true },
+        );
+      }
+    }
+
+    return {
+      confirmationTerminalIds: terminalIds.filter((terminalId) =>
+        confirmationTerminalIds.has(terminalId),
+      ),
+    };
+  });
+
+  const closePreflight: TerminalManager["Service"]["closePreflight"] = (input) =>
+    withThreadLock(input.threadId, closePreflightLocked(input));
+
   const pollSubprocessActivity = Effect.fn("terminal.pollSubprocessActivity")(function* () {
     const state = yield* readManagerState;
     const runningSessions = [...state.sessions.values()].filter(
@@ -2800,6 +2893,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     resize,
     clear,
     restart,
+    closePreflight,
     close,
     subscribe,
     subscribeMetadata,
