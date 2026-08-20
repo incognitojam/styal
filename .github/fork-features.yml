@@ -328,6 +328,61 @@ features:
       tracking: []
       retire_when: Upstream resolves equivalent environment-scoped GitHub references in chat and pull request Markdown with the same navigation behavior.
 
+  - id: inspectable-tool-activity
+    title: Keep tool activity concise and inspectable
+    status: maintained
+    prs: [4, 36, 117, 230]
+    invariants:
+      - Web and mobile name supported tool calls by their action with a concise useful argument, while agent panels and approval rows use the same vocabulary instead of raw provider names or serialized input.
+      - Completed web command rows reveal the full raw command and retrieve persisted output only after expansion, keeping routine timeline activity payloads bounded.
+      - Collapsed web tool groups expand into their individual named calls, with failure, exit-code, diff, and disclosure signals remaining independently visible.
+    implementation_paths:
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/server/src/orchestration/ActivityPayloadProjection.ts
+      - apps/server/src/orchestration/CommandOutputQuery.ts
+      - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
+      - apps/server/src/ws.ts
+      - apps/web/src/components/AgentsPanel.tsx
+      - apps/web/src/components/chat/ComposerPendingApprovalPanel.tsx
+      - apps/web/src/components/chat/MessagesTimeline.logic.ts
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/session-logic.ts
+      - apps/web/src/state/queries.ts
+      - packages/client-runtime/src/state/orchestration.ts
+      - packages/contracts/src/orchestration.ts
+      - packages/contracts/src/rpc.ts
+      - packages/shared/src/toolRowPresentation.ts
+    upstream_paths:
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/server/src/orchestration/ActivityPayloadProjection.ts
+      - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
+      - apps/server/src/ws.ts
+      - apps/web/src/components/AgentsPanel.tsx
+      - apps/web/src/components/chat/ComposerPendingApprovalPanel.tsx
+      - apps/web/src/components/chat/MessagesTimeline.logic.ts
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/session-logic.ts
+      - apps/web/src/state/queries.ts
+      - packages/client-runtime/src/state/orchestration.ts
+      - packages/contracts/src/orchestration.ts
+      - packages/contracts/src/rpc.ts
+    tests:
+      - apps/mobile/src/lib/threadActivity.test.ts
+      - apps/server/src/orchestration/ActivityPayloadProjection.test.ts
+      - apps/server/src/orchestration/CommandOutputQuery.test.ts
+      - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts
+      - apps/web/src/components/chat/ComposerPendingApprovalPanel.test.tsx
+      - apps/web/src/components/chat/MessagesTimeline.logic.test.ts
+      - apps/web/src/components/chat/MessagesTimeline.test.tsx
+      - apps/web/src/session-logic.command-output.test.ts
+      - apps/web/src/session-logic.test.ts
+      - packages/shared/src/toolRowPresentation.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/7152
+      retire_when: Upstream uses equivalent cross-provider action names and concise arguments across clients and approvals, preserves inspectable full commands, retrieves completed output on demand without bloating activity payloads, and keeps collapsed groups visibly expandable with status detail intact.
+
   - id: integrated-browser-links
     title: Open local development links in the integrated browser
     status: maintained
