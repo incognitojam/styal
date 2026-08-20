@@ -14,15 +14,15 @@ export interface ThreadTranscript {
 }
 
 function attachmentSummary(message: TranscriptMessage): string | null {
-  const imageAttachments = message.attachments?.filter((attachment) => attachment.type === "image");
-  const count = imageAttachments?.length ?? 0;
+  const attachments = message.attachments ?? [];
+  const count = attachments.length;
   if (count === 0) {
     return null;
   }
-  const names = imageAttachments?.slice(0, 3).map((image) => image.name) ?? [];
+  const names = attachments.slice(0, 3).map((attachment) => attachment.name);
   const extraCount = count - names.length;
   const extraSummary = extraCount > 0 ? ` (+${extraCount} more)` : "";
-  return `[Attached image${count === 1 ? "" : "s"}: ${names.join(", ")}${extraSummary}]`;
+  return `[Attached file${count === 1 ? "" : "s"}: ${names.join(", ")}${extraSummary}]`;
 }
 
 function messageBody(message: TranscriptMessage): string | null {
