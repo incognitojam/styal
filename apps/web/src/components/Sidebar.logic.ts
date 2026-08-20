@@ -517,6 +517,26 @@ export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): Si
   return "ready";
 }
 
+export function resolveSidebarThreadVisualState(input: {
+  status: SidebarThreadStatus;
+  isUnread: boolean;
+  isWoke: boolean;
+  isActive: boolean;
+  isSelected: boolean;
+}): { shouldRecede: boolean; shouldFade: boolean } {
+  const isBackgroundActivity = input.status === "working" || input.status === "monitoring";
+
+  return {
+    shouldRecede:
+      (input.status === "ready" || isBackgroundActivity) &&
+      !input.isUnread &&
+      !input.isWoke &&
+      !input.isActive &&
+      !input.isSelected,
+    shouldFade: isBackgroundActivity && !input.isActive && !input.isSelected,
+  };
+}
+
 /** NaN-safe Date.parse for sort comparators: a malformed timestamp must not
     poison the whole ordering, so it sinks to the epoch instead. */
 export function parseTimestampMs(isoDate: string): number {
