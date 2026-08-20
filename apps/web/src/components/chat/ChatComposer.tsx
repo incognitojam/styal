@@ -759,7 +759,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const removeComposerDraftElementContext = useComposerDraftStore(
     (store) => store.removeElementContext,
   );
-  const removeComposerDraftIssueContext = useComposerDraftStore((store) => store.removeIssueContext);
+  const removeComposerDraftIssueContext = useComposerDraftStore(
+    (store) => store.removeIssueContext,
+  );
   const removeComposerDraftPreviewAnnotation = useComposerDraftStore(
     (store) => store.removePreviewAnnotation,
   );
