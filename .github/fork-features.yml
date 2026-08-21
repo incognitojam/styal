@@ -255,25 +255,29 @@ features:
     invariants:
       - Mod+W closes the focused terminal, browser, or diff panel tab without closing unrelated application content.
       - Opening a panel menu or launcher preserves panel focus ownership so the next close shortcut targets the panel predictably.
+      - Closing a browser tab preserves the relative order of every remaining panel tab so repeated close actions cannot target a tab that moved unexpectedly.
     implementation_paths:
       - apps/web/src/components/RightPanelTabs.tsx
       - apps/web/src/keybindings.ts
       - apps/web/src/lib/rightPanelFocus.ts
+      - apps/web/src/rightPanelStore.ts
     upstream_paths:
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/RightPanelTabs.tsx
       - apps/web/src/keybindings.ts
+      - apps/web/src/rightPanelStore.ts
       - packages/contracts/src/keybindings.ts
     tests:
       - apps/desktop/src/window/DesktopApplicationMenu.test.ts
       - apps/server/src/keybindings.test.ts
       - apps/web/src/components/RightPanelTabs.test.tsx
       - apps/web/src/keybindings.test.ts
+      - apps/web/src/rightPanelStore.test.ts
       - packages/contracts/src/keybindings.test.ts
     upstream:
       status: unassessed
       tracking: []
-      retire_when: Upstream closes focused panel tabs with the platform Mod+W shortcut and preserves focus ownership across panel menus and launchers.
+      retire_when: Upstream closes focused panel tabs with the platform Mod+W shortcut, preserves focus ownership across panel menus and launchers, and keeps remaining tabs in place after a close.
 
   - id: fork-analytics-identity
     title: Identify fork builds in analytics
