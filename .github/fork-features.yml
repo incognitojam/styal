@@ -115,8 +115,8 @@ features:
     prs: [23, 39, 44, 195]
     invariants:
       - Existing-thread draft text and attachments survive restarts and synchronize without overwriting newer local edits.
-      - Web, desktop-hosted web, and mobile use the same server-backed draft contract and fork-owned migration history.
-      - Sidebar thread rows indicate unsent text or attachments without treating settings-only state as a user draft.
+      - The web and mobile source implementations use the same server-backed draft contract and fork-owned migration history; desktop inherits the web implementation.
+      - Sidebar thread rows indicate unsent prompts, attachments, or context without treating model, provider, runtime, or interaction choices alone as a user draft.
     implementation_paths:
       - apps/mobile/src/state/use-composer-drafts.ts
       - apps/server/src/persistence/ComposerDrafts.ts
@@ -227,8 +227,8 @@ features:
     status: maintained
     prs: [76]
     invariants:
-      - A new thread visited before its server shell exists receives a persisted environment-scoped visit baseline so its first completion becomes unread after the user navigates away.
-      - Visit baselines use server-projected request timestamps, clear on creation rollback, and do not mark historical threads unread without a locally established baseline.
+      - When a user leaves a newly started thread before its first turn settles, that first completion becomes unread even if navigation happened before the server thread was available.
+      - Historical threads remain read without a locally established visit, and failed thread creation cannot leave stale state that affects a later thread.
     implementation_paths:
       - apps/web/src/AppRoot.tsx
       - apps/web/src/components/ChatView.tsx
@@ -243,9 +243,10 @@ features:
       - apps/web/src/threadUnreadCompletion.flow.test.ts
       - apps/web/src/uiStateStore.test.ts
     upstream:
-      status: unassessed
-      tracking: []
-      retire_when: Upstream establishes equivalent first-turn visit baselines so completion state remains truthful when users navigate away before thread creation settles.
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/6662
+      retire_when: Upstream makes first completion unread when navigation happens before thread creation settles without marking historical threads unread or leaving stale state after failed creation.
 
   - id: focused-panel-tab-close
     title: Close the focused panel tab with Mod+W
@@ -321,7 +322,7 @@ features:
     upstream:
       status: unassessed
       tracking: []
-      retire_when: Upstream supports first-class downstream distribution identity with equivalent app, package, process, repository, and channel separation.
+      retire_when: The fork stops shipping separately branded desktop builds or adopts reusable downstream distribution machinery that makes these overrides unnecessary.
 
   - id: github-outage-status
     title: Provider outage status in the sidebar
@@ -418,8 +419,9 @@ features:
       - Completed web command rows reveal the full raw command and retrieve persisted output only after expansion, keeping routine timeline activity payloads bounded.
       - Collapsed web tool groups expand into their individual named calls, with failure, exit-code, diff, and disclosure signals remaining independently visible.
       - Meaningful running-command interactions are shown with fixed sanitized summaries while empty polls and raw terminal input remain hidden.
-      - Claude, Codex, and OpenCode file edits retain structured paths, line statistics, lifecycle state, and provider-independent presentation without sending full diffs to clients.
-      - Folded completed turns summarize their activity categories and keep context-compaction status legible across themes.
+      - Claude, Codex, and OpenCode file edits retain structured paths, line statistics, lifecycle state, and provider-independent presentation without eagerly sending full diffs to clients.
+      - Folded completed turns summarize the categories of tools used with recognizable icons.
+      - Context-compaction markers remain legible across themes.
     implementation_paths:
       - apps/mobile/src/features/threads/thread-work-log.tsx
       - apps/mobile/src/lib/threadActivity.ts
