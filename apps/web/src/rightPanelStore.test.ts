@@ -695,4 +695,27 @@ describe("rightPanelStore", () => {
       ),
     ).toEqual(["terminal:term-1", "browser:tab-b", "browser:tab-c"]);
   });
+
+  it("preserves interleaved tab order when a browser surface closes", () => {
+    useRightPanelStore.getState().open(refA, "diff");
+    useRightPanelStore.getState().openBrowser(refA, "tab-a");
+    useRightPanelStore.getState().openBrowser(refA, "tab-b");
+    useRightPanelStore.getState().openPullRequest(refA, {
+      projectId: "project-a",
+      repository: "org/repo",
+      number: 42,
+    });
+
+    useRightPanelStore.getState().reconcileBrowserSurfaces(refA, ["tab-b"]);
+
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces.map(
+        (surface) => surface.id,
+      ),
+    ).toEqual([
+      "diff",
+      "browser:tab-b",
+      pullRequestSurfaceId({ projectId: "project-a", repository: "org/repo", number: 42 }),
+    ]);
+  });
 });
