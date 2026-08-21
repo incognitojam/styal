@@ -102,6 +102,7 @@ features: []
       overlaps.map(({ feature, paths }) => ({ id: feature.id, paths })),
       [
         { id: "completion-sounds", paths: ["apps/web/src/AppRoot.tsx"] },
+        { id: "first-turn-unread-state", paths: ["apps/web/src/AppRoot.tsx"] },
         {
           id: "github-outage-status",
           paths: ["apps/web/src/components/sidebar/SidebarChrome.tsx"],
