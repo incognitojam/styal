@@ -3,10 +3,15 @@
  *
  * Nothing here reaches the host: a review is one request carrying every line comment and the
  * verdict together, so a half-written one is invisible to everyone else — including on the
- * hosts that have no pending review of their own. That also means a draft lives only as long
- * as the tab does, which is why this is deliberately not persisted.
+ * hosts that have no pending review of their own. These drafts live only in the current browser
+ * session, which is why this store is deliberately not persisted.
  */
-import type { ProjectId, PullRequestRef, PullRequestReviewCommentDraft } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ProjectId,
+  PullRequestRef,
+  PullRequestReviewCommentDraft,
+} from "@t3tools/contracts";
 import { create } from "zustand";
 
 export type PendingReviewComment = PullRequestReviewCommentDraft & { readonly id: string };
@@ -29,15 +34,26 @@ export function pullRequestReviewKey(reference: PullRequestRef): string {
   return `${reference.projectId}/${reference.repository}#${reference.number}`;
 }
 
+/** A conversation draft belongs to the host copy of a pull request it will be posted to. */
+export function pullRequestConversationDraftKey(
+  environmentId: EnvironmentId,
+  reference: PullRequestRef,
+): string {
+  return `${environmentId}:${pullRequestReviewKey(reference)}`;
+}
+
 interface PullRequestReviewStoreState {
   readonly drafts: Readonly<Record<string, ReadonlyArray<PendingReviewComment>>>;
   readonly summaries: Readonly<Record<string, string>>;
+  readonly conversationDrafts: Readonly<Record<string, string>>;
   readonly addComment: (key: string, comment: PendingReviewComment) => void;
   readonly removeComment: (key: string, commentId: string) => void;
   readonly removeComments: (key: string, commentIds: ReadonlyArray<string>) => void;
   readonly clear: (key: string) => void;
   readonly setSummary: (key: string, body: string) => void;
   readonly clearSummary: (key: string, submittedBody: string) => void;
+  readonly setConversationDraft: (key: string, body: string) => void;
+  readonly clearConversationDraft: (key: string, submittedBody: string) => void;
 }
 
 const EMPTY: ReadonlyArray<PendingReviewComment> = [];
@@ -45,6 +61,7 @@ const EMPTY: ReadonlyArray<PendingReviewComment> = [];
 export const usePullRequestReviewStore = create<PullRequestReviewStoreState>()((set) => ({
   drafts: {},
   summaries: {},
+  conversationDrafts: {},
   addComment: (key, comment) =>
     set((state) => ({
       drafts: { ...state.drafts, [key]: [...(state.drafts[key] ?? EMPTY), comment] },
@@ -77,6 +94,20 @@ export const usePullRequestReviewStore = create<PullRequestReviewStoreState>()((
       if (state.summaries[key] !== submittedBody) return state;
       const { [key]: _removed, ...rest } = state.summaries;
       return { summaries: rest };
+    }),
+  setConversationDraft: (key, body) =>
+    set((state) => {
+      if (body.length > 0) {
+        return { conversationDrafts: { ...state.conversationDrafts, [key]: body } };
+      }
+      const { [key]: _removed, ...rest } = state.conversationDrafts;
+      return { conversationDrafts: rest };
+    }),
+  clearConversationDraft: (key, submittedBody) =>
+    set((state) => {
+      if (state.conversationDrafts[key] !== submittedBody) return state;
+      const { [key]: _removed, ...rest } = state.conversationDrafts;
+      return { conversationDrafts: rest };
     }),
 }));
 
