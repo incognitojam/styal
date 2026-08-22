@@ -144,7 +144,7 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
               event.properties.serverArch === "arm64" &&
               event.properties.serverAppVersion === event.properties.t3CodeVersion &&
               event.properties.serverMode === "web" &&
-              event.properties.t3CodeRepository === "yngatech/t3code",
+              event.properties.t3CodeRepository === "incognitojam/t3code",
           ),
         ),
         true,

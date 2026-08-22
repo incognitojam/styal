@@ -24,6 +24,6 @@ export const APP_STAGE_LABEL =
 export const APP_DISPLAY_NAME =
   injectedDesktopAppBranding?.displayName ??
   formatAppDisplayName({ baseName: APP_BASE_NAME, stageLabel: APP_STAGE_LABEL });
-export const APP_REPOSITORY = "yngatech/t3code";
+export const APP_REPOSITORY = "incognitojam/t3code";
 export const APP_VERSION = import.meta.env.APP_VERSION || "0.0.0";
 export const APP_COMMIT_HASH = import.meta.env.APP_COMMIT_HASH || "unknown";

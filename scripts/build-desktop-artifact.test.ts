@@ -160,18 +160,18 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   });
 
   it("uses the fork identity for desktop packaging", () => {
-    assert.equal(resolveDesktopProductName("0.0.17"), "T3 Code (yngatech Alpha)");
+    assert.equal(resolveDesktopProductName("0.0.17"), "T3 Code (incognitojam Alpha)");
     assert.equal(
       resolveDesktopBuildDescription("0.0.17"),
-      "T3 Code (yngatech Alpha) desktop build",
+      "T3 Code (incognitojam Alpha) desktop build",
     );
     assert.equal(
       resolveDesktopProductName("0.0.17-nightly.20260413.42"),
-      "T3 Code (yngatech Nightly)",
+      "T3 Code (incognitojam Nightly)",
     );
     assert.equal(
       resolveDesktopBuildDescription("0.0.17-nightly.20260413.42"),
-      "T3 Code (yngatech Nightly) desktop build",
+      "T3 Code (incognitojam Nightly) desktop build",
     );
   });
 
@@ -525,7 +525,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         "**/node_modules/.bin/**",
       ]);
       assert.deepStrictEqual(mac.dmg, {
-        title: "T3 Code (yngatech Alpha) 1.2.3 Installer",
+        title: "T3 Code (incognitojam Alpha) 1.2.3 Installer",
         background: "dmg/dmg-background-latest.png",
         window: { width: 540, height: 412 },
         contents: [

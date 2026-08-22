@@ -29,7 +29,7 @@ interface BufferedAnalyticsEvent {
   readonly capturedAt: string;
 }
 
-const T3_CODE_REPOSITORY = "yngatech/t3code";
+const T3_CODE_REPOSITORY = "incognitojam/t3code";
 
 const TelemetryEnvConfig = Config.all({
   posthogKey: Config.string("T3CODE_POSTHOG_KEY").pipe(

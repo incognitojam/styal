@@ -2058,7 +2058,7 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
 
 export function resolveDesktopProductName(version: string): string {
   return resolveDesktopUpdateChannel(version) === "nightly"
-    ? "T3 Code (yngatech Nightly)"
+    ? "T3 Code (incognitojam Nightly)"
     : (desktopPackageJson.productName ?? "T3 Code");
 }
 
@@ -2069,7 +2069,7 @@ export function resolveDesktopBuildDescription(version: string): string {
 function resolveDesktopPackageName(platform: typeof BuildPlatform.Type): string {
   // electron-builder's one-click NSIS target derives the install directory from
   // the package name rather than productName. Keep other platforms stable while
-  // preventing the yngatech distribution from sharing upstream's Windows folder.
+  // preventing the incognitojam distribution from sharing upstream's Windows folder.
   return platform === "win" ? "t3code-yngatech" : "t3code";
 }
 

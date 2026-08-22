@@ -304,7 +304,7 @@ features:
     status: maintained
     prs: [3, 27, 29, 49, 56, 242, 243, 244]
     invariants:
-      - Packaged fork builds use a distinct application identifier and channel-aware yngatech product, process, repository, and About-panel identity instead of presenting as upstream.
+      - Packaged fork builds use a distinct application identifier and channel-aware incognitojam product, process, repository, and About-panel identity instead of presenting as upstream.
       - Windows fork packages install under their own package directory without colliding with upstream, while Alpha and Nightly builds remain visibly distinguishable.
       - Canonical brand asset paths and icon geometry stay shared across desktop, mobile configuration, web packaging, and export tooling so production and nightly artwork cannot silently diverge.
     implementation_paths:
