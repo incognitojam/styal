@@ -59,6 +59,10 @@ import { PullRequestMarkdownEditor } from "./PullRequestMarkdownEditor";
 import { PullRequestReactionBar } from "./PullRequestReactions";
 import { PullRequestConversationGhost } from "./PullRequestGhosts";
 import { sectionCollapseAnchorScrollTop } from "./pullRequestSummaryScroll.logic";
+import {
+  pullRequestConversationDraftKey,
+  usePullRequestReviewStore,
+} from "./pullRequestReviewStore";
 
 /** One reviewer, however a host happens to have cased their login this time. */
 function reviewerKey(login: string): string {
@@ -422,7 +426,12 @@ function CommentComposer({
   detail: PullRequestDetailView;
   onCommented: () => void;
 }) {
-  const [body, setBody] = useState("");
+  // The PR panel unmounts when another right-panel surface is selected. Keep the draft outside
+  // this component so returning from Diff, Files, or another PR restores the right words.
+  const draftKey = pullRequestConversationDraftKey(environmentId, detail);
+  const body = usePullRequestReviewStore((store) => store.conversationDrafts[draftKey] ?? "");
+  const setConversationDraft = usePullRequestReviewStore((store) => store.setConversationDraft);
+  const clearConversationDraft = usePullRequestReviewStore((store) => store.clearConversationDraft);
   const [posting, setPosting] = useState(false);
   const postComment = useAtomCommand(pullRequestEnvironment.comment, { reportFailure: false });
 
@@ -444,7 +453,7 @@ function CommentComposer({
       toastManager.add({ type: "error", title: "Could not post the comment" });
       return;
     }
-    setBody("");
+    clearConversationDraft(draftKey, body);
     onCommented();
   };
 
@@ -458,7 +467,7 @@ function CommentComposer({
         rows={3}
         placeholder="Leave a comment"
         aria-label="Comment on this pull request"
-        onChange={(event) => setBody(event.target.value)}
+        onChange={(event) => setConversationDraft(draftKey, event.target.value)}
       />
       <div className="flex justify-end">
         <Button
