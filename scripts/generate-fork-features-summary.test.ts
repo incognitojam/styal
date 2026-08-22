@@ -353,7 +353,9 @@ Show the final result in the timeline.
   it("renders nightly highlights as a flat tooltip-safe list with PR references", () => {
     const rendered = renderNightlySummary(
       {
-        added: [{ text: "Start threads from GitHub issues", evidenceIds: ["incognitojam/t3code#14"] }],
+        added: [
+          { text: "Start threads from GitHub issues", evidenceIds: ["incognitojam/t3code#14"] },
+        ],
         improved: [
           {
             text: "Show setup script outcomes in the thread timeline",

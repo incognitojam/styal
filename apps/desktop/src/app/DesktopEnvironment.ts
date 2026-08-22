@@ -71,6 +71,7 @@ export class DesktopEnvironment extends Context.Service<
     readonly otlpExportIntervalMs: number;
     readonly branding: DesktopAppBranding;
     readonly displayName: string;
+    readonly safeStorageName: string;
     readonly appUserModelId: string;
     readonly linuxDesktopEntryName: string;
     readonly linuxWmClass: string;
@@ -172,6 +173,9 @@ const make = Effect.fn("desktop.environment.make")(function* (
     appVersion: input.appVersion,
   });
   const displayName = branding.displayName;
+  // Electron derives the macOS safeStorage Keychain service from app.name.
+  // Keep the pre-transfer name stable so existing encrypted credentials remain readable.
+  const safeStorageName = `${APP_BASE_NAME} (yngatech ${branding.stageLabel})`;
   const stateDir = resolveDesktopStateDir({
     baseDir,
     isDevelopment,
@@ -223,6 +227,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     otlpExportIntervalMs: config.otlpExportIntervalMs,
     branding,
     displayName,
+    safeStorageName,
     appUserModelId: Option.getOrElse(config.appUserModelIdOverride, () =>
       isDevelopment ? "com.t3tools.t3code.dev" : "dev.incognitojam.t3code",
     ),
