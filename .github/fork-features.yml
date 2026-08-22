@@ -738,6 +738,27 @@ features:
       tracking: []
       retire_when: Upstream keeps repository-scoped pull request association correct across multiple remotes, branch pruning, and pull requests created during a turn.
 
+  - id: pull-request-comment-drafts
+    title: Preserve pull request comment drafts across panel tabs
+    status: maintained
+    prs: [234]
+    invariants:
+      - An unsent pull request conversation comment survives switching to Diff, Files, another pull request, or another right-panel surface and is restored when its pull request is reopened.
+      - Conversation drafts remain isolated by environment, project, repository, and pull request number, and only the exact draft accepted by the host is cleared after a successful post.
+    implementation_paths:
+      - apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx
+      - apps/web/src/components/pullRequest/pullRequestReviewStore.ts
+    upstream_paths:
+      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx
+      - apps/web/src/components/pullRequest/pullRequestReviewStore.ts
+    tests:
+      - apps/web/src/components/pullRequest/pullRequestReviewStore.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream preserves environment-scoped pull request conversation drafts across right-panel surface changes and clears them safely after posting.
+
   - id: pull-request-description-images
     title: Render repository images in pull request descriptions
     status: maintained
