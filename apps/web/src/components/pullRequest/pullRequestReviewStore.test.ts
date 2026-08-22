@@ -8,7 +8,7 @@ function comment(id: string, body = id): PendingReviewComment {
 
 describe("pull request review drafts", () => {
   beforeEach(() => {
-    usePullRequestReviewStore.setState({ drafts: {}, summaries: {} });
+    usePullRequestReviewStore.setState({ drafts: {}, summaries: {}, conversationDrafts: {} });
   });
 
   it("removes only the line comments included in a submitted snapshot", () => {
@@ -43,5 +43,27 @@ describe("pull request review drafts", () => {
     usePullRequestReviewStore.getState().clearSummary("review-a", "Submitted body");
 
     expect(usePullRequestReviewStore.getState().summaries["review-a"]).toBe("Revised body");
+  });
+
+  it("keeps conversation drafts isolated by pull request", () => {
+    usePullRequestReviewStore.getState().setConversationDraft("pr-a", "Draft for A");
+    usePullRequestReviewStore.getState().setConversationDraft("pr-b", "Draft for B");
+
+    expect(usePullRequestReviewStore.getState().conversationDrafts).toEqual({
+      "pr-a": "Draft for A",
+      "pr-b": "Draft for B",
+    });
+  });
+
+  it("clears only the conversation draft that was posted", () => {
+    const store = usePullRequestReviewStore.getState();
+    store.setConversationDraft("pr-a", "Submitted body");
+    usePullRequestReviewStore.getState().setConversationDraft("pr-a", "Revised body");
+    usePullRequestReviewStore.getState().clearConversationDraft("pr-a", "Submitted body");
+
+    expect(usePullRequestReviewStore.getState().conversationDrafts["pr-a"]).toBe("Revised body");
+
+    usePullRequestReviewStore.getState().setConversationDraft("pr-a", "");
+    expect(usePullRequestReviewStore.getState().conversationDrafts["pr-a"]).toBeUndefined();
   });
 });
