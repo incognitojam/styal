@@ -997,8 +997,10 @@ features:
   - id: setup-script-observability
     title: Keep setup script progress and output inspectable
     status: maintained
-    prs: [40, 207, 208, 214, 216]
+    prs: [40, 207, 208, 214, 216, 236]
     invariants:
+      - A terminal opened locally survives server session-list reconciliation until the server reports it, so focus stays on it rather than falling back to a setup session.
+      - Opening the terminal on a thread whose only sessions are retained setup terminals starts an interactive shell instead of focusing the finite session.
       - Web and mobile work logs identify the configured setup action and truthfully distinguish requested, running, completed, failed, and stopped states.
       - Setup terminal output remains inspectable after exit, and later toolbar actions start on the first click without reusing the finite setup session.
     implementation_paths:
