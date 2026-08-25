@@ -84,11 +84,11 @@ warning so you can correct its syntax or field values.
 T3 Code adds project context to commands it launches. These variables are intended for project
 commands and can safely be referenced by actions:
 
-| Variable | Available in | Value |
-| --- | --- | --- |
-| `T3CODE_PROJECT_ROOT` | Actions, plus web and desktop terminals | Absolute path to the checkout registered as the project. In a worktree thread, this remains the original checkout path. |
-| `T3CODE_WORKTREE_PATH` | Actions, plus web and desktop terminals for a worktree thread | Absolute path to the thread's worktree. It is unset for local threads. |
-| `T3CODE_WORKSPACE_PORT` | Actions, T3 Code terminals, and locally launched agent processes | First port in the workspace's stable range of ten ports. |
+| Variable                | Available in                                                     | Value                                                                                                                   |
+| ----------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `T3CODE_PROJECT_ROOT`   | Actions, plus web and desktop terminals                          | Absolute path to the checkout registered as the project. In a worktree thread, this remains the original checkout path. |
+| `T3CODE_WORKTREE_PATH`  | Actions, plus web and desktop terminals for a worktree thread    | Absolute path to the thread's worktree. It is unset for local threads.                                                  |
+| `T3CODE_WORKSPACE_PORT` | Actions, T3 Code terminals, and locally launched agent processes | First port in the workspace's stable range of ten ports.                                                                |
 
 The action's current working directory is normally `T3CODE_WORKTREE_PATH` when that variable is
 set, otherwise `T3CODE_PROJECT_ROOT`. This makes it possible to read shared files from the original
