@@ -26,6 +26,10 @@ export function resolveTerminalSessionLabel(
  * Client-side terminal id allocator. Ids are ALWAYS chosen by the client and sent explicitly
  * on every `terminal.open` / `terminal.attach` call — the server never allocates.
  *
+ * A consequence: the server's session list always lags an open still in flight. An id the server
+ * has not reported yet is pending, not removed, so reconciling a client list against it must keep
+ * ids it has never acknowledged.
+ *
  * Returns the lowest unused `term-N` id (starting at `term-1`), skipping any ids already in
  * `existingTerminalIds`.
  */

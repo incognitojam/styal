@@ -103,13 +103,44 @@ export function resolveDraftPromotionNavigationTarget(input: {
   return input.serverThreadStarted ? input.serverThreadRef : null;
 }
 
+/**
+ * Setup-script terminals run one finite command and are kept around only so their
+ * output stays inspectable, so nothing that wants a shell should land on them.
+ */
+function isSetupScriptTerminalId(terminalId: string): boolean {
+  return terminalId.startsWith("setup-");
+}
+
+/** A thread with only setup sessions has no shell to open onto, so one has to be started. */
+export function hasInteractiveTerminal(terminalIds: ReadonlyArray<string>): boolean {
+  return terminalIds.some((terminalId) => !isSetupScriptTerminalId(terminalId));
+}
+
+/**
+ * Terminal ids to adopt from the server's session list. An id the server has never reported is an
+ * open still in flight, so it survives instead of being replaced away and handing the active
+ * pointer to whatever the server does already know about.
+ */
+export function resolveReconciledTerminalIds(input: {
+  serverTerminalIds: ReadonlyArray<string>;
+  clientTerminalIds: ReadonlyArray<string>;
+  acknowledgedTerminalIds: ReadonlySet<string>;
+}): string[] {
+  const serverTerminalIdSet = new Set(input.serverTerminalIds);
+  const pendingTerminalIds = input.clientTerminalIds.filter(
+    (terminalId) =>
+      !serverTerminalIdSet.has(terminalId) && !input.acknowledgedTerminalIds.has(terminalId),
+  );
+  return [...input.serverTerminalIds, ...pendingTerminalIds];
+}
+
 export function resolveProjectScriptBaseTerminalId(input: {
   activeTerminalId: string;
   knownTerminalIds: ReadonlyArray<string>;
   defaultTerminalId: string;
 }): string {
   const reusableTerminalIds = input.knownTerminalIds.filter(
-    (terminalId) => !terminalId.startsWith("setup-"),
+    (terminalId) => !isSetupScriptTerminalId(terminalId),
   );
   return reusableTerminalIds.includes(input.activeTerminalId)
     ? input.activeTerminalId
