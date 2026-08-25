@@ -52,3 +52,6 @@ Use `$((T3CODE_WORKSPACE_PORT + 1))` through `$((T3CODE_WORKSPACE_PORT + 9))` in
 a workspace needs multiple services. The allocation prevents T3 Code workspaces in the same
 environment from receiving overlapping ranges, but it does not reserve listening sockets from
 unrelated programs on the host.
+
+See [Project scripts](./project-scripts.md) for the full `t3.json` script format and the other
+project environment variables available to actions and terminals.

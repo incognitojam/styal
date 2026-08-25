@@ -6,6 +6,7 @@
 - [Permission modes](./user/permission-modes.md)
 - [Keyboard shortcuts](./user/keybindings.md)
 - [Run commands in the terminal](./user/terminal.md)
+- [Project scripts and environment variables](./user/project-scripts.md)
 - [Reading the chat timeline](./user/chat-timeline.md)
 - [Organizing threads](./user/thread-sidebar.md)
 - [Review usage](./user/usage.md)
