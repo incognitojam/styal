@@ -45,7 +45,11 @@ import {
   resolvePromptInjectedEffort,
 } from "@t3tools/shared/model";
 import { CHAT_LIST_ANCHOR_OFFSET } from "@t3tools/shared/chatList";
-import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
+import {
+  isSetupScriptOutsideWorktree,
+  projectScriptCwd,
+  projectScriptRuntimeEnv,
+} from "@t3tools/shared/projectScripts";
 import { truncate } from "@t3tools/shared/String";
 import {
   getTerminalLabel,
@@ -3031,6 +3035,23 @@ function ChatViewContent(props: ChatViewProps) {
       },
     ) => {
       if (!activeThreadId || !activeProject || !activeThread) return;
+      const targetWorktreePath = options?.worktreePath ?? activeThread.worktreePath ?? null;
+      // A setup script assumes a worktree cwd with the project root somewhere else;
+      // on the main checkout the two collapse and the script can overwrite what it
+      // meant to link to. Refuse rather than run it against the project root.
+      if (
+        isSetupScriptOutsideWorktree({
+          script,
+          projectCwd: activeProject.workspaceRoot,
+          worktreePath: targetWorktreePath,
+        })
+      ) {
+        setThreadError(
+          activeThreadId,
+          `"${script.name}" runs after a worktree is created. In a local thread it would run in the project root and could overwrite the files it sets up.`,
+        );
+        return;
+      }
       if (options?.rememberAsLastInvoked !== false) {
         setLastInvokedScriptByProjectId((current) => {
           if (current[activeProject.id] === script.id) return current;
@@ -3046,7 +3067,6 @@ function ChatViewContent(props: ChatViewProps) {
       const isBaseTerminalBusy = runningTerminalIds.includes(baseTerminalId);
       const wantsNewTerminal = Boolean(options?.preferNewTerminal) || isBaseTerminalBusy;
       const shouldCreateNewTerminal = wantsNewTerminal;
-      const targetWorktreePath = options?.worktreePath ?? activeThread.worktreePath ?? null;
 
       setTerminalUiLaunchContext({
         threadId: activeThreadId,

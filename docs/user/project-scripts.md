@@ -26,6 +26,11 @@ thread. If the current terminal is busy, the action opens in another terminal. A
 action runs after the new worktree is ready, and its progress and result appear in the chat
 timeline. Only one saved action per checkout can be the automatic setup action.
 
+The automatic setup action runs only in a worktree. T3 Code refuses to run it from a local thread,
+where its working directory would be the project root: a setup command that copies or links files
+from `T3CODE_PROJECT_ROOT` into its working directory would overwrite the checkout's own copies of
+those files.
+
 ## Share actions with `t3.json`
 
 Add `t3.json` at the repository root to offer actions to everyone who opens the repository in T3
