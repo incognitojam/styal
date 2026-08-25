@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
-import { deriveToolRowPresentation, isPreviewToolName } from "./toolRowPresentation.ts";
+import {
+  deriveToolRowPresentation,
+  formatAskUserQuestionBody,
+  isPreviewToolName,
+} from "./toolRowPresentation.ts";
 
 describe("deriveToolRowPresentation", () => {
   it("names the well-typed actions identically across providers", () => {
@@ -402,5 +406,98 @@ describe("deriveToolRowPresentation", () => {
       input: { to: "a90dd06a", summary: "Address review:\n  API-failure fallback gate" },
     })?.argument;
     expect(argument?.value).toBe("→ a90dd06a · Address review: API-failure fallback gate");
+  });
+  it("names an asked question by what was asked", () => {
+    const askInput = {
+      questions: [
+        {
+          question: "Should the script name replace the live command?",
+          header: "Live label",
+          options: [{ label: "Script name always", description: "Stable identity." }],
+        },
+      ],
+    };
+
+    expect(
+      deriveToolRowPresentation({
+        toolName: "AskUserQuestion",
+        itemType: "dynamic_tool_call",
+        label: "Tool call",
+        detail: `AskUserQuestion: ${JSON.stringify(askInput)}`,
+        input: askInput,
+      }),
+    ).toEqual({
+      heading: "Asked a question",
+      argument: { kind: "text", value: "Should the script name replace the live command?" },
+    });
+  });
+
+  it("falls back to headers when several questions were asked at once", () => {
+    expect(
+      deriveToolRowPresentation({
+        toolName: "AskUserQuestion",
+        itemType: "dynamic_tool_call",
+        label: "Tool call",
+        input: {
+          questions: [
+            { question: "Which label?", header: "Live label", options: [] },
+            { question: "Which icon?", header: "Icon", options: [] },
+          ],
+        },
+      }),
+    ).toEqual({
+      heading: "Asked 2 questions",
+      argument: { kind: "text", value: "Live label · Icon" },
+    });
+  });
+
+  it("phrases an unanswered question as cancelled, not failed", () => {
+    // The input only arrives with the completion, so a pending or aborted
+    // call has nothing to count.
+    expect(
+      deriveToolRowPresentation({
+        toolName: "AskUserQuestion",
+        itemType: "dynamic_tool_call",
+        label: "Tool call",
+        input: {},
+        failed: true,
+      }),
+    ).toEqual({ heading: "Question cancelled" });
+  });
+});
+
+describe("formatAskUserQuestionBody", () => {
+  it("lays the questions and their options out as text", () => {
+    expect(
+      formatAskUserQuestionBody({
+        toolName: "AskUserQuestion",
+        input: {
+          questions: [
+            {
+              question: "Which label?",
+              header: "Live label",
+              options: [{ label: "Script name always" }, { label: "Child command" }],
+            },
+            { question: "Which icon?", header: "Icon", options: [{ label: "Keep the terminal" }] },
+          ],
+        },
+      }),
+    ).toBe(
+      [
+        "Live label",
+        "Which label?",
+        "  · Script name always",
+        "  · Child command",
+        "",
+        "Icon",
+        "Which icon?",
+        "  · Keep the terminal",
+      ].join("\n"),
+    );
+  });
+
+  it("has nothing to show for other tools or an empty input", () => {
+    expect(formatAskUserQuestionBody({ toolName: "Read", input: { questions: [] } })).toBeNull();
+    expect(formatAskUserQuestionBody({ toolName: "AskUserQuestion", input: {} })).toBeNull();
   });
 });

@@ -296,6 +296,75 @@ describe("projectActivityPayload tool identity", () => {
     expect(input.skill).toBe("x");
   });
 
+  it("carries the questions a tool asked, bounded on every axis", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        title: "Tool call",
+        data: {
+          toolName: "AskUserQuestion",
+          input: {
+            questions: [
+              {
+                question: "Which label?",
+                header: "Live label",
+                multiSelect: false,
+                options: [
+                  { label: "Script name always", description: "z".repeat(50_000) },
+                  { label: "Child command" },
+                  { label: "Third" },
+                  { label: "Fourth" },
+                  { label: "Dropped past the cap" },
+                ],
+              },
+              { question: "q".repeat(5_000), header: "Second" },
+              { header: "Third" },
+              { question: "Fourth" },
+              { question: "Dropped past the cap" },
+            ],
+          },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    const questions = (data.input as Record<string, unknown>).questions as ReadonlyArray<
+      Record<string, unknown>
+    >;
+    expect(questions.length).toBe(4);
+    expect(questions[0]).toEqual({
+      header: "Live label",
+      question: "Which label?",
+      options: [
+        { label: "Script name always" },
+        { label: "Child command" },
+        { label: "Third" },
+        { label: "Fourth" },
+      ],
+    });
+    // Option descriptions are the bulk of an ask and never reach a client.
+    expect(JSON.stringify(projected)).not.toContain("zzz");
+    expect((questions[1]!.question as string).length).toBe(200);
+  });
+
+  it("keeps questions off the wire for every other tool", () => {
+    // Only the AskUserQuestion row renders them, so nothing else pays for them.
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        title: "Tool call",
+        data: {
+          toolName: "Survey",
+          input: {
+            query: "onboarding",
+            questions: [{ question: "q".repeat(5_000), options: [{ label: "yes" }] }],
+          },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    expect(data.input).toEqual({ query: "onboarding" });
+  });
+
   it("names Codex MCP calls from the item, which carries no toolName", () => {
     // Codex and the ACP adapters put identity on the item, and the clients
     // only read data.toolName, so without this they render an anonymous row.
