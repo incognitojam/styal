@@ -14,7 +14,7 @@
     },
     {
       "name": "Setup Worktree",
-      "command": "vp i && ln -sf $T3CODE_PROJECT_ROOT/.env .env && ln -sf $T3CODE_PROJECT_ROOT/infra/relay/.env infra/relay/.env && node apps/web/scripts/warm-dep-cache.ts",
+      "command": "vp i && if [ -n \"$T3CODE_WORKTREE_PATH\" ]; then ln -sf \"$T3CODE_PROJECT_ROOT/.env\" .env && ln -sf \"$T3CODE_PROJECT_ROOT/infra/relay/.env\" infra/relay/.env; else echo \"Not in a worktree - skipping .env symlinks\"; fi && node apps/web/scripts/warm-dep-cache.ts",
       "icon": "configure",
       "runOnWorktreeCreate": true
     }
