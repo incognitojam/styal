@@ -374,7 +374,7 @@ function approvalToolFields(args: unknown): Record<string, unknown> {
       ? (args as Record<string, unknown>)
       : undefined;
   const toolName = typeof record?.toolName === "string" ? record.toolName.trim() : "";
-  const input = projectToolInput(record?.input);
+  const input = projectToolInput(record?.input, toolName);
   return {
     ...(toolName.length > 0 ? { toolName } : {}),
     ...(input ? { toolInput: input } : {}),

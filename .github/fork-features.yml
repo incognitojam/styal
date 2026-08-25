@@ -417,9 +417,10 @@ features:
   - id: inspectable-tool-activity
     title: Keep tool activity concise and inspectable
     status: maintained
-    prs: [4, 11, 36, 58, 60, 66, 117, 158, 168, 190, 204, 230]
+    prs: [4, 11, 36, 58, 60, 66, 117, 158, 168, 190, 204, 230, 238]
     invariants:
       - Web and mobile name supported tool calls by their action with a concise useful argument, while agent panels and approval rows use the same vocabulary instead of raw provider names or serialized input.
+      - Clarifying-question calls name what was asked and expand into those questions with their options, rather than restating the provider's serialized input.
       - Completed web command rows reveal the full raw command and retrieve persisted output only after expansion, keeping routine timeline activity payloads bounded.
       - Collapsed web tool groups expand into their individual named calls, with failure, exit-code, diff, and disclosure signals remaining independently visible.
       - Meaningful running-command interactions are shown with fixed sanitized summaries while empty polls and raw terminal input remain hidden.
