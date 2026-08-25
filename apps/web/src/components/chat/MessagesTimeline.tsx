@@ -20,6 +20,7 @@ const NOOP_OPEN_AGENTS = () => {};
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import {
   deriveToolRowPresentation,
+  formatAskUserQuestionBody,
   isPreviewToolName,
   normalizeKnownToolName,
   type ToolRowArgument,
@@ -2719,9 +2720,17 @@ function buildToolCallExpandedBody(
   if (toolArguments) {
     blocks.push(toolArguments);
   }
+  const askedQuestions = formatAskUserQuestionBody({
+    toolName: workEntry.toolName,
+    input: workEntry.toolInput,
+  });
+  if (askedQuestions) {
+    blocks.push(askedQuestions);
+  }
   // The adapters serialize a tool's whole input into `detail`, so once the
   // arguments are shown as fields the JSON restates them unreadably.
-  if (workEntry.detail?.trim() && !(toolArguments && detailIsSerializedInput(workEntry))) {
+  const structuredInput = toolArguments !== null || askedQuestions !== null;
+  if (workEntry.detail?.trim() && !(structuredInput && detailIsSerializedInput(workEntry))) {
     blocks.push(workEntry.detail.trim());
   }
   const changedFiles = workEntry.changedFiles ?? [];

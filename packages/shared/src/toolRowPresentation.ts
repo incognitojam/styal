@@ -66,6 +66,7 @@ export interface ToolRowPresentationInput {
 }
 
 const KNOWN_TOOL_NAMES: Readonly<Record<string, string>> = {
+  askuserquestion: "AskUserQuestion",
   bash: "Bash",
   bashoutput: "BashOutput",
   edit: "Edit",
@@ -307,6 +308,92 @@ function previewToolNameOf(value: string): string | undefined {
 
 export function isPreviewToolName(value: string): boolean {
   return previewToolNameOf(value) !== undefined;
+}
+
+const ASK_USER_QUESTION_TOOL_NAME = "AskUserQuestion";
+
+interface AskedQuestion {
+  readonly question: string | undefined;
+  readonly header: string | undefined;
+  readonly options: ReadonlyArray<string>;
+}
+
+function askedQuestions(input: Record<string, unknown> | undefined): ReadonlyArray<AskedQuestion> {
+  const questions = Array.isArray(input?.questions) ? input.questions : [];
+  return questions.flatMap((entry) => {
+    const record = asRecord(entry);
+    const question = asTrimmedString(record?.question);
+    const header = asTrimmedString(record?.header);
+    if (!question && !header) {
+      return [];
+    }
+    const options = (Array.isArray(record?.options) ? record.options : []).flatMap((option) => {
+      const label = asTrimmedString(asRecord(option)?.label);
+      return label ? [label] : [];
+    });
+    return [{ question, header, options }];
+  });
+}
+
+/**
+ * The whole prompt lives in this tool's input, so the generic row shows only
+ * the tool's name. Name the act instead, and let the question itself be the
+ * argument — or, when several were asked at once, their headers, since no one
+ * question fits. The input is empty until the call completes, so the pending
+ * row falls back to the singular phrasing.
+ */
+function askUserQuestionPresentation(
+  input: Record<string, unknown> | undefined,
+  failed: boolean,
+): ToolRowPresentation {
+  const questions = askedQuestions(input);
+  const many = questions.length > 1;
+  const heading = failed
+    ? many
+      ? "Questions cancelled"
+      : "Question cancelled"
+    : many
+      ? `Asked ${questions.length.toString()} questions`
+      : "Asked a question";
+  const summary = many
+    ? questions
+        .map((entry) => entry.header ?? entry.question)
+        .filter((value): value is string => value !== undefined)
+        .join(" · ")
+    : (questions[0]?.question ?? questions[0]?.header);
+  const argument = textArgument(summary);
+  return { heading, ...(argument ? { argument } : {}) };
+}
+
+/**
+ * The asked questions as readable text for a row's expanded body, in place of
+ * the serialized input. Option labels are what the answer was chosen from;
+ * their descriptions are prose that belongs in the picker, not the work log.
+ */
+export function formatAskUserQuestionBody(input: {
+  readonly toolName?: string | null | undefined;
+  readonly input?: unknown;
+}): string | null {
+  const toolName = asTrimmedString(input.toolName);
+  if (!toolName || normalizeKnownToolName(toolName) !== ASK_USER_QUESTION_TOOL_NAME) {
+    return null;
+  }
+  const questions = askedQuestions(asRecord(input.input));
+  if (questions.length === 0) {
+    return null;
+  }
+  return questions
+    .map((entry) => {
+      const lines = [entry.question ?? entry.header!];
+      if (entry.header && entry.question) {
+        lines.unshift(entry.header);
+      }
+      for (const option of entry.options) {
+        lines.push(`  · ${option}`);
+      }
+      return lines.join("\n");
+    })
+    .join("\n\n");
 }
 
 /**
@@ -627,6 +714,10 @@ function deriveBaseToolRowPresentation(
     }
   }
 
+  if (toolName === ASK_USER_QUESTION_TOOL_NAME) {
+    return askUserQuestionPresentation(toolInput, input.failed === true);
+  }
+
   // MCP names itself best: the server is the useful half, and Codex already
   // renders `server · tool` this way.
   if (toolName) {
@@ -695,6 +786,10 @@ export function deriveToolRowPresentation(
     return presentation;
   }
   const normalizedToolName = toolName ? normalizeKnownToolName(toolName) : undefined;
+  if (normalizedToolName === ASK_USER_QUESTION_TOOL_NAME) {
+    // Already phrased for the cancelled case.
+    return presentation;
+  }
   const heading =
     input.itemType === "command_execution"
       ? "Command failed"
