@@ -20,6 +20,7 @@ import {
 } from "@t3tools/shared/toolActivity";
 import {
   deriveToolRowPresentation,
+  formatAskUserQuestionBody,
   isPreviewToolName,
   normalizeKnownToolName,
   type ToolRowArgument,
@@ -799,7 +800,15 @@ function buildWorkEntryExpandedBody(
     appendUniqueBlock(`MCP call\n${JSON.stringify(entry.toolData, null, 2)}`);
   }
   appendUniqueBlock(entry.rawCommand ?? entry.command);
-  appendUniqueBlock(entry.detail);
+  const askedQuestions = formatAskUserQuestionBody({
+    toolName: entry.toolName,
+    input: entry.toolInput,
+  });
+  appendUniqueBlock(askedQuestions);
+  // The questions block already says what the serialized input says, readably.
+  if (!askedQuestions) {
+    appendUniqueBlock(entry.detail);
+  }
   if ((entry.changedFiles?.length ?? 0) > 0) {
     appendUniqueBlock(
       entry.changedFiles!.map((path) => formatToolFilePath(path, workspaceRoot)).join("\n"),
