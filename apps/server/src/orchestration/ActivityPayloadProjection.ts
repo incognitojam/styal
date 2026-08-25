@@ -212,7 +212,56 @@ function projectToolInputValue(value: unknown): unknown {
     : `${value.slice(0, TOOL_INPUT_VALUE_MAX_LENGTH - 1)}…`;
 }
 
-export function projectToolInput(value: unknown): Record<string, unknown> | undefined {
+/**
+ * The clarifying questions a tool asked. This is the one long-form input worth
+ * carrying: naming the row and showing what was asked is the whole point of it,
+ * and the alternative is the serialized JSON the clients already fall back to.
+ * Bounded on every axis — questions, options per question, and each string — so
+ * a prompt cannot grow a payload the way a file body would. Option descriptions
+ * stay off the wire; they are picker prose, not work-log content.
+ *
+ * Unlike the rest of the allowlist this is keyed on the tool, not the field:
+ * only `AskUserQuestion` rows render it, so only they are worth the bytes.
+ */
+const ASK_USER_QUESTION_TOOL_NAME = "askuserquestion";
+const ASKED_QUESTION_MAX = 4;
+const ASKED_OPTION_MAX = 4;
+
+function projectAskedQuestions(value: unknown): ReadonlyArray<unknown> | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const questions = value.slice(0, ASKED_QUESTION_MAX).flatMap((entry) => {
+    const record = asRecord(entry);
+    if (!record) {
+      return [];
+    }
+    const question = projectToolInputValue(record.question);
+    const header = projectToolInputValue(record.header);
+    if (question === undefined && header === undefined) {
+      return [];
+    }
+    const options = (Array.isArray(record.options) ? record.options : [])
+      .slice(0, ASKED_OPTION_MAX)
+      .flatMap((option) => {
+        const label = projectToolInputValue(asRecord(option)?.label);
+        return label === undefined ? [] : [{ label }];
+      });
+    return [
+      {
+        ...(header === undefined ? {} : { header }),
+        ...(question === undefined ? {} : { question }),
+        ...(options.length > 0 ? { options } : {}),
+      },
+    ];
+  });
+  return questions.length > 0 ? questions : undefined;
+}
+
+export function projectToolInput(
+  value: unknown,
+  toolName: string | null | undefined,
+): Record<string, unknown> | undefined {
   const input = asRecord(value);
   if (!input) {
     return undefined;
@@ -227,12 +276,18 @@ export function projectToolInput(value: unknown): Record<string, unknown> | unde
       projected[key] = projectedValue;
     }
   }
+  if (toolName?.trim().toLowerCase() === ASK_USER_QUESTION_TOOL_NAME) {
+    const questions = projectAskedQuestions(input.questions);
+    if (questions) {
+      projected.questions = questions;
+    }
+  }
   return Object.keys(projected).length > 0 ? projected : undefined;
 }
 
 function projectToolIdentity(data: Record<string, unknown>): Record<string, unknown> {
   const toolName = asTrimmedString(data.toolName) ?? asTrimmedString(data.tool);
-  const input = projectToolInput(data.input ?? asRecord(data.state)?.input);
+  const input = projectToolInput(data.input ?? asRecord(data.state)?.input, toolName);
   return {
     ...(toolName ? { toolName } : {}),
     ...(input ? { input } : {}),
