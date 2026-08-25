@@ -335,8 +335,10 @@ import {
   cloneComposerImageForRetry,
   deriveLockedProvider,
   readFileAsDataUrl,
+  hasInteractiveTerminal,
   reconcileMountedTerminalThreadIds,
   resolveProjectScriptBaseTerminalId,
+  resolveReconciledTerminalIds,
   resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
   revokeBlobPreviewUrl,
@@ -651,27 +653,6 @@ function terminalIdListsEqual(left: readonly string[], right: readonly string[])
   return true;
 }
 
-/**
- * Server knows about fewer sessions than the client, but every server id still exists locally.
- * Typical right after `terminal.open`: known-session list lags; reconciling would drop the new id
- * and later re-add it as a separate group (no split layout).
- */
-function serverTerminalIdsStrictSubsetOfClient(
-  serverIds: readonly string[],
-  clientIds: readonly string[],
-): boolean {
-  if (serverIds.length >= clientIds.length || clientIds.length === 0) {
-    return false;
-  }
-  const clientSet = new Set(clientIds);
-  for (const id of serverIds) {
-    if (!clientSet.has(id)) {
-      return false;
-    }
-  }
-  return true;
-}
-
 interface PersistentThreadTerminalDrawerProps {
   threadRef: { environmentId: EnvironmentId; threadId: ThreadId };
   threadId: ThreadId;
@@ -803,16 +784,22 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
   const storeCloseTerminal = useTerminalUiStateStore((state) => state.closeTerminal);
   const reconcileTerminalIds = useTerminalUiStateStore((state) => state.reconcileTerminalIds);
 
+  // Ids the server has reported at least once. Anything else the client holds is an open still in
+  // flight and must outlive a reconcile; once acknowledged, a later server drop removes it.
+  const acknowledgedTerminalIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (terminalIdListsEqual(serverOrderedTerminalIds, terminalUiState.terminalIds)) {
+    for (const terminalId of serverOrderedTerminalIds) {
+      acknowledgedTerminalIdsRef.current.add(terminalId);
+    }
+    const nextTerminalIds = resolveReconciledTerminalIds({
+      serverTerminalIds: serverOrderedTerminalIds,
+      clientTerminalIds: terminalUiState.terminalIds,
+      acknowledgedTerminalIds: acknowledgedTerminalIdsRef.current,
+    });
+    if (terminalIdListsEqual(nextTerminalIds, terminalUiState.terminalIds)) {
       return;
     }
-    if (
-      serverTerminalIdsStrictSubsetOfClient(serverOrderedTerminalIds, terminalUiState.terminalIds)
-    ) {
-      return;
-    }
-    reconcileTerminalIds(threadRef, serverOrderedTerminalIds);
+    reconcileTerminalIds(threadRef, nextTerminalIds);
   }, [reconcileTerminalIds, serverOrderedTerminalIds, terminalUiState.terminalIds, threadRef]);
   const [localFocusRequestId, setLocalFocusRequestId] = useState(0);
   const worktreePath = serverThread?.worktreePath ?? draftThread?.worktreePath ?? null;
@@ -2879,32 +2866,33 @@ function ChatViewContent(props: ChatViewProps) {
   const toggleTerminalVisibility = useCallback(() => {
     if (!activeThreadRef) return;
     const nextOpen = !terminalUiState.terminalOpen;
-    if (nextOpen && terminalUiState.terminalIds.length === 0) {
-      if (!activeThreadId || !activeProject) {
-        return;
-      }
-      const cwdForOpen = gitCwd ?? activeProject.workspaceRoot;
-      if (!cwdForOpen) {
-        return;
-      }
-      const terminalId = nextTerminalId(allocatableActiveTerminalIds);
-      storeEnsureTerminal(activeThreadRef, terminalId, { open: true });
-      void openTerminal({
-        environmentId,
-        input: {
-          threadId: activeThreadId,
-          terminalId,
-          cwd: cwdForOpen,
-          ...(activeThreadWorktreePath != null ? { worktreePath: activeThreadWorktreePath } : {}),
-          env: projectScriptRuntimeEnv({
-            project: { cwd: activeProject.workspaceRoot },
-            worktreePath: activeThreadWorktreePath,
-          }),
-        },
-      });
+    if (!nextOpen || hasInteractiveTerminal(terminalUiState.terminalIds)) {
+      setTerminalOpen(nextOpen);
       return;
     }
-    setTerminalOpen(nextOpen);
+    if (!activeThreadId || !activeProject) {
+      return;
+    }
+    const cwdForOpen = gitCwd ?? activeProject.workspaceRoot;
+    if (!cwdForOpen) {
+      return;
+    }
+    const terminalId = nextTerminalId(allocatableActiveTerminalIds);
+    storeEnsureTerminal(activeThreadRef, terminalId, { open: true });
+    setTerminalFocusRequestId((value) => value + 1);
+    void openTerminal({
+      environmentId,
+      input: {
+        threadId: activeThreadId,
+        terminalId,
+        cwd: cwdForOpen,
+        ...(activeThreadWorktreePath != null ? { worktreePath: activeThreadWorktreePath } : {}),
+        env: projectScriptRuntimeEnv({
+          project: { cwd: activeProject.workspaceRoot },
+          worktreePath: activeThreadWorktreePath,
+        }),
+      },
+    });
   }, [
     activeProject,
     activeThreadId,
@@ -2916,7 +2904,7 @@ function ChatViewContent(props: ChatViewProps) {
     openTerminal,
     setTerminalOpen,
     storeEnsureTerminal,
-    terminalUiState.terminalIds.length,
+    terminalUiState.terminalIds,
     terminalUiState.terminalOpen,
   ]);
   const splitTerminal = useCallback(

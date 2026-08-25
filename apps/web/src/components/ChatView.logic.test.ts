@@ -22,12 +22,14 @@ import {
   dismissBranchMismatchForSession,
   ENVIRONMENT_RECONNECT_WARNING_GRACE_MS,
   getStartedThreadModelChangeBlockReason,
+  hasInteractiveTerminal,
   hasEnvironmentReconnectWarningGraceElapsed,
   hasServerAcknowledgedLocalDispatch,
   isBranchMismatchDismissedForSession,
   reconcileMountedTerminalThreadIds,
   reconcileRetainedMountedThreadIds,
   resolveProjectScriptBaseTerminalId,
+  resolveReconciledTerminalIds,
   resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
   scheduleEnvironmentReconnectWarning,
@@ -73,6 +75,46 @@ describe("project script terminal selection", () => {
         defaultTerminalId: "term-1",
       }),
     ).toBe("term-2");
+  });
+});
+
+describe("terminal id reconciliation", () => {
+  it("keeps a terminal the server has not reported yet", () => {
+    expect(
+      resolveReconciledTerminalIds({
+        serverTerminalIds: ["setup-setup-worktree"],
+        clientTerminalIds: ["term-1"],
+        acknowledgedTerminalIds: new Set(),
+      }),
+    ).toEqual(["setup-setup-worktree", "term-1"]);
+  });
+
+  it("drops a terminal the server reported before and has now released", () => {
+    expect(
+      resolveReconciledTerminalIds({
+        serverTerminalIds: ["setup-setup-worktree"],
+        clientTerminalIds: ["setup-setup-worktree", "term-1"],
+        acknowledgedTerminalIds: new Set(["setup-setup-worktree", "term-1"]),
+      }),
+    ).toEqual(["setup-setup-worktree"]);
+  });
+
+  it("adopts the server list once every id is known", () => {
+    expect(
+      resolveReconciledTerminalIds({
+        serverTerminalIds: ["setup-setup-worktree", "term-1"],
+        clientTerminalIds: ["term-1"],
+        acknowledgedTerminalIds: new Set(["term-1"]),
+      }),
+    ).toEqual(["setup-setup-worktree", "term-1"]);
+  });
+});
+
+describe("terminal open target", () => {
+  it("treats a thread with only setup sessions as having no shell", () => {
+    expect(hasInteractiveTerminal([])).toBe(false);
+    expect(hasInteractiveTerminal(["setup-setup-worktree"])).toBe(false);
+    expect(hasInteractiveTerminal(["setup-setup-worktree", "term-1"])).toBe(true);
   });
 });
 
