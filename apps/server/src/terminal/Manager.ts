@@ -260,6 +260,8 @@ export interface TerminalStartInput extends TerminalOpenInput {
 
 export interface TerminalCommandOpenInput extends TerminalOpenInput {
   readonly command: string;
+  /** Display title for a named command, such as a project script, instead of the terminal id. */
+  readonly label?: string;
 }
 
 export interface TerminalSessionState {
@@ -286,6 +288,8 @@ export interface TerminalSessionState {
   hasRunningSubprocess: boolean;
   /** Normalized child command name when `hasRunningSubprocess`; cleared when idle. */
   childCommandLabel: string | null;
+  /** Caller-supplied title that outranks the child command; set for named commands only. */
+  displayLabel: string | null;
   runtimeEnv: Record<string, string> | null;
   launchCommand: string | null;
 }
@@ -348,6 +352,9 @@ function normalizeChildCommandName(raw: string, platform: NodeJS.Platform): stri
 }
 
 function terminalWireLabel(session: TerminalSessionState): string {
+  if (session.displayLabel) {
+    return truncateTerminalWireLabel(session.displayLabel);
+  }
   if (session.hasRunningSubprocess && session.childCommandLabel) {
     const trimmed = session.childCommandLabel.trim();
     if (trimmed.length > 0) {
@@ -2364,6 +2371,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   ) {
     const terminalId = input.terminalId;
     const launchCommand = "command" in input ? input.command : null;
+    const displayLabel = ("label" in input ? (input.label ?? "") : "").trim();
     yield* assertValidCwd(input.cwd);
 
     const sessionKey = toSessionKey(input.threadId, terminalId);
@@ -2396,6 +2404,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         unsubscribeExit: null,
         hasRunningSubprocess: false,
         childCommandLabel: null,
+        displayLabel: displayLabel.length > 0 ? displayLabel : null,
         runtimeEnv: normalizedRuntimeEnv(input.env),
         launchCommand,
       };
@@ -2818,6 +2827,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
             unsubscribeExit: null,
             hasRunningSubprocess: false,
             childCommandLabel: null,
+            displayLabel: null,
             runtimeEnv: normalizedRuntimeEnv(input.env),
             launchCommand: null,
           };

@@ -450,6 +450,7 @@ export const make = Effect.gen(function* () {
         worktreePath: input.worktreePath,
         env,
         command: script.command,
+        label: script.name,
       })
       .pipe(
         Effect.mapError(

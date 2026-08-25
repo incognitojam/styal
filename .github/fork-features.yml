@@ -997,8 +997,9 @@ features:
   - id: setup-script-observability
     title: Keep setup script progress and output inspectable
     status: maintained
-    prs: [40, 207, 208, 214, 216, 236]
+    prs: [40, 207, 208, 214, 216, 236, 237]
     invariants:
+      - A setup terminal is titled with its configured script name from start through exit, in every client's terminal list.
       - A terminal opened locally survives server session-list reconciliation until the server reports it, so focus stays on it rather than falling back to a setup session.
       - Opening the terminal on a thread whose only sessions are retained setup terminals starts an interactive shell instead of focusing the finite session.
       - Web and mobile work logs identify the configured setup action and truthfully distinguish requested, running, completed, failed, and stopped states.
@@ -1016,6 +1017,7 @@ features:
       - apps/mobile/src/features/threads/thread-work-log.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/server/src/project/ProjectSetupScriptRunner.ts
+      - apps/server/src/terminal/Manager.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/ThreadTerminalDrawer.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
@@ -1023,6 +1025,7 @@ features:
     tests:
       - apps/mobile/src/lib/threadActivity.test.ts
       - apps/server/src/project/ProjectSetupScriptRunner.test.ts
+      - apps/server/src/terminal/Manager.test.ts
       - apps/web/src/components/ChatView.logic.test.ts
       - apps/web/src/components/ThreadTerminalDrawer.test.ts
       - apps/web/src/components/chat/MessagesTimeline.test.tsx

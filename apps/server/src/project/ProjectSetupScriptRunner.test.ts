@@ -225,6 +225,7 @@ describe("ProjectSetupScriptRunner", () => {
           T3CODE_WORKTREE_PATH: "/repo/worktrees/a",
         },
         command: "bun install",
+        label: "Setup",
       });
       expect(
         commands.flatMap((command) =>
