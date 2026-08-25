@@ -173,6 +173,43 @@ describe("ProjectSetupScriptRunner", () => {
     }).pipe(Effect.provide(testLayer(project, { openCommand })));
   });
 
+  it.effect("refuses to run the setup script against the project root", () => {
+    const commands: OrchestrationCommand[] = [];
+    const openCommand = vi.fn(() => Effect.die("unexpected open"));
+    const project = makeProject([
+      {
+        id: "setup",
+        name: "Setup",
+        command: 'ln -sf "$T3CODE_PROJECT_ROOT/.env" .env',
+        icon: "configure",
+        runOnWorktreeCreate: true,
+      },
+    ]);
+
+    return Effect.gen(function* () {
+      const runner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
+      const result = yield* runner.runForThread({
+        threadId: "thread-1",
+        projectId: "project-1",
+        worktreePath: "/repo/project",
+      });
+
+      expect(result).toEqual({ status: "not-a-worktree", scriptId: "setup", scriptName: "Setup" });
+      expect(openCommand).not.toHaveBeenCalled();
+      const activities = commands.flatMap((command) =>
+        command.type === "thread.activity.append" ? [command.activity] : [],
+      );
+      expect(activities.map((activity) => activity.kind)).toEqual(["setup-script.failed"]);
+      expect(activities[0]?.tone).toBe("error");
+      expect(activities[0]?.payload).toMatchObject({
+        scriptName: "Setup",
+        failureReason: "launch-error",
+        detail:
+          "This action runs after a worktree is created. In a local thread it would run in the project root and could overwrite the files it sets up.",
+      });
+    }).pipe(Effect.provide(testLayer(project, { openCommand }, commands)));
+  });
+
   it.effect("opens the deterministic setup terminal with the command as its PTY process", () => {
     const commands: OrchestrationCommand[] = [];
     const openCommand = vi.fn(() =>

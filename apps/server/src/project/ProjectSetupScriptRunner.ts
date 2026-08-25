@@ -1,5 +1,9 @@
 import { CommandId, EventId, ProjectId, ProjectScriptIcon, ThreadId } from "@t3tools/contracts";
-import { projectScriptRuntimeEnv, setupProjectScript } from "@t3tools/shared/projectScripts";
+import {
+  isSetupScriptOutsideWorktree,
+  projectScriptRuntimeEnv,
+  setupProjectScript,
+} from "@t3tools/shared/projectScripts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -103,8 +107,15 @@ export interface ProjectSetupScriptRunnerResultStarted {
   readonly cwd: string;
 }
 
+export interface ProjectSetupScriptRunnerResultNotAWorktree {
+  readonly status: "not-a-worktree";
+  readonly scriptId: string;
+  readonly scriptName: string;
+}
+
 export type ProjectSetupScriptRunnerResult =
   | ProjectSetupScriptRunnerResultNoScript
+  | ProjectSetupScriptRunnerResultNotAWorktree
   | ProjectSetupScriptRunnerResultStarted;
 
 export interface ProjectSetupScriptRunnerInput {
@@ -401,6 +412,50 @@ export const make = Effect.gen(function* () {
     const requestedAt = yield* nowIso;
     nextRunSequence += 1;
     const runId = `${input.threadId}:${script.id}:${requestedAt}:${nextRunSequence}`;
+
+    // The script was written for a fresh worktree, so running it over the project
+    // root is destructive rather than merely useless: a setup line that links
+    // $T3CODE_PROJECT_ROOT/.env into the cwd would clobber the file it links to.
+    if (
+      isSetupScriptOutsideWorktree({
+        script,
+        projectCwd: project.workspaceRoot,
+        worktreePath: input.worktreePath,
+      })
+    ) {
+      yield* Effect.logWarning("refused to run setup script outside a worktree", {
+        threadId: input.threadId,
+        scriptId: script.id,
+        projectCwd: project.workspaceRoot,
+        worktreePath: input.worktreePath,
+      });
+      yield* appendActivity({
+        threadId: input.threadId,
+        runId,
+        kind: "setup-script.failed",
+        summary: "Setup script did not run",
+        tone: "error",
+        createdAt: requestedAt,
+        payload: {
+          runId,
+          scriptId: script.id,
+          scriptName: script.name,
+          ...(script.icon ? { scriptIcon: script.icon } : {}),
+          command: script.command,
+          worktreePath: input.worktreePath,
+          outcome: "failed",
+          failureReason: "launch-error",
+          detail:
+            "This action runs after a worktree is created. In a local thread it would run in the project root and could overwrite the files it sets up.",
+        },
+      }).pipe(Effect.ignoreCause({ log: true }));
+      return {
+        status: "not-a-worktree",
+        scriptId: script.id,
+        scriptName: script.name,
+      } as const;
+    }
+
     const env = projectScriptRuntimeEnv({
       project: { cwd: project.workspaceRoot },
       worktreePath: input.worktreePath,
