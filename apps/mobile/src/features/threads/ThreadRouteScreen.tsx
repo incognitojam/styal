@@ -12,8 +12,12 @@ import {
   requestOlderThreadTurns,
   threadHasOlderTurns,
 } from "@t3tools/client-runtime/state/threads";
-import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
-import { Platform, ScrollView, View } from "react-native";
+import {
+  isSetupScriptOutsideWorktree,
+  projectScriptCwd,
+  projectScriptRuntimeEnv,
+} from "@t3tools/shared/projectScripts";
+import { Alert, Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWorkspaceState } from "../../state/workspace";
 import { useEnvironmentQuery } from "../../state/query";
@@ -566,6 +570,26 @@ function ThreadRouteContent(
         threadShellWorktreePath: selectedThread.worktreePath ?? null,
         threadDetailWorktreePath: selectedThreadDetailWorktreePath,
       });
+      // A setup script assumes a worktree cwd with the project root somewhere else;
+      // on the main checkout the two collapse and the script can overwrite what it
+      // meant to link to. Refuse rather than run it against the project root.
+      if (
+        isSetupScriptOutsideWorktree({
+          script,
+          projectCwd: selectedThreadProject.workspaceRoot,
+          worktreePath: preferredWorktreePath,
+        })
+      ) {
+        terminalDebugLog("project-script:abort", {
+          scriptId: script.id,
+          reason: "setup-script-outside-worktree",
+        });
+        Alert.alert(
+          `Cannot run "${script.name}"`,
+          "This action runs after a worktree is created. In a local thread it would run in the project root and could overwrite the files it sets up.",
+        );
+        return;
+      }
       const cwd = projectScriptCwd({
         project: { cwd: selectedThreadProject.workspaceRoot },
         worktreePath: preferredWorktreePath,
