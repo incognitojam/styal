@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
+import { BRAND_ASSET_PATHS } from "@t3tools/shared/brandAssets";
 
 import {
-  BRAND_ASSET_PATHS,
   DEVELOPMENT_ICON_OVERRIDES,
   DEVELOPMENT_PUBLIC_ICON_OVERRIDES,
   resolveWebAssetBrandForChannel,
