@@ -21,6 +21,7 @@ export interface IconOverride {
 
 const WEB_ICON_TARGET_FILENAMES = {
   faviconIco: "favicon.ico",
+  faviconSvg: "favicon.svg",
   favicon16Png: "favicon-16x16.png",
   favicon32Png: "favicon-32x32.png",
   appleTouchIconPng: "apple-touch-icon.png",
@@ -29,23 +30,37 @@ const WEB_ICON_TARGET_FILENAMES = {
 const WEB_ICON_SOURCE_PATHS_BY_BRAND = {
   development: {
     faviconIco: BRAND_ASSET_PATHS.developmentWebFaviconIco,
+    faviconSvg: BRAND_ASSET_PATHS.developmentWebFaviconSvg,
     favicon16Png: BRAND_ASSET_PATHS.developmentWebFavicon16Png,
     favicon32Png: BRAND_ASSET_PATHS.developmentWebFavicon32Png,
     appleTouchIconPng: BRAND_ASSET_PATHS.developmentWebAppleTouchIconPng,
   },
   nightly: {
     faviconIco: BRAND_ASSET_PATHS.nightlyWebFaviconIco,
+    faviconSvg: BRAND_ASSET_PATHS.nightlyWebFaviconSvg,
     favicon16Png: BRAND_ASSET_PATHS.nightlyWebFavicon16Png,
     favicon32Png: BRAND_ASSET_PATHS.nightlyWebFavicon32Png,
     appleTouchIconPng: BRAND_ASSET_PATHS.nightlyWebAppleTouchIconPng,
   },
   production: {
     faviconIco: BRAND_ASSET_PATHS.productionWebFaviconIco,
+    faviconSvg: BRAND_ASSET_PATHS.productionWebFaviconSvg,
     favicon16Png: BRAND_ASSET_PATHS.productionWebFavicon16Png,
     favicon32Png: BRAND_ASSET_PATHS.productionWebFavicon32Png,
     appleTouchIconPng: BRAND_ASSET_PATHS.productionWebAppleTouchIconPng,
   },
 } as const satisfies Record<WebAssetBrand, Record<keyof typeof WEB_ICON_TARGET_FILENAMES, string>>;
+
+/**
+ * Web icons authored by hand rather than rendered by Icon Composer. Icon Composer
+ * only emits raster, so the vector favicon is drawn from the same outlines and
+ * tracked as a source asset; the export script copies it instead of rendering it.
+ */
+export const AUTHORED_WEB_ICON_SOURCE_PATHS: ReadonlySet<string> = new Set([
+  BRAND_ASSET_PATHS.developmentWebFaviconSvg,
+  BRAND_ASSET_PATHS.nightlyWebFaviconSvg,
+  BRAND_ASSET_PATHS.productionWebFaviconSvg,
+]);
 
 export function resolveWebIconOverrides(
   brand: WebAssetBrand,
@@ -56,6 +71,10 @@ export function resolveWebIconOverrides(
     {
       sourceRelativePath: sourcePaths.faviconIco,
       targetRelativePath: `${targetDirectory}/${WEB_ICON_TARGET_FILENAMES.faviconIco}`,
+    },
+    {
+      sourceRelativePath: sourcePaths.faviconSvg,
+      targetRelativePath: `${targetDirectory}/${WEB_ICON_TARGET_FILENAMES.faviconSvg}`,
     },
     {
       sourceRelativePath: sourcePaths.favicon16Png,
