@@ -1,0 +1,164 @@
+name: Fork Release
+
+# Promotes a nightly that has been running cleanly into a stable styal release.
+# There is no separate "build from HEAD" path on purpose: a stable release is
+# always a commit that already shipped as a nightly and had time to fail.
+#
+# Promotion rebuilds rather than re-tagging the nightly's artifacts. The version
+# is baked in at build time (fork-desktop-build.yml aligns package versions
+# before packaging) and resolveDesktopUpdateChannel derives the update channel,
+# product name, and brand assets from that string, so a re-tagged nightly would
+# still call itself Nightly and stay on the nightly update feed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_tag:
+        description: "Nightly tag to promote, for example v0.1.0-nightly.20260825.241"
+        required: true
+        type: string
+      codename:
+        description: "Release codename, for example jenny"
+        required: false
+        type: string
+      dry_run:
+        description: "Build and verify without publishing a release"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Resolve promotion candidate
+    if: github.repository == 'incognitojam/t3code' || github.repository == 'incognitojam/styal'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      ref: ${{ steps.candidate.outputs.ref }}
+      version: ${{ steps.candidate.outputs.version }}
+      tag: ${{ steps.candidate.outputs.tag }}
+      release_name: ${{ steps.candidate.outputs.release_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - id: candidate
+        name: Resolve candidate commit and stable version
+        shell: bash
+        env:
+          SOURCE_TAG: ${{ inputs.source_tag }}
+          CODENAME: ${{ inputs.codename }}
+        run: |
+          set -euo pipefail
+
+          if ! git rev-parse -q --verify "refs/tags/$SOURCE_TAG" >/dev/null; then
+            echo "::error::Source tag $SOURCE_TAG does not exist."
+            exit 1
+          fi
+
+          # Only a nightly prerelease can be promoted. Anything else is either
+          # already stable or was never exercised as a nightly.
+          if [[ ! "$SOURCE_TAG" =~ -nightly\.[0-9]{8}\.[0-9]+$ ]]; then
+            echo "::error::$SOURCE_TAG is not a nightly tag."
+            exit 1
+          fi
+
+          ref="$(git rev-list -n 1 "refs/tags/$SOURCE_TAG")"
+
+          # The stable version is the nightly's base, which is styal-version.json
+          # as of that commit. Reading it from the tag rather than from main keeps
+          # promotion reproducible when main has already moved on.
+          version="$(git show "$ref:styal-version.json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).version))')"
+
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::styal-version.json at $SOURCE_TAG holds an invalid version: $version"
+            exit 1
+          fi
+
+          tag="v$version"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "::error::$tag already exists. Bump styal-version.json before promoting again."
+            exit 1
+          fi
+
+          release_name="styal $version"
+          if [[ -n "$CODENAME" ]]; then
+            release_name="$release_name \"$CODENAME\""
+          fi
+
+          {
+            echo "ref=$ref"
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "release_name=$release_name"
+          } >> "$GITHUB_OUTPUT"
+
+  build_desktop:
+    name: Build desktop artifacts
+    needs: prepare
+    uses: ./.github/workflows/fork-desktop-build.yml
+    with:
+      ref: ${{ needs.prepare.outputs.ref }}
+      version: ${{ needs.prepare.outputs.version }}
+      target: all
+      sign_macos: true
+    secrets: inherit
+
+  publish:
+    name: Publish stable release
+    needs: [prepare, build_desktop]
+    if: needs.build_desktop.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout promoted commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Download release assets
+        uses: actions/download-artifact@v5
+        with:
+          pattern: desktop-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Render release notes
+        shell: bash
+        env:
+          SOURCE_TAG: ${{ inputs.source_tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          {
+            printf 'styal %s, promoted from [%s](../../releases/tag/%s).\n\n' \
+              "$VERSION" "$SOURCE_TAG" "$SOURCE_TAG"
+            printf 'These artifacts are a rebuild of the same commit with a stable version, so they carry the stable update channel.\n'
+          } > release-notes.md
+
+      - name: Publish release
+        if: inputs.dry_run != true
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          target_commitish: ${{ needs.prepare.outputs.ref }}
+          name: ${{ needs.prepare.outputs.release_name }}
+          body_path: release-notes.md
+          draft: false
+          prerelease: false
+          make_latest: true
+          files: release-assets/*
+          fail_on_unmatched_files: true
+          token: ${{ github.token }}
