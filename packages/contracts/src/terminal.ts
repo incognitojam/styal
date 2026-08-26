@@ -114,7 +114,7 @@ export const TerminalSessionSnapshot = Schema.Struct({
   history: Schema.String,
   exitCode: Schema.NullOr(Schema.Int),
   exitSignal: Schema.NullOr(Schema.Int),
-  /** Server-computed display title (idle shell vs subprocess command). */
+  /** Server-computed display title (named command, running subprocess, or terminal id). */
   label: Schema.String.check(Schema.isMaxLength(128)),
   updatedAt: Schema.String,
   sequence: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
@@ -131,7 +131,7 @@ export const TerminalSummary = Schema.Struct({
   exitCode: Schema.NullOr(Schema.Int),
   exitSignal: Schema.NullOr(Schema.Int),
   hasRunningSubprocess: Schema.Boolean,
-  /** Server-computed display title (idle shell vs subprocess command). */
+  /** Server-computed display title (named command, running subprocess, or terminal id). */
   label: Schema.String.check(Schema.isMaxLength(128)),
   updatedAt: Schema.String,
 });
