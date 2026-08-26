@@ -4,8 +4,8 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import { BRAND_ASSET_PATHS } from "@t3tools/shared/brandAssets";
 
-import { BRAND_ASSET_PATHS } from "../../../../scripts/lib/brand-assets.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 
 export interface DesktopIconPaths {

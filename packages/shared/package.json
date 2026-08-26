@@ -3,6 +3,11 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./brandAssets": {
+      "types": "./src/brandAssets.ts",
+      "import": "./src/brandAssets.ts",
+      "default": "./src/brandAssets.ts"
+    },
     "./themePalettes": {
       "types": "./src/themePalettes.ts",
       "import": "./src/themePalettes.ts"
