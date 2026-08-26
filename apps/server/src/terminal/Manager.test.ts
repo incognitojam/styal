@@ -942,6 +942,51 @@ it.layer(
     }),
   );
 
+  it.effect("keeps a named command's label while its child process runs", () =>
+    Effect.gen(function* () {
+      let inspect: {
+        readonly hasRunningSubprocess: boolean;
+        readonly childCommand: string | null;
+        readonly processIds: ReadonlyArray<number>;
+      } = { hasRunningSubprocess: false, childCommand: null, processIds: [] };
+      const { manager, getEvents } = yield* createManager(5, {
+        subprocessInspector: () => Effect.succeed(inspect),
+        subprocessPollIntervalMs: 20,
+      });
+
+      yield* manager.openCommand({
+        ...openInput({ terminalId: "setup-setup" }),
+        command: "vp i",
+        label: "Setup Worktree",
+      });
+
+      inspect = { hasRunningSubprocess: true, childCommand: "vp", processIds: [100] };
+      yield* waitFor(
+        Effect.map(getEvents, (events) =>
+          events.some((event) => event.type === "activity" && event.hasRunningSubprocess === true),
+        ),
+        "1200 millis",
+      );
+
+      const labels = (yield* getEvents).flatMap((event) =>
+        event.type === "activity" ? [event.label] : [],
+      );
+      expect(labels.every((label) => label === "Setup Worktree")).toBe(true);
+    }),
+  );
+
+  it.effect("falls back to the terminal id when a command has no label", () =>
+    Effect.gen(function* () {
+      const { manager } = yield* createManager(5);
+      const snapshot = yield* manager.openCommand({
+        ...openInput({ terminalId: "setup-setup" }),
+        command: "vp i",
+      });
+
+      expect(snapshot.label).toBe("setup-setup");
+    }),
+  );
+
   it.effect("checks subprocess liveness on demand before close confirmation", () =>
     Effect.gen(function* () {
       let inspect = {
