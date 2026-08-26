@@ -1,6 +1,6 @@
 import type { ExpoConfig } from "expo/config";
+import { BRAND_ASSET_PATHS } from "@t3tools/shared/brandAssets";
 
-import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 
 type AppVariant = "development" | "preview" | "production";
