@@ -1,0 +1,4 @@
+{
+  "$comment": "The next styal version to ship. Nightlies are prereleases of it; fork-release.yml promotes it to stable. Bump after each stable release. Fork-only file, so the nightly rebase onto upstream never touches it.",
+  "version": "0.1.0"
+}
