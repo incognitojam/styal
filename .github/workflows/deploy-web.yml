@@ -1,0 +1,62 @@
+name: Deploy styal web
+
+# Rolling deployment of the hosted web app. Mirrors deploy-relay.yml's trigger
+# rather than upstream's release-gated Vercel deploy: styal has no stable
+# desktop release yet, so gating on one would mean never deploying.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/web/**"
+      - "packages/**"
+      - "infra/web/**"
+      - ".github/workflows/deploy-web.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: styal-web-production
+  cancel-in-progress: false
+
+jobs:
+  deploy_web:
+    name: Deploy hosted web app
+    if: github.repository == 'incognitojam/t3code' || github.repository == 'incognitojam/styal'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: production
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      STYAL_WEB_DOMAIN: ${{ vars.STYAL_WEB_DOMAIN }}
+      ALCHEMY_TELEMETRY_DISABLED: "1"
+      # Public client configuration baked into the bundle. Never set
+      # VITE_HTTP_URL or VITE_WS_URL here: the hosted app must stay
+      # origin-relative or every remote browser breaks.
+      VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+      VITE_CLERK_JWT_TEMPLATE: ${{ vars.CLERK_JWT_TEMPLATE }}
+      VITE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ vars.CLERK_CLI_OAUTH_CLIENT_ID }}
+      VITE_RELAY_URL: ${{ vars.RELAY_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+
+      - name: Install vite-plus
+        run: npm install -g vite-plus
+
+      - name: Install dependencies
+        run: vp install --ignore-scripts --filter '@t3tools/web...' --filter 'styal-web-infra...'
+
+      - name: Deploy
+        working-directory: infra/web
+        run: vp run deploy
