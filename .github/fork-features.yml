@@ -251,7 +251,7 @@ features:
   - id: focused-panel-tab-close
     title: Close the focused panel tab with Mod+W
     status: maintained
-    prs: [192]
+    prs: [192, 233]
     invariants:
       - Mod+W closes the focused terminal, browser, or diff panel tab without closing unrelated application content.
       - Opening a panel menu or launcher preserves panel focus ownership so the next close shortcut targets the panel predictably.
@@ -300,29 +300,45 @@ features:
   - id: fork-distribution-identity
     title: Keep fork desktop builds distinctly identifiable
     status: maintained
-    prs: [3, 27, 29, 49, 56]
+    prs: [3, 27, 29, 49, 56, 242, 243, 244]
     invariants:
       - Packaged fork builds use a distinct application identifier and channel-aware yngatech product, process, repository, and About-panel identity instead of presenting as upstream.
       - Windows fork packages install under their own package directory without colliding with upstream, while Alpha and Nightly builds remain visibly distinguishable.
+      - Canonical brand asset paths and icon geometry stay shared across desktop, mobile configuration, web packaging, and export tooling so production and nightly artwork cannot silently diverge.
     implementation_paths:
       - apps/desktop/package.json
       - apps/desktop/resources/installer.nsh
+      - apps/desktop/src/app/DesktopAssets.ts
       - apps/desktop/src/app/DesktopEnvironment.ts
+      - apps/mobile/app.config.ts
       - apps/web/src/branding.logic.ts
       - apps/web/src/branding.ts
       - apps/web/src/components/settings/SettingsPanels.tsx
+      - packages/shared/src/brandAssets.ts
       - scripts/build-desktop-artifact.ts
+      - scripts/export-brand-icons.ts
+      - scripts/lib/brand-assets.ts
+      - scripts/lib/macos-icon-safe-area.ts
     upstream_paths:
       - apps/desktop/package.json
+      - apps/desktop/src/app/DesktopAssets.ts
       - apps/desktop/src/app/DesktopEnvironment.ts
+      - apps/mobile/app.config.ts
       - apps/web/src/branding.logic.ts
       - apps/web/src/branding.ts
       - apps/web/src/components/settings/SettingsPanels.tsx
+      - packages/shared/src/brandAssets.ts
       - scripts/build-desktop-artifact.ts
+      - scripts/export-brand-icons.ts
+      - scripts/lib/brand-assets.ts
+      - scripts/lib/macos-icon-safe-area.ts
     tests:
       - apps/desktop/src/app/DesktopAppIdentity.test.ts
+      - apps/desktop/src/app/DesktopAssets.test.ts
       - apps/web/src/branding.test.ts
       - scripts/build-desktop-artifact.test.ts
+      - scripts/lib/brand-assets.test.ts
+      - scripts/lib/macos-icon-safe-area.test.ts
     upstream:
       status: unassessed
       tracking: []
@@ -996,25 +1012,31 @@ features:
       retire_when: Upstream distinguishes replacement-turn handoffs from same-turn follow-ups and settles both without false ready or Working states.
 
   - id: setup-script-observability
-    title: Keep setup script progress and output inspectable
+    title: Keep setup scripts safe and inspectable
     status: maintained
-    prs: [40, 207, 208, 214, 216, 236, 237]
+    prs: [40, 207, 208, 214, 216, 236, 237, 241]
     invariants:
       - A setup terminal is titled with its configured script name from start through exit, in every client's terminal list.
       - A terminal opened locally survives server session-list reconciliation until the server reports it, so focus stays on it rather than falling back to a setup session.
       - Opening the terminal on a thread whose only sessions are retained setup terminals starts an interactive shell instead of focusing the finite session.
+      - Worktree-creation setup actions never run against a project root; server, web, and mobile refuse the run and explain why before a script can overwrite files it meant to copy or link.
       - Web and mobile work logs identify the configured setup action and truthfully distinguish requested, running, completed, failed, and stopped states.
       - Setup terminal output remains inspectable after exit, and later toolbar actions start on the first click without reusing the finite setup session.
     implementation_paths:
+      - apps/mobile/src/features/threads/ThreadRouteScreen.tsx
       - apps/mobile/src/features/threads/thread-work-log.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/server/src/project/ProjectSetupScriptRunner.ts
       - apps/web/src/components/ChatView.logic.ts
+      - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/ThreadTerminalDrawer.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/projectScriptEditor.tsx
       - apps/web/src/session-logic.ts
       - packages/client-runtime/src/state/setupScriptActivity.ts
+      - packages/shared/src/projectScripts.ts
     upstream_paths:
+      - apps/mobile/src/features/threads/ThreadRouteScreen.tsx
       - apps/mobile/src/features/threads/thread-work-log.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/server/src/project/ProjectSetupScriptRunner.ts
@@ -1022,7 +1044,9 @@ features:
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/ThreadTerminalDrawer.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/projectScriptEditor.tsx
       - apps/web/src/session-logic.ts
+      - packages/shared/src/projectScripts.ts
     tests:
       - apps/mobile/src/lib/threadActivity.test.ts
       - apps/server/src/project/ProjectSetupScriptRunner.test.ts
@@ -1031,10 +1055,11 @@ features:
       - apps/web/src/components/ThreadTerminalDrawer.test.ts
       - apps/web/src/components/chat/MessagesTimeline.test.tsx
       - apps/web/src/session-logic.test.ts
+      - packages/shared/src/projectScripts.test.ts
     upstream:
       status: unassessed
       tracking: []
-      retire_when: Upstream exposes equivalent cross-client setup action lifecycle detail, retained output, and isolation from later interactive terminal actions.
+      retire_when: Upstream exposes equivalent cross-client setup action lifecycle detail, retained output, worktree-only setup safety, and isolation from later interactive terminal actions.
 
   - id: sidebar-attention-prominence
     title: Keep threads awaiting input visually prominent
