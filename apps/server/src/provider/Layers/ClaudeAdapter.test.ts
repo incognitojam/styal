@@ -1049,6 +1049,85 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("does not attribute a resume handshake result to a newly sent turn", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const runtimeEventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil((event) => event.type === "session.exited"),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      const resumeSessionId = "550e8400-e29b-41d4-a716-446655440000";
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        resumeCursor: {
+          threadId: THREAD_ID,
+          resume: resumeSessionId,
+          turnCount: 1,
+        },
+        runtimeMode: "full-access",
+      });
+      const turn = yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "continue",
+        attachments: [],
+      });
+
+      harness.query.emit({
+        type: "system",
+        subtype: "init",
+        session_id: resumeSessionId,
+        uuid: "resume-init",
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        errors: [],
+        num_turns: 0,
+        usage: { input_tokens: 0, output_tokens: 0 },
+        session_id: resumeSessionId,
+        uuid: "resume-handshake-result",
+      } as unknown as SDKMessage);
+      // A marker between the handshake and the real result makes the ordering
+      // assertion prove that the handshake did not settle the active turn.
+      harness.query.emit({
+        type: "system",
+        subtype: "status",
+        status: null,
+        session_id: resumeSessionId,
+        uuid: "after-resume-handshake",
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        errors: [],
+        num_turns: 1,
+        session_id: resumeSessionId,
+        uuid: "real-turn-result",
+      } as unknown as SDKMessage);
+      harness.query.finish();
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      const completions = runtimeEvents.filter((event) => event.type === "turn.completed");
+      const markerIndex = runtimeEvents.findIndex(
+        (event) =>
+          event.type === "session.state.changed" && event.payload.reason === "status:active",
+      );
+      const completionIndex = runtimeEvents.findIndex((event) => event.type === "turn.completed");
+
+      assert.equal(completions.length, 1);
+      assert.equal(markerIndex >= 0 && completionIndex > markerIndex, true);
+      assert.equal(String(completions[0]?.turnId), String(turn.turnId));
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("does not emit turn.completed for a result with no active turn", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

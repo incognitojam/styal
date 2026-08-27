@@ -312,6 +312,9 @@ interface ClaudeSessionContext {
   /** Task ids that have started and not yet reached a terminal state. */
   readonly liveTaskIds: Set<string>;
   turnState: ClaudeTurnState | undefined;
+  /** A resumed SDK stream emits one success result with num_turns: 0 while
+   * initializing. It is stream setup, never the completion of a T3 turn. */
+  resumeHandshakePending: boolean;
   suppressNextIdleStreamFailure: boolean;
   turnAssistantError: SDKAssistantMessageError | undefined;
   lastKnownContextWindow: number | undefined;
@@ -2386,6 +2389,24 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
               : {}),
           }
         : undefined);
+
+    const isResumeHandshakeResult =
+      context.resumeHandshakePending && result?.subtype === "success" && result.num_turns === 0;
+    if (result !== undefined) {
+      context.resumeHandshakePending = false;
+    }
+    if (isResumeHandshakeResult) {
+      yield* emitThreadTokenUsage(context, usageSnapshot, {
+        rawMethod: "claude/result",
+        rawPayload: result,
+      });
+      yield* Effect.logInfo("claude.turn.resume-handshake-result", {
+        threadId: context.session.threadId,
+        hasActiveTurn: context.turnState !== undefined,
+        hasUsage: result.usage !== undefined,
+      });
+      return;
+    }
 
     const turnState = context.turnState;
     if (!turnState) {
@@ -4527,6 +4548,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         workflowMemberFingerprints,
         liveTaskIds,
         turnState: undefined,
+        resumeHandshakePending: existingResumeSessionId !== undefined,
         suppressNextIdleStreamFailure: false,
         turnAssistantError: undefined,
         lastKnownContextWindow: initialContextWindow,
