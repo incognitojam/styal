@@ -44,7 +44,7 @@ concurrency:
 jobs:
   prepare:
     name: Prepare and verify candidate
-    if: github.repository == 'yngatech/t3code'
+    if: github.repository == 'incognitojam/t3code' || github.repository == 'incognitojam/styal'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     outputs:
