@@ -20,7 +20,7 @@ concurrency:
 jobs:
   changes:
     name: Fork Changes
-    if: github.repository == 'yngatech/t3code'
+    if: github.repository == 'incognitojam/t3code' || github.repository == 'incognitojam/styal'
     runs-on: ubuntu-24.04
     outputs:
       run_ci: ${{ steps.filter.outputs.run_ci }}
@@ -61,7 +61,7 @@ jobs:
     # Every commit here joins the patch stack that Fork Nightly rebases onto
     # upstream before each release, so fail fast when the stack no longer
     # applies cleanly. Runs even for docs-only changes; those rebase too.
-    if: github.repository == 'yngatech/t3code'
+    if: github.repository == 'incognitojam/t3code' || github.repository == 'incognitojam/styal'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
