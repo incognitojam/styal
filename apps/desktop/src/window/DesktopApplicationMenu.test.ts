@@ -164,6 +164,21 @@ describe("DesktopApplicationMenu", () => {
     }),
   );
 
+  it.effect("labels the macOS application menu with the branded display name", () =>
+    Effect.gen(function* () {
+      const selectedAction = yield* Deferred.make<string>();
+      const applicationMenuTemplate =
+        yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+
+      yield* configureMenu(selectedAction, applicationMenuTemplate, "darwin");
+
+      const template = yield* Deferred.await(applicationMenuTemplate);
+      // app.name is a stable slug that keys credential storage, so the menu
+      // reads branding instead of whatever Electron was named.
+      assert.equal(template[0]?.label, "styal (Alpha)");
+    }),
+  );
+
   it.effect("installs the native menu and routes Settings through DesktopWindow", () =>
     Effect.gen(function* () {
       const selectedAction = yield* Deferred.make<string>();

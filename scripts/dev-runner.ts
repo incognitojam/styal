@@ -224,7 +224,7 @@ const optionalIntegerConfig = (name: string): Config.Config<number | undefined> 
 const PortSelectionConfig = Config.all({
   portOffset: optionalIntegerConfig("T3CODE_PORT_OFFSET"),
   devInstance: optionalStringConfig("T3CODE_DEV_INSTANCE"),
-  workspacePort: optionalPortConfig("T3CODE_WORKSPACE_PORT"),
+  workspacePort: optionalPortConfig("STYAL_WORKSPACE_PORT"),
 });
 
 export function resolveWorkspaceBasePort(config: {
@@ -649,7 +649,7 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
       Effect.mapError(
         (cause) =>
           new DevRunnerConfigurationError({
-            configKeys: ["T3CODE_PORT_OFFSET", "T3CODE_DEV_INSTANCE", "T3CODE_WORKSPACE_PORT"],
+            configKeys: ["T3CODE_PORT_OFFSET", "T3CODE_DEV_INSTANCE", "STYAL_WORKSPACE_PORT"],
             cause,
           }),
       ),
@@ -679,7 +679,7 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
     const source =
       workspaceBasePort === undefined
         ? resolvedOffset.source
-        : `T3CODE_WORKSPACE_PORT=${workspaceBasePort}`;
+        : `STYAL_WORKSPACE_PORT=${workspaceBasePort}`;
 
     const { serverOffset, webOffset } =
       workspaceBasePort === undefined

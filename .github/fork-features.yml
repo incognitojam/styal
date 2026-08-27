@@ -304,8 +304,9 @@ features:
     status: maintained
     prs: [3, 27, 29, 49, 56, 235, 242, 243, 244]
     invariants:
-      - Packaged fork builds use a distinct application identifier and channel-aware incognitojam product, repository, and About-panel identity instead of presenting as upstream.
-      - Electron retains the pre-transfer stage-aware application name used by macOS Keychain so existing safeStorage data remains decryptable across branding changes.
+      - Packaged builds ship as styal with their own application identifier, URL scheme, product name, and About-panel identity instead of presenting as upstream T3 Code.
+      - Electron's application name is a stable identity slug rather than a display string, so OS credential storage keys stay in the same namespace as the user-data directory they protect.
+      - styal owns its base directory, user-data directory, and URL scheme, so it installs and runs alongside upstream T3 Code without sharing state.
       - Windows fork packages install under their own package directory without colliding with upstream, while Alpha and Nightly builds remain visibly distinguishable.
       - Canonical brand asset paths and icon geometry stay shared across desktop, mobile configuration, web packaging, and export tooling so production and nightly artwork cannot silently diverge.
     implementation_paths:

@@ -78,7 +78,6 @@ export class DesktopEnvironment extends Context.Service<
     readonly linuxApplicationsDir: string;
     readonly appImagePath: Option.Option<string>;
     readonly userDataDirName: string;
-    readonly legacyUserDataDirName: string;
     readonly defaultDesktopSettings: DesktopAppSettings.DesktopSettings;
     readonly runtimeInfo: DesktopRuntimeInfo;
     readonly resolvePickFolderDefaultPath: (rawOptions: unknown) => Option.Option<string>;
@@ -86,7 +85,7 @@ export class DesktopEnvironment extends Context.Service<
   }
 >()("@t3tools/desktop/app/DesktopEnvironment") {}
 
-const APP_BASE_NAME = "T3 Code";
+const APP_BASE_NAME = "styal";
 
 function resolveDesktopAppStageLabel(input: {
   readonly isDevelopment: boolean;
@@ -107,7 +106,7 @@ function resolveDesktopAppBranding(input: {
   return {
     baseName: APP_BASE_NAME,
     stageLabel,
-    displayName: `${APP_BASE_NAME} (incognitojam ${stageLabel})`,
+    displayName: `${APP_BASE_NAME} (${stageLabel})`,
   };
 }
 
@@ -173,17 +172,20 @@ const make = Effect.fn("desktop.environment.make")(function* (
     appVersion: input.appVersion,
   });
   const displayName = branding.displayName;
-  // Electron derives the macOS safeStorage Keychain service from app.name.
-  // Keep the pre-transfer name stable so existing encrypted credentials remain readable.
-  const safeStorageName = `${APP_BASE_NAME} (yngatech ${branding.stageLabel})`;
+  // Electron keys OS credential storage on app.name: the macOS Keychain
+  // service, and the libsecret/kwallet collection on Linux. There is no API to
+  // name those entries directly, so app.name is an identity slug rather than a
+  // display string. It matches userDataDirName below, keeping secrets in the
+  // same namespace as the state they protect. Anything user-visible reads
+  // displayName instead.
+  const safeStorageName = isDevelopment ? "styal-dev" : "styal";
   const stateDir = resolveDesktopStateDir({
     baseDir,
     isDevelopment,
     joinPath: path.join,
     t3Home: config.t3Home,
   });
-  const userDataDirName = isDevelopment ? "t3code-dev" : "t3code";
-  const legacyUserDataDirName = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";
+  const userDataDirName = isDevelopment ? "styal-dev" : "styal";
   const linuxApplicationsDir = path.join(
     Option.getOrElse(config.xdgDataHome, () => path.join(homeDirectory, ".local", "share")),
     "applications",
@@ -229,14 +231,13 @@ const make = Effect.fn("desktop.environment.make")(function* (
     displayName,
     safeStorageName,
     appUserModelId: Option.getOrElse(config.appUserModelIdOverride, () =>
-      isDevelopment ? "com.t3tools.t3code.dev" : "dev.incognitojam.t3code",
+      isDevelopment ? "build.styal.app.dev" : "build.styal.app",
     ),
-    linuxDesktopEntryName: isDevelopment ? "t3code-dev.desktop" : "t3code.desktop",
-    linuxWmClass: isDevelopment ? "t3code-dev" : "t3code",
+    linuxDesktopEntryName: isDevelopment ? "styal-dev.desktop" : "styal.desktop",
+    linuxWmClass: isDevelopment ? "styal-dev" : "styal",
     linuxApplicationsDir,
     appImagePath: config.appImagePath,
     userDataDirName,
-    legacyUserDataDirName,
     defaultDesktopSettings: DesktopAppSettings.resolveDefaultDesktopSettings(input.appVersion),
     runtimeInfo: resolveDesktopRuntimeInfo({
       platform: input.platform,

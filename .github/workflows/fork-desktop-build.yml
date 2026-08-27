@@ -200,7 +200,7 @@ jobs:
           active_submission=$(jq -r '
             .history
             | map(select(
-                .name == "T3 Code (incognitojam Nightly).zip" and
+                .name == "styal (Nightly).zip" and
                 .status == "In Progress"
               ))
             | sort_by(.createdDate)
@@ -334,7 +334,7 @@ jobs:
             printf '%s' "$MACOS_PROVISIONING_PROFILE" | base64 -D > "$profile_path"
             security cms -D -i "$profile_path" > "$profile_plist"
 
-            expected_app_id="$APPLE_TEAM_ID.dev.incognitojam.t3code"
+            expected_app_id="$APPLE_TEAM_ID.build.styal.app"
             profile_app_id=$(/usr/libexec/PlistBuddy \
               -c 'Print :Entitlements:com.apple.application-identifier' \
               "$profile_plist")

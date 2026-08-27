@@ -26,7 +26,7 @@ To use automatic detection again, select **Automatic**.
 # Stable workspace ports
 
 T3 Code automatically assigns every workspace a persistent range of ten development ports. There
-is no setting to enable. The first port is always available as `T3CODE_WORKSPACE_PORT` in that
+is no setting to enable. The first port is always available as `STYAL_WORKSPACE_PORT` in that
 workspace's locally launched agent processes, terminals, and project scripts; the remaining ports
 are the next nine numbers.
 
@@ -42,13 +42,13 @@ For example, a checked-in `t3.json` script can start its development server on t
   "scripts": [
     {
       "name": "Dev server",
-      "command": "npm run dev -- --port \"$T3CODE_WORKSPACE_PORT\""
+      "command": "npm run dev -- --port \"$STYAL_WORKSPACE_PORT\""
     }
   ]
 }
 ```
 
-Use `$((T3CODE_WORKSPACE_PORT + 1))` through `$((T3CODE_WORKSPACE_PORT + 9))` in shell commands when
+Use `$((STYAL_WORKSPACE_PORT + 1))` through `$((STYAL_WORKSPACE_PORT + 9))` in shell commands when
 a workspace needs multiple services. The allocation prevents T3 Code workspaces in the same
 environment from receiving overlapping ranges, but it does not reserve listening sockets from
 unrelated programs on the host.

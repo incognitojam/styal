@@ -585,8 +585,8 @@ describe("CheckpointReactor", () => {
   it("adopts a drifted checkout as the thread branch on a dedicated worktree", async () => {
     const harness = await createHarness({
       seedFilesystemCheckpoints: false,
-      threadBranch: "t3code/original-branch",
-      localStatusRefName: "t3code/renamed-by-agent",
+      threadBranch: "styal/original-branch",
+      localStatusRefName: "styal/renamed-by-agent",
     });
 
     harness.provider.emit({
@@ -605,19 +605,19 @@ describe("CheckpointReactor", () => {
       (event) =>
         event.type === "thread.meta-updated" &&
         (event as unknown as { payload: { branch?: string } }).payload.branch ===
-          "t3code/renamed-by-agent",
+          "styal/renamed-by-agent",
     );
 
     const snapshot = await harness.readModel();
     const thread = snapshot.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
-    expect(thread?.branch).toBe("t3code/renamed-by-agent");
+    expect(thread?.branch).toBe("styal/renamed-by-agent");
   });
 
   it("does not adopt a drifted checkout when the worktree is shared by another thread", async () => {
     const harness = await createHarness({
       seedFilesystemCheckpoints: false,
-      threadBranch: "t3code/original-branch",
-      localStatusRefName: "t3code/renamed-by-agent",
+      threadBranch: "styal/original-branch",
+      localStatusRefName: "styal/renamed-by-agent",
       secondThreadSharingWorktree: true,
     });
 
@@ -635,14 +635,14 @@ describe("CheckpointReactor", () => {
 
     const snapshot = await harness.readModel();
     const thread = snapshot.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
-    expect(thread?.branch).toBe("t3code/original-branch");
+    expect(thread?.branch).toBe("styal/original-branch");
   });
 
   it("does not adopt a temporary placeholder checkout as the thread branch", async () => {
     const harness = await createHarness({
       seedFilesystemCheckpoints: false,
-      threadBranch: "t3code/original-branch",
-      localStatusRefName: "t3code/0a1b2c3d",
+      threadBranch: "styal/original-branch",
+      localStatusRefName: "styal/0a1b2c3d",
     });
 
     harness.provider.emit({
@@ -659,7 +659,7 @@ describe("CheckpointReactor", () => {
 
     const snapshot = await harness.readModel();
     const thread = snapshot.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
-    expect(thread?.branch).toBe("t3code/original-branch");
+    expect(thread?.branch).toBe("styal/original-branch");
   });
 
   it("ignores auxiliary thread turn completion while primary turn is active", async () => {
