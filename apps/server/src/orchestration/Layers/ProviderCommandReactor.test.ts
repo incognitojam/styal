@@ -278,7 +278,12 @@ describe("ProviderCommandReactor", () => {
     const pruneWorktrees = vi.fn((_: { readonly cwd: string }) => Effect.void);
     const createWorktree = vi.fn(
       (input: { readonly refName: string; readonly path: string | null }) =>
-        Effect.succeed({ worktree: { path: input.path ?? "", refName: input.refName } }),
+        Effect.sync(() => {
+          if (input.path !== null) {
+            NodeFS.mkdirSync(input.path, { recursive: true });
+          }
+          return { worktree: { path: input.path ?? "", refName: input.refName } };
+        }),
     );
     const refreshStatus = vi.fn((_: string) =>
       Effect.succeed({
@@ -1772,9 +1777,9 @@ describe("ProviderCommandReactor", () => {
     );
 
     await waitFor(() => harness.startSession.mock.calls.length === 1);
-    expect(harness.pruneWorktrees).toHaveBeenCalledWith({ cwd: "/tmp/provider-project" });
+    expect(harness.pruneWorktrees).toHaveBeenCalledWith({ cwd: harness.workspaceRoot });
     expect(harness.createWorktree).toHaveBeenCalledWith({
-      cwd: "/tmp/provider-project",
+      cwd: harness.workspaceRoot,
       refName: "feature/restore",
       path: worktreePath,
     });

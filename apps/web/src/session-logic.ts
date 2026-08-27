@@ -919,6 +919,7 @@ export function deriveWorkLogEntries(
     entries.push(toDerivedWorkLogEntry(activity));
   }
   return collapseDerivedWorkLogEntries(entries).map((entry) => {
+    if (entry.setupRunId === undefined) return entry;
     const { setupRunId: _setupRunId, ...rest } = entry;
     return rest;
   });
