@@ -29,6 +29,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
+import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -347,6 +348,12 @@ describe("ProviderRuntimeIngestion", () => {
       engine,
       dispatch,
       readModel: () => Effect.runPromise(snapshotQuery.getSnapshot()),
+      readThreadDetail: () =>
+        Effect.runPromise(
+          snapshotQuery
+            .getThreadDetailById(ThreadId.make("thread-1"))
+            .pipe(Effect.map(Option.getOrUndefined)),
+        ),
       emit: provider.emit,
       setProviderSession: provider.setSession,
       drain,
@@ -3596,10 +3603,14 @@ describe("ProviderRuntimeIngestion", () => {
 
     expect(progress?.summary).toBe("Typecheck mobile app");
     expect(progressPayload?.title).toBe("Typecheck mobile app");
+    expect(progressPayload?.agentKind).toBe("background");
+    expect(progressPayload?.taskType).toBe("local_bash");
     expect(completed?.summary).toBe("Task completed");
     expect(completedPayload?.title).toBe("Typecheck mobile app");
     expect(completedPayload?.summary).toBe("Typecheck finished without errors.");
     expect(completedPayload?.detail).toBe("Typecheck finished without errors.");
+    expect(completedPayload?.agentKind).toBe("background");
+    expect(completedPayload?.taskType).toBe("local_bash");
   });
 
   it("titles task completion from task.started when no progress event carried the name", async () => {
@@ -3665,6 +3676,7 @@ describe("ProviderRuntimeIngestion", () => {
         taskId: "swept-task-1",
         description: "Watch round-3 CI and bots",
         summary: "Polling CI checks.",
+        taskType: "local_bash",
       },
     });
 
@@ -3674,6 +3686,34 @@ describe("ProviderRuntimeIngestion", () => {
           activity.id === "task-progress:thread-1:swept-task-1",
       ),
     );
+
+    // Push the source row outside the 500-activity thread-detail window. The
+    // recovery query is task-scoped and intentionally reads beyond that UI
+    // retention boundary.
+    for (let index = 0; index < 501; index += 1) {
+      await harness.dispatch({
+        type: "thread.activity.append",
+        commandId: CommandId.make(`cmd-swept-task-filler-${index}`),
+        threadId: ThreadId.make("thread-1"),
+        activity: {
+          id: asEventId(`evt-swept-task-filler-${index}`),
+          tone: "info",
+          kind: "tool.completed",
+          summary: "Unrelated activity",
+          payload: { index },
+          turnId: null,
+          createdAt: "2026-01-02T00:00:00.000Z",
+        },
+        createdAt: "2026-01-02T00:00:00.000Z",
+      });
+    }
+    const windowedThread = await harness.readThreadDetail();
+    expect(
+      windowedThread?.activities.some(
+        (activity: ProviderRuntimeTestActivity) =>
+          activity.id === "task-progress:thread-1:swept-task-1",
+      ),
+    ).toBe(false);
 
     // session.exited sweeps the in-memory description cache; the completion
     // that follows must recover the name from persisted activities.
@@ -3715,6 +3755,8 @@ describe("ProviderRuntimeIngestion", () => {
         : undefined;
 
     expect(completedPayload?.title).toBe("Watch round-3 CI and bots");
+    expect(completedPayload?.agentKind).toBe("background");
+    expect(completedPayload?.taskType).toBe("local_bash");
   });
 
   it("projects structured user input request and resolution as thread activities", async () => {
