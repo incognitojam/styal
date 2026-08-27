@@ -264,7 +264,7 @@ try {
   );
   assertContains(
     nightlyReleaseMetadata,
-    `name=T3 Code Nightly ${styalVersion}-nightly.20260413.321 (abcdef123456)`,
+    `name=styal nightly ${styalVersion}-nightly.20260413.321 (abcdef123456)`,
     "Expected nightly metadata to include the short commit SHA in the release name.",
   );
 
