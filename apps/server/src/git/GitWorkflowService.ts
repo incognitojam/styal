@@ -65,6 +65,11 @@ export class GitWorkflowService extends Context.Service<
     readonly createWorktree: (
       input: VcsCreateWorktreeInput,
     ) => Effect.Effect<VcsCreateWorktreeResult, GitCommandError>;
+    /** Fails when the revision names nothing a commit can be cut from. */
+    readonly resolveCommit: (input: {
+      readonly cwd: string;
+      readonly revision: string;
+    }) => Effect.Effect<{ readonly commitSha: string }, GitCommandError>;
     readonly fetchRemote: (input: {
       readonly cwd: string;
       readonly remoteName: string;
@@ -104,6 +109,7 @@ export class GitWorkflowService extends Context.Service<
 function nonRepositoryLocalStatus(): VcsStatusLocalResult {
   return {
     isRepo: false,
+    hasHeadCommit: false,
     hasPrimaryRemote: false,
     isDefaultRef: false,
     refName: null,
@@ -305,6 +311,10 @@ export const make = Effect.gen(function* () {
     createWorktree: (input) =>
       ensureGitCommand("GitWorkflowService.createWorktree", input.cwd).pipe(
         Effect.andThen(git.createWorktree(input)),
+      ),
+    resolveCommit: (input) =>
+      ensureGitCommand("GitWorkflowService.resolveCommit", input.cwd).pipe(
+        Effect.andThen(git.resolveCommit(input)),
       ),
     fetchRemote: (input) =>
       ensureGitCommand("GitWorkflowService.fetchRemote", input.cwd).pipe(

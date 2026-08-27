@@ -56,7 +56,10 @@ import { resolveSelectableModelSelection } from "../../lib/modelOptions";
 import { deriveThreadTitleFromPrompt } from "../../lib/projectThreadStartTurn";
 import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/remoteRegistration";
 import { enqueueThreadOutboxMessage, removeThreadOutboxMessage } from "../../state/thread-outbox";
-import { useRemoteConnectionStatus } from "../../state/use-remote-environment-registry";
+import {
+  setPendingConnectionError,
+  useRemoteConnectionStatus,
+} from "../../state/use-remote-environment-registry";
 import { useNewTaskFlow } from "./new-task-flow-provider";
 import { resolveProjectThreadCreationBranch } from "./projectThreadCreationValidation";
 import { useCreateProjectThread } from "./use-project-actions";
@@ -739,6 +742,7 @@ export function NewTaskDraftScreen(props: {
       interactionMode,
       initialMessageText,
       initialAttachments: draft.attachments,
+      worktreeUnavailable: flow.worktreeUnavailable,
       ...(editingPendingTask
         ? {
             turnMetadata: {
@@ -805,7 +809,8 @@ export function NewTaskDraftScreen(props: {
     isIncomingShareReady &&
     !isImportingShare &&
     !flow.submitting &&
-    !(flow.workspaceMode === "worktree" && !flow.selectedBranchName);
+    !(flow.workspaceMode === "worktree" && !flow.selectedBranchName) &&
+    !(flow.workspaceMode === "worktree" && flow.worktreeUnavailable);
   const promptEditor = (
     <ComposerEditor
       ref={promptInputRef}
@@ -938,7 +943,15 @@ export function NewTaskDraftScreen(props: {
         }
         label={workspaceLabel}
         maxWidth={flow.workspaceMode === "local" ? 220 : 148}
-        onPress={() => flow.setWorkspaceMode(flow.workspaceMode === "local" ? "worktree" : "local")}
+        onPress={() => {
+          if (flow.workspaceMode === "local" && flow.worktreeUnavailable) {
+            setPendingConnectionError(
+              "This repository has no commits yet. Make a first commit, or use Current checkout.",
+            );
+            return;
+          }
+          flow.setWorkspaceMode(flow.workspaceMode === "local" ? "worktree" : "local");
+        }}
         showChevron={false}
       />
 

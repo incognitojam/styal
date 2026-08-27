@@ -36,6 +36,11 @@ T3 Code works with the platforms your team already uses:
 - Use the **Publish Repository** action to create a new hosted repository (GitHub, GitLab, Bitbucket, or Azure DevOps), add it as your origin remote, and push, in one flow
 - If the local repository has no commits yet, publishing creates the remote and wires it up but does not push. Make a commit, then push normally.
 
+**Repositories with no commits**
+
+- A repository you have just initialized has a branch name but no commits behind it, so there is nothing for a new worktree to branch from. **New worktree** is unavailable until you make a commit; threads still run normally in **Current checkout**.
+- The Git actions toolbar's commit action does exactly this, and reads **Create first commit** in a project that has no remote yet. It stages everything in the project, suggests a message, and commits — after which worktree threads and the branch actions work as usual.
+
 ### Manage Code Reviews Without Context Switching
 
 **Create pull requests while you work**

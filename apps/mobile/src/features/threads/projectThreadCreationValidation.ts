@@ -26,9 +26,22 @@ export class ProjectThreadBaseBranchRequiredError extends Schema.TaggedErrorClas
   }
 }
 
+export class ProjectThreadFirstCommitRequiredError extends Schema.TaggedErrorClass<ProjectThreadFirstCommitRequiredError>()(
+  "ProjectThreadFirstCommitRequiredError",
+  {
+    environmentId: EnvironmentId,
+    projectId: ProjectId,
+  },
+) {
+  override get message(): string {
+    return "This repository has no commits yet. Make a first commit, or use Current checkout.";
+  }
+}
+
 export const ProjectThreadCreationValidationError = Schema.Union([
   ProjectThreadTaskRequiredError,
   ProjectThreadBaseBranchRequiredError,
+  ProjectThreadFirstCommitRequiredError,
 ]);
 export type ProjectThreadCreationValidationError = typeof ProjectThreadCreationValidationError.Type;
 
@@ -58,6 +71,8 @@ export function validateProjectThreadCreation(input: {
   readonly environmentMode: "local" | "worktree";
   readonly branch: string | null;
   readonly initialMessageText: string;
+  /** Set when the project has nothing a worktree could branch from. */
+  readonly worktreeUnavailable?: boolean;
 }): ProjectThreadCreationValidationError | null {
   if (input.initialMessageText.trim().length === 0) {
     return new ProjectThreadTaskRequiredError({
@@ -68,6 +83,14 @@ export function validateProjectThreadCreation(input: {
   }
   if (input.environmentMode === "worktree" && !input.branch) {
     return new ProjectThreadBaseBranchRequiredError({
+      environmentId: input.environmentId,
+      projectId: input.projectId,
+    });
+  }
+  // A repository with no commits still reports a branch name, so the check
+  // above passes on a ref git cannot actually branch from.
+  if (input.environmentMode === "worktree" && input.worktreeUnavailable === true) {
+    return new ProjectThreadFirstCommitRequiredError({
       environmentId: input.environmentId,
       projectId: input.projectId,
     });

@@ -292,6 +292,9 @@ function toLocalStatusPart(status: VcsStatusResult): VcsStatusLocalResult {
     ...(status.sourceControlProvider
       ? { sourceControlProvider: status.sourceControlProvider }
       : {}),
+    // Absent and false mean different things here: absent is an old server,
+    // read as committed, while false is a repository known to have no commits.
+    ...(status.hasHeadCommit === undefined ? {} : { hasHeadCommit: status.hasHeadCommit }),
     hasPrimaryRemote: status.hasPrimaryRemote,
     isDefaultRef: status.isDefaultRef,
     refName: status.refName,

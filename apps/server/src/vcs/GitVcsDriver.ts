@@ -58,6 +58,8 @@ export interface ExecuteGitResult {
 export interface GitStatusDetails {
   isRepo: boolean;
   sourceControlProvider?: VcsStatusResult["sourceControlProvider"];
+  /** False while HEAD is unborn: `branch` is named but resolves to nothing. */
+  hasHeadCommit: boolean;
   hasOriginRemote: boolean;
   isDefaultBranch: boolean;
   branch: string | null;

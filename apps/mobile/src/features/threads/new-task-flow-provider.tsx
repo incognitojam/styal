@@ -141,6 +141,8 @@ type NewTaskFlowContextValue = {
   readonly hasMoreBranches: boolean;
   readonly availableBranches: ReadonlyArray<VcsRef>;
   readonly currentCheckoutBranchName: string | null;
+  /** Set while the project has nothing a worktree could branch from. */
+  readonly worktreeUnavailable: boolean;
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
   readonly planModeEnabled: boolean;
@@ -571,6 +573,13 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       : null,
   );
   const currentCheckoutBranchName = projectGitStatus.data?.refName ?? null;
+  // Old servers omit the field; treat those as committed so this never blocks
+  // a working setup. Mirrors the server, which gates on whether the base ref
+  // resolves rather than on the local HEAD: starting from origin branches off
+  // a remote commit, which works while the local HEAD is still unborn.
+  const worktreeUnavailable =
+    projectGitStatus.data?.hasHeadCommit === false &&
+    !(startFromOrigin && projectGitStatus.data.hasPrimaryRemote);
 
   const filteredBranches = useMemo(() => {
     const query = branchQuery.trim().toLowerCase();
@@ -1019,6 +1028,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       hasMoreBranches,
       availableBranches,
       currentCheckoutBranchName,
+      worktreeUnavailable,
       runtimeMode,
       interactionMode,
       planModeEnabled,
@@ -1067,6 +1077,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       buildPendingTaskMessage,
       cancelEditingPendingTask,
       currentCheckoutBranchName,
+      worktreeUnavailable,
       editingPendingTask,
       environments,
       expandedProvider,

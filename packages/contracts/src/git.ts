@@ -217,6 +217,15 @@ const VcsStatusChangeRequest = Schema.Struct({
 const VcsStatusLocalShape = {
   isRepo: Schema.Boolean,
   sourceControlProvider: Schema.optional(SourceControlProviderInfo),
+  /**
+   * Whether HEAD resolves to a commit. A repository initialized but never
+   * committed to still reports `isRepo` and a `refName` (git names the unborn
+   * branch it would create), so this is the only way to tell that ref apart
+   * from a real one. Worktrees and branch operations need a commit to point at.
+   * Independent of `refName`, which is null on a detached HEAD that does have
+   * commits. Optional for old servers, which are treated as having one.
+   */
+  hasHeadCommit: Schema.optional(Schema.Boolean),
   hasPrimaryRemote: Schema.Boolean,
   isDefaultRef: Schema.Boolean,
   refName: Schema.NullOr(TrimmedNonEmptyStringSchema),
