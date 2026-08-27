@@ -47,7 +47,10 @@ legacyForkLayer("ForkMigrations legacy fork upgrade", (it) => {
       const result = yield* runAllMigrations();
 
       assert.isTrue(result.repairedLegacyHistory);
-      assert.deepStrictEqual(result.upstream, [[40, "ProjectionProjectFaviconPath"]]);
+      assert.deepStrictEqual(
+        result.upstream,
+        migrationManifest.filter(([migrationId]) => migrationId >= 40),
+      );
       assert.deepStrictEqual(result.fork, [
         [2, "WorkspacePortAllocations"],
         [3, "ProjectAdditionalInstructions"],
@@ -62,16 +65,12 @@ legacyForkLayer("ForkMigrations legacy fork upgrade", (it) => {
         WHERE migration_id >= 39
         ORDER BY migration_id
       `;
-      assert.deepStrictEqual(upstreamHistory, [
-        {
-          migration_id: 39,
-          name: "ProjectionProjectsDefaultThreadEnvMode",
-        },
-        {
-          migration_id: 40,
-          name: "ProjectionProjectFaviconPath",
-        },
-      ]);
+      assert.deepStrictEqual(
+        upstreamHistory,
+        migrationManifest
+          .filter(([migrationId]) => migrationId >= 39)
+          .map(([migration_id, name]) => ({ migration_id, name })),
+      );
 
       const forkHistory = yield* sql<{
         readonly migration_id: number;
@@ -137,7 +136,10 @@ switchedBuildLayer("ForkMigrations switched-build upgrade", (it) => {
       const result = yield* runAllMigrations();
 
       assert.isTrue(result.repairedLegacyHistory);
-      assert.deepStrictEqual(result.upstream, []);
+      assert.deepStrictEqual(
+        result.upstream,
+        migrationManifest.filter(([migrationId]) => migrationId > 40),
+      );
       const projectColumns = yield* sql<{ readonly name: string }>`
         PRAGMA table_info(projection_projects)
       `;
@@ -155,16 +157,12 @@ switchedBuildLayer("ForkMigrations switched-build upgrade", (it) => {
         WHERE migration_id >= 39
         ORDER BY migration_id
       `;
-      assert.deepStrictEqual(upstreamHistory, [
-        {
-          migration_id: 39,
-          name: "ProjectionProjectsDefaultThreadEnvMode",
-        },
-        {
-          migration_id: 40,
-          name: "ProjectionProjectFaviconPath",
-        },
-      ]);
+      assert.deepStrictEqual(
+        upstreamHistory,
+        migrationManifest
+          .filter(([migrationId]) => migrationId >= 39)
+          .map(([migration_id, name]) => ({ migration_id, name })),
+      );
     }),
   );
 });
