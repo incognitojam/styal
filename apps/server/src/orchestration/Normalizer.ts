@@ -51,11 +51,12 @@ export const canonicalizeClientCommandTimestamps = (
 };
 
 const removeClaimedAttachmentPaths = Effect.fn("Normalizer.removeClaimedAttachmentPaths")(
-  function* (attachmentPaths: ReadonlyArray<string>) {
+  function* (attachmentPaths: ReadonlyArray<string>, attachmentsDir: string) {
     if (attachmentPaths.length === 0) {
       return;
     }
     const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
     yield* Effect.forEach(
       attachmentPaths,
       (attachmentPath) =>
@@ -63,6 +64,27 @@ const removeClaimedAttachmentPaths = Effect.fn("Normalizer.removeClaimedAttachme
           Effect.tapError((cause) =>
             Effect.logWarning("Failed to remove an unclaimed attachment copy.", {
               attachmentPath,
+              cause,
+            }),
+          ),
+          Effect.orElseSucceed(() => undefined),
+        ),
+      { concurrency: 1 },
+    );
+    const attachmentDirectories = [
+      ...new Set(
+        attachmentPaths
+          .map((attachmentPath) => path.dirname(attachmentPath))
+          .filter((directory) => directory !== attachmentsDir),
+      ),
+    ];
+    yield* Effect.forEach(
+      attachmentDirectories,
+      (directory) =>
+        fileSystem.remove(directory, { recursive: true, force: true }).pipe(
+          Effect.tapError((cause) =>
+            Effect.logWarning("Failed to remove an unclaimed attachment directory.", {
+              directory,
               cause,
             }),
           ),
@@ -268,7 +290,11 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
           return persistedAttachment;
         }),
       { concurrency: 1 },
-    ).pipe(Effect.tapError(() => removeClaimedAttachmentPaths(claimedAttachmentPaths)));
+    ).pipe(
+      Effect.tapError(() =>
+        removeClaimedAttachmentPaths(claimedAttachmentPaths, serverConfig.attachmentsDir),
+      ),
+    );
 
     return {
       ...canonicalCommand,
@@ -306,5 +332,5 @@ export const cleanupFailedUploadedAttachments = Effect.fn(
       claimedPaths.push(claimedPath);
     }
   }
-  yield* removeClaimedAttachmentPaths(claimedPaths);
+  yield* removeClaimedAttachmentPaths(claimedPaths, serverConfig.attachmentsDir);
 });

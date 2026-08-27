@@ -261,6 +261,21 @@ describe("resolveMarkdownFileLinkTarget", () => {
     });
   });
 
+  it("treats slash variants of the same Windows file as one path", () => {
+    expect(
+      buildMarkdownFileLinkParentSuffixes([
+        {
+          filePath: "C:/Users/example/project/src/main.ts",
+          workspaceRelativePath: "src/main.ts",
+        },
+        {
+          filePath: String.raw`C:\Users\example\project\src\main.ts`,
+          workspaceRelativePath: "src/main.ts",
+        },
+      ]),
+    ).toEqual(new Map());
+  });
+
   it("does not create a preview path for files outside the workspace", () => {
     expect(resolveMarkdownFileLinkMeta("/tmp/report.ts", "/repo/project")).toMatchObject({
       workspaceRelativePath: null,
