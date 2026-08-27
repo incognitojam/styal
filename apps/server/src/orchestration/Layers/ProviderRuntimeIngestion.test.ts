@@ -29,6 +29,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
+import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -347,6 +348,18 @@ describe("ProviderRuntimeIngestion", () => {
       engine,
       dispatch,
       readModel: () => Effect.runPromise(snapshotQuery.getSnapshot()),
+      readThreadDetail: () =>
+        Effect.runPromise(
+          snapshotQuery
+            .getThreadDetailById(ThreadId.make("thread-1"))
+            .pipe(Effect.map(Option.getOrUndefined)),
+        ),
+      readThreadShell: () =>
+        Effect.runPromise(
+          snapshotQuery
+            .getThreadShellById(ThreadId.make("thread-1"))
+            .pipe(Effect.map(Option.getOrUndefined)),
+        ),
       emit: provider.emit,
       setProviderSession: provider.setSession,
       drain,
@@ -3525,6 +3538,123 @@ describe("ProviderRuntimeIngestion", () => {
     ).toBe("# Plan title");
   });
 
+  it("retains background identity for liveness when later lifecycle events omit it", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    harness.emit({
+      type: "task.started",
+      eventId: asEventId("evt-live-background-started"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-live-background"),
+      payload: {
+        taskId: "live-background-1",
+        description: "Watch CI",
+        taskType: "local_bash",
+      },
+    });
+
+    await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some(
+        (activity: ProviderRuntimeTestActivity) => activity.id === "evt-live-background-started",
+      ),
+    );
+    expect((await harness.readThreadShell())?.backgroundLiveness).toBe("monitoring");
+
+    harness.emit({
+      type: "task.updated",
+      eventId: asEventId("evt-live-background-updated"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-live-background"),
+      payload: {
+        taskId: "live-background-1",
+        status: "running",
+      },
+    });
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some(
+        (activity: ProviderRuntimeTestActivity) => activity.id === "evt-live-background-updated",
+      ),
+    );
+    expect((await harness.readThreadShell())?.backgroundLiveness).toBe("monitoring");
+    const updated = thread.activities.find(
+      (activity: ProviderRuntimeTestActivity) => activity.id === "evt-live-background-updated",
+    );
+    const updatedPayload =
+      updated?.payload && typeof updated.payload === "object"
+        ? (updated.payload as Record<string, unknown>)
+        : undefined;
+
+    expect(updatedPayload?.taskType).toBe("local_bash");
+    expect(updatedPayload?.agentKind).toBe("background");
+  });
+
+  it("retains owning agent identity for liveness when later lifecycle events omit it", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    harness.emit({
+      type: "task.started",
+      eventId: asEventId("evt-agent-owned-background-started"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-agent-owned-background"),
+      payload: {
+        taskId: "agent-owned-background-1",
+        description: "Run checks inside the agent",
+        taskType: "local_bash",
+        agentId: "parent-agent-1",
+      },
+    });
+
+    await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some(
+        (activity: ProviderRuntimeTestActivity) =>
+          activity.id === "evt-agent-owned-background-started",
+      ),
+    );
+    expect((await harness.readThreadShell())?.backgroundLiveness).toBeNull();
+
+    harness.emit({
+      type: "task.updated",
+      eventId: asEventId("evt-agent-owned-background-updated"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-agent-owned-background"),
+      payload: {
+        taskId: "agent-owned-background-1",
+        status: "running",
+      },
+    });
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some(
+        (activity: ProviderRuntimeTestActivity) =>
+          activity.id === "evt-agent-owned-background-updated",
+      ),
+    );
+    expect((await harness.readThreadShell())?.backgroundLiveness).toBeNull();
+    const updated = thread.activities.find(
+      (activity: ProviderRuntimeTestActivity) =>
+        activity.id === "evt-agent-owned-background-updated",
+    );
+    const updatedPayload =
+      updated?.payload && typeof updated.payload === "object"
+        ? (updated.payload as Record<string, unknown>)
+        : undefined;
+
+    expect(updatedPayload?.taskType).toBe("local_bash");
+    expect(updatedPayload?.agentId).toBe("parent-agent-1");
+    expect(updatedPayload?.agentKind).toBe("background");
+  });
+
   it("titles task activities with the task description, including on completion", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
@@ -3596,10 +3726,14 @@ describe("ProviderRuntimeIngestion", () => {
 
     expect(progress?.summary).toBe("Typecheck mobile app");
     expect(progressPayload?.title).toBe("Typecheck mobile app");
+    expect(progressPayload?.agentKind).toBe("background");
+    expect(progressPayload?.taskType).toBe("local_bash");
     expect(completed?.summary).toBe("Task completed");
     expect(completedPayload?.title).toBe("Typecheck mobile app");
     expect(completedPayload?.summary).toBe("Typecheck finished without errors.");
     expect(completedPayload?.detail).toBe("Typecheck finished without errors.");
+    expect(completedPayload?.agentKind).toBe("background");
+    expect(completedPayload?.taskType).toBe("local_bash");
   });
 
   it("titles task completion from task.started when no progress event carried the name", async () => {
@@ -3691,6 +3825,33 @@ describe("ProviderRuntimeIngestion", () => {
       ),
     );
 
+    // Push both source rows outside the 500-activity thread-detail window.
+    // Recovery must query the requested task directly instead of depending on
+    // the UI's bounded activity projection.
+    for (let index = 0; index < 501; index += 1) {
+      await harness.dispatch({
+        type: "thread.activity.append",
+        commandId: CommandId.make(`cmd-swept-task-filler-${index}`),
+        threadId: ThreadId.make("thread-1"),
+        activity: {
+          id: asEventId(`evt-swept-task-filler-${index}`),
+          tone: "info",
+          kind: "tool.completed",
+          summary: "Unrelated activity",
+          payload: { index },
+          turnId: null,
+          createdAt: "2026-01-02T00:00:00.000Z",
+        },
+        createdAt: "2026-01-02T00:00:00.000Z",
+      });
+    }
+    const windowedThread = await harness.readThreadDetail();
+    expect(
+      windowedThread?.activities.some(
+        (activity: ProviderRuntimeTestActivity) => activity.id === "evt-swept-task-started",
+      ),
+    ).toBe(false);
+
     // Model a provider restart: ingestion sweeps its description cache and
     // the later terminal notification carries none of the task identity.
     harness.emit({
@@ -3701,6 +3862,35 @@ describe("ProviderRuntimeIngestion", () => {
       threadId: asThreadId("thread-1"),
       payload: {},
     });
+
+    harness.emit({
+      type: "task.updated",
+      eventId: asEventId("evt-swept-task-updated"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-swept-task"),
+      payload: {
+        taskId: "swept-task-1",
+        status: "running",
+      },
+    });
+
+    const recoveredThread = await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some(
+        (activity: ProviderRuntimeTestActivity) => activity.id === "evt-swept-task-updated",
+      ),
+    );
+    const recoveredUpdate = recoveredThread.activities.find(
+      (activity: ProviderRuntimeTestActivity) => activity.id === "evt-swept-task-updated",
+    );
+    const recoveredUpdatePayload =
+      recoveredUpdate?.payload && typeof recoveredUpdate.payload === "object"
+        ? (recoveredUpdate.payload as Record<string, unknown>)
+        : undefined;
+    expect(recoveredUpdatePayload?.taskType).toBe("local_bash");
+    expect(recoveredUpdatePayload?.agentKind).toBe("background");
+    expect((await harness.readThreadShell())?.backgroundLiveness).toBe("monitoring");
 
     harness.emit({
       type: "task.completed",
