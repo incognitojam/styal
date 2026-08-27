@@ -6,7 +6,7 @@ import * as Path from "effect/Path";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import ForkMigration0001 from "../src/persistence/ForkMigrations/001_ComposerDrafts.ts";
-import { runMigrations } from "../src/persistence/Migrations.ts";
+import { migrationManifest, runMigrations } from "../src/persistence/Migrations.ts";
 import * as NodeSqliteClient from "../src/persistence/NodeSqliteClient.ts";
 import { runMigrateDevDb } from "./migrate-dev-db.ts";
 
@@ -210,16 +210,12 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         migrated.projectColumns.map(({ name }) => name),
         ["default_thread_env_mode", "favicon_path", "additional_instructions"],
       );
-      assert.deepStrictEqual(migrated.upstreamHistory, [
-        {
-          migration_id: 39,
-          name: "ProjectionProjectsDefaultThreadEnvMode",
-        },
-        {
-          migration_id: 40,
-          name: "ProjectionProjectFaviconPath",
-        },
-      ]);
+      assert.deepStrictEqual(
+        migrated.upstreamHistory,
+        migrationManifest
+          .filter(([migrationId]) => migrationId >= 39)
+          .map(([migration_id, name]) => ({ migration_id, name })),
+      );
       assert.deepStrictEqual(migrated.forkHistory, [
         { migration_id: 1, name: "ComposerDrafts" },
         { migration_id: 2, name: "WorkspacePortAllocations" },

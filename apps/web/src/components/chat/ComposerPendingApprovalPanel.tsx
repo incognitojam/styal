@@ -16,12 +16,13 @@ export const ComposerPendingApprovalPanel = memo(function ComposerPendingApprova
 }: ComposerPendingApprovalPanelProps) {
   // The tool's own name is more honest than the three request buckets, which
   // route anything that isn't a command or a read to "file change".
-  const presentation = approval.requestKind !== "mcp-elicitation" && approval.toolName
-    ? deriveToolRowPresentation({
-        toolName: approval.toolName,
-        input: approval.toolInput,
-      })
-    : undefined;
+  const presentation =
+    approval.requestKind !== "mcp-elicitation" && approval.toolName
+      ? deriveToolRowPresentation({
+          toolName: approval.toolName,
+          input: approval.toolInput,
+        })
+      : undefined;
   const fallbackLabel = presentation
     ? `${presentation.heading} approval`
     : approval.requestKind === "mcp-elicitation"
