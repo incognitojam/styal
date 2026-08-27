@@ -5527,6 +5527,16 @@ export default function ChatView(props: ChatViewProps) {
       ? (pendingServerThreadStartFromOriginByThreadId[activeThread?.id ?? ""] ??
         activeProjectSettings.settings.newWorktreesStartFromOrigin)
       : false;
+  const projectHasNoCommits =
+    gitStatusQuery.data?.isRepo === true && gitStatusQuery.data.hasHeadCommit === false;
+  // Mirrors the server, which gates on whether the base ref resolves rather
+  // than on the local HEAD: starting from origin branches off a remote commit,
+  // which is a working configuration while the local HEAD is still unborn. If
+  // the remote turns out to be empty too, the server guard is what says so.
+  const worktreeUnavailableReason =
+    projectHasNoCommits && !(startFromOrigin && gitStatusQuery.data?.hasPrimaryRemote === true)
+      ? "Needs a first commit"
+      : null;
   const sendEnvMode = resolveSendEnvMode({
     requestedEnvMode: envMode,
     isGitRepo,
@@ -7071,6 +7081,13 @@ export default function ChatView(props: ChatViewProps) {
       isFirstMessage && sendEnvMode === "worktree" && !activeThread.worktreePath;
     if (shouldCreateWorktree && !activeThreadBranch) {
       setThreadError(threadIdForSend, "Select a base branch before sending in New worktree mode.");
+      return;
+    }
+    if (shouldCreateWorktree && worktreeUnavailableReason !== null) {
+      setThreadError(
+        threadIdForSend,
+        "This repository has no commits yet, so there is nothing for a worktree to branch from. Make a first commit, or switch to Current checkout.",
+      );
       return;
     }
 
@@ -8998,6 +9015,7 @@ export default function ChatView(props: ChatViewProps) {
                                     }
                                   : {})}
                                 envLocked={envLocked}
+                                worktreeUnavailableReason={worktreeUnavailableReason}
                                 onComposerFocusRequest={scheduleComposerFocus}
                                 {...(canCheckoutPullRequestIntoThread
                                   ? { onCheckoutPullRequestRequest: openPullRequestDialog }

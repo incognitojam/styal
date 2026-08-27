@@ -3,6 +3,9 @@
 T3 Code integrates with GitHub, GitLab, Bitbucket, and Azure DevOps to clone and publish
 repositories, create pull requests, and review changes.
 
+A repository with no commits can run threads in **Current checkout**. Make a first commit before
+using **New worktree**, which needs a commit to branch from.
+
 ## Connect an account
 
 Install Git and configure authentication on the machine running your T3 Code server. For a remote

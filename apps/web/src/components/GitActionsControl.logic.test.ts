@@ -32,6 +32,46 @@ function status(overrides: Partial<VcsStatusResult> = {}): VcsStatusResult {
   };
 }
 
+describe("when: the repository has no commits yet", () => {
+  it("resolveQuickAction names the first commit", () => {
+    const quick = resolveQuickAction(
+      status({
+        hasHeadCommit: false,
+        hasPrimaryRemote: false,
+        hasUpstream: false,
+        hasWorkingTreeChanges: true,
+        refName: "main",
+      }),
+      false,
+      false,
+      false,
+    );
+
+    assert.deepEqual(quick, {
+      label: "Create first commit",
+      disabled: false,
+      kind: "run_action",
+      action: "commit",
+    });
+  });
+
+  it("resolveQuickAction keeps the plain label once a commit exists", () => {
+    const quick = resolveQuickAction(
+      status({
+        hasPrimaryRemote: false,
+        hasUpstream: false,
+        hasWorkingTreeChanges: true,
+        refName: "main",
+      }),
+      false,
+      false,
+      false,
+    );
+
+    assert.equal(quick.label, "Commit");
+  });
+});
+
 describe("when: ref is clean and has an open PR", () => {
   it("resolveQuickAction opens the existing PR", () => {
     const quick = resolveQuickAction(

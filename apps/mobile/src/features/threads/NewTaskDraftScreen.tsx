@@ -94,7 +94,10 @@ import { resolveProviderInteractionMode } from "./legacy-plan-mode";
 import { deriveThreadTitleFromPrompt } from "../../lib/projectThreadStartTurn";
 import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/remoteRegistration";
 import { enqueueThreadOutboxMessage } from "../../state/thread-outbox";
-import { useRemoteConnectionStatus } from "../../state/use-remote-environment-registry";
+import {
+  setPendingConnectionError,
+  useRemoteConnectionStatus,
+} from "../../state/use-remote-environment-registry";
 import { useNewTaskFlow } from "./new-task-flow-provider";
 import { resolveProjectThreadCreationBranch } from "./projectThreadCreationValidation";
 import { resolveDraftProjectSelection } from "./new-task-project-selection";
@@ -1099,7 +1102,8 @@ export function NewTaskDraftScreen(props: {
     !isImportingShare &&
     !flow.submitting &&
     !voiceInput.blocksSubmission &&
-    !(flow.workspaceMode === "worktree" && !flow.selectedBranchName);
+    !(flow.workspaceMode === "worktree" && !flow.selectedBranchName) &&
+    !(flow.workspaceMode === "worktree" && flow.worktreeUnavailable);
   const promptEditor = (
     <ComposerEditor
       ref={promptInputRef}
@@ -1252,9 +1256,15 @@ export function NewTaskDraftScreen(props: {
             }
             label={workspaceLabel}
             maxWidth={flow.workspaceMode === "local" ? 220 : 148}
-            onPress={() =>
-              flow.setWorkspaceMode(flow.workspaceMode === "local" ? "worktree" : "local")
-            }
+            onPress={() => {
+              if (flow.workspaceMode === "local" && flow.worktreeUnavailable) {
+                setPendingConnectionError(
+                  "This repository has no commits yet. Make a first commit, or use Current checkout.",
+                );
+                return;
+              }
+              flow.setWorkspaceMode(flow.workspaceMode === "local" ? "worktree" : "local");
+            }}
             showChevron={false}
           />
 
