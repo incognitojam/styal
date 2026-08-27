@@ -7,7 +7,10 @@ const testState = vi.hoisted(() => ({
   assetState: "success" as "success" | "loading",
 }));
 
-vi.mock("@effect/atom-react", () => ({ useAtomValue: () => null }));
+vi.mock("@effect/atom-react", () => ({
+  useAtomRefresh: () => vi.fn(),
+  useAtomValue: () => ({ _tag: "Initial", waiting: false }),
+}));
 vi.mock("../assets/assetUrls", () => ({
   useAssetUrlState: (_environmentId: unknown, resource: unknown) => {
     testState.resources.push(resource);

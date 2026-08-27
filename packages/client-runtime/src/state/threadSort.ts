@@ -198,9 +198,7 @@ export function sortThreadsByWorkspaceCluster<T extends WorkspaceClusterThread>(
   familyList.sort((left, right) => {
     const leftAnchor = Math.max(...left.map(activeThreadAnchorTimestampMs));
     const rightAnchor = Math.max(...right.map(activeThreadAnchorTimestampMs));
-    return (
-      rightAnchor - leftAnchor || identityTiebreak(left[0]!, right[0]!)
-    );
+    return rightAnchor - leftAnchor || identityTiebreak(left[0]!, right[0]!);
   });
   return familyList.flat();
 }

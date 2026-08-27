@@ -3,7 +3,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { Components } from "react-markdown";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-vi.mock("@effect/atom-react", () => ({ useAtomValue: () => null }));
+vi.mock("@effect/atom-react", () => ({
+  useAtomRefresh: () => vi.fn(),
+  useAtomValue: () => ({ _tag: "Initial", waiting: false }),
+}));
 vi.mock("../hooks/useTheme", () => ({ useTheme: () => ({ resolvedTheme: "dark" }) }));
 vi.mock("../state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => vi.fn() }));
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
@@ -236,8 +239,8 @@ describe("ChatMarkdown Windows file links", () => {
         />,
       );
 
-      expect(html).toContain("index.ts · project/src");
-      expect(html).toContain("index.ts · project/test");
+      expect(html).toContain("index.ts · src");
+      expect(html).toContain("index.ts · test");
     },
   );
 

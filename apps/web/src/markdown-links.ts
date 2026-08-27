@@ -90,12 +90,26 @@ function pathParentSegments(path: string): string[] {
 export function buildMarkdownFileLinkParentSuffixes(
   links: ReadonlyArray<Pick<MarkdownFileLinkMeta, "filePath" | "workspaceRelativePath">>,
 ): Map<string, string> {
-  const groups = new Map<string, Map<string, string>>();
+  const groups = new Map<
+    string,
+    Map<string, { readonly displayPath: string; readonly filePaths: Set<string> }>
+  >();
   for (const link of links) {
     const basename = basenameOfPath(link.filePath);
     if (!basename) continue;
-    const group = groups.get(basename) ?? new Map<string, string>();
-    group.set(link.filePath, link.workspaceRelativePath ?? link.filePath);
+    const group =
+      groups.get(basename) ??
+      new Map<string, { readonly displayPath: string; readonly filePaths: Set<string> }>();
+    const normalizedPath = link.filePath.replaceAll("\\", "/");
+    const existing = group.get(normalizedPath);
+    if (existing) {
+      existing.filePaths.add(link.filePath);
+    } else {
+      group.set(normalizedPath, {
+        displayPath: link.workspaceRelativePath ?? link.filePath,
+        filePaths: new Set([link.filePath]),
+      });
+    }
     groups.set(basename, group);
   }
 
@@ -105,7 +119,7 @@ export function buildMarkdownFileLinkParentSuffixes(
     if (uniquePaths.length < 2) continue;
 
     const parentSegmentsByPath = new Map(
-      uniquePaths.map(([filePath, displayPath]) => [filePath, pathParentSegments(displayPath)]),
+      uniquePaths.map(([filePath, entry]) => [filePath, pathParentSegments(entry.displayPath)]),
     );
     const minUniqueDepthByPath = new Map<string, number>();
 
@@ -127,12 +141,15 @@ export function buildMarkdownFileLinkParentSuffixes(
       minUniqueDepthByPath.set(filePath, resolvedDepth);
     }
 
-    for (const [filePath] of uniquePaths) {
+    for (const [filePath, entry] of uniquePaths) {
       const segments = parentSegmentsByPath.get(filePath) ?? [];
       if (segments.length === 0) continue;
       const minUniqueDepth = minUniqueDepthByPath.get(filePath) ?? 1;
       const suffixDepth = Math.min(segments.length, Math.max(minUniqueDepth, 2));
-      suffixByPath.set(filePath, segments.slice(-suffixDepth).join("/"));
+      const suffix = segments.slice(-suffixDepth).join("/");
+      for (const originalPath of entry.filePaths) {
+        suffixByPath.set(originalPath, suffix);
+      }
     }
   }
 
