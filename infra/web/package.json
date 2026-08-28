@@ -8,7 +8,7 @@
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
-    "alchemy": "2.0.0-beta.65",
+    "alchemy": "2.0.0-beta.70",
     "effect": "catalog:"
   },
   "devDependencies": {
