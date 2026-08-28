@@ -179,7 +179,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       Effect.gen(function* () {
         const env = yield* createDevRunnerEnv({
           mode: "dev",
-          baseEnv: { T3CODE_WORKSPACE_PORT: "24000" },
+          baseEnv: { STYAL_WORKSPACE_PORT: "24000" },
           serverOffset: 0,
           webOffset: 0,
           workspaceBasePort: 24_000,
@@ -192,7 +192,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           devUrl: undefined,
         });
 
-        assert.equal(env.T3CODE_WORKSPACE_PORT, "24000");
+        assert.equal(env.STYAL_WORKSPACE_PORT, "24000");
         assert.equal(env.T3CODE_PORT, "24000");
         assert.equal(env.PORT, "24001");
         assert.equal(env.VITE_DEV_SERVER_URL, "http://localhost:24001");
@@ -203,7 +203,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       Effect.gen(function* () {
         const env = yield* createDevRunnerEnv({
           mode: "dev",
-          baseEnv: { T3CODE_WORKSPACE_PORT: "24000" },
+          baseEnv: { STYAL_WORKSPACE_PORT: "24000" },
           serverOffset: 0,
           webOffset: 0,
           workspaceBasePort: 24_000,
@@ -919,7 +919,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
         assert.deepStrictEqual(error.configKeys, [
           "T3CODE_PORT_OFFSET",
           "T3CODE_DEV_INSTANCE",
-          "T3CODE_WORKSPACE_PORT",
+          "STYAL_WORKSPACE_PORT",
         ]);
         assert.ok(error.cause !== undefined);
         assert.ok(!error.message.includes(String((error.cause as Error).message)));
@@ -939,7 +939,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           return Effect.succeed(mockProcess(0));
         }),
       );
-      const workspaceEnvironment = { T3CODE_WORKSPACE_PORT: "24000" };
+      const workspaceEnvironment = { STYAL_WORKSPACE_PORT: "24000" };
 
       return Effect.gen(function* () {
         yield* runDevRunnerWithInput({
@@ -958,7 +958,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           Effect.provideService(HostProcessPlatform, "linux"),
         );
 
-        assert.equal(capturedEnv?.T3CODE_WORKSPACE_PORT, "24000");
+        assert.equal(capturedEnv?.STYAL_WORKSPACE_PORT, "24000");
         assert.equal(capturedEnv?.T3CODE_PORT, "24000");
         assert.equal(capturedEnv?.PORT, "24001");
         assert.equal(capturedEnv?.VITE_DEV_SERVER_URL, "http://localhost:24001");

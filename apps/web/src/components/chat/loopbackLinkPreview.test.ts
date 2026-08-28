@@ -27,7 +27,7 @@ describe("chat loopback link preview", () => {
   });
 
   it.each([
-    "https://github.com/yngatech/t3code/issues/1",
+    "https://github.com/incognitojam/t3code/issues/1",
     "https://example.com/localhost:5173",
     "https://localhost.example.com/",
     "http://192.168.1.4:5173/",

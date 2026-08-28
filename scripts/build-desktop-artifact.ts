@@ -48,7 +48,11 @@ import { Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
-const DESKTOP_APP_ID = "dev.incognitojam.t3code";
+const DESKTOP_APP_ID = "build.styal.app";
+// electron-builder's one-click NSIS target derives the Windows install
+// directory from the package name rather than productName, so this keeps styal
+// out of upstream T3 Code's install folder.
+const DESKTOP_PACKAGE_NAME = "styal";
 const WINDOWS_INSTALLER_GUID = "0122c0ea-801f-5352-a48e-ce98c31bc2d9";
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
@@ -2058,19 +2062,12 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
 
 export function resolveDesktopProductName(version: string): string {
   return resolveDesktopUpdateChannel(version) === "nightly"
-    ? "T3 Code (yngatech Nightly)"
+    ? "styal (Nightly)"
     : (desktopPackageJson.productName ?? "T3 Code");
 }
 
 export function resolveDesktopBuildDescription(version: string): string {
   return `${resolveDesktopProductName(version)} desktop build`;
-}
-
-function resolveDesktopPackageName(platform: typeof BuildPlatform.Type): string {
-  // electron-builder's one-click NSIS target derives the install directory from
-  // the package name rather than productName. Keep other platforms stable while
-  // preventing the yngatech distribution from sharing upstream's Windows folder.
-  return platform === "win" ? "t3code-yngatech" : "t3code";
 }
 
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
@@ -2090,7 +2087,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   const buildConfig: Record<string, unknown> = {
     appId: DESKTOP_APP_ID,
     productName: resolveDesktopProductName(version),
-    artifactName: "T3-Code-${version}-${arch}.${ext}",
+    artifactName: "styal-${version}-${arch}.${ext}",
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
     files: [...DESKTOP_FILE_EXCLUSIONS, ...(platform === "mac" ? MAC_FILE_EXCLUSIONS : [])],
     directories: {
@@ -2129,8 +2126,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       category: "public.app-category.developer-tools",
       protocols: [
         {
-          name: "T3 Code",
-          schemes: ["t3code", "t3code-dev"],
+          name: "styal",
+          schemes: ["styal", "styal-dev"],
         },
       ],
       ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
@@ -2169,21 +2166,21 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "linux") {
     buildConfig.linux = {
       target: [target],
-      executableName: "t3code",
+      executableName: "styal",
       icon: "icons",
       category: "Development",
       // electron-builder turns these into MimeType=x-scheme-handler/<scheme>;
       // in the .desktop entry (Exec already gets %U), so browsers can hand
-      // t3code:// OAuth callbacks to the app.
+      // styal:// OAuth callbacks to the app.
       protocols: [
         {
-          name: "T3 Code",
-          schemes: ["t3code", "t3code-dev"],
+          name: "styal",
+          schemes: ["styal", "styal-dev"],
         },
       ],
       desktop: {
         entry: {
-          StartupWMClass: "t3code",
+          StartupWMClass: "styal",
         },
       },
     };
@@ -2192,8 +2189,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "win") {
     buildConfig.npmRebuild = false;
     buildConfig.nsis = {
-      // Distinct from both upstream and earlier fork builds so the first
-      // separated install never reuses or uninstalls their shared directory.
+      // Distinct from upstream so a styal install never reuses or uninstalls
+      // its directory. Deliberately unchanged from the pre-styal fork builds:
+      // the package name moved, so the same GUID makes NSIS upgrade an existing
+      // fork install into the new directory instead of leaving two side by side.
+      // Parallel operation is a requirement against upstream, not against our
+      // own older builds.
       guid: WINDOWS_INSTALLER_GUID,
       include: "installer.nsh",
       // Keep blockmap-based differential downloads enabled while changing the
@@ -2973,7 +2974,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       ? path.join(stageAppDir, WINDOWS_SERVER_RESOURCE_SOURCE_DIR, WINDOWS_SERVER_ASAR_RESOURCE)
       : undefined;
   const stagePackageJson: StagePackageJson = {
-    name: resolveDesktopPackageName(options.platform),
+    name: DESKTOP_PACKAGE_NAME,
     version: appVersion,
     buildVersion: appVersion,
     t3codeCommitHash: commitHash,

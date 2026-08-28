@@ -63,7 +63,7 @@ integrationLayer("workspace port environment integration", (it) => {
         cwd: workspacePath,
         worktreePath: workspacePath,
         command:
-          "node -e \"process.stdout.write('PORT_PROOF=' + process.env.T3CODE_WORKSPACE_PORT)\"",
+          "node -e \"process.stdout.write('PORT_PROOF=' + process.env.STYAL_WORKSPACE_PORT)\"",
       });
 
       const completion = yield* Deferred.await(completed);
