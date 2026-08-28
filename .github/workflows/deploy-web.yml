@@ -32,7 +32,6 @@ jobs:
       name: production
     env:
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       STYAL_WEB_DOMAIN: ${{ vars.STYAL_WEB_DOMAIN }}
       ALCHEMY_TELEMETRY_DISABLED: "1"
       # Public client configuration baked into the bundle. Never set
@@ -59,4 +58,6 @@ jobs:
 
       - name: Deploy
         working-directory: infra/web
-        run: vp run deploy
+        run: vp run deploy --stage prod --yes
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
