@@ -52,7 +52,7 @@ import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
-const DESKTOP_RENDERER_ORIGINS = ["t3code://app", "t3code-dev://app"];
+const DESKTOP_RENDERER_ORIGINS = ["styal://app", "styal-dev://app"];
 const SVG_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
 const TERMINAL_BROWSER_OPEN_MAX_URL_LENGTH = 2_048;
 const TerminalBrowserOpenBody = Schema.Struct({ url: Schema.String });

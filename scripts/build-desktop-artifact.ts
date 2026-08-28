@@ -2166,12 +2166,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "linux") {
     buildConfig.linux = {
       target: [target],
-      executableName: "t3code",
+      executableName: "styal",
       icon: "icons",
       category: "Development",
       // electron-builder turns these into MimeType=x-scheme-handler/<scheme>;
       // in the .desktop entry (Exec already gets %U), so browsers can hand
-      // t3code:// OAuth callbacks to the app.
+      // styal:// OAuth callbacks to the app.
       protocols: [
         {
           name: "styal",
@@ -2180,7 +2180,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       ],
       desktop: {
         entry: {
-          StartupWMClass: "t3code",
+          StartupWMClass: "styal",
         },
       },
     };
@@ -2189,8 +2189,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "win") {
     buildConfig.npmRebuild = false;
     buildConfig.nsis = {
-      // Distinct from both upstream and earlier fork builds so the first
-      // separated install never reuses or uninstalls their shared directory.
+      // Distinct from upstream so a styal install never reuses or uninstalls
+      // its directory. Deliberately unchanged from the pre-styal fork builds:
+      // the package name moved, so the same GUID makes NSIS upgrade an existing
+      // fork install into the new directory instead of leaving two side by side.
+      // Parallel operation is a requirement against upstream, not against our
+      // own older builds.
       guid: WINDOWS_INSTALLER_GUID,
       include: "installer.nsh",
       // Keep blockmap-based differential downloads enabled while changing the

@@ -20,7 +20,7 @@ export const APP_DISPLAY_NAME = `styal (${appStageLabel})`;
 export const APP_BUNDLE_ID = isDevelopment
   ? `build.styal.app.dev.${devBundleIdSuffix || "local"}`
   : "build.styal.app";
-const APP_PROTOCOL_SCHEMES = isDevelopment ? ["t3code-dev"] : ["t3code"];
+const APP_PROTOCOL_SCHEMES = isDevelopment ? ["styal-dev"] : ["styal"];
 const LAUNCHER_VERSION = 15;
 const developmentMacIconPngPath = NodePath.join(
   repoRoot,
