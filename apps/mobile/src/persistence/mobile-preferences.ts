@@ -5,7 +5,15 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import type { SidebarProjectGroupingMode } from "@t3tools/contracts";
+import {
+  DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+  DEFAULT_SIDEBAR_AUTO_SETTLE_MODE,
+  MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+  MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+  type SidebarAutoSettleAfterDays,
+  type SidebarAutoSettleMode,
+  type SidebarProjectGroupingMode,
+} from "@t3tools/contracts";
 import { MOBILE_THEME_IDS, type MobileThemeId, type MobileThemeMode } from "../lib/mobileTheme";
 
 import * as MobileDatabase from "./mobile-database";
@@ -31,7 +39,8 @@ export interface Preferences {
   /** @deprecated Kept temporarily so older OTA bundles retain the selected mode. */
   readonly projectGroupingEnabled?: boolean;
   readonly projectGroupingMode?: SidebarProjectGroupingMode;
-  readonly autoSettleOnMerge?: boolean;
+  readonly autoSettleMode?: SidebarAutoSettleMode;
+  readonly autoSettleAfterDays?: SidebarAutoSettleAfterDays;
   readonly confirmThreadUnpin?: boolean;
   /**
    * Device-local mirror of the web `legacySidebarEnabled` setting. Mobile has
@@ -102,7 +111,8 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     collapsedProjectGroups?: readonly string[];
     projectGroupingEnabled?: boolean;
     projectGroupingMode?: SidebarProjectGroupingMode;
-    autoSettleOnMerge?: boolean;
+    autoSettleMode?: SidebarAutoSettleMode;
+    autoSettleAfterDays?: SidebarAutoSettleAfterDays;
     confirmThreadUnpin?: boolean;
     legacyThreadListEnabled?: boolean;
     planModeEnabled?: boolean;
@@ -172,8 +182,20 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   if (typeof parsed.confirmThreadUnpin === "boolean") {
     preferences.confirmThreadUnpin = parsed.confirmThreadUnpin;
   }
-  if (typeof parsed.autoSettleOnMerge === "boolean") {
-    preferences.autoSettleOnMerge = parsed.autoSettleOnMerge;
+  if (
+    parsed.autoSettleMode === "never" ||
+    parsed.autoSettleMode === "change-request" ||
+    parsed.autoSettleMode === "inactivity"
+  ) {
+    preferences.autoSettleMode = parsed.autoSettleMode;
+  }
+  if (
+    typeof parsed.autoSettleAfterDays === "number" &&
+    Number.isInteger(parsed.autoSettleAfterDays) &&
+    parsed.autoSettleAfterDays >= MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS &&
+    parsed.autoSettleAfterDays <= MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS
+  ) {
+    preferences.autoSettleAfterDays = parsed.autoSettleAfterDays;
   }
   if (typeof parsed.legacyThreadListEnabled === "boolean") {
     preferences.legacyThreadListEnabled = parsed.legacyThreadListEnabled;
@@ -188,6 +210,16 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     preferences.threadListV2SnoozedShelfExpanded = parsed.threadListV2SnoozedShelfExpanded;
   }
   return preferences;
+}
+
+export function resolveMobileAutoSettlePreferences(preferences: Preferences): {
+  readonly autoSettleMode: SidebarAutoSettleMode;
+  readonly autoSettleAfterDays: SidebarAutoSettleAfterDays;
+} {
+  return {
+    autoSettleMode: preferences.autoSettleMode ?? DEFAULT_SIDEBAR_AUTO_SETTLE_MODE,
+    autoSettleAfterDays: preferences.autoSettleAfterDays ?? DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+  };
 }
 
 export const make = Effect.fn("MobilePreferencesStore.make")(function* () {
