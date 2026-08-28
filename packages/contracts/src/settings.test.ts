@@ -142,6 +142,14 @@ describe("ClientSettings sidebar", () => {
     );
   });
 
+  it("defaults unpin confirmation on while preserving an explicit opt-out", () => {
+    expect(decodeClientSettings({}).confirmThreadUnpin).toBe(true);
+    expect(decodeClientSettings({ confirmThreadUnpin: false }).confirmThreadUnpin).toBe(false);
+    expect(decodeClientSettingsPatch({ confirmThreadUnpin: false }).confirmThreadUnpin).toBe(false);
+    expect(decodeClientSettingsPatch({ confirmThreadUnpin: true }).confirmThreadUnpin).toBe(true);
+    expect(() => decodeClientSettingsPatch({ confirmThreadUnpin: "yes" })).toThrow();
+  });
+
   it("allows auto-settle by inactivity to be disabled", () => {
     expect(
       decodeClientSettings({ sidebarAutoSettleAfterDays: null }).sidebarAutoSettleAfterDays,
