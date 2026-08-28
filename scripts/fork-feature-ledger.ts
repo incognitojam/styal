@@ -30,6 +30,8 @@ export type ForkFeatureLedgerEntry = typeof ForkFeatureLedgerEntry.Type;
 
 export const ForkFeatureLedger = Schema.Struct({
   version: Schema.Literal(1),
+  fork_repository: Schema.NonEmptyString,
+  upstream_repository: Schema.NonEmptyString,
   coverage: Schema.Literal("incremental"),
   features: Schema.Array(ForkFeatureLedgerEntry),
 });
@@ -55,6 +57,10 @@ function duplicates<A>(values: ReadonlyArray<A>): ReadonlyArray<A> {
 
 function isSorted<A extends number | string>(values: ReadonlyArray<A>): boolean {
   return values.every((value, index) => index === 0 || values[index - 1]! <= value);
+}
+
+function isGitHubRepository(value: string): boolean {
+  return /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(value);
 }
 
 function validatePath(
@@ -94,6 +100,15 @@ export function validateForkFeatureLedger(
   const errors: Array<string> = [];
   const ids = ledger.features.map((feature) => feature.id);
 
+  if (!isGitHubRepository(ledger.fork_repository)) {
+    errors.push("fork_repository must use GitHub owner/name form.");
+  }
+  if (!isGitHubRepository(ledger.upstream_repository)) {
+    errors.push("upstream_repository must use GitHub owner/name form.");
+  }
+  if (ledger.fork_repository === ledger.upstream_repository) {
+    errors.push("fork_repository and upstream_repository must be different.");
+  }
   if (ledger.features.length === 0) errors.push("features must contain at least one entry.");
   if (!isSorted(ids)) errors.push("features must be sorted by id.");
   for (const id of duplicates(ids)) errors.push(`Duplicate feature id: ${id}`);

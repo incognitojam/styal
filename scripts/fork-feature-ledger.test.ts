@@ -27,9 +27,24 @@ describe("fork feature ledger", () => {
   it("keeps the checked-in capability evidence valid", () => {
     const ledger = loadForkFeatureLedger(repoRoot);
 
+    assert.equal(ledger.fork_repository, "incognitojam/styal");
+    assert.equal(ledger.upstream_repository, "pingdotgg/t3code");
     assert.equal(ledger.coverage, "incremental");
     assert.isAtLeast(ledger.features.length, 6);
     assert.deepEqual(validateForkFeatureLedger(ledger, repoRoot), []);
+  });
+
+  it("rejects invalid or identical repository identities", () => {
+    const ledger = loadForkFeatureLedger(repoRoot);
+
+    assert.include(
+      validate({ ...ledger, fork_repository: "styal" }),
+      "fork_repository must use GitHub owner/name form.",
+    );
+    assert.include(
+      validate({ ...ledger, upstream_repository: ledger.fork_repository }),
+      "fork_repository and upstream_repository must be different.",
+    );
   });
 
   it("rejects unsupported ledger versions during decoding", () => {

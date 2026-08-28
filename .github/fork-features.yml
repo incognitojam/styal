@@ -1,4 +1,6 @@
 version: 1
+fork_repository: incognitojam/styal
+upstream_repository: pingdotgg/t3code
 coverage: incremental
 
 # Capabilities, not commits. Follow-up fixes belong to the feature they preserve.

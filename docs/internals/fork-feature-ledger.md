@@ -14,6 +14,8 @@ CI validates the file with `vp run --filter @t3tools/scripts ledger:check`.
 
 ## Fields
 
+- `fork_repository`: canonical GitHub `owner/name` identity for styal.
+- `upstream_repository`: canonical GitHub `owner/name` identity for the upstream project.
 - `id`: stable lower-kebab-case capability ID. Do not rename it when implementation details move.
 - `title`: short maintainer-facing capability name.
 - `status`: `maintained`, `review-needed`, or `retiring`.

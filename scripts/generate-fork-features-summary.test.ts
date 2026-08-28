@@ -31,7 +31,7 @@ import {
 
 const commits: ReadonlyArray<RepositoryCommit> = [
   {
-    repository: "incognitojam/t3code",
+    repository: "incognitojam/styal",
     sha: "a".repeat(40),
     subject: "feat(web): show GitHub service outages (#14)",
     body: "feat(web): make GitHub outage alerts opt-in",
@@ -43,8 +43,8 @@ const commits: ReadonlyArray<RepositoryCommit> = [
 
 const evidence: ReadonlyArray<ChangeEvidence> = [
   {
-    id: "incognitojam/t3code#14",
-    repository: "incognitojam/t3code",
+    id: "incognitojam/styal#14",
+    repository: "incognitojam/styal",
     sha: "a".repeat(40),
     title: "feat(web): show GitHub service outages",
     description:
@@ -56,7 +56,7 @@ const evidence: ReadonlyArray<ChangeEvidence> = [
 
 const records: ReadonlyArray<ChangeRecord> = [
   {
-    evidenceId: "incognitojam/t3code#14",
+    evidenceId: "incognitojam/styal#14",
     operation: "add",
     capability: "GitHub outage status",
     outcome: "Detect GitHub outages and show affected services",
@@ -113,8 +113,8 @@ Show the final result in the timeline.
 
     assert.deepEqual(await collectChangeEvidence(commits, "github-token", fetchPull), [
       {
-        id: "incognitojam/t3code#14",
-        repository: "incognitojam/t3code",
+        id: "incognitojam/styal#14",
+        repository: "incognitojam/styal",
         sha: "a".repeat(40),
         title: "feat(web): show GitHub service outages",
         description: "Show affected GitHub services in the sidebar.",
@@ -125,7 +125,7 @@ Show the final result in the timeline.
     assert.deepEqual(requests, [
       {
         authorization: "Bearer github-token",
-        url: "https://api.github.com/repos/incognitojam/t3code/pulls/14",
+        url: "https://api.github.com/repos/incognitojam/styal/pulls/14",
       },
     ]);
   });
@@ -138,8 +138,8 @@ Show the final result in the timeline.
 
     assert.deepEqual(collected, [
       {
-        id: `incognitojam/t3code@${"a".repeat(12)}`,
-        repository: "incognitojam/t3code",
+        id: `incognitojam/styal@${"a".repeat(12)}`,
+        repository: "incognitojam/styal",
         sha: "a".repeat(40),
         title: "feat(web): show GitHub service outages",
         description: "feat(web): make GitHub outage alerts opt-in",
@@ -151,8 +151,8 @@ Show the final result in the timeline.
 
   it("drops the largest diffs first when evidence exceeds the prompt budget", () => {
     const oversized: ReadonlyArray<ChangeEvidence> = [
-      { ...evidence[0]!, id: "incognitojam/t3code#20", diff: "small diff" },
-      { ...evidence[0]!, id: "incognitojam/t3code#21", diff: "x".repeat(300_000) },
+      { ...evidence[0]!, id: "incognitojam/styal#20", diff: "small diff" },
+      { ...evidence[0]!, id: "incognitojam/styal#21", diff: "x".repeat(300_000) },
     ];
 
     const fitted = fitEvidenceToPromptBudget(oversized);
@@ -165,7 +165,7 @@ Show the final result in the timeline.
   it("splits evidence into chronological batches that fit the prompt budget", () => {
     const many = Array.from({ length: 45 }, (_, index) => ({
       ...evidence[0]!,
-      id: `incognitojam/t3code#${index + 100}`,
+      id: `incognitojam/styal#${index + 100}`,
     }));
 
     const batches = chunkEvidenceForExtraction(many);
@@ -186,13 +186,13 @@ Show the final result in the timeline.
   it("keeps evidence larger than the whole budget in a batch of its own", () => {
     const batches = chunkEvidenceForExtraction([
       evidence[0]!,
-      { ...evidence[0]!, id: "incognitojam/t3code#21", diff: "x".repeat(300_000) },
-      { ...evidence[0]!, id: "incognitojam/t3code#22" },
+      { ...evidence[0]!, id: "incognitojam/styal#21", diff: "x".repeat(300_000) },
+      { ...evidence[0]!, id: "incognitojam/styal#22" },
     ]);
 
     assert.deepEqual(
       batches.map((batch) => batch.map((item) => item.id)),
-      [["incognitojam/t3code#14"], ["incognitojam/t3code#21"], ["incognitojam/t3code#22"]],
+      [["incognitojam/styal#14"], ["incognitojam/styal#21"], ["incognitojam/styal#22"]],
     );
     assert.deepEqual(chunkEvidenceForExtraction([]), []);
   });
@@ -227,13 +227,13 @@ Show the final result in the timeline.
   it("excludes mobile-only changes from desktop update highlights", () => {
     const mobileRecord: ChangeRecord = {
       ...records[0]!,
-      evidenceId: "incognitojam/t3code#15",
+      evidenceId: "incognitojam/styal#15",
       outcome: "Sync composer drafts on mobile",
       surface: "mobile",
     };
     const sharedRecord: ChangeRecord = {
       ...records[0]!,
-      evidenceId: "incognitojam/t3code#16",
+      evidenceId: "incognitojam/styal#16",
       outcome: "Sync composer drafts across clients",
       surface: "application",
     };
@@ -247,14 +247,14 @@ Show the final result in the timeline.
   it("keeps release-specific changes out of the rolling fork features summary", () => {
     const brandingRecord: ChangeRecord = {
       ...records[0]!,
-      evidenceId: "incognitojam/t3code#3",
+      evidenceId: "incognitojam/styal#3",
       capability: "Application branding",
       outcome: "Show the fork's own application name and icon",
       releaseOnly: true,
     };
     const installerRecord: ChangeRecord = {
       ...records[0]!,
-      evidenceId: "incognitojam/t3code#49",
+      evidenceId: "incognitojam/styal#49",
       capability: "Windows installer coexistence",
       outcome: "Install fork and upstream Windows builds separately",
       releaseOnly: true,
@@ -279,10 +279,10 @@ Show the final result in the timeline.
   it("normalizes label punctuation and rejects links or multiline output", () => {
     assert.deepEqual(
       parseChangelogSummary(
-        '{"added":[{"text":"Play completion sounds.","evidenceIds":["incognitojam/t3code#14","incognitojam/t3code#14"]}],"improved":[],"removed":[]}',
+        '{"added":[{"text":"Play completion sounds.","evidenceIds":["incognitojam/styal#14","incognitojam/styal#14"]}],"improved":[],"removed":[]}',
       ),
       {
-        added: [{ text: "Play completion sounds", evidenceIds: ["incognitojam/t3code#14"] }],
+        added: [{ text: "Play completion sounds", evidenceIds: ["incognitojam/styal#14"] }],
         improved: [],
         removed: [],
       },
@@ -308,16 +308,16 @@ Show the final result in the timeline.
         added: [
           {
             text: "Play completion sounds",
-            evidenceIds: ["incognitojam/t3code#14", "incognitojam/t3code#999"],
+            evidenceIds: ["incognitojam/styal#14", "incognitojam/styal#999"],
           },
         ],
         improved: [],
         removed: [],
       },
-      new Set(["incognitojam/t3code#14"]),
+      new Set(["incognitojam/styal#14"]),
     );
 
-    assert.deepEqual(summary.added[0]?.evidenceIds, ["incognitojam/t3code#14"]);
+    assert.deepEqual(summary.added[0]?.evidenceIds, ["incognitojam/styal#14"]);
   });
 
   it("renders current fork features around deterministic release details", () => {
@@ -325,12 +325,12 @@ Show the final result in the timeline.
       ahead: 35,
       behind: 1,
       forkRef: "a".repeat(40),
-      forkRepository: "incognitojam/t3code",
+      forkRepository: "incognitojam/styal",
       generatedAt: new Date("2026-08-08T12:00:00Z"),
       model: "gpt-5.6-sol",
       summary: {
         added: [
-          { text: "Play configurable completion sounds", evidenceIds: ["incognitojam/t3code#14"] },
+          { text: "Play configurable completion sounds", evidenceIds: ["incognitojam/styal#14"] },
         ],
         improved: [{ text: "Show exit codes for shell commands", evidenceIds: [] }],
         removed: [{ text: "Remove a superseded internal feature", evidenceIds: [] }],
@@ -342,11 +342,13 @@ Show the final result in the timeline.
     assert.match(rendered, /35 commits ahead/);
     assert.match(rendered, /1 commit behind/);
     assert.equal(/1 commits behind/.test(rendered), false);
+    assert.match(rendered, /^# styal features and improvements/);
     assert.match(
       rendered,
-      /## Added\n\n- Play configurable completion sounds \(\[#14\]\(https:\/\/github\.com\/incognitojam\/t3code\/pull\/14\)\)/,
+      /## Added\n\n- Play configurable completion sounds \(\[#14\]\(https:\/\/github\.com\/incognitojam\/styal\/pull\/14\)\)/,
     );
     assert.match(rendered, /## Improved\n\n- Show exit codes for shell commands/);
+    assert.include(rendered, "Compare upstream/main with styal");
     assert.equal(/superseded internal feature/.test(rendered), false);
   });
 
@@ -354,7 +356,7 @@ Show the final result in the timeline.
     const rendered = renderNightlySummary(
       {
         added: [
-          { text: "Start threads from GitHub issues", evidenceIds: ["incognitojam/t3code#14"] },
+          { text: "Start threads from GitHub issues", evidenceIds: ["incognitojam/styal#14"] },
         ],
         improved: [
           {
@@ -364,12 +366,12 @@ Show the final result in the timeline.
         ],
         removed: [{ text: "Remove the superseded status preview", evidenceIds: [] }],
       },
-      "incognitojam/t3code",
+      "incognitojam/styal",
     );
 
     assert.equal(
       rendered,
-      "- Start threads from GitHub issues ([#14](https://github.com/incognitojam/t3code/pull/14))\n" +
+      "- Start threads from GitHub issues ([#14](https://github.com/incognitojam/styal/pull/14))\n" +
         "- Show setup script outcomes in the thread timeline " +
         "([t3code#12083](https://github.com/pingdotgg/t3code/pull/12083), " +
         `[\`${"c".repeat(7)}\`](https://github.com/pingdotgg/t3code/commit/${"c".repeat(12)}))\n` +
@@ -377,17 +379,17 @@ Show the final result in the timeline.
     );
     assert.equal(/^#|\n#/.test(rendered), false);
     assert.equal(
-      renderNightlySummary({ added: [], improved: [], removed: [] }, "incognitojam/t3code"),
+      renderNightlySummary({ added: [], improved: [], removed: [] }, "incognitojam/styal"),
       "",
     );
   });
 });
 
 describe("extraction cache", () => {
-  const patchIds = new Map([["incognitojam/t3code#14", "1".repeat(40)]]);
+  const patchIds = new Map([["incognitojam/styal#14", "1".repeat(40)]]);
   const keys = extractionCacheKeys(evidence, patchIds, "gpt-5.6-sol");
   const cache: ExtractionCache = new Map([
-    ["incognitojam/t3code#14", { key: keys.get("incognitojam/t3code#14")!, records }],
+    ["incognitojam/styal#14", { key: keys.get("incognitojam/styal#14")!, records }],
   ]);
 
   it("keys entries on the patch id so the nightly rebase does not invalidate the stack", () => {
@@ -397,7 +399,7 @@ describe("extraction cache", () => {
       "gpt-5.6-sol",
     );
 
-    assert.equal(rebased.get("incognitojam/t3code#14"), keys.get("incognitojam/t3code#14"));
+    assert.equal(rebased.get("incognitojam/styal#14"), keys.get("incognitojam/styal#14"));
   });
 
   it("invalidates entries when the pull request content or the model changes", () => {
@@ -418,18 +420,18 @@ describe("extraction cache", () => {
     );
     const amendedPatch = extractionCacheKeys(
       evidence,
-      new Map([["incognitojam/t3code#14", "2".repeat(40)]]),
+      new Map([["incognitojam/styal#14", "2".repeat(40)]]),
       "gpt-5.6-sol",
     );
     const otherModel = extractionCacheKeys(evidence, patchIds, "gpt-5.6-mini");
 
     for (const changed of [editedDescription, editedTitle, movedFiles, amendedPatch, otherModel]) {
-      assert.notEqual(changed.get("incognitojam/t3code#14"), keys.get("incognitojam/t3code#14"));
+      assert.notEqual(changed.get("incognitojam/styal#14"), keys.get("incognitojam/styal#14"));
     }
   });
 
   it("extracts only evidence the cache does not already answer", () => {
-    const added: ChangeEvidence = { ...evidence[0]!, id: "incognitojam/t3code#15" };
+    const added: ChangeEvidence = { ...evidence[0]!, id: "incognitojam/styal#15" };
     const withAdded = [...evidence, added];
     const plan = planExtraction(
       withAdded,
@@ -451,7 +453,7 @@ describe("extraction cache", () => {
   });
 
   it("caches evidence that produced no records so it is never re-extracted", () => {
-    const docsOnly: ChangeEvidence = { ...evidence[0]!, id: "incognitojam/t3code#16" };
+    const docsOnly: ChangeEvidence = { ...evidence[0]!, id: "incognitojam/styal#16" };
     const plan = { cached: cache, pending: [docsOnly] };
     const merged = mergeExtractionCache(
       plan,
@@ -459,34 +461,34 @@ describe("extraction cache", () => {
       [],
     );
 
-    assert.deepEqual(merged.get("incognitojam/t3code#16")?.records, []);
+    assert.deepEqual(merged.get("incognitojam/styal#16")?.records, []);
     assert.deepEqual(cachedChangeRecords(merged), records);
   });
 
   it("leaves evidence read without its diff uncached so a smaller batch re-reads it", () => {
-    const clipped: ChangeEvidence = { ...evidence[0]!, id: "incognitojam/t3code#17" };
-    const clippedRecord: ChangeRecord = { ...records[0]!, evidenceId: "incognitojam/t3code#17" };
+    const clipped: ChangeEvidence = { ...evidence[0]!, id: "incognitojam/styal#17" };
+    const clippedRecord: ChangeRecord = { ...records[0]!, evidenceId: "incognitojam/styal#17" };
     const merged = mergeExtractionCache(
       { cached: cache, pending: [clipped] },
       extractionCacheKeys([...evidence, clipped], patchIds, "gpt-5.6-sol"),
       [clippedRecord],
-      new Set(["incognitojam/t3code#17"]),
+      new Set(["incognitojam/styal#17"]),
     );
 
-    assert.equal(merged.has("incognitojam/t3code#17"), false);
-    assert.deepEqual([...merged.keys()], ["incognitojam/t3code#14"]);
+    assert.equal(merged.has("incognitojam/styal#17"), false);
+    assert.deepEqual([...merged.keys()], ["incognitojam/styal#14"]);
   });
 
   it("drops evidence that left the release and rejects records outside the batch", () => {
-    const added: ChangeEvidence = { ...evidence[0]!, id: "incognitojam/t3code#15" };
-    const freshRecord: ChangeRecord = { ...records[0]!, evidenceId: "incognitojam/t3code#15" };
+    const added: ChangeEvidence = { ...evidence[0]!, id: "incognitojam/styal#15" };
+    const freshRecord: ChangeRecord = { ...records[0]!, evidenceId: "incognitojam/styal#15" };
     const merged = mergeExtractionCache(
       { cached: new Map(), pending: [added] },
       extractionCacheKeys([added], patchIds, "gpt-5.6-sol"),
       [freshRecord],
     );
 
-    assert.deepEqual([...merged.keys()], ["incognitojam/t3code#15"]);
+    assert.deepEqual([...merged.keys()], ["incognitojam/styal#15"]);
     assert.throws(() =>
       mergeExtractionCache(
         { cached: cache, pending: [added] },
@@ -499,7 +501,7 @@ describe("extraction cache", () => {
   it("carries capability names forward across batches and hands over each batch's cache", async () => {
     const many = Array.from({ length: 45 }, (_, index) => ({
       ...evidence[0]!,
-      id: `incognitojam/t3code#${index + 100}`,
+      id: `incognitojam/styal#${index + 100}`,
     }));
     const manyKeys = extractionCacheKeys(many, new Map(), "gpt-5.6-sol");
     const hints: Array<ReadonlyArray<string>> = [];
@@ -534,7 +536,7 @@ describe("extraction cache", () => {
   it("stops feeding a batch's cache forward when its extraction fails", async () => {
     const many = Array.from({ length: 45 }, (_, index) => ({
       ...evidence[0]!,
-      id: `incognitojam/t3code#${index + 100}`,
+      id: `incognitojam/styal#${index + 100}`,
     }));
     const manyKeys = extractionCacheKeys(many, new Map(), "gpt-5.6-sol");
     const handovers: Array<ExtractionCache> = [];
@@ -566,7 +568,7 @@ describe("extraction cache", () => {
     assert.throws(() => parseExtractionCache(JSON.stringify({ version: 1, entries: {} })));
     assert.throws(() =>
       parseExtractionCache(
-        JSON.stringify({ version: 2, entries: { "incognitojam/t3code#14": { key: "abc" } } }),
+        JSON.stringify({ version: 2, entries: { "incognitojam/styal#14": { key: "abc" } } }),
       ),
     );
   });
