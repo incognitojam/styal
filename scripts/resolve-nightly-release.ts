@@ -25,31 +25,31 @@ const RunNumberSchema = Schema.FiniteFromString.check(
   Schema.isGreaterThanOrEqualTo(1),
 );
 const ShaSchema = Schema.String.check(Schema.isPattern(/^[0-9a-f]{7,40}$/i));
-const DesktopPackageJsonSchema = Schema.Struct({
+const StyalVersionFileSchema = Schema.Struct({
   version: Schema.NonEmptyString,
 });
 
-export class InvalidDesktopPackageVersionError extends Schema.TaggedErrorClass<InvalidDesktopPackageVersionError>()(
-  "InvalidDesktopPackageVersionError",
+export class InvalidStyalVersionError extends Schema.TaggedErrorClass<InvalidStyalVersionError>()(
+  "InvalidStyalVersionError",
   {
     version: Schema.String,
   },
 ) {
   override get message(): string {
-    return `Invalid desktop package version '${this.version}'.`;
+    return `Invalid styal version '${this.version}'.`;
   }
 }
 
-export class NightlyReleaseDesktopPackageError extends Schema.TaggedErrorClass<NightlyReleaseDesktopPackageError>()(
-  "NightlyReleaseDesktopPackageError",
+export class NightlyReleaseVersionFileError extends Schema.TaggedErrorClass<NightlyReleaseVersionFileError>()(
+  "NightlyReleaseVersionFileError",
   {
     operation: Schema.Literals(["read", "decode"]),
-    packageJsonPath: Schema.String,
+    versionFilePath: Schema.String,
     cause: Schema.Defect(),
   },
 ) {
   override get message(): string {
-    return `Failed to ${this.operation} desktop package metadata at ${this.packageJsonPath}.`;
+    return `Failed to ${this.operation} styal version metadata at ${this.versionFilePath}.`;
   }
 }
 
@@ -79,21 +79,17 @@ export class NightlyReleaseGitHubOutputAppendError extends Schema.TaggedErrorCla
 const RepoRoot = Effect.service(Path.Path).pipe(
   Effect.flatMap((path) => path.fromFileUrl(new URL("..", import.meta.url))),
 );
-const decodeDesktopPackageJson = Schema.decodeUnknownEffect(
-  Schema.fromJsonString(DesktopPackageJsonSchema),
+const decodeStyalVersionFile = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(StyalVersionFileSchema),
 );
 
 export const resolveNightlyBaseVersion = (version: string) => version.replace(/[-+].*$/, "");
 
-export const resolveNightlyTargetVersion = (version: string) => {
+export const validateStyalBaseVersion = (version: string) => {
   const stableCore = resolveNightlyBaseVersion(version);
-  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(stableCore);
-  if (!match) {
-    return Effect.fail(new InvalidDesktopPackageVersionError({ version }));
-  }
-
-  const [, major, minor, patch] = match;
-  return Effect.succeed(`${major}.${minor}.${Number(patch) + 1}`);
+  return /^(\d+)\.(\d+)\.(\d+)$/.test(stableCore)
+    ? Effect.succeed(stableCore)
+    : Effect.fail(new InvalidStyalVersionError({ version }));
 };
 
 export const resolveNightlyReleaseMetadata = (
@@ -108,39 +104,39 @@ export const resolveNightlyReleaseMetadata = (
     baseVersion,
     version,
     tag: `v${version}`,
-    name: `T3 Code Nightly ${version} (${shortSha})`,
+    name: `styal nightly ${version} (${shortSha})`,
     shortSha,
   };
 };
 
-export const readDesktopBaseVersion = Effect.fn("readDesktopBaseVersion")(function* (
+export const readStyalBaseVersion = Effect.fn("readStyalBaseVersion")(function* (
   rootDir: string | undefined,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const workspaceRoot = rootDir ? path.resolve(rootDir) : yield* RepoRoot;
-  const packageJsonPath = path.join(workspaceRoot, "apps/desktop/package.json");
-  const packageJsonSource = yield* fs.readFileString(packageJsonPath).pipe(
+  const versionFilePath = path.join(workspaceRoot, "styal-version.json");
+  const versionFileSource = yield* fs.readFileString(versionFilePath).pipe(
     Effect.mapError(
       (cause) =>
-        new NightlyReleaseDesktopPackageError({
+        new NightlyReleaseVersionFileError({
           operation: "read",
-          packageJsonPath,
+          versionFilePath,
           cause,
         }),
     ),
   );
-  const packageJson = yield* decodeDesktopPackageJson(packageJsonSource).pipe(
+  const versionFile = yield* decodeStyalVersionFile(versionFileSource).pipe(
     Effect.mapError(
       (cause) =>
-        new NightlyReleaseDesktopPackageError({
+        new NightlyReleaseVersionFileError({
           operation: "decode",
-          packageJsonPath,
+          versionFilePath,
           cause,
         }),
     ),
   );
-  return yield* resolveNightlyTargetVersion(packageJson.version);
+  return yield* validateStyalBaseVersion(versionFile.version);
 });
 
 export const writeNightlyReleaseOutput = Effect.fn("writeNightlyReleaseOutput")(function* (
@@ -203,12 +199,12 @@ const command = Command.make(
       Flag.withDefault(false),
     ),
     root: Flag.string("root").pipe(
-      Flag.withDescription("Workspace root used to resolve apps/desktop/package.json."),
+      Flag.withDescription("Workspace root used to resolve styal-version.json."),
       Flag.optional,
     ),
   },
   ({ date, runNumber, sha, githubOutput, root }) =>
-    readDesktopBaseVersion(Option.getOrUndefined(root)).pipe(
+    readStyalBaseVersion(Option.getOrUndefined(root)).pipe(
       Effect.map((baseVersion) => resolveNightlyReleaseMetadata(baseVersion, date, runNumber, sha)),
       Effect.flatMap((metadata) => writeNightlyReleaseOutput(metadata, githubOutput)),
     ),

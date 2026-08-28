@@ -13,6 +13,8 @@ const workspaceFiles = [
   "package.json",
   "pnpm-lock.yaml",
   "pnpm-workspace.yaml",
+  // Nightly versions derive from this, not from apps/desktop/package.json.
+  "styal-version.json",
   "apps/server/package.json",
   "apps/desktop/package.json",
   "apps/web/package.json",
@@ -23,6 +25,7 @@ const workspaceFiles = [
   "apps/mobile/modules/t3-terminal/package.json",
   "apps/marketing/package.json",
   "infra/relay/package.json",
+  "infra/web/package.json",
   "oxlint-plugin-t3code/package.json",
   "packages/client-runtime/package.json",
   "packages/contracts/package.json",
@@ -241,19 +244,27 @@ try {
       encoding: "utf8",
     },
   );
+  // The nightly base comes from styal-version.json, not from the aligned
+  // package versions above, so read it rather than restating it here and
+  // breaking this check on every release bump.
+  const styalVersion = (
+    JSON.parse(NodeFS.readFileSync(NodePath.resolve(tempRoot, "styal-version.json"), "utf8")) as {
+      version: string;
+    }
+  ).version;
   assertContains(
     nightlyReleaseMetadata,
-    "version=9.9.10-nightly.20260413.321",
+    `version=${styalVersion}-nightly.20260413.321`,
     "Expected nightly metadata to contain the derived nightly version.",
   );
   assertContains(
     nightlyReleaseMetadata,
-    "tag=v9.9.10-nightly.20260413.321",
+    `tag=v${styalVersion}-nightly.20260413.321`,
     "Expected nightly metadata to contain the derived nightly tag.",
   );
   assertContains(
     nightlyReleaseMetadata,
-    "name=T3 Code Nightly 9.9.10-nightly.20260413.321 (abcdef123456)",
+    `name=styal nightly ${styalVersion}-nightly.20260413.321 (abcdef123456)`,
     "Expected nightly metadata to include the short commit SHA in the release name.",
   );
 
