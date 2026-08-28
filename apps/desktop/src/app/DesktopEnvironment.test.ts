@@ -68,8 +68,8 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.serverRoot, "/repo");
       assert.equal(environment.backendEntryPath, "/repo/apps/server/dist/bin.mjs");
       assert.equal(environment.backendCwd, "/repo");
-      assert.equal(environment.appUserModelId, "com.t3tools.t3code.dev");
-      assert.equal(environment.linuxWmClass, "t3code-dev");
+      assert.equal(environment.appUserModelId, "build.styal.app.dev");
+      assert.equal(environment.linuxWmClass, "styal-dev");
       assert.deepEqual(
         Option.map(environment.devServerUrl, (url) => url.href),
         Option.some("http://localhost:5173/"),
@@ -125,8 +125,31 @@ describe("DesktopEnvironment", () => {
       );
       const production = yield* makeEnvironment();
 
-      assert.equal(development.stateDir, "/Users/alice/.t3/dev");
-      assert.equal(production.stateDir, "/Users/alice/.t3/userdata");
+      assert.equal(development.stateDir, "/Users/alice/.styal/dev");
+      assert.equal(production.stateDir, "/Users/alice/.styal/userdata");
+    }),
+  );
+
+  it.effect("keeps the credential storage name stable across release stages", () =>
+    Effect.gen(function* () {
+      const alpha = yield* makeEnvironment({ appVersion: "0.0.22" });
+      const nightly = yield* makeEnvironment({ appVersion: "0.0.22-nightly.20260823.1" });
+      const development = yield* makeEnvironment(
+        {},
+        { VITE_DEV_SERVER_URL: "http://localhost:5173" },
+      );
+
+      // Alpha and Nightly share a bundle id and a user-data directory, so they
+      // have to share the credential namespace guarding that state. Development
+      // keeps its own, matching its separate state directory.
+      assert.equal(alpha.safeStorageName, "styal");
+      assert.equal(nightly.safeStorageName, "styal");
+      assert.equal(alpha.userDataDirName, nightly.userDataDirName);
+      assert.equal(development.safeStorageName, "styal-dev");
+
+      // Branding still tracks the stage.
+      assert.equal(alpha.displayName, "styal (Alpha)");
+      assert.equal(nightly.displayName, "styal (Nightly)");
     }),
   );
 
@@ -135,12 +158,12 @@ describe("DesktopEnvironment", () => {
       const environment = yield* makeEnvironment(
         {},
         {
-          T3CODE_DESKTOP_APP_USER_MODEL_ID: " com.t3tools.t3code.dev.local ",
+          T3CODE_DESKTOP_APP_USER_MODEL_ID: " build.styal.app.dev.local ",
           VITE_DEV_SERVER_URL: "http://localhost:5173",
         },
       );
 
-      assert.equal(environment.appUserModelId, "com.t3tools.t3code.dev.local");
+      assert.equal(environment.appUserModelId, "build.styal.app.dev.local");
     }),
   );
 

@@ -382,7 +382,7 @@ it.layer(
       const unsubscribe = yield* manager.attachStream(
         openInput({
           env: {
-            T3CODE_WORKTREE_PATH: "/tmp/should-not-restart",
+            STYAL_WORKTREE_PATH: "/tmp/should-not-restart",
           },
           worktreePath: "/tmp/should-not-restart",
         }),
@@ -420,7 +420,7 @@ it.layer(
         {
           ...openInput({
             env: {
-              T3CODE_WORKTREE_PATH: "/tmp/restart-requested",
+              STYAL_WORKTREE_PATH: "/tmp/restart-requested",
             },
             worktreePath: "/tmp/restart-requested",
           }),
@@ -1777,8 +1777,8 @@ it.layer(
       yield* manager.open(
         openInput({
           env: {
-            T3CODE_PROJECT_ROOT: "/repo",
-            T3CODE_WORKTREE_PATH: "/repo/worktree-a",
+            STYAL_PROJECT_ROOT: "/repo",
+            STYAL_WORKTREE_PATH: "/repo/worktree-a",
             CUSTOM_FLAG: "1",
           },
         }),
@@ -1787,8 +1787,8 @@ it.layer(
       expect(spawnInput).toBeDefined();
       if (!spawnInput) return;
 
-      assert.equal(spawnInput.env.T3CODE_PROJECT_ROOT, "/repo");
-      assert.equal(spawnInput.env.T3CODE_WORKTREE_PATH, "/repo/worktree-a");
+      assert.equal(spawnInput.env.STYAL_PROJECT_ROOT, "/repo");
+      assert.equal(spawnInput.env.STYAL_WORKTREE_PATH, "/repo/worktree-a");
       assert.equal(spawnInput.env.CUSTOM_FLAG, "1");
     }),
   );
@@ -1800,19 +1800,19 @@ it.layer(
         resolveWorkspaceEnvironment: (workspacePath) =>
           Effect.sync(() => {
             resolvedPaths.push(workspacePath);
-            return { T3CODE_WORKSPACE_PORT: "24120" };
+            return { STYAL_WORKSPACE_PORT: "24120" };
           }),
       });
       yield* manager.open(
         openInput({
           cwd: baseDir,
           worktreePath: baseDir,
-          env: { T3CODE_WORKSPACE_PORT: "9999" },
+          env: { STYAL_WORKSPACE_PORT: "9999" },
         }),
       );
 
       assert.deepStrictEqual(resolvedPaths, [baseDir]);
-      assert.equal(ptyAdapter.spawnInputs[0]?.env.T3CODE_WORKSPACE_PORT, "24120");
+      assert.equal(ptyAdapter.spawnInputs[0]?.env.STYAL_WORKSPACE_PORT, "24120");
     }),
   );
 

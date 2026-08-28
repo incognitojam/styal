@@ -16,11 +16,11 @@ const devBundleIdSuffix = NodePath.basename(repoRoot)
   .toLowerCase()
   .replaceAll(/[^a-z0-9]+/g, "");
 const appStageLabel = isDevelopment ? "Dev" : "Alpha";
-export const APP_DISPLAY_NAME = `T3 Code (yngatech ${appStageLabel})`;
+export const APP_DISPLAY_NAME = `styal (${appStageLabel})`;
 export const APP_BUNDLE_ID = isDevelopment
-  ? `com.t3tools.t3code.dev.${devBundleIdSuffix || "local"}`
-  : "dev.incognitojam.t3code";
-const APP_PROTOCOL_SCHEMES = isDevelopment ? ["t3code-dev"] : ["t3code"];
+  ? `build.styal.app.dev.${devBundleIdSuffix || "local"}`
+  : "build.styal.app";
+const APP_PROTOCOL_SCHEMES = isDevelopment ? ["styal-dev"] : ["styal"];
 const LAUNCHER_VERSION = 15;
 const developmentMacIconPngPath = NodePath.join(
   repoRoot,

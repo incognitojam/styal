@@ -251,18 +251,12 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   });
 
   it("uses the fork identity for desktop packaging", () => {
-    assert.equal(resolveDesktopProductName("0.0.17"), "T3 Code (yngatech Alpha)");
-    assert.equal(
-      resolveDesktopBuildDescription("0.0.17"),
-      "T3 Code (yngatech Alpha) desktop build",
-    );
-    assert.equal(
-      resolveDesktopProductName("0.0.17-nightly.20260413.42"),
-      "T3 Code (yngatech Nightly)",
-    );
+    assert.equal(resolveDesktopProductName("0.0.17"), "styal (Alpha)");
+    assert.equal(resolveDesktopBuildDescription("0.0.17"), "styal (Alpha) desktop build");
+    assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "styal (Nightly)");
     assert.equal(
       resolveDesktopBuildDescription("0.0.17-nightly.20260413.42"),
-      "T3 Code (yngatech Nightly) desktop build",
+      "styal (Nightly) desktop build",
     );
   });
 
@@ -652,7 +646,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         "**/node_modules/.bin/**",
       ]);
       assert.deepStrictEqual(mac.dmg, {
-        title: "T3 Code (yngatech Alpha) 1.2.3 Installer",
+        title: "styal (Alpha) 1.2.3 Installer",
         background: "dmg/dmg-background-latest.png",
         window: { width: 540, height: 412 },
         contents: [
@@ -665,7 +659,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       // Linux must register the renderer schemes so the generated .desktop
       // entry advertises MimeType=x-scheme-handler/t3code; for OAuth deep links.
       assert.deepStrictEqual((linux.linux as Record<string, unknown>).protocols, [
-        { name: "T3 Code", schemes: ["t3code", "t3code-dev"] },
+        { name: "styal", schemes: ["styal", "styal-dev"] },
       ]);
       assert.deepStrictEqual(mac.files, [...DESKTOP_FILE_EXCLUSIONS, ...MAC_FILE_EXCLUSIONS]);
       assert.notProperty(mac.mac as Record<string, unknown>, "sign");
@@ -1293,7 +1287,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     });
 
     assert.deepStrictEqual(configuration, {
-      appId: "dev.incognitojam.t3code",
+      appId: "build.styal.app",
       teamId: "ABC1234567",
       rpDomains: ["example.clerk.accounts.dev"],
       provisioningProfilePath: "/tmp/t3code.provisionprofile",
@@ -1313,7 +1307,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       "clerk.example.com",
       "example.clerk.accounts.dev",
     ]);
-    assert.include(entitlements, "<string>ABC1234567.dev.incognitojam.t3code</string>");
+    assert.include(entitlements, "<string>ABC1234567.build.styal.app</string>");
     assert.include(entitlements, "<string>webcredentials:clerk.example.com</string>");
     assert.include(entitlements, "<string>webcredentials:example.clerk.accounts.dev</string>");
     assert.include(entitlements, "<key>com.apple.security.cs.allow-jit</key>");
@@ -1408,13 +1402,11 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       });
 
       const mac = config.mac as Record<string, unknown>;
-      assert.equal(config.appId, "dev.incognitojam.t3code");
+      assert.equal(config.appId, "build.styal.app");
       assert.equal(mac.entitlements, "/tmp/entitlements.mac.plist");
       assert.equal(mac.provisioningProfile, "/tmp/t3code.provisionprofile");
       assert.match(String(mac.sign), /\/scripts\/sign-macos\.ts$/);
-      assert.deepStrictEqual(mac.protocols, [
-        { name: "T3 Code", schemes: ["t3code", "t3code-dev"] },
-      ]);
+      assert.deepStrictEqual(mac.protocols, [{ name: "styal", schemes: ["styal", "styal-dev"] }]);
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 

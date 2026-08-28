@@ -65,7 +65,7 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
         "",
         "## What's Changed",
         "",
-        "- fix(release): generate clearer nightly changelogs ([yngatech/t3code#59](https://example.com/pull/59)) by @cameron",
+        "- fix(release): generate clearer nightly changelogs ([incognitojam/t3code#59](https://example.com/pull/59)) by @cameron",
         "",
         "**Full Changelog**: https://example.com/compare/x...y",
       ].join("\n"),

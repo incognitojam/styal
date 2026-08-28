@@ -4,6 +4,11 @@ Upstream and fork migrations use separate append-only histories. Upstream migrat
 `effect_sql_migrations` with their original IDs. Fork-only migrations start at ID 1 in
 `yngatech_sql_migrations` and run after the upstream migration pass.
 
+The `yngatech_` prefix is a frozen identifier, not a stale one. It predates the move to
+`incognitojam/t3code` and is deliberately left alone: the migrator reads this table to decide what
+has already run, so renaming it would make every existing database look unmigrated. Leave it in
+place through any future rebrand.
+
 Do not add fork migrations to the upstream manifest or reserve a high range in the upstream table.
 The SQL migrator treats the highest recorded ID as a watermark, so a high fork ID would cause later
 upstream migrations with lower IDs to be skipped.

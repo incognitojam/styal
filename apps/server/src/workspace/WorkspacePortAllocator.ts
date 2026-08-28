@@ -6,7 +6,7 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
-export const WORKSPACE_PORT_ENV_VAR = "T3CODE_WORKSPACE_PORT";
+export const WORKSPACE_PORT_ENV_VAR = "STYAL_WORKSPACE_PORT";
 export const WORKSPACE_PORT_RANGE_SIZE = 10;
 export const WORKSPACE_PORT_MIN = 20_000;
 export const WORKSPACE_PORT_MAX = 29_990;

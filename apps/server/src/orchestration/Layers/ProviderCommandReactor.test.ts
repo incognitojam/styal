@@ -1699,7 +1699,7 @@ describe("ProviderCommandReactor", () => {
         type: "thread.meta.update",
         commandId: CommandId.make("cmd-thread-branch"),
         threadId: ThreadId.make("thread-1"),
-        branch: "t3code/1234abcd",
+        branch: "styal/1234abcd",
         worktreePath: harness.worktreePath,
       }),
     );
