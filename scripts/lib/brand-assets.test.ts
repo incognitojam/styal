@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { BRAND_ASSET_PATHS } from "@t3tools/shared/brandAssets";
 
 import {
+  AUTHORED_WEB_ICON_SOURCE_PATHS,
   DEVELOPMENT_ICON_OVERRIDES,
   DEVELOPMENT_PUBLIC_ICON_OVERRIDES,
   resolveWebAssetBrandForChannel,
@@ -15,6 +16,10 @@ describe("brand-assets", () => {
       {
         sourceRelativePath: BRAND_ASSET_PATHS.productionWebFaviconIco,
         targetRelativePath: "dist/client/favicon.ico",
+      },
+      {
+        sourceRelativePath: BRAND_ASSET_PATHS.productionWebFaviconSvg,
+        targetRelativePath: "dist/client/favicon.svg",
       },
       {
         sourceRelativePath: BRAND_ASSET_PATHS.productionWebFavicon16Png,
@@ -45,6 +50,10 @@ describe("brand-assets", () => {
         targetRelativePath: "apps/web/public/favicon.ico",
       },
       {
+        sourceRelativePath: BRAND_ASSET_PATHS.developmentWebFaviconSvg,
+        targetRelativePath: "apps/web/public/favicon.svg",
+      },
+      {
         sourceRelativePath: BRAND_ASSET_PATHS.developmentWebFavicon16Png,
         targetRelativePath: "apps/web/public/favicon-16x16.png",
       },
@@ -57,6 +66,17 @@ describe("brand-assets", () => {
         targetRelativePath: "apps/web/public/apple-touch-icon.png",
       },
     ]);
+  });
+
+  it("treats every vector favicon as hand-authored rather than rendered", () => {
+    expect([...AUTHORED_WEB_ICON_SOURCE_PATHS]).toEqual([
+      BRAND_ASSET_PATHS.developmentWebFaviconSvg,
+      BRAND_ASSET_PATHS.nightlyWebFaviconSvg,
+      BRAND_ASSET_PATHS.productionWebFaviconSvg,
+    ]);
+    for (const sourcePath of AUTHORED_WEB_ICON_SOURCE_PATHS) {
+      expect(sourcePath.endsWith(".svg")).toBe(true);
+    }
   });
 
   it("can target hosted web dist directly", () => {
