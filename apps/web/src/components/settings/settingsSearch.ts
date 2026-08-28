@@ -146,14 +146,8 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["combine matching repositories environments sidebar"],
   },
   {
-    id: "auto-settle-inactive-threads",
-    title: "Auto-settle inactive threads",
-    to: "/settings/general",
-    searchTerms: ["sidebar inactivity days no activity automatically"],
-  },
-  {
-    id: "auto-settle-merged-threads",
-    title: "Auto-settle merged threads",
+    id: "thread-settling",
+    title: "Thread settling",
     to: "/settings/general",
     searchTerms: ["pull request merge closed automatically sidebar"],
   },
@@ -161,7 +155,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "days-before-auto-settle",
     title: "Days of inactivity before auto-settle",
     to: "/settings/general",
-    targetId: "auto-settle-inactive-threads",
+    targetId: "thread-settling",
     searchTerms: ["thread timeout activity sidebar"],
   },
   {

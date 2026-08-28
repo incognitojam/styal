@@ -369,10 +369,12 @@ describe("buildThreadListV2Items", () => {
           `${environmentId}:${thread.id}`,
           {
             state: "merged" as const,
+            updatedAt: NOW,
             linkedPullRequestKey: '["project-1","pingdotgg/t3code",42]',
           },
         ],
       ]),
+      autoSettleMode: "change-request",
       now: NOW,
     });
 
@@ -380,16 +382,16 @@ describe("buildThreadListV2Items", () => {
     expect(layout.items[0]?.variant).toBe("slim");
   });
 
-  it("keeps a merged thread active when auto-settle on merge is off", () => {
+  it("keeps a merged thread active when automatic settling is off", () => {
     const merged = makeThread({ id: ThreadId.make("merged"), title: "Merged" });
     const layout = buildThreadListV2Items({
       threads: [merged],
       environmentId: null,
       searchQuery: "",
       changeRequestByKey: new Map([
-        [`${environmentId}:${merged.id}`, { state: "merged" as const }],
+        [`${environmentId}:${merged.id}`, { state: "merged" as const, updatedAt: NOW }],
       ]),
-      autoSettleOnMerge: false,
+      autoSettleMode: "never",
       now: NOW,
     });
 
@@ -458,7 +460,10 @@ describe("buildThreadListV2Items", () => {
       threads: [makeThread({ id: ThreadId.make("active"), title: "Active" }), merged],
       environmentId: null,
       searchQuery: "",
-      changeRequestByKey: new Map([[`${environmentId}:${merged.id}`, { state: "merged" }]]),
+      changeRequestByKey: new Map([
+        [`${environmentId}:${merged.id}`, { state: "merged", updatedAt: NOW }],
+      ]),
+      autoSettleMode: "change-request",
       now: NOW,
     });
 
@@ -487,6 +492,7 @@ describe("buildThreadListV2Items", () => {
       threads: [inactive],
       environmentId: null,
       searchQuery: "",
+      autoSettleMode: "inactivity",
       now: NOW,
     });
 
@@ -498,7 +504,7 @@ describe("buildThreadListV2Items", () => {
     expect(layout.settledCount).toBe(1);
   });
 
-  it("keeps pinned merged threads pinned when auto-settle on merge is off", () => {
+  it("keeps pinned merged threads pinned when automatic settling is off", () => {
     const merged = makeThread({
       id: ThreadId.make("pinned-merged"),
       title: "Pinned merged pull request",
@@ -508,8 +514,10 @@ describe("buildThreadListV2Items", () => {
       threads: [merged],
       environmentId: null,
       searchQuery: "",
-      changeRequestByKey: new Map([[`${environmentId}:${merged.id}`, { state: "merged" }]]),
-      autoSettleOnMerge: false,
+      changeRequestByKey: new Map([
+        [`${environmentId}:${merged.id}`, { state: "merged", updatedAt: NOW }],
+      ]),
+      autoSettleMode: "never",
       now: NOW,
     });
 
