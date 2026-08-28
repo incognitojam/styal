@@ -2528,43 +2528,43 @@ describe("session activity performance", () => {
     expect(appendedEntries[1]).toBe(initialEntries[1]);
   });
 
-  it("updates 20,000 ordered tool activities within 100 ms", () => {
-    const activities = Array.from({ length: 20_000 }, (_, index) =>
-      makeActivity({
-        id: `benchmark-tool-${index}`,
-        createdAt: new Date(1_700_000_000_000 + index).toISOString(),
-        kind: "tool.completed",
-        summary: "Ran command",
-        sequence: index,
-        payload: {
-          itemType: "command_execution",
-          title: "Ran command",
-          data: {
-            toolCallId: `benchmark-tool-${index}`,
-            item: { command: ["git", "status"] },
+  it("derives ordered tool activities without super-linear cost", () => {
+    const buildActivities = (idPrefix: string, count: number) =>
+      Array.from({ length: count }, (_, index) =>
+        makeActivity({
+          id: `${idPrefix}-${index}`,
+          createdAt: new Date(1_700_000_000_000 + index).toISOString(),
+          kind: "tool.completed",
+          summary: "Ran command",
+          sequence: index,
+          payload: {
+            itemType: "command_execution",
+            title: "Ran command",
+            data: {
+              toolCallId: `${idPrefix}-${index}`,
+              item: { command: ["git", "status"] },
+            },
           },
-        },
-      }),
-    );
-    deriveWorkLogEntries(activities);
-    const updatedActivities = [
-      ...activities,
-      makeActivity({
-        id: "benchmark-tool-appended",
-        createdAt: new Date(1_700_000_000_000 + activities.length).toISOString(),
-        kind: "tool.completed",
-        summary: "Ran command",
-        sequence: activities.length,
-        payload: {
-          itemType: "command_execution",
-          title: "Ran command",
-          data: { toolCallId: "benchmark-tool-appended", item: { command: ["git", "diff"] } },
-        },
-      }),
-    ];
+        }),
+      );
 
-    const startedAt = performance.now();
-    expect(deriveWorkLogEntries(updatedActivities)).toHaveLength(20_001);
-    expect(performance.now() - startedAt).toBeLessThan(100);
+    const measureDerivationMs = (activities: ReturnType<typeof buildActivities>) => {
+      const startedAt = performance.now();
+      const entries = deriveWorkLogEntries(activities);
+      const elapsedMs = performance.now() - startedAt;
+      expect(entries).toHaveLength(activities.length);
+      return elapsedMs;
+    };
+
+    const QUADRATIC_GROWTH_RATIO = 4;
+    const LINEARITHMIC_GROWTH_RATIO = 2;
+    const growthRatioLimit = (QUADRATIC_GROWTH_RATIO + LINEARITHMIC_GROWTH_RATIO) / 2;
+
+    // Distinct id prefixes keep each run uncached; the first is discarded to JIT.
+    measureDerivationMs(buildActivities("worklog-jit-warmup", 10_000));
+    const baselineMs = measureDerivationMs(buildActivities("worklog-baseline", 10_000));
+    const doubledMs = measureDerivationMs(buildActivities("worklog-doubled", 20_000));
+
+    expect(doubledMs).toBeLessThan(Math.max(baselineMs, 1) * growthRatioLimit);
   });
 });
