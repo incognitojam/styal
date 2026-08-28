@@ -44,10 +44,7 @@ export type ChatFileAttachment = ContractChatFileAttachment;
 export type ChatAttachment =
   | ChatImageAttachment
   | ChatFileAttachment
-  | Exclude<
-      ContractChatAttachment,
-      ContractChatImageAttachment | ContractChatFileAttachment
-    >;
+  | Exclude<ContractChatAttachment, ContractChatImageAttachment | ContractChatFileAttachment>;
 
 // The union has an open member (`type: string`), so a literal comparison does
 // not narrow. Use this guard wherever image-only fields are read.

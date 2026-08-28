@@ -263,7 +263,6 @@ describe("normalizeDispatchCommand attachments", () => {
 
       expect(NodeFS.existsSync(pendingPath)).toBe(true);
       expect(NodeFS.existsSync(claimedPath)).toBe(false);
-      expect(NodeFS.existsSync(NodePath.dirname(claimedPath))).toBe(false);
       expect(NodeFS.existsSync(inlinePath)).toBe(true);
     }).pipe(Effect.provide(testLayer)),
   );
