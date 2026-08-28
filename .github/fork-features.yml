@@ -43,7 +43,7 @@ features:
 
   - id: arbitrary-file-attachments
     title: Attach arbitrary files to agent messages
-    status: maintained
+    status: review-needed
     prs: [228]
     invariants:
       - Web and mobile can attach generic files while supported images retain native provider handling, and every provider receives a safe persisted local path with MIME type and size.
@@ -78,9 +78,10 @@ features:
       - apps/web/src/lib/threadTranscript.test.ts
       - packages/contracts/src/orchestration.test.ts
     upstream:
-      status: unassessed
-      tracking: []
-      retire_when: Upstream supports generic persisted file attachments across clients and providers with equivalent admission limits, rendering, and backward compatibility.
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/8235
+      retire_when: Upstream completes generic persisted file attachments across web and mobile clients with equivalent admission limits, rendering, draft persistence, and backward compatibility.
 
   - id: completion-sounds
     title: Configurable agent completion sounds
@@ -293,8 +294,9 @@ features:
     tests:
       - apps/server/src/telemetry/AnalyticsService.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/8481
       retire_when: Upstream provides a first-class distribution identity that includes the producing repository on every analytics event.
 
   - id: fork-distribution-identity
@@ -495,6 +497,7 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/7152
+        - https://github.com/pingdotgg/t3code/pull/8395
       retire_when: Upstream uses equivalent cross-provider action names and concise arguments across clients and approvals, preserves inspectable full commands, retrieves completed output on demand without bloating activity payloads, and keeps collapsed groups visibly expandable with status detail intact.
 
   - id: integrated-browser-links
