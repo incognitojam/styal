@@ -897,6 +897,7 @@ export function NewTaskDraftScreen(props: {
       flow.finishEditingPendingTask();
     } else {
       clearComposerDraftContent(draftKey, {
+        clearModelSelection: true,
         clearWorkspaceSelection: true,
         deferAttachmentCleanup: true,
       });

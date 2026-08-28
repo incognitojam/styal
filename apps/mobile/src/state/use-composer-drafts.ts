@@ -110,6 +110,7 @@ const PersistedComposerDraftsSchema = Schema.Struct({
       }),
     ),
   ),
+  stickyModelSelection: Schema.optional(ModelSelectionSchema),
 });
 
 const decodePersistedComposerDraftsDocument = Schema.decodeUnknownSync(
@@ -144,6 +145,11 @@ export const composerCloudDraftsAtom = Atom.make<ComposerCloudDraftState>({
   accountId: null,
   signedOut: {},
 }).pipe(Atom.keepAlive);
+
+export const stickyComposerModelSelectionAtom = Atom.make<ModelSelection | null>(null).pipe(
+  Atom.keepAlive,
+  Atom.withLabel("mobile:sticky-composer-model-selection"),
+);
 
 let loadPromise: Promise<void> | null = null;
 let persistRetryNeeded = false;
@@ -190,11 +196,33 @@ function isEmptyDraft(draft: ComposerDraft): boolean {
 export function decodePersistedComposerState(value: unknown): {
   readonly drafts: Record<string, ComposerDraft>;
   readonly cloudDrafts: ComposerCloudDraftState;
+  readonly stickyModelSelection: ModelSelection | null;
 } {
   const parsed = decodePersistedComposerDraftsDocument(value);
   return {
     drafts: Object.fromEntries(
       Object.entries(parsed.drafts)
+        .map(
+          ([key, draft]) =>
+            [
+              key,
+              // Stale new-task drafts left on disk by builds before the
+              // model-precedence fix carry a bare modelSelection with no
+              // other selector settings. Strip it so the next compose pass
+              // re-resolves project → sticky → provider defaults. Drafts
+              // with runtime/interaction/workspace settings or actual text /
+              // attachments were deliberately configured and are left alone.
+              key.startsWith("new-task:") &&
+              draft.modelSelection &&
+              draft.text.length === 0 &&
+              draft.attachments.length === 0 &&
+              draft.runtimeMode === undefined &&
+              draft.interactionMode === undefined &&
+              draft.workspaceSelection === undefined
+                ? { ...draft, modelSelection: undefined }
+                : draft,
+            ] as const,
+        )
         // importedShareIds are share-import receipts: a contentless draft
         // carrying one is not empty, or the same native share would be
         // re-imported after restart.
@@ -212,6 +240,7 @@ export function decodePersistedComposerState(value: unknown): {
         ]),
       ),
     },
+    stickyModelSelection: parsed.stickyModelSelection ?? null,
   };
 }
 
@@ -236,6 +265,7 @@ async function loadPersistedComposerState(): Promise<
       return {
         drafts: {},
         cloudDrafts: { accountId: null, signedOut: {} },
+        stickyModelSelection: null,
       };
     }
     operation = "read";
@@ -255,6 +285,7 @@ async function loadPersistedComposerState(): Promise<
 async function writePersistedComposerState(
   drafts: Record<string, ComposerDraft>,
   cloudDrafts = appAtomRegistry.get(composerCloudDraftsAtom),
+  stickyModelSelection = appAtomRegistry.get(stickyComposerModelSelectionAtom),
 ): Promise<void> {
   let operation: ComposerDraftPersistenceError["operation"] = "open";
   try {
@@ -282,6 +313,7 @@ async function writePersistedComposerState(
             ),
           }
         : {}),
+      ...(stickyModelSelection ? { stickyModelSelection } : {}),
     } as const;
     const encoded = JSON.stringify(document);
     operation = "write";
@@ -319,6 +351,8 @@ export async function flushComposerDrafts(): Promise<void> {
         throw error;
       }
     }
+    // Draining also waits for an already-fired debounce whose write is still
+    // gated behind its own hydration await inside the queue.
     await persistenceQueue.run(() => Promise.resolve());
   } while (persistTimer !== null || persistRetryNeeded);
 }
@@ -526,6 +560,12 @@ export function ensureComposerDraftsLoaded(): void {
     appAtomRegistry.set(composerCloudDraftsAtom, persisted.cloudDrafts);
     const current = appAtomRegistry.get(composerDraftsAtom);
     appAtomRegistry.set(composerDraftsAtom, { ...persisted.drafts, ...current });
+    if (
+      persisted.stickyModelSelection !== null &&
+      appAtomRegistry.get(stickyComposerModelSelectionAtom) === null
+    ) {
+      appAtomRegistry.set(stickyComposerModelSelectionAtom, persisted.stickyModelSelection);
+    }
     appAtomRegistry.set(composerDraftsLoadedAtom, true);
   });
   loadPromise = loading;
@@ -759,6 +799,11 @@ function updateComposerDrafts(
   schedulePersistComposerDrafts();
 }
 
+export function setStickyComposerModelSelection(modelSelection: ModelSelection): void {
+  appAtomRegistry.set(stickyComposerModelSelectionAtom, modelSelection);
+  schedulePersistComposerDrafts();
+}
+
 export function setComposerDraftText(draftKey: string, value: string): void {
   updateComposerDrafts((current) => {
     const draft = {
@@ -971,15 +1016,24 @@ export function applySyncedComposerDraftCommon(
 export function clearComposerDraftContentState(
   current: Record<string, ComposerDraft>,
   draftKey: string,
-  options?: { readonly clearWorkspaceSelection?: boolean },
+  options?: {
+    readonly clearModelSelection?: boolean;
+    readonly clearWorkspaceSelection?: boolean;
+  },
 ): Record<string, ComposerDraft> {
   const existing = current[draftKey];
   if (!existing) {
     return current;
   }
-  const { importedShareIds: _importedShareIds, workspaceSelection, ...retained } = existing;
+  const {
+    importedShareIds: _importedShareIds,
+    modelSelection,
+    workspaceSelection,
+    ...retained
+  } = existing;
   const draft = {
     ...retained,
+    ...(options?.clearModelSelection || modelSelection === undefined ? {} : { modelSelection }),
     ...(options?.clearWorkspaceSelection || workspaceSelection === undefined
       ? {}
       : { workspaceSelection }),
@@ -1350,4 +1404,12 @@ export function useComposerDraft(draftKey: string | null): ComposerDraft {
     ensureComposerDraftsLoaded();
   }, []);
   return draftKey ? normalizeDraft(drafts[draftKey]) : EMPTY_DRAFT;
+}
+
+export function useStickyComposerModelSelection(): ModelSelection | null {
+  const selection = useAtomValue(stickyComposerModelSelectionAtom);
+  useEffect(() => {
+    ensureComposerDraftsLoaded();
+  }, []);
+  return selection;
 }
