@@ -1,7 +1,7 @@
 import type { CompletionSound } from "@t3tools/contracts";
 
 const AVANTI_SAMPLE_URL = "/avanti.mp3";
-const AVANTI_SAMPLE_VOLUME = 0.7;
+const AVANTI_SAMPLE_VOLUME = 0.28;
 const CHIME_FREQUENCY_HZ = 523.252;
 const CHIME_PEAK_GAIN = 0.2;
 const CHIME_END_GAIN = 0.00016;

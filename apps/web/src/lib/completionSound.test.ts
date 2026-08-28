@@ -137,7 +137,7 @@ describe("playCompletionSound", () => {
       expect.objectContaining({
         url: "/avanti.mp3",
         preload: "auto",
-        volume: 0.7,
+        volume: 0.28,
         currentTime: 0,
       }),
     ]);
