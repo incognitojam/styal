@@ -1,5 +1,5 @@
 import { assert, it } from "@effect/vitest";
-import { EventId, ThreadId } from "@t3tools/contracts";
+import { EventId, RuntimeTaskId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -83,6 +83,47 @@ layer("ProjectionThreadActivityRepository", (it) => {
           EventId.make("unfinished-requested-before-start"),
           EventId.make("unfinished-started"),
         ],
+      );
+    }),
+  );
+
+  it.effect("finds task lifecycle rows outside the thread-detail activity window", () =>
+    Effect.gen(function* () {
+      const repository = yield* ProjectionThreadActivityRepository;
+      const threadId = ThreadId.make("thread-task-recovery");
+      const taskId = RuntimeTaskId.make("quiet-background-task");
+      yield* repository.upsert({
+        activityId: EventId.make("quiet-task-started"),
+        threadId,
+        turnId: null,
+        tone: "info",
+        kind: "task.started",
+        summary: "local_bash task started",
+        payload: { taskId, taskType: "local_bash", agentKind: "background" },
+        sequence: 1,
+        createdAt: "2026-01-01T00:00:00.000Z",
+      });
+      yield* Effect.forEach(
+        Array.from({ length: 501 }, (_, index) => index),
+        (index) =>
+          repository.upsert({
+            activityId: EventId.make(`unrelated-task-${index}`),
+            threadId,
+            turnId: null,
+            tone: "info",
+            kind: "task.updated",
+            summary: "Unrelated task updated",
+            payload: { taskId: `unrelated-${index}`, status: "running" },
+            sequence: index + 2,
+            createdAt: "2026-01-01T00:00:01.000Z",
+          }),
+        { concurrency: 16 },
+      );
+
+      const rows = yield* repository.listTaskLifecycleByTaskId({ threadId, taskId });
+      assert.deepEqual(
+        rows.map((row) => row.activityId),
+        [EventId.make("quiet-task-started")],
       );
     }),
   );

@@ -11,6 +11,7 @@ import {
   IsoDateTime,
   NonNegativeInt,
   OrchestrationThreadActivityTone,
+  RuntimeTaskId,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -37,6 +38,13 @@ export const ListProjectionThreadActivitiesInput = Schema.Struct({
   threadId: ThreadId,
 });
 export type ListProjectionThreadActivitiesInput = typeof ListProjectionThreadActivitiesInput.Type;
+
+export const ListProjectionThreadTaskActivitiesInput = Schema.Struct({
+  threadId: ThreadId,
+  taskId: RuntimeTaskId,
+});
+export type ListProjectionThreadTaskActivitiesInput =
+  typeof ListProjectionThreadTaskActivitiesInput.Type;
 
 export const DeleteProjectionThreadActivitiesInput = Schema.Struct({
   threadId: ThreadId,
@@ -65,6 +73,11 @@ export interface ProjectionThreadActivityRepositoryShape {
    */
   readonly listByThreadId: (
     input: ListProjectionThreadActivitiesInput,
+  ) => Effect.Effect<ReadonlyArray<ProjectionThreadActivity>, ProjectionRepositoryError>;
+
+  /** List every persisted lifecycle row for one provider task. */
+  readonly listTaskLifecycleByTaskId: (
+    input: ListProjectionThreadTaskActivitiesInput,
   ) => Effect.Effect<ReadonlyArray<ProjectionThreadActivity>, ProjectionRepositoryError>;
 
   /** List setup starts that have no persisted terminal outcome. */
