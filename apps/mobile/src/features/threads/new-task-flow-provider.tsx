@@ -7,7 +7,7 @@ import type {
   ProviderInteractionMode,
   ProviderOptionSelection,
   RuntimeMode,
-  ServerProviderSkill,
+  ServerProvider,
 } from "@t3tools/contracts";
 import {
   CommandId,
@@ -153,7 +153,7 @@ type NewTaskFlowContextValue = {
   readonly modelOptions: ReadonlyArray<ModelOption>;
   readonly selectedModel: ModelSelection | null;
   readonly selectedModelOption: ModelOption | null;
-  readonly selectedProviderSkills: ReadonlyArray<ServerProviderSkill>;
+  readonly selectedProviderStatus: ServerProvider | null;
   readonly providerGroups: ReadonlyArray<ProviderGroup>;
   readonly filteredBranches: ReadonlyArray<VcsRef>;
   readonly reset: () => void;
@@ -444,11 +444,11 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         option.selection.instanceId === selectedModel.instanceId &&
         option.selection.model === selectedModel.model,
     ) ?? null;
-  const selectedProviderSkills = useMemo(
+  const selectedProviderStatus = useMemo(
     () =>
       selectedEnvironmentServerConfig?.providers.find(
         (provider) => provider.instanceId === selectedModel?.instanceId,
-      )?.skills ?? [],
+      ) ?? null,
     [selectedEnvironmentServerConfig, selectedModel?.instanceId],
   );
   const setSelectedModelKey = useCallback(
@@ -1028,7 +1028,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       modelOptions,
       selectedModel,
       selectedModelOption,
-      selectedProviderSkills,
+      selectedProviderStatus,
       providerGroups,
       filteredBranches,
       reset,
@@ -1090,7 +1090,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       selectedModelKey,
       selectedModelOption,
       selectedProjectDraftKey,
-      selectedProviderSkills,
+      selectedProviderStatus,
       setSelectedModelOptions,
       selectedProject,
       selectedProjectKey,

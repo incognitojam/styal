@@ -127,6 +127,7 @@ const CommandRow = memo(function CommandRow(props: {
 
   return (
     <Pressable
+      accessibilityRole="button"
       onPress={props.onPress}
       style={({ pressed }) => ({
         flexDirection: "row",
