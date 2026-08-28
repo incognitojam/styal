@@ -1,6 +1,6 @@
 # Fork nightly releases
 
-The `Fork Nightly` workflow rebases the `incognitojam/t3code` patch stack onto the current
+The `Fork Nightly` workflow rebases the `incognitojam/styal` patch stack onto the current
 `pingdotgg/t3code` main branch, validates the candidate, builds the supported desktop targets, and
 publishes a GitHub prerelease.
 
@@ -47,7 +47,7 @@ publishes a GitHub prerelease.
 ## Fork features summary
 
 Each published nightly can include model-generated highlights for changes since the previous nightly.
-A separate rolling summary updates the pinned `incognitojam/t3code fork features and improvements` issue,
+A separate rolling summary updates the pinned `styal features and improvements` issue,
 which is the stable view of the fork's current differences from upstream.
 
 Configure the `OPENAI_FORK_CHANGELOG_API_KEY` Actions secret to enable summary generation. The

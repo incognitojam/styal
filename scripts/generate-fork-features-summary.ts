@@ -5,6 +5,8 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
+import { loadForkFeatureLedger } from "./fork-feature-ledger.ts";
+
 export interface RepositoryCommit {
   readonly body: string;
   readonly diff: string;
@@ -111,6 +113,7 @@ const EXTRACTION_CACHE_VERSION = 2;
 // Synthesis over a full record set has run past two minutes, and a timeout here
 // costs the release its generated notes.
 const REQUEST_TIMEOUT_MS = 240_000;
+const repoRoot = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 
 const changeRecordsSchema = {
   type: "object",
@@ -381,7 +384,7 @@ export async function collectChangeEvidence(
       if (pullNumber !== undefined) {
         const headers: Record<string, string> = {
           Accept: "application/vnd.github+json",
-          "User-Agent": "t3code-fork-changelog",
+          "User-Agent": "styal-fork-changelog",
           "X-GitHub-Api-Version": "2022-11-28",
         };
         if (githubToken !== undefined && githubToken !== "") {
@@ -1140,27 +1143,29 @@ export function renderForkFeaturesSummary(options: RenderForkSummaryOptions): st
   const upstreamRefUrl = `https://github.com/${options.upstreamRepository}/commit/${options.upstreamRef}`;
   const generatedDate = options.generatedAt.toISOString().slice(0, 10);
 
-  return `\`${options.forkRepository}:main\` is **${renderCommitCount(options.ahead)} ahead** and **${renderCommitCount(options.behind)} behind** \`${options.upstreamRepository}:main\`.
+  return `# ${fork.name} features and improvements
+
+\`${options.forkRepository}:main\` is **${renderCommitCount(options.ahead)} ahead** and **${renderCommitCount(options.behind)} behind** \`${options.upstreamRepository}:main\`.
 
 ## Added
 
-${renderItems(options.summary.added, "fork-specific additions", options.forkRepository)}
+${renderItems(options.summary.added, `${fork.name}-specific additions`, options.forkRepository)}
 
 ## Improved
 
-${renderItems(options.summary.improved, "fork-specific improvements", options.forkRepository)}
+${renderItems(options.summary.improved, `${fork.name}-specific improvements`, options.forkRepository)}
 
 ## Releases and CI
 
-- Automated nightly CI validates the fork against upstream and publishes GitHub prereleases with generated changelogs and updater metadata.
+- Automated nightly CI validates ${fork.name} against upstream and publishes GitHub prereleases with generated changelogs and updater metadata.
 - Supported targets:
   - **macOS arm64:** signed and Apple-notarized DMG, with ZIP and updater artifacts.
   - **Linux x64:** unsigned AppImage.
   - **Windows x64:** unsigned NSIS \`.exe\` installer with bundled WSL support; users may encounter SmartScreen warnings.
 
-[Compare upstream/main with the fork](${compareUrl})
+[Compare upstream/main with ${fork.name}](${compareUrl})
 
-_Updated automatically on ${generatedDate} from [fork \`${options.forkRef.slice(0, 12)}\`](${forkRefUrl}) and [upstream \`${options.upstreamRef.slice(0, 12)}\`](${upstreamRefUrl}) using ${options.model} with low extraction and medium synthesis reasoning._
+_Updated automatically on ${generatedDate} from [${fork.name} \`${options.forkRef.slice(0, 12)}\`](${forkRefUrl}) and [upstream \`${options.upstreamRef.slice(0, 12)}\`](${upstreamRefUrl}) using ${options.model} with low extraction and medium synthesis reasoning._
 `;
 }
 
@@ -1202,6 +1207,17 @@ async function main(): Promise<void> {
     previousReleaseRef === "" ? "" : runGit("rev-parse", `${previousReleaseRef}^{commit}`);
   const forkRepository = readOption("--fork-repository");
   const upstreamRepository = readOption("--upstream-repository");
+  const ledger = loadForkFeatureLedger(repoRoot);
+  if (forkRepository !== ledger.fork_repository) {
+    throw new Error(
+      `Fork repository '${forkRepository}' does not match ledger repository '${ledger.fork_repository}'.`,
+    );
+  }
+  if (upstreamRepository !== ledger.upstream_repository) {
+    throw new Error(
+      `Upstream repository '${upstreamRepository}' does not match ledger repository '${ledger.upstream_repository}'.`,
+    );
+  }
   const outputPath = readOption("--output");
   const nightlyOutputPath = readOption("--nightly-output");
   const recordsCachePath = readOptionalOption("--records-cache");
