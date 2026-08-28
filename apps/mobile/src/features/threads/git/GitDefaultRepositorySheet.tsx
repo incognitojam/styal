@@ -11,7 +11,6 @@ import { SymbolView } from "../../../components/AppSymbol";
 import { AppText as Text } from "../../../components/AppText";
 import { ErrorBanner } from "../../../components/ErrorBanner";
 import { cn } from "../../../lib/cn";
-import { useThemeColor } from "../../../lib/useThemeColor";
 import { sourceControlEnvironment } from "../../../state/sourceControl";
 import { useAtomCommand } from "../../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../../state/use-atom-query-runner";
@@ -39,8 +38,6 @@ function remoteLabel(state: SourceControlDefaultRepositoryState, remoteName: str
 export function GitDefaultRepositorySheet(_props: GitDefaultRepositorySheetProps) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const iconColor = useThemeColor("--color-icon");
-  const primaryColor = useThemeColor("--color-primary");
   const { selectedThread } = useThreadSelection();
   const { selectedThreadCwd } = useSelectedThreadWorktree();
 
@@ -146,7 +143,12 @@ export function GitDefaultRepositorySheet(_props: GitDefaultRepositorySheetProps
                 <Text className="text-foreground-muted text-xs leading-snug">{row.subtitle}</Text>
               </View>
               {row.selected ? (
-                <SymbolView name="checkmark" size={15} tintColor={primaryColor} type="monochrome" />
+                <SymbolView
+                  name="checkmark"
+                  size={15}
+                  tintColorClassName={"accent-primary"}
+                  type="monochrome"
+                />
               ) : null}
             </Pressable>
           ))}
@@ -155,7 +157,7 @@ export function GitDefaultRepositorySheet(_props: GitDefaultRepositorySheetProps
               <SymbolView
                 name="arrow.triangle.2.circlepath"
                 size={15}
-                tintColor={iconColor}
+                tintColorClassName={"accent-icon"}
                 type="monochrome"
               />
               <Text className="text-foreground-muted text-sm">Reading remotes…</Text>

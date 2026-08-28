@@ -214,7 +214,6 @@ function RepositoryOwnerAvatar(props: {
   readonly remoteUrl: string | null;
   readonly provider: AddProjectRemoteProviderKind;
 }) {
-  const iconColor = useThemeColor("--color-icon");
   const [hasFailed, setHasFailed] = useState(false);
   const avatarUrl = props.remoteUrl
     ? repositoryOwnerAvatarUrl({
@@ -225,7 +224,7 @@ function RepositoryOwnerAvatar(props: {
     : null;
 
   if (avatarUrl === null || hasFailed) {
-    return <SourceControlIcon kind={props.provider} size={18} color={String(iconColor)} />;
+    return <SourceControlIcon kind={props.provider} size={18} colorClassName="accent-icon" />;
   }
 
   return (
@@ -240,11 +239,17 @@ function RepositoryOwnerAvatar(props: {
 }
 
 function SelectedCheckmark(props: { readonly selected: boolean }) {
-  const primaryColor = useThemeColor("--color-primary");
   if (!props.selected) {
     return null;
   }
-  return <SymbolView name="checkmark" size={15} tintColor={primaryColor} type="monochrome" />;
+  return (
+    <SymbolView
+      name="checkmark"
+      size={15}
+      tintColorClassName={"accent-primary"}
+      type="monochrome"
+    />
+  );
 }
 
 function PrimaryActionButton(props: {

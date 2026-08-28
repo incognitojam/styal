@@ -22,7 +22,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
 import { SettingsSection } from "../settings/components/SettingsSection";
@@ -447,7 +446,6 @@ const EMISSIONS_METHODOLOGY = [
  * lightest native way to keep those assumptions one tap away.
  */
 function EmissionsMethodologyButton() {
-  const iconColor = useThemeColor("--color-icon-subtle");
   return (
     <Pressable
       accessibilityRole="button"
@@ -456,7 +454,12 @@ function EmissionsMethodologyButton() {
       hitSlop={12}
       onPress={() => Alert.alert("How this is estimated", EMISSIONS_METHODOLOGY)}
     >
-      <SymbolView name="info.circle" size={15} tintColor={iconColor} type="monochrome" />
+      <SymbolView
+        name="info.circle"
+        size={15}
+        tintColorClassName={"accent-icon-subtle"}
+        type="monochrome"
+      />
     </Pressable>
   );
 }

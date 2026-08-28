@@ -233,10 +233,10 @@ export function ThreadWorkLog(props: {
                     ) : null}
                     {fileChangeStat ? (
                       <Text>
-                        <Text className="font-t3-medium text-emerald-600 dark:text-emerald-400">
+                        <Text className="font-t3-medium text-adaptive-emerald-600-400">
                           {` +${fileChangeStat.additions}`}
                         </Text>
-                        <Text className="font-t3-medium text-rose-600 dark:text-rose-400">
+                        <Text className="font-t3-medium text-adaptive-rose-600-400">
                           {` -${fileChangeStat.deletions}`}
                         </Text>
                       </Text>
