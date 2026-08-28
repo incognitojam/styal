@@ -21,14 +21,6 @@ The fork already carries behavior beyond upstream. See the rolling [styal featur
 
 The transition is intentionally gradual. Inherited package names, source paths, documentation, and application copy will continue to reference T3 Code until the corresponding styal surface is ready to own.
 
-## Current direction
-
-- Establish styal's public identity and design language.
-- Deploy the hosted web app and remote connectivity on styal-owned infrastructure.
-- Produce dependable desktop nightlies and releases in CI.
-- Bring the mobile client to styal after the desktop and web foundations are ready.
-- Keep incorporating useful upstream work without losing styal-specific behavior.
-
 ## Development
 
 Development currently requires Node.js 22.16+, 23.11+, or 24.10+ and [Vite+](https://viteplus.dev/guide/).
