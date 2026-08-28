@@ -192,10 +192,10 @@ describe("browser recording", () => {
 
   it("starts recording for a visible tab", async () => {
     await startBrowserRecording("recording-tab");
-
-    expect(events).toEqual(["start-screencast", "publish:recording-tab"]);
+    const startupEvents = [...events];
 
     await stopBrowserRecording("recording-tab");
+    expect(startupEvents).toEqual(["publish:recording-tab", "start-screencast"]);
   });
 
   it("records a hidden tab without requiring it to become visible", async () => {
@@ -208,14 +208,14 @@ describe("browser recording", () => {
     };
 
     await startBrowserRecording("recording-tab");
+    const startupEvents = [...events];
 
     expect(acquireBrowserCaptureSurface).toHaveBeenCalledWith("recording-tab");
     expect(waitForBrowserCaptureSurface).toHaveBeenCalledWith("recording-tab");
     expect(captureSurfaceRelease).not.toHaveBeenCalled();
     expect(startScreencast).toHaveBeenCalledWith("recording-tab");
-    expect(events).toEqual(["start-screencast", "publish:recording-tab"]);
-
     await stopBrowserRecording("recording-tab");
+    expect(startupEvents).toEqual(["publish:recording-tab", "start-screencast"]);
     expect(captureSurfaceRelease).toHaveBeenCalledOnce();
   });
 

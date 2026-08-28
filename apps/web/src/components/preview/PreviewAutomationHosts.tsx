@@ -44,7 +44,11 @@ import {
 } from "~/browser/browserRecording";
 import { resolveBrowserRecordingStopTarget } from "~/browser/browserRecordingScope";
 import { browserDefaultOpenViewport, resolveBrowserDefaults } from "~/browser/browserDefaults";
-import { useBrowserSurfaceStore, withBrowserCaptureSurface } from "~/browser/browserSurfaceStore";
+import {
+  acquireBrowserSurfaceActivity,
+  useBrowserSurfaceStore,
+  withBrowserCaptureSurface,
+} from "~/browser/browserSurfaceStore";
 import { runBrowserViewportMutation } from "~/browser/browserViewportActions";
 import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
 import { isElectron } from "~/env";
@@ -105,7 +109,7 @@ const waitForDesktopOverlay = async (
       operation,
       requestId,
     });
-    if (state.desktopByTabId[tabId] && previewBridge) {
+    if (state.desktopByTabId[tabId] && previewBridge && isPreviewWebviewRendering(runtimeTabId)) {
       const status = await previewBridge.automation.status(runtimeTabId);
       if (status.available) return;
     }
@@ -138,6 +142,11 @@ const waitForPreviewCaptureSurface = async (
     tabId,
     timeoutMs,
   });
+};
+
+const isPreviewWebviewRendering = (runtimeTabId: string): boolean => {
+  const wrapper = findPreviewWebview(runtimeTabId)?.closest<HTMLElement>("[data-preview-viewport]");
+  return wrapper?.getAttribute("data-preview-rendering") === "active";
 };
 
 const readWebviewViewport = async (
@@ -231,8 +240,12 @@ const currentStatus = async (
   const visible = runtimeTabId
     ? (useBrowserSurfaceStore.getState().byTabId[runtimeTabId]?.visible ?? false)
     : false;
+  const renderingActive = runtimeTabId ? isPreviewWebviewRendering(runtimeTabId) : false;
   const viewportSetting = snapshot ? (snapshot.viewport ?? FILL_PREVIEW_VIEWPORT) : undefined;
-  const viewport = runtimeTabId ? await readRenderedViewport(runtimeTabId).catch(() => null) : null;
+  const viewport =
+    runtimeTabId && renderingActive
+      ? await readRenderedViewport(runtimeTabId).catch(() => null)
+      : null;
   const viewportStatus = {
     ...(viewportSetting === undefined ? {} : { viewportSetting }),
     ...(viewport === null ? {} : { viewport }),
@@ -326,6 +339,7 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
         threadId: request.threadId,
       };
       let tabId = request.tabId ?? null;
+      const browserActivity = { release: null as (() => void) | null };
       try {
         let state = readThreadPreviewState(threadRef);
         const needsSessionSync = needsPreviewAutomationSessionSync(state, request.tabId);
@@ -359,6 +373,7 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           }
           const readyState = readThreadPreviewState(threadRef);
           const runtimeTabId = previewRuntimeTabId(threadRef, readyState.serverEpoch, readyTabId);
+          browserActivity.release ??= acquireBrowserSurfaceActivity(runtimeTabId);
           await waitForDesktopOverlay(
             threadRef,
             request.requestId,
@@ -465,14 +480,7 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
               activeSnapshot &&
               previewAutomationOpenNeedsOverlay(input, activeSnapshot, request.presentation)
             ) {
-              await waitForDesktopOverlay(
-                threadRef,
-                request.requestId,
-                activeTabId,
-                activeRuntimeTabId,
-                request.operation,
-                request.timeoutMs,
-              );
+              await requireReadyTab();
             }
             if (presentation !== null) {
               // React commits the thread-bound surface asynchronously. Settle
@@ -708,6 +716,8 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           tabId,
           cause,
         });
+      } finally {
+        browserActivity.release?.();
       }
     },
     [environmentId, listPreviews, open, registry, resize],
