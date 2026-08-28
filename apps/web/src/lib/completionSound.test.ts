@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 class FakeAudioParam {
   readonly setValueAtTime = vi.fn();
+  readonly linearRampToValueAtTime = vi.fn();
   readonly exponentialRampToValueAtTime = vi.fn();
 }
 
@@ -27,10 +28,32 @@ class FakeAudioContext {
   readonly currentTime = 10;
   readonly destination = {};
   state: AudioContextState = "running";
-  readonly oscillator = new FakeOscillator();
-  readonly gain = new FakeGain();
-  readonly createOscillator = vi.fn(() => this.oscillator);
-  readonly createGain = vi.fn(() => this.gain);
+  readonly oscillators: FakeOscillator[] = [];
+  readonly gains: FakeGain[] = [];
+  readonly createOscillator = vi.fn(() => {
+    const oscillator = new FakeOscillator();
+    this.oscillators.push(oscillator);
+    return oscillator;
+  });
+  readonly createGain = vi.fn(() => {
+    const gain = new FakeGain();
+    this.gains.push(gain);
+    return gain;
+  });
+  get oscillator(): FakeOscillator {
+    const oscillator = this.oscillators[0];
+    if (oscillator === undefined) {
+      throw new Error("Expected an oscillator to be created.");
+    }
+    return oscillator;
+  }
+  get gain(): FakeGain {
+    const gain = this.gains[0];
+    if (gain === undefined) {
+      throw new Error("Expected a gain node to be created.");
+    }
+    return gain;
+  }
   readonly resume = vi.fn(async () => {
     this.state = "running";
   });
@@ -74,39 +97,14 @@ afterEach(() => {
 });
 
 describe("playCompletionSound", () => {
-  it("schedules the procedural C5 chime with an app-level exponential tail", async () => {
-    vi.stubGlobal("AudioContext", FakeAudioContext);
-    const { playCompletionSound } = await import("./completionSound");
-
-    playCompletionSound("chime");
-
-    const [audioContext] = audioContextInstances;
-    expect(audioContext).toBeDefined();
-    if (audioContext === undefined) {
-      throw new Error("Expected an audio context to be created.");
-    }
-    expect(audioContext.oscillator.type).toBe("sine");
-    expect(audioContext.oscillator.frequency.setValueAtTime).toHaveBeenCalledWith(523.252, 10);
-    expect(audioContext.gain.gain.setValueAtTime).toHaveBeenNthCalledWith(1, 0.2, 10);
-    expect(audioContext.gain.gain.setValueAtTime).toHaveBeenNthCalledWith(2, 0.2, 10.06);
-    expect(audioContext.gain.gain.exponentialRampToValueAtTime).toHaveBeenCalledWith(
-      0.00016,
-      11.36,
-    );
-    expect(audioContext.oscillator.connect).toHaveBeenCalledWith(audioContext.gain);
-    expect(audioContext.gain.connect).toHaveBeenCalledWith(audioContext.destination);
-    expect(audioContext.oscillator.start).toHaveBeenCalledWith(10);
-    expect(audioContext.oscillator.stop.mock.calls[0]?.[0]).toBeCloseTo(11.37);
-  });
-
-  it("resumes a suspended audio context before scheduling the chime", async () => {
+  it("resumes a suspended audio context before scheduling Resolve", async () => {
     class SuspendedAudioContext extends FakeAudioContext {
       override state: AudioContextState = "suspended";
     }
     vi.stubGlobal("AudioContext", SuspendedAudioContext);
     const { playCompletionSound } = await import("./completionSound");
 
-    playCompletionSound("chime");
+    playCompletionSound("resolve");
 
     await vi.waitFor(() => {
       expect(audioContextInstances[0]?.resume).toHaveBeenCalledOnce();
@@ -114,12 +112,42 @@ describe("playCompletionSound", () => {
     });
   });
 
+  it("schedules Resolve as a quiet B4 to C5 resolution", async () => {
+    vi.stubGlobal("AudioContext", FakeAudioContext);
+    const { playCompletionSound } = await import("./completionSound");
+
+    playCompletionSound("resolve");
+
+    const [audioContext] = audioContextInstances;
+    expect(audioContext).toBeDefined();
+    if (audioContext === undefined) {
+      throw new Error("Expected an audio context to be created.");
+    }
+    expect(audioContext.createOscillator).toHaveBeenCalledTimes(3);
+    expect(audioContext.createGain).toHaveBeenCalledTimes(3);
+
+    const [leadingTone, resolvedTone, harmonic] = audioContext.oscillators;
+    expect(leadingTone?.frequency.setValueAtTime).toHaveBeenCalledWith(493.88, 10);
+    expect(resolvedTone?.frequency.setValueAtTime).toHaveBeenCalledWith(523.25, 10.13);
+    expect(harmonic?.frequency.setValueAtTime).toHaveBeenCalledWith(1046.5, 10.13);
+    expect(leadingTone?.start).toHaveBeenCalledWith(10);
+    expect(leadingTone?.stop.mock.calls[0]?.[0]).toBeCloseTo(10.19);
+    expect(resolvedTone?.start.mock.calls[0]?.[0]).toBeCloseTo(10.13);
+    expect(resolvedTone?.stop.mock.calls[0]?.[0]).toBeCloseTo(10.48);
+
+    const [leadingGain, resolvedGain, harmonicGain] = audioContext.gains;
+    expect(leadingGain?.gain.linearRampToValueAtTime).toHaveBeenCalledWith(0.126, 10.018);
+    expect(resolvedGain?.gain.linearRampToValueAtTime.mock.calls[0]?.[0]).toBe(0.177);
+    expect(resolvedGain?.gain.linearRampToValueAtTime.mock.calls[0]?.[1]).toBeCloseTo(10.152);
+    expect(harmonicGain?.gain.linearRampToValueAtTime.mock.calls[0]?.[0]).toBe(0.017);
+  });
+
   it("does not fall back to a sample without Web Audio", async () => {
     const { audioInstances, pause, play } = stubSampleAudio();
     vi.stubGlobal("AudioContext", undefined);
     const { playCompletionSound } = await import("./completionSound");
 
-    playCompletionSound("chime");
+    playCompletionSound("resolve");
 
     await Promise.resolve();
     expect(audioInstances).toEqual([]);
