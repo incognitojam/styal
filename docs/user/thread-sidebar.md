@@ -63,5 +63,6 @@ transcript is fetched from the server, so it works on threads you have not opene
 ## Completion sounds
 
 On web and desktop, choose a **Completion sound** in **Settings → General** to hear when an agent
-finishes a response or asks for structured input. An input request appears as **Awaiting Input**
-until you answer it; it remains separate from the unread completion indicator.
+finishes a response or asks for structured input. Choose **Resolve** or **Avanti**, or turn completion
+sounds off. An input request appears as **Awaiting Input** until you answer it; it remains separate
+from the unread completion indicator.
