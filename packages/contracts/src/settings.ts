@@ -30,9 +30,19 @@ export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"])
 export type TimestampFormat = typeof TimestampFormat.Type;
 export const DEFAULT_TIMESTAMP_FORMAT: TimestampFormat = "locale";
 
-export const CompletionSound = Schema.Literals(["none", "chime", "avanti"]);
+export const CompletionSound = Schema.Literals(["none", "resolve", "avanti"]);
 export type CompletionSound = typeof CompletionSound.Type;
-export const DEFAULT_COMPLETION_SOUND: CompletionSound = "none";
+export const DEFAULT_COMPLETION_SOUND: CompletionSound = "resolve";
+
+const PersistedCompletionSound = Schema.Literals(["none", "chime", "resolve", "avanti"]).pipe(
+  Schema.decodeTo(
+    CompletionSound,
+    SchemaTransformation.transformOrFail({
+      decode: (sound) => Effect.succeed(sound === "chime" ? "resolve" : sound),
+      encode: Effect.succeed,
+    }),
+  ),
+);
 
 export const SidebarProjectSortOrder = Schema.Literals(["updated_at", "created_at", "manual"]);
 export type SidebarProjectSortOrder = typeof SidebarProjectSortOrder.Type;
@@ -169,7 +179,7 @@ export const ClientSettingsSchema = Schema.Struct({
   // Desktop-only: require holding the quit shortcut (Cmd/Ctrl+Q) before the
   // app quits; a quick tap only shows a hint. Browser clients ignore it.
   confirmQuit: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  completionSound: CompletionSound.pipe(
+  completionSound: PersistedCompletionSound.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_COMPLETION_SOUND)),
   ),
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),

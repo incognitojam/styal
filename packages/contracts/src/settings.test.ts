@@ -15,6 +15,7 @@ import {
 
 const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
 const decodeClientSettingsPatch = Schema.decodeUnknownSync(ClientSettingsPatch);
+const encodeClientSettings = Schema.encodeSync(ClientSettingsSchema);
 const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
@@ -163,14 +164,22 @@ describe("ClientSettings sidebar", () => {
 });
 
 describe("ClientSettings completion sound", () => {
-  it("defaults to no sound", () => {
-    expect(decodeClientSettings({}).completionSound).toBe("none");
+  it("defaults to Resolve", () => {
+    expect(decodeClientSettings({}).completionSound).toBe("resolve");
   });
 
   it("accepts valid persisted values", () => {
     expect(decodeClientSettings({ completionSound: "none" }).completionSound).toBe("none");
-    expect(decodeClientSettings({ completionSound: "chime" }).completionSound).toBe("chime");
+    expect(decodeClientSettings({ completionSound: "resolve" }).completionSound).toBe("resolve");
     expect(decodeClientSettings({ completionSound: "avanti" }).completionSound).toBe("avanti");
+  });
+
+  it("migrates the retired Chime sound to Resolve", () => {
+    const migrated = decodeClientSettings({ completionSound: "chime" });
+
+    expect(migrated.completionSound).toBe("resolve");
+    expect(encodeClientSettings(migrated).completionSound).toBe("resolve");
+    expect(() => decodeClientSettingsPatch({ completionSound: "chime" })).toThrow();
   });
 
   it("rejects invalid persisted values", () => {

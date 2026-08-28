@@ -169,7 +169,7 @@ const TIMESTAMP_FORMAT_LABELS = {
 
 const COMPLETION_SOUND_LABELS: Record<CompletionSound, string> = {
   none: "No sound",
-  chime: "Chime",
+  resolve: "Resolve",
   avanti: "Avanti",
 };
 
@@ -2200,7 +2200,7 @@ export function GeneralSettingsPanel() {
               <Select
                 value={settings.completionSound}
                 onValueChange={(value) => {
-                  if (value === "none" || value === "chime" || value === "avanti") {
+                  if (value === "none" || value === "resolve" || value === "avanti") {
                     updateSettings({ completionSound: value });
                   }
                 }}
@@ -2209,14 +2209,14 @@ export function GeneralSettingsPanel() {
                   <SelectValue>{COMPLETION_SOUND_LABELS[settings.completionSound]}</SelectValue>
                 </SelectTrigger>
                 <SelectPopup align="end" alignItemWithTrigger={false}>
-                  <SelectItem hideIndicator value="none">
-                    {COMPLETION_SOUND_LABELS.none}
-                  </SelectItem>
-                  <SelectItem hideIndicator value="chime">
-                    {COMPLETION_SOUND_LABELS.chime}
+                  <SelectItem hideIndicator value="resolve">
+                    {COMPLETION_SOUND_LABELS.resolve}
                   </SelectItem>
                   <SelectItem hideIndicator value="avanti">
                     {COMPLETION_SOUND_LABELS.avanti}
+                  </SelectItem>
+                  <SelectItem hideIndicator value="none">
+                    {COMPLETION_SOUND_LABELS.none}
                   </SelectItem>
                 </SelectPopup>
               </Select>

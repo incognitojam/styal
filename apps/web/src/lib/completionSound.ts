@@ -2,12 +2,36 @@ import type { CompletionSound } from "@t3tools/contracts";
 
 const AVANTI_SAMPLE_URL = "/avanti.mp3";
 const AVANTI_SAMPLE_VOLUME = 0.28;
-const CHIME_FREQUENCY_HZ = 523.252;
-const CHIME_PEAK_GAIN = 0.2;
-const CHIME_END_GAIN = 0.00016;
-const CHIME_HOLD_SECONDS = 0.06;
-const CHIME_DECAY_SECONDS = 1.36;
-const CHIME_STOP_SECONDS = 1.37;
+const RESOLVE_END_GAIN = 0.0001;
+const RESOLVE_TONES = [
+  {
+    frequencyHz: 493.88,
+    offsetSeconds: 0,
+    durationSeconds: 0.17,
+    attackSeconds: 0.018,
+    releaseSeconds: 0.06,
+    peakGain: 0.126,
+    sustainRatio: 0.2,
+  },
+  {
+    frequencyHz: 523.25,
+    offsetSeconds: 0.13,
+    durationSeconds: 0.33,
+    attackSeconds: 0.022,
+    releaseSeconds: 0.12,
+    peakGain: 0.177,
+    sustainRatio: 0.22,
+  },
+  {
+    frequencyHz: 1046.5,
+    offsetSeconds: 0.13,
+    durationSeconds: 0.22,
+    attackSeconds: 0.024,
+    releaseSeconds: 0.09,
+    peakGain: 0.017,
+    sustainRatio: 0.12,
+  },
+] as const;
 
 let completionAudioContext: AudioContext | null = null;
 const sampleAudioByUrl = new Map<string, HTMLAudioElement>();
@@ -24,28 +48,35 @@ function getCompletionAudioContext(): AudioContext | null {
   return completionAudioContext;
 }
 
-function scheduleCompletionChime(audioContext: AudioContext): void {
-  const oscillator = audioContext.createOscillator();
-  const gain = audioContext.createGain();
+function scheduleCompletionResolve(audioContext: AudioContext): void {
   const now = audioContext.currentTime;
 
-  oscillator.type = "sine";
-  oscillator.frequency.setValueAtTime(CHIME_FREQUENCY_HZ, now);
-  gain.gain.setValueAtTime(CHIME_PEAK_GAIN, now);
-  gain.gain.setValueAtTime(CHIME_PEAK_GAIN, now + CHIME_HOLD_SECONDS);
-  gain.gain.exponentialRampToValueAtTime(CHIME_END_GAIN, now + CHIME_DECAY_SECONDS);
+  for (const tone of RESOLVE_TONES) {
+    const oscillator = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    const start = now + tone.offsetSeconds;
+    const end = start + tone.durationSeconds;
+    const releaseStart = end - tone.releaseSeconds;
 
-  oscillator.connect(gain).connect(audioContext.destination);
-  oscillator.addEventListener(
-    "ended",
-    () => {
-      oscillator.disconnect();
-      gain.disconnect();
-    },
-    { once: true },
-  );
-  oscillator.start(now);
-  oscillator.stop(now + CHIME_STOP_SECONDS);
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(tone.frequencyHz, start);
+    gain.gain.setValueAtTime(RESOLVE_END_GAIN, start);
+    gain.gain.linearRampToValueAtTime(tone.peakGain, start + tone.attackSeconds);
+    gain.gain.exponentialRampToValueAtTime(tone.peakGain * tone.sustainRatio, releaseStart);
+    gain.gain.linearRampToValueAtTime(RESOLVE_END_GAIN, end);
+
+    oscillator.connect(gain).connect(audioContext.destination);
+    oscillator.addEventListener(
+      "ended",
+      () => {
+        oscillator.disconnect();
+        gain.disconnect();
+      },
+      { once: true },
+    );
+    oscillator.start(start);
+    oscillator.stop(end + 0.02);
+  }
 }
 
 async function playProceduralCompletionSound(): Promise<void> {
@@ -61,7 +92,7 @@ async function playProceduralCompletionSound(): Promise<void> {
       return;
     }
 
-    scheduleCompletionChime(audioContext);
+    scheduleCompletionResolve(audioContext);
   } catch {
     // Browser audio support and autoplay policy vary by client.
   }
