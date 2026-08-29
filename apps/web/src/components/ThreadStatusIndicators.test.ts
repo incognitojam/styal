@@ -49,7 +49,6 @@ function mergedFeaturePr(): NonNullable<VcsStatusResult["pr"]> {
     baseRef: "main",
     headRef: "feature/current",
     state: "merged",
-    updatedAt: "2026-04-10T00:00:00.000Z",
   };
 }
 
@@ -548,7 +547,6 @@ describe("resolveDisplayedThreadPr + nextThreadChangeRequestSnapshot", () => {
       effectiveSettled(shell, {
         now: "2026-04-10T00:00:00.000Z",
         autoSettleAfterDays: null,
-        autoSettleMode: "change-request",
         changeRequest: displayed,
       }),
     ).toBe(true);
