@@ -16,6 +16,7 @@
 - [Project icons and workspace ports](./user/project-settings.md)
 - [Import T3 Code data](./user/importing-t3-code-data.md)
 - [Mobile appearance](./user/mobile-appearance.md)
+- [Environment themes](./user/environment-theme.md)
 - [Remote access](./user/remote-access.md)
 - [Keeping app and server in sync](./user/updating.md)
 - [Source control integrations](./user/source-control.md)

@@ -80,6 +80,7 @@ import * as ComposerDrafts from "./persistence/ComposerDrafts.ts";
 import * as LegacyImportPreview from "./dataImport/LegacyImportPreview.ts";
 import * as LegacyImport from "./dataImport/LegacyImport.ts";
 import * as ServerConfig from "./config.ts";
+import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import {
@@ -518,6 +519,7 @@ const makeWsRpcLayer = (
       const checkpointDiffQuery = yield* CheckpointDiffQuery.CheckpointDiffQuery;
       const commandOutputQuery = yield* CommandOutputQuery.CommandOutputQuery;
       const keybindings = yield* Keybindings.Keybindings;
+      const environmentTheme = yield* EnvironmentTheme.EnvironmentThemeService;
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const remoteOpenTargets = yield* RemoteOpenTargets.RemoteOpenTargets;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
@@ -2573,7 +2575,7 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "preview" },
           ),
-        [WS_METHODS.subscribeServerConfig]: (_input) =>
+        [WS_METHODS.subscribeServerConfig]: (input) =>
           observeRpcStreamEffect(
             WS_METHODS.subscribeServerConfig,
             Effect.gen(function* () {
@@ -2595,6 +2597,23 @@ const makeWsRpcLayer = (
                 })),
                 Stream.debounce(Duration.millis(PROVIDER_STATUS_DEBOUNCE_MS)),
               );
+              // The only source of published themes: the stream emits the
+              // current set before any change, so the snapshot carrying it too
+              // would just send every client the same array twice per connect.
+              // Gated on the subscriber's capability flag because an
+              // already-shipped client decodes this stream against the old
+              // event union and its whole config subscription dies on an
+              // unknown member.
+              const environmentThemeUpdates =
+                input.environmentThemes === true
+                  ? environmentTheme.streamChanges.pipe(
+                      Stream.map((themes) => ({
+                        version: 1 as const,
+                        type: "environmentThemesUpdated" as const,
+                        payload: { themes },
+                      })),
+                    )
+                  : Stream.empty;
               const settingsUpdates = serverSettings.streamChanges.pipe(
                 Stream.map((settings) => ServerSettings.redactServerSettingsForClient(settings)),
                 Stream.map((settings) => ({
@@ -2610,7 +2629,10 @@ const makeWsRpcLayer = (
 
               const liveUpdates = Stream.merge(
                 keybindingsUpdates,
-                Stream.merge(providerStatuses, settingsUpdates),
+                Stream.merge(
+                  providerStatuses,
+                  Stream.merge(settingsUpdates, environmentThemeUpdates),
+                ),
               );
 
               return Stream.concat(
