@@ -1,48 +1,17 @@
 # Fork nightly releases
 
-The `Fork Nightly` workflow rebases the `incognitojam/styal` patch stack onto the current
-`pingdotgg/t3code` main branch, validates the candidate, builds the supported desktop targets, and
-publishes a GitHub prerelease.
+The `Fork Nightly` workflow builds `main` as it stands, validates it, builds the supported desktop
+targets, and publishes a GitHub prerelease. It never modifies `main`.
 
-## Keeping `main` current
+## How upstream work reaches `main`
 
-`main` is the fork patch stack, rebased onto upstream. Two paths move it:
+`main` is not rebased onto `pingdotgg/t3code`. Upstream changes arrive the same way fork changes
+do: a pull request, reviewed and verified by Fork CI on the tree it will actually produce. Which
+upstream changes to bring in, and when, is a maintainer decision made per change rather than an
+automatic sync.
 
-- **Automated promotion (mechanical rebases only).** Every green run promotes the verified rebased
-  stack to `main`; when upstream has not advanced, the push is skipped as a no-op. A rebase stops
-  when a fork patch becomes empty, including when upstream accepts an identical change, so retiring
-  that patch always receives maintainer review through the `source_ref` path. Each successful rebase
-  writes a patch `range-diff` to the workflow summary. When the run has new changes, promotion happens
-  after the release publishes. When it has none (the candidate tree matches `origin/nightly`), the
-  prepare job skips the release but still promotes the candidate when its history advanced. The tree
-  is already fully verified, while the candidate preserves the newer upstream ancestry or reviewed
-  patch retirement instead of restoring the old nightly history. The `nightly` ref remains pinned to
-  the source of the last published artifact, so it can be behind `main` in history while retaining the
-  same tree. The day's first actual promotion snapshots the pre-promotion `main` to
-  `backup/main-YYYYMMDD`; later promotions that day leave the snapshot alone. If `main` moved while
-  the run was in flight (a PR merge, say), promotion is skipped as expected and the next run's
-  candidate includes the change; a `source_ref` run fails loudly at that point instead, since its
-  purpose was promoting the resolution — refresh it from current `main` and re-dispatch (an already
-  published release stands). The final push carries a lease pinned to the commit the run
-  started from, so a push landing in the last seconds still fails the step loudly (and the Discord
-  failure notification fires), as does any other failure checking or pushing refs. Dry runs never
-  promote.
-- **Maintainer-reviewed manual rebases.** When the rebase onto upstream conflicts or a fork patch
-  becomes empty, the nightly fails in prepare before promoting anything. A human resolves the
-  conflict locally, or verifies that upstream made the empty patch redundant before skipping it,
-  and pushes the resolved stack to a scratch branch on origin. Dispatching the workflow with
-  `source_ref` set to that branch rebases it onto upstream (a no-op when nothing moved since, a loud
-  failure when it did), verifies it, publishes a release when its tree changed, and promotes it to
-  `main` through the same backup and lease mechanics as an automated run. The ruleset blocks
-  force-pushing `main` from the CLI, so
-  this dispatch is how a resolved stack reaches `main`. Pair `source_ref` with `dry_run` first to
-  verify a resolution without publishing or promoting anything. Prepare compares the supplied
-  stack's patch IDs with every fork patch currently carried by `main` and fails with the missing
-  commit subjects before rebasing or verifying a stale stack. Refresh the resolution from current
-  `main` immediately before dispatching it. Conflict resolution can intentionally reshape a patch
-  enough to change its patch ID; after reviewing every reported commit, re-dispatch with those
-  commits listed in `waived_main_patches`. Waivers name the reviewed commits, so any other missing
-  patch — including one that merged to `main` after the review — still fails the dispatch.
+A run skips the release when `main`'s tree matches `origin/nightly`, the source of the last
+published artifact. Dry runs build and verify without publishing.
 
 ## Fork features summary
 
