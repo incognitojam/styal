@@ -57,6 +57,43 @@ jobs:
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
+      - name: Validate styal Link public configuration
+        shell: bash
+        env:
+          T3CODE_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+          T3CODE_CLERK_JWT_TEMPLATE: ${{ vars.CLERK_JWT_TEMPLATE }}
+          T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ vars.CLERK_CLI_OAUTH_CLIENT_ID }}
+          T3CODE_RELAY_URL: ${{ vars.RELAY_URL }}
+        run: |
+          set -euo pipefail
+
+          # The Clerk trio is all-or-nothing: a partial set means a variable
+          # was forgotten. The relay URL is separate because it only exists
+          # once the relay is deployed; without it the build omits Link.
+          clerk_names=(
+            T3CODE_CLERK_PUBLISHABLE_KEY
+            T3CODE_CLERK_JWT_TEMPLATE
+            T3CODE_CLERK_CLI_OAUTH_CLIENT_ID
+          )
+          configured=0
+          missing=()
+          for name in "${clerk_names[@]}"; do
+            if [[ -n "${!name:-}" ]]; then
+              configured=$((configured + 1))
+            else
+              missing+=("$name")
+            fi
+          done
+
+          if (( configured == 0 )); then
+            echo "::notice::styal Link is disabled: no Clerk public configuration is set."
+          elif (( ${#missing[@]} > 0 )); then
+            printf 'Incomplete styal Link Clerk configuration; missing: %s\n' "${missing[*]}" >&2
+            exit 1
+          elif [[ -z "${T3CODE_RELAY_URL:-}" ]]; then
+            echo "::notice::styal Link is disabled: Clerk is configured but T3CODE_RELAY_URL is not set (relay not deployed)."
+          fi
+
       - id: matrix
         name: Select targets
         shell: bash
@@ -296,6 +333,10 @@ jobs:
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
           MACOS_PROVISIONING_PROFILE: ${{ secrets.MACOS_PROVISIONING_PROFILE }}
           T3CODE_CLERK_PASSKEY_RP_DOMAINS: ${{ vars.CLERK_PASSKEY_RP_DOMAINS }}
+          T3CODE_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+          T3CODE_CLERK_JWT_TEMPLATE: ${{ vars.CLERK_JWT_TEMPLATE }}
+          T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ vars.CLERK_CLI_OAUTH_CLIENT_ID }}
+          T3CODE_RELAY_URL: ${{ vars.RELAY_URL }}
         run: |
           set -euo pipefail
 
@@ -316,8 +357,14 @@ jobs:
               APPLE_API_ISSUER
               APPLE_TEAM_ID
               MACOS_PROVISIONING_PROFILE
-              T3CODE_CLERK_PASSKEY_RP_DOMAINS
             )
+            # Passkey RP domains derive from T3CODE_CLERK_PUBLISHABLE_KEY;
+            # T3CODE_CLERK_PASSKEY_RP_DOMAINS is only an optional override,
+            # but signed builds still need one of the two.
+            if [[ -z "${T3CODE_CLERK_PUBLISHABLE_KEY:-}" && -z "${T3CODE_CLERK_PASSKEY_RP_DOMAINS:-}" ]]; then
+              echo "Missing T3CODE_CLERK_PUBLISHABLE_KEY or T3CODE_CLERK_PASSKEY_RP_DOMAINS for signed macOS passkey builds" >&2
+              exit 1
+            fi
             for name in "${required[@]}"; do
               if [[ -z "${!name:-}" ]]; then
                 echo "Missing required Apple signing configuration: $name" >&2
