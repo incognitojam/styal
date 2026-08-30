@@ -80,6 +80,17 @@ describe("hostedPairing", () => {
     expect(isHostedStaticApp(new URL("https://preview.t3.codes/"))).toBe(false);
   });
 
+  it("recognizes the default hosted deployment when cloud config is absent", () => {
+    vi.stubEnv("VITE_HOSTED_APP_URL", "");
+    vi.stubEnv("VITE_HTTP_URL", "");
+    vi.stubEnv("VITE_WS_URL", "");
+    vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "");
+    vi.stubEnv("VITE_CLERK_JWT_TEMPLATE", "");
+    vi.stubEnv("VITE_T3CODE_RELAY_URL", "");
+
+    expect(isHostedStaticApp(new URL("https://app.styal.build/"))).toBe(true);
+  });
+
   it("detects hosted channel aliases as static apps", () => {
     vi.stubEnv("VITE_HOSTED_APP_URL", "https://app.t3.codes");
     vi.stubEnv("VITE_HOSTED_APP_CHANNEL", "nightly");

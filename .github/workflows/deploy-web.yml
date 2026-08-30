@@ -40,7 +40,8 @@ jobs:
       VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
       VITE_CLERK_JWT_TEMPLATE: ${{ vars.CLERK_JWT_TEMPLATE }}
       VITE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ vars.CLERK_CLI_OAUTH_CLIENT_ID }}
-      VITE_RELAY_URL: ${{ vars.RELAY_URL }}
+      VITE_T3CODE_RELAY_URL: ${{ vars.RELAY_URL }}
+      VITE_HOSTED_APP_URL: https://${{ vars.STYAL_WEB_DOMAIN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6

@@ -64,10 +64,10 @@ A few more macOS notes:
 
 **Windows** is not supported yet.
 
-## Using It with T3 Connect
+## Using It with styal Link
 
-T3 Connect may offer to install the service during setup so the host stays reachable in the
-background. This is only an onboarding shortcut: the service and T3 Connect are managed separately.
+styal Link may offer to install the service during setup so the host stays reachable in the
+background. This is only an onboarding shortcut: the service and styal Link are managed separately.
 
-Signing out of T3 Connect does not remove the service. Use `t3 service uninstall` when you no longer
+Signing out of styal Link does not remove the service. Use `t3 service uninstall` when you no longer
 want T3 Code to start in the background.

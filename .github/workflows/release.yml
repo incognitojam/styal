@@ -210,7 +210,7 @@ jobs:
         run: vp run test
 
   relay_public_config:
-    name: Resolve T3 Connect public config
+    name: Resolve styal Link public config
     # Consumes only the commit SHA, not preflight's resolved version, so it runs
     # alongside preflight instead of after it. The condition mirrors preflight's:
     # check_changes is skipped on non-schedule events (skipped is neither failure

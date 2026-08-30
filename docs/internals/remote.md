@@ -54,7 +54,7 @@ control plane or a copy of session state.
 | ------------------------- | ------------------------------------------------------------------------ |
 | `PrimaryConnectionTarget` | The platform-managed local server (desktop backend, CLI-served web app). |
 | `BearerConnectionTarget`  | Any manually paired endpoint reached over direct HTTP/WebSocket.         |
-| `RelayConnectionTarget`   | Managed T3 Connect relay tunnels.                                        |
+| `RelayConnectionTarget`   | Managed styal Link relay tunnels.                                        |
 | `SshConnectionTarget`     | Desktop-managed SSH environments.                                        |
 
 Bearer, relay, and SSH are persisted; primary is platform-managed. Note that Tailscale is not a
@@ -106,7 +106,7 @@ Endpoint identifiers are synthesized in `apps/desktop/src/backend/tailscaleEndpo
 A hosted pairing request is a bootstrap URL for the static web app, not a transport:
 
 ```text
-https://app.t3.codes/pair?host=https://backend.example.com:3773#token=PAIRCODE
+https://app.styal.build/pair?host=https://backend.example.com:3773#token=PAIRCODE
 ```
 
 The hosted app reads `host`, takes the token from the URL hash, exchanges it directly with that
@@ -142,7 +142,7 @@ are part of it: a hosted HTTPS client cannot connect to plain `ws://` or `http:/
 
 ### Relay-tunneled access
 
-Managed T3 Connect relay tunnels use `RelayConnectionTarget` and are the answer when the host is
+Managed styal Link relay tunnels use `RelayConnectionTarget` and are the answer when the host is
 behind NAT, inbound ports are unavailable, or mobile must reach a desktop-hosted environment. From
 the client's perspective this is still an ordinary WebSocket connection; the route is mediated. The
 relay Worker only brokers credentials and a managed endpoint; application traffic then flows over

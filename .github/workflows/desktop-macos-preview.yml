@@ -31,6 +31,11 @@ jobs:
       (github.event.action != 'labeled' || github.event.label.name == 'preview:mac')
     runs-on: blacksmith-12vcpu-macos-26
     timeout-minutes: 30
+    env:
+      T3CODE_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+      T3CODE_CLERK_JWT_TEMPLATE: ${{ vars.CLERK_JWT_TEMPLATE }}
+      T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ vars.CLERK_CLI_OAUTH_CLIENT_ID }}
+      T3CODE_RELAY_URL: ${{ vars.RELAY_URL }}
     outputs:
       dmg_name: ${{ steps.build.outputs.dmg_name }}
       version: ${{ steps.version.outputs.version }}
@@ -67,8 +72,40 @@ jobs:
         with:
           targets: aarch64-apple-darwin
 
+      - name: Validate styal Link public configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # The Clerk trio is all-or-nothing: a partial set means a variable was
+          # forgotten. The relay URL is separate because it only exists once the
+          # relay has been deployed; without it the build simply omits Connect.
+          clerk_names=(
+            T3CODE_CLERK_PUBLISHABLE_KEY
+            T3CODE_CLERK_JWT_TEMPLATE
+            T3CODE_CLERK_CLI_OAUTH_CLIENT_ID
+          )
+          configured=0
+          missing=()
+          for name in "${clerk_names[@]}"; do
+            if [[ -n "${!name:-}" ]]; then
+              configured=$((configured + 1))
+            else
+              missing+=("$name")
+            fi
+          done
+
+          if (( configured == 0 )); then
+            echo "::notice::styal Link is disabled: no Clerk public configuration is set."
+          elif (( ${#missing[@]} > 0 )); then
+            printf 'Incomplete styal Link Clerk configuration; missing: %s\n' "${missing[*]}" >&2
+            exit 1
+          elif [[ -z "${T3CODE_RELAY_URL:-}" ]]; then
+            echo "::notice::styal Link is disabled: Clerk is configured but T3CODE_RELAY_URL is not set (relay not deployed)."
+          fi
+
       - id: version
-        name: Set preview version and public configuration
+        name: Set preview version
         shell: bash
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -78,7 +115,6 @@ jobs:
           base_version="$(node -p "require('./apps/desktop/package.json').version")"
           preview_version="${base_version}-pr.${PR_NUMBER}.${GITHUB_RUN_NUMBER}"
           node scripts/update-release-package-versions.ts "$preview_version"
-          cp .env.example .env
 
           echo "version=$preview_version" >> "$GITHUB_OUTPUT"
 
