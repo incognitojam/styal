@@ -353,3 +353,27 @@ export const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(ApnsClient, make);
+
+// "No transport happened" — deliveryAttempts records the reason verbatim.
+const disabledDeliveryResult: ApnsDeliveryResult = {
+  ok: true,
+  status: 0,
+  reason: "APNs is not configured; delivery dropped.",
+  apnsId: null,
+};
+
+/**
+ * Bound instead of {@link layer} when the relay is deployed without APNs
+ * credentials. Keeps the queue-backed delivery pipeline wired exactly as in
+ * production while every actual APNs send is dropped as a successful no-op;
+ * the credentials handed in are placeholders and are never read.
+ */
+export const layerDisabled = Layer.succeed(
+  ApnsClient,
+  ApnsClient.of({
+    makeLiveActivityRequest,
+    makePushNotificationRequest,
+    sendLiveActivityRequest: () => Effect.succeed(disabledDeliveryResult),
+    sendPushNotificationRequest: () => Effect.succeed(disabledDeliveryResult),
+  }),
+);

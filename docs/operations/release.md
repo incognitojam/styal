@@ -57,14 +57,12 @@ GitHub Actions environment before building desktop, CLI, or hosted web artifacts
 Required repository variables shared by relay deployments:
 
 - `CLOUDFLARE_ACCOUNT_ID`
-- `PLANETSCALE_ORGANIZATION`
 - `AXIOM_ORG_ID`
 
 Required repository secrets shared by relay deployments:
 
 - `CLOUDFLARE_API_TOKEN`
-- `PLANETSCALE_API_TOKEN_ID`
-- `PLANETSCALE_API_TOKEN`
+- `NEON_API_KEY`
 - `AXIOM_TOKEN`
 
 Required `production` environment variables:
@@ -75,24 +73,26 @@ Required `production` environment variables:
 - `CLERK_JWT_AUDIENCE`
 - `CLERK_JWT_TEMPLATE`
 - `CLERK_CLI_OAUTH_CLIENT_ID`
-- `APNS_ENVIRONMENT`
-- `APNS_TEAM_ID`
-- `APNS_KEY_ID`
-- `APNS_BUNDLE_ID`
 
 Optional `production` environment variables:
 
 - `RELAY_DOMAIN` when overriding the derived `relay.<RELAY_API_ZONE_NAME>` domain
+- `APNS_ENVIRONMENT`, `APNS_TEAM_ID`, `APNS_KEY_ID`, and `APNS_BUNDLE_ID` only when enabling
+  mobile push; unset, the relay deploys with push delivery disabled, and a partial group fails
+  the deploy
 
 Required `production` environment secrets:
 
 - `CLERK_SECRET_KEY`
-- `APNS_PRIVATE_KEY`
+
+Optional `production` environment secrets:
+
+- `APNS_PRIVATE_KEY` only when enabling mobile push, alongside the `APNS_*` variables
 
 The account-scoped repository credentials are consumed by Alchemy while provisioning relay stages; they
 are not bound into the relay Worker. The production deployment uses an Axiom personal access token,
-so `AXIOM_ORG_ID` must accompany `AXIOM_TOKEN`. The `prod` stage owns the retained PlanetScale
-database. Local personal stages provision isolated branches from it and are never deployed by CI.
+so `AXIOM_ORG_ID` must accompany `AXIOM_TOKEN`. The `prod` stage owns the retained Neon Postgres
+project. Local personal stages provision isolated branches from it and are never deployed by CI.
 Production adopts the configured relay API and tunnel DNS zones as retained Cloudflare resources.
 Personal stages reference the production-owned zones.
 

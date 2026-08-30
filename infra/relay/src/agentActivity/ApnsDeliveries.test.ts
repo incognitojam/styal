@@ -31,15 +31,17 @@ import * as ApnsDeliveries from "./ApnsDeliveries.ts";
 import * as ApnsClient from "./ApnsClient.ts";
 import * as ApnsProviderTokens from "./ApnsProviderTokens.ts";
 
+const apnsCredentials: RelayConfiguration.ApnsCredentials = {
+  environment: "sandbox",
+  teamId: "team-id",
+  keyId: "key-id",
+  privateKey: Redacted.make("not-a-private-key"),
+  bundleId: "com.t3tools.t3code.dev",
+};
+
 const config = RelayConfiguration.RelayConfiguration.of({
   relayIssuer: "https://relay.example.test",
-  apns: {
-    environment: "sandbox",
-    teamId: "team-id",
-    keyId: "key-id",
-    privateKey: Redacted.make("not-a-private-key"),
-    bundleId: "com.t3tools.t3code.dev",
-  },
+  apns: apnsCredentials,
   apnsDeliveryJobSigningSecret: Redacted.make("job-signing-secret"),
   clerkSecretKey: Redacted.make("clerk-secret"),
   clerkPublishableKey: "pk_test_test",
@@ -59,7 +61,7 @@ const apnsSigningKeyPair = NodeCrypto.generateKeyPairSync("ec", {
 const signingConfig = RelayConfiguration.RelayConfiguration.of({
   ...config,
   apns: {
-    ...config.apns,
+    ...apnsCredentials,
     privateKey: Redacted.make(apnsSigningKeyPair.privateKey),
   },
 });

@@ -586,9 +586,12 @@ interface LiveActivityDeliveryTarget {
 function credentialsForTarget(
   credentials: RelayConfiguration.RelayConfiguration["Service"]["apns"],
   target: LiveActivityDeliveryTarget,
-): RelayConfiguration.RelayConfiguration["Service"]["apns"] {
+): RelayConfiguration.ApnsCredentials {
   return {
-    ...credentials,
+    // A null base means APNs is unconfigured; the worker boundary then binds
+    // the disabled ApnsClient, which never reads credentials — the inert
+    // placeholder only satisfies the type.
+    ...(credentials ?? RelayConfiguration.disabledApnsCredentials),
     ...(target.bundle_id ? { bundleId: target.bundle_id } : {}),
     ...(target.aps_environment ? { environment: target.aps_environment } : {}),
   };
