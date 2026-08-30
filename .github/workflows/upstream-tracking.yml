@@ -1,0 +1,52 @@
+name: Upstream tracking
+
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-tracking
+  cancel-in-progress: false
+
+jobs:
+  track:
+    name: List upstream pull requests not on main
+    if: github.repository == 'incognitojam/styal'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/pingdotgg/t3code.git
+          git fetch --no-tags upstream main
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+
+      - name: Append unlisted pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_TRACKING_ISSUE: ${{ vars.UPSTREAM_TRACKING_ISSUE }}
+        run: |
+          if [[ -z "$UPSTREAM_TRACKING_ISSUE" ]]; then
+            echo "::error::Set the UPSTREAM_TRACKING_ISSUE repository variable to the tracking issue number."
+            exit 1
+          fi
+          node scripts/upstream-tracking-issue.ts --issue "$UPSTREAM_TRACKING_ISSUE"
