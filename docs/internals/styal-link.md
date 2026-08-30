@@ -33,9 +33,9 @@ tunnel host a browser touches. Keep it that way.
 
 ## Clerk
 
-One Clerk application, `styal`, with a development and a production instance. Development backs
-source builds, macOS previews, and `styal-dev://` desktop builds; production backs `app.styal.build`,
-release builds, and mobile. Configure both instances identically except where noted. The
+One Clerk application, `styal`, with a development and a production instance. Following upstream's
+model, production backs everything CI builds — the hosted app, releases, macOS previews — plus
+mobile; development backs local source builds and `styal-dev://` desktop dev builds only. Configure both instances identically except where noted. The
 [`clerk` CLI](https://clerk.com/docs/cli) (`bunx clerk@latest`) is the fastest route; pass
 `--app app_3IPih12l7JcyeHP2MlqFOESKdGN --instance dev|prod` explicitly and `--dry-run` every
 mutation first.
@@ -78,21 +78,19 @@ workflows at two scopes:
 | `RELAY_URL`                 |                  ✓                  |                derived from relay state                |                      ✓                       |
 | `STYAL_WEB_DOMAIN`          |   ✓ (also `VITE_HOSTED_APP_URL`)    |                                                        |                                              |
 
-Set them as follows:
+Every CI build uses the **production** instance — a single relay trusts a single Clerk instance,
+so artifacts that talk to the production relay must all sign into production Clerk. Set the
+production values (`pk_live_…`, `CLERK_JWT_TEMPLATE=t3-relay`, the prod OAuth client ID, and
+`RELAY_URL` once the relay is deployed) as **repository variables**: jobs without an `environment:`
+declaration — the macOS preview — see only that scope. `STYAL_WEB_DOMAIN` and the relay deployment
+values live on the `production` environment, which can also shadow the Clerk variables when they
+ever need to diverge. The preview job treats the three Clerk values as all-or-nothing (a partial
+set fails the build) and builds Link-disabled with a notice while `RELAY_URL` is unset.
 
-- **Repository variables** carry the development instance: `CLERK_PUBLISHABLE_KEY` (`pk_test_…`),
-  `CLERK_JWT_TEMPLATE=t3-relay`, `CLERK_CLI_OAUTH_CLIENT_ID` (dev OAuth app), `RELAY_URL`. Jobs
-  without an `environment:` declaration — the macOS preview — see only these. The preview job treats
-  the three Clerk values as all-or-nothing (a partial set fails the build) and builds Connect-disabled
-  with a notice while `RELAY_URL` is unset, since the relay URL only exists once the relay is
-  deployed.
-- **`production` environment variables** carry the production instance under the same names:
-  `CLERK_PUBLISHABLE_KEY` (`pk_live_…`), `CLERK_CLI_OAUTH_CLIENT_ID` (prod OAuth app), plus
-  `STYAL_WEB_DOMAIN=app.styal.build`. Environment variables shadow repository variables of the same
-  name, so `deploy-web.yml` and release builds pick up production automatically.
-
-Until the production instance exists, leave the `production` environment without Clerk variables so
-those jobs fall through to the development values.
+The development instance never appears in CI. It exists for local development: the repository-root
+`.env` carries its identifiers, paired with a personal relay stage
+(`vp run --filter t3code-relay deploy` with any stage name other than `prod`) so dev-Clerk tokens
+are verified by a dev-Clerk relay.
 
 Relay deployment (`deploy-relay.yml`) has its own set of variables and secrets — Cloudflare,
 PlanetScale, Axiom, APNs, `CLERK_SECRET_KEY`, `CLERK_JWT_AUDIENCE=t3-code-relay` — listed in
