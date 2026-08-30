@@ -61,7 +61,18 @@ describe("upstream tracking issue", () => {
     assert.notInclude(line, "pingdotgg");
     // The title sits inside one backtick span, so the @-mention and #-ref
     // inside it cannot autolink; its own backticks are neutralised first.
-    assert.match(line, /^- \[ \] `#8694` 2026-08-29 · `[^`]*` · apps\/mobile$/);
+    assert.match(line, /^- \[ \] `#8694` 2026-08-29 · `[^`]*` · `apps\/mobile`$/);
+  });
+
+  it("keeps scoped package paths from reading as mentions", () => {
+    const line = renderPullRequestLine({
+      number: 1,
+      title: "chore: bump",
+      mergedAt: "2026-08-29T00:00:00Z",
+      areas: ["patches/@expo__metro-config@57.0.12.patch", "apps/mobile"],
+    });
+    // Every `@` sits inside a code span, so nothing can autolink as a user.
+    assert.notMatch(line.replaceAll(/`[^`]*`/g, ""), /@/);
   });
 
   it("reads tracked numbers from backticked references only", () => {
