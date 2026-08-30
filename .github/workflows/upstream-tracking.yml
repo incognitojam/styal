@@ -31,9 +31,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Fetch upstream
-        run: |
-          git remote add upstream https://github.com/pingdotgg/t3code.git
-          git fetch --no-tags upstream main
+        run: git fetch --no-tags https://github.com/pingdotgg/t3code.git main:refs/remotes/upstream/main
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -49,4 +47,4 @@ jobs:
             echo "::error::Set the UPSTREAM_TRACKING_ISSUE repository variable to the tracking issue number."
             exit 1
           fi
-          node scripts/upstream-tracking-issue.ts --issue "$UPSTREAM_TRACKING_ISSUE"
+          node scripts/upstream-tracking-issue.ts --issue "$UPSTREAM_TRACKING_ISSUE" --repo "$GITHUB_REPOSITORY"

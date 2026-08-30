@@ -134,11 +134,15 @@ function main(): void {
     args.set(process.argv[index]!, process.argv[index + 1] ?? "");
   }
   const issue = args.get("--issue");
+  const repository = args.get("--repo");
   const upstream = args.get("--upstream") ?? "pingdotgg/t3code";
   const mainRef = args.get("--main-ref") ?? "origin/main";
   const upstreamRef = args.get("--upstream-ref") ?? "upstream/main";
   const sinceDays = Number(args.get("--since-days") ?? "45");
   if (!issue) throw new Error("--issue <number> is required.");
+  // Never let gh infer the repository from git remotes: with upstream fetched,
+  // it would resolve to upstream and try to edit their issue of the same number.
+  if (!repository) throw new Error("--repo <owner/name> is required.");
 
   const sinceIso = new Date(Date.now() - sinceDays * 86_400_000).toISOString();
   const merged = fetchMergedUpstreamPullRequests(upstream, sinceIso);
@@ -152,7 +156,9 @@ function main(): void {
       areas: areasForPaths(pullRequest.files.nodes.map((file) => file.path)),
     }));
 
-  const currentBody = JSON.parse(run("gh", ["issue", "view", issue, "--json", "body"])) as {
+  const currentBody = JSON.parse(
+    run("gh", ["issue", "view", issue, "--repo", repository, "--json", "body"]),
+  ) as {
     readonly body: string;
   };
   const { body, added } = appendUnlisted(currentBody.body, candidates);
@@ -166,7 +172,7 @@ function main(): void {
     "body.md",
   );
   NodeFS.writeFileSync(bodyPath, body);
-  run("gh", ["issue", "edit", issue, "--body-file", bodyPath]);
+  run("gh", ["issue", "edit", issue, "--repo", repository, "--body-file", bodyPath]);
   console.log(
     `Appended ${added.length} pull request(s): ${added.map((p) => `#${p.number}`).join(", ")}`,
   );
