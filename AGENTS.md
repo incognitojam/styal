@@ -118,7 +118,7 @@ An empty database is a bad test. Seed your worktree's `.t3` with a copy of real 
 - Body: the problem in a sentence or two, then how you fixed it. End with the model and harness that did the work.
 - When the pull request body is long, begin it with a `> [!NOTE]` callout containing a TL;DR.
 - **Rebase standalone branches onto latest main before opening.** Stale branches conflict and burn a review round.
-- **Rebasing after main was force-pushed.** This fork's `main` is a patch stack rebased onto upstream and force-pushed after each nightly rebase. Transplant only the branch's own commits: find the commit the branch was cut from (the parent of its first own commit — check `git log --oneline`; do not trust `git merge-base`, which resolves to a stale ancestor here), then `git rebase --onto origin/main <old-base>`.
+- **Upstream is read-only and never auto-synced.** `main` is not rebased onto `pingdotgg/t3code`. Upstream changes are brought in deliberately, one or more at a time, as ordinary PRs against `main`. Never rebase `main` onto upstream, never force-push it, and never open a PR that assumes upstream's tip rather than `main`.
 - UI changes need before/after images. Motion or timing needs a short video.
 - Upload PR evidence to GitHub. Never commit PR-only screenshots or assets such as `.github/pr-assets/`.
 - One concern per PR. If the description says "also", split it.

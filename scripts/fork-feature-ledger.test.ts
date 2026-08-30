@@ -152,7 +152,7 @@ features: []
     }
   });
 
-  it("wires source-ref-safe advisory overlap review into Fork Nightly", () => {
+  it("wires advisory upstream overlap review into Fork Nightly", () => {
     const workflow = parse(NodeFS.readFileSync(nightlyWorkflowPath, "utf8")) as {
       readonly jobs: {
         readonly prepare: {
@@ -172,7 +172,7 @@ features: []
 
     assert.include(
       candidate?.run ?? "",
-      'old_upstream_ref=$(git merge-base "$main_ref" "$upstream_ref")',
+      "old_upstream_ref=$(git merge-base origin/nightly FETCH_HEAD)",
     );
     assert.include(candidate?.run ?? "", 'echo "old_upstream_ref=$old_upstream_ref"');
     assert.notInclude(candidate?.run ?? "", 'echo "old_upstream_ref=$OLD_UPSTREAM_REF"');

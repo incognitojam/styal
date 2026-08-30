@@ -16,9 +16,9 @@ upstream migrations with lower IDs to be skipped.
 Fork migrations live in `apps/server/src/persistence/ForkMigrations/`. They must be append-only and
 idempotent so upgrades remain safe across rebases and interrupted starts.
 
-CI enforces this rule: `.github/scripts/rebase-onto-upstream.sh` (used by Fork CI's upstream-rebase
-job and Fork Nightly's prepare step) fails when the rebased patch stack touches
-`apps/server/src/persistence/Migrations.ts` or anything under `apps/server/src/persistence/Migrations/`.
+Review enforces this rule: a fork PR must not touch `apps/server/src/persistence/Migrations.ts` or
+anything under `apps/server/src/persistence/Migrations/`. Only a PR that deliberately brings an
+upstream migration in may change those paths, and it should carry upstream's change verbatim.
 The server test job and Fork Nightly also build disposable databases with the migration source from
 the released `nightly` branch, then run the candidate's full migration pass. This checks both the
 split upstream/fork histories and the legacy pre-split composer-draft history.
