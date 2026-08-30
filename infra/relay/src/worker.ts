@@ -126,14 +126,12 @@ export const ApiLive = Api.make(
     //
     // 2. Create bindings
     //
-    const environment = yield* Config.schema(
-      RelayConfiguration.ApnsEnvironment,
-      "APNS_ENVIRONMENT",
-    );
-    const apnsTeamId = yield* Config.string("APNS_TEAM_ID");
-    const apnsKeyId = yield* Config.string("APNS_KEY_ID");
-    const apnsBundleId = yield* Config.string("APNS_BUNDLE_ID");
-    const apnsPrivateKey = yield* Config.redacted("APNS_PRIVATE_KEY");
+    // APNs is optional as one all-or-nothing group: absent runs the relay
+    // with push delivery disabled, a partial group fails resolution loudly.
+    const apnsCredentials = yield* RelayConfiguration.apnsCredentialsConfig;
+    if (apnsCredentials === null) {
+      yield* Effect.logInfo("APNs is not configured; mobile push delivery is disabled.");
+    }
     const apnsDeliveryJobSigningSecret = yield* randomApnsDeliveryJobSigningSecret;
     const apnsDeliveryQueueSender = yield* Cloudflare.Queues.WriteQueue(apnsDeliveryQueue);
 
@@ -164,13 +162,7 @@ export const ApiLive = Api.make(
     const loadSettings = Effect.gen(function* () {
       return RelayConfiguration.RelayConfiguration.of({
         relayIssuer: relayPublicOrigin,
-        apns: {
-          environment,
-          teamId: apnsTeamId,
-          keyId: apnsKeyId,
-          bundleId: apnsBundleId,
-          privateKey: apnsPrivateKey,
-        },
+        apns: apnsCredentials,
         apnsDeliveryJobSigningSecret: yield* apnsDeliveryJobSigningSecret,
         clerkSecretKey,
         clerkPublishableKey,
@@ -205,7 +197,11 @@ export const ApiLive = Api.make(
       ),
       Layer.provideMerge(DpopProofs.layer),
       Layer.provideMerge(ApnsDeliveries.layer),
-      Layer.provideMerge(ApnsClient.layer.pipe(Layer.provideMerge(ApnsProviderTokens.layer))),
+      Layer.provideMerge(
+        apnsCredentials === null
+          ? ApnsClient.layerDisabled
+          : ApnsClient.layer.pipe(Layer.provideMerge(ApnsProviderTokens.layer)),
+      ),
       Layer.provideMerge(
         ApnsDeliveryQueue.layerCloudflareQueues(apnsDeliveryQueueSender, alchemyRuntimeContext),
       ),

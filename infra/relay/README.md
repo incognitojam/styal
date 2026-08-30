@@ -85,14 +85,19 @@ vp run --filter t3code-relay deploy
 The stack provisions the Cloudflare Worker and queues, managed endpoint resources, database
 connectivity, and relay tracing resources. Copy [`infra/relay/.env.example`](./.env.example) to
 `infra/relay/.env` and fill in the deployment-specific values before deploying. Alchemy loads that
-file from the relay directory. Runtime secrets include Clerk and APNs credentials. Production adopts
-the configured API and tunnel DNS zones as retained Cloudflare resources. Personal stages reference
-the production-owned zones.
+file from the relay directory. Runtime secrets include Clerk credentials. APNs credentials are
+optional as an all-or-nothing group: leave all five `APNS_*` values unset until the mobile app
+ships and the relay deploys with push delivery disabled, while setting only some of them fails
+config resolution. Production adopts the configured API and tunnel DNS zones as retained
+Cloudflare resources. Personal stages reference the production-owned zones.
 
-The `prod` Alchemy stage owns the retained PlanetScale database and is the shared hosted relay for
-stable and nightly clients. Every other stage references that database and provisions an isolated
-PlanetScale branch and runtime role for local development, so deploy `prod` before creating
-developer stages:
+The `prod` Alchemy stage owns the retained Neon Postgres project `styal-relay` and is the shared
+hosted relay for stable and nightly clients. The first `prod` deploy adopts the existing Neon
+project by its physical name (the declared region, Postgres version, and `production` default
+branch match it) and applies the Drizzle migrations from `migrations/postgres` into the
+`relay_migrations` table. Every other stage references that project and provisions an isolated
+copy-on-write Neon branch off its default branch for local development, so deploy `prod` before
+creating developer stages:
 
 ```sh
 vp run --filter t3code-relay deploy -- --stage prod
@@ -123,14 +128,12 @@ deploy personal non-production stages locally with any stage name other than `pr
 The repository must define these Actions variables shared by relay deployments:
 
 - `CLOUDFLARE_ACCOUNT_ID`
-- `PLANETSCALE_ORGANIZATION`
 - `AXIOM_ORG_ID`
 
 The repository must define these Actions secrets shared by relay deployments:
 
 - `CLOUDFLARE_API_TOKEN`
-- `PLANETSCALE_API_TOKEN_ID`
-- `PLANETSCALE_API_TOKEN`
+- `NEON_API_KEY`
 - `AXIOM_TOKEN`
 
 The `production` GitHub environment must define these Actions variables:
@@ -141,15 +144,13 @@ The `production` GitHub environment must define these Actions variables:
 - `CLERK_PUBLISHABLE_KEY`
 - `CLERK_JWT_AUDIENCE`
 - `CLERK_JWT_TEMPLATE`
-- `APNS_ENVIRONMENT`
-- `APNS_TEAM_ID`
-- `APNS_KEY_ID`
-- `APNS_BUNDLE_ID`
+- `APNS_ENVIRONMENT`, `APNS_TEAM_ID`, `APNS_KEY_ID`, and `APNS_BUNDLE_ID` only when enabling
+  mobile push; leave the group unset (together with `APNS_PRIVATE_KEY`) until the mobile app ships
 
 The `production` GitHub environment must define these Actions secrets:
 
 - `CLERK_SECRET_KEY`
-- `APNS_PRIVATE_KEY`
+- `APNS_PRIVATE_KEY` only when enabling mobile push, alongside the `APNS_*` variables above
 
 The account-scoped repository credentials are consumed by Alchemy while provisioning relay stages; they
 are not bound into the relay Worker. The production deployment uses an Axiom personal access token,
