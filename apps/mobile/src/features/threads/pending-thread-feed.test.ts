@@ -16,9 +16,11 @@ const pending = (id: string): QueuedThreadMessage => ({
 describe("pending timeline messages", () => {
   it("keeps pending messages after newer agent activity in queue order", () => {
     const activity = {
-      type: "working",
+      type: "activity-group",
       id: "thinking",
       createdAt: "2026-09-06T11:00:00.000Z",
+      turnId: null,
+      activities: [],
     } as const;
     const entries = appendPendingThreadMessages(
       [activity],
