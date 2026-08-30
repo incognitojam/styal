@@ -36,6 +36,7 @@ import React, {
   Suspense,
   type CSSProperties,
   type ClipboardEvent as ReactClipboardEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   isValidElement,
   use,
@@ -66,6 +67,7 @@ import {
   type GithubReferenceSurface,
 } from "./chat/githubReferenceLinks";
 import { renderSkillInlineMarkdownChildren } from "./chat/SkillInlineText";
+import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { CHAT_FILE_TAG_CHIP_CLASS_NAME, FileTagChipContent } from "./chat/FileTagChip";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import {
@@ -178,6 +180,7 @@ interface ChatMarkdownProps {
    */
   referenceContext?: GithubReferenceSurface | undefined;
   imageBaseDir?: string | undefined;
+  onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
 }
 
 export function canUseMarkdownFileShellActions(
@@ -1082,6 +1085,31 @@ const CHAT_MARKDOWN_WORKSPACE_IMAGE_CLASS_NAME = cn(
   CHAT_MARKDOWN_WORKSPACE_IMAGE_LAYOUT_CLASS_NAME,
   "rounded-lg border border-border/40",
 );
+const MarkdownLinkContext = React.createContext(false);
+
+function expandableMarkdownImageProps(
+  onImageExpand: ((preview: ExpandedImagePreview) => void) | undefined,
+  src: string,
+  alt: string,
+) {
+  if (!onImageExpand) return {};
+  const previewName = alt.trim() || "image";
+  const expand = (event: ReactMouseEvent | ReactKeyboardEvent) => {
+    if (event.currentTarget.closest("a")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onImageExpand({ images: [{ src, name: previewName }], index: 0 });
+  };
+  return {
+    role: "button" as const,
+    tabIndex: 0,
+    "aria-label": `Preview ${previewName}`,
+    onClick: expand,
+    onKeyDown: (event: ReactKeyboardEvent) => {
+      if (event.key === "Enter" || event.key === " ") expand(event);
+    },
+  };
+}
 
 function ChatMarkdownImageFallback(props: {
   readonly alt: string;
@@ -1111,6 +1139,7 @@ const ChatMarkdownWorkspaceImage = memo(function ChatMarkdownWorkspaceImage(prop
   readonly copyMarkdown: string;
   readonly srcFragment: string;
   readonly style?: CSSProperties | undefined;
+  readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
 }) {
   const assetUrl = useAssetUrlState(props.threadRef.environmentId, {
     _tag: "workspace-file",
@@ -1137,15 +1166,20 @@ const ChatMarkdownWorkspaceImage = memo(function ChatMarkdownWorkspaceImage(prop
       />
     );
   }
+  const src = assetUrl.url + props.srcFragment;
   return (
     <img
-      src={assetUrl.url + props.srcFragment}
+      src={src}
       alt={props.alt}
       data-markdown-copy={props.copyMarkdown}
       loading="lazy"
       draggable={false}
-      className={CHAT_MARKDOWN_WORKSPACE_IMAGE_CLASS_NAME}
+      className={cn(
+        CHAT_MARKDOWN_WORKSPACE_IMAGE_CLASS_NAME,
+        props.onImageExpand && "cursor-zoom-in",
+      )}
       style={props.style}
+      {...expandableMarkdownImageProps(props.onImageExpand, src, props.alt)}
       onError={() => setFailedUrl(assetUrl.url)}
     />
   );
@@ -1690,6 +1724,7 @@ function ChatMarkdown({
   imageRenderer,
   referenceContext,
   imageBaseDir,
+  onImageExpand,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
   // Held apart so a caller spelling the context inline does not reparse the body every render.
@@ -2148,6 +2183,7 @@ function ChatMarkdown({
           const isSameDocumentLink = href?.startsWith("#") ?? false;
           const onClick = props.onClick;
           const canOpenInPreview = Boolean(threadRef) && isPreviewSupportedInRuntime();
+          const linkChildren = <MarkdownLinkContext value>{children}</MarkdownLinkContext>;
           const link = (
             <a
               {...props}
@@ -2232,10 +2268,10 @@ function ChatMarkdown({
             >
               {faviconHost && hastHasText(node) ? (
                 <MarkdownExternalLinkContent host={faviconHost} plainText={plainHastText(node)}>
-                  {children}
+                  {linkChildren}
                 </MarkdownExternalLinkContent>
               ) : (
-                children
+                linkChildren
               )}
             </a>
           );
@@ -2277,7 +2313,8 @@ function ChatMarkdown({
           </code>
         );
       },
-      img(imageProps) {
+      img: function MarkdownImage(imageProps) {
+        const imageExpand = use(MarkdownLinkContext) ? undefined : onImageExpand;
         if (imageRenderer !== undefined) {
           return React.createElement(imageRenderer, imageProps);
         }
@@ -2301,8 +2338,13 @@ function ChatMarkdown({
               src={imageSource.uri}
               alt={altText}
               loading="lazy"
-              className={cn(props.className, CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME)}
+              className={cn(
+                props.className,
+                CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME,
+                imageExpand && "cursor-zoom-in",
+              )}
               style={authoredSizeStyle}
+              {...expandableMarkdownImageProps(imageExpand, imageSource.uri, altText)}
             />
           );
         }
@@ -2315,6 +2357,7 @@ function ChatMarkdown({
               copyMarkdown={copyMarkdown}
               srcFragment={markdownImageSourceFragment(classifiedSrc)}
               style={authoredSizeStyle}
+              onImageExpand={imageExpand}
             />
           );
         }
@@ -2374,6 +2417,7 @@ function ChatMarkdown({
     isStreaming,
     markdownFileLinkMetaByHref,
     onTaskListChange,
+    onImageExpand,
     openFileInPanel,
     onRunCodeBlock,
     openInPreferredEditor,
