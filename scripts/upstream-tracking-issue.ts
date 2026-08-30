@@ -31,7 +31,10 @@ export function listedNumbers(body: string): ReadonlySet<number> {
 
 export function renderPullRequestLine(pullRequest: UpstreamPullRequest): string {
   const title = pullRequest.title.replaceAll("`", "'").trim();
-  const areas = pullRequest.areas.length > 0 ? ` · ${pullRequest.areas.join(", ")}` : "";
+  const areas =
+    pullRequest.areas.length > 0
+      ? ` · ${pullRequest.areas.map((area) => `\`${area}\``).join(", ")}`
+      : "";
   return `- [ ] \`#${pullRequest.number}\` ${pullRequest.mergedAt.slice(0, 10)} · \`${title}\`${areas}`;
 }
 
