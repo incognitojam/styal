@@ -9,6 +9,7 @@ import {
   type TurnId,
 } from "@t3tools/contracts";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
+import type { CodexArtifactTemplate } from "@t3tools/client-runtime/codex-artifact-templates";
 import type { AgentPanelModel } from "@t3tools/client-runtime/state/subagentRuntime";
 import {
   emptyAgentPanelModel,
@@ -17,6 +18,7 @@ import {
 
 const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
+const NOOP_USE_ARTIFACT_TEMPLATE = () => {};
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import {
   deriveToolRowPresentation,
@@ -171,6 +173,7 @@ interface TimelineRowSharedState {
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   activeThreadEnvironmentId: EnvironmentId;
   onRevertUserMessage: (messageId: MessageId) => void;
+  onUseArtifactTemplate: (template: CodexArtifactTemplate) => void;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   onRunCodeBlock?: ((code: string) => void) | undefined;
@@ -252,6 +255,7 @@ interface MessagesTimelineProps {
   onRunCodeBlock?: ((code: string) => void) | undefined;
   revertTurnCountByUserMessageId: Map<MessageId, number>;
   onRevertUserMessage: (messageId: MessageId) => void;
+  onUseArtifactTemplate?: (template: CodexArtifactTemplate) => void;
   isRevertingCheckpoint: boolean;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   activeThreadEnvironmentId: EnvironmentId;
@@ -298,6 +302,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onRunCodeBlock,
   revertTurnCountByUserMessageId,
   onRevertUserMessage,
+  onUseArtifactTemplate = NOOP_USE_ARTIFACT_TEMPLATE,
   isRevertingCheckpoint,
   onImageExpand,
   activeThreadEnvironmentId,
@@ -557,6 +562,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       skills,
       activeThreadEnvironmentId,
       onRevertUserMessage,
+      onUseArtifactTemplate,
       onImageExpand,
       onOpenTurnDiff,
       onRunCodeBlock,
@@ -574,6 +580,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       skills,
       activeThreadEnvironmentId,
       onRevertUserMessage,
+      onUseArtifactTemplate,
       onImageExpand,
       onOpenTurnDiff,
       onRunCodeBlock,
@@ -1297,6 +1304,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           lineBreaks={shouldPreserveAssistantLineBreaks(messageText)}
           skills={ctx.skills}
           onRunCodeBlock={ctx.onRunCodeBlock}
+          onUseArtifactTemplate={ctx.onUseArtifactTemplate}
           onImageExpand={ctx.onImageExpand}
         />
         <AssistantChangedFilesSection

@@ -13,6 +13,11 @@ import {
   type TurnId,
 } from "@t3tools/contracts";
 import {
+  appendCodexArtifactTemplateUsePrompt,
+  codexArtifactTemplateUsePrompt,
+  type CodexArtifactTemplate,
+} from "@t3tools/client-runtime/codex-artifact-templates";
+import {
   type ChatMessage,
   isImageAttachment,
   type SessionPhase,
@@ -43,6 +48,14 @@ export function composerAttachmentTypeForMime(mimeType: string): "image" | "file
 
 export const LastInvokedScriptByProjectSchema = Schema.Record(ProjectId, Schema.String);
 
+export function codexArtifactTemplatePromptToAppend(
+  currentDraft: string,
+  template: CodexArtifactTemplate,
+): string | null {
+  return appendCodexArtifactTemplateUsePrompt(currentDraft, template) === currentDraft
+    ? null
+    : codexArtifactTemplateUsePrompt(template);
+}
 export function shoulderTabReserve(overlay: HTMLElement): number {
   if (overlay.querySelector(".chat-composer-tasks-tab")) return 0;
   const tab = overlay.querySelector<HTMLElement>(".chat-composer-shoulder-tab");
