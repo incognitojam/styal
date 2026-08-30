@@ -65,6 +65,12 @@ it.effect("normalizes the hosted app URL to an absolute origin", () =>
   }),
 );
 
+it.effect("defaults the hosted app URL to the styal deployment", () =>
+  Effect.gen(function* () {
+    assert.equal(yield* hostedAppUrlConfig.pipe(provideEnv({})), "https://app.styal.build");
+  }),
+);
+
 it.effect("rejects malformed or insecure hosted app URLs", () =>
   Effect.gen(function* () {
     for (const value of [

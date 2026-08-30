@@ -31,6 +31,11 @@ Repository variables:
 - `CLERK_PUBLISHABLE_KEY`, `CLERK_JWT_TEMPLATE`, `CLERK_CLI_OAUTH_CLIENT_ID`,
   `RELAY_URL` — public client configuration baked into the bundle.
 
+The deployment workflow exposes `RELAY_URL` to Vite as `VITE_T3CODE_RELAY_URL` and derives
+`VITE_HOSTED_APP_URL` from `STYAL_WEB_DOMAIN`. The hosted origin must remain available even when
+the Clerk or relay values are absent so the static app can show its local-connection onboarding
+state without probing for a primary server.
+
 Repository secret:
 
 - `CLOUDFLARE_API_TOKEN`
