@@ -197,7 +197,7 @@ function formatCloudStatus(status: CloudCliStatus, options?: { readonly json?: b
     : !status.desired
       ? "Run `t3 connect link` to enable styal Connect."
       : !status.linked
-        ? "Start T3 to provision the environment link and launch its managed tunnel."
+        ? "Start styal to provision the environment link and launch its managed tunnel."
         : undefined;
 
   return [
@@ -217,7 +217,7 @@ const CLOUD_CLI_LIVE_SERVER_TIMEOUT = Duration.seconds(5);
 const confirmRelayClientInstall = (version: string) =>
   Prompt.run(
     Prompt.confirm({
-      message: `The T3 relay client is required for styal Connect. Download and install version ${version}?`,
+      message: `The relay client is required for styal Connect. Download and install version ${version}?`,
       initial: false,
     }),
   );
@@ -532,7 +532,7 @@ const connectLinkCommand = Command.make("link", {
           const serveCommand = yield* resolveCliCommand("serve");
           yield* Console.log(
             flags.publishOnly
-              ? `✓ Authorized${connectedAs(linked.identity)}\n\nNext\n  Start T3 to publish agent activity (no managed tunnel).`
+              ? `✓ Authorized${connectedAs(linked.identity)}\n\nNext\n  Start styal to publish agent activity (no managed tunnel).`
               : `✓ Authorized${connectedAs(linked.identity)}\n\nNext\n  Start the server with \`${serveCommand}\` to make this machine reachable.`,
           );
         }
@@ -642,7 +642,7 @@ const connectPublishCommand = Command.make("publish", {
         // link is pending at all.
         if (yield* CliState.readCliDesiredCloudLink) {
           yield* Console.log(
-            "A styal Connect link is already pending. Start T3 to finish provisioning it; publishing starts once it links.",
+            "A styal Connect link is already pending. Start styal to finish provisioning it; publishing starts once it links.",
           );
           return;
         }
