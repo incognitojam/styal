@@ -14,7 +14,7 @@ export interface EnvironmentSections {
 }
 
 /**
- * Ids of the environments that already occupy a styal Connect slot. A backend saved directly is
+ * Ids of the environments that already occupy a styal Link slot. A backend saved directly is
  * not one of them, so it must not suppress the cloud environment that happens to share its id.
  */
 export function relayManagedEnvironmentIds(

@@ -72,7 +72,7 @@ jobs:
         with:
           targets: aarch64-apple-darwin
 
-      - name: Validate styal Connect public configuration
+      - name: Validate styal Link public configuration
         shell: bash
         run: |
           set -euo pipefail
@@ -96,12 +96,12 @@ jobs:
           done
 
           if (( configured == 0 )); then
-            echo "::notice::styal Connect is disabled: no Clerk public configuration is set."
+            echo "::notice::styal Link is disabled: no Clerk public configuration is set."
           elif (( ${#missing[@]} > 0 )); then
-            printf 'Incomplete styal Connect Clerk configuration; missing: %s\n' "${missing[*]}" >&2
+            printf 'Incomplete styal Link Clerk configuration; missing: %s\n' "${missing[*]}" >&2
             exit 1
           elif [[ -z "${T3CODE_RELAY_URL:-}" ]]; then
-            echo "::notice::styal Connect is disabled: Clerk is configured but T3CODE_RELAY_URL is not set (relay not deployed)."
+            echo "::notice::styal Link is disabled: Clerk is configured but T3CODE_RELAY_URL is not set (relay not deployed)."
           fi
 
       - id: version

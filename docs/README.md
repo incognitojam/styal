@@ -40,7 +40,7 @@ policy in [CONTRIBUTING.md](../CONTRIBUTING.md); agent rules in [AGENTS.md](../A
 - [Product analytics](./internals/product-analytics.md)
 - [Environment auth](./internals/environment-auth.md)
 - [T3 Connect](./internals/t3-connect.md) (upstream mechanics)
-- [styal Connect](./internals/styal-connect.md) (fork deployment and Clerk setup)
+- [styal Link](./internals/styal-link.md) (fork deployment and Clerk setup)
 - [CI gates](./internals/ci.md)
 - [Engineering work artifacts](./internals/work-artifacts.md)
 

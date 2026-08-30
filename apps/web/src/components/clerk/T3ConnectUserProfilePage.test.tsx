@@ -34,7 +34,7 @@ function renderRow({
   );
 }
 
-describe("styal Connect environment row", () => {
+describe("styal Link environment row", () => {
   it("keeps deregistration confirmation inline and collapsed by default", () => {
     const markup = renderRow();
 

@@ -86,7 +86,7 @@ export function T3ConnectEnvironmentRow(props: {
                 “{environment.label}” will be removed from this account.
               </p>
               <p className="mt-4 max-w-xl text-[0.8125rem] leading-[1.125rem] text-muted-foreground">
-                styal Connect access will be revoked, any managed tunnel will be removed, and a host
+                styal Link access will be revoked, any managed tunnel will be removed, and a host
                 space will become available. Local connections on your devices are not changed.
               </p>
               <div className="mt-4 flex justify-end gap-2">
@@ -157,7 +157,7 @@ export function T3ConnectUserProfilePage() {
       toastManager.add({
         type: "success",
         title: "Server deregistered",
-        description: "styal Connect access was revoked and a host space is now available.",
+        description: "styal Link access was revoked and a host space is now available.",
       });
       return;
     }
@@ -200,7 +200,7 @@ export function T3ConnectUserProfilePage() {
 
   return (
     <ClerkUserProfilePage
-      title="styal Connect"
+      title="styal Link"
       description="Environments registered to your account. Connections on this device are managed in Settings."
       action={
         <ClerkUserProfileRefreshButton
@@ -214,7 +214,7 @@ export function T3ConnectUserProfilePage() {
         {environmentsState.error ? (
           <div className="mb-4 border-t border-destructive/35 py-3 text-[0.8125rem]" role="alert">
             <p className="font-medium text-destructive-foreground">
-              Could not load styal Connect environments
+              Could not load styal Link environments
             </p>
             <p className="mt-1 text-xs text-muted-foreground">{environmentsState.error}</p>
           </div>
@@ -246,7 +246,7 @@ export function T3ConnectUserProfilePage() {
             </EmptyMedia>
             <EmptyHeader>
               <EmptyTitle className="text-[1.0625rem] leading-6">
-                No styal Connect environments
+                No styal Link environments
               </EmptyTitle>
               <EmptyDescription className="text-[0.8125rem] leading-[1.125rem]">
                 Link an environment from its local Settings to make it available through styal

@@ -97,7 +97,7 @@ it("formats loopback authorization with a headless-host fallback", () => {
   assert.equal(
     CliTokenManager.formatLoopbackAuthorizationPrompt("https://clerk.example.test/authorize"),
     [
-      "Open this URL to authorize styal Connect:",
+      "Open this URL to authorize styal Link:",
       "  https://clerk.example.test/authorize",
       "",
       "Press \u001b[1mEnter\u001b[22m to open it in your browser.",

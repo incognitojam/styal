@@ -78,7 +78,7 @@ export class NoRunningServerError extends Schema.TaggedErrorClass<NoRunningServe
     return [
       "No running styal server found.",
       ...this.checkedStatePaths.map((statePath) => `  checked ${statePath}`),
-      "Start one with `npx t3 serve`, or connect this machine with styal Connect: `npx t3 connect`.",
+      "Start one with `npx t3 serve`, or connect this machine with styal Link: `npx t3 connect`.",
     ].join("\n");
   }
 }

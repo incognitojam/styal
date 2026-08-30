@@ -133,7 +133,7 @@ export function ConnectionEnvironmentRow(props: {
         >
           {props.environment.isRelayManaged ? (
             <Text className="text-sm text-foreground-muted">
-              Managed by styal Connect. Tunnel details update automatically.
+              Managed by styal Link. Tunnel details update automatically.
             </Text>
           ) : (
             <>

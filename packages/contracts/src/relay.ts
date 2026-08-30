@@ -576,7 +576,7 @@ export class RelayEnvironmentPrincipal extends Context.Service<
 const RelayClientBearerAuthorization = HttpApiSecurity.http({ scheme: "bearer" }).pipe(
   HttpApiSecurity.annotate(
     OpenApi.Description,
-    "Clerk session or OAuth bearer token for the signed-in styal Connect user.",
+    "Clerk session or OAuth bearer token for the signed-in styal Link user.",
   ),
 );
 

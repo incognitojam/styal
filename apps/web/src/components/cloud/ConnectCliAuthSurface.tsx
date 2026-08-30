@@ -111,8 +111,8 @@ export function ConnectCliAuthorizeSurface() {
         title="Connecting your terminal"
         description={
           isSignedIn
-            ? "Redirecting to authorize styal Connect for your CLI…"
-            : "Sign in to continue authorizing styal Connect for your CLI."
+            ? "Redirecting to authorize styal Link for your CLI…"
+            : "Sign in to continue authorizing styal Link for your CLI."
         }
       />
       {isLoaded && !isSignedIn ? (
@@ -202,7 +202,7 @@ export function ConnectCliCallbackSurface() {
 
       <p className="mt-6 text-xs leading-relaxed text-muted-foreground">
         Only enter this code in a terminal session you started yourself. Anyone holding it can link
-        their machine to your styal Connect account while it is valid.
+        their machine to your styal Link account while it is valid.
       </p>
     </AuthSurfaceShell>
   );

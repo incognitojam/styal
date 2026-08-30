@@ -46,7 +46,7 @@ const boldTerminalText = (value: string): string => `\u001b[1m${value}\u001b[22m
 
 export function formatLoopbackAuthorizationPrompt(authorizationUrl: string): string {
   return [
-    "Open this URL to authorize styal Connect:",
+    "Open this URL to authorize styal Link:",
     `  ${authorizationUrl}`,
     "",
     `Press ${boldTerminalText("Enter")} to open it in your browser.`,
@@ -168,7 +168,7 @@ export class CloudCliCredentialRemovalError extends Schema.TaggedErrorClass<Clou
   { cause: Schema.Defect() },
 ) {
   override get message(): string {
-    return "Could not remove the stored styal Connect CLI credential.";
+    return "Could not remove the stored styal Link CLI credential.";
   }
 }
 
@@ -177,7 +177,7 @@ export class CloudCliCredentialRefreshError extends Schema.TaggedErrorClass<Clou
   { cause: Schema.Defect() },
 ) {
   override get message(): string {
-    return "Could not refresh the styal Connect CLI credential.";
+    return "Could not refresh the styal Link CLI credential.";
   }
 }
 
@@ -186,7 +186,7 @@ export class CloudCliCredentialReadError extends Schema.TaggedErrorClass<CloudCl
   { cause: Schema.Defect() },
 ) {
   override get message(): string {
-    return "Could not read the stored styal Connect CLI credential.";
+    return "Could not read the stored styal Link CLI credential.";
   }
 }
 
@@ -195,7 +195,7 @@ export class CloudCliAuthorizationError extends Schema.TaggedErrorClass<CloudCli
   { cause: Schema.Defect() },
 ) {
   override get message(): string {
-    return "Could not authorize the styal Connect CLI.";
+    return "Could not authorize the styal Link CLI.";
   }
 }
 
@@ -204,7 +204,7 @@ export class CloudCliAuthorizationTimeoutError extends Schema.TaggedErrorClass<C
   { cause: Schema.Defect() },
 ) {
   override get message(): string {
-    return "Timed out waiting for styal Connect authorization.";
+    return "Timed out waiting for styal Link authorization.";
   }
 }
 
@@ -377,7 +377,7 @@ export const make = Effect.gen(function* () {
         const url = new URL(request.originalUrl, metadata.redirectUri);
         const code = url.searchParams.get("code");
         if (url.searchParams.get("state") !== state || !code) {
-          return HttpServerResponse.text("Invalid styal Connect authorization callback.", {
+          return HttpServerResponse.text("Invalid styal Link authorization callback.", {
             status: 400,
           });
         }

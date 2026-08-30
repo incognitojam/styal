@@ -1,14 +1,14 @@
-# styal Connect
+# styal Link
 
 > For maintainers. Using styal? See [docs/user](../user/).
 
-styal Connect is the fork's deployment of upstream's T3 Connect. The mechanics — Clerk JWT
+styal Link is the fork's deployment of upstream's T3 Connect. The mechanics — Clerk JWT
 template, CLI OAuth flow, desktop redirect allowlist, passkeys, sign-up restrictions — are unchanged
 and documented in [t3-connect.md](./t3-connect.md). This page is the styal-specific configuration:
 the values our deployment uses and where each one has to be set. It describes the intended
 configuration; when reality drifts from it, fix reality.
 
-Product copy says **styal Connect**. Internal identifiers stay upstream-named on purpose so the fork
+Product copy says **styal Link**. Internal identifiers stay upstream-named on purpose so the fork
 stays mergeable: `t3 connect` CLI commands, `T3CODE_*` environment variables, `T3Connect*`
 component names, the `t3-connect` Clerk profile page URL, `[t3-connect]` log tags, the `t3-relay`
 JWT template, and the `t3-code-relay` audience.
@@ -126,4 +126,4 @@ than replacing the symlink.
   the terminal.
 - The desktop sign-in returns to the app via `styal-dev://app` (dev build) or `styal://app`
   (packaged build).
-- The web sidebar shows **Sign in to styal Connect** on `app.styal.build`.
+- The web sidebar shows **Sign in to styal Link** on `app.styal.build`.

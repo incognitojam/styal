@@ -239,7 +239,7 @@ function ConfiguredSettingsRouteScreen() {
       } else {
         Alert.alert(
           "Couldn't finish enabling notifications",
-          "Notification access was granted, but this device could not be registered with styal Connect. Notifications will start once registration succeeds.",
+          "Notification access was granted, but this device could not be registered with styal Link. Notifications will start once registration succeeds.",
         );
       }
       return;
@@ -269,8 +269,8 @@ function ConfiguredSettingsRouteScreen() {
 
   const promptSignIn = useCallback(() => {
     Alert.alert(
-      "Sign in to styal Connect",
-      "Live Activity updates require styal Connect so relay can deliver updates to this device.",
+      "Sign in to styal Link",
+      "Live Activity updates require styal Link so relay can deliver updates to this device.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -342,7 +342,7 @@ function ConfiguredSettingsRouteScreen() {
     } else {
       Alert.alert(
         "Couldn't finish enabling Live Activities",
-        "This device could not be registered with styal Connect, so Live Activities won't appear yet. They'll start once registration succeeds.",
+        "This device could not be registered with styal Link, so Live Activities won't appear yet. They'll start once registration succeeds.",
       );
     }
   }, [

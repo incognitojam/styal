@@ -112,7 +112,7 @@ export function MobileClientsUserProfilePage() {
   return (
     <ClerkUserProfilePage
       title="Mobile clients"
-      description="Devices registered to receive styal Connect activity from your environments."
+      description="Devices registered to receive styal Link activity from your environments."
       action={
         <ClerkUserProfileRefreshButton
           isPending={devicesState.isPending}

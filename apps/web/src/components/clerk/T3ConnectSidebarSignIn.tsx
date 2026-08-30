@@ -41,7 +41,7 @@ function ConfiguredT3ConnectSidebarAvatar() {
         <MobileClientsUserProfilePage />
       </UserButton.UserProfilePage>
       <UserButton.UserProfilePage
-        label="styal Connect"
+        label="styal Link"
         labelIcon={<ServerIcon className="size-4" />}
         url="t3-connect"
       >
@@ -63,7 +63,7 @@ function ConfiguredT3ConnectSidebarSignIn() {
         <SidebarMenuItem>
           <SidebarMenuButton onClick={openAuthPrompt}>
             <LogInIcon />
-            <span>Sign in to styal Connect</span>
+            <span>Sign in to styal Link</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>

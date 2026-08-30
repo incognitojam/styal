@@ -113,7 +113,7 @@ const authorizeCli = Effect.fn("cloud.cli.authorize")(function* (options: {
   const existing = yield* tokens.getExisting.pipe(
     Effect.catchTag("CloudCliCredentialRefreshError", () =>
       Console.log(
-        "The stored styal Connect credential could not be refreshed; signing in again.",
+        "The stored styal Link credential could not be refreshed; signing in again.",
       ).pipe(Effect.as(Option.none())),
     ),
   );
@@ -193,15 +193,15 @@ function formatCloudStatus(status: CloudCliStatus, options?: { readonly json?: b
       ? "pending server startup"
       : "not provisioned";
   const nextStep = !status.authenticated
-    ? "Run `t3 connect link` to authorize and enable styal Connect."
+    ? "Run `t3 connect link` to authorize and enable styal Link."
     : !status.desired
-      ? "Run `t3 connect link` to enable styal Connect."
+      ? "Run `t3 connect link` to enable styal Link."
       : !status.linked
         ? "Start styal to provision the environment link and launch its managed tunnel."
         : undefined;
 
   return [
-    "styal Connect",
+    "styal Link",
     `  Exposure: ${status.desired ? "enabled" : "disabled"}`,
     `  Authorization: ${status.authenticated ? "stored credential" : "missing"}`,
     `  Environment link: ${provisioned}`,
@@ -217,7 +217,7 @@ const CLOUD_CLI_LIVE_SERVER_TIMEOUT = Duration.seconds(5);
 const confirmRelayClientInstall = (version: string) =>
   Prompt.run(
     Prompt.confirm({
-      message: `The relay client is required for styal Connect. Download and install version ${version}?`,
+      message: `The relay client is required for styal Link. Download and install version ${version}?`,
       initial: false,
     }),
   );
@@ -322,7 +322,7 @@ const logCloudDisconnectFailure = (
   clearAuthorization: boolean,
   cause: Cause.Cause<unknown>,
 ) =>
-  Effect.logWarning("styal Connect disconnect operation failed.").pipe(
+  Effect.logWarning("styal Link disconnect operation failed.").pipe(
     Effect.annotateLogs({
       operation,
       clearAuthorization,
@@ -368,10 +368,10 @@ export const reportCloudDisconnectResults = Effect.fn("cloud.cli.report_disconne
         input.liveResult.cause,
       );
       yield* Console.warn(
-        "styal Connect is disabled, but the running server could not stop its tunnel.\nRestart that server to stop the connector.",
+        "styal Link is disabled, but the running server could not stop its tunnel.\nRestart that server to stop the connector.",
       );
     } else {
-      yield* Console.log("styal Connect is disabled locally.");
+      yield* Console.log("styal Link is disabled locally.");
     }
 
     if (Exit.isFailure(input.relayResult)) {
@@ -412,7 +412,7 @@ const disconnectCloud = Effect.fn("cloud.cli.disconnect")(function* (options: {
 
   if (options.clearAuthorization) {
     yield* Console.log(
-      "Signed out of styal Connect locally.\nThe background service is managed separately with `t3 service`.",
+      "Signed out of styal Link locally.\nThe background service is managed separately with `t3 service`.",
     );
   }
 });
@@ -479,7 +479,7 @@ const linkEnvironmentForConnect = Effect.fn("cloud.cli.link_environment")(functi
       reportRelayClientInstallProgress,
     );
     if (Option.isNone(installed)) {
-      yield* Console.log("styal Connect setup cancelled. The relay client was not installed.");
+      yield* Console.log("styal Link setup cancelled. The relay client was not installed.");
       return null;
     }
     yield* Console.log(formatRelayClientReady(installed.value.version));
@@ -498,12 +498,12 @@ const connectLoginCommand = Command.make("login", {
   ...projectLocationFlags,
   headless: headlessFlag,
 }).pipe(
-  Command.withDescription("Authorize the styal Connect CLI without enabling remote access."),
+  Command.withDescription("Authorize the styal Link CLI without enabling remote access."),
   Command.withHandler((flags) =>
     runCloudCommand(
       flags,
       Effect.gen(function* () {
-        yield* Console.log("styal Connect\n");
+        yield* Console.log("styal Link\n");
         const identity = yield* authorizeCli(flags);
         yield* Console.log(`✓ Signed in${connectedAs(identity)}`);
       }),
@@ -521,12 +521,12 @@ const connectLinkCommand = Command.make("link", {
     Flag.withDefault(false),
   ),
 }).pipe(
-  Command.withDescription("Authorize this environment for styal Connect on next start."),
+  Command.withDescription("Authorize this environment for styal Link on next start."),
   Command.withHandler((flags) =>
     runCloudCommand(
       flags,
       Effect.gen(function* () {
-        yield* Console.log("styal Connect\n");
+        yield* Console.log("styal Link\n");
         const linked = yield* linkEnvironmentForConnect(flags);
         if (linked) {
           const serveCommand = yield* resolveCliCommand("serve");
@@ -545,7 +545,7 @@ const connectStatusCommand = Command.make("status", {
   ...projectLocationFlags,
   json: jsonFlag,
 }).pipe(
-  Command.withDescription("Show persisted styal Connect and relay client state."),
+  Command.withDescription("Show persisted styal Link and relay client state."),
   Command.withHandler((flags) =>
     runCloudCommand(
       flags,
@@ -614,7 +614,7 @@ const connectPublishCommand = Command.make("publish", {
           const linkedNow = Option.isSome(yield* secrets.get(CLOUD_LINKED_USER_ID));
           if (!linkedNow && (yield* CliState.readCliDesiredLinkMode) === "publish_only") {
             yield* CliState.setCliDesiredCloudLink(false);
-            yield* Console.log("Cancelled the pending publish-only styal Connect link.");
+            yield* Console.log("Cancelled the pending publish-only styal Link.");
           }
           yield* Console.log("Publishing agent activity disabled.");
           return;
@@ -629,7 +629,7 @@ const connectPublishCommand = Command.make("publish", {
         // Publishing needs the relay to know this environment belongs to you.
         // Establish a tunnel-free publish-only link automatically so signing in
         // is all it takes — the mobile client can still reach the environment
-        // out of band without styal Connect.
+        // out of band without styal Link.
         if (!(yield* tokens.hasCredential)) {
           yield* Console.log(
             "Run `t3 connect login` first so this environment can be authorized to publish.",
@@ -642,7 +642,7 @@ const connectPublishCommand = Command.make("publish", {
         // link is pending at all.
         if (yield* CliState.readCliDesiredCloudLink) {
           yield* Console.log(
-            "A styal Connect link is already pending. Start styal to finish provisioning it; publishing starts once it links.",
+            "A styal Link is already pending. Start styal to finish provisioning it; publishing starts once it links.",
           );
           return;
         }
@@ -658,7 +658,7 @@ const connectPublishCommand = Command.make("publish", {
 const connectUnlinkCommand = Command.make("unlink", {
   ...projectLocationFlags,
 }).pipe(
-  Command.withDescription("Disable styal Connect while retaining the stored authorization."),
+  Command.withDescription("Disable styal Link while retaining the stored authorization."),
   Command.withHandler((flags) =>
     runCloudCommand(flags, disconnectCloud({ clearAuthorization: false })),
   ),
@@ -667,7 +667,7 @@ const connectUnlinkCommand = Command.make("unlink", {
 const connectLogoutCommand = Command.make("logout", {
   ...projectLocationFlags,
 }).pipe(
-  Command.withDescription("Disable styal Connect and clear the stored CLI authorization."),
+  Command.withDescription("Disable styal Link and clear the stored CLI authorization."),
   Command.withHandler((flags) =>
     runCloudCommand(flags, disconnectCloud({ clearAuthorization: true })),
   ),
@@ -677,12 +677,12 @@ export const connectCommand = Command.make("connect", {
   ...projectLocationFlags,
   headless: headlessFlag,
 }).pipe(
-  Command.withDescription("Set up styal Connect for this machine."),
+  Command.withDescription("Set up styal Link for this machine."),
   Command.withHandler((flags) =>
     runCloudCommand(
       flags,
       Effect.gen(function* () {
-        yield* Console.log("styal Connect\n");
+        yield* Console.log("styal Link\n");
         const linked = yield* linkEnvironmentForConnect(flags);
         if (!linked) {
           return;

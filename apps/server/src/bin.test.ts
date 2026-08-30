@@ -195,15 +195,15 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
         assert.fail(`Expected ShowHelp, got ${error._tag}`);
       }
       assert.deepEqual(error.commandPath, ["t3", "connect"]);
-      assert.include(error.errors[0]?.message ?? "", "missing styal Connect public configuration");
+      assert.include(error.errors[0]?.message ?? "", "missing styal Link public configuration");
 
       const output = (yield* TestConsole.errorLines).join("\n");
       assert.include(output, "ERROR");
-      assert.include(output, "missing styal Connect public configuration");
+      assert.include(output, "missing styal Link public configuration");
     }).pipe(Effect.provide(Layer.mergeAll(CliRuntimeLayer, TestConsole.layer))),
   );
 
-  it.effect("exposes service lifecycle commands without styal Connect configuration", () =>
+  it.effect("exposes service lifecycle commands without styal Link configuration", () =>
     Effect.gen(function* () {
       const { output } = yield* captureStdout(runCli(["service", "--help"], noConnectCli));
 
@@ -249,10 +249,10 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
         runConnectCli(["connect", "status", "--base-dir", baseDir]),
       );
 
-      assert.include(output, "styal Connect\n  Exposure: disabled");
+      assert.include(output, "styal Link\n  Exposure: disabled");
       assert.include(output, "  Authorization: missing");
       assert.include(output, "  Environment link: not provisioned");
-      assert.include(output, "Next: Run `t3 connect link` to authorize and enable styal Connect.");
+      assert.include(output, "Next: Run `t3 connect link` to authorize and enable styal Link.");
     }),
   );
 
@@ -300,7 +300,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
         runConnectCli(["connect", "unlink", "--base-dir", baseDir]),
       );
 
-      assert.equal(output, "styal Connect is disabled locally.");
+      assert.equal(output, "styal Link is disabled locally.");
     }),
   );
 
@@ -320,7 +320,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
 
       assert.equal(
         output,
-        "Signed out of styal Connect locally.\nThe background service is managed separately with `t3 service`.",
+        "Signed out of styal Link locally.\nThe background service is managed separately with `t3 service`.",
       );
       assert.isFalse(NodeFS.existsSync(tokenPath));
     }),

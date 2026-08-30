@@ -22,7 +22,7 @@ import { triageCommand } from "./cli/triage.ts";
 const CliRuntimeLayer = Layer.mergeAll(NodeServices.layer, NetService.layer);
 
 const connectPublicConfigMissingMessage =
-  "styal Connect commands are unavailable: this build is missing styal Connect public configuration.";
+  "styal Link commands are unavailable: this build is missing styal Link public configuration.";
 
 class ConnectPublicConfigMissingError extends CliError.UserError {
   override get message() {
@@ -33,7 +33,7 @@ class ConnectPublicConfigMissingError extends CliError.UserError {
 const connectUnavailableCommand = Command.make("connect", {
   command: Argument.string("command").pipe(Argument.variadic),
 }).pipe(
-  Command.withDescription("styal Connect is unavailable in builds without public configuration."),
+  Command.withDescription("styal Link is unavailable in builds without public configuration."),
   Command.withHidden,
   Command.withHandler(() =>
     Effect.fail(
