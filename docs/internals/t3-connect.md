@@ -1,8 +1,8 @@
-# styal Connect
+# T3 Connect
 
 > For maintainers. Using T3 Code? See [docs/user](../user/).
 
-styal Connect uses one Clerk application for web, desktop, and mobile authentication. The relay verifies
+T3 Connect uses one Clerk application for web, desktop, and mobile authentication. The relay verifies
 two kinds of bearer credential: template JWTs generated from the `t3-relay` template with the shared
 `t3-code-relay` audience, and Clerk OAuth tokens issued to the CLI. `verifyRelayClientBearerToken` in
 `infra/relay/src/http/Api.ts` tries the template/session path first and falls back to OAuth
@@ -14,8 +14,16 @@ For the wider system diagram, see
 
 ## Application Keys
 
-styal Connect is disabled in a fresh clone. Configure source builds with public identifiers for the
-Clerk application and relay you operate in a repository-root `.env` or `.env.local` file:
+T3 Connect is disabled in a fresh clone. To enable it for source builds against the production
+deployment, copy the repository-root example file:
+
+```sh
+cp .env.example .env
+```
+
+`.env.example` carries the production public identifiers (the same values baked into official
+release builds). To target a different Clerk application or relay, set the values yourself in a
+repository-root `.env` or `.env.local` file:
 
 ```dotenv
 T3CODE_CLERK_PUBLISHABLE_KEY=<publishable key>
@@ -23,11 +31,6 @@ T3CODE_CLERK_JWT_TEMPLATE=<JWT template name>
 T3CODE_CLERK_CLI_OAUTH_CLIENT_ID=<public OAuth application client ID>
 T3CODE_RELAY_URL=https://relay.example.com
 ```
-
-The tracked `.env.example` remains the inherited upstream T3 Connect example and is not styal
-deployment configuration. In T3 Code-managed worktrees, the `t3.json` setup script symlinks
-`$T3CODE_PROJECT_ROOT/.env` into each worktree, so maintainers should populate the ignored `.env` in
-the original project checkout once rather than replacing the worktree symlink.
 
 The shared client loader projects these canonical values into framework-specific `VITE_*` and
 `EXPO_PUBLIC_*` aliases. Existing aliases remain accepted as overrides for compatibility, but new
@@ -79,7 +82,7 @@ In **Clerk Dashboard > OAuth applications**:
 2. Enable the **Public** option so authorization-code exchange uses PKCE.
 3. Add **both** allowed redirect URIs:
    - `http://127.0.0.1:34338/callback` for the loopback listener;
-   - `https://app.styal.build/connect/callback` for the hosted out-of-band flow. This is
+   - `https://app.t3.codes/connect/callback` for the hosted out-of-band flow. This is
      `connectCallbackUrl(DEFAULT_HOSTED_APP_URL)` from `packages/shared/src/connectAuth.ts`, so a
      custom `T3CODE_HOSTED_APP_URL` means `$T3CODE_HOSTED_APP_URL/connect/callback` instead.
      Omitting it breaks headless and SSH authorization.
@@ -244,9 +247,9 @@ flow uses a custom redirect URI, add that exact URI to the same allowlist.
 
 ## Sign-in Surfaces
 
-Signed-in users manage styal Connect under **Connections**. The settings sidebar also has dedicated
+Signed-in users manage T3 Connect under **Connections**. The settings sidebar also has dedicated
 controls, rendered by `SettingsSidebarNav.tsx`: `T3ConnectSidebarSignIn` in the footer shows a
-**Sign in to styal Connect** button while signed out, and `T3ConnectSidebarAvatar` shows a Clerk
+**Sign in to T3 Connect** button while signed out, and `T3ConnectSidebarAvatar` shows a Clerk
 `UserButton` account control while signed in. Both are gated on cloud public configuration.
 Desktop renders the same web bundle, so it has them too. The waitlist enrollment flow from the
 private beta was removed when Connect went GA; sign-up is open unless a Clerk restriction below is
