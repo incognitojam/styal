@@ -58,6 +58,13 @@ Model options shown as provider defaults remain display values until you choose 
 T3 Code only sends options you selected explicitly, so an unset reasoning level or service tier can
 still come from the provider's own configuration.
 
+## Notices above the composer
+
+On web and desktop, additional notices peek out above the attached banner. Hover over the peek
+to reveal them, or focus **Show other notices** with `Tab` and press `Enter` or `Space`. Press
+`Escape` to close the stack and return focus to that control. On a touchscreen, tap the peek to
+open the stack. Interacting with the attached banner or composer does not open the stack.
+
 ## Prompt stash
 
 Use the default shortcut, `Cmd+S` on macOS or `Ctrl+S` on Windows and Linux, to stash the current
