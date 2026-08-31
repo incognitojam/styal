@@ -38,7 +38,7 @@ T3 Code works with the platforms your team already uses:
 
 **Repositories with no commits**
 
-- A repository you have just initialized has a branch name but no commits behind it, so there is nothing for a new worktree to branch from. **New worktree** is unavailable until you make a commit; threads still run normally in **Current checkout**.
+- A repository you have just initialized has a branch name but no commits behind it, so there is nothing for a new worktree to branch from. Until a first commit exists, new threads run in **Current checkout** even when your default is **New worktree** — the agent can make that first commit itself, and the default takes effect again from then on.
 - The Git actions toolbar's commit action does exactly this, and reads **Create first commit** in a project that has no remote yet. It stages everything in the project, suggests a message, and commits — after which worktree threads and the branch actions work as usual.
 
 ### Manage Code Reviews Without Context Switching

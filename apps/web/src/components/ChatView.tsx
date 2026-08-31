@@ -27,6 +27,7 @@ import {
   type EnvironmentConnectionPresentation,
 } from "@t3tools/client-runtime/connection";
 import { wasBootstrapThreadDeleted } from "@t3tools/client-runtime/errors";
+import { worktreeNeedsFirstCommit } from "@t3tools/client-runtime/state/vcs";
 import {
   changeRequestAutoSettles,
   effectiveSettled,
@@ -2771,11 +2772,6 @@ function ChatViewContent(props: ChatViewProps) {
           input: { cwd: gitStatusCwd },
         }),
   );
-  // A repository with no commits still reports a branch name, so worktree mode
-  // looks available right up until git refuses to branch from a ref that does
-  // not exist. Old servers omit the field; treat those as committed.
-  const projectHasNoCommits =
-    gitStatusQuery.data?.isRepo === true && gitStatusQuery.data.hasHeadCommit === false;
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const availableEditors = useAtomValue(primaryServerAvailableEditorsAtom);
   // Prefer an instance-id match so a custom Codex instance (e.g.
@@ -4434,17 +4430,15 @@ function ChatViewContent(props: ChatViewProps) {
       ? (pendingServerThreadStartFromOriginByThreadId[activeThread?.id ?? ""] ??
         primaryServerSettings.newWorktreesStartFromOrigin)
       : false;
-  // Mirrors the server, which gates on whether the base ref resolves rather
-  // than on the local HEAD: starting from origin branches off a remote commit,
-  // which is a working configuration while the local HEAD is still unborn. If
-  // the remote turns out to be empty too, the server guard is what says so.
-  const worktreeUnavailableReason =
-    projectHasNoCommits && !(startFromOrigin && gitStatusQuery.data?.hasPrimaryRemote === true)
-      ? "Needs a first commit"
-      : null;
+  const firstCommitNeededForWorktree = worktreeNeedsFirstCommit(
+    gitStatusQuery.data,
+    startFromOrigin,
+  );
+  const worktreeUnavailableReason = firstCommitNeededForWorktree ? "Needs a first commit" : null;
   const sendEnvMode = resolveSendEnvMode({
     requestedEnvMode: envMode,
     isGitRepo,
+    worktreeNeedsFirstCommit: firstCommitNeededForWorktree,
   });
   const localCheckoutBranchMismatch = useMemo(
     () =>
@@ -5772,13 +5766,6 @@ function ChatViewContent(props: ChatViewProps) {
       isFirstMessage && sendEnvMode === "worktree" && !activeThread.worktreePath;
     if (shouldCreateWorktree && !activeThreadBranch) {
       setThreadError(threadIdForSend, "Select a base branch before sending in New worktree mode.");
-      return;
-    }
-    if (shouldCreateWorktree && worktreeUnavailableReason !== null) {
-      setThreadError(
-        threadIdForSend,
-        "This repository has no commits yet, so there is nothing for a worktree to branch from. Make a first commit, or switch to Current checkout.",
-      );
       return;
     }
 
@@ -7358,7 +7345,7 @@ function ChatViewContent(props: ChatViewProps) {
                                 startFromOrigin={startFromOrigin}
                                 onStartFromOriginChange={onStartFromOriginChange}
                                 {...(canOverrideServerThreadEnvMode
-                                  ? { effectiveEnvModeOverride: envMode }
+                                  ? { effectiveEnvModeOverride: sendEnvMode }
                                   : {})}
                                 {...(canOverrideServerThreadEnvMode
                                   ? {

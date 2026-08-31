@@ -809,8 +809,7 @@ export function NewTaskDraftScreen(props: {
     isIncomingShareReady &&
     !isImportingShare &&
     !flow.submitting &&
-    !(flow.workspaceMode === "worktree" && !flow.selectedBranchName) &&
-    !(flow.workspaceMode === "worktree" && flow.worktreeUnavailable);
+    !(flow.workspaceMode === "worktree" && !flow.selectedBranchName);
   const promptEditor = (
     <ComposerEditor
       ref={promptInputRef}
