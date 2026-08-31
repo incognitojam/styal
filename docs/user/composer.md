@@ -60,6 +60,10 @@ still come from the provider's own configuration.
 
 ## Notices above the composer
 
+On web and desktop, loading and syncing statuses fill the available banner width beside the
+stash tab. Task progress appears above the composer, while the timeline's working timer shows
+only elapsed time.
+
 On web and desktop, additional notices peek out above the attached banner. Hover over the peek
 to reveal them, or focus **Show other notices** with `Tab` and press `Enter` or `Space`. Press
 `Escape` to close the stack and return focus to that control. On a touchscreen, tap the peek to
