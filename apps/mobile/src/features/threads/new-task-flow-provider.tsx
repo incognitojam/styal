@@ -81,7 +81,7 @@ import {
   useSavedRemoteConnections,
 } from "../../state/use-remote-environment-registry";
 import { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import { type VcsRef } from "@t3tools/client-runtime/state/vcs";
+import { type VcsRef, worktreeNeedsFirstCommit } from "@t3tools/client-runtime/state/vcs";
 import {
   buildHomeProjectScopes,
   sortHomeProjectScopes,
@@ -457,7 +457,8 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     projectSetting: projectThreadEnvMode,
     projectFilePending: t3ProjectFileQuery.isPending,
   });
-  const workspaceMode = selectedProjectDraft.workspaceSelection?.mode ?? defaultWorkspaceMode;
+  const requestedWorkspaceMode =
+    selectedProjectDraft.workspaceSelection?.mode ?? defaultWorkspaceMode;
   const selectedBranchName = selectedProjectDraft.workspaceSelection?.branch ?? null;
   const selectedWorktreePath = selectedProjectDraft.workspaceSelection?.worktreePath ?? null;
   // Keep the user's explicit choice separate from the resolved display value:
@@ -663,13 +664,13 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       : null,
   );
   const currentCheckoutBranchName = projectGitStatus.data?.refName ?? null;
-  // Old servers omit the field; treat those as committed so this never blocks
-  // a working setup. Mirrors the server, which gates on whether the base ref
-  // resolves rather than on the local HEAD: starting from origin branches off
-  // a remote commit, which works while the local HEAD is still unborn.
-  const worktreeUnavailable =
-    projectGitStatus.data?.hasHeadCommit === false &&
-    !(startFromOrigin && projectGitStatus.data.hasPrimaryRemote);
+  const worktreeUnavailable = worktreeNeedsFirstCommit(projectGitStatus.data, startFromOrigin);
+  // A repository with no commits has nothing a worktree could branch from, so
+  // the draft runs in the checkout — where the agent can make that first
+  // commit itself. The stored selection is untouched; the moment a commit
+  // exists, worktree mode means something again and takes effect.
+  const workspaceMode: WorkspaceMode =
+    requestedWorkspaceMode === "worktree" && worktreeUnavailable ? "local" : requestedWorkspaceMode;
 
   const filteredBranches = useMemo(() => {
     const query = branchQuery.trim().toLowerCase();
@@ -965,9 +966,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         return null;
       }
       const workspaceSelection = draft.workspaceSelection;
-      // Fall back to the resolved mode (server default) so queued tasks drain
-      // with the same mode the composer displayed.
-      const mode = workspaceSelection?.mode ?? workspaceMode;
+      // Queue the mode shown by the composer. The saved selection can still be
+      // worktree while an unborn repository temporarily runs in the checkout.
+      const mode = workspaceMode;
       // When the selection is the stand-in built from the queued snapshot,
       // persist the original (possibly absent) snapshot values — the
       // stand-in's placeholder title/workspaceRoot must never be written back

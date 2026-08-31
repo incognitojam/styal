@@ -1102,8 +1102,7 @@ export function NewTaskDraftScreen(props: {
     !isImportingShare &&
     !flow.submitting &&
     !voiceInput.blocksSubmission &&
-    !(flow.workspaceMode === "worktree" && !flow.selectedBranchName) &&
-    !(flow.workspaceMode === "worktree" && flow.worktreeUnavailable);
+    !(flow.workspaceMode === "worktree" && !flow.selectedBranchName);
   const promptEditor = (
     <ComposerEditor
       ref={promptInputRef}

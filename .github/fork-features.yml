@@ -2492,16 +2492,31 @@ features:
   - id: workspace-thread-organization
     title: Default new threads to isolated worktrees
     status: maintained
-    prs: [199]
+    prs: [199, 271]
     invariants:
-      - New threads default to isolated worktrees unless a user explicitly chooses another workspace mode.
+      - New threads default to isolated worktrees unless a user explicitly chooses another workspace mode or the repository has no commit to branch from.
+      - In a repository without a commit, web and mobile run new threads in the current checkout while retaining the worktree default for after the first commit; the server rejects an unresolvable worktree base with an actionable error.
     implementation_paths:
+      - apps/mobile/src/features/threads/new-task-flow-provider.tsx
+      - apps/server/src/ws.ts
+      - apps/web/src/components/ChatView.logic.ts
+      - packages/client-runtime/src/state/vcs.ts
+      - packages/contracts/src/git.ts
       - packages/contracts/src/settings.ts
     upstream_paths:
+      - apps/mobile/src/features/threads/new-task-flow-provider.tsx
+      - apps/server/src/ws.ts
+      - apps/web/src/components/ChatView.logic.ts
+      - packages/client-runtime/src/state/vcs.ts
+      - packages/contracts/src/git.ts
       - packages/contracts/src/settings.ts
     tests:
+      - apps/server/src/server.test.ts
+      - apps/web/src/components/ChatView.logic.test.ts
+      - packages/client-runtime/src/state/vcsStatus.test.ts
       - packages/contracts/src/settings.test.ts
     upstream:
-      status: unassessed
-      tracking: []
-      retire_when: Upstream defaults new threads to isolated worktrees.
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/5944
+      retire_when: Upstream defaults new threads to isolated worktrees and runs first threads in the current checkout when the repository has no commit, while refusing unresolvable worktree bases with an actionable error.

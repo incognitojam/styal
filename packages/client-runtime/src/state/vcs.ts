@@ -30,6 +30,18 @@ import {
 } from "./vcsRefInvalidation.ts";
 
 const OFFLINE_BRANCH_LIST_LIMIT = 100;
+
+/** Whether a worktree needs an initial commit in the current checkout. */
+export function worktreeNeedsFirstCommit(
+  status: Pick<VcsStatusResult, "isRepo" | "hasHeadCommit" | "hasPrimaryRemote"> | null | undefined,
+  startFromOrigin: boolean,
+): boolean {
+  if (status?.isRepo !== true || status.hasHeadCommit !== false) {
+    return false;
+  }
+  return !(startFromOrigin && status.hasPrimaryRemote);
+}
+
 const VCS_REFS_IDLE_TTL_MS = 30_000;
 // Rows keep the last status they rendered, so the live stream only needs a
 // short grace period when virtualization or scrolling releases its consumer.
