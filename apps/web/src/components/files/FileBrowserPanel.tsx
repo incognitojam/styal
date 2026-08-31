@@ -5,7 +5,7 @@ import type {
 import type { EnvironmentId, ProjectEntry } from "@t3tools/contracts";
 import { FileTree, useFileTree, useFileTreeSearch, useFileTreeSelector } from "@pierre/trees/react";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
-import { ChevronsDownUp, ChevronsUpDown, RotateCw } from "lucide-react";
+import { ChevronsDownUpIcon, ChevronsUpDownIcon, RotateCw } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 
 import { Button } from "~/components/ui/button";
@@ -22,6 +22,7 @@ import { T3_PIERRE_ICONS } from "~/pierre-icons";
 
 import { createFileTreeDragMentionController } from "./fileTreeDragMention";
 import { buildFileTreePathUpdates } from "./fileTreePathReconciliation";
+import { areAllDirectoriesExpanded, setAllDirectoriesExpanded } from "./fileTreeExpansion";
 import { useProjectEntriesQuery } from "./projectFilesQueryState";
 
 interface FileBrowserPanelProps {
@@ -122,6 +123,10 @@ export default function FileBrowserPanel({
   );
   const entryKindsRef = useRef<ReadonlyMap<string, ProjectEntry["kind"]>>(entryKinds);
   const treePaths = useMemo(() => entries.map(treePath), [entries]);
+  const directoryPaths = useMemo(
+    () => entries.filter((entry) => entry.kind === "directory").map(treePath),
+    [entries],
+  );
   const previousTreePathsRef = useRef<readonly string[] | null>(null);
   const syncingSelectionRef = useRef(false);
   const treeSelectionPathRef = useRef<string | null>(null);
@@ -252,22 +257,13 @@ export default function FileBrowserPanel({
     search: false,
     unsafeCSS: TREE_UNSAFE_CSS,
   });
-  const shouldCollapseDirectories = useFileTreeSelector(model, (treeModel) =>
-    entries.some((entry) => {
-      const item = entry.kind === "directory" ? treeModel.getItem(entry.path) : null;
-      return item !== null && "isExpanded" in item && item.isExpanded();
-    }),
+  const search = useFileTreeSearch(model);
+  const allDirectoriesExpanded = useFileTreeSelector(model, (currentModel) =>
+    areAllDirectoriesExpanded(currentModel, directoryPaths),
   );
   const toggleAllDirectories = () => {
-    for (const entry of entries) {
-      if (entry.kind !== "directory") continue;
-      const item = model.getItem(entry.path);
-      if (!item || !("isExpanded" in item)) continue;
-      if (shouldCollapseDirectories) item.collapse();
-      else item.expand();
-    }
+    setAllDirectoriesExpanded(model, directoryPaths, !allDirectoriesExpanded);
   };
-  const search = useFileTreeSearch(model);
   const handleSearchValueChange = (value: string) => {
     if (value.trim().length === 0) {
       search.close();
@@ -392,26 +388,6 @@ export default function FileBrowserPanel({
         data-surface-subheader
       >
         <RefreshFilesButton isPending={entriesQuery.isPending} onRefresh={handleRefresh} />
-        {entries.some((entry) => entry.kind === "directory") && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  aria-label={shouldCollapseDirectories ? "Collapse all files" : "Expand all files"}
-                  onClick={toggleAllDirectories}
-                />
-              }
-            >
-              {shouldCollapseDirectories ? <ChevronsDownUp /> : <ChevronsUpDown />}
-            </TooltipTrigger>
-            <TooltipPopup>
-              {shouldCollapseDirectories ? "Collapse all files" : "Expand all files"}
-            </TooltipPopup>
-          </Tooltip>
-        )}
         <FileSearchField
           name="project-files-search"
           ariaLabel={`Search ${projectName} files`}
@@ -419,6 +395,32 @@ export default function FileBrowserPanel({
           onValueChange={handleSearchValueChange}
           onClose={search.close}
         />
+        {directoryPaths.length > 0 ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={
+                    allDirectoriesExpanded ? "Collapse all folders" : "Expand all folders"
+                  }
+                  onClick={toggleAllDirectories}
+                />
+              }
+            >
+              {allDirectoriesExpanded ? (
+                <ChevronsDownUpIcon className="size-3.5" />
+              ) : (
+                <ChevronsUpDownIcon className="size-3.5" />
+              )}
+            </TooltipTrigger>
+            <TooltipPopup>
+              {allDirectoriesExpanded ? "Collapse all folders" : "Expand all folders"}
+            </TooltipPopup>
+          </Tooltip>
+        ) : null}
       </div>
       {entriesQuery.error && entriesQuery.data === null ? (
         <div className="p-4 text-xs leading-relaxed text-destructive">{entriesQuery.error}</div>
