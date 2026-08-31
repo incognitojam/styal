@@ -41,13 +41,15 @@ numbers, invariants, paths, and test evidence to the existing entry when repairi
 Keep implementation and upstream paths distinct, entries sorted by ID, and values within structured
 lists sorted.
 
-During an upstream rebase, review a capability when upstream changes one of its upstream paths, when
-its tests need conflict resolution, or when the patch range-diff changes. Record upstream evidence
-before changing `upstream.status` from `unassessed`. Fork Nightly compares the old and new upstream
-commits and writes warnings plus a workflow summary section for every exact upstream-path overlap.
-These warnings identify where judgment is needed; they do not claim that an overlap is a behavioral
-conflict. Fork CI validation is blocking, while the Nightly overlap step is deliberately advisory so
-a reporting failure cannot prevent an otherwise verified release.
+When a pull request brings upstream history into the fork, review a capability when upstream changes
+one of its upstream paths or when its tests need conflict resolution. Record upstream evidence before
+changing `upstream.status` from `unassessed`. Fork CI compares the upstream ancestor of the pull
+request base with the candidate and writes warnings plus a workflow summary section for every exact
+upstream-path overlap. The comparison depends on preserved upstream ancestry; squash or cherry-pick
+integration needs the same path review during the pull request because `git merge-base` cannot identify
+the rewritten upstream commits. These warnings identify where judgment is needed; they do not claim
+that an overlap is a behavioral conflict. Ledger validation is blocking, while the overlap step is
+deliberately advisory so a reporting failure cannot prevent an otherwise valid pull request.
 
 When upstream provides overlapping behavior, mark the entry `review-needed` and compare the ledger's
 invariants rather than implementation shape. Retire the fork patch only after upstream satisfies the
