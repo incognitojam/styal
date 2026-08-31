@@ -24,10 +24,10 @@ on:
       theme:
         description: Palette to capture (all multiplies the run by six)
         required: true
-        default: t3-code
+        default: styal
         type: choice
         options:
-          - t3-code
+          - styal
           - t3-chat
           - grove
           - ocean

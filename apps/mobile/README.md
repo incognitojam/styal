@@ -1,7 +1,7 @@
-# T3 Code Mobile
+# styal Mobile
 
 > [!WARNING]
-> T3 Code Mobile is currently in development and is not distributed yet. If you want to try it out, you can build it from source.
+> styal Mobile is currently in development and is not distributed yet. If you want to try it out, you can build it from source.
 
 ## Quickstart
 
@@ -10,9 +10,9 @@
 
 This app has three variants:
 
-- `development`: Expo dev client, installable side-by-side as `T3 Code Dev`
-- `preview`: persistent internal preview build, installable side-by-side as `T3 Code Preview`
-- `production`: store/release build as `T3 Code`
+- `development`: Expo dev client, installable side-by-side as `styal Dev`
+- `preview`: persistent internal preview build, installable side-by-side as `styal Preview`
+- `production`: store/release build as `styal`
 
 Run commands from `apps/mobile`.
 
@@ -36,11 +36,12 @@ vp run ios:dev
 
 If your Xcode account only has a Personal Team, use a bundle identifier you control and opt into the
 reduced-capability local build. Personal Team builds omit the widget and share extensions, push
-entitlement, and native Sign in with Apple entitlement; builds without this opt-in are unchanged.
+entitlement, and native Sign in with Apple entitlement. Full-capability local builds use
+`APPLE_TEAM_ID` when set; EAS builds use the styal project's configured signing credentials.
 
 ```bash
 T3CODE_IOS_PERSONAL_TEAM=1 \
-T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID=com.example.t3code.dev \
+T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID=build.example.styal.dev \
 vp run ios:dev
 ```
 
@@ -54,7 +55,7 @@ The Personal Team equivalent also needs a unique bundle identifier:
 
 ```bash
 T3CODE_IOS_PERSONAL_TEAM=1 \
-T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID=com.example.t3code \
+T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID=build.example.styal \
 vp run ios:release
 ```
 
@@ -89,10 +90,15 @@ The native lint task runs SwiftLint for Swift plus ktlint and detekt for Kotlin.
 
 ## EAS Builds
 
-CI uses Expo fingerprinting with the `preview:dev` profile to reuse an existing compatible build when possible, or start a new internal EAS build when native runtime inputs change. Production and default local builds continue to use the `appVersion` runtime policy.
+CI uses Expo fingerprinting to reuse an existing compatible build when possible, or start a new
+build when native runtime inputs change. All variants use the fingerprint runtime policy by default.
 
-For preview or production EAS environments, set `T3CODE_CLERK_PUBLISHABLE_KEY`,
-`T3CODE_CLERK_JWT_TEMPLATE`, and `T3CODE_RELAY_URL`
+Link this fork to a styal-owned Expo project and create separate App Store Connect and Play Console
+records for `build.styal.app`. Do not relink it to the upstream Expo project or T3 store records.
+When `EXPO_PROJECT_ID` is absent, Expo Updates is disabled rather than falling back to upstream OTA.
+
+For preview or production EAS environments, set `EXPO_PROJECT_ID`, `EXPO_OWNER`,
+`T3CODE_CLERK_PUBLISHABLE_KEY`, `T3CODE_CLERK_JWT_TEMPLATE`, and `T3CODE_RELAY_URL`
 as EAS environment variables. Expo config maps the canonical values into the mobile build.
 
 Create a PR preview dev-client build manually:

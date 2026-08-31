@@ -2063,7 +2063,7 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
 export function resolveDesktopProductName(version: string): string {
   return resolveDesktopUpdateChannel(version) === "nightly"
     ? "styal (Nightly)"
-    : (desktopPackageJson.productName ?? "T3 Code");
+    : (desktopPackageJson.productName ?? "styal");
 }
 
 export function resolveDesktopBuildDescription(version: string): string {
@@ -3238,7 +3238,7 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
     Flag.optional,
   ),
 }).pipe(
-  Command.withDescription("Build a desktop artifact for T3 Code."),
+  Command.withDescription("Build a desktop artifact for styal."),
   Command.withHandler((input) => Effect.flatMap(resolveBuildOptions(input), buildDesktopArtifact)),
 );
 

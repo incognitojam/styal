@@ -1,8 +1,8 @@
 # Run project scripts
 
-Project scripts, shown as **Actions** in T3 Code, are saved shell commands for common project tasks
+Project scripts, shown as **Actions** in styal, are saved shell commands for common project tasks
 such as starting a development server, running tests, or installing dependencies in a new
-worktree. They run on the environment that owns the project and open their output in a T3 Code
+worktree. They run on the environment that owns the project and open their output in a styal
 terminal.
 
 ## Add an action
@@ -15,18 +15,18 @@ Each action has:
 - A name and icon.
 - A shell command.
 - An optional keyboard shortcut.
-- An option to run automatically after T3 Code creates a worktree for a new thread.
+- An option to run automatically after styal creates a worktree for a new thread.
 
 Actions are saved for one checkout, not for every checkout in its project group. Saved actions are
 available to connected clients, including mobile. On mobile, open a thread's terminal menu to run
 one.
 
-T3 Code runs a regular action in the active thread's worktree, or in the project root for a local
+styal runs a regular action in the active thread's worktree, or in the project root for a local
 thread. If the current terminal is busy, the action opens in another terminal. An automatic setup
 action runs after the new worktree is ready, and its progress and result appear in the chat
 timeline. Only one saved action per checkout can be the automatic setup action.
 
-The automatic setup action runs only in a worktree. T3 Code refuses to run it from a local thread,
+The automatic setup action runs only in a worktree. styal refuses to run it from a local thread,
 where its working directory would be the project root: a setup command that copies or links files
 from `T3CODE_PROJECT_ROOT` into its working directory would overwrite the checkout's own copies of
 those files.
@@ -61,11 +61,11 @@ Code:
 ```
 
 The `$schema` entry is optional, but enables validation and suggestions in editors that support
-JSON Schema. T3 Code also accepts comments and trailing commas in this file.
+JSON Schema. styal also accepts comments and trailing commas in this file.
 
 Each script supports these fields:
 
-- `name` (required): the label shown in T3 Code.
+- `name` (required): the label shown in styal.
 - `command` (required): the shell command to run.
 - `icon` (optional): `play`, `test`, `lint`, `configure`, `build`, or `debug`. The default is
   `play`.
@@ -79,21 +79,21 @@ already-imported action. Edit the saved action, or delete it and import the revi
 when you want to adopt a change.
 
 Review a checked-in command before importing it. Once saved, an action has the same access to the
-environment and files as a command entered in a T3 Code terminal.
+environment and files as a command entered in a styal terminal.
 
-If `t3.json` is invalid, T3 Code ignores the entire file. **Settings** → **Projects** shows a
+If `t3.json` is invalid, styal ignores the entire file. **Settings** → **Projects** shows a
 warning so you can correct its syntax or field values.
 
 ## Project environment variables
 
-T3 Code adds project context to commands it launches. These variables are intended for project
+styal adds project context to commands it launches. These variables are intended for project
 commands and can safely be referenced by actions:
 
-| Variable                | Available in                                                     | Value                                                                                                                   |
-| ----------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `T3CODE_PROJECT_ROOT`   | Actions, plus web and desktop terminals                          | Absolute path to the checkout registered as the project. In a worktree thread, this remains the original checkout path. |
-| `T3CODE_WORKTREE_PATH`  | Actions, plus web and desktop terminals for a worktree thread    | Absolute path to the thread's worktree. It is unset for local threads.                                                  |
-| `T3CODE_WORKSPACE_PORT` | Actions, T3 Code terminals, and locally launched agent processes | First port in the workspace's stable range of ten ports.                                                                |
+| Variable                | Available in                                                   | Value                                                                                                                   |
+| ----------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `T3CODE_PROJECT_ROOT`   | Actions, plus web and desktop terminals                        | Absolute path to the checkout registered as the project. In a worktree thread, this remains the original checkout path. |
+| `T3CODE_WORKTREE_PATH`  | Actions, plus web and desktop terminals for a worktree thread  | Absolute path to the thread's worktree. It is unset for local threads.                                                  |
+| `T3CODE_WORKSPACE_PORT` | Actions, styal terminals, and locally launched agent processes | First port in the workspace's stable range of ten ports.                                                                |
 
 The action's current working directory is normally `T3CODE_WORKTREE_PATH` when that variable is
 set, otherwise `T3CODE_PROJECT_ROOT`. This makes it possible to read shared files from the original
@@ -111,7 +111,7 @@ pnpm dev -- --port "$T3CODE_WORKSPACE_PORT" &
 pnpm run api -- --port "$((T3CODE_WORKSPACE_PORT + 1))"
 ```
 
-The assigned range is stable across restarts and does not overlap with another T3 Code workspace
+The assigned range is stable across restarts and does not overlap with another styal workspace
 in the same environment. It does not reserve the sockets from unrelated programs on the host. See
 [Project settings](./project-settings.md#stable-workspace-ports) for allocation details and
 [Keyboard shortcuts](./keybindings.md#commands) for binding saved actions to keys.
