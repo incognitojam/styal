@@ -1758,7 +1758,7 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("lucide-x");
+    expect(markup).toContain("lucide-circle-alert");
     expect(markup).toContain('aria-label="Exit code 17"');
     expect(markup).toContain("Exit code 17");
     // Ordinary tool failures render muted, not red.
@@ -1797,7 +1797,7 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("lucide-x");
+    expect(markup).toContain("lucide-circle-alert");
     expect(markup).toContain("text-destructive");
   });
 
