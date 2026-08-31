@@ -1055,19 +1055,23 @@ features:
     implementation_paths:
       - apps/desktop/src/preview/Manager.ts
       - apps/web/src/browser/HostedBrowserWebview.tsx
+      - apps/web/src/browser/browserRecording.ts
       - apps/web/src/browser/browserSurfaceStore.ts
       - apps/web/src/components/preview/PreviewAutomationHosts.tsx
     upstream_paths:
       - apps/desktop/src/preview/Manager.ts
       - apps/web/src/browser/HostedBrowserWebview.tsx
+      - apps/web/src/browser/browserRecording.ts
       - apps/web/src/components/preview/PreviewAutomationHosts.tsx
     tests:
       - apps/desktop/src/preview/Manager.test.ts
+      - apps/web/src/browser/browserRecording.test.ts
       - apps/web/src/browser/browserSurfaceStore.test.ts
       - apps/web/src/browser/hostedBrowserWebviewStyle.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/8839
       retire_when: Upstream reliably captures hidden preview tabs with bounded native work and no user-visible activation.
 
   - id: preview-surface-continuity
