@@ -1,7 +1,6 @@
 {
   "name": "@styal/cli",
-  "version": "0.0.36",
-  "description": "Run the styal server and web client for coding agents.",
+  "version": "0.0.37",
   "license": "MIT",
   "repository": {
     "type": "git",
