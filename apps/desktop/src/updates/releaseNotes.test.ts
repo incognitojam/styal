@@ -86,4 +86,38 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
     const notes = normalizeDesktopUpdateReleaseNotes("- Broken entity &#9999999999;", "1.0.0");
     expect(notes).toEqual([{ version: "1.0.0", items: ["Broken entity &#9999999999;"] }]);
   });
+
+  it("drops the Full Changelog footer when only its label survives markup stripping", () => {
+    // electron-updater delivers GitHub's HTML, where stripMarkup() discards the
+    // anchor href and leaves the link text behind.
+    const notes = normalizeDesktopUpdateReleaseNotes(
+      '<p><strong>Full Changelog</strong>: <a href="https://example.com/compare/abc...def">acme/widget@abc...def</a></p>',
+      "1.0.0",
+    );
+    expect(notes).toEqual([]);
+  });
+
+  it("drops the New Contributors footer", () => {
+    const notes = normalizeDesktopUpdateReleaseNotes(
+      "- Real change\nNew Contributors: @someone made their first contribution",
+      "1.0.0",
+    );
+    expect(notes).toEqual([{ version: "1.0.0", items: ["Real change"] }]);
+  });
+
+  it("keeps items that merely begin with footer wording", () => {
+    const notes = normalizeDesktopUpdateReleaseNotes(
+      "- Full changelog links now use fork tags\n- New contributors can configure passkeys",
+      "1.0.0",
+    );
+    expect(notes).toEqual([
+      {
+        version: "1.0.0",
+        items: [
+          "Full changelog links now use fork tags",
+          "New contributors can configure passkeys",
+        ],
+      },
+    ]);
+  });
 });

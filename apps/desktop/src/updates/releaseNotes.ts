@@ -83,14 +83,25 @@ function isCommitListHeading(line: string): boolean {
   return normalized === "what's changed" || normalized === "whats changed";
 }
 
+// Labels GitHub appends to a generated release body, as a heading ("New
+// Contributors") or a labelled link ("**Full Changelog**: <url>"). Matching the
+// label rather than the link matters: electron-updater hands us the HTML form,
+// where stripMarkup() drops the anchor href and leaves behind the link text,
+// e.g. "Full Changelog: pingdotgg/t3code@4c51b4c...4c51b4c".
+const GENERATED_FOOTER_LABELS = ["full changelog", "new contributors", "compare"];
+
+function isGeneratedFooterLine(normalized: string): boolean {
+  return GENERATED_FOOTER_LABELS.some(
+    (label) => normalized === label || normalized.startsWith(`${label}:`),
+  );
+}
+
 function isIgnoredReleaseNoteLine(line: string): boolean {
   const normalized = normalizeReleaseNoteLine(line);
   return (
     normalized === "" ||
     isCommitListHeading(line) ||
-    normalized === "full changelog" ||
-    normalized === "new contributors" ||
-    normalized.startsWith("compare: ") ||
+    isGeneratedFooterLine(normalized) ||
     normalized.includes("/compare/")
   );
 }
