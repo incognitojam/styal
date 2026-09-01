@@ -66,6 +66,25 @@ export function hasConfiguredMcpServer(appServerArgs: ReadonlyArray<string> | un
   return appServerArgs?.some((argument) => argument.includes("mcp_servers.")) === true;
 }
 
+export function registerCodexSkillRoots<E>(input: {
+  readonly skillRoots: ReadonlyArray<string> | undefined;
+  readonly request: (
+    params: CodexRpc.ClientRequestParamsByMethod["skills/extraRoots/set"],
+  ) => Effect.Effect<unknown, E>;
+}): Effect.Effect<void> {
+  if (!input.skillRoots || input.skillRoots.length === 0) return Effect.void;
+
+  return input.request({ extraRoots: input.skillRoots }).pipe(
+    Effect.asVoid,
+    Effect.catch((cause) =>
+      Effect.logWarning(
+        "Failed to register additional Codex skill roots; continuing without bundled skills.",
+        { cause },
+      ),
+    ),
+  );
+}
+
 export const CodexResumeCursorSchema = Schema.Struct({
   threadId: Schema.String,
 });
@@ -167,6 +186,7 @@ export interface CodexSessionRuntimeOptions {
   readonly resumeCursor?: CodexResumeCursor;
   readonly appServerArgs?: ReadonlyArray<string>;
   readonly additionalInstructions?: string;
+  readonly skillRoots?: ReadonlyArray<string>;
 }
 
 export interface CodexSessionRuntimeSendTurnInput {
@@ -2239,6 +2259,10 @@ export const makeCodexSessionRuntime = (
       yield* emitSessionEvent("session/connecting", "Starting Codex App Server session.");
       yield* client.request("initialize", buildCodexInitializeParams());
       yield* client.notify("initialized", undefined);
+      yield* registerCodexSkillRoots({
+        skillRoots: options.skillRoots,
+        request: (params) => client.request("skills/extraRoots/set", params),
+      });
 
       const requestedModel = normalizeCodexModelSlug(options.model);
 

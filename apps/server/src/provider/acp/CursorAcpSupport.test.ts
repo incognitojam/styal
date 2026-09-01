@@ -74,6 +74,16 @@ describe("buildCursorAcpSpawnInput", () => {
       cwd: "/tmp/project",
     });
   });
+
+  it("loads local plugins for the ACP process", () => {
+    expect(
+      buildCursorAcpSpawnInput(undefined, "/tmp/project", undefined, ["/opt/t3-plugin"]),
+    ).toEqual({
+      command: "cursor-agent",
+      args: ["--plugin-dir", "/opt/t3-plugin", "acp"],
+      cwd: "/tmp/project",
+    });
+  });
 });
 
 describe("applyCursorAcpModelSelection", () => {

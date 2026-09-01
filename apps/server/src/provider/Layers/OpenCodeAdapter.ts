@@ -45,6 +45,7 @@ import {
   openCodeQuestionId,
   openCodeRuntimeErrorDetail,
   parseOpenCodeModelSlug,
+  resolveOpenCodeConfigContentWithSkillRoot,
   runOpenCodeSdk,
   toOpenCodeFileParts,
   toOpenCodePermissionReply,
@@ -260,6 +261,28 @@ export interface OpenCodeAdapterLiveOptions {
   readonly environment?: NodeJS.ProcessEnv;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
+  readonly projectSetupSkillRoot?: string;
+}
+
+export function resolveOpenCodeRuntimeEnvironment(input: {
+  readonly sessionEnvironment: NodeJS.ProcessEnv | undefined;
+  readonly projectSetupSkillRoot: string | undefined;
+  readonly serverUrl: string | null | undefined;
+  readonly inheritedEnvironment?: NodeJS.ProcessEnv;
+}): NodeJS.ProcessEnv | undefined {
+  if (!input.projectSetupSkillRoot || input.serverUrl?.trim()) {
+    return input.sessionEnvironment;
+  }
+
+  const environment = input.sessionEnvironment ?? input.inheritedEnvironment ?? process.env;
+  return {
+    ...environment,
+    OPENCODE_CONFIG_CONTENT: resolveOpenCodeConfigContentWithSkillRoot(
+      environment,
+      input.projectSetupSkillRoot,
+      environment,
+    ),
+  };
 }
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -1241,6 +1264,11 @@ export function makeOpenCodeAdapter(
           const sessionEnvironment = input.environment
             ? { ...(options?.environment ?? process.env), ...input.environment }
             : options?.environment;
+          const runtimeEnvironment = resolveOpenCodeRuntimeEnvironment({
+            sessionEnvironment,
+            projectSetupSkillRoot: options?.projectSetupSkillRoot,
+            serverUrl,
+          });
           const startedExit = yield* Effect.exit(
             Effect.gen(function* () {
               // The runtime binds the server's lifetime to the Scope.Scope
@@ -1249,7 +1277,7 @@ export function makeOpenCodeAdapter(
               const server = yield* openCodeRuntime.connectToOpenCodeServer({
                 binaryPath,
                 serverUrl,
-                ...(sessionEnvironment ? { environment: sessionEnvironment } : {}),
+                ...(runtimeEnvironment ? { environment: runtimeEnvironment } : {}),
               });
               const client = openCodeRuntime.createOpenCodeSdkClient({
                 baseUrl: server.url,

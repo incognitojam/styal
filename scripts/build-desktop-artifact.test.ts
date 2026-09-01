@@ -51,6 +51,7 @@ import {
   resolveMockUpdateServerUrl,
   resolvePackageManagerUserAgent,
   stageLinuxIconSize,
+  stageAgentPlugins,
   stageDesktopDmgBackground,
   stageResourceMonitor,
   STAGE_INSTALL_ARGS,
@@ -494,10 +495,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.notProperty(linux, "asarUnpack");
       assert.notProperty(win, "asarUnpack");
       assert.deepStrictEqual(win.extraResources, [
-        {
-          from: "apps/desktop/prod-resources/resource-monitor",
-          to: "resource-monitor",
-        },
+        ...DESKTOP_EXTRA_RESOURCES,
         ...WINDOWS_SERVER_EXTRA_RESOURCES,
       ]);
       assert.deepStrictEqual(win.nsis, {
@@ -690,6 +688,31 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
             path.join(stageResourcesDir, "resource-monitor/t3-resource-monitor"),
           ),
           "cached monitor",
+        );
+      }),
+    ),
+  );
+
+  it.effect("stages agent plugins as loose desktop resources", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs.makeTempDirectoryScoped({
+          prefix: "t3-agent-plugins-stage-test-",
+        });
+        const serverDistDir = path.join(root, "server-dist");
+        const stageResourcesDir = path.join(root, "resources");
+        const skillRelativePath = "agent-plugins/t3-project-setup/skills/t3-project-setup/SKILL.md";
+        const sourceSkill = path.join(serverDistDir, skillRelativePath);
+        yield* fs.makeDirectory(path.dirname(sourceSkill), { recursive: true });
+        yield* fs.writeFileString(sourceSkill, "synthetic skill");
+
+        yield* stageAgentPlugins({ serverDistDir, stageResourcesDir });
+
+        assert.equal(
+          yield* fs.readFileString(path.join(stageResourcesDir, skillRelativePath)),
+          "synthetic skill",
         );
       }),
     ),
@@ -1245,11 +1268,15 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 
-  it("stages the resource monitor as an external executable resource", () => {
+  it("stages process-readable desktop resources outside app.asar", () => {
     assert.deepStrictEqual(DESKTOP_EXTRA_RESOURCES, [
       {
         from: "apps/desktop/prod-resources/resource-monitor",
         to: "resource-monitor",
+      },
+      {
+        from: "apps/desktop/prod-resources/agent-plugins",
+        to: "agent-plugins",
       },
     ]);
     assert.deepStrictEqual(resolveResourceMonitorRustTargets("mac", "universal"), [

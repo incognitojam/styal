@@ -473,6 +473,21 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
       expect(openCodeSnapshot.continuation?.groupKey).toBe(
         `${openCodeDriverKind}:instance:${openCodeId}`,
       );
+      for (const snapshot of [
+        codexSnapshot,
+        claudeSnapshot,
+        cursorSnapshot,
+        grokSnapshot,
+        openCodeSnapshot,
+      ]) {
+        expect(snapshot.skills).toContainEqual(
+          expect.objectContaining({
+            name: "t3-project-setup",
+            scope: "bundled",
+            enabled: true,
+          }),
+        );
+      }
     }).pipe(Effect.provide(testLayer)),
   );
 });

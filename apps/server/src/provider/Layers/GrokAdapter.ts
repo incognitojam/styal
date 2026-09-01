@@ -105,6 +105,7 @@ export interface GrokAdapterLiveOptions {
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
   readonly instanceId?: ProviderInstanceId;
+  readonly projectSetupPluginPath?: string;
   /** Override the conservative ACP turn liveness timeout in focused tests. */
   readonly turnInactivityTimeoutMs?: number;
   /** Override the longer active-tool liveness timeout in focused tests. */
@@ -990,6 +991,9 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             runtimeMode: input.runtimeMode,
             ...(input.additionalInstructions
               ? { additionalInstructions: input.additionalInstructions }
+              : {}),
+            ...(options?.projectSetupPluginPath
+              ? { pluginDirs: [options.projectSetupPluginPath] }
               : {}),
             ...(resumeSessionId ? { resumeSessionId } : {}),
             clientInfo: { name: "t3-code", version: "0.0.0" },

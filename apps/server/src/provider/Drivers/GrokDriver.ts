@@ -14,6 +14,10 @@ import { makeGrokTextGeneration } from "../../textGeneration/GrokTextGeneration.
 import { ProviderDriverError } from "../Errors.ts";
 import { makeGrokAdapter } from "../Layers/GrokAdapter.ts";
 import {
+  addT3ProjectSetupSkill,
+  resolveT3ProjectSetupPluginPaths,
+} from "../T3ProjectSetupPlugin.ts";
+import {
   buildInitialGrokProviderSnapshot,
   checkGrokProviderStatus,
   enrichGrokSnapshot,
@@ -102,6 +106,9 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv> = {
         continuationGroupKey: continuationIdentity.continuationKey,
       });
       const effectiveConfig = { ...config, enabled } satisfies GrokSettings;
+      const projectSetupPlugin = yield* resolveT3ProjectSetupPluginPaths();
+      const stampProviderSnapshot = (snapshot: ServerProviderDraft) =>
+        addT3ProjectSetupSkill(stampIdentity(snapshot), projectSetupPlugin);
       const maintenanceCapabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(UPDATE, {
         binaryPath: effectiveConfig.binaryPath,
         env: processEnv,
@@ -109,13 +116,14 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv> = {
 
       const adapter = yield* makeGrokAdapter(effectiveConfig, {
         environment: processEnv,
+        ...(projectSetupPlugin ? { projectSetupPluginPath: projectSetupPlugin.pluginRoot } : {}),
         ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
         instanceId,
       });
       const textGeneration = yield* makeGrokTextGeneration(effectiveConfig, processEnv);
 
       const checkProvider = checkGrokProviderStatus(effectiveConfig, processEnv, cwd).pipe(
-        Effect.map(stampIdentity),
+        Effect.map(stampProviderSnapshot),
         Effect.provideService(Crypto.Crypto, crypto),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       );
@@ -127,7 +135,9 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv> = {
         streamSettings: snapshotSettings.streamSettings,
         haveSettingsChanged: haveProviderSnapshotSettingsChanged,
         initialSnapshot: (settings) =>
-          buildInitialGrokProviderSnapshot(settings.provider).pipe(Effect.map(stampIdentity)),
+          buildInitialGrokProviderSnapshot(settings.provider).pipe(
+            Effect.map(stampProviderSnapshot),
+          ),
         checkProvider,
         enrichSnapshot: ({ settings, snapshot: currentSnapshot, publishSnapshot }) =>
           enrichGrokSnapshot({

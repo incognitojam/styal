@@ -27,6 +27,10 @@ import { makeCursorTextGeneration } from "../../textGeneration/CursorTextGenerat
 import { ProviderDriverError } from "../Errors.ts";
 import { makeCursorAdapter } from "../Layers/CursorAdapter.ts";
 import {
+  addT3ProjectSetupSkill,
+  resolveT3ProjectSetupPluginPaths,
+} from "../T3ProjectSetupPlugin.ts";
+import {
   buildInitialCursorProviderSnapshot,
   checkCursorProviderStatus,
   enrichCursorSnapshot,
@@ -120,6 +124,9 @@ export const CursorDriver: ProviderDriver<CursorSettings, CursorDriverEnv> = {
         continuationGroupKey: continuationIdentity.continuationKey,
       });
       const effectiveConfig = { ...config, enabled } satisfies CursorSettings;
+      const projectSetupPlugin = yield* resolveT3ProjectSetupPluginPaths();
+      const stampProviderSnapshot = (snapshot: ServerProviderDraft) =>
+        addT3ProjectSetupSkill(stampIdentity(snapshot), projectSetupPlugin);
       const maintenanceCapabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(UPDATE, {
         binaryPath: effectiveConfig.binaryPath,
         env: processEnv,
@@ -127,13 +134,14 @@ export const CursorDriver: ProviderDriver<CursorSettings, CursorDriverEnv> = {
 
       const adapter = yield* makeCursorAdapter(effectiveConfig, {
         environment: processEnv,
+        ...(projectSetupPlugin ? { projectSetupPluginPath: projectSetupPlugin.pluginRoot } : {}),
         ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
         instanceId,
       });
       const textGeneration = yield* makeCursorTextGeneration(effectiveConfig, processEnv);
 
       const checkProvider = checkCursorProviderStatus(effectiveConfig, processEnv).pipe(
-        Effect.map(stampIdentity),
+        Effect.map(stampProviderSnapshot),
         Effect.provideService(Crypto.Crypto, crypto),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
         Effect.provideService(FileSystem.FileSystem, fileSystem),
@@ -147,7 +155,9 @@ export const CursorDriver: ProviderDriver<CursorSettings, CursorDriverEnv> = {
         streamSettings: snapshotSettings.streamSettings,
         haveSettingsChanged: haveProviderSnapshotSettingsChanged,
         initialSnapshot: (settings) =>
-          buildInitialCursorProviderSnapshot(settings.provider).pipe(Effect.map(stampIdentity)),
+          buildInitialCursorProviderSnapshot(settings.provider).pipe(
+            Effect.map(stampProviderSnapshot),
+          ),
         checkProvider,
         // Model catalog and capabilities come exclusively from Cursor's
         // list_available_models extension method during provider checks.
@@ -158,7 +168,7 @@ export const CursorDriver: ProviderDriver<CursorSettings, CursorDriverEnv> = {
             maintenanceCapabilities,
             enableProviderUpdateChecks: settings.enableProviderUpdateChecks,
             publishSnapshot,
-            stampIdentity,
+            stampIdentity: stampProviderSnapshot,
             httpClient,
           }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner)),
       }).pipe(

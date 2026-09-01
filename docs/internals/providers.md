@@ -39,6 +39,19 @@ directory to route session and turn operations for a thread, so callers name a t
 Adding a driver means writing the driver plus adapter and adding it to `BUILT_IN_DRIVERS`. No
 orchestration, contract, or client change is required for the common case.
 
+## Bundled provider skills
+
+T3 Code ships a project setup skill as an agent plugin under
+[`apps/server/agent-plugins/`][agent-plugins]. The server build copies it beside the compiled server,
+and desktop packaging also emits it as a loose resource outside `app.asar` and `server.asar`.
+Provider CLIs run as separate processes and cannot read Electron archive paths.
+
+Each driver resolves the bundled plugin when its provider instance is created, includes it in the
+provider skill inventory, and passes the appropriate plugin or skill root to new sessions. A missing
+bundle is ignored. Codex root registration is also best-effort so a Codex build that predates the
+request can still start a session. OpenCode exposure and injection are skipped when the instance
+uses an external server URL because a host-local path is not meaningful to that server.
+
 ## Model manifest
 
 The model picker's legacy section is driven by `apps/server/src/provider/model-manifest.json`, which
@@ -130,3 +143,4 @@ when a request opens (approval) or user input is requested, via
 [ingest]: ../../apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
 [cmd]: ../../apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
 [checkpoint]: ../../apps/server/src/orchestration/Layers/CheckpointReactor.ts
+[agent-plugins]: ../../apps/server/agent-plugins

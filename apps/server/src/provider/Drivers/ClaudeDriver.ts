@@ -30,6 +30,10 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeClaudeAdapter } from "../Layers/ClaudeAdapter.ts";
 import {
+  addT3ProjectSetupSkill,
+  resolveT3ProjectSetupPluginPaths,
+} from "../T3ProjectSetupPlugin.ts";
+import {
   checkClaudeProviderStatus,
   makePendingClaudeProvider,
   probeClaudeCapabilities,
@@ -134,6 +138,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         instanceId,
       });
       const effectiveConfig = { ...config, enabled } satisfies ClaudeSettings;
+      const projectSetupPlugin = yield* resolveT3ProjectSetupPluginPaths();
       const maintenanceCapabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(UPDATE, {
         binaryPath: effectiveConfig.binaryPath,
         env: processEnv,
@@ -145,10 +150,13 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         accentColor,
         continuationGroupKey,
       });
+      const stampProviderSnapshot = (snapshot: ServerProviderDraft) =>
+        addT3ProjectSetupSkill(stampIdentity(snapshot), projectSetupPlugin);
 
       const adapterOptions = {
         instanceId,
         environment: processEnv,
+        ...(projectSetupPlugin ? { projectSetupPluginPath: projectSetupPlugin.pluginRoot } : {}),
         ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
       };
       const adapter = yield* makeClaudeAdapter(effectiveConfig, adapterOptions);
@@ -180,7 +188,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
             ),
             modelManifest.current,
             (draft, manifest) =>
-              stampIdentity(ModelManifest.applyModelManifest(draft, manifest, DRIVER_KIND)),
+              stampProviderSnapshot(ModelManifest.applyModelManifest(draft, manifest, DRIVER_KIND)),
             { concurrent: true },
           ),
         ),
@@ -200,7 +208,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
             makePendingClaudeProvider(settings.provider),
             modelManifest.current,
             (draft, manifest) =>
-              stampIdentity(ModelManifest.applyModelManifest(draft, manifest, DRIVER_KIND)),
+              stampProviderSnapshot(ModelManifest.applyModelManifest(draft, manifest, DRIVER_KIND)),
           ),
         checkProvider,
         enrichSnapshot: ({ settings, snapshot, publishSnapshot }) =>

@@ -45,6 +45,15 @@ describe("grokAcpSpawnArgs", () => {
     ]);
     expect(grokAcpSpawnArgs("auto")).toEqual(["--permission-mode", "auto", "agent", "stdio"]);
   });
+
+  it("loads local plugins for the agent process", () => {
+    expect(grokAcpSpawnArgs(undefined, undefined, ["/opt/t3-plugin"])).toEqual([
+      "agent",
+      "--plugin-dir",
+      "/opt/t3-plugin",
+      "stdio",
+    ]);
+  });
 });
 
 describe("buildGrokAcpSpawnInput", () => {

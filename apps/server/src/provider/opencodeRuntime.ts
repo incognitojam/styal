@@ -35,6 +35,13 @@ import * as NetService from "@t3tools/shared/Net";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
+const decodeOpenCodeConfigContentExit = Schema.decodeUnknownExit(
+  Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+);
+const decodeOpenCodeConfigRecordExit = Schema.decodeUnknownExit(
+  Schema.Record(Schema.String, Schema.Unknown),
+);
+const decodeOpenCodeSkillPathsExit = Schema.decodeUnknownExit(Schema.Array(Schema.String));
 const OPENCODE_EMPTY_CONFIG_CONTENT = "{}";
 
 export function resolveOpenCodeConfigContent(
@@ -46,6 +53,29 @@ export function resolveOpenCodeConfigContent(
     inheritedEnvironment.OPENCODE_CONFIG_CONTENT ??
     OPENCODE_EMPTY_CONFIG_CONTENT
   );
+}
+
+export function resolveOpenCodeConfigContentWithSkillRoot(
+  inputEnvironment: Readonly<Record<string, string | undefined>> | undefined,
+  skillRoot: string,
+  inheritedEnvironment: Readonly<Record<string, string | undefined>> = process.env,
+): string {
+  const content = resolveOpenCodeConfigContent(inputEnvironment, inheritedEnvironment);
+  const configExit = decodeOpenCodeConfigContentExit(content);
+  if (Exit.isFailure(configExit)) return content;
+
+  const skillsExit = decodeOpenCodeConfigRecordExit(configExit.value.skills);
+  const skills = Exit.isSuccess(skillsExit) ? skillsExit.value : {};
+  const pathsExit = decodeOpenCodeSkillPathsExit(skills.paths);
+  const paths = Exit.isSuccess(pathsExit) ? pathsExit.value : [];
+
+  return JSON.stringify({
+    ...configExit.value,
+    skills: {
+      ...skills,
+      paths: [...new Set([...paths, skillRoot])],
+    },
+  });
 }
 
 const OPENCODE_SERVER_READY_PREFIX = "opencode server listening";

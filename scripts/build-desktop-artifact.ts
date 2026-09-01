@@ -859,6 +859,10 @@ export const DESKTOP_EXTRA_RESOURCES = [
     from: "apps/desktop/prod-resources/resource-monitor",
     to: "resource-monitor",
   },
+  {
+    from: "apps/desktop/prod-resources/agent-plugins",
+    to: "agent-plugins",
+  },
 ] as const;
 
 export interface MacPasskeySigningConfiguration {
@@ -1759,6 +1763,18 @@ export const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* 
   if (input.platform !== "win") {
     yield* fs.chmod(destinationPath, 0o755);
   }
+});
+
+export const stageAgentPlugins = Effect.fn("stageAgentPlugins")(function* (input: {
+  readonly serverDistDir: string;
+  readonly stageResourcesDir: string;
+}) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  yield* fs.copy(
+    path.join(input.serverDistDir, "agent-plugins"),
+    path.join(input.stageResourcesDir, "agent-plugins"),
+  );
 });
 
 function generateMacIconSet(
@@ -2897,6 +2913,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     arch: options.arch,
     verbose: options.verbose,
   });
+  yield* stageAgentPlugins({ serverDistDir: distDirs.serverDist, stageResourcesDir });
 
   yield* assertPlatformBuildResources(
     options.platform,

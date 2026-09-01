@@ -22,6 +22,7 @@ import {
   isRecoverableThreadResumeError,
   makeMemoryConsolidationNotificationFilter,
   openCodexThread,
+  registerCodexSkillRoots,
   toMcpElicitationResponse,
 } from "./CodexSessionRuntime.ts";
 const isCodexAppServerRequestError = Schema.is(CodexErrors.CodexAppServerRequestError);
@@ -789,6 +790,37 @@ describe("isRecoverableThreadResumeError", () => {
       false,
     );
   });
+});
+
+describe("registerCodexSkillRoots", () => {
+  it.effect("registers configured roots", () =>
+    Effect.gen(function* () {
+      const requests: Array<CodexRpc.ClientRequestParamsByMethod["skills/extraRoots/set"]> = [];
+
+      yield* registerCodexSkillRoots({
+        skillRoots: ["/synthetic/skills"],
+        request: (params) =>
+          Effect.sync(() => {
+            requests.push(params);
+          }),
+      });
+
+      NodeAssert.deepStrictEqual(requests, [{ extraRoots: ["/synthetic/skills"] }]);
+    }),
+  );
+
+  it.effect("does not fail the session when the app server lacks the method", () =>
+    registerCodexSkillRoots({
+      skillRoots: ["/synthetic/skills"],
+      request: () =>
+        Effect.fail(
+          new CodexErrors.CodexAppServerRequestError({
+            code: -32601,
+            errorMessage: "Method not found",
+          }),
+        ),
+    }),
+  );
 });
 
 describe("openCodexThread", () => {

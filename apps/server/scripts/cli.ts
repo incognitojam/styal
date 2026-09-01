@@ -162,6 +162,11 @@ const buildCmd = Command.make(
         }),
       );
 
+      yield* fs.copy(
+        path.join(serverDir, "agent-plugins"),
+        path.join(serverDir, "dist/agent-plugins"),
+      );
+
       const webDist = path.join(repoRoot, "apps/web/dist");
       const clientTarget = path.join(serverDir, "dist/client");
 
@@ -227,6 +232,7 @@ const publishCmd = Command.make(
         "dist/bin.mjs",
         "dist/service-launcher.mjs",
         "dist/client/index.html",
+        "dist/agent-plugins/t3-project-setup/skills/t3-project-setup/SKILL.md",
       ]) {
         const abs = path.join(serverDir, relPath);
         if (!(yield* fs.exists(abs))) {
