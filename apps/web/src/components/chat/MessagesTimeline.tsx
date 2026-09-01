@@ -24,6 +24,7 @@ import {
   isPreviewToolName,
   normalizeKnownToolName,
   type ToolRowArgument,
+  type ToolRowPresentation,
 } from "@t3tools/shared/toolRowPresentation";
 import {
   createContext,
@@ -1695,14 +1696,8 @@ function WorkGroupToggleTimelineRow({
       row.summaryEntry?.toolName || row.summaryEntry?.itemType
         ? toolRowPresentationFor(row.summaryEntry)
         : undefined;
-    const preview =
-      presentation?.argument && row.summaryEntry
-        ? formatToolRowArgument(presentation.argument, ctx.workspaceRoot)
-        : null;
     const displaySummary = presentation
-      ? preview
-        ? `${presentation.heading} - ${preview}`
-        : presentation.heading
+      ? toolRowDisplayText(presentation, ctx.workspaceRoot)
       : row.summary;
     const fileChangeStat =
       row.fileChangeStat && hasNonZeroStat(row.fileChangeStat) ? row.fileChangeStat : null;
@@ -2478,6 +2473,23 @@ function formatToolRowArgument(
   return argument.moreCount ? `${displayPath} +${argument.moreCount} more` : displayPath;
 }
 
+function toolRowDisplayText(
+  presentation: ToolRowPresentation,
+  workspaceRoot: string | undefined,
+): string {
+  const { heading } = presentation;
+  const rawArgument = presentation.argument
+    ? formatToolRowArgument(presentation.argument, workspaceRoot)
+    : null;
+  const argument =
+    rawArgument &&
+    normalizeCompactToolLabel(rawArgument).toLowerCase() ===
+      normalizeCompactToolLabel(heading).toLowerCase()
+      ? null
+      : rawArgument;
+  return argument ? `${heading} - ${argument}` : heading;
+}
+
 /** Tool rows already sit inside a project-scoped thread, so its root label is redundant. */
 function formatToolFilePath(path: string, workspaceRoot: string | undefined): string {
   return formatWorkspaceRelativePath(path, workspaceRoot, { includeWorkspaceLabel: false });
@@ -2697,6 +2709,11 @@ function liveWorkEntryLabel(
     const program = commandProgramName(command);
     if (program) return `Running ${program}`;
     return "Running command";
+  }
+
+  const presentation = toolRowPresentationFor(workEntry);
+  if (presentation) {
+    return toolRowDisplayText(presentation, workspaceRoot);
   }
 
   return workEntryPreview(workEntry, workspaceRoot) ?? toolWorkEntryHeading(workEntry);
@@ -3092,18 +3109,14 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const heading = presentation?.heading ?? toolWorkEntryHeading(workEntry);
   // A presentation owns its argument, including deciding there isn't one —
   // falling back here would reinstate the serialized-input detail it dropped.
-  const rawPreview = presentation
-    ? presentation.argument
-      ? formatToolRowArgument(presentation.argument, workspaceRoot)
-      : null
-    : workEntryPreview(workEntry, workspaceRoot);
-  const preview =
-    rawPreview &&
-    normalizeCompactToolLabel(rawPreview).toLowerCase() ===
-      normalizeCompactToolLabel(heading).toLowerCase()
-      ? null
-      : rawPreview;
-  const displayText = preview ? `${heading} - ${preview}` : heading;
+  const fallbackPreview = presentation ? null : workEntryPreview(workEntry, workspaceRoot);
+  const displayText = presentation
+    ? toolRowDisplayText(presentation, workspaceRoot)
+    : fallbackPreview &&
+        normalizeCompactToolLabel(fallbackPreview).toLowerCase() !==
+          normalizeCompactToolLabel(heading).toLowerCase()
+      ? `${heading} - ${fallbackPreview}`
+      : heading;
   const fileChangeStat =
     workEntry.fileChangeStat && hasNonZeroStat(workEntry.fileChangeStat)
       ? workEntry.fileChangeStat
