@@ -33,6 +33,16 @@ describe("review file visibility", () => {
     expect(getValidReviewFileIds(files, undefined)).toEqual(["a.ts", "b.ts"]);
   });
 
+  it("defaults generated files and known lockfiles to collapsed", () => {
+    const generatedFiles = [makeFile("src/generated.ts"), makeFile("packages/app/bun.lock")];
+
+    expect(getDefaultReviewExpandedFileIds(generatedFiles, ["src/generated.ts"])).toEqual([]);
+    expect(getValidReviewFileIds(generatedFiles, undefined, ["src/generated.ts"])).toEqual([]);
+    expect(getValidReviewFileIds(generatedFiles, ["packages/app/bun.lock"])).toEqual([
+      "packages/app/bun.lock",
+    ]);
+  });
+
   it("filters stale cached file ids", () => {
     expect(getValidReviewFileIds(files, ["missing.ts", "b.ts"])).toEqual(["b.ts"]);
     expect(getValidExplicitReviewFileIds(files, undefined)).toEqual([]);

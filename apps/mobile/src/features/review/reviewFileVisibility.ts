@@ -1,20 +1,26 @@
 import { useCallback, useMemo } from "react";
+import { isGeneratedLockfilePath } from "@t3tools/shared/generatedFiles";
 
 import { updateReviewExpandedFileIds, updateReviewViewedFileIds } from "./reviewState";
 import type { ReviewRenderableFile } from "./reviewModel";
 
 export function getDefaultReviewExpandedFileIds(
   files: ReadonlyArray<ReviewRenderableFile>,
+  generatedPaths: ReadonlyArray<string> = [],
 ): ReadonlyArray<string> {
-  return files.map((file) => file.id);
+  const generatedPathSet = new Set(generatedPaths);
+  return files
+    .filter((file) => !generatedPathSet.has(file.path) && !isGeneratedLockfilePath(file.path))
+    .map((file) => file.id);
 }
 
 export function getValidReviewFileIds(
   files: ReadonlyArray<ReviewRenderableFile>,
   fileIds: ReadonlyArray<string> | undefined,
+  generatedPaths: ReadonlyArray<string> = [],
 ): ReadonlyArray<string> {
   if (fileIds === undefined) {
-    return getDefaultReviewExpandedFileIds(files);
+    return getDefaultReviewExpandedFileIds(files, generatedPaths);
   }
 
   const fileIdSet = new Set(files.map((file) => file.id));
@@ -52,12 +58,20 @@ export function useReviewFileVisibility(input: {
   readonly files: ReadonlyArray<ReviewRenderableFile>;
   readonly cachedExpandedFileIds: ReadonlyArray<string> | undefined;
   readonly cachedViewedFileIds: ReadonlyArray<string> | undefined;
+  readonly generatedPaths: ReadonlyArray<string>;
 }) {
-  const { cachedExpandedFileIds, cachedViewedFileIds, files, sectionId, threadKey } = input;
+  const {
+    cachedExpandedFileIds,
+    cachedViewedFileIds,
+    files,
+    generatedPaths,
+    sectionId,
+    threadKey,
+  } = input;
 
   const expandedFileIds = useMemo(
-    () => getValidReviewFileIds(files, cachedExpandedFileIds),
-    [cachedExpandedFileIds, files],
+    () => getValidReviewFileIds(files, cachedExpandedFileIds, generatedPaths),
+    [cachedExpandedFileIds, files, generatedPaths],
   );
   const viewedFileIds = useMemo(
     () => getValidExplicitReviewFileIds(files, cachedViewedFileIds),
@@ -80,10 +94,10 @@ export function useReviewFileVisibility(input: {
       }
 
       updateReviewExpandedFileIds(threadKey, sectionId, (existing) =>
-        toggleReviewFileId(getValidReviewFileIds(files, existing), fileId),
+        toggleReviewFileId(getValidReviewFileIds(files, existing, generatedPaths), fileId),
       );
     },
-    [files, sectionId, threadKey],
+    [files, generatedPaths, sectionId, threadKey],
   );
 
   const toggleViewedFile = useCallback(
@@ -99,11 +113,11 @@ export function useReviewFileVisibility(input: {
 
       if (shouldCollapse) {
         updateReviewExpandedFileIds(threadKey, sectionId, (existing) =>
-          removeReviewFileId(getValidReviewFileIds(files, existing), fileId),
+          removeReviewFileId(getValidReviewFileIds(files, existing, generatedPaths), fileId),
         );
       }
     },
-    [files, sectionId, threadKey, viewedFileIds],
+    [files, generatedPaths, sectionId, threadKey, viewedFileIds],
   );
 
   return {

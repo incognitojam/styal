@@ -103,7 +103,7 @@ describe("isFileDiffCollapsed", () => {
 
 describe("shouldAutoFoldFileDiff", () => {
   const fileWithLineCount = (unifiedLineCount: number) =>
-    ({ unifiedLineCount }) as FileDiffMetadata;
+    ({ name: "src/app.ts", unifiedLineCount }) as FileDiffMetadata;
 
   it("folds only files taller than the automatic limit", () => {
     expect(
@@ -123,6 +123,18 @@ describe("shouldAutoFoldFileDiff", () => {
         fileWithLineCount(PULL_REQUEST_DIFF_AUTO_FOLD_LINE_THRESHOLD + 1),
         true,
       ),
+    ).toBe(false);
+  });
+
+  it("folds a lockfile without requiring it to cross the size limit", () => {
+    expect(
+      shouldAutoFoldFileDiff(
+        { name: "packages/app/bun.lock", unifiedLineCount: 10 } as FileDiffMetadata,
+        false,
+      ),
+    ).toBe(true);
+    expect(
+      shouldAutoFoldFileDiff({ name: "bun.lock", unifiedLineCount: 10 } as FileDiffMetadata, true),
     ).toBe(false);
   });
 });
