@@ -2272,7 +2272,7 @@ describe("ClaudeAdapterLive", () => {
           output_tokens: 50,
         },
         modelUsage: {
-          "claude-opus-4-6": {
+          [SYNTHETIC_CLAUDE_CAPABLE_MODEL]: {
             contextWindow: 200000,
             maxOutputTokens: 64000,
           },
@@ -2362,7 +2362,7 @@ describe("ClaudeAdapterLive", () => {
           output_tokens: 50,
         },
         modelUsage: {
-          "claude-opus-4-6": {
+          [SYNTHETIC_CLAUDE_CAPABLE_MODEL]: {
             contextWindow: 200000,
             maxOutputTokens: 64000,
           },
