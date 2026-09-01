@@ -4,7 +4,12 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import { expect } from "vite-plus/test";
-import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
+import {
+  ProjectScriptIcon,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  type ServerProvider,
+} from "@t3tools/contracts";
 
 import {
   addT3ProjectSetupSkill,
@@ -25,6 +30,10 @@ it.effect("resolves the bundled project setup plugin and skill roots", () =>
       yield* fileSystem.exists(path.join(paths!.skillsRoot, "t3-project-setup/SKILL.md")),
     ).toBe(true);
     expect(paths!.skillPath).toBe(path.join(paths!.skillsRoot, "t3-project-setup/SKILL.md"));
+    const skill = yield* fileSystem.readFileString(paths!.skillPath);
+    for (const icon of ProjectScriptIcon.literals) {
+      expect(skill).toContain(`\`${icon}\``);
+    }
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 

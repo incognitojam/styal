@@ -33,7 +33,7 @@ The supported shape is:
 - `$schema` is optional but recommended for validation and completion.
 - `iconPath` is a repository-relative path to an existing SVG, PNG, ICO, JPEG, GIF, AVIF, or WebP image. Prefer a recognizable square app mark already in the repository. Do not invent a path or add an image unless the user asks for one.
 - `defaultThreadEnvMode` is optional and accepts `"worktree"` or `"local"`.
-- `scripts` become importable Actions. Each needs a `name` and `command`; `icon` may be `play`, `test`, `lint`, `configure`, `build`, or `debug`; `runOnWorktreeCreate` defaults to false.
+- `scripts` become importable Actions. Each needs a `name` and `command`; `icon` may be `play`, `test`, `lint`, `configure`, `build`, `debug`, `desktop`, `database`, or `deploy`; `runOnWorktreeCreate` defaults to false.
 - Prefer useful project-specific actions such as development, test, lint, build, and an idempotent dependency/setup command. Do not add redundant wrappers.
 - Use `$STYAL_WORKSPACE_PORT` for a development server that needs a stable port. Actions also receive `$STYAL_PROJECT_ROOT` and, in a worktree, `$STYAL_WORKTREE_PATH`. Use the environment's shell syntax when it is not POSIX.
 - A checked-in script is a template. T3 Code runs it only after a user imports it as an Action; the imported action is a saved copy and does not track later `t3.json` edits.
