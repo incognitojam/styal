@@ -87,6 +87,7 @@ import {
   projectActivityEvent,
   projectThreadDetailSnapshot,
 } from "./orchestration/ActivityPayloadProjection.ts";
+import { makeThreadLiveEventCoalescer } from "./orchestration/ThreadLiveEventCoalescer.ts";
 import {
   cleanupFailedUploadedAttachments,
   normalizeDispatchCommand,
@@ -1623,13 +1624,13 @@ const makeWsRpcLayer = (
 
               // Attach live delivery before reading either replay or snapshot state.
               // Otherwise an event published while the snapshot is loading is lost.
-              const liveBuffer = yield* Queue.unbounded<ThreadLiveInput>();
+              const liveBuffer = yield* makeThreadLiveEventCoalescer();
               yield* Effect.forkScoped(
                 liveStream.pipe(
-                  Stream.runForEach((event) => Queue.offer(liveBuffer, { kind: "event", event })),
+                  Stream.runForEach((event) => liveBuffer.offer({ kind: "event", event })),
                 ),
               );
-              const bufferedLiveStream = Stream.fromQueue(liveBuffer).pipe(
+              const bufferedLiveStream = liveBuffer.stream.pipe(
                 Stream.mapArrayEffect(projectThreadLiveInputs),
               );
 
@@ -1680,8 +1681,13 @@ const makeWsRpcLayer = (
                     input.requestCompletionMarker === true
                       ? Stream.concat(
                           Stream.fromEffect(
-                            Queue.offer(liveBuffer, { kind: "synchronized" as const }),
-                          ).pipe(Stream.drain),
+                            liveBuffer
+                              .offerAndWait({ kind: "synchronized" as const })
+                              .pipe(
+                                Effect.andThen(liveBuffer.takeAll),
+                                Effect.flatMap(projectThreadLiveInputs),
+                              ),
+                          ).pipe(Stream.flatMap((items) => Stream.fromIterable(items))),
                           bufferedLiveStream,
                         )
                       : bufferedLiveStream;
@@ -1702,8 +1708,13 @@ const makeWsRpcLayer = (
                 input.requestCompletionMarker === true
                   ? Stream.concat(
                       Stream.fromEffect(
-                        Queue.offer(liveBuffer, { kind: "synchronized" as const }),
-                      ).pipe(Stream.drain),
+                        liveBuffer
+                          .offerAndWait({ kind: "synchronized" as const })
+                          .pipe(
+                            Effect.andThen(liveBuffer.takeAll),
+                            Effect.flatMap(projectThreadLiveInputs),
+                          ),
+                      ).pipe(Stream.flatMap((items) => Stream.fromIterable(items))),
                       bufferedLiveStream,
                     )
                   : bufferedLiveStream;
