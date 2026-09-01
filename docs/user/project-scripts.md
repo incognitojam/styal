@@ -5,6 +5,10 @@ such as starting a development server, running tests, or installing dependencies
 worktree. They run on the environment that owns the project and open their output in a T3 Code
 terminal.
 
+Ask your agent to use the `t3-project-setup` skill for the current repository. The skill supplies
+the supported `t3.json` fields and guidance for choosing useful actions and an existing project
+icon.
+
 ## Add an action
 
 On web or desktop, open **Settings** → **Projects**, select a checkout, find **Actions**, and select

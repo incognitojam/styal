@@ -158,6 +158,7 @@ function makeHarness(config?: {
   readonly baseDir?: string;
   readonly claudeConfig?: Partial<ClaudeSettings>;
   readonly instanceId?: ProviderInstanceId;
+  readonly projectSetupPluginPath?: string;
 }) {
   const query = new FakeClaudeQuery();
   let createInput:
@@ -169,6 +170,9 @@ function makeHarness(config?: {
 
   const adapterOptions: ClaudeAdapterLiveOptions = {
     ...(config?.instanceId ? { instanceId: config.instanceId } : {}),
+    ...(config?.projectSetupPluginPath
+      ? { projectSetupPluginPath: config.projectSetupPluginPath }
+      : {}),
     createQuery: (input) => {
       createInput = input;
       return query;
@@ -286,6 +290,25 @@ describe("ClaudeAdapterLive", () => {
         preset: "claude_code",
         append: "Prefer focused tests.",
       });
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("loads the project setup plugin for the session", () => {
+    const harness = makeHarness({ projectSetupPluginPath: "/opt/t3-project-setup" });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      assert.deepEqual(harness.getLastCreateQueryInput()?.options.plugins, [
+        { type: "local", path: "/opt/t3-project-setup" },
+      ]);
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

@@ -13,7 +13,7 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
-import { beforeEach } from "vite-plus/test";
+import { beforeEach, describe } from "vite-plus/test";
 
 import {
   OpenCodeSettings,
@@ -37,7 +37,40 @@ import {
   isSameOpenCodeDirectory,
   makeOpenCodeAdapter,
   mergeOpenCodeAssistantText,
+  resolveOpenCodeRuntimeEnvironment,
 } from "./OpenCodeAdapter.ts";
+
+describe("resolveOpenCodeRuntimeEnvironment", () => {
+  it("preserves the inherited environment when adding the bundled skill", () => {
+    const environment = resolveOpenCodeRuntimeEnvironment({
+      sessionEnvironment: undefined,
+      projectSetupSkillRoot: "/synthetic/skills",
+      serverUrl: undefined,
+      inheritedEnvironment: {
+        HOME: "/synthetic/home",
+        PATH: "/synthetic/bin",
+      },
+    });
+
+    NodeAssert.equal(environment?.HOME, "/synthetic/home");
+    NodeAssert.equal(environment?.PATH, "/synthetic/bin");
+    NodeAssert.deepStrictEqual(JSON.parse(environment?.OPENCODE_CONFIG_CONTENT ?? ""), {
+      skills: { paths: ["/synthetic/skills"] },
+    });
+  });
+
+  it("does not add a local skill path for an external server", () => {
+    NodeAssert.equal(
+      resolveOpenCodeRuntimeEnvironment({
+        sessionEnvironment: undefined,
+        projectSetupSkillRoot: "/synthetic/skills",
+        serverUrl: "https://example.invalid",
+        inheritedEnvironment: { PATH: "/synthetic/bin" },
+      }),
+      undefined,
+    );
+  });
+});
 
 // Test-local service tag so the rest of the file can keep using `yield* OpenCodeAdapter`.
 class OpenCodeAdapter extends Context.Service<OpenCodeAdapter, OpenCodeAdapterShape>()(

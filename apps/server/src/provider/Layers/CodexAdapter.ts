@@ -89,6 +89,7 @@ export interface CodexAdapterLiveOptions {
   >;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
+  readonly skillRoots?: ReadonlyArray<string>;
 }
 
 interface CodexAdapterSessionContext {
@@ -1770,6 +1771,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           ...(input.additionalInstructions
             ? { additionalInstructions: input.additionalInstructions }
             : {}),
+          ...(options?.skillRoots ? { skillRoots: options.skillRoots } : {}),
           ...(input.modelSelection?.instanceId === boundInstanceId
             ? { model: input.modelSelection.model }
             : {}),

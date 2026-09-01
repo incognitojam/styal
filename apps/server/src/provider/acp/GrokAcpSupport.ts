@@ -29,24 +29,27 @@ interface GrokAcpRuntimeInput extends Omit<
   readonly environment?: NodeJS.ProcessEnv;
   readonly runtimeMode?: RuntimeMode;
   readonly additionalInstructions?: string;
+  readonly pluginDirs?: ReadonlyArray<string>;
 }
 
 export function grokAcpSpawnArgs(
   runtimeMode?: RuntimeMode,
   additionalInstructions?: string,
+  pluginDirs: ReadonlyArray<string> = [],
 ): ReadonlyArray<string> {
   const rules = additionalInstructions ? ["--rules", additionalInstructions] : [];
+  const plugins = pluginDirs.flatMap((pluginDir) => ["--plugin-dir", pluginDir]);
   switch (runtimeMode) {
     case "approval-required":
-      return [...rules, "--permission-mode", "default", "agent", "stdio"];
+      return [...rules, "--permission-mode", "default", "agent", ...plugins, "stdio"];
     case "auto-accept-edits":
-      return [...rules, "--permission-mode", "acceptEdits", "agent", "stdio"];
+      return [...rules, "--permission-mode", "acceptEdits", "agent", ...plugins, "stdio"];
     case "auto":
-      return [...rules, "--permission-mode", "auto", "agent", "stdio"];
+      return [...rules, "--permission-mode", "auto", "agent", ...plugins, "stdio"];
     case "full-access":
-      return [...rules, "agent", "--always-approve", "stdio"];
+      return [...rules, "agent", ...plugins, "--always-approve", "stdio"];
     default:
-      return [...rules, "agent", "stdio"];
+      return [...rules, "agent", ...plugins, "stdio"];
   }
 }
 
@@ -56,10 +59,11 @@ export function buildGrokAcpSpawnInput(
   environment?: NodeJS.ProcessEnv,
   runtimeMode?: RuntimeMode,
   additionalInstructions?: string,
+  pluginDirs: ReadonlyArray<string> = [],
 ): AcpSessionRuntime.AcpSpawnInput {
   return {
     command: grokSettings?.binaryPath || "grok",
-    args: [...grokAcpSpawnArgs(runtimeMode, additionalInstructions)],
+    args: [...grokAcpSpawnArgs(runtimeMode, additionalInstructions, pluginDirs)],
     cwd,
     env: {
       ...environment,
@@ -91,6 +95,7 @@ export const makeGrokAcpRuntime = (
           input.environment,
           input.runtimeMode,
           input.additionalInstructions,
+          input.pluginDirs,
         ),
         authMethodId: resolveGrokAuthMethodId(input.environment),
       }).pipe(

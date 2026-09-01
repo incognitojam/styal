@@ -339,6 +339,7 @@ export interface ClaudeAdapterLiveOptions {
   }) => ClaudeQueryRuntime;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
+  readonly projectSetupPluginPath?: string;
 }
 
 function isUuid(value: string): boolean {
@@ -4434,6 +4435,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         supportedDialogKinds: ["resume_return"],
         env: sessionEnvironment,
         additionalDirectories,
+        ...(options?.projectSetupPluginPath
+          ? {
+              plugins: [{ type: "local", path: options.projectSetupPluginPath }],
+            }
+          : {}),
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
         ...(mcpSession
           ? {
