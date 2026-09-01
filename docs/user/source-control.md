@@ -183,7 +183,7 @@ Control settings**.
 
 - **Provider shows "Not authenticated"** – Run the login command for that provider (e.g., `gh auth login`) in a terminal on the server, then rescan in Settings
 - **GitHub says it could not verify sign-in status** – T3 Code needs GitHub CLI 2.81.0 or newer to check sign-in status. Update `gh` (e.g., `brew upgrade gh`), then rescan
-- **GitHub operations are unexpectedly failing** – **GitHub outage alerts** are enabled by default and can be managed in **Settings → Beta**. When GitHub reports a service disruption, T3 Code shows the affected services above **Settings** in the web and desktop sidebar. Select the notice to open the official GitHub Status page.
+- **GitHub operations are unexpectedly failing** – **GitHub outage alerts** are enabled by default and can be managed in **Settings → Beta**. When GitHub reports a service disruption, T3 Code shows the affected services above **Settings** in the web and desktop sidebar. Git operations, pull requests, Actions, and deploys are all covered; a Copilot-only disruption stays quiet. Select the notice to open the official GitHub Status page.
 - **Bitbucket not connecting** – Double-check your environment variables are set in the correct shell profile and the server was restarted
 - **Can't push to a remote** – Verify your Git remote URL matches the provider you've authenticated with (SSH vs HTTPS remotes may need different credentials)
 

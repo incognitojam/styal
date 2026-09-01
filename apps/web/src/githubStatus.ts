@@ -20,6 +20,15 @@ export function hasGitHubProject(
   return projects.some((project) => project.repositoryIdentity?.provider === "github");
 }
 
+/**
+ * Surfaces no source-control work depends on. Git operations, pull requests,
+ * Actions, and deploys all stay visible; Copilot is a separate product whose
+ * disruption says nothing about pushing or reviewing code from here.
+ */
+const GITHUB_IGNORED_COMPONENTS = ["Copilot", "Copilot AI Model Providers"];
+
 export function resolveGitHubStatusNotice(input: unknown): GitHubStatusNotice | null {
-  return resolveStatusPageNotice(input, "GitHub");
+  return resolveStatusPageNotice(input, "GitHub", {
+    ignoredComponents: GITHUB_IGNORED_COMPONENTS,
+  });
 }

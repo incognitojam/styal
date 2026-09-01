@@ -163,5 +163,6 @@ should use the shared-home plus shadow-home setup instead.
 **OpenAI outage alerts** are enabled by default and can be managed in **Settings**. When OpenAI
 reports a disruption, T3 Code shows affected services above **Settings** in the web and desktop
 sidebar. The alert includes Codex API, CLI, Codex Web, and the VS Code extension alongside the
-OpenAI API services developers commonly use. Select the notice to open the official OpenAI Status
-page.
+OpenAI API services developers commonly use. Consumer surfaces such as Sora, voice mode, and image
+generation stay quiet, because no Codex turn calls them. Select the notice to open the official
+OpenAI Status page.

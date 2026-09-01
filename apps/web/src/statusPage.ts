@@ -117,6 +117,20 @@ function componentNameKey(name: string): string {
   return name.trim().toLowerCase();
 }
 
+/** Drops the hostname a status page appends for disambiguation. */
+function withoutComponentHost(name: string): string {
+  const stripped = name.replace(/\s*\([^()]*\)$/, "").trim();
+  return stripped.length > 0 ? stripped : name;
+}
+
+/**
+ * Matches an ignore-list entry against a component name, ignoring the appended
+ * hostname so "Claude Console" keeps matching if the host it names ever moves.
+ */
+function componentIgnoreKey(name: string): string {
+  return componentNameKey(withoutComponentHost(name));
+}
+
 function deduplicateNames(names: ReadonlyArray<string>): ReadonlyArray<string> {
   return [...new Map(names.map((name) => [componentNameKey(name), name])).values()];
 }
@@ -148,8 +162,7 @@ const GENERIC_COMPONENT_NAMES = new Set(["api", "console", "dashboard", "platfor
  * generic. The tooltip shows the name exactly as the status page wrote it.
  */
 function shortComponentName(name: string, serviceName: string): string {
-  const withoutHost = name.replace(/\s*\([^()]*\)$/, "").trim();
-  const base = withoutHost.length > 0 ? withoutHost : name;
+  const base = withoutComponentHost(name);
   const prefix = `${serviceName} `;
   if (!base.toLowerCase().startsWith(prefix.toLowerCase())) return base;
   const remainder = base.slice(prefix.length);
@@ -172,32 +185,69 @@ function activeIncidentsDescription(incidents: ReadonlyArray<StatusPageIncidentI
   return incidents.length === 1 ? "1 active incident" : `${incidents.length} active incidents`;
 }
 
+/**
+ * Narrows a status page to the parts T3 Code actually depends on. Vendors run
+ * far more surfaces than we drive, and an incident confined to one of them is
+ * noise the sidebar should not spend a row on. Ignoring is opt-in per name, so
+ * a surface the vendor adds or renames still shows up: the failure mode is a
+ * notice that did not matter, never a silent one that did.
+ */
+export interface StatusPageRelevance {
+  /** Component names, hostname suffix optional, whose disruption cannot reach T3 Code. */
+  readonly ignoredComponents: ReadonlyArray<string>;
+}
+
 export function resolveStatusPageNotice(
   input: unknown,
   serviceName: string,
+  relevance?: StatusPageRelevance,
 ): StatusPageNotice | null {
   const decoded = decodeStatusPageSummary(input);
   if (decoded._tag === "None") return null;
 
+  const ignoredComponents = new Set(
+    (relevance?.ignoredComponents ?? []).map((name) => componentIgnoreKey(name)),
+  );
+  const isIgnoredComponent = (name: string) => ignoredComponents.has(componentIgnoreKey(name));
+  // Set when the page reported a disruption we deliberately dropped, which is
+  // what separates "nothing relevant is wrong" from "we could not attribute
+  // this" further down.
+  let ignoredAnyDisruption = false;
+
   const summary = decoded.value;
   const activeIncidents = (summary.incidents ?? [])
     .filter((incident) => isActiveIncidentStatus(incident.status))
-    .map(
-      (incident): StatusPageIncidentIssue => ({
-        affectedComponents: deduplicateNames(
-          (incident.components ?? [])
-            .filter((component) => component.showcase !== false)
-            .map((component) => component.name),
-        ),
-        impact: incident.impact,
-        name: incident.name,
-        status: incident.status,
-        statusLabel: incidentStatusLabel(incident.status),
-      }),
-    );
+    .flatMap((incident): ReadonlyArray<StatusPageIncidentIssue> => {
+      const scope = deduplicateNames(
+        (incident.components ?? [])
+          .filter((component) => component.showcase !== false)
+          .map((component) => component.name),
+      );
+      // An incident spanning both kinds of surface is still ours, so it keeps
+      // only the components we care about rather than diluting the scope. One
+      // naming no component at all is unattributable, not irrelevant.
+      const relevant = scope.filter((name) => !isIgnoredComponent(name));
+      if (scope.length > 0 && relevant.length === 0) {
+        ignoredAnyDisruption = true;
+        return [];
+      }
+      return [
+        {
+          affectedComponents: relevant,
+          impact: incident.impact,
+          name: incident.name,
+          status: incident.status,
+          statusLabel: incidentStatusLabel(incident.status),
+        },
+      ];
+    });
   const affectedComponentsByName = new Map<string, StatusPageComponentIssue>();
   for (const component of summary.components) {
     if (component.showcase === false || component.status === "operational") continue;
+    if (isIgnoredComponent(component.name)) {
+      ignoredAnyDisruption = true;
+      continue;
+    }
     const issue: StatusPageComponentIssue = {
       name: component.name,
       status: component.status,
@@ -214,17 +264,21 @@ export function resolveStatusPageNotice(
   }
   const affectedComponents = [...affectedComponentsByName.values()];
 
+  // The aggregate indicator covers every surface the vendor runs, so on its own
+  // it cannot justify a notice once the only disruptions behind it were ignored.
   if (
-    summary.status.indicator === "none" &&
     affectedComponents.length === 0 &&
-    activeIncidents.length === 0
+    activeIncidents.length === 0 &&
+    (summary.status.indicator === "none" || ignoredAnyDisruption)
   ) {
     return null;
   }
 
+  // Once something was ignored, the aggregate indicator describes surfaces we
+  // are no longer reporting on, so severity comes from what survived instead.
   const tone =
-    summary.status.indicator === "major" ||
-    summary.status.indicator === "critical" ||
+    (!ignoredAnyDisruption &&
+      (summary.status.indicator === "major" || summary.status.indicator === "critical")) ||
     affectedComponents.some((component) => isErrorStatus(component.status)) ||
     activeIncidents.some((incident) => isErrorImpact(incident.impact))
       ? "error"
@@ -262,7 +316,8 @@ export function resolveStatusPageNotice(
     activeIncidents,
     affectedComponents,
     description:
-      summary.status.indicator === "none" && affectedComponents.length === 0
+      affectedComponents.length === 0 &&
+      (summary.status.indicator === "none" || ignoredAnyDisruption)
         ? activeIncidentsDescription(activeIncidents)
         : summary.status.description,
     label: rendered.label,
