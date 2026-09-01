@@ -20,7 +20,7 @@ const clientSettings: ClientSettings = {
   browserRecordingFrameRate: 60,
   browserAutoShowFloatingPreview: false,
   claudeStatusAlertsEnabled: false,
-  confirmQuit: true,
+  confirmQuit: "double-click",
   discordRichPresence: false,
   completionSound: "none",
   confirmThreadArchive: true,
