@@ -1,5 +1,5 @@
 @layer components {
-  /* The default T3 Code theme carries no data-theme-id, so the fork's Dev and
+  /* The default styal theme carries no data-theme-id, so the fork's Dev and
      Nightly identity hangs off its absence. Named built-ins keep following
      upstream's pigment-derived palettes. Pigments sit on the root so the stage
      art and the focus rings offset against it stay in the same colorway. */

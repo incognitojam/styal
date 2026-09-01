@@ -1,12 +1,12 @@
 # Message composer
 
-Messages can contain up to 120,000 characters. If a draft is longer, T3 Code keeps it in the
+Messages can contain up to 120,000 characters. If a draft is longer, styal keeps it in the
 composer and shows how many characters need to be removed. Shorten the draft or split it into
 multiple messages, then send again in the same thread.
 
 Drop images, source files, text, Markdown, PDFs, or other files onto the chat to attach them. A
 message can contain up to 8 attachments. Images can be up to 10 MB, other files up to 50 MB, and
-the combined attachments can total up to 50 MB. T3 Code saves each attachment in the connected
+the combined attachments can total up to 50 MB. styal saves each attachment in the connected
 environment and gives the agent its local path.
 
 On servers that support direct uploads, attachments upload as soon as you add them. The send button
@@ -23,10 +23,10 @@ such as System, Personal, Project, or App.
 By default, the `/` menu includes skills. To keep this menu command-only, turn off **Show skills in
 slash menu** in **Settings → General**. Skill results use the `/skill:Skill Name` label and add the
 same `$name` skill token to your message. The original skill name remains searchable. If the provider
-also reports that skill as a native slash command, T3 Code hides the duplicate native entry and keeps
+also reports that skill as a native slash command, styal hides the duplicate native entry and keeps
 the `/skill:Skill Name` label.
 
 On desktop, press `Cmd+Enter` on macOS or `Ctrl+Enter` on Windows and Linux from a new thread to
-start it in the background. T3 Code opens another new thread and shows an **Open** action for the
+start it in the background. styal opens another new thread and shows an **Open** action for the
 thread that started. The new thread keeps the selected workspace mode and base branch. If **New
 worktree** is selected, each background thread creates its own worktree.

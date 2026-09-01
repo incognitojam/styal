@@ -21,6 +21,8 @@ JWT template, and the `t3-code-relay` audience.
 | CLI OAuth redirect URIs | `http://127.0.0.1:34338/callback`, `https://app.styal.build/connect/callback`                                                            | `connectCallbackUrl(DEFAULT_HOSTED_APP_URL)`                   |
 | Desktop redirect URIs   | `styal-dev://app/` (dev), `styal://app/` (packaged)                                                                                      | `apps/desktop`, see t3-connect.md                              |
 | macOS bundle ID         | `build.styal.app`                                                                                                                        | `DESKTOP_APP_ID`, `scripts/build-desktop-artifact.ts`          |
+| Mobile URL schemes      | `styal-dev` (development), `styal-preview` (preview), `styal` (production)                                                               | `apps/mobile/app.config.ts`                                    |
+| Mobile bundle/package   | `build.styal.app.dev` (development), `build.styal.app.preview` (preview), `build.styal.app` (production)                                 | `apps/mobile/app.config.ts`                                    |
 | Clerk application       | `styal` (`app_3IPih12l7JcyeHP2MlqFOESKdGN`)                                                                                              | Clerk Dashboard                                                |
 | Relay                   | `https://relay.styal.build`, deployed by `deploy-relay.yml` on push to main                                                              | `infra/relay/README.md`                                        |
 | Relay database          | Neon project `styal-relay` (`divine-frog-52827132`, `aws-eu-west-2`): prod adopts its `production` branch, dev stages fork Neon branches | `infra/relay/src/db.ts`                                        |
@@ -31,6 +33,11 @@ Tunnel endpoints (`prod-<digest>.styal.link`) terminate at servers that styal us
 live on a registrable domain of their own, never under `styal.build`: the production Clerk instance
 sets cookies on the product root domain, and a shared eTLD+1 would send those session cookies to any
 tunnel host a browser touches. Keep it that way.
+
+The mobile app is a separate application, not an in-place T3 Code rebrand. It does not register
+`t3code*` URL schemes, use T3 bundle/package IDs, read T3 application storage, or join T3's Expo
+project. A future import flow may copy selected data explicitly, but install-time identity remains
+separate so both applications can be installed side by side.
 
 ## Clerk
 

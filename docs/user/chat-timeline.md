@@ -1,6 +1,6 @@
 # Reading the chat timeline
 
-T3 Code shows tool activity alongside messages so you can follow what the agent is doing. File
+styal shows tool activity alongside messages so you can follow what the agent is doing. File
 edits include the affected path and line-change counts when the provider reports them.
 
 Paths inside the active project or worktree are shown relative to that workspace. The generated

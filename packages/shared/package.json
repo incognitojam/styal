@@ -138,7 +138,8 @@
     },
     "./relayAuth": {
       "types": "./src/relayAuth.ts",
-      "import": "./src/relayAuth.ts"
+      "import": "./src/relayAuth.ts",
+      "default": "./src/relayAuth.ts"
     },
     "./relayUrl": {
       "types": "./src/relayUrl.ts",

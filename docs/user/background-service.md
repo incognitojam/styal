@@ -1,11 +1,11 @@
-# Running T3 Code in the Background
+# Running styal in the Background
 
-On Linux and macOS, T3 Code can run as a background service for your user, so it is ready without
+On Linux and macOS, styal can run as a background service for your user, so it is ready without
 keeping a terminal open.
 
 ## Manage the Service
 
-Install it with the latest T3 Code release:
+Install it with the latest styal release:
 
 ```sh
 npx t3@latest service install
@@ -29,10 +29,10 @@ Stop it and remove it from startup:
 npx t3@latest service uninstall
 ```
 
-Updating restarts T3 Code briefly. Let active agent work and terminal commands finish first.
+Updating restarts styal briefly. Let active agent work and terminal commands finish first.
 If a remote update is already in progress, wait for it to finish before retrying a local update.
 
-The service runs a small stable launcher. Exact T3 Code versions are installed separately, so a
+The service runs a small stable launcher. Exact styal versions are installed separately, so a
 failed remote candidate can return to the previous version without rewriting the service
 definition. The launcher snapshots the database before a remote candidate starts, so database
 updates roll back with the server version. An older launcher may require one local
@@ -70,4 +70,4 @@ styal Link may offer to install the service during setup so the host stays reach
 background. This is only an onboarding shortcut: the service and styal Link are managed separately.
 
 Signing out of styal Link does not remove the service. Use `t3 service uninstall` when you no longer
-want T3 Code to start in the background.
+want styal to start in the background.
