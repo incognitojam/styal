@@ -65,6 +65,9 @@ T3 Code works with the platforms your team already uses:
   in the **Stack** section of its Summary tab — every layer with its state, top of the stack
   first, down to the base branch. Click another layer to open it in T3 Code, or
   command-click (Control-click on Windows and Linux) to open it on GitHub
+- Filter the list by author or labels, rank authors by merges in the loaded results, see label and
+  change-size context on each row, and sort the results currently shown by update time, creation
+  time, or change size
 - While working in a thread, open linked reviews in the same compact right-panel tabs without
   leaving the conversation
 - Open the review directly in your browser with one click

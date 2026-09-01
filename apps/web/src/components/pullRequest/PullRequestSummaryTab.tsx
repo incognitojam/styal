@@ -58,6 +58,7 @@ import { PullRequestMarkdown } from "./PullRequestMarkdown";
 import { PullRequestMarkdownEditor } from "./PullRequestMarkdownEditor";
 import { PullRequestReactionBar } from "./PullRequestReactions";
 import { PullRequestConversationGhost } from "./PullRequestGhosts";
+import { pullRequestLabelColor } from "./pullRequestList.logic";
 import { sectionCollapseAnchorScrollTop } from "./pullRequestSummaryScroll.logic";
 import {
   pullRequestConversationDraftKey,
@@ -169,12 +170,6 @@ function StackLadder({ stack, currentNumber }: { stack: PullRequestStack; curren
       </li>
     </ol>
   );
-}
-
-/** A host colour only when it is one, so a malformed value falls back to the neutral dot. */
-function labelDotColor(color: string | null): string | null {
-  const hex = color?.trim().replace(/^#/, "") ?? "";
-  return /^[0-9a-fA-F]{6}$/.test(hex) ? `#${hex}` : null;
 }
 
 /** The avatar carries the attribution alone; who it is arrives on hover, like the reviewer row. */
@@ -725,7 +720,7 @@ export function PullRequestSummaryTab({
             <MetaRow icon={<TagIcon className="size-3.5" />} label="Labels">
               <span className="flex min-w-0 flex-wrap items-center gap-1">
                 {detail.labels.map((label) => {
-                  const dot = labelDotColor(label.color);
+                  const dot = pullRequestLabelColor(label.color);
                   return (
                     <span
                       key={label.name}
