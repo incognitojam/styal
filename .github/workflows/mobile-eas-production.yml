@@ -81,18 +81,23 @@ jobs:
       contents: read
     env:
       APP_VARIANT: production
+      EXPO_OWNER: ${{ vars.EXPO_OWNER }}
+      EXPO_PROJECT_ID: ${{ vars.EXPO_PROJECT_ID }}
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
       NODE_OPTIONS: --max-old-space-size=8192
     steps:
       - id: expo-token
         name: Check for EXPO_TOKEN
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_OWNER: ${{ vars.EXPO_OWNER }}
+          EXPO_PROJECT_ID: ${{ vars.EXPO_PROJECT_ID }}
         run: |
-          if [ -n "$EXPO_TOKEN" ]; then
+          if [ -n "$EXPO_TOKEN" ] && [ -n "$EXPO_OWNER" ] && [ -n "$EXPO_PROJECT_ID" ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "EXPO_TOKEN is not available; skipping EAS production job."
+            echo "EXPO_TOKEN, EXPO_OWNER, or EXPO_PROJECT_ID is not available; skipping EAS production job."
           fi
 
       - id: version_app_token

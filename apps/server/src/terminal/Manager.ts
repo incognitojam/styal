@@ -1069,6 +1069,9 @@ function shouldExcludeTerminalEnvKey(key: string): boolean {
   if (normalizedKey.startsWith("T3CODE_")) {
     return true;
   }
+  if (normalizedKey === "STYAL_HOME") {
+    return true;
+  }
   if (normalizedKey.startsWith("VITE_")) {
     return true;
   }

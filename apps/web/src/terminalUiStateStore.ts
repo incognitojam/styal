@@ -26,8 +26,8 @@ interface ThreadTerminalUiState {
   activeTerminalGroupId: string;
 }
 
-// Keep the old storage key so existing drawer layout preferences migrate.
-const TERMINAL_UI_STATE_STORAGE_KEY = "t3code:terminal-state:v1";
+// The v1 suffix identifies the persisted terminal drawer schema.
+const TERMINAL_UI_STATE_STORAGE_KEY = "styal:terminal-state:v1";
 
 interface PersistedTerminalUiStateStoreState {
   terminalUiStateByThreadKey?: Record<string, ThreadTerminalUiState>;

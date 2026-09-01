@@ -4,7 +4,12 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
-import { Launcher, readServiceState, writeServiceState } from "./serviceLauncher.ts";
+import {
+  Launcher,
+  readServiceState,
+  resolveLauncherBaseDir,
+  writeServiceState,
+} from "./serviceLauncher.ts";
 import {
   compareExactServiceVersions,
   decodeServiceState,
@@ -30,6 +35,38 @@ it("orders exact semantic versions without treating build metadata as precedence
   assert.equal(compareExactServiceVersions("2.0.0-alpha-beta", "2.0.0-alpha-alpha"), 1);
   assert.equal(compareExactServiceVersions("2.0.0", "2.0.0-rc.1"), 1);
   assert.equal(compareExactServiceVersions("2.0.0+one", "2.0.0+two"), 0);
+});
+
+it("resolves the styal service home without accepting T3 Code state generally", () => {
+  assert.equal(
+    resolveLauncherBaseDir({
+      STYAL_HOME: " /srv/styal ",
+      T3CODE_HOME: "/srv/t3code",
+      T3_BOOT_SERVICE_UNIT: "styal.service",
+    }),
+    "/srv/styal",
+  );
+  assert.equal(
+    resolveLauncherBaseDir({
+      T3CODE_HOME: " /srv/legacy-styal ",
+      T3_BOOT_SERVICE_UNIT: "styal.service",
+    }),
+    "/srv/legacy-styal",
+  );
+  assert.equal(
+    resolveLauncherBaseDir({
+      T3CODE_HOME: "/srv/legacy-styal",
+      T3_BOOT_SERVICE_UNIT: "build.styal.app.service.plist",
+    }),
+    "/srv/legacy-styal",
+  );
+  assert.isUndefined(resolveLauncherBaseDir({ T3CODE_HOME: "/srv/t3code" }));
+  assert.isUndefined(
+    resolveLauncherBaseDir({
+      T3CODE_HOME: "/srv/t3code",
+      T3_BOOT_SERVICE_UNIT: "t3code.service",
+    }),
+  );
 });
 
 it("rejects contradictory service state", () => {

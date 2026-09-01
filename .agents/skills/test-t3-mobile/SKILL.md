@@ -29,14 +29,14 @@ Do not treat unavailable iOS tooling as a blocker when Android is a valid repres
 The development identity on both platforms is:
 
 - App: `T3 Code Dev`
-- Bundle/package identifier: `com.t3tools.t3code.dev`
-- URL scheme: `t3code-dev`
+- Bundle/package identifier: `build.styal.app.dev`
+- URL scheme: `styal-dev`
 
 Bundle or package presence proves the correct variant, not native compatibility. Reuse it only when the current changes did not alter its Expo SDK, native dependencies, config plugins, entitlements, generated project, or native source.
 
 ## Start one disposable T3 environment
 
-Run backend commands from the repository root. Use the ignored, worktree-local `.t3` directory or create a fresh directory with the host OS's temporary-directory mechanism. An explicit base directory stores state in `<base-dir>/userdata`; never point testing at shared `~/.t3` state.
+Run backend commands from the repository root. Use the ignored, worktree-local `.styal` directory or create a fresh directory with the host OS's temporary-directory mechanism. An explicit base directory stores state in `<base-dir>/userdata`; never point testing at shared `~/.styal` state.
 
 Seed a small number of meaningful Git projects before starting the backend:
 
@@ -72,14 +72,14 @@ Enter the complete `http://` origin to make the test transport explicit. Bare IP
 
 Run Metro from `apps/mobile`.
 
-1. Inspect any process on the intended Metro port and its `/status` response. Reuse it only when it is healthy, belongs to this worktree, and matches `APP_VARIANT=development`, `--dev-client`, and scheme `t3code-dev`.
+1. Inspect any process on the intended Metro port and its `/status` response. Reuse it only when it is healthy, belongs to this worktree, and matches `APP_VARIANT=development`, `--dev-client`, and scheme `styal-dev`.
 2. Never kill another worktree's Metro. Use a free explicit port when necessary.
 3. Run `vp run dev:client` on the standard port. For another port, retain the complete development identity:
 
    ```bash
    APP_VARIANT=development vp exec expo start \
      --dev-client \
-     --scheme t3code-dev \
+     --scheme styal-dev \
      --clear \
      --lan \
      --port <metro-port>
@@ -97,12 +97,12 @@ Use `ios-debugger-agent` to select one UDID and set these XcodeBuildMCP session 
 - Scheme: `T3CodeDev`
 - Configuration: `Debug`
 - Simulator ID: the selected UDID
-- Bundle ID: `com.t3tools.t3code.dev`
+- Bundle ID: `build.styal.app.dev`
 
 Check the installed client with:
 
 ```bash
-xcrun simctl get_app_container <simulator-udid> com.t3tools.t3code.dev app
+xcrun simctl get_app_container <simulator-udid> build.styal.app.dev app
 xcrun simctl openurl <simulator-udid> <printed-dev-client-url>
 ```
 
@@ -113,12 +113,12 @@ Accept the iOS confirmation prompt and dismiss the developer menu when it obscur
 Select one running emulator serial from `adb devices` and check the installed client:
 
 ```bash
-adb -s <emulator-serial> shell pm path com.t3tools.t3code.dev
+adb -s <emulator-serial> shell pm path build.styal.app.dev
 adb -s <emulator-serial> reverse tcp:<metro-port> tcp:<metro-port>
 adb -s <emulator-serial> shell am start -W \
   -a android.intent.action.VIEW \
   -d '<printed-dev-client-url>' \
-  com.t3tools.t3code.dev
+  build.styal.app.dev
 ```
 
 Do not start, stop, erase, or reconfigure an emulator owned by another task. Track and later stop only processes owned by this test.
@@ -140,7 +140,7 @@ Run only the command for the selected platform. The helper uses `http://127.0.0.
 The helper opens this registered route:
 
 ```text
-t3code-dev://connections/new?pairingUrl=<encoded-pairing-url>&autoConnect=1
+styal-dev://connections/new?pairingUrl=<encoded-pairing-url>&autoConnect=1
 ```
 
 The Add Environment route owns the behavior: `pairingUrl` prefills its normal host and token inputs, while `autoConnect=1` submits once in development builds and returns to Home after success. Without `autoConnect`, the same route only prefills the form for manual inspection.

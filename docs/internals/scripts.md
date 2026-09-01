@@ -36,16 +36,16 @@ authenticated.
 - `vp run dev:desktop`: Starts the Electron shell against the dev server.
 - `vp run dev:marketing`: Starts the Astro marketing site.
 - Pass dev-runner flags directly after the root task name, for example:
-  `vp run dev --home-dir /tmp/t3code-dev`
+  `vp run dev --home-dir /tmp/styal-dev`
 
 ### Dev state directories
 
-- Dev commands run from a linked **git worktree** default to that worktree's gitignored `.t3`, even
-  when `T3CODE_HOME` is set, storing state in `<worktree>/.t3/userdata`. Pass `--home-dir <path>` to
+- Dev commands run from a linked **git worktree** default to that worktree's gitignored `.styal`, even
+  when `STYAL_HOME` is set, storing state in `<worktree>/.styal/userdata`. Pass `--home-dir <path>` to
   choose another isolated directory explicitly. Submodules are not worktrees and keep the normal
   precedence.
-- From the **main checkout**, dev commands implicitly use `~/.t3/dev`, keeping development state
-  separate from `~/.t3/userdata`. An explicit `--home-dir <path>` stores state under
+- From the **main checkout**, dev commands implicitly use `~/.styal/dev`, keeping development state
+  separate from `~/.styal/userdata`. An explicit `--home-dir <path>` stores state under
   `<path>/userdata`; the base directory remains available for caches, worktrees, and other shared
   data.
 
@@ -83,7 +83,7 @@ authenticated.
   SVG into standard and Retina PNGs inside the disposable staging directory.
 - The Finder window is 540×412 while its background is 540×380; the extra 32px accounts for the
   title bar included in Finder's window bounds.
-- Desktop production windows load the bundled UI from the `t3code://app/` root URL (not a
+- Desktop production windows load the bundled UI from the `styal://app/` root URL (not a
   `127.0.0.1` document URL, and not an explicit `index.html` path).
 - Desktop packaging includes `apps/server/dist` (the `t3` backend) and starts it on loopback with an
   auth token for WebSocket/API traffic.

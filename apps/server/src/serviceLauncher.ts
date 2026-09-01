@@ -602,10 +602,29 @@ export class Launcher {
   }
 }
 
+const STYAL_BOOT_SERVICE_UNITS = new Set(["styal.service", "build.styal.app.service.plist"]);
+
+/**
+ * Installed styal services from before the storage rename carry T3CODE_HOME.
+ * Accept that value only when the unit's styal-specific identity proves this
+ * is not a T3 Code service or an interactive shell.
+ */
+export function resolveLauncherBaseDir(environment: NodeJS.ProcessEnv): string | undefined {
+  const baseDir = environment.STYAL_HOME?.trim();
+  if (baseDir) {
+    return baseDir;
+  }
+  const serviceUnit = environment.T3_BOOT_SERVICE_UNIT?.trim();
+  if (!serviceUnit || !STYAL_BOOT_SERVICE_UNITS.has(serviceUnit)) {
+    return undefined;
+  }
+  return environment.T3CODE_HOME?.trim() || undefined;
+}
+
 async function main(): Promise<void> {
-  const baseDir = process.env.T3CODE_HOME?.trim();
+  const baseDir = resolveLauncherBaseDir(process.env);
   if (baseDir === undefined || baseDir === "") {
-    throw new Error("T3CODE_HOME is required by the T3 Code service launcher.");
+    throw new Error("STYAL_HOME is required by the styal service launcher.");
   }
   const statePath = NodePath.join(baseDir, "runtime", SERVICE_STATE_FILE);
   const state = await readServiceState(statePath);
