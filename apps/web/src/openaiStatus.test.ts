@@ -139,6 +139,28 @@ describe("OpenAI status notice", () => {
     });
   });
 
+  it("ignores consumer surfaces while keeping the Responses API every Codex turn drives", () => {
+    const consumer = [
+      { name: "Sora", status: "major_outage" },
+      { name: "Voice mode", status: "degraded_performance" },
+    ];
+    const notice = (components: typeof consumer) =>
+      resolveOpenAIStatusNotice(
+        statusSummary({
+          indicator: "major",
+          components,
+          // OpenAI files incidents without naming a component, so the component
+          // list is the only thing relevance can act on here.
+          incidents: [{ impact: "minor", name: "Elevated latency", status: "identified" }],
+        }),
+      );
+
+    expect(notice(consumer)?.label).toBe("1 active incident");
+    expect(
+      notice([...consumer, { name: "Responses", status: "degraded_performance" }])?.label,
+    ).toBe("Outage: Responses");
+  });
+
   it("ignores malformed responses", () => {
     expect(resolveOpenAIStatusNotice({ status: "down" })).toBeNull();
   });

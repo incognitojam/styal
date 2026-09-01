@@ -113,6 +113,23 @@ describe("GitHub status notice", () => {
     });
   });
 
+  it("ignores Copilot while keeping the source control services", () => {
+    const copilot = [
+      { name: "Copilot", status: "partial_outage", showcase: true },
+      { name: "Copilot AI Model Providers", status: "degraded_performance", showcase: true },
+    ];
+    const label = (components: typeof copilot) =>
+      resolveGitHubStatusNotice(statusSummary({ indicator: "major", components }))?.label ?? null;
+
+    expect(label(copilot)).toBeNull();
+    expect(
+      label([
+        ...copilot,
+        { name: "Pull Requests", status: "degraded_performance", showcase: true },
+      ]),
+    ).toBe("Outage: Pull Requests");
+  });
+
   it("ignores malformed responses", () => {
     expect(resolveGitHubStatusNotice({ status: "down" })).toBeNull();
   });

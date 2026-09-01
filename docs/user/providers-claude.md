@@ -234,3 +234,7 @@ Do not put environment variable assignments in `Launch arguments`.
 Anthropic reports a Claude service disruption, T3 Code shows the affected services above
 **Settings** in the web and desktop sidebar. Select the notice to open the official Claude Status
 page.
+
+The alert covers the services Claude Code depends on, so disruptions confined to claude.ai, the
+Claude Console, Claude Cowork, or Claude for Government stay quiet. Those cannot reach a turn
+running in T3 Code. The status page still shows them.

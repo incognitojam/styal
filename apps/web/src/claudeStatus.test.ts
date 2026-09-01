@@ -96,12 +96,7 @@ describe("Claude status notice", () => {
     ).toEqual({
       activeIncidents: [
         {
-          affectedComponents: [
-            "claude.ai",
-            "Claude API (api.anthropic.com)",
-            "Claude Code",
-            "Claude Cowork",
-          ],
+          affectedComponents: ["Claude API (api.anthropic.com)", "Claude Code"],
           impact: "minor",
           name: "Degraded performance for Claude Opus 5, Claude Sonnet 5",
           status: "monitoring",
@@ -110,29 +105,29 @@ describe("Claude status notice", () => {
       ],
       affectedComponents: [],
       description: "1 active incident",
-      accessibleLabel: "Claude Incident: 4 services",
-      label: "Incident: 4 services",
+      accessibleLabel: "Claude Incident: API, Claude Code",
+      label: "Incident: API, Claude Code",
       tone: "warning",
     });
   });
 
-  it("drops the vendor word only where what follows is generic", () => {
-    const label = (name: string) =>
-      resolveClaudeStatusNotice(
-        statusSummary({
-          indicator: "minor",
-          components: [{ name, status: "degraded_performance", showcase: true }],
-        }),
-      )?.label;
+  it("ignores the surfaces Claude Code never calls, and only those", () => {
+    const elsewhere = [
+      { name: "claude.ai", status: "degraded_performance", showcase: true },
+      { name: "Claude Console (platform.claude.com)", status: "major_outage", showcase: true },
+      { name: "Claude Cowork", status: "partial_outage", showcase: true },
+      { name: "Claude for Government", status: "major_outage", showcase: true },
+    ];
+    const label = (components: typeof elsewhere) =>
+      resolveClaudeStatusNotice(statusSummary({ indicator: "major", components }))?.label ?? null;
 
-    // Generic: the icon already says whose API it is, and the hostname goes too.
-    expect(label("Claude API (api.anthropic.com)")).toBe("Outage: API");
-    expect(label("Claude Console (platform.claude.com)")).toBe("Outage: Console");
-    // Product names keep the vendor word; "Code" alone is not a product.
-    expect(label("Claude Code")).toBe("Outage: Claude Code");
-    expect(label("Claude Cowork")).toBe("Outage: Claude Cowork");
-    expect(label("Claude for Government")).toBe("Outage: Claude for Government");
-    expect(label("claude.ai")).toBe("Outage: claude.ai");
+    expect(label(elsewhere)).toBeNull();
+    expect(
+      label([
+        ...elsewhere,
+        { name: "Claude API (api.anthropic.com)", status: "degraded_performance", showcase: true },
+      ]),
+    ).toBe("Outage: API");
   });
 
   it("falls back to the incident count when a single incident names no service", () => {
