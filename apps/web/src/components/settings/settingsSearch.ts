@@ -31,6 +31,7 @@ export interface SettingsSearchItem {
   readonly providerSettingsOnly?: boolean;
   readonly localBackendManagementOnly?: boolean;
   readonly wslAvailableOnly?: boolean;
+  readonly requiresThreadAutoSettlement?: boolean;
 }
 
 export interface SettingsSearchAvailability {
@@ -39,6 +40,7 @@ export interface SettingsSearchAvailability {
   readonly hasProviderSettingsEnvironment: boolean;
   readonly canManageLocalBackend: boolean;
   readonly isWslSettingsRowVisible: boolean;
+  readonly hasThreadAutoSettlement: boolean;
 }
 
 /**
@@ -150,12 +152,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Auto-settle inactive threads",
     to: "/settings/general",
     searchTerms: ["sidebar inactivity days no activity automatically"],
+    requiresThreadAutoSettlement: true,
   },
   {
     id: "auto-settle-merged-threads",
     title: "Auto-settle merged threads",
     to: "/settings/general",
     searchTerms: ["pull request merge closed automatically sidebar"],
+    requiresThreadAutoSettlement: true,
   },
   {
     id: "days-before-auto-settle",
@@ -163,6 +167,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
     targetId: "auto-settle-inactive-threads",
     searchTerms: ["thread timeout activity sidebar"],
+    requiresThreadAutoSettlement: true,
   },
   {
     id: "claude-outage-alerts",
@@ -495,7 +500,8 @@ export function filterAvailableSettingsSearchItems(
       (!item.primaryOnly || availability.hasPrimaryEnvironment) &&
       (!item.providerSettingsOnly || availability.hasProviderSettingsEnvironment) &&
       (!item.localBackendManagementOnly || availability.canManageLocalBackend) &&
-      (!item.wslAvailableOnly || availability.isWslSettingsRowVisible),
+      (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
+      (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement),
   );
 }
 
