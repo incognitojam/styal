@@ -65,6 +65,11 @@ Model options shown as provider defaults remain display values until you choose 
 T3 Code only sends options you selected explicitly, so an unset reasoning level or service tier can
 still come from the provider's own configuration.
 
+## Changing projects
+
+On web and desktop, changing the project from a new thread keeps the current environment when that
+project exists there. If it does not, T3 Code selects another environment that has the project.
+
 ## Notices above the composer
 
 On web and desktop, loading and syncing statuses fill the available banner width beside the
