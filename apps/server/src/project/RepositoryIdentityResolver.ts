@@ -114,7 +114,6 @@ function buildRepositoryIdentity(input: {
 const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.resolveCacheKey")(
   function* (cwd: string) {
     const processRunner = yield* ProcessRunner.ProcessRunner;
-    let rootPath = cwd;
 
     // git is a real executable on every platform — no cmd.exe shell mode, which
     // would split paths containing spaces during cmd's re-tokenization.
@@ -125,29 +124,12 @@ const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.
         timeoutBehavior: "timedOutResult",
       })
       .pipe(Effect.option);
-    if (topLevelResult._tag === "Some" && topLevelResult.value.code === 0) {
-      rootPath = topLevelResult.value.stdout.trim() || cwd;
+    if (topLevelResult._tag === "None" || topLevelResult.value.code !== 0) {
+      return null;
     }
 
-    const branchRemoteResult = yield* processRunner
-      .run({
-        command: "git",
-        args: [
-          "-C",
-          rootPath,
-          "for-each-ref",
-          "--format=%(HEAD)%09%(upstream:remotename)",
-          "refs/heads",
-        ],
-        timeoutBehavior: "timedOutResult",
-      })
-      .pipe(Effect.option);
-    const branchRemoteName =
-      branchRemoteResult._tag === "Some" && branchRemoteResult.value.code === 0
-        ? parseCurrentBranchRemoteName(branchRemoteResult.value.stdout)
-        : null;
-
-    return `${rootPath}${CACHE_KEY_SEPARATOR}${branchRemoteName ?? ""}`;
+    const candidate = topLevelResult.value.stdout.trim();
+    return candidate.length > 0 ? candidate : null;
   },
 );
 
@@ -194,6 +176,22 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
   options: RepositoryIdentityResolverOptions = {},
 ) {
   const processRunner = yield* ProcessRunner.ProcessRunner;
+  const cacheCapacity = options.cacheCapacity ?? DEFAULT_REPOSITORY_IDENTITY_CACHE_CAPACITY;
+
+  const repositoryRootCache = yield* Cache.makeWith<string, string | null>(
+    (cwd) =>
+      resolveRepositoryIdentityCacheKey(cwd).pipe(
+        Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
+      ),
+    {
+      capacity: cacheCapacity,
+      timeToLive: Exit.match({
+        onSuccess: (value) =>
+          value === null ? Duration.zero : (options.positiveCacheTtl ?? DEFAULT_POSITIVE_CACHE_TTL),
+        onFailure: () => Duration.zero,
+      }),
+    },
+  );
 
   const repositoryIdentityCache = yield* Cache.makeWith<string, RepositoryIdentity | null>(
     (cacheKey) =>
@@ -201,7 +199,7 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
         Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
       ),
     {
-      capacity: options.cacheCapacity ?? DEFAULT_REPOSITORY_IDENTITY_CACHE_CAPACITY,
+      capacity: cacheCapacity,
       timeToLive: Exit.match({
         onSuccess: (value) =>
           value === null
@@ -215,9 +213,27 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
   const resolve: RepositoryIdentityResolver["Service"]["resolve"] = Effect.fn(
     "RepositoryIdentityResolver.resolve",
   )(function* (cwd) {
-    const cacheKey = yield* resolveRepositoryIdentityCacheKey(cwd).pipe(
-      Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
-    );
+    const rootPath = yield* Cache.get(repositoryRootCache, cwd);
+    if (rootPath === null) return null;
+    // The root is stable across checkouts; the branch's remote is not.
+    const branchRemoteResult = yield* processRunner
+      .run({
+        command: "git",
+        args: [
+          "-C",
+          rootPath,
+          "for-each-ref",
+          "--format=%(HEAD)%09%(upstream:remotename)",
+          "refs/heads",
+        ],
+        timeoutBehavior: "timedOutResult",
+      })
+      .pipe(Effect.option);
+    const branchRemoteName =
+      branchRemoteResult._tag === "Some" && branchRemoteResult.value.code === 0
+        ? parseCurrentBranchRemoteName(branchRemoteResult.value.stdout)
+        : null;
+    const cacheKey = `${rootPath}${CACHE_KEY_SEPARATOR}${branchRemoteName ?? ""}`;
     return yield* Cache.get(repositoryIdentityCache, cacheKey);
   });
 
