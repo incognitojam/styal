@@ -18,6 +18,7 @@ export interface ReviewSectionItem {
   readonly subtitle: string | null;
   readonly diff: string | null;
   readonly isLoading: boolean;
+  readonly generatedPaths: ReadonlyArray<string>;
 }
 
 export interface ReviewRenderableHunkRow {
@@ -542,6 +543,7 @@ export function buildReviewSectionItems(input: {
         subtitle: checkpointSubtitle(checkpoint),
         diff: input.turnDiffById[id] ?? null,
         isLoading: input.loadingTurnIds[id] === true,
+        generatedPaths: [],
       };
     },
   );
@@ -553,6 +555,7 @@ export function buildReviewSectionItems(input: {
     subtitle: gitSubtitle(section),
     diff: section.diff,
     isLoading: false,
+    generatedPaths: section.generatedPaths ?? [],
   }));
   const hasDirtyWorktreeItem = gitItems.some((item) => item.id === DIRTY_WORKTREE_SECTION_ID);
   const visibleGitItems =
@@ -565,6 +568,7 @@ export function buildReviewSectionItems(input: {
             subtitle: DIRTY_WORKTREE_SUBTITLE,
             diff: null,
             isLoading: true,
+            generatedPaths: [],
           } satisfies ReviewSectionItem,
           ...gitItems,
         ]

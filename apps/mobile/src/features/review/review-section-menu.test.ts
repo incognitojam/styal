@@ -11,6 +11,7 @@ function section(id: string, kind: ReviewSectionKind): ReviewSectionItem {
     subtitle: null,
     diff: null,
     isLoading: false,
+    generatedPaths: [],
   };
 }
 

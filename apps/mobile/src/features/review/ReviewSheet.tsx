@@ -77,6 +77,7 @@ import { reportShowcaseSceneRendered } from "../showcase/showcaseRenderSignal";
 
 const REVIEW_HEADER_SPACING = 0;
 const SHOWCASE_ENABLED = process.env.EXPO_PUBLIC_SHOWCASE === "1";
+const EMPTY_GENERATED_PATHS: ReadonlyArray<string> = [];
 
 const ReviewNotice = memo(function ReviewNotice(props: { readonly notice: string }) {
   return (
@@ -423,6 +424,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
     cachedViewedFileIds: selectedSection?.id
       ? reviewCache.viewedFileIdsBySection[selectedSection.id]
       : undefined,
+    generatedPaths: selectedSection?.generatedPaths ?? EMPTY_GENERATED_PATHS,
   });
   const { collapsedFileIds, toggleExpandedFile, toggleViewedFile, viewedFileIds } = fileVisibility;
   const commentSelection = useReviewCommentSelectionController({

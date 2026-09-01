@@ -2174,9 +2174,14 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   });
 
   const readUntrackedReviewDiffs = Effect.fn("readUntrackedReviewDiffs")(function* (cwd: string) {
+    const repositoryRoot = (yield* runGitStdout(
+      "GitVcsDriver.readUntrackedReviewDiffs.repositoryRoot",
+      cwd,
+      ["rev-parse", "--show-toplevel"],
+    )).trim();
     const untrackedResult = yield* executeGit(
       "GitVcsDriver.readUntrackedReviewDiffs.list",
-      cwd,
+      repositoryRoot,
       ["ls-files", "--others", "--exclude-standard", "-z"],
       {
         maxOutputBytes: WORKSPACE_FILES_MAX_OUTPUT_BYTES,
@@ -2185,7 +2190,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     );
     const untrackedPaths = splitNullSeparatedGitStdoutPaths(untrackedResult);
     if (untrackedPaths.length === 0) {
-      return { diff: "", truncated: untrackedResult.stdoutTruncated };
+      return { diff: "", paths: [], truncated: untrackedResult.stdoutTruncated };
     }
 
     const diffs = yield* Effect.forEach(
@@ -2193,8 +2198,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       (relativePath) =>
         executeGit(
           "GitVcsDriver.readUntrackedReviewDiffs.diff",
-          cwd,
+          repositoryRoot,
           [
+            "-c",
+            "core.quotePath=false",
             "diff",
             "--no-index",
             "--patch",
@@ -2219,8 +2226,47 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       diff: Arr.filterMap(diffs, (result) =>
         result.stdout.trim().length > 0 ? Result.succeed(result.stdout) : Result.failVoid,
       ).join("\n"),
+      paths: untrackedPaths,
       truncated: untrackedResult.stdoutTruncated || diffs.some((result) => result.stdoutTruncated),
     };
+  });
+
+  const readGeneratedDiffPaths = Effect.fn("readGeneratedDiffPaths")(function* (
+    cwd: string,
+    paths: ReadonlyArray<string>,
+  ) {
+    const uniquePaths = [...new Set(paths)];
+    if (uniquePaths.length === 0) return [];
+    const repositoryRoot = (yield* runGitStdout(
+      "GitVcsDriver.getReviewDiffPreview.repositoryRoot",
+      cwd,
+      ["rev-parse", "--show-toplevel"],
+    )).trim();
+
+    const results = yield* Effect.forEach(
+      Arr.chunksOf(uniquePaths, 100),
+      (pathChunk) =>
+        executeGit("GitVcsDriver.getReviewDiffPreview.attributes", repositoryRoot, [
+          "check-attr",
+          "-z",
+          "linguist-generated",
+          "--",
+          ...pathChunk,
+        ]),
+      { concurrency: 4 },
+    );
+
+    return results.flatMap((result) => {
+      const fields = result.stdout.split("\0");
+      const generated: string[] = [];
+      for (let index = 0; index + 2 < fields.length; index += 3) {
+        const [path, attribute, value] = fields.slice(index, index + 3);
+        if (attribute === "linguist-generated" && (value === "set" || value === "true")) {
+          generated.push(path!);
+        }
+      }
+      return generated;
+    });
   });
 
   const getReviewDiffPreview = Effect.fn("getReviewDiffPreview")(function* (
@@ -2248,6 +2294,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       "GitVcsDriver.getReviewDiffPreview.dirtyTracked",
       input.cwd,
       [
+        "-c",
+        "core.quotePath=false",
         "diff",
         "--patch",
         "--no-color",
@@ -2272,7 +2320,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       })),
     );
     const dirtyUntracked = yield* readUntrackedReviewDiffs(input.cwd).pipe(
-      Effect.orElseSucceed(() => ({ diff: "", truncated: false })),
+      Effect.orElseSucceed(() => ({ diff: "", paths: [], truncated: false })),
     );
     const dirtyDiff = [dirtyTrackedResult.stdout.trimEnd(), dirtyUntracked.diff.trimEnd()]
       .filter((diff) => diff.length > 0)
@@ -2284,6 +2332,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             "GitVcsDriver.getReviewDiffPreview.base",
             input.cwd,
             [
+              "-c",
+              "core.quotePath=false",
               "diff",
               "--patch",
               "--no-color",
@@ -2308,6 +2358,30 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           )
         : null;
     const baseDiff = baseResult?.stdout ?? "";
+    const [dirtyTrackedPathsResult, basePathsResult] = yield* Effect.all([
+      executeGit("GitVcsDriver.getReviewDiffPreview.dirtyTrackedPaths", input.cwd, [
+        "diff",
+        "--name-only",
+        "-z",
+        ...(input.ignoreWhitespace ? ["--ignore-all-space"] : []),
+        "HEAD",
+        "--",
+      ]).pipe(Effect.orElseSucceed(() => null)),
+      baseRef && branch
+        ? executeGit("GitVcsDriver.getReviewDiffPreview.basePaths", input.cwd, [
+            "diff",
+            "--name-only",
+            "-z",
+            ...(input.ignoreWhitespace ? ["--ignore-all-space"] : []),
+            `${baseRef}...HEAD`,
+          ]).pipe(Effect.orElseSucceed(() => null))
+        : Effect.succeed(null),
+    ]);
+    const dirtyPaths = [
+      ...(dirtyTrackedPathsResult ? splitNullSeparatedGitStdoutPaths(dirtyTrackedPathsResult) : []),
+      ...dirtyUntracked.paths,
+    ];
+    const basePaths = basePathsResult ? splitNullSeparatedGitStdoutPaths(basePathsResult) : [];
     const hashDiff = (diff: string) =>
       crypto.digest("SHA-256", new TextEncoder().encode(diff)).pipe(
         Effect.map(Encoding.encodeHex),
@@ -2326,6 +2400,13 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       hashDiff(dirtyDiff),
       hashDiff(baseDiff),
     ]);
+    const generatedPaths = yield* readGeneratedDiffPaths(input.cwd, [
+      ...dirtyPaths,
+      ...basePaths,
+    ]).pipe(Effect.orElseSucceed(() => []));
+    const generatedPathSet = new Set(generatedPaths);
+    const dirtyGeneratedPaths = dirtyPaths.filter((path) => generatedPathSet.has(path));
+    const baseGeneratedPaths = basePaths.filter((path) => generatedPathSet.has(path));
 
     const sources: ReviewDiffPreviewSource[] = [
       {
@@ -2337,6 +2418,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         diff: dirtyDiff,
         diffHash: dirtyDiffHash,
         truncated: dirtyTrackedResult.stdoutTruncated || dirtyUntracked.truncated,
+        generatedPaths: dirtyGeneratedPaths,
       },
       {
         id: "branch-range",
@@ -2347,6 +2429,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         diff: baseDiff,
         diffHash: baseDiffHash,
         truncated: baseResult?.stdoutTruncated ?? false,
+        generatedPaths: baseGeneratedPaths,
       },
     ];
 

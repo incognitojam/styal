@@ -52,8 +52,10 @@ T3 Code works with the platforms your team already uses:
   GitHub is still waiting to receive, and whether the pull request is ready to merge or blocked
 - When GitHub is waiting on repository requirements and auto-merge is available, **Auto-merge**
   replaces the primary **Merge** action and merges the pull request as soon as it becomes ready
-- Read ordinary files expanded by default in **Code changes**; oversized files stay folded until
-  opened, while files with review comments remain expanded
+- Read ordinary files expanded by default in **Code changes**; lockfiles and oversized files stay
+  folded until opened, while files with review comments remain expanded
+- In a thread's local Files viewer, lockfiles and files marked `linguist-generated` by the
+  repository stay folded until opened
 - View repository-hosted images in GitHub pull request descriptions, including private repositories
 - See the whole ladder of a GitHub [stacked pull request](https://docs.github.com/en/pull-requests/get-started/about-stacked-prs)
   in the **Stack** section of its Summary tab — every layer with its state, top of the stack

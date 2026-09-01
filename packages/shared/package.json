@@ -36,6 +36,10 @@
       "types": "./src/git.ts",
       "import": "./src/git.ts"
     },
+    "./generatedFiles": {
+      "types": "./src/generatedFiles.ts",
+      "import": "./src/generatedFiles.ts"
+    },
     "./sourceControl": {
       "types": "./src/sourceControl.ts",
       "import": "./src/sourceControl.ts"

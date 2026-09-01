@@ -22,6 +22,8 @@ export const ReviewDiffPreviewSource = Schema.Struct({
   diff: Schema.String,
   diffHash: TrimmedNonEmptyString,
   truncated: Schema.Boolean,
+  /** Paths Git attributes identify as generated in the checked-out repository. */
+  generatedPaths: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
 });
 export type ReviewDiffPreviewSource = typeof ReviewDiffPreviewSource.Type;
 
