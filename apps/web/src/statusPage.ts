@@ -186,14 +186,14 @@ function activeIncidentsDescription(incidents: ReadonlyArray<StatusPageIncidentI
 }
 
 /**
- * Narrows a status page to the parts T3 Code actually depends on. Vendors run
+ * Narrows a status page to the parts styal actually depends on. Vendors run
  * far more surfaces than we drive, and an incident confined to one of them is
  * noise the sidebar should not spend a row on. Ignoring is opt-in per name, so
  * a surface the vendor adds or renames still shows up: the failure mode is a
  * notice that did not matter, never a silent one that did.
  */
 export interface StatusPageRelevance {
-  /** Component names, hostname suffix optional, whose disruption cannot reach T3 Code. */
+  /** Component names, hostname suffix optional, whose disruption cannot reach styal. */
   readonly ignoredComponents: ReadonlyArray<string>;
 }
 
