@@ -65,6 +65,26 @@ Archives support Apple Silicon Macs, Linux x64 and arm64, and Windows x64 and ar
 Intel Macs are unsupported. The server needs neither a separate Node installation
 nor a compiler. Your provider CLIs may still require Node.
 
+## Open a project in the desktop app
+
+When the T3 Code desktop app is running on the same machine, open the current directory with:
+
+```bash
+npx t3 app
+```
+
+Pass a path to open another directory:
+
+```bash
+npx t3 app ../my-project
+```
+
+The command adds the directory as a project when needed, focuses the desktop app, and opens a new
+thread. It does not launch the desktop app, open a browser, or start a T3 Code server. A background
+server does not count as the desktop app. The command also rejects SSH sessions because a remote
+shell cannot focus a local desktop window. The CLI package and the running desktop app must both
+include `t3 app` support.
+
 ## Desktop App
 
 Download a styal installer from [GitHub Releases](https://github.com/incognitojam/styal/releases).
