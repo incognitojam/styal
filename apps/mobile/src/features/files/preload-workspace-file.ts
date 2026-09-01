@@ -7,6 +7,7 @@ import {
 
 import { appAtomRegistry } from "../../state/atom-registry";
 import { projectEnvironment } from "../../state/projects";
+import { isBrowserPreviewFile, isImagePreviewFile, isVideoPreviewFile } from "./filePath";
 import { prepareSourceFileDocument } from "./source-file-document";
 import { sourceHighlightAtom } from "./sourceHighlightingState";
 import type { ReviewDiffTheme } from "../review/shikiReviewHighlighter";
@@ -29,8 +30,9 @@ export function preloadWorkspaceFileContents(input: {
   readonly theme: ReviewDiffTheme;
 }): void {
   if (
-    isWorkspaceBrowserPreviewPath(input.relativePath) ||
-    isWorkspaceImagePreviewPath(input.relativePath)
+    isBrowserPreviewFile(input.relativePath) ||
+    isImagePreviewFile(input.relativePath) ||
+    isVideoPreviewFile(input.relativePath)
   ) {
     return;
   }

@@ -65,6 +65,48 @@ Model options shown as provider defaults remain display values until you choose 
 T3 Code only sends options you selected explicitly, so an unset reasoning level or service tier can
 still come from the provider's own configuration.
 
+## Images and videos in messages
+
+On web, desktop, and mobile, select a link to an image or video to open it inside styal.
+Workspace image and video links open the file viewer. Links to media outside the workspace
+open a media preview.
+Videos opened from the file explorer or a file-viewer tab also play inside styal. They
+stream from the environment as needed, rather than downloading the entire video before playback.
+Paths in inline code, such as `/tmp/recording.mp4`, work the same way. Image embeds stay inline;
+video embeds show a player with controls and an option to expand. Visible video previews load
+an initial frame when supported, but stay paused until you press Play. Video file references use
+a filmstrip icon.
+
+On web and desktop, hover over a preview to see its full file path or original URL. Right-click
+to copy that reference, save an image, or copy an image to the clipboard. Use the video player's
+built-in controls to download videos. If the player cannot decode a video, its error message
+offers a link to open the source in the browser. Workspace media also offers **Copy relative
+path** and **Open in file viewer**. These actions are available in expanded previews too.
+
+On mobile, touch and hold an inline image or use a preview's **Media actions** menu to see its
+source, copy the path or URL, or choose **Save or share**. Workspace media can open in the file
+viewer from the same menu. Saving downloads a copy only when you request it; it does not change
+how the video buffers during playback.
+
+Use Markdown image syntax to embed either kind of media:
+
+```markdown
+![Screenshot](/tmp/screenshot.png)
+![Recording](/tmp/recording.mp4)
+[Open recording](/tmp/recording.mp4)
+```
+
+Relative paths resolve from the thread's workspace. Absolute paths and `file://` links refer to
+the environment's machine, even when you connect remotely or use your phone. Supported media
+can live outside the workspace, including in Downloads or `/tmp`.
+
+styal serves the original file without adding it to attachment storage. If that file is moved
+or deleted, its preview can no longer load from the environment. A browser or device may still
+have a cached copy. Supported video formats and codecs depend on the browser or device.
+
+Bare paths in ordinary prose and paths inside code blocks stay text. Raw HTML `<video>` tags
+are not supported; use the Markdown embed syntax above.
+
 ## Changing projects
 
 On web and desktop, changing the project from a new thread keeps the current environment when that

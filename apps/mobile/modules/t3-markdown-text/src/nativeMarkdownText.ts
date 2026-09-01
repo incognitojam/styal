@@ -3,6 +3,7 @@ import type { MarkdownNode } from "react-native-nitro-markdown/headless";
 import type { SelectableMarkdownSkill } from "./SelectableMarkdownText.types";
 import {
   isMarkdownFileLinkLabel,
+  resolveMarkdownInlineCodePresentation,
   resolveMarkdownLinkPresentation,
   type MarkdownFileIcon,
 } from "./markdownLinks";
@@ -287,8 +288,17 @@ function appendNode(
       return appendRun(runs, textNodeContent(nodeTextContent(node)), context);
     case "html_inline":
       return appendRun(runs, inlineHtmlText(nodeTextContent(node)), context);
-    case "code_inline":
-      return appendRun(runs, nodeTextContent(node), { ...context, code: true });
+    case "code_inline": {
+      const content = nodeTextContent(node);
+      const presentation = context.href ? null : resolveMarkdownInlineCodePresentation(content);
+      return presentation
+        ? appendRun(runs, presentation.label, {
+            ...context,
+            href: presentation.href,
+            fileIcon: presentation.icon,
+          })
+        : appendRun(runs, content, { ...context, code: true });
+    }
     case "soft_break":
       return appendRun(runs, " ", context);
     case "line_break":

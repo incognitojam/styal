@@ -1,6 +1,6 @@
 import * as Haptics from "expo-haptics";
 import { KeyboardAwareLegendList } from "@legendapp/list/keyboard";
-import { type LegendListRef } from "@legendapp/list/react-native";
+import { useViewabilityAmount, type LegendListRef } from "@legendapp/list/react-native";
 import type {
   AssetResource,
   ChatAttachment,
@@ -33,6 +33,7 @@ import { SymbolView, type AppSymbolName } from "../../components/AppSymbol";
 import { HeaderHeightContext } from "@react-navigation/elements";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import {
+  createContext,
   memo,
   useCallback,
   useContext,
@@ -98,6 +99,15 @@ import {
 import { AppText as Text } from "../../components/AppText";
 import { VideoPreviewModal, type VideoPreviewSource } from "../../components/VideoPreviewModal";
 import { VideoAttachmentTile } from "../../components/VideoAttachmentTile";
+import { MediaVideoPlayer } from "../../components/MediaVideoPlayer";
+import { resolveMarkdownMediaPreview } from "../../lib/markdownMedia";
+import { useMediaActions, type MediaActionsSource } from "../../lib/mediaActions";
+import { MediaActionsMenu } from "../../components/MediaActionsMenu";
+import {
+  mediaVideoPreviewUri,
+  mediaVideoThumbnailKey,
+  type MediaVideoPreviewSource,
+} from "../../lib/videoPreviewSource";
 import { CopyTextButton } from "../../components/CopyTextButton";
 import {
   parseReviewCommentMessageSegments,
@@ -126,6 +136,8 @@ import { useAppearanceCodeSurface } from "../settings/appearance/useAppearanceCo
 import { markdownFileIconSource } from "@t3tools/mobile-markdown-text/file-icons";
 import {
   isMarkdownFileLinkLabel,
+  normalizeNativeMarkdownUrl,
+  resolveMarkdownInlineCodePresentation,
   resolveMarkdownLinkPresentation,
 } from "@t3tools/mobile-markdown-text/links";
 import {
@@ -148,7 +160,12 @@ import {
 import { appendPendingThreadMessages, type PendingThreadFeedEntry } from "./pending-thread-feed";
 import type { QueuedThreadMessage } from "../../state/thread-outbox-model";
 import { useMarkdownCodeHighlight } from "./markdownCodeHighlightState";
-import { assetEnvironment, useAssetUrl, useAssetUrlState } from "../../state/assets";
+import {
+  assetEnvironment,
+  useAssetUrl,
+  useAssetUrlState,
+  useRefreshAssetUrl,
+} from "../../state/assets";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { usePreparedConnection } from "../../state/session";
 import * as Option from "effect/Option";
@@ -279,6 +296,7 @@ function MessageAttachmentFile(props: {
 }) {
   const sourceIdentifier = useId();
   const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
+    refresh: true,
     reportFailure: false,
   });
   const preparedConnection = usePreparedConnection(props.environmentId);
@@ -460,9 +478,11 @@ function ThreadMarkdownImageView(props: {
   readonly sourceKey: string;
   readonly unavailable: boolean;
   readonly alt: string | null;
+  readonly actionsSource?: MediaActionsSource;
   readonly onPressPreview: (source: FilePreviewSource) => void;
 }) {
   const sourceIdentifier = useId();
+  const mediaActions = useMediaActions(props.actionsSource);
   const [availableWidth, setAvailableWidth] = useState(0);
   const [sourceSize, setSourceSize] = useState<{ width: number; height: number } | null>(null);
   const [failedUri, setFailedUri] = useState<string | null>(null);
@@ -505,36 +525,51 @@ function ThreadMarkdownImageView(props: {
           ) : (
             <ActivityIndicator />
           )}
+          {props.actionsSource ? (
+            <View className="absolute right-1 top-1">
+              <MediaActionsMenu media={mediaActions} />
+            </View>
+          ) : null}
         </View>
       ) : (
         <PresentationSource identifier={sourceIdentifier} style={{ alignSelf: "flex-start" }}>
-          <Pressable
-            accessibilityRole="imagebutton"
-            accessibilityLabel={props.alt ?? "Markdown image"}
-            onPress={() =>
-              props.onPressPreview({
-                kind: "image",
-                uri: props.uri!,
-                name: props.alt ?? "Image",
-                sourceIdentifier,
-              })
-            }
-            style={{ alignSelf: "flex-start" }}
-          >
-            <View
-              className="items-center justify-center overflow-hidden rounded-[10px] bg-md-code-bg"
-              style={{
-                ...frameStyle,
-              }}
-            >
-              <ThreadMarkdownImageRequest
-                key={props.uri}
-                uri={props.uri}
-                onLoad={setSourceSize}
-                onError={() => setFailedUri(props.uri)}
-              />
-            </View>
-          </Pressable>
+          <View>
+            <MediaActionsMenu media={mediaActions}>
+              <Pressable
+                accessibilityRole="imagebutton"
+                accessibilityLabel={props.alt ?? "Markdown image"}
+                onPress={() =>
+                  props.onPressPreview({
+                    kind: "image",
+                    uri: props.uri!,
+                    name: props.alt ?? "Image",
+                    sourceIdentifier,
+                    actionsSource: props.actionsSource,
+                  })
+                }
+                style={{ alignSelf: "flex-start" }}
+              >
+                <View
+                  className="items-center justify-center overflow-hidden rounded-[10px] bg-md-code-bg"
+                  style={{
+                    ...frameStyle,
+                  }}
+                >
+                  <ThreadMarkdownImageRequest
+                    key={props.uri}
+                    uri={props.uri}
+                    onLoad={setSourceSize}
+                    onError={() => setFailedUri(props.uri)}
+                  />
+                </View>
+              </Pressable>
+            </MediaActionsMenu>
+            {props.actionsSource ? (
+              <View className="absolute right-1 top-1">
+                <MediaActionsMenu media={mediaActions} />
+              </View>
+            ) : null}
+          </View>
         </PresentationSource>
       )}
       {props.alt ? (
@@ -581,9 +616,10 @@ function ThreadMarkdownImageRequest(props: {
 /** Environment-hosted image that loads through a signed asset URL. */
 function ThreadMarkdownImage(props: {
   readonly environmentId: EnvironmentId;
-  readonly resource: Extract<AssetResource, { readonly _tag: "attachment" | "workspace-file" }>;
+  readonly resource: Extract<AssetResource, { readonly _tag: "attachment" | "media-file" }>;
   readonly alt: string | null;
   readonly srcFragment?: string;
+  readonly actionsSource?: MediaActionsSource;
   readonly onPressPreview: (source: FilePreviewSource) => void;
 }) {
   const assetUrl = useAssetUrlState(props.environmentId, props.resource);
@@ -598,7 +634,55 @@ function ThreadMarkdownImage(props: {
       }
       unavailable={assetUrl._tag === "Failure"}
       alt={props.alt}
+      actionsSource={props.actionsSource}
       onPressPreview={props.onPressPreview}
+    />
+  );
+}
+
+const ThreadMediaVisibleContext = createContext(false);
+// LegendList only computes hook visibility when the list has a viewability config.
+const THREAD_MEDIA_VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 0 };
+
+function ThreadMediaVisibility(props: { readonly children: ReactNode }) {
+  const [visible, setVisible] = useState(false);
+  useViewabilityAmount<ThreadFeedEntry>(
+    useCallback((token) => setVisible(token.sizeVisible > 0), []),
+  );
+  return <ThreadMediaVisibleContext value={visible}>{props.children}</ThreadMediaVisibleContext>;
+}
+
+function ThreadMarkdownVideo(props: {
+  readonly source: MediaVideoPreviewSource;
+  readonly onExpand: (source: MediaVideoPreviewSource) => void;
+}) {
+  const { source } = props;
+  const visible = useContext(ThreadMediaVisibleContext);
+  const thumbnailKey = mediaVideoThumbnailKey(source);
+  const asset = useAssetUrlState(
+    "environmentId" in source ? source.environmentId : null,
+    "resource" in source ? source.resource : null,
+  );
+  const refreshAssetUrl = useRefreshAssetUrl(
+    "environmentId" in source ? source.environmentId : null,
+    "resource" in source ? source.resource : null,
+  );
+  const uri = mediaVideoPreviewUri(source, asset._tag === "Success" ? asset.url : null);
+  return (
+    <MediaVideoPlayer
+      key={thumbnailKey}
+      uri={uri}
+      resolvePlaybackUri={
+        "resource" in source
+          ? async () => mediaVideoPreviewUri(source, await refreshAssetUrl())
+          : undefined
+      }
+      name={source.name}
+      thumbnailKey={thumbnailKey}
+      thumbnailVisible={visible}
+      unavailable={"resource" in source && asset._tag === "Failure"}
+      actionsSource={source.actionsSource}
+      onExpand={() => props.onExpand(source)}
     />
   );
 }
@@ -642,6 +726,7 @@ interface ReviewCommentColors {
 }
 
 const failedMarkdownFaviconHosts = new Set<string>();
+const MarkdownLinkLabelContext = createContext(false);
 const markdownLinkStyles = StyleSheet.create({
   inlineIcon: {
     width: 14,
@@ -659,15 +744,14 @@ const MarkdownExternalLink = memo(function MarkdownExternalLink(props: {
   readonly color: string;
   readonly host: string;
   readonly href: string;
+  readonly onPress: (href: string) => void;
 }) {
   const [failed, setFailed] = useState(() => failedMarkdownFaviconHosts.has(props.host));
 
   return (
     <NativeText
       className="font-sans"
-      onPress={() => {
-        void tryOpenExternalUrl(props.href, "markdown-link");
-      }}
+      onPress={() => props.onPress(props.href)}
       style={{
         color: props.color,
         textDecorationLine: "none",
@@ -691,6 +775,37 @@ const MarkdownExternalLink = memo(function MarkdownExternalLink(props: {
     </NativeText>
   );
 });
+
+function MarkdownInlineCode(props: {
+  readonly content: string;
+  readonly textColor: string;
+  readonly codeColor: string;
+  readonly fontSize: number;
+  readonly lineHeight: number;
+  readonly onLinkPress: (href: string) => void;
+}) {
+  const insideLink = useContext(MarkdownLinkLabelContext);
+  const presentation = insideLink ? null : resolveMarkdownInlineCodePresentation(props.content);
+  return (
+    <NativeText
+      className={presentation ? "font-t3-bold" : "font-mono"}
+      onPress={presentation ? () => props.onLinkPress(presentation.href) : undefined}
+      style={{
+        color: presentation ? props.textColor : props.codeColor,
+        fontSize: props.fontSize,
+        lineHeight: props.lineHeight,
+      }}
+    >
+      {presentation ? (
+        <Image
+          source={markdownFileIconSource(presentation.icon)}
+          style={markdownLinkStyles.inlineIcon}
+        />
+      ) : null}
+      {presentation?.label ?? props.content}
+    </NativeText>
+  );
+}
 
 const ARTIFACT_TEMPLATE_SYMBOL_BY_KIND: Record<
   CodexArtifactTemplate["artifactKind"],
@@ -1091,30 +1206,35 @@ function useMarkdownStyles(
         }
         if (presentation.kind === "external") {
           return (
-            <MarkdownExternalLink
-              href={presentation.href}
-              host={presentation.host}
-              color={markdownLinkColor}
-            >
-              {children}
-            </MarkdownExternalLink>
+            <MarkdownLinkLabelContext.Provider value>
+              <MarkdownExternalLink
+                href={presentation.href}
+                host={presentation.host}
+                color={markdownLinkColor}
+                onPress={onLinkPress}
+              >
+                {children}
+              </MarkdownExternalLink>
+            </MarkdownLinkLabelContext.Provider>
           );
         }
         const linkHref = presentation.href;
         return (
-          <NativeText
-            className="underline"
-            onPress={
-              linkHref
-                ? () => {
-                    void tryOpenExternalUrl(linkHref, "markdown-link");
-                  }
-                : undefined
-            }
-            style={{ color: markdownLinkColor }}
-          >
-            {children}
-          </NativeText>
+          <MarkdownLinkLabelContext.Provider value>
+            <NativeText
+              className="underline"
+              onPress={
+                linkHref
+                  ? () => {
+                      void tryOpenExternalUrl(linkHref, "markdown-link");
+                    }
+                  : undefined
+              }
+              style={{ color: markdownLinkColor }}
+            >
+              {children}
+            </NativeText>
+          </MarkdownLinkLabelContext.Provider>
         );
       },
       list: ({ node, Renderer, ordered = false, start = 1 }) => (
@@ -1157,21 +1277,16 @@ function useMarkdownStyles(
               title: node.title ?? null,
             }) ?? undefined)
           : undefined,
-      code_inline: ({ content }) => {
-        const value = content ?? "";
-        return (
-          <NativeText
-            className="font-mono"
-            style={{
-              color: inlineCodeTextColor,
-              fontSize: markdownFontSizes.codeBlockFontSize,
-              lineHeight: markdownFontSizes.bodyLineHeight,
-            }}
-          >
-            {value}
-          </NativeText>
-        );
-      },
+      code_inline: ({ content }) => (
+        <MarkdownInlineCode
+          content={content ?? ""}
+          textColor={inlineTextColor}
+          codeColor={inlineCodeTextColor}
+          fontSize={markdownFontSizes.codeBlockFontSize}
+          lineHeight={markdownFontSizes.bodyLineHeight}
+          onLinkPress={onLinkPress}
+        />
+      ),
       ...(preserveSoftBreaks
         ? {
             soft_break: () => <NativeText>{"\n"}</NativeText>,
@@ -2008,11 +2123,26 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             path: relativePath.split("/").filter((segment) => segment.length > 0),
             ...(presentation.line ? { line: String(presentation.line) } : {}),
           });
+          return;
+        }
+      }
+
+      const media = resolveMarkdownMediaPreview(href, {
+        environmentId: props.environmentId,
+        threadId: props.threadId,
+        workspaceRoot: props.workspaceRoot,
+      });
+      if (media) {
+        void Haptics.selectionAsync();
+        if (media.kind === "video") {
+          setExpandedVideo((current) => current ?? media.source);
+        } else {
+          setExpandedFile((current) => current ?? media.source);
         }
         return;
       }
 
-      if (presentation.href) {
+      if (presentation.kind !== "file" && presentation.href) {
         if (/^https?:\/\//i.test(presentation.href) && isPdfFile({ name: presentation.href })) {
           setExpandedFile(
             (current) => current ?? { kind: "pdf", uri: presentation.href!, name: "Document.pdf" },
@@ -2026,14 +2156,30 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   );
   const renderMarkdownImage = useCallback<MarkdownImageRenderer>(
     (image) => {
+      const media = resolveMarkdownMediaPreview(image.href, {
+        environmentId: props.environmentId,
+        threadId: props.threadId,
+        workspaceRoot: props.workspaceRoot,
+        imageEmbed: true,
+      });
+      if (media?.kind === "video") {
+        return (
+          <ThreadMarkdownVideo
+            key={image.href}
+            source={{ ...media.source, name: image.alt ?? media.source.name }}
+            onExpand={(source) => setExpandedVideo((current) => current ?? source)}
+          />
+        );
+      }
       const imageSource = classifyMarkdownImageSource(image.href, props.workspaceRoot ?? null);
       if (imageSource._tag === "Direct") {
         return (
           <ThreadMarkdownImageView
-            uri={imageSource.uri}
+            uri={normalizeNativeMarkdownUrl(imageSource.uri)}
             sourceKey={imageSource.uri}
             unavailable={false}
             alt={image.alt}
+            actionsSource={media?.source.actionsSource}
             onPressPreview={(source) => setExpandedFile((current) => current ?? source)}
           />
         );
@@ -2045,12 +2191,13 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         <ThreadMarkdownImage
           environmentId={props.environmentId}
           resource={{
-            _tag: "workspace-file",
+            _tag: "media-file",
             threadId: props.threadId,
             path: imageSource.path,
           }}
           alt={image.alt}
           srcFragment={markdownImageSourceFragment(image.href)}
+          actionsSource={media?.source.actionsSource}
           onPressPreview={(source) => setExpandedFile((current) => current ?? source)}
         />
       );
@@ -2063,12 +2210,26 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         threadId: props.threadId,
         workspaceRoot: props.workspaceRoot,
       });
+      const media = viewedImage
+        ? resolveMarkdownMediaPreview(image.href, {
+            environmentId: props.environmentId,
+            threadId: props.threadId,
+            workspaceRoot: props.workspaceRoot,
+            imageEmbed: true,
+          })
+        : null;
+      const actionsSource = media?.source.actionsSource;
       return viewedImage ? (
         <ThreadMarkdownImage
           environmentId={props.environmentId}
           resource={viewedImage.resource}
           alt={viewedImage.alt}
           srcFragment={viewedImage.srcFragment}
+          actionsSource={
+            actionsSource && "resource" in actionsSource
+              ? { ...actionsSource, resource: viewedImage.resource }
+              : undefined
+          }
           onPressPreview={(source) => setExpandedFile((current) => current ?? source)}
         />
       ) : null;
@@ -2527,32 +2688,34 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         }
         exiting={THREAD_FEED_DISCLOSURE_EXIT_TRANSITION}
       >
-        {renderFeedEntry(info, {
-          environmentId: props.environmentId,
-          dispatchingMessageId: props.dispatchingMessageId,
-          onEditPendingMessage: props.onEditPendingMessage,
-          copiedRowId,
-          expandedWorkRows,
-          terminalAssistantMessageIds,
-          unsettledTurnId,
-          onCopyWorkRow,
-          onToggleWorkGroup,
-          onToggleWorkRow,
-          onToggleTurnFold,
-          onPressPreview,
-          onPressVideo,
-          onMarkdownLinkPress,
-          renderMarkdownImage,
-          renderViewedImage,
-          iconSubtleColor,
-          userBubbleColor,
-          markdownStyles,
-          reviewCommentColors,
-          reviewCommentBubbleWidth,
-          userBubbleMaxWidth,
-          skills: props.skills,
-          onUseArtifactTemplate: props.onUseArtifactTemplate,
-        })}
+        <ThreadMediaVisibility>
+          {renderFeedEntry(info, {
+            environmentId: props.environmentId,
+            dispatchingMessageId: props.dispatchingMessageId,
+            onEditPendingMessage: props.onEditPendingMessage,
+            copiedRowId,
+            expandedWorkRows,
+            terminalAssistantMessageIds,
+            unsettledTurnId,
+            onCopyWorkRow,
+            onToggleWorkGroup,
+            onToggleWorkRow,
+            onToggleTurnFold,
+            onPressPreview,
+            onPressVideo,
+            onMarkdownLinkPress,
+            renderMarkdownImage,
+            renderViewedImage,
+            iconSubtleColor,
+            userBubbleColor,
+            markdownStyles,
+            reviewCommentColors,
+            reviewCommentBubbleWidth,
+            userBubbleMaxWidth,
+            skills: props.skills,
+            onUseArtifactTemplate: props.onUseArtifactTemplate,
+          })}
+        </ThreadMediaVisibility>
       </Animated.View>
     ),
     [
@@ -2677,6 +2840,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             data={presentedFeed}
             extraData={listAppearanceData}
             renderItem={renderItem}
+            viewabilityConfig={THREAD_MEDIA_VIEWABILITY_CONFIG}
             keyExtractor={(entry) => entry.id}
             getItemType={(entry) =>
               entry.type === "message" ? `message:${entry.message.role}` : entry.type

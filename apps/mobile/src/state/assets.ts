@@ -2,7 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { createAssetEnvironmentAtoms, resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 import { usePreparedConnection } from "./session";
@@ -45,6 +45,26 @@ export function useAssetUrl(
 ): string | null {
   const state = useAssetUrlState(environmentId, resource);
   return state._tag === "Success" ? state.url : null;
+}
+
+/** Explicit playback and sharing must reauthorize files that may have been replaced on disk. */
+export function useRefreshAssetUrl(
+  environmentId: EnvironmentId | null,
+  resource: AssetResource | null,
+): () => Promise<string | null> {
+  const connection = usePreparedConnection(environmentId);
+  const httpBaseUrl = connection._tag === "Some" ? connection.value.httpBaseUrl : null;
+  const createUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
+    refresh: true,
+    reportFailure: false,
+  });
+  return useCallback(async () => {
+    if (environmentId === null || resource === null || httpBaseUrl === null) return null;
+    const result = await createUrl({ environmentId, input: { resource } });
+    return result._tag === "Success"
+      ? resolveAssetUrl(httpBaseUrl, result.value.relativeUrl)
+      : null;
+  }, [createUrl, environmentId, httpBaseUrl, resource]);
 }
 
 /** A newly opened player waits for a fresh capability instead of pinning a stale cached URL. */

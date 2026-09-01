@@ -15,6 +15,7 @@ export function useAtomQueryRunner<T, A, E>(
   const explicitLabel = typeof options === "string" ? options : options?.label;
   const reportFailure = typeof options === "string" ? true : (options?.reportFailure ?? true);
   const reportDefect = typeof options === "string" ? true : (options?.reportDefect ?? true);
+  const refresh = typeof options === "string" ? false : (options?.refresh ?? false);
 
   const refresh = typeof options === "string" ? false : (options?.refresh ?? false);
 

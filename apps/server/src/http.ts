@@ -32,6 +32,7 @@ import { OtlpTracer } from "effect/unstable/observability";
 
 import * as ServerConfig from "./config.ts";
 import { ASSET_ROUTE_PREFIX, resolveAsset } from "./assets/AssetAccess.ts";
+import { statMediaFile, streamMediaFile, type OpenMediaFile } from "./assets/MediaFile.ts";
 import {
   ATTACHMENT_UPLOAD_ROUTE_PREFIX,
   storeAttachmentUpload,
@@ -168,17 +169,29 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
     readonly download?: boolean;
     readonly fileName?: string;
     readonly mimeType?: string;
+    readonly file?: OpenMediaFile;
   },
   rangeHeader?: string,
   ifRangeHeader?: string,
   method: "GET" | "HEAD" = "GET",
 ) {
   const headers = assetResponseHeaders(asset.path, asset);
-  if (headers["Content-Type"]?.toLowerCase().startsWith("video/")) {
+  const mediaFile = asset.file;
+  const mediaInfo = mediaFile ? yield* statMediaFile(asset.path, mediaFile) : undefined;
+  const isVideo = headers["Content-Type"]?.toLowerCase().startsWith("video/") === true;
+  if (mediaFile && isVideo) {
+    // Host videos can change in place. Do not invite conditional range requests
+    // with validators that cannot establish byte-for-byte identity.
+    headers["Cache-Control"] = "private, no-store";
+  }
+  let status = 200;
+  let offset = 0n;
+  let bytesToRead: bigint | undefined;
+  if (isVideo) {
     headers["Accept-Ranges"] = "bytes";
-    if (method === "GET" && rangeHeader) {
+    if (method === "GET" && rangeHeader && (!asset.file || ifRangeHeader === undefined)) {
       const fs = yield* FileSystem.FileSystem;
-      const info = yield* fs.stat(asset.path);
+      const info = mediaInfo ?? (yield* fs.stat(asset.path));
       if (ifRangeHeader !== undefined) {
         // NodeHttpPlatform uses this strong generator for its file response validators.
         const etag = yield* Etag.Generator.pipe(
@@ -200,16 +213,34 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
         });
       }
       if (range?._tag === "Range") {
-        return yield* HttpServerResponse.file(asset.path, {
-          status: 206,
-          offset: range.offset,
-          bytesToRead: range.bytesToRead,
-          headers: { ...headers, "Content-Range": range.contentRange },
-        });
+        status = 206;
+        offset = range.offset;
+        bytesToRead = range.bytesToRead;
+        headers["Content-Range"] = range.contentRange;
       }
     }
   }
-  return yield* HttpServerResponse.file(asset.path, { status: 200, headers });
+  if (mediaFile && mediaInfo) {
+    const size = bytesToRead ?? mediaInfo.size;
+    headers["Content-Type"] ??= Mime.getType(asset.path) ?? "application/octet-stream";
+    headers["Content-Length"] = String(size);
+    if (!isVideo) {
+      headers["Last-Modified"] = mediaInfo.mtime.toUTCString();
+      headers.ETag = `W/"${mediaInfo.size.toString(16)}-${mediaInfo.mtimeMs.toString(16)}"`;
+    }
+    if (method === "HEAD" || size === 0n) {
+      return HttpServerResponse.empty({ status, headers });
+    }
+    const body = streamMediaFile(mediaFile, offset, size);
+    if (!body) {
+      return HttpServerResponse.text("File is too large to preview.", { status: 413 });
+    }
+    return HttpServerResponse.stream(body, {
+      status,
+      headers,
+    });
+  }
+  return yield* HttpServerResponse.file(asset.path, { status, offset, bytesToRead, headers });
 });
 
 export const httpCompressionLayer = HttpRouter.middleware(HttpMiddleware.compression(), {
