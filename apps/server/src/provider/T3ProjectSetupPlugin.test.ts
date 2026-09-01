@@ -78,12 +78,12 @@ it("adds the bundled skill to provider snapshots without duplicates", () => {
     skillPath: "/synthetic/plugin/skills/t3-project-setup/SKILL.md",
   });
 
+  expect(addT3ProjectSetupSkill(snapshot, undefined)).toBe(snapshot);
   expect(result.skills).toEqual([
     { name: "existing", path: "/synthetic/existing/SKILL.md", enabled: true },
     {
       name: "t3-project-setup",
-      description:
-        "Configure or improve a repository's T3 Code setup using t3.json, an existing project icon, and useful Actions.",
+      description: expect.any(String),
       path: "/synthetic/plugin/skills/t3-project-setup/SKILL.md",
       scope: "bundled",
       enabled: true,

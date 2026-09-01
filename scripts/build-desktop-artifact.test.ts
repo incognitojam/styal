@@ -495,14 +495,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.notProperty(linux, "asarUnpack");
       assert.notProperty(win, "asarUnpack");
       assert.deepStrictEqual(win.extraResources, [
-        {
-          from: "apps/desktop/prod-resources/resource-monitor",
-          to: "resource-monitor",
-        },
-        {
-          from: "apps/desktop/prod-resources/agent-plugins",
-          to: "agent-plugins",
-        },
+        ...DESKTOP_EXTRA_RESOURCES,
         ...WINDOWS_SERVER_EXTRA_RESOURCES,
       ]);
       assert.deepStrictEqual(win.nsis, {
@@ -710,22 +703,15 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         });
         const serverDistDir = path.join(root, "server-dist");
         const stageResourcesDir = path.join(root, "resources");
-        const sourceSkill = path.join(
-          serverDistDir,
-          "agent-plugins/t3-project-setup/skills/t3-project-setup/SKILL.md",
-        );
+        const skillRelativePath = "agent-plugins/t3-project-setup/skills/t3-project-setup/SKILL.md";
+        const sourceSkill = path.join(serverDistDir, skillRelativePath);
         yield* fs.makeDirectory(path.dirname(sourceSkill), { recursive: true });
         yield* fs.writeFileString(sourceSkill, "synthetic skill");
 
         yield* stageAgentPlugins({ serverDistDir, stageResourcesDir });
 
         assert.equal(
-          yield* fs.readFileString(
-            path.join(
-              stageResourcesDir,
-              "agent-plugins/t3-project-setup/skills/t3-project-setup/SKILL.md",
-            ),
-          ),
+          yield* fs.readFileString(path.join(stageResourcesDir, skillRelativePath)),
           "synthetic skill",
         );
       }),
