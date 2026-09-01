@@ -42,15 +42,17 @@ export function resolveHostedBrowserWebviewWrapperStyle(input: {
   readonly active: boolean;
   readonly captureActive?: boolean;
   readonly renderingActive: boolean;
+  readonly keepPaintableWhenInactive?: boolean;
   readonly cornerRadius?: number;
   readonly rect: BrowserSurfaceRect | null;
   readonly hiddenSize: HostedBrowserWebviewSize;
 }): HostedBrowserWebviewWrapperStyle {
   const {
     active,
-    captureActive = false,
     cornerRadius = 0,
     hiddenSize,
+    keepPaintableWhenInactive = false,
+    captureActive = false,
     rect,
     renderingActive,
   } = input;
@@ -66,17 +68,16 @@ export function resolveHostedBrowserWebviewWrapperStyle(input: {
     };
   }
 
-  if (captureActive) {
-    // Electron cannot capture a guest parked outside the compositor. Lease an
-    // in-window surface for the target tab without exposing it to the human.
+  if (captureActive || renderingActive) {
+    // Keep capturing guests inside the compositor, concealed behind the app.
     return {
       left: 0,
       top: 0,
       width: hiddenSize.width,
       height: hiddenSize.height,
-      zIndex: 30,
+      zIndex: captureActive ? 30 : -1,
       pointerEvents: "none",
-      opacity: 0,
+      ...(captureActive ? { opacity: 0 } : {}),
       visibility: "visible",
     };
   }
@@ -88,6 +89,6 @@ export function resolveHostedBrowserWebviewWrapperStyle(input: {
     height: hiddenSize.height,
     zIndex: -1,
     pointerEvents: "none",
-    visibility: renderingActive ? "visible" : "hidden",
+    visibility: keepPaintableWhenInactive ? "visible" : "hidden",
   };
 }
