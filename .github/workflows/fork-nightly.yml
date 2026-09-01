@@ -263,6 +263,7 @@ jobs:
         env:
           FORK_SOURCE_REF: ${{ needs.prepare.outputs.ref }}
           GH_TOKEN: ${{ github.token }}
+          NEW_TAG: ${{ needs.prepare.outputs.tag }}
           PREVIOUS_TAG: ${{ needs.prepare.outputs.previous_tag }}
           UPSTREAM_REF: ${{ needs.prepare.outputs.upstream_ref }}
         run: |
@@ -341,8 +342,13 @@ jobs:
             if (( rendered_change_count == 0 )); then
               printf 'No user-facing changes.\n'
             fi
-            printf '\n**Full Changelog**: https://github.com/pingdotgg/t3code/compare/%s...%s\n' \
-              "$previous_upstream_ref" "$UPSTREAM_REF"
+            # Compare the fork's own release tags. Comparing upstream refs named
+            # the wrong repository, and collapsed to an empty range whenever the
+            # nightly carried no upstream changes.
+            if [[ -n "$PREVIOUS_TAG" ]]; then
+              printf '\n**Full Changelog**: https://github.com/%s/compare/%s...%s\n' \
+                "$GITHUB_REPOSITORY" "$PREVIOUS_TAG" "$NEW_TAG"
+            fi
           } > release-notes.md
 
       - id: draft_release
