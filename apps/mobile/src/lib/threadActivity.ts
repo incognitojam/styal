@@ -77,6 +77,9 @@ export interface ThreadFeedActivity {
     | "checklist"
     | "command"
     | "configure"
+    | "database"
+    | "deploy"
+    | "desktop"
     | "edit"
     | "eye"
     | "flask"
@@ -141,6 +144,9 @@ const SETUP_ACTION_ICON: Record<ProjectScriptIcon, ThreadFeedActivity["icon"]> =
   configure: "configure",
   build: "hammer",
   debug: "bug",
+  desktop: "desktop",
+  database: "database",
+  deploy: "deploy",
 };
 
 type RawThreadFeedEntry =

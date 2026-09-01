@@ -164,5 +164,8 @@ export function projectScriptMenuIcon(icon: ProjectScript["icon"]) {
   if (icon === "configure") return "wrench.and.screwdriver";
   if (icon === "build") return "hammer";
   if (icon === "debug") return "ladybug";
+  if (icon === "desktop") return "desktopcomputer";
+  if (icon === "database") return "cylinder";
+  if (icon === "deploy") return "paperplane";
   return "play";
 }

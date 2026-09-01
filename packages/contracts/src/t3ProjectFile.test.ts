@@ -51,6 +51,12 @@ describe("T3ProjectFile", () => {
     ).toThrow();
   });
 
+  it.each(["desktop", "database", "deploy"] as const)("accepts the %s script icon", (icon) => {
+    const decoded = decode({ scripts: [{ name: "Action", command: "vp run action", icon }] });
+
+    expect(decoded.scripts?.[0]?.icon).toBe(icon);
+  });
+
   it("decodes defaultThreadEnvMode and rejects unknown modes", () => {
     expect(decode({ defaultThreadEnvMode: "worktree" }).defaultThreadEnvMode).toBe("worktree");
     expect(decode({ defaultThreadEnvMode: "local" }).defaultThreadEnvMode).toBe("local");

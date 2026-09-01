@@ -67,8 +67,8 @@ Each script supports these fields:
 
 - `name` (required): the label shown in T3 Code.
 - `command` (required): the shell command to run.
-- `icon` (optional): `play`, `test`, `lint`, `configure`, `build`, or `debug`. The default is
-  `play`.
+- `icon` (optional): `play`, `test`, `lint`, `configure`, `build`, `debug`, `desktop`, `database`,
+  or `deploy`. The default is `play`.
 - `runOnWorktreeCreate` (optional): whether importing this script should make it the automatic
   setup action. The default is `false`.
 
