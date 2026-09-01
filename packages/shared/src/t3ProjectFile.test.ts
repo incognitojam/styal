@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   buildT3ProjectFileJsonSchema,
   parseT3ProjectFile,
+  parseT3ProjectFileResult,
   T3ProjectFileFromJson,
 } from "./t3ProjectFile.ts";
 
@@ -83,8 +84,109 @@ describe("parseT3ProjectFile", () => {
     });
   });
 
-  it("returns null for malformed or invalid contents", () => {
+  it("returns null for malformed JSON and non-object roots", () => {
     expect(parseT3ProjectFile("{ not json")).toBeNull();
-    expect(parseT3ProjectFile('{ "defaultThreadEnvMode": "spaceship" }')).toBeNull();
+    expect(parseT3ProjectFile("[]")).toBeNull();
+  });
+
+  it("ignores one invalid top-level value without discarding valid fields", () => {
+    expect(
+      parseT3ProjectFile(`{
+        "iconPath": "assets/logo.svg",
+        "defaultThreadEnvMode": "spaceship",
+        "scripts": [{ "name": "Dev", "command": "pnpm dev" }]
+      }`),
+    ).toEqual({
+      iconPath: "assets/logo.svg",
+      scripts: [{ name: "Dev", command: "pnpm dev" }],
+    });
+  });
+
+  it("ignores invalid optional script values without discarding the script", () => {
+    expect(
+      parseT3ProjectFile(`{
+        "scripts": [{
+          "name": "Dev",
+          "command": "pnpm dev",
+          "icon": "spaceship",
+          "runOnWorktreeCreate": "yes"
+        }]
+      }`),
+    ).toEqual({ scripts: [{ name: "Dev", command: "pnpm dev" }] });
+  });
+
+  it("drops one invalid script without discarding valid siblings", () => {
+    expect(
+      parseT3ProjectFile(`{
+        "scripts": [
+          { "name": "Dev", "command": "pnpm dev" },
+          { "name": "Broken" },
+          { "name": "Test", "command": "pnpm test", "icon": "test" }
+        ]
+      }`),
+    ).toEqual({
+      scripts: [
+        { name: "Dev", command: "pnpm dev" },
+        { name: "Test", command: "pnpm test", icon: "test" },
+      ],
+    });
+  });
+
+  it("applies the script cap after dropping invalid scripts", () => {
+    const scripts = [
+      ...Array.from({ length: 49 }, (_, index) => ({
+        name: `Script ${index + 1}`,
+        command: `echo ${index + 1}`,
+      })),
+      { name: "Broken" },
+      { name: "Script 50", command: "echo 50" },
+    ];
+
+    expect(parseT3ProjectFile(JSON.stringify({ scripts }))?.scripts).toEqual([
+      ...scripts.slice(0, 49),
+      scripts[50],
+    ]);
+  });
+
+  it("reports when it recovered a partially invalid file", () => {
+    expect(parseT3ProjectFileResult('{ "defaultThreadEnvMode": "spaceship" }')).toEqual({
+      status: "partial",
+      file: {},
+    });
+    expect(parseT3ProjectFileResult('{ "defaultThreadEnvMode": "local" }')).toEqual({
+      status: "valid",
+      file: { defaultThreadEnvMode: "local" },
+    });
+    expect(parseT3ProjectFileResult("{ not json")).toEqual({
+      status: "invalid",
+      file: null,
+    });
+  });
+
+  it("reports ignored unknown top-level fields as partial", () => {
+    expect(
+      parseT3ProjectFileResult(`{
+        "iconPath": "assets/logo.svg",
+        "defaultThreadEnvironmentMode": "worktree"
+      }`),
+    ).toEqual({
+      status: "partial",
+      file: { iconPath: "assets/logo.svg" },
+    });
+  });
+
+  it("reports ignored unknown script fields as partial", () => {
+    expect(
+      parseT3ProjectFileResult(`{
+        "scripts": [{
+          "name": "Setup",
+          "command": "pnpm install",
+          "runOnWorktreeCreation": true
+        }]
+      }`),
+    ).toEqual({
+      status: "partial",
+      file: { scripts: [{ name: "Setup", command: "pnpm install" }] },
+    });
   });
 });
