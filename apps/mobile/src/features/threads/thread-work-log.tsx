@@ -60,6 +60,12 @@ function workRowSymbolName(icon: ThreadFeedActivity["icon"]): AppSymbolName {
     case "configure":
       // Match projectScriptMenuIcon without changing generic tool/search rows.
       return { ios: "wrench.and.screwdriver", android: "build" };
+    case "database":
+      return "cylinder";
+    case "deploy":
+      return "paperplane";
+    case "desktop":
+      return "desktopcomputer";
     case "edit":
       return { ios: "square.and.pencil", android: "edit" };
     case "eye":

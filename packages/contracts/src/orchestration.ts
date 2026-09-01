@@ -255,6 +255,9 @@ export const ProjectScriptIcon = Schema.Literals([
   "configure",
   "build",
   "debug",
+  "desktop",
+  "database",
+  "deploy",
 ]);
 export type ProjectScriptIcon = typeof ProjectScriptIcon.Type;
 

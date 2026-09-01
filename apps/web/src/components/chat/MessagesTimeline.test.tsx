@@ -1064,6 +1064,36 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("Setup action completed");
   });
 
+  it.each([
+    ["desktop", "monitor"],
+    ["database", "database"],
+    ["deploy", "rocket"],
+  ] as const)("renders the %s action icon in the work log", (setupScriptIcon, iconClass) => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: `setup-${setupScriptIcon}`,
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: `setup-work-${setupScriptIcon}`,
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: `${setupScriptIcon} action running`,
+              tone: "info",
+              sourceActivityKind: "setup-script.started",
+              setupScriptIcon,
+              setupScriptState: "running",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain(`lucide-${iconClass}`);
+  });
+
   it("keeps the action icon and adds a failed state when setup fails", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline

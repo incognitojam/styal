@@ -10,10 +10,13 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import {
   BugIcon,
+  DatabaseIcon,
   FlaskConicalIcon,
   HammerIcon,
   ListChecksIcon,
+  MonitorIcon,
   PlayIcon,
+  RocketIcon,
   WrenchIcon,
 } from "lucide-react";
 import React, { type FormEvent, type KeyboardEvent, useEffect, useState } from "react";
@@ -56,6 +59,9 @@ export const SCRIPT_ICONS: Array<{ id: ProjectScriptIcon; label: string }> = [
   { id: "configure", label: "Configure" },
   { id: "build", label: "Build" },
   { id: "debug", label: "Debug" },
+  { id: "desktop", label: "Desktop" },
+  { id: "database", label: "Database" },
+  { id: "deploy", label: "Deploy" },
 ];
 
 export function ScriptIcon({
@@ -70,6 +76,9 @@ export function ScriptIcon({
   if (icon === "configure") return <WrenchIcon className={className} />;
   if (icon === "build") return <HammerIcon className={className} />;
   if (icon === "debug") return <BugIcon className={className} />;
+  if (icon === "desktop") return <MonitorIcon className={className} />;
+  if (icon === "database") return <DatabaseIcon className={className} />;
+  if (icon === "deploy") return <RocketIcon className={className} />;
   return <PlayIcon className={className} />;
 }
 

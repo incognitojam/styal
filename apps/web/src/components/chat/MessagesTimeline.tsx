@@ -64,6 +64,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   CircleAlertIcon,
+  DatabaseIcon,
   EyeIcon,
   FileIcon,
   FlaskConicalIcon,
@@ -73,11 +74,13 @@ import {
   ImageIcon,
   ListChecksIcon,
   MessageCircleIcon,
+  MonitorIcon,
   CircleDotIcon,
   MousePointerClickIcon,
   PaintbrushIcon,
   MinusIcon,
   PlayIcon,
+  RocketIcon,
   SearchIcon,
   SquarePenIcon,
   TerminalIcon,
@@ -2348,13 +2351,16 @@ type WorkEntryIconName =
   | "bug"
   | "check"
   | "circle-alert"
+  | "database"
   | "eye"
   | "flask-conical"
   | "globe"
   | "hammer"
   | "list-checks"
   | "message-circle"
+  | "monitor"
   | "play"
+  | "rocket"
   | "search"
   | "square-pen"
   | "terminal"
@@ -2373,6 +2379,9 @@ const SETUP_ACTION_ICON_NAME: Record<ProjectScriptIcon, WorkEntryIconName> = {
   configure: "wrench",
   build: "hammer",
   debug: "bug",
+  desktop: "monitor",
+  database: "database",
+  deploy: "rocket",
 };
 
 function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; className: string }) {
@@ -2385,6 +2394,8 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       return <CheckIcon className={className} aria-hidden />;
     case "circle-alert":
       return <CircleAlertIcon className={className} aria-hidden />;
+    case "database":
+      return <DatabaseIcon className={className} aria-hidden />;
     case "eye":
       return <EyeIcon className={className} aria-hidden />;
     case "flask-conical":
@@ -2399,6 +2410,10 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       return <PlayIcon className={className} aria-hidden />;
     case "message-circle":
       return <MessageCircleIcon className={className} aria-hidden />;
+    case "monitor":
+      return <MonitorIcon className={className} aria-hidden />;
+    case "rocket":
+      return <RocketIcon className={className} aria-hidden />;
     case "search":
       return <SearchIcon className={className} aria-hidden />;
     case "square-pen":

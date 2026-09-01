@@ -9,6 +9,7 @@ import {
   buildTerminalMenuSessions,
   nextOpenTerminalId,
   previousLiveTerminalId,
+  projectScriptMenuIcon,
   resolveProjectScriptTerminalId,
   type TerminalMenuSession,
 } from "./terminalMenu";
@@ -220,5 +221,15 @@ describe("resolveProjectScriptTerminalId", () => {
         hasRunningTerminal: true,
       }),
     ).toBe("term-3");
+  });
+});
+
+describe("projectScriptMenuIcon", () => {
+  it.each([
+    ["desktop", "desktopcomputer"],
+    ["database", "cylinder"],
+    ["deploy", "paperplane"],
+  ] as const)("maps %s actions to the %s symbol", (icon, symbol) => {
+    expect(projectScriptMenuIcon(icon)).toBe(symbol);
   });
 });

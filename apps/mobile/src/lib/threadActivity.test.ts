@@ -740,6 +740,37 @@ describe("buildThreadFeed", () => {
     });
   });
 
+  it.each([
+    ["desktop", "desktop"],
+    ["database", "database"],
+    ["deploy", "deploy"],
+  ] as const)("preserves the %s action icon in the work log", (scriptIcon, icon) => {
+    const thread = makeThread({
+      id: ThreadId.make(`thread-setup-${scriptIcon}`),
+      projectId: ProjectId.make("project-1"),
+      title: `${scriptIcon} setup`,
+      activities: [
+        makeActivity({
+          id: EventId.make(`setup-${scriptIcon}`),
+          kind: "setup-script.completed",
+          summary: "Setup script completed",
+          createdAt: "2026-04-01T00:00:01.000Z",
+          payload: {
+            runId: `setup-run-${scriptIcon}`,
+            scriptName: `${scriptIcon} action`,
+            scriptIcon,
+          },
+        }),
+      ],
+    });
+
+    const activities = buildThreadFeed(thread).flatMap((entry) =>
+      entry.type === "activity-group" ? entry.activities : [],
+    );
+
+    expect(activities[0]?.icon).toBe(icon);
+  });
+
   it("keeps separate setup runs and preserves completed labels", () => {
     const thread = makeThread({
       id: ThreadId.make("thread-separate-setup-runs"),
