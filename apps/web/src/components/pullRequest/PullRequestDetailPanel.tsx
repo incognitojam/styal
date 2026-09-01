@@ -108,6 +108,7 @@ import {
   pullRequestMergeVerdict,
 } from "./PullRequestChecksTab";
 import { openOnHostLabel, showPullRequestLinkContextMenu } from "./pullRequestLinkContextMenu";
+import { PullRequestMarkdownContext } from "./PullRequestMarkdown";
 import { PullRequestSummaryTab } from "./PullRequestSummaryTab";
 import { PullRequestTimelineTab } from "./PullRequestTimelineTab";
 import {
@@ -2071,7 +2072,7 @@ function PullRequestDetailPanelBody({
             {...(unavailableGitHubUrl ? { gitHubUrl: unavailableGitHubUrl } : {})}
           />
         ) : detail ? (
-          <>
+          <PullRequestMarkdownContext value={detail.provider === "github" ? repositoryUrl : null}>
             {mountedTabs.has("summary") ? (
               <div className={cn("absolute inset-0", tab !== "summary" && "invisible")}>
                 <PullRequestSummaryTab
@@ -2139,7 +2140,7 @@ function PullRequestDetailPanelBody({
                 </Suspense>
               </div>
             ) : null}
-          </>
+          </PullRequestMarkdownContext>
         ) : null}
       </div>
 

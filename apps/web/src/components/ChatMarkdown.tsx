@@ -203,6 +203,7 @@ interface ChatMarkdownProps {
   onUseArtifactTemplate?: ((template: CodexArtifactTemplate) => void) | undefined;
   imageBaseDir?: string | undefined;
   onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
+  extraRemarkPlugins?: NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
 }
 
 export function canUseMarkdownFileShellActions(
@@ -235,6 +236,7 @@ export function shouldUseMarkdownFileBrowserPrimaryAction(input: {
 }
 
 const EMPTY_MARKDOWN_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
+const EMPTY_REMARK_PLUGINS: NonNullable<ReactMarkdownOptions["remarkPlugins"]> = [];
 
 const ARTIFACT_TEMPLATE_ICON_BY_KIND = {
   document: FileTextIcon,
@@ -389,7 +391,7 @@ export const CHAT_MARKDOWN_SANITIZE_SCHEMA: NonNullable<Parameters<typeof rehype
     "*": (defaultSchema.attributes?.["*"] ?? []).filter((attribute) => attribute !== "title"),
     code: [...(defaultSchema.attributes?.code ?? []), "dataCodeMeta", "dataInlineCode"],
     blockquote: [...(defaultSchema.attributes?.blockquote ?? []), "dataAlert"],
-    a: [...(defaultSchema.attributes?.a ?? []), "dataGithubReference"],
+    a: [...(defaultSchema.attributes?.a ?? []), "dataGithubReference", "dataPullRequestAutolink"],
     div: [...(defaultSchema.attributes?.div ?? []), ...CODEX_ARTIFACT_TEMPLATE_HAST_PROPERTIES],
     img: [...(defaultSchema.attributes?.img ?? []), "dataLocalSrc", "dataMarkdownTitle"],
   },
@@ -1779,6 +1781,7 @@ function ChatMarkdown({
   onUseArtifactTemplate,
   imageBaseDir,
   onImageExpand,
+  extraRemarkPlugins = EMPTY_REMARK_PLUGINS,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
   // Held apart so a caller spelling the context inline does not reparse the body every render.
@@ -1788,13 +1791,15 @@ function ChatMarkdown({
     const base = lineBreaks
       ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS
       : CHAT_MARKDOWN_REMARK_PLUGINS;
-    if (referenceHost === undefined || referenceRepository === undefined) return base;
+    if (referenceHost === undefined || referenceRepository === undefined)
+      return [...base, ...extraRemarkPlugins];
     // After remark-gfm, whose autolink literals are the links this rewrites as shorthand.
     return [
       ...base,
       [remarkGithubReferences, { host: referenceHost, repository: referenceRepository }],
+      ...extraRemarkPlugins,
     ] satisfies NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
-  }, [lineBreaks, referenceHost, referenceRepository]);
+  }, [lineBreaks, referenceHost, referenceRepository, extraRemarkPlugins]);
   const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
     reportFailure: false,
   });
@@ -2259,6 +2264,16 @@ function ChatMarkdown({
           : null;
         if (!fileLinkMeta) {
           const faviconHost = resolveExternalWebLinkHost(href);
+          const pullRequestAutolink = String(
+            (props as Record<string, unknown>)["data-pull-request-autolink"] ?? "",
+          );
+          const pullRequestCopy =
+            pullRequestAutolink === "commit"
+              ? /\/commit\/([0-9a-f]{40})$/iu.exec(href ?? "")?.[1]
+              : pullRequestAutolink === "reference"
+                ? plainHastText(node)
+                : undefined;
+          const isPullRequestAutolink = pullRequestCopy !== undefined;
           const isSameDocumentLink = href?.startsWith("#") ?? false;
           const onClick = props.onClick;
           const canOpenInPreview = Boolean(threadRef) && isPreviewSupportedInRuntime();
@@ -2266,6 +2281,8 @@ function ChatMarkdown({
           const link = (
             <a
               {...props}
+              className={cn(props.className, pullRequestAutolink === "commit" && "font-mono")}
+              data-markdown-copy={pullRequestCopy}
               href={href}
               target={isSameDocumentLink ? undefined : "_blank"}
               rel={isSameDocumentLink ? undefined : "noopener noreferrer"}
@@ -2345,7 +2362,7 @@ function ChatMarkdown({
                 });
               }}
             >
-              {faviconHost && hastHasText(node) ? (
+              {faviconHost && hastHasText(node) && !isPullRequestAutolink ? (
                 <MarkdownExternalLinkContent host={faviconHost} plainText={plainHastText(node)}>
                   {linkChildren}
                 </MarkdownExternalLinkContent>

@@ -1,7 +1,14 @@
 import type { EnvironmentId, PullRequestDetailView } from "@t3tools/contracts";
 import { ExternalLinkIcon, LoaderCircleIcon, PaperclipIcon, PlayIcon } from "lucide-react";
-import { type ComponentPropsWithoutRef, useCallback, useMemo, useState } from "react";
-import type { ExtraProps } from "react-markdown";
+import {
+  type ComponentPropsWithoutRef,
+  useCallback,
+  useMemo,
+  useState,
+  createContext,
+  useContext,
+} from "react";
+import type { ExtraProps, Options as ReactMarkdownOptions } from "react-markdown";
 
 import { useAssetUrlState } from "~/assets/assetUrls";
 import { cn } from "~/lib/utils";
@@ -9,6 +16,7 @@ import { cn } from "~/lib/utils";
 import ChatMarkdown from "../ChatMarkdown";
 import type { GithubReferenceSurface } from "../chat/githubReferenceLinks";
 import {
+  remarkPullRequestAutolinks,
   resolvePullRequestRepositoryImage,
   splitPullRequestBody,
 } from "./pullRequestMarkdown.logic";
@@ -69,6 +77,8 @@ function PullRequestRepositoryImage({
   }
   return <img {...props} src={assetUrl.url} alt={alt} onError={() => setFailedUrl(assetUrl.url)} />;
 }
+
+export const PullRequestMarkdownContext = createContext<string | null>(null);
 
 /**
  * A pull request body, rendered with the app's markdown renderer plus a card for each upload
@@ -135,6 +145,11 @@ export function PullRequestMarkdown({
   }, [detail.provider, detail.repository, detail.url, detail.workspaceRoot, environmentId]);
 
   const segments = splitPullRequestBody(text);
+  const repositoryUrl = useContext(PullRequestMarkdownContext);
+  const extraRemarkPlugins = useMemo<NonNullable<ReactMarkdownOptions["remarkPlugins"]>>(
+    () => (repositoryUrl ? [[remarkPullRequestAutolinks, { repositoryUrl }]] : []),
+    [repositoryUrl],
+  );
   return (
     <div className={cn("space-y-3", className)}>
       {segments.map((segment) => {
@@ -147,6 +162,7 @@ export function PullRequestMarkdown({
               environmentId={environmentId}
               imageRenderer={imageRenderer}
               referenceContext={referenceContext}
+              extraRemarkPlugins={extraRemarkPlugins}
             />
           );
         }
