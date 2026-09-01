@@ -74,11 +74,43 @@ it.layer(TestLayer)("T3ProjectFileLoader", (it) => {
       }),
     );
 
-    it.effect("returns none for schema-invalid files without failing", () =>
+    it.effect("keeps valid fields and scripts from a partially invalid file", () =>
       Effect.gen(function* () {
         const loader = yield* T3ProjectFileLoader.T3ProjectFileLoader;
         const cwd = yield* makeTempDir;
-        yield* writeProjectFile(cwd, '{ "scripts": [{ "name": "Dev" }] }');
+        yield* writeProjectFile(
+          cwd,
+          `{
+            "iconPath": "assets/logo.svg",
+            "defaultThreadEnvMode": "spaceship",
+            "scripts": [
+              { "name": "Dev", "command": "pnpm dev", "icon": "spaceship" },
+              { "name": "Broken" },
+              { "name": "Test", "command": "pnpm test", "icon": "test" }
+            ]
+          }`,
+        );
+
+        const loaded = yield* loader.load(cwd);
+
+        expect(Option.isSome(loaded)).toBe(true);
+        if (Option.isSome(loaded)) {
+          expect(loaded.value).toEqual({
+            iconPath: "assets/logo.svg",
+            scripts: [
+              { name: "Dev", command: "pnpm dev" },
+              { name: "Test", command: "pnpm test", icon: "test" },
+            ],
+          });
+        }
+      }),
+    );
+
+    it.effect("returns none for a non-object project file without failing", () =>
+      Effect.gen(function* () {
+        const loader = yield* T3ProjectFileLoader.T3ProjectFileLoader;
+        const cwd = yield* makeTempDir;
+        yield* writeProjectFile(cwd, "[]");
 
         const loaded = yield* loader.load(cwd);
 
