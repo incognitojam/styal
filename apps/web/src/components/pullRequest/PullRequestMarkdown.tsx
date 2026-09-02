@@ -12,7 +12,7 @@ import {
   type GithubReferenceSurface,
 } from "../chat/githubReferenceLinks";
 import {
-  resolvePullRequestRepositoryImagePath,
+  resolvePullRequestRepositoryImage,
   splitPullRequestBody,
 } from "./pullRequestMarkdown.logic";
 
@@ -20,12 +20,16 @@ function PullRequestRepositoryImage({
   detail,
   environmentId,
   path,
+  revision,
+  browserFallback,
   alt,
   ...props
 }: Omit<ComponentPropsWithoutRef<"img">, "src"> & {
   detail: PullRequestDetailView;
   environmentId: EnvironmentId;
   path: string;
+  revision?: string;
+  browserFallback?: string;
 }) {
   const assetUrl = useAssetUrlState(environmentId, {
     _tag: "pull-request-file",
@@ -33,8 +37,10 @@ function PullRequestRepositoryImage({
     repository: detail.repository,
     number: detail.number,
     path,
+    ...(revision === undefined ? {} : { revision }),
   });
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const [failedBrowserFallback, setFailedBrowserFallback] = useState<string | null>(null);
 
   if (assetUrl._tag === "Loading") {
     return (
@@ -48,6 +54,16 @@ function PullRequestRepositoryImage({
     );
   }
   if (assetUrl._tag === "Failure" || failedUrl === assetUrl.url) {
+    if (browserFallback !== undefined && failedBrowserFallback !== browserFallback) {
+      return (
+        <img
+          {...props}
+          src={browserFallback}
+          alt={alt}
+          onError={() => setFailedBrowserFallback(browserFallback)}
+        />
+      );
+    }
     return (
       <span className="text-xs text-muted-foreground" role="img" aria-label={alt || path}>
         Image unavailable.
@@ -81,22 +97,26 @@ export function PullRequestMarkdown({
 }) {
   const imageRenderer = useCallback(
     ({ node: _node, src, ...props }: ComponentPropsWithoutRef<"img"> & ExtraProps) => {
-      const path = src
-        ? resolvePullRequestRepositoryImagePath(src, {
+      const image = src
+        ? resolvePullRequestRepositoryImage(src, {
             provider: detail.provider,
             repository: detail.repository,
             url: detail.url,
             headBranch: detail.headBranch,
           })
         : null;
-      return path === null ? (
+      return image === null ? (
         <img {...props} src={src} />
       ) : (
         <PullRequestRepositoryImage
           {...props}
           detail={detail}
           environmentId={environmentId}
-          path={path}
+          path={image.path}
+          {...(image.revision === undefined ? {} : { revision: image.revision })}
+          {...(image.browserFallback === undefined
+            ? {}
+            : { browserFallback: image.browserFallback })}
         />
       );
     },

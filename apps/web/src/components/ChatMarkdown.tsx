@@ -1973,7 +1973,6 @@ function ChatMarkdown({
     };
 
     return {
-      ...(imageRenderer === undefined ? {} : { img: imageRenderer }),
       p({ node: _node, children, ...props }) {
         return <p {...props}>{renderSkillInlineMarkdownChildren(children, skills)}</p>;
       },
@@ -2221,7 +2220,11 @@ function ChatMarkdown({
           </code>
         );
       },
-      img({ node: _node, title: _title, src, alt, ...props }) {
+      img(imageProps) {
+        if (imageRenderer !== undefined) {
+          return React.createElement(imageRenderer, imageProps);
+        }
+        const { node: _node, title: _title, src, alt, ...props } = imageProps;
         const srcString = typeof src === "string" ? normalizeMarkdownLinkDestination(src) : "";
         const altText = alt ?? "";
         const imageSource = classifyMarkdownImageSource(srcString, cwd);

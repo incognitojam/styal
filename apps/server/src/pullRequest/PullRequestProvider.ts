@@ -207,7 +207,7 @@ export interface ProviderDiffFileContents {
   readonly newContents: string;
 }
 
-/** A bounded file at the pull request's current head, ready for the server to proxy. */
+/** A bounded repository file referenced by a pull request, ready for the server to proxy. */
 export interface ProviderPullRequestFile {
   readonly url: string;
   readonly size: number;
@@ -368,14 +368,17 @@ export interface PullRequestProviderApi {
   ) => Effect.Effect<ProviderDiffFileContents, PullRequestProviderError>;
 
   /**
-   * A short-lived URL for a repository file at the change request's head. Optional because not
-   * every host can exchange its CLI authentication for a file-scoped URL the server can proxy.
-   * GitHub uses this for private repository images embedded in descriptions.
+   * A short-lived URL for a repository file at the change request's head or an explicitly linked
+   * revision. Optional because not every host can exchange its CLI authentication for a
+   * file-scoped URL the server can proxy. GitHub uses this for private repository images embedded
+   * in descriptions.
    */
   readonly getFile?: (
     input: ProviderRepositoryRef & {
       readonly number: number;
       readonly path: string;
+      /** Absent reads the pull request head; present reads the explicitly linked revision. */
+      readonly revision?: string;
     },
   ) => Effect.Effect<ProviderPullRequestFile, PullRequestProviderError>;
 
