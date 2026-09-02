@@ -6,7 +6,7 @@ import {
   type ServerProviderModel,
 } from "@t3tools/contracts";
 import {
-  buildProviderOptionSelectionsFromDescriptors,
+  buildExplicitProviderOptionSelectionsFromDescriptors,
   getProviderOptionCurrentValue,
   getProviderOptionDescriptors,
   isClaudeUltrathinkPrompt,
@@ -78,7 +78,10 @@ export function getComposerProviderState(input: ComposerProviderStateInput): Com
   return {
     provider,
     promptEffort,
-    modelOptionsForDispatch: buildProviderOptionSelectionsFromDescriptors(descriptors),
+    modelOptionsForDispatch: buildExplicitProviderOptionSelectionsFromDescriptors(
+      descriptors,
+      modelOptions,
+    ),
     ...(ultrathinkActive
       ? {
           composerFrameClassName: "ultrathink-frame",

@@ -166,7 +166,7 @@ export const launchStartupHeartbeat = recordStartupHeartbeat.pipe(
   Effect.asVoid,
 );
 
-export const getAutoBootstrapDefaultModelSelection = (): ModelSelection => ({
+export const getAutoBootstrapThreadModelSelection = (): ModelSelection => ({
   instanceId: ProviderInstanceId.make("codex"),
   model: DEFAULT_MODEL,
 });
@@ -207,14 +207,13 @@ export const resolveAutoBootstrapWelcomeTargets = Effect.gen(function* () {
         const createdAt = DateTime.formatIso(yield* DateTime.now);
         nextProjectId = ProjectId.make(yield* randomUUID);
         const bootstrapProjectTitle = path.basename(serverConfig.cwd) || "project";
-        nextThreadModelSelection = getAutoBootstrapDefaultModelSelection();
+        nextThreadModelSelection = getAutoBootstrapThreadModelSelection();
         yield* orchestrationEngine.dispatch({
           type: "project.create",
           commandId: CommandId.make(yield* randomUUID),
           projectId: nextProjectId,
           title: bootstrapProjectTitle,
           workspaceRoot: serverConfig.cwd,
-          defaultModelSelection: getAutoBootstrapDefaultModelSelection(),
           createdAt,
         });
         bootstrapProjectId = nextProjectId;
@@ -223,7 +222,7 @@ export const resolveAutoBootstrapWelcomeTargets = Effect.gen(function* () {
         nextProjectId = existingProject.value.id;
         bootstrapProjectId = nextProjectId;
         nextThreadModelSelection =
-          existingProject.value.defaultModelSelection ?? getAutoBootstrapDefaultModelSelection();
+          existingProject.value.defaultModelSelection ?? getAutoBootstrapThreadModelSelection();
       }
 
       yield* Effect.gen(function* () {
