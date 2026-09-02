@@ -452,7 +452,7 @@ type PullRequestDetailPanelProps = {
   onActed?: () => void;
   /** Page-owned detail columns use this to clear the selected pull request. */
   onClose?: () => void;
-  /** Keeps compact chrome, such as the right-panel tab, in step with refreshed host state. */
+  /** Keeps surrounding thread state in step with refreshed host state. */
   onStateChange?: (status: {
     projectId: string;
     repository: string;

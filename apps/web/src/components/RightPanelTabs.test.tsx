@@ -98,6 +98,7 @@ function renderTabs(
     <RightPanelTabs
       mode="inline"
       surfaces={second ? [previewSurface, secondSurface] : [previewSurface]}
+      environmentId={null}
       activeSurfaceId={previewSurface.id}
       pendingSurfaceIds={new Set()}
       previewSessions={sessions}
