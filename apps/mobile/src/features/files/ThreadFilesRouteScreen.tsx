@@ -58,6 +58,7 @@ import {
   basename,
   isBrowserPreviewFile,
   isImagePreviewFile,
+  isAbsolutePath,
   isMarkdownPreviewFile,
   isSvgImagePreviewFile,
   isVideoPreviewFile,
@@ -776,8 +777,14 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
     );
   }
 
-  const parentDir = relativePath.split("/").slice(0, -1).join("/");
-  const headerSubtitle = [projectName, parentDir].filter(Boolean).join(" · ");
+  const parentDir = relativePath.slice(
+    0,
+    Math.max(relativePath.lastIndexOf("/"), relativePath.lastIndexOf("\\"), 0),
+  );
+  // A host file outside the workspace is not under the project name.
+  const headerSubtitle = isAbsolutePath(relativePath)
+    ? parentDir
+    : [projectName, parentDir].filter(Boolean).join(" · ");
 
   return (
     <ReviewHighlighterProvider>
