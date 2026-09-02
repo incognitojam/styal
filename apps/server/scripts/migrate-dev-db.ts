@@ -40,7 +40,7 @@ import { Command, Flag } from "effect/unstable/cli";
 
 import { forkMigrationManifest, runAllMigrations } from "../src/persistence/ForkMigrations.ts";
 import { migrationManifest } from "../src/persistence/Migrations.ts";
-import * as NodeSqliteClient from "../src/persistence/NodeSqliteClient.ts";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 export class MigrateDevDbNotInWorktreeError extends Schema.TaggedErrorClass<MigrateDevDbNotInWorktreeError>()(
   "MigrateDevDbNotInWorktreeError",
