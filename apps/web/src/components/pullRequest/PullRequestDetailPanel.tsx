@@ -16,6 +16,7 @@ import {
   ArrowUpRightIcon,
   BookOpenIcon,
   ChevronDownIcon,
+  CopyIcon,
   ExternalLinkIcon,
   FileDiffIcon,
   FolderGit2Icon,
@@ -123,6 +124,7 @@ import {
   pullRequestActionMenuHasGroup,
   pullRequestActionNeedsHostRefresh,
   pullRequestComposerTarget,
+  pullRequestCheckoutCommand,
   pullRequestFindingKey,
   pullRequestHandoffLabels,
   readableFailure,
@@ -505,6 +507,16 @@ function PullRequestDetailPanelBody({
     target: "branch name",
     timeout: 1600,
   });
+  const { copyToClipboard: copyCheckoutCommandToClipboard } = useCopyToClipboard({
+    target: "pull request checkout command",
+    onCopy: () => toastManager.add({ type: "success", title: "Checkout command copied" }),
+    onError: (error) =>
+      toastManager.add({
+        type: "error",
+        title: "Could not copy checkout command",
+        description: error.message,
+      }),
+  });
   // The chunk is fetched as soon as the panel exists rather than waiting for the Code tab to be
   // clicked, so a reader who does click it lands on a chunk already in the module cache.
   useEffect(() => {
@@ -544,6 +556,14 @@ function PullRequestDetailPanelBody({
     [activity, coreDetail],
   );
   const repositoryUrl = detail === null ? null : changeRequestRepositoryUrl(detail.url);
+  const checkoutCommand = detail
+    ? pullRequestCheckoutCommand(
+        detail.provider,
+        detail.number,
+        detail.headBranch,
+        detail.headRepositoryNameWithOwner,
+      )
+    : null;
   const branchRefsQuery = useEnvironmentQuery(
     detail === null
       ? null
@@ -1860,6 +1880,27 @@ function PullRequestDetailPanelBody({
                         {`${isBranchCopied ? "Copied" : "Copy pull request branch"}: ${detail.headBranch}`}
                       </TooltipPopup>
                     </Tooltip>
+                    {checkoutCommand ? (
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              size="micro"
+                              variant="outline"
+                              className="ml-1 min-w-0 basis-40 shrink-[0.75] gap-1 font-normal text-muted-foreground"
+                              aria-label={`Copy checkout command: ${checkoutCommand}`}
+                              onClick={() => copyCheckoutCommandToClipboard(checkoutCommand)}
+                            />
+                          }
+                        >
+                          <code className="min-w-0 truncate">{checkoutCommand}</code>
+                          <CopyIcon aria-hidden />
+                        </TooltipTrigger>
+                        <TooltipPopup className="max-w-96 wrap-anywhere font-mono" side="bottom">
+                          {checkoutCommand}
+                        </TooltipPopup>
+                      </Tooltip>
+                    ) : null}
                   </span>
                   <span className="ml-auto inline-flex shrink-0 items-center justify-end gap-2">
                     <span className="inline-flex items-center gap-1.5 tabular-nums">
