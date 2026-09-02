@@ -2010,7 +2010,7 @@ function WorkGroupToggleTimelineRow({
         name={
           setupSummaryEntry
             ? workEntryIconName(setupSummaryEntry)
-            : toolGroupSummaryIconName(row.summaryKind)
+            : (row.summaryToolIcon ?? toolGroupSummaryIconName(row.summaryKind))
         }
         className="size-4 shrink-0 stroke-[1.8] opacity-70"
       />
