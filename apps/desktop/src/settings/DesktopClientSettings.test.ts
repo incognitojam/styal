@@ -20,6 +20,8 @@ const clientSettings: ClientSettings = {
   browserRecordingFrameRate: 60,
   browserAutoShowFloatingPreview: false,
   claudeStatusAlertsEnabled: false,
+  browserProfiles: [{ id: "work", name: "Work", kind: "persistent" }],
+  browserDefaultProfileId: "work",
   confirmQuit: "double-click",
   discordRichPresence: false,
   completionSound: "none",

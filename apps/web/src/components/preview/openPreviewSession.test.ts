@@ -1,5 +1,6 @@
 import {
   DEFAULT_CLIENT_SETTINGS,
+  DEFAULT_BROWSER_PROFILE_ID,
   FILL_PREVIEW_VIEWPORT,
   type PreviewOpenInput,
   type PreviewSessionSnapshot,
@@ -60,6 +61,7 @@ describe("openPreviewSession", () => {
     expect(open).toHaveBeenCalledWith({
       threadId: "thread-1",
       viewport: FILL_PREVIEW_VIEWPORT,
+      profileId: DEFAULT_BROWSER_PROFILE_ID,
     });
     expect(readThreadPreviewState(threadRef).snapshot).toEqual(idleSnapshot);
     expect(readThreadPreviewState(threadRef).recentlySeenUrls).toEqual([]);
@@ -78,6 +80,7 @@ describe("openPreviewSession", () => {
       threadId: "thread-1",
       url: "t3.chat",
       viewport: FILL_PREVIEW_VIEWPORT,
+      profileId: DEFAULT_BROWSER_PROFILE_ID,
     });
     expect(readThreadPreviewState(threadRef).snapshot).toEqual(snapshot);
     expect(readThreadPreviewState(threadRef).recentlySeenUrls).toEqual(["https://t3.chat/"]);
@@ -129,6 +132,7 @@ describe("openPreviewSession", () => {
           threadId: threadRef.threadId,
           url: input.url,
           viewport,
+          profileId: DEFAULT_BROWSER_PROFILE_ID,
         },
       });
     },

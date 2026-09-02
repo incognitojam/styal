@@ -96,6 +96,7 @@ export function ElectronBrowserHost() {
               initialUrl={url}
               viewport={snapshot.viewport ?? FILL_PREVIEW_VIEWPORT}
               pictureInPicture={pictureInPicture}
+              profileId={snapshot.profileId}
               zoomFactor={zoomFactor}
               viewportFallback={viewportFallback}
             />

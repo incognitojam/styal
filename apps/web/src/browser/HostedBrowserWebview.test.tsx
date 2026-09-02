@@ -128,6 +128,7 @@ describe("HostedBrowserWebview settings hydration", () => {
           viewport={FILL_PREVIEW_VIEWPORT}
           viewportFallback={false}
           pictureInPicture={false}
+          profileId={undefined}
           zoomFactor={1.25}
         />,
         {
@@ -173,7 +174,10 @@ describe("HostedBrowserWebview settings hydration", () => {
     });
 
     expect(acquire).toHaveBeenCalledExactlyOnceWith(runtimeTabId);
-    expect(mocks.getPreviewConfig).toHaveBeenCalledExactlyOnceWith(threadRef.environmentId);
+    expect(mocks.getPreviewConfig).toHaveBeenCalledExactlyOnceWith(
+      threadRef.environmentId,
+      undefined,
+    );
     expect(createGuest).toHaveBeenCalledOnce();
     expect(createGuest).toHaveBeenCalledWith(
       expect.objectContaining({

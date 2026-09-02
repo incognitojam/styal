@@ -3657,22 +3657,29 @@ function ChatViewContent(props: ChatViewProps) {
   const toggleInteractionMode = useCallback(() => {
     handleInteractionModeChange(interactionMode === "plan" ? "default" : "plan");
   }, [handleInteractionModeChange, interactionMode]);
-  const createBrowserSurface = useCallback(() => {
-    if (!activeThreadRef) return;
-    void addBrowserSurface({ threadRef: activeThreadRef, openPreview }).then((result) => {
-      if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
-      const error = squashAtomCommandFailure(result);
-      if (error instanceof BrowserSettingsReadError) {
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Unable to open browser",
-            description: error.message,
-          }),
-        );
-      }
-    });
-  }, [activeThreadRef, openPreview]);
+  const createBrowserSurface = useCallback(
+    (profileId?: string) => {
+      if (!activeThreadRef) return;
+      void addBrowserSurface({
+        threadRef: activeThreadRef,
+        openPreview,
+        ...(profileId === undefined ? {} : { profileId }),
+      }).then((result) => {
+        if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
+        const error = squashAtomCommandFailure(result);
+        if (error instanceof BrowserSettingsReadError) {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Unable to open browser",
+              description: error.message,
+            }),
+          );
+        }
+      });
+    },
+    [activeThreadRef, openPreview],
+  );
   const addDiffSurface = useCallback(() => {
     if (!activeThreadRef || !isServerThread || !isGitRepo) return;
     useRightPanelStore.getState().open(activeThreadRef, "diff");
@@ -7940,7 +7947,8 @@ function ChatViewContent(props: ChatViewProps) {
           onCloseSurfacesToRight={closeRightPanelSurfacesToRight}
           onCloseAllSurfaces={closeAllRightPanelSurfaces}
           onCopyFilePath={copyRightPanelFilePath}
-          onAddBrowser={createBrowserSurface}
+          onAddBrowser={() => createBrowserSurface()}
+          onAddBrowserInProfile={createBrowserSurface}
           onAddTerminal={addTerminalSurface}
           onAddDiff={addDiffSurface}
           onAddFiles={addFilesSurface}
@@ -7980,7 +7988,8 @@ function ChatViewContent(props: ChatViewProps) {
             onCloseSurfacesToRight={closeRightPanelSurfacesToRight}
             onCloseAllSurfaces={closeAllRightPanelSurfaces}
             onCopyFilePath={copyRightPanelFilePath}
-            onAddBrowser={createBrowserSurface}
+            onAddBrowser={() => createBrowserSurface()}
+            onAddBrowserInProfile={createBrowserSurface}
             onAddTerminal={addTerminalSurface}
             onAddDiff={addDiffSurface}
             onAddFiles={addFilesSurface}

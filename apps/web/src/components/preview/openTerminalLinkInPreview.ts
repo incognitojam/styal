@@ -3,6 +3,11 @@ import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime"
 import { isPreviewableUrl } from "@t3tools/shared/preview";
 import * as Schema from "effect/Schema";
 
+import {
+  browserDefaultOpenProfileId,
+  browserDefaultOpenViewport,
+  resolveBrowserDefaults,
+} from "~/browser/browserDefaults";
 import type { OpenPreviewMutation } from "~/browser/openFileInPreview";
 import { recordVisitForThread } from "~/browserHistoryStore";
 import { applyPreviewServerSnapshot, isPreviewSupportedInRuntime } from "~/previewStateStore";
@@ -50,9 +55,28 @@ export async function openTerminalLinkInPreview<E>(
     return;
   }
 
+  const errorContext = {
+    environmentId: input.threadRef.environmentId,
+    threadId: input.threadRef.threadId,
+    // The origin only, so a link carrying a token in its path or query is not logged.
+    targetOrigin: new URL(input.url).origin,
+  };
+  let defaults;
+  try {
+    defaults = await resolveBrowserDefaults();
+  } catch (cause) {
+    console.error(new TerminalLinkPreviewOpenError({ ...errorContext, cause }));
+    input.fallbackToBrowser();
+    return;
+  }
   const result = await input.openPreview({
     environmentId: input.threadRef.environmentId,
-    input: { threadId: input.threadRef.threadId, url: input.url },
+    input: {
+      threadId: input.threadRef.threadId,
+      url: input.url,
+      viewport: browserDefaultOpenViewport(defaults),
+      profileId: browserDefaultOpenProfileId(defaults),
+    },
   });
   if (result._tag === "Failure") {
     if (isAtomCommandInterrupted(result)) {
@@ -60,10 +84,7 @@ export async function openTerminalLinkInPreview<E>(
     }
     console.error(
       new TerminalLinkPreviewOpenError({
-        environmentId: input.threadRef.environmentId,
-        threadId: input.threadRef.threadId,
-        // The origin only, so a link carrying a token in its path or query is not logged.
-        targetOrigin: new URL(input.url).origin,
+        ...errorContext,
         cause: result.cause,
       }),
     );

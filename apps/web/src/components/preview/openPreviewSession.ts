@@ -7,11 +7,14 @@ import type {
 } from "@t3tools/contracts";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 
-import { browserDefaultOpenViewport, resolveBrowserDefaults } from "~/browser/browserDefaults";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { BrowserSettingsReadError } from "~/browser/openFileInPreview";
-
+import {
+  browserDefaultOpenProfileId,
+  browserDefaultOpenViewport,
+  resolveBrowserDefaults,
+} from "~/browser/browserDefaults";
 import { applyPreviewServerSnapshot, rememberPreviewUrl } from "~/previewStateStore";
 
 interface OpenPreviewSessionInput<E> {
@@ -23,6 +26,8 @@ interface OpenPreviewSessionInput<E> {
   url?: string;
   /** Overrides the configured default; automation passes an explicit size. */
   viewport?: PreviewViewportSetting;
+  /** Overrides the configured default profile. */
+  profileId?: string;
 }
 
 export async function openPreviewSession<E>(
@@ -39,6 +44,7 @@ export async function openPreviewSession<E>(
       threadId: input.threadRef.threadId,
       ...(input.url === undefined ? {} : { url: input.url }),
       viewport: input.viewport ?? browserDefaultOpenViewport(defaults),
+      profileId: input.profileId ?? browserDefaultOpenProfileId(defaults),
     },
   });
   if (result._tag === "Failure") {

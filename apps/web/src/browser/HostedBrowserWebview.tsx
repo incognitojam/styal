@@ -54,6 +54,11 @@ export function HostedBrowserWebview(props: {
   readonly initialUrl: string | null;
   readonly viewport: PreviewViewportSetting;
   readonly pictureInPicture: boolean;
+  /**
+   * Fixed for the tab's lifetime: Electron only honours `partition` before the
+   * guest attaches, so a live change here would not move the tab anyway.
+   */
+  readonly profileId: string | undefined;
   readonly zoomFactor: number;
   readonly viewportFallback: boolean;
 }) {
@@ -66,9 +71,10 @@ export function HostedBrowserWebview(props: {
     pictureInPicture,
     zoomFactor,
     viewportFallback,
+    profileId,
   } = props;
   const clientSettingsHydrated = useClientSettingsHydrated();
-  const config = usePreviewWebviewConfig(threadRef.environmentId);
+  const config = usePreviewWebviewConfig(threadRef.environmentId, profileId);
   const [initialSrc] = useState(() => initialUrl ?? "about:blank");
   const tabLeaseRef = useRef<AcquiredDesktopTab | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
