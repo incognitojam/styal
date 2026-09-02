@@ -46,6 +46,7 @@ const clientSettings: ClientSettings = {
   glassOpacity: 80,
   openaiStatusAlertsEnabled: false,
   onboardingCompletedAt: null,
+  panelAnimationDurationMs: 0,
   planModeEnabled: false,
   showSkillsInSlashMenu: false,
   providerModelPreferences: {},
