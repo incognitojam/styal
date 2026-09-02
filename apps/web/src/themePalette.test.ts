@@ -400,6 +400,88 @@ describe("theme files", () => {
     vi.unstubAllGlobals();
   });
 
+  it("darkens the update accent when a mid-gray canvas cannot be beaten by lightening", () => {
+    const setProperty = vi.fn();
+    vi.stubGlobal("document", {
+      documentElement: {
+        classList: { toggle: vi.fn() },
+        dataset: {},
+        style: { removeProperty: vi.fn(), setProperty },
+      },
+    });
+
+    // Luminance sits near 0.46, so a midpoint-of-luminance rule would push
+    // toward white and top out around 2:1 where black reaches past 10:1.
+    applyThemeColorPreview(
+      { ...T3_CHAT_THEME.colors, canvas: "#b5b5b5", mutedForeground: "#6f6f6f" },
+      "light",
+    );
+    const emitted = setProperty.mock.calls.find(
+      (call) => call[0] === "--app-theme-update-prominent",
+    )?.[1] as string;
+    expect(emitted).toBeDefined();
+    expect(Number(/oklch\(([\d.]+)/.exec(emitted)?.[1])).toBeLessThan(0.5);
+    vi.unstubAllGlobals();
+  });
+
+  it("measures a translucent accent as it renders, not as if it were opaque", () => {
+    const derive = (updateForeground: string) => {
+      const setProperty = vi.fn();
+      vi.stubGlobal("document", {
+        documentElement: {
+          classList: { toggle: vi.fn() },
+          dataset: {},
+          style: { removeProperty: vi.fn(), setProperty },
+        },
+      });
+      applyThemeColorPreview(
+        {
+          ...T3_CHAT_THEME.colors,
+          canvas: "#000000",
+          mutedForeground: "#555555",
+          updateForeground,
+        },
+        "dark",
+      );
+      const value = setProperty.mock.calls.find(
+        (call) => call[0] === "--app-theme-update-prominent",
+      )?.[1] as string;
+      vi.unstubAllGlobals();
+      return value;
+    };
+
+    // Opaque red already clears the muted label and is emitted as authored. The
+    // same red at 20% composites to roughly L 0.29 over black, so it gets
+    // lifted well clear of that and materialized opaque.
+    expect(derive("oklch(0.6 0.24 27)")).toBe(toCanonicalThemeColor("oklch(0.6 0.24 27)"));
+    const translucent = derive("oklch(0.6 0.24 27 / 0.2)");
+    expect(translucent).not.toContain("/");
+    expect(translucent).not.toBe(toCanonicalThemeColor("oklch(0.6 0.24 27 / 0.2)"));
+    expect(Number(/oklch\(([\d.]+)/.exec(translucent)?.[1])).toBeGreaterThan(0.4);
+    vi.unstubAllGlobals();
+  });
+
+  it("holds the last derived accent while a preview color is half-typed", () => {
+    const removeProperty = vi.fn();
+    const setProperty = vi.fn();
+    vi.stubGlobal("document", {
+      documentElement: {
+        classList: { toggle: vi.fn() },
+        dataset: {},
+        style: { removeProperty, setProperty },
+      },
+    });
+
+    applyThemeColorPreview({ ...T3_CHAT_THEME.colors, updateForeground: "#ff" }, "light");
+    expect(setProperty.mock.calls.some((call) => call[0] === "--app-theme-update-prominent")).toBe(
+      false,
+    );
+    expect(
+      removeProperty.mock.calls.some((call) => call[0] === "--app-theme-update-prominent"),
+    ).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
   it("keeps optional light and dark palettes under one theme id", () => {
     const theme = parseThemeFile({
       version: THEME_FILE_VERSION,
