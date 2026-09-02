@@ -40,6 +40,7 @@ describe("AssetAccess", () => {
           repository: "acme/web",
           number: 7,
           path: "docs/screenshot.png",
+          revision: "assets",
         },
       });
       const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
@@ -51,6 +52,7 @@ describe("AssetAccess", () => {
         repository: "acme/web",
         number: 7,
         path: "docs/screenshot.png",
+        revision: "assets",
       });
       expect(result.relativeUrl).not.toContain("acme");
     }).pipe(Effect.provide(testLayer)),

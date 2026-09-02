@@ -41,6 +41,9 @@ export const AssetResource = Schema.Union([
     repository: TrimmedNonEmptyString.check(Schema.isMaxLength(ASSET_PATH_MAX_LENGTH)),
     number: PositiveInt,
     path: TrimmedNonEmptyString.check(Schema.isMaxLength(ASSET_PATH_MAX_LENGTH)),
+    revision: Schema.optionalKey(
+      TrimmedNonEmptyString.check(Schema.isMaxLength(ASSET_PATH_MAX_LENGTH)),
+    ),
   }),
 ]);
 export type AssetResource = typeof AssetResource.Type;

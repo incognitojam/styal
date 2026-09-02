@@ -1582,6 +1582,27 @@ layer("GitHubPullRequestCli.layer", (it) => {
     }),
   );
 
+  it.effect("issues a browser-readable URL for an explicitly linked revision", () =>
+    Effect.gen(function* () {
+      const url = "https://raw.githubusercontent.com/acme/web/assets/pr-7/screenshot.png";
+      mockedExecute.mockReturnValueOnce(Effect.succeed(output(`{"url":"${url}","size":83785}`)));
+      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+
+      expect(
+        yield* cli.getPullRequestFile({
+          cwd: "/w",
+          repository: "acme/web",
+          host: "github.com",
+          number: 7,
+          path: "pr-7/screenshot.png",
+          revision: "assets",
+        }),
+      ).toEqual({ url, size: 83_785 });
+
+      expect(callAt(0).args).toContain("repos/acme/web/contents/pr-7/screenshot.png?ref=assets");
+    }),
+  );
+
   it.effect("rejects a contents response without a download URL", () =>
     Effect.gen(function* () {
       mockedExecute.mockReturnValueOnce(Effect.succeed(output("{}")));

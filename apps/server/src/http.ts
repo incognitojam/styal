@@ -349,6 +349,7 @@ export const assetRouteLayer = Layer.unwrap(
               repository: asset.repository,
               number: asset.number,
               path: asset.path,
+              ...(asset.revision === undefined ? {} : { revision: asset.revision }),
             })
             .pipe(
               Effect.tapError((cause) =>
@@ -357,6 +358,7 @@ export const assetRouteLayer = Layer.unwrap(
                   repository: asset.repository,
                   number: asset.number,
                   path: asset.path,
+                  ...(asset.revision === undefined ? {} : { revision: asset.revision }),
                   cause,
                 }),
               ),
