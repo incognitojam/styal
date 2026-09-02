@@ -1,5 +1,7 @@
+import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
+
 export function deriveThreadTitleFromPrompt(value: string): string {
-  const trimmed = value.trim();
+  const trimmed = assistantCitationsToPlainText(value).trim();
   if (trimmed.length === 0) return "New thread";
 
   const compact = trimmed.replace(/\s+/g, " ");
