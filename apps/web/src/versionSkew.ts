@@ -126,7 +126,7 @@ export function manualServerUpdateCommand(
     matched to the update path it offers. */
 export function serverUpdateGuidance(
   capability: ServerUpdateCapability | null,
-  serverLabel: string,
+  serverLabel: string = "server",
 ): string {
   switch (capability) {
     case "boot-service":

@@ -4,6 +4,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import type { ComponentProps } from "react";
 
 import { requestConfirmDialog } from "~/confirmDialog";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
@@ -96,6 +97,7 @@ export function ServerUpdateAction({
   desktopAppUpdate = false,
   targetVersion,
   label = "Update",
+  variant = "outline",
 }: {
   readonly environmentId: EnvironmentId;
   readonly serverLabel: string;
@@ -105,6 +107,7 @@ export function ServerUpdateAction({
   readonly desktopAppUpdate?: boolean;
   readonly targetVersion: string;
   readonly label?: string;
+  readonly variant?: ComponentProps<typeof Button>["variant"];
 }) {
   const isDesktopAppUpdate = selfUpdate === "desktop-managed";
   const updateServer = useAtomCommand(serverEnvironment.updateServer, {
@@ -192,7 +195,7 @@ export function ServerUpdateAction({
     );
     return (
       <Dialog>
-        <DialogTrigger render={<Button size="xs" variant="outline" />}>
+        <DialogTrigger render={<Button size="xs" variant={variant} />}>
           Update instructions
         </DialogTrigger>
         <DialogPopup>
@@ -260,7 +263,7 @@ export function ServerUpdateAction({
   }
 
   return (
-    <Button size="xs" variant="outline" onClick={() => void handleUpdate()}>
+    <Button size="xs" variant={variant} onClick={() => void handleUpdate()}>
       {label}
     </Button>
   );
