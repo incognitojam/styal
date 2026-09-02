@@ -713,12 +713,18 @@ export function projectActivityPayload(
   if ("kind" in data) {
     projectedData.kind = data.kind;
   }
+  if ("toolName" in data) {
+    projectedData.toolName = data.toolName;
+  }
 
   // The tool's own name distinguishes calls that share an item type. This
   // also normalizes legacy OpenCode `{ tool, state: { input } }` payloads.
   Object.assign(projectedData, projectToolIdentity(data));
 
-  const rawOutput = projectRawOutput(data.rawOutput) ?? projectAcpContent(data.content);
+  const rawOutput =
+    projectRawOutput(data.rawOutput) ??
+    projectAcpContent(data.content) ??
+    (payload.itemType === "command_execution" ? summarizeMcpResult(data.result) : undefined);
   if (rawOutput) {
     projectedData.rawOutput = rawOutput;
   }
