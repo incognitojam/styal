@@ -238,6 +238,33 @@ describe("getComposerProviderState", () => {
     });
   });
 
+  it("validates options for a model selected through a legacy alias", () => {
+    const state = getComposerProviderState({
+      provider: ProviderDriverKind.make("claudeAgent"),
+      model: "legacy-test-model",
+      models: [
+        {
+          slug: MODEL,
+          name: MODEL,
+          aliases: ["legacy-test-model"],
+          isCustom: false,
+          capabilities: {
+            optionDescriptors: [
+              selectDescriptor("effort", [
+                { id: "low", label: "Low" },
+                { id: "high", label: "High", isDefault: true },
+              ]),
+            ],
+          },
+        },
+      ],
+      modelOptions: selections(["effort", "low"], ["unknown", "value"]),
+      planModeEnabled: false,
+    });
+
+    expect(state.modelOptionsForDispatch).toEqual(selections(["effort", "low"]));
+  });
+
   it("adds ultrathink class names when the prompt triggers a promptInjectedValues descriptor", () => {
     const state = getComposerProviderState({
       provider: PROVIDER,
