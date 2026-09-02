@@ -1827,6 +1827,56 @@ export function getThemeColorVariable(role: ThemeColorRole): string {
   return APP_THEME_VARIABLES[role];
 }
 
+/**
+ * Derived rather than authored: no palette carries this role, and asking every
+ * built-in, generated, and imported theme to hand-pick one would just move the
+ * judgement call somewhere it cannot be checked.
+ */
+const UPDATE_PROMINENT_VARIABLE = "--app-theme-update-prominent";
+
+/**
+ * How far the accent must out-read the muted text sitting beside it. Emphasis
+ * is relative: a marker only reads as "louder" against its actual neighbours,
+ * not against an absolute contrast number.
+ */
+const UPDATE_PROMINENT_MARGIN = 1.35;
+
+/**
+ * The theme's update hue, lifted until it out-reads the muted text it shares a
+ * row with. Palettes that mute with a dim gray (most of them, including the
+ * default) already clear the bar and keep their accent exactly as authored.
+ * A palette that mutes with a bright tint of its own hue — T3 Chat's pink text
+ * on a pink canvas — leaves an accent-colored marker at the same weight as its
+ * neighbours, and since hue cannot separate them there, lightness must.
+ */
+function prominentUpdateColor(colors: ThemeColors): string | null {
+  const hue = parseThemeColor(colors.updateForeground);
+  const canvas = parseThemeColor(colors.canvas);
+  const muted = parseThemeColor(colors.mutedForeground);
+  if (!hue || !canvas || !muted) return null;
+
+  const canvasRgb = themeOklchToRgb(canvas.color);
+  const mutedContrast = themeContrastRatio(themeOklchToRgb(muted.color), canvasRgb);
+  const target = Math.max(mutedContrast * UPDATE_PROMINENT_MARGIN, 4.5);
+  if (themeContrastRatio(themeOklchToRgb(hue.color), canvasRgb) >= target) {
+    return formatOklchThemeColor(hue.color, hue.alpha);
+  }
+
+  // Chroma rides along untouched, so the lift reads as the same color turned
+  // up rather than as a different one.
+  const direction = themeRelativeLuminance(canvasRgb) < 0.5 ? "lighter" : "darker";
+  return formatOklchThemeColor(
+    solveOklchLightness(hue.color, canvasRgb, target, direction),
+    hue.alpha,
+  );
+}
+
+function applyProminentUpdateColor(root: HTMLElement, colors: ThemeColors): void {
+  const prominent = prominentUpdateColor(colors);
+  if (prominent) root.style.setProperty(UPDATE_PROMINENT_VARIABLE, prominent);
+  else root.style.removeProperty(UPDATE_PROMINENT_VARIABLE);
+}
+
 /** Marks the document as wearing an unsaved draft rather than a stored theme. */
 export const THEME_PREVIEW_ID = "__preview";
 
@@ -1849,6 +1899,7 @@ export function applyThemeColorPreview(colors: ThemeColors, appearance: ThemeApp
     // A half-typed hex keeps the last good value instead of blanking the role.
     if (isThemeColor(value)) root.style.setProperty(APP_THEME_VARIABLES[role], value);
   }
+  applyProminentUpdateColor(root, colors);
 }
 
 export function applyThemePalette(theme: ThemePreference, appearance?: ThemeAppearance): void {
@@ -1867,6 +1918,7 @@ export function applyThemePalette(theme: ThemePreference, appearance?: ThemeAppe
     for (const [role, value] of Object.entries(colors) as Array<[ThemeColorRole, string]>) {
       root.style.setProperty(APP_THEME_VARIABLES[role], value);
     }
+    applyProminentUpdateColor(root, colors);
     return;
   }
 
@@ -1874,6 +1926,7 @@ export function applyThemePalette(theme: ThemePreference, appearance?: ThemeAppe
   for (const variable of Object.values(APP_THEME_VARIABLES)) {
     root.style.removeProperty(variable);
   }
+  root.style.removeProperty(UPDATE_PROMINENT_VARIABLE);
 }
 
 export function resolveThemeAppearance(

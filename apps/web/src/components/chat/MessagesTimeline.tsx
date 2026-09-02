@@ -1242,9 +1242,11 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
   const Icon = row.expanded ? ChevronDownIcon : ChevronRightIcon;
   // Compaction is the rarest and most notable event, so it is pinned beside the
   // chevron and stays legible while the busier stats clip away in narrow panes.
-  // It earns emphasis from full-strength foreground rather than a hue: the
-  // theme's action color is a solid-control fill, and reading it as text on the
-  // canvas drops below 3:1 in every built-in theme.
+  // It carries the theme's own hue via update-prominent, which lifts the accent
+  // until it out-reads the muted stats beside it (see prominentUpdateColor) —
+  // unlike the raw action color, a solid-control fill that reads below 3:1 as
+  // text. Hover mixes toward the row's foreground rather than fading the hue:
+  // fading costs rest-state contrast, which is the whole point of the marker.
   const compactionStats = row.activitySummary.filter((stat) => stat.kind === "context-compaction");
   const activityStats = row.activitySummary.filter((stat) => stat.kind !== "context-compaction");
   const hasSummary = row.activitySummary.length > 0;
@@ -1270,7 +1272,11 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
               </span>
             ) : null}
             {compactionStats.map((stat) => (
-              <TurnFoldActivityStat key={stat.kind} stat={stat} className="ms-1 text-foreground" />
+              <TurnFoldActivityStat
+                key={stat.kind}
+                stat={stat}
+                className="ms-1 text-update-prominent transition-colors group-hover/turn-fold:text-[color-mix(in_oklab,var(--update-prominent)_55%,var(--foreground))] motion-reduce:transition-none"
+              />
             ))}
           </>
         ) : null}
@@ -2354,6 +2360,7 @@ type WorkEntryIconName =
   | "database"
   | "eye"
   | "flask-conical"
+  | "fold-vertical"
   | "globe"
   | "hammer"
   | "list-checks"
@@ -2400,6 +2407,8 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       return <EyeIcon className={className} aria-hidden />;
     case "flask-conical":
       return <FlaskConicalIcon className={className} aria-hidden />;
+    case "fold-vertical":
+      return <FoldVerticalIcon className={className} aria-hidden />;
     case "globe":
       return <GlobeIcon className={className} aria-hidden />;
     case "hammer":
@@ -2908,6 +2917,11 @@ const CommandOutputExpandedBody = memo(function CommandOutputExpandedBody(props:
 });
 
 function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
+  // Compaction shares its glyph with the folded-turn marker so the two readings
+  // of the same event — the row and the summary count — stay recognizable.
+  if (workEntry.sourceActivityKind === "context-compaction") {
+    return "fold-vertical";
+  }
   if (
     workEntry.sourceActivityKind === "user-input.requested" ||
     workEntry.sourceActivityKind === "user-input.resolved"
@@ -3112,6 +3126,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const [expanded, setExpanded] = useState(false);
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
+  const isCompactionRow = workEntry.sourceActivityKind === "context-compaction";
   const isStoppedSetupAction = workEntry.setupScriptState === "stopped";
   const isSetupActionRow = workEntry.sourceActivityKind?.startsWith("setup-script.") === true;
   const showFailedIndicator =
@@ -3150,13 +3165,15 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     "flex size-6 shrink-0 items-center justify-center",
     showWarningIndicator
       ? "text-warning"
-      : isSetupActionRow
-        ? "text-icon-muted"
-        : showDestructiveRowStyle
-          ? "text-destructive"
-          : workEntry.tone === "tool" || showFailedIndicator
-            ? "text-icon-muted"
-            : iconConfig.className,
+      : isCompactionRow
+        ? "text-update-prominent"
+        : isSetupActionRow
+          ? "text-icon-muted"
+          : showDestructiveRowStyle
+            ? "text-destructive"
+            : workEntry.tone === "tool" || showFailedIndicator
+              ? "text-icon-muted"
+              : iconConfig.className,
   );
   const headingClass = showWarningIndicator
     ? "font-medium text-warning"

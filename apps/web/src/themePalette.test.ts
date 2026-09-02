@@ -361,6 +361,45 @@ describe("theme files", () => {
     vi.unstubAllGlobals();
   });
 
+  it("lifts the update accent past muted text only where the palette needs it", () => {
+    const capture = () => {
+      const setProperty = vi.fn();
+      vi.stubGlobal("document", {
+        documentElement: {
+          classList: { toggle: vi.fn() },
+          dataset: {},
+          style: { removeProperty: vi.fn(), setProperty },
+        },
+      });
+      return setProperty;
+    };
+    const emitted = (setProperty: ReturnType<typeof vi.fn>, variable: string) =>
+      setProperty.mock.calls.find((call) => call[0] === variable)?.[1] as string | undefined;
+    const lightnessOf = (color: string) => Number(/oklch\(([\d.]+)/.exec(color)?.[1]);
+
+    // T3 Chat mutes with a bright tint of its own pink, so an untouched accent
+    // would sit at the same weight as the stats beside it.
+    const pink = capture();
+    const pinkColors = getThemeColorsForMode(T3_CHAT_THEME, "dark") ?? T3_CHAT_THEME.colors;
+    applyThemeColorPreview(pinkColors, "dark");
+    const lifted = emitted(pink, "--app-theme-update-prominent");
+    expect(lifted).toBeDefined();
+    expect(lightnessOf(lifted!)).toBeGreaterThan(
+      lightnessOf(toCanonicalThemeColor(pinkColors.updateForeground)!),
+    );
+    vi.unstubAllGlobals();
+
+    // Ocean mutes with a dim gray, so its accent already out-reads the row and
+    // is emitted exactly as authored.
+    const ocean = capture();
+    const oceanColors = getThemeColorsForMode(OCEAN_THEME, "dark") ?? OCEAN_THEME.colors;
+    applyThemeColorPreview(oceanColors, "dark");
+    expect(emitted(ocean, "--app-theme-update-prominent")).toBe(
+      toCanonicalThemeColor(oceanColors.updateForeground),
+    );
+    vi.unstubAllGlobals();
+  });
+
   it("keeps optional light and dark palettes under one theme id", () => {
     const theme = parseThemeFile({
       version: THEME_FILE_VERSION,
