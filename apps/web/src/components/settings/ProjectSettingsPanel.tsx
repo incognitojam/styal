@@ -40,6 +40,7 @@ import { useComposerDraftStore } from "../../composerDraftStore";
 import { isElectron } from "../../env";
 import {
   useClientSettings,
+  useEnvironmentSettings,
   useUpdateClientSettings,
   usePrimarySettings,
 } from "../../hooks/useSettings";
@@ -70,7 +71,7 @@ import {
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { useProjects, useThreadShells } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
-import { primaryServerProvidersAtom, serverEnvironment } from "../../state/server";
+import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
@@ -325,10 +326,20 @@ export function ProjectSettingsPanel({ projectKey }: { projectKey: string }) {
 function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
   const navigate = useNavigate();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const representative =
+    group.memberProjects.find(
+      (member) => member.environmentId === group.environmentId && member.id === group.id,
+    ) ?? group.memberProjects[0]!;
   const settings = usePrimarySettings();
+  // Provider instances and model options belong to the environment that runs
+  // the project's threads. The hosted app has no primary environment, so
+  // reading them from there would show "No providers available" everywhere.
+  const projectSettings = useEnvironmentSettings(representative.environmentId);
+  const serverProviders =
+    useAtomValue(serverEnvironment.providersValueAtom(representative.environmentId)) ??
+    EMPTY_SERVER_PROVIDERS;
   const updateClientSettings = useUpdateClientSettings();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
-  const serverProviders = useAtomValue(primaryServerProvidersAtom);
   const threads = useThreadShells();
   const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
   const deleteProject = useAtomCommand(projectEnvironment.delete, { reportFailure: false });
@@ -354,10 +365,6 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
     },
   });
 
-  const representative =
-    group.memberProjects.find(
-      (member) => member.environmentId === group.environmentId && member.id === group.id,
-    ) ?? group.memberProjects[0]!;
   const faviconPath = representative.faviconPath ?? null;
   const pickProjectFavicon =
     typeof window !== "undefined" &&
@@ -452,20 +459,29 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
   // ----- default model -----
   const storedSelection = representative.defaultModelSelection;
   const resolvedSelection = resolveDefaultProviderModelSelection(serverProviders, storedSelection);
+  const resolvedInstanceId = resolvedSelection?.instanceId ?? null;
+  const resolvedModel = resolvedSelection?.model ?? null;
   const instanceEntries = useMemo(
     () =>
       sortProviderInstanceEntries(
-        applyProviderInstanceSettings(deriveProviderInstanceEntries(serverProviders), settings),
+        applyProviderInstanceSettings(
+          deriveProviderInstanceEntries(serverProviders),
+          projectSettings,
+        ),
       ),
-    [serverProviders, settings],
+    [serverProviders, projectSettings],
   );
   const modelOptionsByInstance = useMemo(
-    () => getCustomModelOptionsByInstance(settings, serverProviders),
-    [serverProviders, settings],
+    () =>
+      getCustomModelOptionsByInstance(
+        projectSettings,
+        serverProviders,
+        resolvedInstanceId,
+        resolvedModel,
+      ),
+    [resolvedInstanceId, resolvedModel, serverProviders, projectSettings],
   );
-  const activeEntry = instanceEntries.find(
-    (entry) => entry.instanceId === resolvedSelection?.instanceId,
-  );
+  const activeEntry = instanceEntries.find((entry) => entry.instanceId === resolvedInstanceId);
   const setDefaultModel = useCallback(
     (selection: ModelSelection | null) =>
       void updateAllMembers({ defaultModelSelection: selection }, "Failed to update default model"),
@@ -954,7 +970,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                     onPromptChange={() => {}}
                     modelOptions={resolvedSelection.options ?? []}
                     allowPromptInjectedEffort={false}
-                    planModeEnabled={settings.planModeEnabled}
+                    planModeEnabled={projectSettings.planModeEnabled}
                     triggerVariant="outline"
                     triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
                     onModelOptionsChange={(nextOptions) => {
