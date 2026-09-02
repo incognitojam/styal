@@ -7,6 +7,7 @@ import {
   formatClaudeVersionUpgradeMessage,
   normalizeClaudeCatalogEffort,
   resolveClaudeCatalogApiModelId,
+  resolveClaudeCatalogContextWindowTokens,
   resolveClaudeModelCatalog,
   resolveClaudeModelsForVersion,
   resolveClaudeModelSlug,
@@ -111,6 +112,43 @@ describe("Claude model catalog", () => {
         model: "synthetic",
       }),
       "claude-synthetic-next[large]",
+    );
+  });
+
+  it("resolves fixed context-window metadata", () => {
+    const base = manifest();
+    const input: ModelManifestData = {
+      ...base,
+      providers: {
+        ...base.providers,
+        claudeAgent: {
+          ...base.providers!.claudeAgent!,
+          profiles: {
+            ...base.providers!.claudeAgent!.profiles,
+            fixed: {
+              capabilities: { optionDescriptors: [] },
+              adapter: { claudeCode: { fixedContextWindowTokens: 1_000_000 } },
+            },
+          },
+          models: [
+            ...base.providers!.claudeAgent!.models,
+            {
+              slug: "claude-synthetic-fixed",
+              name: "Claude Synthetic Fixed",
+              status: "current",
+              profile: "fixed",
+            },
+          ],
+        },
+      },
+    };
+    const catalog = resolveClaudeModelCatalog(input);
+    assert.strictEqual(
+      resolveClaudeCatalogContextWindowTokens(catalog, {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-synthetic-fixed",
+      }),
+      1_000_000,
     );
   });
 
