@@ -39,6 +39,7 @@ import {
   resolveDiffThemeName,
   resolveFileDiffPath,
 } from "../lib/diffRendering";
+import { PREFERRED_HIGHLIGHTER } from "../lib/syntaxHighlighting";
 import { areAllDiffFilesCollapsed, toggleAllDiffFiles } from "../lib/diffCollapse";
 import { DiffFileTierChip } from "./diffs/DiffFileTierChip";
 import { diffFileTier, orderDiffFiles, type DiffFileTier } from "../lib/diffFileOrder";
@@ -1023,6 +1024,7 @@ export default function DiffPanel({
                     lineDiffType: "none",
                     overflow: wordWrap ? "wrap" : "scroll",
                     theme: resolveDiffThemeName(resolvedTheme),
+                    preferredHighlighter: PREFERRED_HIGHLIGHTER,
                     themeType: resolvedTheme as DiffThemeType,
                     stickyHeaders: true,
                     ...(currentLoadDiffFiles ? { loadDiffFiles } : {}),
