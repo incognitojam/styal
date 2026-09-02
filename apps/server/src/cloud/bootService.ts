@@ -386,7 +386,7 @@ function launchdManager(input: {
 }
 
 /** Undefined means this host cannot run the background service. */
-export function selectBootServiceManager(input: {
+function selectBootServiceManager(input: {
   readonly platform: NodeJS.Platform;
   readonly homeDir: string;
   readonly uid: number | undefined;

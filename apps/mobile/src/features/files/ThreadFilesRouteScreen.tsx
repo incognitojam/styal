@@ -11,6 +11,10 @@ import {
   type ProjectReadFileResult,
   ThreadId,
 } from "@t3tools/contracts";
+import {
+  isWorkspaceBrowserPreviewPath,
+  isWorkspaceImagePreviewPath,
+} from "@t3tools/shared/filePreview";
 
 import { AndroidHeaderIconButton, AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { SymbolView } from "../../components/AppSymbol";
@@ -48,13 +52,7 @@ import { SourceFileSurface } from "./SourceFileSurface";
 import { ThreadFileNavigatorPane } from "./thread-file-navigator-pane";
 import { WorkspaceFileImagePreview } from "./WorkspaceFileImagePreview";
 import { WorkspaceFileWebPreview } from "./WorkspaceFileWebPreview";
-import {
-  basename,
-  isBrowserPreviewFile,
-  isImagePreviewFile,
-  isMarkdownPreviewFile,
-  isSvgImagePreviewFile,
-} from "./filePath";
+import { basename, isMarkdownPreviewFile, isSvgImagePreviewFile } from "./filePath";
 import { useWorkspaceFileAssetUrl } from "./workspaceFileAssetUrl";
 
 type FileViewMode = "preview" | "source";
@@ -84,7 +82,7 @@ function normalizeRouteLine(value: string | null): number | null {
 }
 
 function defaultViewMode(path: string | null): FileViewMode {
-  return path !== null && (isBrowserPreviewFile(path) || isImagePreviewFile(path))
+  return path !== null && (isWorkspaceBrowserPreviewPath(path) || isWorkspaceImagePreviewPath(path))
     ? "preview"
     : "source";
 }
@@ -100,8 +98,8 @@ function FileContent(props: {
   readonly onRefresh?: () => Promise<void> | void;
 }) {
   const isMarkdown = isMarkdownPreviewFile(props.relativePath);
-  const isBrowserFile = isBrowserPreviewFile(props.relativePath);
-  const isImageFile = isImagePreviewFile(props.relativePath);
+  const isBrowserFile = isWorkspaceBrowserPreviewPath(props.relativePath);
+  const isImageFile = isWorkspaceImagePreviewPath(props.relativePath);
 
   if (props.activeMode === "preview" && isImageFile) {
     if (isSvgImagePreviewFile(props.relativePath)) {
@@ -490,8 +488,8 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
   } | null>(null);
   const [previewRevision, setPreviewRevision] = useState(0);
   const [fullScreenPreview, setFullScreenPreview] = useState<FilePreviewSource | null>(null);
-  const isBrowserFile = relativePath !== null && isBrowserPreviewFile(relativePath);
-  const isImageFile = relativePath !== null && isImagePreviewFile(relativePath);
+  const isBrowserFile = relativePath !== null && isWorkspaceBrowserPreviewPath(relativePath);
+  const isImageFile = relativePath !== null && isWorkspaceImagePreviewPath(relativePath);
   const canPreview =
     relativePath !== null && (isMarkdownPreviewFile(relativePath) || isBrowserFile || isImageFile);
   const activeMode =
