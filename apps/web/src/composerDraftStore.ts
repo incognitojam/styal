@@ -4652,11 +4652,3 @@ export function finalizePromotedDraftThreadByRef(threadRef: ScopedThreadRef): vo
   }
   clearBackgroundDraftSubmissionByRef(threadRef);
 }
-
-export function finalizePromotedDraftThreadsByRef(
-  serverThreadRefs: Iterable<ScopedThreadRef>,
-): void {
-  for (const threadRef of serverThreadRefs) {
-    finalizePromotedDraftThreadByRef(threadRef);
-  }
-}
