@@ -1008,7 +1008,9 @@ function renderFeedEntry(
   const { markdownStyles, iconSubtleColor, userBubbleColor } = props;
 
   if (entry.type === "working") {
-    return <WorkingTimelineRow startedAt={entry.createdAt} />;
+    return (
+      <WorkingTimelineRow startedAt={entry.createdAt} compacting={entry.compacting === true} />
+    );
   }
 
   if (entry.type === "turn-fold") {
@@ -1214,7 +1216,10 @@ function renderFeedEntry(
   );
 }
 
-const WorkingTimelineRow = memo(function WorkingTimelineRow(props: { readonly startedAt: string }) {
+const WorkingTimelineRow = memo(function WorkingTimelineRow(props: {
+  readonly startedAt: string;
+  readonly compacting: boolean;
+}) {
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
@@ -1235,6 +1240,7 @@ const WorkingTimelineRow = memo(function WorkingTimelineRow(props: { readonly st
       </View>
       <Text className="font-t3-medium text-xs tabular-nums text-neutral-600 dark:text-neutral-400">
         Working for {durationLabel}
+        {props.compacting ? " · Compacting context" : null}
       </Text>
     </View>
   );

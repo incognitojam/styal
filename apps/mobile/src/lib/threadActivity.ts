@@ -92,6 +92,8 @@ export interface ThreadFeedActivity {
     | "zap";
   readonly toolLike: boolean;
   readonly status: "success" | "failure" | "neutral" | "stopped" | null;
+  /** Context compaction phase. An in-progress one labels the working row and is never listed. */
+  readonly compaction?: "inProgress" | "completed";
 }
 
 const MAX_VISIBLE_WORK_LOG_ENTRIES = 1;
@@ -170,6 +172,7 @@ export type ThreadFeedEntry =
       readonly type: "working";
       readonly id: string;
       readonly createdAt: string;
+      readonly compacting?: true;
     }
   | {
       readonly type: "activity-group";
@@ -1488,10 +1491,36 @@ export function deriveThreadFeedPresentation(
   expandedWorkGroupIds: ReadonlySet<string> = new Set(),
   activeWorkStartedAt: string | null = null,
 ): ThreadFeedEntry[] {
-  const sourceFeed = feed.filter(
-    (entry) =>
-      entry.type !== "turn-fold" && entry.type !== "work-toggle" && entry.type !== "working",
+  const sourceFeed = feed.flatMap(
+    (
+      entry,
+    ): Array<
+      Exclude<ThreadFeedEntry, { readonly type: "turn-fold" | "work-toggle" | "working" }>
+    > => {
+      if (entry.type === "turn-fold" || entry.type === "work-toggle" || entry.type === "working") {
+        return [];
+      }
+      if (entry.type !== "activity-group") {
+        return [entry];
+      }
+      // An in-progress compaction is a phase signal, not a work item; the
+      // compacted activity that follows is the record.
+      const activities = entry.activities.filter(
+        (activity) => activity.compaction !== "inProgress",
+      );
+      return activities.length === 0 ? [] : [{ ...entry, activities }];
+    },
   );
+  // Only the newest compaction signal counts: once the compacted record lands
+  // after it, the phase is over.
+  const compacting =
+    activeWorkStartedAt !== null &&
+    feed
+      .flatMap((entry) => (entry.type === "activity-group" ? entry.activities : []))
+      .findLast(
+        (activity) =>
+          activity.compaction !== undefined && activity.createdAt >= activeWorkStartedAt,
+      )?.compaction === "inProgress";
   const foldsByAnchorId = deriveThreadFeedTurnFolds(sourceFeed, latestTurn);
   const collapsedEntryIds = new Set<string>();
   for (const fold of foldsByAnchorId.values()) {
@@ -1524,6 +1553,7 @@ export function deriveThreadFeedPresentation(
       type: "working",
       id: "working-indicator-row",
       createdAt: activeWorkStartedAt,
+      ...(compacting ? { compacting: true } : {}),
     });
   }
   return result;
@@ -1821,6 +1851,12 @@ export function buildThreadFeed(
               icon: workEntryIcon(entry),
               toolLike: workLogEntryIsToolLike(entry),
               status: workEntryStatus(entry),
+              ...(entry.activityKind === "context-compaction"
+                ? {
+                    compaction:
+                      entry.toolLifecycleStatus === "inProgress" ? "inProgress" : "completed",
+                  }
+                : {}),
             },
           };
         }),

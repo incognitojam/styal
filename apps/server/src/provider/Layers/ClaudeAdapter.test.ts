@@ -1770,6 +1770,57 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("surfaces a compacting status as a thread state change", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      // Session start emits its own state changes; stop at the thread-level
+      // signal the compacting status must add.
+      const stateEventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter(
+          (event) =>
+            event.type === "session.state.changed" || event.type === "thread.state.changed",
+        ),
+        Stream.takeUntil((event) => event.type === "thread.state.changed"),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "/compact",
+        attachments: [],
+      });
+
+      harness.query.emit({
+        type: "system",
+        subtype: "status",
+        status: "compacting",
+        uuid: "status-compacting",
+        session_id: "sdk-session",
+      } as unknown as SDKMessage);
+
+      const events = Array.from(yield* Fiber.join(stateEventsFiber));
+      const sessionState = events.at(-2);
+      assert.equal(sessionState?.type, "session.state.changed");
+      if (sessionState?.type === "session.state.changed") {
+        assert.equal(sessionState.payload.state, "waiting");
+        assert.equal(sessionState.payload.reason, "status:compacting");
+      }
+      const threadState = events.at(-1);
+      assert.equal(threadState?.type, "thread.state.changed");
+      if (threadState?.type === "thread.state.changed") {
+        assert.equal(threadState.payload.state, "compacting");
+      }
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("interruptTurn settles live tasks and closes the provider session", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

@@ -3263,6 +3263,19 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             detail: message,
           },
         });
+        // Compaction runs with no tool activity, so the session state alone
+        // leaves clients showing a generic "Thinking" row. Surface the phase
+        // itself; compact_boundary marks its end.
+        if (message.status === "compacting") {
+          yield* offerRuntimeEvent({
+            ...base,
+            type: "thread.state.changed",
+            payload: {
+              state: "compacting",
+              detail: message,
+            },
+          });
+        }
         return;
       case "compact_boundary":
         yield* emitThreadTokenUsage(

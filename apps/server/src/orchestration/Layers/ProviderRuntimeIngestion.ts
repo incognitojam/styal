@@ -804,19 +804,23 @@ export function runtimeEventToActivities(
     }
 
     case "thread.state.changed": {
-      if (event.payload.state !== "compacted") {
+      if (event.payload.state !== "compacting" && event.payload.state !== "compacted") {
         return [];
       }
 
+      // `status` mirrors tool lifecycle so clients treat the in-progress
+      // activity as a live phase and the compacted one as the settled record.
+      const compacting = event.payload.state === "compacting";
       return [
         {
           id: event.eventId,
           createdAt: event.createdAt,
           tone: "info",
           kind: "context-compaction",
-          summary: "Context compacted",
+          summary: compacting ? "Compacting context" : "Context compacted",
           payload: {
             state: event.payload.state,
+            status: compacting ? "inProgress" : "completed",
             ...(event.payload.detail !== undefined ? { detail: event.payload.detail } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,

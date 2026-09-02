@@ -1476,7 +1476,11 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
           ) : null}
         </div>
       </div>
-      {row.showThinking ? (
+      {row.compacting ? (
+        <div className="mt-1">
+          <LiveActivityRow label="Compacting context" />
+        </div>
+      ) : row.showThinking ? (
         <div className="mt-1">
           <ThinkingActivityRow />
         </div>

@@ -1866,3 +1866,61 @@ describe("computeStableMessagesTimelineRows", () => {
     expect(reordered.result).toEqual([initial.result[1], initial.result[0]]);
   });
 });
+
+describe("context compaction phase", () => {
+  const turnId = "turn-1" as never;
+  const compactingEntry = {
+    id: "compacting-entry",
+    kind: "work" as const,
+    createdAt: "2026-01-01T00:00:05Z",
+    entry: {
+      id: "compacting",
+      createdAt: "2026-01-01T00:00:05Z",
+      turnId,
+      label: "Compacting context",
+      tone: "info" as const,
+      sourceActivityKind: "context-compaction" as const,
+      toolLifecycleStatus: "inProgress" as const,
+    },
+  };
+  const compactedEntry = {
+    id: "compacted-entry",
+    kind: "work" as const,
+    createdAt: "2026-01-01T00:00:09Z",
+    entry: {
+      id: "compacted",
+      createdAt: "2026-01-01T00:00:09Z",
+      turnId,
+      label: "Context compacted",
+      tone: "info" as const,
+      sourceActivityKind: "context-compaction" as const,
+      toolLifecycleStatus: "completed" as const,
+    },
+  };
+  const derive = (timelineEntries: ReadonlyArray<typeof compactingEntry | typeof compactedEntry>) =>
+    deriveMessagesTimelineRows({
+      timelineEntries,
+      latestTurn: {
+        turnId,
+        state: "running",
+        startedAt: "2026-01-01T00:00:00Z",
+        completedAt: null,
+      },
+      isWorking: true,
+      activeTurnStartedAt: "2026-01-01T00:00:00Z",
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+  it("labels the working row while compaction runs and never lists the signal", () => {
+    const rows = derive([compactingEntry]);
+    expect(rows.map((row) => row.id)).toEqual(["working-indicator-row"]);
+    expect(rows[0]).toMatchObject({ kind: "working", compacting: true });
+  });
+
+  it("returns to the plain working row once the compacted record lands", () => {
+    const rows = derive([compactingEntry, compactedEntry]);
+    expect(rows.map((row) => row.id)).toEqual(["working-indicator-row", "compacted-entry"]);
+    expect(rows[0]).toMatchObject({ kind: "working", compacting: false });
+  });
+});

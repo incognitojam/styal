@@ -1303,3 +1303,64 @@ describe("quiet timeline: nested agents", () => {
     expect(ids).not.toContain("shell-done");
   });
 });
+
+describe("context compaction phase", () => {
+  const turnId = TurnId.make("turn-compact");
+  const startedAt = "2026-04-01T00:00:01.000Z";
+  const compacting = makeActivity({
+    id: EventId.make("compacting"),
+    kind: "context-compaction",
+    summary: "Compacting context",
+    createdAt: "2026-04-01T00:00:05.000Z",
+    turnId,
+    payload: { state: "compacting", status: "inProgress" },
+  });
+  const compacted = makeActivity({
+    id: EventId.make("compacted"),
+    kind: "context-compaction",
+    summary: "Context compacted",
+    createdAt: "2026-04-01T00:00:09.000Z",
+    turnId,
+    payload: { state: "compacted", status: "completed" },
+  });
+  const present = (activities: ReadonlyArray<OrchestrationThreadActivity>) => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-compact"),
+      projectId: ProjectId.make("project-1"),
+      title: "Compacting",
+      latestTurn: {
+        turnId,
+        state: "running",
+        requestedAt: "2026-04-01T00:00:00.000Z",
+        startedAt,
+        completedAt: null,
+        assistantMessageId: null,
+      },
+      activities: [...activities],
+    });
+    return deriveThreadFeedPresentation(
+      buildThreadFeed(thread),
+      thread.latestTurn,
+      new Set(),
+      new Set(),
+      startedAt,
+    );
+  };
+
+  it("labels the working row while compaction runs and never lists the signal", () => {
+    expect(present([compacting])).toEqual([
+      { type: "working", id: "working-indicator-row", createdAt: startedAt, compacting: true },
+    ]);
+  });
+
+  it("returns to the plain working row once the compacted record lands", () => {
+    const presented = present([compacting, compacted]);
+    expect(presented.map((entry) => entry.type)).toEqual(["activity-group", "working"]);
+    expect(presented[0]).toMatchObject({ activities: [{ summary: "Context compacted" }] });
+    expect(presented[1]).toEqual({
+      type: "working",
+      id: "working-indicator-row",
+      createdAt: startedAt,
+    });
+  });
+});
