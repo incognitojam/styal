@@ -42,11 +42,11 @@ update from the previous track; styal waits for a download from the newly select
 
 ## Choose the Action You See
 
-| Action                     | What to do                                                                                                                                                                |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Update server**          | Available for the styal background service on Linux and macOS. Select the button and leave styal open while it prepares, tests, restarts, and reconnects.                 |
-| **Update the desktop app** | Open the styal desktop app on the machine that runs the server and install the app update there. Reopen it if needed.                                                     |
-| **Copy update command**    | Copy the command, open a terminal on the server machine, stop the current styal server, and relaunch it with the copied command and any startup options you normally use. |
+| Action                     | What to do                                                                                                                                                                                                                                                                                                                                                                           |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Update server**          | Available for the styal background service on Linux and macOS and for servers run by a current styal desktop app. Select the button and leave styal open while it downloads, installs, restarts, and reconnects. For desktop-app servers this closes and relaunches the desktop app on that machine. If installation fails, the desktop app stays open and reconnects to its server. |
+| **Update the desktop app** | Shown for desktop apps that predate remote updates. Open the styal desktop app on the machine that runs the server and install the app update there. Reopen it if needed.                                                                                                                                                                                                            |
+| **Copy update command**    | Copy the command, open a terminal on the server machine, stop the current styal server, and relaunch it with the copied command and any startup options you normally use.                                                                                                                                                                                                            |
 
 The available action depends on how that server was started. styal does not update connected
 servers silently in the background.

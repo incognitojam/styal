@@ -61,6 +61,9 @@ const electronDialogLayer = Layer.succeed(ElectronDialog.ElectronDialog, {
 
 const desktopUpdatesLayer = Layer.succeed(DesktopUpdates.DesktopUpdates, {
   getState: Effect.die("unexpected getState"),
+  isActionActive: Effect.succeed(false),
+  isInstallActive: Effect.succeed(false),
+  subscribe: Effect.die("unexpected subscribe"),
   emitState: Effect.void,
   disabledReason: Effect.succeed(Option.none()),
   configure: Effect.void,
@@ -69,6 +72,7 @@ const desktopUpdatesLayer = Layer.succeed(DesktopUpdates.DesktopUpdates, {
   download: Effect.die("unexpected download"),
   install: Effect.die("unexpected install"),
   installOnQuit: Effect.succeed(false),
+  installPrepared: () => Effect.die("unexpected installPrepared"),
 } satisfies DesktopUpdates.DesktopUpdates["Service"]);
 
 const makeDesktopWindowLayer = (selectedAction: Deferred.Deferred<string>) =>

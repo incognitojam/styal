@@ -1,7 +1,6 @@
+import * as Stream from "effect/Stream";
 import * as DesktopShutdownGuard from "../app/DesktopShutdownGuard.ts";
 import { assert, describe, it } from "@effect/vitest";
-import * as NodeServices from "@effect/platform-node/NodeServices";
-import type { DesktopUpdateState } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
@@ -23,239 +22,7 @@ import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopState from "../app/DesktopState.ts";
 import * as DesktopUpdates from "./DesktopUpdates.ts";
 
-interface UpdatesHarnessOptions {
-  readonly confirmShutdown?: Effect.Effect<boolean>;
-  readonly checkForUpdates?: Effect.Effect<
-    void,
-    ElectronUpdater.ElectronUpdaterCheckForUpdatesError
-  >;
-  readonly downloadUpdate?: Effect.Effect<void, ElectronUpdater.ElectronUpdaterDownloadUpdateError>;
-  readonly beforeSetUpdateChannel?: Effect.Effect<void>;
-  readonly setUpdateChannelError?: DesktopAppSettings.DesktopSettingsWriteError;
-  readonly setDisableDifferentialDownload?: Effect.Effect<void>;
-  readonly stopBackend?: Effect.Effect<void>;
-  readonly installWait?: Effect.Effect<void>;
-  readonly installError?: ElectronUpdater.ElectronUpdaterQuitAndInstallError;
-  readonly env?: Record<string, string | undefined>;
-}
-
-const flushCallbacks = Effect.yieldNow;
-
-function makeHarness(options: UpdatesHarnessOptions = {}) {
-  let checkCount = 0;
-  let downloadCount = 0;
-  let allowDowngrade = false;
-  let fullChangelog = false;
-  let autoInstallOnAppQuit = false;
-  const installs: Array<{ isSilent: boolean; isForceRunAfter: boolean }> = [];
-  const feedUrls: ElectronUpdater.ElectronUpdaterFeedUrl[] = [];
-  const listeners = new Map<string, Set<(...args: readonly unknown[]) => void>>();
-  const sentStates: DesktopUpdateState[] = [];
-
-  const addListener = (eventName: string, listener: (...args: readonly unknown[]) => void) => {
-    const eventListeners = listeners.get(eventName) ?? new Set();
-    eventListeners.add(listener);
-    listeners.set(eventName, eventListeners);
-  };
-
-  const removeListener = (eventName: string, listener: (...args: readonly unknown[]) => void) => {
-    const eventListeners = listeners.get(eventName);
-    if (!eventListeners) {
-      return;
-    }
-    eventListeners.delete(listener);
-    if (eventListeners.size === 0) {
-      listeners.delete(eventName);
-    }
-  };
-
-  const updaterLayer = Layer.succeed(ElectronUpdater.ElectronUpdater, {
-    setFeedURL: (options) =>
-      Effect.sync(() => {
-        feedUrls.push(options);
-      }),
-    setAutoDownload: () => Effect.void,
-    setAutoInstallOnAppQuit: (value) =>
-      Effect.sync(() => {
-        autoInstallOnAppQuit = value;
-      }),
-    setChannel: () => Effect.void,
-    setAllowPrerelease: () => Effect.void,
-    allowDowngrade: Effect.sync(() => allowDowngrade),
-    setAllowDowngrade: (value) =>
-      Effect.sync(() => {
-        allowDowngrade = value;
-      }),
-    setFullChangelog: (value) =>
-      Effect.sync(() => {
-        fullChangelog = value;
-      }),
-    setDisableDifferentialDownload: () => options.setDisableDifferentialDownload ?? Effect.void,
-    checkForUpdates: Effect.sync(() => {
-      checkCount += 1;
-    }).pipe(Effect.andThen(options.checkForUpdates ?? Effect.void)),
-    downloadUpdate: Effect.sync(() => {
-      downloadCount += 1;
-    }).pipe(Effect.andThen(options.downloadUpdate ?? Effect.void)),
-    quitAndInstall: (flags) =>
-      Effect.sync(() => {
-        installs.push(flags);
-      }).pipe(
-        Effect.andThen(
-          options.installError
-            ? Effect.fail(options.installError)
-            : (options.installWait ?? Effect.void),
-        ),
-      ),
-    on: (eventName, listener) =>
-      Effect.acquireRelease(
-        Effect.sync(() => {
-          addListener(eventName, listener as unknown as (...args: readonly unknown[]) => void);
-        }),
-        () =>
-          Effect.sync(() => {
-            removeListener(eventName, listener as unknown as (...args: readonly unknown[]) => void);
-          }),
-      ).pipe(Effect.asVoid),
-  } satisfies ElectronUpdater.ElectronUpdater["Service"]);
-
-  const windowLayer = Layer.succeed(ElectronWindow.ElectronWindow, {
-    create: () => Effect.die("unexpected BrowserWindow creation"),
-    main: Effect.succeed(Option.none()),
-    currentMainOrFirst: Effect.succeed(Option.none()),
-    focusedMainOrFirst: Effect.succeed(Option.none()),
-    setMain: () => Effect.void,
-    clearMain: () => Effect.void,
-    reveal: () => Effect.void,
-    sendAll: (_channel, state) =>
-      Effect.sync(() => {
-        sentStates.push(state as DesktopUpdateState);
-      }),
-    destroyAll: Effect.void,
-    syncAllAppearance: () => Effect.void,
-  } satisfies ElectronWindow.ElectronWindow["Service"]);
-
-  const stubBackendInstance: DesktopBackendPool.DesktopBackendInstance = {
-    id: DesktopBackendPool.PRIMARY_INSTANCE_ID,
-    label: Effect.succeed("Windows"),
-    start: Effect.void,
-    stop: () => options.stopBackend ?? Effect.void,
-    currentConfig: Effect.succeed(Option.none()),
-    snapshot: Effect.succeed({
-      desiredRunning: false,
-      ready: false,
-      activePid: Option.none(),
-      restartAttempt: 0,
-      restartScheduled: false,
-    }),
-    waitForReady: () => Effect.succeed(true),
-  };
-  const backendLayer = DesktopBackendPool.layerTest([stubBackendInstance]);
-
-  const environmentLayer = DesktopEnvironment.layer({
-    dirname: "/repo/apps/desktop/src",
-    homeDirectory: `/tmp/t3-desktop-updates-home-${process.pid}`,
-    platform: "darwin",
-    processArch: "x64",
-    appVersion: "1.2.3",
-    appPath: "/repo",
-    isPackaged: true,
-    resourcesPath: "/missing/resources",
-    runningUnderArm64Translation: false,
-  }).pipe(
-    Layer.provide(
-      Layer.mergeAll(
-        NodeServices.layer,
-        DesktopConfig.layerTest({
-          STYAL_HOME: `/tmp/styal-desktop-updates-test-${process.pid}`,
-          T3CODE_DESKTOP_MOCK_UPDATES: "true",
-          T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT: "4141",
-          ...options.env,
-        }),
-      ),
-    ),
-  );
-
-  let testSettings: DesktopAppSettings.DesktopSettings = {
-    ...DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS,
-  };
-  const setUpdateChannelError = options.setUpdateChannelError;
-  const settingsLayer =
-    setUpdateChannelError || options.beforeSetUpdateChannel
-      ? Layer.succeed(DesktopAppSettings.DesktopAppSettings, {
-          get: Effect.sync(() => testSettings),
-          load: Effect.sync(() => testSettings),
-          setMainWindowBounds: () => Effect.die("unexpected main window bounds update"),
-          setServerExposureMode: () => Effect.die("unexpected server exposure update"),
-          setTailscaleServe: () => Effect.die("unexpected Tailscale Serve update"),
-          setUpdateChannel: (channel) =>
-            setUpdateChannelError
-              ? Effect.fail(setUpdateChannelError)
-              : (options.beforeSetUpdateChannel ?? Effect.void).pipe(
-                  Effect.andThen(
-                    Effect.sync(() => {
-                      const changed = testSettings.updateChannel !== channel;
-                      testSettings = {
-                        ...testSettings,
-                        updateChannel: channel,
-                        updateChannelConfiguredByUser: true,
-                      };
-                      return { settings: testSettings, changed };
-                    }),
-                  ),
-                ),
-          setWslBackendEnabled: () => Effect.die("unexpected WSL backend toggle"),
-          setWslDistro: () => Effect.die("unexpected WSL distro change"),
-          setWslOnly: () => Effect.die("unexpected WSL-only toggle"),
-          applyWslWindowsFallback: Effect.die("unexpected WSL Windows fallback"),
-          applyWslWindowsFallbackInMemory: Effect.die("unexpected WSL Windows fallback"),
-        } satisfies DesktopAppSettings.DesktopAppSettings["Service"])
-      : DesktopAppSettings.layer;
-
-  const layer = DesktopUpdates.layer.pipe(
-    Layer.provideMerge(
-      Layer.succeed(DesktopShutdownGuard.DesktopShutdownGuard, {
-        confirm: () => options.confirmShutdown ?? Effect.succeed(true),
-      }),
-    ),
-    Layer.provideMerge(updaterLayer),
-    Layer.provideMerge(windowLayer),
-    Layer.provideMerge(backendLayer),
-    Layer.provideMerge(DesktopState.layer),
-    Layer.provideMerge(settingsLayer),
-    Layer.provideMerge(
-      DesktopConfig.layerTest({
-        STYAL_HOME: `/tmp/styal-desktop-updates-test-${process.pid}`,
-        T3CODE_DESKTOP_MOCK_UPDATES: "true",
-        T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT: "4141",
-        ...options.env,
-      }),
-    ),
-    Layer.provideMerge(environmentLayer),
-    Layer.provideMerge(NodeServices.layer),
-  );
-
-  return {
-    layer,
-    installs,
-    checkCount: () => checkCount,
-    downloadCount: () => downloadCount,
-    feedUrls: () => feedUrls,
-    fullChangelog: () => fullChangelog,
-    autoInstallOnAppQuit: () => autoInstallOnAppQuit,
-    listenerCount: () =>
-      Array.from(listeners.values()).reduce(
-        (total, eventListeners) => total + eventListeners.size,
-        0,
-      ),
-    sentStates,
-    emit: (eventName: string, payload?: unknown) => {
-      for (const listener of listeners.get(eventName) ?? []) {
-        listener(payload);
-      }
-    },
-  };
-}
+import { flushCallbacks, makeHarness } from "./updatesTestHarness.ts";
 
 describe("DesktopUpdates", () => {
   it("preserves complete causes for update poller and event failures", () => {
@@ -1248,4 +1015,193 @@ describe("DesktopUpdates", () => {
       }).pipe(Effect.scoped, Effect.provide(harness.layer));
     }),
   );
+  it.effect("subscribe delivers the latest state plus subsequent changes", () => {
+    const harness = makeHarness();
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        const { latest, changes } = yield* updates.subscribe;
+        assert.equal(latest.status, "idle");
+
+        const nextState = yield* Stream.runHead(changes).pipe(Effect.forkChild);
+        yield* flushCallbacks;
+        harness.emit("update-available", { version: "1.2.4" });
+        yield* flushCallbacks;
+
+        const observed = yield* Fiber.join(nextState);
+        assert.equal(Option.getOrThrow(observed).status, "available");
+        assert.equal(Option.getOrThrow(observed).availableVersion, "1.2.4");
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("updates and broadcasts state from updater events", () => {
+    const harness = makeHarness();
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        harness.emit("update-available", { version: "1.2.4" });
+        yield* flushCallbacks;
+
+        const state = yield* updates.getState;
+        assert.equal(state.status, "available");
+        assert.equal(state.availableVersion, "1.2.4");
+        assert.isNotNull(state.checkedAt);
+        assert.equal(harness.sentStates.at(-1)?.status, "available");
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("recovers download state after an unexpected setup failure", () => {
+    let disableDifferentialCalls = 0;
+    const harness = makeHarness({
+      setDisableDifferentialDownload: Effect.suspend(() => {
+        disableDifferentialCalls += 1;
+        return disableDifferentialCalls === 1
+          ? Effect.void
+          : Effect.die(new Error("download setup failed"));
+      }),
+    });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        harness.emit("update-available", { version: "1.2.4" });
+        yield* flushCallbacks;
+
+        const result = yield* updates.download;
+        assert.isTrue(result.accepted);
+        assert.isFalse(result.completed);
+
+        const failedState = yield* updates.getState;
+        assert.equal(failedState.status, "available");
+        assert.equal(failedState.errorContext, "download");
+        assert.equal(failedState.message, "Desktop update download action failed unexpectedly.");
+
+        const changedState = yield* updates.setChannel("nightly");
+        assert.equal(changedState.channel, "nightly");
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("keeps windows and restarts backends when quitAndInstall fails", () => {
+    const harness = makeHarness({
+      quitAndInstall: Effect.fail(
+        new ElectronUpdater.ElectronUpdaterQuitAndInstallError({
+          channel: "latest",
+          isSilent: true,
+          isForceRunAfter: true,
+          cause: new Error("installer refused"),
+        }),
+      ),
+    });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const desktopState = yield* DesktopState.DesktopState;
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+
+        const result = yield* updates.install;
+        assert.isTrue(result.accepted);
+        assert.isFalse(yield* Ref.get(desktopState.quitting));
+        assert.deepEqual(harness.installSteps, ["quitAndInstall", "startBackend"]);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("holds the install reservation until failed-install recovery finishes", () => {
+    const recoveryStarted = Deferred.makeUnsafe<void>();
+    const releaseRecovery = Deferred.makeUnsafe<void>();
+    const harness = makeHarness({
+      quitAndInstall: Effect.fail(
+        new ElectronUpdater.ElectronUpdaterQuitAndInstallError({
+          channel: "latest",
+          isSilent: true,
+          isForceRunAfter: true,
+          cause: new Error("installer refused"),
+        }),
+      ),
+      startBackend: Deferred.succeed(recoveryStarted, undefined).pipe(
+        Effect.andThen(Deferred.await(releaseRecovery)),
+      ),
+    });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+
+        const failedInstall = yield* updates.install.pipe(Effect.forkChild);
+        yield* Deferred.await(recoveryStarted);
+        assert.isFalse(yield* updates.isInstallActive);
+
+        const overlappingInstall = yield* updates.install;
+        assert.isFalse(overlappingInstall.accepted);
+        assert.equal(harness.quitAndInstalls(), 1);
+        harness.emit("error", new Error("duplicate native installer error"));
+        yield* flushCallbacks;
+        assert.deepEqual(harness.installSteps, ["quitAndInstall", "startBackend"]);
+
+        yield* Deferred.succeed(releaseRecovery, undefined);
+        const failedResult = yield* Fiber.join(failedInstall);
+        assert.equal(failedResult.state.errorContext, "install");
+
+        const retry = yield* updates.install;
+        assert.isTrue(retry.accepted);
+        assert.equal(harness.quitAndInstalls(), 2);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("recovers when quitAndInstall reports failure through an updater event", () => {
+    const harness = makeHarness();
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const desktopState = yield* DesktopState.DesktopState;
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+
+        yield* updates.install;
+        assert.deepEqual(harness.installSteps, ["quitAndInstall"]);
+        harness.emit("error", new Error("native installer refused"));
+        yield* flushCallbacks;
+
+        assert.isFalse(yield* Ref.get(desktopState.quitting));
+        assert.deepEqual(harness.installSteps, ["quitAndInstall", "startBackend"]);
+        assert.equal((yield* updates.getState).errorContext, "install");
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("rejects a prepared install when the downloaded version changed", () => {
+    const harness = makeHarness();
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        harness.emit("update-downloaded", { version: "1.2.5" });
+        yield* flushCallbacks;
+
+        const result = yield* updates.installPrepared("1.2.4");
+        assert.isFalse(result.accepted);
+        assert.equal(harness.quitAndInstalls(), 0);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
 });

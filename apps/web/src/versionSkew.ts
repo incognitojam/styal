@@ -106,6 +106,14 @@ export function resolveServerSelfUpdateCapability(
   return capability;
 }
 
+/** True when the desktop app supervising this server can be told to update
+    itself over RPC. Older desktop servers only get the manual instruction. */
+export function supportsDesktopAppUpdate(
+  serverConfig: Pick<ServerConfig, "environment"> | null | undefined,
+): boolean {
+  return serverConfig?.environment.capabilities.desktopAppUpdate === true;
+}
+
 /** Manual commands require an explicit choice of how the server is run. */
 export function manualServerUpdateCommand(
   targetVersion: string,
