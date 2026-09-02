@@ -535,7 +535,7 @@ export const pullRequestEnvironmentSetKey = (environmentIds: ReadonlyArray<strin
   [...environmentIds].sort((left, right) => left.localeCompare(right)).join(",");
 
 const snapshotStorageKey = (environmentSetKey: string) =>
-  `t3.pullRequests.list:${environmentSetKey}`;
+  `styal.pullRequests.list:${environmentSetKey}`;
 
 /**
  * The priority groups' own server-filtered answers, carried with the feed. An authored pull

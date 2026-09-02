@@ -331,4 +331,16 @@ describe("uiStateStore persistence", () => {
     ) as PersistedUiState;
     expect(resolveProjectExpanded(persisted.projectExpandedById ?? {}, ["unknown"])).toBe(true);
   });
+
+  it("does not remove T3 Code UI state while persisting styal state", () => {
+    const t3CodeStateKey = "t3code:ui-state:v1";
+    const t3CodeRendererKey = "t3code:renderer-state:v8";
+    localStorageStub.setItem(t3CodeStateKey, "t3-owned-ui-state");
+    localStorageStub.setItem(t3CodeRendererKey, "t3-owned-renderer-state");
+
+    persistState(makeUiState());
+
+    expect(localStorageStub.getItem(t3CodeStateKey)).toBe("t3-owned-ui-state");
+    expect(localStorageStub.getItem(t3CodeRendererKey)).toBe("t3-owned-renderer-state");
+  });
 });

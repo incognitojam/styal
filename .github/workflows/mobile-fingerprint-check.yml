@@ -39,6 +39,9 @@ jobs:
       pull-requests: write
     env:
       APP_VARIANT: production
+      EXPO_OWNER: ${{ vars.EXPO_OWNER }}
+      EXPO_PROJECT_ID: ${{ vars.EXPO_PROJECT_ID }}
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
       NODE_OPTIONS: --max-old-space-size=8192
     steps:
       - name: Checkout

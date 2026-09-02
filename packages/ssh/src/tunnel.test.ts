@@ -188,6 +188,9 @@ describe("ssh tunnel scripts", () => {
     assert.include(buildRemoteLaunchScript(), 'kill "$REMOTE_PID" 2>/dev/null || true');
     assert.include(buildRemoteLaunchScript(), "wait_ready");
     assert.include(buildRemoteLaunchScript(), '"$RUNNER_FILE" serve --host 127.0.0.1');
+    assert.include(buildRemoteLaunchScript(), 'STATE_DIR="$HOME/.styal/ssh-launch/$STATE_KEY"');
+    assert.include(buildRemoteLaunchScript(), 'DEFAULT_SERVER_HOME="$HOME/.styal"');
+    assert.notInclude(buildRemoteLaunchScript(), '"$HOME/.t3/ssh-launch/');
     assert.include(buildRemoteLaunchScript(), '--base-dir "$DEFAULT_SERVER_HOME"');
     assert.notInclude(buildRemoteLaunchScript(), "server-home");
     assert.include(buildRemoteLaunchScript(), "Remote T3 server did not become ready");

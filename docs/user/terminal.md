@@ -51,8 +51,8 @@ If those values are missing:
    does not update the parent server that created it. See [Keeping app and server in sync](./updating.md).
 3. Check the server output for `failed to install terminal browser-open helper`. Normal local
    launches write human-readable logs to their standard output and completed traces to
-   `~/.t3/userdata/logs/server.trace.ndjson`. An SSH-managed launch also writes its output under
-   `~/.t3/ssh-launch/<state>/server.log`.
+   `~/.styal/userdata/logs/server.trace.ndjson`. An SSH-managed launch also writes its output under
+   `~/.styal/ssh-launch/<state>/server.log`.
 
 If `BROWSER` shows a value you configured, T3 Code deliberately preserves it and does not install
 its own launcher variables. Remove or change that setting only if you want terminal browser opens

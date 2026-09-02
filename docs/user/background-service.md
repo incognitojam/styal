@@ -40,10 +40,10 @@ updates roll back with the server version. An older launcher may require one loc
 
 ## Platform Support
 
-**Linux** uses a systemd user unit at `~/.config/systemd/user/t3code.service`. The service starts
+**Linux** uses a systemd user unit at `~/.config/systemd/user/styal.service`. The service starts
 when the machine boots and keeps running after you log out (lingering is enabled during install).
 
-**macOS** uses a launch agent at `~/Library/LaunchAgents/com.t3tools.t3code.service.plist`. It
+**macOS** uses a launch agent at `~/Library/LaunchAgents/build.styal.app.service.plist`. It
 starts when you log in, not when the Mac boots, and it stops when you log out; macOS has no
 equivalent of Linux lingering for user agents. For a Mac that should stay reachable unattended,
 turn on automatic login (System Settings → Users & Groups; unavailable while FileVault is on) and

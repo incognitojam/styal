@@ -1,5 +1,6 @@
 import type { ExpoConfig } from "expo/config";
 import { BRAND_ASSET_PATHS } from "@t3tools/shared/brandAssets";
+import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/relayAuth";
 
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 
@@ -10,6 +11,13 @@ Object.assign(process.env, repoEnv);
 
 const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
 const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
+const appleTeamId = repoEnv.APPLE_TEAM_ID?.trim();
+const easProjectId = repoEnv.EXPO_PROJECT_ID?.trim();
+const expoOwner = repoEnv.EXPO_OWNER?.trim();
+const clerkPublishableKey = repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim();
+const clerkFrontendApiHostname = clerkPublishableKey
+  ? clerkFrontendApiHostnameFromPublishableKey(clerkPublishableKey)
+  : undefined;
 
 const personalTeamBundleIdentifier = repoEnv.T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID?.trim();
 const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
@@ -25,7 +33,7 @@ if (
     !IOS_BUNDLE_IDENTIFIER_PATTERN.test(personalTeamBundleIdentifier))
 ) {
   throw new Error(
-    "T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID must be a reverse-DNS identifier such as com.example.t3code when T3CODE_IOS_PERSONAL_TEAM=1.",
+    "T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID must be a reverse-DNS identifier such as build.example.styal when T3CODE_IOS_PERSONAL_TEAM=1.",
   );
 }
 
@@ -62,29 +70,26 @@ const RELEASE_ASSETS = {
   androidNotificationColor: "#FFFFFF",
 } as const;
 
-const VARIANT_CONFIG = {
+export const VARIANT_CONFIG = {
   development: {
-    appName: "T3 Code Dev",
-    scheme: "t3code-dev",
-    iosBundleIdentifier: "com.t3tools.t3code.dev",
-    androidPackage: "com.t3tools.t3code.dev",
-    relyingParty: "clerk.t3.codes",
+    appName: "styal Dev",
+    scheme: "styal-dev",
+    iosBundleIdentifier: "build.styal.app.dev",
+    androidPackage: "build.styal.app.dev",
     assets: DEVELOPMENT_ASSETS,
   },
   preview: {
-    appName: "T3 Code Preview",
-    scheme: "t3code-preview",
-    iosBundleIdentifier: "com.t3tools.t3code.preview",
-    androidPackage: "com.t3tools.t3code.preview",
-    relyingParty: "clerk.t3.codes",
+    appName: "styal Preview",
+    scheme: "styal-preview",
+    iosBundleIdentifier: "build.styal.app.preview",
+    androidPackage: "build.styal.app.preview",
     assets: PREVIEW_ASSETS,
   },
   production: {
-    appName: "T3 Code",
-    scheme: "t3code",
-    iosBundleIdentifier: "com.t3tools.t3code",
-    androidPackage: "com.t3tools.t3code",
-    relyingParty: "clerk.t3.codes",
+    appName: "styal",
+    scheme: "styal",
+    iosBundleIdentifier: "build.styal.app",
+    androidPackage: "build.styal.app",
     assets: RELEASE_ASSETS,
   },
 } as const;
@@ -124,7 +129,7 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
       {
         name: "AgentActivity",
         displayName: "Agent Activity",
-        description: "Shows the current state of active T3 Code agents.",
+        description: "Shows the current state of active styal agents.",
         supportedFamilies: ["systemSmall", "systemMedium", "accessoryRectangular"],
       },
     ],
@@ -161,7 +166,7 @@ const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
 
 const config: ExpoConfig = {
   name: variant.appName,
-  slug: "t3-code",
+  slug: "styal",
   platforms: ["ios", "android"],
   scheme: variant.scheme,
   version: "1.0.4",
@@ -175,12 +180,18 @@ const config: ExpoConfig = {
   orientation: "portrait",
   icon: variant.assets.appIcon,
   userInterfaceStyle: "automatic",
-  updates: {
-    enabled: true,
-    url: "https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454",
-    checkAutomatically: "ON_LOAD",
-    fallbackToCacheTimeout: 0,
-  },
+  updates: easProjectId
+    ? {
+        enabled: true,
+        url: `https://u.expo.dev/${easProjectId}`,
+        checkAutomatically: "ON_LOAD",
+        fallbackToCacheTimeout: 0,
+      }
+    : {
+        enabled: false,
+        checkAutomatically: "NEVER",
+        fallbackToCacheTimeout: 0,
+      },
   ios: {
     icon: variant.assets.iosIcon,
     supportsTablet: true,
@@ -188,20 +199,21 @@ const config: ExpoConfig = {
     // showcase capture build requires full screen (see infoPlist below).
     requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
-    // Pin code signing to the T3 Tools team so non-interactive `expo run:ios`
-    // does not fall back to a personal team (which cannot sign app groups,
-    // Sign in with Apple, or push notification entitlements).
-    appleTeamId: "ARK85ZXQ4Z",
-    associatedDomains: [
-      `applinks:${variant.relyingParty}`,
-      `webcredentials:${variant.relyingParty}`,
-    ],
+    // Entitlement-capable non-interactive builds must pin the styal Apple
+    // Developer team. Without this setting, Expo can fall back to a personal
+    // team that cannot sign app groups, Sign in with Apple, or push.
+    ...(appleTeamId ? { appleTeamId } : {}),
+    // This follows the configured Clerk instance, but it only validates once
+    // that instance's AASA includes styal's build.styal.app bundle IDs.
+    associatedDomains: clerkFrontendApiHostname
+      ? [`applinks:${clerkFrontendApiHostname}`, `webcredentials:${clerkFrontendApiHostname}`]
+      : [],
     infoPlist: {
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: true,
       },
       NSLocalNetworkUsageDescription:
-        "Allow T3 Code to connect to T3 Code servers on your local network or tailnet.",
+        "Allow styal to connect to styal servers on your local network or tailnet.",
       ITSAppUsesNonExemptEncryption: false,
       // The App Store screenshot harness rotates the iPad interface from
       // inside the app (CI denies osascript the Accessibility access that
@@ -295,7 +307,7 @@ const config: ExpoConfig = {
     [
       "expo-camera",
       {
-        cameraPermission: "Allow T3 Code to access your camera so you can scan pairing QR codes.",
+        cameraPermission: "Allow styal to access your camera so you can scan pairing QR codes.",
         microphonePermission: false,
         barcodeScannerEnabled: true,
         recordAudioAndroid: false,
@@ -368,11 +380,9 @@ const config: ExpoConfig = {
       tracesDataset: repoEnv.EXPO_PUBLIC_OTLP_TRACES_DATASET ?? null,
       tracesToken: repoEnv.EXPO_PUBLIC_OTLP_TRACES_TOKEN ?? null,
     },
-    eas: {
-      projectId: "d763fcb8-d37c-41ea-a773-b54a0ab4a454",
-    },
+    ...(easProjectId ? { eas: { projectId: easProjectId } } : {}),
   },
-  owner: "pingdotgg",
+  ...(expoOwner ? { owner: expoOwner } : {}),
 };
 
 export default config;
