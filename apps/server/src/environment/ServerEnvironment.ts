@@ -226,7 +226,10 @@ export const make = Effect.gen(function* () {
       composerDraftSync: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverSelfUpdate === "boot-service" || desktopAppUpdate
-        ? { serverSelfUpdateProgress: true }
+        ? {
+            serverSelfUpdateProgress: true,
+            serverUpdateThreadContinuation: true,
+          }
         : {}),
       ...(desktopAppUpdate ? { desktopAppUpdate: true } : {}),
     },
