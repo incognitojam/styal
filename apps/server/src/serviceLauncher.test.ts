@@ -6,6 +6,7 @@ import * as Path from "effect/Path";
 
 import {
   Launcher,
+  launcherChildEnvironment,
   readServiceState,
   resolveLauncherBaseDir,
   writeServiceState,
@@ -66,6 +67,20 @@ it("resolves the styal service home without accepting T3 Code state generally", 
       T3CODE_HOME: "/srv/t3code",
       T3_BOOT_SERVICE_UNIT: "t3code.service",
     }),
+  );
+});
+
+it("exports the resolved styal home to the server child", () => {
+  assert.deepEqual(
+    launcherChildEnvironment("/srv/custom-styal", {
+      T3CODE_HOME: "/srv/legacy-styal",
+      T3_BOOT_SERVICE_UNIT: "styal.service",
+    }),
+    {
+      STYAL_HOME: "/srv/custom-styal",
+      T3CODE_HOME: "/srv/legacy-styal",
+      T3_BOOT_SERVICE_UNIT: "styal.service",
+    },
   );
 });
 

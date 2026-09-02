@@ -403,7 +403,10 @@ export class Launcher {
       ...(update === undefined ? {} : { update }),
     };
     const child = NodeChildProcess.spawn(process.execPath, [paths.entryPath, "serve"], {
-      env: { ...process.env, [SERVICE_LAUNCHER_CONTEXT_ENV]: JSON.stringify(context) },
+      env: {
+        ...launcherChildEnvironment(this.#baseDir, process.env),
+        [SERVICE_LAUNCHER_CONTEXT_ENV]: JSON.stringify(context),
+      },
       stdio: ["inherit", "inherit", "inherit", "ipc"],
     });
     await new Promise<void>((resolve, reject) => {
@@ -603,6 +606,13 @@ export class Launcher {
 }
 
 const STYAL_BOOT_SERVICE_UNITS = new Set(["styal.service", "build.styal.app.service.plist"]);
+
+export function launcherChildEnvironment(
+  baseDir: string,
+  environment: NodeJS.ProcessEnv,
+): NodeJS.ProcessEnv {
+  return { ...environment, STYAL_HOME: baseDir };
+}
 
 /**
  * Installed styal services from before the storage rename carry T3CODE_HOME.
