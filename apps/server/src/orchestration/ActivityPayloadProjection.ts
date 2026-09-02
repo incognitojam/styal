@@ -6,6 +6,7 @@ import type {
 import { deriveToolFileChangeLineStat } from "@t3tools/shared/toolActivity";
 
 import { classifyCommandInteraction, commandInteractionSummary } from "../CommandInteraction.ts";
+import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -342,6 +343,21 @@ function projectMcpToolInput(value: unknown): Record<string, unknown> | undefine
   return Object.keys(projected).length > 0 ? projected : undefined;
 }
 
+function projectViewedImagePath(data: Record<string, unknown>): string | undefined {
+  const directPath = asTrimmedString(data.imagePath);
+  if (directPath && isWorkspaceImagePreviewPath(directPath)) {
+    return directPath;
+  }
+
+  const toolName = asTrimmedString(data.toolName)?.toLowerCase();
+  if (toolName !== "read" && toolName !== "read file") {
+    return undefined;
+  }
+  const input = asRecord(data.input);
+  const inputPath = asTrimmedString(input?.file_path) ?? asTrimmedString(input?.path);
+  return inputPath && isWorkspaceImagePreviewPath(inputPath) ? inputPath : undefined;
+}
+
 function summarizeToolTextOutput(value: string): string | null {
   let meaningfulLineCount = 0;
   let offset = 0;
@@ -671,6 +687,11 @@ export function projectActivityPayload(
   const resultExitCode = asInteger(asRecord(data.result)?.exitCode);
   if (resultExitCode !== null) {
     projectedData.result = { exitCode: resultExitCode };
+  }
+
+  const imagePath = projectViewedImagePath(data);
+  if (imagePath) {
+    projectedData.imagePath = imagePath;
   }
 
   const changedFiles: string[] = [];
