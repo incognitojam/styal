@@ -86,12 +86,12 @@ interface AnnotatableCodeViewProps {
   options: StyledDiffCodeViewOptions<DiffCommentAnnotationGroup>;
   viewerRef?: Ref<AnnotatableCodeViewHandle>;
   className?: string;
+  renderHeaderFilenameSuffix: (fileDiff: FileDiffMetadata, fileKey: string) => ReactNode;
   renderHeaderPrefix: (
     fileDiff: FileDiffMetadata,
     fileKey: string,
     collapsed: boolean,
   ) => ReactNode;
-  renderHeaderFilenameSuffix?: ((fileKey: string) => ReactNode) | undefined;
 }
 
 interface DiffSelectionContext {
@@ -107,8 +107,8 @@ export function AnnotatableCodeView({
   options,
   viewerRef,
   className,
-  renderHeaderPrefix,
   renderHeaderFilenameSuffix,
+  renderHeaderPrefix,
 }: AnnotatableCodeViewProps) {
   const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);
   const removeReviewComment = useComposerDraftStore((store) => store.removeReviewComment);
@@ -269,17 +269,14 @@ export function AnnotatableCodeView({
         enableLineSelection: !hasOpenComment,
         onGutterUtilityClick: beginComment,
       }}
+      renderHeaderFilenameSuffix={(item) =>
+        item.type === "diff" ? renderHeaderFilenameSuffix(item.fileDiff, item.id) : null
+      }
       renderHeaderPrefix={(item) =>
         item.type === "diff"
           ? renderHeaderPrefix(item.fileDiff, item.id, item.collapsed === true)
           : null
       }
-      {...(renderHeaderFilenameSuffix
-        ? {
-            renderHeaderFilenameSuffix: (item: CodeViewItem<DiffCommentAnnotationGroup>) =>
-              item.type === "diff" ? renderHeaderFilenameSuffix(item.id) : null,
-          }
-        : {})}
       renderAnnotation={(annotation) => {
         const hasDraft = annotation.metadata.entries.some((entry) => entry.kind === "draft");
         return (

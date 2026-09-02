@@ -49,6 +49,7 @@ import { useProject, useThread } from "../state/entities";
 import { resolveThreadRouteRef } from "../threadRoutes";
 import { useClientSettings } from "../hooks/useSettings";
 import { formatShortTimestamp } from "../timestampFormat";
+import { DiffFilePathCopyButton } from "./DiffFilePathCopyButton";
 import { DiffPanelLoadingState, DiffPanelShell, type DiffPanelMode } from "./DiffPanelShell";
 import { DiffStatLabel } from "./chat/DiffStatLabel";
 import { AnnotatableCodeView, type AnnotatableCodeViewHandle } from "./diffs/AnnotatableCodeView";
@@ -1011,14 +1012,15 @@ export default function DiffPanel({
                       </Tooltip>
                     );
                   }}
-                  renderHeaderFilenameSuffix={
-                    fileTierByKey
-                      ? (fileKey) => {
-                          const tier = fileTierByKey.get(fileKey);
-                          return tier === undefined ? null : <DiffFileTierChip tier={tier} />;
-                        }
-                      : undefined
-                  }
+                  renderHeaderFilenameSuffix={(fileDiff, fileKey) => {
+                    const tier = fileTierByKey?.get(fileKey);
+                    return (
+                      <>
+                        {tier === undefined ? null : <DiffFileTierChip tier={tier} />}
+                        <DiffFilePathCopyButton filePath={resolveFileDiffPath(fileDiff)} />
+                      </>
+                    );
+                  }}
                   options={{
                     diffStyle: diffRenderMode === "split" ? "split" : "unified",
                     lineDiffType: "none",
