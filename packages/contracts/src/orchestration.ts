@@ -280,6 +280,47 @@ export const ProjectAdditionalInstructions = TrimmedNonEmptyString.check(
   Schema.isMaxLength(32_000),
 );
 export type ProjectAdditionalInstructions = typeof ProjectAdditionalInstructions.Type;
+export const ProjectIconColor = Schema.Literals([
+  "gray",
+  "red",
+  "orange",
+  "amber",
+  "yellow",
+  "lime",
+  "green",
+  "emerald",
+  "teal",
+  "cyan",
+  "sky",
+  "blue",
+  "indigo",
+  "violet",
+  "purple",
+  "fuchsia",
+  "pink",
+  "rose",
+]);
+export type ProjectIconColor = typeof ProjectIconColor.Type;
+
+const ProjectLucideIconName = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(64),
+  Schema.isPattern(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+);
+
+const ProjectEmoji = TrimmedNonEmptyString.check(Schema.isMaxLength(32));
+
+export const ProjectIconOverride = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("lucide"),
+    name: ProjectLucideIconName,
+    color: ProjectIconColor,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("emoji"),
+    emoji: ProjectEmoji,
+  }),
+]);
+export type ProjectIconOverride = typeof ProjectIconOverride.Type;
 
 export const OrchestrationProject = Schema.Struct({
   id: ProjectId,
@@ -297,6 +338,7 @@ export const OrchestrationProject = Schema.Struct({
   faviconPath: Schema.optional(Schema.NullOr(ProjectFaviconPath)),
   // Optional on the wire so cached snapshots from older servers still decode.
   additionalInstructions: Schema.optional(Schema.NullOr(ProjectAdditionalInstructions)),
+  projectIcon: Schema.optional(Schema.NullOr(ProjectIconOverride)),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -510,6 +552,7 @@ export const OrchestrationProjectShell = Schema.Struct({
   // Optional on the wire so cached snapshots from older servers still decode.
   faviconPath: Schema.optional(Schema.NullOr(ProjectFaviconPath)),
   additionalInstructions: Schema.optional(Schema.NullOr(ProjectAdditionalInstructions)),
+  projectIcon: Schema.optional(Schema.NullOr(ProjectIconOverride)),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -732,6 +775,7 @@ const ProjectMetaUpdateCommand = Schema.Struct({
   autoPull: Schema.optional(Schema.Boolean),
   faviconPath: Schema.optional(Schema.NullOr(ProjectFaviconPath)),
   additionalInstructions: Schema.optional(Schema.NullOr(ProjectAdditionalInstructions)),
+  projectIcon: Schema.optional(Schema.NullOr(ProjectIconOverride)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
 });
 
@@ -1210,6 +1254,7 @@ export const ProjectCreatedPayload = Schema.Struct({
   faviconPath: Schema.optional(Schema.NullOr(ProjectFaviconPath)),
   // Optional so persisted events from older servers still decode.
   additionalInstructions: Schema.optional(Schema.NullOr(ProjectAdditionalInstructions)),
+  projectIcon: Schema.optional(Schema.NullOr(ProjectIconOverride)),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -1225,6 +1270,7 @@ export const ProjectMetaUpdatedPayload = Schema.Struct({
   autoPull: Schema.optional(Schema.Boolean),
   faviconPath: Schema.optional(Schema.NullOr(ProjectFaviconPath)),
   additionalInstructions: Schema.optional(Schema.NullOr(ProjectAdditionalInstructions)),
+  projectIcon: Schema.optional(Schema.NullOr(ProjectIconOverride)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
   updatedAt: IsoDateTime,
 });
