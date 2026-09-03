@@ -130,11 +130,14 @@ import {
   pullRequestFindingKey,
   pullRequestHandoffLabels,
   readableFailure,
+  readPullRequestDetailSnapshot,
+  resolveDisplayedPullRequestDetail,
   resolvePullRequestPrimaryControl,
   resolveBaseFreshness,
   resolvePullRequestPrimaryAction,
   type PullRequestFinding,
   shouldRefreshPullRequestActivity,
+  writePullRequestDetailSnapshot,
 } from "./pullRequestDetail.logic";
 import { canEditPullRequestChangeRequest } from "./pullRequestEditing.logic";
 import {
@@ -597,7 +600,44 @@ function PullRequestDetailPanelBody({
   const activityQuery = useEnvironmentQuery(
     pullRequestEnvironment.activity({ environmentId, input: reference }),
   );
-  const coreDetail = detailQuery.data;
+  const [cachedDetail, setCachedDetail] = useState(() =>
+    readPullRequestDetailSnapshot(
+      typeof window === "undefined" ? undefined : window.localStorage,
+      environmentId,
+      reference,
+    ),
+  );
+  useEffect(() => {
+    setCachedDetail(
+      readPullRequestDetailSnapshot(
+        typeof window === "undefined" ? undefined : window.localStorage,
+        environmentId,
+        reference,
+      ),
+    );
+  }, [environmentId, pullRequestKey, reference.projectId, reference.repository, reference.number]);
+  useEffect(() => {
+    if (detailQuery.data === null) return;
+    writePullRequestDetailSnapshot(
+      typeof window === "undefined" ? undefined : window.localStorage,
+      environmentId,
+      reference,
+      detailQuery.data,
+    );
+    setCachedDetail(detailQuery.data);
+  }, [
+    detailQuery.data,
+    environmentId,
+    pullRequestKey,
+    reference.projectId,
+    reference.repository,
+    reference.number,
+  ]);
+  const coreDetail = resolveDisplayedPullRequestDetail({
+    live: detailQuery.data,
+    cached: cachedDetail,
+    reference,
+  });
   const activity = activityQuery.data;
   const detail = useMemo(
     () =>
@@ -1302,6 +1342,8 @@ function PullRequestDetailPanelBody({
       <PullRequestChecksPopover checks={detail.checks} checksState={checksState} />
     ) : null;
 
+  // A reopen already has last time's title, author, and counts. Keep them on screen
+  // and let the live read replace fields — especially the diff counts — in place.
   if (detailQuery.isPending && !detail) {
     return <PullRequestDetailGhost />;
   }
