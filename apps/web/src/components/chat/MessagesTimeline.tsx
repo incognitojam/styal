@@ -3627,6 +3627,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       ? workEntry.fileChangeStat
       : null;
   const isCommandExecution = workEntry.itemType === "command_execution";
+  const viewedImagePath = workEntryViewedImagePath(workEntry);
   const canExpand =
     isCommandExecution ||
     (workEntry.itemType === "mcp_tool_call" && workEntry.toolData !== undefined) ||
@@ -3634,12 +3635,12 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       workEntryRawCommand(workEntry) ||
       workEntry.command?.trim() ||
       workEntry.detail?.trim() ||
-      workEntry.changedFiles?.length,
+      workEntry.changedFiles?.length ||
+      viewedImagePath,
     );
   const expandedBody = expanded ? buildToolCallExpandedBody(workEntry, workspaceRoot) : null;
   const exitCodeLabel =
     workEntry.exitCode === undefined ? null : `Exit code ${workEntry.exitCode.toString()}`;
-  const viewedImagePath = workEntryViewedImagePath(workEntry);
   const viewedImage =
     viewedImagePath && threadRef
       ? resolveViewedImageAsset(viewedImagePath, {
@@ -3832,7 +3833,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           </div>
         </div>
       </div>
-      {viewedImage && threadRef ? (
+      {expanded && viewedImage && threadRef ? (
         <div
           className="mt-1 ms-7 cursor-default"
           onClick={stopRowToggle}
