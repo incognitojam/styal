@@ -19,6 +19,7 @@ import {
   MessageSquareIcon,
   MessageSquareOffIcon,
   Rows3Icon,
+  SparklesIcon,
   TextWrapIcon,
   TriangleAlertIcon,
   XIcon,
@@ -31,7 +32,8 @@ import { useTheme } from "~/hooks/useTheme";
 import { areAllDiffFilesCollapsed } from "~/lib/diffCollapse";
 import { pullRequestFindingKey, type PullRequestFinding } from "./pullRequestDetail.logic";
 import { canEditPullRequestComment } from "./pullRequestEditing.logic";
-import { orderDiffFiles } from "./pullRequestFileOrder.logic";
+import { diffFileTier, orderDiffFiles } from "~/lib/diffFileOrder";
+import { useDiffPanelStore } from "~/diffPanelStore";
 import {
   buildFileDiffRenderKey,
   fnv1a32,
@@ -56,6 +58,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { DiffPanelLoadingState } from "../DiffPanelShell";
 import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";
 import { DiffCommentAnnotation } from "../diffs/DiffCommentAnnotation";
+import { DiffFileTierChip } from "../diffs/DiffFileTierChip";
 import { StyledDiffCodeView } from "../diffs/StyledDiffCodeView";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
@@ -105,6 +108,8 @@ interface DiffSlice {
   readonly truncated: boolean;
   readonly nextCursor: string | null;
   readonly omittedFileStats: ReadonlyArray<PullRequestOmittedFileStat>;
+  /** Paths the project's checkout attributes as `linguist-generated`. */
+  readonly generatedPaths: ReadonlyArray<string>;
 }
 
 /**
@@ -220,6 +225,8 @@ export function PullRequestCodeTab({
   /** Set once the reader has asked for every file at once, until they pick a file apart again. */
   const [foldOverride, setFoldOverride] = useState<DiffFoldOverride>(null);
   const [diffRenderMode, setDiffRenderMode] = useState<"stacked" | "split">("stacked");
+  const diffSortMode = useDiffPanelStore((state) => state.diffSortMode);
+  const setDiffSortMode = useDiffPanelStore((state) => state.setDiffSortMode);
   const [wordWrap, setWordWrap] = useState(settings.wordWrap);
   const [selectedLines, setSelectedLines] = useState<{
     id: string;
@@ -283,6 +290,7 @@ export function PullRequestCodeTab({
         truncated: data.truncated,
         nextCursor: data.nextCursor,
         omittedFileStats: data.omittedFileStats ?? [],
+        generatedPaths: data.generatedPaths ?? [],
       };
       const index = slices.findIndex((slice) => slice.cursor === cursor);
       if (index === -1) {
@@ -294,6 +302,8 @@ export function PullRequestCodeTab({
         existing.patch === next.patch &&
         existing.truncated === next.truncated &&
         existing.nextCursor === next.nextCursor &&
+        existing.generatedPaths.length === next.generatedPaths.length &&
+        existing.generatedPaths.every((path, index) => next.generatedPaths[index] === path) &&
         existing.omittedFileStats.length === next.omittedFileStats.length &&
         existing.omittedFileStats.every((file, index) => {
           const refreshed = next.omittedFileStats[index];
@@ -390,14 +400,28 @@ export function PullRequestCodeTab({
       }),
     [loadedSlices, resolvedTheme, scopeKey],
   );
+  // Attributions arrive with each slice but apply to every file of the diff, since a checkout's
+  // `.gitattributes` answers for paths it has not seen yet just as well.
+  const generatedPaths = useMemo(
+    () => loadedSlices.flatMap((slice) => slice.generatedPaths),
+    [loadedSlices],
+  );
+  const generatedPathSet = useMemo(() => new Set(generatedPaths), [generatedPaths]);
   // Ordered within a slice rather than across them: ordering the accumulated set would let a late
   // slice push a file the reader is part way through further down the page.
   const files = useMemo(
     () =>
-      parsedSlices.flatMap((parsed) =>
-        parsed?.kind === "files" ? orderDiffFiles(parsed.files) : [],
-      ),
-    [parsedSlices],
+      parsedSlices.flatMap((parsed) => {
+        if (parsed?.kind !== "files") return [];
+        if (diffSortMode === "smart") return orderDiffFiles(parsed.files, generatedPaths);
+        return parsed.files.toSorted((left, right) =>
+          resolveFileDiffPath(left).localeCompare(resolveFileDiffPath(right), undefined, {
+            numeric: true,
+            sensitivity: "base",
+          }),
+        );
+      }),
+    [diffSortMode, generatedPaths, parsedSlices],
   );
   const nextCursor = loadedSlices.at(-1)?.nextCursor ?? null;
   // What a slice withheld: the host declining to inline part of it, or a patch the viewer could
@@ -477,7 +501,7 @@ export function PullRequestCodeTab({
           fileKey,
           foldOverride,
           fileFoldOverrides,
-          shouldAutoFoldFileDiff(fileDiff, groups.size > 0),
+          shouldAutoFoldFileDiff(fileDiff, groups.size > 0, generatedPathSet),
         );
 
         const annotations: ReviewAnnotation[] = [...groups.values()].map((group) => ({
@@ -529,6 +553,7 @@ export function PullRequestCodeTab({
       draft,
       files,
       foldOverride,
+      generatedPathSet,
       pendingComments,
       placedThreadIds,
       fileFoldOverrides,
@@ -718,6 +743,17 @@ export function PullRequestCodeTab({
       );
     },
     [toggleFile],
+  );
+
+  // Smart order is what makes the tier grouping legible, so the chips only ride along with it.
+  const renderHeaderFilenameSuffix = useCallback(
+    (item: CodeViewItem<ReviewAnnotationGroup>) =>
+      item.type === "diff" ? (
+        <DiffFileTierChip
+          tier={diffFileTier(resolveFileDiffPath(item.fileDiff), generatedPathSet)}
+        />
+      ) : null,
+    [generatedPathSet],
   );
 
   const renderHeaderMetadata = useCallback(
@@ -1124,6 +1160,28 @@ export function PullRequestCodeTab({
             </TooltipPopup>
           </Tooltip>
         ) : null}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Toggle
+                aria-label={
+                  diffSortMode === "smart" ? "Sort files alphabetically" : "Sort files by relevance"
+                }
+                variant="ghost"
+                size="sm"
+                pressed={diffSortMode === "smart"}
+                onPressedChange={(pressed) => {
+                  setDiffSortMode(pressed ? "smart" : "alphabetical");
+                }}
+              />
+            }
+          >
+            <SparklesIcon className="size-3.5" />
+          </TooltipTrigger>
+          <TooltipPopup side="top">
+            {diffSortMode === "smart" ? "Sort files alphabetically" : "Sort files by relevance"}
+          </TooltipPopup>
+        </Tooltip>
         <ToggleGroup
           className="shrink-0 gap-1"
           size="sm"
@@ -1364,6 +1422,7 @@ export function PullRequestCodeTab({
             // is running out of diff.
             renderCodeViewFooter={renderCodeViewFooter}
             renderHeaderPrefix={renderHeaderPrefix}
+            {...(diffSortMode === "smart" ? { renderHeaderFilenameSuffix } : {})}
             renderHeaderMetadata={renderHeaderMetadata}
             renderAnnotation={renderAnnotation}
             unsafeCSSExtra={REPLACE_FILE_COUNTS_CSS}

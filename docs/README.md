@@ -8,6 +8,7 @@
 - [Run commands in the terminal](./user/terminal.md)
 - [Project scripts and environment variables](./user/project-scripts.md)
 - [Reading the chat timeline](./user/chat-timeline.md)
+- [How diffs order their files](./user/diff-file-order.md)
 - [Organizing threads](./user/thread-sidebar.md)
 - [Review usage](./user/usage.md)
 - [Project icons and workspace ports](./user/project-settings.md)

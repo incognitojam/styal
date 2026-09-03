@@ -5,10 +5,14 @@ import { Atom } from "effect/unstable/reactivity";
 
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { appAtomRegistry } from "../../state/atom-registry";
-import { buildReviewParsedDiff, type ReviewParsedDiff } from "./reviewModel";
+import {
+  buildReviewParsedDiff,
+  type ReviewParsedDiff,
+  type ReviewTurnDiffEntry,
+} from "./reviewModel";
 
 const EMPTY_GIT_REVIEW_SECTIONS = Object.freeze<ReadonlyArray<ReviewDiffPreviewSource>>([]);
-const EMPTY_REVIEW_TURN_DIFFS = Object.freeze<Readonly<Record<string, string>>>({});
+const EMPTY_REVIEW_TURN_DIFFS = Object.freeze<Readonly<Record<string, ReviewTurnDiffEntry>>>({});
 const EMPTY_REVIEW_LOADING_TURN_IDS = Object.freeze<Readonly<Record<string, boolean>>>({});
 const EMPTY_REVIEW_ASYNC_STATE = Object.freeze<ReviewAsyncState>({
   loadingTurnIds: EMPTY_REVIEW_LOADING_TURN_IDS,
@@ -88,16 +92,17 @@ const reviewViewedFileIdsByThreadKeyAtom = Atom.family((threadKey: string) =>
 );
 
 const reviewParsedDiffBySectionCacheKeyAtom = Atom.family((cacheKey: string) =>
-  Atom.make<{ readonly diff: string | null; readonly parsed: ReviewParsedDiff } | null>(null).pipe(
-    Atom.keepAlive,
-    Atom.withLabel(`mobile:review:parsed-diffs:${cacheKey}`),
-  ),
+  Atom.make<{
+    readonly diff: string | null;
+    readonly generatedPathsKey: string;
+    readonly parsed: ReviewParsedDiff;
+  } | null>(null).pipe(Atom.keepAlive, Atom.withLabel(`mobile:review:parsed-diffs:${cacheKey}`)),
 );
 
 export interface ReviewCacheForThread {
   readonly threadKey: string | null;
   readonly gitSections: ReadonlyArray<ReviewDiffPreviewSource>;
-  readonly turnDiffById: Readonly<Record<string, string>>;
+  readonly turnDiffById: Readonly<Record<string, ReviewTurnDiffEntry>>;
   readonly selectedSectionId: string | null;
   readonly asyncState: ReviewAsyncState;
   readonly expandedFileIdsBySection: Readonly<Record<string, ReadonlyArray<string> | undefined>>;
@@ -177,12 +182,16 @@ export function setReviewGitSections(
   appAtomRegistry.set(reviewGitSectionsByThreadKeyAtom(threadKey), sections);
 }
 
-export function setReviewTurnDiff(threadKey: string, sectionId: string, diff: string): void {
+export function setReviewTurnDiff(
+  threadKey: string,
+  sectionId: string,
+  turnDiff: ReviewTurnDiffEntry,
+): void {
   const atom = reviewTurnDiffByThreadKeyAtom(threadKey);
   const current = appAtomRegistry.get(atom);
   appAtomRegistry.set(atom, {
     ...current,
-    [sectionId]: diff,
+    [sectionId]: turnDiff,
   });
 }
 
@@ -274,22 +283,30 @@ export function getCachedReviewParsedDiff(input: {
   readonly threadKey: string | null;
   readonly sectionId: string | null;
   readonly diff: string | null | undefined;
+  /** Attributions change the parsed ordering, so they join the diff text in the cache identity. */
+  readonly generatedPaths?: ReadonlyArray<string>;
 }): ReviewParsedDiff {
   if (!input.threadKey || !input.sectionId) {
-    return buildReviewParsedDiff(input.diff, input.sectionId ?? "mobile-review");
+    return buildReviewParsedDiff(
+      input.diff,
+      input.sectionId ?? "mobile-review",
+      input.generatedPaths,
+    );
   }
 
   const cacheKey = buildSectionCacheKey(input.threadKey, input.sectionId);
   const normalizedDiff = input.diff?.trim() ?? null;
+  const generatedPathsKey = (input.generatedPaths ?? []).join("\u0000");
   const atom = reviewParsedDiffBySectionCacheKeyAtom(cacheKey);
   const cached = appAtomRegistry.get(atom);
-  if (cached && cached.diff === normalizedDiff) {
+  if (cached && cached.diff === normalizedDiff && cached.generatedPathsKey === generatedPathsKey) {
     return cached.parsed;
   }
 
-  const parsed = buildReviewParsedDiff(input.diff, input.sectionId);
+  const parsed = buildReviewParsedDiff(input.diff, input.sectionId, input.generatedPaths);
   appAtomRegistry.set(atom, {
     diff: normalizedDiff,
+    generatedPathsKey,
     parsed,
   });
   return parsed;

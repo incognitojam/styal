@@ -848,6 +848,11 @@ export const PullRequestDiffResult = Schema.Struct({
    * show still reports what changed instead of a zero the diff never had.
    */
   omittedFileStats: Schema.optional(Schema.Array(PullRequestOmittedFileStat)),
+  /**
+   * Paths in this slice the project's local checkout attributes as `linguist-generated`, read
+   * from its `.gitattributes`. Omitted when none are, or when there is no checkout to ask.
+   */
+  generatedPaths: Schema.optional(Schema.Array(TrimmedNonEmptyString)),
 });
 export type PullRequestDiffResult = typeof PullRequestDiffResult.Type;
 

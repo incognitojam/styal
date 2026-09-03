@@ -1617,6 +1617,8 @@ export const ThreadTurnDiff = TurnCountRange.mapFields(
   Struct.assign({
     threadId: ThreadId,
     diff: Schema.String,
+    /** Diff paths the repository attributes as `linguist-generated`. Omitted when none are. */
+    generatedPaths: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
   }),
   { unsafePreserveChecks: true },
 );

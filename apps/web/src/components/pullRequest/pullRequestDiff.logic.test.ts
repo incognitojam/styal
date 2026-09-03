@@ -126,10 +126,33 @@ describe("shouldAutoFoldFileDiff", () => {
     ).toBe(false);
   });
 
-  it("folds a lockfile without requiring it to cross the size limit", () => {
+  it("folds a file the repository attributes as generated, whatever its name", () => {
+    const attributed = new Set(["src/schema.ts"]);
+    expect(
+      shouldAutoFoldFileDiff(
+        { name: "src/schema.ts", unifiedLineCount: 10 } as FileDiffMetadata,
+        false,
+        attributed,
+      ),
+    ).toBe(true);
+    expect(
+      shouldAutoFoldFileDiff(
+        { name: "src/schema.ts", unifiedLineCount: 10 } as FileDiffMetadata,
+        false,
+      ),
+    ).toBe(false);
+  });
+
+  it("folds a lockfile or build output without requiring it to cross the size limit", () => {
     expect(
       shouldAutoFoldFileDiff(
         { name: "packages/app/bun.lock", unifiedLineCount: 10 } as FileDiffMetadata,
+        false,
+      ),
+    ).toBe(true);
+    expect(
+      shouldAutoFoldFileDiff(
+        { name: "dist/app.js", unifiedLineCount: 10 } as FileDiffMetadata,
         false,
       ),
     ).toBe(true);

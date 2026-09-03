@@ -49,6 +49,8 @@ import {
 } from "@t3tools/contracts";
 import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/sourceControl";
 
+import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
+import { parseTurnDiffFilesFromUnifiedDiff } from "../checkpointing/Diffs.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as SourceControlRateLimit from "../sourceControl/SourceControlRateLimit.ts";
@@ -495,6 +497,7 @@ export const make = Effect.gen(function* () {
   const projections = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const sourceControlProviders = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
   const rateLimits = yield* SourceControlRateLimit.SourceControlRateLimit;
+  const checkpointStore = yield* CheckpointStore.CheckpointStore;
 
   const refineUnknownProjectKinds = (
     projects: ReadonlyArray<OrchestrationProjectShell>,
@@ -1251,6 +1254,21 @@ export const make = Effect.gen(function* () {
       ),
     );
 
+  // The host's patch says nothing about which files the repository considers generated, but
+  // the project's checkout does, so the slice is read with the same `.gitattributes` answer the
+  // diff panel gets. A checkout that cannot answer costs the attributions, not the diff.
+  const attachGeneratedPaths = (cwd: string, slice: PullRequestDiffResult) => {
+    const paths = parseTurnDiffFilesFromUnifiedDiff(slice.patch).map((file) => file.path);
+    if (paths.length === 0) return Effect.succeed(slice);
+    return checkpointStore.readGeneratedDiffPaths({ cwd, paths }).pipe(
+      Effect.orElseSucceed((): ReadonlyArray<string> => []),
+      Effect.map(
+        (generatedPaths): PullRequestDiffResult =>
+          generatedPaths.length === 0 ? slice : { ...slice, generatedPaths },
+      ),
+    );
+  };
+
   const diffUncached: PullRequestService["Service"]["diff"] = (input) =>
     requireProject(input).pipe(
       Effect.flatMap((project) =>
@@ -1264,7 +1282,12 @@ export const make = Effect.gen(function* () {
                 ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
                 ...(input.commit === undefined ? {} : { commit: input.commit }),
               })
-              .pipe(Effect.mapError(toPullRequestError("diff")))
+              .pipe(
+                Effect.mapError(toPullRequestError("diff")),
+                Effect.flatMap((slice) =>
+                  attachGeneratedPaths(project.project.workspaceRoot, slice),
+                ),
+              )
           : Effect.fail(
               new PullRequestOperationError({
                 operation: "diff",

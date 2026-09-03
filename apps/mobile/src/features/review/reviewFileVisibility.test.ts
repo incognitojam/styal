@@ -34,7 +34,11 @@ describe("review file visibility", () => {
   });
 
   it("defaults generated files and known lockfiles to collapsed", () => {
-    const generatedFiles = [makeFile("src/generated.ts"), makeFile("packages/app/bun.lock")];
+    const generatedFiles = [
+      makeFile("src/generated.ts"),
+      makeFile("packages/app/bun.lock"),
+      makeFile("dist/app.js"),
+    ];
 
     expect(getDefaultReviewExpandedFileIds(generatedFiles, ["src/generated.ts"])).toEqual([]);
     expect(getValidReviewFileIds(generatedFiles, undefined, ["src/generated.ts"])).toEqual([]);

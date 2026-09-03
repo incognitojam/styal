@@ -53,9 +53,10 @@ export function useReviewDiffData(input: {
           threadKey,
           sectionId: selectedSection?.id ?? null,
           diff: selectedSection?.diff,
+          ...(selectedSection ? { generatedPaths: selectedSection.generatedPaths } : {}),
         }),
       ),
-    [selectedSection?.diff, selectedSection?.id, threadKey],
+    [selectedSection, threadKey],
   );
   const headerDiffSummary = useMemo(() => formatHeaderDiffSummary(parsedDiff), [parsedDiff]);
   const inlineReviewComments = useMemo(

@@ -4,6 +4,8 @@ const GENERATED_LOCKFILE_NAMES = new Set([
   "Cargo.lock",
   "composer.lock",
   "deno.lock",
+  "Gemfile.lock",
+  "go.sum",
   "package-lock.json",
   "pnpm-lock.yaml",
   "yarn.lock",

@@ -12,6 +12,9 @@ export type DiffPanelSelection =
 
 export type DiffRenderMode = "stacked" | "split";
 
+/** "smart" reads source in dependency order with tests and generated output behind it. */
+export type DiffSortMode = "smart" | "alphabetical";
+
 const DEFAULT_SELECTION: DiffPanelSelection = { kind: "branch", baseRef: null };
 const DEFAULT_WORKING_TREE_SELECTION: DiffPanelSelection = { kind: "unstaged" };
 
@@ -20,6 +23,8 @@ interface DiffPanelStoreState {
   branchBaseRefByThreadKey: Record<string, string | null>;
   diffRenderMode: DiffRenderMode;
   setDiffRenderMode: (mode: DiffRenderMode) => void;
+  diffSortMode: DiffSortMode;
+  setDiffSortMode: (mode: DiffSortMode) => void;
   selectGitScope: (ref: ScopedThreadRef, scope: "branch" | "unstaged") => void;
   selectBranchBaseRef: (ref: ScopedThreadRef, baseRef: string | null) => void;
   selectTurn: (ref: ScopedThreadRef, turnId: TurnId, filePath?: string) => void;
@@ -39,6 +44,8 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
       branchBaseRefByThreadKey: {},
       diffRenderMode: "stacked",
       setDiffRenderMode: (diffRenderMode) => set({ diffRenderMode }),
+      diffSortMode: "smart",
+      setDiffSortMode: (diffSortMode) => set({ diffSortMode }),
       selectGitScope: (ref, scope) =>
         set((state) => {
           const threadKey = scopedThreadKey(ref);
@@ -133,6 +140,7 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
         byThreadKey: state.byThreadKey,
         branchBaseRefByThreadKey: state.branchBaseRefByThreadKey,
         diffRenderMode: state.diffRenderMode,
+        diffSortMode: state.diffSortMode,
       }),
     },
   ),

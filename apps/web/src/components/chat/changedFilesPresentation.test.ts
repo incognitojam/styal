@@ -66,4 +66,36 @@ describe("changed-files presentation", () => {
     ]);
     expect(changedFileName("apps\\web\\src\\App.tsx")).toBe("App.tsx");
   });
+
+  it("prefers a source file as a scope's representative even when a test sorts first", () => {
+    const files = [
+      { path: "apps/mobile/src/reviewModel.test.ts", kind: "modified", additions: 1, deletions: 0 },
+      { path: "apps/mobile/src/reviewModel.ts", kind: "modified", additions: 1, deletions: 0 },
+      { path: "docs/README.md", kind: "modified", additions: 1, deletions: 0 },
+      {
+        path: "packages/contracts/src/orchestration.ts",
+        kind: "modified",
+        additions: 1,
+        deletions: 0,
+      },
+    ];
+
+    expect(selectChangedFilePreview(files).map((file) => file.path)).toEqual([
+      "apps/mobile/src/reviewModel.ts",
+      "docs/README.md",
+      "packages/contracts/src/orchestration.ts",
+    ]);
+  });
+
+  it("still represents a scope holding only generated output", () => {
+    const files = [
+      { path: "pnpm-lock.yaml", kind: "modified", additions: 1, deletions: 0 },
+      { path: "src/a.ts", kind: "modified", additions: 1, deletions: 0 },
+    ];
+
+    expect(selectChangedFilePreview(files).map((file) => file.path)).toEqual([
+      "src/a.ts",
+      "pnpm-lock.yaml",
+    ]);
+  });
 });

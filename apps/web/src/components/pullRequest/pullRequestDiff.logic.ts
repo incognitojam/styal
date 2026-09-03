@@ -1,6 +1,6 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 import type { PullRequestDiffSide } from "@t3tools/contracts";
-import { isGeneratedLockfilePath } from "@t3tools/shared/generatedFiles";
+import { diffFileTier } from "@t3tools/shared/diffFileOrder";
 
 /**
  * Whether a conversation's line is really in this file's hunks.
@@ -28,11 +28,18 @@ export type DiffFoldOverride = "expanded" | "folded" | null;
 /** Past this height, one file stops being a useful part of the surrounding scroll. */
 export const PULL_REQUEST_DIFF_AUTO_FOLD_LINE_THRESHOLD = 1_200;
 
-/** Oversized files stay out of the way, unless a conversation gives the reader a target. */
-export function shouldAutoFoldFileDiff(file: FileDiffMetadata, hasAnnotations: boolean): boolean {
+/**
+ * Oversized and generated files stay out of the way, unless a conversation gives the reader a
+ * target.
+ */
+export function shouldAutoFoldFileDiff(
+  file: FileDiffMetadata,
+  hasAnnotations: boolean,
+  generatedPaths?: ReadonlySet<string>,
+): boolean {
   return (
     !hasAnnotations &&
-    (isGeneratedLockfilePath(file.name ?? file.prevName ?? "") ||
+    (diffFileTier(file.name ?? file.prevName ?? "", generatedPaths) === "generated" ||
       file.unifiedLineCount > PULL_REQUEST_DIFF_AUTO_FOLD_LINE_THRESHOLD)
   );
 }

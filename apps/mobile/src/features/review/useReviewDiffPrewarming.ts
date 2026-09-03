@@ -43,6 +43,7 @@ export function prewarmReviewDiffSection(input: {
     threadKey,
     sectionId: section.id,
     diff: section.diff,
+    generatedPaths: section.generatedPaths,
   });
   getCachedNativeReviewDiffData({ parsedDiff, comments: [] });
 }

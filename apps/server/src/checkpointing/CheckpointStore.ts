@@ -46,6 +46,11 @@ export interface DeleteCheckpointRefsInput {
   readonly checkpointRefs: ReadonlyArray<CheckpointRef>;
 }
 
+export interface ReadGeneratedDiffPathsInput {
+  readonly cwd: string;
+  readonly paths: ReadonlyArray<string>;
+}
+
 /** Service tag for checkpoint persistence and restore operations. */
 export class CheckpointStore extends Context.Service<
   CheckpointStore,
@@ -93,6 +98,11 @@ export class CheckpointStore extends Context.Service<
     readonly deleteCheckpointRefs: (
       input: DeleteCheckpointRefsInput,
     ) => Effect.Effect<void, CheckpointStoreError>;
+
+    /** Which of the given diff paths the repository attributes as `linguist-generated`. */
+    readonly readGeneratedDiffPaths: (
+      input: ReadGeneratedDiffPathsInput,
+    ) => Effect.Effect<ReadonlyArray<string>, CheckpointStoreError>;
   }
 >()("t3/checkpointing/CheckpointStore") {}
 
@@ -157,6 +167,16 @@ export const make = Effect.gen(function* () {
     return yield* checkpoints.deleteCheckpointRefs(input);
   });
 
+  const readGeneratedDiffPaths: CheckpointStore["Service"]["readGeneratedDiffPaths"] = Effect.fn(
+    "readGeneratedDiffPaths",
+  )(function* (input) {
+    const checkpoints = yield* resolveCheckpoints(
+      "CheckpointStore.readGeneratedDiffPaths",
+      input.cwd,
+    );
+    return yield* checkpoints.readGeneratedDiffPaths(input);
+  });
+
   return CheckpointStore.of({
     isGitRepository,
     captureCheckpoint,
@@ -164,6 +184,7 @@ export const make = Effect.gen(function* () {
     restoreCheckpoint,
     diffCheckpoints,
     deleteCheckpointRefs,
+    readGeneratedDiffPaths,
   });
 });
 

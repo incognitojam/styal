@@ -38,6 +38,11 @@ export interface VcsDeleteCheckpointRefsInput {
   readonly checkpointRefs: ReadonlyArray<CheckpointRef>;
 }
 
+export interface VcsReadGeneratedDiffPathsInput {
+  readonly cwd: string;
+  readonly paths: ReadonlyArray<string>;
+}
+
 export interface VcsCheckpointOps {
   readonly captureCheckpoint: (input: VcsCaptureCheckpointInput) => Effect.Effect<void, VcsError>;
   readonly hasCheckpointRef: (
@@ -50,6 +55,10 @@ export interface VcsCheckpointOps {
   readonly deleteCheckpointRefs: (
     input: VcsDeleteCheckpointRefsInput,
   ) => Effect.Effect<void, VcsError>;
+  /** Which of the given diff paths the repository attributes as `linguist-generated`. */
+  readonly readGeneratedDiffPaths: (
+    input: VcsReadGeneratedDiffPathsInput,
+  ) => Effect.Effect<ReadonlyArray<string>, VcsError>;
 }
 
 export class VcsDriver extends Context.Service<

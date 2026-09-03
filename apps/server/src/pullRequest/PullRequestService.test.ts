@@ -10,6 +10,8 @@ import type {
   SourceControlProviderKind,
 } from "@t3tools/contracts";
 
+import { VcsUnsupportedOperationError } from "@t3tools/contracts";
+import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as SourceControlRateLimit from "../sourceControl/SourceControlRateLimit.ts";
@@ -174,11 +176,17 @@ function makeService(input: {
   readonly projects: ReadonlyArray<OrchestrationProjectShell>;
   readonly providers: ReadonlyArray<PullRequestProviderApi>;
   readonly resolveHandle?: SourceControlProviderRegistry.SourceControlProviderRegistry["Service"]["resolveHandle"];
+  readonly readGeneratedDiffPaths?: CheckpointStore.CheckpointStore["Service"]["readGeneratedDiffPaths"];
 }) {
   return PullRequestService.make.pipe(
     Effect.provide(
       Layer.mergeAll(
         Layer.succeed(PullRequestProviderRegistry, fromProviders(input.providers)),
+        // No checkout to ask by default, which is also what a failed read answers.
+        Layer.mock(CheckpointStore.CheckpointStore)({
+          readGeneratedDiffPaths:
+            input.readGeneratedDiffPaths ?? (() => Effect.succeed<ReadonlyArray<string>>([])),
+        }),
         Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
           resolveHandle:
             input.resolveHandle ?? (() => Effect.die("Unexpected provider refinement")),
@@ -2520,6 +2528,82 @@ it.effect("detail invalidation preserves the cached diff", () =>
     yield* service.invalidate({ reference });
     yield* service.diff(reference);
     assert.strictEqual(diffCalls, 2);
+  }),
+);
+
+it.effect("marks the files of a diff slice the local checkout attributes as generated", () =>
+  Effect.gen(function* () {
+    const patch = [
+      "diff --git a/src/app.ts b/src/app.ts",
+      "--- a/src/app.ts",
+      "+++ b/src/app.ts",
+      "@@ -1 +1 @@",
+      "-a",
+      "+b",
+      "diff --git a/schema.generated.ts b/schema.generated.ts",
+      "--- a/schema.generated.ts",
+      "+++ b/schema.generated.ts",
+      "@@ -1 +1 @@",
+      "-a",
+      "+b",
+    ].join("\n");
+    const reads: Array<{ cwd: string; paths: ReadonlyArray<string> }> = [];
+    const service = yield* makeService({
+      projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
+      providers: [
+        fakeProvider("github", {
+          getDiff: () => Effect.succeed({ patch, truncated: false, nextCursor: null }),
+        }),
+      ],
+      readGeneratedDiffPaths: (input) => {
+        reads.push({ cwd: input.cwd, paths: input.paths });
+        return Effect.succeed(input.paths.filter((path) => path.endsWith(".generated.ts")));
+      },
+    });
+
+    const slice = yield* service.diff({
+      projectId: "p1" as ProjectId,
+      repository: "acme/web",
+      number: 1,
+    });
+
+    assert.deepStrictEqual(reads, [{ cwd: "/a", paths: ["schema.generated.ts", "src/app.ts"] }]);
+    assert.deepStrictEqual(slice.generatedPaths, ["schema.generated.ts"]);
+  }),
+);
+
+it.effect("hands over a diff slice without attributions when the checkout cannot answer", () =>
+  Effect.gen(function* () {
+    const service = yield* makeService({
+      projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
+      providers: [
+        fakeProvider("github", {
+          getDiff: () =>
+            Effect.succeed({
+              patch: "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b",
+              truncated: false,
+              nextCursor: null,
+            }),
+        }),
+      ],
+      readGeneratedDiffPaths: () =>
+        Effect.fail(
+          new VcsUnsupportedOperationError({
+            operation: "readGeneratedDiffPaths",
+            kind: "git",
+            detail: "No repository here.",
+          }),
+        ),
+    });
+
+    const slice = yield* service.diff({
+      projectId: "p1" as ProjectId,
+      repository: "acme/web",
+      number: 1,
+    });
+
+    assert.strictEqual(slice.generatedPaths, undefined);
+    assert.strictEqual(slice.patch.length > 0, true);
   }),
 );
 

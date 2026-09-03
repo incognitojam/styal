@@ -12,6 +12,7 @@ describe("diffPanelStore", () => {
       byThreadKey: {},
       branchBaseRefByThreadKey: {},
       diffRenderMode: "stacked",
+      diffSortMode: "smart",
     }),
   );
 
@@ -33,6 +34,26 @@ describe("diffPanelStore", () => {
     await useDiffPanelStore.persist.rehydrate();
 
     expect(useDiffPanelStore.getState().diffRenderMode).toBe("split");
+  });
+
+  it("keeps the selected sort mode in panel and persisted state", async () => {
+    useDiffPanelStore.getState().setDiffSortMode("alphabetical");
+
+    expect(useDiffPanelStore.getState().diffSortMode).toBe("alphabetical");
+    expect(
+      useDiffPanelStore.persist.getOptions().partialize?.(useDiffPanelStore.getState()),
+    ).toMatchObject({ diffSortMode: "alphabetical" });
+
+    const { name, storage } = useDiffPanelStore.persist.getOptions();
+    if (!name) throw new Error("Expected diff panel persistence to have a storage name");
+    const persisted = await storage?.getItem(name);
+    expect(persisted?.state).toMatchObject({ diffSortMode: "alphabetical" });
+
+    useDiffPanelStore.setState({ diffSortMode: "smart" });
+    if (persisted) await storage?.setItem(name, persisted);
+    await useDiffPanelStore.persist.rehydrate();
+
+    expect(useDiffPanelStore.getState().diffSortMode).toBe("alphabetical");
   });
 
   it("defaults each thread to branch changes when the working tree is clean", () => {
