@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { isSetupScriptOutsideWorktree } from "./projectScripts.ts";
+import {
+  isSetupScriptOutsideWorktree,
+  projectScriptRuntimeEnv,
+  withT3CodeProjectEnvironmentAliases,
+} from "./projectScripts.ts";
 
 const setupScript = { runOnWorktreeCreate: true } as const;
 const regularScript = { runOnWorktreeCreate: false } as const;
@@ -61,5 +65,50 @@ describe("isSetupScriptOutsideWorktree", () => {
         worktreePath: "/repo/project",
       }),
     ).toBe(false);
+  });
+});
+
+describe("project process environment compatibility", () => {
+  it("exposes legacy aliases from canonical project context", () => {
+    expect(
+      projectScriptRuntimeEnv({
+        project: { cwd: "/repo" },
+        worktreePath: "/repo/worktree-a",
+        extraEnv: { STYAL_WORKSPACE_PORT: "24120" },
+      }),
+    ).toMatchObject({
+      STYAL_PROJECT_ROOT: "/repo",
+      STYAL_WORKTREE_PATH: "/repo/worktree-a",
+      STYAL_WORKSPACE_PORT: "24120",
+      T3CODE_PROJECT_ROOT: "/repo",
+      T3CODE_WORKTREE_PATH: "/repo/worktree-a",
+      T3CODE_WORKSPACE_PORT: "24120",
+    });
+  });
+
+  it("does not treat legacy names as styal inputs", () => {
+    expect(
+      withT3CodeProjectEnvironmentAliases({
+        T3CODE_PROJECT_ROOT: "/legacy/repo",
+        T3CODE_WORKTREE_PATH: "/legacy/worktree",
+        T3CODE_WORKSPACE_PORT: "24000",
+      }),
+    ).toEqual({
+      T3CODE_PROJECT_ROOT: "/legacy/repo",
+      T3CODE_WORKTREE_PATH: "/legacy/worktree",
+      T3CODE_WORKSPACE_PORT: "24000",
+    });
+  });
+
+  it("overwrites conflicting legacy names with canonical values", () => {
+    expect(
+      withT3CodeProjectEnvironmentAliases({
+        STYAL_PROJECT_ROOT: "/repo",
+        T3CODE_PROJECT_ROOT: "/legacy/repo",
+      }),
+    ).toEqual({
+      STYAL_PROJECT_ROOT: "/repo",
+      T3CODE_PROJECT_ROOT: "/repo",
+    });
   });
 });

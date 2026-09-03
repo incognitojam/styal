@@ -49,6 +49,7 @@ allocatorLayer("WorkspacePortAllocator", (it) => {
         environment[WorkspacePortAllocator.WORKSPACE_PORT_ENV_VAR],
         String(ports[0]),
       );
+      assert.strictEqual(environment.T3CODE_WORKSPACE_PORT, String(ports[0]));
     }),
   );
 });
