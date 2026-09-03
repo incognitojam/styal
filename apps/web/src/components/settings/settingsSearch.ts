@@ -220,6 +220,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
+    id: "composer-collapse",
+    title: "Collapse composer",
+    to: "/settings/general",
+    searchTerms: [
+      "composer rest resting unfocus blur focus click away scroll wheel conversation timeline shrink minimize",
+    ],
+  },
+  {
     id: "provider-update-checks",
     title: "Provider update checks",
     to: "/settings/general",
