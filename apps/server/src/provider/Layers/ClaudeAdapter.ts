@@ -3249,7 +3249,16 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           ...base,
           type: "session.state.changed",
           payload: {
-            state: message.status === "compacting" ? "waiting" : "running",
+            // `null` clears the SDK's transient requesting/compacting state.
+            // Fall back to the adapter's turn lifecycle: /compact completes
+            // its turn before compaction finishes, so treating the later
+            // clear as running leaves the thread stuck Working forever.
+            state:
+              message.status === "compacting"
+                ? "waiting"
+                : message.status === "requesting" || context.turnState
+                  ? "running"
+                  : "ready",
             reason: `status:${message.status ?? "active"}`,
             detail: message,
           },
