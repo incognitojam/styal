@@ -65,9 +65,10 @@ T3 Code works with the platforms your team already uses:
   in the **Stack** section of its Summary tab — every layer with its state, top of the stack
   first, down to the base branch. Click another layer to open it in T3 Code, or
   command-click (Control-click on Windows and Linux) to open it on GitHub
-- By default, see passing and approved reviews first, passing reviews awaiting approval next, and
-  conflicting reviews last. Smaller changes come first within each readiness group, and finished
-  reviews follow open work when all states are visible.
+- Your authored reviews stay at the top and use the selected sort within their group. By default,
+  see passing and approved reviews first, passing reviews awaiting approval next, and conflicting
+  reviews last. Smaller changes come first within each readiness group, and finished reviews follow
+  open work when all states are visible.
 - Filter the list by author or labels, rank authors by merges in the loaded results, see label and
   change-size context on each row, and sort the results currently shown by readiness, update time,
   creation time, or change size. Your filters, search, scope, and sort are restored when you return.
