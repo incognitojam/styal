@@ -9,33 +9,39 @@ import {
   SlidersHorizontalIcon,
   TriangleAlertIcon,
 } from "lucide-react";
-import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type {
-  BackgroundActivityProfile,
   EnvironmentId,
-  LegacyImportPreferences,
   LegacyImportPreview,
+  LegacyImportRequest,
   LegacyImportResult,
   LegacyImportSettingsResult,
   LegacyImportSourceKind,
   LegacyImportUnavailableReason,
-  SourceControlWritingStyleMode,
-  ThreadEnvMode,
 } from "@t3tools/contracts";
-import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts/settings";
+import { useAtomValue } from "@effect/atom-react";
 import {
+  type AtomCommandResult,
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import {
-  getBackgroundActivityPresetSettings,
-  resolveServerBackgroundActivitySettings,
-} from "@t3tools/shared/backgroundActivitySettings";
-import * as Duration from "effect/Duration";
 
 import { cn } from "../../lib/utils";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
-import { importLegacyData, legacyImportPreview } from "../../state/dataImport";
+import {
+  importLegacyData,
+  legacyImportPendingCount,
+  legacyImportPreview,
+} from "../../state/dataImport";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -62,6 +68,13 @@ import { Skeleton } from "../ui/skeleton";
 import { ScrollArea } from "../ui/scroll-area";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import {
+  buildPreferenceComparisonRows,
+  LEGACY_IMPORT_PREFERENCE_COUNT,
+  legacyImportPreviewsEqual,
+  selectLegacyImportPreferences,
+} from "./DataImportSettings.logic";
+import { providerSettingsTabClassName } from "./providerSettingsTabs";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 
@@ -88,23 +101,6 @@ const UNAVAILABLE_COPY: Readonly<
     description:
       "The T3 database in the default T3 home couldn’t be read. Check its file permissions and the old installation, then rescan.",
   },
-};
-
-const BACKGROUND_ACTIVITY_PROFILE_LABELS: Readonly<Record<BackgroundActivityProfile, string>> = {
-  balanced: "Balanced",
-  performance: "Performance",
-  "battery-saver": "Battery saver",
-};
-
-const THREAD_ENV_MODE_LABELS: Readonly<Record<ThreadEnvMode, string>> = {
-  local: "Local checkout",
-  worktree: "New worktree",
-};
-
-const WRITING_STYLE_LABELS: Readonly<Record<SourceControlWritingStyleMode, string>> = {
-  repo_conventions: "Repository conventions",
-  conventional_commits: "Conventional Commits",
-  custom: "Custom instructions",
 };
 
 function formatCount(value: number): string {
@@ -169,35 +165,6 @@ function projectImportSummaryText(result: LegacyImportResult): string {
   return parts.join(" · ");
 }
 
-/** "Every 30 seconds" / "Every 5 minutes" / "Off", so a duration reads as a schedule. */
-function formatIntervalValue(duration: Duration.Duration): string {
-  const seconds = Math.round(Duration.toMillis(duration) / 1_000);
-  if (seconds <= 0) return "Off";
-  return `Every ${formatDurationValue(duration)}`;
-}
-
-function formatDurationValue(duration: Duration.Duration): string {
-  const seconds = Math.round(Duration.toMillis(duration) / 1_000);
-  if (seconds % 3_600 === 0) {
-    const hours = seconds / 3_600;
-    return `${formatCount(hours)} ${hours === 1 ? "hour" : "hours"}`;
-  }
-  if (seconds % 60 === 0) {
-    const minutes = seconds / 60;
-    return `${formatCount(minutes)} ${minutes === 1 ? "minute" : "minutes"}`;
-  }
-  return `${formatCount(seconds)} ${seconds === 1 ? "second" : "seconds"}`;
-}
-
-interface PreferenceRow {
-  readonly id: string;
-  readonly label: string;
-  readonly value: string;
-  readonly detail?: string;
-  /** Paths read better monospaced and must not be paraphrased. */
-  readonly monospace?: boolean;
-}
-
 /**
  * Comparison grid: two value columns on narrow screens (the label spans both above
  * them), and a label column joins them from `sm` up. Header and rows share this so
@@ -210,151 +177,14 @@ function valueClassName(monospace: boolean | undefined): string {
   return monospace ? "break-all font-mono text-xs" : "break-words tabular-nums";
 }
 
-/**
- * The exact values an "Import preferences" run would write, in the same wording the
- * Settings pages use, with background timings resolved the way the server resolves
- * them (profile presets plus any overrides, including the legacy flat fields).
- */
-function buildPreferenceRows(values: LegacyImportPreferences): readonly PreferenceRow[] {
-  const resolved = resolveServerBackgroundActivitySettings({
-    ...DEFAULT_SERVER_SETTINGS,
-    ...values,
-  });
-  const preset = getBackgroundActivityPresetSettings(resolved.profile);
-  const activityCustomized =
-    values.backgroundActivity.profile === "custom" ||
-    Duration.toMillis(resolved.automaticGitFetchInterval) !==
-      Duration.toMillis(preset.automaticGitFetchInterval) ||
-    Duration.toMillis(resolved.providerHealthRefreshInterval) !==
-      Duration.toMillis(preset.providerHealthRefreshInterval);
-  const writingStyle = values.sourceControlWritingStyle;
-  const addProjectBaseDirectory = values.addProjectBaseDirectory.trim();
-
-  return [
-    {
-      id: "background-activity",
-      label: "Background activity policy",
-      value: activityCustomized
-        ? `${BACKGROUND_ACTIVITY_PROFILE_LABELS[resolved.profile]} (customized)`
-        : BACKGROUND_ACTIVITY_PROFILE_LABELS[resolved.profile],
-    },
-    {
-      id: "git-fetch",
-      label: "Automatic Git fetch",
-      value: formatIntervalValue(resolved.automaticGitFetchInterval),
-    },
-    {
-      id: "provider-health",
-      label: "Provider health refresh",
-      value: formatIntervalValue(resolved.providerHealthRefreshInterval),
-    },
-    {
-      id: "host-power-monitor",
-      label: "Host power monitor",
-      value: formatIntervalValue(resolved.hostPowerMonitorActiveInterval),
-    },
-    {
-      id: "idle-host-monitor",
-      label: "Idle host monitor",
-      value: formatIntervalValue(resolved.hostPowerMonitorIdleInterval),
-    },
-    {
-      id: "idle-client-timeout",
-      label: "Idle client timeout",
-      value: formatDurationValue(resolved.idleClientTtl),
-    },
-    {
-      id: "pause-host-locked",
-      label: "Pause when host is locked",
-      value: resolved.pauseWhenHostLocked ? "On" : "Off",
-    },
-    {
-      id: "pause-host-low-power",
-      label: "Pause on host low power",
-      value: resolved.pauseWhenHostLowPower ? "On" : "Off",
-    },
-    {
-      id: "pause-client-low-power",
-      label: "Pause on client low power",
-      value: resolved.pauseWhenClientLowPower ? "On" : "Off",
-    },
-    {
-      id: "pause-on-battery",
-      label: "Pause on battery",
-      value: resolved.pauseWhenOnBattery ? "On" : "Off",
-    },
-    {
-      id: "provider-update-checks",
-      label: "Provider update checks",
-      value: values.enableProviderUpdateChecks ? "On" : "Off",
-    },
-    {
-      id: "new-threads",
-      label: "New threads start in",
-      value: THREAD_ENV_MODE_LABELS[values.defaultThreadEnvMode],
-    },
-    {
-      id: "start-from-origin",
-      label: "New worktrees start from",
-      value: values.newWorktreesStartFromOrigin ? "Origin" : "Local branch",
-    },
-    {
-      id: "add-project-starts-in",
-      label: "Add project starts in",
-      value: addProjectBaseDirectory === "" ? "~/ (default)" : addProjectBaseDirectory,
-      monospace: addProjectBaseDirectory !== "",
-    },
-    {
-      id: "source-control-writing-style",
-      label: "Source control writing style",
-      value: WRITING_STYLE_LABELS[writingStyle.mode],
-    },
-    {
-      id: "source-control-writing-instructions",
-      label: "Source control custom instructions",
-      value: writingStyle.customInstructions || "None",
-    },
-    {
-      id: "change-request-templates",
-      label: "Follow change request templates",
-      value: writingStyle.followChangeRequestTemplates ? "On" : "Off",
-    },
-    {
-      id: "agent-browser-access",
-      label: "Agent browser access",
-      value: values.enableAgentBrowserAccess ? "Allowed" : "Blocked",
-    },
-    {
-      id: "legacy-token-streaming",
-      label: "Stream token by token (legacy)",
-      value: values.enableLegacyTokenStreaming ? "On" : "Off",
-    },
-  ];
-}
-
-function selectLegacyImportPreferences(values: LegacyImportPreferences): LegacyImportPreferences {
-  return {
-    enableLegacyTokenStreaming: values.enableLegacyTokenStreaming,
-    enableProviderUpdateChecks: values.enableProviderUpdateChecks,
-    enableAgentBrowserAccess: values.enableAgentBrowserAccess,
-    backgroundActivity: values.backgroundActivity,
-    automaticGitFetchInterval: values.automaticGitFetchInterval,
-    providerHealthRefreshInterval: values.providerHealthRefreshInterval,
-    backgroundActivityProfile: values.backgroundActivityProfile,
-    defaultThreadEnvMode: values.defaultThreadEnvMode,
-    newWorktreesStartFromOrigin: values.newWorktreesStartFromOrigin,
-    addProjectBaseDirectory: values.addProjectBaseDirectory,
-    sourceControlWritingStyle: values.sourceControlWritingStyle,
-  };
-}
-
-function environmentTabClassName(selected: boolean): string {
-  return cn(
-    "relative flex h-full shrink-0 cursor-pointer items-center gap-2 rounded-sm px-3 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:pointer-events-none disabled:opacity-64",
-    selected
-      ? "text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-primary"
-      : "text-muted-foreground hover:text-foreground",
-  );
+function useStableLegacyImportPreview(
+  value: LegacyImportPreview | null,
+): LegacyImportPreview | null {
+  const stable = useRef(value);
+  if (!legacyImportPreviewsEqual(stable.current, value)) {
+    stable.current = value;
+  }
+  return stable.current;
 }
 
 /** Shared frame for every resolved preview state so the states share one rhythm. */
@@ -575,21 +405,18 @@ function AvailablePreview({
   serverLabel,
   environmentId,
   isImporting,
-  onImportingChange,
+  onImport,
   onRefresh,
 }: {
   readonly preview: Extract<LegacyImportPreview, { status: "available" }>;
   readonly serverLabel: string;
   readonly environmentId: EnvironmentId;
   readonly isImporting: boolean;
-  /** Stable setter owned by the panel so servers and rescan lock with the source card. */
-  readonly onImportingChange: (importing: boolean) => void;
+  readonly onImport: (
+    input: LegacyImportRequest,
+  ) => Promise<AtomCommandResult<LegacyImportResult, unknown>>;
   readonly onRefresh: () => void;
 }) {
-  const runImport = useAtomCommand(importLegacyData, {
-    label: "import T3 Code data",
-    reportFailure: false,
-  });
   const currentPreferenceValues = useEnvironmentSettings(
     environmentId,
     selectLegacyImportPreferences,
@@ -607,13 +434,6 @@ function AvailablePreview({
     null,
   );
   const [preferencesError, setPreferencesError] = useState<string | null>(null);
-  // Unmounting mid-import (server disconnect, rescan result swap) must not leave the
-  // rest of the page permanently locked.
-  useEffect(() => {
-    return () => {
-      onImportingChange(false);
-    };
-  }, [onImportingChange]);
 
   useEffect(() => {
     if (isImporting) return;
@@ -665,24 +485,13 @@ function AvailablePreview({
   const preferencesPreview = preview.preferences;
   const preferenceValues =
     preferencesPreview?.status === "available" ? preferencesPreview.values : null;
-  const preferenceRows = useMemo(
-    () => (preferenceValues === null ? [] : buildPreferenceRows(preferenceValues)),
-    [preferenceValues],
+  const preferenceComparisonRows = useMemo(
+    () =>
+      preferenceValues === null
+        ? []
+        : buildPreferenceComparisonRows(preferenceValues, currentPreferenceValues),
+    [currentPreferenceValues, preferenceValues],
   );
-  const currentPreferenceRows = useMemo(
-    () => buildPreferenceRows(currentPreferenceValues),
-    [currentPreferenceValues],
-  );
-  const preferenceComparisonRows = useMemo(() => {
-    const currentRowsById = new Map(currentPreferenceRows.map((row) => [row.id, row]));
-    const rows = preferenceRows.map((row) => {
-      const current = currentRowsById.get(row.id);
-      return { row, current, changed: current?.value !== row.value };
-    });
-    // Keep the Settings order within each group while putting the values that
-    // would change where they are visible first.
-    return [...rows.filter(({ changed }) => changed), ...rows.filter(({ changed }) => !changed)];
-  }, [currentPreferenceRows, preferenceRows]);
 
   const toggleProject = (projectId: string, selected: boolean) => {
     setSelectedProjectIds((current) => {
@@ -697,14 +506,10 @@ function AvailablePreview({
     setProjectsError(null);
     setProjectsResult(null);
     setRunningAction("projects");
-    onImportingChange(true);
     try {
-      const result = await runImport({
-        environmentId,
-        input: {
-          projectIds: Array.from(selectedProjectIds),
-          includeSettings: false,
-        },
+      const result = await onImport({
+        projectIds: Array.from(selectedProjectIds),
+        includeSettings: false,
       });
       if (result._tag === "Failure") {
         if (!isAtomCommandInterrupted(result)) {
@@ -737,7 +542,6 @@ function AvailablePreview({
               ? "Thread context restored"
               : "Projects imported",
           description: projectImportSummaryText(result.value),
-          timeout: 0,
         });
       }
       onRefresh();
@@ -745,7 +549,6 @@ function AvailablePreview({
       setProjectsError(importFailureMessage(error));
     } finally {
       setRunningAction(null);
-      onImportingChange(false);
     }
   };
 
@@ -753,14 +556,10 @@ function AvailablePreview({
     setPreferencesError(null);
     setPreferencesResult(null);
     setRunningAction("preferences");
-    onImportingChange(true);
     try {
-      const result = await runImport({
-        environmentId,
-        input: {
-          projectIds: [],
-          includeSettings: true,
-        },
+      const result = await onImport({
+        projectIds: [],
+        includeSettings: true,
       });
       if (result._tag === "Failure") {
         if (!isAtomCommandInterrupted(result)) {
@@ -776,15 +575,13 @@ function AvailablePreview({
         toastManager.add({
           type: "success",
           title: "Preferences imported",
-          description: `${formatSettingCount(preferenceRows.length)} on ${serverLabel} now match ${sourceLabel}.`,
-          timeout: 0,
+          description: `${formatSettingCount(LEGACY_IMPORT_PREFERENCE_COUNT)} on ${serverLabel} now match ${sourceLabel}.`,
         });
       }
     } catch (error) {
       setPreferencesError(importFailureMessage(error));
     } finally {
       setRunningAction(null);
-      onImportingChange(false);
     }
   };
 
@@ -838,8 +635,6 @@ function AvailablePreview({
         <span className="flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-[5px] bg-muted/40">
           <ProjectFavicon
             environmentId={environmentId}
-            cwd={project.workspaceRoot}
-            faviconPath={project.faviconPath}
             legacyProjectId={project.projectId}
             className="size-3.5"
           />
@@ -1201,11 +996,6 @@ function AvailablePreview({
                           ) : null}
                           {row.value}
                         </dd>
-                        {row.detail ? (
-                          <dd className="col-span-2 text-xs leading-[1.45] text-muted-foreground/70 sm:col-span-3">
-                            {row.detail}
-                          </dd>
-                        ) : null}
                       </div>
                     );
                   })}
@@ -1218,6 +1008,15 @@ function AvailablePreview({
     </div>
   );
 }
+
+const MemoizedAvailablePreview = memo(
+  AvailablePreview,
+  (previous, next) =>
+    previous.preview === next.preview &&
+    previous.serverLabel === next.serverLabel &&
+    previous.environmentId === next.environmentId &&
+    previous.isImporting === next.isImporting,
+);
 
 export function DataImportSettingsPanel() {
   const { environments } = useEnvironments();
@@ -1236,15 +1035,48 @@ export function DataImportSettingsPanel() {
   const preview = useEnvironmentQuery(
     environmentId === null ? null : legacyImportPreview({ environmentId, input: {} }),
   );
+  const latestPreviewData = useStableLegacyImportPreview(preview.data);
   const serverLabel = environment?.label ?? "the connected server";
-  const isInitialScanPending = preview.isPending && preview.data === null;
-  // Owned here (not in the preview) so an in-flight import also locks the server
-  // switcher and the rescan control, not just the project list.
-  const [isImporting, setIsImporting] = useState(false);
+  const runImportCommand = useAtomCommand(importLegacyData, {
+    label: "import T3 Code data",
+    reportFailure: false,
+  });
+  // Command-owned state outlives every preview state. A failed poll, transient
+  // disconnect, or settings-page remount cannot unlock this while the promise runs.
+  const pendingImportCount = useAtomValue(legacyImportPendingCount);
+  const isImporting = pendingImportCount > 0;
+  const retainedAvailablePreview = useRef<Extract<
+    LegacyImportPreview,
+    { status: "available" }
+  > | null>(null);
+  if (!isImporting && latestPreviewData?.status === "available") {
+    retainedAvailablePreview.current = latestPreviewData;
+  }
+  const previewData =
+    isImporting && retainedAvailablePreview.current !== null
+      ? retainedAvailablePreview.current
+      : latestPreviewData;
+  const isInitialScanPending = preview.isPending && previewData === null;
+  const handleImport = useCallback(
+    async (input: LegacyImportRequest) => {
+      if (environmentId === null) {
+        throw new Error("The import environment is no longer available.");
+      }
+      return runImportCommand({ environmentId, input });
+    },
+    [environmentId, runImportCommand],
+  );
+  const [isRescanning, setIsRescanning] = useState(false);
+  useEffect(() => {
+    if (!preview.isPending) {
+      setIsRescanning(false);
+    }
+  }, [preview.isPending]);
   const canRescan = environmentId !== null && isConnected;
-  const handleRescan = () => {
+  const handleRescan = useCallback(() => {
+    setIsRescanning(true);
     preview.refresh();
-  };
+  }, [preview]);
 
   const rescanHeaderButton = (
     <Tooltip>
@@ -1254,10 +1086,10 @@ export function DataImportSettingsPanel() {
             size="icon-micro"
             variant="ghost-muted"
             onClick={handleRescan}
-            disabled={!canRescan || preview.isPending || isImporting}
+            disabled={!canRescan || isInitialScanPending || isRescanning || isImporting}
             aria-label="Rescan for importable data"
           >
-            <RefreshCwIcon className={cn("size-3", preview.isPending && "animate-spin")} />
+            <RefreshCwIcon className={cn("size-3", isRescanning && "animate-spin")} />
           </Button>
         }
       />
@@ -1283,7 +1115,10 @@ export function DataImportSettingsPanel() {
                 type="button"
                 aria-pressed={selected}
                 disabled={isImporting}
-                className={environmentTabClassName(selected)}
+                className={cn(
+                  providerSettingsTabClassName(selected),
+                  "gap-2 disabled:pointer-events-none disabled:opacity-64",
+                )}
                 onClick={() => setSelectedEnvironmentId(candidate.environmentId)}
               >
                 <ServerIcon className="size-3.5 shrink-0" aria-hidden />
@@ -1310,7 +1145,7 @@ export function DataImportSettingsPanel() {
       );
     }
 
-    if (!isConnected) {
+    if (!isConnected && !(isImporting && previewData?.status === "available")) {
       return (
         <PreviewEmptyState
           icon={<ServerIcon />}
@@ -1320,31 +1155,31 @@ export function DataImportSettingsPanel() {
       );
     }
 
-    if (preview.error !== null) {
+    if (previewData === null && preview.error !== null) {
       return (
         <PreviewEmptyState
           icon={<DatabaseIcon />}
           title="Could not check for importable data"
           description={preview.error}
-          action={<RescanButton isPending={preview.isPending} onRescan={handleRescan} />}
+          action={<RescanButton isPending={isRescanning} onRescan={handleRescan} />}
         />
       );
     }
 
-    const data: LegacyImportPreview | null = preview.data;
+    const data: LegacyImportPreview | null = previewData;
     if (data === null || isInitialScanPending) {
       return <PreviewSkeleton />;
     }
 
     if (data.status === "available") {
       return (
-        <AvailablePreview
-          key={`${environmentId ?? "unknown"}:${data.sourceKind}`}
+        <MemoizedAvailablePreview
+          key={`${environmentId}:${data.sourceKind}`}
           preview={data}
           serverLabel={serverLabel}
           environmentId={environmentId}
           isImporting={isImporting}
-          onImportingChange={setIsImporting}
+          onImport={handleImport}
           onRefresh={preview.refresh}
         />
       );
@@ -1356,7 +1191,7 @@ export function DataImportSettingsPanel() {
           icon={<DatabaseIcon />}
           title="No importable data found"
           description="No T3 Code data in the default T3 home. This check only looks there, so an installation kept somewhere else won’t show up."
-          action={<RescanButton isPending={preview.isPending} onRescan={handleRescan} />}
+          action={<RescanButton isPending={isRescanning} onRescan={handleRescan} />}
         />
       );
     }
@@ -1376,7 +1211,7 @@ export function DataImportSettingsPanel() {
       >
         {isCurrentDatabase ? null : (
           <div className="mt-3">
-            <RescanButton isPending={preview.isPending} onRescan={handleRescan} />
+            <RescanButton isPending={isRescanning} onRescan={handleRescan} />
           </div>
         )}
       </PreviewSourceCard>
@@ -1399,7 +1234,11 @@ export function DataImportSettingsPanel() {
           </span>
         </p>
         {environmentTabs}
-        <div className="pt-5" aria-live="polite" aria-busy={preview.isPending || isImporting}>
+        <div
+          className="pt-5"
+          aria-live="polite"
+          aria-busy={isInitialScanPending || isRescanning || isImporting}
+        >
           {body}
         </div>
       </SettingsSection>

@@ -11,14 +11,24 @@ import { cn } from "~/lib/utils";
 
 const loadedProjectFaviconSrcs = new Map<string, string>();
 
-export function ProjectFavicon(input: {
-  environmentId: EnvironmentId;
-  cwd: string;
-  faviconPath?: string | null | undefined;
-  legacyProjectId?: string | undefined;
+type ProjectFaviconInput = {
+  readonly environmentId: EnvironmentId;
   className?: string | undefined;
   fallbackIcon?: ComponentType<{ className?: string }>;
-}) {
+} & (
+  | {
+      readonly cwd: string;
+      readonly faviconPath?: string | null | undefined;
+      readonly legacyProjectId?: undefined;
+    }
+  | {
+      readonly legacyProjectId: string;
+      readonly cwd?: never;
+      readonly faviconPath?: never;
+    }
+);
+
+export function ProjectFavicon(input: ProjectFaviconInput) {
   const state = useProjectFaviconAsset(input);
   const src = state._tag === "Success" ? state.url : null;
   const FallbackIcon = input.fallbackIcon ?? FolderIcon;
@@ -27,7 +37,9 @@ export function ProjectFavicon(input: {
     return <ProjectFaviconFallback className={input.className} icon={FallbackIcon} />;
   }
 
-  const cacheKey = getProjectFaviconCacheKey(input.environmentId, input.cwd, src);
+  const cacheIdentity =
+    input.legacyProjectId === undefined ? input.cwd : `legacy:${input.legacyProjectId}`;
+  const cacheKey = getProjectFaviconCacheKey(input.environmentId, cacheIdentity, src);
 
   return (
     <ProjectFaviconImage
@@ -40,12 +52,7 @@ export function ProjectFavicon(input: {
   );
 }
 
-export function useProjectFaviconAsset(input: {
-  readonly environmentId: EnvironmentId;
-  readonly cwd: string;
-  readonly faviconPath?: string | null | undefined;
-  readonly legacyProjectId?: string | undefined;
-}) {
+export function useProjectFaviconAsset(input: ProjectFaviconInput) {
   return useAssetUrlState(
     input.environmentId,
     input.legacyProjectId === undefined

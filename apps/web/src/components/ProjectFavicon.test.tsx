@@ -147,8 +147,6 @@ describe("ProjectFavicon", () => {
   it("requests a server-validated legacy project favicon", () => {
     ProjectFavicon({
       environmentId: "environment-test" as EnvironmentId,
-      cwd: "/workspace-test",
-      faviconPath: "brand/icon.svg",
       legacyProjectId: "legacy-project",
     });
 
