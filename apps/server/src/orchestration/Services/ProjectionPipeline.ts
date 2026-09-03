@@ -31,6 +31,15 @@ export interface OrchestrationProjectionPipelineShape {
   readonly projectEvent: (
     event: OrchestrationEvent,
   ) => Effect.Effect<void, ProjectionRepositoryError>;
+
+  /**
+   * Project a historical batch in event order while advancing each projector
+   * cursor once. This preserves cross-projector dependencies without paying the
+   * per-event transaction overhead used by live command dispatch.
+   */
+  readonly projectEvents: (
+    events: ReadonlyArray<OrchestrationEvent>,
+  ) => Effect.Effect<void, ProjectionRepositoryError>;
 }
 
 /**

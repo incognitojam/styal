@@ -7,6 +7,7 @@ import {
   ProjectId,
   ThreadId,
   TurnId,
+  type OrchestrationEvent,
   ProviderInstanceId,
 } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -916,7 +917,7 @@ it.layer(
 it.layer(
   Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-projection-attachments-overwrite-")),
 )("OrchestrationProjectionPipeline", (it) => {
-  it.effect("removes unreferenced attachment files when a thread is reverted", () =>
+  it.effect("keeps only referenced attachment files in a historical revert batch", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -928,15 +929,21 @@ it.layer(
       const keepAttachmentId = "thread-revert-files-00000000-0000-4000-8000-000000000001";
       const keepFileAttachmentId = "thread-revert-files-00000000-0000-4000-8000-000000000004-pdf";
       const removeAttachmentId = "thread-revert-files-00000000-0000-4000-8000-000000000002";
+      const afterRevertAttachmentId = "thread-revert-files-00000000-0000-4000-8000-000000000005";
       const otherThreadAttachmentId =
         "thread-revert-files-extra-00000000-0000-4000-8000-000000000003";
 
-      const appendAndProject = (event: Parameters<typeof eventStore.append>[0]) =>
-        eventStore
-          .append(event)
-          .pipe(Effect.flatMap((savedEvent) => projectionPipeline.projectEvent(savedEvent)));
+      const savedEvents: OrchestrationEvent[] = [];
+      const append = (event: Parameters<typeof eventStore.append>[0]) =>
+        eventStore.append(event).pipe(
+          Effect.tap((savedEvent) =>
+            Effect.sync(() => {
+              savedEvents.push(savedEvent);
+            }),
+          ),
+        );
 
-      yield* appendAndProject({
+      yield* append({
         type: "project.created",
         eventId: EventId.make("evt-revert-files-1"),
         aggregateKind: "project",
@@ -957,7 +964,7 @@ it.layer(
         },
       });
 
-      yield* appendAndProject({
+      yield* append({
         type: "thread.created",
         eventId: EventId.make("evt-revert-files-2"),
         aggregateKind: "thread",
@@ -983,7 +990,7 @@ it.layer(
         },
       });
 
-      yield* appendAndProject({
+      yield* append({
         type: "thread.turn-diff-completed",
         eventId: EventId.make("evt-revert-files-3"),
         aggregateKind: "thread",
@@ -1005,7 +1012,7 @@ it.layer(
         },
       });
 
-      yield* appendAndProject({
+      yield* append({
         type: "thread.message-sent",
         eventId: EventId.make("evt-revert-files-4"),
         aggregateKind: "thread",
@@ -1043,7 +1050,7 @@ it.layer(
         },
       });
 
-      yield* appendAndProject({
+      yield* append({
         type: "thread.turn-diff-completed",
         eventId: EventId.make("evt-revert-files-5"),
         aggregateKind: "thread",
@@ -1065,7 +1072,7 @@ it.layer(
         },
       });
 
-      yield* appendAndProject({
+      yield* append({
         type: "thread.message-sent",
         eventId: EventId.make("evt-revert-files-6"),
         aggregateKind: "thread",
@@ -1099,17 +1106,19 @@ it.layer(
       const keepPath = path.join(attachmentsDir, `${keepAttachmentId}.png`);
       const keepFilePath = path.join(attachmentsDir, `${keepFileAttachmentId}.pdf`);
       const removePath = path.join(attachmentsDir, `${removeAttachmentId}.png`);
+      const afterRevertPath = path.join(attachmentsDir, `${afterRevertAttachmentId}.png`);
       yield* fileSystem.makeDirectory(attachmentsDir, { recursive: true });
       yield* fileSystem.writeFileString(keepPath, "keep");
       yield* fileSystem.writeFileString(keepFilePath, "keep");
       yield* fileSystem.writeFileString(removePath, "remove");
+      yield* fileSystem.writeFileString(afterRevertPath, "after");
       const otherThreadPath = path.join(attachmentsDir, `${otherThreadAttachmentId}.png`);
       yield* fileSystem.writeFileString(otherThreadPath, "other");
       assert.isTrue(yield* exists(keepPath));
       assert.isTrue(yield* exists(removePath));
       assert.isTrue(yield* exists(otherThreadPath));
 
-      yield* appendAndProject({
+      yield* append({
         type: "thread.reverted",
         eventId: EventId.make("evt-revert-files-7"),
         aggregateKind: "thread",
@@ -1125,9 +1134,43 @@ it.layer(
         },
       });
 
+      yield* append({
+        type: "thread.message-sent",
+        eventId: EventId.make("evt-revert-files-8"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-revert-files-8"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-revert-files-8"),
+        metadata: {},
+        payload: {
+          threadId,
+          messageId: MessageId.make("message-after-revert"),
+          role: "user",
+          text: "After revert",
+          attachments: [
+            {
+              type: "image",
+              id: afterRevertAttachmentId,
+              name: "after.png",
+              mimeType: "image/png",
+              sizeBytes: 5,
+            },
+          ],
+          turnId: null,
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      yield* projectionPipeline.projectEvents(savedEvents);
+
       assert.isTrue(yield* exists(keepPath));
       assert.isTrue(yield* exists(keepFilePath));
       assert.isFalse(yield* exists(removePath));
+      assert.isTrue(yield* exists(afterRevertPath));
       assert.isTrue(yield* exists(otherThreadPath));
     }),
   );
@@ -2488,17 +2531,22 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
     }),
   );
 
-  it.effect("does not fallback-retain messages whose turnId is removed by revert", () =>
+  it.effect("preserves reverted history when projecting a historical batch", () =>
     Effect.gen(function* () {
       const projectionPipeline = yield* OrchestrationProjectionPipeline;
       const eventStore = yield* OrchestrationEventStore;
       const sql = yield* SqlClient.SqlClient;
-      const appendAndProject = (event: Parameters<typeof eventStore.append>[0]) =>
-        eventStore
-          .append(event)
-          .pipe(Effect.flatMap((savedEvent) => projectionPipeline.projectEvent(savedEvent)));
+      const savedEvents: OrchestrationEvent[] = [];
+      const append = (event: Parameters<typeof eventStore.append>[0]) =>
+        eventStore.append(event).pipe(
+          Effect.tap((savedEvent) =>
+            Effect.sync(() => {
+              savedEvents.push(savedEvent);
+            }),
+          ),
+        );
 
-      yield* appendAndProject({
+      yield* append({
         type: "project.created",
         eventId: EventId.make("evt-revert-1"),
         aggregateKind: "project",
@@ -2519,7 +2567,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         },
       });
 
-      yield* appendAndProject({
+      yield* append({
         type: "thread.created",
         eventId: EventId.make("evt-revert-2"),
         aggregateKind: "thread",
@@ -2545,7 +2593,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         },
       });
 
-      yield* appendAndProject({
+      yield* append({
         type: "thread.turn-diff-completed",
         eventId: EventId.make("evt-revert-3"),
         aggregateKind: "thread",
@@ -2567,7 +2615,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         },
       });
 
-      yield* appendAndProject({
+      yield* append({
         type: "thread.message-sent",
         eventId: EventId.make("evt-revert-4"),
         aggregateKind: "thread",
@@ -2589,7 +2637,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         },
       });
 
-      yield* appendAndProject({
+      yield* append({
         type: "thread.turn-diff-completed",
         eventId: EventId.make("evt-revert-5"),
         aggregateKind: "thread",
@@ -2611,7 +2659,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         },
       });
 
-      yield* appendAndProject({
+      yield* append({
         type: "thread.message-sent",
         eventId: EventId.make("evt-revert-6"),
         aggregateKind: "thread",
@@ -2633,7 +2681,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         },
       });
 
-      yield* appendAndProject({
+      yield* append({
         type: "thread.message-sent",
         eventId: EventId.make("evt-revert-7"),
         aggregateKind: "thread",
@@ -2655,7 +2703,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         },
       });
 
-      yield* appendAndProject({
+      yield* append({
         type: "thread.reverted",
         eventId: EventId.make("evt-revert-8"),
         aggregateKind: "thread",
@@ -2670,6 +2718,8 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
           turnCount: 1,
         },
       });
+
+      yield* projectionPipeline.projectEvents(savedEvents);
 
       const messageRows = yield* sql<{
         readonly messageId: string;
@@ -2689,6 +2739,23 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
           messageId: "assistant-keep",
           turnId: "turn-1",
           role: "assistant",
+        },
+      ]);
+
+      const threadRows = yield* sql<{
+        readonly latestTurnId: string | null;
+        readonly latestUserMessageAt: string | null;
+      }>`
+        SELECT
+          latest_turn_id AS "latestTurnId",
+          latest_user_message_at AS "latestUserMessageAt"
+        FROM projection_threads
+        WHERE thread_id = 'thread-revert'
+      `;
+      assert.deepEqual(threadRows, [
+        {
+          latestTurnId: "turn-1",
+          latestUserMessageAt: null,
         },
       ]);
     }),

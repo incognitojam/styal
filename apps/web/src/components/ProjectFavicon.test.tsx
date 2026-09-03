@@ -143,4 +143,18 @@ describe("ProjectFavicon", () => {
       path: "brand/icon.svg",
     });
   });
+
+  it("requests a server-validated legacy project favicon", () => {
+    ProjectFavicon({
+      environmentId: "environment-test" as EnvironmentId,
+      cwd: "/workspace-test",
+      faviconPath: "brand/icon.svg",
+      legacyProjectId: "legacy-project",
+    });
+
+    expect(testState.lastResource).toEqual({
+      _tag: "legacy-project-favicon",
+      projectId: "legacy-project",
+    });
+  });
 });

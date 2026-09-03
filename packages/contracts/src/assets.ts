@@ -36,6 +36,11 @@ export const AssetResource = Schema.Union([
     // project projection before it issues the signed URL.
     path: Schema.optional(ProjectFaviconPath),
   }),
+  Schema.TaggedStruct("legacy-project-favicon", {
+    // Resolved against the read-only legacy import preview on the server. The
+    // client never supplies a workspace path for this resource.
+    projectId: Schema.String.check(Schema.isMaxLength(256)),
+  }),
   Schema.TaggedStruct("pull-request-file", {
     projectId: ProjectId,
     repository: TrimmedNonEmptyString.check(Schema.isMaxLength(ASSET_PATH_MAX_LENGTH)),

@@ -94,4 +94,16 @@ describe("searchSettings", () => {
       targetId: "appearance",
     });
   });
+
+  it("routes legacy data import searches to the import preview", () => {
+    expect(searchSettings("import data")[0]).toMatchObject({
+      id: "import-data",
+      to: "/settings/import",
+    });
+    expect(searchSettings("T3 Code")[0]).toMatchObject({
+      id: "legacy-import-source",
+      to: "/settings/import",
+      targetId: "import-data",
+    });
+  });
 });

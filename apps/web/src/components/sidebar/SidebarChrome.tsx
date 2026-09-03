@@ -84,11 +84,12 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
  * The styal wordmark, outlined from Zilla Slab Bold so it carries no font
  * dependency. Regenerate from assets/brand/wordmark.svg if the brand changes.
  */
-function StyalWordmark() {
+export function StyalWordmark({ className }: { className?: string }) {
   return (
     <svg
+      role="img"
       aria-label="styal"
-      className="h-4 w-auto shrink-0"
+      className={cn("h-4 w-auto shrink-0", className)}
       viewBox="28.0 -213.0 2052.5 901.0"
       xmlns="http://www.w3.org/2000/svg"
     >

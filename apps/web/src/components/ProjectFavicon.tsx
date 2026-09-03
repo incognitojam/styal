@@ -15,6 +15,7 @@ export function ProjectFavicon(input: {
   environmentId: EnvironmentId;
   cwd: string;
   faviconPath?: string | null | undefined;
+  legacyProjectId?: string | undefined;
   className?: string | undefined;
   fallbackIcon?: ComponentType<{ className?: string }>;
 }) {
@@ -43,12 +44,21 @@ export function useProjectFaviconAsset(input: {
   readonly environmentId: EnvironmentId;
   readonly cwd: string;
   readonly faviconPath?: string | null | undefined;
+  readonly legacyProjectId?: string | undefined;
 }) {
-  return useAssetUrlState(input.environmentId, {
-    _tag: "project-favicon",
-    cwd: input.cwd,
-    ...(input.faviconPath ? { path: input.faviconPath } : {}),
-  });
+  return useAssetUrlState(
+    input.environmentId,
+    input.legacyProjectId === undefined
+      ? {
+          _tag: "project-favicon",
+          cwd: input.cwd,
+          ...(input.faviconPath ? { path: input.faviconPath } : {}),
+        }
+      : {
+          _tag: "legacy-project-favicon",
+          projectId: input.legacyProjectId,
+        },
+  );
 }
 
 function ProjectFaviconFallback({

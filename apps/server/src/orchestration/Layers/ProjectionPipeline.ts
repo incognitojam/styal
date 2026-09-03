@@ -104,6 +104,8 @@ interface ProjectorDefinition {
 interface AttachmentSideEffects {
   readonly deletedThreadIds: Set<string>;
   readonly prunedThreadRelativePaths: Map<string, Set<string>>;
+  /** Historical batches refresh each affected thread once after all detail rows are final. */
+  readonly deferredThreadShellSummaryIds: Set<ThreadId> | null;
 }
 
 const materializeAttachmentsForProjection = Effect.fn("materializeAttachmentsForProjection")(
@@ -624,6 +626,32 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       });
     });
 
+    const refreshOrDeferThreadShellSummary = (
+      threadId: ThreadId,
+      sideEffects: AttachmentSideEffects,
+    ) => {
+      if (sideEffects.deferredThreadShellSummaryIds === null) {
+        return refreshThreadShellSummary(threadId);
+      }
+      return Effect.sync(() => {
+        sideEffects.deferredThreadShellSummaryIds?.add(threadId);
+      });
+    };
+
+    const refreshPrunedThreadAttachmentPaths = Effect.fn("refreshPrunedThreadAttachmentPaths")(
+      function* (sideEffects: AttachmentSideEffects) {
+        for (const threadId of sideEffects.prunedThreadRelativePaths.keys()) {
+          const messages = yield* projectionThreadMessageRepository.listByThreadId({
+            threadId: ThreadId.make(threadId),
+          });
+          sideEffects.prunedThreadRelativePaths.set(
+            threadId,
+            collectThreadAttachmentRelativePaths(threadId, messages),
+          );
+        }
+      },
+    );
+
     const applyThreadsProjection: ProjectorDefinition["apply"] = Effect.fn(
       "applyThreadsProjection",
     )(function* (event, attachmentSideEffects) {
@@ -910,7 +938,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             updatedAt: event.occurredAt,
           });
           if (shouldRefreshThreadShellSummary(event)) {
-            yield* refreshThreadShellSummary(event.payload.threadId);
+            yield* refreshOrDeferThreadShellSummary(event.payload.threadId, attachmentSideEffects);
           }
           return;
         }
@@ -928,7 +956,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             latestTurnId: event.payload.session.activeTurnId ?? existingRow.value.latestTurnId,
             updatedAt: event.occurredAt,
           });
-          yield* refreshThreadShellSummary(event.payload.threadId);
+          yield* refreshOrDeferThreadShellSummary(event.payload.threadId, attachmentSideEffects);
           return;
         }
 
@@ -944,7 +972,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             latestTurnId: event.payload.turnId,
             updatedAt: event.occurredAt,
           });
-          yield* refreshThreadShellSummary(event.payload.threadId);
+          yield* refreshOrDeferThreadShellSummary(event.payload.threadId, attachmentSideEffects);
           return;
         }
 
@@ -982,7 +1010,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             latestTurnId,
             updatedAt: event.occurredAt,
           });
-          yield* refreshThreadShellSummary(event.payload.threadId);
+          yield* refreshOrDeferThreadShellSummary(event.payload.threadId, attachmentSideEffects);
           return;
         }
 
@@ -1692,33 +1720,89 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       },
     ];
 
-    const runProjectorForEvent = Effect.fn("runProjectorForEvent")(function* (
+    const runProjectorForEvents = Effect.fn("runProjectorForEvents")(function* (
       projector: ProjectorDefinition,
-      event: OrchestrationEvent,
+      events: ReadonlyArray<OrchestrationEvent>,
     ) {
+      const lastEvent = events.at(-1);
+      if (lastEvent === undefined) return;
+
       const attachmentSideEffects: AttachmentSideEffects = {
         deletedThreadIds: new Set<string>(),
         prunedThreadRelativePaths: new Map<string, Set<string>>(),
+        deferredThreadShellSummaryIds: null,
       };
 
       yield* sql.withTransaction(
-        projector.apply(event, attachmentSideEffects).pipe(
-          Effect.flatMap(() =>
-            projectionStateRepository.upsert({
-              projector: projector.name,
-              lastAppliedSequence: event.sequence,
-              updatedAt: event.occurredAt,
-            }),
-          ),
-        ),
+        Effect.gen(function* () {
+          for (const [index, event] of events.entries()) {
+            yield* projector.apply(event, attachmentSideEffects);
+            if ((index + 1) % 50 === 0) yield* Effect.yieldNow;
+          }
+          yield* refreshPrunedThreadAttachmentPaths(attachmentSideEffects);
+          yield* projectionStateRepository.upsert({
+            projector: projector.name,
+            lastAppliedSequence: lastEvent.sequence,
+            updatedAt: lastEvent.occurredAt,
+          });
+        }),
       );
 
       yield* runAttachmentSideEffects(attachmentSideEffects).pipe(
         Effect.catch((cause) =>
           Effect.logWarning("failed to apply projected attachment side-effects", {
             projector: projector.name,
-            sequence: event.sequence,
-            eventType: event.type,
+            sequence: lastEvent.sequence,
+            cause,
+          }),
+        ),
+      );
+    });
+
+    const runProjectorForEvent = (projector: ProjectorDefinition, event: OrchestrationEvent) =>
+      runProjectorForEvents(projector, [event]);
+
+    const runProjectorsForEvents = Effect.fn("runProjectorsForEvents")(function* (
+      events: ReadonlyArray<OrchestrationEvent>,
+    ) {
+      const lastEvent = events.at(-1);
+      if (lastEvent === undefined) return;
+
+      const attachmentSideEffects: AttachmentSideEffects = {
+        deletedThreadIds: new Set<string>(),
+        prunedThreadRelativePaths: new Map<string, Set<string>>(),
+        deferredThreadShellSummaryIds: new Set<ThreadId>(),
+      };
+
+      yield* sql.withTransaction(
+        Effect.gen(function* () {
+          for (const [index, event] of events.entries()) {
+            for (const projector of projectors) {
+              yield* projector.apply(event, attachmentSideEffects);
+            }
+            if ((index + 1) % 50 === 0) yield* Effect.yieldNow;
+          }
+          yield* refreshPrunedThreadAttachmentPaths(attachmentSideEffects);
+          yield* Effect.forEach(
+            attachmentSideEffects.deferredThreadShellSummaryIds ?? [],
+            refreshThreadShellSummary,
+            { concurrency: 1 },
+          );
+          for (const projector of projectors) {
+            yield* projectionStateRepository.upsert({
+              projector: projector.name,
+              lastAppliedSequence: lastEvent.sequence,
+              updatedAt: lastEvent.occurredAt,
+            });
+          }
+        }),
+      );
+
+      yield* runAttachmentSideEffects(attachmentSideEffects).pipe(
+        Effect.catch((cause) =>
+          Effect.logWarning("failed to apply projected attachment side-effects", {
+            projector: "historical-batch",
+            sequence: lastEvent.sequence,
             cause,
           }),
         ),
@@ -1755,6 +1839,16 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         ),
       );
 
+    const projectEvents: OrchestrationProjectionPipelineShape["projectEvents"] = (events) =>
+      runProjectorsForEvents(events).pipe(
+        Effect.provideService(FileSystem.FileSystem, fileSystem),
+        Effect.provideService(Path.Path, path),
+        Effect.provideService(ServerConfig, serverConfig),
+        Effect.catchTag("SqlError", (sqlError) =>
+          Effect.fail(toPersistenceSqlError("ProjectionPipeline.projectEvents:query")(sqlError)),
+        ),
+      );
+
     const bootstrap: OrchestrationProjectionPipelineShape["bootstrap"] = Effect.forEach(
       projectors,
       bootstrapProjector,
@@ -1777,6 +1871,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     return {
       bootstrap,
       projectEvent,
+      projectEvents,
     } satisfies OrchestrationProjectionPipelineShape;
   },
 );

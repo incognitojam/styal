@@ -76,6 +76,8 @@ import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as CommandOutputQuery from "./orchestration/CommandOutputQuery.ts";
 import * as ComposerDrafts from "./persistence/ComposerDrafts.ts";
+import * as LegacyImportPreview from "./dataImport/LegacyImportPreview.ts";
+import * as LegacyImport from "./dataImport/LegacyImport.ts";
 import * as ServerConfig from "./config.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
@@ -553,6 +555,8 @@ const makeWsRpcLayer = (
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const usage = yield* UsageService.UsageService;
+      const legacyImportPreview = yield* LegacyImportPreview.LegacyImportPreviewService;
+      const legacyImport = yield* LegacyImport.LegacyImportService;
       const composerDrafts = yield* ComposerDrafts.ComposerDraftRepository;
       const relayClient = yield* RelayClient.RelayClient;
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
@@ -1719,6 +1723,14 @@ const makeWsRpcLayer = (
               "rpc.aggregate": "server",
             },
           ),
+        [WS_METHODS.serverPreviewLegacyImport]: (_input) =>
+          observeRpcEffect(WS_METHODS.serverPreviewLegacyImport, legacyImportPreview.preview, {
+            "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.serverImportLegacyData]: (input) =>
+          observeRpcEffect(WS_METHODS.serverImportLegacyData, legacyImport.importData(input), {
+            "rpc.aggregate": "server",
+          }),
         [WS_METHODS.serverUpdateSettings]: ({ patch }) =>
           observeRpcEffect(
             WS_METHODS.serverUpdateSettings,
@@ -2111,6 +2123,23 @@ const makeWsRpcLayer = (
                 input.resource._tag === "pull-request-file"
               ) {
                 return yield* issueAssetUrl({ resource: input.resource });
+              }
+              if (input.resource._tag === "legacy-project-favicon") {
+                const project = yield* legacyImportPreview.findProject(input.resource.projectId);
+                if (Option.isNone(project)) {
+                  return yield* new AssetWorkspaceContextNotFoundError({
+                    resource: input.resource,
+                  });
+                }
+                return yield* issueAssetUrl({
+                  resource: {
+                    _tag: "project-favicon",
+                    cwd: project.value.workspaceRoot,
+                  },
+                  ...(project.value.faviconPath
+                    ? { projectFaviconPath: project.value.faviconPath }
+                    : {}),
+                });
               }
               if (input.resource._tag === "project-favicon") {
                 const project = yield* projectionSnapshotQuery
@@ -2597,6 +2626,8 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(ProviderMaintenanceRunner.layer),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
+              Layer.provide(LegacyImportPreview.layer),
+              Layer.provide(LegacyImport.layer),
               // One server-lifetime service means clients share the same PR caches, and a WS
               // mutation invalidates the HTTP diff cache that every client reads from.
               Layer.provide(Layer.succeed(PullRequestService.PullRequestService, pullRequests)),
