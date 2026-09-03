@@ -89,26 +89,30 @@ warning so you can correct its syntax or field values.
 T3 Code adds project context to commands it launches. These variables are intended for project
 commands and can safely be referenced by actions:
 
-| Variable                | Available in                                                     | Value                                                                                                                   |
-| ----------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `T3CODE_PROJECT_ROOT`   | Actions, plus web and desktop terminals                          | Absolute path to the checkout registered as the project. In a worktree thread, this remains the original checkout path. |
-| `T3CODE_WORKTREE_PATH`  | Actions, plus web and desktop terminals for a worktree thread    | Absolute path to the thread's worktree. It is unset for local threads.                                                  |
-| `T3CODE_WORKSPACE_PORT` | Actions, T3 Code terminals, and locally launched agent processes | First port in the workspace's stable range of ten ports.                                                                |
+| Variable               | Available in                                                     | Value                                                                                                                   |
+| ---------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `STYAL_PROJECT_ROOT`   | Actions, plus web and desktop terminals                          | Absolute path to the checkout registered as the project. In a worktree thread, this remains the original checkout path. |
+| `STYAL_WORKTREE_PATH`  | Actions, plus web and desktop terminals for a worktree thread    | Absolute path to the thread's worktree. It is unset for local threads.                                                  |
+| `STYAL_WORKSPACE_PORT` | Actions, T3 Code terminals, and locally launched agent processes | First port in the workspace's stable range of ten ports.                                                                |
 
-The action's current working directory is normally `T3CODE_WORKTREE_PATH` when that variable is
-set, otherwise `T3CODE_PROJECT_ROOT`. This makes it possible to read shared files from the original
+For compatibility with existing project scripts, T3 Code also exposes `T3CODE_PROJECT_ROOT`,
+`T3CODE_WORKTREE_PATH`, and `T3CODE_WORKSPACE_PORT` with the same values. New scripts should use
+the `STYAL_*` names.
+
+The action's current working directory is normally `STYAL_WORKTREE_PATH` when that variable is
+set, otherwise `STYAL_PROJECT_ROOT`. This makes it possible to read shared files from the original
 checkout while still modifying and running code in the thread's isolated worktree.
 
-Use the syntax for the environment's shell: `$T3CODE_PROJECT_ROOT` in a POSIX shell,
-`$env:T3CODE_PROJECT_ROOT` in PowerShell, or `%T3CODE_PROJECT_ROOT%` in Command Prompt. Shared
+Use the syntax for the environment's shell: `$STYAL_PROJECT_ROOT` in a POSIX shell,
+`$env:STYAL_PROJECT_ROOT` in PowerShell, or `%STYAL_PROJECT_ROOT%` in Command Prompt. Shared
 actions should use syntax supported by every environment where the project will run.
 
 For example, a POSIX shell action can inspect the paths and use two ports from the assigned range:
 
 ```sh
-printf 'project=%s\nworktree=%s\n' "$T3CODE_PROJECT_ROOT" "${T3CODE_WORKTREE_PATH:-local}"
-pnpm dev -- --port "$T3CODE_WORKSPACE_PORT" &
-pnpm run api -- --port "$((T3CODE_WORKSPACE_PORT + 1))"
+printf 'project=%s\nworktree=%s\n' "$STYAL_PROJECT_ROOT" "${STYAL_WORKTREE_PATH:-local}"
+pnpm dev -- --port "$STYAL_WORKSPACE_PORT" &
+pnpm run api -- --port "$((STYAL_WORKSPACE_PORT + 1))"
 ```
 
 The assigned range is stable across restarts and does not overlap with another T3 Code workspace

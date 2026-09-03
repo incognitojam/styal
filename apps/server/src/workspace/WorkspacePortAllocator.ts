@@ -5,6 +5,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { withT3CodeProjectEnvironmentAliases } from "@t3tools/shared/projectScripts";
 
 export const WORKSPACE_PORT_ENV_VAR = "STYAL_WORKSPACE_PORT";
 export const WORKSPACE_PORT_RANGE_SIZE = 10;
@@ -124,7 +125,11 @@ export const make = Effect.fn("WorkspacePortAllocator.make")(function* () {
 
   const environmentFor: WorkspacePortAllocator["Service"]["environmentFor"] = (workspacePath) =>
     getBasePort(workspacePath).pipe(
-      Effect.map((basePort) => ({ [WORKSPACE_PORT_ENV_VAR]: String(basePort) })),
+      Effect.map((basePort) =>
+        withT3CodeProjectEnvironmentAliases({
+          [WORKSPACE_PORT_ENV_VAR]: String(basePort),
+        }),
+      ),
     );
 
   return WorkspacePortAllocator.of({ getBasePort, environmentFor });

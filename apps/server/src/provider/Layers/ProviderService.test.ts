@@ -304,7 +304,11 @@ function makeProviderServiceLayer() {
   const layer = it.layer(
     Layer.mergeAll(
       makeProviderServiceLive({
-        resolveWorkspaceEnvironment: () => Effect.succeed({ STYAL_WORKSPACE_PORT: "24120" }),
+        resolveWorkspaceEnvironment: () =>
+          Effect.succeed({
+            STYAL_WORKSPACE_PORT: "24120",
+            T3CODE_WORKSPACE_PORT: "24120",
+          }),
       }).pipe(
         Layer.provide(providerAdapterLayer),
         Layer.provide(directoryLayer),
@@ -1010,6 +1014,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
         assert.equal(startPayload.provider, "codex");
         assert.equal(startPayload.cwd, "/tmp/project");
         assert.equal(startPayload.environment?.STYAL_WORKSPACE_PORT, "24120");
+        assert.equal(startPayload.environment?.T3CODE_WORKSPACE_PORT, "24120");
         assert.deepEqual(startPayload.resumeCursor, session.resumeCursor);
         assert.equal(startPayload.threadId, session.threadId);
       }

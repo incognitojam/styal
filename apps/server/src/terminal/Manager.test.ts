@@ -1802,7 +1802,10 @@ it.layer(
         resolveWorkspaceEnvironment: (workspacePath) =>
           Effect.sync(() => {
             resolvedPaths.push(workspacePath);
-            return { STYAL_WORKSPACE_PORT: "24120" };
+            return {
+              STYAL_WORKSPACE_PORT: "24120",
+              T3CODE_WORKSPACE_PORT: "24120",
+            };
           }),
       });
       yield* manager.open(
@@ -1815,6 +1818,7 @@ it.layer(
 
       assert.deepStrictEqual(resolvedPaths, [baseDir]);
       assert.equal(ptyAdapter.spawnInputs[0]?.env.STYAL_WORKSPACE_PORT, "24120");
+      assert.equal(ptyAdapter.spawnInputs[0]?.env.T3CODE_WORKSPACE_PORT, "24120");
     }),
   );
 

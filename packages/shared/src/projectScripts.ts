@@ -26,10 +26,27 @@ export function projectScriptRuntimeEnv(
   if (input.worktreePath) {
     env.STYAL_WORKTREE_PATH = input.worktreePath;
   }
-  if (input.extraEnv) {
-    return { ...env, ...input.extraEnv };
-  }
-  return env;
+  return withT3CodeProjectEnvironmentAliases(
+    input.extraEnv === undefined ? env : { ...env, ...input.extraEnv },
+  );
+}
+
+/** Adds legacy names only at the boundary where project processes receive their environment. */
+export function withT3CodeProjectEnvironmentAliases(
+  input: Record<string, string>,
+): Record<string, string> {
+  return {
+    ...input,
+    ...(input.STYAL_PROJECT_ROOT === undefined
+      ? {}
+      : { T3CODE_PROJECT_ROOT: input.STYAL_PROJECT_ROOT }),
+    ...(input.STYAL_WORKTREE_PATH === undefined
+      ? {}
+      : { T3CODE_WORKTREE_PATH: input.STYAL_WORKTREE_PATH }),
+    ...(input.STYAL_WORKSPACE_PORT === undefined
+      ? {}
+      : { T3CODE_WORKSPACE_PORT: input.STYAL_WORKSPACE_PORT }),
+  };
 }
 
 export function setupProjectScript(scripts: readonly ProjectScript[]): ProjectScript | null {
@@ -38,9 +55,9 @@ export function setupProjectScript(scripts: readonly ProjectScript[]): ProjectSc
 
 /**
  * A setup script is written against a fresh worktree: its cwd is the worktree and
- * `$T3CODE_PROJECT_ROOT` names a different directory. Where those are the same
+ * `$STYAL_PROJECT_ROOT` names a different directory. Where those are the same
  * directory - a thread on the main checkout - a line like
- * `ln -sf "$T3CODE_PROJECT_ROOT/.env" .env` replaces the file it meant to link to.
+ * `ln -sf "$STYAL_PROJECT_ROOT/.env" .env` replaces the file it meant to link to.
  * Callers refuse the run instead of falling back to the project root.
  */
 export function isSetupScriptOutsideWorktree(input: {

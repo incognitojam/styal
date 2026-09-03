@@ -63,14 +63,14 @@ integrationLayer("workspace port environment integration", (it) => {
         cwd: workspacePath,
         worktreePath: workspacePath,
         command:
-          "node -e \"process.stdout.write('PORT_PROOF=' + process.env.STYAL_WORKSPACE_PORT)\"",
+          "node -e \"process.stdout.write('PORT_PROOF=' + process.env.STYAL_WORKSPACE_PORT + ':' + process.env.T3CODE_WORKSPACE_PORT)\"",
       });
 
       const completion = yield* Deferred.await(completed);
       const observedOutput = yield* Ref.get(output);
       assert.strictEqual(completion.type, "exited");
       if (completion.type === "exited") assert.strictEqual(completion.exitCode, 0);
-      assert.include(observedOutput, `PORT_PROOF=${allocatedPort}`);
+      assert.include(observedOutput, `PORT_PROOF=${allocatedPort}:${allocatedPort}`);
 
       if (process.env.T3CODE_PRINT_WORKSPACE_PORT_PROOF === "1") {
         yield* Effect.sync(() =>
