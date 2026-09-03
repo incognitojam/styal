@@ -46,6 +46,7 @@ import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts"
 import {
   OrchestrationEngineService,
   type HistoricalEventImportError,
+  type HistoricalProviderContinuation,
   type OrchestrationEngineShape,
 } from "../Services/OrchestrationEngine.ts";
 const isOrchestrationCommandPreviouslyRejectedError = Schema.is(
@@ -53,6 +54,7 @@ const isOrchestrationCommandPreviouslyRejectedError = Schema.is(
 );
 const isOrchestrationCommandIdConflictError = Schema.is(OrchestrationCommandIdConflictError);
 const isOrchestrationCommandInvariantError = Schema.is(OrchestrationCommandInvariantError);
+const encodeUnknownJsonString = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
 interface CommandEnvelope {
   readonly kind: "command";
@@ -65,6 +67,7 @@ interface CommandEnvelope {
 interface HistoricalImportEnvelope {
   readonly kind: "historical-import";
   readonly events: ReadonlyArray<Omit<OrchestrationEvent, "sequence">>;
+  readonly continuation: HistoricalProviderContinuation | undefined;
   readonly result: Deferred.Deferred<
     { readonly eventCount: number; readonly sequence: number },
     HistoricalEventImportError
@@ -358,6 +361,42 @@ const makeOrchestrationEngine = Effect.gen(function* () {
               if ((index + 1) % 50 === 0) yield* Effect.yieldNow;
             }
             yield* projectionPipeline.projectEvents(committedEvents);
+            if (envelope.continuation !== undefined) {
+              const continuation = envelope.continuation;
+              yield* sql`
+                INSERT INTO provider_session_runtime (
+                  thread_id,
+                  provider_name,
+                  provider_instance_id,
+                  adapter_key,
+                  runtime_mode,
+                  status,
+                  last_seen_at,
+                  resume_cursor_json,
+                  runtime_payload_json
+                ) VALUES (
+                  ${continuation.threadId},
+                  ${continuation.provider},
+                  ${continuation.providerInstanceId},
+                  ${continuation.provider},
+                  ${continuation.runtimeMode},
+                  'stopped',
+                  ${continuation.lastSeenAt},
+                  ${encodeUnknownJsonString(continuation.resumeCursor)},
+                  NULL
+                )
+                ON CONFLICT (thread_id)
+                DO UPDATE SET
+                  provider_name = excluded.provider_name,
+                  provider_instance_id = excluded.provider_instance_id,
+                  adapter_key = excluded.adapter_key,
+                  runtime_mode = excluded.runtime_mode,
+                  status = excluded.status,
+                  last_seen_at = excluded.last_seen_at,
+                  resume_cursor_json = excluded.resume_cursor_json,
+                  runtime_payload_json = excluded.runtime_payload_json
+              `;
+            }
 
             return {
               eventCount: envelope.events.length,
@@ -365,7 +404,10 @@ const makeOrchestrationEngine = Effect.gen(function* () {
               creationEvents: committedEvents.filter(
                 (event) => event.type === "project.created" || event.type === "thread.created",
               ),
-              nextCommandReadModel: yield* projectionSnapshotQuery.getCommandReadModel(),
+              nextCommandReadModel:
+                committedEvents.length === 0
+                  ? commandReadModel
+                  : yield* projectionSnapshotQuery.getCommandReadModel(),
             } as const;
           }),
         )
@@ -438,6 +480,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
 
   const importHistoricalEvents: NonNullable<OrchestrationEngineShape["importHistoricalEvents"]> = (
     events,
+    options,
   ) =>
     Effect.gen(function* () {
       const result = yield* Deferred.make<
@@ -447,6 +490,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
       yield* Queue.offer(commandQueue, {
         kind: "historical-import",
         events,
+        continuation: options?.continuation,
         result,
       });
       return yield* Deferred.await(result);

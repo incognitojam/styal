@@ -8,6 +8,7 @@ import {
   ThreadId,
   TurnId,
   type OrchestrationEvent,
+  type ProviderDriverKind,
   ProviderInstanceId,
 } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -18,6 +19,7 @@ import * as Metric from "effect/Metric";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { describe, expect, it } from "vite-plus/test";
 
 import { PersistenceSqlError } from "../../persistence/Errors.ts";
@@ -63,7 +65,7 @@ async function createOrchestrationSystem() {
     Layer.provide(OrchestrationEventStoreLive),
     Layer.provide(OrchestrationCommandReceiptRepositoryLive),
     Layer.provide(RepositoryIdentityResolver.layer),
-    Layer.provide(SqlitePersistenceMemory),
+    Layer.provideMerge(SqlitePersistenceMemory),
     Layer.provideMerge(ServerConfigLayer),
     Layer.provideMerge(NodeServices.layer),
   );
@@ -74,6 +76,28 @@ async function createOrchestrationSystem() {
     engine,
     readModel: () => runtime.runPromise(snapshotQuery.getSnapshot()),
     run: <A, E>(effect: Effect.Effect<A, E>) => runtime.runPromise(effect),
+    readProviderContinuation: (threadId: ThreadId) =>
+      runtime.runPromise(
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          return yield* sql<{
+            readonly providerName: string;
+            readonly providerInstanceId: string | null;
+            readonly status: string;
+            readonly resumeCursorJson: string | null;
+            readonly runtimePayloadJson: string | null;
+          }>`
+            SELECT
+              provider_name AS "providerName",
+              provider_instance_id AS "providerInstanceId",
+              status,
+              resume_cursor_json AS "resumeCursorJson",
+              runtime_payload_json AS "runtimePayloadJson"
+            FROM provider_session_runtime
+            WHERE thread_id = ${threadId}
+          `;
+        }),
+      ),
     dispose: () => runtime.dispose(),
   };
 }
@@ -525,75 +549,87 @@ describe("OrchestrationEngine", () => {
 
     const createdAt = now();
     const imported = await system.run(
-      importHistoricalEvents([
-        {
-          eventId: EventId.make("event-import-project"),
-          type: "project.created",
-          aggregateKind: "project",
-          aggregateId: asProjectId("project-import"),
-          occurredAt: createdAt,
-          commandId: CommandId.make("command-import-project"),
-          causationEventId: null,
-          correlationId: CommandId.make("command-import-project"),
-          metadata: {},
-          payload: {
-            projectId: asProjectId("project-import"),
-            title: "Imported project",
-            workspaceRoot: "/work/imported",
-            defaultModelSelection: null,
-            scripts: [],
-            createdAt,
-            updatedAt: createdAt,
-          },
-        },
-        {
-          eventId: EventId.make("event-import-thread"),
-          type: "thread.created",
-          aggregateKind: "thread",
-          aggregateId: ThreadId.make("thread-import"),
-          occurredAt: createdAt,
-          commandId: CommandId.make("command-import-thread"),
-          causationEventId: null,
-          correlationId: CommandId.make("command-import-thread"),
-          metadata: {},
-          payload: {
-            threadId: ThreadId.make("thread-import"),
-            projectId: asProjectId("project-import"),
-            title: "Imported thread",
-            modelSelection: {
-              instanceId: ProviderInstanceId.make("codex"),
-              model: "gpt-5-codex",
+      importHistoricalEvents(
+        [
+          {
+            eventId: EventId.make("event-import-project"),
+            type: "project.created",
+            aggregateKind: "project",
+            aggregateId: asProjectId("project-import"),
+            occurredAt: createdAt,
+            commandId: CommandId.make("command-import-project"),
+            causationEventId: null,
+            correlationId: CommandId.make("command-import-project"),
+            metadata: {},
+            payload: {
+              projectId: asProjectId("project-import"),
+              title: "Imported project",
+              workspaceRoot: "/work/imported",
+              defaultModelSelection: null,
+              scripts: [],
+              createdAt,
+              updatedAt: createdAt,
             },
-            interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-            runtimeMode: "full-access",
-            branch: null,
-            worktreePath: null,
-            createdAt,
-            updatedAt: createdAt,
           },
-        },
+          {
+            eventId: EventId.make("event-import-thread"),
+            type: "thread.created",
+            aggregateKind: "thread",
+            aggregateId: ThreadId.make("thread-import"),
+            occurredAt: createdAt,
+            commandId: CommandId.make("command-import-thread"),
+            causationEventId: null,
+            correlationId: CommandId.make("command-import-thread"),
+            metadata: {},
+            payload: {
+              threadId: ThreadId.make("thread-import"),
+              projectId: asProjectId("project-import"),
+              title: "Imported thread",
+              modelSelection: {
+                instanceId: ProviderInstanceId.make("codex"),
+                model: "gpt-5-codex",
+              },
+              interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+              runtimeMode: "full-access",
+              branch: null,
+              worktreePath: null,
+              createdAt,
+              updatedAt: createdAt,
+            },
+          },
+          {
+            eventId: EventId.make("event-import-message"),
+            type: "thread.message-sent",
+            aggregateKind: "thread",
+            aggregateId: ThreadId.make("thread-import"),
+            occurredAt: createdAt,
+            commandId: null,
+            causationEventId: null,
+            correlationId: null,
+            metadata: {},
+            payload: {
+              threadId: ThreadId.make("thread-import"),
+              messageId: asMessageId("message-import"),
+              role: "assistant",
+              text: "Imported answer",
+              turnId: null,
+              streaming: false,
+              createdAt,
+              updatedAt: createdAt,
+            },
+          },
+        ],
         {
-          eventId: EventId.make("event-import-message"),
-          type: "thread.message-sent",
-          aggregateKind: "thread",
-          aggregateId: ThreadId.make("thread-import"),
-          occurredAt: createdAt,
-          commandId: null,
-          causationEventId: null,
-          correlationId: null,
-          metadata: {},
-          payload: {
+          continuation: {
             threadId: ThreadId.make("thread-import"),
-            messageId: asMessageId("message-import"),
-            role: "assistant",
-            text: "Imported answer",
-            turnId: null,
-            streaming: false,
-            createdAt,
-            updatedAt: createdAt,
+            provider: "codex" as ProviderDriverKind,
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            runtimeMode: "full-access",
+            lastSeenAt: createdAt,
+            resumeCursor: { threadId: "provider-thread-import" },
           },
         },
-      ]),
+      ),
     );
 
     expect(imported.eventCount).toBe(3);
@@ -604,6 +640,15 @@ describe("OrchestrationEngine", () => {
     expect(
       readModel.threads.find((thread) => thread.id === "thread-import")?.messages[0]?.text,
     ).toBe("Imported answer");
+    expect(await system.readProviderContinuation(ThreadId.make("thread-import"))).toEqual([
+      {
+        providerName: "codex",
+        providerInstanceId: "codex",
+        status: "stopped",
+        resumeCursorJson: '{"threadId":"provider-thread-import"}',
+        runtimePayloadJson: null,
+      },
+    ]);
 
     const sequenceBeforeFailedBatch = await system.run(engine.latestSequence);
     const duplicateProjectEvent = {
@@ -627,7 +672,18 @@ describe("OrchestrationEngine", () => {
       },
     };
     await expect(
-      system.run(importHistoricalEvents([duplicateProjectEvent, duplicateProjectEvent])),
+      system.run(
+        importHistoricalEvents([duplicateProjectEvent, duplicateProjectEvent], {
+          continuation: {
+            threadId: ThreadId.make("thread-import-rollback"),
+            provider: "codex" as ProviderDriverKind,
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            runtimeMode: "full-access",
+            lastSeenAt: createdAt,
+            resumeCursor: { threadId: "provider-thread-rollback" },
+          },
+        }),
+      ),
     ).rejects.toThrow();
     expect(await system.run(engine.latestSequence)).toBe(sequenceBeforeFailedBatch);
     expect(
@@ -635,6 +691,9 @@ describe("OrchestrationEngine", () => {
         (project) => project.id === "project-import-rollback",
       ),
     ).toBe(false);
+    expect(await system.readProviderContinuation(ThreadId.make("thread-import-rollback"))).toEqual(
+      [],
+    );
 
     await system.run(
       engine.dispatch({

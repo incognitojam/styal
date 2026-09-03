@@ -11,9 +11,14 @@
  * @module OrchestrationEngineService
  */
 import type {
+  IsoDateTime,
   OrchestrationClientOrigin,
   OrchestrationCommand,
   OrchestrationEvent,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  RuntimeMode,
+  ThreadId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
@@ -30,6 +35,16 @@ export type HistoricalEventImportError =
   | OrchestrationEventStoreError
   | OrchestrationProjectorDecodeError
   | ProjectionRepositoryError;
+
+/** Safe, durable provider state that lets an imported thread resume its native conversation. */
+export interface HistoricalProviderContinuation {
+  readonly threadId: ThreadId;
+  readonly provider: ProviderDriverKind;
+  readonly providerInstanceId: ProviderInstanceId;
+  readonly runtimeMode: RuntimeMode;
+  readonly lastSeenAt: IsoDateTime;
+  readonly resumeCursor: unknown;
+}
 
 /**
  * OrchestrationEngineShape - Service API for orchestration command and event flow.
@@ -76,6 +91,7 @@ export interface OrchestrationEngineShape {
    */
   readonly importHistoricalEvents?: (
     events: ReadonlyArray<Omit<OrchestrationEvent, "sequence">>,
+    options?: { readonly continuation?: HistoricalProviderContinuation },
   ) => Effect.Effect<
     { readonly eventCount: number; readonly sequence: number },
     HistoricalEventImportError,

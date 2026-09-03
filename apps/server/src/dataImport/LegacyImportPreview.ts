@@ -41,6 +41,14 @@ const SourceProjectScripts = Schema.Array(Schema.Unknown);
 const SourceThreadRows = Schema.Array(
   Schema.Struct({ projectId: Schema.String, threadId: Schema.String }),
 );
+const RuntimeRows = Schema.Array(
+  Schema.Struct({
+    threadId: Schema.String,
+    providerName: Schema.String,
+    providerInstanceId: Schema.NullOr(Schema.String),
+    resumeCursorJson: Schema.NullOr(Schema.String),
+  }),
+);
 const DestinationProjectRows = Schema.Array(
   Schema.Struct({
     projectId: Schema.String,
@@ -58,6 +66,9 @@ const decodeSourceProjectScripts = Schema.decodeUnknownSync(
   Schema.fromJsonString(SourceProjectScripts),
 );
 const decodeSourceThreadRows = Schema.decodeUnknownSync(SourceThreadRows);
+const decodeRuntimeRows = Schema.decodeUnknownSync(RuntimeRows);
+const decodeUnknownJsonString = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+const encodeUnknownJsonString = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 const decodeDestinationProjectRows = Schema.decodeUnknownSync(DestinationProjectRows);
 const decodeMigrationVersionRows = Schema.decodeUnknownSync(MigrationVersionRows);
 
@@ -77,13 +88,126 @@ export interface LegacyImportDestinationState {
   readonly projectIds: ReadonlySet<string>;
   readonly activeWorkspaceRoots: ReadonlySet<string>;
   readonly threadIds: ReadonlySet<string>;
+  readonly continuationKeys: ReadonlyMap<string, string>;
 }
 
 export const emptyLegacyImportDestinationState = (): LegacyImportDestinationState => ({
   projectIds: new Set(),
   activeWorkspaceRoots: new Set(),
   threadIds: new Set(),
+  continuationKeys: new Map(),
 });
+
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+export function sanitizeLegacyResumeCursor(
+  providerName: string,
+  resumeCursor: unknown,
+): unknown | null {
+  if (resumeCursor === null || typeof resumeCursor !== "object" || Array.isArray(resumeCursor)) {
+    return null;
+  }
+  const cursor = resumeCursor as Record<string, unknown>;
+  if (providerName === "codex") {
+    const threadId = nonEmptyString(cursor.threadId);
+    return threadId === undefined ? null : { threadId };
+  }
+  if (providerName === "claudeAgent") {
+    const threadId = nonEmptyString(cursor.threadId);
+    const resume = nonEmptyString(cursor.resume);
+    const resumeSessionAt = nonEmptyString(cursor.resumeSessionAt);
+    const turnCount =
+      typeof cursor.turnCount === "number" &&
+      Number.isInteger(cursor.turnCount) &&
+      cursor.turnCount >= 0
+        ? cursor.turnCount
+        : undefined;
+    if (threadId === undefined && resume === undefined) return null;
+    return {
+      ...(threadId === undefined ? {} : { threadId }),
+      ...(resume === undefined ? {} : { resume }),
+      ...(resumeSessionAt === undefined ? {} : { resumeSessionAt }),
+      ...(turnCount === undefined ? {} : { turnCount }),
+    };
+  }
+  if (providerName === "cursor" || providerName === "grok" || providerName === "opencode") {
+    const sessionId = nonEmptyString(cursor.sessionId);
+    if (sessionId === undefined) return null;
+    const schemaVersion =
+      typeof cursor.schemaVersion === "number" && Number.isInteger(cursor.schemaVersion)
+        ? cursor.schemaVersion
+        : undefined;
+    return {
+      ...(schemaVersion === undefined ? {} : { schemaVersion }),
+      sessionId,
+    };
+  }
+  return null;
+}
+
+function resumeCursorIdentity(resumeCursor: unknown): string {
+  if (resumeCursor !== null && typeof resumeCursor === "object" && !Array.isArray(resumeCursor)) {
+    const cursor = resumeCursor as Record<string, unknown>;
+    for (const key of ["resume", "sessionId", "threadId"] as const) {
+      const value = cursor[key];
+      if (typeof value === "string" && value.length > 0) return `${key}:${value}`;
+    }
+  }
+  return `opaque:${encodeUnknownJsonString(resumeCursor)}`;
+}
+
+export function legacyContinuationKey(input: {
+  readonly providerName: string;
+  readonly providerInstanceId: string | null;
+  readonly resumeCursor: unknown;
+}): string | null {
+  const resumeCursor = sanitizeLegacyResumeCursor(input.providerName, input.resumeCursor);
+  return resumeCursor === null
+    ? null
+    : `${input.providerName}:${input.providerInstanceId ?? input.providerName}:${resumeCursorIdentity(resumeCursor)}`;
+}
+
+function readRuntimeContinuationKeys(
+  database: ReadonlyDatabase,
+  tableNames: ReadonlySet<string>,
+): ReadonlyMap<string, string> {
+  if (!tableNames.has("provider_session_runtime")) return new Map();
+  const runtimeColumns = new Set(
+    decodeTableRows(database.all("PRAGMA table_info(provider_session_runtime)")).map(
+      ({ name }) => name,
+    ),
+  );
+  const providerInstanceIdExpression = runtimeColumns.has("provider_instance_id")
+    ? "provider_instance_id"
+    : "NULL";
+  const rows = decodeRuntimeRows(
+    database.all(`
+      SELECT
+        thread_id AS threadId,
+        provider_name AS providerName,
+        ${providerInstanceIdExpression} AS providerInstanceId,
+        resume_cursor_json AS resumeCursorJson
+      FROM provider_session_runtime
+      WHERE resume_cursor_json IS NOT NULL
+    `),
+  );
+  return new Map(
+    rows.flatMap((row) => {
+      try {
+        const key = legacyContinuationKey({
+          providerName: row.providerName,
+          providerInstanceId: row.providerInstanceId,
+          resumeCursor: decodeUnknownJsonString(row.resumeCursorJson ?? "null"),
+        });
+        return key === null ? [] : [[row.threadId, key] as const];
+      } catch {
+        return [];
+      }
+    }),
+  );
+}
 
 export function inspectLegacyImportDestinationState(
   database: ReadonlyDatabase,
@@ -118,6 +242,7 @@ export function inspectLegacyImportDestinationState(
     projectIds: new Set(destinationProjects.map((project) => project.projectId)),
     activeWorkspaceRoots,
     threadIds: new Set(destinationThreads.map((thread) => thread.threadId)),
+    continuationKeys: readRuntimeContinuationKeys(database, tableNames),
   };
 }
 
@@ -204,8 +329,10 @@ export function inspectOpenDatabase(
         WHERE deleted_at IS NULL
       `),
     );
+    const sourceContinuationKeys = readRuntimeContinuationKeys(database, tableNames);
     const sourceThreadCounts = new Map<string, number>();
     const remainingThreadCounts = new Map<string, number>();
+    const contextRepairCounts = new Map<string, number>();
     for (const thread of sourceThreads) {
       sourceThreadCounts.set(thread.projectId, (sourceThreadCounts.get(thread.projectId) ?? 0) + 1);
       if (!destination.threadIds.has(thread.threadId)) {
@@ -213,20 +340,39 @@ export function inspectOpenDatabase(
           thread.projectId,
           (remainingThreadCounts.get(thread.projectId) ?? 0) + 1,
         );
+      } else {
+        const sourceContinuationKey = sourceContinuationKeys.get(thread.threadId);
+        if (
+          sourceContinuationKey !== undefined &&
+          destination.continuationKeys.get(thread.threadId) !== sourceContinuationKey
+        ) {
+          contextRepairCounts.set(
+            thread.projectId,
+            (contextRepairCounts.get(thread.projectId) ?? 0) + 1,
+          );
+        }
       }
     }
     const projects = sourceProjects
       .flatMap((project) => {
         const sourceThreadCount = sourceThreadCounts.get(project.projectId) ?? 0;
         const threadCount = remainingThreadCounts.get(project.projectId) ?? 0;
+        const contextRepairCount = contextRepairCounts.get(project.projectId) ?? 0;
         const projectAlreadyExists =
           destination.projectIds.has(project.projectId) ||
           destination.activeWorkspaceRoots.has(project.workspaceRoot);
-        if (threadCount === 0 && (sourceThreadCount > 0 || projectAlreadyExists)) return [];
+        if (
+          threadCount === 0 &&
+          contextRepairCount === 0 &&
+          (sourceThreadCount > 0 || projectAlreadyExists)
+        ) {
+          return [];
+        }
         return [
           {
             ...project,
             threadCount,
+            contextRepairCount,
             scriptCount: decodeSourceProjectScripts(project.scriptsJson).length,
             isExistingProject: projectAlreadyExists,
           },

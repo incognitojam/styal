@@ -11,6 +11,8 @@ import {
   type OrchestrationProjectShell,
   type OrchestrationReadModel,
   type OrchestrationShellSnapshot,
+  type ProviderDriverKind,
+  type ProviderInstanceId,
   ProjectId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -27,6 +29,7 @@ import {
 } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ServerSettingsService, layerTest as serverSettingsLayerTest } from "../serverSettings.ts";
 import { makeLegacyImportService, readLegacySourceSnapshot } from "./LegacyImport.ts";
+import { legacyContinuationKey } from "./LegacyImportPreview.ts";
 
 function createLegacyDatabase(databasePath: string): void {
   const database = new NodeSqlite.DatabaseSync(databasePath);
@@ -63,11 +66,27 @@ function createLegacyDatabase(databasePath: string): void {
       payload_json TEXT NOT NULL,
       metadata_json TEXT NOT NULL
     );
+    CREATE TABLE provider_session_runtime (
+      thread_id TEXT PRIMARY KEY,
+      provider_name TEXT NOT NULL,
+      provider_instance_id TEXT,
+      adapter_key TEXT NOT NULL,
+      runtime_mode TEXT NOT NULL,
+      status TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      resume_cursor_json TEXT,
+      runtime_payload_json TEXT
+    );
     INSERT INTO projection_projects VALUES (
       'project-import', 'Imported project', '/work/import', NULL,
       '2026-01-01T00:00:00.000Z', NULL
     );
     INSERT INTO projection_threads VALUES ('thread-import', 'project-import', NULL);
+    INSERT INTO provider_session_runtime VALUES (
+      'thread-import', 'codex', 'codex', 'codex', 'full-access', 'stopped',
+      '2026-01-01T00:00:00.000Z',
+      '{"threadId":"provider-thread-import","accessToken":"must-not-cross-import"}', NULL
+    );
   `);
 
   const insert = database.prepare(`
@@ -381,6 +400,17 @@ it.effect("reads durable history without carrying live provider state", () => {
         assert.strictEqual(snapshot.sourceKind, "t3-code-yngatech");
         assert.deepStrictEqual(snapshot.projects[0]?.threadIds, [ThreadId.make("thread-import")]);
         assert.deepStrictEqual(
+          snapshot.projects[0]?.continuations.get(ThreadId.make("thread-import")),
+          {
+            threadId: ThreadId.make("thread-import"),
+            provider: "codex" as ProviderDriverKind,
+            providerInstanceId: "codex" as ProviderInstanceId,
+            runtimeMode: "full-access",
+            lastSeenAt: "2026-01-01T00:00:00.000Z",
+            resumeCursor: { threadId: "provider-thread-import" },
+          },
+        );
+        assert.deepStrictEqual(
           snapshot.projects[0]?.events.map((event) => event.type),
           [
             "project.created",
@@ -441,13 +471,16 @@ it.effect("imports selected history and safe preferences independently", () => {
     }),
   );
 
-  const importedBatches: Array<ReadonlyArray<Omit<OrchestrationEvent, "sequence">>> = [];
+  const importedBatches: Array<{
+    readonly events: ReadonlyArray<Omit<OrchestrationEvent, "sequence">>;
+    readonly continuation: unknown;
+  }> = [];
   const engine = OrchestrationEngineService.of({
     readEvents: () => Stream.empty,
     dispatch: () => Effect.succeed({ sequence: 0 }),
-    importHistoricalEvents: (events) =>
+    importHistoricalEvents: (events, options) =>
       Effect.sync(() => {
-        importedBatches.push(events);
+        importedBatches.push({ events, continuation: options?.continuation });
         return { eventCount: events.length, sequence: events.length };
       }),
     streamDomainEvents: Stream.empty,
@@ -512,7 +545,7 @@ it.effect("imports selected history and safe preferences independently", () => {
     assert.isTrue(settingsBeforePreferenceImport.newWorktreesStartFromOrigin);
     assert.strictEqual(importedBatches.length, 1);
     assert.deepStrictEqual(
-      importedBatches[0]?.map((event) => event.type),
+      importedBatches[0]?.events.map((event) => event.type),
       [
         "project.created",
         "thread.created",
@@ -521,7 +554,7 @@ it.effect("imports selected history and safe preferences independently", () => {
         "thread.meta-updated",
       ],
     );
-    const importedMessage = importedBatches[0]?.find(
+    const importedMessage = importedBatches[0]?.events.find(
       (event) => event.type === "thread.message-sent",
     ) as
       | Omit<Extract<OrchestrationEvent, { readonly type: "thread.message-sent" }>, "sequence">
@@ -530,6 +563,14 @@ it.effect("imports selected history and safe preferences independently", () => {
     if (importedMessage?.type === "thread.message-sent") {
       assert.deepStrictEqual(importedMessage.payload.attachments, []);
     }
+    assert.deepStrictEqual(importedBatches[0]?.continuation, {
+      threadId: ThreadId.make("thread-import"),
+      provider: "codex",
+      providerInstanceId: "codex",
+      runtimeMode: "full-access",
+      lastSeenAt: "2026-01-01T00:00:00.000Z",
+      resumeCursor: { threadId: "provider-thread-import" },
+    });
 
     const preferenceResult = yield* service.importData({
       projectIds: [],
@@ -571,12 +612,13 @@ it.effect("imports one thread at a time and resumes after an interrupted thread"
 
   const importedProjectIds = new Set<string>();
   const importedThreadIds = new Set<string>();
+  const importedContinuationKeys = new Map<string, string>();
   const importedBatches: Array<ReadonlyArray<Omit<OrchestrationEvent, "sequence">>> = [];
   let targetAttachmentsDir = "";
   const engine = OrchestrationEngineService.of({
     readEvents: () => Stream.empty,
     dispatch: () => Effect.succeed({ sequence: 0 }),
-    importHistoricalEvents: (events) =>
+    importHistoricalEvents: (events, options) =>
       Effect.suspend(() => {
         importedBatches.push(events);
         if (importedBatches.length === 1) {
@@ -592,6 +634,14 @@ it.effect("imports one thread at a time and resumes after an interrupted thread"
         for (const event of events) {
           if (event.type === "project.created") importedProjectIds.add(event.aggregateId);
           if (event.type === "thread.created") importedThreadIds.add(event.aggregateId);
+        }
+        if (options?.continuation !== undefined) {
+          const key = legacyContinuationKey({
+            providerName: options.continuation.provider,
+            providerInstanceId: options.continuation.providerInstanceId,
+            resumeCursor: options.continuation.resumeCursor,
+          });
+          if (key !== null) importedContinuationKeys.set(options.continuation.threadId, key);
         }
         return Effect.succeed({ eventCount: events.length, sequence: events.length });
       }),
@@ -646,6 +696,7 @@ it.effect("imports one thread at a time and resumes after an interrupted thread"
       projectIds: new Set(importedProjectIds),
       activeWorkspaceRoots: new Set(importedProjectIds.size === 0 ? [] : ["/work/import"]),
       threadIds: new Set(importedThreadIds),
+      continuationKeys: new Map(importedContinuationKeys),
     });
 
   return Effect.gen(function* () {
@@ -696,6 +747,124 @@ it.effect("imports one thread at a time and resumes after an interrupted thread"
     });
     assert.strictEqual(complete.projects[0]?.status, "skipped");
     assert.strictEqual(importedBatches.length, 3);
+  }).pipe(
+    Effect.provide(dependencies),
+    Effect.scoped,
+    Effect.ensuring(
+      Effect.sync(() => NodeFS.rmSync(tempDirectory, { recursive: true, force: true })),
+    ),
+  );
+});
+
+it.effect("repairs provider context for threads imported by an earlier release", () => {
+  const tempDirectory = NodeFS.mkdtempSync(
+    NodePath.join(NodeOS.tmpdir(), "t3-legacy-import-context-repair-test-"),
+  );
+  const sourceStateDir = NodePath.join(tempDirectory, "legacy-userdata");
+  NodeFS.mkdirSync(sourceStateDir, { recursive: true });
+  createLegacyDatabase(NodePath.join(sourceStateDir, "state.sqlite"));
+
+  const continuationKeys = new Map<string, string>([
+    ["thread-import", "codex:codex:threadId:provider-thread-replacement"],
+  ]);
+  const importedBatches: Array<{
+    readonly events: ReadonlyArray<Omit<OrchestrationEvent, "sequence">>;
+    readonly continuation: unknown;
+  }> = [];
+  const engine = OrchestrationEngineService.of({
+    readEvents: () => Stream.empty,
+    dispatch: () => Effect.succeed({ sequence: 0 }),
+    importHistoricalEvents: (events, options) =>
+      Effect.sync(() => {
+        importedBatches.push({ events, continuation: options?.continuation });
+        if (options?.continuation !== undefined) {
+          const key = legacyContinuationKey({
+            providerName: options.continuation.provider,
+            providerInstanceId: options.continuation.providerInstanceId,
+            resumeCursor: options.continuation.resumeCursor,
+          });
+          if (key !== null) continuationKeys.set(options.continuation.threadId, key);
+        }
+        return { eventCount: events.length, sequence: 0 };
+      }),
+    streamDomainEvents: Stream.empty,
+    latestSequence: Effect.succeed(0),
+  });
+  const emptyReadModel: OrchestrationReadModel = {
+    snapshotSequence: 0,
+    projects: [],
+    threads: [],
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+  const emptyShell: OrchestrationShellSnapshot = {
+    snapshotSequence: 0,
+    projects: [],
+    threads: [],
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+  const snapshots = ProjectionSnapshotQuery.of({
+    getCommandReadModel: () => Effect.succeed(emptyReadModel),
+    getSnapshot: () => Effect.succeed(emptyReadModel),
+    getShellSnapshot: () => Effect.succeed(emptyShell),
+    getArchivedShellSnapshot: () => Effect.succeed(emptyShell),
+    searchThreads: () => Effect.succeed({ matches: [] }),
+    getSnapshotSequence: () => Effect.succeed({ snapshotSequence: 0 }),
+    getCounts: () => Effect.succeed({ projectCount: 1, threadCount: 1 }),
+    getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
+    getProjectShellById: () => Effect.succeed(Option.some(importedProjectShell())),
+    getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.none()),
+    getThreadCheckpointContext: () => Effect.succeed(Option.none()),
+    getFullThreadDiffContext: () => Effect.succeed(Option.none()),
+    getThreadShellById: () => Effect.succeed(Option.none()),
+    getThreadDetailById: () => Effect.succeed(Option.none()),
+    getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
+  } satisfies ProjectionSnapshotQueryShape);
+  const dependencies = Layer.mergeAll(
+    Layer.succeed(OrchestrationEngineService, engine),
+    Layer.succeed(ProjectionSnapshotQuery, snapshots),
+    serverSettingsLayerTest(),
+    NodeServices.layer,
+    ServerConfig.layerTest(process.cwd(), { prefix: "t3-import-repair-target-test-" }).pipe(
+      Layer.provide(NodeServices.layer),
+    ),
+  );
+  const loadDestinationState = () =>
+    Effect.succeed({
+      projectIds: new Set(["project-import"]),
+      activeWorkspaceRoots: new Set(["/work/import"]),
+      threadIds: new Set(["thread-import"]),
+      continuationKeys: new Map(continuationKeys),
+    });
+
+  return Effect.gen(function* () {
+    const service = yield* makeLegacyImportService({ sourceStateDir, loadDestinationState });
+    const repaired = yield* service.importData({
+      projectIds: ["project-import"],
+      includeSettings: false,
+    });
+
+    assert.strictEqual(repaired.importedProjectCount, 0);
+    assert.strictEqual(repaired.importedThreadCount, 0);
+    assert.strictEqual(repaired.repairedThreadCount, 1);
+    assert.strictEqual(repaired.projects[0]?.status, "merged");
+    assert.strictEqual(repaired.projects[0]?.repairedThreadCount, 1);
+    assert.deepStrictEqual(importedBatches[0]?.events, []);
+    assert.deepStrictEqual(importedBatches[0]?.continuation, {
+      threadId: ThreadId.make("thread-import"),
+      provider: "codex",
+      providerInstanceId: "codex",
+      runtimeMode: "full-access",
+      lastSeenAt: "2026-01-01T00:00:00.000Z",
+      resumeCursor: { threadId: "provider-thread-import" },
+    });
+
+    const alreadyRepaired = yield* service.importData({
+      projectIds: ["project-import"],
+      includeSettings: false,
+    });
+    assert.strictEqual(alreadyRepaired.repairedThreadCount, 0);
+    assert.strictEqual(alreadyRepaired.projects[0]?.status, "skipped");
+    assert.lengthOf(importedBatches, 1);
   }).pipe(
     Effect.provide(dependencies),
     Effect.scoped,

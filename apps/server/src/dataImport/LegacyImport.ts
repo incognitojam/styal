@@ -5,6 +5,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import {
+  defaultInstanceIdForDriver,
   EventId,
   LegacyImportError,
   type LegacyImportProjectPreview,
@@ -15,7 +16,10 @@ import {
   OrchestrationAggregateKind,
   OrchestrationEvent,
   OrchestrationEventType,
+  ProviderDriverKind,
+  ProviderInstanceId,
   ProjectId,
+  RuntimeMode,
   ThreadId,
   CommandId,
   IsoDateTime,
@@ -28,7 +32,10 @@ import * as Schema from "effect/Schema";
 
 import { attachmentRelativePath } from "../attachmentStore.ts";
 import { ServerConfig } from "../config.ts";
-import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
+import {
+  OrchestrationEngineService,
+  type HistoricalProviderContinuation,
+} from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { resolveAttachmentRelativePath } from "../attachmentPaths.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
@@ -36,13 +43,16 @@ import {
   emptyLegacyImportDestinationState,
   inspectLegacyImportDestinationState,
   inspectOpenDatabase,
+  legacyContinuationKey,
   openReadonlyDatabase,
+  sanitizeLegacyResumeCursor,
   type LegacyImportDestinationState,
   type ReadonlyDatabase,
 } from "./LegacyImportPreview.ts";
 import { readLegacyImportPreferences } from "./LegacyImportPreferences.ts";
 
 const SourceThreadRows = Schema.Array(Schema.Struct({ threadId: ThreadId }));
+const SourceTableRows = Schema.Array(Schema.Struct({ name: Schema.String }));
 const SourceEventRows = Schema.Array(
   Schema.Struct({
     sequence: NonNegativeInt,
@@ -58,8 +68,21 @@ const SourceEventRows = Schema.Array(
     metadataJson: Schema.String,
   }),
 );
+const SourceRuntimeRows = Schema.Array(
+  Schema.Struct({
+    threadId: ThreadId,
+    provider: ProviderDriverKind,
+    providerInstanceId: Schema.NullOr(ProviderInstanceId),
+    runtimeMode: RuntimeMode,
+    lastSeenAt: IsoDateTime,
+    resumeCursorJson: Schema.String,
+  }),
+);
 const decodeSourceThreadRows = Schema.decodeUnknownSync(SourceThreadRows);
+const decodeSourceTableRows = Schema.decodeUnknownSync(SourceTableRows);
 const decodeSourceEventRows = Schema.decodeUnknownSync(SourceEventRows);
+const decodeSourceRuntimeRows = Schema.decodeUnknownSync(SourceRuntimeRows);
+const decodeUnknownJsonString = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 const decodeOrchestrationEvent = Schema.decodeUnknownSync(OrchestrationEvent);
 const decodeProjectId = Schema.decodeUnknownSync(ProjectId);
 const isLegacyImportError = Schema.is(LegacyImportError);
@@ -68,6 +91,8 @@ interface LegacySourceProjectPlan {
   readonly projectId: ProjectId;
   readonly project: LegacyImportProjectPreview;
   readonly threadIds: ReadonlyArray<ThreadId>;
+  readonly repairThreadIds: ReadonlyArray<ThreadId>;
+  readonly continuations: ReadonlyMap<ThreadId, HistoricalProviderContinuation>;
   readonly events: ReadonlyArray<OrchestrationEvent>;
 }
 
@@ -158,6 +183,73 @@ function readProjectEvents(
       correlationId: row.correlationId,
       payload: JSON.parse(row.payloadJson),
       metadata: JSON.parse(row.metadataJson),
+    }),
+  );
+}
+
+function readSourceContinuations(
+  database: ReadonlyDatabase,
+  threadIds: ReadonlyArray<ThreadId>,
+): ReadonlyMap<ThreadId, HistoricalProviderContinuation> {
+  if (threadIds.length === 0) return new Map();
+  const tables = new Set(
+    decodeSourceTableRows(database.all("SELECT name FROM sqlite_master WHERE type = 'table'")).map(
+      ({ name }) => name,
+    ),
+  );
+  if (!tables.has("provider_session_runtime")) return new Map();
+  const columns = new Set(
+    decodeSourceTableRows(database.all("PRAGMA table_info(provider_session_runtime)")).map(
+      ({ name }) => name,
+    ),
+  );
+  const providerInstanceIdExpression = columns.has("provider_instance_id")
+    ? "provider_instance_id"
+    : "NULL";
+  const runtimeModeExpression = columns.has("runtime_mode") ? "runtime_mode" : "'full-access'";
+  const rows = decodeSourceRuntimeRows(
+    database.all(
+      `
+        SELECT
+          thread_id AS threadId,
+          provider_name AS provider,
+          ${providerInstanceIdExpression} AS providerInstanceId,
+          ${runtimeModeExpression} AS runtimeMode,
+          last_seen_at AS lastSeenAt,
+          resume_cursor_json AS resumeCursorJson
+        FROM provider_session_runtime
+        WHERE
+          resume_cursor_json IS NOT NULL
+          AND thread_id IN (${threadIds.map(() => "?").join(", ")})
+      `,
+      threadIds,
+    ),
+  );
+  return new Map(
+    rows.flatMap((row) => {
+      try {
+        const resumeCursor = sanitizeLegacyResumeCursor(
+          row.provider,
+          decodeUnknownJsonString(row.resumeCursorJson),
+        );
+        if (resumeCursor === null) return [];
+        return [
+          [
+            row.threadId,
+            {
+              threadId: row.threadId,
+              provider: row.provider,
+              providerInstanceId:
+                row.providerInstanceId ?? defaultInstanceIdForDriver(row.provider),
+              runtimeMode: row.runtimeMode,
+              lastSeenAt: row.lastSeenAt,
+              resumeCursor,
+            },
+          ] as const,
+        ];
+      } catch {
+        return [];
+      }
     }),
   );
 }
@@ -254,7 +346,7 @@ function compactHistoricalEvents(
 function inspectSelectedProjects(
   database: ReadonlyDatabase,
   selectedProjectIds: ReadonlySet<string>,
-  excludedThreadIds: ReadonlySet<string>,
+  destination: LegacyImportDestinationState,
 ): LegacySourceSnapshot {
   const preview = inspectOpenDatabase(database);
   if (preview.status !== "available") {
@@ -291,7 +383,7 @@ function inspectSelectedProjects(
   try {
     const projects = selectedProjects.map((project) => {
       const projectId = decodeProjectId(project.projectId);
-      const threadIds = decodeSourceThreadRows(
+      const allThreadIds = decodeSourceThreadRows(
         database.all(
           `
             SELECT thread_id AS threadId
@@ -301,9 +393,22 @@ function inspectSelectedProjects(
           `,
           [projectId],
         ),
-      )
-        .map(({ threadId }) => threadId)
-        .filter((threadId) => !excludedThreadIds.has(threadId));
+      ).map(({ threadId }) => threadId);
+      const continuations = readSourceContinuations(database, allThreadIds);
+      const threadIds = allThreadIds.filter((threadId) => !destination.threadIds.has(threadId));
+      const repairThreadIds = allThreadIds.filter((threadId) => {
+        if (!destination.threadIds.has(threadId)) return false;
+        const continuation = continuations.get(threadId);
+        return (
+          continuation !== undefined &&
+          destination.continuationKeys.get(threadId) !==
+            legacyContinuationKey({
+              providerName: continuation.provider,
+              providerInstanceId: continuation.providerInstanceId,
+              resumeCursor: continuation.resumeCursor,
+            })
+        );
+      });
       const events = compactHistoricalEvents(
         readProjectEvents(database, projectId, threadIds)
           .map(sanitizeHistoricalEvent)
@@ -328,7 +433,14 @@ function inspectSelectedProjects(
           `The thread history for ${project.title} is incomplete and cannot be imported.`,
         );
       }
-      return { projectId, project, threadIds, events } satisfies LegacySourceProjectPlan;
+      return {
+        projectId,
+        project,
+        threadIds,
+        repairThreadIds,
+        continuations,
+        events,
+      } satisfies LegacySourceProjectPlan;
     });
     database.exec("COMMIT");
     return { sourceKind: preview.sourceKind, projects };
@@ -347,12 +459,12 @@ export const readLegacySourceSnapshot = Effect.fn("LegacyImport.readLegacySource
     sourceDatabasePath,
     currentDatabasePath,
     projectIds,
-    excludedThreadIds = new Set<string>(),
+    destination = emptyLegacyImportDestinationState(),
   }: {
     readonly sourceDatabasePath: string;
     readonly currentDatabasePath: string;
     readonly projectIds: ReadonlyArray<string>;
-    readonly excludedThreadIds?: ReadonlySet<string>;
+    readonly destination?: LegacyImportDestinationState;
   }): Effect.fn.Return<LegacySourceSnapshot, LegacyImportError, never> {
     if (!NodeFS.existsSync(sourceDatabasePath)) {
       return yield* sourceFailure("source-not-found", "No T3 Code data was found on this server.");
@@ -368,7 +480,7 @@ export const readLegacySourceSnapshot = Effect.fn("LegacyImport.readLegacySource
       openReadonlyDatabase(sourceDatabasePath),
       (database) =>
         Effect.try({
-          try: () => inspectSelectedProjects(database, new Set(projectIds), excludedThreadIds),
+          try: () => inspectSelectedProjects(database, new Set(projectIds), destination),
           catch: (error) =>
             isLegacyImportError(error)
               ? error
@@ -607,7 +719,7 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
         sourceDatabasePath,
         currentDatabasePath: config.dbPath,
         projectIds: request.projectIds,
-        excludedThreadIds: destination.threadIds,
+        destination,
       });
       const importedProjectIds = new Set(destination.projectIds);
       const importedThreadIds = new Set(destination.threadIds);
@@ -640,6 +752,7 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
           Option.isNone(activeProject) && !importedProjectIds.has(sourceProjectId);
         let includeProject = wasNewProject;
         let importedThreadCount = 0;
+        let repairedThreadCount = 0;
         let failedThreadCount = 0;
         let skippedAttachmentCount = 0;
 
@@ -654,6 +767,7 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
             title: plan.project.title,
             status: "failed",
             threadCount: 0,
+            repairedThreadCount: 0,
             skippedAttachmentCount: 0,
             detail: "The matching project is no longer active on this server.",
           });
@@ -673,6 +787,7 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
               title: plan.project.title,
               status: "failed",
               threadCount: 0,
+              repairedThreadCount: 0,
               skippedAttachmentCount: 0,
               detail: "The project could not be imported.",
             });
@@ -684,6 +799,7 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
               title: plan.project.title,
               status: "imported",
               threadCount: 0,
+              repairedThreadCount: 0,
               skippedAttachmentCount: 0,
             });
           }
@@ -718,7 +834,13 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
             includeProject,
             unavailableAttachmentPaths: attachmentsOutcome.value,
           });
-          const outcome = yield* Effect.exit(importHistoricalEvents(events));
+          const continuation = plan.continuations.get(threadId);
+          const outcome = yield* Effect.exit(
+            importHistoricalEvents(
+              events,
+              continuation === undefined ? undefined : { continuation },
+            ),
+          );
           if (outcome._tag === "Failure") {
             failedThreadCount += 1;
             yield* Effect.logWarning("Could not import a legacy T3 thread", {
@@ -739,6 +861,23 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
           yield* Effect.yieldNow;
         }
 
+        for (const threadId of plan.repairThreadIds) {
+          const continuation = plan.continuations.get(threadId);
+          if (continuation === undefined) continue;
+          const outcome = yield* Effect.exit(importHistoricalEvents([], { continuation }));
+          if (outcome._tag === "Failure") {
+            failedThreadCount += 1;
+            yield* Effect.logWarning("Could not restore a legacy T3 thread's provider context", {
+              projectId: sourceProjectId,
+              threadId,
+              cause: outcome.cause,
+            });
+            continue;
+          }
+          repairedThreadCount += 1;
+          yield* Effect.yieldNow;
+        }
+
         if (failedThreadCount > 0) {
           projectResults.push({
             sourceProjectId,
@@ -746,19 +885,21 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
             title: plan.project.title,
             status: "failed",
             threadCount: importedThreadCount,
+            repairedThreadCount,
             skippedAttachmentCount,
-            detail: `${failedThreadCount} ${failedThreadCount === 1 ? "thread" : "threads"} could not be imported.`,
+            detail: `${failedThreadCount} ${failedThreadCount === 1 ? "thread" : "threads"} could not be imported or repaired.`,
           });
           continue;
         }
 
-        if (importedThreadCount === 0) {
+        if (importedThreadCount === 0 && repairedThreadCount === 0) {
           projectResults.push({
             sourceProjectId,
             targetProjectId,
             title: plan.project.title,
             status: "skipped",
             threadCount: 0,
+            repairedThreadCount: 0,
             skippedAttachmentCount: 0,
             detail: "No new work to import.",
           });
@@ -771,6 +912,7 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
           title: plan.project.title,
           status: wasNewProject ? "imported" : "merged",
           threadCount: importedThreadCount,
+          repairedThreadCount,
           skippedAttachmentCount,
         });
       }
@@ -800,7 +942,8 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
         : undefined;
 
       const importedProjects = projectResults.filter(
-        (result) => result.status === "imported" || result.status === "merged",
+        (result) =>
+          result.status === "imported" || (result.status === "merged" && result.threadCount > 0),
       );
       return {
         sourceKind: source.sourceKind,
@@ -809,6 +952,10 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
         importedProjectCount: importedProjects.length,
         importedThreadCount: projectResults.reduce(
           (count, project) => count + project.threadCount,
+          0,
+        ),
+        repairedThreadCount: projectResults.reduce(
+          (count, project) => count + project.repairedThreadCount,
           0,
         ),
         skippedAttachmentCount: projectResults.reduce(

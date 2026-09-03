@@ -154,6 +154,9 @@ function projectImportSummaryText(result: LegacyImportResult): string {
       `${formatProjectCount(result.importedProjectCount)} and ${formatThreadCount(result.importedThreadCount)} imported`,
     );
   }
+  if (result.repairedThreadCount > 0) {
+    parts.push(`Context restored for ${formatThreadCount(result.repairedThreadCount)}`);
+  }
   if (skippedProjectCount > 0) {
     parts.push(`${formatProjectCount(skippedProjectCount)} already here`);
   }
@@ -653,6 +656,11 @@ function AvailablePreview({
       selectedProjectIds.has(project.projectId) ? count + project.threadCount : count,
     0,
   );
+  const selectedContextRepairCount = preview.projects.reduce(
+    (count, project) =>
+      selectedProjectIds.has(project.projectId) ? count + project.contextRepairCount : count,
+    0,
+  );
 
   const preferencesPreview = preview.preferences;
   const preferenceValues =
@@ -718,10 +726,16 @@ function AvailablePreview({
       // taking over the page; anything retryable stays on the page below.
       if (!hasFailure) {
         const nothingChanged =
-          result.value.importedProjectCount === 0 && result.value.importedThreadCount === 0;
+          result.value.importedProjectCount === 0 &&
+          result.value.importedThreadCount === 0 &&
+          result.value.repairedThreadCount === 0;
         toastManager.add({
           type: "success",
-          title: nothingChanged ? `${serverLabel} already has these projects` : "Projects imported",
+          title: nothingChanged
+            ? `${serverLabel} already has these projects`
+            : result.value.importedProjectCount === 0 && result.value.importedThreadCount === 0
+              ? "Thread context restored"
+              : "Projects imported",
           description: projectImportSummaryText(result.value),
           timeout: 0,
         });
@@ -782,7 +796,11 @@ function AvailablePreview({
   const projectsButtonLabel = (() => {
     if (runningAction === "projects") return "Importing projects…";
     if (selectedProjectIds.size === 0) {
+      if (projectsResult?.repairedThreadCount) return "Context restored";
       return projectsImported ? "Projects imported" : "Import projects";
+    }
+    if (selectedThreadCount === 0 && selectedContextRepairCount > 0) {
+      return `Restore context for ${formatThreadCount(selectedContextRepairCount)}`;
     }
     const verb = failedProjectCount > 0 ? "Retry" : "Import";
     return `${verb} ${formatProjectCount(selectedProjectIds.size)}`;
@@ -937,6 +955,12 @@ function AvailablePreview({
                 selected
                 <span aria-hidden> · </span>
                 {formatThreadCount(selectedThreadCount)}
+                {selectedContextRepairCount > 0 ? (
+                  <>
+                    <span aria-hidden> · </span>
+                    restore context for {formatThreadCount(selectedContextRepairCount)}
+                  </>
+                ) : null}
               </span>
             </div>
             {preview.projects.length === 0 ? (
@@ -978,9 +1002,24 @@ function AvailablePreview({
                         {existingProjects.map((project) =>
                           renderProjectRow(
                             project,
-                            <span className="whitespace-nowrap">
-                              {formatThreadCount(project.threadCount)}
-                            </span>,
+                            <>
+                              {project.threadCount > 0 ? (
+                                <span className="whitespace-nowrap">
+                                  {formatThreadCount(project.threadCount)}
+                                </span>
+                              ) : null}
+                              {project.threadCount > 0 && project.contextRepairCount > 0 ? (
+                                <span aria-hidden className="text-muted-foreground/50">
+                                  ·
+                                </span>
+                              ) : null}
+                              {project.contextRepairCount > 0 ? (
+                                <span className="whitespace-nowrap">
+                                  Restore context for{" "}
+                                  {formatThreadCount(project.contextRepairCount)}
+                                </span>
+                              ) : null}
+                            </>,
                           ),
                         )}
                       </div>

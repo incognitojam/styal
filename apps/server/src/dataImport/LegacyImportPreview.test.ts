@@ -11,6 +11,7 @@ import * as Option from "effect/Option";
 import {
   inspectLegacyImportDatabase,
   makeLegacyImportPreviewService,
+  sanitizeLegacyResumeCursor,
 } from "./LegacyImportPreview.ts";
 
 function makeTempDirectory(): string {
@@ -68,6 +69,64 @@ function createProjectionDatabase(
   }
   database.close();
 }
+
+function addProviderContinuation(
+  databasePath: string,
+  threadId: string,
+  providerThreadId: string,
+): void {
+  const database = new NodeSqlite.DatabaseSync(databasePath);
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS provider_session_runtime (
+      thread_id TEXT PRIMARY KEY,
+      provider_name TEXT NOT NULL,
+      provider_instance_id TEXT,
+      adapter_key TEXT NOT NULL,
+      runtime_mode TEXT NOT NULL,
+      status TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      resume_cursor_json TEXT,
+      runtime_payload_json TEXT
+    )
+  `);
+  database
+    .prepare(
+      `INSERT INTO provider_session_runtime VALUES (?, 'codex', 'codex', 'codex', 'full-access', 'stopped', '2026-02-01T00:00:00Z', ?, NULL)`,
+    )
+    .run(threadId, JSON.stringify({ threadId: providerThreadId }));
+  database.close();
+}
+
+it("keeps only known provider continuation fields", () => {
+  assert.deepStrictEqual(
+    sanitizeLegacyResumeCursor("claudeAgent", {
+      threadId: "thread-import",
+      resume: "provider-session",
+      resumeSessionAt: "assistant-message",
+      turnCount: 4,
+      accessToken: "must-not-cross-import",
+    }),
+    {
+      threadId: "thread-import",
+      resume: "provider-session",
+      resumeSessionAt: "assistant-message",
+      turnCount: 4,
+    },
+  );
+  assert.deepStrictEqual(
+    sanitizeLegacyResumeCursor("opencode", {
+      schemaVersion: 1,
+      sessionId: "provider-session",
+      credential: "must-not-cross-import",
+    }),
+    { schemaVersion: 1, sessionId: "provider-session" },
+  );
+  assert.isNull(
+    sanitizeLegacyResumeCursor("custom-provider", {
+      sessionId: "opaque-session",
+    }),
+  );
+});
 
 it.effect("returns not-found when the default T3 database does not exist", () => {
   const tempDirectory = makeTempDirectory();
@@ -127,6 +186,7 @@ it.effect("previews active projects and threads from T3 Code", () => {
               workspaceRoot: "/work/active",
               faviconPath: "assets/active.svg",
               threadCount: 2,
+              contextRepairCount: 0,
               scriptCount: 2,
               isExistingProject: false,
             },
@@ -136,6 +196,7 @@ it.effect("previews active projects and threads from T3 Code", () => {
               workspaceRoot: "/work/empty",
               faviconPath: null,
               threadCount: 0,
+              contextRepairCount: 0,
               scriptCount: 0,
               isExistingProject: false,
             },
@@ -184,6 +245,7 @@ it.effect("previews only projects and threads that are not already in the destin
             workspaceRoot: "/work/active",
             faviconPath: "assets/active.svg",
             threadCount: 1,
+            contextRepairCount: 0,
             scriptCount: 2,
             isExistingProject: true,
           },
@@ -195,6 +257,46 @@ it.effect("previews only projects and threads that are not already in the destin
     ),
   );
 });
+
+it.effect(
+  "offers context repair when an imported thread started a different provider session",
+  () => {
+    const tempDirectory = makeTempDirectory();
+    const sourceDatabasePath = NodePath.join(tempDirectory, "legacy.sqlite");
+    const currentDatabasePath = NodePath.join(tempDirectory, "current.sqlite");
+    createProjectionDatabase(sourceDatabasePath);
+    createProjectionDatabase(currentDatabasePath);
+    addProviderContinuation(sourceDatabasePath, "thread-one", "provider-thread-original");
+    addProviderContinuation(currentDatabasePath, "thread-one", "provider-thread-replacement");
+
+    return inspectLegacyImportDatabase({
+      sourceDatabasePath,
+      currentDatabasePath,
+    }).pipe(
+      Effect.tap((preview) =>
+        Effect.sync(() => {
+          assert.strictEqual(preview.status, "available");
+          if (preview.status !== "available") return;
+          assert.deepStrictEqual(preview.projects, [
+            {
+              projectId: "project-active",
+              title: "Active project",
+              workspaceRoot: "/work/active",
+              faviconPath: "assets/active.svg",
+              threadCount: 0,
+              contextRepairCount: 1,
+              scriptCount: 2,
+              isExistingProject: true,
+            },
+          ]);
+        }),
+      ),
+      Effect.ensuring(
+        Effect.sync(() => NodeFS.rmSync(tempDirectory, { recursive: true, force: true })),
+      ),
+    );
+  },
+);
 
 it.effect("previews only the preferences that can be imported", () => {
   const tempDirectory = makeTempDirectory();
@@ -290,6 +392,7 @@ it.effect("indexes previewed projects for legacy favicon authorization", () => {
       workspaceRoot: "/work/active",
       faviconPath: "assets/active.svg",
       threadCount: 2,
+      contextRepairCount: 0,
       scriptCount: 2,
       isExistingProject: false,
     });
@@ -340,6 +443,7 @@ it.effect("reads a live WAL database without copying or quiescing it", () => {
               workspaceRoot: "/work/live",
               faviconPath: null,
               threadCount: 1,
+              contextRepairCount: 0,
               scriptCount: 0,
               isExistingProject: false,
             },

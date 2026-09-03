@@ -1,3 +1,4 @@
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { NonNegativeInt, PositiveInt } from "./baseSchemas.ts";
@@ -23,6 +24,7 @@ export const LegacyImportProjectPreview = Schema.Struct({
   workspaceRoot: Schema.String,
   faviconPath: Schema.NullOr(Schema.String),
   threadCount: NonNegativeInt,
+  contextRepairCount: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
   scriptCount: NonNegativeInt,
   isExistingProject: Schema.Boolean,
 });
@@ -95,6 +97,7 @@ export const LegacyImportProjectResult = Schema.Struct({
   title: Schema.String,
   status: LegacyImportProjectStatus,
   threadCount: NonNegativeInt,
+  repairedThreadCount: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
   skippedAttachmentCount: NonNegativeInt,
   detail: Schema.optional(Schema.String),
 });
@@ -115,6 +118,7 @@ export const LegacyImportResult = Schema.Struct({
   settings: Schema.optional(LegacyImportSettingsResult),
   importedProjectCount: NonNegativeInt,
   importedThreadCount: NonNegativeInt,
+  repairedThreadCount: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
   skippedAttachmentCount: NonNegativeInt,
 });
 export type LegacyImportResult = typeof LegacyImportResult.Type;
