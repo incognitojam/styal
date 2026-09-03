@@ -1,5 +1,6 @@
 import {
   FILL_PREVIEW_VIEWPORT,
+  type PreviewAutomationOperation,
   type PreviewAutomationOpenInput,
   type PreviewAutomationPresentation,
   type PreviewSessionSnapshot,
@@ -40,6 +41,20 @@ export function resolvePreviewAutomationPresentation(
     presentation === "right-panel" ? true : autoShowFloatingPreview,
   );
   return shouldPresent ? (presentation ?? "mini-player") : null;
+}
+
+export function shouldAutoShowPreviewForAutomationUse(input: {
+  readonly operation: PreviewAutomationOperation;
+  readonly autoShowFloatingPreview: boolean;
+  readonly presentationSuppressed: boolean;
+}): boolean {
+  return (
+    input.operation !== "open" && input.autoShowFloatingPreview && !input.presentationSuppressed
+  );
+}
+
+export function explicitlySuppressesPreviewMiniPlayer(input: PreviewAutomationOpenInput): boolean {
+  return (input.open ?? input.show) === false;
 }
 
 export function previewAutomationOpenNeedsOverlay(

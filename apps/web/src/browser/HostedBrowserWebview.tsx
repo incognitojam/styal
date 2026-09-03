@@ -92,6 +92,7 @@ export function HostedBrowserWebview(props: {
         captureActive: (current?.captureCount ?? 0) > 0,
         rect: resolveBrowserSurfacePanelRect(state.byTabId, runtimeTabId),
         visible: current?.visible ?? false,
+        zIndex: current?.zIndex ?? 30,
       };
     }),
   );
@@ -305,6 +306,7 @@ export function HostedBrowserWebview(props: {
     // suspend them, and automation continues to see the macOS guests as inactive.
     keepPaintableWhenInactive: isMacPlatform(navigator.platform),
     cornerRadius: presentation.cornerRadius,
+    zIndex: presentation.zIndex,
     rect: lastRect,
     hiddenSize,
   });
