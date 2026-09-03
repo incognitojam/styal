@@ -3832,25 +3832,29 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           </div>
         </div>
       </div>
+      {viewedImage && threadRef ? (
+        <div
+          className="mt-1 ms-7 cursor-default"
+          onClick={stopRowToggle}
+          onPointerDown={stopRowToggle}
+        >
+          <ChatMarkdownAssetImage
+            environmentId={threadRef.environmentId}
+            resource={viewedImage.resource}
+            alt={viewedImage.alt}
+            srcFragment={viewedImage.srcFragment}
+            workspaceRoot={workspaceRoot}
+            style={{ maxHeight: "16rem" }}
+            onImageExpand={onImageExpand}
+          />
+        </div>
+      ) : null}
       {expanded && canExpand ? (
         <div
           className="mt-1 ms-7 cursor-default border-s border-border/45 ps-3 pt-0.5"
           onClick={stopRowToggle}
           onPointerDown={stopRowToggle}
         >
-          {viewedImage && threadRef ? (
-            <div className="mb-1.5">
-              <ChatMarkdownAssetImage
-                environmentId={threadRef.environmentId}
-                resource={viewedImage.resource}
-                alt={viewedImage.alt}
-                srcFragment={viewedImage.srcFragment}
-                workspaceRoot={workspaceRoot}
-                style={{ maxHeight: "16rem" }}
-                onImageExpand={onImageExpand}
-              />
-            </div>
-          ) : null}
           {isCommandExecution ? (
             <CommandOutputExpandedBody workEntry={workEntry} />
           ) : expandedBody ? (
