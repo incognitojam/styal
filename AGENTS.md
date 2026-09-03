@@ -118,6 +118,7 @@ An empty database is a bad test. Seed your worktree's `.styal` with a copy of re
 - Body: the problem in a sentence or two, then how you fixed it. End with the model and harness that did the work.
 - When the pull request body is long, begin it with a `> [!NOTE]` callout containing a TL;DR.
 - **Rebase standalone branches onto latest main before opening.** Stale branches conflict and burn a review round.
+- When explicitly asked to open a pull request, consider opening it as a draft after the implementation and focused checks are complete but before final verification, screenshots, or recordings. This lets CI run in parallel with evidence gathering. Update the pull request body and evidence afterward, and mark it ready for review only once verification is complete.
 - **Upstream is read-only and never auto-synced.** `main` is not rebased onto `pingdotgg/t3code`. Upstream changes are brought in deliberately, one or more at a time, as ordinary PRs against `main`. Never rebase `main` onto upstream, never force-push it, and never open a PR that assumes upstream's tip rather than `main`.
 - UI changes need before/after images. Motion or timing needs a short video.
 - Upload PR evidence to GitHub. Never commit PR-only screenshots or assets such as `.github/pr-assets/`.
