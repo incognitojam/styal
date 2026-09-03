@@ -63,7 +63,7 @@ import { useProjects } from "~/state/entities";
 import { useEnvironments } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
-import { pullRequestEnvironment } from "~/state/pullRequests";
+import { pullRequestEnvironment, useSharedPullRequestSummary } from "~/state/pullRequests";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { vcsEnvironment } from "~/state/vcs";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
@@ -476,14 +476,8 @@ type PullRequestDetailPanelProps = {
   onActed?: () => void;
   /** Page-owned detail columns use this to clear the selected pull request. */
   onClose?: () => void;
-  /** Keeps surrounding thread state in step with refreshed host state. */
-  onStateChange?: (status: {
-    projectId: string;
-    repository: string;
-    number: number;
-    state: PullRequestState;
-    isDraft: boolean;
-  }) => void;
+  /** Keeps surrounding inferred thread state in step with refreshed host state. */
+  onStateChange?: (status: { repository: string; number: number; state: PullRequestState }) => void;
   /**
    * Beside a thread, the checkout affordance disappears: the panel is showing that thread's
    * own pull request, so the branch is already under the reader's feet — and checking it out
@@ -646,11 +640,19 @@ function PullRequestDetailPanelBody({
     reference.repository,
     reference.number,
   ]);
-  const coreDetail = resolveDisplayedPullRequestDetail({
+  const resolvedCoreDetail = resolveDisplayedPullRequestDetail({
     live: detailQuery.data,
     cached: cachedDetail,
     reference,
   });
+  const sharedSummary = useSharedPullRequestSummary(environmentId, reference, resolvedCoreDetail);
+  const coreDetail = useMemo(
+    () =>
+      resolvedCoreDetail === null || sharedSummary === null || sharedSummary === resolvedCoreDetail
+        ? resolvedCoreDetail
+        : { ...resolvedCoreDetail, ...sharedSummary },
+    [resolvedCoreDetail, sharedSummary],
+  );
   const activity = activityQuery.data;
   const detail = useMemo(
     () =>
@@ -726,20 +728,15 @@ function PullRequestDetailPanelBody({
     },
     [detailQuery.refresh, environmentId, invalidate, reference, refreshDetail],
   );
-  useEffect(() => {
-    if (!detail) return;
+  useLayoutEffect(() => {
+    if (!resolvedCoreDetail) return;
     onStateChange?.({
-      projectId: detail.projectId,
-      repository: detail.repository,
-      number: detail.number,
-      state: detail.state,
-      isDraft: detail.isDraft,
+      repository: resolvedCoreDetail.repository,
+      number: resolvedCoreDetail.number,
+      state: resolvedCoreDetail.state,
     });
-  }, [detail, onStateChange]);
-  // Core detail is cheap enough to re-read while this stays open. Invalidate it first so the
-  // visible panel is not left one refresh behind; the revision effect refreshes heavier activity
-  // only after this same pull request reports a change. Keyed by the pull request rather than by
-  // the panel, because this one panel shows a different pull request every time it is opened.
+  }, [onStateChange, resolvedCoreDetail]);
+  // Refresh host state before rereading the cached detail. Activity follows the revision.
   useLiveRefresh(() => void refreshDetailFromHost("detail"), {
     key: `pull-request:${reference.projectId}:${reference.repository}#${reference.number}`,
   });
