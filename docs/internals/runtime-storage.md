@@ -11,6 +11,12 @@ preferences and requires environments to be paired independently; an existing T3
 keeps all of its state for its next launch. In particular, a T3 Code IndexedDB database that remains
 in the same browser origin is not an orphan for styal to clean up.
 
+The sole exception is the Styal-owned hosted web origin (`https://app.styal.build`). T3 Code used
+that origin before the fork adopted its own storage namespace, so the hosted client performs a
+one-time deletion of abandoned `t3code:*` local-storage keys and IndexedDB databases there. It never
+runs that cleanup on localhost, the desktop protocol, or an arbitrary self-hosted origin, where the
+old data may still belong to a parallel T3 Code installation.
+
 Server state follows the same rule. styal defaults to `~/.styal`, worktree development defaults to
 the worktree's `.styal`, and the explicit override is `STYAL_HOME`. Other inherited `T3CODE_*`
 variables can remain where they configure protocol or development behavior rather than persistent

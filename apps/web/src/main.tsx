@@ -18,6 +18,9 @@ import {
 } from "./lib/windowControlsOverlay";
 import { AppRoot } from "./AppRoot";
 import { clerkAppearance } from "./components/clerk/clerkAppearance";
+import { cleanupAbandonedHostedBrowserStorage } from "./hostedStorageCleanup";
+
+void cleanupAbandonedHostedBrowserStorage();
 
 // Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.
 const history = isElectron ? createHashHistory() : createBrowserHistory();
