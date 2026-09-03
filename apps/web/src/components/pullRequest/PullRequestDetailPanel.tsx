@@ -1,14 +1,15 @@
 import { scopedThreadKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import type {
-  EnvironmentId,
-  PullRequestAction,
-  PullRequestInvalidationScope,
-  PullRequestMergeMethod,
-  PullRequestUpdateMethod,
-  PullRequestRef,
-  PullRequestState,
-  ScopedThreadRef,
+import {
+  type EnvironmentId,
+  type PullRequestAction,
+  type PullRequestInvalidationScope,
+  type PullRequestMergeMethod,
+  type PullRequestUpdateMethod,
+  type PullRequestRef,
+  type PullRequestState,
+  resolveEnvironmentMachineKind,
+  type ScopedThreadRef,
 } from "@t3tools/contracts";
 import {
   ArrowDownUpIcon,
@@ -36,7 +37,6 @@ import {
   PlayIcon,
   RefreshCwIcon,
   RotateCcwIcon,
-  ServerIcon,
   TriangleAlertIcon,
 } from "lucide-react";
 import {
@@ -77,6 +77,7 @@ import {
   AlertDialogPopup,
   AlertDialogTitle,
 } from "../ui/alert-dialog";
+import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -284,7 +285,10 @@ function ActOnEnvironmentPicker({
             {/* The radio item lays its children out as one block, so the icon and the label
                 need their own row to share a line. */}
             <span className="flex min-w-0 items-center gap-2">
-              <ServerIcon className="size-3.5 shrink-0" />
+              <EnvironmentMachineIcon
+                kind={environment.machine ?? "server"}
+                className="size-3.5 shrink-0"
+              />
               <span className="truncate">{environment.label}</span>
             </span>
           </MenuRadioItem>
@@ -777,7 +781,11 @@ function PullRequestDetailPanelBody({
         ? resolvePickableEnvironments(
             { environmentId, projectId: reference.projectId },
             projects,
-            environments,
+            environments.map((environment) => ({
+              environmentId: environment.environmentId,
+              label: environment.label,
+              machine: resolveEnvironmentMachineKind(environment.serverConfig),
+            })),
           )
         : [],
     [context, environmentId, environments, projects, reference.projectId],
