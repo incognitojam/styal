@@ -770,6 +770,85 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("returns to ready when Claude clears compacting status after the turn", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const sessionStatesFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.type === "session.state.changed"),
+        Stream.take(5),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "/compact",
+        attachments: [],
+      });
+
+      harness.query.emit({
+        type: "system",
+        subtype: "status",
+        status: "requesting",
+        session_id: "sdk-session-compact",
+        uuid: "status-requesting",
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "system",
+        subtype: "status",
+        status: null,
+        session_id: "sdk-session-compact",
+        uuid: "status-active-clear",
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        errors: [],
+        session_id: "sdk-session-compact",
+        uuid: "result-compact-turn",
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "system",
+        subtype: "status",
+        status: "compacting",
+        session_id: "sdk-session-compact",
+        uuid: "status-compacting",
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "system",
+        subtype: "status",
+        status: null,
+        compact_result: "success",
+        session_id: "sdk-session-compact",
+        uuid: "status-compacting-clear",
+      } as unknown as SDKMessage);
+
+      const sessionStates = Array.from(yield* Fiber.join(sessionStatesFiber)).flatMap((event) =>
+        event.type === "session.state.changed"
+          ? [`${event.payload.state}:${event.payload.reason ?? ""}`]
+          : [],
+      );
+      assert.deepEqual(sessionStates, [
+        "ready:",
+        "running:status:requesting",
+        "running:status:active",
+        "waiting:status:compacting",
+        "ready:status:active",
+      ]);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("embeds image attachments in Claude user messages", () => {
     const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "claude-attachments-"));
     const harness = makeHarness({
