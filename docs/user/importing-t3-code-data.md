@@ -16,7 +16,7 @@ A new project includes its name, workspace, icon, additional instructions, defau
 
 Each thread is committed with its history and provider continuation as one transaction. Attachments are copied and checked before that transaction is committed. The continuation contains the provider's conversation identifier, not its credentials or active-session state, so the next message can resume with the original context. If an import is interrupted, completed threads stay imported and the next preview omits them; running the import again continues with the remaining threads.
 
-Imports made by an affected earlier styal release can be repaired from the same page. The project row shows how many threads need their context restored, and the import replaces a missing or unrelated continuation with the one still stored by T3 Code.
+Imports made by an affected earlier styal release can be repaired from the same page. The project row shows how many threads need their context restored, and the import replaces a missing or unrelated continuation with the one still stored by T3 Code. Any loaded session for that thread is stopped first, so its next message uses the restored context.
 
 If the old database refers to an attachment file that is no longer present, styal imports the rest of the thread without the broken attachment and reports how many attachments were skipped.
 

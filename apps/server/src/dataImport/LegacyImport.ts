@@ -38,6 +38,8 @@ import {
 } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { resolveAttachmentRelativePath } from "../attachmentPaths.ts";
+import type { ProviderServiceError } from "../provider/Errors.ts";
+import { ProviderService } from "../provider/Services/ProviderService.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import {
   emptyLegacyImportDestinationState,
@@ -686,12 +688,16 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
   function* ({
     sourceStateDir,
     loadDestinationState,
+    stopActiveProviderSession,
   }: {
     readonly sourceStateDir: string;
     readonly loadDestinationState?: () => Effect.Effect<
       LegacyImportDestinationState,
       LegacyImportError
     >;
+    readonly stopActiveProviderSession: (
+      threadId: ThreadId,
+    ) => Effect.Effect<void, ProviderServiceError>;
   }) {
     const config = yield* ServerConfig;
     const engine = yield* OrchestrationEngineService;
@@ -864,7 +870,11 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
         for (const threadId of plan.repairThreadIds) {
           const continuation = plan.continuations.get(threadId);
           if (continuation === undefined) continue;
-          const outcome = yield* Effect.exit(importHistoricalEvents([], { continuation }));
+          const outcome = yield* Effect.exit(
+            stopActiveProviderSession(threadId).pipe(
+              Effect.andThen(importHistoricalEvents([], { continuation })),
+            ),
+          );
           if (outcome._tag === "Failure") {
             failedThreadCount += 1;
             yield* Effect.logWarning("Could not restore a legacy T3 thread's provider context", {
@@ -969,8 +979,20 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
   },
 );
 
-export const make = makeLegacyImportService({
-  sourceStateDir: NodePath.join(NodeOS.homedir(), ".t3", "userdata"),
+export const make = Effect.gen(function* () {
+  const providerService = yield* ProviderService;
+  const stopActiveProviderSession = Effect.fn("LegacyImport.stopActiveProviderSession")(function* (
+    threadId: ThreadId,
+  ) {
+    const sessions = yield* providerService.listSessions();
+    if (sessions.some((session) => session.threadId === threadId)) {
+      yield* providerService.stopSession({ threadId });
+    }
+  });
+  return yield* makeLegacyImportService({
+    sourceStateDir: NodePath.join(NodeOS.homedir(), ".t3", "userdata"),
+    stopActiveProviderSession,
+  });
 });
 
 export const layer = Layer.effect(LegacyImportService, make);

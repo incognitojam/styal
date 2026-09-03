@@ -54,6 +54,7 @@ describe("legacy import preview equality", () => {
           workspaceRoot: "/workspace/example",
           faviconPath: null,
           threadCount: 2,
+          contextRepairCount: 0,
           scriptCount: 1,
           isExistingProject: false,
         },

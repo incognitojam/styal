@@ -31,6 +31,8 @@ import { ServerSettingsService, layerTest as serverSettingsLayerTest } from "../
 import { makeLegacyImportService, readLegacySourceSnapshot } from "./LegacyImport.ts";
 import { legacyContinuationKey } from "./LegacyImportPreview.ts";
 
+const stopNoActiveProviderSession = (_threadId: ThreadId) => Effect.void;
+
 function createLegacyDatabase(databasePath: string): void {
   const database = new NodeSqlite.DatabaseSync(databasePath);
   database.exec(`
@@ -527,7 +529,10 @@ it.effect("imports selected history and safe preferences independently", () => {
   );
 
   return Effect.gen(function* () {
-    const service = yield* makeLegacyImportService({ sourceStateDir });
+    const service = yield* makeLegacyImportService({
+      sourceStateDir,
+      stopActiveProviderSession: stopNoActiveProviderSession,
+    });
     const projectResult = yield* service.importData({
       projectIds: ["project-import"],
       includeSettings: false,
@@ -705,6 +710,7 @@ it.effect("imports one thread at a time and resumes after an interrupted thread"
     const service = yield* makeLegacyImportService({
       sourceStateDir,
       loadDestinationState,
+      stopActiveProviderSession: stopNoActiveProviderSession,
     });
 
     const interrupted = yield* service.importData({
@@ -771,11 +777,13 @@ it.effect("repairs provider context for threads imported by an earlier release",
     readonly events: ReadonlyArray<Omit<OrchestrationEvent, "sequence">>;
     readonly continuation: unknown;
   }> = [];
+  const repairOperations: string[] = [];
   const engine = OrchestrationEngineService.of({
     readEvents: () => Stream.empty,
     dispatch: () => Effect.succeed({ sequence: 0 }),
     importHistoricalEvents: (events, options) =>
       Effect.sync(() => {
+        repairOperations.push(`import:${options?.continuation?.threadId ?? "none"}`);
         importedBatches.push({ events, continuation: options?.continuation });
         if (options?.continuation !== undefined) {
           const key = legacyContinuationKey({
@@ -837,7 +845,14 @@ it.effect("repairs provider context for threads imported by an earlier release",
     });
 
   return Effect.gen(function* () {
-    const service = yield* makeLegacyImportService({ sourceStateDir, loadDestinationState });
+    const service = yield* makeLegacyImportService({
+      sourceStateDir,
+      loadDestinationState,
+      stopActiveProviderSession: (threadId) =>
+        Effect.sync(() => {
+          repairOperations.push(`stop:${threadId}`);
+        }),
+    });
     const repaired = yield* service.importData({
       projectIds: ["project-import"],
       includeSettings: false,
@@ -857,6 +872,7 @@ it.effect("repairs provider context for threads imported by an earlier release",
       lastSeenAt: "2026-01-01T00:00:00.000Z",
       resumeCursor: { threadId: "provider-thread-import" },
     });
+    assert.deepStrictEqual(repairOperations, ["stop:thread-import", "import:thread-import"]);
 
     const alreadyRepaired = yield* service.importData({
       projectIds: ["project-import"],
