@@ -1,6 +1,4 @@
-import type { FileDiffMetadata } from "@pierre/diffs";
-
-import { resolveFileDiffPath } from "~/lib/diffRendering";
+import { isGeneratedLockfilePath } from "./generatedFiles.ts";
 
 /**
  * Which of the three reading passes a file belongs to.
@@ -11,16 +9,6 @@ import { resolveFileDiffPath } from "~/lib/diffRendering";
  */
 export type DiffFileTier = "source" | "test" | "generated";
 
-const GENERATED_FILE_NAMES = new Set([
-  "pnpm-lock.yaml",
-  "yarn.lock",
-  "package-lock.json",
-  "bun.lockb",
-  "Cargo.lock",
-  "go.sum",
-  "composer.lock",
-  "Gemfile.lock",
-]);
 const GENERATED_DIRECTORIES = new Set([
   "__snapshots__",
   "__generated__",
@@ -31,11 +19,18 @@ const GENERATED_DIRECTORIES = new Set([
 const TEST_DIRECTORIES = new Set(["__tests__", "tests", "test"]);
 const MODULE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
 
-export function diffFileTier(path: string): DiffFileTier {
+/**
+ * Classifies a diff path by name alone. `generatedPaths` carries the repository's own
+ * `linguist-generated` attributions when the caller has them, which outrank any name pattern.
+ */
+export function diffFileTier(path: string, generatedPaths?: ReadonlySet<string>): DiffFileTier {
+  if (generatedPaths?.has(path)) {
+    return "generated";
+  }
   const segments = path.split("/");
   const name = segments.at(-1) ?? "";
   if (
-    GENERATED_FILE_NAMES.has(name) ||
+    isGeneratedLockfilePath(name) ||
     name.endsWith(".snap") ||
     name.endsWith(".min.js") ||
     name.endsWith(".min.css") ||
@@ -110,29 +105,82 @@ function importedPaths(
   return imported;
 }
 
+function heapPush(heap: Array<number>, value: number): void {
+  heap.push(value);
+  let index = heap.length - 1;
+  while (index > 0) {
+    const parent = (index - 1) >> 1;
+    if (heap[parent]! <= heap[index]!) break;
+    [heap[parent], heap[index]] = [heap[index]!, heap[parent]!];
+    index = parent;
+  }
+}
+
+function heapPop(heap: Array<number>): number {
+  const top = heap[0]!;
+  const last = heap.pop()!;
+  if (heap.length > 0) {
+    heap[0] = last;
+    let index = 0;
+    for (;;) {
+      const left = index * 2 + 1;
+      const smallest = left + 1 < heap.length && heap[left + 1]! < heap[left]! ? left + 1 : left;
+      if (smallest >= heap.length || heap[index]! <= heap[smallest]!) break;
+      [heap[index], heap[smallest]] = [heap[smallest]!, heap[index]!];
+      index = smallest;
+    }
+  }
+  return top;
+}
+
 /**
  * Source files with what they import ahead of what imports them.
  *
- * Kahn's, but every step takes the lowest remaining path rather than any ready node, so the same
+ * Kahn's, but every step takes the lowest ready path rather than any ready node, so the same
  * change always reads the same way and files of one directory stay together. A cycle leaves nothing
  * ready: the lowest path still standing is taken anyway, which is the alphabetical order the tier
- * would have had without a graph.
+ * would have had without a graph. Ready paths wait in a min-heap of sorted ranks; this runs
+ * synchronously on the UI thread, so it must stay near-linear even for an enormous diff.
  */
 function orderByImports(
   paths: ReadonlyArray<string>,
   imports: ReadonlyMap<string, ReadonlySet<string>>,
 ): Array<string> {
-  const remaining = new Set(paths);
-  const ordered: Array<string> = [];
   const sorted = [...paths].sort((left, right) => left.localeCompare(right));
-  while (remaining.size > 0) {
-    const candidates = sorted.filter((path) => remaining.has(path));
-    const next =
-      candidates.find((path) =>
-        [...(imports.get(path) ?? [])].every((dependency) => !remaining.has(dependency)),
-      ) ?? candidates[0]!;
-    remaining.delete(next);
-    ordered.push(next);
+  const rank = new Map(sorted.map((path, index) => [path, index] as const));
+  const pending = sorted.map((path) => imports.get(path)?.size ?? 0);
+  const dependents = new Map<string, Array<number>>();
+  for (const path of sorted) {
+    for (const dependency of imports.get(path) ?? []) {
+      const list = dependents.get(dependency);
+      if (list === undefined) dependents.set(dependency, [rank.get(path)!]);
+      else list.push(rank.get(path)!);
+    }
+  }
+
+  const ready: Array<number> = [];
+  for (let index = 0; index < sorted.length; index += 1) {
+    if (pending[index] === 0) heapPush(ready, index);
+  }
+  const placed = Array.from({ length: sorted.length }, () => false);
+  const ordered: Array<string> = [];
+  let lowestUnplaced = 0;
+  while (ordered.length < sorted.length) {
+    let index: number;
+    if (ready.length > 0) {
+      index = heapPop(ready);
+    } else {
+      while (placed[lowestUnplaced]) lowestUnplaced += 1;
+      index = lowestUnplaced;
+    }
+    placed[index] = true;
+    const path = sorted[index]!;
+    ordered.push(path);
+    for (const dependent of dependents.get(path) ?? []) {
+      pending[dependent] = pending[dependent]! - 1;
+      // A cycle-broken path may drain to zero after it was already taken; it must not re-enter.
+      if (pending[dependent] === 0 && !placed[dependent]) heapPush(ready, dependent);
+    }
   }
   return ordered;
 }
@@ -142,17 +190,27 @@ function testedBaseName(path: string): string {
   return (path.split("/").at(-1) ?? "").replace(/\.(?:test|spec)\..*$/, "").replace(/\.[^.]+$/, "");
 }
 
+/** How a caller's file shape maps onto the ordering: its diff path and its patch's changed lines. */
+export interface DiffFileOrderAccessors<T> {
+  readonly path: (file: T) => string;
+  readonly changedLines: (file: T) => ReadonlyArray<string>;
+}
+
 /**
  * Diff files in reading order: source in dependency order, then the tests that cover it, then
- * whatever a tool wrote.
+ * whatever a tool wrote. `generatedPaths` carries repository `linguist-generated` attributions
+ * on top of the name-based tiers.
  */
-export function orderDiffFiles(
-  files: ReadonlyArray<FileDiffMetadata>,
-): ReadonlyArray<FileDiffMetadata> {
-  const byPath = new Map<string, FileDiffMetadata>();
-  for (const file of files) byPath.set(resolveFileDiffPath(file), file);
+export function orderDiffFiles<T>(
+  files: ReadonlyArray<T>,
+  accessors: DiffFileOrderAccessors<T>,
+  generatedPaths?: ReadonlyArray<string>,
+): ReadonlyArray<T> {
+  const generatedPathSet = generatedPaths === undefined ? undefined : new Set(generatedPaths);
+  const byPath = new Map<string, T>();
+  for (const file of files) byPath.set(accessors.path(file), file);
   const tiers = new Map<string, DiffFileTier>();
-  for (const path of byPath.keys()) tiers.set(path, diffFileTier(path));
+  for (const path of byPath.keys()) tiers.set(path, diffFileTier(path, generatedPathSet));
 
   const sourcePaths = [...byPath.keys()].filter((path) => tiers.get(path) === "source");
   const byModulePath = new Map<string, string>();
@@ -169,10 +227,7 @@ export function orderDiffFiles(
   const imports = new Map<string, ReadonlySet<string>>();
   for (const path of sourcePaths) {
     const file = byPath.get(path)!;
-    imports.set(
-      path,
-      importedPaths(path, [...file.additionLines, ...file.deletionLines], byModulePath, byBaseName),
-    );
+    imports.set(path, importedPaths(path, accessors.changedLines(file), byModulePath, byBaseName));
   }
   const orderedSource = orderByImports(sourcePaths, imports);
 

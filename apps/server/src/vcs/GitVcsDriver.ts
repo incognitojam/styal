@@ -1,5 +1,6 @@
 import * as NodeCrypto from "node:crypto";
 
+import * as Arr from "effect/Array";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -30,7 +31,7 @@ import {
   type VcsStatusInput,
   type VcsStatusResult,
 } from "@t3tools/contracts";
-import { makeGitVcsDriverCore } from "./GitVcsDriverCore.ts";
+import { makeGitVcsDriverCore, parseCheckAttrGeneratedPaths } from "./GitVcsDriverCore.ts";
 import * as VcsDriver from "./VcsDriver.ts";
 import * as VcsProcess from "./VcsProcess.ts";
 
@@ -868,6 +869,10 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         operation,
         cwd: input.cwd,
         args: [
+          // Without this, git octal-escapes non-ASCII paths in the patch headers, and the paths
+          // parsed back out of the diff no longer match the working tree for `check-attr`.
+          "-c",
+          "core.quotePath=false",
           "diff",
           "--patch",
           "--no-color",
@@ -907,6 +912,34 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             }),
           { discard: true },
         );
+      },
+    ),
+
+    readGeneratedDiffPaths: Effect.fn("GitVcsDriver.checkpoints.readGeneratedDiffPaths")(
+      function* (input) {
+        const operation = "GitVcsDriver.checkpoints.readGeneratedDiffPaths";
+        const uniquePaths = [...new Set(input.paths)];
+        if (uniquePaths.length === 0) return [];
+
+        // Attributes resolve against the repository root, not whichever subdirectory holds cwd.
+        const repositoryRoot = (yield* execute({
+          operation,
+          cwd: input.cwd,
+          args: ["rev-parse", "--show-toplevel"],
+        })).stdout.trim();
+
+        const results = yield* Effect.forEach(
+          Arr.chunksOf(uniquePaths, 100),
+          (pathChunk) =>
+            execute({
+              operation,
+              cwd: repositoryRoot,
+              args: ["check-attr", "-z", "linguist-generated", "--", ...pathChunk],
+            }),
+          { concurrency: 4 },
+        );
+
+        return results.flatMap((result) => parseCheckAttrGeneratedPaths(result.stdout));
       },
     ),
   };

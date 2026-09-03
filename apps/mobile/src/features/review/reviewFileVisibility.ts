@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { isGeneratedLockfilePath } from "@t3tools/shared/generatedFiles";
+import { diffFileTier } from "@t3tools/shared/diffFileOrder";
 
 import { updateReviewExpandedFileIds, updateReviewViewedFileIds } from "./reviewState";
 import type { ReviewRenderableFile } from "./reviewModel";
@@ -10,7 +10,7 @@ export function getDefaultReviewExpandedFileIds(
 ): ReadonlyArray<string> {
   const generatedPathSet = new Set(generatedPaths);
   return files
-    .filter((file) => !generatedPathSet.has(file.path) && !isGeneratedLockfilePath(file.path))
+    .filter((file) => diffFileTier(file.path, generatedPathSet) !== "generated")
     .map((file) => file.id);
 }
 

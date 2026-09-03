@@ -1,21 +1,30 @@
-import type { FileDiffMetadata } from "@pierre/diffs";
 import { describe, expect, it } from "vite-plus/test";
 
-import { diffFileTier, orderDiffFiles } from "./pullRequestFileOrder.logic";
+import { diffFileTier, orderDiffFiles } from "./diffFileOrder.ts";
 
-/** Only the path and the patch's own lines matter here; the viewer fills the rest in. */
-function file(name: string, additionLines: ReadonlyArray<string> = []): FileDiffMetadata {
-  return { name, hunks: [], additionLines, deletionLines: [] } as unknown as FileDiffMetadata;
+interface Entry {
+  readonly path: string;
+  readonly changedLines: ReadonlyArray<string>;
 }
 
-function order(files: ReadonlyArray<FileDiffMetadata>): Array<string> {
-  return orderDiffFiles(files).map((entry) => entry.name);
+function file(path: string, changedLines: ReadonlyArray<string> = []): Entry {
+  return { path, changedLines };
+}
+
+const accessors = {
+  path: (entry: Entry) => entry.path,
+  changedLines: (entry: Entry) => entry.changedLines,
+};
+
+function order(files: ReadonlyArray<Entry>, generatedPaths?: ReadonlyArray<string>): Array<string> {
+  return orderDiffFiles(files, accessors, generatedPaths).map((entry) => entry.path);
 }
 
 describe("diffFileTier", () => {
   it("puts lockfiles, snapshots and build output last", () => {
     expect(diffFileTier("pnpm-lock.yaml")).toBe("generated");
     expect(diffFileTier("apps/web/package-lock.json")).toBe("generated");
+    expect(diffFileTier("go.sum")).toBe("generated");
     expect(diffFileTier("src/__snapshots__/app.ts")).toBe("generated");
     expect(diffFileTier("src/app.test.ts.snap")).toBe("generated");
     expect(diffFileTier("src/api.generated.ts")).toBe("generated");
@@ -36,6 +45,11 @@ describe("diffFileTier", () => {
     expect(diffFileTier("src/app.ts")).toBe("source");
     expect(diffFileTier("src/testing.ts")).toBe("source");
     expect(diffFileTier("src/dist.ts")).toBe("source");
+  });
+
+  it("lets a repository attribution mark any path generated", () => {
+    expect(diffFileTier("src/schema.ts", new Set(["src/schema.ts"]))).toBe("generated");
+    expect(diffFileTier("src/schema.ts", new Set(["src/other.ts"]))).toBe("source");
   });
 });
 
@@ -118,6 +132,16 @@ describe("orderDiffFiles", () => {
     ).toEqual(["src/a.ts", "src/b.ts"]);
   });
 
+  it("places a cycle-broken file exactly once even when its imports later resolve", () => {
+    expect(
+      order([
+        file("src/a.ts", ['import { b } from "./b";']),
+        file("src/b.ts", ['import { a } from "./a";']),
+        file("src/c.ts", ['import { a } from "./a";']),
+      ]),
+    ).toEqual(["src/a.ts", "src/b.ts", "src/c.ts"]);
+  });
+
   it("clusters unrelated files by path", () => {
     expect(order([file("src/ui/b.ts"), file("src/lib/z.ts"), file("src/lib/a.ts")])).toEqual([
       "src/lib/a.ts",
@@ -151,6 +175,13 @@ describe("orderDiffFiles", () => {
       "src/a.ts",
       "src/a.test.ts",
       "src/orphan.spec.ts",
+    ]);
+  });
+
+  it("moves a repository-attributed generated file behind sources named like it", () => {
+    expect(order([file("src/schema.ts"), file("src/app.ts")], ["src/schema.ts"])).toEqual([
+      "src/app.ts",
+      "src/schema.ts",
     ]);
   });
 

@@ -290,6 +290,19 @@ export function splitNullSeparatedGitStdoutPaths(
   return splitNullSeparatedPaths(result.stdout, result.stdoutTruncated);
 }
 
+/** Paths a `git check-attr -z linguist-generated` run marked generated. */
+export function parseCheckAttrGeneratedPaths(stdout: string): string[] {
+  const fields = stdout.split("\0");
+  const generated: string[] = [];
+  for (let index = 0; index + 2 < fields.length; index += 3) {
+    const [path, attribute, value] = fields.slice(index, index + 3);
+    if (attribute === "linguist-generated" && (value === "set" || value === "true")) {
+      generated.push(path!);
+    }
+  }
+  return generated;
+}
+
 function sanitizeRemoteName(value: string): string {
   const sanitized = value
     .trim()
@@ -2256,17 +2269,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       { concurrency: 4 },
     );
 
-    return results.flatMap((result) => {
-      const fields = result.stdout.split("\0");
-      const generated: string[] = [];
-      for (let index = 0; index + 2 < fields.length; index += 3) {
-        const [path, attribute, value] = fields.slice(index, index + 3);
-        if (attribute === "linguist-generated" && (value === "set" || value === "true")) {
-          generated.push(path!);
-        }
-      }
-      return generated;
-    });
+    return results.flatMap((result) => parseCheckAttrGeneratedPaths(result.stdout));
   });
 
   const getReviewDiffPreview = Effect.fn("getReviewDiffPreview")(function* (

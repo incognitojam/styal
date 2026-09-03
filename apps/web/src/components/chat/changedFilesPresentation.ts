@@ -1,3 +1,5 @@
+import { diffFileTier } from "@t3tools/shared/diffFileOrder";
+
 import { type TurnDiffFileChange } from "../../types";
 import { summarizeTurnDiffStats } from "../../lib/turnDiffTree";
 
@@ -67,15 +69,25 @@ export function summarizeChangedFileScopes(
     .map(({ label, fileCount }) => ({ label, fileCount }));
 }
 
+const PREVIEW_TIER_RANK = { source: 0, test: 1, generated: 2 } as const;
+
 export function selectChangedFilePreview(
   files: ReadonlyArray<TurnDiffFileChange>,
   limit = CHANGED_FILES_PREVIEW_FILE_LIMIT,
 ): TurnDiffFileChange[] {
+  // A test or a lockfile makes a poor face for a turn. The stable sort keeps the incoming
+  // alphabetical order within each tier while sources front the walk, so a scope's
+  // representative is only ever a test or generated file when it holds nothing else.
+  const preferred = files.toSorted(
+    (left, right) =>
+      PREVIEW_TIER_RANK[diffFileTier(left.path.replaceAll("\\", "/"))] -
+      PREVIEW_TIER_RANK[diffFileTier(right.path.replaceAll("\\", "/"))],
+  );
   const selected: TurnDiffFileChange[] = [];
   const selectedPaths = new Set<string>();
   const selectedScopes = new Set<string>();
 
-  for (const file of files) {
+  for (const file of preferred) {
     const scope = changedFileScope(file.path);
     if (selectedScopes.has(scope)) {
       continue;
@@ -88,7 +100,7 @@ export function selectChangedFilePreview(
     }
   }
 
-  for (const file of files) {
+  for (const file of preferred) {
     if (selectedPaths.has(file.path)) {
       continue;
     }

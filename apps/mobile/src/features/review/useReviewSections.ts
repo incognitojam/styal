@@ -141,7 +141,10 @@ export function useReviewSections(input: {
     if (!reviewCache.threadKey || !activeSectionId || !activeTurnDiff.data) {
       return;
     }
-    setReviewTurnDiff(reviewCache.threadKey, activeSectionId, activeTurnDiff.data.diff);
+    setReviewTurnDiff(reviewCache.threadKey, activeSectionId, {
+      diff: activeTurnDiff.data.diff,
+      generatedPaths: activeTurnDiff.data.generatedPaths ?? [],
+    });
     setReviewAsyncError(reviewCache.threadKey, null);
   }, [activeSectionId, activeTurnDiff.data, reviewCache.threadKey]);
 

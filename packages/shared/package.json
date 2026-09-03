@@ -40,6 +40,10 @@
       "types": "./src/generatedFiles.ts",
       "import": "./src/generatedFiles.ts"
     },
+    "./diffFileOrder": {
+      "types": "./src/diffFileOrder.ts",
+      "import": "./src/diffFileOrder.ts"
+    },
     "./sourceControl": {
       "types": "./src/sourceControl.ts",
       "import": "./src/sourceControl.ts"

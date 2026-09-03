@@ -9,6 +9,8 @@ describe("isGeneratedLockfilePath", () => {
     "crates\\server\\Cargo.lock",
     "vendor/composer.lock",
     "deno.lock",
+    "Gemfile.lock",
+    "go.sum",
     "pnpm-lock.yaml",
     "yarn.lock",
   ])("recognizes %s", (path) => {

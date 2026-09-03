@@ -7,7 +7,6 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import type { ScopedThreadRef, TurnId } from "@t3tools/contracts";
-import { isGeneratedLockfilePath } from "@t3tools/shared/generatedFiles";
 import {
   ArrowRightIcon,
   CheckIcon,
@@ -20,6 +19,7 @@ import {
   RefreshCwIcon,
   Rows3Icon,
   SearchIcon,
+  SparklesIcon,
   TextWrapIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -39,6 +39,8 @@ import {
   resolveFileDiffPath,
 } from "../lib/diffRendering";
 import { areAllDiffFilesCollapsed, toggleAllDiffFiles } from "../lib/diffCollapse";
+import { DiffFileTierChip } from "./diffs/DiffFileTierChip";
+import { diffFileTier, orderDiffFiles, type DiffFileTier } from "../lib/diffFileOrder";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { useProject, useThread } from "../state/entities";
 import { resolveThreadRouteRef } from "../threadRoutes";
@@ -105,6 +107,8 @@ export default function DiffPanel({
   const [initialGitScope] = useState(initialGitScopeProp);
   const diffRenderMode = useDiffPanelStore((state) => state.diffRenderMode);
   const setDiffRenderMode = useDiffPanelStore((state) => state.setDiffRenderMode);
+  const diffSortMode = useDiffPanelStore((state) => state.diffSortMode);
+  const setDiffSortMode = useDiffPanelStore((state) => state.setDiffSortMode);
   const [wordWrap, setWordWrap] = useState(settings.wordWrap);
   const [diffIgnoreWhitespace, setDiffIgnoreWhitespace] = useState(settings.diffIgnoreWhitespace);
   const [baseRefQuery, setBaseRefQuery] = useState("");
@@ -394,9 +398,16 @@ export default function DiffPanel({
       }),
     [resolvedTheme, selectedPatch, selectedTurnId],
   );
+  // Turn diffs carry their attributions on the diff result; git sources on the preview source.
+  const attributedGeneratedPaths = selectedTurn
+    ? activeCheckpointDiff.data?.generatedPaths
+    : selectedGitSource?.generatedPaths;
   const renderableFiles = useMemo(() => {
     if (!renderablePatch || renderablePatch.kind !== "files") {
       return [];
+    }
+    if (diffSortMode === "smart") {
+      return orderDiffFiles(renderablePatch.files, attributedGeneratedPaths);
     }
     return renderablePatch.files.toSorted((left, right) =>
       resolveFileDiffPath(left).localeCompare(resolveFileDiffPath(right), undefined, {
@@ -404,7 +415,7 @@ export default function DiffPanel({
         sensitivity: "base",
       }),
     );
-  }, [renderablePatch]);
+  }, [attributedGeneratedPaths, diffSortMode, renderablePatch]);
   const renderableFileEntries = useMemo(
     () =>
       renderableFiles.map((fileDiff) => ({
@@ -414,16 +425,26 @@ export default function DiffPanel({
     [renderableFiles],
   );
   const automaticCollapsedDiffFileKeys = useMemo(() => {
-    const attributedPaths = new Set(selectedGitSource?.generatedPaths ?? []);
+    const attributedPaths = new Set(attributedGeneratedPaths ?? []);
     return new Set(
       renderableFileEntries
-        .filter(({ fileDiff }) => {
-          const path = resolveFileDiffPath(fileDiff);
-          return attributedPaths.has(path) || isGeneratedLockfilePath(path);
-        })
+        .filter(
+          ({ fileDiff }) =>
+            diffFileTier(resolveFileDiffPath(fileDiff), attributedPaths) === "generated",
+        )
         .map(({ fileKey }) => fileKey),
     );
-  }, [renderableFileEntries, selectedGitSource?.generatedPaths]);
+  }, [attributedGeneratedPaths, renderableFileEntries]);
+  // Fed to the header suffix chips; smart order is what makes the tier grouping legible.
+  const fileTierByKey = useMemo(() => {
+    if (diffSortMode !== "smart") return null;
+    const attributedPaths = new Set(attributedGeneratedPaths ?? []);
+    const tiers = new Map<string, DiffFileTier>();
+    for (const { fileDiff, fileKey } of renderableFileEntries) {
+      tiers.set(fileKey, diffFileTier(resolveFileDiffPath(fileDiff), attributedPaths));
+    }
+    return tiers;
+  }, [attributedGeneratedPaths, diffSortMode, renderableFileEntries]);
   const collapsedDiffFileKeys =
     collapsedDiffFiles.scopeKey === collapseScopeKey
       ? collapsedDiffFiles.fileKeys
@@ -779,6 +800,28 @@ export default function DiffPanel({
             </TooltipPopup>
           </Tooltip>
         )}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Toggle
+                aria-label={
+                  diffSortMode === "smart" ? "Sort files alphabetically" : "Sort files by relevance"
+                }
+                variant="ghost"
+                size="sm"
+                pressed={diffSortMode === "smart"}
+                onPressedChange={(pressed) => {
+                  setDiffSortMode(pressed ? "smart" : "alphabetical");
+                }}
+              />
+            }
+          >
+            <SparklesIcon className="size-3.5" />
+          </TooltipTrigger>
+          <TooltipPopup side="top">
+            {diffSortMode === "smart" ? "Sort files alphabetically" : "Sort files by relevance"}
+          </TooltipPopup>
+        </Tooltip>
         <ToggleGroup
           className="shrink-0 gap-1"
           size="sm"
@@ -969,6 +1012,14 @@ export default function DiffPanel({
                       </Tooltip>
                     );
                   }}
+                  renderHeaderFilenameSuffix={
+                    fileTierByKey
+                      ? (fileKey) => {
+                          const tier = fileTierByKey.get(fileKey);
+                          return tier === undefined ? null : <DiffFileTierChip tier={tier} />;
+                        }
+                      : undefined
+                  }
                   options={{
                     diffStyle: diffRenderMode === "split" ? "split" : "unified",
                     lineDiffType: "none",

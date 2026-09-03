@@ -31,6 +31,7 @@ import {
 } from "./Errors.ts";
 import type { CheckpointServiceError } from "./Errors.ts";
 import { checkpointRefForThreadTurn } from "./Utils.ts";
+import { parseTurnDiffFilesFromUnifiedDiff } from "./Diffs.ts";
 import * as CheckpointStore from "./CheckpointStore.ts";
 
 /** Service tag for checkpoint diff queries. */
@@ -66,18 +67,32 @@ function buildTurnDiffResult(
     readonly toTurnCount: number;
   },
   diff: string,
+  generatedPaths: ReadonlyArray<string> = [],
 ): OrchestrationGetTurnDiffResultType {
   return {
     threadId: input.threadId,
     fromTurnCount: input.fromTurnCount,
     toTurnCount: input.toTurnCount,
     diff,
+    ...(generatedPaths.length > 0 ? { generatedPaths } : {}),
   };
 }
 
 export const make = Effect.gen(function* () {
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const checkpointStore = yield* CheckpointStore.CheckpointStore;
+
+  /** Best-effort `linguist-generated` attribution for a computed patch; failure yields none. */
+  const resolveGeneratedDiffPaths = Effect.fn("resolveGeneratedDiffPaths")(function* (
+    cwd: string,
+    diff: string,
+  ) {
+    const paths = parseTurnDiffFilesFromUnifiedDiff(diff).map((file) => file.path);
+    if (paths.length === 0) return [];
+    return yield* checkpointStore
+      .readGeneratedDiffPaths({ cwd, paths })
+      .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
+  });
 
   const getTurnDiff: CheckpointDiffQuery["Service"]["getTurnDiff"] = Effect.fn("getTurnDiff")(
     function* (input) {
@@ -174,7 +189,8 @@ export const make = Effect.gen(function* () {
         })
         .pipe(Effect.withSpan("checkpoint.turnDiff.diffCheckpoints"));
 
-      const turnDiff = buildTurnDiffResult(input, diff);
+      const generatedPaths = yield* resolveGeneratedDiffPaths(workspaceCwd, diff);
+      const turnDiff = buildTurnDiffResult(input, diff, generatedPaths);
       if (!isTurnDiffResult(turnDiff)) {
         return yield* new CheckpointDiffResultInvalidError({
           operation,
@@ -264,6 +280,7 @@ export const make = Effect.gen(function* () {
       })
       .pipe(Effect.withSpan("checkpoint.fullThread.diffCheckpoints"));
 
+    const generatedPaths = yield* resolveGeneratedDiffPaths(workspaceCwd, diff);
     const turnDiff = buildTurnDiffResult(
       {
         threadId: input.threadId,
@@ -271,6 +288,7 @@ export const make = Effect.gen(function* () {
         toTurnCount: input.toTurnCount,
       },
       diff,
+      generatedPaths,
     );
     if (!isTurnDiffResult(turnDiff)) {
       return yield* new CheckpointDiffResultInvalidError({

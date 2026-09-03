@@ -1,6 +1,7 @@
 import { parsePatchFiles } from "@pierre/diffs/utils/parsePatchFiles";
 import type { ChangeTypes, FileDiffMetadata } from "@pierre/diffs/types";
 import type { OrchestrationCheckpointSummary, ReviewDiffPreviewSource } from "@t3tools/contracts";
+import { orderDiffFiles } from "@t3tools/shared/diffFileOrder";
 import * as Arr from "effect/Array";
 import { pipe } from "effect/Function";
 import * as Order from "effect/Order";
@@ -18,6 +19,12 @@ export interface ReviewSectionItem {
   readonly subtitle: string | null;
   readonly diff: string | null;
   readonly isLoading: boolean;
+  readonly generatedPaths: ReadonlyArray<string>;
+}
+
+/** A fetched turn diff with the paths the repository attributes as generated. */
+export interface ReviewTurnDiffEntry {
+  readonly diff: string;
   readonly generatedPaths: ReadonlyArray<string>;
 }
 
@@ -529,21 +536,22 @@ export function getReadyReviewCheckpoints(
 export function buildReviewSectionItems(input: {
   readonly checkpoints: ReadonlyArray<OrchestrationCheckpointSummary>;
   readonly gitSections: ReadonlyArray<ReviewDiffPreviewSource>;
-  readonly turnDiffById: Readonly<Record<string, string | undefined>>;
+  readonly turnDiffById: Readonly<Record<string, ReviewTurnDiffEntry | undefined>>;
   readonly loadingTurnIds: Readonly<Record<string, boolean | undefined>>;
   readonly loadingGitSections: boolean;
 }): ReadonlyArray<ReviewSectionItem> {
   const turnItems = getReadyReviewCheckpoints(input.checkpoints).map<ReviewSectionItem>(
     (checkpoint) => {
       const id = getReviewSectionIdForCheckpoint(checkpoint);
+      const turnDiff = input.turnDiffById[id];
       return {
         id,
         kind: "turn",
         title: checkpointTitle(checkpoint),
         subtitle: checkpointSubtitle(checkpoint),
-        diff: input.turnDiffById[id] ?? null,
+        diff: turnDiff?.diff ?? null,
         isLoading: input.loadingTurnIds[id] === true,
-        generatedPaths: [],
+        generatedPaths: turnDiff?.generatedPaths ?? [],
       };
     },
   );
@@ -583,9 +591,15 @@ export function getDefaultReviewSectionId(
   return sections[0]?.id ?? null;
 }
 
+const REVIEW_FILE_ORDER_ACCESSORS = {
+  path: (file: ReviewRenderableFile) => file.path,
+  changedLines: (file: ReviewRenderableFile) => [...file.additionLines, ...file.deletionLines],
+};
+
 export function buildReviewParsedDiff(
   diff: string | null | undefined,
   cacheScope: string,
+  generatedPaths?: ReadonlyArray<string>,
 ): ReviewParsedDiff {
   const normalized = diff?.trim();
   if (!normalized) {
@@ -605,10 +619,14 @@ export function buildReviewParsedDiff(
     const parsedPatches = runDiffParserSilently(() =>
       parsePatchFiles(text, buildPatchCacheKey(text, cacheScope)),
     );
-    const files = pipe(
-      parsedPatches,
-      Arr.flatMap((patch) => patch.files),
-      Arr.map(mapRenderableFile),
+    const files = orderDiffFiles(
+      pipe(
+        parsedPatches,
+        Arr.flatMap((patch) => patch.files),
+        Arr.map(mapRenderableFile),
+      ),
+      REVIEW_FILE_ORDER_ACCESSORS,
+      generatedPaths,
     );
 
     if (files.length === 0) {

@@ -90,7 +90,10 @@ describe("buildReviewSectionItems", () => {
       checkpoints,
       gitSections,
       turnDiffById: {
-        [loadedTurnId]: "diff --git a/loaded.ts b/loaded.ts",
+        [loadedTurnId]: {
+          diff: "diff --git a/loaded.ts b/loaded.ts",
+          generatedPaths: ["loaded.generated.ts"],
+        },
       },
       loadingTurnIds: {
         [getReviewSectionIdForCheckpoint(checkpoints[1])]: true,
@@ -108,6 +111,7 @@ describe("buildReviewSectionItems", () => {
     expect(items[1]).toMatchObject({
       isLoading: false,
       diff: expect.stringContaining("loaded.ts"),
+      generatedPaths: ["loaded.generated.ts"],
     });
     expect(getDefaultReviewSectionId(items)).toBe("turn:2");
   });
