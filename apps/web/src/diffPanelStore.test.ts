@@ -11,30 +11,9 @@ describe("diffPanelStore", () => {
     useDiffPanelStore.setState({
       byThreadKey: {},
       branchBaseRefByThreadKey: {},
-      diffRenderMode: "stacked",
       diffSortMode: "smart",
     }),
   );
-
-  it("keeps the selected render mode in panel and persisted state", async () => {
-    useDiffPanelStore.getState().setDiffRenderMode("split");
-
-    expect(useDiffPanelStore.getState().diffRenderMode).toBe("split");
-    expect(
-      useDiffPanelStore.persist.getOptions().partialize?.(useDiffPanelStore.getState()),
-    ).toMatchObject({ diffRenderMode: "split" });
-
-    const { name, storage } = useDiffPanelStore.persist.getOptions();
-    if (!name) throw new Error("Expected diff panel persistence to have a storage name");
-    const persisted = await storage?.getItem(name);
-    expect(persisted?.state).toMatchObject({ diffRenderMode: "split" });
-
-    useDiffPanelStore.setState({ diffRenderMode: "stacked" });
-    if (persisted) await storage?.setItem(name, persisted);
-    await useDiffPanelStore.persist.rehydrate();
-
-    expect(useDiffPanelStore.getState().diffRenderMode).toBe("split");
-  });
 
   it("keeps the selected sort mode in panel and persisted state", async () => {
     useDiffPanelStore.getState().setDiffSortMode("alphabetical");
