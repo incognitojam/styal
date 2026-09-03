@@ -110,8 +110,8 @@ const DEFAULT_BINDINGS = compile([
   },
   {
     shortcut: modShortcut("w"),
-    command: "rightPanel.closeActive",
-    whenAst: whenAnd(whenIdentifier("rightPanelFocus"), whenNot(whenIdentifier("terminalFocus"))),
+    command: "rightPanel.close",
+    whenAst: whenNot(whenIdentifier("terminalFocus")),
   },
   {
     shortcut: modShortcut("d"),
@@ -806,6 +806,24 @@ describe("resolveShortcutCommand", () => {
         platform: "Linux",
       }),
       "script.setup.run",
+    );
+  });
+
+  it("routes mod+w to the terminal while focused and to the right panel otherwise", () => {
+    const closeEvent = event({ key: "w", metaKey: true });
+    assert.strictEqual(
+      resolveShortcutCommand(closeEvent, DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }),
+      "terminal.close",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(closeEvent, DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: false },
+      }),
+      "rightPanel.close",
     );
   });
 
