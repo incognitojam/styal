@@ -20,7 +20,16 @@ import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
 
 import type { OrchestrationDispatchError } from "../Errors.ts";
-import type { OrchestrationEventStoreError } from "../../persistence/Errors.ts";
+import type { OrchestrationProjectorDecodeError } from "../Errors.ts";
+import type {
+  OrchestrationEventStoreError,
+  ProjectionRepositoryError,
+} from "../../persistence/Errors.ts";
+
+export type HistoricalEventImportError =
+  | OrchestrationEventStoreError
+  | OrchestrationProjectorDecodeError
+  | ProjectionRepositoryError;
 
 /**
  * OrchestrationEngineShape - Service API for orchestration command and event flow.
@@ -56,6 +65,22 @@ export interface OrchestrationEngineShape {
     command: OrchestrationCommand,
     options?: { readonly origin?: OrchestrationClientOrigin },
   ) => Effect.Effect<{ sequence: number }, OrchestrationDispatchError, never>;
+
+  /**
+   * Persist already-decoded history while keeping the engine read model and
+   * projections synchronized. This is an internal compatibility seam used by
+   * local data import; normal callers must dispatch commands instead.
+   *
+   * Optionality keeps existing test doubles and downstream forks source
+   * compatible. The production engine always implements it.
+   */
+  readonly importHistoricalEvents?: (
+    events: ReadonlyArray<Omit<OrchestrationEvent, "sequence">>,
+  ) => Effect.Effect<
+    { readonly eventCount: number; readonly sequence: number },
+    HistoricalEventImportError,
+    never
+  >;
 
   /**
    * Stream persisted domain events in dispatch order.

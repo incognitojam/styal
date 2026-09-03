@@ -2,6 +2,7 @@ import {
   CheckpointRef,
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
+  EventId,
   MessageId,
   ProjectId,
   ThreadId,
@@ -214,6 +215,7 @@ describe("OrchestrationEngine", () => {
         Layer.succeed(OrchestrationProjectionPipeline, {
           bootstrap: Effect.void,
           projectEvent: () => Effect.void,
+          projectEvents: () => Effect.void,
         } satisfies OrchestrationProjectionPipelineShape),
       ),
       Layer.provide(Layer.succeed(OrchestrationEventStore, eventStore)),
@@ -511,6 +513,140 @@ describe("OrchestrationEngine", () => {
     );
 
     expect(eventTypes).toEqual(["thread.created", "thread.meta-updated"]);
+    await system.dispose();
+  });
+
+  it("imports historical events through the serialized engine", async () => {
+    const system = await createOrchestrationSystem();
+    const { engine } = system;
+    const importHistoricalEvents = engine.importHistoricalEvents;
+    expect(importHistoricalEvents).toBeDefined();
+    if (importHistoricalEvents === undefined) return;
+
+    const createdAt = now();
+    const imported = await system.run(
+      importHistoricalEvents([
+        {
+          eventId: EventId.make("event-import-project"),
+          type: "project.created",
+          aggregateKind: "project",
+          aggregateId: asProjectId("project-import"),
+          occurredAt: createdAt,
+          commandId: CommandId.make("command-import-project"),
+          causationEventId: null,
+          correlationId: CommandId.make("command-import-project"),
+          metadata: {},
+          payload: {
+            projectId: asProjectId("project-import"),
+            title: "Imported project",
+            workspaceRoot: "/work/imported",
+            defaultModelSelection: null,
+            scripts: [],
+            createdAt,
+            updatedAt: createdAt,
+          },
+        },
+        {
+          eventId: EventId.make("event-import-thread"),
+          type: "thread.created",
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-import"),
+          occurredAt: createdAt,
+          commandId: CommandId.make("command-import-thread"),
+          causationEventId: null,
+          correlationId: CommandId.make("command-import-thread"),
+          metadata: {},
+          payload: {
+            threadId: ThreadId.make("thread-import"),
+            projectId: asProjectId("project-import"),
+            title: "Imported thread",
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("codex"),
+              model: "gpt-5-codex",
+            },
+            interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+            runtimeMode: "full-access",
+            branch: null,
+            worktreePath: null,
+            createdAt,
+            updatedAt: createdAt,
+          },
+        },
+        {
+          eventId: EventId.make("event-import-message"),
+          type: "thread.message-sent",
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-import"),
+          occurredAt: createdAt,
+          commandId: null,
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          payload: {
+            threadId: ThreadId.make("thread-import"),
+            messageId: asMessageId("message-import"),
+            role: "assistant",
+            text: "Imported answer",
+            turnId: null,
+            streaming: false,
+            createdAt,
+            updatedAt: createdAt,
+          },
+        },
+      ]),
+    );
+
+    expect(imported.eventCount).toBe(3);
+    const readModel = await system.readModel();
+    expect(readModel.projects.find((project) => project.id === "project-import")?.title).toBe(
+      "Imported project",
+    );
+    expect(
+      readModel.threads.find((thread) => thread.id === "thread-import")?.messages[0]?.text,
+    ).toBe("Imported answer");
+
+    const sequenceBeforeFailedBatch = await system.run(engine.latestSequence);
+    const duplicateProjectEvent = {
+      eventId: EventId.make("event-import-rollback-project"),
+      type: "project.created" as const,
+      aggregateKind: "project" as const,
+      aggregateId: asProjectId("project-import-rollback"),
+      occurredAt: createdAt,
+      commandId: CommandId.make("command-import-rollback-project"),
+      causationEventId: null,
+      correlationId: CommandId.make("command-import-rollback-project"),
+      metadata: {},
+      payload: {
+        projectId: asProjectId("project-import-rollback"),
+        title: "Rolled back project",
+        workspaceRoot: "/work/imported-rollback",
+        defaultModelSelection: null,
+        scripts: [],
+        createdAt,
+        updatedAt: createdAt,
+      },
+    };
+    await expect(
+      system.run(importHistoricalEvents([duplicateProjectEvent, duplicateProjectEvent])),
+    ).rejects.toThrow();
+    expect(await system.run(engine.latestSequence)).toBe(sequenceBeforeFailedBatch);
+    expect(
+      (await system.readModel()).projects.some(
+        (project) => project.id === "project-import-rollback",
+      ),
+    ).toBe(false);
+
+    await system.run(
+      engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("command-imported-thread-update"),
+        threadId: ThreadId.make("thread-import"),
+        title: "Renamed after import",
+      }),
+    );
+    expect(
+      (await system.readModel()).threads.find((thread) => thread.id === "thread-import")?.title,
+    ).toBe("Renamed after import");
     await system.dispose();
   });
 
@@ -907,6 +1043,7 @@ describe("OrchestrationEngine", () => {
     let shouldFailRequestedProjection = true;
     const flakyProjectionPipeline: OrchestrationProjectionPipelineShape = {
       bootstrap: Effect.void,
+      projectEvents: () => Effect.void,
       projectEvent: (event) => {
         if (
           shouldFailRequestedProjection &&
@@ -1053,6 +1190,7 @@ describe("OrchestrationEngine", () => {
     let shouldFailProjection = true;
     const flakyProjectionPipeline: OrchestrationProjectionPipelineShape = {
       bootstrap: Effect.void,
+      projectEvents: () => Effect.void,
       projectEvent: (event) => {
         if (
           shouldFailProjection &&

@@ -8,6 +8,7 @@ export type SettingsPath =
   | "/settings/integrations"
   | "/settings/source-control"
   | "/settings/connections"
+  | "/settings/import"
   | "/settings/archived";
 
 export interface SettingsSearchItem {
@@ -32,6 +33,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/integrations": "Integrations",
   "/settings/source-control": "Source Control",
   "/settings/connections": "Connections",
+  "/settings/import": "Import data",
   "/settings/archived": "Archive",
 };
 
@@ -262,6 +264,18 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "remote-environments",
     title: "Remote environments",
     to: "/settings/connections",
+  },
+  {
+    id: "import-data",
+    title: "Import data",
+    to: "/settings/import",
+  },
+  {
+    id: "legacy-import-source",
+    title: "Import from T3 Code",
+    to: "/settings/import",
+    // The detected-source card is the destination for both import entries.
+    targetId: "import-data",
   },
   {
     id: "archive",

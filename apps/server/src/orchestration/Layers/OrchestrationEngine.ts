@@ -45,6 +45,7 @@ import { OrchestrationProjectionPipeline } from "../Services/ProjectionPipeline.
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import {
   OrchestrationEngineService,
+  type HistoricalEventImportError,
   type OrchestrationEngineShape,
 } from "../Services/OrchestrationEngine.ts";
 const isOrchestrationCommandPreviouslyRejectedError = Schema.is(
@@ -54,11 +55,23 @@ const isOrchestrationCommandIdConflictError = Schema.is(OrchestrationCommandIdCo
 const isOrchestrationCommandInvariantError = Schema.is(OrchestrationCommandInvariantError);
 
 interface CommandEnvelope {
+  readonly kind: "command";
   command: OrchestrationCommand;
   origin: OrchestrationClientOrigin | undefined;
   result: Deferred.Deferred<{ sequence: number }, OrchestrationDispatchError>;
   startedAtMs: number;
 }
+
+interface HistoricalImportEnvelope {
+  readonly kind: "historical-import";
+  readonly events: ReadonlyArray<Omit<OrchestrationEvent, "sequence">>;
+  readonly result: Deferred.Deferred<
+    { readonly eventCount: number; readonly sequence: number },
+    HistoricalEventImportError
+  >;
+}
+
+type EngineEnvelope = CommandEnvelope | HistoricalImportEnvelope;
 
 function commandToAggregateRef(command: OrchestrationCommand): {
   readonly aggregateKind: "project" | "thread";
@@ -91,7 +104,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
   let commandReadModel = createEmptyReadModel(yield* nowIso);
 
-  const commandQueue = yield* Queue.unbounded<CommandEnvelope>();
+  const commandQueue = yield* Queue.unbounded<EngineEnvelope>();
   const eventPubSub = yield* PubSub.unbounded<OrchestrationEvent>();
 
   const projectEventsOntoReadModel = (
@@ -328,10 +341,80 @@ const makeOrchestrationEngine = Effect.gen(function* () {
     );
   };
 
+  const processHistoricalImportEnvelope = (
+    envelope: HistoricalImportEnvelope,
+  ): Effect.Effect<void> =>
+    Effect.exit(
+      sql
+        .withTransaction(
+          Effect.gen(function* () {
+            const committedEvents: OrchestrationEvent[] = [];
+            let sequence = commandReadModel.snapshotSequence;
+
+            for (const [index, event] of envelope.events.entries()) {
+              const savedEvent = yield* eventStore.append(event);
+              committedEvents.push(savedEvent);
+              sequence = savedEvent.sequence;
+              if ((index + 1) % 50 === 0) yield* Effect.yieldNow;
+            }
+            yield* projectionPipeline.projectEvents(committedEvents);
+
+            return {
+              eventCount: envelope.events.length,
+              sequence,
+              creationEvents: committedEvents.filter(
+                (event) => event.type === "project.created" || event.type === "thread.created",
+              ),
+              nextCommandReadModel: yield* projectionSnapshotQuery.getCommandReadModel(),
+            } as const;
+          }),
+        )
+        .pipe(
+          Effect.catchTag("SqlError", (sqlError) =>
+            Effect.fail(
+              toPersistenceSqlError(
+                "OrchestrationEngine.processHistoricalImportEnvelope:transaction",
+              )(sqlError),
+            ),
+          ),
+        ),
+    ).pipe(
+      Effect.flatMap((exit) => {
+        if (Exit.isFailure(exit)) {
+          return Deferred.fail(
+            envelope.result,
+            Cause.squash(exit.cause) as HistoricalEventImportError,
+          );
+        }
+
+        commandReadModel = exit.value.nextCommandReadModel;
+        return Effect.gen(function* () {
+          // Creation events are enough to make shell subscribers refetch the
+          // final projected rows. Historical operational events stay silent,
+          // so importing cannot restart provider or checkpoint work.
+          for (const event of exit.value.creationEvents) {
+            yield* PubSub.publish(eventPubSub, event);
+          }
+          yield* Deferred.succeed(envelope.result, {
+            eventCount: exit.value.eventCount,
+            sequence: exit.value.sequence,
+          });
+        });
+      }),
+    );
+
   yield* projectionPipeline.bootstrap;
   commandReadModel = yield* projectionSnapshotQuery.getCommandReadModel();
 
-  const worker = Effect.forever(Queue.take(commandQueue).pipe(Effect.flatMap(processEnvelope)));
+  const worker = Effect.forever(
+    Queue.take(commandQueue).pipe(
+      Effect.flatMap((envelope) =>
+        envelope.kind === "command"
+          ? processEnvelope(envelope)
+          : processHistoricalImportEnvelope(envelope),
+      ),
+    ),
+  );
   yield* Effect.forkScoped(worker);
   yield* Effect.logDebug("orchestration engine started").pipe(
     Effect.annotateLogs({ sequence: commandReadModel.snapshotSequence }),
@@ -344,6 +427,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
     Effect.gen(function* () {
       const result = yield* Deferred.make<{ sequence: number }, OrchestrationDispatchError>();
       yield* Queue.offer(commandQueue, {
+        kind: "command",
         command,
         origin: options?.origin,
         result,
@@ -352,9 +436,26 @@ const makeOrchestrationEngine = Effect.gen(function* () {
       return yield* Deferred.await(result);
     });
 
+  const importHistoricalEvents: NonNullable<OrchestrationEngineShape["importHistoricalEvents"]> = (
+    events,
+  ) =>
+    Effect.gen(function* () {
+      const result = yield* Deferred.make<
+        { readonly eventCount: number; readonly sequence: number },
+        HistoricalEventImportError
+      >();
+      yield* Queue.offer(commandQueue, {
+        kind: "historical-import",
+        events,
+        result,
+      });
+      return yield* Deferred.await(result);
+    });
+
   return {
     readEvents,
     dispatch,
+    importHistoricalEvents,
     // Each access creates a fresh PubSub subscription so that multiple
     // consumers (wsServer, ProviderRuntimeIngestion, CheckpointReactor, etc.)
     // each independently receive all domain events.

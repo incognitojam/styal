@@ -28,6 +28,12 @@ import {
   AttachmentUploadSigningKeyError,
 } from "./assets.ts";
 import {
+  LegacyImportError,
+  LegacyImportPreview,
+  LegacyImportRequest,
+  LegacyImportResult,
+} from "./dataImport.ts";
+import {
   GitActionProgressEvent,
   VcsSwitchRefInput,
   VcsSwitchRefResult,
@@ -316,6 +322,8 @@ export const WS_METHODS = {
   serverReportHostPowerState: "server.reportHostPowerState",
   serverGetBackgroundPolicy: "server.getBackgroundPolicy",
   serverGetUsageSummary: "server.getUsageSummary",
+  serverPreviewLegacyImport: "server.previewLegacyImport",
+  serverImportLegacyData: "server.importLegacyData",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -495,6 +503,18 @@ export const WsServerGetUsageSummaryRpc = Rpc.make(WS_METHODS.serverGetUsageSumm
   payload: UsageSummaryInput,
   success: UsageSummary,
   error: Schema.Union([EnvironmentAuthorizationError, UsageReadError]),
+});
+
+export const WsServerPreviewLegacyImportRpc = Rpc.make(WS_METHODS.serverPreviewLegacyImport, {
+  payload: Schema.Struct({}),
+  success: LegacyImportPreview,
+  error: EnvironmentAuthorizationError,
+});
+
+export const WsServerImportLegacyDataRpc = Rpc.make(WS_METHODS.serverImportLegacyData, {
+  payload: LegacyImportRequest,
+  success: LegacyImportResult,
+  error: Schema.Union([LegacyImportError, EnvironmentAuthorizationError]),
 });
 
 export const WsServerSignalProcessRpc = Rpc.make(WS_METHODS.serverSignalProcess, {
@@ -1133,6 +1153,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetResourceTelemetryHistoryRpc,
   WsServerRetryResourceTelemetryRpc,
   WsServerGetUsageSummaryRpc,
+  WsServerPreviewLegacyImportRpc,
+  WsServerImportLegacyDataRpc,
   WsServerSignalProcessRpc,
   WsServerReportClientActivityRpc,
   WsServerReportHostPowerStateRpc,

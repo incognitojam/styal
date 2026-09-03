@@ -11,6 +11,7 @@
 - [Organizing threads](./user/thread-sidebar.md)
 - [Review usage](./user/usage.md)
 - [Project icons and workspace ports](./user/project-settings.md)
+- [Import T3 Code data](./user/importing-t3-code-data.md)
 - [Mobile appearance](./user/mobile-appearance.md)
 - [Remote access](./user/remote-access.md)
 - [Keeping app and server in sync](./user/updating.md)
