@@ -212,9 +212,9 @@ import {
 // stays behind an explicit Show more.
 const SETTLED_TAIL_INITIAL_COUNT = 10;
 const SETTLED_TAIL_PAGE_COUNT = 25;
-// The v2 suffix identifies the settled-shelf preference model.
-const SETTLED_SHELF_EXPANDED_KEY = "styal:sidebar-v2:settled-expanded";
-const SNOOZED_SHELF_EXPANDED_KEY = "styal:sidebar-v2:snoozed-expanded";
+// Fresh keys deliberately reset both shelves to collapsed for existing users.
+const SETTLED_SHELF_EXPANDED_KEY = "styal:sidebar:settled-expanded";
+const SNOOZED_SHELF_EXPANDED_KEY = "styal:sidebar:snoozed-expanded";
 
 function compactSidebarTimeLabel(label: string): string {
   if (label === "just now") return "now";
@@ -2301,7 +2301,7 @@ export default function Sidebar() {
   );
   const [settledShelfExpanded, setSettledShelfExpanded] = useLocalStorage(
     SETTLED_SHELF_EXPANDED_KEY,
-    true,
+    false,
     Schema.Boolean,
   );
   const toggleSettledShelf = useCallback(
