@@ -34,6 +34,8 @@ import {
 import {
   commandDetailRepeatsCommand,
   extractCommandOutputText,
+  isWorktreeSetupActivity,
+  liveActivityToolStatus,
   normalizeCompactToolLabel,
   omitSupersededLifecycleMarkers,
   resolveWorkEntryToolPresentation,
@@ -1729,7 +1731,7 @@ function appendToolGroupRows(
   const latestActivity = latestActiveActivity ?? activities.at(-1)!;
   const singleActivity = activities.length === 1 ? latestActivity : null;
   const summary = live
-    ? liveToolActivitySummary(latestActivity, active)
+    ? liveToolActivitySummary(latestActivity, live)
     : singleActivity !== null &&
         singleActivity.toolLike &&
         toolGroupAction(singleActivity.workEntry) !== "edit"
@@ -1781,16 +1783,16 @@ function appendToolGroupRows(
   });
 }
 
-function liveToolActivitySummary(activity: ThreadFeedActivity, active: boolean): string {
-  const presentation = resolveWorkEntryToolPresentation(
-    activity.workEntry,
-    active ? "inProgress" : "completed",
-  );
+function liveToolActivitySummary(activity: ThreadFeedActivity, presentTense: boolean): string {
+  const status = liveActivityToolStatus(activity.lifecycleStatus, presentTense);
+  const presentation = resolveWorkEntryToolPresentation({
+    ...activity.workEntry,
+    toolLifecycleStatus: status,
+  });
   if (presentation) return presentation.displayName;
   const command = activity.workEntry.command?.trim();
   if (command) {
     const program = commandProgramName(command);
-    const status = activity.lifecycleStatus ?? (active ? "inProgress" : "completed");
     const verb =
       status === "inProgress"
         ? "Running"
