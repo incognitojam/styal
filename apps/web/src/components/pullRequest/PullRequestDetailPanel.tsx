@@ -1574,41 +1574,6 @@ function PullRequestDetailPanelBody({
                   </MenuPopup>
                 </Menu>
               ) : null}
-              {workflowApprovalsRequired > 0 && can("approve-workflows") ? (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <span className="inline-flex shrink-0">
-                        <Button
-                          size="xs"
-                          variant="warning-outline"
-                          disabled={actionPending}
-                          onClick={() =>
-                            setConfirmation({ open: true, action: "approve-workflows" })
-                          }
-                          aria-label={
-                            pendingAction === "approve-workflows"
-                              ? "Approving..."
-                              : "Approve workflows to run"
-                          }
-                        >
-                          <PlayIcon aria-hidden className="size-3.5" />
-                          <span className="@max-[40rem]/pr-header:hidden">
-                            {pendingAction === "approve-workflows"
-                              ? "Approving..."
-                              : "Approve workflows to run"}
-                          </span>
-                        </Button>
-                      </span>
-                    }
-                  />
-                  <TooltipPopup side="top">
-                    {pendingAction === "approve-workflows"
-                      ? "Approving..."
-                      : "Approve workflows to run"}
-                  </TooltipPopup>
-                </Tooltip>
-              ) : null}
               {/* Said where the Merge button is, because it is the answer to why nobody has
                   pressed it: the merge is already asked for, and the host is holding it. */}
               {autoMergeArmed && primaryAction !== "auto-merge-armed" ? (
@@ -2261,12 +2226,49 @@ function PullRequestDetailPanelBody({
               ))}
             </ToggleGroup>
             {tab === "summary" ? (
-              <PullRequestChecksNavButton
-                checks={detail.checks}
-                isDraft={detail.isDraft}
-                mergeReadiness={detail.mergeReadiness}
-                onSelect={() => setTab("checks")}
-              />
+              <span className="ml-auto inline-flex shrink-0 items-center gap-2">
+                {workflowApprovalsRequired > 0 && can("approve-workflows") ? (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <span className="inline-flex shrink-0">
+                          <Button
+                            size="xs"
+                            variant="warning-outline"
+                            disabled={actionPending}
+                            onClick={() =>
+                              setConfirmation({ open: true, action: "approve-workflows" })
+                            }
+                            aria-label={
+                              pendingAction === "approve-workflows"
+                                ? "Approving..."
+                                : "Approve workflows to run"
+                            }
+                          >
+                            <PlayIcon aria-hidden className="size-3.5" />
+                            <span>
+                              {pendingAction === "approve-workflows"
+                                ? "Approving..."
+                                : "Approve workflows to run"}
+                            </span>
+                          </Button>
+                        </span>
+                      }
+                    />
+                    <TooltipPopup side="top">
+                      {pendingAction === "approve-workflows"
+                        ? "Approving..."
+                        : "Approve workflows to run"}
+                    </TooltipPopup>
+                  </Tooltip>
+                ) : null}
+                <PullRequestChecksNavButton
+                  checks={detail.checks}
+                  isDraft={detail.isDraft}
+                  mergeReadiness={detail.mergeReadiness}
+                  onSelect={() => setTab("checks")}
+                />
+              </span>
             ) : tab === "timeline" ? (
               <div className="ml-auto flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
                 <PullRequestMetaLine
