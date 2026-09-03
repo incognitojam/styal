@@ -225,7 +225,7 @@ import {
   ResourceTelemetryRetryResult,
   ResourceTelemetrySnapshot,
 } from "./resourceTelemetry.ts";
-import { UsageReadError, UsageSummary, UsageSummaryInput } from "./usage.ts";
+import { UsagePricing, UsageReadError, UsageSummary, UsageSummaryInput } from "./usage.ts";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings.ts";
 import {
   SourceControlCloneRepositoryInput,
@@ -359,6 +359,7 @@ export const WS_METHODS = {
   serverGetUsageSummary: "server.getUsageSummary",
   serverPreviewLegacyImport: "server.previewLegacyImport",
   serverImportLegacyData: "server.importLegacyData",
+  serverRefreshUsageRates: "server.refreshUsageRates",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -620,6 +621,16 @@ export const WsServerImportLegacyDataRpc = Rpc.make(WS_METHODS.serverImportLegac
   payload: LegacyImportRequest,
   success: LegacyImportResult,
   error: Schema.Union([LegacyImportError, EnvironmentAuthorizationError]),
+});
+
+/**
+ * Refetches the model rate table ahead of its daily TTL, so a model released
+ * since the last fetch gets priced. The next usage summary uses the new table.
+ */
+export const WsServerRefreshUsageRatesRpc = Rpc.make(WS_METHODS.serverRefreshUsageRates, {
+  payload: Schema.Struct({}),
+  success: UsagePricing,
+  error: EnvironmentAuthorizationError,
 });
 
 export const WsServerSignalProcessRpc = Rpc.make(WS_METHODS.serverSignalProcess, {
@@ -1315,6 +1326,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetUsageSummaryRpc,
   WsServerPreviewLegacyImportRpc,
   WsServerImportLegacyDataRpc,
+  WsServerRefreshUsageRatesRpc,
   WsServerSignalProcessRpc,
   WsServerReportClientActivityRpc,
   WsServerReportHostPowerStateRpc,
