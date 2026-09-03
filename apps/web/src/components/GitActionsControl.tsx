@@ -32,7 +32,6 @@ import {
   ChevronDownIcon,
   CloudDownloadIcon,
   CloudUploadIcon,
-  ExternalLinkIcon,
   GitBranchPlusIcon,
   GitCommitIcon,
   InfoIcon,
@@ -97,9 +96,9 @@ import { vcsEnvironment } from "~/state/vcs";
 import { randomUUID } from "~/lib/utils";
 import { resolvePathLinkTarget } from "~/terminal-links";
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
-import { readLocalApi } from "~/localApi";
 import { getSourceControlPresentation } from "~/sourceControlPresentation";
 import { useViewPullRequest } from "~/lib/viewPullRequest";
+import { useOpenLink } from "~/browser/useOpenLink";
 import { useOpenPrLink } from "~/lib/openPullRequestLink";
 
 interface GitActionsControlProps {
@@ -385,10 +384,13 @@ interface PublishRepositoryDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly environmentId: ScopedThreadRef["environmentId"] | null;
+  /** Thread the dialog was opened from, so the new repository can open beside it. */
+  readonly threadRef: ScopedThreadRef | null;
   readonly gitCwd: string;
 }
 
 function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
+  const openLink = useOpenLink(props.threadRef);
   const navigate = useNavigate();
   const sourceControlDiscovery = useEnvironmentQuery(
     props.environmentId === null
@@ -912,12 +914,9 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                       size="sm"
                       className="w-full"
                       onClick={() => {
-                        const api = readLocalApi();
-                        if (!api) return;
-                        void api.shell.openExternal(publishResult.repository.url);
+                        void openLink(publishResult.repository.url).catch(() => undefined);
                       }}
                     >
-                      <ExternalLinkIcon className="size-3.5" aria-hidden />
                       Open on {publishProviderLabel}
                     </Button>
                   </>
@@ -1005,6 +1004,7 @@ export default function GitActionsControl({
     [activeThreadRef],
   );
   const openPrLink = useOpenPrLink(activeThreadRef ?? undefined);
+  const openLink = useOpenLink(activeThreadRef);
   const activeDraftThread = useComposerDraftStore((store) =>
     draftId
       ? store.getDraftSession(draftId)
@@ -1987,6 +1987,7 @@ export default function GitActionsControl({
         open={isPublishDialogOpen}
         onOpenChange={setIsPublishDialogOpen}
         environmentId={activeEnvironmentId}
+        threadRef={activeThreadRef}
         gitCwd={gitCwd}
       />
 

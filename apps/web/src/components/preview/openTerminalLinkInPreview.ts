@@ -8,6 +8,7 @@ import {
   browserDefaultOpenViewport,
   resolveBrowserDefaults,
 } from "~/browser/browserDefaults";
+import { isWebUrl, resolveBrowserLinkTargetPreference } from "~/browser/browserLinkTarget";
 import type { OpenPreviewMutation } from "~/browser/openFileInPreview";
 import { recordVisitForThread } from "~/browserHistoryStore";
 import { applyPreviewServerSnapshot, isPreviewSupportedInRuntime } from "~/previewStateStore";
@@ -41,14 +42,16 @@ interface OpenTerminalLinkInPreviewInput<E> {
  * is not the machine the system browser runs on, and only the integrated browser resolves it
  * against the environment. Activation is already a deliberate modifier gesture, so it opens rather
  * than asking which browser to use; the preview chrome carries the way back out.
+ * Other web links follow the configured browser preference.
  */
 export async function openTerminalLinkInPreview<E>(
   input: OpenTerminalLinkInPreviewInput<E>,
 ): Promise<void> {
   const supportsPreview =
-    isPreviewableUrl(input.url) &&
+    isWebUrl(input.url) &&
     isPreviewSupportedInRuntime() &&
-    input.threadRef.threadId.length > 0;
+    input.threadRef.threadId.length > 0 &&
+    (isPreviewableUrl(input.url) || (await resolveBrowserLinkTargetPreference()) === "app");
 
   if (!supportsPreview) {
     input.fallbackToBrowser();
@@ -74,6 +77,8 @@ export async function openTerminalLinkInPreview<E>(
     input: {
       threadId: input.threadRef.threadId,
       url: input.url,
+      // Same reason as `openUrlInPreview`: this path handles its own result
+      // mapping, so the configured defaults are applied explicitly.
       viewport: browserDefaultOpenViewport(defaults),
       profileId: browserDefaultOpenProfileId(defaults),
     },

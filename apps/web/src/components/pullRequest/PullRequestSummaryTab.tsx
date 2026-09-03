@@ -5,6 +5,7 @@ import type {
   PullRequestDetailView,
   PullRequestRef,
   PullRequestStack,
+  ScopedThreadRef,
 } from "@t3tools/contracts";
 import {
   ArrowDownUpIcon,
@@ -24,6 +25,7 @@ import { useContext, useRef, useState, type ReactNode } from "react";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { cn } from "~/lib/utils";
+import { useOpenLink } from "~/browser/useOpenLink";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 
 import { Button } from "../ui/button";
@@ -200,6 +202,7 @@ function reviewStateLabel(state: string): string {
 interface CommentEditing {
   readonly detail: PullRequestDetailView;
   readonly environmentId: EnvironmentId;
+  readonly threadRef: ScopedThreadRef | null;
   readonly canEdit: (comment: PullRequestComment) => boolean;
   readonly editingId: string | null;
   readonly saving: boolean;
@@ -227,6 +230,7 @@ function CommentBody({
         value={comment.body}
         detail={editing.detail}
         environmentId={editing.environmentId}
+        threadRef={editing.threadRef}
         label="Edit comment"
         saving={editing.saving}
         onSave={(body) => editing.onSave(comment, body)}
@@ -241,6 +245,7 @@ function CommentBody({
         text={comment.body}
         detail={editing.detail}
         environmentId={editing.environmentId}
+        threadRef={editing.threadRef}
       />
       {editing.canEdit(comment) ? (
         <Button
@@ -535,6 +540,7 @@ const COMMENT_PAGE = 30;
 
 export function PullRequestSummaryTab({
   environmentId,
+  threadRef,
   reference,
   detail,
   activityPending,
@@ -547,6 +553,7 @@ export function PullRequestSummaryTab({
   onRefresh,
 }: {
   environmentId: EnvironmentId;
+  threadRef: ScopedThreadRef | null;
   reference: PullRequestRef;
   detail: PullRequestDetailView;
   activityPending: boolean;
@@ -618,6 +625,14 @@ export function PullRequestSummaryTab({
     ),
   );
 
+  const openLink = useOpenLink(threadRef);
+  const openCheck = (url: string) => {
+    void openLink(url).catch((error: unknown) => {
+      console.error(error);
+      toastManager.add({ type: "error", title: "Unable to open check details" });
+    });
+  };
+
   const update = useAtomCommand(pullRequestEnvironment.update, { reportFailure: false });
   const updateComment = useAtomCommand(pullRequestEnvironment.updateComment, {
     reportFailure: false,
@@ -653,6 +668,7 @@ export function PullRequestSummaryTab({
   const commentEditing: CommentEditing = {
     detail,
     environmentId,
+    threadRef,
     canEdit: (comment) => canEditPullRequestComment(detail, comment),
     editingId: editingCommentId,
     saving: commentSaving,
@@ -834,6 +850,7 @@ export function PullRequestSummaryTab({
               value={detail.body}
               detail={detail}
               environmentId={environmentId}
+              threadRef={threadRef}
               label="Pull request description"
               placeholder="Describe this pull request"
               saving={bodySaving}
@@ -847,6 +864,7 @@ export function PullRequestSummaryTab({
                 text={detail.body.trim().length > 0 ? detail.body : "_No description provided._"}
                 detail={detail}
                 environmentId={environmentId}
+                threadRef={threadRef}
               />
               {canEditPullRequestChangeRequest(detail) ? (
                 <Button

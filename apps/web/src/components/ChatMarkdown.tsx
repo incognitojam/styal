@@ -131,7 +131,7 @@ import { LRUCache } from "../lib/lruCache";
 import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
 import { useTheme } from "../hooks/useTheme";
-import { getClientSettings } from "../hooks/useSettings";
+import { getClientSettings, useClientSettings } from "../hooks/useSettings";
 import {
   chatMarkdownClipboardPayload,
   serializeTableElementToCsv,
@@ -188,6 +188,7 @@ import {
   BrowserSettingsReadError,
 } from "../browser/openFileInPreview";
 import { createStableMarkdownComponents } from "./chatMarkdownRenderers";
+import { resolveLinkTarget } from "../browser/browserLinkTarget";
 
 interface ChatMarkdownProps {
   text: string;
@@ -2108,6 +2109,7 @@ function ChatMarkdown({
   }, []);
   const surfaceThreadRef = use(GithubReferenceThreadContext);
   const openChangeRequestLink = useOpenChangeRequestLink(threadRef ?? surfaceThreadRef);
+  const linkTargetPreference = useClientSettings((settings) => settings.browserLinkTarget);
   const resolveThreadPullRequest = useCallback(
     (href: string): ThreadLinkedPullRequest | null => {
       if (
@@ -2533,13 +2535,41 @@ function ChatMarkdown({
                 // the panel it opens offers the browser as one of its actions.
                 if (openChangeRequestLink(event, href)) return;
                 // A dev server the agent just started is only reachable from the environment, so
-                // it opens in the integrated browser. Anything else is an ordinary link and keeps
-                // the `_blank` the shell already handles.
+                // it opens in the integrated browser regardless of the general link setting.
                 if (shouldOpenLinkInIntegratedBrowser({ href, event, canOpenInPreview })) {
                   event.preventDefault();
                   event.stopPropagation();
                   void openLinkInIntegratedBrowser(href);
+                  return;
                 }
+                if (!href) return;
+                // Anything else follows the "Open links in" setting. The system browser
+                // keeps the `_blank` the shell already handles; the in-app browser needs
+                // the click intercepted here. A modifier click is the way out of the
+                // in-app default, so it is left to the shell too.
+                if (
+                  event.defaultPrevented ||
+                  resolveLinkTarget({
+                    url: href,
+                    event,
+                    preference: linkTargetPreference,
+                    canOpenInApp: canOpenInPreview,
+                  }) !== "app"
+                ) {
+                  return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                // The click was taken from the shell, so an in-app open that fails
+                // hands the link to the system browser instead of dropping it.
+                void openExternalLinkInPreview(href).then((result) => {
+                  if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
+                  reportMarkdownActionFailure(
+                    { operation: "open-link-in-preview", target: href },
+                    result.cause,
+                  );
+                  void readLocalApi()?.shell.openExternal(href);
+                });
               }}
               onContextMenu={(event) => {
                 if (!href || !faviconHost) return;
@@ -2805,6 +2835,7 @@ function ChatMarkdown({
     imageRenderer,
     imageBaseDir,
     isStreaming,
+    linkTargetPreference,
     markdownFileLinkMetaByHref,
     onTaskListChange,
     onUseArtifactTemplate,

@@ -455,6 +455,13 @@ function PullRequestBaseFreshnessWarning({
 
 type PullRequestDetailPanelProps = {
   environmentId: EnvironmentId;
+  /**
+   * The thread this panel sits beside, if any. Links that are not the pull
+   * request itself (check details, host permalinks) can open in that thread's
+   * in-app browser when the user has asked for it; the page has no thread, so
+   * there they always go to the system browser.
+   */
+  threadRef?: ScopedThreadRef | null;
   reference: PullRequestRef;
   /**
    * Bumped by whatever holds the panel when a reader asks for everything on screen to be read
@@ -516,6 +523,7 @@ export function PullRequestDetailPanel(props: PullRequestDetailPanelProps) {
 
 function PullRequestDetailPanelBody({
   environmentId,
+  threadRef: explicitThreadRef,
   reference,
   refreshToken: forcedRefreshToken = 0,
   onActed,
@@ -525,6 +533,9 @@ function PullRequestDetailPanelBody({
   chromeVariant = "full",
   composerDraftTarget,
 }: PullRequestDetailPanelProps) {
+  const threadRef =
+    explicitThreadRef ??
+    (typeof composerDraftTarget === "string" ? null : (composerDraftTarget ?? null));
   const pullRequestKey = `${reference.projectId}:${reference.repository}#${reference.number}`;
   const [tab, setTab] = useState<DetailTab>("summary");
   const [timelineOrder, setTimelineOrder] = useState<"newest" | "oldest">("newest");
@@ -1344,7 +1355,7 @@ function PullRequestDetailPanelBody({
     : null;
   const checksMark =
     detail && checksState !== null ? (
-      <PullRequestChecksPopover checks={detail.checks} checksState={checksState} />
+      <PullRequestChecksPopover checks={detail.checks} checksState={checksState} threadRef={threadRef} />
     ) : null;
 
   // A reopen already has last time's title, author, and counts. Keep them on screen
@@ -2373,6 +2384,7 @@ function PullRequestDetailPanelBody({
               <div className={cn("absolute inset-0", tab !== "summary" && "invisible")}>
                 <PullRequestSummaryTab
                   environmentId={environmentId}
+                  threadRef={threadRef}
                   reference={reference}
                   detail={detail}
                   activityPending={activityPending}
@@ -2411,6 +2423,7 @@ function PullRequestDetailPanelBody({
                   <PullRequestTimelineTab
                     environmentId={environmentId}
                     detail={detail}
+                    threadRef={threadRef}
                     reference={reference}
                     order={timelineOrder}
                     onOpenCommit={openCommit}

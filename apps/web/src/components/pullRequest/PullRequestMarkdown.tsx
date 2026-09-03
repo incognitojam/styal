@@ -1,4 +1,4 @@
-import type { EnvironmentId, PullRequestDetailView } from "@t3tools/contracts";
+import type { EnvironmentId, PullRequestDetailView, ScopedThreadRef } from "@t3tools/contracts";
 import { ExternalLinkIcon, LoaderCircleIcon, PaperclipIcon, PlayIcon } from "lucide-react";
 import {
   type ComponentPropsWithoutRef,
@@ -92,11 +92,14 @@ export function PullRequestMarkdown({
   text,
   detail,
   environmentId,
+  threadRef,
   className,
 }: {
   text: string;
   detail: PullRequestDetailView;
   environmentId: EnvironmentId;
+  /** Thread the body is shown beside, so its links can open in that thread's in-app browser. */
+  threadRef?: ScopedThreadRef | null;
   className?: string;
 }) {
   const imageRenderer = useCallback(
@@ -159,6 +162,7 @@ export function PullRequestMarkdown({
               key={segment.id}
               text={segment.text}
               cwd={detail.workspaceRoot}
+              threadRef={threadRef ?? undefined}
               environmentId={environmentId}
               imageRenderer={imageRenderer}
               referenceContext={referenceContext}

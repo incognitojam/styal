@@ -19,6 +19,7 @@ export function PullRequestMarkdownEditor({
   value,
   detail,
   environmentId,
+  threadRef = null,
   placeholder,
   label,
   saving,
@@ -30,6 +31,8 @@ export function PullRequestMarkdownEditor({
   readonly value: string;
   readonly detail: PullRequestDetailView;
   readonly environmentId: EnvironmentId;
+  /** Thread the editor sits beside, so links in its preview follow the link target setting. */
+  readonly threadRef?: ScopedThreadRef | null;
   readonly placeholder?: string | undefined;
   readonly label: string;
   readonly saving: boolean;
@@ -84,7 +87,7 @@ export function PullRequestMarkdownEditor({
           {empty ? (
             <p className="text-xs text-muted-foreground">Nothing to preview.</p>
           ) : (
-            <PullRequestMarkdown text={draft} detail={detail} environmentId={environmentId} />
+            <PullRequestMarkdown text={draft} detail={detail} environmentId={environmentId} threadRef={threadRef} />
           )}
         </div>
       ) : (

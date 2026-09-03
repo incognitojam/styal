@@ -31,6 +31,15 @@ vi.mock("~/browser/browserDefaults", () => ({
   browserDefaultOpenProfileId: (defaults: { profileId: string }) => defaults.profileId,
 }));
 
+const linkTargetMocks = vi.hoisted(() => ({
+  preference: vi.fn<() => "system" | "app">(),
+}));
+
+vi.mock("~/browser/browserLinkTarget", () => ({
+  resolveBrowserLinkTargetPreference: async () => linkTargetMocks.preference(),
+  isWebUrl: (url: string) => /^https?:/u.test(url),
+}));
+
 const hydratedDefaults = {
   viewport: { _tag: "fixed", width: 1280, height: 720 } as const,
   profileId: "work",
@@ -51,7 +60,9 @@ const snapshot: PreviewSessionSnapshot = {
 };
 
 beforeEach(() => {
+  browserDefaultsMocks.resolve.mockReset();
   browserDefaultsMocks.resolve.mockResolvedValue(hydratedDefaults);
+  linkTargetMocks.preference.mockReturnValue("app");
 });
 
 afterEach(() => {
@@ -60,6 +71,37 @@ afterEach(() => {
 });
 
 describe("openTerminalLinkInPreview", () => {
+  it("opens in the system browser while that is the configured target", async () => {
+    linkTargetMocks.preference.mockReturnValue("system");
+    const fallbackToBrowser = vi.fn();
+    const openPreview = vi.fn(async () => AsyncResult.success(snapshot));
+
+    await openTerminalLinkInPreview({
+      url: "http://localhost:3000/",
+      threadRef,
+      openPreview,
+      fallbackToBrowser,
+    });
+
+    expect(fallbackToBrowser).toHaveBeenCalledOnce();
+    expect(openPreview).not.toHaveBeenCalled();
+  });
+
+  it("opens public URLs in-app too, not only local servers", async () => {
+    const fallbackToBrowser = vi.fn();
+    const openPreview = vi.fn(async () => AsyncResult.success(snapshot));
+
+    await openTerminalLinkInPreview({
+      url: "https://example.com/docs",
+      threadRef,
+      openPreview,
+      fallbackToBrowser,
+    });
+
+    expect(openPreview).toHaveBeenCalledOnce();
+    expect(fallbackToBrowser).not.toHaveBeenCalled();
+  });
+
   it("waits for hydrated viewport and profile defaults before opening", async () => {
     let hydrate: ((defaults: typeof hydratedDefaults) => void) | undefined;
     browserDefaultsMocks.resolve.mockImplementationOnce(
