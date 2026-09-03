@@ -3,6 +3,7 @@ import type {
   PullRequestActor,
   PullRequestBaseComparison,
   PullRequestCheck,
+  PullRequestChecksState,
   PullRequestComment,
   PullRequestCommit,
   PullRequestDetailView,
@@ -20,6 +21,47 @@ import { inferReviewCommentFenceLanguage, type ReviewCommentContext } from "~/re
 
 const safeShellArgument = /^[A-Za-z0-9._/@+=,-]+$/;
 const bitbucketRepositoryName = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
+
+export type PullRequestPrimaryControl =
+  | "resolve"
+  | "ready"
+  | "merge"
+  | "enable-auto-merge"
+  | "auto-merge-armed"
+  | "merged"
+  | "closed"
+  | null;
+
+/** The one merge-area state shown in the header, including terminal and deferred states. */
+export function resolvePullRequestPrimaryControl(input: {
+  readonly state: PullRequestState;
+  readonly isDraft: boolean;
+  readonly mergeability: PullRequestMergeability;
+  readonly checksState: PullRequestChecksState | null;
+  readonly mergeReadiness?: PullRequestMergeReadiness | undefined;
+  readonly isBehind: boolean;
+  readonly autoMergeEnabled: boolean | undefined;
+  readonly hasMergeMethod: boolean;
+  readonly canMerge: boolean;
+  readonly canMarkReady: boolean;
+  readonly canEnableAutoMerge: boolean;
+}): PullRequestPrimaryControl {
+  if (input.state === "merged") return "merged";
+  if (input.state === "closed") return "closed";
+  if (input.autoMergeEnabled) return "auto-merge-armed";
+  return resolvePullRequestPrimaryAction({
+    state: input.state,
+    isDraft: input.isDraft,
+    mergeability: input.mergeability,
+    mergeReadiness: input.mergeReadiness,
+    autoMergeArmed: false,
+    isBehind: input.isBehind,
+    canReady: input.canMarkReady,
+    canMerge: input.canMerge,
+    canEnableAutoMerge: input.canEnableAutoMerge,
+    hasMergeMethod: input.hasMergeMethod,
+  });
+}
 
 export function pullRequestCheckoutCommand(
   provider: SourceControlProviderKind,
@@ -979,11 +1021,9 @@ export function resolveBaseFreshness(detail: {
 }
 
 /**
- * Whether a completed action leaves the diff atom pointed at a comparison that no longer exists,
- * the same staleness the manual refresh button fixes. Only `update-branch` moves the head commit;
- * a merge moves the branch too, but it also closes the pull request, where the diff is no longer
- * what anyone is looking at. Written as a `Record` so a new `PullRequestAction` fails to compile
- * here until somebody decides which side of the diff it belongs on.
+ * Whether a completed action needs the uncached host read rather than the cheaper detail refresh.
+ * Updating a branch moves the diff's head. Approving workflows changes data GitHub omits from the
+ * normal pull-request detail. Written as a `Record` so every new action makes that choice here.
  */
 const ACTION_NEEDS_HOST_REFRESH: Record<PullRequestAction, boolean> = {
   "update-branch": true,
@@ -994,6 +1034,8 @@ const ACTION_NEEDS_HOST_REFRESH: Record<PullRequestAction, boolean> = {
   reopen: false,
   "enable-auto-merge": false,
   "disable-auto-merge": false,
+  revert: false,
+  "approve-workflows": true,
 };
 
 export function pullRequestActionNeedsHostRefresh(action: PullRequestAction): boolean {

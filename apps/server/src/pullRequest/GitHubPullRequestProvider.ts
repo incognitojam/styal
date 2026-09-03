@@ -5,6 +5,7 @@ import * as Exit from "effect/Exit";
 import type {
   PullRequestActor,
   PullRequestCapabilities,
+  PullRequestCheck,
   PullRequestReaction,
   PullRequestViewerPermissions,
 } from "@t3tools/contracts";
@@ -22,6 +23,7 @@ import {
   markRequiredChecks,
   narrowMergeCapabilities,
   type GitHubViewerAccess,
+  type GitHubWorkflowRunApproval,
 } from "./gitHubPullRequestJson.ts";
 
 const CAPABILITIES: PullRequestCapabilities = {
@@ -36,6 +38,8 @@ const CAPABILITIES: PullRequestCapabilities = {
     "update-branch",
     "enable-auto-merge",
     "disable-auto-merge",
+    "revert",
+    "approve-workflows",
   ],
   mergeMethods: ["merge", "squash", "rebase"],
   updateMethods: ["merge", "rebase"],
@@ -77,6 +81,7 @@ export function gitHubViewerPermissions(access: GitHubViewerAccess): PullRequest
       // without repository write access. Older hosts fall back to the write-based approximation.
       ...((access.canEnableAutoMerge ?? access.canWrite) ? (["enable-auto-merge"] as const) : []),
       ...((access.canDisableAutoMerge ?? access.canWrite) ? (["disable-auto-merge"] as const) : []),
+      ...(access.canWrite ? (["revert", "approve-workflows"] as const) : []),
       ...(access.canUpdate ? (["ready", "draft", "close", "reopen"] as const) : []),
       // Whether this viewer may update the branch is GitHub's own answer, read with the
       // comparison; without it the action is offered to nobody rather than to everybody.
@@ -123,6 +128,43 @@ function withAvatar(
   if (actor === null || actor.avatarUrl !== null) return actor;
   const avatarUrl = avatarsByLogin.get(actor.login) ?? loginAvatarUrl(actor.login, host);
   return avatarUrl === null ? actor : { ...actor, avatarUrl };
+}
+
+function withWorkflowApprovals(
+  checks: ReadonlyArray<PullRequestCheck>,
+  runs: ReadonlyArray<GitHubWorkflowRunApproval>,
+  unavailable: boolean,
+): ReadonlyArray<PullRequestCheck> {
+  const representedRunIds = new Set<number>();
+  for (const check of checks) {
+    if (check.status !== "action-required" || check.url === null) continue;
+    const id = check.url.match(/\/actions\/runs\/(\d+)(?:\/|$)/)?.[1];
+    if (id !== undefined) representedRunIds.add(Number(id));
+  }
+  const approvalChecks = runs
+    .filter((run) => !representedRunIds.has(run.id))
+    .map(
+      (run): PullRequestCheck => ({
+        name: run.name,
+        status: "action-required",
+        description: "A maintainer must approve this workflow before it can run.",
+        url: run.url,
+      }),
+    );
+  return [
+    ...checks,
+    ...approvalChecks,
+    ...(unavailable
+      ? [
+          {
+            name: "Workflow approval status",
+            status: "action-required" as const,
+            description: "GitHub could not determine whether workflows are awaiting approval.",
+            url: null,
+          },
+        ]
+      : []),
+  ];
 }
 
 /**
@@ -286,8 +328,41 @@ export const make = Effect.gen(function* () {
                   // The stack field is in public preview, so a host that has never heard of it
                   // refuses the query — the same nothing as a pull request that stands alone.
                   stack: cli.getPullRequestStack(input).pipe(Effect.orElseSucceed(() => null)),
+                  // A fork workflow awaiting approval is absent from the normal checks rollup.
+                  workflowApprovals:
+                    pullRequest.state !== "open" || pullRequest.isCrossRepository !== true
+                      ? Effect.succeed({
+                          runs: [] as ReadonlyArray<GitHubWorkflowRunApproval>,
+                          unavailable: false,
+                        })
+                      : pullRequest.headSha == null || pullRequest.headRepositoryOwner == null
+                        ? Effect.succeed({
+                            runs: [] as ReadonlyArray<GitHubWorkflowRunApproval>,
+                            unavailable: true,
+                          })
+                        : cli
+                            .listWorkflowRunsRequiringApproval({
+                              ...input,
+                              headSha: pullRequest.headSha,
+                              headBranch: pullRequest.headBranch,
+                              headRepositoryOwner: pullRequest.headRepositoryOwner,
+                              isCrossRepository: true,
+                            })
+                            .pipe(
+                              Effect.matchEffect({
+                                onFailure: (error) =>
+                                  error._tag === "GitHubCliRateLimitError" ||
+                                  error._tag === "SourceControlRateLimitPausedError"
+                                    ? Effect.fail(error)
+                                    : Effect.succeed({
+                                        runs: [] as ReadonlyArray<GitHubWorkflowRunApproval>,
+                                        unavailable: true,
+                                      }),
+                                onSuccess: (runs) => Effect.succeed({ runs, unavailable: false }),
+                              }),
+                            ),
                 },
-                { concurrency: 3 },
+                { concurrency: 4 },
               ).pipe(Effect.map((metadata) => ({ pullRequest, ...metadata }))),
             ),
           ),
@@ -309,12 +384,19 @@ export const make = Effect.gen(function* () {
         Effect.map(
           ([detail, repository, viewerAccess, requiredChecks]): ProviderChangeRequestDetail => ({
             ...detail.pullRequest,
-            checks: applyRequiredCheckPolicy(
-              requiredChecks === null
-                ? detail.pullRequest.checks
-                : markRequiredChecks(detail.pullRequest.checks, requiredChecks),
-              detail.branchPolicy?.requiredChecks ?? [],
+            checks: withWorkflowApprovals(
+              applyRequiredCheckPolicy(
+                requiredChecks === null
+                  ? detail.pullRequest.checks
+                  : markRequiredChecks(detail.pullRequest.checks, requiredChecks),
+                detail.branchPolicy?.requiredChecks ?? [],
+              ),
+              detail.workflowApprovals.runs,
+              detail.workflowApprovals.unavailable,
             ),
+            ...(detail.workflowApprovals.unavailable
+              ? {}
+              : { workflowApprovalsRequired: detail.workflowApprovals.runs.length }),
             reviewers: detail.pullRequest.reviewRequestLogins.map((login) => ({
               login,
               name: null,

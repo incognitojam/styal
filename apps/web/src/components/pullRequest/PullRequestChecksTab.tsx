@@ -276,7 +276,7 @@ export function PullRequestChecksTab({
                   </Badge>
                 ) : null}
                 <span className="shrink-0 text-muted-foreground">
-                  {pullRequestCheckStatusLabel(check.status)}
+                  {pullRequestCheckStatusLabel(check)}
                 </span>
               </>
             );

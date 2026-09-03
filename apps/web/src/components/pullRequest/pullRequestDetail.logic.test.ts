@@ -31,6 +31,7 @@ import {
   pullRequestHandoffLabels,
   pullRequestReviewOutcome,
   readableFailure,
+  resolvePullRequestPrimaryControl,
   shouldRefreshPullRequestActivity,
   resolveBaseFreshness,
   resolvePullRequestPrimaryAction,
@@ -147,52 +148,54 @@ describe("pull request action menu", () => {
   });
 });
 
-describe("pull request primary action", () => {
-  const primary = (
-    overrides: Partial<Parameters<typeof resolvePullRequestPrimaryAction>[0]> = {},
-  ) =>
-    resolvePullRequestPrimaryAction({
-      state: "open",
-      isDraft: false,
-      mergeability: "mergeable",
-      mergeReadiness: "ready",
-      autoMergeArmed: false,
-      isBehind: false,
-      canReady: true,
-      canMerge: true,
-      canEnableAutoMerge: true,
-      hasMergeMethod: true,
-      ...overrides,
-    });
+describe("pull request primary control", () => {
+  const open = {
+    state: "open" as const,
+    isDraft: false,
+    mergeability: "mergeable" as const,
+    checksState: "passing" as const,
+    mergeReadiness: "ready" as const,
+    isBehind: false,
+    autoMergeEnabled: false,
+    hasMergeMethod: true,
+    canMerge: true,
+    canMarkReady: true,
+    canEnableAutoMerge: true,
+  };
 
-  it("promotes auto-merge when repository policy blocks an otherwise clean merge", () => {
-    expect(primary({ mergeReadiness: "blocked" })).toBe("enable-auto-merge");
+  it("moves repository policy blockers to auto-merge while leaving check health as context", () => {
+    expect(resolvePullRequestPrimaryControl({ ...open, mergeReadiness: "blocked" })).toBe(
+      "enable-auto-merge",
+    );
+    expect(resolvePullRequestPrimaryControl({ ...open, checksState: "failing" })).toBe("merge");
+    expect(
+      resolvePullRequestPrimaryControl({ ...open, mergeReadiness: "blocked", isBehind: true }),
+    ).toBeNull();
   });
 
-  it("withholds a merge the host would refuse when auto-merge is unavailable", () => {
-    expect(primary({ mergeReadiness: "blocked", canEnableAutoMerge: false })).toBeNull();
+  it("does not offer auto-merge while the host state is unknown", () => {
+    expect(
+      resolvePullRequestPrimaryControl({
+        ...open,
+        mergeReadiness: undefined,
+        autoMergeEnabled: undefined,
+      }),
+    ).toBe("merge");
   });
 
-  it("keeps Merge for a ready host or one that exposes no policy verdict", () => {
-    expect(primary()).toBe("merge");
-    expect(primary({ mergeReadiness: undefined })).toBe("merge");
+  it("keeps armed and terminal states in the merge button slot", () => {
+    expect(resolvePullRequestPrimaryControl({ ...open, autoMergeEnabled: true })).toBe(
+      "auto-merge-armed",
+    );
+    expect(resolvePullRequestPrimaryControl({ ...open, state: "merged" })).toBe("merged");
+    expect(resolvePullRequestPrimaryControl({ ...open, state: "closed" })).toBe("closed");
   });
 
-  it("keeps Merge while the host's policy verdict is explicitly unknown", () => {
-    expect(primary({ mergeReadiness: "unknown" })).toBe("merge");
-  });
-
-  it("offers no second merge action once auto-merge is already armed", () => {
-    expect(primary({ mergeReadiness: "blocked", autoMergeArmed: true })).toBeNull();
-  });
-
-  it("leaves an out-of-date branch to the existing update-branch control", () => {
-    expect(primary({ mergeReadiness: "blocked", isBehind: true })).toBeNull();
-  });
-
-  it("keeps conflicts and drafts ahead of the repository-policy verdict", () => {
-    expect(primary({ mergeability: "conflicting", mergeReadiness: "blocked" })).toBe("resolve");
-    expect(primary({ isDraft: true, mergeReadiness: "blocked" })).toBe("ready");
+  it("keeps conflicts and drafts actionable before merge", () => {
+    expect(resolvePullRequestPrimaryControl({ ...open, mergeability: "conflicting" })).toBe(
+      "resolve",
+    );
+    expect(resolvePullRequestPrimaryControl({ ...open, isDraft: true })).toBe("ready");
   });
 });
 
@@ -1293,7 +1296,9 @@ describe("which actions need the host read again after they run", () => {
     // Imported from the contract rather than hand-listed, so a new PullRequestAction fails this
     // test until somebody decides which side of the diff it belongs on.
     expect(PullRequestAction.literals.map(pullRequestActionNeedsHostRefresh)).toEqual(
-      PullRequestAction.literals.map((action) => action === "update-branch"),
+      PullRequestAction.literals.map(
+        (action) => action === "update-branch" || action === "approve-workflows",
+      ),
     );
   });
 
@@ -1310,6 +1315,7 @@ describe("which actions need the host read again after they run", () => {
       "enable-auto-merge",
       "disable-auto-merge",
       "merge",
+      "revert",
     ] as const) {
       expect(pullRequestActionNeedsHostRefresh(action)).toBe(false);
     }

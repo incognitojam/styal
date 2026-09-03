@@ -65,9 +65,19 @@ T3 Code works with the platforms your team already uses:
   in the **Stack** section of its Summary tab — every layer with its state, top of the stack
   first, down to the base branch. Click another layer to open it in T3 Code, or
   command-click (Control-click on Windows and Linux) to open it on GitHub
+- By default, see passing and approved reviews first, passing reviews awaiting approval next, and
+  conflicting reviews last. Smaller changes come first within each readiness group, and finished
+  reviews follow open work when all states are visible.
 - Filter the list by author or labels, rank authors by merges in the loaded results, see label and
-  change-size context on each row, and sort the results currently shown by update time, creation
-  time, or change size
+  change-size context on each row, and sort the results currently shown by readiness, update time,
+  creation time, or change size. Your filters, search, scope, and sort are restored when you return.
+- Merge now, or on GitHub, GitLab, and Azure DevOps, leave an auto-merge instruction with a chosen
+  strategy while checks are outstanding; see the completed state in the same control after the
+  pull request merges
+- On GitHub, approve fork workflows that are waiting to run and open a revert pull request for a
+  merged change
+- Timeline line counts stay hidden on merge commits, where GitHub's totals include upstream changes
+  brought in from the base branch
 - While working in a thread, open linked reviews in the same compact right-panel tabs without
   leaving the conversation
 - Enable **Settings → General → Proactive panels** to open a newly linked review automatically and
@@ -80,6 +90,8 @@ T3 Code works with the platforms your team already uses:
 
 **Fix what you wrote, in place**
 
+- Comment while closing an open pull request or reopening a closed one when the host offers that
+  action
 - Rewrite a pull request's title and description from the review itself, in Markdown, with a
   preview before you save
 - Rewrite your own comments the same way, wherever they are shown
