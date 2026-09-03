@@ -79,6 +79,12 @@ Because persistence and projection share a transaction, the read model cannot du
 the event log. On dispatch failure the engine rereads persisted events past the starting sequence and
 reconciles.
 
+Historical data import uses the engine's `importHistoricalEvents` seam instead of replaying user
+commands through the decider. It is serialized on the same engine queue, appends and projects each
+batch in one transaction, then reloads the command read model. After commit it publishes only
+`project.created` and `thread.created` events: shell subscribers refetch the completed rows, while
+historical operational events cannot wake provider or checkpoint reactors.
+
 Command and event names live in [`orchestration.ts`][contracts]. Some commands are client
 dispatchable (`thread.create`, `thread.turn.start`, `thread.approval.respond`); others are internal
 and produced only by server-side reactors (`thread.message.assistant.delta`,
