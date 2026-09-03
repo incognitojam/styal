@@ -2858,6 +2858,67 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       shouldBlurMobileComposerOnSubmit,
     ],
   );
+  const submitCitationAndSend = useCallback(() => {
+    const intent = composerSubmissionIntentForEnter({
+      isMobileViewport,
+      shiftKey: false,
+      modifierKey: true,
+      isDraftThread: routeKind === "draft",
+    });
+    submitComposer(undefined, intent ?? "foreground");
+  }, [isMobileViewport, routeKind, submitComposer]);
+  const compactThreadContext = useCallback(() => {
+    if (
+      compactDisabled ||
+      noProviderAvailable ||
+      composerSendState.hasSendableContent ||
+      activePendingApproval !== null ||
+      pendingUserInputs.length > 0 ||
+      phase === "running" ||
+      isSendBusy ||
+      isConnecting ||
+      !activeThreadId
+    ) {
+      return;
+    }
+    // The compact buttons cannot see the compression counter (it lives in
+    // a ref), so they render enabled during a paste; toast instead of
+    // silently ignoring the click.
+    if ((pendingImageCompressionsRef.current.get(activeThreadId) ?? 0) > 0) {
+      toastManager.add({
+        type: "info",
+        title: "Still compressing a pasted image.",
+        description: "Compact again once its thumbnail appears.",
+      });
+      return;
+    }
+
+    promptRef.current = "/compact";
+    setComposerDraftPrompt(composerDraftTarget, "/compact");
+    submitComposer();
+    // A blocked dispatch (busy send ref, provider preflight rejection)
+    // would leave the injected "/compact" behind as if the user typed it.
+    // Clearing here is safe even when the send did dispatch: the send
+    // snapshots its prompt synchronously and clears the draft itself.
+    if (promptRef.current === "/compact") {
+      promptRef.current = "";
+      setComposerDraftPrompt(composerDraftTarget, "");
+    }
+  }, [
+    activePendingApproval,
+    activeThreadId,
+    compactDisabled,
+    composerDraftTarget,
+    composerSendState.hasSendableContent,
+    isConnecting,
+    isSendBusy,
+    noProviderAvailable,
+    pendingUserInputs.length,
+    phase,
+    promptRef,
+    setComposerDraftPrompt,
+    submitComposer,
+  ]);
   const expandMobileComposer = useCallback(() => {
     if (composerBlurFrameRef.current !== null) {
       window.cancelAnimationFrame(composerBlurFrameRef.current);
@@ -5331,6 +5392,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   onPageScrollKeyDown={onPageScrollKeyDown}
                   onPageScrollKeyUp={onPageScrollKeyUp}
                   onPageScrollRelease={onPageScrollRelease}
+                  onCitationSubmitAndSend={submitCitationAndSend}
                   onPaste={onComposerPaste}
                   placeholder={
                     isComposerApprovalState
