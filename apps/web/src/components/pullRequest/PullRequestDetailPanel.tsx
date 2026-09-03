@@ -135,7 +135,6 @@ import {
   resolveDisplayedPullRequestDetail,
   resolvePullRequestPrimaryControl,
   resolveBaseFreshness,
-  resolvePullRequestPrimaryAction,
   type PullRequestFinding,
   shouldRefreshPullRequestActivity,
   writePullRequestDetailSnapshot,
@@ -153,7 +152,6 @@ import {
   PullRequestMetaLine,
   PullRequestReviewOutcomeIcon,
   pullRequestChecksState,
-  summarizePullRequestChecks,
   pullRequestReviewOutcomeToneClassName,
   resolvePullRequestState,
 } from "./pullRequestPresentation";
@@ -1323,7 +1321,6 @@ function PullRequestDetailPanelBody({
   const statePresentation = detail
     ? resolvePullRequestState({ state: detail.state, isDraft: detail.isDraft })
     : null;
-  const checksSummary = detail ? summarizePullRequestChecks(detail.checks) : null;
   // Approvals that still stand, and only those. A superseded one is dimmed beside the reviewer
   // who gave it, so counting it here would have the header assert in a number what the row next
   // to it has just qualified.

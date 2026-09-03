@@ -97,6 +97,8 @@ T3 Code works with the platforms your team already uses:
 - Rewrite your own comments the same way, wherever they are shown
 - Works on GitHub, GitLab, and Bitbucket. Azure DevOps takes a new title and description; its
   comments stay read-only here, as they already were
+- On GitHub, put a label on a pull request or take one off from the **Labels** row of the review.
+  Changing labels needs triage access or better on the repository
 
 ![A repository-hosted image rendered inside a GitHub pull request description](./images/pull-request-description-image-after.jpg)
 

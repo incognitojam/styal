@@ -1578,6 +1578,7 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/7077
+        - https://github.com/pingdotgg/t3code/pull/9188
       retire_when: Upstream provides a dedicated checks view with repository-policy-aware required checks and equivalent merge or auto-merge guidance in pull request details.
 
   - id: run-shell-code-blocks

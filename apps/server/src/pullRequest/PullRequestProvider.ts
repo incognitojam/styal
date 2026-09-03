@@ -28,6 +28,7 @@ import type {
   PullRequestReviewerCandidateList,
   PullRequestReviewerKind,
   PullRequestStack,
+  PullRequestLabelCandidateList,
   PullRequestState,
   PullRequestUpdateMethod,
   PullRequestViewerPermissions,
@@ -493,6 +494,23 @@ export interface PullRequestProviderApi {
         readonly kind: PullRequestReviewerKind;
       }>;
       readonly requested: boolean;
+    },
+  ) => Effect.Effect<void, PullRequestProviderError>;
+
+  /**
+   * The repository's labels, with the ones already on the change request marked. Present with
+   * `setLabels` only where `capabilities.labels` is true; the service refuses both without it.
+   */
+  readonly listLabelCandidates?: (
+    input: ProviderRepositoryRef & { readonly number: number },
+  ) => Effect.Effect<PullRequestLabelCandidateList, PullRequestProviderError>;
+
+  /** Puts labels on the change request, or takes them off. One call for both directions. */
+  readonly setLabels?: (
+    input: ProviderRepositoryRef & {
+      readonly number: number;
+      readonly labels: ReadonlyArray<string>;
+      readonly applied: boolean;
     },
   ) => Effect.Effect<void, PullRequestProviderError>;
 
