@@ -2304,7 +2304,8 @@ const makeWsRpcLayer = (
             Effect.gen(function* () {
               if (
                 input.resource._tag === "attachment" ||
-                input.resource._tag === "pull-request-file"
+                input.resource._tag === "pull-request-file" ||
+                input.resource._tag === "native-app-icon"
               ) {
                 return yield* issueAssetUrl({ resource: input.resource });
               }

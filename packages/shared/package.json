@@ -96,6 +96,10 @@
       "types": "./src/toolRowPresentation.ts",
       "import": "./src/toolRowPresentation.ts"
     },
+    "./favicon": {
+      "types": "./src/favicon.ts",
+      "import": "./src/favicon.ts"
+    },
     "./Struct": {
       "types": "./src/Struct.ts",
       "import": "./src/Struct.ts"
