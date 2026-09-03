@@ -340,7 +340,7 @@ export function HostedBrowserWebview(props: {
         ) : null}
         <div
           className={cn(
-            "absolute overflow-hidden bg-background",
+            "absolute flex overflow-hidden bg-white",
             active && !layout.fillsPanel && "ring-1 ring-border/70 shadow-sm",
           )}
           style={webviewStyle}
