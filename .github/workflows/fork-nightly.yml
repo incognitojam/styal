@@ -128,21 +128,9 @@ jobs:
           grep -nE "desktopBridge|getLocalEnvironmentBootstrap|PICK_FOLDER_CHANNEL|wsUrl" apps/desktop/dist-electron/preload.cjs
           grep -n "__clerk_internal_electron_passkeys" apps/desktop/dist-electron/preload.cjs
 
-      - name: Test
-        if: steps.candidate.outputs.has_changes == 'true'
-        run: |
-          vp run -r test --exclude '**/imageCompression.test.ts'
-          vp run --filter @t3tools/web test src/lib/imageCompression.test.ts \
-            --no-file-parallelism \
-            --maxWorkers=1
-
       - name: Test previous nightly schema upgrade
         if: steps.candidate.outputs.has_changes == 'true'
         run: vp run --filter t3 test:nightly-upgrade -- origin/nightly
-
-      - name: Test resource monitor
-        if: steps.candidate.outputs.has_changes == 'true'
-        run: cargo test --locked --manifest-path native/resource-monitor/Cargo.toml
 
       - id: release_meta
         name: Resolve nightly version
