@@ -18,6 +18,7 @@ import {
   type OrchestrationThread,
   type OrchestrationThreadActivity,
   type ProviderRuntimeEvent,
+  type TaskAgentLinkage,
 } from "@t3tools/contracts";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
@@ -51,39 +52,92 @@ import { projectToolInput } from "../ActivityPayloadProjection.ts";
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 const providerTaskKey = (threadId: ThreadId, taskId: string) => `${threadId}:${taskId}`;
 
-// Fallback when the in-memory description cache no longer has the task name
-// (server restart, session-exit sweep, TTL/capacity eviction): earlier
-// task.started/task.progress activities for the task are persisted with it.
-function findTaskTitleInActivities(
+const TASK_IDENTITY_ACTIVITY_KEYS = [
+  "taskType",
+  "agentId",
+  "title",
+  "role",
+  "model",
+  "effort",
+  "toolUseId",
+  "parentAgentId",
+  "workflowName",
+  "agentIndex",
+  "phaseIndex",
+  "phaseTitle",
+  "phases",
+  "attempt",
+  "runHandles",
+  "outputFile",
+  "agentPath",
+  "timelineBypass",
+] as const satisfies ReadonlyArray<Exclude<keyof TaskAgentLinkage, "agentKind">>;
+
+const TASK_ACTIVITY_FIELDS = [
+  ...TASK_IDENTITY_ACTIVITY_KEYS,
+  "typedUsage",
+  "status",
+  "error",
+] as const;
+
+interface PersistedTaskContext {
+  readonly title?: string;
+  readonly linkage?: Omit<TaskAgentLinkage, "agentKind">;
+}
+
+// Claude terminal notifications intentionally omit task_type. After a
+// provider session restart the adapter's in-memory task registry is empty, so
+// recover the durable identity carried by earlier lifecycle activities before
+// ingestion stamps agentKind on the terminal row. The same scan recovers the
+// title when the ingestion cache was swept or evicted.
+function findTaskContextInActivities(
   activities: ReadonlyArray<OrchestrationThreadActivity> | undefined,
   taskId: string,
-): string | undefined {
+): PersistedTaskContext | undefined {
   if (!activities) {
     return undefined;
   }
+  let title: string | undefined;
+  const recovered: Record<string, unknown> = {};
   for (let index = activities.length - 1; index >= 0; index -= 1) {
     const activity = activities[index];
-    if (!activity || (activity.kind !== "task.started" && activity.kind !== "task.progress")) {
+    if (!activity?.kind.startsWith("task.")) {
       continue;
     }
     const payload =
       activity.payload && typeof activity.payload === "object"
-        ? (activity.payload as { taskId?: unknown; title?: unknown; detail?: unknown })
+        ? (activity.payload as Record<string, unknown>)
         : undefined;
     if (payload?.taskId !== taskId) {
       continue;
     }
-    const title =
-      typeof payload.title === "string"
-        ? payload.title
-        : activity.kind === "task.started" && typeof payload.detail === "string"
-          ? payload.detail
-          : undefined;
-    if (title && title.trim().length > 0) {
-      return title;
+    if (
+      title === undefined &&
+      (activity.kind === "task.started" || activity.kind === "task.progress")
+    ) {
+      const candidate =
+        typeof payload.title === "string"
+          ? payload.title
+          : activity.kind === "task.started" && typeof payload.detail === "string"
+            ? payload.detail
+            : undefined;
+      if (candidate && candidate.trim().length > 0) {
+        title = candidate;
+      }
+    }
+    for (const key of TASK_IDENTITY_ACTIVITY_KEYS) {
+      if (recovered[key] === undefined && payload[key] !== undefined) {
+        recovered[key] = payload[key];
+      }
     }
   }
-  return undefined;
+  const linkage =
+    Object.keys(recovered).length > 0
+      ? (recovered as Omit<TaskAgentLinkage, "agentKind">)
+      : undefined;
+  return title || linkage
+    ? { ...(title ? { title } : {}), ...(linkage ? { linkage } : {}) }
+    : undefined;
 }
 
 interface AssistantSegmentState {
@@ -333,29 +387,7 @@ function taskLinkageActivityFields(payload: Record<string, unknown>): Record<str
       agentId: typeof payload.agentId === "string" ? payload.agentId : undefined,
     }),
   };
-  for (const key of [
-    "taskType",
-    "agentId",
-    "title",
-    "role",
-    "model",
-    "effort",
-    "toolUseId",
-    "parentAgentId",
-    "workflowName",
-    "agentIndex",
-    "phaseIndex",
-    "phaseTitle",
-    "phases",
-    "attempt",
-    "runHandles",
-    "outputFile",
-    "agentPath",
-    "timelineBypass",
-    "typedUsage",
-    "status",
-    "error",
-  ] as const) {
+  for (const key of TASK_ACTIVITY_FIELDS) {
     if (payload[key] !== undefined) {
       fields[key] = payload[key];
     }
@@ -2105,15 +2137,31 @@ const make = Effect.gen(function* () {
       }
 
       let taskTitle: string | undefined;
+      let taskLinkage: Omit<TaskAgentLinkage, "agentKind"> | undefined;
       if (event.type === "task.completed") {
         taskTitle = yield* lookupTaskDescription(thread.id, event.payload.taskId);
-        if (!taskTitle) {
+        if (!taskTitle || event.payload.taskType === undefined) {
           const threadDetail = yield* getLoadedThreadDetail();
-          taskTitle = findTaskTitleInActivities(threadDetail?.activities, event.payload.taskId);
+          const persistedTask = findTaskContextInActivities(
+            threadDetail?.activities,
+            event.payload.taskId,
+          );
+          taskTitle ??= persistedTask?.title;
+          taskLinkage = event.payload.taskType === undefined ? persistedTask?.linkage : undefined;
         }
       }
 
-      const activities = runtimeEventToActivities(event, taskTitle);
+      const eventForActivities: ProviderRuntimeEvent =
+        event.type === "task.completed" && taskLinkage
+          ? {
+              ...event,
+              payload: {
+                ...taskLinkage,
+                ...event.payload,
+              },
+            }
+          : event;
+      const activities = runtimeEventToActivities(eventForActivities, taskTitle);
       yield* Effect.forEach(activities, (activity) =>
         providerCommandId(event, "thread-activity-append").pipe(
           Effect.flatMap((commandId) =>

@@ -3650,13 +3650,13 @@ describe("ProviderRuntimeIngestion", () => {
     expect(completedPayload?.title).toBe("wait for codex review to finish");
   });
 
-  it("titles task completion from persisted activities after the description cache is swept", async () => {
+  it("recovers task completion identity from persisted activities after session exit", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
 
     harness.emit({
-      type: "task.progress",
-      eventId: asEventId("evt-swept-task-progress"),
+      type: "task.started",
+      eventId: asEventId("evt-swept-task-started"),
       provider: ProviderDriverKind.make("claudeAgent"),
       createdAt: now,
       threadId: asThreadId("thread-1"),
@@ -3664,19 +3664,35 @@ describe("ProviderRuntimeIngestion", () => {
       payload: {
         taskId: "swept-task-1",
         description: "Watch round-3 CI and bots",
-        summary: "Polling CI checks.",
+        taskType: "local_bash",
+        toolUseId: "tool-swept-task-1",
+      },
+    });
+    harness.emit({
+      type: "task.started",
+      eventId: asEventId("evt-owned-task-started"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-swept-task"),
+      payload: {
+        taskId: "owned-task-1",
+        description: "Run a shell inside the subagent",
+        agentId: "parent-agent-1",
+        toolUseId: "tool-owned-task-1",
       },
     });
 
     await waitForThread(harness.readModel, (entry) =>
-      entry.activities.some(
-        (activity: ProviderRuntimeTestActivity) =>
-          activity.id === "task-progress:thread-1:swept-task-1",
+      ["evt-swept-task-started", "evt-owned-task-started"].every((activityId) =>
+        entry.activities.some(
+          (activity: ProviderRuntimeTestActivity) => activity.id === activityId,
+        ),
       ),
     );
 
-    // session.exited sweeps the in-memory description cache; the completion
-    // that follows must recover the name from persisted activities.
+    // Model a provider restart: ingestion sweeps its description cache and
+    // the later terminal notification carries none of the task identity.
     harness.emit({
       type: "session.exited",
       eventId: asEventId("evt-swept-task-session-exited"),
@@ -3699,22 +3715,46 @@ describe("ProviderRuntimeIngestion", () => {
         summary: "CI is green.",
       },
     });
+    harness.emit({
+      type: "task.completed",
+      eventId: asEventId("evt-owned-task-completed"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-swept-task"),
+      payload: {
+        taskId: "owned-task-1",
+        status: "completed",
+        summary: "Nested shell finished.",
+      },
+    });
 
     const thread = await waitForThread(harness.readModel, (entry) =>
-      entry.activities.some(
-        (activity: ProviderRuntimeTestActivity) => activity.id === "evt-swept-task-completed",
+      ["evt-swept-task-completed", "evt-owned-task-completed"].every((activityId) =>
+        entry.activities.some(
+          (activity: ProviderRuntimeTestActivity) => activity.id === activityId,
+        ),
       ),
     );
 
-    const completed = thread.activities.find(
-      (activity: ProviderRuntimeTestActivity) => activity.id === "evt-swept-task-completed",
-    );
-    const completedPayload =
-      completed?.payload && typeof completed.payload === "object"
-        ? (completed.payload as Record<string, unknown>)
+    const completionPayload = (activityId: string) => {
+      const activity = thread.activities.find(
+        (candidate: ProviderRuntimeTestActivity) => candidate.id === activityId,
+      );
+      return activity?.payload && typeof activity.payload === "object"
+        ? (activity.payload as Record<string, unknown>)
         : undefined;
+    };
+    const completedPayload = completionPayload("evt-swept-task-completed");
+    const ownedCompletedPayload = completionPayload("evt-owned-task-completed");
 
     expect(completedPayload?.title).toBe("Watch round-3 CI and bots");
+    expect(completedPayload?.taskType).toBe("local_bash");
+    expect(completedPayload?.agentKind).toBe("background");
+    expect(completedPayload?.toolUseId).toBe("tool-swept-task-1");
+    expect(ownedCompletedPayload?.agentId).toBe("parent-agent-1");
+    expect(ownedCompletedPayload?.agentKind).toBe("background");
+    expect(ownedCompletedPayload?.toolUseId).toBe("tool-owned-task-1");
   });
 
   it("projects structured user input request and resolution as thread activities", async () => {
