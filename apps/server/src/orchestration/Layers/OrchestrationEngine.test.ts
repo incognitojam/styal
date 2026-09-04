@@ -13,6 +13,7 @@ import {
 } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Metric from "effect/Metric";
@@ -706,6 +707,157 @@ describe("OrchestrationEngine", () => {
     expect(
       (await system.readModel()).threads.find((thread) => thread.id === "thread-import")?.title,
     ).toBe("Renamed after import");
+    await system.dispose();
+  });
+
+  it("publishes imported prompt links without replaying other historical events", async () => {
+    const system = await createOrchestrationSystem();
+    const { engine } = system;
+    const importHistoricalEvents = engine.importHistoricalEvents;
+    expect(importHistoricalEvents).toBeDefined();
+    if (importHistoricalEvents === undefined) return;
+    const createdAt = now();
+    const threadId = ThreadId.make("thread-import-prompt-link");
+
+    const publishedEvents = await system.run(
+      Effect.gen(function* () {
+        const publishedEventsFiber = yield* Effect.forkScoped(
+          engine.streamDomainEvents.pipe(
+            Stream.takeUntil(
+              (event) =>
+                event.type === "thread.meta-updated" &&
+                event.payload.title === "Import publication marker",
+            ),
+            Stream.runCollect,
+          ),
+          { startImmediately: true },
+        );
+        yield* importHistoricalEvents([
+          {
+            eventId: EventId.make("event-import-link-project"),
+            type: "project.created",
+            aggregateKind: "project",
+            aggregateId: asProjectId("project-import-prompt-link"),
+            occurredAt: createdAt,
+            commandId: CommandId.make("command-import-link-project"),
+            causationEventId: null,
+            correlationId: CommandId.make("command-import-link-project"),
+            metadata: {},
+            payload: {
+              projectId: asProjectId("project-import-prompt-link"),
+              title: "Imported prompt link project",
+              workspaceRoot: "/work/import-prompt-link",
+              defaultModelSelection: null,
+              scripts: [],
+              createdAt,
+              updatedAt: createdAt,
+            },
+          },
+          {
+            eventId: EventId.make("event-import-link-thread"),
+            type: "thread.created",
+            aggregateKind: "thread",
+            aggregateId: threadId,
+            occurredAt: createdAt,
+            commandId: CommandId.make("command-import-link-thread"),
+            causationEventId: null,
+            correlationId: CommandId.make("command-import-link-thread"),
+            metadata: {},
+            payload: {
+              threadId,
+              projectId: asProjectId("project-import-prompt-link"),
+              title: "Imported prompt link thread",
+              modelSelection: {
+                instanceId: ProviderInstanceId.make("codex"),
+                model: "gpt-5-codex",
+              },
+              interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+              runtimeMode: "full-access",
+              branch: null,
+              worktreePath: null,
+              createdAt,
+              updatedAt: createdAt,
+            },
+          },
+          {
+            eventId: EventId.make("event-import-link-message"),
+            type: "thread.message-sent",
+            aggregateKind: "thread",
+            aggregateId: threadId,
+            occurredAt: createdAt,
+            commandId: null,
+            causationEventId: null,
+            correlationId: null,
+            metadata: {},
+            payload: {
+              threadId,
+              messageId: asMessageId("message-import-link-assistant"),
+              role: "assistant",
+              text: "Imported answer",
+              turnId: TurnId.make("turn-import-prompt-link"),
+              streaming: false,
+              createdAt,
+              updatedAt: createdAt,
+            },
+          },
+          {
+            eventId: EventId.make("event-import-link-derived"),
+            type: "thread.turn-prompt-linked",
+            aggregateKind: "thread",
+            aggregateId: threadId,
+            occurredAt: createdAt,
+            commandId: null,
+            causationEventId: EventId.make("event-import-link-start"),
+            correlationId: null,
+            metadata: {},
+            payload: {
+              threadId,
+              turnId: TurnId.make("turn-import-prompt-link"),
+              messageId: asMessageId("message-import-link-user"),
+              requestedAt: createdAt,
+              startedAt: createdAt,
+              sourceTurnStartEventId: EventId.make("event-import-link-start"),
+              sourceSessionEventId: EventId.make("event-import-link-session"),
+            },
+          },
+          {
+            eventId: EventId.make("event-import-link-derived-latest"),
+            type: "thread.turn-prompt-linked",
+            aggregateKind: "thread",
+            aggregateId: threadId,
+            occurredAt: createdAt,
+            commandId: null,
+            causationEventId: EventId.make("event-import-link-start-latest"),
+            correlationId: null,
+            metadata: {},
+            payload: {
+              threadId,
+              turnId: TurnId.make("turn-import-prompt-link"),
+              messageId: asMessageId("message-import-link-user-latest"),
+              requestedAt: createdAt,
+              startedAt: createdAt,
+              sourceTurnStartEventId: EventId.make("event-import-link-start-latest"),
+              sourceSessionEventId: EventId.make("event-import-link-session-latest"),
+            },
+          },
+        ]);
+        yield* engine.dispatch({
+          type: "thread.meta.update",
+          commandId: CommandId.make("command-import-link-marker"),
+          threadId,
+          title: "Import publication marker",
+        });
+        return yield* Fiber.join(publishedEventsFiber);
+      }).pipe(Effect.scoped),
+    );
+
+    expect(Array.from(publishedEvents, (event) => event.type)).toEqual([
+      "project.created",
+      "thread.created",
+      "thread.turn-prompt-linked",
+      "thread.meta-updated",
+    ]);
+    expect(publishedEvents[2]?.eventId).toBe("event-import-link-derived-latest");
     await system.dispose();
   });
 

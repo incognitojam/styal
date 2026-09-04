@@ -52,6 +52,11 @@ import {
   type ReadonlyDatabase,
 } from "./LegacyImportPreview.ts";
 import { readLegacyImportPreferences } from "./LegacyImportPreferences.ts";
+import {
+  deriveLegacyTurnPromptLinks,
+  prepareLegacyTurnPromptLinks,
+  readLegacyTurnLifecycleEvents,
+} from "./LegacyImportTurnPromptLinks.ts";
 
 const SourceThreadRows = Schema.Array(Schema.Struct({ threadId: ThreadId }));
 const SourceTableRows = Schema.Array(Schema.Struct({ name: Schema.String }));
@@ -94,6 +99,7 @@ interface LegacySourceProjectPlan {
   readonly project: LegacyImportProjectPreview;
   readonly threadIds: ReadonlyArray<ThreadId>;
   readonly repairThreadIds: ReadonlyArray<ThreadId>;
+  readonly repairEvents: ReadonlyMap<ThreadId, ReadonlyArray<OrchestrationEvent>>;
   readonly continuations: ReadonlyMap<ThreadId, HistoricalProviderContinuation>;
   readonly events: ReadonlyArray<OrchestrationEvent>;
 }
@@ -398,24 +404,41 @@ function inspectSelectedProjects(
       ).map(({ threadId }) => threadId);
       const continuations = readSourceContinuations(database, allThreadIds);
       const threadIds = allThreadIds.filter((threadId) => !destination.threadIds.has(threadId));
-      const repairThreadIds = allThreadIds.filter((threadId) => {
-        if (!destination.threadIds.has(threadId)) return false;
+      const existingThreadIds = allThreadIds.filter((threadId) =>
+        destination.threadIds.has(threadId),
+      );
+      const missingPromptLinks = deriveLegacyTurnPromptLinks(
+        readLegacyTurnLifecycleEvents(database, existingThreadIds),
+      ).filter(
+        (event) =>
+          destination.turnIdsByThreadId.get(event.payload.threadId)?.has(event.payload.turnId) ===
+            true && !destination.turnPromptLinkEventIds.has(event.eventId),
+      );
+      const repairEvents = new Map<ThreadId, ReadonlyArray<OrchestrationEvent>>();
+      for (const event of missingPromptLinks) {
+        const threadId = event.payload.threadId;
+        repairEvents.set(threadId, [...(repairEvents.get(threadId) ?? []), event]);
+      }
+      const repairThreadIds = existingThreadIds.filter((threadId) => {
         const continuation = continuations.get(threadId);
         return (
-          continuation !== undefined &&
-          destination.continuationKeys.get(threadId) !==
-            legacyContinuationKey({
-              providerName: continuation.provider,
-              providerInstanceId: continuation.providerInstanceId,
-              resumeCursor: continuation.resumeCursor,
-            })
+          repairEvents.has(threadId) ||
+          (continuation !== undefined &&
+            destination.continuationKeys.get(threadId) !==
+              legacyContinuationKey({
+                providerName: continuation.provider,
+                providerInstanceId: continuation.providerInstanceId,
+                resumeCursor: continuation.resumeCursor,
+              }))
         );
       });
-      const events = compactHistoricalEvents(
-        readProjectEvents(database, projectId, threadIds)
+      const sourceEvents = readProjectEvents(database, projectId, threadIds);
+      const retainedEvents = compactHistoricalEvents(
+        sourceEvents
           .map(sanitizeHistoricalEvent)
           .filter((event): event is OrchestrationEvent => event !== null),
       );
+      const events = prepareLegacyTurnPromptLinks(sourceEvents, retainedEvents);
       if (!events.some((event) => event.type === "project.created")) {
         throw sourceFailure(
           "unsupported-source",
@@ -440,6 +463,7 @@ function inspectSelectedProjects(
         project,
         threadIds,
         repairThreadIds,
+        repairEvents,
         continuations,
         events,
       } satisfies LegacySourceProjectPlan;
@@ -869,15 +893,31 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
 
         for (const threadId of plan.repairThreadIds) {
           const continuation = plan.continuations.get(threadId);
-          if (continuation === undefined) continue;
+          const events = plan.repairEvents.get(threadId) ?? [];
+          const continuationNeedsRepair =
+            continuation !== undefined &&
+            destination.continuationKeys.get(threadId) !==
+              legacyContinuationKey({
+                providerName: continuation.provider,
+                providerInstanceId: continuation.providerInstanceId,
+                resumeCursor: continuation.resumeCursor,
+              });
+          if (events.length === 0 && !continuationNeedsRepair) continue;
           const outcome = yield* Effect.exit(
-            stopActiveProviderSession(threadId).pipe(
-              Effect.andThen(importHistoricalEvents([], { continuation })),
+            (continuationNeedsRepair ? stopActiveProviderSession(threadId) : Effect.void).pipe(
+              Effect.andThen(
+                importHistoricalEvents(
+                  events.map(withoutSequence),
+                  continuationNeedsRepair && continuation !== undefined
+                    ? { continuation }
+                    : undefined,
+                ),
+              ),
             ),
           );
           if (outcome._tag === "Failure") {
             failedThreadCount += 1;
-            yield* Effect.logWarning("Could not restore a legacy T3 thread's provider context", {
+            yield* Effect.logWarning("Could not repair a legacy T3 thread", {
               projectId: sourceProjectId,
               threadId,
               cause: outcome.cause,

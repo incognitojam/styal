@@ -1234,6 +1234,31 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           return;
         }
 
+        case "thread.turn-prompt-linked": {
+          const existingTurn = yield* projectionTurnRepository.getByTurnId({
+            threadId: event.payload.threadId,
+            turnId: event.payload.turnId,
+          });
+          if (Option.isNone(existingTurn)) return;
+          if (existingTurn.value.pendingMessageId !== null) return;
+          yield* projectionTurnRepository.upsertByTurnId({
+            ...existingTurn.value,
+            pendingMessageId: event.payload.messageId,
+            sourceProposedPlanThreadId:
+              event.payload.sourceProposedPlan?.threadId ??
+              existingTurn.value.sourceProposedPlanThreadId,
+            sourceProposedPlanId:
+              event.payload.sourceProposedPlan?.planId ?? existingTurn.value.sourceProposedPlanId,
+            requestedAt: event.payload.requestedAt,
+            startedAt:
+              existingTurn.value.startedAt === null ||
+              event.payload.startedAt < existingTurn.value.startedAt
+                ? event.payload.startedAt
+                : existingTurn.value.startedAt,
+          });
+          return;
+        }
+
         case "thread.session-set": {
           const turnId = event.payload.session.activeTurnId;
           if (turnId === null || event.payload.session.status !== "running") {

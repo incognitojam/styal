@@ -2830,6 +2830,82 @@ it.layer(makeProjectionPipelinePrefixedTestLayer("t3-pending-turn-terminal-test-
   },
 );
 
+it.layer(makeProjectionPipelinePrefixedTestLayer("t3-imported-turn-link-test-"))(
+  "OrchestrationProjectionPipeline imported prompt links",
+  (it) => {
+    it.effect("preserves the first prompt linked to a provider turn", () =>
+      Effect.gen(function* () {
+        const projectionPipeline = yield* OrchestrationProjectionPipeline;
+        const eventStore = yield* OrchestrationEventStore;
+        const sql = yield* SqlClient.SqlClient;
+        const threadId = ThreadId.make("thread-import-link");
+        const turnId = TurnId.make("turn-import-link");
+        const firstRequestedAt = "2026-02-26T14:00:00.000Z";
+
+        yield* eventStore.append({
+          type: "thread.message-sent",
+          eventId: EventId.make("evt-import-link-assistant"),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: "2026-02-26T14:00:02.000Z",
+          commandId: null,
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          payload: {
+            threadId,
+            messageId: MessageId.make("message-import-link-assistant"),
+            role: "assistant",
+            text: "Done",
+            turnId,
+            streaming: false,
+            createdAt: "2026-02-26T14:00:02.000Z",
+            updatedAt: "2026-02-26T14:00:02.000Z",
+          },
+        });
+        for (const [index, messageId] of ["message-first", "message-follow-up"].entries()) {
+          yield* eventStore.append({
+            type: "thread.turn-prompt-linked",
+            eventId: EventId.make(`evt-import-link-${index}`),
+            aggregateKind: "thread",
+            aggregateId: threadId,
+            occurredAt: `2026-02-26T14:00:0${index + 3}.000Z`,
+            commandId: null,
+            causationEventId: EventId.make(`evt-import-start-${index}`),
+            correlationId: null,
+            metadata: {},
+            payload: {
+              threadId,
+              turnId,
+              messageId: MessageId.make(messageId),
+              requestedAt: index === 0 ? firstRequestedAt : "2026-02-26T14:00:03.000Z",
+              startedAt: `2026-02-26T14:00:0${index + 1}.000Z`,
+              sourceTurnStartEventId: EventId.make(`evt-import-start-${index}`),
+              sourceSessionEventId: EventId.make(`evt-import-session-${index}`),
+            },
+          });
+        }
+
+        yield* projectionPipeline.bootstrap;
+
+        const rows = yield* sql<{
+          readonly pendingMessageId: string | null;
+          readonly requestedAt: string;
+        }>`
+          SELECT
+            pending_message_id AS "pendingMessageId",
+            requested_at AS "requestedAt"
+          FROM projection_turns
+          WHERE thread_id = ${threadId} AND turn_id = ${turnId}
+        `;
+        assert.deepEqual(rows, [
+          { pendingMessageId: "message-first", requestedAt: firstRequestedAt },
+        ]);
+      }),
+    );
+  },
+);
+
 it.effect("restores pending turn-start metadata across projection pipeline restart", () =>
   Effect.gen(function* () {
     const { dbPath } = yield* ServerConfig;

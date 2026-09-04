@@ -1975,6 +1975,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
     yield* sql`DELETE FROM projection_thread_messages`;
     yield* sql`DELETE FROM projection_thread_activities`;
     yield* sql`DELETE FROM projection_state`;
+    yield* sql`DELETE FROM orchestration_events`;
 
     yield* sql`
       INSERT INTO projection_projects (
@@ -2060,6 +2061,15 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
         VALUES (${projector}, 42, '2026-03-01T00:00:10.000Z')
       `;
     }
+    yield* sql`
+      INSERT INTO orchestration_events (
+        sequence, event_id, aggregate_kind, stream_id, stream_version, event_type,
+        occurred_at, actor_kind, payload_json, metadata_json
+      ) VALUES (
+        42, 'event-window-prompt-link', 'thread', 'thread-w', 1,
+        'thread.turn-prompt-linked', '2026-03-01T00:00:10.000Z', 'server', '{}', '{}'
+      )
+    `;
   });
 
   const threadW = ThreadId.make("thread-w");
@@ -2111,6 +2121,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
         assert.equal(snapshot.value.page?.hasMore, true);
         assert.notEqual(snapshot.value.page?.beforeCursor, null);
         assert.equal(snapshot.value.page?.snapshotSequence, 42);
+        assert.equal(snapshot.value.page?.threadSequence, 42);
       }
     }),
   );

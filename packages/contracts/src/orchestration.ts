@@ -1150,6 +1150,7 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.interaction-mode-set",
   "thread.message-sent",
   "thread.turn-start-requested",
+  "thread.turn-prompt-linked",
   "thread.turn-interrupt-requested",
   "thread.approval-response-requested",
   "thread.user-input-response-requested",
@@ -1334,6 +1335,21 @@ export const ThreadTurnStartRequestedPayload = Schema.Struct({
   ),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
   createdAt: IsoDateTime,
+});
+
+/**
+ * Historical import provenance that explicitly associates a user prompt with
+ * the root provider turn observed in the source event stream.
+ */
+export const ThreadTurnPromptLinkedPayload = Schema.Struct({
+  threadId: ThreadId,
+  turnId: TurnId,
+  messageId: MessageId,
+  requestedAt: IsoDateTime,
+  startedAt: IsoDateTime,
+  sourceTurnStartEventId: EventId,
+  sourceSessionEventId: EventId,
+  sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
 });
 
 export const ThreadTurnInterruptRequestedPayload = Schema.Struct({
@@ -1527,6 +1543,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.turn-start-requested"),
     payload: ThreadTurnStartRequestedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.turn-prompt-linked"),
+    payload: ThreadTurnPromptLinkedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

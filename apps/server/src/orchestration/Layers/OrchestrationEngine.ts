@@ -398,12 +398,24 @@ const makeOrchestrationEngine = Effect.gen(function* () {
               `;
             }
 
+            const publishedEvents: OrchestrationEvent[] = committedEvents.filter(
+              (event) => event.type === "project.created" || event.type === "thread.created",
+            );
+            // A repair batch can link many turns in one thread. Subscribers
+            // only need one invalidation after the final projection is visible.
+            const latestPromptLinkByThread = new Map<ThreadId, OrchestrationEvent>();
+            for (const event of committedEvents) {
+              if (event.type === "thread.turn-prompt-linked") {
+                latestPromptLinkByThread.set(event.payload.threadId, event);
+              }
+            }
+            publishedEvents.push(...latestPromptLinkByThread.values());
+            publishedEvents.sort((left, right) => left.sequence - right.sequence);
+
             return {
               eventCount: envelope.events.length,
               sequence,
-              creationEvents: committedEvents.filter(
-                (event) => event.type === "project.created" || event.type === "thread.created",
-              ),
+              publishedEvents,
               nextCommandReadModel:
                 committedEvents.length === 0
                   ? commandReadModel
@@ -431,10 +443,12 @@ const makeOrchestrationEngine = Effect.gen(function* () {
 
         commandReadModel = exit.value.nextCommandReadModel;
         return Effect.gen(function* () {
-          // Creation events are enough to make shell subscribers refetch the
-          // final projected rows. Historical operational events stay silent,
-          // so importing cannot restart provider or checkpoint work.
-          for (const event of exit.value.creationEvents) {
+          // Creation events make shell subscribers refetch final projected rows.
+          // Prompt-link repairs additionally reset subscribed thread detail so
+          // an already loaded window picks up the newly visible user message.
+          // Other historical operational events stay silent, so importing
+          // cannot restart provider or checkpoint work.
+          for (const event of exit.value.publishedEvents) {
             yield* PubSub.publish(eventPubSub, event);
           }
           yield* Deferred.succeed(envelope.result, {

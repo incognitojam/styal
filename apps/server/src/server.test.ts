@@ -29,6 +29,7 @@ import {
   ProviderInstanceId,
   ResolvedKeybindingRule,
   ThreadId,
+  TurnId,
   WS_METHODS,
   WsRpcGroup,
   EditorId,
@@ -6768,6 +6769,152 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(items[0]?.kind, "snapshot");
       assert.equal(items[1]?.kind, "event");
       assert.equal(items[1]?.kind === "event" ? items[1].event.sequence : null, 2);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest), TestClock.withLive),
+  );
+
+  it.effect("resets a loaded thread snapshot when an imported prompt link arrives", () =>
+    Effect.gen(function* () {
+      const thread = makeDefaultOrchestrationReadModel().threads[0]!;
+      const liveEvents = yield* PubSub.unbounded<OrchestrationEvent>();
+      const initialSnapshotReceived = yield* Deferred.make<void>();
+      let snapshotLoads = 0;
+      const promptLinkEvent = {
+        sequence: 2,
+        eventId: EventId.make("event-turn-prompt-linked-live"),
+        aggregateKind: "thread",
+        aggregateId: defaultThreadId,
+        occurredAt: "2026-01-01T00:00:01.000Z",
+        commandId: null,
+        causationEventId: EventId.make("event-turn-start-live"),
+        correlationId: null,
+        metadata: {},
+        type: "thread.turn-prompt-linked",
+        payload: {
+          threadId: defaultThreadId,
+          turnId: TurnId.make("turn-live"),
+          messageId: MessageId.make("message-user-live"),
+          requestedAt: "2026-01-01T00:00:00.000Z",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          sourceTurnStartEventId: EventId.make("event-turn-start-live"),
+          sourceSessionEventId: EventId.make("event-session-live"),
+        },
+      } satisfies Extract<OrchestrationEvent, { type: "thread.turn-prompt-linked" }>;
+
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            streamDomainEvents: Stream.fromPubSub(liveEvents),
+          },
+          projectionSnapshotQuery: {
+            getThreadDetailSnapshot: () =>
+              Effect.sync(() => {
+                snapshotLoads += 1;
+                return Option.some({ snapshotSequence: snapshotLoads, thread });
+              }),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const items = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const itemsFiber = yield* withWsRpcClient(wsUrl, (client) =>
+            client[ORCHESTRATION_WS_METHODS.subscribeThread]({
+              threadId: defaultThreadId,
+            }).pipe(
+              Stream.tap((item) =>
+                item.kind === "snapshot" && item.snapshot.snapshotSequence === 1
+                  ? Deferred.succeed(initialSnapshotReceived, undefined).pipe(Effect.ignore)
+                  : Effect.void,
+              ),
+              Stream.take(2),
+              Stream.runCollect,
+            ),
+          ).pipe(Effect.forkScoped);
+          yield* Deferred.await(initialSnapshotReceived);
+          yield* PubSub.publish(liveEvents, promptLinkEvent);
+          return yield* Fiber.join(itemsFiber);
+        }),
+      ).pipe(Effect.timeout("2 seconds"));
+
+      assert.deepEqual(
+        Array.from(items, (item) =>
+          item.kind === "snapshot" ? item.snapshot.snapshotSequence : item.kind,
+        ),
+        [1, 2],
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest), TestClock.withLive),
+  );
+
+  it.effect("resets a cached thread when catch-up contains an imported prompt link", () =>
+    Effect.gen(function* () {
+      const thread = makeDefaultOrchestrationReadModel().threads[0]!;
+      const promptLinkEvent = {
+        sequence: 2,
+        eventId: EventId.make("event-turn-prompt-linked-catch-up"),
+        aggregateKind: "thread",
+        aggregateId: defaultThreadId,
+        occurredAt: "2026-01-01T00:00:01.000Z",
+        commandId: null,
+        causationEventId: EventId.make("event-turn-start-catch-up"),
+        correlationId: null,
+        metadata: {},
+        type: "thread.turn-prompt-linked",
+        payload: {
+          threadId: defaultThreadId,
+          turnId: TurnId.make("turn-catch-up"),
+          messageId: MessageId.make("message-user-catch-up"),
+          requestedAt: "2026-01-01T00:00:00.000Z",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          sourceTurnStartEventId: EventId.make("event-turn-start-catch-up"),
+          sourceSessionEventId: EventId.make("event-session-catch-up"),
+        },
+      } satisfies Extract<OrchestrationEvent, { type: "thread.turn-prompt-linked" }>;
+      const promptLinkEvents = Array.from({ length: 81 }, (_unused, index) => ({
+        ...promptLinkEvent,
+        sequence: index + 2,
+        eventId: EventId.make(`event-turn-prompt-linked-catch-up-${index}`),
+        payload: {
+          ...promptLinkEvent.payload,
+          turnId: TurnId.make(`turn-catch-up-${index}`),
+          messageId: MessageId.make(`message-user-catch-up-${index}`),
+          sourceTurnStartEventId: EventId.make(`event-turn-start-catch-up-${index}`),
+          sourceSessionEventId: EventId.make(`event-session-catch-up-${index}`),
+        },
+      }));
+      let snapshotLoads = 0;
+
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            latestSequence: Effect.succeed(82),
+            readEvents: () => Stream.fromIterable(promptLinkEvents),
+          },
+          projectionSnapshotQuery: {
+            getThreadDetailSnapshot: () =>
+              Effect.sync(() => {
+                snapshotLoads += 1;
+                return Option.some({ snapshotSequence: 82, thread });
+              }),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const items = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeThread]({
+            threadId: defaultThreadId,
+            afterSequence: 1,
+            requestCompletionMarker: true,
+          }).pipe(Stream.take(2), Stream.runCollect),
+        ),
+      ).pipe(Effect.timeout("2 seconds"));
+
+      assert.equal(items[0]?.kind, "snapshot");
+      assert.equal(items[0]?.kind === "snapshot" ? items[0].snapshot.snapshotSequence : null, 82);
+      assert.deepEqual(items[1], { kind: "synchronized" });
+      assert.equal(snapshotLoads, 1);
     }).pipe(Effect.provide(NodeHttpServer.layerTest), TestClock.withLive),
   );
 
