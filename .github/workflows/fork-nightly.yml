@@ -64,9 +64,7 @@ jobs:
           git fetch origin '+refs/heads/nightly:refs/remotes/origin/nightly' || true
 
           has_changes=true
-          old_upstream_ref=$upstream_ref
           if git rev-parse --verify refs/remotes/origin/nightly >/dev/null 2>&1; then
-            old_upstream_ref=$(git merge-base origin/nightly FETCH_HEAD)
             if [[ "$DRY_RUN" != "true" ]] && git diff --quiet origin/nightly HEAD --; then
               has_changes=false
             fi
@@ -75,7 +73,6 @@ jobs:
           {
             echo "has_changes=$has_changes"
             echo "ref=$candidate_ref"
-            echo "old_upstream_ref=$old_upstream_ref"
             echo "upstream_ref=$upstream_ref"
           } >> "$GITHUB_OUTPUT"
 
@@ -86,20 +83,6 @@ jobs:
           node-version-file: package.json
           cache: true
           run-install: true
-
-      - name: Review upstream overlap with fork features
-        if: steps.candidate.outputs.has_changes == 'true'
-        continue-on-error: true
-        env:
-          OLD_UPSTREAM_REF: ${{ steps.candidate.outputs.old_upstream_ref }}
-          UPSTREAM_REF: ${{ steps.candidate.outputs.upstream_ref }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          changed_paths="$RUNNER_TEMP/upstream-changed-paths.txt"
-          git diff --name-only --no-renames \
-            "$OLD_UPSTREAM_REF..$UPSTREAM_REF" > "$changed_paths"
-          vp run --filter @t3tools/scripts ledger:check -- --changed-paths "$changed_paths"
 
       - name: Ensure Electron runtime is installed
         if: steps.candidate.outputs.has_changes == 'true'

@@ -71,6 +71,7 @@ jobs:
         with:
           # github.sha is the synthetic merge commit for pull_request runs.
           ref: ${{ github.sha }}
+          fetch-depth: 0
           sparse-checkout: |
             /*
             !/.repos/
@@ -96,6 +97,29 @@ jobs:
 
       - name: Check fork feature ledger
         run: vp run --filter @t3tools/scripts ledger:check
+
+      - name: Review upstream overlap with fork features
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch --no-tags https://github.com/pingdotgg/t3code.git main
+          base_upstream_ref=$(git merge-base "$BASE_SHA" FETCH_HEAD)
+          candidate_upstream_ref=$(git merge-base HEAD FETCH_HEAD)
+
+          if [[ "$base_upstream_ref" == "$candidate_upstream_ref" ]]; then
+            echo "Pull request does not advance upstream ancestry."
+            exit 0
+          fi
+
+          changed_paths="$RUNNER_TEMP/upstream-changed-paths.txt"
+          git diff --name-only --no-renames \
+            "$base_upstream_ref..$candidate_upstream_ref" > "$changed_paths"
+          vp run --filter @t3tools/scripts ledger:check -- --changed-paths "$changed_paths"
 
       - name: Typecheck
         run: vpr typecheck
