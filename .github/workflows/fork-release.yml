@@ -148,12 +148,36 @@ jobs:
             printf 'These artifacts are a rebuild of the same commit with a stable version, so they carry the stable update channel.\n'
           } > release-notes.md
 
+      # The promoted commit is behind main, and GITHUB_TOKEN cannot create a
+      # release tag at a commit whose workflow files differ from main's.
+      - name: Create release tag
+        if: inputs.dry_run != true
+        shell: bash
+        env:
+          NEW_TAG: ${{ needs.prepare.outputs.tag }}
+          SOURCE_REF: ${{ needs.prepare.outputs.ref }}
+        run: |
+          set -euo pipefail
+
+          existing=$(
+            git ls-remote origin "refs/tags/${NEW_TAG}" "refs/tags/${NEW_TAG}^{}" | cut -f1
+          )
+          if [[ -n "$existing" ]]; then
+            if [[ $'\n'"$existing"$'\n' == *$'\n'"$SOURCE_REF"$'\n'* ]]; then
+              echo "Tag ${NEW_TAG} already points at ${SOURCE_REF}."
+              exit 0
+            fi
+            echo "Tag ${NEW_TAG} already exists and does not point at ${SOURCE_REF}." >&2
+            exit 1
+          fi
+
+          git push origin "${SOURCE_REF}:refs/tags/${NEW_TAG}"
+
       - name: Publish release
         if: inputs.dry_run != true
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
-          target_commitish: ${{ needs.prepare.outputs.ref }}
           name: ${{ needs.prepare.outputs.release_name }}
           body_path: release-notes.md
           draft: false
@@ -162,3 +186,35 @@ jobs:
           files: release-assets/*
           fail_on_unmatched_files: true
           token: ${{ github.token }}
+
+      # cancelled() can be true after the release went live, so the tag of a
+      # published release is never deleted.
+      - name: Discard tag from unfinished publish
+        if: (failure() || cancelled()) && inputs.dry_run != true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW_TAG: ${{ needs.prepare.outputs.tag }}
+          SOURCE_REF: ${{ needs.prepare.outputs.ref }}
+        run: |
+          set -euo pipefail
+
+          existing=$(
+            git ls-remote origin "refs/tags/${NEW_TAG}" "refs/tags/${NEW_TAG}^{}" | cut -f1
+          )
+          if [[ $'\n'"$existing"$'\n' != *$'\n'"$SOURCE_REF"$'\n'* ]]; then
+            echo "Tag ${NEW_TAG} is not at ${SOURCE_REF}; leaving it alone."
+            exit 0
+          fi
+
+          # Listing includes drafts; the by-tag endpoint would not.
+          draft=$(
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              | jq -r --arg tag "$NEW_TAG" '.[] | select(.tag_name == $tag) | .draft'
+          )
+          if [[ "$draft" == "false" ]]; then
+            echo "Release ${NEW_TAG} is published; keeping its tag."
+            exit 0
+          fi
+
+          git push origin --delete "refs/tags/${NEW_TAG}"

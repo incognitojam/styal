@@ -321,12 +321,39 @@ jobs:
             fi
           } > release-notes.md
 
+      # GITHUB_TOKEN cannot create a release tag at a commit whose workflow
+      # files differ from main's, so the tag is pushed before the release.
+      - name: Create nightly tag
+        if: inputs.dry_run != true
+        shell: bash
+        env:
+          FORK_SOURCE_REF: ${{ needs.prepare.outputs.ref }}
+          NEW_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          existing=$(
+            git ls-remote origin "refs/tags/${NEW_TAG}" "refs/tags/${NEW_TAG}^{}" | cut -f1
+          )
+          if [[ -n "$existing" ]]; then
+            if [[ $'\n'"$existing"$'\n' == *$'\n'"$FORK_SOURCE_REF"$'\n'* ]]; then
+              echo "Tag ${NEW_TAG} already points at ${FORK_SOURCE_REF}."
+              exit 0
+            fi
+            echo "Tag ${NEW_TAG} already exists and does not point at ${FORK_SOURCE_REF}." >&2
+            exit 1
+          fi
+
+          git push origin "${FORK_SOURCE_REF}:refs/tags/${NEW_TAG}"
+
+      # target_commitish only on dry runs, which skip the tag; sending it on a
+      # real run would re-arm the check above. Empty is unset.
       - id: draft_release
         name: Upload draft prerelease
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
-          target_commitish: ${{ needs.prepare.outputs.ref }}
+          target_commitish: ${{ inputs.dry_run == true && needs.prepare.outputs.ref || '' }}
           name: ${{ needs.prepare.outputs.release_name }}
           body_path: release-notes.md
           draft: true
@@ -351,6 +378,38 @@ jobs:
             -F prerelease=true \
             -f make_latest=false \
             >/dev/null
+
+      # cancelled() can be true after the release went live, so the tag of a
+      # published release is never deleted.
+      - name: Discard tag from unfinished publish
+        if: (failure() || cancelled()) && inputs.dry_run != true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW_TAG: ${{ needs.prepare.outputs.tag }}
+          FORK_SOURCE_REF: ${{ needs.prepare.outputs.ref }}
+        run: |
+          set -euo pipefail
+
+          existing=$(
+            git ls-remote origin "refs/tags/${NEW_TAG}" "refs/tags/${NEW_TAG}^{}" | cut -f1
+          )
+          if [[ $'\n'"$existing"$'\n' != *$'\n'"$FORK_SOURCE_REF"$'\n'* ]]; then
+            echo "Tag ${NEW_TAG} is not at ${FORK_SOURCE_REF}; leaving it alone."
+            exit 0
+          fi
+
+          # Listing includes drafts; the by-tag endpoint would not.
+          draft=$(
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              | jq -r --arg tag "$NEW_TAG" '.[] | select(.tag_name == $tag) | .draft'
+          )
+          if [[ "$draft" == "false" ]]; then
+            echo "Release ${NEW_TAG} is published; keeping its tag."
+            exit 0
+          fi
+
+          git push origin --delete "refs/tags/${NEW_TAG}"
 
       - name: Promote successful nightly source
         if: inputs.dry_run != true
