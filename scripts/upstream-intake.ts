@@ -28,7 +28,8 @@ interface ManualReviewRule {
 const manualReviewRules: ReadonlyArray<ManualReviewRule> = [
   {
     description: "repository automation or maintainer policy changed",
-    matches: (path) => path === "AGENTS.md" || path.startsWith(".github/"),
+    matches: (path) =>
+      path === "AGENTS.md" || path.startsWith(".github/") || path.startsWith("scripts/"),
   },
   {
     description: "dependency or build configuration changed",

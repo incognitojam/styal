@@ -50,6 +50,14 @@ function isAncestor(baseSha: string, headSha: string): boolean {
   throw new Error(result.stderr.trim() || "Could not compare main with the intake candidate.");
 }
 
+function isFileAtRevision(revision: string, path: string): boolean {
+  const result = NodeChildProcess.spawnSync("git", ["cat-file", "-t", `${revision}:${path}`], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+  return result.status === 0 && result.stdout.trim() === "blob";
+}
+
 function writeOutput(name: string, value: string | boolean): void {
   if (process.env.GITHUB_OUTPUT !== undefined) {
     NodeFS.appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${String(value)}\n`);
@@ -62,7 +70,9 @@ try {
   // Use main's ledger as the review policy. A candidate must not be able to
   // weaken the overlap gate by editing or removing its own watched paths.
   const ledger = decodeForkFeatureLedger(git(["show", `${baseSha}:${ledgerRelativePath}`]));
-  const ledgerErrors = validateForkFeatureLedger(ledger, repoRoot);
+  const ledgerErrors = validateForkFeatureLedger(ledger, repoRoot, {
+    isFile: (path) => isFileAtRevision(baseSha, path),
+  });
   if (ledgerErrors.length > 0) throw new Error(ledgerErrors.join("\n"));
 
   const audit = auditUpstreamIntakeCandidate({

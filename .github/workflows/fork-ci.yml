@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: fork-ci-${{ github.event.pull_request.number || github.sha }}
+  group: fork-ci-${{ startsWith(github.ref, 'refs/heads/intake/') && github.ref || github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/intake/') }}
 
 jobs:
@@ -64,7 +64,7 @@ jobs:
 
   intake:
     name: Fork Intake Audit
-    if: startsWith(github.ref, 'refs/heads/intake/')
+    if: (github.repository == 'incognitojam/t3code' || github.repository == 'incognitojam/styal') && startsWith(github.ref, 'refs/heads/intake/')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:

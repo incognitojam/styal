@@ -33,10 +33,10 @@ candidate and validate it again before promotion.
 Pushing an intake branch runs the same Fork CI jobs as a pull request, comparing the complete
 `main...candidate` diff rather than only the latest push. `Fork Intake Audit` also verifies that the
 branch can fast-forward from `main`, rejects merge commits, reports exact fork feature ledger overlap,
-and conservatively identifies changes that need a maintainer decision. Automation, dependencies,
-migrations, contracts, authentication, user-facing clients, and ledger overlap all require manual
-review. A candidate outside those categories is reported as eligible for eventual automatic
-promotion.
+and conservatively identifies changes that need a maintainer decision. Automation and scripts,
+dependencies, migrations, contracts, authentication, user-facing clients, and ledger overlap all
+require manual review. A candidate outside those categories is reported as eligible for eventual
+automatic promotion.
 
 The audit is currently report-only: it never writes to `main`. Until the dedicated intake App,
 independent model review, protected approval environment, and split rulesets are configured, finish a
@@ -44,3 +44,8 @@ candidate through an ordinary fork pull request. Name any routine upstream pull 
 carries in backticks. The reviewer must also inspect upstream source changes that the resulting diff
 intentionally leaves out. Upstream migration files may only change in a reviewed intake, carried
 verbatim.
+
+The promotion workflow must execute its audit and ledger helpers from the trusted `main` checkout,
+never from the candidate branch. It must treat the candidate as data, require CI and independent
+review for the exact candidate SHA, recheck fast-forward ancestry immediately before updating the
+ref, and refuse to force-push.

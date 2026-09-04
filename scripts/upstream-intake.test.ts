@@ -5,12 +5,34 @@ import * as NodeURL from "node:url";
 import { assert, describe, it } from "@effect/vitest";
 import { parse } from "yaml";
 
-import { loadForkFeatureLedger } from "./fork-feature-ledger.ts";
+import type { ForkFeatureLedger } from "./fork-feature-ledger.ts";
 import { auditUpstreamIntakeCandidate } from "./upstream-intake.ts";
 
 const repoRoot = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 const ciWorkflowPath = NodePath.resolve(repoRoot, ".github/workflows/fork-ci.yml");
-const ledger = loadForkFeatureLedger(repoRoot);
+const ledger = {
+  version: 1,
+  fork_repository: "example/fork",
+  upstream_repository: "example/upstream",
+  coverage: "incremental",
+  features: [
+    {
+      id: "watched-capability",
+      title: "Synthetic watched capability",
+      status: "maintained",
+      prs: [1],
+      invariants: ["The watched behavior remains intact."],
+      implementation_paths: ["apps/web/src/AppRoot.tsx"],
+      upstream_paths: ["apps/web/src/AppRoot.tsx"],
+      tests: ["apps/web/src/AppRoot.test.tsx"],
+      upstream: {
+        status: "unassessed",
+        tracking: [],
+        retire_when: "The synthetic behavior is no longer maintained.",
+      },
+    },
+  ],
+} satisfies ForkFeatureLedger;
 
 function audit(overrides: Partial<Parameters<typeof auditUpstreamIntakeCandidate>[0]> = {}) {
   return auditUpstreamIntakeCandidate({
@@ -45,6 +67,7 @@ describe("upstream intake audit", () => {
         "apps/web/src/AppRoot.tsx",
         "packages/contracts/src/auth.ts",
         "pnpm-lock.yaml",
+        "scripts/release-smoke.ts",
       ],
     });
 
@@ -62,7 +85,7 @@ describe("upstream intake audit", () => {
       result.manualReviewReasons,
       "a user-facing client changed and needs surface-specific review",
     );
-    assert.include(result.overlapFeatureIds, "completion-sounds");
+    assert.deepEqual(result.overlapFeatureIds, ["watched-capability"]);
     assert.include(result.summary, "Manual approval required");
   });
 
@@ -81,6 +104,7 @@ describe("upstream intake audit", () => {
 
   it("runs Fork CI and the intake audit for intake branches", () => {
     const workflow = parse(NodeFS.readFileSync(ciWorkflowPath, "utf8")) as {
+      readonly concurrency: { readonly group: string; readonly "cancel-in-progress": string };
       readonly on: {
         readonly push: { readonly branches: ReadonlyArray<string> };
       };
@@ -94,8 +118,11 @@ describe("upstream intake audit", () => {
     };
 
     assert.include(workflow.on.push.branches, "intake/**");
+    assert.include(workflow.concurrency.group, "github.ref");
+    assert.include(workflow.concurrency["cancel-in-progress"], "refs/heads/intake/");
     assert.equal(workflow.jobs.intake.name, "Fork Intake Audit");
     assert.include(workflow.jobs.intake.if, "refs/heads/intake/");
+    assert.include(workflow.jobs.intake.if, "incognitojam/styal");
     const auditStep = workflow.jobs.intake.steps.find(
       (step) => step.name === "Audit upstream intake candidate",
     );
