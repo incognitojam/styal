@@ -286,6 +286,7 @@ features:
       - apps/mobile/src/features/review/reviewFileVisibility.ts
       - apps/mobile/src/features/review/reviewModel.ts
       - apps/server/src/checkpointing/CheckpointDiffQuery.ts
+      - apps/server/src/pullRequest/PullRequestService.ts
       - apps/server/src/vcs/GitVcsDriverCore.ts
       - apps/web/src/components/DiffPanel.tsx
       - apps/web/src/components/chat/changedFilesPresentation.ts
@@ -298,6 +299,7 @@ features:
       - .gitattributes
       - apps/mobile/src/features/review/reviewModel.ts
       - apps/server/src/checkpointing/CheckpointDiffQuery.ts
+      - apps/server/src/pullRequest/PullRequestService.ts
       - apps/server/src/vcs/GitVcsDriverCore.ts
       - apps/web/src/components/DiffPanel.tsx
       - apps/web/src/components/pullRequest/PullRequestCodeTab.tsx
@@ -308,6 +310,7 @@ features:
       - apps/mobile/src/features/review/reviewFileVisibility.test.ts
       - apps/mobile/src/features/review/reviewModel.test.ts
       - apps/server/src/checkpointing/CheckpointDiffQuery.test.ts
+      - apps/server/src/pullRequest/PullRequestService.test.ts
       - apps/server/src/vcs/GitVcsDriverCore.test.ts
       - apps/web/src/components/chat/changedFilesPresentation.test.ts
       - apps/web/src/components/pullRequest/pullRequestDiff.logic.test.ts
@@ -509,7 +512,7 @@ features:
     upstream:
       status: unassessed
       tracking: []
-      retire_when: The fork stops shipping separately branded desktop builds or adopts reusable downstream distribution machinery that makes these overrides unnecessary.
+      retire_when: The fork no longer ships any separately branded desktop, mobile, or web distribution, or adopts reusable downstream distribution machinery that makes these overrides unnecessary.
 
   - id: fork-managed-link
     title: Operate styal Link independently
@@ -529,6 +532,7 @@ features:
       - apps/server/src/cloud/publicConfig.ts
       - apps/web/src/cloud/linkEnvironment.ts
       - infra/relay/src/Config.ts
+      - infra/relay/src/db.ts
       - infra/relay/src/dbConfig.ts
       - infra/web/alchemy.run.ts
       - packages/client-runtime/src/relay/managedRelayState.ts
@@ -541,6 +545,7 @@ features:
       - apps/server/src/cloud/publicConfig.ts
       - apps/web/src/cloud/linkEnvironment.ts
       - infra/relay/src/Config.ts
+      - infra/relay/src/db.ts
       - infra/relay/src/dbConfig.ts
       - packages/client-runtime/src/relay/managedRelayState.ts
       - packages/shared/src/connectAuth.ts
@@ -569,24 +574,31 @@ features:
       - apps/desktop/src/app/DesktopConfig.ts
       - apps/desktop/src/app/DesktopEarlyElectronStartup.ts
       - apps/mobile/app.config.ts
+      - apps/mobile/src/persistence/mobile-database.ts
+      - apps/mobile/src/persistence/mobile-preferences.ts
       - apps/mobile/src/persistence/mobile-storage.ts
       - apps/server/src/cli/config.ts
       - apps/server/src/serviceLauncher.ts
       - apps/web/src/clientPersistenceStorage.ts
+      - apps/web/src/connection/storage.ts
       - apps/web/src/hostedStorageCleanup.ts
     upstream_paths:
       - apps/desktop/src/app/DesktopConfig.ts
       - apps/desktop/src/app/DesktopEarlyElectronStartup.ts
       - apps/mobile/app.config.ts
+      - apps/mobile/src/persistence/mobile-database.ts
+      - apps/mobile/src/persistence/mobile-preferences.ts
       - apps/mobile/src/persistence/mobile-storage.ts
       - apps/server/src/cli/config.ts
       - apps/server/src/serviceLauncher.ts
       - apps/web/src/clientPersistenceStorage.ts
+      - apps/web/src/connection/storage.ts
       - apps/web/src/hooks/useLocalStorage.ts
     tests:
       - apps/desktop/src/app/DesktopEarlyElectronStartup.test.ts
       - apps/mobile/src/appIdentity.test.ts
       - apps/mobile/src/lib/storage.test.ts
+      - apps/mobile/src/persistence/mobile-database.test.ts
       - apps/server/src/cli/config.test.ts
       - apps/server/src/serviceLauncher.test.ts
       - apps/web/src/clientPersistenceStorage.test.ts
@@ -875,12 +887,14 @@ features:
       - apps/mobile/src/lib/threadActivity.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/projectScriptEditor.tsx
+      - packages/contracts/src/orchestration.ts
       - packages/contracts/src/t3ProjectFile.ts
     upstream_paths:
       - apps/mobile/src/components/AppSymbol.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/projectScriptEditor.tsx
+      - packages/contracts/src/orchestration.ts
       - packages/contracts/src/t3ProjectFile.ts
     tests:
       - apps/mobile/src/features/terminal/terminalMenu.test.ts
