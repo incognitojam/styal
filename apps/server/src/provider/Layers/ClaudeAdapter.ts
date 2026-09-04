@@ -23,6 +23,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import { parseCliArgs } from "@t3tools/shared/cliArgs";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
+import { type ClaudeScopedLimitNames, claudeRateLimitEventToUpdate } from "./claudeUsageLimits.ts";
 import {
   type AccountRateLimitsUpdatedPayload,
   ApprovalRequestId,
@@ -350,6 +351,8 @@ export interface ClaudeAdapterLiveOptions {
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
   readonly modelCatalog?: Effect.Effect<ClaudeModelCatalog>;
+  /** Scoped-bucket names the driver's status probe last saw; see `claudeUsageLimits`. */
+  readonly scopedLimitNames?: Ref.Ref<ClaudeScopedLimitNames>;
 }
 
 function isUuid(value: string): boolean {
@@ -3714,14 +3717,16 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     if (message.type === "rate_limit_event") {
-      const payload = normalizeClaudeRateLimits(message.rate_limit_info);
-      if (payload) {
-        yield* offerRuntimeEvent({
-          ...base,
-          type: "account.rate-limits.updated",
-          payload,
-        });
-      }
+      const names = options?.scopedLimitNames
+        ? yield* Ref.get(options.scopedLimitNames)
+        : { overageIncluded: undefined };
+      const limits = claudeRateLimitEventToUpdate(message.rate_limit_info, names);
+      if (!limits) return;
+      yield* offerRuntimeEvent({
+        ...base,
+        type: "account.rate-limits.updated",
+        payload: { limits },
+      });
       return;
     }
   });

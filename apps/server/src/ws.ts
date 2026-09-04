@@ -138,6 +138,7 @@ import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
+import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -528,6 +529,7 @@ const makeWsRpcLayer = (
       const commandOutputQuery = yield* CommandOutputQuery.CommandOutputQuery;
       const keybindings = yield* Keybindings.Keybindings;
       const environmentTheme = yield* EnvironmentTheme.EnvironmentThemeService;
+      const usageLimitSources = yield* UsageLimitSources.UsageLimitSources;
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const remoteOpenTargets = yield* RemoteOpenTargets.RemoteOpenTargets;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
@@ -1779,6 +1781,13 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.serverRefreshProviders,
             Effect.gen(function* () {
+              // An untargeted refresh is "re-read everything's status", which
+              // includes quota from configured usage-limit sources. Awaited,
+              // not forked: the RPC scope closes on return and would
+              // interrupt a fork before the hub answered.
+              if (input.instanceId === undefined) {
+                yield* usageLimitSources.refresh;
+              }
               let providers = yield* input.cwd !== undefined && input.instanceId !== undefined
                 ? providerRegistry.refreshWorkspaceSnapshot({
                     instanceId: input.instanceId,
@@ -2775,6 +2784,17 @@ const makeWsRpcLayer = (
                       })),
                     )
                   : Stream.empty;
+              // Same gate as themes: an older client dies on an unknown event.
+              const usageLimitSourceUpdates =
+                input.usageLimitSources === true
+                  ? usageLimitSources.streamChanges.pipe(
+                      Stream.map((sources) => ({
+                        version: 1 as const,
+                        type: "usageLimitSourcesUpdated" as const,
+                        payload: { sources },
+                      })),
+                    )
+                  : Stream.empty;
               const settingsUpdates = serverSettings.streamChanges.pipe(
                 Stream.map((settings) => ServerSettings.redactServerSettingsForClient(settings)),
                 Stream.map((settings) => ({
@@ -2792,7 +2812,10 @@ const makeWsRpcLayer = (
                 keybindingsUpdates,
                 Stream.merge(
                   providerStatuses,
-                  Stream.merge(settingsUpdates, environmentThemeUpdates),
+                  Stream.merge(
+                    settingsUpdates,
+                    Stream.merge(environmentThemeUpdates, usageLimitSourceUpdates),
+                  ),
                 ),
               );
 

@@ -14,6 +14,7 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
+import { ProviderUsageLimitsUpdate } from "./providerUsageLimits.ts";
 import { ProviderApprovalOption } from "./orchestration.ts";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
@@ -761,33 +762,11 @@ const AccountUpdatedPayload = Schema.Struct({
 export type AccountUpdatedPayload = typeof AccountUpdatedPayload.Type;
 
 /**
- * One provider-reported quota window, normalized by the adapter. `usedPercent`
- * is 0-100; `resetsAt` is unix seconds. Absent fields were not reported in
- * this update, not cleared: providers send sparse rolling updates that
- * consumers merge into the last full snapshot.
+ * Adapters normalise their native rate-limit payload at the boundary so the
+ * consumer that folds it into the provider snapshot never sees driver shapes.
  */
-export const AccountRateLimitWindow = Schema.Struct({
-  id: TrimmedNonEmptyStringSchema,
-  label: Schema.optional(TrimmedNonEmptyStringSchema),
-  usedPercent: Schema.optional(Schema.Number),
-  resetsAt: Schema.optional(Schema.Number),
-  windowMinutes: Schema.optional(Schema.Number),
-});
-export type AccountRateLimitWindow = typeof AccountRateLimitWindow.Type;
-
-const AccountRateLimitCredits = Schema.Struct({
-  balance: Schema.optional(TrimmedNonEmptyStringSchema),
-  hasCredits: Schema.optional(Schema.Boolean),
-  unlimited: Schema.optional(Schema.Boolean),
-});
-export type AccountRateLimitCredits = typeof AccountRateLimitCredits.Type;
-
 const AccountRateLimitsUpdatedPayload = Schema.Struct({
-  windows: Schema.Array(AccountRateLimitWindow),
-  limitId: Schema.optional(TrimmedNonEmptyStringSchema),
-  limitName: Schema.optional(TrimmedNonEmptyStringSchema),
-  planType: Schema.optional(TrimmedNonEmptyStringSchema),
-  credits: Schema.optional(AccountRateLimitCredits),
+  limits: ProviderUsageLimitsUpdate,
 });
 export type AccountRateLimitsUpdatedPayload = typeof AccountRateLimitsUpdatedPayload.Type;
 

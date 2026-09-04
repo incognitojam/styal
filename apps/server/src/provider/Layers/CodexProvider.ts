@@ -35,8 +35,19 @@ import {
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
+import { makeUnavailableUsageLimits } from "../providerUsageLimits.ts";
+import {
+  codexRateLimitsFailureMessage,
+  codexRateLimitsToLimits,
+  type CodexRateLimitSnapshot,
+} from "./codexUsageLimits.ts";
 import packageJson from "../../../package.json" with { type: "json" };
 const isCodexAppServerSpawnError = Schema.is(CodexErrors.CodexAppServerSpawnError);
+const RATE_LIMITS_PROBE_TIMEOUT_MS = 3_000;
+
+type CodexRateLimitsProbe =
+  | { readonly snapshot: CodexRateLimitSnapshot }
+  | { readonly failure: string };
 
 const CODEX_APP_SERVER_PROBE_FORCE_KILL_AFTER = "2 seconds" as const;
 
@@ -47,6 +58,7 @@ const CODEX_PRESENTATION = {
 
 export interface CodexAppServerProviderSnapshot {
   readonly account: CodexSchema.V2GetAccountResponse;
+  readonly rateLimits?: CodexRateLimitsProbe;
   readonly version: string | undefined;
   readonly models: ReadonlyArray<ServerProviderModel>;
   readonly skills: ReadonlyArray<ServerProviderSkill>;
@@ -75,8 +87,12 @@ function codexAccountAuthLabel(account: CodexSchema.V2GetAccountResponse["accoun
   if (account.type === "apiKey") return "OpenAI API Key";
   if (account.type === "amazonBedrock") return "Amazon Bedrock";
   if (account.type !== "chatgpt") return undefined;
+  return codexPlanLabel(account.planType);
+}
 
-  switch (account.planType) {
+/** Shared with usage-limit sources, which report the same `planType` slugs. */
+export function codexPlanLabel(planType: string | null | undefined): string | undefined {
+  switch (planType) {
     case "free":
       return "ChatGPT Free Subscription";
     case "go":
@@ -105,7 +121,6 @@ function codexAccountAuthLabel(account: CodexSchema.V2GetAccountResponse["accoun
     case "unknown":
       return "ChatGPT Subscription";
     default:
-      account.planType satisfies never;
       return undefined;
   }
 }
@@ -403,14 +418,29 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
         cwds: [input.cwd],
       }),
       requestAllCodexModels(client),
-      // Best-effort: a probe must not fail because quota data is unavailable.
-      client.request("account/rateLimits/read", undefined).pipe(Effect.option),
+      // Usage is an enrichment: a failure or a slow answer degrades to "no
+      // usage this probe" rather than costing the account and models.
+      client.request("account/rateLimits/read", undefined).pipe(
+        Effect.map((response): CodexRateLimitsProbe => ({ snapshot: response.rateLimits })),
+        Effect.timeoutOption(Duration.millis(RATE_LIMITS_PROBE_TIMEOUT_MS)),
+        Effect.map(
+          Option.getOrElse((): CodexRateLimitsProbe => ({
+            failure: "Codex did not answer the usage request.",
+          })),
+        ),
+        Effect.catch((error) =>
+          Effect.logDebug("Codex rate-limit read failed.", { cause: error }).pipe(
+            Effect.as<CodexRateLimitsProbe>({ failure: codexRateLimitsFailureMessage(error) }),
+          ),
+        ),
+      ),
     ],
     { concurrency: "unbounded" },
   );
 
   return {
     account: accountResponse,
+    rateLimits,
     version,
     models: applyPreferredCodexDefaultModel(
       appendCustomCodexModels(models, input.customModels ?? []),
@@ -688,7 +718,16 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
 
   const snapshot = probeResult.success.value;
   const accountStatus = accountProbeStatus(snapshot.account);
-  const rateLimits = codexServerRateLimits(snapshot.rateLimits, checkedAt);
+  const usageLimits =
+    snapshot.account.account?.type === "apiKey"
+      ? makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" })
+      : snapshot.rateLimits === undefined || "failure" in snapshot.rateLimits
+        ? makeUnavailableUsageLimits({
+            checkedAt,
+            reason: "probeFailed",
+            ...(snapshot.rateLimits ? { message: snapshot.rateLimits.failure } : {}),
+          })
+        : codexRateLimitsToLimits({ snapshot: snapshot.rateLimits.snapshot, checkedAt });
 
   return buildServerProvider({
     presentation: CODEX_PRESENTATION,
@@ -709,7 +748,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
       status: accountStatus.status,
       auth: accountStatus.auth,
       ...(accountStatus.message ? { message: accountStatus.message } : {}),
-      ...(rateLimits ? { rateLimits } : {}),
+      usageLimits,
     },
   });
 });
