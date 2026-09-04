@@ -1,0 +1,275 @@
+name: Promote upstream intake
+
+run-name: Promote ${{ inputs.candidate_branch }} at ${{ inputs.reviewed_sha }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_branch:
+        description: "Intake branch to promote, without refs/heads/"
+        required: true
+        type: string
+      reviewed_sha:
+        description: "Exact 40-character candidate SHA approved by an independent model review"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: upstream-intake-promotion
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate promotion candidate
+    if: github.repository == 'incognitojam/styal'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      base_sha: ${{ steps.candidate.outputs.base_sha }}
+      candidate_branch: ${{ steps.candidate.outputs.candidate_branch }}
+      candidate_sha: ${{ steps.candidate.outputs.candidate_sha }}
+      ci_run_url: ${{ steps.ci.outputs.ci_run_url }}
+    steps:
+      - name: Checkout trusted promotion code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - id: candidate
+        name: Resolve the reviewed candidate
+        shell: bash
+        env:
+          CANDIDATE_BRANCH: ${{ inputs.candidate_branch }}
+          REVIEWED_SHA: ${{ inputs.reviewed_sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "::error::Promotion must be dispatched from main."
+            exit 1
+          fi
+          case "$CANDIDATE_BRANCH" in
+            intake/*) ;;
+            *)
+              echo "::error::Candidate branch must be below intake/."
+              exit 1
+              ;;
+          esac
+          git check-ref-format --branch "$CANDIDATE_BRANCH" >/dev/null
+
+          if [[ ! "$REVIEWED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Reviewed SHA must be a full lowercase commit SHA."
+            exit 1
+          fi
+
+          git fetch --no-tags origin \
+            '+refs/heads/main:refs/remotes/origin/main' \
+            "+refs/heads/${CANDIDATE_BRANCH}:refs/remotes/origin/intake-candidate"
+
+          trusted_sha="$(git rev-parse --verify 'HEAD^{commit}')"
+          base_sha="$(git rev-parse --verify 'refs/remotes/origin/main^{commit}')"
+          candidate_sha="$(git rev-parse --verify 'refs/remotes/origin/intake-candidate^{commit}')"
+
+          if [[ "$trusted_sha" != "$base_sha" ]]; then
+            echo "::error::main moved after this workflow was dispatched. Run it again from the latest main."
+            exit 1
+          fi
+          if [[ "$candidate_sha" != "$REVIEWED_SHA" ]]; then
+            echo "::error::The intake branch no longer points at the independently reviewed SHA."
+            exit 1
+          fi
+          if ! git diff --quiet "$base_sha" "$candidate_sha" -- .github/workflows/fork-ci.yml; then
+            echo "::error::Candidates that change Fork CI must land through a pull request."
+            exit 1
+          fi
+
+          {
+            echo "base_sha=$base_sha"
+            echo "candidate_branch=$CANDIDATE_BRANCH"
+            echo "candidate_sha=$candidate_sha"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/scripts...
+
+      - name: Audit candidate with trusted main code
+        run: |
+          vp run --filter @t3tools/scripts intake:check -- \
+            --base "${{ steps.candidate.outputs.base_sha }}" \
+            --head "${{ steps.candidate.outputs.candidate_sha }}"
+
+      - id: ci
+        name: Verify Fork CI for the reviewed SHA
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_BRANCH: ${{ steps.candidate.outputs.candidate_branch }}
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+
+          run_json="$(gh run list \
+            --repo "$GITHUB_REPOSITORY" \
+            --workflow fork-ci.yml \
+            --branch "$CANDIDATE_BRANCH" \
+            --commit "$CANDIDATE_SHA" \
+            --event push \
+            --status success \
+            --limit 1 \
+            --json databaseId,conclusion,event,headBranch,headSha,status,url)"
+          run_id="$(jq -r '.[0].databaseId // empty' <<< "$run_json")"
+
+          if [[ -z "$run_id" ]]; then
+            echo "::error::No successful Fork CI push run exists for the reviewed candidate SHA."
+            exit 1
+          fi
+
+          if [[ "$(jq -r '.[0].headSha' <<< "$run_json")" != "$CANDIDATE_SHA" ]] ||
+            [[ "$(jq -r '.[0].headBranch' <<< "$run_json")" != "$CANDIDATE_BRANCH" ]] ||
+            [[ "$(jq -r '.[0].event' <<< "$run_json")" != "push" ]] ||
+            [[ "$(jq -r '.[0].conclusion' <<< "$run_json")" != "success" ]]
+          then
+            echo "::error::The selected Fork CI run does not match the reviewed candidate."
+            exit 1
+          fi
+
+          jobs_json="$(gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --json jobs)"
+          required_jobs=(
+            "Fork Changes"
+            "Fork Intake Audit"
+            "Fork Check"
+            "Fork Release Smoke"
+            "Fork Test (Server)"
+            "Fork Test (Workspace)"
+          )
+
+          for job_name in "${required_jobs[@]}"; do
+            match_count="$(jq --arg name "$job_name" '[.jobs[] | select(.name == $name)] | length' <<< "$jobs_json")"
+            conclusion="$(jq -r --arg name "$job_name" '.jobs[] | select(.name == $name) | .conclusion' <<< "$jobs_json")"
+            if [[ "$match_count" != "1" ]]; then
+              echo "::error::Fork CI must contain exactly one $job_name job."
+              exit 1
+            fi
+            if [[ "$job_name" == "Fork Changes" || "$job_name" == "Fork Intake Audit" ]]; then
+              if [[ "$conclusion" != "success" ]]; then
+                echo "::error::$job_name must complete successfully."
+                exit 1
+              fi
+            elif [[ "$conclusion" != "success" && "$conclusion" != "skipped" ]]; then
+              echo "::error::$job_name did not pass or skip successfully."
+              exit 1
+            fi
+          done
+
+          ci_run_url="$(jq -r '.[0].url' <<< "$run_json")"
+          echo "ci_run_url=$ci_run_url" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Promotion validation"
+            echo
+            echo "- Candidate: \`$CANDIDATE_BRANCH\` at \`$CANDIDATE_SHA\`"
+            echo "- Fork CI: $ci_run_url"
+            echo "- Independent review: attested by the exact SHA supplied at dispatch"
+            echo
+            echo "Styal Porter will request approval before receiving its write token."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  promote:
+    name: Approve and promote candidate
+    needs: validate
+    if: needs.validate.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: upstream-intake-manual
+    permissions:
+      contents: read
+    steps:
+      - id: porter_token
+        name: Mint Styal Porter token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.STYAL_INTAKE_APP_ID }}
+          private-key: ${{ secrets.STYAL_INTAKE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+
+      - name: Checkout current main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ steps.porter_token.outputs.token }}
+          persist-credentials: true
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Fast-forward main to the reviewed candidate
+        shell: bash
+        env:
+          EXPECTED_BASE_SHA: ${{ needs.validate.outputs.base_sha }}
+          CANDIDATE_BRANCH: ${{ needs.validate.outputs.candidate_branch }}
+          CANDIDATE_SHA: ${{ needs.validate.outputs.candidate_sha }}
+          CI_RUN_URL: ${{ needs.validate.outputs.ci_run_url }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$EXPECTED_BASE_SHA" =~ ^[0-9a-f]{40}$ ]] ||
+            [[ ! "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          then
+            echo "::error::Promotion received an invalid base or candidate SHA."
+            exit 1
+          fi
+
+          git fetch --no-tags origin \
+            '+refs/heads/main:refs/remotes/origin/main' \
+            "+refs/heads/${CANDIDATE_BRANCH}:refs/remotes/origin/intake-candidate"
+
+          current_main_sha="$(git rev-parse --verify 'refs/remotes/origin/main^{commit}')"
+          current_candidate_sha="$(git rev-parse --verify 'refs/remotes/origin/intake-candidate^{commit}')"
+
+          if [[ "$current_main_sha" != "$EXPECTED_BASE_SHA" ]]; then
+            echo "::error::main moved after validation. Rebase the intake branch and dispatch again."
+            exit 1
+          fi
+          if [[ "$current_candidate_sha" != "$CANDIDATE_SHA" ]]; then
+            echo "::error::The intake branch moved after validation. Review and dispatch its new SHA."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$current_main_sha" "$CANDIDATE_SHA"; then
+            echo "::error::The reviewed candidate is no longer a fast-forward of main."
+            exit 1
+          fi
+
+          git push origin "${CANDIDATE_SHA}:refs/heads/main"
+
+          promoted_sha="$(git ls-remote --exit-code origin refs/heads/main | cut -f1)"
+          if [[ "$promoted_sha" != "$CANDIDATE_SHA" ]]; then
+            echo "::error::main does not point at the reviewed candidate after the push."
+            exit 1
+          fi
+
+          {
+            echo "## Promotion complete"
+            echo
+            echo "- Branch: \`$CANDIDATE_BRANCH\`"
+            echo "- Promoted SHA: \`$CANDIDATE_SHA\`"
+            echo "- Verified Fork CI: $CI_RUN_URL"
+            echo "- Push actor: \`${{ steps.porter_token.outputs.app-slug }}[bot]\`"
+          } >> "$GITHUB_STEP_SUMMARY"
