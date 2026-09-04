@@ -377,7 +377,7 @@ jobs:
             export APPLE_API_KEY="$key_path"
 
             profile_path="$RUNNER_TEMP/t3code.provisionprofile"
-            profile_plist="$RUNNER_TEMP/t3code-profile.plist"
+            profile_plist="$RUNNER_TEMP/styal-profile.plist"
             printf '%s' "$MACOS_PROVISIONING_PROFILE" | base64 -D > "$profile_path"
             security cms -D -i "$profile_path" > "$profile_plist"
 

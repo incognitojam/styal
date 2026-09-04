@@ -53,7 +53,9 @@ function listForkReleaseCommits(
 }
 
 it("does not attribute upstream commits to the fork after a rebase", () => {
-  const fixtureRoot = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-release-changelog-"));
+  const fixtureRoot = NodeFS.mkdtempSync(
+    NodePath.join(NodeOS.tmpdir(), "styal-release-changelog-"),
+  );
 
   try {
     runGit(fixtureRoot, "init");

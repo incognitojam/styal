@@ -128,7 +128,7 @@ features: []
   });
 
   it("runs the CLI and writes advisory overlap evidence", () => {
-    const fixtureRoot = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-fork-ledger-"));
+    const fixtureRoot = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "styal-fork-ledger-"));
     try {
       const changedPathsFile = NodePath.join(fixtureRoot, "changed-paths.txt");
       const summaryFile = NodePath.join(fixtureRoot, "summary.md");

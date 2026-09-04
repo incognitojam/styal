@@ -58,14 +58,14 @@ describe("ssh auth", () => {
   it.effect("builds a windows askpass launcher pair", () =>
     Effect.gen(function* () {
       const descriptor = yield* buildSshAskpassHelperDescriptor({
-        directory: "C:\\temp\\t3code-ssh-askpass",
+        directory: "C:\\temp\\styal-ssh-askpass",
       }).pipe(
         Effect.provide(
           Layer.merge(NodeServices.layer, Layer.succeed(HostProcessPlatform, "win32")),
         ),
       );
 
-      assert.equal(descriptor.launcherPath, "C:\\temp\\t3code-ssh-askpass\\ssh-askpass.cmd");
+      assert.equal(descriptor.launcherPath, "C:\\temp\\styal-ssh-askpass\\ssh-askpass.cmd");
       assert.deepEqual(
         descriptor.files.map((file) => file.path.split("\\").at(-1)),
         ["ssh-askpass.cmd", "ssh-askpass.ps1"],

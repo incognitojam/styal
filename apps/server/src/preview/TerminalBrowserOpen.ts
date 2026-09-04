@@ -104,7 +104,7 @@ void (async () => {
       windowsHide: true,
     });
     child.once("error", () => {
-      process.stderr.write("Unable to open " + fallbackTarget + " in T3 Code or the system browser.\\n");
+      process.stderr.write("Unable to open " + fallbackTarget + " in styal or the system browser.\\n");
     });
     child.unref();
   };

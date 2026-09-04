@@ -44,7 +44,7 @@ it("builds a prerelease Discord announcement for nightly subscribers", () => {
         {
           title: "T3 Code Nightly 1.2.4-nightly.20260501.17 (abcdef123456)",
           url: "https://github.com/t3dotgg/t3-code/releases/tag/v1.2.4-nightly.20260501.17",
-          description: "A new T3 Code prerelease is available for nightly testers.",
+          description: "A new styal prerelease is available for nightly testers.",
           color: 0x5865f2,
           fields: [
             {
@@ -75,7 +75,7 @@ it("builds a latest Discord announcement for stable subscribers", () => {
       {
         title: "T3 Code v1.2.3",
         url: "https://github.com/t3dotgg/t3-code/releases/tag/v1.2.3",
-        description: "A new T3 Code latest release is available.",
+        description: "A new styal latest release is available.",
         color: 0x2ecc71,
         fields: [
           {
