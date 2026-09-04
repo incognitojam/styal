@@ -23,6 +23,8 @@ export interface StyalProjectFileState {
   status: "loading" | "missing" | "invalid" | "valid";
   /** The decoded file when status is `valid`, null otherwise. */
   file: StyalProjectFile | null;
+  /** Original JSONC text, retained so action edits can preserve unrelated fields and comments. */
+  contents: string | null;
   scripts: ReadonlyArray<ProjectScript>;
   refresh: () => void;
 }
@@ -42,12 +44,14 @@ export function useStyalProjectFileState(
     cwd !== null,
   );
   const contents = query.data && !query.data.truncated ? query.data.contents : null;
+  const unavailable = query.data?.truncated === true || query.error !== null;
   const isPending = query.isPending;
   return useMemo(() => {
     if (contents === null) {
       return {
-        status: isPending ? "loading" : "missing",
+        status: isPending ? "loading" : unavailable ? "invalid" : "missing",
         file: null,
+        contents: null,
         scripts: NO_SCRIPTS,
         refresh: query.refresh,
       } as const;
@@ -57,6 +61,7 @@ export function useStyalProjectFileState(
       return {
         status: "invalid",
         file: null,
+        contents,
         scripts: NO_SCRIPTS,
         refresh: query.refresh,
       } as const;
@@ -64,10 +69,11 @@ export function useStyalProjectFileState(
     return {
       status: "valid",
       file,
+      contents,
       scripts: projectScriptsFromStyalFile(file.scripts ?? []),
       refresh: query.refresh,
     } as const;
-  }, [contents, isPending, query.refresh]);
+  }, [contents, isPending, query.refresh, unavailable]);
 }
 
 /**

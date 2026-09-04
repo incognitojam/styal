@@ -57,14 +57,6 @@ export function projectScriptsFromStyalFile(
   });
 }
 
-export function mergeProjectScripts(
-  fileScripts: ReadonlyArray<ProjectScript>,
-  savedScripts: ReadonlyArray<ProjectScript>,
-): ReadonlyArray<ProjectScript> {
-  const fileIds = new Set(fileScripts.map((script) => script.id));
-  return [...fileScripts, ...savedScripts.filter((script) => !fileIds.has(script.id))];
-}
-
 export function projectScriptCwd(input: {
   project: {
     cwd: string;

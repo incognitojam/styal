@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
-  mergeProjectScripts,
   projectScriptCwd,
   projectScriptRuntimeEnv,
-  projectScriptsFromStyalFile,
   setupProjectScript,
 } from "@t3tools/shared/projectScripts";
 
@@ -80,36 +78,6 @@ describe("projectScripts helpers", () => {
       T3CODE_PROJECT_ROOT: "/repo",
       T3CODE_WORKTREE_PATH: "/repo/worktree-a",
     });
-  });
-
-  it("shadows saved scripts by ID without breaking shortcuts for other saved IDs", () => {
-    const fileScripts = projectScriptsFromStyalFile([
-      { id: "dev", name: "Dev", command: "vp run dev", icon: "play" },
-      { name: "Run Tests", command: "vp test" },
-    ]);
-    const merged = mergeProjectScripts(fileScripts, [
-      buildProjectScript("dev", {
-        name: "Dev",
-        command: "old dev command",
-        icon: "play",
-        runOnWorktreeCreate: false,
-      }),
-      buildProjectScript("legacy-dev", {
-        name: "Dev",
-        command: "vp run dev",
-        icon: "play",
-        runOnWorktreeCreate: false,
-      }),
-      buildProjectScript("lint", {
-        name: "Lint",
-        command: "vp lint",
-        icon: "lint",
-        runOnWorktreeCreate: false,
-      }),
-    ]);
-
-    expect(merged.map((script) => script.id)).toEqual(["dev", "run-tests", "legacy-dev", "lint"]);
-    expect(merged[0]?.command).toBe("vp run dev");
   });
 
   it("allows overriding runtime env values", () => {

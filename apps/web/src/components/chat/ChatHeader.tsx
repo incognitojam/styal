@@ -3,7 +3,6 @@ import {
   type EditorId,
   type ProjectScript,
   type ResolvedKeybindingsConfig,
-  type T3ProjectFileScript,
   type ThreadId,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -60,8 +59,8 @@ interface ChatHeaderProps {
   activeProjectFaviconPath: string | null;
   openInCwd: string | null;
   activeProjectScripts: ReadonlyArray<ProjectScript> | undefined;
-  activeProjectFileScripts: ReadonlyArray<ProjectScript>;
-  activeLegacyProjectFileScripts: ReadonlyArray<T3ProjectFileScript>;
+  legacyProjectScripts: ReadonlyArray<ProjectScript>;
+  hasLegacyProjectConfig: boolean;
   onRefreshProjectFileScripts: () => void;
   preferredScriptId: string | null;
   keybindings: ResolvedKeybindingsConfig;
@@ -71,6 +70,7 @@ interface ChatHeaderProps {
   readonly onOpenPullRequest?: ((number: number) => void) | undefined;
   onNewThreadInProject: () => void;
   onRunProjectScript: (script: ProjectScript) => void;
+  onMigrateLegacyProjectScripts: () => Promise<ProjectScriptActionResult>;
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
   onUpdateProjectScript: (
     scriptId: string,
@@ -132,8 +132,8 @@ export const ChatHeader = memo(function ChatHeader({
   activeProjectFaviconPath,
   openInCwd,
   activeProjectScripts,
-  activeProjectFileScripts,
-  activeLegacyProjectFileScripts,
+  legacyProjectScripts,
+  hasLegacyProjectConfig,
   onRefreshProjectFileScripts,
   preferredScriptId,
   keybindings,
@@ -143,6 +143,7 @@ export const ChatHeader = memo(function ChatHeader({
   onOpenPullRequest,
   onNewThreadInProject,
   onRunProjectScript,
+  onMigrateLegacyProjectScripts,
   onAddProjectScript,
   onUpdateProjectScript,
   onDeleteProjectScript,
@@ -385,11 +386,12 @@ export const ChatHeader = memo(function ChatHeader({
         {activeProjectScripts && (
           <ProjectScriptsControl
             scripts={activeProjectScripts}
-            fileScripts={activeProjectFileScripts}
-            legacyFileScripts={activeLegacyProjectFileScripts}
+            legacyScripts={legacyProjectScripts}
+            hasLegacyConfig={hasLegacyProjectConfig}
             keybindings={keybindings}
             preferredScriptId={preferredScriptId}
             onRefreshFileScripts={onRefreshProjectFileScripts}
+            onMigrateLegacyScripts={onMigrateLegacyProjectScripts}
             onRunScript={onRunProjectScript}
             onAddScript={onAddProjectScript}
             onUpdateScript={onUpdateProjectScript}

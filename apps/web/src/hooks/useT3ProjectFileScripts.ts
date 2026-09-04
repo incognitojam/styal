@@ -36,11 +36,12 @@ export function useT3ProjectFileState(
 ): T3ProjectFileState {
   const query = useProjectFileQuery(environmentId, cwd ?? "", T3_PROJECT_FILE_NAME, cwd !== null);
   const contents = query.data && !query.data.truncated ? query.data.contents : null;
+  const unavailable = query.data?.truncated === true || query.error !== null;
   const isPending = query.isPending;
   return useMemo(() => {
     if (contents === null) {
       return {
-        status: isPending ? "loading" : "missing",
+        status: isPending ? "loading" : unavailable ? "invalid" : "missing",
         file: null,
         scripts: NO_SCRIPTS,
         refresh: query.refresh,
@@ -61,7 +62,7 @@ export function useT3ProjectFileState(
       scripts: file.scripts ?? NO_SCRIPTS,
       refresh: query.refresh,
     } as const;
-  }, [contents, isPending, query.refresh]);
+  }, [contents, isPending, query.refresh, unavailable]);
 }
 
 /**

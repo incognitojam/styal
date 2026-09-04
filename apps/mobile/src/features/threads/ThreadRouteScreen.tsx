@@ -20,7 +20,6 @@ import {
 } from "@t3tools/client-runtime/state/threads";
 import {
   isSetupScriptOutsideWorktree,
-  mergeProjectScripts,
   projectScriptCwd,
   projectScriptRuntimeEnv,
   projectScriptsFromStyalFile,
@@ -237,10 +236,7 @@ function ThreadRouteContent(
     const file = parseStyalProjectFile(styalProjectFileData.contents);
     return projectScriptsFromStyalFile(file?.scripts ?? []);
   }, [styalProjectFileData]);
-  const availableProjectScripts = useMemo(
-    () => mergeProjectScripts(styalProjectFileScripts, selectedThreadProject?.scripts ?? []),
-    [selectedThreadProject?.scripts, styalProjectFileScripts],
-  );
+  const availableProjectScripts = styalProjectFileScripts;
   useFocusEffect(
     useCallback(() => {
       styalProjectFileQuery.refresh();

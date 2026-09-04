@@ -1,8 +1,4 @@
-import type {
-  ProjectScript,
-  ResolvedKeybindingsConfig,
-  T3ProjectFileScript,
-} from "@t3tools/contracts";
+import type { ProjectScript, ResolvedKeybindingsConfig } from "@t3tools/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -19,16 +15,17 @@ const PRIMARY_SCRIPT: ProjectScript = {
 
 function renderControl(
   scripts: ReadonlyArray<ProjectScript>,
-  fileScripts: ReadonlyArray<ProjectScript> = [],
-  legacyFileScripts: ReadonlyArray<T3ProjectFileScript> = [],
+  legacyScripts: ReadonlyArray<ProjectScript> = [],
+  hasLegacyConfig = legacyScripts.length > 0,
 ) {
   return renderToStaticMarkup(
     <ProjectScriptsControl
       scripts={scripts}
-      fileScripts={fileScripts}
-      legacyFileScripts={legacyFileScripts}
+      legacyScripts={legacyScripts}
+      hasLegacyConfig={hasLegacyConfig}
       keybindings={EMPTY_KEYBINDINGS}
       onRunScript={() => {}}
+      onMigrateLegacyScripts={async () => undefined as never}
       onAddScript={async () => undefined as never}
       onUpdateScript={async () => undefined as never}
       onDeleteScript={async () => undefined as never}
@@ -85,16 +82,23 @@ describe("ProjectScriptsControl compact controls", () => {
   });
 
   it("runs a styal.json action directly without importing it", () => {
-    const html = renderControl([], [PRIMARY_SCRIPT]);
+    const html = renderControl([PRIMARY_SCRIPT]);
 
     expectResponsiveXsControl(buttonTag(html, "Run Dev"));
     expect(html).not.toContain('aria-label="Add action"');
+    expect(html).not.toContain("styal.json");
   });
 
-  it("keeps a legacy t3.json action behind the import menu", () => {
-    const html = renderControl([], [], [{ name: "Dev", command: "vp dev" }]);
+  it("keeps a legacy action behind migration", () => {
+    const html = renderControl([], [PRIMARY_SCRIPT]);
 
     expect(buttonTag(html, "Run Dev")).toBeUndefined();
+    expect(buttonTag(html, "Project actions")).toBeDefined();
+  });
+
+  it("offers migration for a legacy config without actions", () => {
+    const html = renderControl([], [], true);
+
     expect(buttonTag(html, "Project actions")).toBeDefined();
   });
 });

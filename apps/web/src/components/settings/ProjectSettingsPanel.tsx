@@ -18,14 +18,12 @@ import type {
   ProviderDriverKind,
   SidebarProjectGroupingMode,
   SourceControlDefaultRepositoryState,
-  T3ProjectFileScript,
   ThreadEnvMode,
 } from "@t3tools/contracts";
 import { resolveEnvModeLabel } from "../BranchToolbar.logic";
 import { createModelSelection } from "@t3tools/shared/model";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { useCanGoBack, useNavigate } from "@tanstack/react-router";
-import * as Cause from "effect/Cause";
 import {
   ChevronDownIcon,
   CopyIcon,
@@ -51,17 +49,11 @@ import {
   usePrimarySettings,
 } from "../../hooks/useSettings";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
-import { useProjectFileState } from "../../hooks/useProjectFileState";
 import { shortcutLabelForCommand } from "../../keybindings";
-import { keybindingValueForCommand } from "../../lib/projectScriptKeybindings";
+import { useCheckoutProjectScripts } from "../../hooks/useCheckoutProjectScripts";
 import { releaseProjectDraftUploads } from "../../lib/composerDraftUploads";
 import { readLocalApi } from "../../localApi";
-import {
-  buildProjectScript,
-  commandForProjectScript,
-  nextProjectScriptId,
-} from "../../projectScripts";
-import { decodeProjectScriptKeybindingRule } from "../../lib/projectScriptKeybindings";
+import { commandForProjectScript } from "../../projectScripts";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
@@ -89,21 +81,11 @@ import {
   editorRequestForScript,
   ProjectScriptEditorDialog,
   ScriptIcon,
-  type NewProjectScriptInput,
   type ProjectScriptEditorRequest,
 } from "../projectScriptEditor";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
-import {
-  Menu,
-  MenuGroup,
-  MenuGroupLabel,
-  MenuItem,
-  MenuPopup,
-  MenuSeparator,
-  MenuTrigger,
-} from "../ui/menu";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { SidebarInset } from "../ui/sidebar";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -339,12 +321,6 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
   const threads = useThreadShells();
   const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
   const deleteProject = useAtomCommand(projectEnvironment.delete, { reportFailure: false });
-  const upsertKeybinding = useAtomCommand(serverEnvironment.upsertKeybinding, {
-    reportFailure: false,
-  });
-  const removeKeybinding = useAtomCommand(serverEnvironment.removeKeybinding, {
-    reportFailure: false,
-  });
   const projectNameEditedRef = useRef(false);
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
     onCopy: ({ path }) => {
@@ -527,7 +503,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
     serverEnvironment.configValueAtom(selectedCheckout.environmentId),
   );
   const keybindings = selectedServerConfig?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS;
-  const scripts = selectedCheckout.scripts;
+  const savedScripts = selectedCheckout.scripts;
 
   // ----- default repository (the config `gh repo set-default` writes) -----
   const [defaultRepository, setDefaultRepositoryState] =
@@ -581,182 +557,34 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
     defaultRepository.remotes.some((remote) => remote.provider === "github") &&
     (defaultRepository.remotes.length > 1 || defaultRepository.defaultRemoteName !== null);
   const [editorRequest, setEditorRequest] = useState<ProjectScriptEditorRequest | null>(null);
-  // Script writes replace the whole array, so two overlapping writes computed
-  // from the same snapshot would drop each other's changes. One at a time.
-  const [isSavingScripts, setIsSavingScripts] = useState(false);
-  const savingScriptsRef = useRef(false);
-  const projectFile = useProjectFileState(
-    selectedCheckout.environmentId,
-    selectedCheckout.workspaceRoot,
-  );
+  const checkoutScripts = useCheckoutProjectScripts({
+    environmentId: selectedCheckout.environmentId,
+    cwd: selectedCheckout.workspaceRoot,
+    savedScripts,
+    keybindings,
+  });
+  const { projectFile } = checkoutScripts;
   // What the "Default" option resolves to while no override is set: the
   // checkout's styal.json or legacy t3.json value, otherwise the global setting.
   const inheritedEnvMode = projectFile.defaultThreadEnvMode ?? settings.defaultThreadEnvMode;
   const inheritedEnvModeSource =
     projectFile.defaultThreadEnvMode != null ? (projectFile.source ?? "global") : "global";
-  const importableScripts = useMemo(
-    () =>
-      projectFile.legacyScripts.filter(
-        (fileScript) =>
-          !scripts.some(
-            (script) =>
-              script.command === fileScript.command ||
-              script.name.toLowerCase() === fileScript.name.toLowerCase(),
-          ),
-      ),
-    [projectFile.legacyScripts, scripts],
-  );
-
-  const persistScripts = useCallback(
-    async (
-      nextScripts: ReadonlyArray<ReturnType<typeof buildProjectScript>>,
-      keybinding: string | null | undefined,
-      keybindingCommand: ReturnType<typeof commandForProjectScript>,
-    ): Promise<AtomCommandResult<void, unknown>> => {
-      if (savingScriptsRef.current) {
-        return AsyncResult.failure(
-          Cause.fail(new Error("Another script change is still saving. Try again.")),
-        );
-      }
-      savingScriptsRef.current = true;
-      setIsSavingScripts(true);
-      try {
-        // Captured before the write so a cleared or deleted binding can be
-        // removed from the keybindings config afterwards.
-        const previousKeybinding = keybindingValueForCommand(keybindings, keybindingCommand);
-        const updateResult = mapAtomCommandResult(
-          await updateProject({
-            environmentId: selectedCheckout.environmentId,
-            input: { projectId: selectedCheckout.id, scripts: nextScripts },
-          }),
-          () => undefined,
-        );
-        if (updateResult._tag === "Failure") {
-          reportFailure("Failed to save scripts", updateResult);
-          return updateResult;
-        }
-
-        const keybindingRule = decodeProjectScriptKeybindingRule({
-          keybinding,
-          command: keybindingCommand,
-        });
-        if (!isElectron) return updateResult;
-        const environmentIds = [selectedCheckout.environmentId];
-        const previousTarget = previousKeybinding
-          ? decodeProjectScriptKeybindingRule({
-              keybinding: previousKeybinding,
-              command: keybindingCommand,
-            })
-          : null;
-        if (keybindingRule) {
-          // `replace` swaps the command's previous rule instead of appending a
-          // second one that would keep the old shortcut alive.
-          const input =
-            previousTarget && previousTarget.key !== keybindingRule.key
-              ? { ...keybindingRule, replace: previousTarget }
-              : keybindingRule;
-          for (const environmentId of environmentIds) {
-            const result = mapAtomCommandResult(
-              await upsertKeybinding({ environmentId, input }),
-              () => undefined,
-            );
-            if (result._tag === "Failure") {
-              reportFailure("Failed to save keybinding", result);
-              return result;
-            }
-          }
-        } else if (previousTarget) {
-          for (const environmentId of environmentIds) {
-            const result = mapAtomCommandResult(
-              await removeKeybinding({ environmentId, input: previousTarget }),
-              () => undefined,
-            );
-            if (result._tag === "Failure") {
-              reportFailure("Failed to remove keybinding", result);
-              return result;
-            }
-          }
-        }
-        return updateResult;
-      } finally {
-        savingScriptsRef.current = false;
-        setIsSavingScripts(false);
-      }
-    },
-    [
-      keybindings,
-      removeKeybinding,
-      reportFailure,
-      selectedCheckout.environmentId,
-      selectedCheckout.id,
-      updateProject,
-      upsertKeybinding,
-    ],
-  );
-
-  const submitScript = useCallback(
-    async (
-      scriptId: string | null,
-      input: NewProjectScriptInput,
-    ): Promise<AtomCommandResult<void, unknown>> => {
-      if (scriptId === null) {
-        const nextId = nextProjectScriptId(
-          input.name,
-          [...projectFile.liveScripts, ...scripts].map((script) => script.id),
-        );
-        const nextScript = buildProjectScript(nextId, input);
-        const nextScripts = input.runOnWorktreeCreate
-          ? [
-              ...scripts.map((script) =>
-                script.runOnWorktreeCreate ? { ...script, runOnWorktreeCreate: false } : script,
-              ),
-              nextScript,
-            ]
-          : [...scripts, nextScript];
-        return persistScripts(nextScripts, input.keybinding, commandForProjectScript(nextId));
-      }
-
-      const updatedScript = buildProjectScript(scriptId, input);
-      const nextScripts = scripts.map((script) =>
-        script.id === scriptId
-          ? updatedScript
-          : input.runOnWorktreeCreate
-            ? { ...script, runOnWorktreeCreate: false }
-            : script,
-      );
-      return persistScripts(nextScripts, input.keybinding, commandForProjectScript(scriptId));
-    },
-    [persistScripts, projectFile.liveScripts, scripts],
-  );
-
-  const importFileScript = useCallback(
-    async (fileScript: T3ProjectFileScript) => {
-      const payload: NewProjectScriptInput = {
-        name: fileScript.name,
-        command: fileScript.command,
-        icon: fileScript.icon ?? "play",
-        runOnWorktreeCreate: fileScript.runOnWorktreeCreate ?? false,
-        keybinding: null,
-      };
-      const result = await submitScript(null, payload);
-      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
-        setEditorRequest({
-          scriptId: null,
-          initial: payload,
-          error: error instanceof Error ? error.message : "Failed to import action.",
-        });
-      }
-    },
-    [submitScript],
-  );
+  const migrateLegacyScripts = useCallback(async () => {
+    const result = await checkoutScripts.migrateLegacyScripts();
+    if (result._tag === "Failure") {
+      reportFailure("Failed to migrate actions", result);
+      return;
+    }
+    toastManager.add({ type: "success", title: "Actions migrated to styal.json" });
+  }, [checkoutScripts, reportFailure]);
 
   const deleteScript = useCallback(
     (scriptId: string) => {
-      const nextScripts = scripts.filter((script) => script.id !== scriptId);
-      void persistScripts(nextScripts, null, commandForProjectScript(scriptId));
+      void checkoutScripts.deleteScript(scriptId).then((result) => {
+        if (result._tag === "Failure") reportFailure("Failed to delete action", result);
+      });
     },
-    [persistScripts, scripts],
+    [checkoutScripts, reportFailure],
   );
 
   // ----- checkouts -----
@@ -1202,46 +1030,22 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
             <div className="min-w-0">
               <h3 className="text-base font-semibold text-foreground">Actions</h3>
               <p className="text-pretty text-sm text-muted-foreground">
-                {projectFile.source === "t3.json"
-                  ? "Legacy t3.json actions can be imported into this checkout."
-                  : "styal.json actions follow this checkout; saved actions stay local to it."}
+                Actions are read from and saved to styal.json in this checkout.
               </p>
             </div>
             <div className="flex w-full flex-wrap gap-1.5 sm:w-auto sm:shrink-0 sm:justify-end">
-              {importableScripts.length > 0 ? (
-                <Menu>
-                  <MenuTrigger
-                    render={
-                      <Button size="xs" variant="ghost" disabled={isSavingScripts} type="button" />
-                    }
-                  >
-                    Import scripts
-                    <ChevronDownIcon className="size-3.5" />
-                  </MenuTrigger>
-                  <MenuPopup align="end" className="w-72">
-                    <MenuGroup>
-                      <MenuGroupLabel>Legacy t3.json</MenuGroupLabel>
-                      <p className="px-2 pb-2 text-pretty text-sm text-muted-foreground">
-                        Import actions declared by this checkout into saved project settings.
-                      </p>
-                    </MenuGroup>
-                    <MenuSeparator />
-                    {importableScripts.map((fileScript) => (
-                      <MenuItem
-                        key={`${fileScript.name} ${fileScript.command}`}
-                        onClick={() => void importFileScript(fileScript)}
-                      >
-                        <ScriptIcon icon={fileScript.icon ?? "play"} className="size-4 shrink-0" />
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate font-medium">{fileScript.name}</div>
-                          <div className="truncate font-mono text-muted-foreground">
-                            {fileScript.command}
-                          </div>
-                        </div>
-                      </MenuItem>
-                    ))}
-                  </MenuPopup>
-                </Menu>
+              {checkoutScripts.hasLegacyConfig ? (
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  disabled={checkoutScripts.isSaving}
+                  type="button"
+                  onClick={() => void migrateLegacyScripts()}
+                >
+                  {checkoutScripts.legacyScripts.length > 0
+                    ? "Migrate legacy actions"
+                    : "Migrate legacy config"}
+                </Button>
               ) : null}
               <Button size="xs" variant="ghost" type="button" onClick={projectFile.refresh}>
                 <RefreshCwIcon className="size-3.5" />
@@ -1250,7 +1054,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
               <Button
                 size="xs"
                 variant="outline"
-                disabled={isSavingScripts}
+                disabled={checkoutScripts.isSaving}
                 onClick={() =>
                   setEditorRequest({ scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT })
                 }
@@ -1260,7 +1064,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
               </Button>
             </div>
           </div>
-          {projectFile.liveScripts.map((script) => {
+          {checkoutScripts.scripts.map((script) => {
             const shortcutLabel = shortcutLabelForCommand(
               keybindings,
               commandForProjectScript(script.id),
@@ -1284,77 +1088,37 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                         setup
                       </span>
                     ) : null}
-                    <span className="shrink-0 rounded-sm border border-border/60 px-1.5 py-px text-[11px] font-normal text-muted-foreground">
-                      styal.json
-                    </span>
                   </span>
                 }
                 control={
-                  shortcutLabel ? (
-                    <span className="text-xs text-muted-foreground">{shortcutLabel}</span>
-                  ) : null
+                  <>
+                    {shortcutLabel ? (
+                      <span className="text-xs text-muted-foreground">{shortcutLabel}</span>
+                    ) : null}
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      className="shrink-0 text-muted-foreground"
+                      aria-label={`Edit ${script.name}`}
+                      disabled={checkoutScripts.isSaving}
+                      onClick={() => setEditorRequest(editorRequestForScript(script, keybindings))}
+                    >
+                      <SettingsIcon className="size-3.5" />
+                    </Button>
+                  </>
                 }
               />
             );
           })}
-          {scripts.length === 0 && projectFile.liveScripts.length === 0 ? (
+          {checkoutScripts.scripts.length === 0 ? (
             <p className="px-3 py-2 text-base text-muted-foreground sm:px-4 sm:text-sm">
               No actions configured for this checkout.
             </p>
-          ) : (
-            scripts.map((script) => {
-              const shortcutLabel = shortcutLabelForCommand(
-                keybindings,
-                commandForProjectScript(script.id),
-              );
-              return (
-                <SettingsRow
-                  key={script.id}
-                  className="group py-2"
-                  title={
-                    <span className="flex min-w-0 items-center gap-2">
-                      <ScriptIcon
-                        icon={script.icon}
-                        className="size-4 shrink-0 text-muted-foreground"
-                      />
-                      <span className="max-w-40 shrink-0 truncate">{script.name}</span>
-                      <code className="min-w-0 flex-1 truncate font-mono font-normal text-muted-foreground">
-                        {script.command}
-                      </code>
-                      {script.runOnWorktreeCreate ? (
-                        <span className="shrink-0 rounded-sm border border-border/60 px-1.5 py-px text-[11px] font-normal text-muted-foreground">
-                          setup
-                        </span>
-                      ) : null}
-                    </span>
-                  }
-                  control={
-                    <>
-                      {shortcutLabel ? (
-                        <span className="text-xs text-muted-foreground">{shortcutLabel}</span>
-                      ) : null}
-                      <Button
-                        size="icon-xs"
-                        variant="ghost"
-                        className="shrink-0 text-muted-foreground opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
-                        aria-label={`Edit ${script.name}`}
-                        disabled={isSavingScripts}
-                        onClick={() =>
-                          setEditorRequest(editorRequestForScript(script, keybindings))
-                        }
-                      >
-                        <SettingsIcon className="size-3.5" />
-                      </Button>
-                    </>
-                  }
-                />
-              );
-            })
-          )}
+          ) : null}
           {projectFile.status === "invalid" ? (
             <SettingsRow
               title={`${projectFile.source ?? "Project file"} is invalid`}
-              description={`A ${projectFile.source ?? "project file"} exists in this checkout but fails to parse, so every setting it declares is ignored. Check its JSON syntax and field values.`}
+              description={`The ${projectFile.source ?? "project file"} in this checkout could not be read or parsed, so every setting it declares is ignored. Check its size, permissions, JSON syntax, and field values.`}
               className="text-warning"
             />
           ) : null}
@@ -1385,8 +1149,12 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
 
       <ProjectScriptEditorDialog
         request={editorRequest}
-        scripts={[...projectFile.liveScripts, ...scripts]}
-        onSubmit={submitScript}
+        scripts={[...checkoutScripts.scripts, ...checkoutScripts.legacyScripts]}
+        onSubmit={(scriptId, input) =>
+          scriptId === null
+            ? checkoutScripts.addScript(input)
+            : checkoutScripts.updateScript(scriptId, input)
+        }
         onDelete={deleteScript}
         onClose={() => setEditorRequest(null)}
       />

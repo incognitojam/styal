@@ -104,7 +104,7 @@ export const EMPTY_PROJECT_SCRIPT_INPUT: NewProjectScriptInput = {
 export interface ProjectScriptEditorRequest {
   scriptId: string | null;
   initial: NewProjectScriptInput;
-  /** Validation error to show immediately (e.g. a failed legacy t3.json import). */
+  /** Validation error to show immediately. */
   error?: string;
 }
 
@@ -249,7 +249,8 @@ export function ProjectScriptEditorDialog({
           <DialogHeader>
             <DialogTitle>{isEditing ? "Edit Action" : "Add Action"}</DialogTitle>
             <DialogDescription>
-              Actions are project-scoped commands you can run from the top bar or keybindings.
+              Actions are saved to this checkout's styal.json and can run from the top bar or
+              keybindings.
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>
@@ -329,9 +330,9 @@ export function ProjectScriptEditorDialog({
               </div>
               <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035]">
                 <span>
-                  Run automatically on worktree creation
+                  Use as the worktree setup action
                   <span className="mt-0.5 block text-xs text-muted-foreground">
-                    Runs in new worktrees only, never in a local thread.
+                    Setup actions run manually until project trust is supported.
                   </span>
                 </span>
                 <Switch

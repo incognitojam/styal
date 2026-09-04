@@ -1,6 +1,7 @@
 import type {
   EnvironmentId,
   ProjectScript,
+  T3ProjectFile,
   T3ProjectFileScript,
   ThreadEnvMode,
 } from "@t3tools/contracts";
@@ -16,6 +17,8 @@ export interface ProjectFileState {
   status: "loading" | "missing" | "invalid" | "valid";
   source: "styal.json" | "t3.json" | null;
   defaultThreadEnvMode: ThreadEnvMode | null;
+  styalContents: string | null;
+  legacyFile: T3ProjectFile | null;
   liveScripts: ReadonlyArray<ProjectScript>;
   legacyScripts: ReadonlyArray<T3ProjectFileScript>;
   refresh: () => void;
@@ -32,6 +35,8 @@ export function resolveProjectFileState(input: {
       status: "loading",
       source: null,
       defaultThreadEnvMode: null,
+      styalContents: null,
+      legacyFile: null,
       liveScripts: NO_LIVE_SCRIPTS,
       legacyScripts: NO_LEGACY_SCRIPTS,
       refresh,
@@ -42,6 +47,8 @@ export function resolveProjectFileState(input: {
       status: "valid",
       source: "styal.json",
       defaultThreadEnvMode: styal.file?.defaultThreadEnvMode ?? null,
+      styalContents: styal.contents,
+      legacyFile: null,
       liveScripts: styal.scripts,
       legacyScripts: NO_LEGACY_SCRIPTS,
       refresh,
@@ -52,6 +59,8 @@ export function resolveProjectFileState(input: {
       status: "invalid",
       source: "styal.json",
       defaultThreadEnvMode: null,
+      styalContents: styal.contents,
+      legacyFile: null,
       liveScripts: NO_LIVE_SCRIPTS,
       legacyScripts: NO_LEGACY_SCRIPTS,
       refresh,
@@ -63,6 +72,8 @@ export function resolveProjectFileState(input: {
       status: "loading",
       source: null,
       defaultThreadEnvMode: null,
+      styalContents: null,
+      legacyFile: null,
       liveScripts: NO_LIVE_SCRIPTS,
       legacyScripts: NO_LEGACY_SCRIPTS,
       refresh,
@@ -73,6 +84,8 @@ export function resolveProjectFileState(input: {
       status: "valid",
       source: "t3.json",
       defaultThreadEnvMode: t3.file?.defaultThreadEnvMode ?? null,
+      styalContents: null,
+      legacyFile: t3.file,
       liveScripts: NO_LIVE_SCRIPTS,
       legacyScripts: t3.scripts,
       refresh,
@@ -82,6 +95,8 @@ export function resolveProjectFileState(input: {
     status: t3.status,
     source: t3.status === "invalid" ? "t3.json" : null,
     defaultThreadEnvMode: null,
+    styalContents: null,
+    legacyFile: null,
     liveScripts: NO_LIVE_SCRIPTS,
     legacyScripts: NO_LEGACY_SCRIPTS,
     refresh,

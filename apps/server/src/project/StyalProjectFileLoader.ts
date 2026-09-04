@@ -46,6 +46,8 @@ export class StyalProjectFileLoader extends Context.Service<
      * `Option.none` (invalid files are logged as warnings).
      */
     readonly load: (workspaceRoot: string) => Effect.Effect<Option.Option<StyalProjectFile>>;
+    /** Whether the checkout contains styal.json, including an invalid or unreadable file. */
+    readonly exists: (workspaceRoot: string) => Effect.Effect<boolean>;
   }
 >()("t3/project/StyalProjectFileLoader") {}
 
@@ -102,7 +104,16 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  return StyalProjectFileLoader.of({ load });
+  const exists: StyalProjectFileLoader["Service"]["exists"] = Effect.fn(
+    "StyalProjectFileLoader.exists",
+  )((workspaceRoot) =>
+    fileSystem
+      .exists(path.join(workspaceRoot, STYAL_PROJECT_FILE_NAME))
+      // A filesystem error must not reopen the legacy auto-run path.
+      .pipe(Effect.orElseSucceed(() => true)),
+  );
+
+  return StyalProjectFileLoader.of({ load, exists });
 });
 
 export const layer = Layer.effect(StyalProjectFileLoader, make);

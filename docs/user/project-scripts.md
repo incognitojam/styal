@@ -1,35 +1,32 @@
 # Run project scripts
 
-Project scripts, shown as **Actions** in T3 Code, are saved or checked-in shell commands for common
-project tasks such as starting a development server, running tests, or installing dependencies in
-a new worktree. They run on the environment that owns the project and open their output in a T3
-Code terminal.
+Project scripts, shown as **Actions** in T3 Code, are shell commands declared in the active
+checkout's `styal.json` for common project tasks such as starting a development server, running
+tests, or installing dependencies in a new worktree. They run on the environment that owns the
+project and open their output in a T3 Code terminal.
 
 ## Add an action
 
 On web or desktop, open **Settings** → **Projects**, select a checkout, find **Actions**, and select
-**Add action**. You can also add or edit actions from the actions menu in a thread's top bar.
+**Add action**. You can also add or edit actions from the actions menu in a thread's top bar. T3
+Code creates or updates `styal.json` in that exact checkout; a thread in a worktree edits the
+worktree's copy.
 
 Each action has:
 
 - A name and icon.
 - A shell command.
 - An optional keyboard shortcut.
-- An option to run automatically after T3 Code creates a worktree for a new thread.
+- An option to mark it as the worktree setup action.
 
-Actions are saved for one checkout, not for every checkout in its project group. Saved actions are
-available to connected clients, including mobile. On mobile, open a thread's terminal menu to run
-one.
+Because actions live in the checkout, committed actions follow the repository while uncommitted
+changes remain local to that checkout. They are available to connected clients, including mobile.
+On mobile, open a thread's terminal menu to run one.
 
 T3 Code runs a regular action in the active thread's worktree, or in the project root for a local
-thread. If the current terminal is busy, the action opens in another terminal. An automatic setup
-action runs after the new worktree is ready, and its progress and result appear in the chat
-timeline. Only one saved action per checkout can be the automatic setup action.
-
-The automatic setup action runs only in a worktree. T3 Code refuses to run it from a local thread,
-where its working directory would be the project root: a setup command that copies or links files
-from `STYAL_PROJECT_ROOT` into its working directory would overwrite the checkout's own copies of
-those files.
+thread. If the current terminal is busy, the action opens in another terminal. A setup action is
+visually identified in the actions menu, but checked-in setup actions do not run automatically.
+Run one manually until explicit project trust is supported.
 
 ## Declare shared actions in `styal.json`
 
@@ -83,29 +80,27 @@ returning to a mobile thread, or selecting **Refresh file** in project settings 
 changes follow the checkout that contains them. A thread in a worktree reads that worktree's copy
 instead of waiting for the main checkout to update.
 
-Saved actions remain available for machine- or checkout-specific commands. When a file action and a
-saved action have the same ID, the file action wins in the toolbar; delete the old saved copy after
-migrating it to `styal.json`. Actions with different IDs remain available even when their names or
-commands match, so existing ID-based keyboard shortcuts continue to work.
-
-Running a checked-in action manually is an explicit user action. Automatic setup remains limited to
-saved setup actions; merely opening a repository does not grant a checked-in command permission to
-execute.
+Running an action manually is an explicit user action. Merely opening a repository does not grant a
+checked-in command permission to execute.
 
 If `styal.json` is invalid, T3 Code ignores the entire file. **Settings** → **Projects** shows a
 warning so you can correct its syntax or field values.
 
 ## Legacy `t3.json` files
 
-When the current checkout has no `styal.json`, T3 Code continues to read its legacy `t3.json`.
-Legacy scripts retain their existing import behavior: choose one from the thread's actions menu or
-from **Settings** → **Projects** → **Actions** to create a saved copy for that checkout. They do not
-become live actions automatically.
+When the current checkout has no `styal.json`, T3 Code continues to read supported project defaults
+from its legacy `t3.json`. Legacy actions are not runnable until you select **Migrate legacy
+actions** in the thread actions menu or in **Settings** → **Projects** → **Actions**. Migration
+creates `styal.json` in that exact checkout, copies supported `t3.json` settings and actions, assigns
+stable action IDs, and includes any actions previously saved in T3 Code's project database. It
+leaves both legacy sources untouched.
 
-`styal.json` takes ownership as soon as it exists in that checkout. T3 Code does not fall back to
-`t3.json` when `styal.json` is invalid, because doing so would conceal the configuration error. Git
-worktrees resolve these files independently, so a branch can adopt `styal.json` without changing
-another checkout until that repository change is committed and merged.
+`styal.json` becomes the sole action source as soon as it exists in that checkout. T3 Code does not
+fall back to `t3.json` or database actions when `styal.json` is invalid, because doing so would
+conceal the configuration error. Git worktrees resolve these files independently, so a branch can
+adopt `styal.json` without changing another checkout until that repository change is committed and
+merged. For compatibility, a legacy saved setup action can still run automatically only while the
+new worktree has no `styal.json`; migration disables that legacy path.
 
 ## Project environment variables
 
@@ -141,4 +136,4 @@ pnpm run api -- --port "$((STYAL_WORKSPACE_PORT + 1))"
 The assigned range is stable across restarts and does not overlap with another T3 Code workspace
 in the same environment. It does not reserve the sockets from unrelated programs on the host. See
 [Project settings](./project-settings.md#stable-workspace-ports) for allocation details and
-[Keyboard shortcuts](./keybindings.md#commands) for binding saved actions to keys.
+[Keyboard shortcuts](./keybindings.md#commands) for binding actions to keys.

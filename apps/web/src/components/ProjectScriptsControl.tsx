@@ -1,13 +1,8 @@
-import type {
-  ProjectScript,
-  ResolvedKeybindingsConfig,
-  T3ProjectFileScript,
-} from "@t3tools/contracts";
+import type { ProjectScript, ResolvedKeybindingsConfig } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { mergeProjectScripts } from "@t3tools/shared/projectScripts";
 import { ChevronDownIcon, DownloadIcon, PlusIcon, SettingsIcon } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
@@ -24,22 +19,13 @@ import {
 } from "./projectScriptEditor";
 import { Button } from "./ui/button";
 import { Group, GroupSeparator } from "./ui/group";
-import {
-  Menu,
-  MenuGroup,
-  MenuGroupLabel,
-  MenuItem,
-  MenuPopup,
-  MenuSeparator,
-  MenuShortcut,
-  MenuTrigger,
-} from "./ui/menu";
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from "./ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+import { stackedThreadToast, toastManager } from "./ui/toast";
 
 export type { NewProjectScriptInput, ProjectScriptActionResult };
 
-const NO_FILE_SCRIPTS: ReadonlyArray<ProjectScript> = [];
-const NO_LEGACY_FILE_SCRIPTS: ReadonlyArray<T3ProjectFileScript> = [];
+const NO_LEGACY_SCRIPTS: ReadonlyArray<ProjectScript> = [];
 
 export function openAddProjectScriptEditor(input: {
   refreshFileScripts?: () => void;
@@ -50,14 +36,15 @@ export function openAddProjectScriptEditor(input: {
 }
 
 interface ProjectScriptsControlProps {
-  scripts: ReadonlyArray<ProjectScript>;
   /** Live scripts declared in the active checkout's styal.json. */
-  fileScripts?: ReadonlyArray<ProjectScript>;
-  /** Legacy t3.json scripts offered for explicit import. */
-  legacyFileScripts?: ReadonlyArray<T3ProjectFileScript>;
+  scripts: ReadonlyArray<ProjectScript>;
+  /** Database and t3.json actions that can be copied into this checkout. */
+  legacyScripts?: ReadonlyArray<ProjectScript>;
+  hasLegacyConfig?: boolean;
   keybindings: ResolvedKeybindingsConfig;
   preferredScriptId?: string | null;
   onRefreshFileScripts?: () => void;
+  onMigrateLegacyScripts: () => Promise<ProjectScriptActionResult>;
   onRunScript: (script: ProjectScript) => void;
   onAddScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
   onUpdateScript: (
@@ -69,11 +56,12 @@ interface ProjectScriptsControlProps {
 
 export default function ProjectScriptsControl({
   scripts,
-  fileScripts = NO_FILE_SCRIPTS,
-  legacyFileScripts = NO_LEGACY_FILE_SCRIPTS,
+  legacyScripts = NO_LEGACY_SCRIPTS,
+  hasLegacyConfig = legacyScripts.length > 0,
   keybindings,
   preferredScriptId = null,
   onRefreshFileScripts,
+  onMigrateLegacyScripts,
   onRunScript,
   onAddScript,
   onUpdateScript,
@@ -81,30 +69,15 @@ export default function ProjectScriptsControl({
 }: ProjectScriptsControlProps) {
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
   const [editorRequest, setEditorRequest] = useState<ProjectScriptEditorRequest | null>(null);
-  const availableScripts = useMemo(
-    () => mergeProjectScripts(fileScripts, scripts),
-    [fileScripts, scripts],
-  );
-  const importableLegacyScripts = useMemo(
-    () =>
-      legacyFileScripts.filter(
-        (fileScript) =>
-          !availableScripts.some(
-            (script) =>
-              script.command === fileScript.command ||
-              script.name.toLowerCase() === fileScript.name.toLowerCase(),
-          ),
-      ),
-    [availableScripts, legacyFileScripts],
-  );
+  const editorScripts = useMemo(() => [...scripts, ...legacyScripts], [legacyScripts, scripts]);
 
   const primaryScript = useMemo(() => {
     if (preferredScriptId) {
-      const preferred = availableScripts.find((script) => script.id === preferredScriptId);
+      const preferred = scripts.find((script) => script.id === preferredScriptId);
       if (preferred) return preferred;
     }
-    return primaryProjectScript(availableScripts);
-  }, [availableScripts, preferredScriptId]);
+    return primaryProjectScript(scripts);
+  }, [preferredScriptId, scripts]);
   const dropdownItemClassName =
     "data-highlighted:bg-transparent data-highlighted:text-foreground hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground data-highlighted:hover:bg-accent data-highlighted:hover:text-accent-foreground data-highlighted:focus-visible:bg-accent data-highlighted:focus-visible:text-accent-foreground";
 
@@ -126,44 +99,33 @@ export default function ProjectScriptsControl({
     [onAddScript, onUpdateScript],
   );
 
-  const importLegacyFileScript = async (fileScript: T3ProjectFileScript) => {
-    const payload: NewProjectScriptInput = {
-      name: fileScript.name,
-      command: fileScript.command,
-      icon: fileScript.icon ?? "play",
-      runOnWorktreeCreate: fileScript.runOnWorktreeCreate ?? false,
-      keybinding: null,
-    };
-    const result = await onAddScript(payload);
+  const migrateLegacyScripts = async () => {
+    const result = await onMigrateLegacyScripts();
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       const error = squashAtomCommandFailure(result);
-      setEditorRequest({
-        scriptId: null,
-        initial: payload,
-        error: error instanceof Error ? error.message : "Failed to import action.",
-      });
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Could not migrate actions",
+          description: error instanceof Error ? error.message : "An unexpected error occurred.",
+        }),
+      );
+      return;
+    }
+    if (result._tag === "Success") {
+      toastManager.add({ type: "success", title: "Actions migrated to styal.json" });
     }
   };
 
-  const legacyImportMenuItems = importableLegacyScripts.length > 0 && (
+  const legacyMigrationMenuItem = hasLegacyConfig && (
     <>
       {primaryScript && <MenuSeparator />}
-      <MenuGroup>
-        <MenuGroupLabel>Legacy t3.json</MenuGroupLabel>
-        {importableLegacyScripts.map((fileScript) => (
-          <MenuItem
-            key={`${fileScript.name} ${fileScript.command}`}
-            className={dropdownItemClassName}
-            onClick={() => void importLegacyFileScript(fileScript)}
-          >
-            <ScriptIcon icon={fileScript.icon ?? "play"} className="size-4" />
-            <span className="truncate">{fileScript.name}</span>
-            <MenuShortcut className="ms-auto">
-              <DownloadIcon className="size-3.5" aria-label="Import" />
-            </MenuShortcut>
-          </MenuItem>
-        ))}
-      </MenuGroup>
+      <MenuItem className={dropdownItemClassName} onClick={() => void migrateLegacyScripts()}>
+        <DownloadIcon className="size-4" />
+        {legacyScripts.length > 0
+          ? `Migrate ${legacyScripts.length} legacy action${legacyScripts.length === 1 ? "" : "s"}`
+          : "Migrate legacy config"}
+      </MenuItem>
     </>
   );
 
@@ -208,8 +170,7 @@ export default function ProjectScriptsControl({
               <ChevronDownIcon className="size-4" />
             </MenuTrigger>
             <MenuPopup align="end">
-              {availableScripts.map((script) => {
-                const isFileScript = fileScripts.includes(script);
+              {scripts.map((script) => {
                 const shortcutLabel = shortcutLabelForCommand(
                   keybindings,
                   commandForProjectScript(script.id),
@@ -230,33 +191,29 @@ export default function ProjectScriptsControl({
                           {shortcutLabel}
                         </MenuShortcut>
                       )}
-                      {isFileScript ? (
-                        <MenuShortcut className="ms-2">styal.json</MenuShortcut>
-                      ) : (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-xs"
-                          className="absolute right-0 top-1/2 size-6 -translate-y-1/2 opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto group-focus-visible:opacity-100 group-focus-visible:pointer-events-auto"
-                          aria-label={`Edit ${script.name}`}
-                          onPointerDown={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                          }}
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            openEditDialog(script);
-                          }}
-                        >
-                          <SettingsIcon className="size-3.5" />
-                        </Button>
-                      )}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        className="absolute right-0 top-1/2 size-6 -translate-y-1/2 opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto group-focus-visible:opacity-100 group-focus-visible:pointer-events-auto"
+                        aria-label={`Edit ${script.name}`}
+                        onPointerDown={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          openEditDialog(script);
+                        }}
+                      >
+                        <SettingsIcon className="size-3.5" />
+                      </Button>
                     </span>
                   </MenuItem>
                 );
               })}
-              {legacyImportMenuItems}
+              {legacyMigrationMenuItem}
               <MenuSeparator />
               <MenuItem className={dropdownItemClassName} onClick={openAddDialog}>
                 <PlusIcon className="size-4" />
@@ -265,7 +222,7 @@ export default function ProjectScriptsControl({
             </MenuPopup>
           </Menu>
         </Group>
-      ) : importableLegacyScripts.length > 0 ? (
+      ) : hasLegacyConfig ? (
         <Menu
           highlightItemOnHover={false}
           open={actionsMenuOpen}
@@ -282,7 +239,7 @@ export default function ProjectScriptsControl({
             <ChevronDownIcon className="size-3.5" />
           </MenuTrigger>
           <MenuPopup align="end">
-            {legacyImportMenuItems}
+            {legacyMigrationMenuItem}
             <MenuItem className={dropdownItemClassName} onClick={openAddDialog}>
               <PlusIcon className="size-4" />
               Add action
@@ -316,7 +273,7 @@ export default function ProjectScriptsControl({
 
       <ProjectScriptEditorDialog
         request={editorRequest}
-        scripts={availableScripts}
+        scripts={editorScripts}
         onSubmit={submitScript}
         onDelete={(scriptId) => void onDeleteScript(scriptId)}
         onClose={() => setEditorRequest(null)}

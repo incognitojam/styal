@@ -62,6 +62,17 @@ it.layer(TestLayer)("StyalProjectFileLoader", (it) => {
       }),
     );
 
+    it.effect("reports file presence independently of whether it is valid", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir;
+        const loader = yield* StyalProjectFileLoader.StyalProjectFileLoader;
+
+        expect(yield* loader.exists(cwd)).toBe(false);
+        yield* writeProjectFile(cwd, "{ not json");
+        expect(yield* loader.exists(cwd)).toBe(true);
+      }),
+    );
+
     it.effect("does not load the legacy t3.json filename", () =>
       Effect.gen(function* () {
         const loader = yield* StyalProjectFileLoader.StyalProjectFileLoader;
