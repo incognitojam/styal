@@ -68,6 +68,7 @@ export function hasConfiguredMcpServer(appServerArgs: ReadonlyArray<string> | un
 
 export const CodexResumeCursorSchema = Schema.Struct({
   threadId: Schema.String,
+  mcpServerName: Schema.optional(Schema.Literals(["styal", "t3-code"])),
 });
 const CodexUserInputAnswerObject = Schema.Struct({
   answers: Schema.Array(Schema.String),
@@ -165,6 +166,7 @@ export interface CodexSessionRuntimeOptions {
   readonly model?: string;
   readonly serviceTier?: CodexServiceTier | undefined;
   readonly resumeCursor?: CodexResumeCursor;
+  readonly mcpServerName?: "styal" | "t3-code";
   readonly appServerArgs?: ReadonlyArray<string>;
   readonly additionalInstructions?: string;
 }
@@ -1866,7 +1868,10 @@ export const makeCodexSessionRuntime = (
             return Effect.void;
           }
           return updateSession(sessionRef, {
-            resumeCursor: { threadId: payload.thread.id },
+            resumeCursor: {
+              threadId: payload.thread.id,
+              mcpServerName: options.mcpServerName ?? "styal",
+            },
           });
         }),
       ),
@@ -2258,7 +2263,10 @@ export const makeCodexSessionRuntime = (
         status: "ready",
         cwd: opened.cwd,
         model: opened.model,
-        resumeCursor: { threadId: providerThreadId },
+        resumeCursor: {
+          threadId: providerThreadId,
+          mcpServerName: options.mcpServerName ?? "styal",
+        },
         updatedAt: yield* nowIso,
       } satisfies ProviderSession;
       yield* Ref.set(sessionRef, session);
@@ -2356,7 +2364,12 @@ export const makeCodexSessionRuntime = (
             threadId: options.threadId,
             turnId,
             ...(resumedProviderThreadId
-              ? { resumeCursor: { threadId: resumedProviderThreadId } }
+              ? {
+                  resumeCursor: {
+                    threadId: resumedProviderThreadId,
+                    mcpServerName: options.mcpServerName ?? "styal",
+                  },
+                }
               : {}),
           } satisfies ProviderTurnStartResult;
         }),

@@ -657,7 +657,7 @@ describe("deriveMessagesTimelineRows", () => {
         {
           id: "preview-1",
           itemType: "mcp_tool_call" as const,
-          toolName: "mcp__t3-code__preview_navigate" as const,
+          toolName: "mcp__styal__preview_navigate" as const,
         },
         { id: "compaction-1", sourceActivityKind: "context-compaction" as const },
       ].map((entry, index) => ({

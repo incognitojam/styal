@@ -514,6 +514,10 @@ export function makeCursorAdapter(
           let ctx!: CursorSessionContext;
 
           const resumeSessionId = parseCursorResume(input.resumeCursor)?.sessionId;
+          const mcpServerName = McpProviderSession.serverNameForResumeCursor(
+            input.resumeCursor,
+            resumeSessionId !== undefined,
+          );
           const sessionEnvironment = input.environment
             ? { ...(options?.environment ?? process.env), ...input.environment }
             : options?.environment;
@@ -548,7 +552,7 @@ export function makeCursorAdapter(
                   mcpServers: [
                     {
                       type: "http" as const,
-                      name: "t3-code",
+                      name: mcpServerName,
                       url: mcpSession.endpoint,
                       headers: [
                         {
@@ -766,6 +770,7 @@ export function makeCursorAdapter(
             resumeCursor: {
               schemaVersion: CURSOR_RESUME_VERSION,
               sessionId: started.sessionId,
+              mcpServerName,
             },
             createdAt: now,
             updatedAt: now,

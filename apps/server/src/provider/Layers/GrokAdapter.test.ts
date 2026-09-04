@@ -246,6 +246,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       assert.deepStrictEqual(session.resumeCursor, {
         schemaVersion: 1,
         sessionId: "mock-session-1",
+        mcpServerName: "styal",
       });
 
       yield* adapter.sendTurn({
@@ -1481,6 +1482,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       assert.deepStrictEqual(session.resumeCursor, {
         schemaVersion: 1,
         sessionId: "mock-session-1",
+        mcpServerName: "t3-code",
       });
       assert.isFalse(
         runtimeEvents.some(

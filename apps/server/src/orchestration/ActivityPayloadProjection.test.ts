@@ -374,7 +374,7 @@ describe("projectActivityPayload tool identity", () => {
         data: {
           item: {
             type: "mcpToolCall",
-            server: "t3-code",
+            server: "styal",
             tool: "preview_click",
             arguments: { locator: "role=button[name='Send']" },
           },
@@ -382,7 +382,7 @@ describe("projectActivityPayload tool identity", () => {
       }),
     );
     const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
-    expect(data.toolName).toBe("mcp__t3-code__preview_click");
+    expect(data.toolName).toBe("mcp__styal__preview_click");
     // The clients read data.input, so the item's arguments have to be lifted
     // there or the row renders a heading with nothing after it.
     expect((data.input as Record<string, unknown>).locator).toBe("role=button[name='Send']");
@@ -393,13 +393,13 @@ describe("projectActivityPayload tool identity", () => {
       activity({
         itemType: "mcp_tool_call",
         data: {
-          toolName: "mcp__t3-code__preview_snapshot",
+          toolName: "mcp__styal__preview_snapshot",
           item: { type: "mcpToolCall", server: "other", tool: "something_else" },
         },
       }),
     );
     const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
-    expect(data.toolName).toBe("mcp__t3-code__preview_snapshot");
+    expect(data.toolName).toBe("mcp__styal__preview_snapshot");
   });
 
   it("reads MCP input from OpenCode's state shape", () => {
@@ -407,7 +407,7 @@ describe("projectActivityPayload tool identity", () => {
       activity({
         itemType: "mcp_tool_call",
         data: {
-          toolName: "mcp__t3-code__preview_press",
+          toolName: "mcp__styal__preview_press",
           state: { input: { key: "Enter", modifiers: ["Meta"] } },
         },
       }),
@@ -421,7 +421,7 @@ describe("projectActivityPayload tool identity", () => {
       activity({
         itemType: "mcp_tool_call",
         data: {
-          toolName: "mcp__t3-code__preview_navigate",
+          toolName: "mcp__styal__preview_navigate",
           input: { url: "https://example.com/".padEnd(5_000, "x") },
         },
       }),

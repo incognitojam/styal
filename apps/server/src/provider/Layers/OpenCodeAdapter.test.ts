@@ -33,11 +33,21 @@ import {
 } from "../opencodeRuntime.ts";
 import {
   appendOpenCodeAssistantTextDelta,
+  canonicalOpenCodeToolName,
   isOpenCodeNotFound,
   isSameOpenCodeDirectory,
   makeOpenCodeAdapter,
   mergeOpenCodeAssistantText,
 } from "./OpenCodeAdapter.ts";
+
+it("normalizes current and legacy styal MCP tool prefixes", () => {
+  NodeAssert.equal(canonicalOpenCodeToolName("styal_preview_status"), "mcp__styal__preview_status");
+  NodeAssert.equal(
+    canonicalOpenCodeToolName("t3-code_preview_status"),
+    "mcp__t3-code__preview_status",
+  );
+  NodeAssert.equal(canonicalOpenCodeToolName("bash"), "bash");
+});
 
 // Test-local service tag so the rest of the file can keep using `yield* OpenCodeAdapter`.
 class OpenCodeAdapter extends Context.Service<OpenCodeAdapter, OpenCodeAdapterShape>()(
@@ -343,6 +353,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       NodeAssert.deepEqual(session.resumeCursor, {
         schemaVersion: 1,
         sessionId: "http://127.0.0.1:9999/session",
+        mcpServerName: "styal",
       });
 
       yield* adapter.stopSession(threadId);
@@ -368,6 +379,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       NodeAssert.deepEqual(session.resumeCursor, {
         schemaVersion: 1,
         sessionId: "ses_persisted",
+        mcpServerName: "t3-code",
       });
       // Resume re-asserts the permission ruleset for the current runtimeMode.
       NodeAssert.equal(runtimeMock.state.sessionUpdateCalls.length, 1);
@@ -407,6 +419,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       NodeAssert.deepEqual(result.resumeCursor, {
         schemaVersion: 1,
         sessionId: "ses_persisted",
+        mcpServerName: "t3-code",
       });
 
       yield* adapter.stopSession(threadId);
@@ -433,6 +446,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       NodeAssert.deepEqual(session.resumeCursor, {
         schemaVersion: 1,
         sessionId: "http://127.0.0.1:9999/session",
+        mcpServerName: "t3-code",
       });
 
       yield* adapter.stopSession(threadId);
@@ -458,6 +472,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       NodeAssert.deepEqual(session.resumeCursor, {
         schemaVersion: 1,
         sessionId: "http://127.0.0.1:9999/session",
+        mcpServerName: "styal",
       });
 
       yield* adapter.stopSession(threadId);
@@ -543,6 +558,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         NodeAssert.deepEqual(session.resumeCursor, {
           schemaVersion: 1,
           sessionId: "ses_otherdir_fork",
+          mcpServerName: "t3-code",
         });
 
         yield* adapter.stopSession(threadId);
@@ -570,6 +586,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       NodeAssert.deepEqual(session.resumeCursor, {
         schemaVersion: 1,
         sessionId: "ses_samedir",
+        mcpServerName: "t3-code",
       });
 
       yield* adapter.stopSession(threadId);
@@ -1259,8 +1276,8 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
               type: "tool",
               callID: "call-preview",
               // OpenCode names MCP tools `<server>_<tool>`; this is the exact
-              // shape a real session produced for T3's browser.
-              tool: "t3-code_preview_type",
+              // shape a real session produces for styal's browser.
+              tool: "styal_preview_type",
               state: {
                 status: "completed",
                 input: { text: "Hello there" },
@@ -1294,7 +1311,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         NodeAssert.equal(completed.payload.itemType, "mcp_tool_call");
         NodeAssert.equal(
           (completed.payload.data as { toolName?: unknown }).toolName,
-          "mcp__t3-code__preview_type",
+          "mcp__styal__preview_type",
         );
       }
     }),

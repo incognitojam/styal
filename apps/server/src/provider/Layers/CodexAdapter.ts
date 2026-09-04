@@ -1755,6 +1755,13 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           ? { ...(options?.environment ?? process.env), ...input.environment }
           : options?.environment;
         const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+        const codexResumeCursor = isCodexResumeCursorSchema(input.resumeCursor)
+          ? input.resumeCursor
+          : undefined;
+        const mcpServerName = McpProviderSession.serverNameForResumeCursor(
+          input.resumeCursor,
+          codexResumeCursor !== undefined,
+        );
         const runtimeInput: CodexSessionRuntimeOptions = {
           threadId: input.threadId,
           providerInstanceId: boundInstanceId,
@@ -1763,9 +1770,8 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           launchArgs: resolveCodexLaunchArgs(codexConfig.launchArgs, sessionEnvironment),
           ...(sessionEnvironment ? { environment: sessionEnvironment } : {}),
           ...(codexConfig.homePath ? { homePath: codexConfig.homePath } : {}),
-          ...(isCodexResumeCursorSchema(input.resumeCursor)
-            ? { resumeCursor: input.resumeCursor }
-            : {}),
+          ...(codexResumeCursor ? { resumeCursor: codexResumeCursor } : {}),
+          mcpServerName,
           runtimeMode: input.runtimeMode,
           ...(input.additionalInstructions
             ? { additionalInstructions: input.additionalInstructions }
@@ -1778,13 +1784,13 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             ? {
                 environment: {
                   ...(sessionEnvironment ?? process.env),
-                  T3_MCP_BEARER_TOKEN: mcpSession.authorizationHeader.replace(/^Bearer\s+/, ""),
+                  STYAL_MCP_BEARER_TOKEN: mcpSession.authorizationHeader.replace(/^Bearer\s+/, ""),
                 },
                 appServerArgs: [
                   "-c",
-                  `mcp_servers.t3-code.url=${mcpSession.endpoint}`,
+                  `mcp_servers.${mcpServerName}.url=${mcpSession.endpoint}`,
                   "-c",
-                  'mcp_servers.t3-code.bearer_token_env_var="T3_MCP_BEARER_TOKEN"',
+                  `mcp_servers.${mcpServerName}.bearer_token_env_var="STYAL_MCP_BEARER_TOKEN"`,
                 ],
               }
             : {}),

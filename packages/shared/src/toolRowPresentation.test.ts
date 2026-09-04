@@ -145,7 +145,7 @@ describe("deriveToolRowPresentation", () => {
         itemType: "dynamic_tool_call",
         input: {
           query:
-            "select:mcp__t3-code__preview_open,mcp__t3-code__preview_status,mcp__t3-code__preview_navigate",
+            "select:mcp__styal__preview_open,mcp__styal__preview_status,mcp__styal__preview_navigate",
         },
       })?.argument,
     ).toEqual({ kind: "text", value: "preview_open, preview_status +1 more" });
@@ -161,7 +161,7 @@ describe("deriveToolRowPresentation", () => {
     ).toBe("linear · create_issue");
   });
 
-  describe("T3 preview tools", () => {
+  describe("styal preview tools", () => {
     const PREVIEW_HEADINGS = [
       ["preview_status", "Checked preview status"],
       ["preview_open", "Opened preview"],
@@ -181,7 +181,7 @@ describe("deriveToolRowPresentation", () => {
 
     const preview = (toolName: string, input: Record<string, unknown> = {}, failed = false) =>
       deriveToolRowPresentation({
-        toolName: `mcp__t3-code__${toolName}`,
+        toolName: `mcp__styal__${toolName}`,
         itemType: "mcp_tool_call",
         label: "MCP tool call",
         input,
@@ -285,11 +285,22 @@ describe("deriveToolRowPresentation", () => {
 
     it("gives every tool in the family a curated heading", () => {
       // Membership is derived from the spec table's keys, so a tool that
-      // reaches the row without a heading would fall back to `t3-code · …`.
+      // reaches the row without a heading would fall back to `styal · …`.
       for (const [tool, heading] of PREVIEW_HEADINGS) {
-        expect(isPreviewToolName(`mcp__t3-code__${tool}`)).toBe(true);
+        expect(isPreviewToolName(`mcp__styal__${tool}`)).toBe(true);
         expect(preview(tool)?.heading).toBe(heading);
       }
+    });
+
+    it("keeps the former prefix readable without exposing its old label", () => {
+      expect(isPreviewToolName("mcp__t3-code__preview_status")).toBe(true);
+      expect(
+        deriveToolRowPresentation({
+          toolName: "mcp__t3-code__unknown_tool",
+          itemType: "mcp_tool_call",
+          label: "MCP tool call",
+        })?.heading,
+      ).toBe("styal · unknown_tool");
     });
 
     it("describes a fill-mode resize as fitting the panel", () => {
@@ -323,7 +334,7 @@ describe("deriveToolRowPresentation", () => {
     });
 
     it("leaves another server's preview tools as generic MCP rows", () => {
-      // The vocabulary describes T3's browser; it would misdescribe anyone
+      // The vocabulary describes styal's browser; it would misdescribe anyone
       // else's tool that happens to share the name.
       expect(isPreviewToolName("mcp__playwright__preview_click")).toBe(false);
       expect(
@@ -342,7 +353,7 @@ describe("deriveToolRowPresentation", () => {
       // sees. This is that post-projection shape.
       expect(
         deriveToolRowPresentation({
-          toolName: "mcp__t3-code__preview_press",
+          toolName: "mcp__styal__preview_press",
           itemType: "mcp_tool_call",
           label: "MCP tool call",
           input: { key: "Enter", modifiers: ["Meta"] },
