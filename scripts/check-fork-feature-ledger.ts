@@ -37,7 +37,7 @@ try {
       }
       for (const { feature, paths } of overlaps) {
         process.stdout.write(
-          `::warning title=Upstream touched fork feature::${feature.id}: ${paths.join(", ")}\n`,
+          `::warning title=Changed path overlaps fork feature::${feature.id}: ${paths.join(", ")}\n`,
         );
       }
     }

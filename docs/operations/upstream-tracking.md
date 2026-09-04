@@ -24,5 +24,7 @@ cross-references or notifications on upstream's side.
 Tick the boxes you want and add direction beneath each — what to keep of the fork's behaviour, which
 related changes to take together, or why to skip. Then dispatch an agent with the ticked items and
 those notes as its brief. The resulting pull request should name the upstream numbers it carries in
-backticks, and it is verified by Fork CI on the tree it produces. Upstream migration files may only
-change in such a pull request, carried verbatim.
+backticks. Fork CI reports when the resulting pull request touches paths watched by the fork feature
+ledger, regardless of whether the upstream work was merged, cherry-picked, squashed, or ported by
+hand. The reviewer must also inspect upstream source changes that the resulting diff intentionally
+leaves out. Upstream migration files may only change in such a pull request, carried verbatim.

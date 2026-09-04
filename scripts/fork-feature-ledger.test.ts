@@ -17,6 +17,7 @@ import {
 
 const repoRoot = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 const cliPath = NodePath.resolve(repoRoot, "scripts/check-fork-feature-ledger.ts");
+const ciWorkflowPath = NodePath.resolve(repoRoot, ".github/workflows/fork-ci.yml");
 const nightlyWorkflowPath = NodePath.resolve(repoRoot, ".github/workflows/fork-nightly.yml");
 
 function validate(ledger: ForkFeatureLedger): string {
@@ -145,39 +146,63 @@ features: []
 
       assert.equal(result.status, 0, result.stderr);
       assert.include(result.stdout, "Validated");
-      assert.include(result.stdout, "Upstream touched fork feature::completion-sounds");
+      assert.include(result.stdout, "Changed path overlaps fork feature::completion-sounds");
       assert.include(NodeFS.readFileSync(summaryFile, "utf8"), "completion-sounds");
     } finally {
       NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
     }
   });
 
-  it("wires advisory upstream overlap review into Fork Nightly", () => {
-    const workflow = parse(NodeFS.readFileSync(nightlyWorkflowPath, "utf8")) as {
+  it("reviews pull request paths in Fork CI instead of upstream ancestry in Fork Nightly", () => {
+    const ciWorkflow = parse(NodeFS.readFileSync(ciWorkflowPath, "utf8")) as {
       readonly jobs: {
-        readonly prepare: {
+        readonly check: {
           readonly steps: ReadonlyArray<{
             readonly id?: string;
             readonly name?: string;
             readonly run?: string;
+            readonly if?: string;
             readonly "continue-on-error"?: boolean;
           }>;
         };
       };
     };
-    const candidate = workflow.jobs.prepare.steps.find((step) => step.id === "candidate");
-    const review = workflow.jobs.prepare.steps.find(
-      (step) => step.name === "Review upstream overlap with fork features",
+    const reviewIndex = ciWorkflow.jobs.check.steps.findIndex(
+      (step) => step.name === "Review pull request overlap with fork features",
+    );
+    const review = ciWorkflow.jobs.check.steps[reviewIndex];
+    const setupViteIndex = ciWorkflow.jobs.check.steps.findIndex(
+      (step) => step.name === "Setup Vite+",
+    );
+    const setupRustIndex = ciWorkflow.jobs.check.steps.findIndex(
+      (step) => step.name === "Setup Rust",
     );
 
-    assert.include(
-      candidate?.run ?? "",
-      "old_upstream_ref=$(git merge-base origin/nightly FETCH_HEAD)",
-    );
-    assert.include(candidate?.run ?? "", 'echo "old_upstream_ref=$old_upstream_ref"');
-    assert.notInclude(candidate?.run ?? "", 'echo "old_upstream_ref=$OLD_UPSTREAM_REF"');
+    assert.equal(review?.if, "github.event_name == 'pull_request'");
     assert.equal(review?.["continue-on-error"], true);
+    assert.include(review?.run ?? "", '"$BASE_SHA...HEAD"');
     assert.include(review?.run ?? "", "git diff --name-only --no-renames");
     assert.include(review?.run ?? "", "ledger:check -- --changed-paths");
+    assert.notInclude(review?.run ?? "", "git merge-base");
+    assert.notInclude(review?.run ?? "", "FETCH_HEAD");
+    assert.isAbove(reviewIndex, setupViteIndex);
+    assert.isBelow(reviewIndex, setupRustIndex);
+
+    const nightlyWorkflow = parse(NodeFS.readFileSync(nightlyWorkflowPath, "utf8")) as {
+      readonly jobs: {
+        readonly prepare: {
+          readonly steps: ReadonlyArray<{ readonly name?: string; readonly run?: string }>;
+        };
+      };
+    };
+    const nightlyReview = nightlyWorkflow.jobs.prepare.steps.find(
+      (step) => step.name === "Review upstream overlap with fork features",
+    );
+    const candidate = nightlyWorkflow.jobs.prepare.steps.find(
+      (step) => step.name === "Resolve candidate",
+    );
+
+    assert.isUndefined(nightlyReview);
+    assert.notInclude(candidate?.run ?? "", "old_upstream_ref");
   });
 });

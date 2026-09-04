@@ -41,13 +41,17 @@ numbers, invariants, paths, and test evidence to the existing entry when repairi
 Keep implementation and upstream paths distinct, entries sorted by ID, and values within structured
 lists sorted.
 
-During an upstream rebase, review a capability when upstream changes one of its upstream paths, when
-its tests need conflict resolution, or when the patch range-diff changes. Record upstream evidence
-before changing `upstream.status` from `unassessed`. Fork Nightly compares the old and new upstream
-commits and writes warnings plus a workflow summary section for every exact upstream-path overlap.
+Review a capability when an upstream integration changes one of its upstream paths, when its tests
+need conflict resolution, or when the port changes the fork's implementation. Record upstream
+evidence before changing `upstream.status` from `unassessed`. For every pull request, Fork CI compares
+the base with GitHub's synthetic merge candidate and writes warnings plus a workflow summary section
+for every exact upstream-path overlap. Comparing the resulting pull request instead of commit
+ancestry covers merges, cherry-picks, squash integration, and hand-written ports alike. It cannot
+report an upstream path whose change was deliberately discarded while resolving or porting the
+source, so upstream integration reviews must still inspect the named upstream changes themselves.
 These warnings identify where judgment is needed; they do not claim that an overlap is a behavioral
-conflict. Fork CI validation is blocking, while the Nightly overlap step is deliberately advisory so
-a reporting failure cannot prevent an otherwise verified release.
+conflict. Ledger validation is blocking, while the overlap step is deliberately advisory so a
+reporting failure cannot prevent an otherwise valid pull request.
 
 When upstream provides overlapping behavior, mark the entry `review-needed` and compare the ledger's
 invariants rather than implementation shape. Retire the fork patch only after upstream satisfies the

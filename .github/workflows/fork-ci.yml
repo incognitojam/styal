@@ -71,6 +71,7 @@ jobs:
         with:
           # github.sha is the synthetic merge commit for pull_request runs.
           ref: ${{ github.sha }}
+          fetch-depth: 0
           sparse-checkout: |
             /*
             !/.repos/
@@ -82,6 +83,20 @@ jobs:
           node-version-file: package.json
           cache: true
           run-install: true
+
+      - name: Review pull request overlap with fork features
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          changed_paths="$RUNNER_TEMP/pull-request-changed-paths.txt"
+          git diff --name-only --no-renames \
+            "$BASE_SHA...HEAD" > "$changed_paths"
+          vp run --filter @t3tools/scripts ledger:check -- --changed-paths "$changed_paths"
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
