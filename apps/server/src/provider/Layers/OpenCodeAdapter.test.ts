@@ -29,6 +29,7 @@ import { createModelSelection } from "@t3tools/shared/model";
 import { ServerConfig } from "../../config.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
 import { ProviderSessionDirectory } from "../Services/ProviderSessionDirectory.ts";
 import type { OpenCodeAdapterShape } from "../Services/OpenCodeAdapter.ts";
 import {
@@ -565,7 +566,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
 
       NodeAssert.equal(
         (runtimeMock.state.promptCalls.at(-1) as { system?: string }).system,
-        "Prefer focused tests.",
+        `${buildRuntimeInstructions({ harness: "OpenCode", model: "anthropic/sonnet" })}\n\nPrefer focused tests.`,
       );
       yield* adapter.stopSession(threadId);
     }),
@@ -5031,6 +5032,10 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         },
         agent: "github-copilot",
         variant: "high",
+        system: buildRuntimeInstructions({
+          harness: "OpenCode",
+          model: "anthropic/claude-sonnet-4-5",
+        }),
         parts: [{ type: "text", text: "Fix it" }],
       });
     }).pipe(Effect.provide(adapterLayer));
@@ -5078,6 +5083,10 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
           providerID: "anthropic",
           modelID: "claude-sonnet-4-5",
         },
+        system: buildRuntimeInstructions({
+          harness: "OpenCode",
+          model: "anthropic/claude-sonnet-4-5",
+        }),
         parts: [{ type: "text", text: "Fix it" }],
       });
     }).pipe(Effect.provide(adapterLayer));

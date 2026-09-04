@@ -47,6 +47,7 @@ import {
   SYNTHETIC_CLAUDE_THINKING_MODEL,
 } from "../ClaudeModelCatalog.testFixtures.ts";
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
+import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import type { ClaudeScopedLimitNames } from "./claudeUsageLimits.ts";
 import { makeClaudeAdapter, type ClaudeAdapterLiveOptions } from "./ClaudeAdapter.ts";
@@ -322,7 +323,7 @@ describe("ClaudeAdapterLive", () => {
       assert.deepEqual(harness.getLastCreateQueryInput()?.options.systemPrompt, {
         type: "preset",
         preset: "claude_code",
-        append: "Prefer focused tests.",
+        append: `${buildRuntimeInstructions({ harness: "Claude Code" })}\n\nPrefer focused tests.`,
       });
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
@@ -410,6 +411,12 @@ describe("ClaudeAdapterLive", () => {
 
       const createInput = harness.getLastCreateQueryInput();
       assert.deepEqual(createInput?.options.settingSources, ["user", "project", "local"]);
+      assert.deepEqual(createInput?.options.systemPrompt, {
+        type: "preset",
+        preset: "claude_code",
+        append:
+          "<runtime_info>In case you're asked: you are running in styal through the Claude Code harness. No need to mention this otherwise. You can embed images and videos in your response using Markdown with absolute file paths.</runtime_info>",
+      });
       assert.equal(createInput?.options.permissionMode, "bypassPermissions");
       assert.equal(createInput?.options.allowDangerouslySkipPermissions, true);
     }).pipe(

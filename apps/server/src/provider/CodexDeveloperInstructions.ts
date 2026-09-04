@@ -1,5 +1,6 @@
 import type { ProviderInteractionMode } from "@t3tools/contracts";
 import { ACTIVE_MCP_SERVER_NAME, type McpServerName } from "../mcp/McpProviderSession.ts";
+import { buildRuntimeInstructions } from "./RuntimeInstructions.ts";
 
 const browserToolInstructionBlock = (mcpServerName: McpServerName): string => `
 
@@ -180,11 +181,6 @@ export interface CodexRuntimeInfo {
   readonly reasoningEffort: string;
 }
 
-// Values come from trusted config, but keep the block single-line regardless.
-function toSingleLine(value: string): string {
-  return value.replaceAll(/\s+/g, " ").trim();
-}
-
 export function buildCodexDeveloperInstructions(
   interactionMode: ProviderInteractionMode,
   runtime: CodexRuntimeInfo,
@@ -203,5 +199,5 @@ export function buildCodexDeveloperInstructions(
       : codexDefaultModeDeveloperInstructions(browserToolsAvailable, mcpServerName);
   return `${base}
 
-<runtime_info>In case you're asked: you are running in styal through the Codex harness, as ${toSingleLine(runtime.model)} with ${toSingleLine(runtime.reasoningEffort)} reasoning effort. No need to mention this otherwise.</runtime_info>${additionalInstructions ? `\n\n<additional_instructions>\n${additionalInstructions}\n</additional_instructions>` : ""}`;
+${buildRuntimeInstructions({ harness: "Codex", ...runtime })}${additionalInstructions ? `\n\n<additional_instructions>\n${additionalInstructions}\n</additional_instructions>` : ""}`;
 }
