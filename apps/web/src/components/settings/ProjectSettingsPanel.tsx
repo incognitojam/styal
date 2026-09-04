@@ -27,6 +27,7 @@ import { useCanGoBack, useNavigate } from "@tanstack/react-router";
 import {
   ChevronDownIcon,
   CopyIcon,
+  FileInputIcon,
   PlusIcon,
   RefreshCwIcon,
   SettingsIcon,
@@ -559,6 +560,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
   const [editorRequest, setEditorRequest] = useState<ProjectScriptEditorRequest | null>(null);
   const checkoutScripts = useCheckoutProjectScripts({
     environmentId: selectedCheckout.environmentId,
+    projectId: selectedCheckout.id,
     cwd: selectedCheckout.workspaceRoot,
     savedScripts,
     keybindings,
@@ -575,8 +577,14 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
       reportFailure("Failed to migrate actions", result);
       return;
     }
-    toastManager.add({ type: "success", title: "Actions migrated to styal.json" });
-  }, [checkoutScripts.migrateLegacyScripts, reportFailure]);
+    toastManager.add({
+      type: "success",
+      title:
+        checkoutScripts.actionSource === "local"
+          ? "styal.json created"
+          : "Local actions copied to styal.json",
+    });
+  }, [checkoutScripts.actionSource, checkoutScripts.migrateLegacyScripts, reportFailure]);
 
   const deleteScript = useCallback(
     (scriptId: string) => {
@@ -1030,7 +1038,9 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
             <div className="min-w-0">
               <h3 className="text-base font-semibold text-foreground">Actions</h3>
               <p className="text-pretty text-sm text-muted-foreground">
-                Actions are read from and saved to styal.json in this checkout.
+                {checkoutScripts.actionSource === "styal.json"
+                  ? "Actions are read from and saved to styal.json in this checkout."
+                  : "Local actions are stored in Styal and apply to this checkout's worktree threads."}
               </p>
             </div>
             <div className="flex w-full flex-wrap gap-1.5 sm:w-auto sm:shrink-0 sm:justify-end">
@@ -1042,9 +1052,10 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                   type="button"
                   onClick={() => void migrateLegacyScripts()}
                 >
-                  {checkoutScripts.legacyScripts.length > 0
-                    ? "Migrate legacy actions"
-                    : "Migrate legacy config"}
+                  <FileInputIcon className="size-3.5" />
+                  {checkoutScripts.actionSource === "local"
+                    ? "Create styal.json"
+                    : "Copy local actions"}
                 </Button>
               ) : null}
               <Button size="xs" variant="ghost" type="button" onClick={projectFile.refresh}>
@@ -1071,7 +1082,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
             );
             return (
               <SettingsRow
-                key={`styal:${script.id}`}
+                key={`${checkoutScripts.actionSource}:${script.id}`}
                 className="group py-2"
                 title={
                   <span className="flex min-w-0 items-center gap-2">
@@ -1083,7 +1094,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                     <code className="min-w-0 flex-1 truncate font-mono font-normal text-muted-foreground">
                       {script.command}
                     </code>
-                    {script.runOnWorktreeCreate ? (
+                    {checkoutScripts.actionSource === "local" && script.runOnWorktreeCreate ? (
                       <span className="shrink-0 rounded-sm border border-border/60 px-1.5 py-px text-[11px] font-normal text-muted-foreground">
                         setup
                       </span>
@@ -1112,7 +1123,9 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
           })}
           {checkoutScripts.scripts.length === 0 ? (
             <p className="px-3 py-2 text-base text-muted-foreground sm:px-4 sm:text-sm">
-              No actions configured for this checkout.
+              {checkoutScripts.actionSource === "styal.json"
+                ? "No actions configured in this checkout's styal.json."
+                : "No local actions configured for this checkout."}
             </p>
           ) : null}
           {projectFile.status === "invalid" ? (
@@ -1149,6 +1162,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
 
       <ProjectScriptEditorDialog
         request={editorRequest}
+        actionSource={checkoutScripts.actionSource}
         scripts={[...checkoutScripts.scripts, ...checkoutScripts.legacyScripts]}
         onSubmit={(scriptId, input) =>
           scriptId === null

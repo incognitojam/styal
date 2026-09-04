@@ -11,16 +11,14 @@ const setupScript = { runOnWorktreeCreate: true } as const;
 const regularScript = { runOnWorktreeCreate: false } as const;
 
 describe("projectScriptsFromStyalFile", () => {
-  it("maps the file's setup marker to the runtime setup flag", () => {
-    expect(
-      projectScriptsFromStyalFile([{ id: "setup", name: "Setup", command: "vp i", setup: true }]),
-    ).toEqual([
+  it("keeps checked-in actions manual", () => {
+    expect(projectScriptsFromStyalFile([{ id: "setup", name: "Setup", command: "vp i" }])).toEqual([
       {
         id: "setup",
         name: "Setup",
         command: "vp i",
         icon: "play",
-        runOnWorktreeCreate: true,
+        runOnWorktreeCreate: false,
       },
     ]);
   });

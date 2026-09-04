@@ -2752,6 +2752,7 @@ function ChatViewContent(props: ChatViewProps) {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const projectScripts = useCheckoutProjectScripts({
     environmentId,
+    projectId: activeProject?.id ?? null,
     cwd: activeProject === null ? null : gitCwd,
     savedScripts: activeProject?.scripts ?? [],
     keybindings,
@@ -6940,6 +6941,7 @@ function ChatViewContent(props: ChatViewProps) {
             activeProjectFaviconPath={activeProject?.faviconPath ?? null}
             openInCwd={gitCwd}
             activeProjectScripts={activeProject ? projectScripts.scripts : undefined}
+            projectScriptSource={projectScripts.actionSource}
             legacyProjectScripts={projectScripts.legacyScripts}
             hasLegacyProjectConfig={projectScripts.hasLegacyConfig}
             canEditProjectScripts={projectScripts.canEdit && !projectScripts.isSaving}

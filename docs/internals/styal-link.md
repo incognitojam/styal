@@ -142,8 +142,7 @@ T3's production Clerk instance and relay. It is left untouched so upstream picks
 
 Run the repository's **Setup Worktree** action after creating a worktree. It symlinks
 `$STYAL_PROJECT_ROOT/.env` (and `infra/relay/.env`) into that worktree, so populate the file once in
-the original checkout rather than replacing the symlink. Checked-in setup actions remain manual
-until styal has an explicit project-trust model.
+the original checkout rather than replacing the symlink. Checked-in actions always remain manual.
 
 ## Verifying a build
 

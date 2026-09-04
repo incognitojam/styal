@@ -59,6 +59,7 @@ interface ChatHeaderProps {
   activeProjectFaviconPath: string | null;
   openInCwd: string | null;
   activeProjectScripts: ReadonlyArray<ProjectScript> | undefined;
+  projectScriptSource: "local" | "styal.json";
   legacyProjectScripts: ReadonlyArray<ProjectScript>;
   hasLegacyProjectConfig: boolean;
   canEditProjectScripts: boolean;
@@ -133,6 +134,7 @@ export const ChatHeader = memo(function ChatHeader({
   activeProjectFaviconPath,
   openInCwd,
   activeProjectScripts,
+  projectScriptSource,
   legacyProjectScripts,
   hasLegacyProjectConfig,
   canEditProjectScripts,
@@ -388,6 +390,7 @@ export const ChatHeader = memo(function ChatHeader({
         {activeProjectScripts && (
           <ProjectScriptsControl
             scripts={activeProjectScripts}
+            actionSource={projectScriptSource}
             legacyScripts={legacyProjectScripts}
             hasLegacyConfig={hasLegacyProjectConfig}
             canEdit={canEditProjectScripts}

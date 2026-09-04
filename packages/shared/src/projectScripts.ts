@@ -52,7 +52,8 @@ export function projectScriptsFromStyalFile(
       name: script.name,
       command: script.command,
       icon: script.icon ?? "play",
-      runOnWorktreeCreate: script.setup ?? false,
+      // Checked-in commands remain manual until project trust is supported.
+      runOnWorktreeCreate: false,
     };
   });
 }

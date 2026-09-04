@@ -49,13 +49,7 @@ describe("buildStyalProjectFileJsonSchema", () => {
 
     const script = schema.properties.scripts?.items;
     expect(script?.required).toEqual(["name", "command"]);
-    expect(Object.keys(script?.properties ?? {}).sort()).toEqual([
-      "command",
-      "icon",
-      "id",
-      "name",
-      "setup",
-    ]);
+    expect(Object.keys(script?.properties ?? {}).sort()).toEqual(["command", "icon", "id", "name"]);
     expect(script?.properties.id?.allOf).toContainEqual({
       pattern: "^[a-z0-9][a-z0-9-]*$",
     });

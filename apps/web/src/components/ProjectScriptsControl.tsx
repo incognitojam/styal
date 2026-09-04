@@ -3,7 +3,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { ChevronDownIcon, DownloadIcon, PlusIcon, SettingsIcon } from "lucide-react";
+import { ChevronDownIcon, FileInputIcon, PlusIcon, SettingsIcon } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
 import { commandForProjectScript, primaryProjectScript } from "~/projectScripts";
@@ -36,9 +36,10 @@ export function openAddProjectScriptEditor(input: {
 }
 
 interface ProjectScriptsControlProps {
-  /** Live scripts declared in the active checkout's styal.json. */
+  /** Actions from the active checkout's selected source. */
   scripts: ReadonlyArray<ProjectScript>;
-  /** Database and t3.json actions that can be copied into this checkout. */
+  actionSource: "local" | "styal.json";
+  /** Actions from older sources that can be copied into this checkout's styal.json. */
   legacyScripts?: ReadonlyArray<ProjectScript>;
   hasLegacyConfig?: boolean;
   canEdit?: boolean;
@@ -57,6 +58,7 @@ interface ProjectScriptsControlProps {
 
 export default function ProjectScriptsControl({
   scripts,
+  actionSource,
   legacyScripts = NO_LEGACY_SCRIPTS,
   hasLegacyConfig = legacyScripts.length > 0,
   canEdit = true,
@@ -116,7 +118,11 @@ export default function ProjectScriptsControl({
       return;
     }
     if (result._tag === "Success") {
-      toastManager.add({ type: "success", title: "Actions migrated to styal.json" });
+      toastManager.add({
+        type: "success",
+        title:
+          actionSource === "local" ? "styal.json created" : "Local actions copied to styal.json",
+      });
     }
   };
 
@@ -124,10 +130,10 @@ export default function ProjectScriptsControl({
     <>
       {primaryScript && <MenuSeparator />}
       <MenuItem className={dropdownItemClassName} onClick={() => void migrateLegacyScripts()}>
-        <DownloadIcon className="size-4" />
-        {legacyScripts.length > 0
-          ? `Migrate ${legacyScripts.length} legacy action${legacyScripts.length === 1 ? "" : "s"}`
-          : "Migrate legacy config"}
+        <FileInputIcon className="size-4" />
+        {actionSource === "local"
+          ? "Create styal.json"
+          : `Copy ${legacyScripts.length} local action${legacyScripts.length === 1 ? "" : "s"} to styal.json`}
       </MenuItem>
     </>
   );
@@ -186,7 +192,9 @@ export default function ProjectScriptsControl({
                   >
                     <ScriptIcon icon={script.icon} className="size-4" />
                     <span className="truncate">
-                      {script.runOnWorktreeCreate ? `${script.name} (setup)` : script.name}
+                      {actionSource === "local" && script.runOnWorktreeCreate
+                        ? `${script.name} (setup)`
+                        : script.name}
                     </span>
                     <span className="relative ms-auto flex h-6 min-w-6 items-center justify-end">
                       {shortcutLabel && (
@@ -281,6 +289,7 @@ export default function ProjectScriptsControl({
 
       <ProjectScriptEditorDialog
         request={editorRequest}
+        actionSource={actionSource}
         scripts={editorScripts}
         onSubmit={submitScript}
         onDelete={(scriptId) => void onDeleteScript(scriptId)}

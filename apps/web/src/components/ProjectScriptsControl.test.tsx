@@ -18,10 +18,12 @@ function renderControl(
   legacyScripts: ReadonlyArray<ProjectScript> = [],
   hasLegacyConfig = legacyScripts.length > 0,
   canEdit = true,
+  actionSource: "local" | "styal.json" = "styal.json",
 ) {
   return renderToStaticMarkup(
     <ProjectScriptsControl
       scripts={scripts}
+      actionSource={actionSource}
       legacyScripts={legacyScripts}
       hasLegacyConfig={hasLegacyConfig}
       canEdit={canEdit}
@@ -91,7 +93,7 @@ describe("ProjectScriptsControl compact controls", () => {
     expect(html).not.toContain("styal.json");
   });
 
-  it("keeps a legacy action behind migration", () => {
+  it("keeps a local action behind migration once styal.json exists", () => {
     const html = renderControl([], [PRIMARY_SCRIPT]);
 
     expect(buttonTag(html, "Run Dev")).toBeUndefined();
@@ -102,6 +104,12 @@ describe("ProjectScriptsControl compact controls", () => {
     const html = renderControl([], [], true);
 
     expect(buttonTag(html, "Project actions")).toBeDefined();
+  });
+
+  it("runs local actions when styal.json is absent", () => {
+    const html = renderControl([PRIMARY_SCRIPT], [], true, true, "local");
+
+    expectResponsiveXsControl(buttonTag(html, "Run Dev"));
   });
 
   it("disables Add action while the project file is unavailable", () => {

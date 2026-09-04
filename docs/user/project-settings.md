@@ -14,10 +14,9 @@ files.
 
 To choose a different icon:
 
-1. Open **Settings** and select **Projects**.
-2. Select the project.
-3. Under **Appearance**, select **Choose a project file**.
-4. Search for an image file and select it.
+1. Open the projects filter and select the settings icon for the project.
+2. Under **Appearance**, select **Choose a project file**.
+3. Search for an image file and select it.
 
 T3 Code supports SVG, PNG, ICO, JPEG, GIF, AVIF, and WebP files. The selected path applies to
 each checkout in the project group and appears on your connected clients.

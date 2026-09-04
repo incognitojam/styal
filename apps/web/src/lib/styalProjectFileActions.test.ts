@@ -68,6 +68,18 @@ describe("styal project file actions", () => {
     });
   });
 
+  it("turns a trusted local setup action into a manual file action", () => {
+    const contents = styalProjectFileContentsWithScripts({
+      currentContents: null,
+      legacyFile: null,
+      scripts: [{ ...dev, id: "setup", name: "Setup", runOnWorktreeCreate: true }],
+    });
+
+    expect(parseStyalProjectFile(contents)?.scripts).toEqual([
+      { id: "setup", name: "Setup", command: "vp dev" },
+    ]);
+  });
+
   it("deduplicates IDs while preserving distinct keybinding identities", () => {
     expect(
       legacyProjectScriptsForMigration({
@@ -82,16 +94,6 @@ describe("styal project file actions", () => {
       { ...dev, id: "old-dev" },
       { ...dev, id: "lint", name: "Lint", command: "vp lint", icon: "lint" },
     ]);
-  });
-
-  it("keeps the checkout's existing setup action when migrating another", () => {
-    expect(
-      legacyProjectScriptsForMigration({
-        liveScripts: [{ ...dev, id: "setup", name: "Setup", runOnWorktreeCreate: true }],
-        legacyFile: null,
-        savedScripts: [{ ...dev, id: "old-setup", runOnWorktreeCreate: true }],
-      }),
-    ).toEqual([{ ...dev, id: "old-setup", runOnWorktreeCreate: false }]);
   });
 
   it("reserves saved IDs when assigning IDs to t3.json actions", () => {

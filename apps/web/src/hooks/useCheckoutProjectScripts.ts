@@ -21,6 +21,7 @@ import type { NewProjectScriptInput } from "~/components/projectScriptEditor";
 import type {
   EnvironmentId,
   KeybindingCommand,
+  ProjectId,
   ProjectScript,
   ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
@@ -34,16 +35,41 @@ import { useCallback, useMemo, useRef, useState } from "react";
 
 import { useProjectFileState } from "./useProjectFileState";
 
+const NO_SCRIPTS: ReadonlyArray<ProjectScript> = [];
+
 interface CheckoutProjectScriptsInput {
   environmentId: EnvironmentId;
+  projectId: ProjectId | null;
   cwd: string | null;
   savedScripts: ReadonlyArray<ProjectScript>;
   keybindings: ResolvedKeybindingsConfig;
 }
 
+export function resolveCheckoutActionState(input: {
+  readonly status: "loading" | "missing" | "invalid" | "valid";
+  readonly source: "styal.json" | "t3.json" | null;
+  readonly fileScripts: ReadonlyArray<ProjectScript>;
+  readonly localScripts: ReadonlyArray<ProjectScript>;
+}): {
+  readonly actionSource: "local" | "styal.json";
+  readonly scripts: ReadonlyArray<ProjectScript>;
+} {
+  const actionSource = input.source === "styal.json" ? "styal.json" : "local";
+  return {
+    actionSource,
+    scripts:
+      input.status === "loading"
+        ? NO_SCRIPTS
+        : actionSource === "styal.json"
+          ? input.fileScripts
+          : input.localScripts,
+  };
+}
+
 export function useCheckoutProjectScripts(input: CheckoutProjectScriptsInput) {
   const projectFile = useProjectFileState(input.environmentId, input.cwd);
   const writeFile = useAtomCommand(projectEnvironment.writeFile, { reportFailure: false });
+  const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
   const upsertKeybinding = useAtomCommand(serverEnvironment.upsertKeybinding, {
     reportFailure: false,
   });
@@ -53,16 +79,27 @@ export function useCheckoutProjectScripts(input: CheckoutProjectScriptsInput) {
   const [isSaving, setIsSaving] = useState(false);
   const savingRef = useRef(false);
   const { legacyFile, liveScripts, refresh, source, status, styalContents } = projectFile;
+  const { actionSource, scripts } = resolveCheckoutActionState({
+    status,
+    source,
+    fileScripts: liveScripts,
+    localScripts: input.savedScripts,
+  });
 
-  const legacyScripts = useMemo(
-    () =>
-      legacyProjectScriptsForMigration({
+  const legacyScripts = useMemo(() => {
+    if (actionSource === "styal.json") {
+      return legacyProjectScriptsForMigration({
         liveScripts,
         legacyFile,
         savedScripts: input.savedScripts,
-      }),
-    [input.savedScripts, legacyFile, liveScripts],
-  );
+      });
+    }
+    return legacyT3ProjectScriptsForMigration({
+      liveScripts: input.savedScripts,
+      legacyFile,
+      savedScripts: input.savedScripts,
+    });
+  }, [actionSource, input.savedScripts, legacyFile, liveScripts]);
 
   const writeScripts = useCallback(
     async (scripts: ReadonlyArray<ProjectScript>): Promise<AtomCommandResult<void, unknown>> => {
@@ -146,55 +183,82 @@ export function useCheckoutProjectScripts(input: CheckoutProjectScriptsInput) {
     [input.environmentId, input.keybindings, removeKeybinding, upsertKeybinding],
   );
 
+  const writeLocalScripts = useCallback(
+    async (
+      nextScripts: ReadonlyArray<ProjectScript>,
+    ): Promise<AtomCommandResult<void, unknown>> => {
+      if (input.projectId === null) return AsyncResult.success(undefined);
+      if (status === "loading") {
+        return AsyncResult.failure<void, Error>(
+          Cause.fail(new Error("Wait for the project file to finish loading.")),
+        );
+      }
+      if (savingRef.current) {
+        return AsyncResult.failure<void, Error>(
+          Cause.fail(new Error("Another action change is still saving. Try again.")),
+        );
+      }
+
+      savingRef.current = true;
+      setIsSaving(true);
+      try {
+        return mapAtomCommandResult(
+          await updateProject({
+            environmentId: input.environmentId,
+            input: { projectId: input.projectId, scripts: nextScripts },
+          }),
+          () => undefined,
+        );
+      } finally {
+        savingRef.current = false;
+        setIsSaving(false);
+      }
+    },
+    [input.environmentId, input.projectId, status, updateProject],
+  );
+
   const persistScripts = useCallback(
     async (
       scripts: ReadonlyArray<ProjectScript>,
       command: KeybindingCommand,
       keybinding: string | null,
     ) => {
-      const writeResult = await writeScripts(scripts);
+      const writeResult =
+        actionSource === "styal.json"
+          ? await writeScripts(scripts)
+          : await writeLocalScripts(scripts);
       if (writeResult._tag === "Failure") return writeResult;
       return persistKeybinding(command, keybinding);
     },
-    [persistKeybinding, writeScripts],
+    [actionSource, persistKeybinding, writeLocalScripts, writeScripts],
   );
 
   const addScript = useCallback(
     async (scriptInput: NewProjectScriptInput) => {
-      // Creating styal.json also carries forward t3.json actions, since the
-      // legacy file stops being consulted as soon as the new file exists.
-      const t3Scripts = legacyT3ProjectScriptsForMigration({
-        liveScripts,
-        legacyFile,
-        savedScripts: input.savedScripts,
-      });
-      const baseScripts = [...liveScripts, ...t3Scripts];
       const id = nextProjectScriptId(
         scriptInput.name,
-        [...liveScripts, ...legacyScripts].map((script) => script.id),
+        [...scripts, ...legacyScripts].map((script) => script.id),
       );
       const nextScript = buildProjectScript(id, scriptInput);
       const nextScripts = scriptInput.runOnWorktreeCreate
         ? [
-            ...baseScripts.map((script) =>
+            ...scripts.map((script) =>
               script.runOnWorktreeCreate ? { ...script, runOnWorktreeCreate: false } : script,
             ),
             nextScript,
           ]
-        : [...baseScripts, nextScript];
+        : [...scripts, nextScript];
       return persistScripts(nextScripts, commandForProjectScript(id), scriptInput.keybinding);
     },
-    [input.savedScripts, legacyFile, legacyScripts, liveScripts, persistScripts],
+    [legacyScripts, persistScripts, scripts],
   );
 
   const updateScript = useCallback(
     async (scriptId: string, scriptInput: NewProjectScriptInput) => {
-      if (!liveScripts.some((script) => script.id === scriptId)) {
-        return AsyncResult.failure<void, Error>(
-          Cause.fail(new Error("Action not found in styal.json.")),
-        );
+      if (!scripts.some((script) => script.id === scriptId)) {
+        return AsyncResult.failure<void, Error>(Cause.fail(new Error("Action not found.")));
       }
-      const nextScripts = liveScripts.map((script) =>
+      const nextScripts = scripts.map((script) =>
         script.id === scriptId
           ? buildProjectScript(scriptId, scriptInput)
           : scriptInput.runOnWorktreeCreate && script.runOnWorktreeCreate
@@ -203,33 +267,36 @@ export function useCheckoutProjectScripts(input: CheckoutProjectScriptsInput) {
       );
       return persistScripts(nextScripts, commandForProjectScript(scriptId), scriptInput.keybinding);
     },
-    [liveScripts, persistScripts],
+    [persistScripts, scripts],
   );
 
   const deleteScript = useCallback(
     async (scriptId: string) =>
       persistScripts(
-        liveScripts.filter((script) => script.id !== scriptId),
+        scripts.filter((script) => script.id !== scriptId),
         commandForProjectScript(scriptId),
         null,
       ),
-    [liveScripts, persistScripts],
+    [persistScripts, scripts],
   );
 
   const migrateLegacyScripts = useCallback(
-    () => writeScripts([...liveScripts, ...legacyScripts]),
-    [legacyScripts, liveScripts, writeScripts],
+    () => writeScripts([...scripts, ...legacyScripts]),
+    [legacyScripts, scripts, writeScripts],
   );
   const hasLegacyConfig =
     status !== "loading" &&
     status !== "invalid" &&
-    (legacyFile !== null || legacyScripts.length > 0);
+    (actionSource === "styal.json"
+      ? legacyScripts.length > 0
+      : legacyFile !== null || scripts.length > 0);
   const canEdit = status !== "loading" && !(status === "invalid" && source === "styal.json");
 
   return useMemo(
     () => ({
       projectFile,
-      scripts: liveScripts,
+      actionSource,
+      scripts,
       legacyScripts,
       hasLegacyConfig,
       canEdit,
@@ -241,12 +308,13 @@ export function useCheckoutProjectScripts(input: CheckoutProjectScriptsInput) {
     }),
     [
       addScript,
+      actionSource,
       canEdit,
       deleteScript,
       hasLegacyConfig,
       isSaving,
       legacyScripts,
-      liveScripts,
+      scripts,
       migrateLegacyScripts,
       projectFile,
       updateScript,

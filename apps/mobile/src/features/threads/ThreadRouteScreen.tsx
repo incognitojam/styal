@@ -22,9 +22,7 @@ import {
   isSetupScriptOutsideWorktree,
   projectScriptCwd,
   projectScriptRuntimeEnv,
-  projectScriptsFromStyalFile,
 } from "@t3tools/shared/projectScripts";
-import { parseStyalProjectFile } from "@t3tools/shared/styalProjectFile";
 import { Alert, Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWorkspaceState } from "../../state/workspace";
@@ -77,6 +75,7 @@ import { useThreadComposerState } from "../../state/use-thread-composer-state";
 import { threadEnvironment } from "../../state/threads";
 import { projectEnvironment } from "../../state/projects";
 import { projectThreadContentPresentation } from "./threadContentPresentation";
+import { resolveMobileProjectScripts } from "./projectScripts";
 import {
   useAdaptiveWorkspaceLayout,
   useAdaptiveWorkspacePaneRole,
@@ -231,12 +230,15 @@ function ThreadRouteContent(
       : null,
   );
   const styalProjectFileData = styalProjectFileQuery.data as ProjectReadFileResult | null;
-  const styalProjectFileScripts = useMemo(() => {
-    if (styalProjectFileData === null || styalProjectFileData.truncated) return [];
-    const file = parseStyalProjectFile(styalProjectFileData.contents);
-    return projectScriptsFromStyalFile(file?.scripts ?? []);
-  }, [styalProjectFileData]);
-  const availableProjectScripts = styalProjectFileScripts;
+  const availableProjectScripts = useMemo(
+    () =>
+      resolveMobileProjectScripts({
+        fileData: styalProjectFileData,
+        fileFailure: styalProjectFileQuery.failure,
+        localScripts: selectedThreadProject?.scripts ?? [],
+      }),
+    [selectedThreadProject?.scripts, styalProjectFileData, styalProjectFileQuery.failure],
+  );
   useFocusEffect(
     useCallback(() => {
       styalProjectFileQuery.refresh();

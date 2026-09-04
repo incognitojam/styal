@@ -50,11 +50,6 @@ export const StyalProjectFileScript = Schema.Struct({
       description: 'Icon shown next to the script in the scripts menu. Defaults to "play".',
     }),
   ),
-  setup: Schema.optionalKey(
-    Schema.Boolean.annotate({
-      description: "Marks this as the checkout's setup action.",
-    }),
-  ),
 }).annotate({
   description: "A project script T3 Code exposes directly from styal.json.",
 });

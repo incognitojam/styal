@@ -16,7 +16,6 @@ export function styalFileScriptFromProjectScript(script: ProjectScript): StyalPr
     name: script.name,
     command: script.command,
     ...(script.icon === "play" ? {} : { icon: script.icon }),
-    ...(script.runOnWorktreeCreate ? { setup: true } : {}),
   };
 }
 
@@ -73,12 +72,8 @@ export function legacyT3ProjectScriptsForMigration(input: {
     ) {
       continue;
     }
-    const normalized =
-      candidate.runOnWorktreeCreate && combined.some((script) => script.runOnWorktreeCreate)
-        ? { ...candidate, runOnWorktreeCreate: false }
-        : candidate;
-    combined.push(normalized);
-    additions.push(normalized);
+    combined.push(candidate);
+    additions.push(candidate);
   }
 
   return additions;
@@ -94,12 +89,8 @@ export function legacyProjectScriptsForMigration(input: {
   const combined = [...input.liveScripts, ...additions];
   const append = (candidate: ProjectScript) => {
     if (hasMatchingId(combined, candidate)) return;
-    const normalized =
-      candidate.runOnWorktreeCreate && combined.some((script) => script.runOnWorktreeCreate)
-        ? { ...candidate, runOnWorktreeCreate: false }
-        : candidate;
-    combined.push(normalized);
-    additions.push(normalized);
+    combined.push(candidate);
+    additions.push(candidate);
   };
 
   for (const savedScript of input.savedScripts) append(savedScript);
