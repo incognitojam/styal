@@ -166,7 +166,7 @@ describe("parsePersistedState", () => {
         42 as unknown as string,
       ],
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
-      threadChangedFilesExpansionVersion: 1,
+      threadChangedFilesExpansionVersion: 2,
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
           "turn-1": false,
@@ -194,8 +194,9 @@ describe("parsePersistedState", () => {
     });
   });
 
-  it("ignores changed-file expansion values saved with legacy folder semantics", () => {
+  it.each([undefined, 1])("ignores changed-file expansion version %s", (version) => {
     const parsed = parsePersistedState({
+      ...(version === undefined ? {} : { threadChangedFilesExpansionVersion: version }),
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
           "turn-1": false,
@@ -306,7 +307,7 @@ describe("uiStateStore persistence", () => {
       },
       pendingThreadVisitBaselineKeys: ["environment:thread-1"],
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
-      threadChangedFilesExpansionVersion: 1,
+      threadChangedFilesExpansionVersion: 2,
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
           "turn-1": false,

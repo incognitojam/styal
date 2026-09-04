@@ -3,7 +3,8 @@ import { create } from "zustand";
 import { normalizeProjectPathForComparison } from "./lib/projectPaths";
 
 export const PERSISTED_STATE_KEY = "styal:ui-state:v1";
-const THREAD_CHANGED_FILES_EXPANSION_VERSION = 1;
+// Version 1 stored card visibility, not folder expansion.
+const THREAD_CHANGED_FILES_EXPANSION_VERSION = 2;
 
 export interface PersistedUiState {
   projectExpandedById?: Record<string, boolean>;
@@ -15,7 +16,7 @@ export interface PersistedUiState {
   expandedProjectCwds?: string[];
   projectOrderCwds?: string[];
   defaultAdvertisedEndpointKey?: string | null;
-  threadChangedFilesExpansionVersion?: typeof THREAD_CHANGED_FILES_EXPANSION_VERSION;
+  threadChangedFilesExpansionVersion?: number;
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
 }
 
