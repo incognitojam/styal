@@ -65,7 +65,7 @@ const resolveEnvironmentPortTarget = (
       : normalizedEnvironmentHost;
   const resolved = sourceUrl
     ? new URL(sourceUrl)
-    : new URL(path, `${protocol}://${resolvedHost}:${target.port}`);
+    : new URL(`${protocol}://${resolvedHost}:${target.port}${path}`);
   if (sourceUrl) {
     resolved.hostname = resolvedHost;
     resolved.port = String(target.port);
