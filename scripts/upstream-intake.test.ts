@@ -10,6 +10,10 @@ import { auditUpstreamIntakeCandidate } from "./upstream-intake.ts";
 
 const repoRoot = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 const ciWorkflowPath = NodePath.resolve(repoRoot, ".github/workflows/fork-ci.yml");
+const promotionWorkflowPath = NodePath.resolve(
+  repoRoot,
+  ".github/workflows/promote-upstream-intake.yml",
+);
 const ledger = {
   version: 1,
   fork_repository: "example/fork",
@@ -131,5 +135,92 @@ describe("upstream intake audit", () => {
     assert.include(auditStep?.run ?? "", "intake:check");
     assert.include(auditStep?.run ?? "", "refs/remotes/origin/main");
     assert.include(auditStep?.run ?? "", '"$GITHUB_SHA"');
+  });
+
+  it("gates manual promotion on trusted validation and environment approval", () => {
+    const workflow = parse(NodeFS.readFileSync(promotionWorkflowPath, "utf8")) as {
+      readonly on: {
+        readonly workflow_dispatch: {
+          readonly inputs: Record<string, { readonly required: boolean }>;
+        };
+      };
+      readonly permissions: Record<string, string>;
+      readonly concurrency: { readonly "cancel-in-progress": boolean };
+      readonly jobs: {
+        readonly validate: {
+          readonly if: string;
+          readonly steps: ReadonlyArray<{
+            readonly name?: string;
+            readonly uses?: string;
+            readonly run?: string;
+            readonly with?: Record<string, string>;
+          }>;
+        };
+        readonly promote: {
+          readonly needs: string;
+          readonly environment: string;
+          readonly steps: ReadonlyArray<{
+            readonly name?: string;
+            readonly uses?: string;
+            readonly run?: string;
+            readonly with?: Record<string, string>;
+          }>;
+        };
+      };
+    };
+
+    assert.isTrue(workflow.on.workflow_dispatch.inputs.candidate_branch?.required);
+    assert.isTrue(workflow.on.workflow_dispatch.inputs.reviewed_sha?.required);
+    assert.equal(workflow.permissions.actions, "read");
+    assert.equal(workflow.permissions.contents, "read");
+    assert.isFalse(workflow.concurrency["cancel-in-progress"]);
+    assert.equal(workflow.jobs.validate.if, "github.repository == 'incognitojam/styal'");
+
+    const trustedCheckout = workflow.jobs.validate.steps.find(
+      (step) => step.name === "Checkout trusted promotion code",
+    );
+    assert.equal(trustedCheckout?.with?.ref, "${{ github.sha }}");
+
+    const resolveCandidate = workflow.jobs.validate.steps.find(
+      (step) => step.name === "Resolve the reviewed candidate",
+    );
+    assert.include(resolveCandidate?.run ?? "", '"$GITHUB_REF" != "refs/heads/main"');
+    assert.include(resolveCandidate?.run ?? "", "git check-ref-format");
+    assert.include(resolveCandidate?.run ?? "", '"$candidate_sha" != "$REVIEWED_SHA"');
+    assert.include(resolveCandidate?.run ?? "", '"$trusted_sha" != "$base_sha"');
+    assert.include(
+      resolveCandidate?.run ?? "",
+      'git diff --quiet "$base_sha" "$candidate_sha" -- .github/workflows/fork-ci.yml',
+    );
+
+    const auditCandidate = workflow.jobs.validate.steps.find(
+      (step) => step.name === "Audit candidate with trusted main code",
+    );
+    assert.include(auditCandidate?.run ?? "", "intake:check");
+
+    const verifyCi = workflow.jobs.validate.steps.find(
+      (step) => step.name === "Verify Fork CI for the reviewed SHA",
+    );
+    assert.include(verifyCi?.run ?? "", '--commit "$CANDIDATE_SHA"');
+    assert.include(verifyCi?.run ?? "", '"Fork Intake Audit"');
+    assert.include(verifyCi?.run ?? "", '"Fork Test (Workspace)"');
+
+    assert.equal(workflow.jobs.promote.needs, "validate");
+    assert.equal(workflow.jobs.promote.environment, "upstream-intake-manual");
+    const tokenStep = workflow.jobs.promote.steps.find(
+      (step) => step.name === "Mint Styal Porter token",
+    );
+    assert.equal(tokenStep?.uses, "actions/create-github-app-token@v2");
+    assert.equal(tokenStep?.with?.["permission-contents"], "write");
+    assert.equal(tokenStep?.with?.["app-id"], "${{ vars.STYAL_INTAKE_APP_ID }}");
+
+    const promoteStep = workflow.jobs.promote.steps.find(
+      (step) => step.name === "Fast-forward main to the reviewed candidate",
+    );
+    assert.include(promoteStep?.run ?? "", '"$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$');
+    assert.include(promoteStep?.run ?? "", '"$current_main_sha" != "$EXPECTED_BASE_SHA"');
+    assert.include(promoteStep?.run ?? "", "git merge-base --is-ancestor");
+    assert.include(promoteStep?.run ?? "", 'git push origin "${CANDIDATE_SHA}:refs/heads/main"');
+    assert.notInclude(promoteStep?.run ?? "", "--force");
   });
 });
