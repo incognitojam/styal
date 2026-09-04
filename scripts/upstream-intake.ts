@@ -1,10 +1,13 @@
 import type { ForkFeatureLedger } from "./fork-feature-ledger.ts";
 import { findForkFeatureOverlaps } from "./fork-feature-ledger.ts";
+import { parseUpstreamProvenance } from "./upstream-provenance.ts";
 
 export interface UpstreamIntakeAuditInput {
   readonly baseSha: string;
   readonly headSha: string;
   readonly commits: ReadonlyArray<string>;
+  readonly commitMessages: ReadonlyArray<string>;
+  readonly expectedSourcePullRequests?: ReadonlyArray<number>;
   readonly mergeCommits: ReadonlyArray<string>;
   readonly mainIsAncestor: boolean;
   readonly changedPaths: ReadonlyArray<string>;
@@ -17,6 +20,7 @@ export interface UpstreamIntakeAudit {
   readonly errors: ReadonlyArray<string>;
   readonly manualReviewReasons: ReadonlyArray<string>;
   readonly overlapFeatureIds: ReadonlyArray<string>;
+  readonly sourcePullRequests: ReadonlyArray<number>;
   readonly summary: string;
 }
 
@@ -92,6 +96,30 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
     errors.push(`The candidate contains merge commits: ${input.mergeCommits.join(", ")}.`);
   }
   if (input.changedPaths.length === 0) errors.push("The candidate changes no paths beyond main.");
+  if (input.commitMessages.length !== input.commits.length) {
+    errors.push("The candidate audit did not receive one commit message per candidate commit.");
+  }
+
+  for (const [index, commit] of input.commits.entries()) {
+    const message = input.commitMessages[index];
+    if (
+      message === undefined ||
+      parseUpstreamProvenance([message]).pullRequestNumbers.length === 0
+    ) {
+      errors.push(`Candidate commit ${abbreviated(commit)} has no upstream source provenance.`);
+    }
+  }
+
+  const provenance = parseUpstreamProvenance(input.commitMessages);
+  errors.push(...provenance.errors);
+  if (
+    input.expectedSourcePullRequests !== undefined &&
+    input.expectedSourcePullRequests.join(",") !== provenance.pullRequestNumbers.join(",")
+  ) {
+    errors.push(
+      "The supplied source pull requests do not exactly match the candidate's commit provenance.",
+    );
+  }
 
   const overlaps = findForkFeatureOverlaps(input.ledger, input.changedPaths);
   const overlapFeatureIds = overlaps.map(({ feature }) => feature.id);
@@ -134,6 +162,11 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
 | Candidate | \`${abbreviated(input.headSha)}\` |
 | Commits | ${input.commits.length} |
 | Changed paths | ${input.changedPaths.length} |
+| Upstream PRs | ${
+    provenance.pullRequestNumbers.length === 0
+      ? "None"
+      : provenance.pullRequestNumbers.map((number) => `\`pingdotgg/t3code#${number}\``).join(", ")
+  } |
 | Decision | ${promotion} |
 ${errorSection}${manualReviewSection}${overlapSection}
 > This audit is report-only. It does not update \`main\`.
@@ -145,6 +178,7 @@ ${errorSection}${manualReviewSection}${overlapSection}
     errors,
     manualReviewReasons,
     overlapFeatureIds,
+    sourcePullRequests: provenance.pullRequestNumbers,
     summary,
   };
 }

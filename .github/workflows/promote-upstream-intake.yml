@@ -13,6 +13,10 @@ on:
         description: "Exact 40-character candidate SHA approved by an independent model review"
         required: true
         type: string
+      source_prs:
+        description: "Comma-separated upstream PR numbers matching candidate commit provenance"
+        required: true
+        type: string
 
 permissions:
   actions: read
@@ -33,6 +37,7 @@ jobs:
       candidate_branch: ${{ steps.candidate.outputs.candidate_branch }}
       candidate_sha: ${{ steps.candidate.outputs.candidate_sha }}
       ci_run_url: ${{ steps.ci.outputs.ci_run_url }}
+      source_prs: ${{ steps.audit.outputs.source_prs }}
     steps:
       - name: Checkout trusted promotion code
         uses: actions/checkout@v6
@@ -107,11 +112,15 @@ jobs:
             args:
               - --filter=@t3tools/scripts...
 
-      - name: Audit candidate with trusted main code
+      - id: audit
+        name: Audit candidate with trusted main code
+        env:
+          EXPECTED_SOURCE_PRS: ${{ inputs.source_prs }}
         run: |
           vp run --filter @t3tools/scripts intake:check -- \
             --base "${{ steps.candidate.outputs.base_sha }}" \
-            --head "${{ steps.candidate.outputs.candidate_sha }}"
+            --head "${{ steps.candidate.outputs.candidate_sha }}" \
+            --expected-source-prs "$EXPECTED_SOURCE_PRS"
 
       - id: ci
         name: Verify Fork CI for the reviewed SHA
@@ -120,6 +129,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_BRANCH: ${{ steps.candidate.outputs.candidate_branch }}
           CANDIDATE_SHA: ${{ steps.candidate.outputs.candidate_sha }}
+          SOURCE_PRS: ${{ steps.audit.outputs.source_prs }}
         run: |
           set -euo pipefail
 
@@ -182,6 +192,7 @@ jobs:
             echo "## Promotion validation"
             echo
             echo "- Candidate: \`$CANDIDATE_BRANCH\` at \`$CANDIDATE_SHA\`"
+            echo "- Source PRs: \`$SOURCE_PRS\`"
             echo "- Fork CI: $ci_run_url"
             echo "- Independent review: attested by the exact SHA supplied at dispatch"
             echo
@@ -196,6 +207,7 @@ jobs:
     timeout-minutes: 10
     environment: upstream-intake-manual
     permissions:
+      actions: write
       contents: read
     steps:
       - id: porter_token
@@ -227,6 +239,7 @@ jobs:
           CANDIDATE_BRANCH: ${{ needs.validate.outputs.candidate_branch }}
           CANDIDATE_SHA: ${{ needs.validate.outputs.candidate_sha }}
           CI_RUN_URL: ${{ needs.validate.outputs.ci_run_url }}
+          SOURCE_PRS: ${{ needs.validate.outputs.source_prs }}
         run: |
           set -euo pipefail
 
@@ -270,6 +283,19 @@ jobs:
             echo
             echo "- Branch: \`$CANDIDATE_BRANCH\`"
             echo "- Promoted SHA: \`$CANDIDATE_SHA\`"
+            echo "- Source PRs: \`$SOURCE_PRS\`"
             echo "- Verified Fork CI: $CI_RUN_URL"
             echo "- Push actor: \`${{ steps.porter_token.outputs.app-slug }}[bot]\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - id: refresh_tracking
+        name: Refresh upstream tracking issue
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run upstream-tracking.yml --repo "$GITHUB_REPOSITORY" --ref main
+
+      - name: Report deferred tracking refresh
+        if: steps.refresh_tracking.outcome == 'failure'
+        run: |
+          echo "::warning::The promotion succeeded, but the immediate tracking refresh could not be dispatched. The daily tracker will reconcile it."

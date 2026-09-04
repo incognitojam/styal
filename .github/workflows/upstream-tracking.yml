@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "0 7 * * *"
   workflow_dispatch:
+    inputs:
+      since_days:
+        description: "Upstream merge window; widen only to recover after an extended tracker outage"
+        required: false
+        default: "7"
+        type: string
 
 permissions:
   contents: read
@@ -15,7 +21,7 @@ concurrency:
 
 jobs:
   track:
-    name: List upstream pull requests not on main
+    name: Reconcile upstream intake
     if: github.repository == 'incognitojam/styal'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -38,13 +44,17 @@ jobs:
         with:
           node-version-file: package.json
 
-      - name: Append unlisted pull requests
+      - name: Reconcile tracking issue
         env:
           GH_TOKEN: ${{ github.token }}
+          SINCE_DAYS: ${{ inputs.since_days || '7' }}
           UPSTREAM_TRACKING_ISSUE: ${{ vars.UPSTREAM_TRACKING_ISSUE }}
         run: |
           if [[ -z "$UPSTREAM_TRACKING_ISSUE" ]]; then
             echo "::error::Set the UPSTREAM_TRACKING_ISSUE repository variable to the tracking issue number."
             exit 1
           fi
-          node scripts/upstream-tracking-issue.ts --issue "$UPSTREAM_TRACKING_ISSUE" --repo "$GITHUB_REPOSITORY"
+          node scripts/upstream-tracking-issue.ts \
+            --issue "$UPSTREAM_TRACKING_ISSUE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --since-days "$SINCE_DAYS"

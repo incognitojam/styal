@@ -6,14 +6,36 @@ to take, and dispatching the work, stays with a maintainer.
 
 ## The tracking issue
 
-Once a day the workflow appends every upstream pull request merged in the last 45 days whose merge
-commit is not an ancestor of `main` to the issue named by the `UPSTREAM_TRACKING_ISSUE` repository
-variable. Each line is a checkbox, the merge date, the title, and the top-level areas it touched.
-Lines already present are never rewritten, so ticked boxes and notes survive every run.
+Once a day the workflow reconciles upstream pull requests merged in the last seven days into the issue
+named by the `UPSTREAM_TRACKING_ISSUE` repository variable. Each line is a checkbox, the merge date,
+the title, and the top-level areas it touched. New candidates are appended. Existing lines and their
+indented notes are preserved.
 
-Ancestry is the only state. A pull request that was cherry-picked rather than merged keeps a
-different commit id and would be listed again; leaving its line in the issue is what stops that, so
-do not delete lines for work that has landed — tick them.
+The tracker reads source provenance from recent `main` commit messages. Escaped references retained
+in fork squash commit bodies and `Upstream-PR:` trailers on intake commits both count. When that
+provenance names a listed pull request, the tracker checks it and adds `— promoted \`abcdef0\``.
+This recognizes rebased, cherry-picked, modified, and squashed ports without guessing from patch
+similarity.
+
+A checked item without a disposition is queued for intake. Terminal dispositions are `promoted`,
+`already present`, and `skip`; use `review needed` for a non-terminal decision. Maintainers may add a
+reason after a manual disposition and may keep direction as indented lines beneath the item. Notes on
+an unticked item expire with it. Unticked items expire after the seven-day UTC scan window, keeping the
+issue a bounded inbox. Checked items and `review needed` decisions remain as the durable backlog and
+are reported when they are outside the window. Terminal entries are pruned on the same schedule.
+
+The tracker keeps the issue below a 55,000-character operating budget by removing recent terminal
+entries and then the oldest unqueued entries early when necessary. It never compacts queued or
+`review needed` entries; if those alone exceed the budget, the workflow fails with a request to split
+or resolve the backlog. The run summary reports both body size and durable backlog count.
+
+A gap longer than the scan window can miss upstream merges. Recover by manually dispatching the
+workflow with a temporarily wider `since_days` value, then let the next daily run return to the normal
+window. A recovery scan can briefly relist old unqueued or terminal items because the bounded issue
+does not retain tombstones for them.
+
+The issue update is a full-body write. Avoid editing it during a running tracker job; a manual edit in
+the short interval between the workflow's read and write can be overwritten.
 
 Nothing the workflow writes links to upstream or mentions anyone: numbers and titles are wrapped in
 backticks and no URLs are rendered. Keep that property when annotating, so the issue never creates
@@ -27,8 +49,11 @@ those notes as its brief.
 
 Routine candidates use an `intake/<batch>` branch based on the current `main`. Preserve the individual
 upstream commits and their authors where they apply cleanly; a port may use fork-authored commits when
-the implementation must differ. Do not merge `main` into the branch. If `main` moves, rebase the
-candidate and validate it again before promotion.
+the implementation must differ. Every intake commit records its source in commit metadata with a
+comma-separated trailer such as `Upstream-PR: 1234, 5678`. Fork pull requests may instead carry the
+usual escaped `pingdotgg/t3code#1234` references in their bodies because this repository retains the
+body in the squash commit. Do not merge `main` into the branch. If `main` moves, rebase the candidate
+and validate it again before promotion.
 
 Pushing an intake branch runs the same Fork CI jobs as a pull request, comparing the complete
 `main...candidate` diff rather than only the latest push. `Fork Intake Audit` also verifies that the
@@ -49,7 +74,10 @@ files may only change in a reviewed intake, carried verbatim.
 Before dispatching promotion, give an independent model the candidate's complete `main...candidate`
 diff, its audit report, and the upstream changes it is meant to carry. Resolve its findings, rerun Fork
 CI, and copy the full candidate commit id. Dispatch `Promote upstream intake` from `main` with the
-`intake/<batch>` branch and that exact commit id as `reviewed_sha`.
+`intake/<batch>` branch, that exact commit id as `reviewed_sha`, and the comma-separated source pull
+request numbers as `source_prs`. Trusted validation requires that list to exactly match the candidate's
+commit provenance. This is durable bookkeeping, not proof that the candidate implements those pull
+requests; the independent review must verify that correspondence.
 
 The validation job runs from the current trusted `main`, treats the candidate as data, repeats the
 ledger and structural audit, and requires a successful Fork CI push run with the complete expected
@@ -62,6 +90,8 @@ the evidence used to promote themselves.
 After approval, Styal Porter checks that neither `main` nor the candidate branch moved, checks
 fast-forward ancestry again, and pushes the reviewed commit to `main` without force. Any movement
 ends the run without updating `main`; rebase the candidate, rerun CI and review, then dispatch again.
+After a successful push it requests an immediate `Upstream tracking` run. If that request fails, the
+daily run provides the same idempotent reconciliation from `main` history.
 
 The promotion lane requires these repository settings:
 
