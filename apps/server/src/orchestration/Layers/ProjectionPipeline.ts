@@ -2016,13 +2016,14 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             refreshThreadShellSummary,
             { concurrency: 1 },
           );
-          for (const projector of projectors) {
-            yield* projectionStateRepository.upsert({
+          // Runtime projectors commit together. Bootstrap still advances each cursor separately.
+          yield* projectionStateRepository.upsertMany(
+            projectors.map((projector) => ({
               projector: projector.name,
               lastAppliedSequence: lastEvent.sequence,
               updatedAt: lastEvent.occurredAt,
-            });
-          }
+            })),
+          );
         }),
       );
 
