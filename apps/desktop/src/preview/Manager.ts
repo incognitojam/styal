@@ -405,6 +405,12 @@ interface PickSession {
 
 interface BrowserControlSession {
   readonly webContentsId: number;
+  // Pins the WebContents' Debugger wrapper for the session's lifetime.
+  // Electron's Debugger is GC-managed but registered with Chromium as a raw
+  // DevToolsAgentHostClient pointer; collecting it while attached crashes the
+  // browser process (electron/electron#53376). Detach must also go through
+  // this reference: `wc.debugger` throws once the WebContents is destroyed.
+  readonly debugger: Electron.Debugger;
   readonly semaphore: Semaphore.Semaphore;
   readonly scope: Scope.Closeable;
   readonly onDetach: (event: Electron.Event, reason: string) => void;
@@ -1239,6 +1245,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         const createControlSession = Effect.fn("PreviewManager.createControlSession")(function* () {
           const semaphore = yield* Semaphore.make(1);
           const scope = yield* Scope.fork(parentScope, "sequential");
+          const wcDebugger = wc.debugger;
           const handleDebuggerMessage = Effect.fnUntraced(function* (
             method: string,
             params: Record<string, unknown>,
@@ -1251,7 +1258,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                     operation: "ackScreencastFrame",
                     webContentsId: wc.id,
                   },
-                  () => wc.debugger.sendCommand("Page.screencastFrameAck", { sessionId }),
+                  () => wcDebugger.sendCommand("Page.screencastFrameAck", { sessionId }),
                 ).pipe(Effect.ignore);
               }
               const tabId = yield* tabIdForWebContents(wc.id);
@@ -1317,9 +1324,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                   }),
                 ),
                 attempt({ operation: "detachControlSession", webContentsId: wc.id }, () => {
-                  wc.debugger.off("message", onMessage);
-                  wc.debugger.off("detach", onDetach);
-                  if (wc.debugger.isAttached()) wc.debugger.detach();
+                  wcDebugger.off("message", onMessage);
+                  wcDebugger.off("detach", onDetach);
+                  if (wcDebugger.isAttached()) wcDebugger.detach();
                 }).pipe(Effect.ignore),
               ],
               { discard: true },
@@ -1327,6 +1334,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           );
           control = {
             webContentsId: wc.id,
+            debugger: wcDebugger,
             semaphore,
             scope,
             onDetach,
@@ -1343,16 +1351,16 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
               }),
             );
             yield* attempt({ operation: "attachDebuggerListeners", webContentsId: wc.id }, () => {
-              wc.debugger.on("message", onMessage);
-              wc.debugger.on("detach", onDetach);
-              wc.debugger.attach("1.3");
+              wcDebugger.on("message", onMessage);
+              wcDebugger.on("detach", onDetach);
+              wcDebugger.attach("1.3");
             });
             yield* Effect.all(
               ["Runtime.enable", "Accessibility.enable", "Network.enable", "Log.enable"].map(
                 (method) =>
                   attemptPromise(
                     { operation: `initializeDebugger.${method}`, webContentsId: wc.id },
-                    () => wc.debugger.sendCommand(method),
+                    () => wcDebugger.sendCommand(method),
                   ),
               ),
               { concurrency: "unbounded", discard: true },
@@ -1466,7 +1474,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           }
           const result = yield* attemptPromise(
             { operation: `${action}.${method}`, tabId, webContentsId: wc.id },
-            () => wc.debugger.sendCommand(method, commandParams),
+            () => control.debugger.sendCommand(method, commandParams),
           );
           const after = (yield* Ref.get(controlEpochRef)).get(tabId) ?? 0;
           if (after !== epoch) {
@@ -1490,7 +1498,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
               tabId,
               webContentsId: wc.id,
             },
-            () => wc.debugger.sendCommand(method, commandParams),
+            () => control.debugger.sendCommand(method, commandParams),
           );
         },
       );
@@ -1671,7 +1679,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           (method, commandParams) =>
             attemptPromise(
               { operation: `${operation}.${method}`, tabId, webContentsId: wc.id },
-              () => wc.debugger.sendCommand(method, commandParams),
+              () => control.debugger.sendCommand(method, commandParams),
             ),
           presentation,
           cropRect,
@@ -2847,9 +2855,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     wc: Electron.WebContents,
     colorScheme: DesktopPreviewColorScheme,
   ) {
-    yield* ensureControlSession(wc);
+    const control = yield* ensureControlSession(wc);
     yield* attemptPromise({ operation: "applyColorScheme", tabId, webContentsId: wc.id }, () =>
-      wc.debugger.sendCommand("Emulation.setEmulatedMedia", {
+      control.debugger.sendCommand("Emulation.setEmulatedMedia", {
         features: [
           {
             name: "prefers-color-scheme",
@@ -2886,7 +2894,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             yield* attemptPromise(
               { operation: "applyColorScheme", tabId, webContentsId: wc.id },
               () =>
-                wc.debugger.sendCommand("Emulation.setEmulatedMedia", {
+                control.debugger.sendCommand("Emulation.setEmulatedMedia", {
                   features: [
                     {
                       name: "prefers-color-scheme",
@@ -2900,7 +2908,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             wc.setZoomFactor(current.zoomFactor),
           );
           if (
-            !wc.debugger.isAttached() ||
+            !control.debugger.isAttached() ||
             (yield* SynchronizedRef.get(controlSessionsRef)).get(wc.id) !== control
           ) {
             return;
