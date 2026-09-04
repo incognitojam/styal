@@ -27,7 +27,7 @@ const otlpAttributeValue = (value: {
 
 const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 
-it.effect("exports schema error fields as span attributes", () =>
+it.effect("exports the relay resource and schema error attributes", () =>
   Effect.gen(function* () {
     const exportedRequest = yield* Deferred.make<ExportedRequest>();
     yield* HttpServer.serveEffect(
@@ -62,6 +62,12 @@ it.effect("exports schema error fields as span attributes", () =>
 
     const request = yield* Deferred.await(exportedRequest).pipe(Effect.timeout("1 second"));
     const payload = (yield* decodeJson(request.body)) as OtlpTracer.TraceData;
+    const resourceAttributes = Object.fromEntries(
+      (payload.resourceSpans[0]?.resource?.attributes ?? []).map((attribute) => [
+        attribute.key,
+        otlpAttributeValue(attribute.value),
+      ]),
+    );
     const span = payload.resourceSpans
       .flatMap((resourceSpan) => resourceSpan.scopeSpans)
       .flatMap((scopeSpan) => scopeSpan.spans)
@@ -75,6 +81,11 @@ it.effect("exports schema error fields as span attributes", () =>
 
     expect(request.authorization).toBe("Bearer test-token");
     expect(request.dataset).toBe("relay-test-traces");
+    expect(resourceAttributes).toMatchObject({
+      "service.name": "styal-relay-worker",
+      "service.runtime": "cloudflare-worker",
+      "service.component": "relay",
+    });
     expect(attributes).toMatchObject({
       "error.type": "EnvironmentConnectNotAuthorized",
       "error.environmentId": "environment-1",
