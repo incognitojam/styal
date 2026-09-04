@@ -1890,6 +1890,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       ...(context.resumeSessionId ? { resume: context.resumeSessionId } : {}),
       ...(context.lastAssistantUuid ? { resumeSessionAt: context.lastAssistantUuid } : {}),
       turnCount: context.turns.length,
+      mcpServerName: McpProviderSession.serverNameForResumeCursor(
+        context.session.resumeCursor,
+        true,
+      ),
     };
 
     context.session = {
@@ -4413,6 +4417,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           : {}),
       };
       const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+      const mcpServerName = McpProviderSession.serverNameForResumeCursor(
+        input.resumeCursor,
+        existingResumeSessionId !== undefined,
+      );
       const sessionEnvironment = {
         ...claudeEnvironment,
         ...input.environment,
@@ -4459,7 +4467,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(mcpSession
           ? {
               mcpServers: {
-                "t3-code": {
+                [mcpServerName]: {
                   type: "http",
                   url: mcpSession.endpoint,
                   headers: {
@@ -4525,6 +4533,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           ...(sessionId ? { resume: sessionId } : {}),
           ...(resumeState?.resumeSessionAt ? { resumeSessionAt: resumeState.resumeSessionAt } : {}),
           turnCount: resumeState?.turnCount ?? 0,
+          mcpServerName,
         },
         createdAt: startedAt,
         updatedAt: startedAt,

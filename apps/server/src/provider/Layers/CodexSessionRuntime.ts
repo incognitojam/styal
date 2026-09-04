@@ -38,6 +38,7 @@ import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
 import { buildCodexInitializeParams } from "./CodexProvider.ts";
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
+import type { McpServerName } from "../../mcp/McpProviderSession.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
 import { buildCodexDeveloperInstructions } from "../CodexDeveloperInstructions.ts";
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
@@ -68,6 +69,7 @@ export function hasConfiguredMcpServer(appServerArgs: ReadonlyArray<string> | un
 
 export const CodexResumeCursorSchema = Schema.Struct({
   threadId: Schema.String,
+  mcpServerName: Schema.optional(Schema.Literals(["styal", "t3-code"])),
 });
 const CodexUserInputAnswerObject = Schema.Struct({
   answers: Schema.Array(Schema.String),
@@ -165,6 +167,7 @@ export interface CodexSessionRuntimeOptions {
   readonly model?: string;
   readonly serviceTier?: CodexServiceTier | undefined;
   readonly resumeCursor?: CodexResumeCursor;
+  readonly mcpServerName?: "styal" | "t3-code";
   readonly appServerArgs?: ReadonlyArray<string>;
   readonly additionalInstructions?: string;
 }
@@ -219,10 +222,22 @@ export interface CodexSessionRuntimeShape {
 
 export type CodexSessionRuntimeError =
   | CodexErrors.CodexAppServerError
+  | CodexSessionRuntimeLegacyResumeUnavailableError
   | CodexSessionRuntimePendingApprovalNotFoundError
   | CodexSessionRuntimePendingUserInputNotFoundError
   | CodexSessionRuntimeInvalidUserInputAnswersError
   | CodexSessionRuntimeThreadIdMissingError;
+
+export class CodexSessionRuntimeLegacyResumeUnavailableError extends Schema.TaggedErrorClass<CodexSessionRuntimeLegacyResumeUnavailableError>()(
+  "CodexSessionRuntimeLegacyResumeUnavailableError",
+  {
+    threadId: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Legacy Codex provider history '${this.threadId}' is unavailable`;
+  }
+}
 
 export class CodexSessionRuntimePendingApprovalNotFoundError extends Schema.TaggedErrorClass<CodexSessionRuntimePendingApprovalNotFoundError>()(
   "CodexSessionRuntimePendingApprovalNotFoundError",
@@ -570,6 +585,7 @@ function buildCodexCollaborationMode(input: {
   readonly model?: string;
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort;
   readonly browserToolsAvailable?: boolean;
+  readonly mcpServerName?: McpServerName;
   readonly additionalInstructions?: string;
 }): EffectCodexSchema.V2TurnStartParams__CollaborationMode | undefined {
   if (input.interactionMode === undefined) {
@@ -587,6 +603,7 @@ function buildCodexCollaborationMode(input: {
         { model, reasoningEffort },
         input.browserToolsAvailable ?? true,
         input.additionalInstructions,
+        input.mcpServerName,
       ),
     },
   };
@@ -606,6 +623,7 @@ export function buildTurnStartParams(input: {
   readonly interactionMode?: ProviderInteractionMode;
   /** Defaults to true so callers that predate the agent-access gate are unchanged. */
   readonly browserToolsAvailable?: boolean;
+  readonly mcpServerName?: McpServerName;
   readonly additionalInstructions?: string;
 }): Effect.Effect<
   CodexTurnStartParamsWithCollaborationMode,
@@ -628,6 +646,7 @@ export function buildTurnStartParams(input: {
     ...(input.model ? { model: input.model } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
     browserToolsAvailable: input.browserToolsAvailable ?? true,
+    ...(input.mcpServerName ? { mcpServerName: input.mcpServerName } : {}),
     ...(input.additionalInstructions
       ? { additionalInstructions: input.additionalInstructions }
       : {}),
@@ -703,7 +722,11 @@ export const openCodexThread = (input: {
   readonly requestedModel: string | undefined;
   readonly serviceTier: CodexServiceTier | undefined;
   readonly resumeThreadId: string | undefined;
-}): Effect.Effect<CodexThreadOpenResponse, CodexErrors.CodexAppServerError> => {
+  readonly restartWithActiveMcpOnMissingResume?: boolean;
+}): Effect.Effect<
+  CodexThreadOpenResponse,
+  CodexErrors.CodexAppServerError | CodexSessionRuntimeLegacyResumeUnavailableError
+> => {
   const resumeThreadId = input.resumeThreadId;
   const startParams = buildThreadStartParams({
     cwd: input.cwd,
@@ -723,13 +746,21 @@ export const openCodexThread = (input: {
     })
     .pipe(
       Effect.catchIf(isRecoverableThreadResumeError, (error) =>
-        Effect.logWarning("codex app-server thread resume fell back to fresh start", {
-          threadId: input.threadId,
-          requestedRuntimeMode: input.runtimeMode,
-          resumeThreadId,
-          recoverable: true,
-          cause: error,
-        }).pipe(Effect.andThen(input.client.request("thread/start", startParams))),
+        Effect.gen(function* () {
+          yield* Effect.logWarning("codex app-server thread resume fell back to fresh start", {
+            threadId: input.threadId,
+            requestedRuntimeMode: input.runtimeMode,
+            resumeThreadId,
+            recoverable: true,
+            cause: error,
+          });
+          if (input.restartWithActiveMcpOnMissingResume) {
+            return yield* new CodexSessionRuntimeLegacyResumeUnavailableError({
+              threadId: resumeThreadId,
+            });
+          }
+          return yield* input.client.request("thread/start", startParams);
+        }),
       ),
     );
 };
@@ -1866,7 +1897,10 @@ export const makeCodexSessionRuntime = (
             return Effect.void;
           }
           return updateSession(sessionRef, {
-            resumeCursor: { threadId: payload.thread.id },
+            resumeCursor: {
+              threadId: payload.thread.id,
+              mcpServerName: options.mcpServerName ?? "styal",
+            },
           });
         }),
       ),
@@ -2250,6 +2284,7 @@ export const makeCodexSessionRuntime = (
         requestedModel,
         serviceTier: options.serviceTier,
         resumeThreadId: readResumeCursorThreadId(options.resumeCursor),
+        restartWithActiveMcpOnMissingResume: options.mcpServerName === "t3-code",
       });
 
       const providerThreadId = opened.thread.id;
@@ -2258,7 +2293,10 @@ export const makeCodexSessionRuntime = (
         status: "ready",
         cwd: opened.cwd,
         model: opened.model,
-        resumeCursor: { threadId: providerThreadId },
+        resumeCursor: {
+          threadId: providerThreadId,
+          mcpServerName: options.mcpServerName ?? "styal",
+        },
         updatedAt: yield* nowIso,
       } satisfies ProviderSession;
       yield* Ref.set(sessionRef, session);
@@ -2328,6 +2366,7 @@ export const makeCodexSessionRuntime = (
             // setting, so the prompt describes the tools this turn actually
             // has even if the setting changed after the session started.
             browserToolsAvailable: hasConfiguredMcpServer(options.appServerArgs),
+            mcpServerName: options.mcpServerName ?? "styal",
             ...(options.additionalInstructions
               ? { additionalInstructions: options.additionalInstructions }
               : {}),
@@ -2356,7 +2395,12 @@ export const makeCodexSessionRuntime = (
             threadId: options.threadId,
             turnId,
             ...(resumedProviderThreadId
-              ? { resumeCursor: { threadId: resumedProviderThreadId } }
+              ? {
+                  resumeCursor: {
+                    threadId: resumedProviderThreadId,
+                    mcpServerName: options.mcpServerName ?? "styal",
+                  },
+                }
               : {}),
           } satisfies ProviderTurnStartResult;
         }),

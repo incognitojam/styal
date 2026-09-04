@@ -241,6 +241,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
       assert.deepStrictEqual(session.resumeCursor, {
         schemaVersion: 1,
         sessionId: "mock-session-1",
+        mcpServerName: "styal",
       });
 
       yield* adapter.sendTurn({

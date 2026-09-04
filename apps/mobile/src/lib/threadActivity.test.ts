@@ -881,9 +881,9 @@ describe("buildThreadFeed", () => {
             itemType: "mcp_tool_call",
             status: "completed",
             data: {
-              toolName: "mcp__t3-code__preview_click",
+              toolName: "mcp__styal__preview_click",
               item: {
-                server: "t3-code",
+                server: "styal",
                 tool: "preview_click",
                 arguments: { locator: "role=button[name='Send']" },
               },

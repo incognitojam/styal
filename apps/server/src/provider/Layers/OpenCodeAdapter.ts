@@ -302,18 +302,25 @@ type EventBaseInput = {
 };
 
 /**
- * T3 attaches its MCP server to OpenCode as `t3-code`, and OpenCode names MCP
- * tools `<server>_<tool>` — `t3-code_preview_type`. Rewrite that to the
+ * styal attaches its MCP server to OpenCode as `styal`, and OpenCode names MCP
+ * tools `<server>_<tool>` — `styal_preview_type`. Rewrite that to the
  * canonical `mcp__<server>__<tool>` the other providers use, which both gives
  * the clients one identity to match and routes the row to `mcp_tool_call`, so
- * its arguments skip the allowlist that is meant for built-in tools.
+ * its arguments skip the allowlist that is meant for built-in tools. Keep the
+ * former `t3-code` prefix readable for activity from sessions created before
+ * the rename; only `styal` is advertised to new provider sessions.
  */
-const OPENCODE_T3_MCP_PREFIX = "t3-code_";
+const OPENCODE_STYAL_MCP_PREFIX = "styal_";
+const OPENCODE_LEGACY_MCP_PREFIX = "t3-code_";
 
-function canonicalOpenCodeToolName(tool: string): string {
-  return tool.startsWith(OPENCODE_T3_MCP_PREFIX)
-    ? `mcp__t3-code__${tool.slice(OPENCODE_T3_MCP_PREFIX.length)}`
-    : tool;
+export function canonicalOpenCodeToolName(tool: string): string {
+  if (tool.startsWith(OPENCODE_STYAL_MCP_PREFIX)) {
+    return `mcp__styal__${tool.slice(OPENCODE_STYAL_MCP_PREFIX.length)}`;
+  }
+  if (tool.startsWith(OPENCODE_LEGACY_MCP_PREFIX)) {
+    return `mcp__t3-code__${tool.slice(OPENCODE_LEGACY_MCP_PREFIX.length)}`;
+  }
+  return tool;
 }
 
 function toToolLifecycleItemType(toolName: string): ToolLifecycleItemType {
@@ -1230,6 +1237,10 @@ export function makeOpenCodeAdapter(
         const serverPassword = openCodeSettings.serverPassword;
         const directory = input.cwd ?? serverConfig.cwd;
         const resumeSessionId = parseOpenCodeResume(input.resumeCursor)?.sessionId;
+        const resumeMcpServerName = McpProviderSession.serverNameForResumeCursor(
+          input.resumeCursor,
+          resumeSessionId !== undefined,
+        );
         const existing = sessions.get(input.threadId);
         if (existing) {
           yield* stopOpenCodeContext(existing);
@@ -1256,22 +1267,6 @@ export function makeOpenCodeAdapter(
                 directory,
                 ...(server.external && serverPassword ? { serverPassword } : {}),
               });
-              const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
-              if (mcpSession && !server.external) {
-                yield* runOpenCodeSdk("mcp.add", () =>
-                  client.mcp.add({
-                    name: "t3-code",
-                    config: {
-                      type: "remote",
-                      url: mcpSession.endpoint,
-                      headers: {
-                        Authorization: mcpSession.authorizationHeader,
-                      },
-                      oauth: false,
-                    },
-                  }),
-                );
-              }
               // Resume: re-adopt the session named by the durable cursor —
               // OpenCode scopes history by session id. The probe recovers only
               // a confirmed not-found (start fresh); transport/auth/server
@@ -1307,7 +1302,7 @@ export function makeOpenCodeAdapter(
                       permission: buildOpenCodePermissionRules(input.runtimeMode),
                     }),
                   );
-                  return { openCodeSession: reusable, created: false };
+                  return { openCodeSession: reusable, created: false, preservedHistory: true };
                 }
 
                 // The session lives under a different cwd (e.g. the thread
@@ -1334,7 +1329,7 @@ export function makeOpenCodeAdapter(
                       permission: buildOpenCodePermissionRules(input.runtimeMode),
                     }),
                   );
-                  return { openCodeSession: forked, created: true };
+                  return { openCodeSession: forked, created: true, preservedHistory: true };
                 }
 
                 if (resumeSessionId) {
@@ -1354,8 +1349,32 @@ export function makeOpenCodeAdapter(
                     detail: "OpenCode session.create returned no session payload.",
                   });
                 }
-                return { openCodeSession: createdSession.data, created: true };
+                return {
+                  openCodeSession: createdSession.data,
+                  created: true,
+                  preservedHistory: false,
+                };
               });
+
+              const mcpServerName = resolved.preservedHistory
+                ? resumeMcpServerName
+                : McpProviderSession.ACTIVE_MCP_SERVER_NAME;
+              const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+              if (mcpSession && !server.external) {
+                yield* runOpenCodeSdk("mcp.add", () =>
+                  client.mcp.add({
+                    name: mcpServerName,
+                    config: {
+                      type: "remote",
+                      url: mcpSession.endpoint,
+                      headers: {
+                        Authorization: mcpSession.authorizationHeader,
+                      },
+                      oauth: false,
+                    },
+                  }),
+                );
+              }
 
               return {
                 sessionScope,
@@ -1363,6 +1382,7 @@ export function makeOpenCodeAdapter(
                 client,
                 openCodeSession: resolved.openCodeSession,
                 created: resolved.created,
+                mcpServerName,
               };
             }).pipe(Effect.provideService(Scope.Scope, sessionScope)),
           );
@@ -1406,6 +1426,7 @@ export function makeOpenCodeAdapter(
           resumeCursor: {
             schemaVersion: OPENCODE_RESUME_VERSION,
             sessionId: started.openCodeSession.id,
+            mcpServerName: started.mcpServerName,
           },
           createdAt,
           updatedAt: createdAt,

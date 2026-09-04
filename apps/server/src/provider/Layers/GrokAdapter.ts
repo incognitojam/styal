@@ -972,6 +972,10 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
           );
 
           const resumeSessionId = parseGrokResume(input.resumeCursor)?.sessionId;
+          const mcpServerName = McpProviderSession.serverNameForResumeCursor(
+            input.resumeCursor,
+            resumeSessionId !== undefined,
+          );
           const sessionEnvironment = input.environment
             ? { ...(options?.environment ?? process.env), ...input.environment }
             : options?.environment;
@@ -998,7 +1002,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                   mcpServers: [
                     {
                       type: "http" as const,
-                      name: "t3-code",
+                      name: mcpServerName,
                       url: mcpSession.endpoint,
                       headers: [
                         {
@@ -1263,6 +1267,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             resumeCursor: {
               schemaVersion: GROK_RESUME_VERSION,
               sessionId: started.sessionId,
+              mcpServerName,
             },
             createdAt: now,
             updatedAt: now,

@@ -104,12 +104,13 @@ function memorySlug(path: string | undefined): string | undefined {
   return path ? MEMORY_PATH_PATTERN.exec(path)?.groups?.slug : undefined;
 }
 
-/** `mcp__t3-code__preview_snapshot` → `t3-code · preview_snapshot`. */
+/** `mcp__styal__preview_snapshot` → `styal · preview_snapshot`. */
 function mcpHeading(toolName: string): string | undefined {
   const match = /^mcp__(?<server>[^_]+(?:_[^_]+)*?)__(?<tool>.+)$/u.exec(toolName);
   const server = match?.groups?.server;
   const tool = match?.groups?.tool;
-  return server && tool ? `${server} · ${tool}` : undefined;
+  const displayServer = server === "t3-code" ? "styal" : server;
+  return displayServer && tool ? `${displayServer} · ${tool}` : undefined;
 }
 
 function previewNavigateArgument(input: Record<string, unknown>): ToolRowArgument | undefined {
@@ -203,8 +204,8 @@ interface PreviewToolSpec {
 }
 
 /**
- * The T3 preview tools are a product-native browser family, so their rows get
- * a curated vocabulary instead of the generic `t3-code · preview_*` MCP form:
+ * The styal preview tools are a product-native browser family, so their rows get
+ * a curated vocabulary instead of the generic `styal · preview_*` MCP form:
  * a verb for the action and only the argument that matters, with session noise
  * (`tabId`, `timeoutMs`, `open`/`show`) dropped.
  *
@@ -289,20 +290,23 @@ const PREVIEW_TOOL_SPECS: Readonly<Record<string, PreviewToolSpec>> = {
 const PREVIEW_TOOL_NAMES: ReadonlySet<string> = new Set(Object.keys(PREVIEW_TOOL_SPECS));
 
 /**
- * Every adapter registers this MCP server as `t3-code`, and the payload
+ * Every adapter registers this MCP server as `styal`, and the payload
  * projection gives providers that carry identity on the item a synthesized
  * `mcp__<server>__<tool>`, so the qualified name is the one form that reaches
  * presentation. Requiring it is what keeps this vocabulary — which describes
- * T3's browser specifically — off an unrelated server's `preview_*` tool.
+ * styal's browser specifically — off an unrelated server's `preview_*` tool.
+ * The former prefix remains readable so persisted activity keeps its curated
+ * presentation throughout the compatibility window.
  */
-const QUALIFIED_PREVIEW_PREFIX = "mcp__t3-code__";
+const QUALIFIED_PREVIEW_PREFIXES = ["mcp__styal__", "mcp__t3-code__"] as const;
 
 function previewToolNameOf(value: string): string | undefined {
   const trimmed = value.trim();
-  if (!trimmed.startsWith(QUALIFIED_PREVIEW_PREFIX)) {
+  const prefix = QUALIFIED_PREVIEW_PREFIXES.find((candidate) => trimmed.startsWith(candidate));
+  if (!prefix) {
     return undefined;
   }
-  const tool = trimmed.slice(QUALIFIED_PREVIEW_PREFIX.length);
+  const tool = trimmed.slice(prefix.length);
   return PREVIEW_TOOL_NAMES.has(tool) ? tool : undefined;
 }
 

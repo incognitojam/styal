@@ -516,13 +516,14 @@ describe("buildCodexDeveloperInstructions", () => {
   });
 });
 
-describe("T3 browser developer instructions", () => {
+describe("styal browser developer instructions", () => {
   it("prefers the product-native preview tools in both collaboration modes", () => {
     for (const instructions of [
       codexDefaultModeDeveloperInstructions(true),
       codexPlanModeDeveloperInstructions(true),
     ]) {
-      NodeAssert.match(instructions, /t3-code/);
+      NodeAssert.match(instructions, /styal/);
+      NodeAssert.doesNotMatch(instructions, /t3-code/);
       NodeAssert.match(instructions, /preview_status/);
       NodeAssert.match(instructions, /preview_open/);
       NodeAssert.match(instructions, /Do not switch to global browser skills/);
@@ -536,7 +537,7 @@ describe("T3 browser developer instructions", () => {
     ]) {
       NodeAssert.doesNotMatch(instructions, /preview_status/);
       NodeAssert.doesNotMatch(instructions, /preview_open/);
-      NodeAssert.doesNotMatch(instructions, /T3 Code collaborative browser/);
+      NodeAssert.doesNotMatch(instructions, /styal collaborative browser/);
       // Steering away from other browser automation must go with the tools;
       // keeping it would leave the model talked out of its only option.
       NodeAssert.doesNotMatch(instructions, /Do not switch to global browser skills/);
@@ -554,12 +555,32 @@ describe("T3 browser developer instructions", () => {
       /preview_open/,
     );
   });
+
+  it.effect("names the legacy MCP server for resumed legacy histories", () =>
+    Effect.gen(function* () {
+      const params = yield* buildTurnStartParams({
+        threadId: "legacy-provider-thread",
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        browserToolsAvailable: true,
+        mcpServerName: "t3-code",
+      });
+      const instructions = params.collaborationMode?.settings.developer_instructions ?? "";
+
+      NodeAssert.match(instructions, /The `t3-code` MCP server/);
+      NodeAssert.doesNotMatch(instructions, /The `styal` MCP server/);
+    }),
+  );
 });
 
 describe("hasConfiguredMcpServer", () => {
   it("detects inline Codex MCP configuration arguments", () => {
     NodeAssert.equal(hasConfiguredMcpServer(undefined), false);
     NodeAssert.equal(hasConfiguredMcpServer(["--model", "gpt-5.4"]), false);
+    NodeAssert.equal(
+      hasConfiguredMcpServer(["-c", 'mcp_servers.styal.url="http://127.0.0.1/mcp"']),
+      true,
+    );
     NodeAssert.equal(
       hasConfiguredMcpServer(["-c", 'mcp_servers.t3-code.url="http://127.0.0.1/mcp"']),
       true,
@@ -717,7 +738,7 @@ describe("codexSessionAppServerArgs", () => {
   it("keeps launch args when explicit app-server args are provided", () => {
     NodeAssert.deepStrictEqual(
       codexSessionAppServerArgs(
-        ["-c", "mcp_servers.t3-code.url=http://127.0.0.1/mcp"],
+        ["-c", "mcp_servers.styal.url=http://127.0.0.1/mcp"],
         "--strict-config --enable foo",
       ),
       [
@@ -726,7 +747,7 @@ describe("codexSessionAppServerArgs", () => {
         "--enable",
         "foo",
         "-c",
-        "mcp_servers.t3-code.url=http://127.0.0.1/mcp",
+        "mcp_servers.styal.url=http://127.0.0.1/mcp",
       ],
     );
   });
@@ -829,6 +850,47 @@ describe("openCodexThread", () => {
         calls.map((call) => call.method),
         ["thread/resume", "thread/start"],
       );
+    }),
+  );
+
+  it.effect("requests an MCP-name restart before starting fresh for a legacy history", () =>
+    Effect.gen(function* () {
+      const calls: Array<"thread/start" | "thread/resume"> = [];
+      const client = {
+        request: <M extends "thread/start" | "thread/resume">(
+          method: M,
+          _payload: CodexRpc.ClientRequestParamsByMethod[M],
+        ) => {
+          calls.push(method);
+          if (method === "thread/resume") {
+            return Effect.fail(
+              new CodexErrors.CodexAppServerRequestError({
+                code: -32603,
+                errorMessage: "thread not found",
+              }),
+            );
+          }
+          return Effect.succeed(
+            makeThreadOpenResponse(
+              "unexpected-thread",
+            ) as CodexRpc.ClientRequestResponsesByMethod[M],
+          );
+        },
+      };
+
+      const error = yield* openCodexThread({
+        client,
+        threadId: ThreadId.make("thread-1"),
+        runtimeMode: "full-access",
+        cwd: "/tmp/project",
+        requestedModel: "gpt-5.3-codex",
+        serviceTier: undefined,
+        resumeThreadId: "stale-thread",
+        restartWithActiveMcpOnMissingResume: true,
+      }).pipe(Effect.flip);
+
+      NodeAssert.equal(error._tag, "CodexSessionRuntimeLegacyResumeUnavailableError");
+      NodeAssert.deepStrictEqual(calls, ["thread/resume"]);
     }),
   );
 
