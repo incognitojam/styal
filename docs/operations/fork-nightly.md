@@ -1,7 +1,17 @@
 # Fork nightly releases
 
-The `Fork Nightly` workflow builds `main` as it stands, validates it, builds the supported desktop
-targets, and publishes a GitHub prerelease. It never modifies `main`.
+The `Fork Nightly` workflow takes the newest commit on `main` that Fork CI has passed, builds the
+supported desktop targets from it, and publishes a GitHub prerelease. It never modifies `main`.
+
+Fork CI is the only verifier: the nightly does not repeat its checks, tests, or desktop build. It
+walks `main` from the tip and skips any commit whose Fork CI run failed, so a briefly red `main` delays
+those commits to a later nightly rather than shipping them. If the tip's run is still in progress the
+nightly waits for it, since it is newer than any green commit below. The one check the nightly does
+repeat is the previous-nightly schema upgrade test, because the `nightly` branch it upgrades from may
+have moved since the pull request ran.
+
+`Fork Release` promotes a nightly tag and refuses any commit without a successful Fork CI run, which
+every commit the nightly tagged already has.
 
 ## How upstream work reaches `main`
 
