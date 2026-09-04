@@ -24,6 +24,32 @@ Alchemy resolves account-level Axiom deployment credentials through its provider
 Worker receives only its scoped ingest token. Mobile and relay clients use their own separately
 provisioned scoped ingest tokens.
 
+## Deployment token permissions
+
+Production `AXIOM_TOKEN` is an advanced API token, not a basic ingest token. Store it in the
+`production` GitHub environment and provide the organization identifier separately as
+`AXIOM_ORG_ID`.
+
+Grant the deployment token these organization-level permissions:
+
+- API tokens: Create, Read, Update, and Delete
+- Datasets: Create, Read, Update, and Delete
+- Views: Create, Read, Update, and Delete
+
+Grant it these permissions on the existing `t3-code-relay-traces-prod` dataset:
+
+- Ingest: Create
+- Query: Read
+
+These permissions let Alchemy adopt and update the dataset and view, mint the three producer ingest
+tokens, and validate the managed query. They are deployment permissions only; the Worker, mobile
+app, and relay clients continue to receive separate write-only tokens scoped to the trace dataset.
+
+[Axiom API token permissions are immutable](https://axiom.co/docs/reference/tokens). To change them,
+create a replacement advanced token with the complete permission set and replace the `AXIOM_TOKEN`
+environment secret. Rotating that deployment token does not require reinstalling or relinking any
+client because it is never shipped in an application.
+
 The Worker emits Effect's built-in HTTP server spans plus endpoint and database child spans.
 Effect's OpenTelemetry exporter stores semantic HTTP attributes below the `attributes.` prefix.
 For example:
@@ -49,5 +75,5 @@ attributes.
 
 Agents should prefer the provisioned view or APL queries for completed incidents instead of
 tailing the Cloudflare Worker. The stack does not provision a separate query token. Responders who
-need scripted query access use the authorized account-level `AXIOM_TOKEN` together with
+need scripted query access use the authorized deployment `AXIOM_TOKEN` together with
 `AXIOM_ORG_ID`; scoped ingest tokens remain write-only credentials for their producers.

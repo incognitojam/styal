@@ -59,12 +59,6 @@ Required repository variables shared by relay deployments:
 - `CLOUDFLARE_ACCOUNT_ID`
 - `AXIOM_ORG_ID`
 
-Required repository secrets shared by relay deployments:
-
-- `CLOUDFLARE_API_TOKEN`
-- `NEON_API_KEY`
-- `AXIOM_TOKEN`
-
 Required `production` environment variables:
 
 - `RELAY_API_ZONE_NAME`
@@ -83,18 +77,23 @@ Optional `production` environment variables:
 
 Required `production` environment secrets:
 
+- `CLOUDFLARE_API_TOKEN`
+- `NEON_API_KEY`
+- `AXIOM_TOKEN`
 - `CLERK_SECRET_KEY`
 
 Optional `production` environment secrets:
 
 - `APNS_PRIVATE_KEY` only when enabling mobile push, alongside the `APNS_*` variables
 
-The account-scoped repository credentials are consumed by Alchemy while provisioning relay stages; they
-are not bound into the relay Worker. The production deployment uses an Axiom personal access token,
-so `AXIOM_ORG_ID` must accompany `AXIOM_TOKEN`. The `prod` stage owns the retained Neon Postgres
-project. Local personal stages provision isolated branches from it and are never deployed by CI.
-Production adopts the configured relay API and tunnel DNS zones as retained Cloudflare resources.
-Personal stages reference the production-owned zones.
+The account-scoped deployment credentials are consumed by Alchemy while provisioning relay stages;
+they are not bound into the relay Worker. `AXIOM_TOKEN` must be an advanced API token with the
+organization- and dataset-level permissions documented in
+[Relay Observability](relay-observability.md#deployment-token-permissions), and `AXIOM_ORG_ID` must
+accompany it. The `prod` stage owns the retained Neon Postgres project. Local personal stages
+provision isolated branches from it and are never deployed by CI. Production adopts the configured
+relay API and tunnel DNS zones as retained Cloudflare resources. Personal stages reference the
+production-owned zones.
 
 Developers deploy personal stages locally rather than through pull-request automation:
 
