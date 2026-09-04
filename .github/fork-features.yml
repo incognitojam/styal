@@ -1476,7 +1476,7 @@ features:
       - apps/server/src/provider/Layers/ProviderService.ts
       - apps/server/src/terminal/Manager.ts
       - scripts/dev-runner.ts
-      - t3.json
+      - styal.json
     tests:
       - apps/server/integration/workspacePortEnvironment.integration.test.ts
       - apps/server/src/persistence/ForkMigrations.test.ts
