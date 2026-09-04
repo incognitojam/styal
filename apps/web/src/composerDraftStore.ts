@@ -4514,34 +4514,21 @@ export function persistComposerDraftsNow(): boolean {
   }
 }
 
-/**
- * Whether the thread has unsent composer content worth surfacing in thread
- * lists. Content means prompt text or attachments — a draft entry that only
- * carries settings (model selection, runtime mode) doesn't count.
- */
-export function useComposerThreadHasDraftContent(threadRef: ComposerThreadTarget): boolean {
-  return useComposerDraftStore((state) => {
-    const draft = getComposerDraftState(state, threadRef);
-    if (!draft) {
-      return false;
-    }
-    return (
-      draft.prompt.trim().length > 0 ||
-      draft.images.length > 0 ||
-      draft.files.length > 0 ||
-      draft.persistedAttachments.length > 0 ||
-      draft.terminalContexts.length > 0 ||
-      draft.elementContexts.length > 0 ||
-      draft.previewAnnotations.length > 0 ||
-      draft.reviewComments.length > 0
-    );
-  });
-}
-
 export function useComposerThreadDraft(threadRef: ComposerThreadTarget): ComposerThreadDraftState {
   return useComposerDraftStore((state) => {
     return getComposerDraftState(state, threadRef) ?? EMPTY_THREAD_DRAFT;
   });
+}
+
+/**
+ * True when a real thread's composer holds unsent user content. Selects a
+ * boolean so the sidebar row that reads it re-renders only when the draft
+ * appears or disappears, not on every keystroke.
+ */
+export function useThreadHasUnsentDraft(threadRef: ScopedThreadRef): boolean {
+  return useComposerDraftStore((state) =>
+    composerDraftHasUserContent(getComposerDraftState(state, threadRef)),
+  );
 }
 
 export function useComposerDraftModelState(
