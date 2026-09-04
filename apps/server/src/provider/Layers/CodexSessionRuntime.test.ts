@@ -555,6 +555,22 @@ describe("styal browser developer instructions", () => {
       /preview_open/,
     );
   });
+
+  it.effect("names the legacy MCP server for resumed legacy histories", () =>
+    Effect.gen(function* () {
+      const params = yield* buildTurnStartParams({
+        threadId: "legacy-provider-thread",
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        browserToolsAvailable: true,
+        mcpServerName: "t3-code",
+      });
+      const instructions = params.collaborationMode?.settings.developer_instructions ?? "";
+
+      NodeAssert.match(instructions, /The `t3-code` MCP server/);
+      NodeAssert.doesNotMatch(instructions, /The `styal` MCP server/);
+    }),
+  );
 });
 
 describe("hasConfiguredMcpServer", () => {
