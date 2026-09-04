@@ -16,6 +16,7 @@ import * as TestClock from "effect/testing/TestClock";
 import { beforeEach } from "vite-plus/test";
 
 import {
+  EnvironmentId,
   OpenCodeSettings,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -23,6 +24,7 @@ import {
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { ServerConfig } from "../../config.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderSessionDirectory } from "../Services/ProviderSessionDirectory.ts";
 import type { OpenCodeAdapterShape } from "../Services/OpenCodeAdapter.ts";
@@ -84,6 +86,7 @@ const runtimeMock = {
     sessionDirectoryById: new Map<string, string>(),
     sessionUpdateCalls: [] as Array<{ sessionID: string; permission: unknown }>,
     forkCalls: [] as Array<{ sessionID: string; directory?: string }>,
+    mcpAddNames: [] as string[],
   },
   reset() {
     this.state.startCalls.length = 0;
@@ -104,6 +107,7 @@ const runtimeMock = {
     this.state.sessionDirectoryById.clear();
     this.state.sessionUpdateCalls.length = 0;
     this.state.forkCalls.length = 0;
+    this.state.mcpAddNames.length = 0;
   },
 };
 
@@ -213,6 +217,12 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
               : runtimeMock.state.messages;
         },
       },
+      mcp: {
+        add: async ({ name }: { name: string }) => {
+          runtimeMock.state.mcpAddNames.push(name);
+          return { data: true };
+        },
+      },
       event: {
         subscribe: async () => ({
           stream: (async function* () {
@@ -279,6 +289,20 @@ const OpenCodeAdapterTestLayer = Layer.effect(
       },
     }),
   ),
+  Layer.provideMerge(providerSessionDirectoryTestLayer),
+  Layer.provideMerge(NodeServices.layer),
+);
+
+const managedOpenCodeSettings = Schema.decodeSync(OpenCodeSettings)({
+  binaryPath: "fake-opencode",
+});
+const ManagedOpenCodeAdapterTestLayer = Layer.effect(
+  OpenCodeAdapter,
+  makeOpenCodeAdapter(managedOpenCodeSettings),
+).pipe(
+  Layer.provideMerge(Layer.succeed(OpenCodeRuntime, OpenCodeRuntimeTestDouble)),
+  Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+  Layer.provideMerge(ServerSettingsService.layerTest()),
   Layer.provideMerge(providerSessionDirectoryTestLayer),
   Layer.provideMerge(NodeServices.layer),
 );
@@ -446,7 +470,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       NodeAssert.deepEqual(session.resumeCursor, {
         schemaVersion: 1,
         sessionId: "http://127.0.0.1:9999/session",
-        mcpServerName: "t3-code",
+        mcpServerName: "styal",
       });
 
       yield* adapter.stopSession(threadId);
@@ -1608,4 +1632,41 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       NodeAssert.deepEqual(closeCallsDuringRun, []);
     }),
   );
+});
+
+it.layer(ManagedOpenCodeAdapterTestLayer)("OpenCode managed MCP fallback", (it) => {
+  it.effect("registers the active MCP name after a legacy history is missing", () => {
+    const threadId = asThreadId("thread-opencode-missing-legacy-mcp");
+
+    return Effect.gen(function* () {
+      McpProviderSession.setMcpProviderSession({
+        environmentId: EnvironmentId.make("environment-1"),
+        threadId,
+        providerSessionId: "provider-session-1",
+        providerInstanceId: ProviderInstanceId.make("opencode"),
+        endpoint: "http://127.0.0.1:4310/mcp",
+        authorizationHeader: "Bearer synthetic-token",
+      });
+      runtimeMock.state.missingSessionIds.add("ses_stale");
+
+      const adapter = yield* OpenCodeAdapter;
+      const session = yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+        resumeCursor: { schemaVersion: 1, sessionId: "ses_stale" },
+      });
+
+      NodeAssert.deepEqual(runtimeMock.state.mcpAddNames, ["styal"]);
+      NodeAssert.deepEqual(session.resumeCursor, {
+        schemaVersion: 1,
+        sessionId: "/session",
+        mcpServerName: "styal",
+      });
+
+      yield* adapter.stopSession(threadId);
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
+    );
+  });
 });

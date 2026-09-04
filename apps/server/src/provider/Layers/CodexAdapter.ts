@@ -1837,7 +1837,18 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           }),
         ).pipe(Effect.forkIn(sessionScope));
 
-        const started = yield* runtime.start().pipe(
+        const startResult = yield* runtime.start().pipe(
+          Effect.map((session) => ({ _tag: "started" as const, session })),
+          Effect.onError(() =>
+            runtime.close.pipe(
+              Effect.andThen(Effect.ignore(Scope.close(sessionScope, Exit.void))),
+              Effect.andThen(Fiber.interrupt(eventFiber)),
+              Effect.ignore,
+            ),
+          ),
+          Effect.catchTag("CodexSessionRuntimeLegacyResumeUnavailableError", () =>
+            Effect.succeed({ _tag: "restartWithActiveMcp" as const }),
+          ),
           Effect.mapError(
             (cause) =>
               new ProviderAdapterProcessError({
@@ -1847,14 +1858,12 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
                 cause,
               }),
           ),
-          Effect.onError(() =>
-            runtime.close.pipe(
-              Effect.andThen(Effect.ignore(Scope.close(sessionScope, Exit.void))),
-              Effect.andThen(Fiber.interrupt(eventFiber)),
-              Effect.ignore,
-            ),
-          ),
         );
+
+        if (startResult._tag === "restartWithActiveMcp") {
+          return yield* startSession({ ...input, resumeCursor: undefined });
+        }
+        const started = startResult.session;
 
         sessions.set(input.threadId, {
           threadId: input.threadId,

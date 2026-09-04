@@ -6,6 +6,7 @@ import * as NodePath from "node:path";
 import {
   ApprovalRequestId,
   CodexSettings,
+  EnvironmentId,
   EventId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -36,12 +37,15 @@ import * as TestClock from "effect/testing/TestClock";
 import * as CodexErrors from "effect-codex-app-server/errors";
 
 import { ServerConfig } from "../../config.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterValidationError } from "../Errors.ts";
 import type { CodexAdapterShape } from "../Services/CodexAdapter.ts";
 import { ProviderSessionDirectory } from "../Services/ProviderSessionDirectory.ts";
 import {
+  type CodexSessionRuntimeError,
   type CodexSessionRuntimeOptions,
+  CodexSessionRuntimeLegacyResumeUnavailableError,
   type CodexSessionRuntimeSendTurnInput,
   type CodexSessionRuntimeShape,
   type CodexThreadSnapshot,
@@ -127,7 +131,10 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
   }
 
   start() {
-    return Effect.promise(() => this.startImpl());
+    return Effect.tryPromise({
+      try: () => this.startImpl(),
+      catch: (cause) => cause as CodexSessionRuntimeError,
+    });
   }
 
   getSession = Effect.promise(() => this.startImpl());
@@ -169,10 +176,19 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
   }
 }
 
-function makeRuntimeFactory() {
+function makeRuntimeFactory(config?: { readonly failLegacyResume?: boolean }) {
   const runtimes: Array<FakeCodexRuntime> = [];
-  const factory = vi.fn((options: CodexSessionRuntimeOptions) => {
-    const runtime = new FakeCodexRuntime(options);
+  const factory = vi.fn((runtimeOptions: CodexSessionRuntimeOptions) => {
+    const runtime = new FakeCodexRuntime(runtimeOptions);
+    if (config?.failLegacyResume && runtime.options.mcpServerName === "t3-code") {
+      runtime.startImpl.mockImplementationOnce(() =>
+        Promise.reject(
+          new CodexSessionRuntimeLegacyResumeUnavailableError({
+            threadId: runtime.options.resumeCursor?.threadId ?? "missing-thread",
+          }),
+        ),
+      );
+    }
     runtimes.push(runtime);
     return Effect.succeed(runtime);
   });
@@ -181,6 +197,9 @@ function makeRuntimeFactory() {
     factory,
     get lastRuntime(): FakeCodexRuntime | undefined {
       return runtimes.at(-1);
+    },
+    get runtimes(): ReadonlyArray<FakeCodexRuntime> {
+      return runtimes;
     },
   };
 }
@@ -435,6 +454,64 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
       NodeAssert.ok(runtime);
       NodeAssert.equal(runtime.options.launchArgs, "--strict-config --enable foo");
     }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("restarts a missing legacy history with the active MCP configuration", () => {
+    const runtimeFactory = makeRuntimeFactory({ failLegacyResume: true });
+    const layer = Layer.effect(
+      CodexAdapter,
+      Effect.gen(function* () {
+        const codexConfig = decodeCodexSettings({});
+        return yield* makeCodexAdapter(codexConfig, {
+          makeRuntime: runtimeFactory.factory,
+        });
+      }),
+    ).pipe(
+      Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(providerSessionDirectoryTestLayer),
+      Layer.provideMerge(NodeServices.layer),
+    );
+    const threadId = asThreadId("sess-missing-legacy-history");
+
+    return Effect.gen(function* () {
+      McpProviderSession.setMcpProviderSession({
+        environmentId: EnvironmentId.make("environment-1"),
+        threadId,
+        providerSessionId: "provider-session-1",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        endpoint: "http://127.0.0.1:4310/mcp",
+        authorizationHeader: "Bearer synthetic-token",
+      });
+      const adapter = yield* CodexAdapter;
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        resumeCursor: { threadId: "missing-provider-thread" },
+        runtimeMode: "full-access",
+      });
+
+      NodeAssert.equal(runtimeFactory.runtimes.length, 2);
+      const legacyRuntime = runtimeFactory.runtimes[0];
+      const activeRuntime = runtimeFactory.runtimes[1];
+      NodeAssert.equal(legacyRuntime?.options.mcpServerName, "t3-code");
+      NodeAssert.ok(
+        legacyRuntime?.options.appServerArgs?.includes(
+          "mcp_servers.t3-code.url=http://127.0.0.1:4310/mcp",
+        ),
+      );
+      NodeAssert.equal(legacyRuntime?.closeImpl.mock.calls.length, 1);
+      NodeAssert.equal(activeRuntime?.options.mcpServerName, "styal");
+      NodeAssert.equal(activeRuntime?.options.resumeCursor, undefined);
+      NodeAssert.ok(
+        activeRuntime?.options.appServerArgs?.includes(
+          "mcp_servers.styal.url=http://127.0.0.1:4310/mcp",
+        ),
+      );
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
+      Effect.provide(layer),
+    );
   });
 
   it.effect("uses T3CODE_CODEX_LAUNCH_ARGS for the session runtime", () => {

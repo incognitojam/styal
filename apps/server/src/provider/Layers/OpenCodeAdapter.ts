@@ -1237,7 +1237,7 @@ export function makeOpenCodeAdapter(
         const serverPassword = openCodeSettings.serverPassword;
         const directory = input.cwd ?? serverConfig.cwd;
         const resumeSessionId = parseOpenCodeResume(input.resumeCursor)?.sessionId;
-        const mcpServerName = McpProviderSession.serverNameForResumeCursor(
+        const resumeMcpServerName = McpProviderSession.serverNameForResumeCursor(
           input.resumeCursor,
           resumeSessionId !== undefined,
         );
@@ -1267,22 +1267,6 @@ export function makeOpenCodeAdapter(
                 directory,
                 ...(server.external && serverPassword ? { serverPassword } : {}),
               });
-              const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
-              if (mcpSession && !server.external) {
-                yield* runOpenCodeSdk("mcp.add", () =>
-                  client.mcp.add({
-                    name: mcpServerName,
-                    config: {
-                      type: "remote",
-                      url: mcpSession.endpoint,
-                      headers: {
-                        Authorization: mcpSession.authorizationHeader,
-                      },
-                      oauth: false,
-                    },
-                  }),
-                );
-              }
               // Resume: re-adopt the session named by the durable cursor —
               // OpenCode scopes history by session id. The probe recovers only
               // a confirmed not-found (start fresh); transport/auth/server
@@ -1318,7 +1302,7 @@ export function makeOpenCodeAdapter(
                       permission: buildOpenCodePermissionRules(input.runtimeMode),
                     }),
                   );
-                  return { openCodeSession: reusable, created: false };
+                  return { openCodeSession: reusable, created: false, preservedHistory: true };
                 }
 
                 // The session lives under a different cwd (e.g. the thread
@@ -1345,7 +1329,7 @@ export function makeOpenCodeAdapter(
                       permission: buildOpenCodePermissionRules(input.runtimeMode),
                     }),
                   );
-                  return { openCodeSession: forked, created: true };
+                  return { openCodeSession: forked, created: true, preservedHistory: true };
                 }
 
                 if (resumeSessionId) {
@@ -1365,8 +1349,32 @@ export function makeOpenCodeAdapter(
                     detail: "OpenCode session.create returned no session payload.",
                   });
                 }
-                return { openCodeSession: createdSession.data, created: true };
+                return {
+                  openCodeSession: createdSession.data,
+                  created: true,
+                  preservedHistory: false,
+                };
               });
+
+              const mcpServerName = resolved.preservedHistory
+                ? resumeMcpServerName
+                : McpProviderSession.ACTIVE_MCP_SERVER_NAME;
+              const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+              if (mcpSession && !server.external) {
+                yield* runOpenCodeSdk("mcp.add", () =>
+                  client.mcp.add({
+                    name: mcpServerName,
+                    config: {
+                      type: "remote",
+                      url: mcpSession.endpoint,
+                      headers: {
+                        Authorization: mcpSession.authorizationHeader,
+                      },
+                      oauth: false,
+                    },
+                  }),
+                );
+              }
 
               return {
                 sessionScope,
@@ -1374,6 +1382,7 @@ export function makeOpenCodeAdapter(
                 client,
                 openCodeSession: resolved.openCodeSession,
                 created: resolved.created,
+                mcpServerName,
               };
             }).pipe(Effect.provideService(Scope.Scope, sessionScope)),
           );
@@ -1417,7 +1426,7 @@ export function makeOpenCodeAdapter(
           resumeCursor: {
             schemaVersion: OPENCODE_RESUME_VERSION,
             sessionId: started.openCodeSession.id,
-            mcpServerName,
+            mcpServerName: started.mcpServerName,
           },
           createdAt,
           updatedAt: createdAt,

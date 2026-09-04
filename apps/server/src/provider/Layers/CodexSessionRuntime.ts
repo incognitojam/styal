@@ -221,10 +221,22 @@ export interface CodexSessionRuntimeShape {
 
 export type CodexSessionRuntimeError =
   | CodexErrors.CodexAppServerError
+  | CodexSessionRuntimeLegacyResumeUnavailableError
   | CodexSessionRuntimePendingApprovalNotFoundError
   | CodexSessionRuntimePendingUserInputNotFoundError
   | CodexSessionRuntimeInvalidUserInputAnswersError
   | CodexSessionRuntimeThreadIdMissingError;
+
+export class CodexSessionRuntimeLegacyResumeUnavailableError extends Schema.TaggedErrorClass<CodexSessionRuntimeLegacyResumeUnavailableError>()(
+  "CodexSessionRuntimeLegacyResumeUnavailableError",
+  {
+    threadId: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Legacy Codex provider history '${this.threadId}' is unavailable`;
+  }
+}
 
 export class CodexSessionRuntimePendingApprovalNotFoundError extends Schema.TaggedErrorClass<CodexSessionRuntimePendingApprovalNotFoundError>()(
   "CodexSessionRuntimePendingApprovalNotFoundError",
@@ -705,7 +717,11 @@ export const openCodexThread = (input: {
   readonly requestedModel: string | undefined;
   readonly serviceTier: CodexServiceTier | undefined;
   readonly resumeThreadId: string | undefined;
-}): Effect.Effect<CodexThreadOpenResponse, CodexErrors.CodexAppServerError> => {
+  readonly restartWithActiveMcpOnMissingResume?: boolean;
+}): Effect.Effect<
+  CodexThreadOpenResponse,
+  CodexErrors.CodexAppServerError | CodexSessionRuntimeLegacyResumeUnavailableError
+> => {
   const resumeThreadId = input.resumeThreadId;
   const startParams = buildThreadStartParams({
     cwd: input.cwd,
@@ -725,13 +741,21 @@ export const openCodexThread = (input: {
     })
     .pipe(
       Effect.catchIf(isRecoverableThreadResumeError, (error) =>
-        Effect.logWarning("codex app-server thread resume fell back to fresh start", {
-          threadId: input.threadId,
-          requestedRuntimeMode: input.runtimeMode,
-          resumeThreadId,
-          recoverable: true,
-          cause: error,
-        }).pipe(Effect.andThen(input.client.request("thread/start", startParams))),
+        Effect.gen(function* () {
+          yield* Effect.logWarning("codex app-server thread resume fell back to fresh start", {
+            threadId: input.threadId,
+            requestedRuntimeMode: input.runtimeMode,
+            resumeThreadId,
+            recoverable: true,
+            cause: error,
+          });
+          if (input.restartWithActiveMcpOnMissingResume) {
+            return yield* new CodexSessionRuntimeLegacyResumeUnavailableError({
+              threadId: resumeThreadId,
+            });
+          }
+          return yield* input.client.request("thread/start", startParams);
+        }),
       ),
     );
 };
@@ -2255,6 +2279,7 @@ export const makeCodexSessionRuntime = (
         requestedModel,
         serviceTier: options.serviceTier,
         resumeThreadId: readResumeCursorThreadId(options.resumeCursor),
+        restartWithActiveMcpOnMissingResume: options.mcpServerName === "t3-code",
       });
 
       const providerThreadId = opened.thread.id;
