@@ -42,6 +42,10 @@ function createProjectionDatabase(
       project_id TEXT NOT NULL,
       deleted_at TEXT
     );
+    CREATE TABLE projection_turns (
+      thread_id TEXT NOT NULL,
+      turn_id TEXT
+    );
     CREATE TABLE effect_sql_migrations (
       migration_id INTEGER NOT NULL,
       name TEXT NOT NULL
@@ -52,6 +56,7 @@ function createProjectionDatabase(
     INSERT INTO projection_threads VALUES ('thread-one', 'project-active', NULL);
     INSERT INTO projection_threads VALUES ('thread-two', 'project-active', NULL);
     INSERT INTO projection_threads VALUES ('thread-deleted', 'project-active', '2026-01-01T00:00:00Z');
+    INSERT INTO projection_turns VALUES ('thread-one', 'turn-root');
   `);
   database
     .prepare("INSERT INTO effect_sql_migrations (migration_id, name) VALUES (?, ?)")
@@ -94,6 +99,97 @@ function addProviderContinuation(
       `INSERT INTO provider_session_runtime VALUES (?, 'codex', 'codex', 'codex', 'full-access', 'stopped', '2026-02-01T00:00:00Z', ?, NULL)`,
     )
     .run(threadId, JSON.stringify({ threadId: providerThreadId }));
+  database.close();
+}
+
+function addTurnPromptLinkHistory(databasePath: string, includeDerivedLink = false): void {
+  const database = new NodeSqlite.DatabaseSync(databasePath);
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS orchestration_events (
+      sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id TEXT NOT NULL UNIQUE,
+      aggregate_kind TEXT NOT NULL,
+      stream_id TEXT NOT NULL,
+      stream_version INTEGER NOT NULL,
+      event_type TEXT NOT NULL,
+      occurred_at TEXT NOT NULL,
+      command_id TEXT,
+      causation_event_id TEXT,
+      correlation_id TEXT,
+      actor_kind TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      metadata_json TEXT NOT NULL
+    )
+  `);
+  if (includeDerivedLink) {
+    database
+      .prepare(`
+        INSERT INTO orchestration_events (
+          event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at,
+          actor_kind, payload_json, metadata_json
+        ) VALUES (?, 'thread', 'thread-one', 1, 'thread.turn-prompt-linked', ?, 'server', '{}', '{}')
+      `)
+      .run("legacy-import:turn-prompt-link:event-session", "2026-02-01T00:00:01.000Z");
+    database.close();
+    return;
+  }
+  const insert = database.prepare(`
+    INSERT INTO orchestration_events (
+      event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at,
+      command_id, causation_event_id, correlation_id, actor_kind, payload_json, metadata_json
+    ) VALUES (?, 'thread', 'thread-one', ?, ?, ?, ?, NULL, ?, ?, ?, '{}')
+  `);
+  insert.run(
+    "event-start",
+    1,
+    "thread.turn-start-requested",
+    "2026-02-01T00:00:00.000Z",
+    "command-start",
+    "command-start",
+    "client",
+    JSON.stringify({
+      threadId: "thread-one",
+      messageId: "message-user",
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      createdAt: "2026-02-01T00:00:00.000Z",
+    }),
+  );
+  insert.run(
+    "event-session",
+    2,
+    "thread.session-set",
+    "2026-02-01T00:00:01.000Z",
+    null,
+    null,
+    "server",
+    JSON.stringify({
+      threadId: "thread-one",
+      session: {
+        threadId: "thread-one",
+        status: "running",
+        providerName: "codex",
+        providerInstanceId: "codex",
+        runtimeMode: "full-access",
+        activeTurnId: "turn-root",
+        lastError: null,
+        updatedAt: "2026-02-01T00:00:01.000Z",
+      },
+    }),
+  );
+  database.close();
+}
+
+function addMalformedLifecycleEvent(databasePath: string): void {
+  const database = new NodeSqlite.DatabaseSync(databasePath);
+  database
+    .prepare(`
+      INSERT INTO orchestration_events (
+        event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at,
+        actor_kind, payload_json, metadata_json
+      ) VALUES (?, 'thread', 'thread-one', 3, 'thread.session-set', ?, 'server', ?, '{}')
+    `)
+    .run("event-session-malformed", "2026-02-01T00:00:02.000Z", "{not-json");
   database.close();
 }
 
@@ -250,6 +346,77 @@ it.effect("previews only projects and threads that are not already in the destin
             isExistingProject: true,
           },
         ]);
+      }),
+    ),
+    Effect.ensuring(
+      Effect.sync(() => NodeFS.rmSync(tempDirectory, { recursive: true, force: true })),
+    ),
+  );
+});
+
+it.effect("offers prompt-link repair despite a malformed lifecycle row", () => {
+  const tempDirectory = makeTempDirectory();
+  const sourceDatabasePath = NodePath.join(tempDirectory, "legacy.sqlite");
+  const currentDatabasePath = NodePath.join(tempDirectory, "current.sqlite");
+  createProjectionDatabase(sourceDatabasePath);
+  createProjectionDatabase(currentDatabasePath);
+  addTurnPromptLinkHistory(sourceDatabasePath);
+  addMalformedLifecycleEvent(sourceDatabasePath);
+
+  return Effect.gen(function* () {
+    const repairable = yield* inspectLegacyImportDatabase({
+      sourceDatabasePath,
+      currentDatabasePath,
+    });
+    assert.equal(repairable.status, "available");
+    if (repairable.status === "available") {
+      assert.deepStrictEqual(repairable.projects, [
+        {
+          projectId: "project-active",
+          title: "Active project",
+          workspaceRoot: "/work/active",
+          faviconPath: "assets/active.svg",
+          threadCount: 0,
+          contextRepairCount: 1,
+          scriptCount: 2,
+          isExistingProject: true,
+        },
+      ]);
+    }
+
+    addTurnPromptLinkHistory(currentDatabasePath, true);
+    const repaired = yield* inspectLegacyImportDatabase({
+      sourceDatabasePath,
+      currentDatabasePath,
+    });
+    assert.equal(repaired.status, "available");
+    if (repaired.status === "available") assert.deepStrictEqual(repaired.projects, []);
+  }).pipe(
+    Effect.ensuring(
+      Effect.sync(() => NodeFS.rmSync(tempDirectory, { recursive: true, force: true })),
+    ),
+  );
+});
+
+it.effect("does not offer prompt-link repair for a turn absent from the destination", () => {
+  const tempDirectory = makeTempDirectory();
+  const sourceDatabasePath = NodePath.join(tempDirectory, "legacy.sqlite");
+  const currentDatabasePath = NodePath.join(tempDirectory, "current.sqlite");
+  createProjectionDatabase(sourceDatabasePath);
+  createProjectionDatabase(currentDatabasePath);
+  addTurnPromptLinkHistory(sourceDatabasePath);
+  const currentDatabase = new NodeSqlite.DatabaseSync(currentDatabasePath);
+  currentDatabase.exec("DELETE FROM projection_turns WHERE thread_id = 'thread-one'");
+  currentDatabase.close();
+
+  return inspectLegacyImportDatabase({
+    sourceDatabasePath,
+    currentDatabasePath,
+  }).pipe(
+    Effect.tap((preview) =>
+      Effect.sync(() => {
+        assert.equal(preview.status, "available");
+        if (preview.status === "available") assert.deepStrictEqual(preview.projects, []);
       }),
     ),
     Effect.ensuring(

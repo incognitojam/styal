@@ -82,8 +82,10 @@ reconciles.
 Historical data import uses the engine's `importHistoricalEvents` seam instead of replaying user
 commands through the decider. It is serialized on the same engine queue, appends and projects each
 batch in one transaction, then reloads the command read model. After commit it publishes only
-`project.created` and `thread.created` events: shell subscribers refetch the completed rows, while
-historical operational events cannot wake provider or checkpoint reactors.
+`project.created`, `thread.created`, and one final `thread.turn-prompt-linked` event per repaired
+thread. Shell subscribers refetch completed rows, thread-detail subscribers reload repaired
+history, historical operational events cannot wake provider or checkpoint reactors, and the
+prompt-link invalidation bypasses relay publication.
 
 Command and event names live in [`orchestration.ts`][contracts]. Some commands are client
 dispatchable (`thread.create`, `thread.turn.start`, `thread.approval.respond`); others are internal

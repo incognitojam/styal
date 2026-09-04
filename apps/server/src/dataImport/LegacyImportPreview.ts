@@ -8,6 +8,7 @@ import {
   type LegacyImportProjectPreview as LegacyImportProjectPreviewType,
   NonNegativeInt,
   PositiveInt,
+  ThreadId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -18,6 +19,10 @@ import * as Schema from "effect/Schema";
 
 import { ServerConfig } from "../config.ts";
 import { inspectLegacyImportPreferences } from "./LegacyImportPreferences.ts";
+import {
+  deriveLegacyTurnPromptLinks,
+  readLegacyTurnLifecycleEvents,
+} from "./LegacyImportTurnPromptLinks.ts";
 
 export interface ReadonlyDatabase {
   readonly exec: (sql: string) => void;
@@ -41,6 +46,9 @@ const SourceProjectScripts = Schema.Array(Schema.Unknown);
 const SourceThreadRows = Schema.Array(
   Schema.Struct({ projectId: Schema.String, threadId: Schema.String }),
 );
+const ProjectionTurnRows = Schema.Array(
+  Schema.Struct({ threadId: Schema.String, turnId: Schema.String }),
+);
 const RuntimeRows = Schema.Array(
   Schema.Struct({
     threadId: Schema.String,
@@ -59,6 +67,7 @@ const DestinationProjectRows = Schema.Array(
 const MigrationVersionRows = Schema.Array(
   Schema.Struct({ schemaVersion: Schema.NullOr(PositiveInt) }),
 );
+const EventIdRows = Schema.Array(Schema.Struct({ eventId: Schema.String }));
 const decodeTableRows = Schema.decodeUnknownSync(TableRows);
 const decodeCountRows = Schema.decodeUnknownSync(CountRows);
 const decodeSourceProjectRows = Schema.decodeUnknownSync(SourceProjectRows);
@@ -66,11 +75,13 @@ const decodeSourceProjectScripts = Schema.decodeUnknownSync(
   Schema.fromJsonString(SourceProjectScripts),
 );
 const decodeSourceThreadRows = Schema.decodeUnknownSync(SourceThreadRows);
+const decodeProjectionTurnRows = Schema.decodeUnknownSync(ProjectionTurnRows);
 const decodeRuntimeRows = Schema.decodeUnknownSync(RuntimeRows);
 const decodeUnknownJsonString = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 const encodeUnknownJsonString = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 const decodeDestinationProjectRows = Schema.decodeUnknownSync(DestinationProjectRows);
 const decodeMigrationVersionRows = Schema.decodeUnknownSync(MigrationVersionRows);
+const decodeEventIdRows = Schema.decodeUnknownSync(EventIdRows);
 
 const unavailable = (
   reason: "current-database" | "unsupported-database" | "unreadable-database",
@@ -89,6 +100,8 @@ export interface LegacyImportDestinationState {
   readonly activeWorkspaceRoots: ReadonlySet<string>;
   readonly threadIds: ReadonlySet<string>;
   readonly continuationKeys: ReadonlyMap<string, string>;
+  readonly turnPromptLinkEventIds: ReadonlySet<string>;
+  readonly turnIdsByThreadId: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
 export const emptyLegacyImportDestinationState = (): LegacyImportDestinationState => ({
@@ -96,6 +109,8 @@ export const emptyLegacyImportDestinationState = (): LegacyImportDestinationStat
   activeWorkspaceRoots: new Set(),
   threadIds: new Set(),
   continuationKeys: new Map(),
+  turnPromptLinkEventIds: new Set(),
+  turnIdsByThreadId: new Map(),
 });
 
 function nonEmptyString(value: unknown): string | undefined {
@@ -209,6 +224,22 @@ function readRuntimeContinuationKeys(
   );
 }
 
+function readTurnPromptLinkEventIds(
+  database: ReadonlyDatabase,
+  tableNames: ReadonlySet<string>,
+): ReadonlySet<string> {
+  if (!tableNames.has("orchestration_events")) return new Set();
+  return new Set(
+    decodeEventIdRows(
+      database.all(`
+        SELECT event_id AS eventId
+        FROM orchestration_events
+        WHERE event_type = 'thread.turn-prompt-linked'
+      `),
+    ).map(({ eventId }) => eventId),
+  );
+}
+
 export function inspectLegacyImportDestinationState(
   database: ReadonlyDatabase,
 ): LegacyImportDestinationState {
@@ -233,6 +264,21 @@ export function inspectLegacyImportDestinationState(
   const destinationThreads = decodeSourceThreadRows(
     database.all("SELECT project_id AS projectId, thread_id AS threadId FROM projection_threads"),
   );
+  const destinationTurns = tableNames.has("projection_turns")
+    ? decodeProjectionTurnRows(
+        database.all(`
+          SELECT thread_id AS threadId, turn_id AS turnId
+          FROM projection_turns
+          WHERE turn_id IS NOT NULL
+        `),
+      )
+    : [];
+  const turnIdsByThreadId = new Map<string, Set<string>>();
+  for (const turn of destinationTurns) {
+    const turnIds = turnIdsByThreadId.get(turn.threadId) ?? new Set<string>();
+    turnIds.add(turn.turnId);
+    turnIdsByThreadId.set(turn.threadId, turnIds);
+  }
   const activeWorkspaceRoots = new Set<string>();
   for (const project of destinationProjects) {
     if (project.deletedAt === null) activeWorkspaceRoots.add(project.workspaceRoot);
@@ -243,6 +289,8 @@ export function inspectLegacyImportDestinationState(
     activeWorkspaceRoots,
     threadIds: new Set(destinationThreads.map((thread) => thread.threadId)),
     continuationKeys: readRuntimeContinuationKeys(database, tableNames),
+    turnPromptLinkEventIds: readTurnPromptLinkEventIds(database, tableNames),
+    turnIdsByThreadId,
   };
 }
 
@@ -271,6 +319,7 @@ export const openReadonlyDatabase = Effect.fn("LegacyImportPreview.openReadonlyD
 export function inspectOpenDatabase(
   database: ReadonlyDatabase,
   destination = emptyLegacyImportDestinationState(),
+  options: { readonly onInvalidLifecycleEvent?: () => void } = {},
 ): LegacyImportPreview {
   database.exec("BEGIN");
   try {
@@ -330,6 +379,26 @@ export function inspectOpenDatabase(
       `),
     );
     const sourceContinuationKeys = readRuntimeContinuationKeys(database, tableNames);
+    const missingPromptLinkThreadIds = tableNames.has("orchestration_events")
+      ? new Set(
+          deriveLegacyTurnPromptLinks(
+            readLegacyTurnLifecycleEvents(
+              database,
+              sourceThreads
+                .filter((thread) => destination.threadIds.has(thread.threadId))
+                .map((thread) => ThreadId.make(thread.threadId)),
+              options.onInvalidLifecycleEvent === undefined
+                ? {}
+                : { onInvalidRow: options.onInvalidLifecycleEvent },
+            ),
+          )
+            .filter((event) =>
+              destination.turnIdsByThreadId.get(event.payload.threadId)?.has(event.payload.turnId),
+            )
+            .filter((event) => !destination.turnPromptLinkEventIds.has(event.eventId))
+            .map((event) => event.payload.threadId),
+        )
+      : new Set<string>();
     const sourceThreadCounts = new Map<string, number>();
     const remainingThreadCounts = new Map<string, number>();
     const contextRepairCounts = new Map<string, number>();
@@ -343,8 +412,9 @@ export function inspectOpenDatabase(
       } else {
         const sourceContinuationKey = sourceContinuationKeys.get(thread.threadId);
         if (
-          sourceContinuationKey !== undefined &&
-          destination.continuationKeys.get(thread.threadId) !== sourceContinuationKey
+          missingPromptLinkThreadIds.has(thread.threadId) ||
+          (sourceContinuationKey !== undefined &&
+            destination.continuationKeys.get(thread.threadId) !== sourceContinuationKey)
         ) {
           contextRepairCounts.set(
             thread.projectId,
@@ -438,9 +508,17 @@ export const inspectLegacyImportDatabase = Effect.fn(
       )
     : emptyLegacyImportDestinationState();
 
+  let invalidLifecycleEventCount = 0;
   const databasePreview = yield* Effect.acquireUseRelease(
     openReadonlyDatabase(sourceDatabasePath),
-    (database) => Effect.sync(() => inspectOpenDatabase(database, destination)),
+    (database) =>
+      Effect.sync(() =>
+        inspectOpenDatabase(database, destination, {
+          onInvalidLifecycleEvent: () => {
+            invalidLifecycleEventCount += 1;
+          },
+        }),
+      ),
     (database) => Effect.sync(() => database.close()).pipe(Effect.ignore),
   ).pipe(
     Effect.catchCause((cause) =>
@@ -449,6 +527,12 @@ export const inspectLegacyImportDatabase = Effect.fn(
       ),
     ),
   );
+  if (invalidLifecycleEventCount > 0) {
+    yield* Effect.logWarning(
+      "Skipped malformed legacy lifecycle events while previewing import repairs",
+      { count: invalidLifecycleEventCount },
+    );
+  }
   if (databasePreview.status !== "available" || sourceSettingsPath === undefined) {
     return databasePreview;
   }

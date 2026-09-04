@@ -306,6 +306,7 @@ export function isThreadDetailEvent(event: OrchestrationEvent): event is Extract
   {
     type:
       | "thread.message-sent"
+      | "thread.turn-prompt-linked"
       | "thread.proposed-plan-upserted"
       | "thread.activity-appended"
       | "thread.turn-diff-completed"
@@ -315,6 +316,7 @@ export function isThreadDetailEvent(event: OrchestrationEvent): event is Extract
 > {
   return (
     event.type === "thread.message-sent" ||
+    event.type === "thread.turn-prompt-linked" ||
     event.type === "thread.proposed-plan-upserted" ||
     event.type === "thread.activity-appended" ||
     event.type === "thread.turn-diff-completed" ||
@@ -1505,21 +1507,95 @@ const makeWsRpcLayer = (
                 event.aggregateId === input.threadId &&
                 isThreadDetailEvent(event);
 
-              const liveStream = orchestrationEngine.streamDomainEvents.pipe(
-                Stream.filter(isThisThreadDetailEvent),
-                Stream.map((event) => ({
+              const loadThreadSnapshotItem = Effect.fn("ws.loadThreadSnapshotItem")(function* () {
+                const snapshot = yield* projectionSnapshotQuery
+                  .getThreadDetailSnapshot(
+                    input.threadId,
+                    input.turnLimit === undefined ? undefined : { turnLimit: input.turnLimit },
+                  )
+                  .pipe(
+                    Effect.mapError(
+                      (cause) =>
+                        new OrchestrationGetSnapshotError({
+                          message: `Failed to load thread ${input.threadId}`,
+                          cause,
+                        }),
+                    ),
+                  );
+                if (Option.isNone(snapshot)) {
+                  return yield* new OrchestrationGetSnapshotError({
+                    message: `Thread ${input.threadId} was not found`,
+                    cause: input.threadId,
+                  });
+                }
+                return {
+                  kind: "snapshot" as const,
+                  snapshot: projectThreadDetailSnapshot(snapshot.value),
+                };
+              });
+
+              const projectThreadEventBatch = Effect.fn("ws.projectThreadEventBatch")(function* (
+                events: ReadonlyArray<OrchestrationEvent>,
+              ): Effect.fn.Return<
+                ReadonlyArray<OrchestrationThreadStreamItem>,
+                OrchestrationGetSnapshotError
+              > {
+                // The fresh snapshot is read at the current projection head,
+                // so it subsumes every ordinary event alongside any number of
+                // prompt-link invalidations in this batch.
+                if (events.some((event) => event.type === "thread.turn-prompt-linked")) {
+                  return [yield* loadThreadSnapshotItem()];
+                }
+                return events.map((event) => ({
                   kind: "event" as const,
                   event: projectActivityEvent(event),
-                })),
+                }));
+              });
+
+              type ThreadLiveInput =
+                | { readonly kind: "event"; readonly event: OrchestrationEvent }
+                | { readonly kind: "synchronized" };
+              const projectThreadLiveInputs = Effect.fn("ws.projectThreadLiveInputs")(function* (
+                inputs: ReadonlyArray<ThreadLiveInput>,
+              ): Effect.fn.Return<
+                readonly [OrchestrationThreadStreamItem, ...Array<OrchestrationThreadStreamItem>],
+                OrchestrationGetSnapshotError
+              > {
+                const output: Array<OrchestrationThreadStreamItem> = [];
+                let pendingEvents: Array<OrchestrationEvent> = [];
+                for (const item of inputs) {
+                  if (item.kind === "event") {
+                    pendingEvents.push(item.event);
+                    continue;
+                  }
+                  output.push(...(yield* projectThreadEventBatch(pendingEvents)));
+                  pendingEvents = [];
+                  output.push(item);
+                }
+                output.push(...(yield* projectThreadEventBatch(pendingEvents)));
+                const first = output[0];
+                if (first === undefined) {
+                  return yield* Effect.die(
+                    "Thread live input batch unexpectedly produced no items",
+                  );
+                }
+                return [first, ...output.slice(1)];
+              });
+              const liveStream = orchestrationEngine.streamDomainEvents.pipe(
+                Stream.filter(isThisThreadDetailEvent),
               );
 
               // Attach live delivery before reading either replay or snapshot state.
               // Otherwise an event published while the snapshot is loading is lost.
-              const liveBuffer = yield* Queue.unbounded<OrchestrationThreadStreamItem>();
+              const liveBuffer = yield* Queue.unbounded<ThreadLiveInput>();
               yield* Effect.forkScoped(
-                liveStream.pipe(Stream.runForEach((item) => Queue.offer(liveBuffer, item))),
+                liveStream.pipe(
+                  Stream.runForEach((event) => Queue.offer(liveBuffer, { kind: "event", event })),
+                ),
               );
-              const bufferedLiveStream = Stream.fromQueue(liveBuffer);
+              const bufferedLiveStream = Stream.fromQueue(liveBuffer).pipe(
+                Stream.mapArrayEffect(projectThreadLiveInputs),
+              );
 
               // When the client already loaded the snapshot over HTTP it passes
               // that snapshot's sequence, and we resume the live subscription by
@@ -1548,15 +1624,12 @@ const makeWsRpcLayer = (
                 const headSequence = yield* orchestrationEngine.latestSequence;
                 const replayGap = headSequence - afterSequence;
                 if (replayGap >= 0 && replayGap <= THREAD_RESUME_MAX_GAP) {
-                  const catchUpStream = orchestrationEngine
+                  const catchUpEvents = yield* orchestrationEngine
                     .readEvents(afterSequence, replayGap)
                     .pipe(
                       Stream.filter(isThisThreadDetailEvent),
-                      Stream.map((event) => ({
-                        kind: "event" as const,
-                        event: projectActivityEvent(event),
-                      })),
-                      Stream.mapError(
+                      Stream.runCollect,
+                      Effect.mapError(
                         (cause) =>
                           new OrchestrationGetSnapshotError({
                             message: `Failed to replay thread ${input.threadId} events`,
@@ -1564,6 +1637,9 @@ const makeWsRpcLayer = (
                           }),
                       ),
                     );
+                  const catchUpStream = Stream.fromIterable(
+                    yield* projectThreadEventBatch(catchUpEvents),
+                  );
                   const afterCatchUp =
                     input.requestCompletionMarker === true
                       ? Stream.concat(
@@ -1580,31 +1656,11 @@ const makeWsRpcLayer = (
                 // fresh thread detail instead of an unbounded replay.
               }
 
-              const snapshot = yield* projectionSnapshotQuery
-                .getThreadDetailSnapshot(
-                  input.threadId,
-                  // Windowing the fallback snapshot is opt-in per subscription:
-                  // clients that don't send turnLimit (including all
-                  // pre-pagination clients) get the full thread, since they
-                  // have no way to load older pages.
-                  input.turnLimit === undefined ? undefined : { turnLimit: input.turnLimit },
-                )
-                .pipe(
-                  Effect.mapError(
-                    (cause) =>
-                      new OrchestrationGetSnapshotError({
-                        message: `Failed to load thread ${input.threadId}`,
-                        cause,
-                      }),
-                  ),
-                );
-
-              if (Option.isNone(snapshot)) {
-                return yield* new OrchestrationGetSnapshotError({
-                  message: `Thread ${input.threadId} was not found`,
-                  cause: input.threadId,
-                });
-              }
+              // Windowing the fallback snapshot is opt-in per subscription:
+              // clients that don't send turnLimit (including all
+              // pre-pagination clients) get the full thread, since they have
+              // no way to load older pages.
+              const snapshotItem = yield* loadThreadSnapshotItem();
 
               const afterSnapshot =
                 input.requestCompletionMarker === true
@@ -1615,13 +1671,7 @@ const makeWsRpcLayer = (
                       bufferedLiveStream,
                     )
                   : bufferedLiveStream;
-              return Stream.concat(
-                Stream.make({
-                  kind: "snapshot" as const,
-                  snapshot: projectThreadDetailSnapshot(snapshot.value),
-                }),
-                afterSnapshot,
-              );
+              return Stream.concat(Stream.make(snapshotItem), afterSnapshot);
             }),
             { "rpc.aggregate": "orchestration" },
           ),

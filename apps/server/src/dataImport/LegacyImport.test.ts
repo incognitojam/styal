@@ -7,21 +7,38 @@ import * as NodeSqlite from "node:sqlite";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
+  EventId,
+  MessageId,
   type OrchestrationEvent,
   type OrchestrationProjectShell,
   type OrchestrationReadModel,
   type OrchestrationShellSnapshot,
   type ProviderDriverKind,
-  type ProviderInstanceId,
+  ProviderInstanceId,
   ProjectId,
   ThreadId,
+  TurnId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { ServerConfig } from "../config.ts";
+import { OrchestrationEngineLive } from "../orchestration/Layers/OrchestrationEngine.ts";
+import {
+  ORCHESTRATION_PROJECTOR_NAMES,
+  OrchestrationProjectionPipelineLive,
+} from "../orchestration/Layers/ProjectionPipeline.ts";
+import { OrchestrationProjectionSnapshotQueryLive } from "../orchestration/Layers/ProjectionSnapshotQuery.ts";
+import { OrchestrationProjectionPipeline } from "../orchestration/Services/ProjectionPipeline.ts";
+import * as ThreadBackgroundLiveness from "../orchestration/ThreadBackgroundLiveness.ts";
+import * as ThreadPlanProgress from "../orchestration/ThreadPlanProgress.ts";
+import { OrchestrationCommandReceiptRepositoryLive } from "../persistence/Layers/OrchestrationCommandReceipts.ts";
+import { OrchestrationEventStoreLive } from "../persistence/Layers/OrchestrationEventStore.ts";
+import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import {
   ProjectionSnapshotQuery,
@@ -98,6 +115,9 @@ function createLegacyDatabase(databasePath: string): void {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, '{}')
   `);
   const at = "2026-01-01T00:00:00.000Z";
+  const subagentAt = "2026-01-01T00:00:10.000Z";
+  const assistantAt = "2026-01-01T00:00:15.000Z";
+  const completedAt = "2026-01-01T00:00:16.000Z";
   insert.run(
     "event-project",
     "project",
@@ -142,10 +162,32 @@ function createLegacyDatabase(databasePath: string): void {
     }),
   );
   insert.run(
-    "event-turn-start",
+    "event-user-message",
     "thread",
     "thread-import",
     1,
+    "thread.message-sent",
+    at,
+    "command-turn",
+    "command-turn",
+    "client",
+    JSON.stringify({
+      threadId: "thread-import",
+      messageId: "message-user",
+      role: "user",
+      text: "Initial prompt",
+      attachments: [],
+      turnId: null,
+      streaming: false,
+      createdAt: at,
+      updatedAt: at,
+    }),
+  );
+  insert.run(
+    "event-turn-start",
+    "thread",
+    "thread-import",
+    2,
     "thread.turn-start-requested",
     at,
     "command-turn",
@@ -161,7 +203,7 @@ function createLegacyDatabase(databasePath: string): void {
     "event-session",
     "thread",
     "thread-import",
-    2,
+    3,
     "thread.session-set",
     at,
     null,
@@ -181,12 +223,33 @@ function createLegacyDatabase(databasePath: string): void {
     }),
   );
   insert.run(
+    "event-subagent-message",
+    "thread",
+    "thread-import",
+    4,
+    "thread.message-sent",
+    subagentAt,
+    null,
+    null,
+    "provider",
+    JSON.stringify({
+      threadId: "thread-import",
+      messageId: "message-subagent",
+      role: "assistant",
+      text: "Subagent note",
+      turnId: "turn-subagent",
+      streaming: false,
+      createdAt: subagentAt,
+      updatedAt: subagentAt,
+    }),
+  );
+  insert.run(
     "event-message-one",
     "thread",
     "thread-import",
-    3,
+    5,
     "thread.message-sent",
-    at,
+    assistantAt,
     null,
     null,
     "provider",
@@ -197,17 +260,17 @@ function createLegacyDatabase(databasePath: string): void {
       text: "Hello ",
       turnId: "turn-one",
       streaming: true,
-      createdAt: at,
-      updatedAt: at,
+      createdAt: assistantAt,
+      updatedAt: assistantAt,
     }),
   );
   insert.run(
     "event-message-two",
     "thread",
     "thread-import",
-    4,
+    6,
     "thread.message-sent",
-    at,
+    assistantAt,
     null,
     null,
     "provider",
@@ -218,15 +281,15 @@ function createLegacyDatabase(databasePath: string): void {
       text: "Hello there",
       turnId: "turn-one",
       streaming: false,
-      createdAt: at,
-      updatedAt: at,
+      createdAt: assistantAt,
+      updatedAt: assistantAt,
     }),
   );
   insert.run(
     "event-progress-one",
     "thread",
     "thread-import",
-    5,
+    7,
     "thread.activity-appended",
     at,
     null,
@@ -249,7 +312,7 @@ function createLegacyDatabase(databasePath: string): void {
     "event-progress-two",
     "thread",
     "thread-import",
-    6,
+    8,
     "thread.activity-appended",
     at,
     null,
@@ -272,7 +335,7 @@ function createLegacyDatabase(databasePath: string): void {
     "event-context-window",
     "thread",
     "thread-import",
-    7,
+    9,
     "thread.activity-appended",
     at,
     null,
@@ -292,10 +355,31 @@ function createLegacyDatabase(databasePath: string): void {
     }),
   );
   insert.run(
+    "event-turn-diff",
+    "thread",
+    "thread-import",
+    10,
+    "thread.turn-diff-completed",
+    completedAt,
+    null,
+    null,
+    "server",
+    JSON.stringify({
+      threadId: "thread-import",
+      turnId: "turn-one",
+      checkpointTurnCount: 1,
+      checkpointRef: "refs/t3/checkpoints/imported/turn/1",
+      status: "ready",
+      files: [],
+      assistantMessageId: "message-assistant",
+      completedAt,
+    }),
+  );
+  insert.run(
     "event-title",
     "thread",
     "thread-import",
-    8,
+    11,
     "thread.meta-updated",
     at,
     "command-title",
@@ -418,28 +502,52 @@ it.effect("reads durable history without carrying live provider state", () => {
             "project.created",
             "thread.created",
             "thread.message-sent",
+            "thread.message-sent",
+            "thread.message-sent",
             "thread.activity-appended",
+            "thread.turn-diff-completed",
             "thread.meta-updated",
+            "thread.turn-prompt-linked",
           ],
         );
-        const messageEvent = snapshot.projects[0]?.events.at(2);
+        const messageEvent = snapshot.projects[0]?.events.find(
+          (event) =>
+            event.type === "thread.message-sent" && event.payload.messageId === "message-assistant",
+        );
         assert.strictEqual(messageEvent?.type, "thread.message-sent");
         if (messageEvent?.type === "thread.message-sent") {
           assert.strictEqual(messageEvent.payload.text, "Hello there");
           assert.isFalse(messageEvent.payload.streaming);
         }
-        const activityEvent = snapshot.projects[0]?.events.at(3);
+        const activityEvent = snapshot.projects[0]?.events.find(
+          (event) => event.type === "thread.activity-appended",
+        );
         assert.strictEqual(activityEvent?.type, "thread.activity-appended");
         if (activityEvent?.type === "thread.activity-appended") {
           assert.strictEqual(activityEvent.payload.activity.summary, "Final progress update");
         }
-        const titleEvent = snapshot.projects[0]?.events.at(-1);
+        const titleEvent = snapshot.projects[0]?.events.find(
+          (event) => event.type === "thread.meta-updated",
+        );
         assert.strictEqual(titleEvent?.type, "thread.meta-updated");
         if (titleEvent?.type === "thread.meta-updated") {
           assert.deepStrictEqual(titleEvent.payload, {
             threadId: ThreadId.make("thread-import"),
             title: "Finished title",
             updatedAt: "2026-01-01T00:00:00.000Z",
+          });
+        }
+        const promptLinkEvent = snapshot.projects[0]?.events.at(-1);
+        assert.strictEqual(promptLinkEvent?.type, "thread.turn-prompt-linked");
+        if (promptLinkEvent?.type === "thread.turn-prompt-linked") {
+          assert.deepStrictEqual(promptLinkEvent.payload, {
+            threadId: ThreadId.make("thread-import"),
+            turnId: TurnId.make("turn-one"),
+            messageId: MessageId.make("message-user"),
+            requestedAt: "2026-01-01T00:00:00.000Z",
+            startedAt: "2026-01-01T00:00:00.000Z",
+            sourceTurnStartEventId: EventId.make("event-turn-start"),
+            sourceSessionEventId: EventId.make("event-session"),
           });
         }
         assert.strictEqual(
@@ -555,15 +663,22 @@ it.effect("imports selected history and safe preferences independently", () => {
         "project.created",
         "thread.created",
         "thread.message-sent",
+        "thread.message-sent",
+        "thread.message-sent",
         "thread.activity-appended",
+        "thread.turn-diff-completed",
         "thread.meta-updated",
+        "thread.turn-prompt-linked",
       ],
     );
-    const importedMessage = importedBatches[0]?.events.find(
+    const importedMessages = importedBatches[0]?.events.filter(
       (event) => event.type === "thread.message-sent",
-    ) as
-      | Omit<Extract<OrchestrationEvent, { readonly type: "thread.message-sent" }>, "sequence">
-      | undefined;
+    ) as ReadonlyArray<
+      Omit<Extract<OrchestrationEvent, { readonly type: "thread.message-sent" }>, "sequence">
+    >;
+    const importedMessage = importedMessages.find(
+      (event) => event.payload.messageId === "message-assistant",
+    );
     assert.strictEqual(importedMessage?.type, "thread.message-sent");
     if (importedMessage?.type === "thread.message-sent") {
       assert.deepStrictEqual(importedMessage.payload.attachments, []);
@@ -602,6 +717,140 @@ it.effect("imports selected history and safe preferences independently", () => {
   );
 });
 
+const legacyImportProjectionLayer = Layer.mergeAll(
+  OrchestrationEngineLive.pipe(
+    Layer.provide(OrchestrationProjectionSnapshotQueryLive),
+    Layer.provide(OrchestrationProjectionPipelineLive),
+  ),
+  OrchestrationProjectionPipelineLive,
+  OrchestrationProjectionSnapshotQueryLive,
+  serverSettingsLayerTest(),
+).pipe(
+  Layer.provide(ThreadBackgroundLiveness.layer),
+  Layer.provide(ThreadPlanProgress.layer),
+  Layer.provide(OrchestrationEventStoreLive),
+  Layer.provide(OrchestrationCommandReceiptRepositoryLive),
+  Layer.provide(RepositoryIdentityResolver.layer),
+  Layer.provideMerge(SqlitePersistenceMemory),
+  Layer.provideMerge(
+    ServerConfig.layerTest(process.cwd(), { prefix: "t3-legacy-import-repair-test-" }),
+  ),
+  Layer.provideMerge(NodeServices.layer),
+);
+
+it.effect("repairs an existing import from source linkage and remains rebuild-stable", () => {
+  const tempDirectory = NodeFS.mkdtempSync(
+    NodePath.join(NodeOS.tmpdir(), "t3-legacy-import-repair-test-"),
+  );
+  const sourceStateDir = NodePath.join(tempDirectory, "legacy-userdata");
+  const sourceDatabasePath = NodePath.join(sourceStateDir, "state.sqlite");
+  NodeFS.mkdirSync(sourceStateDir, { recursive: true });
+  createLegacyDatabase(sourceDatabasePath);
+
+  return Effect.gen(function* () {
+    const engine = yield* OrchestrationEngineService;
+    const snapshots = yield* ProjectionSnapshotQuery;
+    const projectionPipeline = yield* OrchestrationProjectionPipeline;
+    const sql = yield* SqlClient.SqlClient;
+    const threadId = ThreadId.make("thread-import");
+    const source = yield* readLegacySourceSnapshot({
+      sourceDatabasePath,
+      currentDatabasePath: NodePath.join(tempDirectory, "destination.sqlite"),
+      projectIds: ["project-import"],
+    });
+    const preRepairEvents = (source.projects[0]?.events ?? [])
+      .filter((event) => event.type !== "thread.turn-prompt-linked")
+      .map(({ sequence: _sequence, ...event }) => event);
+    yield* engine.importHistoricalEvents!(preRepairEvents);
+
+    const messageTexts = Effect.fn("LegacyImportTest.messageTexts")(function* () {
+      const snapshot = yield* snapshots.getThreadDetailSnapshot(threadId, { turnLimit: 1 });
+      assert.equal(snapshot._tag, "Some");
+      return snapshot._tag === "Some"
+        ? snapshot.value.thread.messages.map((message) => message.text)
+        : [];
+    });
+    assert.notInclude(yield* messageTexts(), "Initial prompt");
+
+    const loadDestinationState = () =>
+      Effect.gen(function* () {
+        const links = yield* sql<{ readonly eventId: string }>`
+          SELECT event_id AS "eventId"
+          FROM orchestration_events
+          WHERE event_type = 'thread.turn-prompt-linked'
+        `.pipe(Effect.orDie);
+        const turns = yield* sql<{ readonly threadId: string; readonly turnId: string }>`
+          SELECT thread_id AS "threadId", turn_id AS "turnId"
+          FROM projection_turns
+          WHERE turn_id IS NOT NULL
+        `.pipe(Effect.orDie);
+        const turnIdsByThreadId = new Map<string, Set<string>>();
+        for (const turn of turns) {
+          const turnIds = turnIdsByThreadId.get(turn.threadId) ?? new Set<string>();
+          turnIds.add(turn.turnId);
+          turnIdsByThreadId.set(turn.threadId, turnIds);
+        }
+        return {
+          projectIds: new Set(["project-import"]),
+          activeWorkspaceRoots: new Set(["/work/import"]),
+          threadIds: new Set(["thread-import"]),
+          continuationKeys: new Map([
+            ["thread-import", "codex:codex:threadId:provider-thread-import"],
+          ]),
+          turnPromptLinkEventIds: new Set(links.map(({ eventId }) => eventId)),
+          turnIdsByThreadId,
+        };
+      });
+    const service = yield* makeLegacyImportService({
+      sourceStateDir,
+      loadDestinationState,
+      stopActiveProviderSession: stopNoActiveProviderSession,
+    });
+    const repaired = yield* service.importData({
+      projectIds: ["project-import"],
+      includeSettings: false,
+    });
+    assert.strictEqual(repaired.repairedThreadCount, 1);
+    assert.include(yield* messageTexts(), "Initial prompt");
+
+    const turns = yield* sql<{
+      readonly turnId: string;
+      readonly pendingMessageId: string | null;
+    }>`
+      SELECT turn_id AS "turnId", pending_message_id AS "pendingMessageId"
+      FROM projection_turns
+      WHERE thread_id = ${threadId}
+      ORDER BY turn_id
+    `;
+    assert.deepStrictEqual(turns, [
+      { turnId: "turn-one", pendingMessageId: "message-user" },
+      { turnId: "turn-subagent", pendingMessageId: null },
+    ]);
+
+    yield* sql`DELETE FROM projection_turns WHERE thread_id = ${threadId}`;
+    yield* sql`
+      UPDATE projection_state
+      SET last_applied_sequence = 0
+      WHERE projector = ${ORCHESTRATION_PROJECTOR_NAMES.threadTurns}
+    `;
+    yield* projectionPipeline.bootstrap;
+    assert.include(yield* messageTexts(), "Initial prompt");
+
+    const alreadyRepaired = yield* service.importData({
+      projectIds: ["project-import"],
+      includeSettings: false,
+    });
+    assert.strictEqual(alreadyRepaired.repairedThreadCount, 0);
+    assert.strictEqual(alreadyRepaired.projects[0]?.status, "skipped");
+  }).pipe(
+    Effect.provide(legacyImportProjectionLayer),
+    Effect.scoped,
+    Effect.ensuring(
+      Effect.sync(() => NodeFS.rmSync(tempDirectory, { recursive: true, force: true })),
+    ),
+  );
+});
+
 it.effect("imports one thread at a time and resumes after an interrupted thread", () => {
   const tempDirectory = NodeFS.mkdtempSync(
     NodePath.join(NodeOS.tmpdir(), "t3-legacy-import-resume-test-"),
@@ -618,6 +867,7 @@ it.effect("imports one thread at a time and resumes after an interrupted thread"
   const importedProjectIds = new Set<string>();
   const importedThreadIds = new Set<string>();
   const importedContinuationKeys = new Map<string, string>();
+  const importedTurnPromptLinkEventIds = new Set<string>();
   const importedBatches: Array<ReadonlyArray<Omit<OrchestrationEvent, "sequence">>> = [];
   let targetAttachmentsDir = "";
   const engine = OrchestrationEngineService.of({
@@ -639,6 +889,9 @@ it.effect("imports one thread at a time and resumes after an interrupted thread"
         for (const event of events) {
           if (event.type === "project.created") importedProjectIds.add(event.aggregateId);
           if (event.type === "thread.created") importedThreadIds.add(event.aggregateId);
+          if (event.type === "thread.turn-prompt-linked") {
+            importedTurnPromptLinkEventIds.add(event.eventId);
+          }
         }
         if (options?.continuation !== undefined) {
           const key = legacyContinuationKey({
@@ -702,6 +955,8 @@ it.effect("imports one thread at a time and resumes after an interrupted thread"
       activeWorkspaceRoots: new Set(importedProjectIds.size === 0 ? [] : ["/work/import"]),
       threadIds: new Set(importedThreadIds),
       continuationKeys: new Map(importedContinuationKeys),
+      turnPromptLinkEventIds: new Set(importedTurnPromptLinkEventIds),
+      turnIdsByThreadId: new Map(),
     });
 
   return Effect.gen(function* () {
@@ -842,6 +1097,8 @@ it.effect("repairs provider context for threads imported by an earlier release",
       activeWorkspaceRoots: new Set(["/work/import"]),
       threadIds: new Set(["thread-import"]),
       continuationKeys: new Map(continuationKeys),
+      turnPromptLinkEventIds: new Set(["legacy-import:turn-prompt-link:event-session"]),
+      turnIdsByThreadId: new Map([["thread-import", new Set(["turn-one"])]]),
     });
 
   return Effect.gen(function* () {

@@ -151,7 +151,7 @@ function projectImportSummaryText(result: LegacyImportResult): string {
     );
   }
   if (result.repairedThreadCount > 0) {
-    parts.push(`Context restored for ${formatThreadCount(result.repairedThreadCount)}`);
+    parts.push(`Repaired ${formatThreadCount(result.repairedThreadCount)}`);
   }
   if (skippedProjectCount > 0) {
     parts.push(`${formatProjectCount(skippedProjectCount)} already here`);
@@ -539,7 +539,7 @@ function AvailablePreview({
           title: nothingChanged
             ? `${serverLabel} already has these projects`
             : result.value.importedProjectCount === 0 && result.value.importedThreadCount === 0
-              ? "Thread context restored"
+              ? "Threads repaired"
               : "Projects imported",
           description: projectImportSummaryText(result.value),
         });
@@ -593,11 +593,11 @@ function AvailablePreview({
   const projectsButtonLabel = (() => {
     if (runningAction === "projects") return "Importing projects…";
     if (selectedProjectIds.size === 0) {
-      if (projectsResult?.repairedThreadCount) return "Context restored";
+      if (projectsResult?.repairedThreadCount) return "Threads repaired";
       return projectsImported ? "Projects imported" : "Import projects";
     }
     if (selectedThreadCount === 0 && selectedContextRepairCount > 0) {
-      return `Restore context for ${formatThreadCount(selectedContextRepairCount)}`;
+      return `Repair ${formatThreadCount(selectedContextRepairCount)}`;
     }
     const verb = failedProjectCount > 0 ? "Retry" : "Import";
     return `${verb} ${formatProjectCount(selectedProjectIds.size)}`;
@@ -753,7 +753,7 @@ function AvailablePreview({
                 {selectedContextRepairCount > 0 ? (
                   <>
                     <span aria-hidden> · </span>
-                    restore context for {formatThreadCount(selectedContextRepairCount)}
+                    repair {formatThreadCount(selectedContextRepairCount)}
                   </>
                 ) : null}
               </span>
@@ -810,8 +810,7 @@ function AvailablePreview({
                               ) : null}
                               {project.contextRepairCount > 0 ? (
                                 <span className="whitespace-nowrap">
-                                  Restore context for{" "}
-                                  {formatThreadCount(project.contextRepairCount)}
+                                  Repair {formatThreadCount(project.contextRepairCount)}
                                 </span>
                               ) : null}
                             </>,
