@@ -50,6 +50,9 @@ T3 Code works with the platforms your team already uses:
 **Stay on top of open reviews**
 
 - See if your current branch already has an open PR/MR
+- When an agent finishes a turn on your thread's branch, T3 Code checks for a newly opened
+  PR/MR if background activity is enabled for that repository. Known reviews keep their normal
+  refresh schedule.
 - Open several reviews from the **Pull requests** page as tabs in the right panel
 - On web and desktop, follow pull request links in a thread's PR descriptions or comments to open another tab beside the same thread, including other PRs in a stack. The linked repository must be available in that thread's environment. Cmd/Ctrl-click opens the link in your browser.
 - Use **Checks** to see which GitHub checks are required by repository policy, including checks
