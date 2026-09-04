@@ -64,7 +64,11 @@ import { useProjects } from "~/state/entities";
 import { useEnvironments } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
-import { pullRequestEnvironment, useSharedPullRequestSummary } from "~/state/pullRequests";
+import {
+  pullRequestEnvironment,
+  usePullRequestTurnRefresh,
+  useSharedPullRequestSummary,
+} from "~/state/pullRequests";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { vcsEnvironment } from "~/state/vcs";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
@@ -618,6 +622,7 @@ function PullRequestDetailPanelBody({
   const activityQuery = useEnvironmentQuery(
     pullRequestEnvironment.activity({ environmentId, input: reference }),
   );
+  const turnRefresh = usePullRequestTurnRefresh(environmentId);
   const [cachedDetail, setCachedDetail] = useState(() =>
     readPullRequestDetailSnapshot(
       typeof window === "undefined" ? undefined : window.localStorage,
@@ -754,7 +759,9 @@ function PullRequestDetailPanelBody({
   // Manual refresh also advances the Code tab's token. Live refresh deliberately stops at the
   // detail and activity reads: keeping the potentially large diff current is a separate policy,
   // while a reader asking for everything on screen expects the patch to be included too.
+  // A finished agent turn advances the token too: the turn may have pushed to this branch.
   const [refreshToken, setRefreshToken] = useState(0);
+  const codeRefreshToken = refreshToken + (turnRefresh ?? 0);
   const refreshFromHost = useCallback(async () => {
     await refreshDetailFromHost("all");
     setRefreshToken((token) => token + 1);
@@ -2463,7 +2470,7 @@ function PullRequestDetailPanelBody({
                     fixFindingLabel={handoffLabels.fixFinding}
                     onFixFinding={startFixFinding}
                     onRefresh={refreshDetail}
-                    refreshToken={refreshToken}
+                    refreshToken={codeRefreshToken}
                   />
                 </Suspense>
               </div>
