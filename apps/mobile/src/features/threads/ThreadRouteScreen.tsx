@@ -7,16 +7,25 @@ import {
 } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as Option from "effect/Option";
-import { EnvironmentId, ThreadId, type ProjectScript } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  STYAL_PROJECT_FILE_NAME,
+  ThreadId,
+  type ProjectReadFileResult,
+  type ProjectScript,
+} from "@t3tools/contracts";
 import {
   requestOlderThreadTurns,
   threadHasOlderTurns,
 } from "@t3tools/client-runtime/state/threads";
 import {
   isSetupScriptOutsideWorktree,
+  mergeProjectScripts,
   projectScriptCwd,
   projectScriptRuntimeEnv,
+  projectScriptsFromStyalFile,
 } from "@t3tools/shared/projectScripts";
+import { parseStyalProjectFile } from "@t3tools/shared/styalProjectFile";
 import { Alert, Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWorkspaceState } from "../../state/workspace";
@@ -67,6 +76,7 @@ import { useSelectedThreadRequests } from "../../state/use-selected-thread-reque
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
 import { threadEnvironment } from "../../state/threads";
+import { projectEnvironment } from "../../state/projects";
 import { projectThreadContentPresentation } from "./threadContentPresentation";
 import {
   useAdaptiveWorkspaceLayout,
@@ -213,6 +223,29 @@ function ThreadRouteContent(
     };
   }, [selectedThread, selectedThreadDetailState]);
   const { selectedThreadCwd } = useSelectedThreadWorktree();
+  const styalProjectFileQuery = useEnvironmentQuery(
+    selectedThread !== null && selectedThreadCwd !== null
+      ? projectEnvironment.readFile({
+          environmentId: selectedThread.environmentId,
+          input: { cwd: selectedThreadCwd, relativePath: STYAL_PROJECT_FILE_NAME },
+        })
+      : null,
+  );
+  const styalProjectFileData = styalProjectFileQuery.data as ProjectReadFileResult | null;
+  const styalProjectFileScripts = useMemo(() => {
+    if (styalProjectFileData === null || styalProjectFileData.truncated) return [];
+    const file = parseStyalProjectFile(styalProjectFileData.contents);
+    return projectScriptsFromStyalFile(file?.scripts ?? []);
+  }, [styalProjectFileData]);
+  const availableProjectScripts = useMemo(
+    () => mergeProjectScripts(styalProjectFileScripts, selectedThreadProject?.scripts ?? []),
+    [selectedThreadProject?.scripts, styalProjectFileScripts],
+  );
+  useFocusEffect(
+    useCallback(() => {
+      styalProjectFileQuery.refresh();
+    }, [styalProjectFileQuery.refresh]),
+  );
   const composer = useThreadComposerState();
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
@@ -650,7 +683,7 @@ function ThreadRouteContent(
     gitOperationLabel: gitState.gitOperationLabel,
     canOpenTerminal: Boolean(selectedThreadProject?.workspaceRoot),
     canOpenFiles: Boolean(selectedThreadProject?.workspaceRoot),
-    projectScripts: selectedThreadProject?.scripts ?? [],
+    projectScripts: availableProjectScripts,
     terminalSessions: terminalMenuSessions,
     showDirectFileControl: layout.usesSplitView,
     onOpenTerminal: handleOpenTerminal,

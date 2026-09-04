@@ -400,6 +400,9 @@ export const make = Effect.gen(function* () {
       return yield* new ProjectSetupScriptProjectNotFoundError(errorContext);
     }
 
+    // Checked-in actions are runnable only through an explicit user action.
+    // Automatic setup remains limited to saved actions, which cross that
+    // consent boundary when the user creates or imports them.
     const script = setupProjectScript(project.scripts);
     if (!script) {
       return {
@@ -415,7 +418,7 @@ export const make = Effect.gen(function* () {
 
     // The script was written for a fresh worktree, so running it over the project
     // root is destructive rather than merely useless: a setup line that links
-    // $T3CODE_PROJECT_ROOT/.env into the cwd would clobber the file it links to.
+    // $STYAL_PROJECT_ROOT/.env into the cwd would clobber the file it links to.
     if (
       isSetupScriptOutsideWorktree({
         script,

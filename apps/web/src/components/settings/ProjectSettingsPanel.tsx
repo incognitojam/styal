@@ -26,7 +26,14 @@ import { createModelSelection } from "@t3tools/shared/model";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { useCanGoBack, useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
-import { ChevronDownIcon, CopyIcon, PlusIcon, SettingsIcon, Trash2Icon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  CopyIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  SettingsIcon,
+  Trash2Icon,
+} from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -44,7 +51,7 @@ import {
   usePrimarySettings,
 } from "../../hooks/useSettings";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
-import { useT3ProjectFileState } from "../../hooks/useT3ProjectFileScripts";
+import { useProjectFileState } from "../../hooks/useProjectFileState";
 import { shortcutLabelForCommand } from "../../keybindings";
 import { keybindingValueForCommand } from "../../lib/projectScriptKeybindings";
 import { releaseProjectDraftUploads } from "../../lib/composerDraftUploads";
@@ -578,17 +585,18 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
   // from the same snapshot would drop each other's changes. One at a time.
   const [isSavingScripts, setIsSavingScripts] = useState(false);
   const savingScriptsRef = useRef(false);
-  const t3File = useT3ProjectFileState(
+  const projectFile = useProjectFileState(
     selectedCheckout.environmentId,
     selectedCheckout.workspaceRoot,
   );
   // What the "Default" option resolves to while no override is set: the
-  // repo's t3.json value when present, otherwise the global setting.
-  const inheritedEnvMode = t3File.file?.defaultThreadEnvMode ?? settings.defaultThreadEnvMode;
-  const inheritedEnvModeSource = t3File.file?.defaultThreadEnvMode != null ? "t3.json" : "global";
+  // checkout's styal.json or legacy t3.json value, otherwise the global setting.
+  const inheritedEnvMode = projectFile.defaultThreadEnvMode ?? settings.defaultThreadEnvMode;
+  const inheritedEnvModeSource =
+    projectFile.defaultThreadEnvMode != null ? (projectFile.source ?? "global") : "global";
   const importableScripts = useMemo(
     () =>
-      t3File.scripts.filter(
+      projectFile.legacyScripts.filter(
         (fileScript) =>
           !scripts.some(
             (script) =>
@@ -596,7 +604,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
               script.name.toLowerCase() === fileScript.name.toLowerCase(),
           ),
       ),
-    [scripts, t3File.scripts],
+    [projectFile.legacyScripts, scripts],
   );
 
   const persistScripts = useCallback(
@@ -694,7 +702,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
       if (scriptId === null) {
         const nextId = nextProjectScriptId(
           input.name,
-          scripts.map((script) => script.id),
+          [...projectFile.liveScripts, ...scripts].map((script) => script.id),
         );
         const nextScript = buildProjectScript(nextId, input);
         const nextScripts = input.runOnWorktreeCreate
@@ -718,15 +726,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
       );
       return persistScripts(nextScripts, input.keybinding, commandForProjectScript(scriptId));
     },
-    [persistScripts, scripts],
-  );
-
-  const deleteScript = useCallback(
-    (scriptId: string) => {
-      const nextScripts = scripts.filter((script) => script.id !== scriptId);
-      void persistScripts(nextScripts, null, commandForProjectScript(scriptId));
-    },
-    [persistScripts, scripts],
+    [persistScripts, projectFile.liveScripts, scripts],
   );
 
   const importFileScript = useCallback(
@@ -749,6 +749,14 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
       }
     },
     [submitScript],
+  );
+
+  const deleteScript = useCallback(
+    (scriptId: string) => {
+      const nextScripts = scripts.filter((script) => script.id !== scriptId);
+      void persistScripts(nextScripts, null, commandForProjectScript(scriptId));
+    },
+    [persistScripts, scripts],
   );
 
   // ----- checkouts -----
@@ -975,7 +983,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
           />
           <SettingsRow
             title="Workspace"
-            description="Where new threads in this project start. Overrides t3.json and the global default; applies to every checkout in this group."
+            description="Where new threads in this project start. Overrides the checkout's project file and the global default; applies to every checkout in this group."
             resetAction={
               storedEnvMode !== null ? (
                 <SettingResetButton
@@ -1007,7 +1015,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                 <SelectPopup align="end" alignItemWithTrigger={false}>
                   <SelectItem value="inherit">
                     {group.memberProjects.length > 1
-                      ? "Default (each checkout's t3.json or global setting)"
+                      ? "Default (each checkout's project file or global setting)"
                       : `Default (${inheritedEnvModeSource}: ${resolveEnvModeLabel(inheritedEnvMode).toLowerCase()})`}
                   </SelectItem>
                   <SelectItem value="worktree">{resolveEnvModeLabel("worktree")}</SelectItem>
@@ -1194,7 +1202,9 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
             <div className="min-w-0">
               <h3 className="text-base font-semibold text-foreground">Actions</h3>
               <p className="text-pretty text-sm text-muted-foreground">
-                Saved and run only in {selectedCheckoutLabel}.
+                {projectFile.source === "t3.json"
+                  ? "Legacy t3.json actions can be imported into this checkout."
+                  : "styal.json actions follow this checkout; saved actions stay local to it."}
               </p>
             </div>
             <div className="flex w-full flex-wrap gap-1.5 sm:w-auto sm:shrink-0 sm:justify-end">
@@ -1210,9 +1220,9 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                   </MenuTrigger>
                   <MenuPopup align="end" className="w-72">
                     <MenuGroup>
-                      <MenuGroupLabel>Import from t3.json</MenuGroupLabel>
+                      <MenuGroupLabel>Legacy t3.json</MenuGroupLabel>
                       <p className="px-2 pb-2 text-pretty text-sm text-muted-foreground">
-                        Add actions declared by this checkout without editing them first.
+                        Import actions declared by this checkout into saved project settings.
                       </p>
                     </MenuGroup>
                     <MenuSeparator />
@@ -1233,6 +1243,10 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                   </MenuPopup>
                 </Menu>
               ) : null}
+              <Button size="xs" variant="ghost" type="button" onClick={projectFile.refresh}>
+                <RefreshCwIcon className="size-3.5" />
+                Refresh file
+              </Button>
               <Button
                 size="xs"
                 variant="outline"
@@ -1246,7 +1260,44 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
               </Button>
             </div>
           </div>
-          {scripts.length === 0 ? (
+          {projectFile.liveScripts.map((script) => {
+            const shortcutLabel = shortcutLabelForCommand(
+              keybindings,
+              commandForProjectScript(script.id),
+            );
+            return (
+              <SettingsRow
+                key={`styal:${script.id}`}
+                className="py-2"
+                title={
+                  <span className="flex min-w-0 items-center gap-2">
+                    <ScriptIcon
+                      icon={script.icon}
+                      className="size-4 shrink-0 text-muted-foreground"
+                    />
+                    <span className="max-w-40 shrink-0 truncate">{script.name}</span>
+                    <code className="min-w-0 flex-1 truncate font-mono font-normal text-muted-foreground">
+                      {script.command}
+                    </code>
+                    {script.runOnWorktreeCreate ? (
+                      <span className="shrink-0 rounded-sm border border-border/60 px-1.5 py-px text-[11px] font-normal text-muted-foreground">
+                        setup
+                      </span>
+                    ) : null}
+                    <span className="shrink-0 rounded-sm border border-border/60 px-1.5 py-px text-[11px] font-normal text-muted-foreground">
+                      styal.json
+                    </span>
+                  </span>
+                }
+                control={
+                  shortcutLabel ? (
+                    <span className="text-xs text-muted-foreground">{shortcutLabel}</span>
+                  ) : null
+                }
+              />
+            );
+          })}
+          {scripts.length === 0 && projectFile.liveScripts.length === 0 ? (
             <p className="px-3 py-2 text-base text-muted-foreground sm:px-4 sm:text-sm">
               No actions configured for this checkout.
             </p>
@@ -1300,10 +1351,10 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
               );
             })
           )}
-          {t3File.status === "invalid" ? (
+          {projectFile.status === "invalid" ? (
             <SettingsRow
-              title="t3.json is invalid"
-              description="A t3.json exists in this checkout but fails to parse, so every action and icon it declares is ignored. Check the JSON syntax and icon values."
+              title={`${projectFile.source ?? "Project file"} is invalid`}
+              description={`A ${projectFile.source ?? "project file"} exists in this checkout but fails to parse, so every setting it declares is ignored. Check its JSON syntax and field values.`}
               className="text-warning"
             />
           ) : null}
@@ -1334,7 +1385,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
 
       <ProjectScriptEditorDialog
         request={editorRequest}
-        scripts={scripts}
+        scripts={[...projectFile.liveScripts, ...scripts]}
         onSubmit={submitScript}
         onDelete={deleteScript}
         onClose={() => setEditorRequest(null)}

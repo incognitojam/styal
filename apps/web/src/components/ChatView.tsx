@@ -53,6 +53,7 @@ import {
 import { CHAT_LIST_ANCHOR_OFFSET } from "@t3tools/shared/chatList";
 import {
   isSetupScriptOutsideWorktree,
+  mergeProjectScripts,
   projectScriptCwd,
   projectScriptRuntimeEnv,
 } from "@t3tools/shared/projectScripts";
@@ -191,6 +192,7 @@ import {
 import { cn, randomHex } from "~/lib/utils";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
+import { useProjectFileState } from "~/hooks/useProjectFileState";
 import { type NewProjectScriptInput } from "./ProjectScriptsControl";
 import {
   buildProjectScript,
@@ -2762,6 +2764,11 @@ function ChatViewContent(props: ChatViewProps) {
         worktreePath: activeThread?.worktreePath ?? null,
       })
     : null;
+  const projectFile = useProjectFileState(environmentId, activeProject === null ? null : gitCwd);
+  const availableProjectScripts = useMemo(
+    () => mergeProjectScripts(projectFile.liveScripts, activeProject?.scripts ?? []),
+    [activeProject?.scripts, projectFile.liveScripts],
+  );
   const gitStatusCwd = activeThread?.worktreePath ?? gitCwd;
   const gitStatusQuery = useEnvironmentQuery(
     gitStatusCwd === null
@@ -3356,7 +3363,7 @@ function ChatViewContent(props: ChatViewProps) {
       }
       const nextId = nextProjectScriptId(
         input.name,
-        activeProject.scripts.map((script) => script.id),
+        availableProjectScripts.map((script) => script.id),
       );
       const nextScript = buildProjectScript(nextId, input);
       const nextScripts = input.runOnWorktreeCreate
@@ -3377,7 +3384,7 @@ function ChatViewContent(props: ChatViewProps) {
         keybindingCommand: commandForProjectScript(nextId),
       });
     },
-    [activeProject, persistProjectScripts],
+    [activeProject, availableProjectScripts, persistProjectScripts],
   );
   const updateProjectScript = useCallback(
     async (
@@ -5378,7 +5385,7 @@ function ChatViewContent(props: ChatViewProps) {
 
       const scriptId = projectScriptIdFromCommand(command);
       if (!scriptId || !activeProject) return;
-      const script = activeProject.scripts.find((entry) => entry.id === scriptId);
+      const script = availableProjectScripts.find((entry) => entry.id === scriptId);
       if (!script) return;
       event.preventDefault();
       event.stopPropagation();
@@ -5388,6 +5395,7 @@ function ChatViewContent(props: ChatViewProps) {
     return () => window.removeEventListener("keydown", handler, true);
   }, [
     activeProject,
+    availableProjectScripts,
     activeRightPanelSurface,
     activeThreadRef,
     addTerminalSurface,
@@ -7062,6 +7070,9 @@ function ChatViewContent(props: ChatViewProps) {
             activeProjectFaviconPath={activeProject?.faviconPath ?? null}
             openInCwd={gitCwd}
             activeProjectScripts={activeProject?.scripts}
+            activeProjectFileScripts={projectFile.liveScripts}
+            activeLegacyProjectFileScripts={projectFile.legacyScripts}
+            onRefreshProjectFileScripts={projectFile.refresh}
             preferredScriptId={
               activeProject ? (lastInvokedScriptByProjectId[activeProject.id] ?? null) : null
             }

@@ -1,9 +1,9 @@
 # Run project scripts
 
-Project scripts, shown as **Actions** in T3 Code, are saved shell commands for common project tasks
-such as starting a development server, running tests, or installing dependencies in a new
-worktree. They run on the environment that owns the project and open their output in a T3 Code
-terminal.
+Project scripts, shown as **Actions** in T3 Code, are saved or checked-in shell commands for common
+project tasks such as starting a development server, running tests, or installing dependencies in
+a new worktree. They run on the environment that owns the project and open their output in a T3
+Code terminal.
 
 ## Add an action
 
@@ -28,30 +28,33 @@ timeline. Only one saved action per checkout can be the automatic setup action.
 
 The automatic setup action runs only in a worktree. T3 Code refuses to run it from a local thread,
 where its working directory would be the project root: a setup command that copies or links files
-from `T3CODE_PROJECT_ROOT` into its working directory would overwrite the checkout's own copies of
+from `STYAL_PROJECT_ROOT` into its working directory would overwrite the checkout's own copies of
 those files.
 
-## Share actions with `t3.json`
+## Declare shared actions in `styal.json`
 
-Add `t3.json` at the repository root to offer actions to everyone who opens the repository in T3
-Code:
+Add `styal.json` at the repository root to expose actions automatically to everyone who opens the
+repository in T3 Code:
 
 ```json
 {
-  "$schema": "https://t3.codes/schema/t3.json",
+  "$schema": "https://styal.build/schema/styal.json",
   "scripts": [
     {
+      "id": "install",
       "name": "Install dependencies",
       "command": "pnpm install",
       "icon": "configure",
       "runOnWorktreeCreate": true
     },
     {
+      "id": "dev",
       "name": "Dev server",
-      "command": "pnpm dev -- --port \"$T3CODE_WORKSPACE_PORT\"",
+      "command": "pnpm dev -- --port \"$STYAL_WORKSPACE_PORT\"",
       "icon": "play"
     },
     {
+      "id": "test",
       "name": "Test",
       "command": "pnpm test",
       "icon": "test"
@@ -65,24 +68,44 @@ JSON Schema. T3 Code also accepts comments and trailing commas in this file.
 
 Each script supports these fields:
 
+- `id` (optional): a stable lowercase identifier for keybindings such as `script.dev.run`. When
+  omitted, T3 Code derives one from `name`.
 - `name` (required): the label shown in T3 Code.
 - `command` (required): the shell command to run.
 - `icon` (optional): `play`, `test`, `lint`, `configure`, `build`, `debug`, `desktop`, `database`,
   or `deploy`. The default is `play`.
-- `runOnWorktreeCreate` (optional): whether importing this script should make it the automatic
-  setup action. The default is `false`.
+- `runOnWorktreeCreate` (optional): marks the script as the checkout's setup action. Checked-in
+  setup actions do not run automatically. The default is `false`.
 
-Scripts in `t3.json` are templates and never run directly from the checked-in file. Import one
-from the thread actions menu or from **Settings** → **Projects** → **Actions**. Importing creates a
-saved copy for that checkout, so later changes to `t3.json` do not silently change or run an
-already-imported action. Edit the saved action, or delete it and import the revised definition,
-when you want to adopt a change.
+Scripts in `styal.json` appear directly in the active checkout's thread toolbar and in **Settings**
+→ **Projects** → **Actions**. They are not copied into project settings. Opening the actions menu,
+returning to a mobile thread, or selecting **Refresh file** in project settings reloads the file, so
+changes follow the checkout that contains them. A thread in a worktree reads that worktree's copy
+instead of waiting for the main checkout to update.
 
-Review a checked-in command before importing it. Once saved, an action has the same access to the
-environment and files as a command entered in a T3 Code terminal.
+Saved actions remain available for machine- or checkout-specific commands. When a file action and a
+saved action have the same ID, the file action wins in the toolbar; delete the old saved copy after
+migrating it to `styal.json`. Actions with different IDs remain available even when their names or
+commands match, so existing ID-based keyboard shortcuts continue to work.
 
-If `t3.json` is invalid, T3 Code ignores the entire file. **Settings** → **Projects** shows a
+Running a checked-in action manually is an explicit user action. Automatic setup remains limited to
+saved setup actions; merely opening a repository does not grant a checked-in command permission to
+execute.
+
+If `styal.json` is invalid, T3 Code ignores the entire file. **Settings** → **Projects** shows a
 warning so you can correct its syntax or field values.
+
+## Legacy `t3.json` files
+
+When the current checkout has no `styal.json`, T3 Code continues to read its legacy `t3.json`.
+Legacy scripts retain their existing import behavior: choose one from the thread's actions menu or
+from **Settings** → **Projects** → **Actions** to create a saved copy for that checkout. They do not
+become live actions automatically.
+
+`styal.json` takes ownership as soon as it exists in that checkout. T3 Code does not fall back to
+`t3.json` when `styal.json` is invalid, because doing so would conceal the configuration error. Git
+worktrees resolve these files independently, so a branch can adopt `styal.json` without changing
+another checkout until that repository change is committed and merged.
 
 ## Project environment variables
 

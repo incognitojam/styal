@@ -1471,7 +1471,7 @@ features:
       - apps/server/src/terminal/Manager.ts
       - apps/server/src/workspace/WorkspacePortAllocator.ts
       - scripts/dev-runner.ts
-      - t3.json
+      - styal.json
     upstream_paths:
       - apps/server/src/provider/Layers/ProviderService.ts
       - apps/server/src/terminal/Manager.ts

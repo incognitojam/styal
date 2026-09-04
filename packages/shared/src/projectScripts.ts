@@ -1,4 +1,8 @@
-import type { ProjectScript } from "@t3tools/contracts";
+import {
+  MAX_SCRIPT_ID_LENGTH,
+  type ProjectScript,
+  type StyalProjectFileScript,
+} from "@t3tools/contracts";
 
 interface ProjectScriptRuntimeEnvInput {
   project: {
@@ -6,6 +10,59 @@ interface ProjectScriptRuntimeEnvInput {
   };
   worktreePath?: string | null;
   extraEnv?: Record<string, string>;
+}
+
+function normalizeProjectScriptId(value: string): string {
+  const cleaned = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (cleaned.length === 0) return "script";
+  if (cleaned.length <= MAX_SCRIPT_ID_LENGTH) return cleaned;
+  return cleaned.slice(0, MAX_SCRIPT_ID_LENGTH).replace(/-+$/g, "") || "script";
+}
+
+export function nextProjectScriptId(name: string, existingIds: Iterable<string>): string {
+  const taken = new Set(existingIds);
+  const baseId = normalizeProjectScriptId(name);
+  if (!taken.has(baseId)) return baseId;
+
+  let suffix = 2;
+  while (true) {
+    const candidate = `${baseId}-${suffix}`;
+    const safeCandidate =
+      candidate.length <= MAX_SCRIPT_ID_LENGTH
+        ? candidate
+        : `${baseId.slice(0, Math.max(1, MAX_SCRIPT_ID_LENGTH - String(suffix).length - 1))}-${suffix}`;
+    if (!taken.has(safeCandidate)) return safeCandidate;
+    suffix += 1;
+  }
+}
+
+export function projectScriptsFromStyalFile(
+  scripts: ReadonlyArray<StyalProjectFileScript>,
+): ReadonlyArray<ProjectScript> {
+  const ids = new Set<string>();
+  return scripts.map((script) => {
+    const id = nextProjectScriptId(script.id ?? script.name, ids);
+    ids.add(id);
+    return {
+      id,
+      name: script.name,
+      command: script.command,
+      icon: script.icon ?? "play",
+      runOnWorktreeCreate: script.runOnWorktreeCreate ?? false,
+    };
+  });
+}
+
+export function mergeProjectScripts(
+  fileScripts: ReadonlyArray<ProjectScript>,
+  savedScripts: ReadonlyArray<ProjectScript>,
+): ReadonlyArray<ProjectScript> {
+  const fileIds = new Set(fileScripts.map((script) => script.id));
+  return [...fileScripts, ...savedScripts.filter((script) => !fileIds.has(script.id))];
 }
 
 export function projectScriptCwd(input: {
