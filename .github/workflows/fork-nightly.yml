@@ -321,12 +321,47 @@ jobs:
             fi
           } > release-notes.md
 
+      # The release API resolves target_commitish only when it has to create the
+      # tag itself, and refuses to create one from a GITHUB_TOKEN whenever that
+      # commit's .github/workflows differ from the default branch. Desktop
+      # builds take long enough that a workflow-touching PR landing mid-run
+      # leaves the candidate behind main and fails the publish with a 403 no
+      # permissions block can grant. Creating the tag here leaves the API
+      # nothing to resolve.
+      - id: create_tag
+        name: Create nightly tag
+        if: inputs.dry_run != true
+        shell: bash
+        env:
+          FORK_SOURCE_REF: ${{ needs.prepare.outputs.ref }}
+          NEW_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          # Reruns land here with the tag already pushed. Matching commit is the
+          # rerun; a different one means two runs claimed the same version.
+          existing=$(
+            git ls-remote origin "refs/tags/${NEW_TAG}" "refs/tags/${NEW_TAG}^{}" | cut -f1
+          )
+          if [[ -n "$existing" ]]; then
+            if [[ $'\n'"$existing"$'\n' == *$'\n'"$FORK_SOURCE_REF"$'\n'* ]]; then
+              echo "Tag ${NEW_TAG} already points at ${FORK_SOURCE_REF}."
+              exit 0
+            fi
+            echo "Tag ${NEW_TAG} already exists and does not point at ${FORK_SOURCE_REF}." >&2
+            exit 1
+          fi
+
+          git push origin "${FORK_SOURCE_REF}:refs/tags/${NEW_TAG}"
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      # No target_commitish: the tag above already fixes the commit, and a dry
+      # run leaves an unpublished draft, which never creates a tag at all.
       - id: draft_release
         name: Upload draft prerelease
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
-          target_commitish: ${{ needs.prepare.outputs.ref }}
           name: ${{ needs.prepare.outputs.release_name }}
           body_path: release-notes.md
           draft: true
@@ -351,6 +386,12 @@ jobs:
             -F prerelease=true \
             -f make_latest=false \
             >/dev/null
+
+      - name: Discard tag from failed publish
+        if: failure() && steps.create_tag.outputs.pushed == 'true'
+        env:
+          NEW_TAG: ${{ needs.prepare.outputs.tag }}
+        run: git push origin --delete "refs/tags/${NEW_TAG}"
 
       - name: Promote successful nightly source
         if: inputs.dry_run != true
