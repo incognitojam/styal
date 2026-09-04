@@ -3655,6 +3655,59 @@ describe("ProviderRuntimeIngestion", () => {
     expect(updatedPayload?.agentKind).toBe("background");
   });
 
+  it("honors a persisted background stamp during cold recovery", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await harness.dispatch({
+      type: "thread.activity.append",
+      commandId: CommandId.make("cmd-persisted-background-started"),
+      threadId: ThreadId.make("thread-1"),
+      activity: {
+        id: asEventId("evt-persisted-background-started"),
+        tone: "info",
+        kind: "task.started",
+        summary: "Background task started",
+        payload: {
+          taskId: "persisted-background-1",
+          agentKind: "background",
+        },
+        turnId: null,
+        createdAt: now,
+      },
+      createdAt: now,
+    });
+
+    harness.emit({
+      type: "task.updated",
+      eventId: asEventId("evt-persisted-background-updated"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-persisted-background"),
+      payload: {
+        taskId: "persisted-background-1",
+        status: "running",
+      },
+    });
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some(
+        (activity: ProviderRuntimeTestActivity) =>
+          activity.id === "evt-persisted-background-updated",
+      ),
+    );
+    const updated = thread.activities.find(
+      (activity: ProviderRuntimeTestActivity) => activity.id === "evt-persisted-background-updated",
+    );
+    const updatedPayload =
+      updated?.payload && typeof updated.payload === "object"
+        ? (updated.payload as Record<string, unknown>)
+        : undefined;
+
+    expect(updatedPayload?.agentKind).toBe("background");
+  });
+
   it("titles task activities with the task description, including on completion", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
