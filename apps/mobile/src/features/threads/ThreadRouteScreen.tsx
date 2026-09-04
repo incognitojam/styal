@@ -7,7 +7,13 @@ import {
 } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as Option from "effect/Option";
-import { EnvironmentId, ThreadId, type ProjectScript } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  STYAL_PROJECT_FILE_NAME,
+  ThreadId,
+  type ProjectReadFileResult,
+  type ProjectScript,
+} from "@t3tools/contracts";
 import {
   requestOlderThreadTurns,
   threadHasOlderTurns,
@@ -67,7 +73,9 @@ import { useSelectedThreadRequests } from "../../state/use-selected-thread-reque
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
 import { threadEnvironment } from "../../state/threads";
+import { projectEnvironment } from "../../state/projects";
 import { projectThreadContentPresentation } from "./threadContentPresentation";
+import { resolveMobileProjectScripts } from "./projectScripts";
 import {
   useAdaptiveWorkspaceLayout,
   useAdaptiveWorkspacePaneRole,
@@ -213,6 +221,29 @@ function ThreadRouteContent(
     };
   }, [selectedThread, selectedThreadDetailState]);
   const { selectedThreadCwd } = useSelectedThreadWorktree();
+  const styalProjectFileQuery = useEnvironmentQuery(
+    selectedThread !== null && selectedThreadCwd !== null
+      ? projectEnvironment.readFile({
+          environmentId: selectedThread.environmentId,
+          input: { cwd: selectedThreadCwd, relativePath: STYAL_PROJECT_FILE_NAME },
+        })
+      : null,
+  );
+  const styalProjectFileData = styalProjectFileQuery.data as ProjectReadFileResult | null;
+  const availableProjectScripts = useMemo(
+    () =>
+      resolveMobileProjectScripts({
+        fileData: styalProjectFileData,
+        fileFailure: styalProjectFileQuery.failure,
+        localScripts: selectedThreadProject?.scripts ?? [],
+      }),
+    [selectedThreadProject?.scripts, styalProjectFileData, styalProjectFileQuery.failure],
+  );
+  useFocusEffect(
+    useCallback(() => {
+      styalProjectFileQuery.refresh();
+    }, [styalProjectFileQuery.refresh]),
+  );
   const composer = useThreadComposerState();
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
@@ -650,7 +681,7 @@ function ThreadRouteContent(
     gitOperationLabel: gitState.gitOperationLabel,
     canOpenTerminal: Boolean(selectedThreadProject?.workspaceRoot),
     canOpenFiles: Boolean(selectedThreadProject?.workspaceRoot),
-    projectScripts: selectedThreadProject?.scripts ?? [],
+    projectScripts: availableProjectScripts,
     terminalSessions: terminalMenuSessions,
     showDirectFileControl: layout.usesSplitView,
     onOpenTerminal: handleOpenTerminal,

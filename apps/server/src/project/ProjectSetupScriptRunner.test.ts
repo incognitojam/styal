@@ -18,6 +18,7 @@ import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSn
 import * as ProjectionThreadActivities from "../persistence/Services/ProjectionThreadActivities.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as ProjectSetupScriptRunner from "./ProjectSetupScriptRunner.ts";
+import * as StyalProjectFileLoader from "./StyalProjectFileLoader.ts";
 
 const isProjectSetupScriptOperationError = Schema.is(
   ProjectSetupScriptRunner.ProjectSetupScriptOperationError,
@@ -80,10 +81,17 @@ const testLayer = (
   terminal: Pick<TerminalManager.TerminalManager["Service"], "openCommand"> &
     Partial<Pick<TerminalManager.TerminalManager["Service"], "subscribe">>,
   commands: OrchestrationCommand[] = [],
+  hasStyalProjectFile = false,
 ) =>
   ProjectSetupScriptRunner.layer.pipe(
     Layer.provideMerge(makeProjectionSnapshotQueryLayer(project)),
     Layer.provideMerge(makeTerminalManagerLayer(terminal)),
+    Layer.provideMerge(
+      Layer.succeed(StyalProjectFileLoader.StyalProjectFileLoader, {
+        load: () => Effect.succeed(Option.none()),
+        exists: () => Effect.succeed(hasStyalProjectFile),
+      }),
+    ),
     Layer.provideMerge(
       Layer.succeed(OrchestrationEngine.OrchestrationEngineService, {
         dispatch: (command) =>
@@ -171,6 +179,31 @@ describe("ProjectSetupScriptRunner", () => {
       expect(result).toEqual({ status: "no-script" });
       expect(openCommand).not.toHaveBeenCalled();
     }).pipe(Effect.provide(testLayer(project, { openCommand })));
+  });
+
+  it.effect("does not run a saved setup action after the checkout adopts styal.json", () => {
+    const openCommand = vi.fn(() => Effect.die("unexpected open"));
+    const project = makeProject([
+      {
+        id: "setup",
+        name: "Setup",
+        command: "bun install",
+        icon: "configure",
+        runOnWorktreeCreate: true,
+      },
+    ]);
+
+    return Effect.gen(function* () {
+      const runner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
+      const result = yield* runner.runForThread({
+        threadId: "thread-1",
+        projectId: "project-1",
+        worktreePath: "/repo/worktrees/a",
+      });
+
+      expect(result).toEqual({ status: "no-script" });
+      expect(openCommand).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(testLayer(project, { openCommand }, [], true)));
   });
 
   it.effect("refuses to run the setup script against the project root", () => {

@@ -104,7 +104,7 @@ export const EMPTY_PROJECT_SCRIPT_INPUT: NewProjectScriptInput = {
 export interface ProjectScriptEditorRequest {
   scriptId: string | null;
   initial: NewProjectScriptInput;
-  /** Validation error to show immediately (e.g. a failed t3.json import). */
+  /** Validation error to show immediately. */
   error?: string;
 }
 
@@ -131,12 +131,14 @@ export function editorRequestForScript(
  */
 export function ProjectScriptEditorDialog({
   request,
+  actionSource,
   scripts,
   onSubmit,
   onDelete,
   onClose,
 }: {
   request: ProjectScriptEditorRequest | null;
+  actionSource: "local" | "styal.json";
   /** Existing scripts, used to derive a unique id for new scripts. */
   scripts: ReadonlyArray<ProjectScript>;
   onSubmit: (
@@ -214,7 +216,7 @@ export function ProjectScriptEditorDialog({
         name: trimmedName,
         command: trimmedCommand,
         icon,
-        runOnWorktreeCreate,
+        runOnWorktreeCreate: actionSource === "local" && runOnWorktreeCreate,
         keybinding: keybindingRule?.key ?? null,
       } satisfies NewProjectScriptInput;
     } catch (error) {
@@ -249,7 +251,9 @@ export function ProjectScriptEditorDialog({
           <DialogHeader>
             <DialogTitle>{isEditing ? "Edit Action" : "Add Action"}</DialogTitle>
             <DialogDescription>
-              Actions are project-scoped commands you can run from the top bar or keybindings.
+              {actionSource === "styal.json"
+                ? "This action is saved to the current checkout's styal.json."
+                : "This action is stored locally in Styal and is available to this project's threads."}
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>
@@ -327,18 +331,20 @@ export function ProjectScriptEditorDialog({
                   onChange={(event) => setCommand(event.target.value)}
                 />
               </div>
-              <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035]">
-                <span>
-                  Run automatically on worktree creation
-                  <span className="mt-0.5 block text-xs text-muted-foreground">
-                    Runs in new worktrees only, never in a local thread.
+              {actionSource === "local" ? (
+                <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035]">
+                  <span>
+                    Run after creating a worktree
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      Local setup actions are trusted because you configured them in Styal.
+                    </span>
                   </span>
-                </span>
-                <Switch
-                  checked={runOnWorktreeCreate}
-                  onCheckedChange={(checked) => setRunOnWorktreeCreate(Boolean(checked))}
-                />
-              </label>
+                  <Switch
+                    checked={runOnWorktreeCreate}
+                    onCheckedChange={(checked) => setRunOnWorktreeCreate(Boolean(checked))}
+                  />
+                </label>
+              ) : null}
               {validationError && <p className="text-sm text-destructive">{validationError}</p>}
             </form>
           </DialogPanel>

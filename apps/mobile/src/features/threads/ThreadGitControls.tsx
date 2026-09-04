@@ -269,7 +269,7 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
             ...(props.projectScripts.length === 0
               ? [
                   {
-                    description: "This project has no saved scripts yet",
+                    description: "This project has no local or checkout actions",
                     disabled: true,
                     icon: { name: "play", type: "sfSymbol" as const },
                     label: "No project scripts",
@@ -448,7 +448,7 @@ export function ThreadGitControls(props: ThreadGitControlsProps) {
               icon="play"
               disabled
               onPress={() => {}}
-              subtitle="This project has no saved scripts yet"
+              subtitle="This project has no local or checkout actions"
             >
               <NativeHeaderToolbar.Label>No project scripts</NativeHeaderToolbar.Label>
             </NativeHeaderToolbar.MenuAction>

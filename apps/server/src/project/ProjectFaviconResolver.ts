@@ -16,6 +16,7 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
+import * as StyalProjectFileLoader from "./StyalProjectFileLoader.ts";
 import * as T3ProjectFileLoader from "./T3ProjectFileLoader.ts";
 
 // Well-known favicon paths checked in order.
@@ -127,7 +128,8 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
-  const projectFileLoader = yield* T3ProjectFileLoader.T3ProjectFileLoader;
+  const styalProjectFileLoader = yield* StyalProjectFileLoader.StyalProjectFileLoader;
+  const t3ProjectFileLoader = yield* T3ProjectFileLoader.T3ProjectFileLoader;
 
   const resolveIconHref = (href: string): ReadonlyArray<string> => {
     const clean = href.replace(/^\//, "");
@@ -200,8 +202,13 @@ export const make = Effect.gen(function* () {
       }
     }
 
-    // A t3.json iconPath takes precedence over the well-known locations.
-    const projectFile = yield* projectFileLoader.load(projectCwd);
+    // styal.json owns the checkout once present. Only a missing file falls
+    // back to the legacy t3.json configuration; an invalid styal.json must
+    // remain visible as invalid rather than silently reviving old settings.
+    const hasStyalProjectFile = yield* styalProjectFileLoader.exists(projectCwd);
+    const projectFile = hasStyalProjectFile
+      ? yield* styalProjectFileLoader.load(projectCwd)
+      : yield* t3ProjectFileLoader.load(projectCwd);
     if (Option.isSome(projectFile) && projectFile.value.iconPath !== undefined) {
       const existing = yield* findExistingFile(
         projectCwd,

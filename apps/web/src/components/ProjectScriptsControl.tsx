@@ -1,13 +1,9 @@
-import type {
-  ProjectScript,
-  ResolvedKeybindingsConfig,
-  T3ProjectFileScript,
-} from "@t3tools/contracts";
+import type { ProjectScript, ResolvedKeybindingsConfig } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { ChevronDownIcon, DownloadIcon, PlusIcon, SettingsIcon } from "lucide-react";
+import { ChevronDownIcon, FileInputIcon, PlusIcon, SettingsIcon } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
 import { commandForProjectScript, primaryProjectScript } from "~/projectScripts";
@@ -23,28 +19,34 @@ import {
 } from "./projectScriptEditor";
 import { Button } from "./ui/button";
 import { Group, GroupSeparator } from "./ui/group";
-import {
-  Menu,
-  MenuGroup,
-  MenuGroupLabel,
-  MenuItem,
-  MenuPopup,
-  MenuSeparator,
-  MenuShortcut,
-  MenuTrigger,
-} from "./ui/menu";
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from "./ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+import { stackedThreadToast, toastManager } from "./ui/toast";
 
 export type { NewProjectScriptInput, ProjectScriptActionResult };
 
-const NO_FILE_SCRIPTS: ReadonlyArray<T3ProjectFileScript> = [];
+const NO_LEGACY_SCRIPTS: ReadonlyArray<ProjectScript> = [];
+
+export function openAddProjectScriptEditor(input: {
+  refreshFileScripts?: () => void;
+  openEditor: () => void;
+}) {
+  input.refreshFileScripts?.();
+  input.openEditor();
+}
 
 interface ProjectScriptsControlProps {
+  /** Actions from the active checkout's selected source. */
   scripts: ReadonlyArray<ProjectScript>;
-  /** Scripts declared in the project's checked-in t3.json, offered for import. */
-  fileScripts?: ReadonlyArray<T3ProjectFileScript>;
+  actionSource: "local" | "styal.json";
+  /** Actions from older sources that can be copied into this checkout's styal.json. */
+  legacyScripts?: ReadonlyArray<ProjectScript>;
+  hasLegacyConfig?: boolean;
+  canEdit?: boolean;
   keybindings: ResolvedKeybindingsConfig;
   preferredScriptId?: string | null;
+  onRefreshFileScripts?: () => void;
+  onMigrateLegacyScripts: () => Promise<ProjectScriptActionResult>;
   onRunScript: (script: ProjectScript) => void;
   onAddScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
   onUpdateScript: (
@@ -56,19 +58,22 @@ interface ProjectScriptsControlProps {
 
 export default function ProjectScriptsControl({
   scripts,
-  fileScripts = NO_FILE_SCRIPTS,
+  actionSource,
+  legacyScripts = NO_LEGACY_SCRIPTS,
+  hasLegacyConfig = legacyScripts.length > 0,
+  canEdit = true,
   keybindings,
   preferredScriptId = null,
+  onRefreshFileScripts,
+  onMigrateLegacyScripts,
   onRunScript,
   onAddScript,
   onUpdateScript,
   onDeleteScript,
 }: ProjectScriptsControlProps) {
-  const [actionsMenuOpen, setActionsMenuOpen] = useState({
-    scripts: false,
-    imports: false,
-  });
+  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
   const [editorRequest, setEditorRequest] = useState<ProjectScriptEditorRequest | null>(null);
+  const editorScripts = useMemo(() => [...scripts, ...legacyScripts], [legacyScripts, scripts]);
 
   const primaryScript = useMemo(() => {
     if (preferredScriptId) {
@@ -77,27 +82,19 @@ export default function ProjectScriptsControl({
     }
     return primaryProjectScript(scripts);
   }, [preferredScriptId, scripts]);
-  const importableScripts = useMemo(
-    () =>
-      fileScripts.filter(
-        (fileScript) =>
-          !scripts.some(
-            (script) =>
-              script.command === fileScript.command ||
-              script.name.toLowerCase() === fileScript.name.toLowerCase(),
-          ),
-      ),
-    [fileScripts, scripts],
-  );
   const dropdownItemClassName =
     "data-highlighted:bg-transparent data-highlighted:text-foreground hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground data-highlighted:hover:bg-accent data-highlighted:hover:text-accent-foreground data-highlighted:focus-visible:bg-accent data-highlighted:focus-visible:text-accent-foreground";
 
   const openAddDialog = () => {
-    setEditorRequest({ scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT });
+    if (!canEdit) return;
+    openAddProjectScriptEditor({
+      ...(onRefreshFileScripts ? { refreshFileScripts: onRefreshFileScripts } : {}),
+      openEditor: () => setEditorRequest({ scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT }),
+    });
   };
 
   const openEditDialog = (script: ProjectScript) => {
-    setActionsMenuOpen({ scripts: false, imports: false });
+    setActionsMenuOpen(false);
     setEditorRequest(editorRequestForScript(script, keybindings));
   };
 
@@ -107,46 +104,37 @@ export default function ProjectScriptsControl({
     [onAddScript, onUpdateScript],
   );
 
-  const importFileScript = async (fileScript: T3ProjectFileScript) => {
-    const payload: NewProjectScriptInput = {
-      name: fileScript.name,
-      command: fileScript.command,
-      icon: fileScript.icon ?? "play",
-      runOnWorktreeCreate: fileScript.runOnWorktreeCreate ?? false,
-      keybinding: null,
-    };
-    const result = await onAddScript(payload);
+  const migrateLegacyScripts = async () => {
+    const result = await onMigrateLegacyScripts();
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      // Surface the failure through the regular add dialog, prefilled so the
-      // user can adjust and retry.
       const error = squashAtomCommandFailure(result);
-      setEditorRequest({
-        scriptId: null,
-        initial: payload,
-        error: error instanceof Error ? error.message : "Failed to import action.",
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Could not migrate actions",
+          description: error instanceof Error ? error.message : "An unexpected error occurred.",
+        }),
+      );
+      return;
+    }
+    if (result._tag === "Success") {
+      toastManager.add({
+        type: "success",
+        title:
+          actionSource === "local" ? "styal.json created" : "Local actions copied to styal.json",
       });
     }
   };
 
-  const importMenuItems = importableScripts.length > 0 && (
+  const legacyMigrationMenuItem = hasLegacyConfig && (
     <>
       {primaryScript && <MenuSeparator />}
-      <MenuGroup>
-        <MenuGroupLabel>From t3.json</MenuGroupLabel>
-        {importableScripts.map((fileScript) => (
-          <MenuItem
-            key={`${fileScript.name} ${fileScript.command}`}
-            className={dropdownItemClassName}
-            onClick={() => void importFileScript(fileScript)}
-          >
-            <ScriptIcon icon={fileScript.icon ?? "play"} className="size-4" />
-            <span className="truncate">{fileScript.name}</span>
-            <MenuShortcut className="ms-auto">
-              <DownloadIcon className="size-3.5" aria-label="Import" />
-            </MenuShortcut>
-          </MenuItem>
-        ))}
-      </MenuGroup>
+      <MenuItem className={dropdownItemClassName} onClick={() => void migrateLegacyScripts()}>
+        <FileInputIcon className="size-4" />
+        {actionSource === "local"
+          ? "Create styal.json"
+          : `Copy ${legacyScripts.length} local action${legacyScripts.length === 1 ? "" : "s"} to styal.json`}
+      </MenuItem>
     </>
   );
 
@@ -179,8 +167,11 @@ export default function ProjectScriptsControl({
           <GroupSeparator className="hidden @3xl/header-actions:block" />
           <Menu
             highlightItemOnHover={false}
-            open={actionsMenuOpen.scripts}
-            onOpenChange={(open) => setActionsMenuOpen({ scripts: open, imports: false })}
+            open={actionsMenuOpen}
+            onOpenChange={(open) => {
+              setActionsMenuOpen(open);
+              if (open) onRefreshFileScripts?.();
+            }}
           >
             <MenuTrigger
               render={<Button size="icon-xs" variant="outline" aria-label="Script actions" />}
@@ -201,7 +192,9 @@ export default function ProjectScriptsControl({
                   >
                     <ScriptIcon icon={script.icon} className="size-4" />
                     <span className="truncate">
-                      {script.runOnWorktreeCreate ? `${script.name} (setup)` : script.name}
+                      {actionSource === "local" && script.runOnWorktreeCreate
+                        ? `${script.name} (setup)`
+                        : script.name}
                     </span>
                     <span className="relative ms-auto flex h-6 min-w-6 items-center justify-end">
                       {shortcutLabel && (
@@ -231,19 +224,27 @@ export default function ProjectScriptsControl({
                   </MenuItem>
                 );
               })}
-              {importMenuItems}
-              <MenuItem className={dropdownItemClassName} onClick={openAddDialog}>
+              {legacyMigrationMenuItem}
+              <MenuSeparator />
+              <MenuItem
+                disabled={!canEdit}
+                className={dropdownItemClassName}
+                onClick={openAddDialog}
+              >
                 <PlusIcon className="size-4" />
                 Add action
               </MenuItem>
             </MenuPopup>
           </Menu>
         </Group>
-      ) : importableScripts.length > 0 ? (
+      ) : hasLegacyConfig ? (
         <Menu
           highlightItemOnHover={false}
-          open={actionsMenuOpen.imports}
-          onOpenChange={(open) => setActionsMenuOpen({ scripts: false, imports: open })}
+          open={actionsMenuOpen}
+          onOpenChange={(open) => {
+            setActionsMenuOpen(open);
+            if (open) onRefreshFileScripts?.();
+          }}
         >
           <MenuTrigger render={<Button size="xs" variant="outline" aria-label="Project actions" />}>
             <PlusIcon className="size-3.5" />
@@ -253,8 +254,8 @@ export default function ProjectScriptsControl({
             <ChevronDownIcon className="size-3.5" />
           </MenuTrigger>
           <MenuPopup align="end">
-            {importMenuItems}
-            <MenuItem className={dropdownItemClassName} onClick={openAddDialog}>
+            {legacyMigrationMenuItem}
+            <MenuItem disabled={!canEdit} className={dropdownItemClassName} onClick={openAddDialog}>
               <PlusIcon className="size-4" />
               Add action
             </MenuItem>
@@ -272,6 +273,7 @@ export default function ProjectScriptsControl({
                 // The tooltip wrapper replaces data-slot="button", so themed
                 // toolbar styling needs its own hook.
                 data-toolbar-control=""
+                disabled={!canEdit}
                 onClick={openAddDialog}
               />
             }
@@ -287,7 +289,8 @@ export default function ProjectScriptsControl({
 
       <ProjectScriptEditorDialog
         request={editorRequest}
-        scripts={scripts}
+        actionSource={actionSource}
+        scripts={editorScripts}
         onSubmit={submitScript}
         onDelete={(scriptId) => void onDeleteScript(scriptId)}
         onClose={() => setEditorRequest(null)}

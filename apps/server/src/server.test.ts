@@ -133,6 +133,7 @@ import * as PortScanner from "./preview/PortScanner.ts";
 import * as TerminalBrowserOpen from "./preview/TerminalBrowserOpen.ts";
 import * as BrowserTraceCollector from "./observability/BrowserTraceCollector.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
+import * as StyalProjectFileLoader from "./project/StyalProjectFileLoader.ts";
 import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
@@ -585,7 +586,7 @@ const buildAppUnderTest = (options?: {
       ),
       ProjectFaviconResolver.layer.pipe(
         Layer.provide(WorkspacePaths.layer),
-        Layer.provide(T3ProjectFileLoader.layer),
+        Layer.provide(Layer.mergeAll(StyalProjectFileLoader.layer, T3ProjectFileLoader.layer)),
       ),
     );
     const gitWorkflowLayer = GitWorkflowService.layer.pipe(
@@ -5267,6 +5268,10 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               cwd: workspaceDir,
               relativePath: "linked-outside.txt",
             }).pipe(Effect.result),
+            missingFile: client[WS_METHODS.projectsReadFile]({
+              cwd: workspaceDir,
+              relativePath: "missing.txt",
+            }).pipe(Effect.result),
             browse: client[WS_METHODS.filesystemBrowse]({
               cwd: workspaceDir,
               partialPath: "./missing-browse/child",
@@ -5322,6 +5327,15 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(readError.failure, "resolved_path_outside_root");
       assert.equal(readError.resolvedPath, resolvedOutsideFile);
       assert.isDefined(readError.cause);
+
+      if (
+        results.missingFile._tag !== "Failure" ||
+        results.missingFile.failure._tag !== "ProjectReadFileError"
+      ) {
+        assert.fail("Expected a ProjectReadFileError");
+      }
+      assert.equal(results.missingFile.failure.failure, "not_found");
+      assert.equal(results.missingFile.failure.operation, "realpath-target");
 
       if (
         results.browse._tag !== "Failure" ||

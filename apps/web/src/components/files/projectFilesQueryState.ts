@@ -1,11 +1,13 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
-import type {
-  EnvironmentId,
-  ProjectListEntriesResult,
-  ProjectReadFileResult,
+import {
+  ProjectReadFileError,
+  type EnvironmentId,
+  type ProjectListEntriesResult,
+  type ProjectReadFileResult,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { useCallback } from "react";
 
@@ -25,6 +27,7 @@ function optimisticFileAtom(environmentId: EnvironmentId, cwd: string, relativeP
 interface ProjectQueryState<A> {
   readonly data: A | null;
   readonly error: string | null;
+  readonly failure: unknown | null;
   readonly isPending: boolean;
   readonly refresh: () => void;
 }
@@ -115,9 +118,19 @@ export function clearProjectFileQueryData(
   appAtomRegistry.set(optimisticFileAtom(environmentId, cwd, relativePath), null);
 }
 
+const isProjectReadFileError = Schema.is(ProjectReadFileError);
+
+export function isProjectFileNotFoundFailure(failure: unknown): boolean {
+  return isProjectReadFileError(failure) && failure.failure === "not_found";
+}
+
+function queryFailure<A>(result: AsyncResult.AsyncResult<A, unknown>): unknown | null {
+  return result._tag === "Failure" ? Cause.squash(result.cause) : null;
+}
+
 function errorMessage<A>(result: AsyncResult.AsyncResult<A, unknown>): string | null {
-  if (result._tag !== "Failure") return null;
-  const cause = Cause.squash(result.cause);
+  const cause = queryFailure(result);
+  if (cause === null) return null;
   return cause instanceof Error ? cause.message : "Workspace query failed.";
 }
 
@@ -132,6 +145,7 @@ export function useProjectEntriesQuery(
   return {
     data: Option.getOrNull(AsyncResult.value(result)),
     error: errorMessage(result),
+    failure: queryFailure(result),
     isPending: result.waiting,
     refresh,
   };
@@ -193,6 +207,7 @@ export function useProjectFileQuery(
   return {
     data: optimisticFile?.data ?? data,
     error: errorMessage(result),
+    failure: queryFailure(result),
     isPending: result.waiting,
     refresh,
   };

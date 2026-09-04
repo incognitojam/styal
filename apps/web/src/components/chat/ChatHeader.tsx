@@ -34,7 +34,6 @@ import ProjectScriptsControl, {
 import { OpenInPicker } from "./OpenInPicker";
 import { useRemoteOpenState, type RemoteOpenMode } from "../../remoteOpen";
 import { usePrimaryEnvironmentId } from "../../state/environments";
-import { useT3ProjectFileScripts } from "~/hooks/useT3ProjectFileScripts";
 import { useThreadActionMenu } from "~/hooks/useThreadActionMenu";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -60,6 +59,11 @@ interface ChatHeaderProps {
   activeProjectFaviconPath: string | null;
   openInCwd: string | null;
   activeProjectScripts: ReadonlyArray<ProjectScript> | undefined;
+  projectScriptSource: "local" | "styal.json";
+  legacyProjectScripts: ReadonlyArray<ProjectScript>;
+  hasLegacyProjectConfig: boolean;
+  canEditProjectScripts: boolean;
+  onRefreshProjectFileScripts: () => void;
   preferredScriptId: string | null;
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
@@ -68,6 +72,7 @@ interface ChatHeaderProps {
   readonly onOpenPullRequest?: ((number: number) => void) | undefined;
   onNewThreadInProject: () => void;
   onRunProjectScript: (script: ProjectScript) => void;
+  onMigrateLegacyProjectScripts: () => Promise<ProjectScriptActionResult>;
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
   onUpdateProjectScript: (
     scriptId: string,
@@ -129,6 +134,11 @@ export const ChatHeader = memo(function ChatHeader({
   activeProjectFaviconPath,
   openInCwd,
   activeProjectScripts,
+  projectScriptSource,
+  legacyProjectScripts,
+  hasLegacyProjectConfig,
+  canEditProjectScripts,
+  onRefreshProjectFileScripts,
   preferredScriptId,
   keybindings,
   availableEditors,
@@ -137,15 +147,12 @@ export const ChatHeader = memo(function ChatHeader({
   onOpenPullRequest,
   onNewThreadInProject,
   onRunProjectScript,
+  onMigrateLegacyProjectScripts,
   onAddProjectScript,
   onUpdateProjectScript,
   onDeleteProjectScript,
 }: ChatHeaderProps) {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const fileScripts = useT3ProjectFileScripts(
-    activeThreadEnvironmentId,
-    activeProjectScripts ? activeProjectCwd : null,
-  );
   const remoteOpenState = useRemoteOpenState(activeThreadEnvironmentId);
   const showOpenInPicker = shouldShowOpenInPicker({
     activeProjectName,
@@ -383,9 +390,14 @@ export const ChatHeader = memo(function ChatHeader({
         {activeProjectScripts && (
           <ProjectScriptsControl
             scripts={activeProjectScripts}
-            fileScripts={fileScripts}
+            actionSource={projectScriptSource}
+            legacyScripts={legacyProjectScripts}
+            hasLegacyConfig={hasLegacyProjectConfig}
+            canEdit={canEditProjectScripts}
             keybindings={keybindings}
             preferredScriptId={preferredScriptId}
+            onRefreshFileScripts={onRefreshProjectFileScripts}
+            onMigrateLegacyScripts={onMigrateLegacyProjectScripts}
             onRunScript={onRunProjectScript}
             onAddScript={onAddProjectScript}
             onUpdateScript={onUpdateProjectScript}
