@@ -25,7 +25,8 @@ export type WslServerTreeResult =
   | { readonly ok: true; readonly root: string }
   | { readonly ok: false; readonly reason: string; readonly fatal: boolean };
 
-const MARKER_FILE_NAME = "t3code-wsl-server-tree.json";
+const MARKER_FILE_NAME = "styal-wsl-server-tree.json";
+const LEGACY_MARKER_FILE_NAME = "t3code-wsl-server-tree.json";
 const COPY_CONCURRENCY = 8;
 
 const Marker = Schema.Struct({ version: Schema.String });
@@ -135,10 +136,23 @@ export const make = Effect.gen(function* () {
     );
   });
 
+  const readMarkerMatches = (fileName: string) =>
+    Effect.gen(function* () {
+      const raw = yield* fs.readFileString(join(versionDir, fileName));
+      const marker = yield* decodeMarker(raw);
+      return marker.version === version;
+    }).pipe(Effect.orElseSucceed(() => false));
+
   const markerMatches = Effect.gen(function* () {
-    const raw = yield* fs.readFileString(join(versionDir, MARKER_FILE_NAME));
-    const marker = yield* decodeMarker(raw);
-    return marker.version === version;
+    if (yield* readMarkerMatches(MARKER_FILE_NAME)) return true;
+    if (!(yield* readMarkerMatches(LEGACY_MARKER_FILE_NAME))) return false;
+
+    // Existing extracted trees are a disposable cache, but rewriting their
+    // marker avoids a needless full extraction during the branding migration.
+    const markerJson = yield* encodeMarker({ version });
+    yield* fs.writeFileString(join(versionDir, MARKER_FILE_NAME), `${markerJson}\n`);
+    yield* fs.remove(join(versionDir, LEGACY_MARKER_FILE_NAME)).pipe(Effect.ignore);
+    return true;
   }).pipe(Effect.orElseSucceed(() => false));
 
   const extract = Effect.gen(function* () {

@@ -192,7 +192,7 @@ jobs:
       - name: Restore changelog extraction cache
         uses: actions/cache@v5
         with:
-          path: ~/.cache/t3code-changelog
+          path: ~/.cache/styal-changelog
           key: changelog-records-${{ github.run_id }}
           restore-keys: changelog-records-
 
@@ -224,7 +224,7 @@ jobs:
             --upstream-repository pingdotgg/t3code \
             --output fork-features.md \
             --nightly-output nightly-highlights.md \
-            --records-cache "$HOME/.cache/t3code-changelog/records.json" \
+            --records-cache "$HOME/.cache/styal-changelog/records.json" \
             --exclude-mobile-only-nightly
           echo "generated=true" >> "$GITHUB_OUTPUT"
 

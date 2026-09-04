@@ -54,7 +54,7 @@ const withTempDir = <A, E, R>(
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
     const tempDir = yield* fileSystem.makeTempDirectoryScoped({
-      prefix: "t3-wsl-server-tree-test-",
+      prefix: "styal-wsl-server-tree-test-",
     });
     return yield* run(tempDir);
   }).pipe(Effect.scoped);
@@ -154,7 +154,7 @@ describe("DesktopWslServerTree", () => {
         const dep = yield* fileSystem.exists(path.join(root, "node_modules/effect/package.json"));
         assert.isTrue(dep);
         const marker = yield* fileSystem.readFileString(
-          path.join(root, "t3code-wsl-server-tree.json"),
+          path.join(root, "styal-wsl-server-tree.json"),
         );
         assert.include(marker, '"version":"1.2.3"');
       }),
@@ -228,6 +228,46 @@ describe("DesktopWslServerTree", () => {
         const root = second.ok ? second.root : "";
         const entry = yield* fileSystem.readFileString(path.join(root, "apps/server/dist/bin.mjs"));
         assert.equal(entry, "v1");
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("rewrites a legacy marker without re-extracting the cached tree", () =>
+    withTempDir((tempDir) =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const serverRoot = path.join(tempDir, "resources", "server.asar");
+        yield* fileSystem.makeDirectory(path.join(serverRoot, "apps/server/dist"), {
+          recursive: true,
+        });
+        yield* fileSystem.writeFileString(path.join(serverRoot, "apps/server/dist/bin.mjs"), "v1");
+
+        const first = yield* ensureWith({
+          baseDir: tempDir,
+          resourcesPath: path.join(tempDir, "resources"),
+        });
+        assert.isTrue(first.ok);
+        const root = first.ok ? first.root : "";
+        const currentMarker = path.join(root, "styal-wsl-server-tree.json");
+        const legacyMarker = path.join(root, "t3code-wsl-server-tree.json");
+        yield* fileSystem.rename(currentMarker, legacyMarker);
+        yield* fileSystem.writeFileString(
+          path.join(serverRoot, "apps/server/dist/bin.mjs"),
+          "v2-should-not-appear",
+        );
+
+        const second = yield* ensureWith({
+          baseDir: tempDir,
+          resourcesPath: path.join(tempDir, "resources"),
+        });
+        assert.isTrue(second.ok);
+        assert.equal(
+          yield* fileSystem.readFileString(path.join(root, "apps/server/dist/bin.mjs")),
+          "v1",
+        );
+        assert.isTrue(yield* fileSystem.exists(currentMarker));
+        assert.isFalse(yield* fileSystem.exists(legacyMarker));
       }),
     ).pipe(Effect.provide(NodeServices.layer)),
   );
