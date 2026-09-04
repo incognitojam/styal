@@ -116,6 +116,7 @@ An empty database is a bad test. Seed your worktree's `.styal` with a copy of re
 - Never make a PR unless the developer explicitly asks you to do so.
 - Conventional commit titles, plain language: `fix(web): new threads no longer spike CPU`.
 - Body: the problem in a sentence or two, then how you fixed it. End with the model and harness that did the work.
+- For routine upstream backport pull requests, avoid creating noise for upstream maintainers and contributors: put source pull request and issue references inside backticks, for example `pingdotgg/t3code#1234`, instead of using live Markdown links or auto-linked references, and do not name or `@`-mention upstream people. This is not a general link ban; links to this fork and intentional upstream links that are relevant to the discussion are allowed.
 - When the pull request body is long, begin it with a `> [!NOTE]` callout containing a TL;DR.
 - **Rebase standalone branches onto latest main before opening.** Stale branches conflict and burn a review round.
 - When explicitly asked to open a pull request and meaningful final verification or evidence gathering remains, consider opening it as a draft after the implementation and focused checks are complete. This lets CI run in parallel with screenshots, recordings, or other final verification. Update the pull request body and evidence afterward, then mark it ready for review. If no further verification or evidence is needed, open it ready for review instead.
