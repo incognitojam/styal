@@ -31,7 +31,7 @@ import {
 } from "~/previewStateStore";
 import { selectThreadPreviewMiniPlayer, usePreviewMiniPlayerStore } from "~/previewMiniPlayerStore";
 import { useRightPanelStore } from "~/rightPanelStore";
-import { resolveBrowserNavigationTarget } from "~/browser/browserTargetResolver";
+import { resolveForwardedBrowserTarget } from "~/browser/browserPortForward";
 import {
   type ExecutableBrowserWebview,
   findBrowserWebview,
@@ -418,10 +418,10 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           case "open": {
             const input = request.input as PreviewAutomationOpenInput;
             const resolvedInputUrl = input.url
-              ? resolveBrowserNavigationTarget(environmentId, {
+              ? await resolveForwardedBrowserTarget(environmentId, {
                   kind: "url",
                   url: input.url,
-                }).resolvedUrl
+                })
               : undefined;
             let activeTabId = resolvePreviewAutomationOpenTab(
               state,
@@ -558,14 +558,14 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           case "navigate": {
             const ready = await requireReadyTab();
             const input = request.input as PreviewAutomationNavigateInput;
-            const resolution = resolveBrowserNavigationTarget(
+            const resolvedUrl = await resolveForwardedBrowserTarget(
               environmentId,
               input.target ?? {
                 kind: "url",
                 url: input.url!,
               },
             );
-            await ready.bridge.navigate(ready.runtimeTabId, resolution.resolvedUrl);
+            await ready.bridge.navigate(ready.runtimeTabId, resolvedUrl);
             await waitForNavigationReadiness(
               threadRef,
               request.requestId,
@@ -768,6 +768,7 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
             }
             return {
               ...artifact,
+              path: artifact.environmentPath ?? artifact.path,
               tabId: stopTabId,
             };
           }

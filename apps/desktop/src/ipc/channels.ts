@@ -70,6 +70,7 @@ export const PREVIEW_REGISTER_WEBVIEW_CHANNEL = "desktop:preview-register-webvie
 export const PREVIEW_SET_VIEWPORT_PRESENTATION_CHANNEL =
   "desktop:preview-set-viewport-presentation";
 export const PREVIEW_NAVIGATE_CHANNEL = "desktop:preview-navigate";
+export const PREVIEW_PORT_FORWARD_CHANNEL = "desktop:preview-port-forward";
 export const PREVIEW_GO_BACK_CHANNEL = "desktop:preview-go-back";
 export const PREVIEW_GO_FORWARD_CHANNEL = "desktop:preview-go-forward";
 export const PREVIEW_REFRESH_CHANNEL = "desktop:preview-refresh";

@@ -29,6 +29,15 @@ connection. Pull request diffs and provider settings keep working after the
 previous credential expires. A failed renewal affects that request; it does not
 disconnect an otherwise healthy conversation.
 
+In the desktop app's Browser panel, select a local server from the connected
+environment or enter its localhost URL. Preview tabs reuse that environment's
+connection and do not consume additional T3 Connect tunnel slots. Both the
+desktop app and the environment server must support remote previews.
+
+Browser recordings are saved on the desktop and copied to the connected
+environment so its agent can read them. Remote recording transfers support files
+up to 64 MiB.
+
 ## Pair over a LAN or private network
 
 Use direct pairing when the other device can reach the host's network address.

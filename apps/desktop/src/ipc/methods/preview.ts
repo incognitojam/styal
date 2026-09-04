@@ -115,6 +115,16 @@ export const navigate = DesktopIpc.makeIpcMethod({
   }),
 });
 
+export const ensurePortForward = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.PREVIEW_PORT_FORWARD_CHANNEL,
+  payload: Schema.Struct({ key: Schema.String, websocketUrl: Schema.String }),
+  result: Schema.Number,
+  handler: Effect.fn("desktop.ipc.preview.ensurePortForward")(function* ({ key, websocketUrl }) {
+    const manager = yield* PreviewManager.PreviewManager;
+    return yield* manager.ensurePortForward(key, websocketUrl);
+  }),
+});
+
 const tabMethod = (
   channel: string,
   name: string,
@@ -484,6 +494,7 @@ export const saveRecording = DesktopIpc.makeIpcMethod({
 });
 
 export const methods = [
+  ensurePortForward,
   createTab,
   closeTab,
   registerWebview,

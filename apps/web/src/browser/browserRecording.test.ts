@@ -59,6 +59,16 @@ vi.mock("~/components/preview/previewBridge", () => ({
   },
 }));
 
+vi.mock("./browserEnvironmentHttp", () => ({
+  previewEnvironmentPost: vi.fn(
+    async () => new Response(JSON.stringify({ path: "/remote/recording.webm" })),
+  ),
+}));
+
+vi.mock("~/state/session", () => ({
+  readPreparedConnection: vi.fn(() => ({ target: { _tag: "BearerConnectionTarget" } })),
+}));
+
 vi.mock("~/rpc/atomRegistry", () => ({
   appAtomRegistry: { set: registrySet },
 }));
@@ -615,7 +625,10 @@ describe("browser recording", () => {
     ).rejects.toBeInstanceOf(BrowserRecordingConflictError);
     expect(startScreencast).toHaveBeenCalledTimes(1);
 
-    await stopBrowserRecording(runtimeTabId);
+    await expect(stopBrowserRecording(runtimeTabId)).resolves.toMatchObject({
+      path: "/tmp/recording-test.webm",
+      environmentPath: "/remote/recording.webm",
+    });
   });
 
   it("does not report success for a second start while the first is still starting", async () => {

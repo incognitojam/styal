@@ -33,6 +33,15 @@ vi.mock("~/components/preview/previewBridge", () => ({
   },
 }));
 
+// The tab belongs to this desktop's own connected backend.
+vi.mock("~/state/session", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/state/session")>()),
+  readPreparedConnection: () => ({
+    httpBaseUrl: "http://127.0.0.1:3773",
+    target: { _tag: "PrimaryConnectionTarget" },
+  }),
+}));
+
 vi.mock("~/components/preview/usePreviewBridge", () => ({
   usePreviewBridge: () => undefined,
 }));
