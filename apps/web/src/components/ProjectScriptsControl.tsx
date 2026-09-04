@@ -41,6 +41,7 @@ interface ProjectScriptsControlProps {
   /** Database and t3.json actions that can be copied into this checkout. */
   legacyScripts?: ReadonlyArray<ProjectScript>;
   hasLegacyConfig?: boolean;
+  canEdit?: boolean;
   keybindings: ResolvedKeybindingsConfig;
   preferredScriptId?: string | null;
   onRefreshFileScripts?: () => void;
@@ -58,6 +59,7 @@ export default function ProjectScriptsControl({
   scripts,
   legacyScripts = NO_LEGACY_SCRIPTS,
   hasLegacyConfig = legacyScripts.length > 0,
+  canEdit = true,
   keybindings,
   preferredScriptId = null,
   onRefreshFileScripts,
@@ -82,6 +84,7 @@ export default function ProjectScriptsControl({
     "data-highlighted:bg-transparent data-highlighted:text-foreground hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground data-highlighted:hover:bg-accent data-highlighted:hover:text-accent-foreground data-highlighted:focus-visible:bg-accent data-highlighted:focus-visible:text-accent-foreground";
 
   const openAddDialog = () => {
+    if (!canEdit) return;
     openAddProjectScriptEditor({
       ...(onRefreshFileScripts ? { refreshFileScripts: onRefreshFileScripts } : {}),
       openEditor: () => setEditorRequest({ scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT }),
@@ -215,7 +218,11 @@ export default function ProjectScriptsControl({
               })}
               {legacyMigrationMenuItem}
               <MenuSeparator />
-              <MenuItem className={dropdownItemClassName} onClick={openAddDialog}>
+              <MenuItem
+                disabled={!canEdit}
+                className={dropdownItemClassName}
+                onClick={openAddDialog}
+              >
                 <PlusIcon className="size-4" />
                 Add action
               </MenuItem>
@@ -240,7 +247,7 @@ export default function ProjectScriptsControl({
           </MenuTrigger>
           <MenuPopup align="end">
             {legacyMigrationMenuItem}
-            <MenuItem className={dropdownItemClassName} onClick={openAddDialog}>
+            <MenuItem disabled={!canEdit} className={dropdownItemClassName} onClick={openAddDialog}>
               <PlusIcon className="size-4" />
               Add action
             </MenuItem>
@@ -258,6 +265,7 @@ export default function ProjectScriptsControl({
                 // The tooltip wrapper replaces data-slot="button", so themed
                 // toolbar styling needs its own hook.
                 data-toolbar-control=""
+                disabled={!canEdit}
                 onClick={openAddDialog}
               />
             }

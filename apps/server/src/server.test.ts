@@ -5268,6 +5268,10 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               cwd: workspaceDir,
               relativePath: "linked-outside.txt",
             }).pipe(Effect.result),
+            missingFile: client[WS_METHODS.projectsReadFile]({
+              cwd: workspaceDir,
+              relativePath: "missing.txt",
+            }).pipe(Effect.result),
             browse: client[WS_METHODS.filesystemBrowse]({
               cwd: workspaceDir,
               partialPath: "./missing-browse/child",
@@ -5323,6 +5327,15 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(readError.failure, "resolved_path_outside_root");
       assert.equal(readError.resolvedPath, resolvedOutsideFile);
       assert.isDefined(readError.cause);
+
+      if (
+        results.missingFile._tag !== "Failure" ||
+        results.missingFile.failure._tag !== "ProjectReadFileError"
+      ) {
+        assert.fail("Expected a ProjectReadFileError");
+      }
+      assert.equal(results.missingFile.failure.failure, "not_found");
+      assert.equal(results.missingFile.failure.operation, "realpath-target");
 
       if (
         results.browse._tag !== "Failure" ||

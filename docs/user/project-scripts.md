@@ -42,7 +42,7 @@ repository in T3 Code:
       "name": "Install dependencies",
       "command": "pnpm install",
       "icon": "configure",
-      "runOnWorktreeCreate": true
+      "setup": true
     },
     {
       "id": "dev",
@@ -71,8 +71,8 @@ Each script supports these fields:
 - `command` (required): the shell command to run.
 - `icon` (optional): `play`, `test`, `lint`, `configure`, `build`, `debug`, `desktop`, `database`,
   or `deploy`. The default is `play`.
-- `runOnWorktreeCreate` (optional): marks the script as the checkout's setup action. Checked-in
-  setup actions do not run automatically. The default is `false`.
+- `setup` (optional): marks the script as the checkout's setup action. Checked-in setup actions do
+  not run automatically. The default is `false`.
 
 Scripts in `styal.json` appear directly in the active checkout's thread toolbar and in **Settings**
 → **Projects** → **Actions**. They are not copied into project settings. Opening the actions menu,

@@ -19,7 +19,7 @@
       "name": "Setup Worktree",
       "command": "vp i && if [ -n \"$STYAL_WORKTREE_PATH\" ]; then ln -sf \"$STYAL_PROJECT_ROOT/.env\" .env && ln -sf \"$STYAL_PROJECT_ROOT/infra/relay/.env\" infra/relay/.env; else echo \"Not in a worktree - skipping .env symlinks\"; fi && node apps/web/scripts/warm-dep-cache.ts",
       "icon": "configure",
-      "runOnWorktreeCreate": true
+      "setup": true
     }
   ]
 }

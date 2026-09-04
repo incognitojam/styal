@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   legacyProjectScriptsForMigration,
+  legacyT3ProjectScriptsForMigration,
   styalProjectFileContentsWithScripts,
 } from "./styalProjectFileActions";
 
@@ -62,7 +63,6 @@ describe("styal project file actions", () => {
           name: "Test",
           command: "vp test",
           icon: "test",
-          runOnWorktreeCreate: false,
         },
       ],
     });
@@ -105,5 +105,15 @@ describe("styal project file actions", () => {
       { ...dev, id: "dev-2", command: "vp run new-dev" },
       { ...dev, command: "vp run saved-dev" },
     ]);
+  });
+
+  it("reserves saved IDs when carrying t3.json actions into a newly created file", () => {
+    expect(
+      legacyT3ProjectScriptsForMigration({
+        liveScripts: [],
+        legacyFile: { scripts: [{ name: "Dev", command: "vp run new-dev" }] },
+        savedScripts: [{ ...dev, command: "vp run saved-dev" }],
+      }),
+    ).toEqual([{ ...dev, id: "dev-2", command: "vp run new-dev" }]);
   });
 });

@@ -3323,7 +3323,7 @@ function ChatViewContent(props: ChatViewProps) {
       }
       return result;
     },
-    [projectScripts],
+    [projectScripts.deleteScript, projectScripts.scripts],
   );
 
   const handleRuntimeModeChange = useCallback(
@@ -6942,6 +6942,7 @@ function ChatViewContent(props: ChatViewProps) {
             activeProjectScripts={activeProject ? projectScripts.scripts : undefined}
             legacyProjectScripts={projectScripts.legacyScripts}
             hasLegacyProjectConfig={projectScripts.hasLegacyConfig}
+            canEditProjectScripts={projectScripts.canEdit && !projectScripts.isSaving}
             onRefreshProjectFileScripts={projectScripts.projectFile.refresh}
             preferredScriptId={
               activeProject ? (lastInvokedScriptByProjectId[activeProject.id] ?? null) : null

@@ -576,7 +576,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
       return;
     }
     toastManager.add({ type: "success", title: "Actions migrated to styal.json" });
-  }, [checkoutScripts, reportFailure]);
+  }, [checkoutScripts.migrateLegacyScripts, reportFailure]);
 
   const deleteScript = useCallback(
     (scriptId: string) => {
@@ -584,7 +584,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         if (result._tag === "Failure") reportFailure("Failed to delete action", result);
       });
     },
-    [checkoutScripts, reportFailure],
+    [checkoutScripts.deleteScript, reportFailure],
   );
 
   // ----- checkouts -----
@@ -1054,7 +1054,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
               <Button
                 size="xs"
                 variant="outline"
-                disabled={checkoutScripts.isSaving}
+                disabled={!checkoutScripts.canEdit || checkoutScripts.isSaving}
                 onClick={() =>
                   setEditorRequest({ scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT })
                 }
@@ -1072,7 +1072,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
             return (
               <SettingsRow
                 key={`styal:${script.id}`}
-                className="py-2"
+                className="group py-2"
                 title={
                   <span className="flex min-w-0 items-center gap-2">
                     <ScriptIcon
@@ -1098,9 +1098,9 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                     <Button
                       size="icon-xs"
                       variant="ghost"
-                      className="shrink-0 text-muted-foreground"
+                      className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
                       aria-label={`Edit ${script.name}`}
-                      disabled={checkoutScripts.isSaving}
+                      disabled={!checkoutScripts.canEdit || checkoutScripts.isSaving}
                       onClick={() => setEditorRequest(editorRequestForScript(script, keybindings))}
                     >
                       <SettingsIcon className="size-3.5" />

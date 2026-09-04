@@ -16,7 +16,7 @@ describe("StyalProjectFile", () => {
           name: "Dev",
           command: "pnpm dev",
           icon: "play",
-          runOnWorktreeCreate: false,
+          setup: true,
         },
         { name: "Test", command: "pnpm test" },
       ],
@@ -25,6 +25,7 @@ describe("StyalProjectFile", () => {
     expect(decoded.iconPath).toBe("assets/logo.svg");
     expect(decoded.scripts).toHaveLength(2);
     expect(decoded.scripts?.[0]?.id).toBe("dev");
+    expect(decoded.scripts?.[0]?.setup).toBe(true);
     expect(decoded.scripts?.[1]).toEqual({ name: "Test", command: "pnpm test" });
   });
 

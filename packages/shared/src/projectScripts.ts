@@ -52,7 +52,7 @@ export function projectScriptsFromStyalFile(
       name: script.name,
       command: script.command,
       icon: script.icon ?? "play",
-      runOnWorktreeCreate: script.runOnWorktreeCreate ?? false,
+      runOnWorktreeCreate: script.setup ?? false,
     };
   });
 }

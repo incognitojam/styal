@@ -17,12 +17,14 @@ function renderControl(
   scripts: ReadonlyArray<ProjectScript>,
   legacyScripts: ReadonlyArray<ProjectScript> = [],
   hasLegacyConfig = legacyScripts.length > 0,
+  canEdit = true,
 ) {
   return renderToStaticMarkup(
     <ProjectScriptsControl
       scripts={scripts}
       legacyScripts={legacyScripts}
       hasLegacyConfig={hasLegacyConfig}
+      canEdit={canEdit}
       keybindings={EMPTY_KEYBINDINGS}
       onRunScript={() => {}}
       onMigrateLegacyScripts={async () => undefined as never}
@@ -100,5 +102,9 @@ describe("ProjectScriptsControl compact controls", () => {
     const html = renderControl([], [], true);
 
     expect(buttonTag(html, "Project actions")).toBeDefined();
+  });
+
+  it("disables Add action while the project file is unavailable", () => {
+    expect(buttonTag(renderControl([], [], false, false), "Add action")).toContain("disabled");
   });
 });

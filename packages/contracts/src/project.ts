@@ -206,6 +206,7 @@ export const ProjectReadFileResult = Schema.Struct({
 export type ProjectReadFileResult = typeof ProjectReadFileResult.Type;
 
 export const ProjectFileFailure = Schema.Literals([
+  "not_found",
   "workspace_path_outside_root",
   "resolved_path_outside_root",
   "path_not_file",

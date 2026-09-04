@@ -25,16 +25,20 @@ const trimmedNonEmpty = (annotations: { readonly description: string }, maxLengt
   return encoded.pipe(Schema.decodeTo(encoded, SchemaTransformation.trim()));
 };
 
+const styalProjectFileScriptId = (() => {
+  const encoded = Schema.String.annotate({
+    description:
+      "Stable lowercase identifier used by script keybindings. Defaults to an identifier derived from the name.",
+  }).check(
+    Schema.isNonEmpty(),
+    Schema.isMaxLength(MAX_SCRIPT_ID_LENGTH),
+    Schema.isPattern(/^[a-z0-9][a-z0-9-]*$/),
+  );
+  return encoded.pipe(Schema.decodeTo(encoded, SchemaTransformation.trim()));
+})();
+
 export const StyalProjectFileScript = Schema.Struct({
-  id: Schema.optionalKey(
-    trimmedNonEmpty(
-      {
-        description:
-          "Stable lowercase identifier used by script keybindings. Defaults to an identifier derived from the name.",
-      },
-      MAX_SCRIPT_ID_LENGTH,
-    ).check(Schema.isPattern(/^[a-z0-9][a-z0-9-]*$/)),
-  ),
+  id: Schema.optionalKey(styalProjectFileScriptId),
   name: trimmedNonEmpty({
     description: "Display name for the script, shown in the T3 Code scripts menu.",
   }),
@@ -46,10 +50,9 @@ export const StyalProjectFileScript = Schema.Struct({
       description: 'Icon shown next to the script in the scripts menu. Defaults to "play".',
     }),
   ),
-  runOnWorktreeCreate: Schema.optionalKey(
+  setup: Schema.optionalKey(
     Schema.Boolean.annotate({
-      description:
-        "Marks this as the checkout's setup action. Checked-in setup actions do not run automatically.",
+      description: "Marks this as the checkout's setup action.",
     }),
   ),
 }).annotate({

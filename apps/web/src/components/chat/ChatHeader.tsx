@@ -61,6 +61,7 @@ interface ChatHeaderProps {
   activeProjectScripts: ReadonlyArray<ProjectScript> | undefined;
   legacyProjectScripts: ReadonlyArray<ProjectScript>;
   hasLegacyProjectConfig: boolean;
+  canEditProjectScripts: boolean;
   onRefreshProjectFileScripts: () => void;
   preferredScriptId: string | null;
   keybindings: ResolvedKeybindingsConfig;
@@ -134,6 +135,7 @@ export const ChatHeader = memo(function ChatHeader({
   activeProjectScripts,
   legacyProjectScripts,
   hasLegacyProjectConfig,
+  canEditProjectScripts,
   onRefreshProjectFileScripts,
   preferredScriptId,
   keybindings,
@@ -388,6 +390,7 @@ export const ChatHeader = memo(function ChatHeader({
             scripts={activeProjectScripts}
             legacyScripts={legacyProjectScripts}
             hasLegacyConfig={hasLegacyProjectConfig}
+            canEdit={canEditProjectScripts}
             keybindings={keybindings}
             preferredScriptId={preferredScriptId}
             onRefreshFileScripts={onRefreshProjectFileScripts}

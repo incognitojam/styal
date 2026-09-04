@@ -25,7 +25,13 @@ describe("buildStyalProjectFileJsonSchema", () => {
         string,
         {
           description?: string;
-          items?: { properties: Record<string, unknown>; required: ReadonlyArray<string> };
+          items?: {
+            properties: Record<
+              string,
+              { pattern?: string; allOf?: ReadonlyArray<{ pattern?: string }> }
+            >;
+            required: ReadonlyArray<string>;
+          };
         }
       >;
       required?: ReadonlyArray<string>;
@@ -48,8 +54,11 @@ describe("buildStyalProjectFileJsonSchema", () => {
       "icon",
       "id",
       "name",
-      "runOnWorktreeCreate",
+      "setup",
     ]);
+    expect(script?.properties.id?.allOf).toContainEqual({
+      pattern: "^[a-z0-9][a-z0-9-]*$",
+    });
   });
 
   it("stays JSON-serializable", () => {

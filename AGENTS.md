@@ -76,7 +76,7 @@ The most common defect in this repo is a change that works on the path you teste
 
 ## Dev servers
 
-- `vp i` installs. Worktrees get this from the project's saved setup action; if module resolution looks broken, it probably did not run.
+- `vp i` installs. Checked-in setup actions stay manual until project trust exists, so run **Setup Worktree** from the Actions menu after creating a worktree; it installs dependencies, links the local environment files, and warms the dependency cache.
 - `vp run dev` starts server and web. In a worktree, state defaults to that worktree's gitignored `.styal`, which deliberately outranks an ambient `STYAL_HOME` so you cannot land on shared state by accident. An explicit `--home-dir` still wins.
 - Ports derive from the worktree path and are stable across restarts, but read the real ones from the `[dev-runner]` line since occupied ports shift.
 - Sharing over the tailnet is three steps: run `vp run dev --share` in the background, wait for the `pairingUrl:` line in its output, paste that full URL (token included) in your reply. Do not wire up `tailscale serve` by hand for this, and do not open the URL yourself.

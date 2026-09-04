@@ -5,7 +5,7 @@ import type {
   T3ProjectFileScript,
   ThreadEnvMode,
 } from "@t3tools/contracts";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 
 import { useStyalProjectFileState, type StyalProjectFileState } from "./useStyalProjectFileScripts";
 import { useT3ProjectFileState, type T3ProjectFileState } from "./useT3ProjectFileScripts";
@@ -118,5 +118,5 @@ export function useProjectFileState(
     styal.refresh();
     t3.refresh();
   }, [styal.refresh, t3.refresh]);
-  return resolveProjectFileState({ styal, t3, refresh });
+  return useMemo(() => resolveProjectFileState({ styal, t3, refresh }), [refresh, styal, t3]);
 }

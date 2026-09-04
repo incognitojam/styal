@@ -8,7 +8,10 @@ import { projectScriptsFromStyalFile } from "@t3tools/shared/projectScripts";
 import { parseStyalProjectFile } from "@t3tools/shared/styalProjectFile";
 import { useMemo } from "react";
 
-import { useProjectFileQuery } from "~/components/files/projectFilesQueryState";
+import {
+  isProjectFileNotFoundFailure,
+  useProjectFileQuery,
+} from "~/components/files/projectFilesQueryState";
 
 const NO_SCRIPTS: ReadonlyArray<ProjectScript> = [];
 
@@ -44,7 +47,8 @@ export function useStyalProjectFileState(
     cwd !== null,
   );
   const contents = query.data && !query.data.truncated ? query.data.contents : null;
-  const unavailable = query.data?.truncated === true || query.error !== null;
+  const missing = isProjectFileNotFoundFailure(query.failure);
+  const unavailable = query.data?.truncated === true || (query.error !== null && !missing);
   const isPending = query.isPending;
   return useMemo(() => {
     if (contents === null) {
@@ -73,7 +77,7 @@ export function useStyalProjectFileState(
       scripts: projectScriptsFromStyalFile(file.scripts ?? []),
       refresh: query.refresh,
     } as const;
-  }, [contents, isPending, query.refresh, unavailable]);
+  }, [contents, isPending, missing, query.refresh, unavailable]);
 }
 
 /**

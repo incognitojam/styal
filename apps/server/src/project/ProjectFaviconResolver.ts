@@ -15,8 +15,6 @@ import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
-import { STYAL_PROJECT_FILE_NAME } from "@t3tools/contracts";
-
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as StyalProjectFileLoader from "./StyalProjectFileLoader.ts";
 import * as T3ProjectFileLoader from "./T3ProjectFileLoader.ts";
@@ -207,19 +205,7 @@ export const make = Effect.gen(function* () {
     // styal.json owns the checkout once present. Only a missing file falls
     // back to the legacy t3.json configuration; an invalid styal.json must
     // remain visible as invalid rather than silently reviving old settings.
-    const styalProjectFilePath = path.join(projectCwd, STYAL_PROJECT_FILE_NAME);
-    const hasStyalProjectFile = yield* fileSystem.exists(styalProjectFilePath).pipe(
-      Effect.mapError(
-        (cause) =>
-          new ProjectFaviconResolutionError({
-            operation: "stat-candidate",
-            workspaceRoot: projectCwd,
-            relativePath: STYAL_PROJECT_FILE_NAME,
-            absolutePath: styalProjectFilePath,
-            cause,
-          }),
-      ),
-    );
+    const hasStyalProjectFile = yield* styalProjectFileLoader.exists(projectCwd);
     const projectFile = hasStyalProjectFile
       ? yield* styalProjectFileLoader.load(projectCwd)
       : yield* t3ProjectFileLoader.load(projectCwd);
