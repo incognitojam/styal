@@ -561,6 +561,18 @@ describe("resolveDisplayedThreadPr + nextThreadChangeRequestSnapshot", () => {
     });
     expect(displayed?.state).toBe("merged");
   });
+
+  it("refreshes a cached snapshot when a pull request becomes ready", () => {
+    const readyPr = { ...mergedPr, state: "open" as const };
+    const draftPr = { ...readyPr, isDraft: true };
+
+    expect(
+      threadChangeRequestSnapshotsEqual(
+        snapshotFor(featureBranch, draftPr),
+        snapshotFor(featureBranch, readyPr),
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("threadChangeRequestSnapshotsAtom", () => {
