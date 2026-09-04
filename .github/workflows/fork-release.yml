@@ -199,8 +199,8 @@ jobs:
       # Delete only a tag at this run's commit with nothing published behind
       # it. Cancellation can land after the release goes live but before this
       # step evaluates, and a release with no tag is worse than a stray tag.
-      # Querying rather than trusting the tag step's output also covers a
-      # cancellation between its push and its output write.
+      # Querying rather than recording what the tag step did also covers a
+      # cancellation that lands right after its push.
       - name: Discard tag from unfinished publish
         if: (failure() || cancelled()) && inputs.dry_run != true
         shell: bash

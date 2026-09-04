@@ -354,9 +354,10 @@ jobs:
           git push origin "${FORK_SOURCE_REF}:refs/tags/${NEW_TAG}"
 
       # target_commitish only for dry runs, which skip the tag above and would
-      # otherwise leave a draft targeting whatever main has become. Sending it
-      # on a real run re-arms the 403, because the API resolves it whether or
-      # not the tag it names already exists. Empty reads as unset.
+      # otherwise leave a draft targeting whatever main has become. Real runs
+      # send nothing: the docs describe the workflows check in terms of
+      # target_commitish with no exemption for an existing tag, so passing it
+      # would risk re-arming the 403. Empty reads as unset.
       - id: draft_release
         name: Upload draft prerelease
         uses: softprops/action-gh-release@v3
@@ -391,8 +392,8 @@ jobs:
       # Delete only a tag at this run's commit with nothing published behind
       # it. Cancellation can land after the release goes live but before this
       # step evaluates, and a release with no tag is worse than a stray tag.
-      # Querying rather than trusting the tag step's output also covers a
-      # cancellation between its push and its output write.
+      # Querying rather than recording what the tag step did also covers a
+      # cancellation that lands right after its push.
       - name: Discard tag from unfinished publish
         if: (failure() || cancelled()) && inputs.dry_run != true
         shell: bash
