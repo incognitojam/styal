@@ -6,6 +6,11 @@ installation-scoped anonymous ID as the distinct ID. It also keeps the
 telemetry opt-out, event buffer, and batch delivery. Clients do not load the
 PostHog browser SDK.
 
+Styal builds send events to the Styal PostHog project in the EU Cloud region by
+default. Set `T3CODE_TELEMETRY_ENABLED=false` on the server process to disable
+collection. `T3CODE_POSTHOG_KEY` and `T3CODE_POSTHOG_HOST` may be overridden for
+development or self-hosted PostHog installations.
+
 ## Client events
 
 These events use the metadata from the WebSocket connection that caused them.
