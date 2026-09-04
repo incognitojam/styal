@@ -544,6 +544,20 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 
+  it.effect("limits the Windows installer running-app check to styal", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const installerInclude = yield* fs.readFileString(
+        path.join(process.cwd(), "apps/desktop/resources/installer.nsh"),
+      );
+
+      assert.include(installerInclude, "!macro customCheckAppRunning");
+      assert.include(installerInclude, "StrCpy $IsPowerShellAvailable 1");
+      assert.include(installerInclude, "!insertmacro _CHECK_APP_RUNNING");
+    }),
+  );
+
   it("excludes Windows terminal binaries only from macOS packages", () => {
     assert.deepStrictEqual(MAC_FILE_EXCLUSIONS, [
       "!**/node_modules/node-pty/prebuilds/win32-*/**/*",
