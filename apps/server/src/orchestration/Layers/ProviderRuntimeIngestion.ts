@@ -18,6 +18,7 @@ import {
   type OrchestrationThread,
   type OrchestrationThreadActivity,
   type ProviderRuntimeEvent,
+  type RuntimeTaskId,
   type TaskAgentLinkage,
 } from "@t3tools/contracts";
 import * as Cache from "effect/Cache";
@@ -33,6 +34,11 @@ import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { ProjectionTurnRepository } from "../../persistence/Services/ProjectionTurns.ts";
 import { ProjectionTurnRepositoryLive } from "../../persistence/Layers/ProjectionTurns.ts";
+import {
+  ProjectionThreadActivityRepository,
+  type ProjectionThreadActivity,
+} from "../../persistence/Services/ProjectionThreadActivities.ts";
+import { ProjectionThreadActivityRepositoryLive } from "../../persistence/Layers/ProjectionThreadActivities.ts";
 import { isGitRepository } from "../../git/Utils.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ThreadBackgroundLivenessService } from "../ThreadBackgroundLiveness.ts";
@@ -85,13 +91,46 @@ interface PersistedTaskContext {
   readonly linkage?: Omit<TaskAgentLinkage, "agentKind">;
 }
 
+interface TaskClassification {
+  readonly agentKind: "agent" | "background";
+  readonly taskType?: string;
+  readonly agentId?: string;
+}
+
+function taskClassificationFromPayload(payload: Record<string, unknown>): TaskClassification {
+  const taskType = typeof payload.taskType === "string" ? payload.taskType : undefined;
+  const agentId = typeof payload.agentId === "string" ? payload.agentId : undefined;
+  return {
+    agentKind: classifyTaskAgentKind({ taskType, agentId }),
+    ...(taskType !== undefined ? { taskType } : {}),
+    ...(agentId !== undefined ? { agentId } : {}),
+  };
+}
+
+// Keep the first concrete identity fields, but allow a sparse initial event to
+// be refined when a later row finally reveals its taskType or owning agent.
+function mergeTaskClassification(
+  original: TaskClassification | undefined,
+  incoming: TaskClassification,
+): TaskClassification {
+  if (!original) {
+    return incoming;
+  }
+  const taskType = original.taskType ?? incoming.taskType;
+  const agentId = original.agentId ?? incoming.agentId;
+  if (taskType === original.taskType && agentId === original.agentId) {
+    return original;
+  }
+  return taskClassificationFromPayload({ taskType, agentId });
+}
+
 // Claude terminal notifications intentionally omit task_type. After a
 // provider session restart the adapter's in-memory task registry is empty, so
 // recover the durable identity carried by earlier lifecycle activities before
 // ingestion stamps agentKind on the terminal row. The same scan recovers the
 // title when the ingestion cache was swept or evicted.
 function findTaskContextInActivities(
-  activities: ReadonlyArray<OrchestrationThreadActivity> | undefined,
+  activities: ReadonlyArray<Pick<OrchestrationThreadActivity, "kind" | "payload">> | undefined,
   taskId: string,
 ): PersistedTaskContext | undefined {
   if (!activities) {
@@ -140,6 +179,40 @@ function findTaskContextInActivities(
     : undefined;
 }
 
+function findTaskClassificationInActivities(
+  activities: ReadonlyArray<Pick<OrchestrationThreadActivity, "kind" | "payload">> | undefined,
+  taskId: string,
+): TaskClassification | undefined {
+  if (!activities) {
+    return undefined;
+  }
+  let classification: TaskClassification | undefined;
+  for (const activity of activities) {
+    if (!activity.kind.startsWith("task.")) {
+      continue;
+    }
+    const payload =
+      activity.payload && typeof activity.payload === "object"
+        ? (activity.payload as Record<string, unknown>)
+        : undefined;
+    if (payload?.taskId !== taskId) {
+      continue;
+    }
+    const taskType = typeof payload.taskType === "string" ? payload.taskType : undefined;
+    const agentId = typeof payload.agentId === "string" ? payload.agentId : undefined;
+    const agentKind =
+      payload.agentKind === "agent" || payload.agentKind === "background"
+        ? payload.agentKind
+        : classifyTaskAgentKind({ taskType, agentId });
+    classification = mergeTaskClassification(classification, {
+      agentKind,
+      ...(taskType !== undefined ? { taskType } : {}),
+      ...(agentId !== undefined ? { agentId } : {}),
+    });
+  }
+  return classification;
+}
+
 interface AssistantSegmentState {
   baseKey: string;
   nextSegmentIndex: number;
@@ -154,6 +227,8 @@ const BUFFERED_PROPOSED_PLAN_BY_ID_CACHE_CAPACITY = 10_000;
 const BUFFERED_PROPOSED_PLAN_BY_ID_TTL = Duration.minutes(120);
 const TASK_DESCRIPTION_BY_TASK_CACHE_CAPACITY = 10_000;
 const TASK_DESCRIPTION_BY_TASK_TTL = Duration.minutes(120);
+const TASK_CLASSIFICATION_BY_TASK_CACHE_CAPACITY = 10_000;
+const TASK_CLASSIFICATION_BY_TASK_TTL = Duration.minutes(120);
 const MAX_BUFFERED_ASSISTANT_CHARS = 24_000;
 const STRICT_PROVIDER_LIFECYCLE_GUARD = process.env.T3CODE_STRICT_PROVIDER_LIFECYCLE_GUARD !== "0";
 
@@ -373,21 +448,32 @@ function requestKindFromCanonicalRequestType(
 
 /**
  * Copies the optional TaskAgentLinkage bundle from a task.* runtime payload
- * into the persisted activity payload. Identity fields ride on every row so
- * client folds survive activity retention; absent fields stay absent.
+ * into the persisted activity payload. Known classification fields ride on
+ * every row so client folds survive activity retention; other absent fields
+ * stay absent.
  */
-function taskLinkageActivityFields(payload: Record<string, unknown>): Record<string, unknown> {
+function taskLinkageActivityFields(
+  payload: Record<string, unknown>,
+  classification?: TaskClassification,
+): Record<string, unknown> {
+  const resolvedClassification = classification ?? taskClassificationFromPayload(payload);
   const fields: Record<string, unknown> = {
     // Server-stamped classification: persisted rows are self-describing, so
     // clients trust the stamp instead of re-deriving agent-vs-background
     // from taskType denylists and marker heuristics (legacy rows without a
     // stamp keep the client fallback).
-    agentKind: classifyTaskAgentKind({
-      taskType: typeof payload.taskType === "string" ? payload.taskType : undefined,
-      agentId: typeof payload.agentId === "string" ? payload.agentId : undefined,
-    }),
+    agentKind: resolvedClassification.agentKind,
+    ...(resolvedClassification.taskType !== undefined
+      ? { taskType: resolvedClassification.taskType }
+      : {}),
+    ...(resolvedClassification.agentId !== undefined
+      ? { agentId: resolvedClassification.agentId }
+      : {}),
   };
   for (const key of TASK_ACTIVITY_FIELDS) {
+    if (key === "taskType" || key === "agentId") {
+      continue;
+    }
     if (payload[key] !== undefined) {
       fields[key] = payload[key];
     }
@@ -416,6 +502,7 @@ function approvalToolFields(args: unknown): Record<string, unknown> {
 export function runtimeEventToActivities(
   event: ProviderRuntimeEvent,
   taskTitle?: string,
+  taskClassification?: TaskClassification,
 ): ReadonlyArray<OrchestrationThreadActivity> {
   const maybeSequence = (() => {
     const eventWithSequence = event as ProviderRuntimeEvent & { sessionSequence?: number };
@@ -619,7 +706,10 @@ export function runtimeEventToActivities(
             ...(event.payload.description
               ? { detail: truncateDetail(event.payload.description) }
               : {}),
-            ...taskLinkageActivityFields(event.payload as Record<string, unknown>),
+            ...taskLinkageActivityFields(
+              event.payload as Record<string, unknown>,
+              taskClassification,
+            ),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,
@@ -628,7 +718,10 @@ export function runtimeEventToActivities(
     }
 
     case "task.progress": {
-      const linkage = taskLinkageActivityFields(event.payload as Record<string, unknown>);
+      const linkage = taskLinkageActivityFields(
+        event.payload as Record<string, unknown>,
+        taskClassification,
+      );
       // Usage and activity are independent latest-state streams. Keeping them
       // under separate stable ids prevents a command/reasoning update from
       // replacing the last known token count (and prevents a usage-only tick
@@ -727,7 +820,10 @@ export function runtimeEventToActivities(
             ...(event.payload.isBackgrounded !== undefined
               ? { isBackgrounded: event.payload.isBackgrounded }
               : {}),
-            ...taskLinkageActivityFields(event.payload as Record<string, unknown>),
+            ...taskLinkageActivityFields(
+              event.payload as Record<string, unknown>,
+              taskClassification,
+            ),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,
@@ -795,7 +891,10 @@ export function runtimeEventToActivities(
                 }
               : {}),
             ...(event.payload.usage !== undefined ? { usage: event.payload.usage } : {}),
-            ...taskLinkageActivityFields(event.payload as Record<string, unknown>),
+            ...taskLinkageActivityFields(
+              event.payload as Record<string, unknown>,
+              taskClassification,
+            ),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,
@@ -967,6 +1066,7 @@ const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const orchestrationEngine = yield* OrchestrationEngineService;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
+  const projectionThreadActivityRepository = yield* ProjectionThreadActivityRepository;
   const providerService = yield* ProviderService;
   const projectionTurnRepository = yield* ProjectionTurnRepository;
   const serverSettingsService = yield* ServerSettingsService;
@@ -1021,6 +1121,26 @@ const make = Effect.gen(function* () {
       Effect.map((description) =>
         Option.filter(description, (value) => value.length > 0).pipe(Option.getOrUndefined),
       ),
+    );
+
+  const taskClassificationByTaskKey = yield* Cache.make<string, TaskClassification>({
+    capacity: TASK_CLASSIFICATION_BY_TASK_CACHE_CAPACITY,
+    timeToLive: TASK_CLASSIFICATION_BY_TASK_TTL,
+    lookup: () =>
+      Effect.die(
+        new Error("task classification should be read through getOption before initialization"),
+      ),
+  });
+
+  const rememberTaskClassification = (
+    threadId: ThreadId,
+    taskId: string,
+    classification: TaskClassification,
+  ) => Cache.set(taskClassificationByTaskKey, providerTaskKey(threadId, taskId), classification);
+
+  const lookupTaskClassification = (threadId: ThreadId, taskId: string) =>
+    Cache.getOption(taskClassificationByTaskKey, providerTaskKey(threadId, taskId)).pipe(
+      Effect.map(Option.getOrUndefined),
     );
 
   const resolveThreadDetail = Effect.fn("resolveThreadDetail")(function* (threadId: ThreadId) {
@@ -1448,6 +1568,7 @@ const make = Effect.gen(function* () {
       const assistantSegmentKeys = Array.from(yield* Cache.keys(assistantSegmentStateByTurnKey));
       const proposedPlanKeys = Array.from(yield* Cache.keys(bufferedProposedPlanById));
       const taskDescriptionKeys = Array.from(yield* Cache.keys(taskDescriptionByTaskKey));
+      const taskClassificationKeys = Array.from(yield* Cache.keys(taskClassificationByTaskKey));
       yield* Effect.forEach(
         turnKeys,
         (key) =>
@@ -1487,6 +1608,12 @@ const make = Effect.gen(function* () {
         taskDescriptionKeys,
         (key) =>
           key.startsWith(prefix) ? Cache.invalidate(taskDescriptionByTaskKey, key) : Effect.void,
+        { concurrency: 1 },
+      ).pipe(Effect.asVoid);
+      yield* Effect.forEach(
+        taskClassificationKeys,
+        (key) =>
+          key.startsWith(prefix) ? Cache.invalidate(taskClassificationByTaskKey, key) : Effect.void,
         { concurrency: 1 },
       ).pipe(Effect.asVoid);
     });
@@ -1581,6 +1708,20 @@ const make = Effect.gen(function* () {
           loadedThreadDetail = (yield* resolveThreadDetail(thread.id)) ?? null;
           return loadedThreadDetail;
         });
+
+      let loadedTaskActivities: ReadonlyArray<ProjectionThreadActivity> | undefined;
+      const getLoadedTaskActivities = Effect.fn("getLoadedTaskActivities")(function* (
+        taskId: RuntimeTaskId,
+      ) {
+        if (loadedTaskActivities !== undefined) {
+          return loadedTaskActivities;
+        }
+        loadedTaskActivities = yield* projectionThreadActivityRepository.listTaskLifecycleByTaskId({
+          threadId: thread.id,
+          taskId,
+        });
+        return loadedTaskActivities;
+      });
 
       const now = event.createdAt;
       const eventTurnId = toTurnId(event.turnId);
@@ -2084,6 +2225,32 @@ const make = Effect.gen(function* () {
           yield* rememberTaskDescription(thread.id, event.payload.taskId, description);
         }
       }
+
+      let taskClassification: TaskClassification | undefined;
+      if (
+        event.type === "task.started" ||
+        event.type === "task.progress" ||
+        event.type === "task.updated" ||
+        event.type === "task.completed"
+      ) {
+        const incomingTaskClassification = taskClassificationFromPayload(
+          event.payload as Record<string, unknown>,
+        );
+        taskClassification = yield* lookupTaskClassification(thread.id, event.payload.taskId);
+        if (!taskClassification && event.type !== "task.started") {
+          const taskActivities = yield* getLoadedTaskActivities(event.payload.taskId);
+          taskClassification = findTaskClassificationInActivities(
+            taskActivities,
+            event.payload.taskId,
+          );
+        }
+        taskClassification = mergeTaskClassification(
+          taskClassification,
+          incomingTaskClassification,
+        );
+        yield* rememberTaskClassification(thread.id, event.payload.taskId, taskClassification);
+      }
+
       // Working-indicator plan progress: current step while the turn runs,
       // cleared on settle so a finished plan never lingers as stale UI.
       // Events carrying a turn id that conflicts with the active turn are
@@ -2115,9 +2282,9 @@ const make = Effect.gen(function* () {
           threadBackgroundLiveness.recordTaskLiveness({
             threadId: thread.id,
             taskId: payload.taskId,
-            taskType: payload.taskType,
+            taskType: taskClassification?.taskType ?? payload.taskType,
             status: payload.status,
-            agentId: payload.agentId,
+            agentId: taskClassification?.agentId ?? payload.agentId,
             kind:
               event.type === "task.started"
                 ? "started"
@@ -2141,11 +2308,8 @@ const make = Effect.gen(function* () {
       if (event.type === "task.completed") {
         taskTitle = yield* lookupTaskDescription(thread.id, event.payload.taskId);
         if (!taskTitle || event.payload.taskType === undefined) {
-          const threadDetail = yield* getLoadedThreadDetail();
-          const persistedTask = findTaskContextInActivities(
-            threadDetail?.activities,
-            event.payload.taskId,
-          );
+          const taskActivities = yield* getLoadedTaskActivities(event.payload.taskId);
+          const persistedTask = findTaskContextInActivities(taskActivities, event.payload.taskId);
           taskTitle ??= persistedTask?.title;
           taskLinkage = event.payload.taskType === undefined ? persistedTask?.linkage : undefined;
         }
@@ -2161,7 +2325,11 @@ const make = Effect.gen(function* () {
               },
             }
           : event;
-      const activities = runtimeEventToActivities(eventForActivities, taskTitle);
+      const activities = runtimeEventToActivities(
+        eventForActivities,
+        taskTitle,
+        taskClassification,
+      );
       yield* Effect.forEach(activities, (activity) =>
         providerCommandId(event, "thread-activity-append").pipe(
           Effect.flatMap((commandId) =>
@@ -2225,4 +2393,7 @@ const make = Effect.gen(function* () {
 export const ProviderRuntimeIngestionLive = Layer.effect(
   ProviderRuntimeIngestionService,
   make,
-).pipe(Layer.provide(ProjectionTurnRepositoryLive));
+).pipe(
+  Layer.provide(ProjectionTurnRepositoryLive),
+  Layer.provide(ProjectionThreadActivityRepositoryLive),
+);
