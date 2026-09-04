@@ -1,9 +1,11 @@
+// @effect-diagnostics nodeBuiltinImport:off - cleanup uses Node's retrying rm, which the FileSystem service does not expose.
 import * as ClaudeSdk from "@anthropic-ai/claude-agent-sdk";
 import { vi } from "vite-plus/test";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as TestClock from "effect/testing/TestClock";
 import { ClaudeSettings } from "@t3tools/contracts";
+import * as NodeFSP from "node:fs/promises";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -58,8 +60,25 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
       const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-probe-sdk-" });
       const executablePath = path.join(tempDir, "fake-claude.mjs");
       const invocationPath = path.join(tempDir, "invocation.json");
-      const workspaceCwd = path.join(tempDir, "workspace");
-      yield* fs.makeDirectory(workspaceCwd, { recursive: true });
+      // The probe aborts the SDK without awaiting the child's exit, and on
+      // Windows a directory that is still some process's cwd cannot be
+      // removed. Keep the workspace outside the scoped directory and let it
+      // go with a retrying removal once the child has gone.
+      const workspaceCwd = yield* fs.makeTempDirectory({ prefix: "t3-claude-probe-cwd-" });
+      // Node's own retry rather than an Effect schedule: it.effect runs on a
+      // TestClock, so a scheduled retry would wait for time nobody advances.
+      // If the child still holds the directory after that, an empty temp
+      // directory is left behind rather than failing the test for it.
+      yield* Effect.addFinalizer(() =>
+        Effect.promise(() =>
+          NodeFSP.rm(workspaceCwd, {
+            recursive: true,
+            force: true,
+            maxRetries: 20,
+            retryDelay: 250,
+          }).catch(() => undefined),
+        ),
+      );
 
       yield* fs.writeFileString(
         executablePath,
