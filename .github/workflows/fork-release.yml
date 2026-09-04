@@ -40,6 +40,9 @@ jobs:
     if: github.repository == 'incognitojam/t3code' || github.repository == 'incognitojam/styal'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
     outputs:
       ref: ${{ steps.candidate.outputs.ref }}
       version: ${{ steps.candidate.outputs.version }}
@@ -101,6 +104,27 @@ jobs:
             echo "tag=$tag"
             echo "release_name=$release_name"
           } >> "$GITHUB_OUTPUT"
+
+      # Fork Nightly only tags commits whose Fork CI run succeeded, so this
+      # holds for every tag it made. It guards against a hand-pushed tag.
+      - name: Require a green Fork CI run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REF: ${{ steps.candidate.outputs.ref }}
+          SOURCE_TAG: ${{ inputs.source_tag }}
+        run: |
+          set -euo pipefail
+
+          verdict=$(
+            gh run list --workflow fork-ci.yml --branch main --event push \
+              --commit "$SOURCE_REF" --limit 1 --json status,conclusion \
+              --jq '.[0] // empty | "\(.status) \(.conclusion)"'
+          )
+          if [[ "$verdict" != "completed success" ]]; then
+            echo "::error::$SOURCE_TAG is at $SOURCE_REF, whose Fork CI run is ${verdict:-missing}. Only a commit that passed Fork CI can be promoted."
+            exit 1
+          fi
 
   build_desktop:
     name: Build desktop artifacts
