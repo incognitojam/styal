@@ -328,8 +328,7 @@ jobs:
       # leaves the candidate behind main and fails the publish with a 403 no
       # permissions block can grant. Creating the tag here leaves the API
       # nothing to resolve.
-      - id: create_tag
-        name: Create nightly tag
+      - name: Create nightly tag
         if: inputs.dry_run != true
         shell: bash
         env:
@@ -353,7 +352,6 @@ jobs:
           fi
 
           git push origin "${FORK_SOURCE_REF}:refs/tags/${NEW_TAG}"
-          echo "pushed=true" >> "$GITHUB_OUTPUT"
 
       # target_commitish only for dry runs, which skip the tag above and would
       # otherwise leave a draft targeting whatever main has become. Sending it
@@ -390,11 +388,41 @@ jobs:
             -f make_latest=false \
             >/dev/null
 
+      # Delete only a tag at this run's commit with nothing published behind
+      # it. Cancellation can land after the release goes live but before this
+      # step evaluates, and a release with no tag is worse than a stray tag.
+      # Querying rather than trusting the tag step's output also covers a
+      # cancellation between its push and its output write.
       - name: Discard tag from unfinished publish
-        if: (failure() || cancelled()) && steps.create_tag.outputs.pushed == 'true'
+        if: (failure() || cancelled()) && inputs.dry_run != true
+        shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           NEW_TAG: ${{ needs.prepare.outputs.tag }}
-        run: git push origin --delete "refs/tags/${NEW_TAG}"
+          FORK_SOURCE_REF: ${{ needs.prepare.outputs.ref }}
+        run: |
+          set -euo pipefail
+
+          existing=$(
+            git ls-remote origin "refs/tags/${NEW_TAG}" "refs/tags/${NEW_TAG}^{}" | cut -f1
+          )
+          if [[ $'\n'"$existing"$'\n' != *$'\n'"$FORK_SOURCE_REF"$'\n'* ]]; then
+            echo "Tag ${NEW_TAG} is not at ${FORK_SOURCE_REF}; leaving it alone."
+            exit 0
+          fi
+
+          # Push access lists drafts too, so absence means no release at all.
+          # A transport error fails the step rather than risking the delete.
+          draft=$(
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              | jq -r --arg tag "$NEW_TAG" '.[] | select(.tag_name == $tag) | .draft'
+          )
+          if [[ "$draft" == "false" ]]; then
+            echo "Release ${NEW_TAG} is published; keeping its tag."
+            exit 0
+          fi
+
+          git push origin --delete "refs/tags/${NEW_TAG}"
 
       - name: Promote successful nightly source
         if: inputs.dry_run != true
