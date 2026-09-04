@@ -154,6 +154,9 @@ export function useThreadComposerState() {
         : [],
     [queuedMessagesByThreadKey, selectedThreadKey],
   );
+  const selectedThreadMessages = selectedThreadDetail?.messages;
+  const selectedThreadActivities = selectedThreadDetail?.activities;
+  const selectedThreadWorktreePath = selectedThreadDetail?.worktreePath ?? null;
   const selectedThreadFeed = useMemo(() => {
     const submissions = selectedThreadKey
       ? (feedbackSubmissionsByThreadKey[selectedThreadKey] ?? [])
@@ -163,7 +166,7 @@ export function useThreadComposerState() {
       : null;
     const localMessages = [
       ...(creationMessage !== null &&
-      !selectedThreadDetail?.messages.some((message) => message.id === creationMessage.id)
+      !selectedThreadMessages?.some((message) => message.id === creationMessage.id)
         ? [creationMessage]
         : []),
       ...submissions.flatMap((submission) =>
@@ -172,18 +175,26 @@ export function useThreadComposerState() {
           : [codexFeedbackMessage(submission), codexFeedbackMessage(submission, "assistant")],
       ),
     ];
-    const feed = selectedThreadDetail
-      ? buildThreadFeed(selectedThreadDetail, { localMessages })
-      : creationMessage !== null
-        ? [
+    const feed =
+      selectedThreadMessages && selectedThreadActivities
+        ? buildThreadFeed(
             {
-              type: "message" as const,
-              id: creationMessage.id,
-              createdAt: creationMessage.createdAt,
-              message: creationMessage,
+              messages: selectedThreadMessages,
+              activities: selectedThreadActivities,
+              worktreePath: selectedThreadWorktreePath,
             },
-          ]
-        : [];
+            { localMessages },
+          )
+        : creationMessage !== null
+          ? [
+              {
+                type: "message" as const,
+                id: creationMessage.id,
+                createdAt: creationMessage.createdAt,
+                message: creationMessage,
+              },
+            ]
+          : [];
 
     const pendingAcknowledgments = acknowledgedMessages.filter(
       (message) =>
@@ -196,14 +207,16 @@ export function useThreadComposerState() {
     );
   }, [
     feedbackSubmissionsByThreadKey,
-    selectedThreadDetail,
+    selectedThreadActivities,
     selectedThreadCreation,
     selectedThreadKey,
+    selectedThreadMessages,
     selectedThreadQueuedMessages,
+    selectedThreadWorktreePath,
     acknowledgedMessages,
   ]);
   useEffect(() => {
-    const echoedIds = new Set(selectedThreadDetail?.messages.map((message) => message.id));
+    const echoedIds = new Set(selectedThreadMessages?.map((message) => message.id));
     if (acknowledgedMessages.some((message) => echoedIds.has(message.messageId))) {
       appAtomRegistry.set(
         acknowledgedThreadMessagesAtom,
@@ -212,7 +225,7 @@ export function useThreadComposerState() {
           .filter((message) => !echoedIds.has(message.messageId)),
       );
     }
-  }, [acknowledgedMessages, selectedThreadDetail]);
+  }, [acknowledgedMessages, selectedThreadMessages]);
 
   const selectedDraft = selectedThreadKey ? composerDrafts[selectedThreadKey] : null;
   const draftMessage = selectedDraft?.text ?? "";
