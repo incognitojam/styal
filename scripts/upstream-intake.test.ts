@@ -67,6 +67,8 @@ describe("upstream intake audit", () => {
         "apps/web/src/AppRoot.tsx",
         "packages/contracts/src/auth.ts",
         "pnpm-lock.yaml",
+        "apps/server/scripts/publish.ts",
+        "packaging/aur/PKGBUILD",
         "scripts/release-smoke.ts",
       ],
     });

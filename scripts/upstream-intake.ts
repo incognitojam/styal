@@ -28,8 +28,15 @@ interface ManualReviewRule {
 const manualReviewRules: ReadonlyArray<ManualReviewRule> = [
   {
     description: "repository automation or maintainer policy changed",
-    matches: (path) =>
-      path === "AGENTS.md" || path.startsWith(".github/") || path.startsWith("scripts/"),
+    matches: (path) => {
+      const segments = path.split("/");
+      return (
+        path === "AGENTS.md" ||
+        path.startsWith(".github/") ||
+        path.startsWith("packaging/") ||
+        segments.includes("scripts")
+      );
+    },
   },
   {
     description: "dependency or build configuration changed",
