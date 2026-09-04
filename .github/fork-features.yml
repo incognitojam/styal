@@ -1779,7 +1779,7 @@ features:
     prs: [224]
     invariants:
       - Inactive threads awaiting approval or user input remain at full visual prominence because they require immediate attention.
-      - Working and Monitoring threads may recede as background activity without changing active, selected, unread, woke, ready, or failed presentation.
+      - Working and Monitoring threads recede as background activity unless active or selected, without changing ready or failed presentation.
     implementation_paths:
       - apps/web/src/components/Sidebar.logic.ts
       - apps/web/src/components/Sidebar.tsx
@@ -1789,8 +1789,9 @@ features:
     tests:
       - apps/web/src/components/Sidebar.logic.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/9759
       retire_when: Upstream distinguishes attention-required Approval and Input rows from dimmable Working and Monitoring background activity with equivalent precedence behavior.
 
   - id: source-control-fork-remotes

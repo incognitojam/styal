@@ -550,6 +550,20 @@ export type SidebarThreadStatus =
   | "failed"
   | "ready";
 
+export function shouldRecedeSidebarThread(input: {
+  status: SidebarThreadStatus;
+  isUnread: boolean;
+  isWoke: boolean;
+  isActive: boolean;
+  isSelected: boolean;
+}): boolean {
+  if (input.isActive || input.isSelected) return false;
+  if (input.status === "working" || input.status === "monitoring") return true;
+  // Approval and input need a human, so they keep full prominence.
+  if (input.status === "ready") return !input.isUnread && !input.isWoke;
+  return false;
+}
+
 type SidebarThreadStatusInput = Pick<
   SidebarThreadSummary,
   "hasPendingApprovals" | "hasPendingUserInput" | "session" | "backgroundLiveness"
@@ -591,12 +605,7 @@ export function resolveSidebarThreadVisualState(input: {
   const isBackgroundActivity = input.status === "working" || input.status === "monitoring";
 
   return {
-    shouldRecede:
-      (input.status === "ready" || isBackgroundActivity) &&
-      !input.isUnread &&
-      !input.isWoke &&
-      !input.isActive &&
-      !input.isSelected,
+    shouldRecede: shouldRecedeSidebarThread(input),
     shouldFade: isBackgroundActivity && !input.isActive && !input.isSelected,
   };
 }
