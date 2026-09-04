@@ -6,6 +6,8 @@ Use **Settings → Import data** on web or desktop to bring projects, threads, a
 
 Import runs on the server selected at the top of the page. That server checks its own default T3 Code data in `~/.t3/userdata`, so repeat the import for each server that has an older installation. styal recognizes both regular T3 Code data and T3 Code (yngatech) data in that location.
 
+T3 Code can stay open while you import. styal reads its database without modifying it and takes a consistent snapshot of the selected project history.
+
 ## Import projects and threads
 
 The project list separates projects that will transfer into styal from projects that are already there and have missing threads. Transfer rows show how many threads and scripts they include. A project can also appear when an earlier import needs its provider context restored. Select the projects you want, then choose **Import projects**.

@@ -501,7 +501,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         ...WINDOWS_SERVER_EXTRA_RESOURCES,
       ]);
       assert.deepStrictEqual(win.nsis, {
-        guid: "0122c0ea-801f-5352-a48e-ce98c31bc2d9",
+        guid: "0903b661-4e4a-53c0-8d0a-a5ba319f6601",
         include: "installer.nsh",
         differentialPackage: true,
       });
@@ -542,6 +542,22 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       }
       assert.deepStrictEqual(mac.electronLanguages, DESKTOP_ELECTRON_LANGUAGES);
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
+  );
+
+  it.effect("limits the Windows installer running-app check to styal", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const installerPath = yield* path.fromFileUrl(
+        new URL("../apps/desktop/resources/installer.nsh", import.meta.url),
+      );
+      const installerInclude = yield* fs.readFileString(installerPath);
+
+      assert.include(installerInclude, "!macro customCheckAppRunning");
+      assert.include(installerInclude, "StrCpy $IsPowerShellAvailable 1");
+      assert.include(installerInclude, "!insertmacro _CHECK_APP_RUNNING");
+      assert.include(installerInclude, "Uninstall\\0122c0ea-801f-5352-a48e-ce98c31bc2d9");
+    }),
   );
 
   it("excludes Windows terminal binaries only from macOS packages", () => {
