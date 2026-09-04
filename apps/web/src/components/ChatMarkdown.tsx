@@ -175,8 +175,10 @@ import {
   findProjectForChangeRequest,
   matchesLinkedPullRequestUrl,
   parseChangeRequestUrl,
+  pullRequestCandidateUrlFromReferenceAutolink,
   useOpenChangeRequestLink,
 } from "~/lib/openPullRequestLink";
+import { useOpenLink } from "../browser/useOpenLink";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { isPreviewSupportedInRuntime } from "../previewStateStore";
 import { isAbsolutePath, resolvePathLinkTarget } from "../terminal-links";
@@ -188,6 +190,7 @@ import {
   BrowserSettingsReadError,
 } from "../browser/openFileInPreview";
 import { resolveLinkTarget } from "../browser/browserLinkTarget";
+import { PullRequestLinkPreview } from "./pullRequest/PullRequestLinkPreview";
 
 interface ChatMarkdownProps {
   text: string;
@@ -2088,6 +2091,7 @@ function useChatMarkdownState({
   }, []);
   const surfaceThreadRef = use(GithubReferenceThreadContext);
   const openChangeRequestLink = useOpenChangeRequestLink(threadRef ?? surfaceThreadRef);
+  const openDeferredMarkdownLink = useOpenLink(threadRef);
   const linkTargetPreference = useClientSettings((settings) => settings.browserLinkTarget);
   const resolveThreadPullRequest = useCallback(
     (href: string): ThreadLinkedPullRequest | null => {
@@ -2353,6 +2357,7 @@ function useChatMarkdownState({
     () => ({
       cwd,
       diffThemeName,
+      environmentId,
       expandMedia,
       fileLinkChip,
       imageBaseDir,
@@ -2366,12 +2371,15 @@ function useChatMarkdownState({
       onTaskListChange,
       onUseArtifactTemplate,
       openChangeRequestLink,
+      openDeferredMarkdownLink,
       openExternalLinkInPreview,
       openLinkInIntegratedBrowser,
       openMarkdownMedia,
       openReference,
+      projects,
       resolveThreadPullRequest,
       resolvedTheme,
+      serverConfig,
       skills,
       text,
       threadRef,
@@ -2380,6 +2388,7 @@ function useChatMarkdownState({
     [
       cwd,
       diffThemeName,
+      environmentId,
       expandMedia,
       fileLinkChip,
       imageBaseDir,
@@ -2393,12 +2402,15 @@ function useChatMarkdownState({
       onTaskListChange,
       onUseArtifactTemplate,
       openChangeRequestLink,
+      openDeferredMarkdownLink,
       openExternalLinkInPreview,
       openLinkInIntegratedBrowser,
       openMarkdownMedia,
       openReference,
+      projects,
       resolveThreadPullRequest,
       resolvedTheme,
+      serverConfig,
       skills,
       text,
       threadRef,
@@ -2503,14 +2515,18 @@ const CHAT_MARKDOWN_COMPONENTS = {
   a: function MarkdownAnchor({ node, href, children, title: _title, ...props }) {
     const {
       cwd,
+      environmentId,
       imageBaseDir,
       markdownFileLinkMetaByHref,
       threadRef,
       openMarkdownMedia,
       openChangeRequestLink,
+      openDeferredMarkdownLink,
       linkTargetPreference,
       openExternalLinkInPreview,
+      projects,
       resolveThreadPullRequest,
+      serverConfig,
       updateThreadPullRequestLink,
       fileLinkChip,
       lookupReference,
@@ -2571,6 +2587,34 @@ const CHAT_MARKDOWN_COMPONENTS = {
             ? plainHastText(node)
             : undefined;
       const isPullRequestAutolink = pullRequestCopy !== undefined;
+      const confirmBeforeOpen = pullRequestAutolink === "reference";
+      const pullRequestCandidateUrl =
+        confirmBeforeOpen && href ? pullRequestCandidateUrlFromReferenceAutolink(href) : href;
+      const pullRequestCandidate = pullRequestCandidateUrl
+        ? parseChangeRequestUrl(pullRequestCandidateUrl)
+        : null;
+      const pullRequestProject =
+        environmentId !== null &&
+        serverConfig?.environment.capabilities.pullRequests === true &&
+        pullRequestCandidate !== null
+          ? findProjectForChangeRequest(
+              projects.filter((project) => project.environmentId === environmentId),
+              pullRequestCandidate,
+            )
+          : undefined;
+      const pullRequestPreviewTarget =
+        environmentId === null || pullRequestProject === undefined || pullRequestCandidate === null
+          ? null
+          : {
+              environmentId,
+              input: {
+                projectId: pullRequestProject.id,
+                repository:
+                  pullRequestProject.repositoryIdentity?.displayName ??
+                  pullRequestCandidate.repository,
+                number: pullRequestCandidate.number,
+              },
+            };
       const isSameDocumentLink = href?.startsWith("#") ?? false;
       const onClick = props.onClick;
       const canOpenInPreview = Boolean(threadRef) && isPreviewSupportedInRuntime();
@@ -2711,6 +2755,30 @@ const CHAT_MARKDOWN_COMPONENTS = {
       );
       if (!faviconHost || !href) {
         return link;
+      }
+      if (pullRequestPreviewTarget !== null) {
+        return (
+          <PullRequestLinkPreview
+            link={link}
+            originalUrl={href}
+            target={pullRequestPreviewTarget}
+            confirmBeforeOpen={confirmBeforeOpen}
+            onOpenPullRequest={(targetUrl) =>
+              openChangeRequestLink(
+                {
+                  metaKey: false,
+                  ctrlKey: false,
+                  preventDefault: () => undefined,
+                  stopPropagation: () => undefined,
+                },
+                targetUrl,
+                undefined,
+                environmentId ?? undefined,
+              )
+            }
+            onOpenFallback={openDeferredMarkdownLink}
+          />
+        );
       }
       return (
         <Tooltip>
