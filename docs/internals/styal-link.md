@@ -4,7 +4,7 @@
 
 styal Link is the fork's deployment of upstream's T3 Connect. The mechanics — Clerk JWT
 template, CLI OAuth flow, desktop redirect allowlist, passkeys, sign-up restrictions — are unchanged
-and documented in [t3-connect.md](./t3-connect.md). This page is the styal-specific configuration:
+and documented in [T3 Connect setup](../operations/connect-setup.md). This page is the styal-specific configuration:
 the values our deployment uses and where each one has to be set. It describes the intended
 configuration; when reality drifts from it, fix reality.
 
@@ -20,7 +20,7 @@ JWT template, and the `t3-code-relay` audience.
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | Hosted app origin       | `https://app.styal.build`                                                                                                                | `DEFAULT_HOSTED_APP_URL`, `packages/shared/src/connectAuth.ts` |
 | CLI OAuth redirect URIs | `http://127.0.0.1:34338/callback`, `https://app.styal.build/connect/callback`                                                            | `connectCallbackUrl(DEFAULT_HOSTED_APP_URL)`                   |
-| Desktop redirect URIs   | `styal-dev://app/` (dev), `styal://app/` (packaged)                                                                                      | `apps/desktop`, see t3-connect.md                              |
+| Desktop redirect URIs   | `styal-dev://app/` (dev), `styal://app/` (packaged)                                                                                      | `apps/desktop`, see connect-setup.md                           |
 | macOS bundle ID         | `build.styal.app`                                                                                                                        | `DESKTOP_APP_ID`, `scripts/build-desktop-artifact.ts`          |
 | Clerk application       | `styal` (`app_3IPih12l7JcyeHP2MlqFOESKdGN`)                                                                                              | Clerk Dashboard                                                |
 | Relay                   | `https://relay.styal.build`, deployed by `deploy-relay.yml` on push to main                                                              | `infra/relay/README.md`                                        |
@@ -47,16 +47,16 @@ mutation first.
    providers, and Clerk renders an empty sign-up card unless `email_address` is also _required_
    (Dashboard: User & authentication → Email). Enabled-but-optional looks configured and is not.
 2. **JWT template** named `t3-relay` with claims `{ "aud": "t3-code-relay" }`
-   ([t3-connect.md § JWT Template](./t3-connect.md#jwt-template)). Check with
+   ([connect-setup.md § JWT template](../operations/connect-setup.md#jwt-template)). Check with
    `clerk api /jwt_templates`.
 3. **CLI OAuth application** named `styal CLI`
-   ([t3-connect.md § Headless CLI OAuth Application](./t3-connect.md#headless-cli-oauth-application)):
+   ([connect-setup.md § CLI OAuth application](../operations/connect-setup.md#cli-oauth-application)):
    public client (PKCE), scopes `openid profile email`, and **both** redirect URIs from the table
    above. The hosted callback must equal `connectCallbackUrl(DEFAULT_HOSTED_APP_URL)` exactly or
    `styal link --headless` and SSH authorization fail. Its client ID is `CLERK_CLI_OAUTH_CLIENT_ID`.
    Check with `clerk api /oauth_applications`.
 4. **Native API** for desktop
-   ([t3-connect.md § Desktop OAuth Redirect Allowlist](./t3-connect.md#desktop-oauth-redirect-allowlist)):
+   ([connect-setup.md § Desktop OAuth redirects](../operations/connect-setup.md#desktop-oauth-redirects)):
    enabled, with `styal-dev://app/` allowlisted on dev and `styal://app/` on prod, and the instance's
    `allowed_origins` set to the same scheme:
 
@@ -66,7 +66,7 @@ mutation first.
    ```
 
 5. **Passkeys** (production only,
-   [t3-connect.md § Desktop Passkeys](./t3-connect.md#desktop-passkeys)): an iOS app entry in Clerk's
+   [connect-setup.md § Desktop passkeys](../operations/connect-setup.md#desktop-passkeys)): an iOS app entry in Clerk's
    Native API with our Apple Team ID and `build.styal.app`, and the AASA served from the production
    Frontend API. The RP domain derives from the production publishable key, so the
    `CLERK_PASSKEY_RP_DOMAINS` repository variable is only set when Clerk reports a different RP ID.
