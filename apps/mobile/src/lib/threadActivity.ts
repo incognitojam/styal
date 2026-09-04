@@ -231,6 +231,15 @@ export type ThreadFeedLatestTurn = Pick<
   "turnId" | "state" | "startedAt" | "completedAt"
 >;
 
+export function isContextCompactionActivityGroup(
+  entry: Extract<ThreadFeedEntry, { readonly type: "activity-group" }>,
+): boolean {
+  return (
+    entry.activities.length === 1 &&
+    entry.activities[0]?.workEntry.sourceActivityKind === "context-compaction"
+  );
+}
+
 function requestKindFromRequestType(requestType: unknown): PendingApproval["requestKind"] | null {
   switch (requestType) {
     case "command_execution_approval":
@@ -1468,6 +1477,18 @@ function groupAdjacentActivities(entries: ReadonlyArray<RawThreadFeedEntry>): Th
       continue;
     }
 
+    if (entry.activity.workEntry.sourceActivityKind === "context-compaction") {
+      grouped.push({
+        type: "activity-group",
+        id: entry.id,
+        createdAt: entry.createdAt,
+        turnId: entry.turnId,
+        activities: [entry.activity],
+      });
+      openGroupActivities = null;
+      continue;
+    }
+
     if (openGroupActivities !== null && openGroupTurnId === entry.turnId) {
       openGroupActivities.push(entry.activity);
       continue;
@@ -1545,6 +1566,9 @@ function deriveThreadFeedTurnFolds(
   for (const entry of feed) {
     if (entry.type === "message" && entry.message.role === "user") {
       pendingUserBoundary = entry.message.createdAt;
+      continue;
+    }
+    if (entry.type === "activity-group" && isContextCompactionActivityGroup(entry)) {
       continue;
     }
     const turnId =
@@ -1703,6 +1727,10 @@ function appendPresentedFeedEntry(
   activeTail: boolean,
 ): void {
   if (entry.type !== "activity-group") {
+    result.push(entry);
+    return;
+  }
+  if (isContextCompactionActivityGroup(entry)) {
     result.push(entry);
     return;
   }

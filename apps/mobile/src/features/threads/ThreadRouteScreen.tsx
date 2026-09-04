@@ -836,6 +836,7 @@ function ThreadRouteContent(
               : composer.activeWorkStartedAt
           }
           creationState={creationState}
+          isCompacting={composer.isCompacting}
           activePendingApproval={requests.activePendingApproval}
           respondingApprovalId={requests.respondingApprovalId}
           activePendingUserInput={requests.activePendingUserInput}
