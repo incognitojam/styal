@@ -42,6 +42,10 @@ export interface ForkFeatureOverlap {
   readonly paths: ReadonlyArray<string>;
 }
 
+export interface ForkFeatureLedgerValidationOptions {
+  readonly isFile?: (path: string) => boolean;
+}
+
 export const ledgerRelativePath = ".github/fork-features.yml";
 const ledgerSchema = fromYaml(ForkFeatureLedger);
 
@@ -68,6 +72,7 @@ function validatePath(
   featureId: string,
   field: string,
   path: string,
+  options: ForkFeatureLedgerValidationOptions,
 ): string | null {
   const segments = path.split("/");
   if (
@@ -83,7 +88,10 @@ function validatePath(
   if (relativePath.startsWith("..") || NodePath.isAbsolute(relativePath)) {
     return `${featureId}.${field} escapes the repository: ${path}`;
   }
-  if (!NodeFS.existsSync(absolutePath) || !NodeFS.statSync(absolutePath).isFile()) {
+  const isFile =
+    options.isFile?.(path) ??
+    (NodeFS.existsSync(absolutePath) && NodeFS.statSync(absolutePath).isFile());
+  if (!isFile) {
     return `${featureId}.${field} does not name an existing file: ${path}`;
   }
   return null;
@@ -96,6 +104,7 @@ export function decodeForkFeatureLedger(contents: string): ForkFeatureLedger {
 export function validateForkFeatureLedger(
   ledger: ForkFeatureLedger,
   repoRoot: string,
+  options: ForkFeatureLedgerValidationOptions = {},
 ): ReadonlyArray<string> {
   const errors: Array<string> = [];
   const ids = ledger.features.map((feature) => feature.id);
@@ -139,15 +148,15 @@ export function validateForkFeatureLedger(
     }
 
     for (const path of feature.tests) {
-      const error = validatePath(repoRoot, feature.id, "tests", path);
+      const error = validatePath(repoRoot, feature.id, "tests", path, options);
       if (error !== null) errors.push(error);
     }
     for (const path of feature.implementation_paths) {
-      const error = validatePath(repoRoot, feature.id, "implementation_paths", path);
+      const error = validatePath(repoRoot, feature.id, "implementation_paths", path, options);
       if (error !== null) errors.push(error);
     }
     for (const path of feature.upstream_paths) {
-      const error = validatePath(repoRoot, feature.id, "upstream_paths", path);
+      const error = validatePath(repoRoot, feature.id, "upstream_paths", path, options);
       if (error !== null) errors.push(error);
     }
 

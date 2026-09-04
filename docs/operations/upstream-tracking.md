@@ -1,8 +1,8 @@
 # Upstream tracking
 
 `main` is not synced with `pingdotgg/t3code`. Upstream changes are brought in deliberately, one or
-more at a time, as ordinary pull requests. The `Upstream tracking` workflow keeps the list of
-candidates current; deciding what to take, and dispatching the work, stays with a maintainer.
+more at a time. The `Upstream tracking` workflow keeps the list of candidates current; deciding what
+to take, and dispatching the work, stays with a maintainer.
 
 ## The tracking issue
 
@@ -19,12 +19,33 @@ Nothing the workflow writes links to upstream or mentions anyone: numbers and ti
 backticks and no URLs are rendered. Keep that property when annotating, so the issue never creates
 cross-references or notifications on upstream's side.
 
-## Bringing a change in
+## Preparing an intake candidate
 
 Tick the boxes you want and add direction beneath each — what to keep of the fork's behaviour, which
 related changes to take together, or why to skip. Then dispatch an agent with the ticked items and
-those notes as its brief. The resulting pull request should name the upstream numbers it carries in
-backticks. Fork CI reports when the resulting pull request touches paths watched by the fork feature
-ledger, regardless of whether the upstream work was merged, cherry-picked, squashed, or ported by
-hand. The reviewer must also inspect upstream source changes that the resulting diff intentionally
-leaves out. Upstream migration files may only change in such a pull request, carried verbatim.
+those notes as its brief.
+
+Routine candidates use an `intake/<batch>` branch based on the current `main`. Preserve the individual
+upstream commits and their authors where they apply cleanly; a port may use fork-authored commits when
+the implementation must differ. Do not merge `main` into the branch. If `main` moves, rebase the
+candidate and validate it again before promotion.
+
+Pushing an intake branch runs the same Fork CI jobs as a pull request, comparing the complete
+`main...candidate` diff rather than only the latest push. `Fork Intake Audit` also verifies that the
+branch can fast-forward from `main`, rejects merge commits, reports exact fork feature ledger overlap,
+and conservatively identifies changes that need a maintainer decision. Automation and scripts,
+dependencies, migrations, contracts, authentication, user-facing clients, and ledger overlap all
+require manual review. A candidate outside those categories is reported as eligible for eventual
+automatic promotion.
+
+The audit is currently report-only: it never writes to `main`. Until the dedicated intake App,
+independent model review, protected approval environment, and split rulesets are configured, finish a
+candidate through an ordinary fork pull request. Name any routine upstream pull requests or issues it
+carries in backticks. The reviewer must also inspect upstream source changes that the resulting diff
+intentionally leaves out. Upstream migration files may only change in a reviewed intake, carried
+verbatim.
+
+The promotion workflow must execute its audit and ledger helpers from the trusted `main` checkout,
+never from the candidate branch. It must treat the candidate as data, require CI and independent
+review for the exact candidate SHA, recheck fast-forward ancestry immediately before updating the
+ref, and refuse to force-push.

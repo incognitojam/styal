@@ -105,6 +105,34 @@ features: []
     assert.include(errors, `${feature.id}.upstream.tracking must cite evidence`);
   });
 
+  it("can validate evidence paths against a trusted revision instead of the working tree", () => {
+    const ledger = loadForkFeatureLedger(repoRoot);
+    const feature = ledger.features[0]!;
+    const missingPath = "apps/web/src/deleted-watched-file.ts";
+    const changed = {
+      ...ledger,
+      features: ledger.features.map((candidate) =>
+        candidate.id === feature.id
+          ? { ...candidate, implementation_paths: [missingPath] }
+          : candidate,
+      ),
+    } satisfies ForkFeatureLedger;
+
+    assert.include(
+      validateForkFeatureLedger(changed, repoRoot).join("\n"),
+      `${feature.id}.implementation_paths does not name an existing file: ${missingPath}`,
+    );
+    assert.notInclude(
+      validateForkFeatureLedger(changed, repoRoot, {
+        isFile: (path) =>
+          path === missingPath ||
+          (NodeFS.existsSync(NodePath.resolve(repoRoot, path)) &&
+            NodeFS.statSync(NodePath.resolve(repoRoot, path)).isFile()),
+      }).join("\n"),
+      `${feature.id}.implementation_paths does not name an existing file`,
+    );
+  });
+
   it("maps changed upstream paths to the capabilities needing review", () => {
     const ledger = loadForkFeatureLedger(repoRoot);
 
