@@ -30,8 +30,6 @@ jobs:
     name: Prepare and verify candidate
     if: github.repository == 'incognitojam/t3code' || github.repository == 'incognitojam/styal'
     runs-on: ubuntu-24.04
-    # Leaves room to wait out one in-flight Fork CI run (about 25 minutes)
-    # before the schema upgrade test.
     timeout-minutes: 50
     permissions:
       actions: read
@@ -53,13 +51,8 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      # Fork CI verifies every push to main, so the nightly consumes its
-      # verdict instead of repeating it. Main can be briefly red: required
-      # checks run against each PR's own base, so two PRs that were each green
-      # can squash-merge into a broken tip. The candidate is therefore the
-      # newest first-parent commit whose Fork CI run succeeded, not bare HEAD.
-      # A run still in flight is waited for, since it belongs to a newer
-      # commit than any green one below it.
+      # Picks the newest commit on main that passed Fork CI, waiting for any
+      # run still in flight.
       - id: candidate
         name: Resolve candidate
         shell: bash
