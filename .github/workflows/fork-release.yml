@@ -148,6 +148,9 @@ jobs:
             printf 'These artifacts are a rebuild of the same commit with a stable version, so they carry the stable update channel.\n'
           } > release-notes.md
 
+      # A stranded tag is worse here than on the nightly: prepare refuses to
+      # promote onto an existing tag, so a rerun cannot clear it.
+      #
       # Promotion tags a commit that already soaked as a nightly, so it is
       # always behind main. The release API will not create a tag from a
       # GITHUB_TOKEN when the commit's .github/workflows differ from the default
@@ -195,8 +198,8 @@ jobs:
           fail_on_unmatched_files: true
           token: ${{ github.token }}
 
-      - name: Discard tag from failed publish
-        if: failure() && steps.create_tag.outputs.pushed == 'true'
+      - name: Discard tag from unfinished publish
+        if: (failure() || cancelled()) && steps.create_tag.outputs.pushed == 'true'
         env:
           NEW_TAG: ${{ needs.prepare.outputs.tag }}
         run: git push origin --delete "refs/tags/${NEW_TAG}"

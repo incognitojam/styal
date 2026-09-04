@@ -355,13 +355,16 @@ jobs:
           git push origin "${FORK_SOURCE_REF}:refs/tags/${NEW_TAG}"
           echo "pushed=true" >> "$GITHUB_OUTPUT"
 
-      # No target_commitish: the tag above already fixes the commit, and a dry
-      # run leaves an unpublished draft, which never creates a tag at all.
+      # target_commitish only for dry runs, which skip the tag above and would
+      # otherwise leave a draft targeting whatever main has become. Sending it
+      # on a real run re-arms the 403, because the API resolves it whether or
+      # not the tag it names already exists. Empty reads as unset.
       - id: draft_release
         name: Upload draft prerelease
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
+          target_commitish: ${{ inputs.dry_run == true && needs.prepare.outputs.ref || '' }}
           name: ${{ needs.prepare.outputs.release_name }}
           body_path: release-notes.md
           draft: true
@@ -387,8 +390,8 @@ jobs:
             -f make_latest=false \
             >/dev/null
 
-      - name: Discard tag from failed publish
-        if: failure() && steps.create_tag.outputs.pushed == 'true'
+      - name: Discard tag from unfinished publish
+        if: (failure() || cancelled()) && steps.create_tag.outputs.pushed == 'true'
         env:
           NEW_TAG: ${{ needs.prepare.outputs.tag }}
         run: git push origin --delete "refs/tags/${NEW_TAG}"
