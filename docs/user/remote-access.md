@@ -2,6 +2,33 @@
 
 Use this when you want to connect to a styal server from another device such as a phone, tablet, or separate desktop app.
 
+## styal Link troubleshooting
+
+Run `styal link` on the server machine to authorize it and optionally install the background service.
+The authorization message means your sign-in was saved. The server must then start and establish its
+relay link before the machine is reachable.
+
+`styal link status` reports saved authorization and link configuration, not a live reachability
+check. If the machine appears offline, run `styal service status` on it and read the displayed log.
+On Linux, a service that works while SSH is open but stops after logout usually has lingering
+disabled. See [background service troubleshooting](./background-service.md#troubleshooting).
+
+Relay errors include the returned reason and trace ID when available:
+
+| Error                                                            | Next step                                                                                                                                                                   |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `environment_link_limit_exceeded` / managed tunnel limit reached | Unlink an unused environment in styal Link, then restart styal on this machine.                                                                                             |
+| `auth_invalid` / `invalid_bearer`                                | Run `styal link login`. If the stored credential was revoked, run `styal link logout`, then `styal link` and restart the server.                                            |
+| Expired or invalid link proof                                    | Check the server's date and time, update styal, and restart it. Include the reason and trace ID if it still fails.                                                          |
+| HTTP 403 without a recognized error response                     | Check relay access and any proxy or firewall restrictions. Include the Cloudflare Ray ID if one was returned; an HTTP status alone does not identify the cause.             |
+| HTTP 408, 429, or 5xx                                            | The server retries temporary failures during startup for up to ten minutes. Check network and relay availability; include the trace ID when reporting a persistent failure. |
+
+Authorization and other permanent 4xx rejections stop the startup link attempt immediately.
+After correcting them, restart the server. For the Linux background service, use
+`systemctl --user restart styal.service`; for a foreground server, stop it and run `styal serve` again.
+Keep the diagnostic message and trace ID when reporting a problem. Do not post authorization codes,
+pairing URLs, or the contents of the secrets directory.
+
 ## Quick Pairing for a Running Server
 
 If a server is already running on this machine, mint a fresh pairing token and QR code without restarting anything:
