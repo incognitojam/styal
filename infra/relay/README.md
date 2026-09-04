@@ -130,12 +130,6 @@ The repository must define these Actions variables shared by relay deployments:
 - `CLOUDFLARE_ACCOUNT_ID`
 - `AXIOM_ORG_ID`
 
-The repository must define these Actions secrets shared by relay deployments:
-
-- `CLOUDFLARE_API_TOKEN`
-- `NEON_API_KEY`
-- `AXIOM_TOKEN`
-
 The `production` GitHub environment must define these Actions variables:
 
 - `RELAY_API_ZONE_NAME`
@@ -149,14 +143,19 @@ The `production` GitHub environment must define these Actions variables:
 
 The `production` GitHub environment must define these Actions secrets:
 
+- `CLOUDFLARE_API_TOKEN`
+- `NEON_API_KEY`
+- `AXIOM_TOKEN`
 - `CLERK_SECRET_KEY`
 - `APNS_PRIVATE_KEY` only when enabling mobile push, alongside the `APNS_*` variables above
 
-The account-scoped repository credentials are consumed by Alchemy while provisioning relay stages; they
-are not bound into the relay Worker. The production deployment uses an Axiom personal access token,
-so `AXIOM_ORG_ID` must accompany `AXIOM_TOKEN`. The release workflow reads the production relay's
-derived public URL and Clerk publishable key from the same environment for downstream desktop, CLI,
-and hosted web builds.
+The account-scoped deployment credentials are consumed by Alchemy while provisioning relay stages;
+they are not bound into the relay Worker. `AXIOM_TOKEN` must be an advanced API token with the
+organization- and dataset-level permissions documented in
+[Relay Observability](../../docs/operations/relay-observability.md#deployment-token-permissions), and
+`AXIOM_ORG_ID` must accompany it. The release workflow reads the production relay's derived public
+URL and Clerk publishable key from the same environment for downstream desktop, CLI, and hosted web
+builds.
 
 See:
 

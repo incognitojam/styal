@@ -107,7 +107,7 @@ app (`deploy-web.yml`) needs `CLOUDFLARE_ACCOUNT_ID`, `STYAL_WEB_DOMAIN`, and th
 The four sensitive secrets — `CLOUDFLARE_API_TOKEN`, `CLERK_SECRET_KEY`, `NEON_API_KEY`,
 `AXIOM_TOKEN` — live **only** in the `production` GitHub environment, which is restricted to
 deployments from `main`. No PR or fork workflow can read them; repository-level secrets hold only
-Apple-signing and release plumbing. Two of them have non-obvious shape requirements:
+Apple-signing and release plumbing. Three of them have non-obvious shape requirements:
 
 - `CLOUDFLARE_API_TOKEN` must be the superuser token minted by
   `./infra/relay/node_modules/.bin/alchemy cloudflare create-token --all-permissions`. The relay
@@ -117,6 +117,9 @@ Apple-signing and release plumbing. Two of them have non-obvious shape requireme
 - `NEON_API_KEY` must be an **organization** API key. Alchemy adopts the existing project by
   searching the projects list; a project-scoped key cannot list, so adoption misses and the
   deploy falls through to a (refused) create.
+- `AXIOM_TOKEN` must be an **advanced API token**, accompanied by `AXIOM_ORG_ID`. Its exact
+  organization- and dataset-level permissions are documented in
+  [Relay Observability](../operations/relay-observability.md#deployment-token-permissions).
 
 Fork workflows run on GitHub-hosted runners. Blacksmith `runs-on` labels survive in inherited
 upstream workflows the fork does not run; Blacksmith is not installed for this account, so a job
