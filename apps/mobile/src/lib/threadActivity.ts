@@ -1203,6 +1203,11 @@ function unwrapCommandRemainder(value: string, wrapperFlagPattern: RegExp): stri
     return null;
   }
 
+  const openingQuote = command[0];
+  if ((openingQuote === "'" || openingQuote === '"') && !command.endsWith(openingQuote)) {
+    return null;
+  }
+
   const unwrapped = trimMatchingOuterQuotes(command);
   return unwrapped.length > 0 ? unwrapped : null;
 }
