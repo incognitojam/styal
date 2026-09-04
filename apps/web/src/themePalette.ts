@@ -1827,6 +1827,96 @@ export function getThemeColorVariable(role: ThemeColorRole): string {
   return APP_THEME_VARIABLES[role];
 }
 
+/**
+ * Derived rather than authored: no palette carries this role, and asking every
+ * built-in, generated, and imported theme to hand-pick one would just move the
+ * judgement call somewhere it cannot be checked.
+ */
+const UPDATE_PROMINENT_VARIABLE = "--app-theme-update-prominent";
+
+/**
+ * How far the accent must out-read the muted text sitting beside it. Emphasis
+ * is relative: a marker only reads as "louder" against its actual neighbours,
+ * not against an absolute contrast number.
+ */
+const UPDATE_PROMINENT_MARGIN = 1.35;
+
+/**
+ * The theme's update hue, lifted until it out-reads the muted text it shares a
+ * row with. Palettes that mute with a dim gray (most of them, including the
+ * default) already clear the bar and keep their accent exactly as authored.
+ * A palette that mutes with a bright tint of its own hue — T3 Chat's pink text
+ * on a pink canvas — leaves an accent-colored marker at the same weight as its
+ * neighbours, and since hue cannot separate them there, lightness must.
+ */
+/**
+ * What the eye actually receives. Theme roles may carry alpha, and measuring a
+ * translucent color as if it were opaque overstates it badly — a 20%-alpha red
+ * scores as full red while rendering barely above its backdrop.
+ */
+function compositeOverCanvas(color: ParsedThemeColor, canvasRgb: ThemeRgbColor): ThemeRgbColor {
+  const rgb = themeOklchToRgb(color.color);
+  if (color.alpha >= 1) return rgb;
+  const blend = (channel: number, backdrop: number) =>
+    channel * color.alpha + backdrop * (1 - color.alpha);
+  return {
+    r: blend(rgb.r, canvasRgb.r),
+    g: blend(rgb.g, canvasRgb.g),
+    b: blend(rgb.b, canvasRgb.b),
+  };
+}
+
+function prominentUpdateColor(colors: ThemeColors): string | null {
+  const hue = parseThemeColor(colors.updateForeground);
+  const canvas = parseThemeColor(colors.canvas);
+  const muted = parseThemeColor(colors.mutedForeground);
+  if (!hue || !canvas || !muted) return null;
+
+  const canvasRgb = themeOklchToRgb(canvas.color);
+  const mutedContrast = themeContrastRatio(compositeOverCanvas(muted, canvasRgb), canvasRgb);
+  const target = Math.max(mutedContrast * UPDATE_PROMINENT_MARGIN, 4.5);
+  const hueRgb = compositeOverCanvas(hue, canvasRgb);
+  if (themeContrastRatio(hueRgb, canvasRgb) >= target) {
+    return formatOklchThemeColor(hue.color, hue.alpha);
+  }
+
+  // Solve from the composited color and emit it opaque: it renders as the same
+  // pixels the theme already produces, and a translucent marker cannot hold a
+  // contrast guarantee once something other than the canvas sits behind it.
+  const base = themeRgbToOklch(hueRgb);
+  // Which way to move depends on the canvas, and the midpoint of luminance is
+  // not the midpoint of contrast — mid-grays reach far more contrast going dark
+  // than going light. Solve both ways and keep whichever actually gets further;
+  // chroma rides along untouched, so the lift reads as the same color turned up
+  // rather than as a different one.
+  const candidates = (["lighter", "darker"] as const).map((direction) =>
+    solveOklchLightness(base, canvasRgb, target, direction),
+  );
+  const best = candidates.reduce((winner, candidate) =>
+    themeContrastRatio(themeOklchToRgb(candidate), canvasRgb) >
+    themeContrastRatio(themeOklchToRgb(winner), canvasRgb)
+      ? candidate
+      : winner,
+  );
+  return formatOklchThemeColor(best);
+}
+
+/**
+ * `preserveOnFailure` keeps a half-typed color in the theme editor from
+ * blanking the marker, matching how the preview holds the last good value for
+ * every other role. A real theme switch clears instead, so the previous
+ * theme's derived color cannot outlive it.
+ */
+function applyProminentUpdateColor(
+  root: HTMLElement,
+  colors: ThemeColors,
+  preserveOnFailure = false,
+): void {
+  const prominent = prominentUpdateColor(colors);
+  if (prominent) root.style.setProperty(UPDATE_PROMINENT_VARIABLE, prominent);
+  else if (!preserveOnFailure) root.style.removeProperty(UPDATE_PROMINENT_VARIABLE);
+}
+
 /** Marks the document as wearing an unsaved draft rather than a stored theme. */
 export const THEME_PREVIEW_ID = "__preview";
 
@@ -1849,6 +1939,7 @@ export function applyThemeColorPreview(colors: ThemeColors, appearance: ThemeApp
     // A half-typed hex keeps the last good value instead of blanking the role.
     if (isThemeColor(value)) root.style.setProperty(APP_THEME_VARIABLES[role], value);
   }
+  applyProminentUpdateColor(root, colors, true);
 }
 
 export function applyThemePalette(theme: ThemePreference, appearance?: ThemeAppearance): void {
@@ -1867,6 +1958,7 @@ export function applyThemePalette(theme: ThemePreference, appearance?: ThemeAppe
     for (const [role, value] of Object.entries(colors) as Array<[ThemeColorRole, string]>) {
       root.style.setProperty(APP_THEME_VARIABLES[role], value);
     }
+    applyProminentUpdateColor(root, colors);
     return;
   }
 
@@ -1874,6 +1966,7 @@ export function applyThemePalette(theme: ThemePreference, appearance?: ThemeAppe
   for (const variable of Object.values(APP_THEME_VARIABLES)) {
     root.style.removeProperty(variable);
   }
+  root.style.removeProperty(UPDATE_PROMINENT_VARIABLE);
 }
 
 export function resolveThemeAppearance(
