@@ -83,15 +83,52 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/8235
+        - https://github.com/pingdotgg/t3code/pull/8236
+        - https://github.com/pingdotgg/t3code/pull/8237
       retire_when: Upstream completes generic persisted file attachments across web and mobile clients with equivalent admission limits, rendering, draft persistence, and backward compatibility.
+
+  - id: claude-model-manifest-policy
+    title: Source Claude models from the styal manifest
+    status: maintained
+    prs: [285]
+    invariants:
+      - Claude's complete built-in catalog comes from a validated manifest bundled for offline startup and refreshed from the styal fork, with invalid fetches preserving the last valid cache or bundle.
+      - Provider-owned schemas and installed Claude Code versions filter manifest data before clients receive model aliases, presentation metadata, effort mappings, and context-window capabilities.
+      - The fork can publish model availability independently of an app release without treating Claude's initialization response as an account-entitlement list.
+    implementation_paths:
+      - apps/server/src/provider/ClaudeModelCatalog.ts
+      - apps/server/src/provider/ClaudeModelManifest.ts
+      - apps/server/src/provider/ModelManifest.ts
+      - apps/server/src/provider/model-manifest.json
+      - apps/web/src/providerModels.ts
+      - packages/shared/src/model.ts
+    upstream_paths:
+      - apps/server/src/provider/ClaudeModelCatalog.ts
+      - apps/server/src/provider/ClaudeModelManifest.ts
+      - apps/server/src/provider/ModelManifest.ts
+      - apps/server/src/provider/model-manifest.json
+      - apps/web/src/providerModels.ts
+      - packages/shared/src/model.ts
+    tests:
+      - apps/server/src/provider/ClaudeModelCatalog.test.ts
+      - apps/server/src/provider/ModelManifest.test.ts
+      - apps/web/src/providerModels.test.ts
+      - packages/shared/src/model.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/9078
+        - https://github.com/pingdotgg/t3code/pull/9084
+      retire_when: Upstream supports a downstream-owned manifest source and publication policy, or the fork adopts upstream's catalog unchanged.
 
   - id: completion-sounds
     title: Configurable agent completion sounds
     status: maintained
-    prs: [5, 7, 19, 72]
+    prs: [5, 7, 19, 72, 249, 250]
     invariants:
       - Users can select, preview, and disable the sound played when an agent finishes or awaits input.
       - Sound playback follows persisted client settings without firing repeatedly for the same turn state.
+      - Resolve is the fork's default completion sound, legacy Chime preferences migrate to it, and every offered sound uses a comparable playback level.
     implementation_paths:
       - apps/web/src/components/TurnCompletionSound.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
@@ -115,7 +152,7 @@ features:
   - id: composer-draft-sync
     title: Cross-device composer draft synchronization
     status: maintained
-    prs: [23, 39, 44, 195]
+    prs: [23, 39, 44, 69, 195]
     invariants:
       - Existing-thread draft text and attachments survive restarts and synchronize without overwriting newer local edits.
       - The web and mobile source implementations use the same server-backed draft contract and fork-owned migration history; desktop inherits the web implementation.
@@ -144,6 +181,39 @@ features:
       status: unassessed
       tracking: []
       retire_when: Upstream synchronizes equivalent composer draft state across clients and safely migrates installations carrying the fork schema.
+
+  - id: data-import-from-t3-code
+    title: Import projects and history from T3 Code
+    status: maintained
+    prs: [294, 297, 298, 300]
+    invariants:
+      - A selected styal environment can preview and import projects, missing threads, attachments, provider continuations, and supported server preferences from a live T3 Code database without modifying the source.
+      - Existing styal project configuration wins while each imported thread and its verified attachments commit atomically, so interrupted or repeated imports resume without duplication.
+      - Credentials, connections, provider sign-ins, active sessions, and client-local preferences remain isolated, while affected earlier imports can restore provider context only after their loaded sessions stop.
+    implementation_paths:
+      - apps/server/src/dataImport/LegacyImport.ts
+      - apps/server/src/dataImport/LegacyImportPreferences.ts
+      - apps/server/src/dataImport/LegacyImportPreview.ts
+      - apps/web/src/components/settings/DataImportSettings.tsx
+      - apps/web/src/state/dataImport.ts
+      - packages/contracts/src/dataImport.ts
+    upstream_paths:
+      - apps/server/src/assets/AssetAccess.ts
+      - apps/server/src/orchestration/Layers/OrchestrationEngine.ts
+      - apps/server/src/ws.ts
+      - apps/web/src/components/settings/SettingsSidebarNav.tsx
+      - apps/web/src/components/settings/settingsSearch.ts
+      - packages/contracts/src/index.ts
+      - packages/contracts/src/rpc.ts
+    tests:
+      - apps/server/src/dataImport/LegacyImport.test.ts
+      - apps/server/src/dataImport/LegacyImportPreview.test.ts
+      - apps/web/src/components/settings/DataImportSettings.logic.test.ts
+      - apps/web/src/state/dataImport.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: The fork no longer supports migration from T3 Code installations or replaces this importer with an equivalent safe cross-distribution transfer path.
 
   - id: desktop-background-updates
     title: Download desktop updates in the background
@@ -203,6 +273,52 @@ features:
         - https://github.com/pingdotgg/t3code/pull/6562
       retire_when: Upstream performs the same ordered, bounded, and observable graceful shutdown before destroying windows and terminating the backend.
 
+  - id: diff-file-review-order
+    title: Order diff files by review relevance
+    status: maintained
+    prs: [274, 275, 296]
+    invariants:
+      - Turn, working-tree, branch, and pull request diffs order source dependencies first, their tests next, and repository-attributed or recognized generated output last across web, desktop, and mobile review surfaces.
+      - Test and generated tiers remain visible, generated files start collapsed, and explicit reader fold choices take precedence over automatic classification.
+      - One persisted web preference switches the diff panel and pull request Code tab between relevance and alphabetical order, while chat previews use the same shared ranking to choose representative files.
+    implementation_paths:
+      - .gitattributes
+      - apps/mobile/src/features/review/reviewFileVisibility.ts
+      - apps/mobile/src/features/review/reviewModel.ts
+      - apps/server/src/checkpointing/CheckpointDiffQuery.ts
+      - apps/server/src/vcs/GitVcsDriverCore.ts
+      - apps/web/src/components/DiffPanel.tsx
+      - apps/web/src/components/chat/changedFilesPresentation.ts
+      - apps/web/src/components/diffs/DiffFileTierChip.tsx
+      - apps/web/src/components/pullRequest/pullRequestDiff.logic.ts
+      - apps/web/src/diffPanelStore.ts
+      - packages/shared/src/diffFileOrder.ts
+      - packages/shared/src/generatedFiles.ts
+    upstream_paths:
+      - .gitattributes
+      - apps/mobile/src/features/review/reviewModel.ts
+      - apps/server/src/checkpointing/CheckpointDiffQuery.ts
+      - apps/server/src/vcs/GitVcsDriverCore.ts
+      - apps/web/src/components/DiffPanel.tsx
+      - apps/web/src/components/pullRequest/PullRequestCodeTab.tsx
+      - apps/web/src/components/pullRequest/pullRequestDiff.logic.ts
+      - packages/contracts/src/orchestration.ts
+      - packages/contracts/src/pullRequest.ts
+    tests:
+      - apps/mobile/src/features/review/reviewFileVisibility.test.ts
+      - apps/mobile/src/features/review/reviewModel.test.ts
+      - apps/server/src/checkpointing/CheckpointDiffQuery.test.ts
+      - apps/server/src/vcs/GitVcsDriverCore.test.ts
+      - apps/web/src/components/chat/changedFilesPresentation.test.ts
+      - apps/web/src/components/pullRequest/pullRequestDiff.logic.test.ts
+      - apps/web/src/diffPanelStore.test.ts
+      - packages/shared/src/diffFileOrder.test.ts
+      - packages/shared/src/generatedFiles.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream applies equivalent shared relevance ordering, repository generated-file attributes, tier presentation, and persisted ordering controls across every review surface.
+
   - id: editable-diff-comments
     title: Edit anchored diff comments in place
     status: maintained
@@ -249,11 +365,12 @@ features:
       status: tracking
       tracking:
         - https://github.com/pingdotgg/t3code/pull/6662
+        - https://github.com/pingdotgg/t3code/pull/9124
       retire_when: Upstream makes first completion unread when navigation happens before thread creation settles without marking historical threads unread or leaving stale state after failed creation.
 
   - id: focused-panel-tab-close
     title: Close the focused panel tab with Mod+W
-    status: maintained
+    status: review-needed
     prs: [192, 233]
     invariants:
       - Mod+W closes the focused terminal, browser, or diff panel tab without closing unrelated application content.
@@ -278,9 +395,55 @@ features:
       - apps/web/src/rightPanelStore.test.ts
       - packages/contracts/src/keybindings.test.ts
     upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/9363
+      retire_when: Upstream closes focused panel tabs with the platform Mod+W shortcut, preserves focus ownership across panel menus and launchers, and keeps remaining tabs in place after a close.
+
+  - id: fork-agent-integration-identity
+    title: Identify styal to agents and MCP clients
+    status: maintained
+    prs: [284, 301]
+    invariants:
+      - Fresh provider sessions advertise the product-native MCP integration as `styal`, persist that choice for recovery, and identify styal as the harness in generated agent instructions and disclosures.
+      - Successfully resumed pre-rename provider histories continue using `t3-code` without registering a second MCP namespace, while missing legacy histories restart cleanly under `styal`.
+      - Provider ingestion and shared client presentation recognize both namespaces so historical tool calls remain readable across web and mobile.
+    implementation_paths:
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/server/src/mcp/McpHttpServer.ts
+      - apps/server/src/mcp/McpProviderSession.ts
+      - apps/server/src/provider/CodexDeveloperInstructions.ts
+      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/server/src/provider/Layers/CodexAdapter.ts
+      - apps/server/src/provider/Layers/CodexSessionRuntime.ts
+      - apps/server/src/provider/Layers/CursorAdapter.ts
+      - apps/server/src/provider/Layers/GrokAdapter.ts
+      - apps/server/src/provider/Layers/OpenCodeAdapter.ts
+      - apps/server/src/provider/Layers/ProviderService.ts
+      - packages/shared/src/toolRowPresentation.ts
+    upstream_paths:
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/server/src/mcp/McpHttpServer.ts
+      - apps/server/src/mcp/McpProviderSession.ts
+      - apps/server/src/provider/CodexDeveloperInstructions.ts
+      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/server/src/provider/Layers/CodexAdapter.ts
+      - apps/server/src/provider/Layers/CodexSessionRuntime.ts
+      - apps/server/src/provider/Layers/CursorAdapter.ts
+      - apps/server/src/provider/Layers/GrokAdapter.ts
+      - apps/server/src/provider/Layers/OpenCodeAdapter.ts
+      - apps/server/src/provider/Layers/ProviderService.ts
+    tests:
+      - apps/mobile/src/lib/threadActivity.test.ts
+      - apps/server/src/mcp/McpProviderSession.test.ts
+      - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
+      - apps/server/src/provider/Layers/CodexSessionRuntime.test.ts
+      - apps/server/src/provider/Layers/OpenCodeAdapter.test.ts
+      - packages/shared/src/toolRowPresentation.test.ts
+    upstream:
       status: unassessed
       tracking: []
-      retire_when: Upstream closes focused panel tabs with the platform Mod+W shortcut, preserves focus ownership across panel menus and launchers, and keeps remaining tabs in place after a close.
+      retire_when: The fork stops exposing a separately named agent integration or no longer needs compatibility with provider histories created under the pre-rename namespace.
 
   - id: fork-analytics-identity
     title: Identify fork builds in analytics
@@ -302,14 +465,14 @@ features:
       retire_when: Upstream provides a first-class distribution identity that includes the producing repository on every analytics event.
 
   - id: fork-distribution-identity
-    title: Keep fork desktop builds distinctly identifiable
+    title: Keep fork builds distinctly identifiable
     status: maintained
-    prs: [3, 27, 29, 49, 56, 235, 242, 243, 244]
+    prs: [3, 27, 29, 49, 56, 235, 242, 243, 244, 245, 281, 287, 302]
     invariants:
       - Packaged builds ship as styal with their own application identifier, URL scheme, product name, and About-panel identity instead of presenting as upstream T3 Code.
       - Electron's application name is a stable identity slug rather than a display string, so OS credential storage keys stay in the same namespace as the user-data directory they protect.
       - styal owns its base directory, user-data directory, and URL scheme, so it installs and runs alongside upstream T3 Code without sharing state.
-      - Windows fork packages install under their own package directory without colliding with upstream, while Alpha and Nightly builds remain visibly distinguishable.
+      - Windows fork packages use styal-specific package and uninstall identities, never block on a running T3 Code process, and remain visibly distinguishable across Alpha and Nightly builds.
       - Canonical brand asset paths and icon geometry stay shared across desktop, mobile configuration, web packaging, and export tooling so production and nightly artwork cannot silently diverge.
     implementation_paths:
       - apps/desktop/package.json
@@ -333,11 +496,9 @@ features:
       - apps/web/src/branding.logic.ts
       - apps/web/src/branding.ts
       - apps/web/src/components/settings/SettingsPanels.tsx
-      - packages/shared/src/brandAssets.ts
       - scripts/build-desktop-artifact.ts
       - scripts/export-brand-icons.ts
       - scripts/lib/brand-assets.ts
-      - scripts/lib/macos-icon-safe-area.ts
     tests:
       - apps/desktop/src/app/DesktopAppIdentity.test.ts
       - apps/desktop/src/app/DesktopAssets.test.ts
@@ -350,10 +511,95 @@ features:
       tracking: []
       retire_when: The fork stops shipping separately branded desktop builds or adopts reusable downstream distribution machinery that makes these overrides unnecessary.
 
+  - id: fork-managed-link
+    title: Operate styal Link independently
+    status: maintained
+    prs: [264, 265, 266, 269]
+    invariants:
+      - User-facing cloud connection surfaces target the styal-hosted app, relay, native schemes, and Clerk application while protocol-level T3 Connect identifiers remain compatible with upstream clients and servers.
+      - Hosted, release, preview, and mobile builds use one coherent production public configuration, while an incomplete or absent local configuration disables Link without breaking local connections.
+      - The relay uses the fork's independently deployed database and permits installations without APNs, and managed tunnel hosts remain outside the product origin's registrable domain.
+    implementation_paths:
+      - .github/workflows/deploy-relay.yml
+      - .github/workflows/deploy-web.yml
+      - .github/workflows/desktop-macos-preview.yml
+      - .github/workflows/fork-desktop-build.yml
+      - .github/workflows/release.yml
+      - apps/mobile/src/connection/platform.ts
+      - apps/server/src/cloud/publicConfig.ts
+      - apps/web/src/cloud/linkEnvironment.ts
+      - infra/relay/src/Config.ts
+      - infra/relay/src/dbConfig.ts
+      - infra/web/alchemy.run.ts
+      - packages/client-runtime/src/relay/managedRelayState.ts
+      - packages/shared/src/connectAuth.ts
+    upstream_paths:
+      - .github/workflows/deploy-relay.yml
+      - .github/workflows/desktop-macos-preview.yml
+      - .github/workflows/release.yml
+      - apps/mobile/src/connection/platform.ts
+      - apps/server/src/cloud/publicConfig.ts
+      - apps/web/src/cloud/linkEnvironment.ts
+      - infra/relay/src/Config.ts
+      - infra/relay/src/dbConfig.ts
+      - packages/client-runtime/src/relay/managedRelayState.ts
+      - packages/shared/src/connectAuth.ts
+    tests:
+      - apps/mobile/src/features/cloud/publicConfig.test.ts
+      - apps/server/src/cloud/publicConfig.test.ts
+      - apps/web/src/cloud/linkEnvironment.test.ts
+      - infra/relay/src/Config.test.ts
+      - infra/relay/src/dbConfig.test.ts
+      - packages/client-runtime/src/relay/managedRelayState.test.ts
+      - packages/shared/src/connectAuth.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: The fork stops operating styal Link or upstream makes the hosted identity, relay storage, build configuration, and downstream deployment boundary fully configurable.
+
+  - id: fork-runtime-storage-isolation
+    title: Keep styal runtime storage separate from T3 Code
+    status: maintained
+    prs: [287, 292]
+    invariants:
+      - Desktop, mobile, web, SSH, and server persistence use styal-owned directories, native identifiers, storage keys, cookies, partitions, and databases so styal and T3 Code can run in parallel without reading or overwriting each other's state.
+      - The server defaults to a styal home and accepts the legacy home variable only for an already-installed styal service, never as a general fallback into T3 Code state.
+      - Only the styal-owned hosted origin performs the bounded one-time cleanup of abandoned pre-rename browser data; localhost, desktop, and arbitrary self-hosted origins remain untouched.
+    implementation_paths:
+      - apps/desktop/src/app/DesktopConfig.ts
+      - apps/desktop/src/app/DesktopEarlyElectronStartup.ts
+      - apps/mobile/app.config.ts
+      - apps/mobile/src/persistence/mobile-storage.ts
+      - apps/server/src/cli/config.ts
+      - apps/server/src/serviceLauncher.ts
+      - apps/web/src/clientPersistenceStorage.ts
+      - apps/web/src/hostedStorageCleanup.ts
+    upstream_paths:
+      - apps/desktop/src/app/DesktopConfig.ts
+      - apps/desktop/src/app/DesktopEarlyElectronStartup.ts
+      - apps/mobile/app.config.ts
+      - apps/mobile/src/persistence/mobile-storage.ts
+      - apps/server/src/cli/config.ts
+      - apps/server/src/serviceLauncher.ts
+      - apps/web/src/clientPersistenceStorage.ts
+      - apps/web/src/hooks/useLocalStorage.ts
+    tests:
+      - apps/desktop/src/app/DesktopEarlyElectronStartup.test.ts
+      - apps/mobile/src/appIdentity.test.ts
+      - apps/mobile/src/lib/storage.test.ts
+      - apps/server/src/cli/config.test.ts
+      - apps/server/src/serviceLauncher.test.ts
+      - apps/web/src/clientPersistenceStorage.test.ts
+      - apps/web/src/hostedStorageCleanup.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: The fork stops shipping as a separately installable application or adopts a shared downstream-namespacing mechanism that preserves the same isolation and hosted-origin cleanup boundary.
+
   - id: github-outage-status
     title: Provider outage status in the sidebar
     status: maintained
-    prs: [14, 136, 180, 183, 196, 200, 212]
+    prs: [14, 136, 180, 183, 196, 200, 212, 277, 280]
     invariants:
       - Enabled clients distinguish GitHub, Claude, and OpenAI incidents from missing or malformed status responses.
       - Sidebar notices are scoped to relevant projects or providers and remain readable without blocking ordinary work.
@@ -410,7 +656,7 @@ features:
 
   - id: github-reference-links
     title: Resolve GitHub references across chat and pull requests
-    status: maintained
+    status: review-needed
     prs: [31, 134]
     invariants:
       - GitHub issue, pull request, commit, and repository references resolve against the project remote and become navigable links in chat and pull request Markdown.
@@ -432,14 +678,15 @@ features:
       - apps/web/src/components/chat/githubReferenceLinks.test.ts
       - apps/web/src/markdown-github-references.test.tsx
     upstream:
-      status: unassessed
-      tracking: []
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/8812
       retire_when: Upstream resolves equivalent environment-scoped GitHub references in chat and pull request Markdown with the same navigation behavior.
 
   - id: inspectable-tool-activity
     title: Keep tool activity concise and inspectable
     status: maintained
-    prs: [4, 11, 36, 58, 60, 66, 117, 158, 168, 190, 204, 230, 238]
+    prs: [4, 11, 36, 58, 60, 66, 117, 139, 158, 168, 190, 204, 230, 238, 278, 282, 301]
     invariants:
       - Web and mobile name supported tool calls by their action with a concise useful argument, while agent panels and approval rows use the same vocabulary instead of raw provider names or serialized input.
       - Clarifying-question calls name what was asked and expand into those questions with their options, rather than restating the provider's serialized input.
@@ -616,6 +863,35 @@ features:
         - https://github.com/pingdotgg/t3code/pull/7445
       retire_when: Upstream preserves equivalent responsive device metrics, logical capture coordinates, DevTools fallback behavior, and surface ownership across panel visibility changes.
 
+  - id: project-action-icons
+    title: Give project actions role-specific icons
+    status: maintained
+    prs: [282]
+    invariants:
+      - Project actions can select desktop, database, and deployment roles in addition to the upstream icon set through the validated project-file contract.
+      - Web and mobile use the same role vocabulary in action menus and completed action activity instead of falling back to generic or platform-inconsistent symbols.
+    implementation_paths:
+      - apps/mobile/src/components/AppSymbol.tsx
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/projectScriptEditor.tsx
+      - packages/contracts/src/t3ProjectFile.ts
+    upstream_paths:
+      - apps/mobile/src/components/AppSymbol.tsx
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/projectScriptEditor.tsx
+      - packages/contracts/src/t3ProjectFile.ts
+    tests:
+      - apps/mobile/src/features/terminal/terminalMenu.test.ts
+      - apps/mobile/src/lib/threadActivity.test.ts
+      - apps/web/src/components/chat/MessagesTimeline.test.tsx
+      - packages/contracts/src/t3ProjectFile.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream supports the same project-action roles and consistent icon presentation across web and mobile.
+
   - id: project-agent-instructions
     title: Apply project instructions to every agent session
     status: maintained
@@ -692,7 +968,7 @@ features:
 
   - id: provider-subscription-limits
     title: Show provider subscription usage limits
-    status: maintained
+    status: review-needed
     prs: [225]
     invariants:
       - Provider-reported subscription windows are normalized into generic named limits, retain sparse or cached values safely, and disappear when expired, disabled, or associated with a different account.
@@ -731,9 +1007,46 @@ features:
       - apps/web/src/components/settings/providerStatus.test.ts
       - apps/web/src/lib/providerRateLimits.test.ts
     upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/9507
+      retire_when: Upstream normalizes and surfaces generic provider subscription limits with equivalent refresh, cache, account-lifecycle, expiry, and unsupported-provider behavior.
+
+  - id: provider-task-identity-recovery
+    title: Recover background task identity after provider restarts
+    status: maintained
+    prs: [291]
+    invariants:
+      - A delayed task completion after a provider restart or session exit recovers its missing title, task type, ownership, and tool linkage from persisted lifecycle activity before the server classifies it.
+      - Fields supplied by the current provider event take precedence over recovered values, and an ordinary background shell cannot be mislabeled as a completed subagent merely because its transient registry was cleared.
+    implementation_paths:
+      - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
+    upstream_paths:
+      - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
+    tests:
+      - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts
+    upstream:
       status: unassessed
       tracking: []
-      retire_when: Upstream normalizes and surfaces generic provider subscription limits with equivalent refresh, cache, account-lifecycle, expiry, and unsupported-provider behavior.
+      retire_when: Upstream durably recovers missing task identity before classifying delayed lifecycle events after provider restarts.
+
+  - id: provider-working-state-recovery
+    title: Recover truthful Claude working state after compaction
+    status: maintained
+    prs: [290]
+    invariants:
+      - A cleared Claude transient status keeps an active turn running but returns an idle session to ready after manual context compaction completes.
+      - Requesting and compacting states retain their existing presentation, and a delayed provider status cannot leave a completed thread falsely Working.
+    implementation_paths:
+      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+    upstream_paths:
+      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+    tests:
+      - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream maps cleared Claude statuses through the active-turn lifecycle with equivalent post-compaction recovery.
 
   - id: pull-request-association-continuity
     title: Keep worktrees associated with the correct pull request
@@ -786,10 +1099,10 @@ features:
   - id: pull-request-description-images
     title: Render repository images in pull request descriptions
     status: maintained
-    prs: [103]
+    prs: [103, 288]
     invariants:
-      - Repository-relative, GitHub blob, and GitHub raw image references resolve against the pull request head and render through a bounded short-lived same-origin asset URL.
-      - Private repository images use the environment's authorized GitHub CLI, while external and unsupported image URLs continue through the ordinary Markdown path.
+      - Repository-relative image references resolve against the pull request head, while qualified GitHub blob and raw references can resolve against their named revision or asset branch through a bounded short-lived same-origin asset URL.
+      - Private repository and raw HTML images use the environment's authorized GitHub CLI, while external, public, ambiguous, and unsupported image URLs retain their ordinary browser fallback.
     implementation_paths:
       - apps/server/src/assets/AssetAccess.ts
       - apps/server/src/pullRequest/GitHubPullRequestCli.ts
@@ -816,7 +1129,7 @@ features:
 
   - id: pull-request-diff-expansion
     title: Open reviewable pull request diffs by default
-    status: maintained
+    status: review-needed
     prs: [105]
     invariants:
       - Ordinary pull request files open expanded, while individually oversized files start folded so one generated or lock file cannot dominate the review scroll.
@@ -830,8 +1143,9 @@ features:
     tests:
       - apps/web/src/components/pullRequest/pullRequestDiff.logic.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/9174
       retire_when: Upstream provides equivalent review-oriented default expansion with oversized-file protection and stable explicit choices across annotations and pagination.
 
   - id: pull-request-draft-status
@@ -1000,7 +1314,7 @@ features:
   - id: same-turn-follow-up-lifecycle
     title: Keep follow-up turn lifecycle state truthful
     status: maintained
-    prs: [65, 106, 206]
+    prs: [65, 106, 149, 206]
     invariants:
       - A queued replacement turn keeps the thread active across provider completion without briefly presenting completed work.
       - A follow-up absorbed into the active provider turn is adopted and cleared so the session settles instead of remaining falsely stuck on Working.
@@ -1131,10 +1445,10 @@ features:
   - id: stable-workspace-ports
     title: Assign stable development ports per workspace
     status: maintained
-    prs: [100]
+    prs: [100, 299]
     invariants:
       - Each normalized workspace receives a persistent non-overlapping range of ten development ports that is reused across server restarts and threads sharing that workspace.
-      - The first port is exposed as `T3CODE_WORKSPACE_PORT` to terminal children, project scripts, and fresh or resumed Codex, Claude, Cursor, Grok, and OpenCode sessions.
+      - The first port is exposed canonically as `STYAL_WORKSPACE_PORT` to terminal children, project scripts, and fresh or resumed Codex, Claude, Cursor, Grok, and OpenCode sessions, with a one-way `T3CODE_WORKSPACE_PORT` compatibility alias for existing scripts.
       - The repository dev runner uses the workspace base port for the server and the next port for Vite while preserving explicit port, offset, instance, and development URL overrides.
     implementation_paths:
       - apps/server/src/persistence/ForkMigrations/002_WorkspacePortAllocations.ts
