@@ -1671,6 +1671,7 @@ const makeWsRpcLayer = (
                 liveStream.pipe(
                   Stream.runForEach((event) => liveBuffer.offer({ kind: "event", event })),
                 ),
+                { startImmediately: true },
               );
               const bufferedLiveStream = liveBuffer.stream.pipe(
                 Stream.mapArrayEffect(projectThreadLiveInputs),
