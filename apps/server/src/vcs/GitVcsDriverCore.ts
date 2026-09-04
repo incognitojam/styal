@@ -80,6 +80,7 @@ const DEFAULT_BASE_BRANCH_CANDIDATES = ["main", "master"] as const;
 const GIT_LIST_BRANCHES_DEFAULT_LIMIT = 100;
 const NON_REPOSITORY_STATUS_DETAILS = Object.freeze<GitVcsDriver.GitStatusDetails>({
   isRepo: false,
+  hasHeadCommit: false,
   hasOriginRemote: false,
   isDefaultBranch: false,
   branch: null,
@@ -1699,6 +1700,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const statusStdout = statusResult.stdout;
 
     let refName: string | null = null;
+    // Only `(initial)` proves an unborn HEAD. Anything else, including a
+    // missing header, is treated as committed so an unreadable status never
+    // blocks worktree creation on its own; the server guard is the backstop.
+    let hasHeadCommit = true;
     let upstreamRef: string | null = null;
     let aheadCount = 0;
     let behindCount = 0;
@@ -1707,6 +1712,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const changedFilesWithoutNumstat = new Set<string>();
 
     for (const line of statusStdout.split(/\r?\n/g)) {
+      if (line.startsWith("# branch.oid ")) {
+        hasHeadCommit = line.slice("# branch.oid ".length).trim() !== "(initial)";
+        continue;
+      }
       if (line.startsWith("# branch.head ")) {
         const value = line.slice("# branch.head ".length).trim();
         refName = value.startsWith("(") ? null : value;
@@ -1776,6 +1785,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
     return {
       isRepo: true,
+      hasHeadCommit,
       hasOriginRemote: hasPrimaryRemote,
       isDefaultBranch,
       branch: refName,
@@ -1830,6 +1840,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     statusDetails(input.cwd).pipe(
       Effect.map((details) => ({
         isRepo: details.isRepo,
+        hasHeadCommit: details.hasHeadCommit,
         hasPrimaryRemote: details.hasOriginRemote,
         isDefaultRef: details.isDefaultBranch,
         refName: details.branch,

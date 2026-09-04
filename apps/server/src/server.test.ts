@@ -8001,6 +8001,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               fetchRemote,
               resolveRemoteTrackingCommit,
               createWorktree,
+              resolveCommit: () =>
+                Effect.succeed({ commitSha: "1111111111111111111111111111111111111111" }),
             },
             vcsStatusBroadcaster: {
               refreshStatus,
@@ -8139,6 +8141,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               fetchRemote,
               resolveRemoteTrackingCommit,
               createWorktree,
+              resolveCommit: () =>
+                Effect.succeed({ commitSha: "1111111111111111111111111111111111111111" }),
             },
             orchestrationEngine: {
               dispatch: (command) =>
@@ -8239,6 +8243,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         layers: {
           gitVcsDriver: {
             createWorktree,
+            resolveCommit: () =>
+              Effect.succeed({ commitSha: "1111111111111111111111111111111111111111" }),
           },
           orchestrationEngine: {
             dispatch: (command) =>
@@ -8312,6 +8318,112 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("refuses a bootstrap worktree when the base ref has no commit behind it", () =>
+    Effect.gen(function* () {
+      const dispatchedCommands: Array<OrchestrationCommand> = [];
+      const createWorktree = vi.fn(
+        (_: Parameters<GitVcsDriver.GitVcsDriver["Service"]["createWorktree"]>[0]) =>
+          Effect.succeed({
+            worktree: {
+              refName: "t3code/bootstrap-refName",
+              path: "/tmp/bootstrap-worktree",
+            },
+          }),
+      );
+
+      yield* buildAppUnderTest({
+        layers: {
+          gitVcsDriver: {
+            createWorktree,
+            // An unborn HEAD: git names the branch it would create, but no
+            // commit exists for a worktree to be cut from.
+            resolveCommit: (input) =>
+              Effect.fail(
+                new GitCommandError({
+                  operation: "GitVcsDriver.resolveCommit",
+                  command: "git",
+                  cwd: input.cwd,
+                  detail: "fatal: Needed a single revision",
+                }),
+              ),
+            statusDetailsLocal: () =>
+              Effect.succeed({
+                isRepo: true,
+                hasHeadCommit: false,
+                hasOriginRemote: false,
+                isDefaultBranch: true,
+                branch: "main",
+                upstreamRef: null,
+                hasWorkingTreeChanges: true,
+                workingTree: { files: [], insertions: 0, deletions: 0 },
+                hasUpstream: false,
+                aheadCount: 0,
+                behindCount: 0,
+                aheadOfDefaultCount: 0,
+              }),
+          },
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.sync(() => {
+                dispatchedCommands.push(command);
+                return { sequence: dispatchedCommands.length };
+              }),
+            readEvents: () => Stream.empty,
+          },
+        },
+      });
+
+      const createdAt = "2026-01-01T00:00:00.000Z";
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const error = yield* Effect.flip(
+        Effect.scoped(
+          withWsRpcClient(wsUrl, (client) =>
+            client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+              type: "thread.turn.start",
+              commandId: CommandId.make("cmd-bootstrap-unborn"),
+              threadId: ThreadId.make("thread-bootstrap-unborn"),
+              message: {
+                messageId: MessageId.make("msg-bootstrap-unborn"),
+                role: "user",
+                text: "hello",
+                attachments: [],
+              },
+              modelSelection: defaultModelSelection,
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              bootstrap: {
+                createThread: {
+                  projectId: defaultProjectId,
+                  title: "Bootstrap Thread",
+                  modelSelection: defaultModelSelection,
+                  runtimeMode: "full-access",
+                  interactionMode: "default",
+                  branch: "main",
+                  worktreePath: null,
+                  createdAt,
+                },
+                prepareWorktree: {
+                  projectCwd: "/tmp/project",
+                  baseBranch: "main",
+                  branch: "t3code/bootstrap-refName",
+                },
+                runSetupScript: true,
+              },
+              createdAt,
+            }),
+          ),
+        ),
+      );
+
+      assertInclude(String(error), "no commits yet");
+      assert.equal(createWorktree.mock.calls.length, 0);
+      // The half-created thread is rolled back rather than left pointing at a
+      // worktree that was never made.
+      assertTrue(dispatchedCommands.some((command) => command.type === "thread.delete"));
+      assertTrue(dispatchedCommands.every((command) => command.type !== "thread.turn.start"));
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("does not duplicate runner-owned setup activities in bootstrap", () =>
     Effect.gen(function* () {
       const dispatchedCommands: Array<OrchestrationCommand> = [];
@@ -8343,6 +8455,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         layers: {
           gitVcsDriver: {
             createWorktree,
+            resolveCommit: () =>
+              Effect.succeed({ commitSha: "1111111111111111111111111111111111111111" }),
           },
           orchestrationEngine: {
             dispatch: (command) =>
@@ -8429,6 +8543,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         layers: {
           gitVcsDriver: {
             createWorktree,
+            resolveCommit: () =>
+              Effect.succeed({ commitSha: "1111111111111111111111111111111111111111" }),
           },
           orchestrationEngine: {
             dispatch: (command) =>
@@ -8533,6 +8649,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         layers: {
           gitVcsDriver: {
             createWorktree,
+            resolveCommit: () =>
+              Effect.succeed({ commitSha: "1111111111111111111111111111111111111111" }),
           },
           orchestrationEngine: {
             dispatch: (command) => {

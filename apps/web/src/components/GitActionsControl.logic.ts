@@ -203,7 +203,14 @@ export function resolveQuickAction(
 
   if (hasChanges) {
     if (!gitStatus.hasUpstream && !hasPrimaryRemote) {
-      return { label: "Commit", disabled: false, kind: "run_action", action: "commit" };
+      // Naming the first commit matters: it is what unblocks worktree mode and
+      // every branch action in a repository that has none yet.
+      return {
+        label: gitStatus.hasHeadCommit === false ? "Create first commit" : "Commit",
+        disabled: false,
+        kind: "run_action",
+        action: "commit",
+      };
     }
     if (hasOpenPr || isDefaultRef) {
       return { label: "Commit & push", disabled: false, kind: "run_action", action: "commit_push" };

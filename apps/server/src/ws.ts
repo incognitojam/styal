@@ -1030,6 +1030,31 @@ const makeWsRpcLayer = (
                 });
                 worktreeBaseRef = resolvedRemoteBase.commitSha;
               }
+              // A repository with no commits still reports a branch name, so
+              // clients ask for a worktree off a ref that does not exist yet.
+              // Resolvability is the predicate, not unbornness: "start from
+              // origin" above passes a remote commit sha, which is valid even
+              // while the local HEAD is unborn.
+              const baseRefResolves = yield* gitWorkflow
+                .resolveCommit({
+                  cwd: bootstrap.prepareWorktree.projectCwd,
+                  revision: worktreeBaseRef,
+                })
+                .pipe(
+                  Effect.as(true),
+                  Effect.orElseSucceed(() => false),
+                );
+              if (!baseRefResolves) {
+                const projectStatus = yield* gitWorkflow
+                  .localStatus({ cwd: bootstrap.prepareWorktree.projectCwd })
+                  .pipe(Effect.catchCause(() => Effect.succeed(null)));
+                return yield* new OrchestrationDispatchCommandError({
+                  message:
+                    projectStatus?.hasHeadCommit === false
+                      ? "This repository has no commits yet, so there is nothing for a worktree to branch from. Make a first commit, or start this thread in local mode."
+                      : `Cannot create a worktree from "${worktreeBaseRef}" because it no longer resolves to a commit.`,
+                });
+              }
               const worktree = yield* gitWorkflow.createWorktree({
                 cwd: bootstrap.prepareWorktree.projectCwd,
                 refName: worktreeBaseRef,
