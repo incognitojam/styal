@@ -18,7 +18,7 @@ Run commands from `apps/mobile`.
 
 styal Link is optional and disabled in a fresh clone. Public configuration belongs in the
 repository-root `.env` or `.env.local`, not an `apps/mobile/.env` file. See
-the [styal Link maintainer setup](../../docs/internals/t3-connect.md#application-keys).
+the [styal Link maintainer setup](../../docs/operations/connect-setup.md#public-application-configuration).
 
 ## Development
 

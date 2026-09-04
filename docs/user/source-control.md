@@ -1,231 +1,139 @@
-# Source Control Integrations
+# Source control
 
-T3 Code connects to your Git hosting provider so you can create pull requests, review code, and manage repositories without leaving the app.
+T3 Code integrates with GitHub, GitLab, Bitbucket, and Azure DevOps to clone and publish
+repositories, create pull requests, and review changes.
 
-## Supported Providers
+## Connect an account
 
-T3 Code works with the platforms your team already uses:
+Install Git and configure authentication on the machine running your T3 Code server. For a remote
+environment, do this on the remote machine. After signing in, open **Settings → Source Control**
+and choose **Rescan**.
 
-- **GitHub** – Pull requests, repository creation, and clone integration
-- **GitLab** – Merge requests, repository publishing, and hosted clones
-- **Bitbucket** – Pull request workflows (via API token authentication)
-- **Azure DevOps** – Pull request support for Microsoft-hosted repositories
+### GitHub
 
-## What You Can Do
+Install [GitHub CLI](https://cli.github.com/) 2.81.0 or newer, then sign in:
 
-### Start Projects from Anywhere
+```bash
+gh auth login
+```
 
-**Clone repositories directly**
+### GitLab
 
-- Open the Command Palette (`Cmd/Ctrl + K`) → **Add Project**
-- Choose **GitHub repository**, **GitLab repository**, **Bitbucket repository**, **Azure DevOps repository**, or paste any **Git URL**
-- Enter the repository path (`owner/repo`, `group/project`, `workspace/repository`, or `project/repository`) or a full Git URL, pick a destination, and start coding
-- GitHub repositories, including forks, use HTTPS by default. To use SSH, choose **Git URL** and paste the SSH clone URL.
+Install [GitLab CLI](https://gitlab.com/gitlab-org/cli), then sign in:
 
-**Forks come wired up**
+```bash
+glab auth login
+```
 
-- Cloning a GitHub fork also adds the repository it was forked from as an `upstream` remote, so you can fetch from the original project right away
-- Because two remotes means two possible targets, cloning a fork adds one step: choose which repository is the **default repository**. Your fork is offered first; choose the original project instead when you are cloning to contribute upstream.
-- The default repository is where pull requests, issues, and releases go — including the ones T3 Code creates and the **Pull requests** page it lists.
-- Branches keep their own alignment: once a branch tracks a remote, that repository is the one T3 Code treats it as belonging to, so a branch pushed to the original project groups with the original project and a branch on your fork stays with your fork.
-- Change your mind later on web or desktop in **Settings → Projects → Checkout → Default repository**. It is the same setting as the GitHub CLI's `gh repo set-default`, so the two agree in both directions.
-- Fork detection is GitHub-only. Clones from GitLab, Bitbucket, Azure DevOps, or a plain Git URL are untouched.
+### Bitbucket
 
-**Publish local projects to the cloud**
-
-- Have a local Git repository without a remote?
-- Use the **Publish Repository** action to create a new hosted repository (GitHub, GitLab, Bitbucket, or Azure DevOps), add it as your origin remote, and push, in one flow
-- If the local repository has no commits yet, publishing creates the remote and wires it up but does not push. Make a commit, then push normally.
-
-### Manage Code Reviews Without Context Switching
-
-**Create pull requests while you work**
-
-- Push a branch and create a pull request from the Git actions controls in the toolbar
-- T3 Code can suggest titles and descriptions based on your commits
-- With **Repository conventions** selected, generated source control text follows the project's
-  `AGENTS.md` along with recent commit subjects. Claude writers also follow `CLAUDE.md`
-- Supports GitHub Pull Requests, GitLab Merge Requests, Bitbucket Pull Requests, and Azure DevOps Pull Requests
-
-**Stay on top of open reviews**
-
-- See if your current branch already has an open PR/MR
-- When an agent finishes a turn on your thread's branch, T3 Code checks for a newly opened
-  PR/MR if background activity is enabled for that repository. Known reviews keep their normal
-  refresh schedule.
-- Open several reviews from the **Pull requests** page as tabs in the right panel
-- On web and desktop, follow pull request links in a thread's PR descriptions or comments to open another tab beside the same thread, including other PRs in a stack. The linked repository must be available in that thread's environment. Cmd/Ctrl-click opens the link in your browser.
-- Use **Checks** to see which GitHub checks are required by repository policy, including checks
-  GitHub is still waiting to receive, and whether the pull request is ready to merge or blocked. When
-  repository rules require an out-of-date branch to be updated, Checks explains why and offers the
-  available update methods. Enabling auto-merge waits for that update; it does not perform it.
-- When GitHub is waiting on repository requirements and auto-merge is available, **Auto-merge**
-  replaces the primary **Merge** action and merges the pull request as soon as it becomes ready
-- Read ordinary files expanded by default in **Code changes**; lockfiles and oversized files stay
-  folded until opened, while files with review comments remain expanded
-- In a thread's local Files viewer, lockfiles and files marked `linguist-generated` by the
-  repository stay folded until opened
-- View repository-hosted images in GitHub pull request descriptions, including private repositories
-- See the whole ladder of a GitHub [stacked pull request](https://docs.github.com/en/pull-requests/get-started/about-stacked-prs)
-  in the **Stack** section of its Summary tab — every layer with its state, top of the stack
-  first, down to the base branch. Click another layer to open it in T3 Code, or
-  command-click (Control-click on Windows and Linux) to open it on GitHub
-- Your authored reviews stay at the top and use the selected sort within their group. By default,
-  see passing and approved reviews first, passing reviews awaiting approval next, and conflicting
-  reviews last. Smaller changes come first within each readiness group, and finished reviews follow
-  open work when all states are visible.
-- Filter the list by author or labels, rank authors by merges in the loaded results, see label and
-  change-size context on each row, and sort the results currently shown by readiness, update time,
-  creation time, or change size. Your filters, search, scope, and sort are restored when you return.
-- Merge now, or on GitHub, GitLab, and Azure DevOps, leave an auto-merge instruction with a chosen
-  strategy while checks are outstanding; see the completed state in the same control after the
-  pull request merges
-- On GitHub, approve fork workflows that are waiting to run and open a revert pull request for a
-  merged change
-- Timeline line counts stay hidden on merge commits, where GitHub's totals include upstream changes
-  brought in from the base branch
-- While working in a thread, open linked reviews in the same compact right-panel tabs without
-  leaving the conversation
-- Show a file tree next to a review's **Code** tab, or a thread's **Diff** panel, to browse the
-  changed files as folders and jump straight to any of them. The toolbar toggle remembers your
-  choice.
-- By default, **Proactive panels** opens a newly linked review automatically and switches to the
-  completed turn's diff when agent work changes files. An open review stays in front. Turn it off
-  in **Settings → General** if you prefer to open panels manually.
-- Open the review directly in your browser with one click
-- If T3 Code cannot load a GitHub pull request, including when GitHub rate limits requests, use
-  **Open on GitHub** in the error view
-- Command-click (Control-click on Windows and Linux) a pull request number in the sidebar to open it in your browser instead of in T3 Code
-- Check out a teammate's branch to review code locally
-
-**Fix what you wrote, in place**
-
-- Comment while closing an open pull request or reopening a closed one when the host offers that
-  action
-- Rewrite a pull request's title and description from the review itself, in Markdown, with a
-  preview before you save
-- Rewrite your own comments the same way, wherever they are shown
-- Works on GitHub, GitLab, and Bitbucket. Azure DevOps takes a new title and description; its
-  comments stay read-only here, as they already were
-- On GitHub, put a label on a pull request or take one off from the **Labels** row of the review.
-  Changing labels needs triage access or better on the repository
-
-![A repository-hosted image rendered inside a GitHub pull request description](./images/pull-request-description-image-after.jpg)
-
-When a GitHub project has multiple remotes, the **Pull requests** page follows the current branch's
-tracked remote. If the branch has no tracked remote, it follows the repository selected by
-`gh repo set-default`. The current branch's PR indicator verifies both the branch name and its head
-repository, so a fork checkout does not pick up a same-named branch from `upstream`.
-
-### Start a Thread from a GitHub Issue
-
-Open the command palette and run **New thread from GitHub issue…** to pick from the current
-project's open issues.
-
-- Search the list by issue number or title
-- Picking an issue opens a new thread draft with the issue's title, body, and comments attached as
-  a removable context chip
-- Nothing is sent automatically — write your instructions, then send when you're ready
-- If the GitHub CLI isn't installed or signed in, the picker tells you what to fix
-
-Issue browsing is GitHub-only today.
-
-### Know Your Setup at a Glance
-
-The **Source Control settings** page shows you exactly what's connected:
-
-- ✅ Which providers are authenticated and ready
-- ⚠️ What's missing and how to fix it
-- 👤 Which account is signed in (when available)
-
-Run a quick **Rescan** after setting up a new machine or changing credentials.
-
-## Getting Started
-
-### For GitHub (Recommended for most users)
-
-1. Install the GitHub CLI (version 2.81.0 or newer) on the machine running T3 Code:
-   ```bash
-   brew install gh
-   ```
-2. Sign in:
-   ```bash
-   gh auth login
-   ```
-3. Open **Settings → Source Control** in T3 Code and verify GitHub shows as authenticated
-
-You can now clone, publish, and create pull requests.
-
-### For GitLab
-
-1. Install the GitLab CLI:
-   ```bash
-   brew install glab
-   ```
-2. Authenticate:
-   ```bash
-   glab auth login
-   ```
-3. Check **Settings → Source Control** to confirm the connection
-
-### For Bitbucket
-
-Bitbucket uses tokens instead of a CLI tool. Two options, both set as environment variables on the
-machine running T3 Code.
-
-Recommended, a Bitbucket access token:
+Set an access token in the server's environment:
 
 ```bash
 export T3CODE_BITBUCKET_ACCESS_TOKEN="your-access-token"
 ```
 
-Or an Atlassian account email plus API token, with read/write access to pull requests and
-repositories, plus read access to your user account (`read:user:bitbucket`, used to verify the
-connection):
+Or use an Atlassian account email and API token with read/write access to repositories and pull
+requests, plus user read access (`read:user:bitbucket`):
 
 ```bash
 export T3CODE_BITBUCKET_EMAIL="you@example.com"
 export T3CODE_BITBUCKET_API_TOKEN="your-token"
 ```
 
-If both are set, the access token wins. Restart T3 Code and verify the connection in **Source
-Control settings**.
+The access token takes precedence if both are configured. Restart the server after changing these
+variables.
 
-### For Azure DevOps
+### Azure DevOps
 
-1. Install Azure CLI:
-   ```bash
-   brew install azure-cli
-   ```
-2. Add the DevOps extension:
-   ```bash
-   az extension add --name azure-devops
-   ```
-3. Sign in:
-   ```bash
-   az login
-   ```
+Install [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/), add the DevOps extension, and sign in:
 
----
+```bash
+az extension add --name azure-devops
+az login
+```
 
-## Requirements & Troubleshooting
+## Clone or publish a project
 
-**Git is required** – T3 Code uses Git for all local operations. Ensure `git` is installed on your server.
+Use **Add Project** in the command palette (`Cmd/Ctrl+K`) to clone a repository. Choose a hosting
+provider or paste a Git URL, then choose where to save it. GitHub repositories clone over HTTPS;
+to use SSH, choose **Git URL** and paste the SSH clone URL.
 
-**Server-side setup** – Authentication happens on the machine running T3 Code (the server), not your local browser. If you're using a hosted or team instance, your administrator may have already configured providers.
+For a local Git repository without a remote, **Publish Repository** creates a hosted repository,
+adds it as `origin`, and pushes your commits. If there are no commits yet, it creates the remote;
+make your first commit before pushing.
 
-**Common issues:**
+### Clone a GitHub fork
 
-- **Provider shows "Not authenticated"** – Run the login command for that provider (e.g., `gh auth login`) in a terminal on the server, then rescan in Settings
-- **GitHub says it could not verify sign-in status** – T3 Code needs GitHub CLI 2.81.0 or newer to check sign-in status. Update `gh` (e.g., `brew upgrade gh`), then rescan
-- **GitHub operations are unexpectedly failing** – **GitHub outage alerts** are enabled by default and can be managed in **Settings → Beta**. When GitHub reports a service disruption, T3 Code shows the affected services above **Settings** in the web and desktop sidebar. Git operations, pull requests, Actions, and deploys are all covered; a Copilot-only disruption stays quiet. Select the notice to open the official GitHub Status page.
-- **Bitbucket not connecting** – Double-check your environment variables are set in the correct shell profile and the server was restarted
-- **Can't push to a remote** – Verify your Git remote URL matches the provider you've authenticated with (SSH vs HTTPS remotes may need different credentials)
+Cloning a GitHub fork keeps your fork as `origin`, adds the repository it was forked from as
+`upstream`, and asks you to choose the **default repository**. Pull requests, issues, and the
+**Pull requests** page use the default repository. Choose the original project when you are
+cloning to contribute to it.
 
-![The sidebar stays quiet while GitHub is healthy and shows affected services during an outage](./images/github-status-before-after.png)
+A branch that tracks a remote belongs to that remote's repository, regardless of the default. To
+change the default later, open **Settings → Projects → Checkout → Default repository**. This is the
+same setting as `gh repo set-default`, so the two stay in agreement. Clones from other hosts or a
+plain Git URL do not get this step.
 
-**Need more help?** Check your provider's CLI documentation:
+## Create a pull request
 
-- [GitHub CLI](https://cli.github.com/)
-- [GitLab CLI](https://gitlab.com/gitlab-org/cli)
-- [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/)
+Use a thread's Git actions to commit, push, and create a pull request. T3 Code can generate commit
+messages, review titles, and descriptions from your changes.
+
+Choose the writing style and model in **Settings → Source Control**. **Repository conventions**
+uses the project's instructions and recent commit subjects.
+
+## Start a thread from a GitHub issue
+
+Run **New thread from GitHub issue…** from the command palette and search the current project's
+open issues by number or title. The issue's title, body, and comments are attached to a new thread
+draft as removable context. Nothing is sent until you write your instructions and send them.
+
+## Review and merge
+
+Open **Pull requests** to review changes and comments, request reviewers, check out a branch,
+or merge. You can edit review titles and descriptions and your own comments where the host allows it.
+GitLab calls these merge requests.
+
+GitHub, GitLab, and Azure DevOps support auto-merge while checks are outstanding. GitHub also
+supports approving waiting fork workflows and opening a revert pull request for a merged change.
+
+For Azure DevOps, use the host website to view diffs or change comments. Bitbucket does not support
+reopening a declined pull request.
+
+For GitHub pull requests:
+
+- **Checks** separates checks required by repository policy from optional ones, including required
+  checks that have not reported yet. When rules require an out-of-date branch to be updated before
+  merging, it explains why and offers the update methods you can use. Auto-merge waits for that
+  update; it does not perform it.
+- A stacked pull request lists every layer of its stack on the Summary tab. Select a layer to open
+  it, or Cmd/Ctrl-click to open it on GitHub.
+- Images stored in the repository display in pull request descriptions, including for private
+  repositories.
+- On web and desktop, pull request links in descriptions and comments open another tab beside the
+  same thread when the linked repository is available in that environment. Cmd/Ctrl-click opens the
+  link in your browser.
+- With several remotes, the **Pull requests** page follows the current branch's tracked remote, or
+  the default repository when the branch does not track one.
+
+A pull request's changed files open expanded, except lockfiles and very large files, which stay
+folded until you open them. A thread's Files viewer also folds lockfiles and files the repository
+marks `linguist-generated`.
+
+**Proactive panels** is on by default: a newly linked review opens automatically, and agent work
+that changes files switches to its diff when the turn completes. Turn it off in
+**Settings → General**.
+
+## Troubleshooting
+
+- **Not authenticated:** run the provider's login command on the server, then rescan. For Bitbucket,
+  confirm the running server received the environment variables.
+- **GitHub sign-in cannot be verified:** update GitHub CLI to at least 2.81.0.
+- **Push fails despite a connected account:** check the Git remote's credentials. SSH and HTTPS
+  remotes can require separate setup from the hosting provider's API access.
+- **GitHub operations fail unexpectedly:** when GitHub reports a disruption, web and desktop show
+  the affected services in the sidebar while you have a GitHub project. Select the notice to open
+  GitHub Status.
+- **A review cannot load:** open it on the host website while resolving connectivity, permissions,
+  or rate limits.

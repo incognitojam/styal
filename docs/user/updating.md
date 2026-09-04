@@ -1,115 +1,74 @@
-# Keeping styal in Sync
+# Updating styal
 
-The styal web or desktop app and the server it connects to work best when they use the same
-version. If they do not match, styal shows a warning with the right update option for that server.
+The app you use and the server running your agents can be on different machines.
+When a server is behind your web or desktop app, an update notice appears in the
+conversation and **Settings → Connections**. Update the machine named in that
+notice.
 
-## Where to Find the Update
+## Before you update
 
-You may see the warning in either of these places:
+Server updates restart the connection and can interrupt active agents and
+terminal commands. Saved threads, settings, and project files remain.
 
-- above the message box in the current conversation
-- **Settings** → **Connections**, beside the affected connection
+**Settings → General → Continue threads after server updates** is off by default.
+Enable it to resume supported active threads once the replacement server is
+ready. Terminal commands may still be interrupted.
 
-Dismissing the conversation warning only hides that reminder for those two versions. It does not
-update the server, and the version difference remains visible in Connections.
+## Update a connected server
 
-## Before You Update
+The offered action depends on how the server runs:
 
-Updating restarts the server, so the connection will disappear briefly. **Settings** → **General**
-has a **Continue threads after server updates** preference. It is off by default. When enabled, the
-update buttons automatically resume supported provider threads after the replacement server is
-ready. Providers with native promptless continuation use it; other providers receive a short
-instruction to continue where they left off. Terminal commands and other running work may still be
-interrupted during the update.
+| Action                     | What to do                                                                                                                                                                                      |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Update server**          | Keep the client open while it installs and reconnects. Supported background services update remotely. For a desktop-hosted server, this also closes and relaunches the desktop app on the host. |
+| **Update the desktop app** | Update the desktop app on the machine running the server, then reopen it if needed.                                                                                                             |
+| **Update instructions**    | Copy the command shown and run it in a separate terminal or SSH session on the host, keeping your usual startup options.                                                                        |
 
-The update does not remove saved threads, settings, or project files.
-
-## Desktop App Updates
-
-The desktop app checks for updates and downloads them in the background. Downloaded updates install
-automatically when you quit styal, ready for your next launch. On macOS, closing the last window
-leaves the app running; use **Quit** to exit and install the update.
-
-Once an update is ready, the sidebar shows a **Restart to update** icon if you want to apply it
-immediately. Before quitting or restarting, styal checks the environments hosted by the desktop app,
-including WSL and work started from other devices. Idle agent sessions and idle terminal shells do
-not require confirmation. If agents are working or waiting for input, terminal commands are running,
-or activity cannot be checked, styal shows a summary and lets you cancel or continue. Cancelling keeps
-the app running and the update ready. The hold-to-quit keyboard setting still protects against
-accidental shortcuts. On macOS, closing a window alone does not stop the host.
-
-If a confirmation cannot be displayed, styal cancels that attempt. If the app remains unresponsive,
-choose **Quit** again after five seconds to exit with normal cleanup. This can interrupt running work.
-
-Update checks, download progress, and retries remain available in Settings. Changing the update track cancels installation of a pending
-update from the previous track; styal waits for a download from the newly selected track.
-
-## Choose the Action You See
-
-| Action                     | What to do                                                                                                                                                                                                                                                                                                                                                                           |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Update server**          | Available for the styal background service on Linux and macOS and for servers run by a current styal desktop app. Select the button and leave styal open while it downloads, installs, restarts, and reconnects. For desktop-app servers this closes and relaunches the desktop app on that machine. If installation fails, the desktop app stays open and reconnects to its server. |
-| **Update the desktop app** | Shown for desktop apps that predate remote updates. Open the styal desktop app on the machine that runs the server and install the app update there. Reopen it if needed.                                                                                                                                                                                                            |
-| **Copy update command**    | Copy the command, open a terminal on the server machine, stop the current styal server, and relaunch it with the copied command and any startup options you normally use.                                                                                                                                                                                                            |
-
-The available action depends on how that server was started. styal does not update connected
-servers silently in the background.
-
-An older background-service launcher may ask you to run the exact
-`npx @styal/cli@<version> service update` command on the server machine. That one local update installs the
-rollback support needed for later remote updates, including versions that change the database.
-
-After selecting **Update**, the notice becomes a live status line: **Downloading…** while the new
-version is fetched and verified, then **Restarting…** while the server restarts into it. The same
-status appears in the conversation and in Connections, so navigating between them does not lose the
-update. A failure remains visible with its error and an option to retry.
-
-**Copy update command** gives you `npx @styal/cli@<client-version> serve`, which relaunches the server directly
-at the matching version. Add whatever startup options you normally use.
-
-If the server instead runs as the styal background service, update the service on the host and
-pin the same version:
+For a background service that needs its one-time migration, run the matching
+version's CLI on the host:
 
 ```sh
 npx @styal/cli@<client-version> service update
 ```
 
-`service update` installs the version of the CLI that invoked it, so `npx @styal/cli@latest service update`
-only resolves the skew when your client happens to be on the latest release. The exact version from
-the warning always works.
+Replace `<client-version>` with the version shown in the notice. An older service
+launcher needs this local update before it supports remote updates and rollback.
+See [migrating an existing installation](./background-service.md#migrating-an-existing-styal-installation).
 
-See [Running styal in the Background](./background-service.md) for install, status, and removal
-commands.
+For a foreground server, stop it, then relaunch with
+`npx @styal/cli@<client-version> serve`, preserving options such as `--host` or
+`--tailscale-serve`. If styal runs under a service or container that you manage
+yourself, update it through your existing deployment method. See
+[background services](./background-service.md) for service management.
 
-## Nightly desktop release notes
+## If an update fails
 
-The desktop app shows a compact release-notes preview when a nightly update is available. Changes
-appear newest first within each release. Each release links to its exact page on GitHub, even when
-all changes fit in the preview.
-
-The preview shows up to eight changes from each of six releases. When it leaves out changes or older
-releases, it shows the exact number and links to the rest. Contributor credits do not count as
-changes.
-
-## After the Update
-
-Keep the web or desktop app open while the server restarts. The update completes only after the
-service launcher reports that exact update committed and the replacement server is ready to accept
-commands. A rollback is reported immediately instead of waiting for a generic reconnect timeout.
-
-If a step fails:
+Keep the client open until it reconnects or reports a failure. A failed service
+update can roll back to the previous version. If the update still fails:
 
 1. Retry the offered action once.
-2. Make sure you updated the machine named in the warning, not only the device you are using.
-3. For a command-line server, relaunch it with `npx @styal/cli@<client-version> serve`, replacing
-   `<client-version>` with the client version shown in the warning.
+2. Check that you updated the server's machine, not only the device you are using.
+3. For a command-line server, stop it and relaunch the exact version shown in the notice.
 
-## The Mobile App
+## Desktop app updates
 
-The mobile app keeps itself current on its own. When it finds a new version, it downloads it in the
-background and installs it automatically the next time you leave the app. Unsent drafts and queued
-messages are saved before the restart. Only if the app stays open long enough that the update never
-gets that chance does it ask whether to install right away; choosing **Later** is safe and keeps the
-automatic install armed.
+The desktop app downloads updates in the background and installs them when you
+quit, ready for your next launch. On macOS, closing the last window leaves the
+app running; choose **Quit** to install. To apply a downloaded update right away,
+select **Restart to update** in the sidebar. Update checks, download progress,
+retries, and the update track are in **Settings**. Changing the track cancels a
+pending update from the previous track.
 
-For remote connection setup and access troubleshooting, see [Remote Access](./remote-access.md).
+Before quitting or restarting, styal checks agents and terminal commands in the
+environments the desktop app hosts, including WSL and work started from other
+devices. If work is active or cannot be checked, styal lists it and lets you
+cancel or continue; cancelling keeps the downloaded update. If the confirmation
+cannot be displayed and the app stays unresponsive, choose **Quit** again after
+five seconds to exit. This can interrupt running work.
+
+## Mobile updates
+
+The mobile app can download updates in the background and apply them when you
+next leave the app. It saves drafts and queued messages before restarting. If you
+keep the app open for a long time, it may ask to install immediately; choosing
+**Later** leaves the update queued for the next suitable moment.

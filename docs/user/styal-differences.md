@@ -63,7 +63,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   styal adds a separate Checks tab that identifies checks required by repository policy and shows
   required checks that have not reported yet. When branch rules require current checks, it explains
   why an out-of-date branch must be updated before auto-merge can finish and offers the permitted
-  update methods. [Code review](./source-control.md#manage-code-reviews-without-context-switching).
+  update methods. [Code review](./source-control.md#review-and-merge).
   Compared with [T3 Code revision a493946](https://github.com/pingdotgg/t3code/tree/a493946bb42ab16e1d18285dac3e9e4603651330),
   checked September 23, 2026.
 

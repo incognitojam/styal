@@ -120,4 +120,4 @@ pnpm run api -- --port "$((STYAL_WORKSPACE_PORT + 1))"
 The assigned range is stable across restarts and does not overlap with another T3 Code workspace
 in the same environment. It does not reserve the sockets from unrelated programs on the host. See
 [Project settings](./project-settings.md#stable-workspace-ports) for allocation details and
-[Keyboard shortcuts](./keybindings.md#commands) for binding saved actions to keys.
+[Keyboard shortcuts](./keybindings.md#rule-shape) for binding saved actions to keys.
