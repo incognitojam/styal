@@ -124,6 +124,10 @@ vi.mock("@pierre/diffs/react", () => {
   return { FileDiff: MockFileDiff };
 });
 
+vi.mock("../DiffWorkerPoolProvider", () => ({
+  DiffWorkerPoolProvider: ({ children }: { children?: ReactNode }) => children,
+}));
+
 // The unit project runs on the node environment, so the module graph needs DOM
 // globals in place before it is evaluated. Stubbing from `vi.hoisted` runs
 // ahead of the imports above, which lets MessagesTimeline be imported
