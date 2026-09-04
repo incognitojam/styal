@@ -53,7 +53,7 @@ const DESKTOP_APP_ID = "build.styal.app";
 // directory from the package name rather than productName, so this keeps styal
 // out of upstream T3 Code's install folder.
 const DESKTOP_PACKAGE_NAME = "styal";
-const WINDOWS_INSTALLER_GUID = "0122c0ea-801f-5352-a48e-ce98c31bc2d9";
+const WINDOWS_INSTALLER_GUID = "0903b661-4e4a-53c0-8d0a-a5ba319f6601";
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
@@ -2189,12 +2189,11 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "win") {
     buildConfig.npmRebuild = false;
     buildConfig.nsis = {
-      // Distinct from upstream so a styal install never reuses or uninstalls
-      // its directory. Deliberately unchanged from the pre-styal fork builds:
-      // the package name moved, so the same GUID makes NSIS upgrade an existing
-      // fork install into the new directory instead of leaving two side by side.
-      // Parallel operation is a requirement against upstream, not against our
-      // own older builds.
+      // The styal-specific GUID prevents NSIS from launching the uninstaller
+      // baked into a pre-rename fork build. That uninstaller can mistake an
+      // upstream process for the fork when both once shared an install path.
+      // customInstall removes the superseded registration after this fresh
+      // install succeeds; later styal upgrades use the safe uninstaller.
       guid: WINDOWS_INSTALLER_GUID,
       include: "installer.nsh",
       // Keep blockmap-based differential downloads enabled while changing the

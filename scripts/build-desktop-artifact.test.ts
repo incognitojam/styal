@@ -501,7 +501,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         ...WINDOWS_SERVER_EXTRA_RESOURCES,
       ]);
       assert.deepStrictEqual(win.nsis, {
-        guid: "0122c0ea-801f-5352-a48e-ce98c31bc2d9",
+        guid: "0903b661-4e4a-53c0-8d0a-a5ba319f6601",
         include: "installer.nsh",
         differentialPackage: true,
       });
@@ -548,13 +548,15 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const installerInclude = yield* fs.readFileString(
-        path.join(process.cwd(), "apps/desktop/resources/installer.nsh"),
+      const installerPath = yield* path.fromFileUrl(
+        new URL("../apps/desktop/resources/installer.nsh", import.meta.url),
       );
+      const installerInclude = yield* fs.readFileString(installerPath);
 
       assert.include(installerInclude, "!macro customCheckAppRunning");
       assert.include(installerInclude, "StrCpy $IsPowerShellAvailable 1");
       assert.include(installerInclude, "!insertmacro _CHECK_APP_RUNNING");
+      assert.include(installerInclude, "Uninstall\\0122c0ea-801f-5352-a48e-ce98c31bc2d9");
     }),
   );
 
