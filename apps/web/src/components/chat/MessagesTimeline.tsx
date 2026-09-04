@@ -2000,6 +2000,17 @@ function ActivityShimmerOverlay({ children }: { children: ReactNode }) {
   );
 }
 
+const failedToolIconClassName = "text-tool-error-icon/40";
+
+/** Image icons and the gradient computer-use mark cannot take a currentColor
+ *  tint, so failed rows using them get a trailing x instead. */
+function toolIconAcceptsTint(
+  iconName: WorkEntryIconName,
+  toolIcon: ToolActivityIcon | undefined,
+): boolean {
+  return toolIcon === undefined && iconName !== "computer";
+}
+
 function LiveActivityRow({
   label,
   iconName,
@@ -2048,37 +2059,41 @@ function LiveActivityContent({
   announceFailure?: boolean;
   highlighted?: boolean;
 }) {
-  const isSpecialToolIcon =
-    iconName === "browser" || iconName === "computer" || iconName === "t3-code";
-  const resolvedIconName = failed && !isSpecialToolIcon ? "circle-alert" : iconName;
+  const showTrailingFailureMark =
+    failed && iconName !== undefined && !toolIconAcceptsTint(iconName, toolIcon);
 
   return (
     <span
       className={cn(
         "flex min-h-6 min-w-0 items-center gap-1.5 py-0.5",
-        resolvedIconName ? "px-0.5" : "px-1",
+        iconName ? "px-0.5" : "px-1",
         highlighted ? "text-foreground" : "text-secondary-label",
       )}
     >
-      {resolvedIconName ? (
+      {iconName ? (
         <span
           className={cn(
             "flex size-6 shrink-0 items-center justify-center",
-            highlighted ? "text-foreground" : "text-icon-muted",
+            highlighted ? "text-foreground" : failed ? failedToolIconClassName : "text-icon-muted",
           )}
           role={announceFailure ? "img" : undefined}
           aria-label={announceFailure ? "Tool call failed" : undefined}
         >
           <ToolActivityIconView
-            icon={failed && !isSpecialToolIcon ? undefined : toolIcon}
-            fallbackName={resolvedIconName}
+            icon={toolIcon}
+            fallbackName={iconName}
             className="block size-4 shrink-0 stroke-[1.8]"
             muted={!highlighted}
           />
         </span>
       ) : null}
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {failed && isSpecialToolIcon ? <XIcon aria-hidden className="size-3 shrink-0" /> : null}
+      {showTrailingFailureMark ? (
+        <XIcon
+          aria-hidden
+          className={cn("size-3 shrink-0", !highlighted && failedToolIconClassName)}
+        />
+      ) : null}
     </span>
   );
 }
@@ -3627,13 +3642,15 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const isSetupActionRow = workEntry.sourceActivityKind?.startsWith("setup-script.") === true;
   const showFailedIndicator =
     !isStoppedSetupAction && workEntryDisplayIndicatesToolFailure(workEntry);
-  const toolPresentation = resolveWorkEntryToolPresentation(workEntry);
-  const hasSpecialToolIcon =
-    isSetupActionRow || toolPresentation !== null || workEntry.toolSurface !== undefined;
-  const entryIconName =
-    showWarningIndicator || (showFailedIndicator && !hasSpecialToolIcon)
-      ? "circle-alert"
-      : workEntryIconName(workEntry);
+  const showDestructiveRowStyle =
+    showFailedIndicator &&
+    (workEntrySignalsSevereFailure(workEntry) || !workLogEntryIsToolLike(workEntry));
+  // Setup actions keep their own icon and report failure through their status mark.
+  const showAlertIcon = showWarningIndicator || (showDestructiveRowStyle && !isSetupActionRow);
+  const entryIconName = showAlertIcon ? "circle-alert" : workEntryIconName(workEntry);
+  const entryToolIcon = showAlertIcon
+    ? undefined
+    : (workEntry.toolIcon ?? workEntry.toolSource?.icon);
   const presentation = toolRowPresentationFor(workEntry);
   const heading = presentation?.heading ?? toolWorkEntryHeading(workEntry);
   // A presentation owns its argument, including deciding there isn't one.
@@ -3687,11 +3704,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
         viewedImage ? viewedImagePath : null,
       )
     : null;
-  const showDestructiveRowStyle =
-    showFailedIndicator &&
-    (workEntrySignalsSevereFailure(workEntry) || !workLogEntryIsToolLike(workEntry));
-  // Ordinary tool failures stay muted; only runtime errors and warnings get
-  // color. The red treatment is reserved for severe failures.
+  // Reserve destructive row styling for severe failures, not routine tool errors.
   const iconWrapperClass = cn(
     "flex size-6 shrink-0 items-center justify-center",
     showWarningIndicator
@@ -3700,9 +3713,11 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
         ? "text-icon-muted"
         : showDestructiveRowStyle
           ? "text-destructive"
-          : workEntry.tone === "tool" || showFailedIndicator
-            ? "text-icon-muted"
-            : iconConfig.className,
+          : showFailedIndicator
+            ? failedToolIconClassName
+            : workEntry.tone === "tool"
+              ? "text-icon-muted"
+              : iconConfig.className,
   );
   const headingClass = showWarningIndicator
     ? "font-medium text-warning"
@@ -3772,11 +3787,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
               }
             >
               <ToolActivityIconView
-                icon={
-                  showWarningIndicator || (showFailedIndicator && !hasSpecialToolIcon)
-                    ? undefined
-                    : (workEntry.toolIcon ?? workEntry.toolSource?.icon)
-                }
+                icon={entryToolIcon}
                 fallbackName={entryIconName}
                 className="block size-4 shrink-0 stroke-[1.8]"
                 muted
@@ -3792,11 +3803,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
             aria-hidden={!showEntryIcon}
           >
             <ToolActivityIconView
-              icon={
-                showWarningIndicator || (showFailedIndicator && !hasSpecialToolIcon)
-                  ? undefined
-                  : (workEntry.toolIcon ?? workEntry.toolSource?.icon)
-              }
+              icon={entryToolIcon}
               fallbackName={entryIconName}
               className="block size-4 shrink-0 stroke-[1.8]"
               muted
@@ -3829,8 +3836,10 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
               ) : null}
             </p>
           </div>
-          {showFailedIndicator && hasSpecialToolIcon ? (
-            <XIcon aria-hidden className="size-3 shrink-0 text-icon-muted" />
+          {showFailedIndicator &&
+          !showDestructiveRowStyle &&
+          !toolIconAcceptsTint(entryIconName, entryToolIcon) ? (
+            <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />
           ) : null}
           <div className="flex shrink-0 items-center gap-px text-icon-muted">
             <span
