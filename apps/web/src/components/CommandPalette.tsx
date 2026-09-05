@@ -2307,6 +2307,10 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
 
+    const cloneEnvironmentLabel =
+      environments.find(
+        (environment) => environment.environmentId === addProjectCloneFlow.environmentId,
+      )?.label ?? "the selected server";
     const rawDestination = (destinationPathInput ?? query).trim();
     if (rawDestination.length === 0 || isRemoteProjectCloning) {
       return;
@@ -2316,7 +2320,7 @@ function OpenCommandPaletteDialog(props: {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Clone failed",
+          title: `Clone failed on ${cloneEnvironmentLabel}`,
           description: "Windows-style paths are only supported on Windows.",
         }),
       );
@@ -2327,7 +2331,7 @@ function OpenCommandPaletteDialog(props: {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Clone failed",
+          title: `Clone failed on ${cloneEnvironmentLabel}`,
           description: "Relative paths require an active project.",
         }),
       );
@@ -2375,7 +2379,7 @@ function OpenCommandPaletteDialog(props: {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Clone failed",
+            title: `Clone failed on ${cloneEnvironmentLabel}`,
             description: isSourceControlRepositoryError(error) ? error.detail : errorMessage(error),
           }),
         );

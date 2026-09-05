@@ -685,17 +685,17 @@ for (const [name, stderr, expectedDetail] of [
   [
     "missing HTTPS credentials",
     "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
-    "Git could not authenticate.",
+    "Git authentication failed.",
   ],
   [
     "missing password",
     "fatal: could not read Password for 'https://user@github.com': No such device or address",
-    "Git could not authenticate.",
+    "Git authentication failed.",
   ],
   [
     "SSH authentication",
     "git@github.com: Permission denied (publickey).",
-    "Git could not authenticate.",
+    "Git authentication failed.",
   ],
   [
     "rate limiting",
@@ -723,8 +723,8 @@ for (const [name, stderr, expectedDetail] of [
       assert.isUndefined(error.cause);
       assert.notInclude(error.message, stderr);
       assert.isFalse(error.message.includes("secret-token"));
-      if (expectedDetail === "Git could not authenticate.") {
-        assert.include(error.detail, "on the cloning environment");
+      if (expectedDetail === "Git authentication failed.") {
+        assert.include(error.detail, "Git credentials or SSH keys");
         assert.include(error.detail, "gh auth login and gh auth setup-git");
       }
     }).pipe(

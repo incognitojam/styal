@@ -496,10 +496,10 @@ export const make = Effect.gen(function* () {
         provider,
         detail:
           failureKind === "authentication"
-            ? "Git could not authenticate. Set up credentials or SSH keys on the cloning environment. For GitHub HTTPS, run gh auth login and gh auth setup-git there."
+            ? "Git authentication failed. Set up Git credentials or SSH keys. For GitHub HTTPS, run gh auth login and gh auth setup-git."
             : failureKind === "rate-limited"
               ? "The Git host rate limit was exceeded. Wait and retry the clone."
-              : "Git could not clone the repository. Check the repository URL, your access, and the network connection on the environment where you are cloning.",
+              : "Git could not clone the repository. Check the repository URL, your access, and the network connection.",
       });
     }
 

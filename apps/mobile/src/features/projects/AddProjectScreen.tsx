@@ -1026,7 +1026,8 @@ export function AddProjectDestinationScreen(props: {
     });
     if (AsyncResult.isFailure(cloneResult)) {
       const error = Cause.squash(cloneResult.cause);
-      setError(isSourceControlRepositoryError(error) ? error.detail : errorMessage(error));
+      const detail = isSourceControlRepositoryError(error) ? error.detail : errorMessage(error);
+      setError(`Clone failed on ${environment.label}. ${detail}`);
     } else {
       // The clone itself succeeded, so this is a warning rather than a failure:
       // the repository is on disk, just without the remote that was asked for.
