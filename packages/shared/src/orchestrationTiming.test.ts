@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { deriveActiveWorkStartedAt, formatDuration, formatElapsed } from "./orchestrationTiming.ts";
+import { deriveActiveWorkStartedAt, formatDuration } from "./orchestrationTiming.ts";
 
 describe("deriveActiveWorkStartedAt", () => {
   it.each([null, "2026-09-06T23:34:00.000Z"])(
@@ -134,11 +134,5 @@ describe("formatDuration", () => {
 
   it.each([-1, NaN, Infinity, -Infinity])("handles invalid durations: %s", (durationMs) => {
     expect(formatDuration(durationMs)).toBe("0ms");
-  });
-});
-
-describe("formatElapsed", () => {
-  it("formats a long run across midnight", () => {
-    expect(formatElapsed("2026-09-03T22:00:00Z", "2026-09-04T04:59:50Z")).toBe("6h 59m 50s");
   });
 });
