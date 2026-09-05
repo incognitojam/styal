@@ -1170,6 +1170,81 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("completes manual compaction as the first turn of a resumed session", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const runtimeEventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil((event) => event.type === "session.exited"),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      const resumeSessionId = "550e8400-e29b-41d4-a716-446655440000";
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        resumeCursor: { threadId: THREAD_ID, resume: resumeSessionId, turnCount: 1 },
+        runtimeMode: "full-access",
+      });
+      const turn = yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "/compact",
+        attachments: [],
+      });
+      for (const status of ["compacting", null]) {
+        harness.query.emit({
+          type: "system",
+          subtype: "status",
+          status,
+          session_id: resumeSessionId,
+          uuid: `compact-status-${status}`,
+        } as unknown as SDKMessage);
+      }
+      harness.query.emit({
+        type: "system",
+        subtype: "init",
+        session_id: resumeSessionId,
+        uuid: "compact-init",
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "system",
+        subtype: "compact_boundary",
+        compact_metadata: { trigger: "manual", pre_tokens: 100000, post_tokens: 4000 },
+        session_id: resumeSessionId,
+        uuid: "compact-boundary",
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        errors: [],
+        num_turns: 0,
+        usage: { input_tokens: 0, output_tokens: 0 },
+        session_id: resumeSessionId,
+        uuid: "compact-result",
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "system",
+        subtype: "status",
+        status: null,
+        session_id: resumeSessionId,
+        uuid: "after-compact-result",
+      } as unknown as SDKMessage);
+      harness.query.finish();
+
+      const events = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      const completions = events.filter((event) => event.type === "turn.completed");
+      assert.equal(completions.length, 1);
+      assert.equal(String(completions[0]?.turnId), String(turn.turnId));
+      assert.equal(completions[0]?.payload.state, "completed");
+      const states = events.filter((event) => event.type === "session.state.changed");
+      assert.equal(states.at(-1)?.payload.state, "ready");
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("does not emit turn.completed for a result with no active turn", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
