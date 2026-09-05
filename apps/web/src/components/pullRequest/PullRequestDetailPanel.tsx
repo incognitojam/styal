@@ -239,9 +239,8 @@ const TABS: ReadonlyArray<{ value: DetailTab; label: string }> = [
   { value: "code", label: "Code" },
 ];
 
-// The diff viewer pulls in its worker pool, so it stays out of the bundle until Code is opened.
-// Named rather than inlined so the panel can also call it itself, to start the download before
-// anyone has clicked the tab.
+// The diff viewer pulls in its worker pool, so load it only when the reader approaches Code.
+// Start the download on tab hover or focus, before the click, without loading it for every PR.
 const loadCodeTab = () => import("./PullRequestCodeTab");
 const PullRequestCodeTab = lazy(loadCodeTab);
 
@@ -565,14 +564,21 @@ function PullRequestDetailPanelBody({
   // summary needs it too — a large description re-parses its whole markdown on every return
   // to the tab. `visibility` keeps boxes, sizes and scroll offsets, and takes hidden content
   // out of the tab order and the accessibility tree.
-  const [mountedTabs, setMountedTabs] = useState<ReadonlySet<DetailTab>>(
-    () => new Set<DetailTab>(["summary"]),
-  );
+  const tabScopeKey = `${environmentId}:${pullRequestKey}`;
+  const [tabMountState, setTabMountState] = useState(() => ({
+    key: tabScopeKey,
+    tabs: new Set<DetailTab>(["summary"]),
+  }));
+  // A previously visited Code tab must not fetch diffs for every later PR while hidden.
+  const mountedTabs =
+    tabMountState.key === tabScopeKey ? tabMountState.tabs : new Set<DetailTab>([tab]);
   useEffect(() => {
-    setMountedTabs((previous) =>
-      previous.has(tab) ? previous : new Set<DetailTab>(previous).add(tab),
-    );
-  }, [tab]);
+    setTabMountState((previous) => {
+      if (previous.key !== tabScopeKey) return { key: tabScopeKey, tabs: new Set([tab]) };
+      if (previous.tabs.has(tab)) return previous;
+      return { key: tabScopeKey, tabs: new Set(previous.tabs).add(tab) };
+    });
+  }, [tab, tabScopeKey]);
   const [chromeCondensed, setChromeCondensed] = useState(false);
   // Each mounted tab remembers its own scroll chrome; short tabs cannot scroll to reopen it.
   const chromeStateByTab = useRef<Partial<Record<DetailTab, boolean>>>({});
@@ -609,12 +615,6 @@ function PullRequestDetailPanelBody({
   // Which handoff is preparing, keyed so a per-finding button can say "Preparing..." on itself
   // alone. One at a time whatever the key: they all check the same pull request out.
   const [handoff, setHandoff] = useState<string | null>(null);
-  // The chunk is fetched as soon as the panel exists rather than waiting for the Code tab to be
-  // clicked, so a reader who does click it lands on a chunk already in the module cache.
-  useEffect(() => {
-    void loadCodeTab();
-  }, []);
-
   const detailQuery = useEnvironmentQuery(
     pullRequestEnvironment.detail({ environmentId, input: reference }),
   );
@@ -736,14 +736,21 @@ function PullRequestDetailPanelBody({
   const activityRevision = useRef<{ readonly key: string; readonly updatedAt: string } | null>(
     null,
   );
+  // Manual refresh advances the Code tab's token, and so does a revision change reported by core
+  // detail. Live refresh itself stops at the detail read, so an unchanged pull request keeps its
+  // cached diff, while a reader asking for everything on screen expects the patch to be included.
+  // A finished agent turn advances the token too: the turn may have pushed to this branch.
+  const [refreshToken, setRefreshToken] = useState(0);
+  const codeRefreshToken = refreshToken + (turnRefresh ?? 0);
   useEffect(() => {
     if (!coreDetail) return;
-    const next = { key: pullRequestKey, updatedAt: coreDetail.updatedAt };
+    const next = { key: tabScopeKey, updatedAt: coreDetail.updatedAt };
     if (shouldRefreshPullRequestActivity(activityRevision.current, next)) {
       activityQuery.refresh();
+      setRefreshToken((token) => token + 1);
     }
     activityRevision.current = next;
-  }, [activityQuery.refresh, coreDetail, pullRequestKey]);
+  }, [activityQuery.refresh, coreDetail, tabScopeKey]);
   const invalidate = useAtomCommand(pullRequestEnvironment.invalidate, { reportFailure: false });
   const refreshDetailFromHost = useCallback(
     async (scope: PullRequestInvalidationScope) => {
@@ -764,16 +771,12 @@ function PullRequestDetailPanelBody({
       state: resolvedCoreDetail.state,
     });
   }, [onStateChange, resolvedCoreDetail]);
-  // Refresh host state before rereading the cached detail. Activity follows the revision.
+  // Refresh host state before rereading the cached detail. Activity and the diff follow the
+  // revision. Keyed by the pull request rather than by the panel, because this one panel shows a
+  // different pull request every time it is opened.
   useLiveRefresh(() => void refreshDetailFromHost("detail"), {
-    key: `pull-request:${reference.projectId}:${reference.repository}#${reference.number}`,
+    key: `pull-request:${environmentId}:${pullRequestKey}`,
   });
-  // Manual refresh also advances the Code tab's token. Live refresh deliberately stops at the
-  // detail and activity reads: keeping the potentially large diff current is a separate policy,
-  // while a reader asking for everything on screen expects the patch to be included too.
-  // A finished agent turn advances the token too: the turn may have pushed to this branch.
-  const [refreshToken, setRefreshToken] = useState(0);
-  const codeRefreshToken = refreshToken + (turnRefresh ?? 0);
   const refreshFromHost = useCallback(async () => {
     await refreshDetailFromHost("all");
     setRefreshToken((token) => token + 1);
@@ -2236,7 +2239,12 @@ function PullRequestDetailPanelBody({
               }}
             >
               {visibleTabs.map((item) => (
-                <Toggle key={item.value} value={item.value}>
+                <Toggle
+                  key={item.value}
+                  value={item.value}
+                  onPointerEnter={item.value === "code" ? () => void loadCodeTab() : undefined}
+                  onFocus={item.value === "code" ? () => void loadCodeTab() : undefined}
+                >
                   {item.label}
                 </Toggle>
               ))}
