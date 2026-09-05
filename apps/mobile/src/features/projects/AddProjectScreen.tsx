@@ -39,9 +39,23 @@ import {
   ProjectId,
   type SourceControlCloneDefaultRepository,
 } from "@t3tools/contracts";
-import { CommonActions, StackActions, useNavigation } from "@react-navigation/native";
+import {
+  CommonActions,
+  StackActions,
+  useFocusEffect,
+  useNavigation,
+} from "@react-navigation/native";
+import { RegistryContext } from "@effect/atom-react";
 import { SymbolView } from "../../components/AppSymbol";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { ActivityIndicator, Alert, Image, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Arr from "effect/Array";
@@ -504,17 +518,25 @@ export function AddProjectSourceScreen() {
   const iconColor = useThemeColor("--color-icon");
   const { environmentOptions, selectedEnvironment, setSelectedEnvironmentId } =
     useSelectedEnvironment();
-  const discoveryState = useEnvironmentQuery(
+  const atomRegistry = useContext(RegistryContext);
+  const discoveryAtom =
     selectedEnvironment === null
       ? null
       : sourceControlEnvironment.discovery({
           environmentId: selectedEnvironment.environmentId,
           input: {},
-        }),
-  );
+        });
+  const discoveryState = useEnvironmentQuery(discoveryAtom);
   const readiness = useMemo(
     () => buildAddProjectRemoteSourceReadiness(discoveryState.data),
     [discoveryState.data],
+  );
+  useFocusEffect(
+    useCallback(() => {
+      if (discoveryAtom !== null && !atomRegistry.get(discoveryAtom).waiting) {
+        atomRegistry.refresh(discoveryAtom);
+      }
+    }, [atomRegistry, discoveryAtom]),
   );
 
   return (
