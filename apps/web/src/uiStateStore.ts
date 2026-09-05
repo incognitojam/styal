@@ -16,6 +16,7 @@ export interface PersistedUiState {
   expandedProjectCwds?: string[];
   projectOrderCwds?: string[];
   defaultAdvertisedEndpointKey?: string | null;
+  sidebarProjectScopeKey?: string | null;
   threadChangedFilesExpansionVersion?: number;
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
 }
@@ -23,6 +24,10 @@ export interface PersistedUiState {
 export interface UiProjectState {
   projectExpandedById: Record<string, boolean>;
   projectOrder: string[];
+  // Logical project key the sidebar list is scoped to, or null for "all
+  // projects". Lives here so routes that unmount the sidebar (Settings)
+  // cannot reset the filter.
+  sidebarProjectScopeKey: string | null;
 }
 
 export interface UiThreadState {
@@ -40,6 +45,7 @@ export interface UiState extends UiProjectState, UiThreadState, UiEndpointState 
 const initialState: UiState = {
   projectExpandedById: {},
   projectOrder: [],
+  sidebarProjectScopeKey: null,
   threadLastVisitedAtById: {},
   pendingThreadVisitBaselineKeys: [],
   threadChangedFilesExpandedById: {},
@@ -73,6 +79,10 @@ function sanitizeBooleanRecord(value: unknown): Record<string, boolean> {
       (entry): entry is [string, boolean] => entry[0].length > 0 && typeof entry[1] === "boolean",
     ),
   );
+}
+
+function sanitizeOptionalKey(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function sanitizeTimestampRecord(value: unknown): Record<string, string> {
@@ -123,11 +133,8 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
       parsed.threadChangedFilesExpansionVersion === THREAD_CHANGED_FILES_EXPANSION_VERSION
         ? sanitizePersistedThreadChangedFilesExpanded(parsed.threadChangedFilesExpandedById)
         : {},
-    defaultAdvertisedEndpointKey:
-      typeof parsed.defaultAdvertisedEndpointKey === "string" &&
-      parsed.defaultAdvertisedEndpointKey.length > 0
-        ? parsed.defaultAdvertisedEndpointKey
-        : null,
+    defaultAdvertisedEndpointKey: sanitizeOptionalKey(parsed.defaultAdvertisedEndpointKey),
+    sidebarProjectScopeKey: sanitizeOptionalKey(parsed.sidebarProjectScopeKey),
   };
 }
 
@@ -192,6 +199,7 @@ export function persistState(state: UiState): void {
         threadLastVisitedAtById: state.threadLastVisitedAtById,
         pendingThreadVisitBaselineKeys: state.pendingThreadVisitBaselineKeys,
         defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
+        sidebarProjectScopeKey: state.sidebarProjectScopeKey,
         threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
         threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
       } satisfies PersistedUiState),
@@ -321,6 +329,17 @@ export function setDefaultAdvertisedEndpointKey(state: UiState, key: string | nu
   };
 }
 
+export function setSidebarProjectScopeKey(state: UiState, projectKey: string | null): UiState {
+  const nextKey = sanitizeOptionalKey(projectKey);
+  if (state.sidebarProjectScopeKey === nextKey) {
+    return state;
+  }
+  return {
+    ...state,
+    sidebarProjectScopeKey: nextKey,
+  };
+}
+
 export function resolveProjectExpanded(
   projectExpandedById: Readonly<Record<string, boolean>>,
   preferenceKeys: readonly string[],
@@ -406,6 +425,7 @@ interface UiStateStore extends UiState {
   resolveThreadVisitBaseline: (threadKey: string, requestedAt: string) => void;
   setThreadChangedFilesExpanded: (threadId: string, turnId: string, expanded: boolean) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
+  setSidebarProjectScopeKey: (projectKey: string | null) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
   reorderProjects: (
     currentProjectOrder: readonly string[],
@@ -430,6 +450,8 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) => setThreadChangedFilesExpanded(state, threadId, turnId, expanded)),
   setDefaultAdvertisedEndpointKey: (key) =>
     set((state) => setDefaultAdvertisedEndpointKey(state, key)),
+  setSidebarProjectScopeKey: (projectKey) =>
+    set((state) => setSidebarProjectScopeKey(state, projectKey)),
   setProjectExpanded: (projectIds, expanded) =>
     set((state) => setProjectExpanded(state, projectIds, expanded)),
   reorderProjects: (currentProjectOrder, draggedProjectIds, targetProjectIds) =>

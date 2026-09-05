@@ -102,7 +102,7 @@ import {
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
-import { useScopedProjectGroup, useSidebarProjectScopeStore } from "../sidebarProjectScopeStore";
+import { useScopedProjectGroup } from "../sidebarProjectScopeStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
@@ -114,7 +114,11 @@ import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
-import { useProjects, useThreadShells } from "../state/entities";
+import {
+  useAllEnvironmentProjectSnapshotsReady,
+  useProjects,
+  useThreadShells,
+} from "../state/entities";
 import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "../state/server";
 import { vcsEnvironment } from "../state/vcs";
 import { threadEnvironment } from "../state/threads";
@@ -1878,8 +1882,8 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
 });
 
 export default function Sidebar() {
-  const projectScopeKey = useSidebarProjectScopeStore((state) => state.projectScopeKey);
-  const onProjectScopeKeyChange = useSidebarProjectScopeStore((state) => state.setProjectScopeKey);
+  const projectScopeKey = useUiStateStore((store) => store.sidebarProjectScopeKey);
+  const onProjectScopeKeyChange = useUiStateStore((store) => store.setSidebarProjectScopeKey);
   const projects = useProjects();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
@@ -2180,8 +2184,13 @@ export default function Sidebar() {
           ),
     [scopedProjectGroup],
   );
+  // A persisted scope whose project is gone falls back to all projects, but
+  // only after every catalog environment has a live project snapshot. Cached
+  // or disconnected environments cannot establish that the project is gone.
+  const allProjectSnapshotsReady = useAllEnvironmentProjectSnapshotsReady();
   useEffect(() => {
     if (
+      allProjectSnapshotsReady &&
       shouldClearProjectScope({
         projectScopeKey,
         scopedProjectGroup,
@@ -2190,7 +2199,13 @@ export default function Sidebar() {
     ) {
       onProjectScopeKeyChange(null);
     }
-  }, [onProjectScopeKeyChange, projectGroups.length, projectScopeKey, scopedProjectGroup]);
+  }, [
+    allProjectSnapshotsReady,
+    onProjectScopeKeyChange,
+    projectGroups.length,
+    projectScopeKey,
+    scopedProjectGroup,
+  ]);
   // Count-only subscription: the parent needs "are there draft rows" for the
   // empty state, while SidebarDraftBlock owns the per-keystroke content
   // subscription. Selecting a number keeps typing in a draft composer from

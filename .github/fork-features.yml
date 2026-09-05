@@ -1326,15 +1326,19 @@ features:
       - apps/web/src/components/Sidebar.tsx
       - apps/web/src/lib/chatThreadActions.ts
       - apps/web/src/sidebarProjectScopeStore.ts
+      - apps/web/src/uiStateStore.ts
     upstream_paths:
       - apps/web/src/components/AppSidebarLayout.tsx
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/Sidebar.tsx
+      - apps/web/src/uiStateStore.ts
     tests:
       - apps/web/src/lib/chatThreadActions.test.ts
+      - apps/web/src/uiStateStore.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/9416
       retire_when: Upstream preserves project scope across sidebar state and every new-thread entry point.
 
   - id: provider-server-settings-isolation
