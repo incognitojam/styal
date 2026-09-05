@@ -2269,6 +2269,12 @@ export default function ChatView(props: ChatViewProps) {
     [openOrReuseProjectDraftThread],
   );
 
+  // Once a thread selects an environment, never substitute the primary
+  // environment's config while the selected environment is still loading.
+  const serverConfig = activeThread
+    ? (activeEnvironment?.serverConfig ?? null)
+    : (primaryEnvironment?.serverConfig ?? null);
+  const providerStatuses = serverConfig?.providers ?? EMPTY_PROVIDERS;
   const selectedProviderByThreadId = composerActiveProvider ?? null;
   const threadProvider =
     activeThread?.modelSelection.instanceId ??
@@ -2278,12 +2284,8 @@ export default function ChatView(props: ChatViewProps) {
     thread: activeThread,
     selectedProvider: selectedProviderByThreadId,
     threadProvider,
+    providers: providerStatuses,
   });
-  // Once a thread selects an environment, never substitute the primary
-  // environment's config while the selected environment is still loading.
-  const serverConfig = activeThread
-    ? (activeEnvironment?.serverConfig ?? null)
-    : (primaryEnvironment?.serverConfig ?? null);
   const pullRequestsCapabilityKnown = serverConfig !== null;
   const supportsPullRequests = serverConfig?.environment.capabilities.pullRequests === true;
   const attachmentEnvironmentConfig = environmentById.get(environmentId)?.serverConfig ?? null;
@@ -2495,7 +2497,6 @@ export default function ChatView(props: ChatViewProps) {
     versionMismatchThreadContinuation,
     versionMismatchServerLabel,
   ]);
-  const providerStatuses = serverConfig?.providers ?? EMPTY_PROVIDERS;
   const providerInstanceEntries = useMemo(
     () =>
       sortProviderInstanceEntries(
