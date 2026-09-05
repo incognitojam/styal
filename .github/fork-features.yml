@@ -460,7 +460,7 @@ features:
     invariants:
       - Turn, working-tree, branch, and pull request diffs order source dependencies first, their tests next, and repository-attributed or recognized generated output last across web, desktop, and mobile review surfaces.
       - Test and generated tiers remain visible, generated files start collapsed, and explicit reader fold choices take precedence over automatic classification.
-      - One persisted web preference switches the diff panel and pull request Code tab between relevance and alphabetical order, while chat previews use the same shared ranking to choose representative files.
+      - One persisted web preference switches the diff panel and pull request Code tab between relevance and alphabetical order.
     implementation_paths:
       - .gitattributes
       - apps/mobile/src/features/review/reviewFileVisibility.ts
@@ -469,7 +469,6 @@ features:
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/server/src/vcs/GitVcsDriverCore.ts
       - apps/web/src/components/DiffPanel.tsx
-      - apps/web/src/components/chat/changedFilesPresentation.ts
       - apps/web/src/components/diffs/DiffFileTierChip.tsx
       - apps/web/src/components/pullRequest/pullRequestDiff.logic.ts
       - apps/web/src/diffPanelStore.ts
@@ -492,7 +491,6 @@ features:
       - apps/server/src/checkpointing/CheckpointDiffQuery.test.ts
       - apps/server/src/pullRequest/PullRequestService.test.ts
       - apps/server/src/vcs/GitVcsDriverCore.test.ts
-      - apps/web/src/components/chat/changedFilesPresentation.test.ts
       - apps/web/src/components/pullRequest/pullRequestDiff.logic.test.ts
       - apps/web/src/diffPanelStore.test.ts
       - packages/shared/src/diffFileOrder.test.ts
