@@ -6,10 +6,11 @@ to take, and dispatching the work, stays with a maintainer.
 
 ## The tracking issue
 
-Once a day the workflow reconciles upstream pull requests merged in the last seven days into the issue
-named by the `UPSTREAM_TRACKING_ISSUE` repository variable. Each line is a checkbox, the merge date,
-the title, and the top-level areas it touched. New candidates are appended. Existing lines and their
-indented notes are preserved.
+Once a day the workflow reconciles upstream pull requests merged inside the configured window into
+the issue named by the `UPSTREAM_TRACKING_ISSUE` repository variable. During the initial catch-up the
+window defaults to 14 days, covering the fork's August 28 divergence boundary with several days of
+margin. Each line is a checkbox, the merge date, the title, and the top-level areas it touched. New
+candidates are inserted by merge date. Existing lines and their indented notes are preserved.
 
 The tracker reads source provenance from recent `main` commit messages. Escaped references retained
 in fork squash commit bodies and `Upstream-PR:` trailers on intake commits both count. When that
@@ -20,14 +21,21 @@ similarity.
 A checked item without a disposition is queued for intake. Terminal dispositions are `promoted`,
 `already present`, and `skip`; use `review needed` for a non-terminal decision. Maintainers may add a
 reason after a manual disposition and may keep direction as indented lines beneath the item. Notes on
-an unticked item expire with it. Unticked items expire after the seven-day UTC scan window, keeping the
-issue a bounded inbox. Checked items and `review needed` decisions remain as the durable backlog and
-are reported when they are outside the window. Terminal entries are pruned on the same schedule.
+an unticked item expire with it. Unticked items expire after the configured UTC scan window. Checked
+items and `review needed` decisions remain as the durable backlog and are reported when they are
+outside the window. Terminal entries are pruned on the same schedule.
 
 The tracker keeps the issue below a 55,000-character operating budget by removing recent terminal
-entries and then the oldest unqueued entries early when necessary. It never compacts queued or
+entries and deferring the newest unqueued entries when necessary. Compact hidden terminal markers
+keep `promoted`, `already present`, and `skip` decisions from being relisted while their sources remain
+inside the scan window. The oldest unresolved slice therefore stays visible during catch-up, and
+deferred newer candidates return as triage makes room. The tracker never compacts queued or
 `review needed` entries; if those alone exceed the budget, the workflow fails with a request to split
-or resolve the backlog. The run summary reports both body size and durable backlog count.
+or resolve the backlog. The run summary reports body size, durable backlog count, and deferred count.
+
+When a 14-day run reports zero deferred catch-up candidates, set the
+`UPSTREAM_TRACKING_WINDOW_DAYS` repository variable to `7` for steady-state operation. The manual
+workflow input overrides that variable when a wider recovery scan is needed.
 
 A gap longer than the scan window can miss upstream merges. Recover by manually dispatching the
 workflow with a temporarily wider `since_days` value, then let the next daily run return to the normal

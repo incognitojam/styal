@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       since_days:
-        description: "Upstream merge window; widen only to recover after an extended tracker outage"
+        description: "Upstream merge window for catch-up or recovery"
         required: false
-        default: "7"
+        default: "14"
         type: string
 
 permissions:
@@ -47,7 +47,7 @@ jobs:
       - name: Reconcile tracking issue
         env:
           GH_TOKEN: ${{ github.token }}
-          SINCE_DAYS: ${{ inputs.since_days || '7' }}
+          SINCE_DAYS: ${{ inputs.since_days || vars.UPSTREAM_TRACKING_WINDOW_DAYS || '14' }}
           UPSTREAM_TRACKING_ISSUE: ${{ vars.UPSTREAM_TRACKING_ISSUE }}
         run: |
           if [[ -z "$UPSTREAM_TRACKING_ISSUE" ]]; then

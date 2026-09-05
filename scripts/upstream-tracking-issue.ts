@@ -22,12 +22,13 @@ export interface UpstreamPullRequest {
 const TRACKING_LINE_PATTERN = /^- \[([ x])\] `#(\d+)` (\d{4}-\d{2}-\d{2})\b/u;
 const DISPOSITION_PATTERN = / — (promoted|already present|skip|review needed)\b/gu;
 const CHERRY_PICK_REFERENCE = /\(cherry picked from commit ([0-9a-f]{40})\)/gu;
+const TERMINAL_STATE_PATTERN = /^<!-- upstream-tracking-terminal:(.*?)-->$/gmu;
 const TRACKING_BODY_TARGET_LENGTH = 55_000;
 const OLD_INTRO = `Upstream pull requests not yet on \`main\`, newest last. Tick a box and add direction
 beneath it, then dispatch an agent with the ticked items. The list is appended by
 \`upstream-tracking.yml\`; edits here are preserved.
 `;
-const INTRO = `Upstream pull requests in the rolling one-week intake window, newest last. Tick an item
+const INTRO = `Upstream pull requests in the rolling intake window, oldest first. Tick an item
 to retain and queue it, then add direction beneath it. Unticked items expire after the window. The
 tracker marks landed source provenance as \`promoted\`. Manual dispositions are \`already present\`,
 \`skip\`, and \`review needed\`; queued items and \`review needed\` decisions remain until resolved.
@@ -39,6 +40,28 @@ export function listedNumbers(body: string): ReadonlySet<number> {
     return match === null ? [] : [Number(match[2])];
   });
   return new Set(numbers);
+}
+
+export function terminalStateNumbers(body: string): ReadonlySet<number> {
+  const matches = [...body.matchAll(TERMINAL_STATE_PATTERN)];
+  if (matches.length > 1) throw new Error("The tracking issue contains multiple terminal markers.");
+  const value = matches[0]?.[1]?.trim();
+  if (value === undefined || value.length === 0) return new Set();
+  if (!/^[1-9]\d*(?:,[1-9]\d*)*$/u.test(value)) {
+    throw new Error("The tracking issue terminal marker is malformed.");
+  }
+  const numbers = value.split(",").map(Number);
+  if (!numbers.every(Number.isSafeInteger)) {
+    throw new Error("The tracking issue terminal marker contains an invalid pull request number.");
+  }
+  return new Set(numbers);
+}
+
+export function writeTerminalState(body: string, numbers: ReadonlySet<number>): string {
+  const withoutState = body.replace(TERMINAL_STATE_PATTERN, "").trimEnd();
+  if (numbers.size === 0) return `${withoutState}\n`;
+  const value = [...numbers].toSorted((left, right) => left - right).join(",");
+  return `${withoutState}\n\n<!-- upstream-tracking-terminal:${value} -->\n`;
 }
 
 function inertInlineCode(value: string): string {
@@ -64,9 +87,22 @@ export function appendUnlisted(
     .toSorted((left, right) => left.mergedAt.localeCompare(right.mergedAt));
   if (added.length === 0) return { body, added };
 
-  const base = body.trim().length === 0 ? INTRO : body.trimEnd() + "\n";
-  const lines = added.map(renderPullRequestLine).join("\n");
-  return { body: `${base}\n${lines}\n`, added };
+  const base = body.trim().length === 0 ? `${INTRO}\n` : body;
+  const lines = base.trimEnd().split("\n");
+  for (const pullRequest of added) {
+    const date = pullRequest.mergedAt.slice(0, 10);
+    const laterEntry = lines.findIndex((line) => {
+      const match = line.match(TRACKING_LINE_PATTERN);
+      return match !== null && (match[3] ?? "") > date;
+    });
+    const stateMarker = lines.findIndex((line) =>
+      line.startsWith("<!-- upstream-tracking-terminal:"),
+    );
+    const insertion =
+      laterEntry === -1 ? (stateMarker === -1 ? lines.length : stateMarker) : laterEntry;
+    lines.splice(insertion, 0, renderPullRequestLine(pullRequest));
+  }
+  return { body: `${lines.join("\n")}\n`, added };
 }
 
 export function refreshTrackingIntro(body: string): string {
@@ -174,21 +210,21 @@ export function fitTrackingIssueBody(
 ): {
   readonly body: string;
   readonly compactedTerminal: ReadonlyArray<number>;
-  readonly compactedOpen: ReadonlyArray<number>;
+  readonly deferredOpen: ReadonlyArray<number>;
   readonly backlogCount: number;
   readonly overflow: boolean;
 } {
   let lines = body.split("\n");
   const compactedTerminal: Array<number> = [];
-  const compactedOpen: Array<number> = [];
+  const deferredOpen: Array<number> = [];
 
   for (const removeTerminal of [true, false]) {
-    let index = 0;
-    while (lines.join("\n").length > targetLength && index < lines.length) {
+    let index = removeTerminal ? 0 : lines.length - 1;
+    while (lines.join("\n").length > targetLength && index >= 0 && index < lines.length) {
       const line = lines[index] ?? "";
       const match = line.match(TRACKING_LINE_PATTERN);
       if (match === null) {
-        index += 1;
+        index += removeTerminal ? 1 : -1;
         continue;
       }
 
@@ -200,11 +236,12 @@ export function fitTrackingIssueBody(
       const open = !checked && disposition !== "review needed" && !terminal;
       if ((removeTerminal && terminal) || (!removeTerminal && open)) {
         if (terminal) compactedTerminal.push(number);
-        else compactedOpen.push(number);
+        else deferredOpen.push(number);
         lines = removeTrackingEntry(lines, index);
+        if (!removeTerminal) index = Math.min(index - 1, lines.length - 1);
         continue;
       }
-      index += 1;
+      index += removeTerminal ? 1 : -1;
     }
   }
 
@@ -220,10 +257,57 @@ export function fitTrackingIssueBody(
   return {
     body: fittedBody,
     compactedTerminal,
-    compactedOpen,
+    deferredOpen,
     backlogCount,
     overflow: fittedBody.length > targetLength,
   };
+}
+
+export function prepareTrackingIssueUpdate(input: {
+  readonly body: string;
+  readonly candidates: ReadonlyArray<UpstreamPullRequest>;
+  readonly landed: ReadonlyMap<number, string>;
+  readonly cutoffDate: string;
+  readonly targetLength?: number;
+}) {
+  const previousTerminal = terminalStateNumbers(input.body);
+  const candidateNumbers = new Set(input.candidates.map((pullRequest) => pullRequest.number));
+  const activeTerminal = new Set(
+    [...previousTerminal].filter((number) => candidateNumbers.has(number)),
+  );
+  const appended = appendUnlisted(
+    refreshTrackingIntro(input.body),
+    input.candidates.filter((pullRequest) => !activeTerminal.has(pullRequest.number)),
+  );
+  const reconciled = reconcilePromoted(appended.body, input.landed);
+  const pruned = pruneTrackingEntries(reconciled.body, input.cutoffDate);
+  for (const number of pruned.prunedTerminal) {
+    if (candidateNumbers.has(number)) activeTerminal.add(number);
+  }
+
+  const compactedTerminal: Array<number> = [];
+  const deferredOpen: Array<number> = [];
+  let bodyWithState = writeTerminalState(pruned.body, activeTerminal);
+  let fitted: ReturnType<typeof fitTrackingIssueBody>;
+  while (true) {
+    const pass = fitTrackingIssueBody(bodyWithState, input.targetLength);
+    compactedTerminal.push(...pass.compactedTerminal);
+    deferredOpen.push(...pass.deferredOpen);
+    for (const number of pass.compactedTerminal) {
+      if (candidateNumbers.has(number)) activeTerminal.add(number);
+    }
+    if (pass.compactedTerminal.length === 0) {
+      fitted = {
+        ...pass,
+        compactedTerminal,
+        deferredOpen,
+      };
+      break;
+    }
+    bodyWithState = writeTerminalState(pass.body, activeTerminal);
+  }
+
+  return { body: fitted.body, appended, reconciled, pruned, fitted };
 }
 
 export interface GitCommitMessage {
@@ -364,7 +448,7 @@ function main(): void {
   const upstream = args.get("--upstream") ?? "pingdotgg/t3code";
   const mainRef = args.get("--main-ref") ?? "origin/main";
   const upstreamRef = args.get("--upstream-ref") ?? "upstream/main";
-  const sinceDays = Number(args.get("--since-days") ?? "7");
+  const sinceDays = Number(args.get("--since-days") ?? "14");
   if (!issue) throw new Error("--issue <number> is required.");
   // Never let gh infer the repository from git remotes: with upstream fetched,
   // it would resolve to upstream and try to edit their issue of the same number.
@@ -399,22 +483,25 @@ function main(): void {
   ) as {
     readonly body: string;
   };
-  const appended = appendUnlisted(refreshTrackingIntro(currentBody.body), candidates);
-  const reconciled = reconcilePromoted(appended.body, landedResult.landed);
-  const pruned = pruneTrackingEntries(reconciled.body, pruneBefore);
-  const fitted = fitTrackingIssueBody(pruned.body);
+  const update = prepareTrackingIssueUpdate({
+    body: currentBody.body,
+    candidates,
+    landed: landedResult.landed,
+    cutoffDate: pruneBefore,
+  });
+  const { appended, reconciled, pruned, fitted } = update;
   if (fitted.overflow) {
     throw new Error(
       `The retained upstream backlog exceeds the ${TRACKING_BODY_TARGET_LENGTH}-character operating budget. Resolve or split backlog entries before rerunning the tracker.`,
     );
   }
 
-  if (fitted.body !== currentBody.body) {
+  if (update.body !== currentBody.body) {
     const bodyPath = NodePath.join(
       NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "upstream-tracking-")),
       "body.md",
     );
-    NodeFS.writeFileSync(bodyPath, fitted.body);
+    NodeFS.writeFileSync(bodyPath, update.body);
     run("gh", ["issue", "edit", issue, "--repo", repository, "--body-file", bodyPath]);
   }
 
@@ -423,7 +510,7 @@ function main(): void {
   console.log(`Pruned ${pruned.prunedTerminal.length} old terminal pull request(s).`);
   console.log(`Expired ${pruned.expiredOpen.length} old unqueued pull request(s).`);
   console.log(`Compacted ${fitted.compactedTerminal.length} recent terminal pull request(s).`);
-  console.log(`Compacted ${fitted.compactedOpen.length} recent unqueued pull request(s).`);
+  console.log(`Deferred ${fitted.deferredOpen.length} newer unqueued pull request(s).`);
   if (pruned.retainedBacklog.length > 0) {
     console.log(
       `Retained backlog entries outside the rolling window: ${pruned.retainedBacklog
@@ -435,9 +522,10 @@ function main(): void {
 
 - Issue body: ${fitted.body.length} / ${TRACKING_BODY_TARGET_LENGTH} operating characters
 - Durable backlog: ${fitted.backlogCount} pull request(s)
+- Deferred catch-up candidates: ${fitted.deferredOpen.length}
 - Appended: ${appended.added.length}
 - Reconciled as promoted: ${reconciled.reconciled.length}
-- Expired or compacted: ${pruned.expiredOpen.length + fitted.compactedOpen.length}
+- Expired: ${pruned.expiredOpen.length}
 `;
   if (process.env.GITHUB_STEP_SUMMARY !== undefined) {
     NodeFS.appendFileSync(process.env.GITHUB_STEP_SUMMARY, runSummary);

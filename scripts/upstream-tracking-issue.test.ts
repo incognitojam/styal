@@ -6,11 +6,14 @@ import {
   fitTrackingIssueBody,
   landedUpstreamPullRequests,
   listedNumbers,
+  prepareTrackingIssueUpdate,
   pruneTrackingEntries,
   reconcilePromoted,
   refreshTrackingIntro,
   renderPullRequestLine,
+  terminalStateNumbers,
   validateTrackingRepository,
+  writeTerminalState,
 } from "./upstream-tracking-issue.ts";
 import { parseSourcePullRequestInput, parseUpstreamProvenance } from "./upstream-provenance.ts";
 
@@ -30,16 +33,18 @@ describe("upstream tracking issue", () => {
     ].join("\n");
     const { body: next, added } = appendUnlisted(body, [
       pullRequest(102, "2026-08-03T10:00:00Z"),
+      pullRequest(99, "2026-07-31T10:00:00Z"),
       pullRequest(100, "2026-08-01T10:00:00Z"),
       pullRequest(101, "2026-08-02T10:00:00Z"),
     ]);
 
     assert.deepEqual(
       added.map((p) => p.number),
-      [101, 102],
+      [99, 101, 102],
     );
     assert.include(next, "- [x] `#100` 2026-08-01");
     assert.include(next, "  take, but keep our sidebar clustering");
+    assert.isTrue(next.indexOf("`#99`") < next.indexOf("`#100`"));
     assert.isTrue(next.indexOf("`#101`") < next.indexOf("`#102`"));
   });
 
@@ -52,7 +57,7 @@ describe("upstream tracking issue", () => {
 
   it("seeds an empty issue with the intro", () => {
     const { body } = appendUnlisted("", [pullRequest(1, "2026-08-01T00:00:00Z")]);
-    assert.include(body, "Upstream pull requests in the rolling one-week intake window");
+    assert.include(body, "Upstream pull requests in the rolling intake window");
     assert.include(body, "- [ ] `#1`");
   });
 
@@ -105,6 +110,18 @@ describe("upstream tracking issue", () => {
     assert.deepEqual([...listedNumbers(body)], [5, 7]);
   });
 
+  it("round-trips compact terminal state without exposing active references", () => {
+    const body = writeTerminalState("intro\n- [ ] `#5` 2026-08-01 · `open`\n", new Set([9, 7]));
+
+    assert.deepEqual([...terminalStateNumbers(body)], [7, 9]);
+    assert.include(body, "<!-- upstream-tracking-terminal:7,9 -->");
+    assert.notInclude(body, "`#7`");
+    assert.throws(
+      () => terminalStateNumbers("<!-- upstream-tracking-terminal:7,nope -->"),
+      "malformed",
+    );
+  });
+
   it("collapses touched paths to their top two segments", () => {
     assert.deepEqual(
       areasForPaths([
@@ -126,7 +143,7 @@ beneath it, then dispatch an agent with the ticked items. The list is appended b
 
     const refreshed = refreshTrackingIntro(legacy);
 
-    assert.include(refreshed, "rolling one-week intake window");
+    assert.include(refreshed, "rolling intake window");
     assert.include(refreshed, "- [ ] `#1`");
     assert.strictEqual(refreshTrackingIntro("custom intro"), "custom intro");
   });
@@ -251,13 +268,13 @@ beneath it, then dispatch an agent with the ticked items. The list is appended b
     const result = fitTrackingIssueBody(body, 260);
 
     assert.deepEqual(result.compactedTerminal, [100]);
-    assert.deepEqual(result.compactedOpen, [101]);
+    assert.deepEqual(result.deferredOpen, [104]);
     assert.strictEqual(result.backlogCount, 2);
     assert.isFalse(result.overflow);
-    assert.notInclude(result.body, "candidate note");
+    assert.include(result.body, "candidate note");
     assert.include(result.body, "preserve this direction");
     assert.include(result.body, "needs a decision");
-    assert.include(result.body, "newer open candidate");
+    assert.notInclude(result.body, "newer open candidate");
   });
 
   it("reports overflow instead of removing checked backlog", () => {
@@ -267,6 +284,52 @@ beneath it, then dispatch an agent with the ticked items. The list is appended b
     assert.isTrue(result.overflow);
     assert.strictEqual(result.body, body);
     assert.strictEqual(result.backlogCount, 1);
+  });
+
+  it("pages catch-up from oldest to newest without relisting terminal decisions", () => {
+    const candidates = [
+      pullRequest(1, "2026-08-01T00:00:00Z", "oldest"),
+      pullRequest(2, "2026-08-02T00:00:00Z", "second"),
+      pullRequest(3, "2026-08-03T00:00:00Z", "third"),
+      pullRequest(4, "2026-08-04T00:00:00Z", "newest"),
+    ];
+    const first = prepareTrackingIssueUpdate({
+      body: "catch-up\n",
+      candidates,
+      landed: new Map(),
+      cutoffDate: "2026-07-01",
+      targetLength: 170,
+    });
+
+    assert.include(first.body, "`#1`");
+    assert.include(first.body, "`#2`");
+    assert.notInclude(first.body, "`#4`");
+    assert.include(first.fitted.deferredOpen, 4);
+
+    const decided = first.body.replace("`oldest`", "`oldest` — skip: not for the fork");
+    const second = prepareTrackingIssueUpdate({
+      body: decided,
+      candidates,
+      landed: new Map(),
+      cutoffDate: "2026-07-01",
+      targetLength: 170,
+    });
+    const third = prepareTrackingIssueUpdate({
+      body: second.body,
+      candidates,
+      landed: new Map(),
+      cutoffDate: "2026-07-01",
+      targetLength: 170,
+    });
+
+    assert.notInclude(second.body, "`#1`");
+    assert.include(second.body, "`#3`");
+    assert.include(terminalStateNumbers(second.body), 1);
+    assert.notInclude(third.body, "`#1`");
+    assert.notInclude(
+      third.appended.added.map((pullRequest) => pullRequest.number),
+      1,
+    );
   });
 
   it("derives landed sources from trailers, fork PR bodies, and cherry-pick metadata", () => {

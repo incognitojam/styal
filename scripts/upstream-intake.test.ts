@@ -259,7 +259,7 @@ describe("upstream intake audit", () => {
     assert.include(refreshTracking?.run ?? "", "gh workflow run upstream-tracking.yml");
   });
 
-  it("keeps recovery scans explicit while scheduled tracking uses the weekly window", () => {
+  it("defaults to the catch-up window while allowing a steady-state repository setting", () => {
     const workflow = parse(NodeFS.readFileSync(trackingWorkflowPath, "utf8")) as {
       readonly on: {
         readonly workflow_dispatch: {
@@ -277,11 +277,12 @@ describe("upstream intake audit", () => {
       };
     };
 
-    assert.equal(workflow.on.workflow_dispatch.inputs.since_days.default, "7");
+    assert.equal(workflow.on.workflow_dispatch.inputs.since_days.default, "14");
     const reconcile = workflow.jobs.track.steps.find(
       (step) => step.name === "Reconcile tracking issue",
     );
     assert.include(reconcile?.env?.SINCE_DAYS ?? "", "inputs.since_days");
+    assert.include(reconcile?.env?.SINCE_DAYS ?? "", "UPSTREAM_TRACKING_WINDOW_DAYS");
     assert.include(reconcile?.run ?? "", '--since-days "$SINCE_DAYS"');
   });
 });
