@@ -540,7 +540,6 @@ features:
       - apps/web/src/components/diffs/AnnotatableCodeView.tsx
       - apps/web/src/components/diffs/DiffCommentAnnotation.tsx
     tests:
-      - apps/web/src/components/diffs/AnnotatableCodeView.test.tsx
       - apps/web/src/components/diffs/DiffCommentAnnotation.test.tsx
       - apps/web/src/components/diffs/commentSubmitShortcut.test.ts
     upstream:
