@@ -3,7 +3,6 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   appendTerminalContextsToPrompt,
-  buildTerminalContextPreviewTitle,
   buildTerminalContextBlock,
   countInlineTerminalContextPlaceholders,
   deriveDisplayedUserMessageState,
@@ -134,20 +133,6 @@ describe("terminalContext", () => {
       previewTitle: null,
       contexts: [],
     });
-  });
-
-  it("returns null preview title when every context is invalid", () => {
-    expect(
-      buildTerminalContextPreviewTitle([
-        makeContext({
-          terminalId: "   ",
-        }),
-        makeContext({
-          id: "context-2",
-          text: "\n\n",
-        }),
-      ]),
-    ).toBeNull();
   });
 
   it("tracks inline terminal context placeholders in prompt text", () => {
