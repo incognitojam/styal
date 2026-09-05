@@ -25,7 +25,7 @@ const browserToolInstructions = (
   mcpServerName: McpServerName,
 ): string => (browserToolsAvailable ? browserToolInstructionBlock(mcpServerName) : "");
 
-export const codexPlanModeDeveloperInstructions = (
+const codexPlanModeDeveloperInstructions = (
   browserToolsAvailable: boolean,
   mcpServerName: McpServerName = ACTIVE_MCP_SERVER_NAME,
 ): string => `<collaboration_mode># Plan Mode (Conversational)
@@ -159,7 +159,7 @@ If the user stays in Plan mode and asks for revisions after a prior \`<proposed_
 ${browserToolInstructions(browserToolsAvailable, mcpServerName)}
 </collaboration_mode>`;
 
-export const codexDefaultModeDeveloperInstructions = (
+const codexDefaultModeDeveloperInstructions = (
   browserToolsAvailable: boolean,
   mcpServerName: McpServerName = ACTIVE_MCP_SERVER_NAME,
 ): string => `<collaboration_mode># Collaboration Mode: Default
