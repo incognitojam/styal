@@ -12,6 +12,7 @@ import {
   validateForkFeatureLedger,
 } from "./fork-feature-ledger.ts";
 import { auditUpstreamIntakeCandidate } from "./upstream-intake.ts";
+import { parseSourcePullRequestInput } from "./upstream-provenance.ts";
 
 const repoRoot = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 
@@ -22,6 +23,26 @@ function flag(name: string): string {
     throw new Error(`${name} requires a value.`);
   }
   return value;
+}
+
+function optionalFlag(name: string): string | undefined {
+  const index = process.argv.indexOf(name);
+  if (index === -1) return undefined;
+  const value = process.argv[index + 1];
+  if (value === undefined || value.startsWith("--")) {
+    throw new Error(`${name} requires a value.`);
+  }
+  return value;
+}
+
+function expectedSourcePullRequests(): ReadonlyArray<number> | undefined {
+  const input = optionalFlag("--expected-source-prs");
+  if (input === undefined) return undefined;
+  const parsed = parseSourcePullRequestInput(input);
+  if (parsed === null) {
+    throw new Error("--expected-source-prs must contain comma-separated pull request numbers.");
+  }
+  return parsed;
 }
 
 function git(args: ReadonlyArray<string>): string {
@@ -75,10 +96,15 @@ try {
   });
   if (ledgerErrors.length > 0) throw new Error(ledgerErrors.join("\n"));
 
+  const commits = lines(git(["rev-list", "--reverse", `${baseSha}..${headSha}`]));
+  const expectedSources = expectedSourcePullRequests();
+
   const audit = auditUpstreamIntakeCandidate({
     baseSha,
     headSha,
-    commits: lines(git(["rev-list", "--reverse", `${baseSha}..${headSha}`])),
+    commits,
+    commitMessages: commits.map((commit) => git(["show", "-s", "--format=%B", commit])),
+    ...(expectedSources === undefined ? {} : { expectedSourcePullRequests: expectedSources }),
     mergeCommits: lines(
       git(["rev-list", "--min-parents=2", "--reverse", `${baseSha}..${headSha}`]),
     ),
@@ -95,6 +121,7 @@ try {
   writeOutput("automatic_eligible", audit.automaticEligible);
   writeOutput("base_sha", baseSha);
   writeOutput("head_sha", headSha);
+  writeOutput("source_prs", audit.sourcePullRequests.join(","));
   for (const error of audit.errors) {
     process.stdout.write(`::error title=Invalid upstream intake candidate::${error}\n`);
   }
