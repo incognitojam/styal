@@ -48,6 +48,7 @@ import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
+import * as Schedule from "effect/Schedule";
 import * as Scope from "effect/Scope";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
@@ -122,6 +123,13 @@ const CAPTURE_PAGE_TIMEOUT_MS = 5_000;
 const RECORDING_ARM_GRACE_MS = 10_000;
 const PICTURE_IN_PICTURE_FRAME_INTERVAL_MS = Math.ceil(1_000 / 12);
 const PICTURE_IN_PICTURE_JPEG_QUALITY = 80;
+/**
+ * Cold guests can reject capturePage with UnknownVizError or never settle it.
+ * Bound each attempt so snapshots release control even when Chromium stalls.
+ */
+const CAPTURE_PAGE_RETRY_ATTEMPTS = 3;
+const CAPTURE_PAGE_RETRY_DELAY_MS = 120;
+const CAPTURE_PAGE_ATTEMPT_TIMEOUT_MS = 1_000;
 const PICTURE_IN_PICTURE_INITIAL_WIDTH = 480;
 const PICTURE_IN_PICTURE_INITIAL_HEIGHT = 320;
 const PICTURE_IN_PICTURE_MIN_WIDTH = 240;
@@ -625,40 +633,45 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     void capture.then(clear, clear);
     return capture;
   };
-  const capturePageWithTimeout = (operation: string, tabId: string, wc: Electron.WebContents) => {
-    const capture = capturePageSingleFlight(wc);
-    return attemptPromise(
-      {
-        operation,
-        tabId,
-        webContentsId: wc.id,
-      },
-      () => capture,
-    ).pipe(
-      Effect.timeoutOrElse({
-        duration: CAPTURE_PAGE_TIMEOUT_MS,
-        orElse: () =>
-          Effect.sync(() => {
-            if (capturePagePromises.get(wc.id) === capture) {
-              capturePagePromises.delete(wc.id);
-            }
-          }).pipe(
-            Effect.andThen(
-              Effect.fail(
-                new PreviewOperationError({
-                  operation,
-                  tabId,
-                  webContentsId: wc.id,
-                  cause: new PreviewCaptureTimeoutError(
-                    `Preview capture timed out after ${CAPTURE_PAGE_TIMEOUT_MS}ms.`,
-                  ),
-                }),
+  // Each run joins the in-flight capture, or starts one when none is pending.
+  const capturePageWithTimeout = (operation: string, tabId: string, wc: Electron.WebContents) =>
+    Effect.suspend(() => {
+      const capture = capturePageSingleFlight(wc);
+      // A stalled capture must not be shared with a later attempt.
+      const release = Effect.sync(() => {
+        if (capturePagePromises.get(wc.id) === capture) {
+          capturePagePromises.delete(wc.id);
+        }
+      });
+      return attemptPromise(
+        {
+          operation,
+          tabId,
+          webContentsId: wc.id,
+        },
+        () => capture,
+      ).pipe(
+        Effect.timeoutOrElse({
+          duration: CAPTURE_PAGE_TIMEOUT_MS,
+          orElse: () =>
+            release.pipe(
+              Effect.andThen(
+                Effect.fail(
+                  new PreviewOperationError({
+                    operation,
+                    tabId,
+                    webContentsId: wc.id,
+                    cause: new PreviewCaptureTimeoutError(
+                      `Preview capture timed out after ${CAPTURE_PAGE_TIMEOUT_MS}ms.`,
+                    ),
+                  }),
+                ),
               ),
             ),
-          ),
-      }),
-    );
-  };
+        }),
+        Effect.onInterrupt(() => release),
+      );
+    });
   const captureWithTimeout = <A, E, R>(
     operation: string,
     tabId: string,
@@ -681,6 +694,42 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           ),
       }),
     );
+  // Retry transient capture failures, and drop any capture whose guest changed meanwhile.
+  const capturePageWithRetry = Effect.fn("PreviewManager.capturePageWithRetry")(function* <E, R>(
+    errorContext: PreviewOperationContext,
+    tabId: string,
+    wc: Electron.WebContents,
+    captureAttempt: Effect.Effect<Electron.NativeImage, E, R>,
+  ) {
+    const requireCurrentGuest = Effect.gen(function* () {
+      const tabs = yield* SynchronizedRef.get(tabsRef);
+      if (wc.isDestroyed() || tabs.get(tabId)?.webContentsId !== wc.id) {
+        return yield* new PreviewWebContentsNotFoundError({ tabId, webContentsId: wc.id });
+      }
+    });
+    const capture = Effect.gen(function* () {
+      // Check after the retry delay, and again before accepting its result.
+      yield* requireCurrentGuest;
+      const image = yield* captureAttempt.pipe(
+        Effect.timeoutOrElse({
+          duration: CAPTURE_PAGE_ATTEMPT_TIMEOUT_MS,
+          orElse: () =>
+            Effect.fail(
+              new PreviewOperationError({ ...errorContext, cause: new Cause.TimeoutError() }),
+            ),
+        }),
+      );
+      yield* requireCurrentGuest;
+      return image;
+    });
+    return yield* capture.pipe(
+      Effect.retry({
+        times: CAPTURE_PAGE_RETRY_ATTEMPTS - 1,
+        schedule: Schedule.spaced(CAPTURE_PAGE_RETRY_DELAY_MS),
+        while: isPreviewOperationError,
+      }),
+    );
+  });
   const currentIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
   const currentMillis = Clock.currentTimeMillis;
   const encodeJson = (errorContext: PreviewOperationContext, value: unknown) =>
@@ -2979,7 +3028,16 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     const [createdAt, millis, image] = yield* Effect.all([
       currentIso,
       currentMillis,
-      captureViewportPage("captureScreenshot.capturePage", tabId, wc),
+      capturePageWithRetry(
+        {
+          operation: "captureScreenshot.capturePage",
+          tabId,
+          webContentsId: wc.id,
+        },
+        tabId,
+        wc,
+        captureViewportPage("captureScreenshot.capturePage", tabId, wc),
+      ),
     ]);
     const id = `browser-screenshot-${artifactSiteSlug(wc.getURL())}-${millis.toString(36)}`;
     const artifactPath = path.join(resolvedArtifactDirectory, `${id}.png`);
@@ -3831,7 +3889,16 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       );
       const [accessibility, sourceImage, diagnostics, timelines] = yield* Effect.all([
         send("Accessibility.getFullAXTree"),
-        captureViewportPageWithSend("automationSnapshot.capturePage", tabId, wc, send),
+        capturePageWithRetry(
+          {
+            operation: "automationSnapshot.capturePage",
+            tabId,
+            webContentsId: wc.id,
+          },
+          tabId,
+          wc,
+          captureViewportPageWithSend("automationSnapshot.capturePage", tabId, wc, send),
+        ),
         Ref.get(diagnosticsRef),
         Ref.get(actionTimelineRef),
       ]);
