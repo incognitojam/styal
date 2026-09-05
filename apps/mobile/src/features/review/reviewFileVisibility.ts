@@ -4,7 +4,7 @@ import { diffFileTier } from "@t3tools/shared/diffFileOrder";
 import { updateReviewExpandedFileIds, updateReviewViewedFileIds } from "./reviewState";
 import type { ReviewRenderableFile } from "./reviewModel";
 
-export function getDefaultReviewExpandedFileIds(
+function getDefaultReviewExpandedFileIds(
   files: ReadonlyArray<ReviewRenderableFile>,
   generatedPaths: ReadonlyArray<string> = [],
 ): ReadonlyArray<string> {
