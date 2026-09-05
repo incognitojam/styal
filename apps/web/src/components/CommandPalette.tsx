@@ -79,6 +79,7 @@ import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
 import { useClientSettings, useLegacySidebarEnabled } from "../hooks/useSettings";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { useTheme } from "../hooks/useTheme";
@@ -727,11 +728,15 @@ function OpenCommandPaletteDialog(props: {
           ),
           retainTerminalOnBranchMismatch: activeThread.worktreePath === null,
         })?.url ?? null);
+  const openPanelPullRequestUrl = useOpenPanelPullRequestUrl(
+    activeThread ? scopeThreadRef(activeThread.environmentId, activeThread.id) : null,
+  );
   const activeThreadReferenceCopyTarget =
     activeThread == null
       ? null
       : resolveThreadReferenceCopyTarget({
           threadId: activeThread.id,
+          openPanelPullRequestUrl,
           linkedPullRequestUrl: activeThread.linkedPullRequest?.url ?? null,
           detectedPullRequestUrl,
         });
@@ -2786,9 +2791,10 @@ function OpenCommandPaletteDialog(props: {
       }
       return;
     }
-    if (command === "thread.copyReference" && activeThreadReferenceCopyTarget !== null) {
+    if (command === "thread.copyReference") {
       event.preventDefault();
       event.stopPropagation();
+      if (activeThreadReferenceCopyTarget === null) return;
       setOpen(false);
       void copyActiveThreadReference();
       return;
