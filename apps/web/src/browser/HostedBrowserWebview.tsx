@@ -29,6 +29,7 @@ import { useBrowserViewportResize } from "./useBrowserViewportResize";
 import {
   INITIAL_WEBVIEW_CRASH_RECOVERY_STATE,
   planWebviewCrashRecovery,
+  WEBVIEW_CRASH_RECOVERY_MAX_ATTEMPTS,
   type WebviewCrashRecoveryState,
 } from "./webviewCrashRecovery";
 
@@ -154,6 +155,7 @@ export function HostedBrowserWebview(props: {
     if (!clientSettingsHydrated || !webview || !config || !bridge) return;
     let disposed = false;
     let recoveryTimeout: ReturnType<typeof setTimeout> | null = null;
+    let recoveryFailures = 0;
     const register = () => {
       const lease = tabLeaseRef.current;
       if (!lease) return;
@@ -203,7 +205,7 @@ export function HostedBrowserWebview(props: {
                 description:
                   error instanceof Error ? error.message : "Could not recover the preview.",
               });
-              recoverGuest();
+              if (++recoveryFailures < WEBVIEW_CRASH_RECOVERY_MAX_ATTEMPTS) recoverGuest();
             });
         }
       }, recovery.delayMs);
