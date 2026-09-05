@@ -1,3 +1,5 @@
+import { isWindowsAbsolutePath } from "./path.ts";
+
 function splitPathAndPosition(value: string): {
   readonly path: string;
   readonly line: string | undefined;
@@ -70,10 +72,15 @@ export function formatWorkspaceRelativePath(
       normalizePathSeparators(trimTrailingPathSeparators(workspaceRoot)),
     );
     const workspaceLabel = basenameOfPath(normalizedWorkspaceRoot);
-    const pathForCompare = normalizedPath.toLowerCase();
-    const workspaceForCompare = normalizedWorkspaceRoot.toLowerCase();
+    const caseInsensitive = isWindowsAbsolutePath(
+      workspaceRoot.replace(/^\/(?=[A-Za-z]:[\\/])/u, ""),
+    );
+    const pathForCompare = caseInsensitive ? normalizedPath.toLowerCase() : normalizedPath;
+    const workspaceForCompare = caseInsensitive
+      ? normalizedWorkspaceRoot.toLowerCase()
+      : normalizedWorkspaceRoot;
     const workspaceWithSeparator = `${workspaceForCompare}/`;
-    const workspaceLabelWithSeparator = `${workspaceLabel.toLowerCase()}/`;
+    const workspaceLabelWithSeparator = `${caseInsensitive ? workspaceLabel.toLowerCase() : workspaceLabel}/`;
     const includeWorkspaceLabel = options?.includeWorkspaceLabel ?? true;
 
     if (pathForCompare === workspaceForCompare) {
