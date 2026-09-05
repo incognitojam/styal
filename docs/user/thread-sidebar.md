@@ -6,6 +6,8 @@ their project, including when you connect to more than one environment.
 
 Pinned threads still move to **Settled** when they become inactive. They also move when their pull
 request merges if **Auto-settle merged threads** is enabled.
+By default, the **Settled** list stays collapsed until you open it and remembers your choice. If
+you have a settled thread open, that thread remains visible until you focus a different thread.
 
 When you un-settle a thread, it returns to the top of the active list so you can find it right
 away. Its timestamps do not change. Other threads keep their positions.

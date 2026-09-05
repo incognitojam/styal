@@ -16,7 +16,7 @@ export function useThreadListV2ShelfPreferences() {
   const snoozedShelfExpanded =
     loaded && preferencesResult.value.threadListV2SnoozedShelfExpanded === true;
   const settledShelfExpanded =
-    !loaded || preferencesResult.value.threadListV2SettledShelfExpanded !== false;
+    loaded && preferencesResult.value.threadListV2SettledShelfExpanded === true;
   const snoozedShelfExpandedRef = useRef(snoozedShelfExpanded);
   const settledShelfExpandedRef = useRef(settledShelfExpanded);
   snoozedShelfExpandedRef.current = snoozedShelfExpanded;
