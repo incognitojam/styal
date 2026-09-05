@@ -41,6 +41,7 @@ import {
 
 import { ServerConfig } from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import { classifyNonZeroExit } from "../vcs/VcsProcess.ts";
 import { MAX_REFERENCES_PER_REQUEST } from "./gitHubReferences.ts";
 import { makeReferenceCache } from "./referenceCache.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
@@ -468,13 +469,39 @@ export const make = Effect.gen(function* () {
       ? resolveCloneProtocol(repository, remoteUrl, input.protocol)
       : input.protocol;
 
-    yield* git.execute({
-      operation: "SourceControlRepositoryService.cloneRepository",
-      cwd: preparedDestination.parentPath,
-      args: ["clone", remoteUrl, preparedDestination.directoryName],
-      timeoutMs: 120_000,
-      maxOutputBytes: 256 * 1024,
-    });
+    const cloneResult = yield* git
+      .execute({
+        operation: "SourceControlRepositoryService.cloneRepository",
+        cwd: preparedDestination.parentPath,
+        args: ["clone", remoteUrl, preparedDestination.directoryName],
+        timeoutMs: 120_000,
+        maxOutputBytes: 256 * 1024,
+        allowNonZeroExit: true,
+      })
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new SourceControlRepositoryError({
+              operation: "cloneRepository",
+              provider,
+              detail: cause.detail,
+              cause,
+            }),
+        ),
+      );
+    if (cloneResult.exitCode !== 0) {
+      const failureKind = classifyNonZeroExit("git", cloneResult.stderr);
+      return yield* new SourceControlRepositoryError({
+        operation: "cloneRepository",
+        provider,
+        detail:
+          failureKind === "authentication"
+            ? "Git could not authenticate. Set up credentials or SSH keys on the cloning environment. For GitHub HTTPS, run gh auth login and gh auth setup-git there."
+            : failureKind === "rate-limited"
+              ? "The Git host rate limit was exceeded. Wait and retry the clone."
+              : "Git could not clone the repository. Check the repository URL, your access, and the network connection on the environment where you are cloning.",
+      });
+    }
 
     const parentNameWithOwner = repository?.parentNameWithOwner ?? null;
     const upstream = !parentNameWithOwner
