@@ -22,6 +22,7 @@ const DISPOSITION_PATTERN = / — (promoted|already present|skip|review needed)\
 const CHERRY_PICK_REFERENCE = /\(cherry picked from commit ([0-9a-f]{40})\)/gu;
 const TERMINAL_STATE_PATTERN = /^<!-- upstream-tracking-terminal:(.*?)-->$/gmu;
 const CATCHUP_SINCE_PATTERN = /^<!-- upstream-tracking-catchup-since:(.*?)-->$/gmu;
+const TRACKING_STATE_LINE_PATTERN = /^<!-- upstream-tracking-(?:terminal|catchup-since):.*-->$/u;
 const TRACKING_BODY_TARGET_LENGTH = 55_000;
 const MAX_UPSTREAM_PAGES = 20;
 const OLD_INTRO = `Upstream pull requests not yet on \`main\`, newest last. Tick a box and add direction
@@ -58,13 +59,6 @@ export function terminalStateNumbers(body: string): ReadonlySet<number> {
   return new Set(numbers);
 }
 
-export function writeTerminalState(body: string, numbers: ReadonlySet<number>): string {
-  const withoutState = body.replace(TERMINAL_STATE_PATTERN, "").trimEnd();
-  if (numbers.size === 0) return `${withoutState}\n`;
-  const value = [...numbers].toSorted((left, right) => left - right).join(",");
-  return `${withoutState}\n\n<!-- upstream-tracking-terminal:${value} -->\n`;
-}
-
 export function catchupSinceIso(body: string): string | undefined {
   const matches = [...body.matchAll(CATCHUP_SINCE_PATTERN)];
   if (matches.length > 1) throw new Error("The tracking issue contains multiple catch-up markers.");
@@ -77,10 +71,56 @@ export function catchupSinceIso(body: string): string | undefined {
   return value;
 }
 
+function withoutTrackingState(body: string): string {
+  const output: Array<string> = [];
+  let removedState = false;
+  for (const line of body.split("\n")) {
+    if (TRACKING_STATE_LINE_PATTERN.test(line)) {
+      while (output.at(-1)?.trim().length === 0) output.pop();
+      removedState = true;
+      continue;
+    }
+    if (removedState && line.trim().length === 0) continue;
+    if (removedState && output.length > 0) output.push("");
+    removedState = false;
+    output.push(line);
+  }
+  return output.join("\n").trimEnd();
+}
+
+export function writeTrackingState(
+  body: string,
+  state: {
+    readonly terminal: ReadonlySet<number>;
+    readonly catchupSince?: string;
+  },
+): string {
+  const content = withoutTrackingState(body);
+  const markers: Array<string> = [];
+  if (state.terminal.size > 0) {
+    const value = [...state.terminal].toSorted((left, right) => left - right).join(",");
+    markers.push(`<!-- upstream-tracking-terminal:${value} -->`);
+  }
+  if (state.catchupSince !== undefined) {
+    markers.push(`<!-- upstream-tracking-catchup-since:${state.catchupSince} -->`);
+  }
+  if (markers.length === 0) return `${content}\n`;
+  return `${content}\n\n${markers.join("\n")}\n`;
+}
+
+export function writeTerminalState(body: string, numbers: ReadonlySet<number>): string {
+  const catchupSince = catchupSinceIso(body);
+  return writeTrackingState(body, {
+    terminal: numbers,
+    ...(catchupSince === undefined ? {} : { catchupSince }),
+  });
+}
+
 export function writeCatchupSince(body: string, sinceIso?: string): string {
-  const withoutState = body.replace(CATCHUP_SINCE_PATTERN, "").trimEnd();
-  if (sinceIso === undefined) return `${withoutState}\n`;
-  return `${withoutState}\n\n<!-- upstream-tracking-catchup-since:${sinceIso} -->\n`;
+  return writeTrackingState(body, {
+    terminal: terminalStateNumbers(body),
+    ...(sinceIso === undefined ? {} : { catchupSince: sinceIso }),
+  });
 }
 
 export function effectiveScanBoundary(body: string, configuredSinceIso: string): string {
