@@ -565,7 +565,6 @@ features:
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/uiStateStore.ts
     tests:
-      - apps/web/src/AppRoot.test.tsx
       - apps/web/src/threadUnreadCompletion.flow.test.ts
       - apps/web/src/uiStateStore.test.ts
     upstream:
