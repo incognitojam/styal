@@ -15,10 +15,13 @@ lines and their indented notes are preserved.
 
 The tracker reads source provenance from `main` commit messages. Escaped references listed beneath a
 `Source PRs:` section in fork squash commit bodies and case-insensitive `Upstream-PR:` trailers on
-intake commits both count. Other upstream references in commit prose do not. When provenance names a
-listed pull request, the tracker checks it and adds `— promoted \`abcdef0\``. Promotion overrides a
-non-terminal `review needed`disposition but not`already present`or`skip`. This recognizes rebased,
-cherry-picked, modified, and squashed ports without guessing from patch similarity.
+intake commits both count. Each source-section list item must contain only its escaped reference.
+Other upstream references in commit prose do not. When provenance names a listed pull request, the
+tracker checks it and adds `— promoted \`abcdef0\``. Promotion overrides a non-terminal disposition
+when its state is `review needed`. It leaves terminal dispositions unchanged. This recognizes
+rebased, cherry-picked, modified, and squashed ports without guessing from patch similarity. Work
+promoted before provenance tracking does not reconcile automatically; mark its source rows
+`already present` once.
 
 A checked item without a disposition is queued for intake. Terminal dispositions are `promoted`,
 `already present`, and `skip`; use `review needed` for a non-terminal decision. Maintainers may add a
@@ -48,6 +51,8 @@ A gap longer than the scan window can miss upstream merges. Recover by manually 
 workflow with a temporarily wider `since_days` value. If that scan defers candidates, its boundary
 remains pinned across subsequent daily runs until catch-up finishes. A recovery scan can briefly
 relist old unqueued or terminal items because the bounded issue does not retain permanent tombstones.
+To intentionally abandon a pinned catch-up, delete the hidden `upstream-tracking-catchup-since`
+marker from the issue body; the next run uses the configured window again.
 
 The issue update is a full-body write. Avoid editing it during a running tracker job; a manual edit in
 the short interval between the workflow's read and write can be overwritten.

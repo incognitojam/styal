@@ -18,6 +18,7 @@ import {
   validateTrackingRepository,
   writeCatchupSince,
   writeTerminalState,
+  writeTrackingState,
 } from "./upstream-tracking-issue.ts";
 import { parseSourcePullRequestInput, parseUpstreamProvenance } from "./upstream-provenance.ts";
 
@@ -140,6 +141,26 @@ describe("upstream tracking issue", () => {
     assert.throws(
       () => catchupSinceIso("<!-- upstream-tracking-catchup-since:not-a-date -->"),
       "malformed",
+    );
+  });
+
+  it("rewrites both hidden markers without accumulating blank lines", () => {
+    const since = "2026-08-22T07:00:00.000Z";
+    const expected = `intro
+
+<!-- upstream-tracking-terminal:7,9 -->
+<!-- upstream-tracking-catchup-since:${since} -->
+`;
+    let body = "intro\n";
+    for (let run = 0; run < 4; run += 1) {
+      body = writeCatchupSince(body, since);
+      body = writeTerminalState(body, new Set([9, 7]));
+      assert.strictEqual(body, expected);
+    }
+
+    assert.strictEqual(
+      writeTrackingState(body, { terminal: new Set([7, 9]) }),
+      "intro\n\n<!-- upstream-tracking-terminal:7,9 -->\n",
     );
   });
 
