@@ -3290,6 +3290,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         });
         return;
       case "compact_boundary":
+        // Compaction has performed work, so its zero-turn result is not the
+        // empty resume handshake. Manual /compact can be the first resumed turn.
+        context.resumeHandshakePending = false;
         yield* emitThreadTokenUsage(
           context,
           compactBoundaryTokenUsageSnapshot(
