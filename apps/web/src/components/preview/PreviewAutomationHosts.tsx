@@ -32,6 +32,7 @@ import {
 import { selectThreadPreviewMiniPlayer, usePreviewMiniPlayerStore } from "~/previewMiniPlayerStore";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { resolveForwardedBrowserTarget } from "~/browser/browserPortForward";
+import { restoreForwardedBrowserUrl } from "~/browser/browserTargetResolver";
 import {
   type ExecutableBrowserWebview,
   findBrowserWebview,
@@ -439,7 +440,9 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
                 environmentId,
                 input: {
                   threadId: request.threadId,
-                  ...(resolvedInputUrl ? { url: resolvedInputUrl } : {}),
+                  ...(resolvedInputUrl
+                    ? { url: restoreForwardedBrowserUrl(environmentId, resolvedInputUrl) }
+                    : {}),
                   // An agent that didn't state a size gets the user's
                   // configured default, same as a hand-opened tab.
                   viewport: browserDefaultOpenViewport(defaults),
