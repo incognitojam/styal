@@ -62,6 +62,10 @@ vi.mock("~/state/session", async (importOriginal) => ({
   readPreparedConnection: mocks.readPreparedConnection,
 }));
 
+vi.mock("~/browser/browserEnvironmentHttp", () => ({
+  previewEnvironmentPost: () => fetch("https://test.t3coderelay.com/api/auth/websocket-ticket"),
+}));
+
 // Stubbed at the direct dependency rather than letting the real module pull in
 // `useSettings` -> `state/server`, which would drag the whole settings and
 // connection graph into a test that only cares about the browser chrome.
@@ -441,11 +445,17 @@ describe("PreviewView navigation", () => {
     const document = installTestDom();
     const { createRoot } = await import("react-dom/client");
     const root = createRoot(document.createElement("div") as unknown as Element);
-    const first = Promise.withResolvers<number>();
-    const second = Promise.withResolvers<number>();
+    let resolveFirst!: (port: number) => void;
+    let resolveSecond!: (port: number) => void;
+    const first = new Promise<number>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const second = new Promise<number>((resolve) => {
+      resolveSecond = resolve;
+    });
     mocks.readPreparedConnection.mockReturnValue({ httpBaseUrl: "https://test.t3coderelay.com" });
     mocks.ensurePortForward.mockReset();
-    mocks.ensurePortForward.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    mocks.ensurePortForward.mockReturnValueOnce(first).mockReturnValueOnce(second);
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => Response.json({ ticket: "test-ticket" })),
@@ -460,10 +470,10 @@ describe("PreviewView navigation", () => {
       });
       expect(mocks.ensurePortForward).toHaveBeenCalledTimes(2);
       await act(async () => {
-        second.resolve(44000);
+        resolveSecond(44000);
       });
       await act(async () => {
-        first.resolve(43000);
+        resolveFirst(43000);
       });
       expect(mocks.navigate.mock.calls).toEqual([
         [TEST_RUNTIME_TAB_ID, "http://localhost:44000/newer"],
