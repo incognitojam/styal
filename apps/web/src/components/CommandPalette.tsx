@@ -922,6 +922,15 @@ function OpenCommandPaletteDialog(props: {
           input: {},
         }),
   );
+  const isSelectingProjectSource =
+    addProjectEnvironmentId !== null &&
+    currentView?.groups[0]?.value === `sources:${addProjectEnvironmentId}`;
+  const refreshSourceControlDiscovery = sourceControlDiscovery.refresh;
+  useEffect(() => {
+    if (isSelectingProjectSource) {
+      refreshSourceControlDiscovery();
+    }
+  }, [isSelectingProjectSource, refreshSourceControlDiscovery]);
   const browseEnvironmentPlatform = getEnvironmentBrowsePlatform(
     browseEnvironment?.serverConfig?.environment.platform.os,
   );

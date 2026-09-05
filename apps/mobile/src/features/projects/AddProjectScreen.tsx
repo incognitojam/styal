@@ -39,7 +39,12 @@ import {
   ProjectId,
   type SourceControlCloneDefaultRepository,
 } from "@t3tools/contracts";
-import { CommonActions, StackActions, useNavigation } from "@react-navigation/native";
+import {
+  CommonActions,
+  StackActions,
+  useFocusEffect,
+  useNavigation,
+} from "@react-navigation/native";
 import { SymbolView } from "../../components/AppSymbol";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, Alert, Image, Pressable, ScrollView, View } from "react-native";
@@ -516,6 +521,8 @@ export function AddProjectSourceScreen() {
     () => buildAddProjectRemoteSourceReadiness(discoveryState.data),
     [discoveryState.data],
   );
+  const refreshDiscovery = discoveryState.refresh;
+  useFocusEffect(useCallback(() => refreshDiscovery(), [refreshDiscovery]));
 
   return (
     <AddProjectShell>
