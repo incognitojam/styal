@@ -8,7 +8,6 @@ on:
       since_days:
         description: "Upstream merge window for catch-up or recovery"
         required: false
-        default: "14"
         type: string
 
 permissions:

@@ -2,8 +2,6 @@
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off globalConsole:off - This tracking script calls gh from a short-lived Node process.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
-import * as NodeOS from "node:os";
-import * as NodePath from "node:path";
 
 import { parseUpstreamProvenance } from "./upstream-provenance.ts";
 
@@ -23,7 +21,9 @@ const TRACKING_LINE_PATTERN = /^- \[([ x])\] `#(\d+)` (\d{4}-\d{2}-\d{2})\b/u;
 const DISPOSITION_PATTERN = / — (promoted|already present|skip|review needed)\b/gu;
 const CHERRY_PICK_REFERENCE = /\(cherry picked from commit ([0-9a-f]{40})\)/gu;
 const TERMINAL_STATE_PATTERN = /^<!-- upstream-tracking-terminal:(.*?)-->$/gmu;
+const CATCHUP_SINCE_PATTERN = /^<!-- upstream-tracking-catchup-since:(.*?)-->$/gmu;
 const TRACKING_BODY_TARGET_LENGTH = 55_000;
+const MAX_UPSTREAM_PAGES = 20;
 const OLD_INTRO = `Upstream pull requests not yet on \`main\`, newest last. Tick a box and add direction
 beneath it, then dispatch an agent with the ticked items. The list is appended by
 \`upstream-tracking.yml\`; edits here are preserved.
@@ -31,7 +31,8 @@ beneath it, then dispatch an agent with the ticked items. The list is appended b
 const INTRO = `Upstream pull requests in the rolling intake window, oldest first. Tick an item
 to retain and queue it, then add direction beneath it. Unticked items expire after the window. The
 tracker marks landed source provenance as \`promoted\`. Manual dispositions are \`already present\`,
-\`skip\`, and \`review needed\`; queued items and \`review needed\` decisions remain until resolved.
+\`skip\`, and \`review needed\`; append them as \`— skip: reason\` (or the corresponding state).
+Queued items and \`review needed\` decisions remain until resolved.
 `;
 
 export function listedNumbers(body: string): ReadonlySet<number> {
@@ -62,6 +63,29 @@ export function writeTerminalState(body: string, numbers: ReadonlySet<number>): 
   if (numbers.size === 0) return `${withoutState}\n`;
   const value = [...numbers].toSorted((left, right) => left - right).join(",");
   return `${withoutState}\n\n<!-- upstream-tracking-terminal:${value} -->\n`;
+}
+
+export function catchupSinceIso(body: string): string | undefined {
+  const matches = [...body.matchAll(CATCHUP_SINCE_PATTERN)];
+  if (matches.length > 1) throw new Error("The tracking issue contains multiple catch-up markers.");
+  const value = matches[0]?.[1]?.trim();
+  if (value === undefined) return undefined;
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString() !== value) {
+    throw new Error("The tracking issue catch-up marker is malformed.");
+  }
+  return value;
+}
+
+export function writeCatchupSince(body: string, sinceIso?: string): string {
+  const withoutState = body.replace(CATCHUP_SINCE_PATTERN, "").trimEnd();
+  if (sinceIso === undefined) return `${withoutState}\n`;
+  return `${withoutState}\n\n<!-- upstream-tracking-catchup-since:${sinceIso} -->\n`;
+}
+
+export function effectiveScanBoundary(body: string, configuredSinceIso: string): string {
+  const saved = catchupSinceIso(body);
+  return saved !== undefined && saved < configuredSinceIso ? saved : configuredSinceIso;
 }
 
 function inertInlineCode(value: string): string {
@@ -95,9 +119,7 @@ export function appendUnlisted(
       const match = line.match(TRACKING_LINE_PATTERN);
       return match !== null && (match[3] ?? "") > date;
     });
-    const stateMarker = lines.findIndex((line) =>
-      line.startsWith("<!-- upstream-tracking-terminal:"),
-    );
+    const stateMarker = lines.findIndex((line) => line.startsWith("<!-- upstream-tracking-"));
     const insertion =
       laterEntry === -1 ? (stateMarker === -1 ? lines.length : stateMarker) : laterEntry;
     lines.splice(insertion, 0, renderPullRequestLine(pullRequest));
@@ -109,12 +131,18 @@ export function refreshTrackingIntro(body: string): string {
   return body.startsWith(OLD_INTRO) ? INTRO + body.slice(OLD_INTRO.length) : body;
 }
 
-function trackingDisposition(line: string): string | undefined {
+function trackingDispositionMatch(
+  line: string,
+): { readonly kind: string; readonly index: number } | undefined {
   for (const match of line.matchAll(DISPOSITION_PATTERN)) {
     const backticksBefore = [...line.slice(0, match.index).matchAll(/`/gu)].length;
-    if (backticksBefore % 2 === 0) return match[1];
+    if (backticksBefore % 2 === 0) return { kind: match[1] ?? "", index: match.index };
   }
   return undefined;
+}
+
+function trackingDisposition(line: string): string | undefined {
+  return trackingDispositionMatch(line)?.kind;
 }
 
 export function reconcilePromoted(
@@ -124,12 +152,23 @@ export function reconcilePromoted(
   const reconciled: Array<number> = [];
   const lines = body.split("\n").map((line) => {
     const match = line.match(TRACKING_LINE_PATTERN);
-    if (match === null || trackingDisposition(line) !== undefined) return line;
+    if (match === null) return line;
+    const disposition = trackingDispositionMatch(line);
+    if (
+      disposition !== undefined &&
+      (disposition.kind === "promoted" ||
+        disposition.kind === "already present" ||
+        disposition.kind === "skip")
+    ) {
+      return line;
+    }
     const number = Number(match[2]);
     const forkSha = landed.get(number);
     if (forkSha === undefined) return line;
     reconciled.push(number);
-    return `${line.replace(/^- \[[ x]\]/u, "- [x]")} — promoted \`${forkSha.slice(0, 7)}\``;
+    const withoutReview =
+      disposition?.kind === "review needed" ? line.slice(0, disposition.index) : line;
+    return `${withoutReview.replace(/^- \[[ x]\]/u, "- [x]")} — promoted \`${forkSha.slice(0, 7)}\``;
   });
   return { body: lines.join("\n"), reconciled };
 }
@@ -353,7 +392,11 @@ export function validateTrackingRepository(repository: string, upstream: string)
 }
 
 function run(command: string, args: ReadonlyArray<string>, input?: string): string {
-  const result = NodeChildProcess.spawnSync(command, args, { encoding: "utf8", input });
+  const result = NodeChildProcess.spawnSync(command, args, {
+    encoding: "utf8",
+    input,
+    maxBuffer: 16 * 1_024 * 1_024,
+  });
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(`${command} ${args.join(" ")} failed: ${result.stderr}`);
@@ -361,8 +404,16 @@ function run(command: string, args: ReadonlyArray<string>, input?: string): stri
   return result.stdout;
 }
 
-function gitCommitMessages(ref: string, sinceDays: number): ReadonlyArray<GitCommitMessage> {
-  const output = run("git", ["log", `--since=${sinceDays}.days`, "--format=%H%x1f%B%x1e", ref]);
+function gitCommitMessages(ref: string): ReadonlyArray<GitCommitMessage> {
+  const output = run("git", [
+    "log",
+    "--regexp-ignore-case",
+    "--grep=Upstream-PR:",
+    "--grep=Source PRs:",
+    "--grep=cherry picked from commit",
+    "--format=%H%x1f%B%x1e",
+    ref,
+  ]);
   return output
     .split("\x1e")
     .map((record) => record.trim())
@@ -386,8 +437,17 @@ interface GraphQlPullRequest {
   readonly number: number;
   readonly title: string;
   readonly mergedAt: string;
+  readonly updatedAt: string;
   readonly mergeCommit: { readonly oid: string } | null;
   readonly files: { readonly nodes: ReadonlyArray<{ readonly path: string }> };
+}
+
+export function upstreamPageReachesWindowBoundary(
+  pullRequests: ReadonlyArray<Pick<GraphQlPullRequest, "updatedAt">>,
+  sinceIso: string,
+): boolean {
+  const oldestUpdated = pullRequests.at(-1)?.updatedAt;
+  return oldestUpdated === undefined || oldestUpdated < sinceIso;
 }
 
 function fetchMergedUpstreamPullRequests(
@@ -399,13 +459,13 @@ function fetchMergedUpstreamPullRequests(
     repository(owner:$owner,name:$name){
       pullRequests(first:100,states:MERGED,orderBy:{field:UPDATED_AT,direction:DESC},after:$cursor){
         pageInfo{hasNextPage endCursor}
-        nodes{number title mergedAt mergeCommit{oid} files(first:100){nodes{path}}}
+        nodes{number title mergedAt updatedAt mergeCommit{oid} files(first:100){nodes{path}}}
       }
     }
   }`;
   const collected: Array<GraphQlPullRequest & { readonly sha: string }> = [];
   let cursor: string | null = null;
-  for (let page = 0; page < 20; page += 1) {
+  for (let page = 0; page < MAX_UPSTREAM_PAGES; page += 1) {
     const args = [
       "api",
       "graphql",
@@ -432,7 +492,21 @@ function fetchMergedUpstreamPullRequests(
       if (node.mergedAt < sinceIso) continue;
       if (node.mergeCommit) collected.push({ ...node, sha: node.mergeCommit.oid });
     }
-    if (!connection.pageInfo.hasNextPage) break;
+    if (
+      !connection.pageInfo.hasNextPage ||
+      upstreamPageReachesWindowBoundary(connection.nodes, sinceIso)
+    ) {
+      break;
+    }
+    if (page === MAX_UPSTREAM_PAGES - 1) {
+      console.log(
+        `::warning::Upstream pull request scan reached the ${MAX_UPSTREAM_PAGES}-page safety cap before the configured window boundary.`,
+      );
+      break;
+    }
+    if (connection.pageInfo.endCursor === null) {
+      throw new Error("Upstream pagination has another page but did not return a cursor.");
+    }
     cursor = connection.pageInfo.endCursor;
   }
   return collected;
@@ -458,16 +532,19 @@ function main(): void {
     throw new Error("--since-days must be a positive integer.");
   }
 
-  const sinceIso = new Date(Date.now() - sinceDays * 86_400_000).toISOString();
-  const pruneBefore = new Date(Date.now() - sinceDays * 86_400_000).toISOString().slice(0, 10);
+  const currentIssue = JSON.parse(
+    run("gh", ["issue", "view", issue, "--repo", repository, "--json", "body"]),
+  ) as {
+    readonly body: string;
+  };
+  const configuredSinceIso = new Date(Date.now() - sinceDays * 86_400_000).toISOString();
+  const sinceIso = effectiveScanBoundary(currentIssue.body, configuredSinceIso);
+  const pruneBefore = sinceIso.slice(0, 10);
   const merged = fetchMergedUpstreamPullRequests(upstream, sinceIso);
   const upstreamMergeCommits = new Map(
     merged.map((pullRequest) => [pullRequest.sha, pullRequest.number] as const),
   );
-  const landedResult = landedUpstreamPullRequests(
-    gitCommitMessages(mainRef, sinceDays),
-    upstreamMergeCommits,
-  );
+  const landedResult = landedUpstreamPullRequests(gitCommitMessages(mainRef), upstreamMergeCommits);
   const candidates = merged
     .filter((pullRequest) => isAncestorOf(pullRequest.sha, upstreamRef))
     .filter((pullRequest) => !isAncestorOf(pullRequest.sha, mainRef))
@@ -478,13 +555,8 @@ function main(): void {
       areas: areasForPaths(pullRequest.files.nodes.map((file) => file.path)),
     }));
 
-  const currentBody = JSON.parse(
-    run("gh", ["issue", "view", issue, "--repo", repository, "--json", "body"]),
-  ) as {
-    readonly body: string;
-  };
   const update = prepareTrackingIssueUpdate({
-    body: currentBody.body,
+    body: writeCatchupSince(currentIssue.body, sinceIso),
     candidates,
     landed: landedResult.landed,
     cutoffDate: pruneBefore,
@@ -496,20 +568,16 @@ function main(): void {
     );
   }
 
-  if (update.body !== currentBody.body) {
-    const bodyPath = NodePath.join(
-      NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "upstream-tracking-")),
-      "body.md",
-    );
-    NodeFS.writeFileSync(bodyPath, update.body);
-    run("gh", ["issue", "edit", issue, "--repo", repository, "--body-file", bodyPath]);
+  const nextBody = fitted.deferredOpen.length === 0 ? writeCatchupSince(update.body) : update.body;
+  if (nextBody !== currentIssue.body) {
+    run("gh", ["issue", "edit", issue, "--repo", repository, "--body-file", "-"], nextBody);
   }
 
   console.log(`Appended ${appended.added.length} pull request(s).`);
   console.log(`Reconciled ${reconciled.reconciled.length} promoted pull request(s).`);
   console.log(`Pruned ${pruned.prunedTerminal.length} old terminal pull request(s).`);
   console.log(`Expired ${pruned.expiredOpen.length} old unqueued pull request(s).`);
-  console.log(`Compacted ${fitted.compactedTerminal.length} recent terminal pull request(s).`);
+  console.log(`Compacted ${fitted.compactedTerminal.length} terminal pull request(s).`);
   console.log(`Deferred ${fitted.deferredOpen.length} newer unqueued pull request(s).`);
   if (pruned.retainedBacklog.length > 0) {
     console.log(
@@ -520,7 +588,8 @@ function main(): void {
   }
   const runSummary = `## Upstream tracking
 
-- Issue body: ${fitted.body.length} / ${TRACKING_BODY_TARGET_LENGTH} operating characters
+- Issue body: ${nextBody.length} / ${TRACKING_BODY_TARGET_LENGTH} operating characters
+- Scan boundary: ${sinceIso}
 - Durable backlog: ${fitted.backlogCount} pull request(s)
 - Deferred catch-up candidates: ${fitted.deferredOpen.length}
 - Appended: ${appended.added.length}
@@ -530,7 +599,7 @@ function main(): void {
   if (process.env.GITHUB_STEP_SUMMARY !== undefined) {
     NodeFS.appendFileSync(process.env.GITHUB_STEP_SUMMARY, runSummary);
   }
-  if (fitted.body.length >= TRACKING_BODY_TARGET_LENGTH * 0.9) {
+  if (nextBody.length >= TRACKING_BODY_TARGET_LENGTH * 0.9) {
     console.log("::warning::The upstream tracking issue is above 90% of its operating budget.");
   }
   for (const error of landedResult.errors) console.log(`::warning::${error}`);

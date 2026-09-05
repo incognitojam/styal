@@ -263,7 +263,7 @@ describe("upstream intake audit", () => {
     const workflow = parse(NodeFS.readFileSync(trackingWorkflowPath, "utf8")) as {
       readonly on: {
         readonly workflow_dispatch: {
-          readonly inputs: { readonly since_days: { readonly default: string } };
+          readonly inputs: { readonly since_days: { readonly default?: string } };
         };
       };
       readonly jobs: {
@@ -277,7 +277,7 @@ describe("upstream intake audit", () => {
       };
     };
 
-    assert.equal(workflow.on.workflow_dispatch.inputs.since_days.default, "14");
+    assert.isUndefined(workflow.on.workflow_dispatch.inputs.since_days.default);
     const reconcile = workflow.jobs.track.steps.find(
       (step) => step.name === "Reconcile tracking issue",
     );

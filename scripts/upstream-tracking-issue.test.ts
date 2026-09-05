@@ -3,6 +3,8 @@ import { assert, describe, it } from "@effect/vitest";
 import {
   appendUnlisted,
   areasForPaths,
+  catchupSinceIso,
+  effectiveScanBoundary,
   fitTrackingIssueBody,
   landedUpstreamPullRequests,
   listedNumbers,
@@ -12,7 +14,9 @@ import {
   refreshTrackingIntro,
   renderPullRequestLine,
   terminalStateNumbers,
+  upstreamPageReachesWindowBoundary,
   validateTrackingRepository,
+  writeCatchupSince,
   writeTerminalState,
 } from "./upstream-tracking-issue.ts";
 import { parseSourcePullRequestInput, parseUpstreamProvenance } from "./upstream-provenance.ts";
@@ -122,6 +126,23 @@ describe("upstream tracking issue", () => {
     );
   });
 
+  it("round-trips the fixed catch-up boundary while candidates are deferred", () => {
+    const since = "2026-08-22T07:00:00.000Z";
+    const body = writeCatchupSince("intro\n", since);
+
+    assert.strictEqual(catchupSinceIso(body), since);
+    assert.strictEqual(effectiveScanBoundary(body, "2026-08-29T07:00:00.000Z"), since);
+    assert.strictEqual(
+      effectiveScanBoundary(body, "2026-08-15T07:00:00.000Z"),
+      "2026-08-15T07:00:00.000Z",
+    );
+    assert.strictEqual(catchupSinceIso(writeCatchupSince(body)), undefined);
+    assert.throws(
+      () => catchupSinceIso("<!-- upstream-tracking-catchup-since:not-a-date -->"),
+      "malformed",
+    );
+  });
+
   it("collapses touched paths to their top two segments", () => {
     assert.deepEqual(
       areasForPaths([
@@ -172,7 +193,7 @@ beneath it, then dispatch an agent with the ticked items. The list is appended b
     assert.deepEqual(second.reconciled, []);
   });
 
-  it("preserves explicit manual dispositions during reconciliation", () => {
+  it("preserves terminal dispositions while promotion resolves review-needed entries", () => {
     const body = [
       "- [x] `#100` 2026-08-01 · `x` — already present",
       "- [x] `#101` 2026-08-01 · `x` — skip: conflicts with fork behavior",
@@ -187,8 +208,11 @@ beneath it, then dispatch an agent with the ticked items. The list is appended b
       ]),
     );
 
-    assert.strictEqual(result.body, body);
-    assert.deepEqual(result.reconciled, []);
+    assert.include(result.body, "`#100` 2026-08-01 · `x` — already present");
+    assert.include(result.body, "`#101` 2026-08-01 · `x` — skip: conflicts with fork behavior");
+    assert.include(result.body, "- [x] `#102` 2026-08-01 · `x` — promoted `ccccccc`");
+    assert.notInclude(result.body, "review needed");
+    assert.deepEqual(result.reconciled, [102]);
   });
 
   it("does not mistake disposition words inside a title for state", () => {
@@ -337,7 +361,8 @@ beneath it, then dispatch an agent with the ticked items. The list is appended b
       [
         {
           sha: "a".repeat(40),
-          message: "fix: combined\n\n- `pingdotgg/t3code#300`\n\nUpstream-PR: 301, 302",
+          message:
+            "fix: combined\n\nSource PRs:\n\n- `pingdotgg/t3code#300`\n\nVerification:\n\n- focused tests\n\nUpstream-PR: 301, 302",
         },
         {
           sha: "b".repeat(40),
@@ -359,13 +384,39 @@ beneath it, then dispatch an agent with the ticked items. The list is appended b
     assert.isNull(parseSourcePullRequestInput("0"));
     assert.isNull(parseSourcePullRequestInput("999999999999999999999"));
 
-    const parsed = parseUpstreamProvenance(["- `pingdotgg/t3code#302`\n\nUpstream-PR: 301, 300"]);
+    const parsed = parseUpstreamProvenance([
+      "Source PRs:\n\n- `pingdotgg/t3code#302`\n\nupstream-pr: 301, 300",
+    ]);
     assert.deepEqual(parsed.pullRequestNumbers, [300, 301, 302]);
     assert.deepEqual(parsed.errors, []);
 
     const malformed = parseUpstreamProvenance(["Upstream-PR: 300, nope"]);
     assert.deepEqual(malformed.pullRequestNumbers, []);
     assert.lengthOf(malformed.errors, 1);
+  });
+
+  it("ignores escaped upstream references outside the explicit source section", () => {
+    const parsed = parseUpstreamProvenance([
+      "Unlike `pingdotgg/t3code#299`, this keeps the fork behavior.\n\nSource PRs:\n\n- `pingdotgg/t3code#300`\n\nNotes:\n\n- `pingdotgg/t3code#301`",
+    ]);
+
+    assert.deepEqual(parsed.pullRequestNumbers, [300]);
+  });
+
+  it("stops updated-at pagination once a page crosses the scan boundary", () => {
+    assert.isFalse(
+      upstreamPageReachesWindowBoundary(
+        [{ updatedAt: "2026-09-05T12:00:00Z" }, { updatedAt: "2026-09-05T10:00:00Z" }],
+        "2026-09-05T09:00:00Z",
+      ),
+    );
+    assert.isTrue(
+      upstreamPageReachesWindowBoundary(
+        [{ updatedAt: "2026-09-05T10:00:00Z" }, { updatedAt: "2026-09-05T08:00:00Z" }],
+        "2026-09-05T09:00:00Z",
+      ),
+    );
+    assert.isTrue(upstreamPageReachesWindowBoundary([], "2026-09-05T09:00:00Z"));
   });
 
   it("refuses to edit an issue in the upstream repository", () => {
