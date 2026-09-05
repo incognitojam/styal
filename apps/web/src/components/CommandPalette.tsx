@@ -55,6 +55,7 @@ import {
 } from "lucide-react";
 import {
   useCallback,
+  useContext,
   useDeferredValue,
   useEffect,
   useLayoutEffect,
@@ -65,7 +66,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtomValue } from "@effect/atom-react";
 
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
@@ -914,23 +915,27 @@ function OpenCommandPaletteDialog(props: {
       desktopLocalBootstraps.find((bootstrap) => bootstrap.httpBaseUrl === displayUrl)?.id ?? null
     );
   }, [browseEnvironment, browseEnvironmentIsDesktopLocal, desktopLocalBootstraps]);
-  const sourceControlDiscovery = useEnvironmentQuery(
+  const atomRegistry = useContext(RegistryContext);
+  const sourceControlDiscoveryAtom =
     browseEnvironmentId === null
       ? null
       : sourceControlEnvironment.discovery({
           environmentId: browseEnvironmentId,
           input: {},
-        }),
-  );
+        });
+  const sourceControlDiscovery = useEnvironmentQuery(sourceControlDiscoveryAtom);
   const isSelectingProjectSource =
     addProjectEnvironmentId !== null &&
     currentView?.groups[0]?.value === `sources:${addProjectEnvironmentId}`;
-  const refreshSourceControlDiscovery = sourceControlDiscovery.refresh;
   useEffect(() => {
-    if (isSelectingProjectSource) {
-      refreshSourceControlDiscovery();
+    if (
+      isSelectingProjectSource &&
+      sourceControlDiscoveryAtom !== null &&
+      !atomRegistry.get(sourceControlDiscoveryAtom).waiting
+    ) {
+      atomRegistry.refresh(sourceControlDiscoveryAtom);
     }
-  }, [isSelectingProjectSource, refreshSourceControlDiscovery]);
+  }, [atomRegistry, isSelectingProjectSource, sourceControlDiscoveryAtom]);
   const browseEnvironmentPlatform = getEnvironmentBrowsePlatform(
     browseEnvironment?.serverConfig?.environment.platform.os,
   );

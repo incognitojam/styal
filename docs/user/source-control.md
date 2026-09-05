@@ -21,8 +21,6 @@ T3 Code works with the platforms your team already uses:
 - Choose **GitHub repository**, **GitLab repository**, **Bitbucket repository**, **Azure DevOps repository**, or paste any **Git URL**
 - Enter the repository path (`owner/repo`, `group/project`, `workspace/repository`, or `project/repository`) or a full Git URL, pick a destination, and start coding
 
-Opening the Add Project source list checks the selected environment's Git and hosting integrations again. After installing or signing into a hosting CLI, reopen the source list to update its setup status. Credentials must be configured on the environment where the repository will be cloned.
-
 **Forks come wired up**
 
 - Cloning a GitHub fork also adds the repository it was forked from as an `upstream` remote, so you can fetch from the original project right away
