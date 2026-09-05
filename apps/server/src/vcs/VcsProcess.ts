@@ -62,6 +62,10 @@ export const classifyNonZeroExit = (command: string, stderr: string): VcsProcess
 
   if (
     normalized.includes("authentication failed") ||
+    (command === "git" &&
+      (normalized.includes("could not read username") ||
+        normalized.includes("could not read password") ||
+        normalized.includes("permission denied (publickey"))) ||
     normalized.includes("not logged in") ||
     normalized.includes("gh auth login") ||
     normalized.includes("glab auth login") ||

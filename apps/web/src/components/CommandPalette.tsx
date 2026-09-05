@@ -33,9 +33,11 @@ import {
   type SourceControlProviderKind,
   type SourceControlRepositoryInfo,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
+  SourceControlRepositoryError,
 } from "@t3tools/contracts";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import {
   ArrowLeftIcon,
   CircleDotIcon,
@@ -181,6 +183,7 @@ import { useFocusPullRequestTab, useViewPullRequest } from "../lib/viewPullReque
 import { getSourceControlPresentation } from "../sourceControlPresentation";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
+const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
 
 /**
  * Shows who owns a repository. The avatar is derived from the repository URL, so
@@ -2304,6 +2307,10 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
 
+    const cloneEnvironmentLabel =
+      environments.find(
+        (environment) => environment.environmentId === addProjectCloneFlow.environmentId,
+      )?.label ?? "the selected server";
     const rawDestination = (destinationPathInput ?? query).trim();
     if (rawDestination.length === 0 || isRemoteProjectCloning) {
       return;
@@ -2313,7 +2320,7 @@ function OpenCommandPaletteDialog(props: {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Clone failed",
+          title: `Clone failed on ${cloneEnvironmentLabel}`,
           description: "Windows-style paths are only supported on Windows.",
         }),
       );
@@ -2324,7 +2331,7 @@ function OpenCommandPaletteDialog(props: {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Clone failed",
+          title: `Clone failed on ${cloneEnvironmentLabel}`,
           description: "Relative paths require an active project.",
         }),
       );
@@ -2368,11 +2375,12 @@ function OpenCommandPaletteDialog(props: {
     setIsRemoteProjectCloning(false);
     if (cloneResult._tag === "Failure") {
       if (!isAtomCommandInterrupted(cloneResult)) {
+        const error = squashAtomCommandFailure(cloneResult);
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Clone failed",
-            description: errorMessage(squashAtomCommandFailure(cloneResult)),
+            title: `Clone failed on ${cloneEnvironmentLabel}`,
+            description: isSourceControlRepositoryError(error) ? error.detail : errorMessage(error),
           }),
         );
       }

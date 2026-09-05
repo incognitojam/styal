@@ -681,6 +681,108 @@ it.effect("falls back to the requested clone URL when the repository lookup fail
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 
+for (const [name, stderr, expectedDetail] of [
+  [
+    "missing HTTPS credentials",
+    "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+    "Git authentication failed.",
+  ],
+  [
+    "missing password",
+    "fatal: could not read Password for 'https://user@github.com': No such device or address",
+    "Git authentication failed.",
+  ],
+  [
+    "SSH authentication",
+    "git@github.com: Permission denied (publickey).",
+    "Git authentication failed.",
+  ],
+  [
+    "rate limiting",
+    "remote: Too many requests (HTTP 429)",
+    "The Git host rate limit was exceeded.",
+  ],
+  [
+    "other failures",
+    "remote: repository not found using secret-token",
+    "Git could not clone the repository.",
+  ],
+] as const) {
+  it.effect(`explains clone ${name} without exposing process output`, () =>
+    Effect.gen(function* () {
+      const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+      const error = yield* Effect.flip(
+        service.cloneRepository({
+          remoteUrl: CLONE_URLS.url,
+          destinationPath: "/projects/t3code",
+        }),
+      );
+
+      assert.strictEqual(error.operation, "cloneRepository");
+      assert.isTrue(error.detail.startsWith(expectedDetail));
+      assert.isUndefined(error.cause);
+      assert.notInclude(error.message, stderr);
+      assert.isFalse(error.message.includes("secret-token"));
+      if (expectedDetail === "Git authentication failed.") {
+        assert.include(error.detail, "Git credentials or SSH keys");
+        assert.include(error.detail, "gh auth login and gh auth setup-git");
+      }
+    }).pipe(
+      Effect.provide(
+        makeLayer({
+          fileSystem: FileSystem.makeNoop({
+            exists: () => Effect.succeed(false),
+            makeDirectory: () => Effect.void,
+          }),
+          git: {
+            execute: (input) => {
+              assert.strictEqual(input.allowNonZeroExit, true);
+              return Effect.succeed({
+                ...processOutput(),
+                exitCode: ChildProcessSpawner.ExitCode(128),
+                stderr,
+              });
+            },
+          },
+        }),
+      ),
+    ),
+  );
+}
+
+it.effect("preserves clone process failures such as timeouts", () =>
+  Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const error = yield* Effect.flip(
+      service.cloneRepository({
+        remoteUrl: CLONE_URLS.url,
+        destinationPath: "/projects/t3code",
+      }),
+    );
+    assert.strictEqual(error.detail, "Git command timed out.");
+  }).pipe(
+    Effect.provide(
+      makeLayer({
+        fileSystem: FileSystem.makeNoop({
+          exists: () => Effect.succeed(false),
+          makeDirectory: () => Effect.void,
+        }),
+        git: {
+          execute: (input) =>
+            Effect.fail(
+              new GitCommandError({
+                operation: input.operation,
+                command: "git",
+                cwd: input.cwd,
+                detail: "Git command timed out.",
+              }),
+            ),
+        },
+      }),
+    ),
+  ),
+);
+
 it.effect("preserves destination probe failures instead of treating them as missing paths", () => {
   const fileSystemCause = PlatformError.systemError({
     _tag: "PermissionDenied",

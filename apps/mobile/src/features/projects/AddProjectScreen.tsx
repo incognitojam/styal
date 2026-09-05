@@ -37,6 +37,7 @@ import {
   CommandId,
   type EnvironmentId,
   ProjectId,
+  SourceControlRepositoryError,
   type SourceControlCloneDefaultRepository,
 } from "@t3tools/contracts";
 import {
@@ -61,6 +62,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Arr from "effect/Array";
 import * as Cause from "effect/Cause";
 import * as Order from "effect/Order";
+import * as Schema from "effect/Schema";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { cn } from "../../lib/cn";
 
@@ -92,6 +94,8 @@ interface EnvironmentOption {
   readonly connectionError: string | null;
   readonly connectionErrorTraceId: string | null;
 }
+
+const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
 
 const environmentOptionOrder = Order.mapInput(
   Order.Struct({
@@ -1021,7 +1025,9 @@ export function AddProjectDestinationScreen(props: {
       },
     });
     if (AsyncResult.isFailure(cloneResult)) {
-      setError(errorMessage(Cause.squash(cloneResult.cause)));
+      const error = Cause.squash(cloneResult.cause);
+      const detail = isSourceControlRepositoryError(error) ? error.detail : errorMessage(error);
+      setError(`Clone failed on ${environment.label}. ${detail}`);
     } else {
       // The clone itself succeeded, so this is a warning rather than a failure:
       // the repository is on disk, just without the remote that was asked for.
