@@ -10,6 +10,7 @@ import {
   CircleDashedIcon,
   InfoIcon,
   RefreshCwIcon,
+  SlidersHorizontalIcon,
 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 
@@ -42,7 +43,14 @@ import {
   USAGE_EMISSIONS_GRAMS_PER_1K_OUTPUT_TOKENS,
 } from "@t3tools/shared/usageFormat";
 import { Button } from "../ui/button";
-import { Menu, MenuCheckboxItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
+import {
+  Menu,
+  MenuCheckboxItem,
+  MenuItem,
+  MenuPopup,
+  MenuSeparator,
+  MenuTrigger,
+} from "../ui/menu";
 import { ScrollArea } from "../ui/scroll-area";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import {
@@ -305,11 +313,6 @@ export function UsagePage() {
 
         <ScrollArea className="min-h-0 flex-1">
           <WorkspacePageContainer width="wide">
-            {!showingLimits ? (
-              <div className="flex justify-end">
-                <UsagePriceOverrides usage={environments} />
-              </div>
-            ) : null}
             {selectedEnvironments.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 {environments.length === 0
@@ -704,6 +707,7 @@ function UsageEnvironmentFilter({
   readonly duplicateSources: readonly string[];
   readonly staleEnvironments: readonly string[];
 }) {
+  const [modelPricesOpen, setModelPricesOpen] = useState(false);
   const allSelected = selectedEnvironmentIds === null;
   const label = allSelected
     ? "All environments"
@@ -817,8 +821,20 @@ function UsageEnvironmentFilter({
               staleEnvironments={staleEnvironments}
             />
           ) : null}
+          <MenuSeparator />
+          <MenuItem onClick={() => setModelPricesOpen(true)}>
+            <SlidersHorizontalIcon aria-hidden />
+            Model prices
+          </MenuItem>
         </MenuPopup>
       </Menu>
+      {modelPricesOpen ? (
+        <UsagePriceOverrides
+          usage={environments}
+          initialSelectedEnvironmentIds={selectedEnvironmentIds}
+          onOpenChange={setModelPricesOpen}
+        />
+      ) : null}
     </>
   );
 }
