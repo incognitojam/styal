@@ -866,7 +866,7 @@ const EMPTY_THREAD_DRAFT = Object.freeze<ComposerThreadDraftState>({
  * slice — adding a new field to the interface (e.g. `elementContexts`) only
  * has to be reflected here, not in every stub.
  */
-export function createEmptyThreadDraft(): ComposerThreadDraftState {
+function createEmptyThreadDraft(): ComposerThreadDraftState {
   return {
     prompt: "",
     images: [],
@@ -4561,9 +4561,7 @@ export function useThreadHasUnsentDraft(threadRef: ScopedThreadRef): boolean {
   );
 }
 
-export function useComposerDraftModelState(
-  threadRef: ComposerThreadTarget,
-): ComposerDraftModelState {
+function useComposerDraftModelState(threadRef: ComposerThreadTarget): ComposerDraftModelState {
   return useComposerDraftStore(
     useShallow((state) => {
       const draft = getComposerDraftState(state, threadRef);

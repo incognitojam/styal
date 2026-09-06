@@ -71,7 +71,7 @@ export function filterTerminalContextsWithText<T extends { text: string }>(
   return contexts.filter((context) => hasTerminalContextText(context));
 }
 
-export function normalizeTerminalContextSelection(
+function normalizeTerminalContextSelection(
   selection: TerminalContextSelection,
 ): TerminalContextSelection | null {
   const text = normalizeTerminalContextText(selection.text);
@@ -91,10 +91,7 @@ export function normalizeTerminalContextSelection(
   };
 }
 
-export function formatTerminalContextRange(selection: {
-  lineStart: number;
-  lineEnd: number;
-}): string {
+function formatTerminalContextRange(selection: { lineStart: number; lineEnd: number }): string {
   return selection.lineStart === selection.lineEnd
     ? `line ${selection.lineStart}`
     : `lines ${selection.lineStart}-${selection.lineEnd}`;
