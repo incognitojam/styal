@@ -110,6 +110,7 @@ describe("CheckpointDiffQuery.layer", () => {
                 });
               }),
             getThreadRuntimeContext: () => Effect.die("unused"),
+            getTurnStartMessage: () => Effect.die("unused"),
             getThreadShellById: () => Effect.succeed(Option.none()),
             getThreadDetailById: () => Effect.succeed(Option.none()),
             getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
@@ -209,6 +210,7 @@ describe("CheckpointDiffQuery.layer", () => {
             getThreadCheckpointContext: () => Effect.succeed(Option.some(threadCheckpointContext)),
             getFullThreadDiffContext: () => Effect.die("unused"),
             getThreadRuntimeContext: () => Effect.die("unused"),
+            getTurnStartMessage: () => Effect.die("unused"),
             getThreadShellById: () => Effect.succeed(Option.none()),
             getThreadDetailById: () => Effect.succeed(Option.none()),
             getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
@@ -301,6 +303,7 @@ describe("CheckpointDiffQuery.layer", () => {
           Layer.succeed(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
             getEventReplayStats: () => Effect.die("unused"),
             getThreadRuntimeContext: () => Effect.die("unused"),
+            getTurnStartMessage: () => Effect.die("unused"),
             getCommandReadModel: () =>
               Effect.die("CheckpointDiffQuery should not request the command read model"),
             getSnapshot: () =>
@@ -402,6 +405,7 @@ describe("CheckpointDiffQuery.layer", () => {
             getThreadCheckpointContext: () => Effect.succeed(Option.some(threadCheckpointContext)),
             getFullThreadDiffContext: () => Effect.die("unused"),
             getThreadRuntimeContext: () => Effect.die("unused"),
+            getTurnStartMessage: () => Effect.die("unused"),
             getThreadShellById: () => Effect.succeed(Option.none()),
             getThreadDetailById: () => Effect.succeed(Option.none()),
             getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
@@ -476,6 +480,7 @@ describe("CheckpointDiffQuery.layer", () => {
             getThreadCheckpointContext: () => Effect.succeed(Option.some(threadCheckpointContext)),
             getFullThreadDiffContext: () => Effect.die("unused"),
             getThreadRuntimeContext: () => Effect.die("unused"),
+            getTurnStartMessage: () => Effect.die("unused"),
             getThreadShellById: () => Effect.succeed(Option.none()),
             getThreadDetailById: () => Effect.succeed(Option.none()),
             getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
@@ -535,6 +540,7 @@ describe("CheckpointDiffQuery.layer", () => {
             getThreadCheckpointContext: () => Effect.succeed(Option.none()),
             getFullThreadDiffContext: () => Effect.succeed(Option.none()),
             getThreadRuntimeContext: () => Effect.die("unused"),
+            getTurnStartMessage: () => Effect.die("unused"),
             getThreadShellById: () => Effect.succeed(Option.none()),
             getThreadDetailById: () => Effect.succeed(Option.none()),
             getThreadDetailSnapshot: () => Effect.succeed(Option.none()),

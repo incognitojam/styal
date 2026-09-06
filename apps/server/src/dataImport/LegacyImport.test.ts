@@ -610,6 +610,7 @@ it.effect("imports selected history and safe preferences independently", () => {
   const snapshots = ProjectionSnapshotQuery.of({
     getEventReplayStats: () => Effect.die("unused"),
     getThreadRuntimeContext: () => Effect.die("unused"),
+    getTurnStartMessage: () => Effect.die("unused"),
     getCommandReadModel: () => Effect.succeed(emptyReadModel),
     getSnapshot: () => Effect.succeed(emptyReadModel),
     getShellSnapshot: () => Effect.succeed(emptyShell),
@@ -934,6 +935,7 @@ it.effect("imports one thread at a time and resumes after an interrupted thread"
   const snapshots = ProjectionSnapshotQuery.of({
     getEventReplayStats: () => Effect.die("unused"),
     getThreadRuntimeContext: () => Effect.die("unused"),
+    getTurnStartMessage: () => Effect.die("unused"),
     getCommandReadModel: () => Effect.succeed(emptyReadModel),
     getSnapshot: () => Effect.succeed(emptyReadModel),
     getShellSnapshot: () => Effect.succeed(emptyShell),
@@ -1089,6 +1091,7 @@ it.effect("repairs provider context for threads imported by an earlier release",
   const snapshots = ProjectionSnapshotQuery.of({
     getEventReplayStats: () => Effect.die("unused"),
     getThreadRuntimeContext: () => Effect.die("unused"),
+    getTurnStartMessage: () => Effect.die("unused"),
     getCommandReadModel: () => Effect.succeed(emptyReadModel),
     getSnapshot: () => Effect.succeed(emptyReadModel),
     getShellSnapshot: () => Effect.succeed(emptyShell),
