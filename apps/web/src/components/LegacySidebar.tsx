@@ -353,7 +353,7 @@ interface SidebarThreadRowProps {
   ) => boolean;
 }
 
-export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowProps) {
+const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowProps) {
   const {
     orderedProjectThreadKeys,
     isActive,
