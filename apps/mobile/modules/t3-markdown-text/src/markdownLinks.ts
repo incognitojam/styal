@@ -44,6 +44,18 @@ export function isMarkdownFileLinkLabel(
   return labelLink.kind === "file" && labelLink.path === file.path;
 }
 
+export type MarkdownLinkIcon = "github";
+
+/**
+ * Sites whose brand mark replaces the generic external-link glyph. The marks
+ * are monochrome and tinted with the link color, so they follow the theme.
+ */
+export function resolveMarkdownLinkIcon(host: string): MarkdownLinkIcon | null {
+  const hostname = host.toLowerCase();
+  if (hostname === "github.com" || hostname.endsWith(".github.com")) return "github";
+  return null;
+}
+
 const FILE_ICON_BY_NAME: Readonly<Record<string, MarkdownFileIcon>> = {
   ".babelrc": "babel",
   ".babelrc.json": "babel",
