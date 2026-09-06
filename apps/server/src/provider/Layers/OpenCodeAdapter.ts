@@ -4,6 +4,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ProviderRuntimeEvent,
+  type ProviderSendTurnInput,
   type ProviderSession,
   RuntimeItemId,
   RuntimeRequestId,
@@ -3476,9 +3477,10 @@ export function makeOpenCodeAdapter(
       );
     });
 
-    const compactThread: NonNullable<OpenCodeAdapterShape["compactThread"]> = Effect.fn(
-      "compactThread",
-    )(function* (threadId, requestedModelSelection) {
+    const compactThread = Effect.fn("compactThread")(function* (
+      threadId: ThreadId,
+      requestedModelSelection?: ProviderSendTurnInput["modelSelection"],
+    ) {
       const context = yield* ensureSessionContext(sessions, threadId);
       yield* awaitOpenCodeContextReady(context);
       const modelSelection =
@@ -3893,7 +3895,7 @@ export function makeOpenCodeAdapter(
       },
       startSession,
       sendTurn,
-      compactThread,
+      compaction: { type: "native", start: compactThread },
       interruptTurn,
       respondToRequest,
       respondToUserInput,
