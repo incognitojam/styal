@@ -7829,7 +7829,7 @@ export default function ChatView(props: ChatViewProps) {
           mode="embedded"
           threadRef={activeThreadRef}
           tabId={renderedRightPanelSurface.resourceId}
-          visible
+          visible={rightPanelOpen}
           onSendAnnotation={(annotation, image) => {
             void onSend(undefined, "foreground", { annotation, image });
           }}
