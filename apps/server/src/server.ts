@@ -355,6 +355,7 @@ const TerminalLayerLive = Layer.merge(
   TerminalManager.layer.pipe(
     Layer.provide(PtyAdapterLive),
     Layer.provide(PortScannerLayerLive),
+    Layer.provide(NativeTelemetryLayerLive),
     Layer.provide(WorkspacePortAllocatorLayerLive),
     Layer.provide(TerminalBrowserOpenLayerLive),
   ),
