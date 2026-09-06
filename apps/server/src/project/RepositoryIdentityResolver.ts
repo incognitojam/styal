@@ -27,7 +27,10 @@ export interface RepositoryIdentityResolverOptions {
 export class RepositoryIdentityResolver extends Context.Service<
   RepositoryIdentityResolver,
   {
-    readonly resolve: (cwd: string) => Effect.Effect<RepositoryIdentity | null>;
+    readonly resolve: (
+      cwd: string,
+      options?: { readonly refresh?: boolean },
+    ) => Effect.Effect<RepositoryIdentity | null>;
   }
 >()("@styal/cli/project/RepositoryIdentityResolver") {}
 
@@ -212,7 +215,8 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
 
   const resolve: RepositoryIdentityResolver["Service"]["resolve"] = Effect.fn(
     "RepositoryIdentityResolver.resolve",
-  )(function* (cwd) {
+  )(function* (cwd, options) {
+    if (options?.refresh) yield* Cache.invalidate(repositoryRootCache, cwd);
     const rootPath = yield* Cache.get(repositoryRootCache, cwd);
     if (rootPath === null) return null;
     // The root is stable across checkouts; the branch's remote is not.
@@ -234,6 +238,7 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
         ? parseCurrentBranchRemoteName(branchRemoteResult.value.stdout)
         : null;
     const cacheKey = `${rootPath}${CACHE_KEY_SEPARATOR}${branchRemoteName ?? ""}`;
+    if (options?.refresh) yield* Cache.invalidate(repositoryIdentityCache, cacheKey);
     return yield* Cache.get(repositoryIdentityCache, cacheKey);
   });
 

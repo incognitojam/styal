@@ -416,14 +416,6 @@ export function HomeScreen(props: HomeScreenProps) {
     [threadListV2Enabled, projectGroups, effectiveGroupDisplayStates, hasSearchQuery],
   );
 
-  const projectCwdByKey = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const project of props.projects) {
-      map.set(scopedProjectKey(project.environmentId, project.id), project.workspaceRoot);
-    }
-    return map;
-  }, [props.projects]);
-
   const projectByKey = useMemo(() => {
     const map = new Map<string, EnvironmentProject>();
     for (const project of props.projects) {
@@ -852,9 +844,6 @@ export function HomeScreen(props: HomeScreenProps) {
           onPinThread={handlePinThread}
           onUnpinThread={handleUnpinThread}
           onMovePinnedThread={handleMovePinnedThread}
-          projectCwd={
-            projectCwdByKey.get(scopedProjectKey(thread.environmentId, thread.projectId)) ?? null
-          }
           onSwipeableClose={handleSwipeableClose}
           onSwipeableWillOpen={handleSwipeableWillOpen}
         />
@@ -877,7 +866,6 @@ export function HomeScreen(props: HomeScreenProps) {
       machineByEnvironmentId,
       pinReorderEnvironmentIds,
       projectByKey,
-      projectCwdByKey,
       props.onArchiveThread,
       props.onDeletePendingTask,
       props.onSelectPendingTask,
@@ -905,7 +893,6 @@ export function HomeScreen(props: HomeScreenProps) {
   const v2ExtraData = useMemo(
     () => ({
       projectByKey,
-      projectCwdByKey,
       projectTitleByProjectKey: v2ProjectTitleByProjectKey,
       serverConfigs,
       savedConnectionsById: props.savedConnectionsById,
@@ -915,7 +902,6 @@ export function HomeScreen(props: HomeScreenProps) {
     }),
     [
       projectByKey,
-      projectCwdByKey,
       props.searchQuery,
       props.savedConnectionsById,
       serverConfigs,
@@ -927,12 +913,11 @@ export function HomeScreen(props: HomeScreenProps) {
 
   const extraData = useMemo(
     () => ({
-      projectCwdByKey,
       savedConnectionsById: props.savedConnectionsById,
       searchQuery: props.searchQuery,
       threadSearchMatchByKey,
     }),
-    [projectCwdByKey, props.savedConnectionsById, props.searchQuery, threadSearchMatchByKey],
+    [props.savedConnectionsById, props.searchQuery, threadSearchMatchByKey],
   );
 
   const renderItem = useCallback(
@@ -984,10 +969,6 @@ export function HomeScreen(props: HomeScreenProps) {
                 props.savedConnectionsById[thread.environmentId]?.environmentLabel ?? null
               }
               environmentMachine={machineByEnvironmentId.get(thread.environmentId)}
-              projectCwd={
-                projectCwdByKey.get(scopedProjectKey(thread.environmentId, thread.projectId)) ??
-                null
-              }
               isLast={item.isLast}
               searchMatch={threadSearchMatchByKey.get(
                 threadSearchMatchKey({
@@ -1023,7 +1004,6 @@ export function HomeScreen(props: HomeScreenProps) {
       handleSwipeableWillOpen,
       handleRegenerateThreadTitle,
       machineByEnvironmentId,
-      projectCwdByKey,
       props.onArchiveThread,
       props.onDeletePendingTask,
       props.onDeleteThread,

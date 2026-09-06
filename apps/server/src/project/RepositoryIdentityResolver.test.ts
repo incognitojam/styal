@@ -38,15 +38,16 @@ const makeRepositoryIdentityResolverTestLayer = (options: {
   ).pipe(Layer.provide(ProcessRunner.layer));
 
 it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
-  it.effect("reuses the cached Git root for repeated workspace lookups", () => {
+  it.effect("refreshes the Git root only when requested", () => {
     const calls: Array<ReadonlyArray<string>> = [];
+    let rootPath = "/repo";
     const processRunner = Layer.succeed(ProcessRunner.ProcessRunner, {
       run: (input) =>
         Effect.sync(() => {
           calls.push(input.args);
           return {
             stdout: input.args.includes("rev-parse")
-              ? "/repo\n"
+              ? `${rootPath}\n`
               : input.args.includes("for-each-ref")
                 ? ""
                 : "remote.origin.url git@github.com:T3Tools/t3code.git\n",
@@ -68,6 +69,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
     return Effect.gen(function* () {
       const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
       const first = yield* resolver.resolve("/repo/packages/web");
+      rootPath = "/repo/packages/web";
       const second = yield* resolver.resolve("/repo/packages/web");
 
       expect(first?.canonicalKey).toBe("github.com/t3tools/t3code");
@@ -77,6 +79,28 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
         ["-C", "/repo", "for-each-ref", "--format=%(HEAD)%09%(upstream:remotename)", "refs/heads"],
         ["-C", "/repo", "config", "--get-regexp", "^remote\\..*\\.(url|gh-resolved)$"],
         ["-C", "/repo", "for-each-ref", "--format=%(HEAD)%09%(upstream:remotename)", "refs/heads"],
+      ]);
+
+      const refreshed = yield* resolver.resolve("/repo/packages/web", { refresh: true });
+      expect(refreshed?.rootPath).toBe("/repo/packages/web");
+      expect(yield* resolver.resolve("/repo/packages/web")).toEqual(refreshed);
+      expect(calls.slice(4)).toEqual([
+        ["-C", "/repo/packages/web", "rev-parse", "--show-toplevel"],
+        [
+          "-C",
+          "/repo/packages/web",
+          "for-each-ref",
+          "--format=%(HEAD)%09%(upstream:remotename)",
+          "refs/heads",
+        ],
+        ["-C", "/repo/packages/web", "config", "--get-regexp", "^remote\\..*\\.(url|gh-resolved)$"],
+        [
+          "-C",
+          "/repo/packages/web",
+          "for-each-ref",
+          "--format=%(HEAD)%09%(upstream:remotename)",
+          "refs/heads",
+        ],
       ]);
     }).pipe(Effect.provide(resolverLayer));
   });
@@ -224,6 +248,44 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       expect(identity?.canonicalKey).toBe("github.com/pingdotgg/t3code");
       expect(identity?.displayName).toBe("pingdotgg/t3code");
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+  );
+
+  it.effect.each(["add", "replace"] as const)(
+    "refreshes the primary upstream after %s before cache expiry",
+    (change) =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const cwd = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-repository-identity-upstream-test-",
+        });
+
+        yield* git(cwd, ["init"]);
+        yield* git(cwd, ["remote", "add", "origin", "git@github.com:julius/t3code.git"]);
+        if (change === "replace") {
+          yield* git(cwd, ["remote", "add", "upstream", "git@github.com:T3Tools/previous.git"]);
+        }
+
+        const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+        const initialIdentity = yield* resolver.resolve(cwd);
+        expect(initialIdentity?.canonicalKey).toBe(
+          change === "add" ? "github.com/julius/t3code" : "github.com/t3tools/previous",
+        );
+
+        yield* git(cwd, [
+          "remote",
+          change === "add" ? "add" : "set-url",
+          "upstream",
+          "git@github.com:T3Tools/t3code.git",
+        ]);
+        expect(yield* resolver.resolve(cwd)).toEqual(initialIdentity);
+        const identity = yield* resolver.resolve(cwd, { refresh: true });
+
+        expect(identity).not.toBeNull();
+        expect(identity?.locator.remoteName).toBe("upstream");
+        expect(identity?.canonicalKey).toBe("github.com/t3tools/t3code");
+        expect(identity?.displayName).toBe("t3tools/t3code");
+        expect(yield* resolver.resolve(cwd)).toEqual(identity);
+      }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 
   it.effect("follows branch remote changes before gh's selected default", () =>
