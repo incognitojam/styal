@@ -29,6 +29,8 @@ export const ChangeRequest = Schema.Struct({
   baseRefName: TrimmedNonEmptyString,
   headRefName: TrimmedNonEmptyString,
   state: ChangeRequestState,
+  closedAt: Schema.optional(Schema.NullOr(Schema.String)),
+  mergedAt: Schema.optional(Schema.NullOr(Schema.String)),
   updatedAt: Schema.Option(Schema.DateTimeUtc),
   /**
    * Whether the change request is still a draft. A modifier on `open` rather
