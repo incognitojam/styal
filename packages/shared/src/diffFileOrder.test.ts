@@ -54,6 +54,30 @@ describe("diffFileTier", () => {
 });
 
 describe("orderDiffFiles", () => {
+  it("places source before tests and generated files across path conventions", () => {
+    const source = ["src/app.ts", "src/dist.ts", "src/testing.ts"];
+    const tests = [
+      "src/__tests__/app.ts",
+      "src/app.spec.tsx",
+      "src/app.test.ts",
+      "test/app.ts",
+      "tests/helpers/app.ts",
+    ];
+    const generated = [
+      "apps/web/package-lock.json",
+      "dist/app.js",
+      "packages/core/vendor/lib.js",
+      "pnpm-lock.yaml",
+      "public/app.min.js",
+      "src/__snapshots__/app.ts",
+      "src/api.generated.ts",
+      "src/app.test.ts.snap",
+    ];
+    expect(
+      order([...generated, ...tests, ...source].toReversed().map((path) => file(path))),
+    ).toEqual([...source, ...tests, ...generated]);
+  });
+
   it("answers an empty diff with an empty order", () => {
     expect(order([])).toEqual([]);
   });
