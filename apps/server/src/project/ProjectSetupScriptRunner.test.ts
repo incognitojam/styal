@@ -117,6 +117,7 @@ const testLayer = (
         listUserInputLifecycleByThreadId: () => Effect.succeed([]),
         listTaskLifecycleByTaskId: () => Effect.succeed([]),
         listUnfinishedSetupRuns: () => Effect.succeed([]),
+        getLatestTaskActivity: () => Effect.succeed(Option.none()),
         deleteByThreadId: () => Effect.void,
       }),
     ),
