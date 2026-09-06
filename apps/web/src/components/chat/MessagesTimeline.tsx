@@ -16,6 +16,7 @@ import {
   resolveWorkEntryToolPresentation,
   resolveViewedImageAsset,
   workEntryViewedImagePath,
+  workEntryIndicatesToolFailure,
 } from "@t3tools/client-runtime/work-log/presentation";
 import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
 import type { AgentPanelModel } from "@t3tools/client-runtime/state/subagentRuntime";
@@ -69,7 +70,6 @@ import {
   deriveTimelineEntries,
   selectMessageImageResources,
   workEntryDisplayIndicatesToolFailure,
-  workEntryIndicatesToolFailure,
   workEntrySignalsSevereFailure,
   workLogEntryIsToolLike,
 } from "../../session-logic";
