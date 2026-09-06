@@ -18,7 +18,7 @@ import { environmentSnapshotAtom } from "./shell";
 
 export const threadEnvironment = createThreadEnvironmentAtoms(connectionAtomRuntime);
 export const threadSnapshotCommands = createThreadSnapshotCommands(connectionAtomRuntime);
-export const environmentThreads = createEnvironmentThreadStateAtoms(connectionAtomRuntime);
+const environmentThreads = createEnvironmentThreadStateAtoms(connectionAtomRuntime);
 export const environmentThreadDetails = createEnvironmentThreadDetailAtoms(
   environmentThreads.stateAtom,
 );
