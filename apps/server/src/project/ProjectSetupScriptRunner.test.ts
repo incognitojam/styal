@@ -16,6 +16,7 @@ import * as Stream from "effect/Stream";
 import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ProjectionThreadActivities from "../persistence/Services/ProjectionThreadActivities.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as ProjectSetupScriptRunner from "./ProjectSetupScriptRunner.ts";
 
@@ -88,6 +89,7 @@ const testLayer = (
   terminal: Pick<TerminalManager.TerminalManager["Service"], "openCommand"> &
     Partial<Pick<TerminalManager.TerminalManager["Service"], "subscribe">>,
   commands: OrchestrationCommand[] = [],
+  settings = ServerSettings.layerTest(),
 ) =>
   ProjectSetupScriptRunner.layer.pipe(
     Layer.provideMerge(makeProjectionSnapshotQueryLayer(project)),
@@ -117,6 +119,7 @@ const testLayer = (
         deleteByThreadId: () => Effect.void,
       }),
     ),
+    Layer.provide(settings),
   );
 
 describe("ProjectSetupScriptRunner", () => {
@@ -167,6 +170,66 @@ describe("ProjectSetupScriptRunner", () => {
     ]);
     expect(runs[0]).not.toHaveProperty("scriptIcon");
     expect(runs[1]).not.toHaveProperty("scriptIcon");
+  });
+
+  it.effect("runs the inherited machine setup action in the checkout's worktree", () => {
+    const openCommand = vi.fn(() =>
+      Effect.succeed({
+        threadId: "thread-1",
+        terminalId: "setup-default-setup",
+        cwd: "/repo/worktrees/a",
+        worktreePath: "/repo/worktrees/a",
+        status: "running" as const,
+        pid: 123,
+        history: "",
+        exitCode: null,
+        exitSignal: null,
+        label: "setup-default-setup",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    return Effect.gen(function* () {
+      const runner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
+      const result = yield* runner.runForThread({
+        threadId: "thread-1",
+        projectId: "project-1",
+        worktreePath: "/repo/worktrees/a",
+      });
+      expect(result).toMatchObject({ status: "started", scriptId: "default-setup" });
+      expect(openCommand).toHaveBeenCalledWith({
+        threadId: "thread-1",
+        terminalId: "setup-default-setup",
+        cwd: "/repo/worktrees/a",
+        worktreePath: "/repo/worktrees/a",
+        env: {
+          STYAL_PROJECT_ROOT: "/repo/project",
+          STYAL_WORKTREE_PATH: "/repo/worktrees/a",
+          T3CODE_PROJECT_ROOT: "/repo/project",
+          T3CODE_WORKTREE_PATH: "/repo/worktrees/a",
+        },
+        command: "npm install",
+        label: "Setup",
+      });
+    }).pipe(
+      Effect.provide(
+        testLayer(
+          makeProject([]),
+          { openCommand },
+          [],
+          ServerSettings.layerTest({
+            defaultProjectScripts: [
+              {
+                id: "default-setup",
+                name: "Setup",
+                command: "npm install",
+                icon: "configure",
+                runOnWorktreeCreate: true,
+              },
+            ],
+          }),
+        ),
+      ),
+    );
   });
 
   it.effect("returns no-script when no setup script exists", () => {

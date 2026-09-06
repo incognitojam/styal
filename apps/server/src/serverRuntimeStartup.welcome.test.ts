@@ -1,6 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import { ProjectId, ThreadId } from "@t3tools/contracts";
+import { DEFAULT_SERVER_SETTINGS, ProjectId, ThreadId } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -45,7 +45,10 @@ it.effect("publishes pending before complete even without an activation gate", (
               autoBootstrapProjectFromCwd: true,
             } as never),
             Layer.succeed(Keybindings.Keybindings, { start: Effect.void } as never),
-            Layer.succeed(ServerSettings.ServerSettingsService, { start: Effect.void } as never),
+            Layer.succeed(ServerSettings.ServerSettingsService, {
+              start: Effect.void,
+              getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
+            } as never),
             Layer.succeed(OrchestrationReactor.OrchestrationReactor, {
               start: () => Effect.void,
             } as never),
