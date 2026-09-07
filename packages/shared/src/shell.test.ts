@@ -20,10 +20,24 @@ import {
   resolveKnownWindowsCliDirs,
   resolveSpawnCommand,
   resolveWindowsEnvironment,
+  resolveWindowsSystemRoot,
   SpawnExecutableResolution,
   WindowsShellEnvironment,
   type WindowsShellEnvironmentReader,
 } from "./shell.ts";
+
+describe("resolveWindowsSystemRoot", () => {
+  it.each([
+    [{ SystemRoot: " C:\\SystemRoot " }, "C:\\SystemRoot"],
+    [{ SYSTEMROOT: " C:\\UpperRoot " }, "C:\\UpperRoot"],
+    [{ WINDIR: " C:\\WinDir " }, "C:\\WinDir"],
+    [{ windir: " C:\\LowerWinDir " }, "C:\\LowerWinDir"],
+    [{ SystemRoot: " ", WINDIR: " D:\\Windows " }, "D:\\Windows"],
+    [{}, "C:\\Windows"],
+  ])("resolves a Windows root from %o", (env, expected) => {
+    expect(resolveWindowsSystemRoot(env)).toBe(expected);
+  });
+});
 
 const withWindowsEnvironmentMocks = <A, E, R>(
   effect: Effect.Effect<A, E, R>,

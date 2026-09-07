@@ -180,6 +180,9 @@ describe("ClientSettings completion sound", () => {
     expect(decodeClientSettings({ completionSound: "none" }).completionSound).toBe("none");
     expect(decodeClientSettings({ completionSound: "resolve" }).completionSound).toBe("resolve");
     expect(decodeClientSettings({ completionSound: "avanti" }).completionSound).toBe("avanti");
+    expect(decodeClientSettings({ completionSound: "windows-tada" }).completionSound).toBe(
+      "windows-tada",
+    );
   });
 
   it("migrates the retired Chime sound to Resolve", () => {
