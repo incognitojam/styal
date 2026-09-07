@@ -16,8 +16,8 @@ const devBundleIdSuffix = NodePath.basename(repoRoot)
   .toLowerCase()
   .replaceAll(/[^a-z0-9]+/g, "");
 const appStageLabel = isDevelopment ? "Dev" : "Alpha";
-export const APP_DISPLAY_NAME = `styal (${appStageLabel})`;
-export const APP_BUNDLE_ID = isDevelopment
+const APP_DISPLAY_NAME = `styal (${appStageLabel})`;
+const APP_BUNDLE_ID = isDevelopment
   ? `build.styal.app.dev.${devBundleIdSuffix || "local"}`
   : "build.styal.app";
 const APP_PROTOCOL_SCHEMES = isDevelopment ? ["styal-dev"] : ["styal"];
@@ -388,7 +388,7 @@ function resolveLinuxSandboxArgs(electronBinaryPath) {
   return ["--no-sandbox"];
 }
 
-export function resolveElectronPath() {
+function resolveElectronPath() {
   const electronBinaryPath = resolveElectronBinaryPath();
 
   if (hostPlatform !== "darwin") {
