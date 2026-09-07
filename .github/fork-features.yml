@@ -1128,7 +1128,7 @@ features:
     prs: [222]
     invariants:
       - Provider startup validates the resolved project or worktree path before launching a session and reports a controlled actionable error when the workspace is missing.
-      - A failed Claude turn reports Claude's user-facing result error, or an actionable message derived from the assistant error when Claude lists none, and a later stream failure does not replace it.
+      - A later Claude stream failure does not replace the error of a failed result.
     implementation_paths:
       - apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
       - apps/server/src/provider/Layers/ClaudeAdapter.ts
@@ -1146,7 +1146,7 @@ features:
         - https://github.com/pingdotgg/t3code/pull/10549
         - https://github.com/pingdotgg/t3code/pull/5040
         - https://github.com/pingdotgg/t3code/pull/9135
-      retire_when: Upstream validates missing project and worktree paths before every provider starts. Retire the Claude fallback message mapping and assistant error tracking earlier, when intake takes upstream's shared result outcome and expired login and usage limit messages, keeping the stream failure guard only if upstream still lets a later stream failure replace a failed result's error.
+      retire_when: Upstream validates missing project and worktree paths before every provider starts, and a stream failure after a failed Claude result no longer replaces that result's error.
 
   - id: mobile-clerk-load-recovery
     title: Recover mobile styal Link sign-in after a failed Clerk startup

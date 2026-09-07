@@ -9,7 +9,6 @@ import type {
   PermissionMode,
   PermissionResult,
   SDKAssistantMessage,
-  SDKAssistantMessageError,
   SDKMessage,
   SDKResultError,
   SDKUserMessage,
@@ -2709,6 +2708,139 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  const usageLimitMessage =
+    "Claude usage limit reached. Send the message again once the limit resets.";
+  const genericApiErrorMessage = "Claude gave up after repeated API errors.";
+  const rateLimitAssistant = {
+    type: "assistant",
+    session_id: "sdk-session-limit",
+    uuid: "assistant-limit",
+    parent_tool_use_id: null,
+    error: "rate_limit",
+    message: {
+      id: "assistant-message-limit",
+      model: "<synthetic>",
+      content: [{ type: "text", text: "You've hit your session limit" }],
+    },
+  };
+  const rateLimitResult = {
+    type: "result",
+    subtype: "success",
+    is_error: true,
+    terminal_reason: "api_error",
+    session_id: "sdk-session-limit",
+    uuid: "result-limit",
+  };
+
+  it.effect.each([
+    {
+      name: "an assistant-only rate limit",
+      messages: [rateLimitAssistant],
+      expected: usageLimitMessage,
+    },
+    {
+      name: "a normal parent response after a rate limit",
+      messages: [rateLimitAssistant, { ...rateLimitAssistant, error: undefined }],
+      expected: genericApiErrorMessage,
+    },
+    {
+      name: "a server error after a rate limit",
+      messages: [rateLimitAssistant, { ...rateLimitAssistant, error: "server_error" }],
+      expected: genericApiErrorMessage,
+    },
+    {
+      name: "a subagent rate limit",
+      messages: [{ ...rateLimitAssistant, parent_tool_use_id: "nested-tool" }],
+      expected: genericApiErrorMessage,
+    },
+    {
+      name: "a subagent response after a parent rate limit",
+      messages: [
+        rateLimitAssistant,
+        { ...rateLimitAssistant, error: undefined, parent_tool_use_id: "nested-tool" },
+      ],
+      expected: usageLimitMessage,
+    },
+  ])("classifies the terminal API failure after $name", ({ messages, expected }) => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil((event) => event.type === "turn.completed"),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({ threadId: session.threadId, input: "hello", attachments: [] });
+      for (const [index, message] of messages.entries()) {
+        harness.query.emit({ ...message, uuid: `assistant-${index}` } as unknown as SDKMessage);
+      }
+      harness.query.emit(rateLimitResult as unknown as SDKMessage);
+
+      const events = Array.from(yield* Fiber.join(eventsFiber));
+      const errors = events.filter((event) => event.type === "runtime.error");
+      assert.equal(errors.length, 1);
+      assert.equal(errors[0]?.payload.message, expected);
+      assert.equal(completedTurn(events).state, "failed");
+      assert.equal(completedTurn(events).errorMessage, expected);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("names repeated usage limits without carrying them into a later turn", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      for (const [index, expected] of [
+        usageLimitMessage,
+        usageLimitMessage,
+        genericApiErrorMessage,
+      ].entries()) {
+        const eventsFiber = yield* adapter.streamEvents.pipe(
+          Stream.takeUntil((event) => event.type === "turn.completed"),
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+        yield* adapter.sendTurn({ threadId: session.threadId, input: "again", attachments: [] });
+        if (index === 0) {
+          harness.query.emit({
+            type: "rate_limit_event",
+            rate_limit_info: { status: "rejected", rateLimitType: "five_hour" },
+            session_id: "sdk-session-limit",
+            uuid: "limit-rejected",
+          } as unknown as SDKMessage);
+        }
+        if (index < 2) {
+          harness.query.emit({
+            ...rateLimitAssistant,
+            uuid: `assistant-limit-${index}`,
+          } as unknown as SDKMessage);
+        }
+        harness.query.emit({
+          ...rateLimitResult,
+          uuid: `result-limit-${index}`,
+        } as unknown as SDKMessage);
+        const payload = completedTurn(Array.from(yield* Fiber.join(eventsFiber)));
+        assert.equal(payload.state, "failed");
+        assert.equal(payload.errorMessage, expected);
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect.each([
     {
       name: "listed error with api_error",
@@ -2760,6 +2892,43 @@ describe("ClaudeAdapterLive", () => {
       expected: /repeated API errors/,
       expectedState: "failed",
     },
+    {
+      name: "assistant rate limit followed by overload",
+      evidence: "assistant-rate-limit",
+      result: {
+        subtype: "success",
+        is_error: true,
+        terminal_reason: "api_error",
+        api_error_status: 529,
+        errors: [],
+      },
+      expected: /overloaded \(529\)/,
+      expectedState: "failed",
+    },
+    {
+      name: "assistant rate limit followed by a listed error",
+      evidence: "assistant-rate-limit",
+      result: {
+        subtype: "success",
+        is_error: true,
+        terminal_reason: "api_error",
+        errors: ["Tool execution failed: EACCES"],
+      },
+      expected: /EACCES/,
+      expectedState: "failed",
+    },
+    {
+      name: "assistant rate limit followed by an interrupt",
+      evidence: "assistant-rate-limit",
+      result: {
+        subtype: "error_during_execution",
+        is_error: true,
+        terminal_reason: "aborted_tools",
+        errors: [],
+      },
+      expected: undefined,
+      expectedState: "interrupted",
+    },
     ...[
       "recovered-missing-reset",
       "recovered-next-reset",
@@ -2807,7 +2976,9 @@ describe("ClaudeAdapterLive", () => {
           input: "synthetic hello",
           attachments: [],
         });
-        if (evidence === "auth" || evidence === "nested-auth") {
+        if (evidence === "assistant-rate-limit") {
+          harness.query.emit(rateLimitAssistant as unknown as SDKMessage);
+        } else if (evidence === "auth" || evidence === "nested-auth") {
           harness.query.emit({
             type: "assistant",
             session_id: "sdk-audit",
@@ -4139,182 +4310,6 @@ describe("ClaudeAdapterLive", () => {
       if (completed?.type === "turn.completed") {
         assert.equal(completed.payload.state, "failed");
         assert.equal(completed.payload.errorMessage, "Claude runtime stream failed.");
-      }
-    }).pipe(
-      Effect.provideService(Random.Random, makeDeterministicRandomService()),
-      Effect.provide(harness.layer),
-    );
-  });
-
-  it.effect("maps typed Claude failures without a listed error to actionable messages", () => {
-    const harness = makeHarness();
-    return Effect.gen(function* () {
-      const adapter = yield* ClaudeAdapter;
-      yield* adapter.startSession({
-        threadId: THREAD_ID,
-        provider: ProviderDriverKind.make("claudeAgent"),
-        runtimeMode: "full-access",
-      });
-
-      const cases: ReadonlyArray<{
-        readonly subtype: SDKResultError["subtype"];
-        readonly terminalReason?: NonNullable<SDKResultError["terminal_reason"]>;
-        readonly assistantError?: SDKAssistantMessageError;
-        readonly expected: string;
-      }> = [
-        {
-          subtype: "error_max_turns",
-          expected: "Claude reached the maximum turn limit.",
-        },
-        {
-          subtype: "error_during_execution",
-          terminalReason: "prompt_too_long",
-          expected: "Claude stopped: the prompt exceeds the model's context window.",
-        },
-        {
-          subtype: "error_during_execution",
-          assistantError: "authentication_failed",
-          expected: "Claude authentication failed. Check the configured credentials.",
-        },
-        {
-          subtype: "error_during_execution",
-          assistantError: "oauth_org_not_allowed",
-          expected: "The selected Claude organization does not allow OAuth access.",
-        },
-        {
-          subtype: "error_during_execution",
-          assistantError: "billing_error",
-          expected:
-            "Claude billing or account credits prevented the request. Check the account billing status.",
-        },
-        {
-          subtype: "error_during_execution",
-          assistantError: "rate_limit",
-          expected: "Claude usage limit reached. Try again later.",
-        },
-        {
-          subtype: "error_during_execution",
-          assistantError: "overloaded",
-          expected: "Claude is temporarily overloaded. Try again.",
-        },
-        {
-          subtype: "error_during_execution",
-          assistantError: "invalid_request",
-          expected: "Claude rejected the request as invalid.",
-        },
-        {
-          subtype: "error_during_execution",
-          assistantError: "model_not_found",
-          expected: "The selected Claude model is unavailable. Choose another model.",
-        },
-        {
-          subtype: "error_during_execution",
-          assistantError: "server_error",
-          expected: "Claude service error. Try again.",
-        },
-        {
-          subtype: "error_during_execution",
-          assistantError: "max_output_tokens",
-          expected: "Claude reached the maximum output length.",
-        },
-        {
-          subtype: "error_during_execution",
-          assistantError: "unknown",
-          expected: "Claude turn failed.",
-        },
-        {
-          subtype: "error_during_execution",
-          expected: "Claude turn failed.",
-        },
-      ];
-
-      for (const [index, testCase] of cases.entries()) {
-        yield* adapter.sendTurn({
-          threadId: THREAD_ID,
-          input: `turn ${index + 1}`,
-          attachments: [],
-        });
-        const runtimeErrorFiber = yield* Stream.filter(
-          adapter.streamEvents,
-          (event) => event.type === "runtime.error",
-        ).pipe(Stream.runHead, Effect.forkChild);
-
-        if (testCase.assistantError !== undefined) {
-          const assistantMessage: SDKAssistantMessage = {
-            type: "assistant",
-            error: testCase.assistantError,
-            parent_tool_use_id: null,
-            message: {
-              id: `assistant-message-safe-error-${index + 1}`,
-              container: null,
-              content: [],
-              context_management: null,
-              model: "claude-sonnet-4-6",
-              role: "assistant",
-              stop_details: null,
-              stop_reason: null,
-              stop_sequence: null,
-              type: "message",
-              usage: {
-                cache_creation: null,
-                cache_creation_input_tokens: null,
-                cache_read_input_tokens: null,
-                inference_geo: null,
-                input_tokens: 0,
-                iterations: null,
-                output_tokens: 0,
-                server_tool_use: null,
-                service_tier: null,
-                speed: null,
-              },
-            },
-            session_id: `sdk-session-safe-error-${index + 1}`,
-            uuid: "00000000-0000-4000-8000-000000000001",
-          };
-          harness.query.emit(assistantMessage);
-        }
-
-        const resultMessage: SDKResultError = {
-          type: "result",
-          subtype: testCase.subtype,
-          is_error: true,
-          duration_ms: 1,
-          duration_api_ms: 1,
-          num_turns: 1,
-          stop_reason: null,
-          total_cost_usd: 0,
-          usage: {
-            cache_creation: {
-              ephemeral_1h_input_tokens: 0,
-              ephemeral_5m_input_tokens: 0,
-            },
-            cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0,
-            inference_geo: "unknown",
-            input_tokens: 0,
-            iterations: [],
-            output_tokens: 0,
-            server_tool_use: {
-              web_fetch_requests: 0,
-              web_search_requests: 0,
-            },
-            service_tier: "standard",
-            speed: "standard",
-          },
-          modelUsage: {},
-          permission_denials: [],
-          errors: [],
-          ...(testCase.terminalReason ? { terminal_reason: testCase.terminalReason } : {}),
-          session_id: `sdk-session-safe-error-${index + 1}`,
-          uuid: "00000000-0000-4000-8000-000000000002",
-        };
-        harness.query.emit(resultMessage);
-
-        const runtimeError = yield* Fiber.join(runtimeErrorFiber);
-        assert.equal(runtimeError._tag, "Some");
-        if (runtimeError._tag === "Some" && runtimeError.value.type === "runtime.error") {
-          assert.equal(runtimeError.value.payload.message, testCase.expected);
-        }
       }
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
