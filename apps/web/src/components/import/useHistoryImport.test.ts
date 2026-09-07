@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
     threadCount: number;
     sources: ("codex" | "claudeAgent")[];
     lastActiveAt: string;
+    git: { remoteKey: string | null; repository: string | null } | null;
   }>,
 }));
 vi.mock("react", async (original) => {
@@ -66,9 +67,10 @@ describe("setup CLI history importer", () => {
       title: id,
       path: `/demo/${id}`,
       projectId: ProjectId.make(id),
-      threadCount: 2,
+      threadCount: 3,
       sources: ["codex"],
       lastActiveAt: new Date().toISOString(),
+      git: { remoteKey: null, repository: null },
     }));
   });
   it("retains partial failures for retry and does not repeat completed projects", async () => {
@@ -101,9 +103,10 @@ describe("setup CLI history importer", () => {
       {
         title: "new",
         path: "/demo/new",
-        threadCount: 2,
+        threadCount: 3,
         sources: ["codex"],
         lastActiveAt: new Date().toISOString(),
+        git: { remoteKey: null, repository: null },
       },
     ];
     mocks.importThreads.mockResolvedValueOnce({

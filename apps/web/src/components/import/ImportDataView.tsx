@@ -2,6 +2,7 @@ import {
   ArrowRightIcon,
   CheckIcon,
   ChevronLeftIcon,
+  ChevronRightIcon,
   FolderIcon,
   LoaderCircleIcon,
   MonitorIcon,
@@ -12,10 +13,12 @@ import { type ReactNode, useId, useMemo } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 
 import { cn } from "../../lib/utils";
+import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { ClaudeAI, OpenAI, type Icon } from "../Icons";
 import { Button } from "../ui/button";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { Checkbox } from "../ui/checkbox";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { ScrollArea } from "../ui/scroll-area";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
@@ -23,6 +26,7 @@ import type {
   ComputerImportSummary,
   ImportComputerOption,
   ImportPreferencesModel,
+  ImportProjectGroup,
   ImportProjectRow,
   ImportSource,
   ImportSourceModel,
@@ -127,10 +131,12 @@ export function ImportSourceView({
     source.select(allSelected ? new Set() : new Set(projects.map((project) => project.id)));
   };
 
-  const toggleProject = (project: ImportProjectRow, checked: boolean) => {
+  const toggleProjects = (ids: readonly string[], checked: boolean) => {
     const next = new Set(selectedProjects.map((selected) => selected.id));
-    if (checked) next.add(project.id);
-    else next.delete(project.id);
+    for (const id of ids) {
+      if (checked) next.add(id);
+      else next.delete(id);
+    }
     source.select(next);
   };
 
@@ -208,80 +214,25 @@ export function ImportSourceView({
 
       {total > 0 ? (
         <div className="divide-y divide-border/60">
-          {projects.map((project) => {
-            const title = project.title.trim() || "Untitled project";
-            const path = project.path.trim();
-            const showPath = path.length > 0 && (repeatedTitles.get(project.title) ?? 0) > 1;
-            const providers = project.providers ?? [];
-            return (
-              <label
-                key={project.id}
-                className={cn(
-                  "flex min-w-0 items-center gap-3 px-3 py-2.5 transition-colors has-[:focus-visible]:bg-muted/40 motion-reduce:transition-none",
-                  disabled ? "cursor-default" : "cursor-pointer hover:bg-muted/30",
-                )}
-              >
-                <Checkbox
-                  checked={project.selected}
+          {source.groups
+            ? source.groups.map((group) => (
+                <ImportProjectGroupView
+                  key={group.key}
+                  group={group}
+                  projects={projects}
                   disabled={disabled}
-                  onCheckedChange={(checked) => toggleProject(project, checked === true)}
+                  onToggle={toggleProjects}
                 />
-                <span className="flex shrink-0 items-center gap-1 text-muted-foreground">
-                  {providers.length > 0 ? (
-                    <>
-                      {providers.map((provider) => {
-                        const ProviderIcon = PROVIDER_ICONS[provider];
-                        return <ProviderIcon key={provider} className="size-3.5" aria-hidden />;
-                      })}
-                      <span className="sr-only">{providerSummary(providers)}</span>
-                    </>
-                  ) : project.legacyFavicon ? (
-                    <span aria-hidden>
-                      <ProjectFavicon
-                        environmentId={project.legacyFavicon.environmentId}
-                        legacyProjectId={project.legacyFavicon.projectId}
-                        className="size-3.5"
-                      />
-                    </span>
-                  ) : (
-                    <FolderIcon className="size-3.5" aria-hidden />
-                  )}
-                </span>
-                <Tooltip>
-                  <TooltipTrigger render={<span className="flex min-w-0 flex-1 flex-col" />}>
-                    <span
-                      className={cn(
-                        "truncate text-[13px] font-medium",
-                        project.selected ? "text-foreground" : "text-muted-foreground",
-                      )}
-                    >
-                      {title}
-                    </span>
-                    {showPath ? (
-                      <span className="truncate font-mono text-[11px] text-muted-foreground/80">
-                        {path}
-                      </span>
-                    ) : null}
-                  </TooltipTrigger>
-                  <TooltipPopup className="max-w-96 break-all font-mono">
-                    {path || title}
-                  </TooltipPopup>
-                </Tooltip>
-                <span className="flex max-w-[52%] shrink-0 flex-wrap justify-end gap-x-1.5 text-right text-xs tabular-nums text-muted-foreground">
-                  <span className="whitespace-nowrap">{plural(project.threads, "thread")}</span>
-                  {project.detail ? (
-                    <>
-                      <span className="sr-only">, </span>
-                      <span aria-hidden className="text-muted-foreground/50">
-                        ·
-                      </span>
-                      <span className="min-w-0 break-words">{project.detail}</span>
-                    </>
-                  ) : null}
-                </span>
-              </label>
-            );
-          })}
+              ))
+            : projects.map((project) => (
+                <ImportProjectRowView
+                  key={project.id}
+                  project={project}
+                  showPath={(repeatedTitles.get(project.title) ?? 0) > 1}
+                  disabled={disabled}
+                  onToggle={toggleProjects}
+                />
+              ))}
         </div>
       ) : source.pending ? (
         <SourceNote icon={<LoaderCircleIcon className="size-3.5 animate-spin" aria-hidden />}>
@@ -293,6 +244,207 @@ export function ImportSourceView({
         <SourceNote>Nothing to import here.</SourceNote>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * One heading and its rows. A repository with a single clone renders as a plain
+ * row labelled with the repository; several clones share a tri-state heading.
+ * Folders that are not git repositories start folded.
+ */
+function ImportProjectGroupView({
+  group,
+  projects,
+  disabled,
+  onToggle,
+}: {
+  group: ImportProjectGroup;
+  projects: readonly ImportProjectRow[];
+  disabled: boolean;
+  onToggle: (ids: readonly string[], checked: boolean) => void;
+}) {
+  const rows = group.ids.flatMap((id) => projects.find((project) => project.id === id) ?? []);
+  const only = rows.length === 1 ? rows[0] : undefined;
+  if (group.kind === "repository" && only !== undefined) {
+    return (
+      <ImportProjectRowView
+        project={only}
+        label={group.label}
+        showPath={group.label !== only.title}
+        disabled={disabled}
+        onToggle={onToggle}
+      />
+    );
+  }
+  const selectedCount = rows.filter((project) => project.selected).length;
+  const threads = rows.reduce((sum, project) => sum + project.threads, 0);
+  const lastActiveAt = rows.reduce<string | null>(
+    (latest, project) =>
+      project.lastActiveAt && (latest === null || project.lastActiveAt > latest)
+        ? project.lastActiveAt
+        : latest,
+    null,
+  );
+  return (
+    <Collapsible defaultOpen={group.kind === "repository"}>
+      <div className="flex min-w-0 items-center gap-3 px-3 py-2.5">
+        <Checkbox
+          checked={selectedCount === rows.length}
+          indeterminate={selectedCount > 0 && selectedCount < rows.length}
+          disabled={disabled}
+          onCheckedChange={(checked) =>
+            onToggle(
+              rows.map((project) => project.id),
+              checked === true,
+            )
+          }
+          aria-label={`Select ${group.label}`}
+        />
+        <CollapsibleTrigger className="group flex min-w-0 flex-1 items-center gap-1.5 text-left">
+          <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-90 motion-reduce:transition-none" />
+          <span
+            className={cn(
+              "truncate text-[13px] font-medium",
+              group.kind === "other" || selectedCount === 0
+                ? "text-muted-foreground"
+                : "text-foreground",
+            )}
+          >
+            {group.label}
+          </span>
+          <ImportRowMeta
+            summary={
+              group.kind === "other" ? plural(rows.length, "folder") : plural(threads, "thread")
+            }
+            lastActiveAt={group.kind === "other" ? null : lastActiveAt}
+          />
+        </CollapsibleTrigger>
+      </div>
+      <CollapsiblePanel>
+        {rows.map((project) => (
+          <ImportProjectRowView
+            key={project.id}
+            project={project}
+            label={project.path}
+            nested
+            disabled={disabled}
+            onToggle={onToggle}
+          />
+        ))}
+      </CollapsiblePanel>
+    </Collapsible>
+  );
+}
+
+function ImportProjectRowView({
+  project,
+  label,
+  showPath = false,
+  nested = false,
+  disabled,
+  onToggle,
+}: {
+  project: ImportProjectRow;
+  label?: string;
+  showPath?: boolean;
+  nested?: boolean;
+  disabled: boolean;
+  onToggle: (ids: readonly string[], checked: boolean) => void;
+}) {
+  const title = (label ?? project.title).trim() || "Untitled project";
+  const path = project.path.trim();
+  const providers = project.providers ?? [];
+  return (
+    <label
+      className={cn(
+        "flex min-w-0 items-center gap-3 px-3 py-2.5 transition-colors has-[:focus-visible]:bg-muted/40 motion-reduce:transition-none",
+        nested && "pl-10",
+        disabled ? "cursor-default" : "cursor-pointer hover:bg-muted/30",
+      )}
+    >
+      <Checkbox
+        checked={project.selected}
+        disabled={disabled}
+        onCheckedChange={(checked) => onToggle([project.id], checked === true)}
+      />
+      {nested ? null : (
+        <span className="flex shrink-0 items-center gap-1 text-muted-foreground">
+          {providers.length > 0 ? (
+            <>
+              {providers.map((provider) => {
+                const ProviderIcon = PROVIDER_ICONS[provider];
+                return <ProviderIcon key={provider} className="size-3.5" aria-hidden />;
+              })}
+              <span className="sr-only">{providerSummary(providers)}</span>
+            </>
+          ) : project.legacyFavicon ? (
+            <span aria-hidden>
+              <ProjectFavicon
+                environmentId={project.legacyFavicon.environmentId}
+                legacyProjectId={project.legacyFavicon.projectId}
+                className="size-3.5"
+              />
+            </span>
+          ) : (
+            <FolderIcon className="size-3.5" aria-hidden />
+          )}
+        </span>
+      )}
+      <Tooltip>
+        <TooltipTrigger render={<span className="flex min-w-0 flex-1 flex-col" />}>
+          <span
+            className={cn(
+              "truncate",
+              nested ? "font-mono text-xs" : "text-[13px] font-medium",
+              project.selected ? "text-foreground" : "text-muted-foreground",
+            )}
+          >
+            {title}
+          </span>
+          {showPath && path.length > 0 ? (
+            <span className="truncate font-mono text-[11px] text-muted-foreground/80">{path}</span>
+          ) : null}
+        </TooltipTrigger>
+        <TooltipPopup className="max-w-96 break-all font-mono">{path || title}</TooltipPopup>
+      </Tooltip>
+      <ImportRowMeta
+        summary={plural(project.threads, "thread")}
+        detail={project.detail}
+        lastActiveAt={project.lastActiveAt ?? null}
+      />
+    </label>
+  );
+}
+
+/** Thread count, then any detail, then how long ago the project was last active. */
+function ImportRowMeta({
+  summary,
+  detail,
+  lastActiveAt,
+}: {
+  summary: string;
+  detail?: string | undefined;
+  lastActiveAt: string | null;
+}) {
+  const age = lastActiveAt === null ? "" : formatRelativeTimeLabel(lastActiveAt);
+  return (
+    <span className="ml-auto flex max-w-[52%] shrink-0 flex-wrap justify-end gap-x-1.5 text-right text-xs tabular-nums text-muted-foreground">
+      <span className="whitespace-nowrap">{summary}</span>
+      {detail ? <ImportRowMetaPart>{detail}</ImportRowMetaPart> : null}
+      {age ? <ImportRowMetaPart>{age}</ImportRowMetaPart> : null}
+    </span>
+  );
+}
+
+function ImportRowMetaPart({ children }: { children: ReactNode }) {
+  return (
+    <>
+      <span className="sr-only">, </span>
+      <span aria-hidden className="text-muted-foreground/50">
+        ·
+      </span>
+      <span className="min-w-0 break-words">{children}</span>
+    </>
   );
 }
 

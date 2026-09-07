@@ -21,11 +21,26 @@ export interface ImportProjectRow {
     readonly projectId: string;
   };
   readonly providers?: readonly ("claudeAgent" | "codex")[] | undefined;
+  readonly lastActiveAt?: string | null | undefined;
+}
+
+/**
+ * Rows shown together under one heading. A repository group holds the clones
+ * of one repository; the "other" group holds folders that are not git
+ * repositories and starts folded.
+ */
+export interface ImportProjectGroup {
+  readonly key: string;
+  readonly kind: "repository" | "other";
+  readonly label: string;
+  readonly ids: readonly string[];
 }
 
 export interface ImportSourceModel {
   readonly title: string;
   readonly projects: readonly ImportProjectRow[];
+  /** When set, rows render under these headings in this order. */
+  readonly groups?: readonly ImportProjectGroup[] | undefined;
   readonly pending: boolean;
   readonly message?: string | undefined;
   readonly error?: string | null | undefined;

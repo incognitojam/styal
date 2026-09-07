@@ -1,11 +1,17 @@
-import { useEffect, useImperativeHandle, type Ref } from "react";
+import { useEffect, useImperativeHandle, useMemo, type Ref } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
+import { groupOnboardingProjects } from "../../onboarding/projectImport.logic";
 import { ImportPreferencesView, ImportSourceView } from "./ImportDataView";
 import { useHistoryImport, type HistoryImportProgress } from "./useHistoryImport";
 import { ImportProgressView } from "./ImportProgressView";
 import { LegacyImportProgressView } from "./LegacyImportProgressView";
 import { useLegacyImport } from "./useLegacyImport";
-import type { ComputerImporter, ComputerImportSummary, LegacyImportStage } from "./types";
+import type {
+  ComputerImporter,
+  ComputerImportSummary,
+  ImportProjectGroup,
+  LegacyImportStage,
+} from "./types";
 
 const UNAVAILABLE = {
   "current-database": "This computer already runs on this T3 Code data.",
@@ -174,6 +180,25 @@ export function HistoryImportComputer({
   importing,
 }: ImportComputerProps) {
   const history = useHistoryImport(environmentId, busy);
+  // Repositories first, newest activity on top, then folders that are not git repositories.
+  const historyGroups = useMemo((): readonly ImportProjectGroup[] => {
+    const { repositories, other } = groupOnboardingProjects(history.candidates);
+    const groups: ImportProjectGroup[] = repositories.map((group) => ({
+      key: group.key,
+      kind: "repository",
+      label: group.label,
+      ids: group.candidates.map((candidate) => candidate.key),
+    }));
+    if (other.length > 0) {
+      groups.push({
+        key: "other",
+        kind: "other",
+        label: "Other folders",
+        ids: other.map((candidate) => candidate.key),
+      });
+    }
+    return groups;
+  }, [history.candidates]);
   const selectedHistoryKeys = new Set(history.selected.map((project) => project.key));
   const projects = history.selected.length;
   const threads = history.selected.reduce((total, project) => total + project.threadCount, 0);
@@ -235,8 +260,10 @@ export function HistoryImportComputer({
             providers: project.sources,
             path: project.path,
             threads: project.threadCount,
+            lastActiveAt: project.lastActiveAt,
             selected: selectedHistoryKeys.has(project.key),
           })),
+          groups: historyGroups,
           pending: history.scan.isPending && history.scan.data === null,
           error: history.error || history.scan.error,
           message:

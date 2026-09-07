@@ -84,9 +84,15 @@ imports, and completed work for each computer. Counts refresh every 30 seconds.
 
 ### Claude/Codex history
 
-styal finds directories that Claude Code or Codex has used. The default
-selection includes projects active within the last 30 days. Use the checkboxes
-to include older projects or change the selection.
+styal finds directories that Claude Code or Codex has used. Git repositories
+are listed first, newest activity on top. When the remote is on GitHub, the
+group shows the repository as `owner/name`. Clones with the same remote share
+one group. Directories that are not git repositories sit under "Other folders".
+
+The default selection includes git repositories active within the last 30 days
+with at least three conversations. Use the checkboxes, including **Select all**,
+to change the selection. Linked git worktrees, Codex scratch directories under
+`Documents/Codex`, and anything under `Downloads` are not offered.
 
 A large or malformed history can reach the scan limit. styal keeps the
 projects it found and warns when projects or conversations may be missing.
