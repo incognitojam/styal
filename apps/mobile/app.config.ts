@@ -212,6 +212,9 @@ const config: ExpoConfig = {
     associatedDomains: clerkFrontendApiHostname
       ? [`applinks:${clerkFrontendApiHostname}`, `webcredentials:${clerkFrontendApiHostname}`]
       : [],
+    entitlements: {
+      "keychain-access-groups": [`$(AppIdentifierPrefix)${variant.iosBundleIdentifier}`],
+    },
     infoPlist: {
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: true,
