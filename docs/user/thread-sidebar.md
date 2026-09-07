@@ -69,5 +69,7 @@ transcript is fetched from the server, so it works on threads you have not opene
 
 On web and desktop, choose a **Completion sound** in **Settings → General** to hear when an agent
 finishes a response or asks for structured input. Choose **Resolve** or **Avanti**, or turn completion
-sounds off. An input request appears as **Awaiting Input** until you answer it; it remains separate
-from the unread completion indicator.
+sounds off. The Windows desktop app also offers **Windows Ta-da**, played from the copy installed
+with Windows. If that system sound cannot be loaded, styal shows a notification without playing
+another sound. An input request appears as **Awaiting Input** until you answer it; it remains
+separate from the unread completion indicator.

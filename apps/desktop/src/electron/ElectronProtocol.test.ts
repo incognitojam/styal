@@ -39,6 +39,7 @@ describe("ElectronProtocol", () => {
             targetOrigin: new URL("http://127.0.0.1:3773/"),
             backendOrigin: new URL("http://127.0.0.1:3774/"),
             clerkFrontendApiHostname: "clerk.t3.codes",
+            windowsTadaFileUrl: null,
           });
           assert.isDefined(handler);
 
@@ -103,6 +104,7 @@ describe("ElectronProtocol", () => {
             targetOrigin: new URL("http://127.0.0.1:3773/"),
             backendOrigin: new URL("http://127.0.0.1:3773/"),
             clerkFrontendApiHostname: undefined,
+            windowsTadaFileUrl: null,
           });
           return yield* Effect.promise(() => handler!(new Request("t3code://other/")));
         }),
@@ -110,6 +112,101 @@ describe("ElectronProtocol", () => {
 
       assert.equal(response.status, 404);
       assert.equal(netFetchMock.mock.calls.length, 0);
+    }).pipe(Effect.provide(ElectronProtocol.layer)),
+  );
+
+  it.effect("serves the installed Windows ta-da sound from the renderer origin", () =>
+    Effect.gen(function* () {
+      let handler: ((request: Request) => Promise<Response>) | undefined;
+      handleMock.mockImplementation((_scheme, nextHandler) => {
+        handler = nextHandler;
+      });
+      netFetchMock.mockResolvedValue(
+        new Response("RIFF", { headers: { "Content-Type": "application/octet-stream" } }),
+      );
+
+      const response = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const protocol = yield* ElectronProtocol.ElectronProtocol;
+          yield* protocol.registerDesktopProtocol({
+            scheme: "t3code",
+            targetOrigin: new URL("http://127.0.0.1:3773/"),
+            backendOrigin: new URL("http://127.0.0.1:3773/"),
+            clerkFrontendApiHostname: undefined,
+            windowsTadaFileUrl: new URL("file:///C:/Windows/Media/tada.wav"),
+          });
+          assert.isDefined(handler);
+          return yield* Effect.promise(() =>
+            handler!(new Request(`t3code://app${ElectronProtocol.WINDOWS_TADA_PATH}`)),
+          );
+        }),
+      );
+
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("content-type"), "audio/wav");
+      assert.equal(yield* Effect.promise(() => response.text()), "RIFF");
+      assert.deepEqual(netFetchMock.mock.calls, [
+        ["file:///C:/Windows/Media/tada.wav", { method: "GET" }],
+      ]);
+    }).pipe(Effect.provide(ElectronProtocol.layer)),
+  );
+
+  it.effect("returns not found when Windows ta-da is unavailable", () =>
+    Effect.gen(function* () {
+      let handler: ((request: Request) => Promise<Response>) | undefined;
+      handleMock.mockImplementation((_scheme, nextHandler) => {
+        handler = nextHandler;
+      });
+
+      const response = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const protocol = yield* ElectronProtocol.ElectronProtocol;
+          yield* protocol.registerDesktopProtocol({
+            scheme: "t3code",
+            targetOrigin: new URL("http://127.0.0.1:3773/"),
+            backendOrigin: new URL("http://127.0.0.1:3773/"),
+            clerkFrontendApiHostname: undefined,
+            windowsTadaFileUrl: null,
+          });
+          assert.isDefined(handler);
+          return yield* Effect.promise(() =>
+            handler!(new Request(`t3code://app${ElectronProtocol.WINDOWS_TADA_PATH}`)),
+          );
+        }),
+      );
+
+      assert.equal(response.status, 404);
+      assert.equal(netFetchMock.mock.calls.length, 0);
+    }).pipe(Effect.provide(ElectronProtocol.layer)),
+  );
+
+  it.effect("returns not found when the installed Windows ta-da file cannot be read", () =>
+    Effect.gen(function* () {
+      let handler: ((request: Request) => Promise<Response>) | undefined;
+      handleMock.mockImplementation((_scheme, nextHandler) => {
+        handler = nextHandler;
+      });
+      netFetchMock.mockRejectedValue(new Error("file not found"));
+
+      const response = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const protocol = yield* ElectronProtocol.ElectronProtocol;
+          yield* protocol.registerDesktopProtocol({
+            scheme: "t3code",
+            targetOrigin: new URL("http://127.0.0.1:3773/"),
+            backendOrigin: new URL("http://127.0.0.1:3773/"),
+            clerkFrontendApiHostname: undefined,
+            windowsTadaFileUrl: new URL("file:///C:/Windows/Media/tada.wav"),
+          });
+          assert.isDefined(handler);
+          return yield* Effect.promise(() =>
+            handler!(new Request(`t3code://app${ElectronProtocol.WINDOWS_TADA_PATH}`)),
+          );
+        }),
+      );
+
+      assert.equal(response.status, 404);
+      assert.equal(netFetchMock.mock.calls.length, 1);
     }).pipe(Effect.provide(ElectronProtocol.layer)),
   );
 
@@ -131,6 +228,7 @@ describe("ElectronProtocol", () => {
             targetOrigin: new URL("http://127.0.0.1:5733/"),
             backendOrigin: new URL("http://127.0.0.1:3773/"),
             clerkFrontendApiHostname: undefined,
+            windowsTadaFileUrl: null,
           });
           return yield* Effect.promise(() => handler!(new Request("t3code-dev://app/")));
         }),
@@ -155,6 +253,7 @@ describe("ElectronProtocol", () => {
           targetOrigin: new URL("http://127.0.0.1:3773/"),
           backendOrigin: new URL("http://127.0.0.1:3774/"),
           clerkFrontendApiHostname: undefined,
+          windowsTadaFileUrl: null,
         }),
       ).pipe(Effect.flip);
 
@@ -180,6 +279,7 @@ describe("ElectronProtocol", () => {
             targetOrigin: new URL("http://127.0.0.1:3773/"),
             backendOrigin: new URL("http://127.0.0.1:3773/"),
             clerkFrontendApiHostname: undefined,
+            windowsTadaFileUrl: null,
           }),
         ),
       );
@@ -201,6 +301,7 @@ describe("ElectronProtocol", () => {
       targetOrigin: new URL("http://127.0.0.1:3773/"),
       backendOrigin: new URL("http://127.0.0.1:3773/"),
       clerkFrontendApiHostname: "clerk.t3.codes",
+      windowsTadaFileUrl: null,
     });
     const directives = Object.fromEntries(
       policy.split("; ").map((directive) => {

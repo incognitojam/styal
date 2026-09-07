@@ -171,6 +171,7 @@ const COMPLETION_SOUND_LABELS: Record<CompletionSound, string> = {
   none: "No sound",
   resolve: "Resolve",
   avanti: "Avanti",
+  "windows-tada": "Windows Ta-da",
 };
 
 const BACKGROUND_ACTIVITY_PROFILE_LABELS: Record<BackgroundActivityProfile, string> = {
@@ -2205,7 +2206,12 @@ export function GeneralSettingsPanel() {
               <Select
                 value={settings.completionSound}
                 onValueChange={(value) => {
-                  if (value === "none" || value === "resolve" || value === "avanti") {
+                  if (
+                    value === "none" ||
+                    value === "resolve" ||
+                    value === "avanti" ||
+                    value === "windows-tada"
+                  ) {
                     updateSettings({ completionSound: value });
                   }
                 }}
@@ -2220,6 +2226,11 @@ export function GeneralSettingsPanel() {
                   <SelectItem hideIndicator value="avanti">
                     {COMPLETION_SOUND_LABELS.avanti}
                   </SelectItem>
+                  {window.desktopBridge?.getClientPlatform?.() === "win32" ? (
+                    <SelectItem hideIndicator value="windows-tada">
+                      {COMPLETION_SOUND_LABELS["windows-tada"]}
+                    </SelectItem>
+                  ) : null}
                   <SelectItem hideIndicator value="none">
                     {COMPLETION_SOUND_LABELS.none}
                   </SelectItem>

@@ -449,6 +449,16 @@ function readEnvPath(env: NodeJS.ProcessEnv): string | undefined {
   return env.PATH ?? env.Path ?? env.path;
 }
 
+export function resolveWindowsSystemRoot(env: NodeJS.ProcessEnv): string {
+  return (
+    env.SystemRoot?.trim() ||
+    env.SYSTEMROOT?.trim() ||
+    env.WINDIR?.trim() ||
+    env.windir?.trim() ||
+    "C:\\Windows"
+  );
+}
+
 function resolvePathEnvironmentVariable(env: NodeJS.ProcessEnv): string {
   return readEnvPath(env) ?? "";
 }

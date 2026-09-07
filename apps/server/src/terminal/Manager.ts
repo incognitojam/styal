@@ -36,7 +36,7 @@ import {
 } from "@t3tools/contracts";
 import { makeKeyedCoalescingWorker } from "@t3tools/shared/KeyedCoalescingWorker";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { mergePathValues } from "@t3tools/shared/shell";
+import { mergePathValues, resolveWindowsSystemRoot } from "@t3tools/shared/shell";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import * as DateTime from "effect/DateTime";
 import * as Context from "effect/Context";
@@ -535,13 +535,9 @@ function shellCandidateFromCommand(
   return { shell: command };
 }
 
-function windowsSystemRoot(env: NodeJS.ProcessEnv): string {
-  return env.SystemRoot?.trim() || env.windir?.trim() || "C:\\Windows";
-}
-
 function windowsPowerShellPath(env: NodeJS.ProcessEnv): string {
   return joinWindowsPath(
-    windowsSystemRoot(env),
+    resolveWindowsSystemRoot(env),
     "System32",
     "WindowsPowerShell",
     "v1.0",
@@ -550,7 +546,7 @@ function windowsPowerShellPath(env: NodeJS.ProcessEnv): string {
 }
 
 function windowsCmdPath(env: NodeJS.ProcessEnv): string {
-  return joinWindowsPath(windowsSystemRoot(env), "System32", "cmd.exe");
+  return joinWindowsPath(resolveWindowsSystemRoot(env), "System32", "cmd.exe");
 }
 
 function formatShellCandidate(candidate: ShellCandidate): string {

@@ -1,10 +1,84 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+const { addToast } = vi.hoisted(() => ({ addToast: vi.fn() }));
+vi.mock("../components/ui/toast", () => ({ toastManager: { add: addToast } }));
+
+class FakeAudioParam {
+  readonly setValueAtTime = vi.fn();
+  readonly linearRampToValueAtTime = vi.fn();
+  readonly exponentialRampToValueAtTime = vi.fn();
+}
+
+class FakeOscillator {
+  type: OscillatorType = "sine";
+  readonly frequency = new FakeAudioParam();
+  readonly connect = vi.fn((destination: unknown) => destination);
+  readonly addEventListener = vi.fn();
+  readonly disconnect = vi.fn();
+  readonly start = vi.fn();
+  readonly stop = vi.fn();
+}
+
+class FakeGain {
+  readonly gain = new FakeAudioParam();
+  readonly connect = vi.fn((destination: unknown) => destination);
+  readonly disconnect = vi.fn();
+}
+
+const audioContextInstances: FakeAudioContext[] = [];
+
+class FakeAudioContext {
+  readonly currentTime = 10;
+  readonly destination = {};
+  state: AudioContextState = "running";
+  readonly oscillators: FakeOscillator[] = [];
+  readonly gains: FakeGain[] = [];
+  readonly createOscillator = vi.fn(() => {
+    const oscillator = new FakeOscillator();
+    this.oscillators.push(oscillator);
+    return oscillator;
+  });
+  readonly createGain = vi.fn(() => {
+    const gain = new FakeGain();
+    this.gains.push(gain);
+    return gain;
+  });
+  get oscillator(): FakeOscillator {
+    const oscillator = this.oscillators[0];
+    if (oscillator === undefined) {
+      throw new Error("Expected an oscillator to be created.");
+    }
+    return oscillator;
+  }
+  get gain(): FakeGain {
+    const gain = this.gains[0];
+    if (gain === undefined) {
+      throw new Error("Expected a gain node to be created.");
+    }
+    return gain;
+  }
+  readonly resume = vi.fn(async () => {
+    this.state = "running";
+  });
+
+  constructor() {
+    audioContextInstances.push(this);
+  }
+}
+
 function stubSampleAudio() {
   const pause = vi.fn();
   const play = vi.fn().mockResolvedValue(undefined);
-  const audioInstances: FakeAudio[] = [];
-  class FakeAudio {
+  const audioInstances: Array<{
+    readonly url: string;
+    preload: string;
+    volume: number;
+    currentTime: number;
+    error: { code: number } | null;
+    dispatchEvent: (event: Event) => boolean;
+  }> = [];
+  class FakeAudio extends EventTarget {
+    error: { code: number } | null = null;
     preload = "";
     volume = 1;
     currentTime = 5;
@@ -12,6 +86,7 @@ function stubSampleAudio() {
     readonly play = play;
 
     constructor(readonly url: string) {
+      super();
       audioInstances.push(this);
     }
   }
@@ -21,6 +96,8 @@ function stubSampleAudio() {
 
 beforeEach(() => {
   vi.resetModules();
+  addToast.mockClear();
+  audioContextInstances.length = 0;
 });
 
 afterEach(() => {
@@ -59,6 +136,59 @@ describe("playCompletionSound", () => {
     const { playCompletionSound } = await import("./completionSound");
 
     expect(() => playCompletionSound("resolve")).not.toThrow();
+  });
+
+  it("plays Windows Ta-da from the desktop protocol", async () => {
+    const { audioInstances, pause, play } = stubSampleAudio();
+    const { playCompletionSound } = await import("./completionSound");
+
+    playCompletionSound("windows-tada");
+
+    expect(audioInstances).toEqual([
+      expect.objectContaining({
+        url: "/_desktop/windows-tada.wav",
+        preload: "auto",
+        volume: 0.28,
+        currentTime: 0,
+      }),
+    ]);
+    expect(pause).toHaveBeenCalledOnce();
+    expect(play).toHaveBeenCalledOnce();
+  });
+
+  it("reports unavailable Windows Ta-da once without playing another sound", async () => {
+    const { audioInstances, play } = stubSampleAudio();
+    vi.stubGlobal("AudioContext", FakeAudioContext);
+    const { playCompletionSound } = await import("./completionSound");
+
+    playCompletionSound("windows-tada");
+
+    const sample = audioInstances[0]!;
+    sample.error = { code: 4 };
+    sample.dispatchEvent(new Event("error"));
+    sample.dispatchEvent(new Event("error"));
+    expect(addToast).toHaveBeenCalledOnce();
+    expect(addToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Windows Ta-da is unavailable",
+      }),
+    );
+    expect(audioContextInstances).toEqual([]);
+    playCompletionSound("windows-tada");
+    expect(play).toHaveBeenCalledTimes(2);
+    expect(audioInstances).toHaveLength(2);
+  });
+
+  it.each(["AbortError", "NotAllowedError"])("ignores %s playback rejections", async (name) => {
+    const { play } = stubSampleAudio();
+    play.mockRejectedValueOnce(new DOMException("interrupted or blocked", name));
+    vi.stubGlobal("AudioContext", FakeAudioContext);
+    const { playCompletionSound } = await import("./completionSound");
+    playCompletionSound("windows-tada");
+    playCompletionSound("windows-tada");
+    await Promise.resolve();
+    expect(addToast).not.toHaveBeenCalled();
+    expect(audioContextInstances).toEqual([]);
   });
 
   it("does nothing when completion sounds are disabled", async () => {
