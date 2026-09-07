@@ -586,6 +586,10 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (isTaskActivity && typeof payload?.error === "string" && payload.error.trim()) {
     entry.detail = payload.error;
   }
+  if (!entry.detail && (activity.kind === "runtime.error" || activity.kind === "runtime.warning")) {
+    const message = asTrimmedString(payload?.message);
+    if (message) entry.detail = message;
+  }
   if (viewedImagePath) {
     entry.viewedImagePath = viewedImagePath;
   }
@@ -1085,12 +1089,16 @@ function formatToolFilePath(path: string, workspaceRoot: string | undefined): st
 function buildWorkEntryExpandedBody(
   entry: WorkLogEntry,
   workspaceRoot: string | undefined,
+  expandedLabel: string,
 ): string | null {
   if (entry.agentSpawn) return agentSpawnExpandedBody(entry.agentSpawn);
   const blocks: string[] = [];
+  const visibleLabel = expandedLabel.trim();
   const appendBlock = (value: string | null | undefined) => {
     const trimmed = value?.trim();
-    if (trimmed && (entry.command || !blocks.includes(trimmed))) blocks.push(trimmed);
+    if (trimmed && (entry.command || (trimmed !== visibleLabel && !blocks.includes(trimmed)))) {
+      blocks.push(trimmed);
+    }
   };
 
   if (entry.itemType === "mcp_tool_call" && entry.toolData !== undefined) {
@@ -1116,24 +1124,15 @@ function buildWorkEntryExpandedBody(
 }
 
 /**
- * A row only opens when its body says more than its collapsed line. A row
- * whose only detail is the single-line text it already shows (a runtime
- * warning, a task summary, a short command) has nothing to reveal.
- * Multi-line text still expands: the collapsed row truncates it to one line.
+ * Even single-line details can be truncated by the available screen width.
  * Cheap field checks come first so large tool payloads are not serialized
  * for every row (see the deferred-expansion test).
  */
-function workEntryHasExpandedBody(entry: WorkLogEntry, collapsedText: string): boolean {
+function workEntryCanExpand(entry: WorkLogEntry): boolean {
   if (entry.agentSpawn) return agentSpawnMembers(entry.agentSpawn).length > 0;
   if (entry.itemType === "mcp_tool_call" && entry.toolData !== undefined) return true;
   if (entry.changedFiles?.some((path) => path.trim().length > 0)) return true;
-  const parts = [entry.rawCommand ?? entry.command, entry.detail]
-    .map((value) => value?.trim())
-    .filter((value): value is string => Boolean(value));
-  if (parts.length === 0) return false;
-  if (parts.length > 1 && new Set(parts).size > 1) return true;
-  const only = parts[0]!;
-  return only.includes("\n") || collapseWhitespace(only) !== collapseWhitespace(collapsedText);
+  return Boolean((entry.rawCommand ?? entry.command)?.trim() || entry.detail?.trim());
 }
 
 function collapseWhitespace(value: string): string {
@@ -1146,13 +1145,25 @@ function stripShellWrapper(value: string): string {
   return (match?.[1] ?? trimmed).trim();
 }
 
-/** The one-line text a collapsed work row shows. */
+/**
+ * The text a work row shows. Collapsed rows use one line; expanded rows retain
+ * detail formatting, and commands stay in the separate body.
+ */
 export function workEntryRowLabel(
   row: Pick<ThreadFeedActivity, "workEntry" | "detail" | "summary">,
+  expanded = false,
 ): string {
-  if (row.workEntry.agentSpawn) return agentSpawnLabel(row.workEntry.agentSpawn);
-  const presentation = resolveWorkEntryToolPresentation(row.workEntry);
+  const entry = row.workEntry;
+  if (entry.agentSpawn) return agentSpawnLabel(entry.agentSpawn);
+  const presentation = resolveWorkEntryToolPresentation(entry);
   if (presentation) return presentation.displayName;
+  if (expanded && entry.command?.trim()) return "Command";
+  // Expanded rows show the unshortened detail; file changes keep the row's
+  // workspace-relative path.
+  if (expanded) {
+    const fullDetail = entry.itemType === "file_change" ? null : entry.detail?.trim();
+    return fullDetail || row.detail?.trim() || row.summary;
+  }
   const compactDetail =
     row.detail === null ? null : collapseWhitespace(stripShellWrapper(row.detail));
   return compactDetail || row.summary;
@@ -2420,7 +2431,13 @@ function toThreadFeedActivityEntry(
       ? formatToolRowArgument(presentation.argument, workspaceRoot)
       : null
     : workEntryPreview(entry, workspaceRoot);
-  const getFullDetail = memoizeValue(() => buildWorkEntryExpandedBody(entry, workspaceRoot));
+  const getFullDetail = memoizeValue(() =>
+    buildWorkEntryExpandedBody(
+      entry,
+      workspaceRoot,
+      workEntryRowLabel({ workEntry: entry, detail, summary }, true),
+    ),
+  );
   const getCopyText = memoizeValue(() => {
     const copyLabel = capitalizePhrase(normalizeCompactToolLabel(entry.toolTitle || entry.label));
     const fullDetail = getFullDetail();
@@ -2431,7 +2448,9 @@ function toThreadFeedActivityEntry(
         .filter((value): value is string => Boolean(value))
         .join("\n");
     }
-    return [copyLabel, detail, fullDetail]
+    // A presentation shortens its argument for the row; copy the full detail.
+    const copyDetail = presentation && entry.detail?.trim() ? entry.detail : detail;
+    return [copyLabel, copyDetail, fullDetail]
       .filter((value, index, values): value is string => {
         return Boolean(value) && values.indexOf(value) === index;
       })
@@ -2449,10 +2468,7 @@ function toThreadFeedActivityEntry(
       summary,
       detail,
       ...(entry.fileChangeStat ? { fileChangeStat: entry.fileChangeStat } : {}),
-      canExpand: workEntryHasExpandedBody(
-        entry,
-        workEntryRowLabel({ workEntry: entry, detail, summary }),
-      ),
+      canExpand: workEntryCanExpand(entry),
       getFullDetail,
       getCopyText,
       icon: workEntryIcon(entry),
