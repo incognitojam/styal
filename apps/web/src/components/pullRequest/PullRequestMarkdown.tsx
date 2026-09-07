@@ -1,5 +1,5 @@
 import type { EnvironmentId, PullRequestDetailView, ScopedThreadRef } from "@t3tools/contracts";
-import { ExternalLinkIcon, LoaderCircleIcon, PaperclipIcon, PlayIcon } from "lucide-react";
+import { ExternalLinkIcon, LoaderCircleIcon, PaperclipIcon } from "lucide-react";
 import {
   type ComponentPropsWithoutRef,
   useCallback,
@@ -15,6 +15,7 @@ import { cn } from "~/lib/utils";
 
 import ChatMarkdown from "../ChatMarkdown";
 import type { GithubReferenceSurface } from "../chat/githubReferenceLinks";
+import { MediaVideoPlayer } from "../media/MediaVideoPlayer";
 import {
   remarkPullRequestAutolinks,
   resolvePullRequestRepositoryImage,
@@ -80,14 +81,7 @@ function PullRequestRepositoryImage({
 
 export const PullRequestMarkdownContext = createContext<string | null>(null);
 
-/**
- * A pull request body, rendered with the app's markdown renderer plus a card for each upload
- * embedded in it, which that renderer drops on the floor.
- *
- * The card links out instead of playing in place. GitHub serves the file as uploaded — Mac
- * recordings can use codecs Chromium cannot decode. Opening the host keeps its playback
- * and download fallbacks available without introducing another inline player.
- */
+/** Renders PR uploads inline, with retry and an original link when video playback fails. */
 export function PullRequestMarkdown({
   text,
   detail,
@@ -170,8 +164,18 @@ export function PullRequestMarkdown({
             />
           );
         }
-        const isVideo = segment.media === "video";
-        const Icon = isVideo ? PlayIcon : PaperclipIcon;
+        if (segment.media === "video") {
+          return (
+            <MediaVideoPlayer
+              key={`${segment.id}:${segment.url}`}
+              src={segment.url}
+              originalUrl={segment.url}
+              label="Pull request video"
+              className="w-full"
+              videoClassName="rounded-lg border border-border/60"
+            />
+          );
+        }
         return (
           // A plain anchor rather than the page's openExternal button: the desktop window
           // turns a blocked _blank into openExternal itself, and in a browser tab — where
@@ -183,10 +187,8 @@ export function PullRequestMarkdown({
             target="_blank"
             className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm hover:bg-muted/60"
           >
-            <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate">
-              {isVideo ? "Play video on GitHub" : "Open attachment on GitHub"}
-            </span>
+            <PaperclipIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate">Open attachment on GitHub</span>
             <ExternalLinkIcon aria-hidden className="size-3 shrink-0 text-muted-foreground" />
           </a>
         );
