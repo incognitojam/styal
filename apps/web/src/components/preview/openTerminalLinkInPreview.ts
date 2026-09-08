@@ -33,21 +33,24 @@ interface OpenTerminalLinkInPreviewInput<E> {
   readonly threadRef: ScopedThreadRef;
   readonly openPreview: OpenPreviewMutation<E>;
   readonly fallbackToBrowser: () => void;
+  /** Cmd/Ctrl-click bypasses the preference and opens in the system browser. */
+  readonly forceBrowser: boolean;
 }
 
 /**
- * Opens a terminal link, in the integrated browser where it is a loopback one.
+ * Opens a terminal link, in the integrated browser where it is a loopback one, unless a
+ * Cmd/Ctrl-click explicitly requests the system browser.
  *
  * A loopback URL names a port on the machine the terminal runs on, which in a remote environment
  * is not the machine the system browser runs on, and only the integrated browser resolves it
- * against the environment. Activation is already a deliberate modifier gesture, so it opens rather
- * than asking which browser to use; the preview chrome carries the way back out.
- * Other web links follow the configured browser preference.
+ * against the environment, so it opens there rather than asking which browser to use; the preview
+ * chrome carries the way back out. Other web links follow the configured browser preference.
  */
 export async function openTerminalLinkInPreview<E>(
   input: OpenTerminalLinkInPreviewInput<E>,
 ): Promise<void> {
   const supportsPreview =
+    !input.forceBrowser &&
     isWebUrl(input.url) &&
     isPreviewSupportedInRuntime() &&
     input.threadRef.threadId.length > 0 &&
