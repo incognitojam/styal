@@ -2,18 +2,19 @@ import type { ProviderInstanceEnvironment } from "@t3tools/contracts";
 
 import { expandHomePath } from "../pathExpansion.ts";
 import { stripServerOwnedEnvironment } from "../serverOwnedEnvironment.ts";
-import { T3CODE_CODEX_LAUNCH_ARGS_ENV } from "./Layers/codexLaunchArgs.ts";
+
+/** Read by the Codex adapter from the provider environment, so it must survive stripping. */
+const CODEX_LAUNCH_ARGS_ENV = "T3CODE_CODEX_LAUNCH_ARGS";
 
 /**
  * The server's environment without its own settings, used as the base for
  * provider processes. Agents can start other styal servers, which must not
- * inherit this server's settings. `T3CODE_CODEX_LAUNCH_ARGS` is kept because
- * the Codex adapter reads it from this environment.
+ * inherit this server's settings.
  */
 export function inheritedProviderEnvironment(
   env: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
-  return stripServerOwnedEnvironment(env, [T3CODE_CODEX_LAUNCH_ARGS_ENV]);
+  return stripServerOwnedEnvironment(env, [CODEX_LAUNCH_ARGS_ENV]);
 }
 
 /**
