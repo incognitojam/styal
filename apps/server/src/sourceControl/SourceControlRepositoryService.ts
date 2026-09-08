@@ -206,6 +206,7 @@ function parseRemoteConfig(stdout: string): ParsedRemoteConfig {
   };
 }
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const config = yield* ServerConfig;
   const fileSystem = yield* FileSystem.FileSystem;
