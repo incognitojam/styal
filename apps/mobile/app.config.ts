@@ -174,7 +174,7 @@ const config: ExpoConfig = {
   slug: "styal",
   platforms: ["ios", "android"],
   scheme: variant.scheme,
-  version: "1.1.0",
+  version: "1.1.1",
   runtimeVersion: {
     // Development manifests resolve on every launch, so avoid fingerprint's
     // expensive native-project calculation there. Preview and production stay
