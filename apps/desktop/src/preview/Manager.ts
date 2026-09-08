@@ -125,6 +125,12 @@ const ZOOM_EPSILON = 0.001;
 const MAX_EVALUATION_BYTES = 64_000;
 const MAX_VISIBLE_TEXT_LENGTH = 20_000;
 const MAX_INTERACTIVE_ELEMENTS = 200;
+/**
+ * A `[role]` container's innerText is its whole subtree, which turned one
+ * snapshot's element list into 60 KB of repeated page text. Names are labels,
+ * not content, so cap them where they are read.
+ */
+const MAX_INTERACTIVE_ELEMENT_NAME_LENGTH = 200;
 const MAX_SCREENSHOT_WIDTH = 1280;
 const CAPTURE_PAGE_TIMEOUT_MS = 5_000;
 /** How long an armed tab keeps the exclusive display-media slot before another tab may take it. */
@@ -3913,7 +3919,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             return {
               tag: element.tagName.toLowerCase(),
               role: element.getAttribute("role"),
-              name: element.getAttribute("aria-label") || element.innerText || element.getAttribute("name") || "",
+              name: (element.getAttribute("aria-label") || element.innerText || element.getAttribute("name") || "").slice(0, ${MAX_INTERACTIVE_ELEMENT_NAME_LENGTH}),
               selector: selectorFor(element),
               x: rect.x,
               y: rect.y,
