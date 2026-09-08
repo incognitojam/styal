@@ -12,6 +12,7 @@ import type { ExtraProps, Options as ReactMarkdownOptions } from "react-markdown
 
 import { useAssetUrlState } from "~/assets/assetUrls";
 import { cn } from "~/lib/utils";
+import { PULL_REQUESTS_PANEL_REF } from "~/rightPanelStore";
 
 import ChatMarkdown from "../ChatMarkdown";
 import type { GithubReferenceSurface } from "../chat/githubReferenceLinks";
@@ -79,7 +80,10 @@ function PullRequestRepositoryImage({
   return <img {...props} src={assetUrl.url} alt={alt} onError={() => setFailedUrl(assetUrl.url)} />;
 }
 
-export const PullRequestMarkdownContext = createContext<string | null>(null);
+export const PullRequestMarkdownContext = createContext<{
+  repositoryUrl: string | null;
+  threadRef: ScopedThreadRef | null;
+} | null>(null);
 
 /** Renders PR uploads inline, with retry and an original link when video playback fails. */
 export function PullRequestMarkdown({
@@ -142,7 +146,9 @@ export function PullRequestMarkdown({
   }, [detail.provider, detail.repository, detail.url, detail.workspaceRoot, environmentId]);
 
   const segments = splitPullRequestBody(text);
-  const repositoryUrl = useContext(PullRequestMarkdownContext);
+  const context = useContext(PullRequestMarkdownContext);
+  const repositoryUrl = context?.repositoryUrl;
+  const resolvedThreadRef = threadRef ?? context?.threadRef ?? undefined;
   const extraRemarkPlugins = useMemo<NonNullable<ReactMarkdownOptions["remarkPlugins"]>>(
     () => (repositoryUrl ? [[remarkPullRequestAutolinks, { repositoryUrl }]] : []),
     [repositoryUrl],
@@ -156,7 +162,8 @@ export function PullRequestMarkdown({
               key={segment.id}
               text={segment.text}
               cwd={detail.workspaceRoot}
-              threadRef={threadRef ?? undefined}
+              threadRef={resolvedThreadRef}
+              pullRequestPanelRef={resolvedThreadRef ?? PULL_REQUESTS_PANEL_REF}
               environmentId={environmentId}
               imageRenderer={imageRenderer}
               referenceContext={referenceContext}

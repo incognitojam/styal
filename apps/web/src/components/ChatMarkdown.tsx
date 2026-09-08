@@ -199,6 +199,8 @@ interface ChatMarkdownProps {
   text: string;
   cwd: string | undefined;
   threadRef?: ScopedThreadRef | undefined;
+  /** Panel that receives pull request links, including the standalone PR view. */
+  pullRequestPanelRef?: ScopedThreadRef | undefined;
   /** Environment that owns non-thread markdown, such as a pull request panel. */
   environmentId?: EnvironmentId | undefined;
   onTaskListChange?: ((input: { markerOffset: number; checked: boolean }) => void) | undefined;
@@ -2126,6 +2128,7 @@ function useChatMarkdownState({
   text,
   cwd,
   threadRef,
+  pullRequestPanelRef,
   environmentId: explicitEnvironmentId,
   onTaskListChange,
   isStreaming = false,
@@ -2290,7 +2293,10 @@ function useChatMarkdownState({
     event.clipboardData.setData("text/html", payload.html);
   }, []);
   const surfaceThreadRef = use(GithubReferenceThreadContext);
-  const openChangeRequestLink = useOpenChangeRequestLink(threadRef ?? surfaceThreadRef);
+  const openChangeRequestLink = useOpenChangeRequestLink(
+    threadRef ?? surfaceThreadRef,
+    pullRequestPanelRef,
+  );
   const openDeferredMarkdownLink = useOpenLink(threadRef);
   const linkTargetPreference = useClientSettings((settings) => settings.browserLinkTarget);
   const resolveThreadPullRequest = useCallback(
@@ -2852,7 +2858,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
             // A link to a change request in a workspace project opens beside the
             // conversation instead of in a browser: it is the thing being talked about, and
             // the panel it opens offers the browser as one of its actions.
-            if (openChangeRequestLink(event, href)) return;
+            if (openChangeRequestLink(event, href, undefined, environmentId ?? undefined)) return;
             // A dev server the agent just started is only reachable from the environment, so
             // it opens in the integrated browser regardless of the general link setting.
             if (shouldOpenLinkInIntegratedBrowser({ href, event, canOpenInPreview })) {

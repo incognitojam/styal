@@ -99,7 +99,7 @@ describe("ChatMarkdown PR link thread context", () => {
       </GithubReferenceThreadContext.Provider>,
     );
 
-    expect(useOpenChangeRequestLink).toHaveBeenLastCalledWith(surfaceThreadRef);
+    expect(useOpenChangeRequestLink).toHaveBeenLastCalledWith(surfaceThreadRef, undefined);
   });
 
   it("prefers the chat's explicit thread over the surrounding surface", () => {
@@ -109,13 +109,13 @@ describe("ChatMarkdown PR link thread context", () => {
       </GithubReferenceThreadContext.Provider>,
     );
 
-    expect(useOpenChangeRequestLink).toHaveBeenLastCalledWith(chatThreadRef);
+    expect(useOpenChangeRequestLink).toHaveBeenLastCalledWith(chatThreadRef, undefined);
   });
 
   it("keeps standalone PR pages without a thread target", () => {
     renderToStaticMarkup(<ChatMarkdown cwd="/workspace/project" text={text} />);
 
-    expect(useOpenChangeRequestLink).toHaveBeenLastCalledWith(undefined);
+    expect(useOpenChangeRequestLink).toHaveBeenLastCalledWith(undefined, undefined);
   });
 });
 
