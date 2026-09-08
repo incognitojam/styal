@@ -1,4 +1,5 @@
-import type { EnvironmentId, ProjectIconColor, ProjectIconOverride } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectIconColor } from "@t3tools/contracts";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
   getProjectFaviconResourceKey,
   isProjectFaviconFallbackUrl,
@@ -97,48 +98,53 @@ const PROJECT_ICON_COLOR_BY_NAME: Record<ProjectIconName, ProjectIconColor> = {
   web: "sky",
 };
 
+// The slice of a project that decides its icon. Every surface must pass the
+// project record itself (or a snapshot spread from it) so the saved title, favicon
+// and icon override always travel together. Passing a display label as the title
+// changes the automatic icon, which is how the command palette drifted once.
+export type ProjectFaviconProject = Pick<
+  EnvironmentProject,
+  "environmentId" | "workspaceRoot" | "title" | "faviconPath" | "projectIcon"
+>;
+
 type ProjectFaviconInput = {
-  readonly environmentId: EnvironmentId;
-  readonly projectIcon?: ProjectIconOverride | null | undefined;
-  readonly projectName?: string | undefined;
   className?: string | undefined;
   fallbackIcon?: ComponentType<{ className?: string }>;
 } & (
+  | { readonly project: ProjectFaviconProject; readonly legacyProjectId?: undefined }
   | {
-      readonly cwd: string;
-      readonly faviconPath?: string | null | undefined;
-      readonly legacyProjectId?: undefined;
-    }
-  | {
+      readonly project?: undefined;
+      readonly environmentId: EnvironmentId;
       readonly legacyProjectId: string;
-      readonly cwd?: never;
-      readonly faviconPath?: never;
     }
 );
 
 export function ProjectFavicon(input: ProjectFaviconInput) {
+  const { project } = input;
   // Import previews name a project that is not in any environment yet, so its icon comes from the
   // legacy data directory rather than the cached project favicon.
   const cachedSrc = useAtomValue(
-    input.legacyProjectId === undefined ? projectFaviconUrlAtom(input) : NO_PROJECT_FAVICON_URL,
+    project === undefined
+      ? NO_PROJECT_FAVICON_URL
+      : projectFaviconUrlAtom({
+          environmentId: project.environmentId,
+          cwd: project.workspaceRoot,
+          faviconPath: project.faviconPath,
+        }),
   );
   const legacyAsset = useAssetUrlState(
-    input.environmentId,
-    input.legacyProjectId === undefined
-      ? null
-      : { _tag: "legacy-project-favicon", projectId: input.legacyProjectId },
+    input.project === undefined ? input.environmentId : input.project.environmentId,
+    input.project === undefined
+      ? { _tag: "legacy-project-favicon", projectId: input.legacyProjectId }
+      : null,
   );
   const src =
-    input.legacyProjectId === undefined
-      ? cachedSrc
-      : legacyAsset._tag === "Success"
-        ? legacyAsset.url
-        : null;
-  if (input.projectIcon?.kind === "emoji") {
-    return <ProjectFaviconFallback className={input.className} emoji={input.projectIcon.emoji} />;
+    project === undefined ? (legacyAsset._tag === "Success" ? legacyAsset.url : null) : cachedSrc;
+  if (project?.projectIcon?.kind === "emoji") {
+    return <ProjectFaviconFallback className={input.className} emoji={project.projectIcon.emoji} />;
   }
-  if (input.projectIcon?.kind === "lucide") {
-    const colorClassName = projectIconColorClassName(input.projectIcon.color);
+  if (project?.projectIcon?.kind === "lucide") {
+    const colorClassName = projectIconColorClassName(project.projectIcon.color);
     const iconClassName = cn(
       "inline-flex size-3.5 shrink-0 items-center justify-center",
       colorClassName,
@@ -148,7 +154,7 @@ export function ProjectFavicon(input: ProjectFaviconInput) {
       <span aria-hidden="true" className={iconClassName}>
         <Suspense fallback={<DynamicProjectIconFallback />}>
           <DynamicIcon
-            name={input.projectIcon.name as IconName}
+            name={project.projectIcon.name as IconName}
             className={cn("size-full", colorClassName)}
             fallback={DynamicProjectIconFallback}
           />
@@ -157,9 +163,9 @@ export function ProjectFavicon(input: ProjectFaviconInput) {
     );
   }
   const automaticIconName =
-    input.fallbackIcon || input.legacyProjectId !== undefined
+    input.fallbackIcon || project === undefined
       ? null
-      : selectProjectIcon(input.projectName ?? "", input.cwd);
+      : selectProjectIcon(project.title, project.workspaceRoot);
   const FallbackIcon =
     input.fallbackIcon ??
     (automaticIconName?.kind === "lucide" ? PROJECT_ICONS[automaticIconName.icon] : undefined);
@@ -181,9 +187,13 @@ export function ProjectFavicon(input: ProjectFaviconInput) {
   }
 
   const cacheKey =
-    input.legacyProjectId === undefined
-      ? getProjectFaviconResourceKey(input.environmentId, input.cwd, input.faviconPath)
-      : getProjectFaviconResourceKey(input.environmentId, `legacy:${input.legacyProjectId}`, null);
+    input.project === undefined
+      ? getProjectFaviconResourceKey(input.environmentId, `legacy:${input.legacyProjectId}`, null)
+      : getProjectFaviconResourceKey(
+          input.project.environmentId,
+          input.project.workspaceRoot,
+          input.project.faviconPath,
+        );
 
   return (
     <ProjectFaviconImage
