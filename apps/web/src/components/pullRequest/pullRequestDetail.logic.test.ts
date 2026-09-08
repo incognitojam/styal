@@ -39,6 +39,7 @@ import {
   resolveBaseFreshness,
   resolveRequiredBranchUpdate,
   resolvePullRequestPrimaryAction,
+  resolvePullRequestMergeMethod,
   buildPullRequestTimeline,
   editPullRequestThreadComment,
   writePullRequestDetailSnapshot,
@@ -86,6 +87,21 @@ const TIMELINE_SOURCE: Pick<
   mergedAt: null,
   closedAt: null,
 };
+
+describe("pull request merge method", () => {
+  it("uses the current choice, then the project default, then the last choice", () => {
+    expect(
+      resolvePullRequestMergeMethod(["merge", "squash", "rebase"], null, "squash", "rebase"),
+    ).toBe("squash");
+    expect(
+      resolvePullRequestMergeMethod(["merge", "squash", "rebase"], "rebase", "squash", "merge"),
+    ).toBe("rebase");
+    expect(resolvePullRequestMergeMethod(["merge", "rebase"], null, "squash", "rebase")).toBe(
+      "rebase",
+    );
+    expect(resolvePullRequestMergeMethod(["squash"], null, "merge", "rebase")).toBe("squash");
+  });
+});
 
 describe("pull request activity refresh", () => {
   const first = {
