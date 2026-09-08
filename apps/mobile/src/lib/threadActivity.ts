@@ -1,8 +1,13 @@
+import * as Option from "effect/Option";
 import {
   requestKindFromRequestType,
   type PendingApproval,
 } from "@t3tools/client-runtime/pending-requests";
-import { isToolLifecycleItemType, ProjectScriptIcon } from "@t3tools/contracts";
+import {
+  isToolLifecycleItemType,
+  ProjectScriptIcon,
+  UserInputAttachmentAnswerPayload,
+} from "@t3tools/contracts";
 import {
   setupScriptActivityLabel,
   setupScriptActivityState,
@@ -59,6 +64,8 @@ export type { PendingApproval, PendingUserInput } from "@t3tools/client-runtime/
 export interface PendingUserInputDraftAnswer {
   readonly selectedOptionValues?: ReadonlyArray<string>;
   readonly customAnswer?: string;
+  readonly attachmentCount?: number;
+  readonly attachmentsBlocked?: boolean;
 }
 
 export interface ThreadFeedActivity {
@@ -103,6 +110,7 @@ export interface ThreadFeedActivity {
 }
 
 export interface WorkLogEntry {
+  readonly questionAnswer?: UserInputAttachmentAnswerPayload;
   id: string;
   createdAt: string;
   turnId: TurnId | null;
@@ -360,6 +368,7 @@ function resolvePendingUserInputAnswer(
   question: UserInputQuestion,
   draft: PendingUserInputDraftAnswer | undefined,
 ): string | ReadonlyArray<string> | null {
+  if (draft?.attachmentsBlocked) return null;
   const customAnswer =
     question.allowCustomAnswer === false ? null : normalizeDraftAnswer(draft?.customAnswer);
   if (customAnswer) {
@@ -368,9 +377,16 @@ function resolvePendingUserInputAnswer(
 
   const selectedOptionValues = normalizeSelectedOptionValues(question, draft?.selectedOptionValues);
   if (question.multiSelect) {
-    return selectedOptionValues.length > 0 ? selectedOptionValues : null;
+    return selectedOptionValues.length > 0
+      ? selectedOptionValues
+      : question.allowCustomAnswer !== false && (draft?.attachmentCount ?? 0) > 0
+        ? ""
+        : null;
   }
-  return selectedOptionValues[0] ?? null;
+  return (
+    selectedOptionValues[0] ??
+    (question.allowCustomAnswer !== false && (draft?.attachmentCount ?? 0) > 0 ? "" : null)
+  );
 }
 
 /** Some providers settle agents through task.updated instead of task.completed. */
@@ -492,6 +508,8 @@ function isPlanBoundaryToolActivity(activity: OrchestrationThreadActivity): bool
   return typeof payload?.detail === "string" && payload.detail.startsWith("ExitPlanMode:");
 }
 
+const decodeQuestionAttachmentAnswer = Schema.decodeUnknownOption(UserInputAttachmentAnswerPayload);
+
 function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWorkLogEntry {
   const payload =
     activity.payload && typeof activity.payload === "object"
@@ -542,6 +560,11 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
           : activity.tone,
     sourceActivityKind: activity.kind,
     ...(setupScriptState ? { setupScriptState } : {}),
+    ...(() => {
+      if (activity.kind !== "user-input.answer-submitted") return {};
+      const answer = decodeQuestionAttachmentAnswer(activity.payload);
+      return Option.isSome(answer) ? { questionAnswer: answer.value } : {};
+    })(),
   };
   const toolCallId =
     asTrimmedString(payload?.toolCallId) ?? asTrimmedString(asRecord(payload?.data)?.toolCallId);
@@ -1129,6 +1152,7 @@ function buildWorkEntryExpandedBody(
  * for every row (see the deferred-expansion test).
  */
 function workEntryCanExpand(entry: WorkLogEntry): boolean {
+  if (entry.questionAnswer) return true;
   if (entry.agentSpawn) return agentSpawnMembers(entry.agentSpawn).length > 0;
   if (entry.itemType === "mcp_tool_call" && entry.toolData !== undefined) return true;
   if (entry.changedFiles?.some((path) => path.trim().length > 0)) return true;
