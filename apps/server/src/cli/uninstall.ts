@@ -23,7 +23,7 @@ import { projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
 import { bootServiceLayer } from "./service.ts";
 import { findWindowsShim, launcherOwnsVersionsDir, resolveLauncherPath } from "./update.ts";
 
-export class CliUninstallError extends Schema.TaggedErrorClass<CliUninstallError>()(
+export class CliUninstallError extends Schema.TaggedError<CliUninstallError>()(
   "CliUninstallError",
   { reason: Schema.String },
 ) {

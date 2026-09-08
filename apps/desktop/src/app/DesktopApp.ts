@@ -42,7 +42,7 @@ const makeDesktopRunId = Crypto.Crypto.pipe(
   Effect.map((value) => value.replaceAll("-", "").slice(0, 12)),
 );
 
-export class DesktopBackendPortUnavailableError extends Schema.TaggedErrorClass<DesktopBackendPortUnavailableError>()(
+export class DesktopBackendPortUnavailableError extends Schema.TaggedError<DesktopBackendPortUnavailableError>()(
   "DesktopBackendPortUnavailableError",
   {
     startPort: Schema.Int,
@@ -55,7 +55,7 @@ export class DesktopBackendPortUnavailableError extends Schema.TaggedErrorClass<
   }
 }
 
-export class DesktopDevelopmentBackendPortRequiredError extends Schema.TaggedErrorClass<DesktopDevelopmentBackendPortRequiredError>()(
+export class DesktopDevelopmentBackendPortRequiredError extends Schema.TaggedError<DesktopDevelopmentBackendPortRequiredError>()(
   "DesktopDevelopmentBackendPortRequiredError",
   {},
 ) {

@@ -47,7 +47,7 @@ type ConnectionFlags = {
   readonly url: Option.Option<string>;
 };
 
-class DriveConnectionError extends Schema.TaggedErrorClass<DriveConnectionError>()(
+class DriveConnectionError extends Schema.TaggedError<DriveConnectionError>()(
   "DriveConnectionError",
   { message: Schema.String },
 ) {}

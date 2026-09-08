@@ -14,7 +14,7 @@ import { main as runServiceLauncher } from "../serviceLauncher.ts";
  * interrupt the fiber and exit while the child is still being terminated.
  */
 export const serviceLauncherCommand = Command.make("__service-launcher").pipe(
-  Command.withHidden,
+  Command.unlisted,
   Command.withHandler(() =>
     Effect.sync(() => {
       runServiceLauncher().catch((cause: unknown) => {

@@ -17,7 +17,7 @@ import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 
-export class ComposerDraftPersistenceError extends Schema.TaggedErrorClass<ComposerDraftPersistenceError>()(
+export class ComposerDraftPersistenceError extends Schema.TaggedError<ComposerDraftPersistenceError>()(
   "ComposerDraftPersistenceError",
   {
     operation: Schema.String,

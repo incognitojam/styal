@@ -771,7 +771,7 @@ if [ -f "$LOG_FILE" ]; then
 fi
 `;
 
-export class SshInvalidArchiveVersionError extends Schema.TaggedErrorClass<SshInvalidArchiveVersionError>()(
+export class SshInvalidArchiveVersionError extends Schema.TaggedError<SshInvalidArchiveVersionError>()(
   "SshInvalidArchiveVersionError",
   { archiveVersion: Schema.String },
 ) {
@@ -786,7 +786,7 @@ export class SshInvalidArchiveVersionError extends Schema.TaggedErrorClass<SshIn
 const EXACT_ARCHIVE_VERSION =
   /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
 
-export class SshMissingRunnerError extends Schema.TaggedErrorClass<SshMissingRunnerError>()(
+export class SshMissingRunnerError extends Schema.TaggedError<SshMissingRunnerError>()(
   "SshMissingRunnerError",
   {},
 ) {

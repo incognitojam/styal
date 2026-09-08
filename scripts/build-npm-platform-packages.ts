@@ -48,7 +48,7 @@ export const NPM_LAUNCHER_PACKAGE_NAME = "@styal/cli";
 
 const encodePackageJson = Schema.encodeEffect(fromJsonStringPretty(Schema.Unknown));
 
-export class NpmPackagesCommandFailedError extends Schema.TaggedErrorClass<NpmPackagesCommandFailedError>()(
+export class NpmPackagesCommandFailedError extends Schema.TaggedError<NpmPackagesCommandFailedError>()(
   "NpmPackagesCommandFailedError",
   { command: Schema.String, exitCode: Schema.Int },
 ) {
@@ -57,7 +57,7 @@ export class NpmPackagesCommandFailedError extends Schema.TaggedErrorClass<NpmPa
   }
 }
 
-export class NpmPackagesToolMissingError extends Schema.TaggedErrorClass<NpmPackagesToolMissingError>()(
+export class NpmPackagesToolMissingError extends Schema.TaggedError<NpmPackagesToolMissingError>()(
   "NpmPackagesToolMissingError",
   { tool: Schema.String, purpose: Schema.String },
 ) {
@@ -66,7 +66,7 @@ export class NpmPackagesToolMissingError extends Schema.TaggedErrorClass<NpmPack
   }
 }
 
-export class NpmPackagesArchivesMissingError extends Schema.TaggedErrorClass<NpmPackagesArchivesMissingError>()(
+export class NpmPackagesArchivesMissingError extends Schema.TaggedError<NpmPackagesArchivesMissingError>()(
   "NpmPackagesArchivesMissingError",
   { archivesDir: Schema.String, missing: Schema.Array(Schema.String) },
 ) {
@@ -75,7 +75,7 @@ export class NpmPackagesArchivesMissingError extends Schema.TaggedErrorClass<Npm
   }
 }
 
-export class NpmPackagesArchiveLayoutError extends Schema.TaggedErrorClass<NpmPackagesArchiveLayoutError>()(
+export class NpmPackagesArchiveLayoutError extends Schema.TaggedError<NpmPackagesArchiveLayoutError>()(
   "NpmPackagesArchiveLayoutError",
   { archive: Schema.String, detail: Schema.String },
 ) {

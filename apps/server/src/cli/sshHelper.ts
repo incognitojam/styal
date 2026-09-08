@@ -121,6 +121,6 @@ const runtimePort = Command.make("runtime-port", {
 );
 
 export const sshHelperCommand = Command.make("__ssh-helper").pipe(
-  Command.withHidden,
+  Command.unlisted,
   Command.withSubcommands([pickPort, waitReady, runtimePort]),
 );

@@ -42,10 +42,10 @@ const encodeScenarioSummary = Schema.encodeEffect(
   ),
 );
 
-class DriveScenarioError extends Schema.TaggedErrorClass<DriveScenarioError>()(
-  "DriveScenarioError",
-  { message: Schema.String, cause: Schema.optional(Schema.Defect()) },
-) {}
+class DriveScenarioError extends Schema.TaggedError<DriveScenarioError>()("DriveScenarioError", {
+  message: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 const scenarioRuntimeLayer = OrchestrationLayerLive.pipe(
   Layer.provideMerge(RepositoryIdentityResolver.layer),

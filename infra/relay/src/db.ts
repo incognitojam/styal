@@ -54,8 +54,7 @@ export const NeonDatabase = Effect.gen(function* () {
           pgVersion: 18,
           defaultBranchName: "production",
           orgId: "org-steep-grass-53001488",
-          migrationsDir: schema.out,
-          migrationsTable: "relay_migrations",
+          migrations: { dir: schema.out, table: "relay_migrations" },
         }).pipe(RemovalPolicy.retain())
       : yield* Neon.Project.ref("RelayNeonProject", { stage: "prod" });
   // Personal stages fork a copy-on-write branch off the project's default
@@ -64,8 +63,7 @@ export const NeonDatabase = Effect.gen(function* () {
     mode === "stage-branch"
       ? yield* Neon.Branch("RelayNeonBranch", {
           project,
-          migrationsDir: schema.out,
-          migrationsTable: "relay_migrations",
+          migrations: { dir: schema.out, table: "relay_migrations" },
         })
       : undefined;
 

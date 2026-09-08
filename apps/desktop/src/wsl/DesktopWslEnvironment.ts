@@ -79,7 +79,7 @@ export type ProbeWslRuntimeResult =
       readonly reason: string;
     };
 
-export class DesktopWslDistroListError extends Schema.TaggedErrorClass<DesktopWslDistroListError>()(
+export class DesktopWslDistroListError extends Schema.TaggedError<DesktopWslDistroListError>()(
   "DesktopWslDistroListError",
   { reason: Schema.String },
 ) {

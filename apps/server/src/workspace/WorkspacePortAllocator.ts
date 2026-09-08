@@ -19,12 +19,12 @@ interface WorkspacePortRow {
   readonly basePort: number;
 }
 
-class WorkspacePortRangesExhaustedError extends Schema.TaggedErrorClass<WorkspacePortRangesExhaustedError>()(
+class WorkspacePortRangesExhaustedError extends Schema.TaggedError<WorkspacePortRangesExhaustedError>()(
   "WorkspacePortRangesExhaustedError",
   {},
 ) {}
 
-export class WorkspacePortAllocationError extends Schema.TaggedErrorClass<WorkspacePortAllocationError>()(
+export class WorkspacePortAllocationError extends Schema.TaggedError<WorkspacePortAllocationError>()(
   "WorkspacePortAllocationError",
   {
     workspacePath: Schema.String,

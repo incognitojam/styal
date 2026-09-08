@@ -45,7 +45,7 @@ export const ComposerDraftUpdateResult = Schema.Union([
 ]);
 export type ComposerDraftUpdateResult = typeof ComposerDraftUpdateResult.Type;
 
-export class ComposerDraftSyncError extends Schema.TaggedErrorClass<ComposerDraftSyncError>()(
+export class ComposerDraftSyncError extends Schema.TaggedError<ComposerDraftSyncError>()(
   "ComposerDraftSyncError",
   { message: Schema.String },
 ) {}

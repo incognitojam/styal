@@ -520,7 +520,7 @@ const connectLinkCommand = Command.make("link", {
   ),
 }).pipe(
   Command.withDescription("Authorize this environment for styal Link on next start."),
-  Command.withHidden,
+  Command.unlisted,
   Command.withHandler((flags) =>
     runCloudCommand(
       flags,
@@ -732,5 +732,5 @@ export const connectCompatibilityCommand = Command.make("connect", linkCommandFl
   Command.withDescription("Set up styal Link for this machine."),
   Command.withHandler(runLinkOnboarding),
   Command.withSubcommands(linkSubcommands),
-  Command.withHidden,
+  Command.unlisted,
 );

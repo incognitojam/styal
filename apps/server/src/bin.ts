@@ -41,7 +41,7 @@ const linkUnavailableCommand = Command.make("link", {
 }).pipe(
   Command.withDescription("styal Link is unavailable in builds without public configuration."),
   Command.withAlias("connect"),
-  Command.withHidden,
+  Command.unlisted,
   Command.withHandler(() =>
     Effect.fail(
       new CliError.ShowHelp({

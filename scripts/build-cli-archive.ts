@@ -77,7 +77,7 @@ const RepoRoot = Effect.service(Path.Path).pipe(
   Effect.flatMap((path) => path.fromFileUrl(new URL("..", import.meta.url))),
 );
 
-export class CliArchiveCommandFailedError extends Schema.TaggedErrorClass<CliArchiveCommandFailedError>()(
+export class CliArchiveCommandFailedError extends Schema.TaggedError<CliArchiveCommandFailedError>()(
   "CliArchiveCommandFailedError",
   { command: Schema.String, exitCode: Schema.Int },
 ) {
@@ -86,7 +86,7 @@ export class CliArchiveCommandFailedError extends Schema.TaggedErrorClass<CliArc
   }
 }
 
-export class CliArchiveInputMissingError extends Schema.TaggedErrorClass<CliArchiveInputMissingError>()(
+export class CliArchiveInputMissingError extends Schema.TaggedError<CliArchiveInputMissingError>()(
   "CliArchiveInputMissingError",
   { inputPath: Schema.String, hint: Schema.String },
 ) {

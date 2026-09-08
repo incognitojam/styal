@@ -29,7 +29,7 @@ const StyalVersionFileSchema = Schema.Struct({
   version: Schema.NonEmptyString,
 });
 
-export class InvalidStyalVersionError extends Schema.TaggedErrorClass<InvalidStyalVersionError>()(
+export class InvalidStyalVersionError extends Schema.TaggedError<InvalidStyalVersionError>()(
   "InvalidStyalVersionError",
   {
     version: Schema.String,
@@ -40,7 +40,7 @@ export class InvalidStyalVersionError extends Schema.TaggedErrorClass<InvalidSty
   }
 }
 
-export class NightlyReleaseVersionFileError extends Schema.TaggedErrorClass<NightlyReleaseVersionFileError>()(
+export class NightlyReleaseVersionFileError extends Schema.TaggedError<NightlyReleaseVersionFileError>()(
   "NightlyReleaseVersionFileError",
   {
     operation: Schema.Literals(["read", "decode"]),
@@ -53,7 +53,7 @@ export class NightlyReleaseVersionFileError extends Schema.TaggedErrorClass<Nigh
   }
 }
 
-export class NightlyReleaseGitHubOutputConfigError extends Schema.TaggedErrorClass<NightlyReleaseGitHubOutputConfigError>()(
+export class NightlyReleaseGitHubOutputConfigError extends Schema.TaggedError<NightlyReleaseGitHubOutputConfigError>()(
   "NightlyReleaseGitHubOutputConfigError",
   {
     cause: Schema.Defect(),
@@ -64,7 +64,7 @@ export class NightlyReleaseGitHubOutputConfigError extends Schema.TaggedErrorCla
   }
 }
 
-export class NightlyReleaseGitHubOutputAppendError extends Schema.TaggedErrorClass<NightlyReleaseGitHubOutputAppendError>()(
+export class NightlyReleaseGitHubOutputAppendError extends Schema.TaggedError<NightlyReleaseGitHubOutputAppendError>()(
   "NightlyReleaseGitHubOutputAppendError",
   {
     outputPath: Schema.String,

@@ -129,7 +129,7 @@ export const LegacyImportFailureReason = Schema.Literals([
 ]);
 export type LegacyImportFailureReason = typeof LegacyImportFailureReason.Type;
 
-export class LegacyImportError extends Schema.TaggedErrorClass<LegacyImportError>()(
+export class LegacyImportError extends Schema.TaggedError<LegacyImportError>()(
   "LegacyImportError",
   {
     reason: LegacyImportFailureReason,

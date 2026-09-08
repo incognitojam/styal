@@ -4569,7 +4569,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   };
 });
 
-export class PreviewTabNotFoundError extends Schema.TaggedErrorClass<PreviewTabNotFoundError>()(
+export class PreviewTabNotFoundError extends Schema.TaggedError<PreviewTabNotFoundError>()(
   "PreviewTabNotFoundError",
   { tabId: Schema.String },
 ) {
@@ -4578,7 +4578,7 @@ export class PreviewTabNotFoundError extends Schema.TaggedErrorClass<PreviewTabN
   }
 }
 
-export class PreviewWebContentsNotFoundError extends Schema.TaggedErrorClass<PreviewWebContentsNotFoundError>()(
+export class PreviewWebContentsNotFoundError extends Schema.TaggedError<PreviewWebContentsNotFoundError>()(
   "PreviewWebContentsNotFoundError",
   { tabId: Schema.String, webContentsId: Schema.Number },
 ) {
@@ -4587,7 +4587,7 @@ export class PreviewWebContentsNotFoundError extends Schema.TaggedErrorClass<Pre
   }
 }
 
-export class PreviewWebviewNotInitializedError extends Schema.TaggedErrorClass<PreviewWebviewNotInitializedError>()(
+export class PreviewWebviewNotInitializedError extends Schema.TaggedError<PreviewWebviewNotInitializedError>()(
   "PreviewWebviewNotInitializedError",
   { tabId: Schema.String },
 ) {
@@ -4596,7 +4596,7 @@ export class PreviewWebviewNotInitializedError extends Schema.TaggedErrorClass<P
   }
 }
 
-export class PreviewMainWindowClosedError extends Schema.TaggedErrorClass<PreviewMainWindowClosedError>()(
+export class PreviewMainWindowClosedError extends Schema.TaggedError<PreviewMainWindowClosedError>()(
   "PreviewMainWindowClosedError",
   { tabId: Schema.String },
 ) {
@@ -4605,7 +4605,7 @@ export class PreviewMainWindowClosedError extends Schema.TaggedErrorClass<Previe
   }
 }
 
-export class PreviewRecordingArmConflictError extends Schema.TaggedErrorClass<PreviewRecordingArmConflictError>()(
+export class PreviewRecordingArmConflictError extends Schema.TaggedError<PreviewRecordingArmConflictError>()(
   "PreviewRecordingArmConflictError",
   {
     tabId: Schema.String,
@@ -4618,7 +4618,7 @@ export class PreviewRecordingArmConflictError extends Schema.TaggedErrorClass<Pr
   }
 }
 
-export class PreviewRecordingCaptureUnavailableError extends Schema.TaggedErrorClass<PreviewRecordingCaptureUnavailableError>()(
+export class PreviewRecordingCaptureUnavailableError extends Schema.TaggedError<PreviewRecordingCaptureUnavailableError>()(
   "PreviewRecordingCaptureUnavailableError",
   {
     tabId: Schema.String,
@@ -4630,7 +4630,7 @@ export class PreviewRecordingCaptureUnavailableError extends Schema.TaggedErrorC
   }
 }
 
-export class PreviewOperationError extends Schema.TaggedErrorClass<PreviewOperationError>()(
+export class PreviewOperationError extends Schema.TaggedError<PreviewOperationError>()(
   "PreviewOperationError",
   {
     operation: Schema.String,
@@ -4656,7 +4656,7 @@ export class PreviewOperationError extends Schema.TaggedErrorClass<PreviewOperat
 
 const isPreviewOperationError = Schema.is(PreviewOperationError);
 
-export class PreviewArtifactPathOutsideDirectoryError extends Schema.TaggedErrorClass<PreviewArtifactPathOutsideDirectoryError>()(
+export class PreviewArtifactPathOutsideDirectoryError extends Schema.TaggedError<PreviewArtifactPathOutsideDirectoryError>()(
   "PreviewArtifactPathOutsideDirectoryError",
   {
     artifactPath: Schema.String,
@@ -4668,7 +4668,7 @@ export class PreviewArtifactPathOutsideDirectoryError extends Schema.TaggedError
   }
 }
 
-export class PreviewArtifactImageLoadError extends Schema.TaggedErrorClass<PreviewArtifactImageLoadError>()(
+export class PreviewArtifactImageLoadError extends Schema.TaggedError<PreviewArtifactImageLoadError>()(
   "PreviewArtifactImageLoadError",
   { artifactPath: Schema.String },
 ) {
@@ -4677,7 +4677,7 @@ export class PreviewArtifactImageLoadError extends Schema.TaggedErrorClass<Previ
   }
 }
 
-export class PreviewAutomationDevToolsOpenError extends Schema.TaggedErrorClass<PreviewAutomationDevToolsOpenError>()(
+export class PreviewAutomationDevToolsOpenError extends Schema.TaggedError<PreviewAutomationDevToolsOpenError>()(
   "PreviewAutomationDevToolsOpenError",
   { webContentsId: Schema.Number },
 ) {
@@ -4686,7 +4686,7 @@ export class PreviewAutomationDevToolsOpenError extends Schema.TaggedErrorClass<
   }
 }
 
-export class PreviewAutomationDebuggerAttachedError extends Schema.TaggedErrorClass<PreviewAutomationDebuggerAttachedError>()(
+export class PreviewAutomationDebuggerAttachedError extends Schema.TaggedError<PreviewAutomationDebuggerAttachedError>()(
   "PreviewAutomationDebuggerAttachedError",
   { webContentsId: Schema.Number },
 ) {
@@ -4695,7 +4695,7 @@ export class PreviewAutomationDebuggerAttachedError extends Schema.TaggedErrorCl
   }
 }
 
-export class PreviewAutomationEvaluationError extends Schema.TaggedErrorClass<PreviewAutomationEvaluationError>()(
+export class PreviewAutomationEvaluationError extends Schema.TaggedError<PreviewAutomationEvaluationError>()(
   "PreviewAutomationEvaluationError",
   {
     tabId: Schema.String,
@@ -4713,7 +4713,7 @@ export class PreviewAutomationEvaluationError extends Schema.TaggedErrorClass<Pr
   }
 }
 
-export class PreviewAutomationTargetNotFoundError extends Schema.TaggedErrorClass<PreviewAutomationTargetNotFoundError>()(
+export class PreviewAutomationTargetNotFoundError extends Schema.TaggedError<PreviewAutomationTargetNotFoundError>()(
   "PreviewAutomationTargetNotFoundError",
   {
     operation: Schema.String,
@@ -4728,7 +4728,7 @@ export class PreviewAutomationTargetNotFoundError extends Schema.TaggedErrorClas
   }
 }
 
-export class PreviewAutomationTargetNotEditableError extends Schema.TaggedErrorClass<PreviewAutomationTargetNotEditableError>()(
+export class PreviewAutomationTargetNotEditableError extends Schema.TaggedError<PreviewAutomationTargetNotEditableError>()(
   "PreviewAutomationTargetNotEditableError",
   {
     tabId: Schema.String,
@@ -4742,7 +4742,7 @@ export class PreviewAutomationTargetNotEditableError extends Schema.TaggedErrorC
   }
 }
 
-export class PreviewAutomationCoordinatesOutsideViewportError extends Schema.TaggedErrorClass<PreviewAutomationCoordinatesOutsideViewportError>()(
+export class PreviewAutomationCoordinatesOutsideViewportError extends Schema.TaggedError<PreviewAutomationCoordinatesOutsideViewportError>()(
   "PreviewAutomationCoordinatesOutsideViewportError",
   {
     tabId: Schema.String,
@@ -4757,7 +4757,7 @@ export class PreviewAutomationCoordinatesOutsideViewportError extends Schema.Tag
   }
 }
 
-export class PreviewAutomationInvalidSelectorError extends Schema.TaggedErrorClass<PreviewAutomationInvalidSelectorError>()(
+export class PreviewAutomationInvalidSelectorError extends Schema.TaggedError<PreviewAutomationInvalidSelectorError>()(
   "PreviewAutomationInvalidSelectorError",
   {
     operation: Schema.String,
@@ -4790,7 +4790,7 @@ export class PreviewAutomationInvalidSelectorError extends Schema.TaggedErrorCla
   }
 }
 
-export class PreviewAutomationResultTooLargeError extends Schema.TaggedErrorClass<PreviewAutomationResultTooLargeError>()(
+export class PreviewAutomationResultTooLargeError extends Schema.TaggedError<PreviewAutomationResultTooLargeError>()(
   "PreviewAutomationResultTooLargeError",
   {
     tabId: Schema.String,
@@ -4807,7 +4807,7 @@ export class PreviewAutomationResultTooLargeError extends Schema.TaggedErrorClas
   }
 }
 
-export class PreviewAutomationTimeoutError extends Schema.TaggedErrorClass<PreviewAutomationTimeoutError>()(
+export class PreviewAutomationTimeoutError extends Schema.TaggedError<PreviewAutomationTimeoutError>()(
   "PreviewAutomationTimeoutError",
   {
     tabId: Schema.String,
@@ -4819,7 +4819,7 @@ export class PreviewAutomationTimeoutError extends Schema.TaggedErrorClass<Previ
   }
 }
 
-export class PreviewAutomationControlInterruptedError extends Schema.TaggedErrorClass<PreviewAutomationControlInterruptedError>()(
+export class PreviewAutomationControlInterruptedError extends Schema.TaggedError<PreviewAutomationControlInterruptedError>()(
   "PreviewAutomationControlInterruptedError",
   {
     operation: Schema.String,

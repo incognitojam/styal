@@ -14,7 +14,7 @@ import { recordVisitForThread } from "~/browserHistoryStore";
 import { applyPreviewServerSnapshot, isPreviewSupportedInRuntime } from "~/previewStateStore";
 import { useRightPanelStore } from "~/rightPanelStore";
 
-export class TerminalLinkPreviewOpenError extends Schema.TaggedErrorClass<TerminalLinkPreviewOpenError>()(
+export class TerminalLinkPreviewOpenError extends Schema.TaggedError<TerminalLinkPreviewOpenError>()(
   "TerminalLinkPreviewOpenError",
   {
     environmentId: Schema.String,

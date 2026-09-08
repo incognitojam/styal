@@ -34,7 +34,7 @@ export default Alchemy.Stack(
         ? yield* Cloudflare.Worker("ManagedEndpointApexRedirect", {
             main: "./src/apexRedirect.ts",
             domain: managedEndpointZoneName,
-            url: false,
+            workersDev: false,
           })
         : null;
     const observability = yield* RelayObservability;

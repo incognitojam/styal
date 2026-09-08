@@ -11,7 +11,7 @@ type AutoUpdater = typeof autoUpdater;
 
 export type ElectronUpdaterFeedUrl = Parameters<AutoUpdater["setFeedURL"]>[0];
 
-export class ElectronUpdaterCheckForUpdatesError extends Schema.TaggedErrorClass<ElectronUpdaterCheckForUpdatesError>()(
+export class ElectronUpdaterCheckForUpdatesError extends Schema.TaggedError<ElectronUpdaterCheckForUpdatesError>()(
   "ElectronUpdaterCheckForUpdatesError",
   {
     channel: Schema.NullOr(Schema.String),
@@ -23,7 +23,7 @@ export class ElectronUpdaterCheckForUpdatesError extends Schema.TaggedErrorClass
   }
 }
 
-export class ElectronUpdaterDownloadUpdateError extends Schema.TaggedErrorClass<ElectronUpdaterDownloadUpdateError>()(
+export class ElectronUpdaterDownloadUpdateError extends Schema.TaggedError<ElectronUpdaterDownloadUpdateError>()(
   "ElectronUpdaterDownloadUpdateError",
   {
     channel: Schema.NullOr(Schema.String),
@@ -35,7 +35,7 @@ export class ElectronUpdaterDownloadUpdateError extends Schema.TaggedErrorClass<
   }
 }
 
-export class ElectronUpdaterQuitAndInstallError extends Schema.TaggedErrorClass<ElectronUpdaterQuitAndInstallError>()(
+export class ElectronUpdaterQuitAndInstallError extends Schema.TaggedError<ElectronUpdaterQuitAndInstallError>()(
   "ElectronUpdaterQuitAndInstallError",
   {
     channel: Schema.NullOr(Schema.String),
