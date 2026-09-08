@@ -736,16 +736,22 @@ features:
       - Stale release retries are rejected before npm publication or integrity acceptance when any package channel tag is newer; nightly source promotion cannot move the branch backward.
       - CLI help and triage copy identify styal, and a bare CLI invocation shows command guidance while explicit `start` and `serve` commands own server startup.
       - Canonical brand asset paths and icon geometry stay shared across desktop, mobile configuration, web packaging, and export tooling so production and nightly artwork cannot silently diverge.
+      - Linux desktop entries, SnapShot D-Bus names, the GNOME Shell extension, and the KDE and Hyprland capture helpers use styal identities (`build.styal.Styal`, `snap-shot@styal.build`, `styal-*-snap-shot`) so they cannot collide with an upstream T3 Code install.
     implementation_paths:
       - .github/workflows/fork-cli-archives.yml
       - .github/workflows/fork-cli-build.yml
       - .github/workflows/fork-nightly.yml
       - .github/workflows/fork-release.yml
+      - apps/desktop/gnome-extension/bundle.json
+      - apps/desktop/gnome-extension/captureService.js
       - apps/desktop/package.json
       - apps/desktop/resources/installer.nsh
       - apps/desktop/src/app/DesktopAssets.ts
+      - apps/desktop/src/app/DesktopEarlyElectronStartup.ts
       - apps/desktop/src/app/DesktopEnvironment.ts
       - apps/desktop/src/backend/DesktopBackendConfiguration.ts
+      - apps/desktop/src/snapShot/HyprlandSnapShot.ts
+      - apps/desktop/src/snapShot/KdeSnapShot.ts
       - apps/desktop/src/wsl/DesktopWslEnvironment.ts
       - apps/mobile/app.config.ts
       - apps/server/package.json

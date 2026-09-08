@@ -248,6 +248,11 @@ the WSL backend extracts the server tree once into the desktop state directory
 under `wsl-server-tree/<version>` and reuses the completed version until the app
 is updated.
 
+Windows keeps JavaScript and package metadata inside `app.asar` and unpacks only
+native libraries and helper executables. Avoid enabling whole-package smart
+unpacking: each loose file adds work to NSIS installation and counts against
+the payload limit.
+
 The artifact builder rejects a Windows package when any of these invariants
 break:
 

@@ -16,6 +16,7 @@
 - [Reading the chat timeline](./user/chat-timeline.md)
 - [How diffs order their files](./user/diff-file-order.md)
 - [Discord Rich Presence](./user/discord-rich-presence.md)
+- [SnapShots](./user/snap-shot.md)
 - [Import browser sessions](./user/browser-import.md)
 - [Import T3 Code data](./user/importing-t3-code-data.md)
 - [Usage and limits](./user/usage.md)

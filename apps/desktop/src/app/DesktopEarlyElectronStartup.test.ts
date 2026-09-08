@@ -81,7 +81,9 @@ describe("DesktopEarlyElectronStartup", () => {
     });
 
     assert.deepEqual(options, {
+      isDevelopment: true,
       linuxWmClass: "styal-dev",
+      linuxDesktopEntryName: "build.styal.Styal.Development.desktop",
       passwordStore: "gnome-libsecret",
     });
   });
