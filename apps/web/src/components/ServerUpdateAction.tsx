@@ -4,7 +4,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import type { ComponentProps } from "react";
+import { type ComponentProps, useRef, useState } from "react";
 
 import { requestConfirmDialog } from "~/confirmDialog";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
@@ -43,6 +43,156 @@ export function serverUpdateStageLabel(stage: ServerUpdateStage): string {
 
 function updateFailureMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Server update failed.";
+}
+
+export interface ServerUpdateTarget {
+  readonly environmentId: EnvironmentId;
+  readonly serverLabel: string;
+  readonly selfUpdate: ServerUpdateCapability | null;
+  /** The desktop app supervising this server accepts remote update
+      requests (capabilities.desktopAppUpdate). */
+  readonly desktopAppUpdate?: boolean;
+  /** The server can durably continue running provider turns after updating. */
+  readonly threadContinuation?: boolean;
+  readonly targetVersion: string;
+  readonly continueThreadsAfterServerUpdate?: boolean;
+}
+
+type UpdateButtonProps = Pick<ComponentProps<typeof Button>, "variant" | "size"> & {
+  readonly label?: string;
+};
+
+/** The app can start this server's update itself; other servers need manual steps. */
+export function canUpdateFromApp(
+  target: Pick<ServerUpdateTarget, "selfUpdate" | "desktopAppUpdate">,
+): boolean {
+  return (
+    target.selfUpdate !== null &&
+    target.selfUpdate !== "service-migration" &&
+    (target.selfUpdate !== "desktop-managed" || target.desktopAppUpdate === true)
+  );
+}
+
+function continuesRunningThreads(target: ServerUpdateTarget): boolean {
+  return Boolean(target.threadContinuation && target.continueThreadsAfterServerUpdate);
+}
+
+/**
+ * Updates servers after one confirmation covering all of them. Servers with an
+ * update already in flight are skipped; each remaining server reports its own
+ * result.
+ */
+function useServerUpdates() {
+  const updateServer = useAtomCommand(serverEnvironment.updateServer, { reportFailure: false });
+  const readHostActivity = useAtomCommand(serverEnvironment.hostActivity, {
+    reportFailure: false,
+  });
+  const updateOne = async (target: ServerUpdateTarget, failureTitle: string) => {
+    const { environmentId, serverLabel, selfUpdate, targetVersion } = target;
+    try {
+      const result = await updateServer({
+        environmentId,
+        input: {
+          targetVersion,
+          ...(continuesRunningThreads(target) ? { continueRunningThreads: true } : {}),
+        },
+      });
+      if (result._tag === "Failure") {
+        if (isAtomCommandInterrupted(result)) return;
+        throw squashAtomCommandFailure(result);
+      }
+      toastManager.add({
+        type: "success",
+        title: `${serverLabel} updated`,
+        description:
+          selfUpdate === "desktop-managed"
+            ? `Desktop app relaunched on ${result.value.targetVersion}.`
+            : `Reconnected on @styal/cli@${result.value.targetVersion}.`,
+      });
+    } catch (error) {
+      toastManager.add({
+        type: "error",
+        title: failureTitle,
+        description: updateFailureMessage(error),
+      });
+    }
+  };
+  return async (targets: ReadonlyArray<ServerUpdateTarget>) => {
+    const claimed = targets.filter(
+      (target) => !pendingUpdateEnvironmentIds.has(target.environmentId),
+    );
+    if (claimed.length === 0) return;
+    for (const target of claimed) pendingUpdateEnvironmentIds.add(target.environmentId);
+    try {
+      // This is the only confirmation in the flow; the remote machines restart
+      // without asking anyone there, so work started from any client counts.
+      const activities = await Promise.all(
+        claimed.map(async ({ environmentId }) => {
+          const activity = await readHostActivity({ environmentId, input: {} });
+          return activity._tag === "Success" ? activity.value : null;
+        }),
+      );
+      const confirmation = serverUpdateConfirmation(
+        claimed.map((target, index) => ({
+          serverLabel: target.serverLabel,
+          activity: activities[index] ?? null,
+          desktopApp: target.selfUpdate === "desktop-managed",
+          continueRunningThreads: continuesRunningThreads(target),
+        })),
+      );
+      // No themed host mounted (undefined) means proceed: the click itself
+      // was the request.
+      if (confirmation !== null && !((await requestConfirmDialog(confirmation)) ?? true)) {
+        return;
+      }
+      await Promise.all(
+        claimed.map((target) =>
+          updateOne(
+            target,
+            claimed.length === 1 ? "Server update failed" : `${target.serverLabel} update failed`,
+          ),
+        ),
+      );
+    } finally {
+      for (const target of claimed) pendingUpdateEnvironmentIds.delete(target.environmentId);
+    }
+  };
+}
+
+/** Updates eligible machines independently; manual paths remain in the machine list. */
+export function ServerUpdatesAction({
+  targets,
+  label = "Update all",
+  variant = "outline",
+  size = "xs",
+}: UpdateButtonProps & {
+  readonly targets: ReadonlyArray<ServerUpdateTarget>;
+}) {
+  const update = useServerUpdates();
+  const pending = useRef(false);
+  const [isPending, setIsPending] = useState(false);
+  const eligible = targets.filter(canUpdateFromApp);
+  const handleUpdate = async () => {
+    if (pending.current) return;
+    pending.current = true;
+    setIsPending(true);
+    try {
+      await update(eligible);
+    } finally {
+      pending.current = false;
+      setIsPending(false);
+    }
+  };
+  return (
+    <Button
+      size={size}
+      variant={variant}
+      disabled={isPending || eligible.length === 0}
+      onClick={() => void handleUpdate()}
+    >
+      {label}
+    </Button>
+  );
 }
 
 /**
@@ -102,31 +252,12 @@ export function ServerUpdateAction({
   label = "Update",
   variant = "outline",
   size = "xs",
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly serverLabel: string;
-  readonly selfUpdate: ServerUpdateCapability | null;
-  /** The desktop app supervising this server accepts remote update
-      requests (capabilities.desktopAppUpdate). */
-  readonly desktopAppUpdate?: boolean;
-  /** The server can durably continue running provider turns after updating. */
-  readonly threadContinuation?: boolean;
-  readonly targetVersion: string;
-  readonly label?: string;
-  readonly variant?: ComponentProps<typeof Button>["variant"];
-  readonly size?: ComponentProps<typeof Button>["size"];
-}) {
-  const isDesktopAppUpdate = selfUpdate === "desktop-managed";
+}: Omit<ServerUpdateTarget, "continueThreadsAfterServerUpdate"> & UpdateButtonProps) {
   const continueThreadsAfterServerUpdate = useEnvironmentSettings(
     environmentId,
     (settings) => settings.continueThreadsAfterServerUpdate,
   );
-  const updateServer = useAtomCommand(serverEnvironment.updateServer, {
-    reportFailure: false,
-  });
-  const readHostActivity = useAtomCommand(serverEnvironment.hostActivity, {
-    reportFailure: false,
-  });
+  const update = useServerUpdates();
   const { copyToClipboard } = useCopyToClipboard<{ description: string }>({
     target: "command",
     onCopy: ({ description }) => {
@@ -145,56 +276,18 @@ export function ServerUpdateAction({
     },
   });
 
-  const handleUpdate = async () => {
-    if (pendingUpdateEnvironmentIds.has(environmentId)) {
-      return;
-    }
-    pendingUpdateEnvironmentIds.add(environmentId);
-    try {
-      const continueRunningThreads = threadContinuation && continueThreadsAfterServerUpdate;
-      // This is the only confirmation in the flow; the remote machine restarts
-      // without asking anyone there, so work started from any client counts.
-      const activity = await readHostActivity({ environmentId, input: {} });
-      const confirmation = serverUpdateConfirmation({
-        serverLabel,
-        activity: activity._tag === "Success" ? activity.value : null,
-        desktopApp: isDesktopAppUpdate,
-        continueRunningThreads,
-      });
-      // No themed host mounted (undefined) means proceed: the click itself
-      // was the request.
-      if (confirmation !== null && !((await requestConfirmDialog(confirmation)) ?? true)) {
-        return;
-      }
-      const result = await updateServer({
+  const handleUpdate = () =>
+    update([
+      {
         environmentId,
-        input: {
-          targetVersion,
-          ...(continueRunningThreads ? { continueRunningThreads: true } : {}),
-        },
-      });
-      if (result._tag === "Failure") {
-        if (isAtomCommandInterrupted(result)) {
-          return;
-        }
-        toastManager.add({
-          type: "error",
-          title: "Server update failed",
-          description: updateFailureMessage(squashAtomCommandFailure(result)),
-        });
-        return;
-      }
-      toastManager.add({
-        type: "success",
-        title: `${serverLabel} updated`,
-        description: isDesktopAppUpdate
-          ? `Desktop app relaunched on ${result.value.targetVersion}.`
-          : `Reconnected on @styal/cli@${result.value.targetVersion}.`,
-      });
-    } finally {
-      pendingUpdateEnvironmentIds.delete(environmentId);
-    }
-  };
+        serverLabel,
+        selfUpdate,
+        desktopAppUpdate,
+        threadContinuation,
+        targetVersion,
+        continueThreadsAfterServerUpdate,
+      },
+    ]);
 
   if (selfUpdate === "desktop-managed" && !desktopAppUpdate) {
     return (
