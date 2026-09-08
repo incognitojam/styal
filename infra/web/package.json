@@ -5,7 +5,7 @@
   "scripts": {
     "deploy": "alchemy deploy",
     "destroy": "alchemy destroy",
-    "typecheck": "tsgo --noEmit"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "alchemy": "2.0.0-beta.65",
