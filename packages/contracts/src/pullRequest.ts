@@ -7,6 +7,7 @@ import {
   NonNegativeInt,
   PositiveInt,
   ProjectId,
+  ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
 import { SourceControlProviderKind } from "./sourceControl.ts";
@@ -428,6 +429,11 @@ export const PullRequestCapabilities = Schema.Struct({
    */
   edit: Schema.optional(PullRequestEditCapabilities),
   /**
+   * The host keeps stacks of change requests as objects of its own, so a linked thread can show
+   * the stack the host shows. Absent means chains are only ever inferred from base branches.
+   */
+  stacks: Schema.optional(Schema.Boolean),
+  /**
    * The repository's labels can be listed, and one put on a change request or taken off it.
    * Optional for the same reason `edit` is: a server that says nothing about labels has no way
    * to change them, which is what every server before this field was.
@@ -630,12 +636,32 @@ export const PullRequestListResult = Schema.Struct({
 });
 export type PullRequestListResult = typeof PullRequestListResult.Type;
 
+/**
+ * Addresses one pull request for reads and writes. `projectId` picks the checkout the host
+ * CLI runs in and, when its repository matches, the credentials; `host` lets the server
+ * route a pull request from another repository through any project on the same host
+ * (a frontend project's thread linking a backend PR). Absent `host` means "the project's
+ * own host", which is every reference from before thread links became host-level.
+ */
 export const PullRequestRef = Schema.Struct({
   projectId: ProjectId,
+  host: Schema.optional(TrimmedNonEmptyString),
   repository: TrimmedNonEmptyString,
   number: PositiveInt,
 });
 export type PullRequestRef = typeof PullRequestRef.Type;
+
+export const PullRequestLinkedThreadsResult = Schema.Struct({
+  threads: Schema.Array(
+    Schema.Struct({
+      id: ThreadId,
+      projectId: ProjectId,
+      title: Schema.String,
+      archivedAt: Schema.NullOr(IsoDateTime),
+    }),
+  ),
+});
+export type PullRequestLinkedThreadsResult = typeof PullRequestLinkedThreadsResult.Type;
 
 /**
  * The small live shape a linked thread needs. Keeping it separate from detail means a sidebar
@@ -656,8 +682,31 @@ export const PullRequestSummary = Schema.Struct({
   closedAt: Schema.optional(Schema.NullOr(Schema.String)),
   mergedAt: Schema.optional(Schema.NullOr(Schema.String)),
   updatedAt: IsoDateTime,
+  author: Schema.optional(Schema.NullOr(PullRequestActor)),
+  additions: Schema.optional(NonNegativeInt),
+  deletions: Schema.optional(NonNegativeInt),
+  changedFiles: Schema.optional(NonNegativeInt),
+  reviewDecision: Schema.optional(Schema.NullOr(PullRequestReviewDecision)),
+  checksState: Schema.optional(Schema.NullOr(PullRequestChecksState)),
+  mergeability: Schema.optional(PullRequestMergeability),
 });
 export type PullRequestSummary = typeof PullRequestSummary.Type;
+
+/** The host-native stack a pull request belongs to, in the thread link's shape. */
+export const PullRequestStack = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  number: PositiveInt,
+  url: TrimmedNonEmptyString,
+  base: TrimmedNonEmptyString,
+  layers: Schema.Array(
+    Schema.Struct({
+      number: PositiveInt,
+      headBranch: TrimmedNonEmptyString,
+      state: PullRequestState,
+    }),
+  ),
+});
+export type PullRequestStack = typeof PullRequestStack.Type;
 
 /**
  * One row's line counts, read after the listing rather than inside it. On GitHub the pair is
@@ -735,7 +784,7 @@ export type PullRequestStackEntry = typeof PullRequestStackEntry.Type;
  * only host feature shaped like this so far: each layer targets the one below it, and the whole
  * ladder lands on `baseBranch`.
  */
-export const PullRequestStack = Schema.Struct({
+export const PullRequestStackLadder = Schema.Struct({
   /** The branch the bottom of the stack lands on, e.g. `main`. */
   baseBranch: TrimmedNonEmptyString,
   /**
@@ -748,7 +797,7 @@ export const PullRequestStack = Schema.Struct({
   size: PositiveInt,
   entries: Schema.Array(PullRequestStackEntry),
 });
-export type PullRequestStack = typeof PullRequestStack.Type;
+export type PullRequestStackLadder = typeof PullRequestStackLadder.Type;
 
 export const PullRequestDetail = Schema.Struct({
   provider: SourceControlProviderKind,
@@ -814,7 +863,7 @@ export const PullRequestDetail = Schema.Struct({
    * where this change request stands alone, or where the stack could not be read — all of which
    * a page draws the same way, as no stack to show.
    */
-  stack: Schema.optional(PullRequestStack),
+  stack: Schema.optional(PullRequestStackLadder),
   /** The strategy the host will use for an armed auto-merge, where it reports one. */
   autoMergeMethod: Schema.optional(PullRequestMergeMethod),
   /** GitHub Actions runs on this head commit that are waiting for a maintainer's approval. */

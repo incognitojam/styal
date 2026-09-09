@@ -66,12 +66,18 @@ import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
 import { buildPhysicalToLogicalProjectKeyMap } from "~/sidebarProjectGrouping";
-import { useProjects } from "~/state/entities";
+import { useProjects, useServerConfigs } from "~/state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
-import { pullRequestEnvironment, useSharedPullRequestSummary } from "~/state/pullRequests";
+import {
+  pullRequestEnvironment,
+  pullRequestStackAtom,
+  useSharedPullRequestSummary,
+} from "~/state/pullRequests";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { PullRequestStackMap } from "./PullRequestStackMap";
+import { PullRequestThreadLinks } from "./PullRequestThreadLinks";
 import { vcsEnvironment } from "~/state/vcs";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { useUiStateStore } from "~/uiStateStore";
@@ -499,6 +505,12 @@ type PullRequestDetailPanelProps = {
    * composer instead of opening a new thread.
    */
   composerDraftTarget?: ScopedThreadRef | DraftId;
+  /**
+   * Beside a thread, the way back to that thread's list of pull requests. The tab strip can
+   * close this surface, but closing is not going back: the reader came from the list and
+   * expects to land on it, with this one still open behind.
+   */
+  onBack?: (() => void) | undefined;
 };
 
 /**
@@ -521,7 +533,7 @@ export function PullRequestDetailPanel(props: PullRequestDetailPanelProps) {
 function PullRequestDetailPanelBody({
   environmentId,
   threadRef: explicitThreadRef,
-  reference,
+  reference: requestedReference,
   listEntry = null,
   refreshToken: forcedRefreshToken = 0,
   onActed,
@@ -529,17 +541,33 @@ function PullRequestDetailPanelBody({
   context = "page",
   chromeVariant = "full",
   composerDraftTarget,
+  onBack,
 }: PullRequestDetailPanelProps) {
   const threadRef =
     explicitThreadRef ??
     (typeof composerDraftTarget === "string" ? null : (composerDraftTarget ?? null));
-  const pullRequestKey = `${reference.projectId}:${reference.repository}#${reference.number}`;
+  const environmentConfigs = useServerConfigs();
+  const supportsThreadPullRequests =
+    environmentConfigs.get(environmentId)?.environment.capabilities.threadPullRequests === true;
+  const reference = useMemo(
+    () =>
+      supportsThreadPullRequests
+        ? requestedReference
+        : {
+            projectId: requestedReference.projectId,
+            repository: requestedReference.repository,
+            number: requestedReference.number,
+          },
+    [requestedReference, supportsThreadPullRequests],
+  );
+  const pullRequestKey = `${reference.projectId}:${reference.host ?? ""}:${reference.repository}#${reference.number}`;
   const matchingListEntry =
     listEntry?.projectId === reference.projectId &&
     listEntry.repository.toLowerCase() === reference.repository.toLowerCase() &&
     listEntry.number === reference.number
       ? listEntry
       : null;
+  const [threadPickerOpen, setThreadPickerOpen] = useState(false);
   const [tab, setTab] = useState<DetailTab>("summary");
   const [timelineOrder, setTimelineOrder] = useState<"newest" | "oldest">("newest");
   const [codeCommitScope, setCodeCommitScope] = useState<{
@@ -667,6 +695,11 @@ function PullRequestDetailPanelBody({
         : {
             ...resolvedCoreDetail,
             ...sharedSummary,
+            author: sharedSummary.author ?? resolvedCoreDetail.author,
+            additions: sharedSummary.additions ?? resolvedCoreDetail.additions,
+            deletions: sharedSummary.deletions ?? resolvedCoreDetail.deletions,
+            changedFiles: sharedSummary.changedFiles ?? resolvedCoreDetail.changedFiles,
+            mergeability: sharedSummary.mergeability ?? resolvedCoreDetail.mergeability,
             closedAt:
               sharedSummary.closedAt === undefined
                 ? resolvedCoreDetail.closedAt
@@ -738,6 +771,13 @@ function PullRequestDetailPanelBody({
   const isStackedPullRequest =
     detail !== null &&
     isStackedPullRequestBase(detail.baseBranch, branchRefsQuery.data?.refs ?? []);
+  // The host's own stack, where it keeps one. Only asked for once the detail has landed so a
+  // pull request nobody can read costs one request rather than two.
+  const nativeStack = useEnvironmentQuery(
+    detail === null || detail.capabilities.stacks !== true || !supportsThreadPullRequests
+      ? null
+      : pullRequestStackAtom({ environmentId, input: reference }),
+  ).data;
   const activityPending = activityQuery.isPending && activity === null;
   const activityError = activity === null ? activityQuery.error : null;
   const refreshDetail = useCallback(() => {
@@ -1437,6 +1477,17 @@ function PullRequestDetailPanelBody({
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-background">
+      {threadPickerOpen && detail ? (
+        <PullRequestThreadLinks
+          key={`${environmentId}:${detail.url}`}
+          display="picker"
+          environmentId={environmentId}
+          reference={reference}
+          url={detail.url}
+          threadRef={null}
+          onPickerOpenChange={setThreadPickerOpen}
+        />
+      ) : null}
       <div className="@container/pr-header grid min-w-0 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 border-b border-border/60">
         <div className="ml-4 grid h-7 min-w-0 items-center overflow-hidden">
           <div
@@ -1451,6 +1502,24 @@ function PullRequestDetailPanelBody({
           >
             {detail && statePresentation ? (
               <>
+                {onBack ? (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          size="icon-micro"
+                          variant="ghost-muted"
+                          onClick={onBack}
+                          className="-ml-1.5"
+                          aria-label="Back to this thread's pull requests"
+                        >
+                          <ArrowLeftIcon aria-hidden className="size-3.5" />
+                        </Button>
+                      }
+                    />
+                    <TooltipPopup side="top">Back to pull requests</TooltipPopup>
+                  </Tooltip>
+                ) : null}
                 <Tooltip>
                   <TooltipTrigger
                     render={
@@ -1508,6 +1577,25 @@ function PullRequestDetailPanelBody({
           >
             {detail && statePresentation ? (
               <>
+                {onBack ? (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          size="icon-micro"
+                          variant="ghost-muted"
+                          tabIndex={condensed ? 0 : -1}
+                          onClick={onBack}
+                          className="-ml-1.5"
+                          aria-label="Back to this thread's pull requests"
+                        >
+                          <ArrowLeftIcon aria-hidden className="size-3.5" />
+                        </Button>
+                      }
+                    />
+                    <TooltipPopup side="top">Back to pull requests</TooltipPopup>
+                  </Tooltip>
+                ) : null}
                 <Tooltip>
                   <TooltipTrigger
                     render={
@@ -1578,6 +1666,15 @@ function PullRequestDetailPanelBody({
         <div className="mr-4 flex h-7 shrink-0 items-center justify-end gap-1">
           {detail ? (
             <>
+              {context === "page" ? (
+                <PullRequestThreadLinks
+                  display="count"
+                  environmentId={environmentId}
+                  reference={reference}
+                  url={detail.url}
+                  threadRef={null}
+                />
+              ) : null}
               {/* Checking a pull request out is the reason to open one here at all, so it is a
                   button of its own rather than a side effect of asking an agent for something.
                   It asks where, because the two answers are not interchangeable: one leaves your
@@ -1804,6 +1901,17 @@ function PullRequestDetailPanelBody({
                   <MoreHorizontalIcon className="size-4" />
                 </MenuTrigger>
                 <MenuPopup align="end" side="bottom" className="min-w-72">
+                  <PullRequestThreadLinks
+                    display="menu-item"
+                    environmentId={environmentId}
+                    reference={reference}
+                    url={detail.url}
+                    threadRef={
+                      threadRef ??
+                      (typeof composerDraftTarget === "object" ? composerDraftTarget : null)
+                    }
+                    onPickerOpenChange={setThreadPickerOpen}
+                  />
                   <MenuItem
                     disabled={isInvalidating || detailQuery.isPending}
                     onClick={() => void refreshFromHost()}
@@ -2091,6 +2199,13 @@ function PullRequestDetailPanelBody({
                     />
                   </span>
                 </div>
+                {nativeStack ? (
+                  <PullRequestStackMap
+                    stack={nativeStack}
+                    currentNumber={detail.number}
+                    className="mt-1"
+                  />
+                ) : null}
               </div>
             ) : null}
           </div>

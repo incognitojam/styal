@@ -7799,6 +7799,7 @@ it.layer(ManagedOpenCodeAdapterTestLayer)("OpenCode managed MCP fallback", (it) 
         providerInstanceId: ProviderInstanceId.make("opencode"),
         endpoint: "http://127.0.0.1:4310/mcp",
         authorizationHeader: "Bearer synthetic-token",
+        preview: true,
       });
       runtimeMock.state.missingSessionIds.add("ses_stale");
 

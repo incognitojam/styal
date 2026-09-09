@@ -25,6 +25,7 @@ it.effect("uses one narrow read for a linked pull request summary", () =>
                 baseBranch: "main",
                 state: "open" as const,
                 updatedAt: "2026-08-24T12:34:56.000Z",
+                author: { login: "octocat", name: null, avatarUrl: null },
               };
             }),
         }),
@@ -42,6 +43,66 @@ it.effect("uses one narrow read for a linked pull request summary", () =>
 
     expect(summary.state).toBe("open");
     expect(summaryReads).toBe(1);
+    // The author's avatar comes from the login-shaped URL, not a second request.
+    expect(summary.author?.avatarUrl).toBe("https://github.com/octocat.png?size=80");
+  }),
+);
+
+it.effect("declares host-native stacks and passes the one the CLI reads through", () =>
+  Effect.gen(function* () {
+    const stack = {
+      id: "42",
+      number: 3,
+      url: "https://github.com/acme/web/stacks/3",
+      base: "main",
+      layers: [
+        { number: 6, headBranch: "feat/one", state: "merged" as const },
+        { number: 7, headBranch: "feat/two", state: "open" as const },
+      ],
+    };
+    const provider = yield* make.pipe(
+      Effect.provide(
+        Layer.mock(GitHubPullRequestCli.GitHubPullRequestCli)({
+          getPullRequestStack: (input) => Effect.succeed(input.number === 7 ? stack : null),
+        }),
+      ),
+    );
+
+    expect(provider.capabilities.stacks).toBe(true);
+    const readStack = provider.getChangeRequestStack;
+    if (readStack === undefined) return yield* Effect.die("stack read was not implemented");
+    const ref = { cwd: "/w", repository: "acme/web", host: "github.com" };
+    expect(yield* readStack({ ...ref, number: 7 })).toEqual(stack);
+    expect(yield* readStack({ ...ref, number: 8 })).toBeNull();
+  }),
+);
+
+it.effect("reports a failed stack read against its own operation", () =>
+  Effect.gen(function* () {
+    const provider = yield* make.pipe(
+      Effect.provide(
+        Layer.mock(GitHubPullRequestCli.GitHubPullRequestCli)({
+          getPullRequestStack: () =>
+            Effect.fail(
+              new GitHubPullRequestCli.GitHubPullRequestReadError({
+                command: "gh",
+                cwd: "/w",
+                operation: "getPullRequestStack",
+                cause: new Error("unreadable"),
+              }),
+            ),
+        }),
+      ),
+    );
+
+    const readStack = provider.getChangeRequestStack;
+    if (readStack === undefined) return yield* Effect.die("stack read was not implemented");
+    const error = yield* Effect.flip(
+      readStack({ cwd: "/w", repository: "acme/web", host: "github.com", number: 7 }),
+    );
+
+    expect(error.operation).toBe("getChangeRequestStack");
+    expect(error.reason).toBe("failed");
   }),
 );
 
@@ -252,7 +313,7 @@ describe("gitHubViewerPermissions", () => {
               requiresUpToDateBranch: true,
               allowedMergeMethods: null,
             }),
-          getPullRequestStack: () => Effect.succeed(null),
+          getPullRequestStackLadder: () => Effect.succeed(null),
         }),
       ),
     ),
@@ -294,7 +355,7 @@ describe("gitHubViewerPermissions", () => {
         Layer.mock(GitHubPullRequestCli.GitHubPullRequestCli)({
           getRequiredChecks: () => Effect.succeed([]),
           getBranchPolicy: () => Effect.succeed({ requiredChecks: [], allowedMergeMethods: null }),
-          getPullRequestStack: () => Effect.succeed(null),
+          getPullRequestStackLadder: () => Effect.succeed(null),
           getPullRequestDetail: () =>
             Effect.succeed({
               authorId: null,
@@ -407,7 +468,7 @@ it.effect("does not classify same-repository gates as fork workflow approvals", 
       Layer.mock(GitHubPullRequestCli.GitHubPullRequestCli)({
         getRequiredChecks: () => Effect.succeed([]),
         getBranchPolicy: () => Effect.succeed({ requiredChecks: [], allowedMergeMethods: null }),
-        getPullRequestStack: () => Effect.succeed(null),
+        getPullRequestStackLadder: () => Effect.succeed(null),
         getPullRequestDetail: () => Effect.succeed({ ...openDetail, isCrossRepository: false }),
         getPullRequestBaseComparison: () => Effect.succeed({ behindBy: 0, viewerCanUpdate: true }),
         listWorkflowRunsRequiringApproval: () =>
@@ -448,7 +509,7 @@ it.effect("keeps an unsafe workflow approval scope visible as unknown", () =>
       Layer.mock(GitHubPullRequestCli.GitHubPullRequestCli)({
         getRequiredChecks: () => Effect.succeed([]),
         getBranchPolicy: () => Effect.succeed({ requiredChecks: [], allowedMergeMethods: null }),
-        getPullRequestStack: () => Effect.succeed(null),
+        getPullRequestStackLadder: () => Effect.succeed(null),
         getPullRequestDetail: () => Effect.succeed(openDetail),
         getPullRequestBaseComparison: () => Effect.succeed({ behindBy: 0, viewerCanUpdate: true }),
         listWorkflowRunsRequiringApproval: () =>
@@ -493,7 +554,7 @@ it.effect("propagates workflow discovery rate limits", () =>
       Layer.mock(GitHubPullRequestCli.GitHubPullRequestCli)({
         getRequiredChecks: () => Effect.succeed([]),
         getBranchPolicy: () => Effect.succeed({ requiredChecks: [], allowedMergeMethods: null }),
-        getPullRequestStack: () => Effect.succeed(null),
+        getPullRequestStackLadder: () => Effect.succeed(null),
         getPullRequestDetail: () => Effect.succeed(openDetail),
         getPullRequestBaseComparison: () => Effect.succeed({ behindBy: 0, viewerCanUpdate: true }),
         listWorkflowRunsRequiringApproval: () =>
@@ -685,7 +746,7 @@ describe("getChangeRequest stacks", () => {
         Effect.succeed({ canWrite: true, canTriage: true, canUpdate: true, didAuthor: false }),
       getRequiredChecks: () => Effect.succeed([]),
       getBranchPolicy: () => Effect.succeed({ requiredChecks: [], allowedMergeMethods: null }),
-      getPullRequestStack: () => read,
+      getPullRequestStackLadder: () => read,
     });
 
   const readChangeRequest = Effect.gen(function* () {
@@ -724,7 +785,7 @@ describe("getChangeRequest stacks", () => {
             new GitHubPullRequestCli.GitHubPullRequestReadError({
               command: "gh",
               cwd: "/w",
-              operation: "getPullRequestStack",
+              operation: "getPullRequestStackLadder",
               cause: new Error("Field 'stack' doesn't exist on type 'PullRequest'"),
             }),
           ),

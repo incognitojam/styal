@@ -4,7 +4,7 @@ import type {
   PullRequestComment,
   PullRequestDetailView,
   PullRequestRef,
-  PullRequestStack,
+  PullRequestStackLadder,
   ScopedThreadRef,
 } from "@t3tools/contracts";
 import {
@@ -81,7 +81,7 @@ function reviewerKey(login: string): string {
  * The bare size where this pull request is not among the visible layers, which says how tall the
  * ladder is without claiming to know where the reader stands on it.
  */
-function stackPositionLabel(stack: PullRequestStack, currentNumber: number): string | number {
+function stackPositionLabel(stack: PullRequestStackLadder, currentNumber: number): string | number {
   const current = stack.entries.find((entry) => entry.number === currentNumber);
   return current === undefined ? stack.size : `${current.position} of ${stack.size}`;
 }
@@ -93,7 +93,13 @@ function stackPositionLabel(stack: PullRequestStack, currentNumber: number): str
  * layer opens the way any pull request link here does — in the app where the workspace has the
  * repository, in the browser with a modifier.
  */
-function StackLadder({ stack, currentNumber }: { stack: PullRequestStack; currentNumber: number }) {
+function StackLadder({
+  stack,
+  currentNumber,
+}: {
+  stack: PullRequestStackLadder;
+  currentNumber: number;
+}) {
   const threadRef = useContext(GithubReferenceThreadContext);
   const openPrLink = useOpenPrLink(threadRef);
   const layers = stack.entries.toSorted((left, right) => right.position - left.position);
@@ -422,12 +428,14 @@ function Section({
 
 function CommentComposer({
   environmentId,
+  reference,
   detail,
   actionPending,
   onCommentAction,
   onCommented,
 }: {
   environmentId: EnvironmentId;
+  reference: PullRequestRef;
   detail: PullRequestDetailView;
   actionPending: boolean;
   onCommentAction: (
@@ -468,9 +476,7 @@ function CommentComposer({
     const result = await postComment({
       environmentId,
       input: {
-        projectId: detail.projectId,
-        repository: detail.repository,
-        number: detail.number,
+        ...reference,
         body: trimmed,
       },
     });
@@ -1060,7 +1066,14 @@ export function PullRequestSummaryTab({
         {/* Posting is a core capability and remains usable even if the activity read failed. */}
         {detail.capabilities.comment && detail.viewerPermissions.comment ? (
           <CommentComposer
-            key={`${environmentId}:${detail.projectId}/${detail.repository}#${detail.number}`}
+            reference={reference}
+            key={JSON.stringify([
+              environmentId,
+              reference.projectId,
+              reference.host,
+              reference.repository,
+              reference.number,
+            ])}
             environmentId={environmentId}
             detail={detail}
             actionPending={actionPending}

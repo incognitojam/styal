@@ -2310,6 +2310,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
                   "-c",
                   `mcp_servers.${mcpServerName}.bearer_token_env_var="STYAL_MCP_BEARER_TOKEN"`,
                 ],
+                browserToolsAvailable: mcpSession.preview,
               }
             : {}),
         };

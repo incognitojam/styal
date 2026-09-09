@@ -170,6 +170,13 @@ export interface CodexSessionRuntimeOptions {
   readonly mcpServerName?: "styal" | "t3-code";
   readonly appServerArgs?: ReadonlyArray<string>;
   readonly additionalInstructions?: string;
+  /**
+   * Whether the attached `styal` MCP server exposes the preview tools. The
+   * server is attached for every session now (the pull request toolkit is
+   * always on), so its presence in `appServerArgs` no longer implies browser
+   * access; the credential's own capability decides the developer prompt.
+   */
+  readonly browserToolsAvailable?: boolean;
 }
 
 export interface CodexSessionRuntimeSendTurnInput {
@@ -2394,10 +2401,12 @@ export const makeCodexSessionRuntime = (
             ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
             ...(input.effort ? { effort: input.effort } : {}),
             ...(input.interactionMode ? { interactionMode: input.interactionMode } : {}),
-            // Derived from the session's own MCP configuration rather than the
+            // Derived from the session's own credential rather than the
             // setting, so the prompt describes the tools this turn actually
             // has even if the setting changed after the session started.
-            browserToolsAvailable: hasConfiguredMcpServer(options.appServerArgs),
+            browserToolsAvailable:
+              hasConfiguredMcpServer(options.appServerArgs) &&
+              (options.browserToolsAvailable ?? true),
             mcpServerName: options.mcpServerName ?? "styal",
             ...(options.additionalInstructions
               ? { additionalInstructions: options.additionalInstructions }
