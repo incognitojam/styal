@@ -684,6 +684,7 @@ export const make = Effect.gen(function* () {
       "relay.delivery.kind": input.kind,
       ...(input.sourceJobId ? { "relay.delivery.job_id": input.sourceJobId } : {}),
     });
+    let deliveryTarget = input.target;
     const now = yield* DateTime.now;
     const aggregate =
       input.aggregate === null ? null : sanitizeAgentActivityAggregateState(input.aggregate);
@@ -725,6 +726,7 @@ export const make = Effect.gen(function* () {
         });
         return staleJobResult({ deviceId: input.target.device_id, kind: input.kind });
       }
+      deliveryTarget = currentTarget;
       if (alert) {
         const preferences = parsePreferences(currentTarget.preferences_json);
         const previousAggregate = parseAggregate(currentTarget.last_aggregate_json);
@@ -782,7 +784,7 @@ export const make = Effect.gen(function* () {
     );
     const result = yield* apns
       .sendLiveActivityRequest({
-        credentials: credentialsForTarget(config.apns, input.target),
+        credentials: credentialsForTarget(config.apns, deliveryTarget),
         request,
         issuedAtUnixSeconds: epochSeconds,
       })
@@ -848,6 +850,7 @@ export const make = Effect.gen(function* () {
       "relay.delivery.kind": "push_notification",
       ...(input.sourceJobId ? { "relay.delivery.job_id": input.sourceJobId } : {}),
     });
+    let deliveryTarget = input.target;
     const now = yield* DateTime.now;
     const epochSeconds = Math.floor(now.epochMilliseconds / 1_000);
     const notification = sanitizeApnsNotificationPayload(input.notification);
@@ -917,6 +920,7 @@ export const make = Effect.gen(function* () {
           kind: "push_notification",
         });
       }
+      deliveryTarget = currentTarget;
       const preferences = parsePreferences(currentTarget.preferences_json);
       const alertAllowed =
         notification.phase !== undefined && notification.updatedAt !== undefined
@@ -938,7 +942,7 @@ export const make = Effect.gen(function* () {
     }
     const result = yield* apns
       .sendPushNotificationRequest({
-        credentials: credentialsForTarget(config.apns, input.target),
+        credentials: credentialsForTarget(config.apns, deliveryTarget),
         request,
         issuedAtUnixSeconds: epochSeconds,
       })
