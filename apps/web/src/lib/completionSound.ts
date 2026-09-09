@@ -4,7 +4,7 @@ import { toastManager } from "../components/ui/toast";
 const AVANTI_SAMPLE_URL = "/avanti.mp3";
 const AVANTI_SAMPLE_VOLUME = 0.28;
 const WINDOWS_TADA_SAMPLE_URL = "/_desktop/windows-tada.wav";
-const WINDOWS_TADA_SAMPLE_VOLUME = 0.28;
+const WINDOWS_TADA_SAMPLE_VOLUME = 1;
 const RESOLVE_END_GAIN = 0.0001;
 const RESOLVE_TONES = [
   {

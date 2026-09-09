@@ -191,7 +191,7 @@ describe("playCompletionSound", () => {
       expect.objectContaining({
         url: "/_desktop/windows-tada.wav",
         preload: "auto",
-        volume: 0.28,
+        volume: 1,
         currentTime: 0,
       }),
     ]);
