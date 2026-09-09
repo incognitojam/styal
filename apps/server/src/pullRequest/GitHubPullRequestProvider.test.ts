@@ -130,6 +130,7 @@ describe("gitHubViewerPermissions", () => {
       ],
       comment: true,
       resolve: true,
+      stackRebase: true,
       verdicts: ["comment", "approve", "request-changes"],
       requestReviewers: true,
       labels: true,
@@ -761,14 +762,14 @@ describe("getChangeRequest stacks", () => {
 
   it.effect("carries the whole ladder through the detail", () =>
     readChangeRequest.pipe(
-      Effect.map((changeRequest) => expect(changeRequest.stack).toEqual(stack)),
+      Effect.map((changeRequest) => expect(changeRequest.stackLadder).toEqual(stack)),
       Effect.provide(layerWithStack(Effect.succeed(stack))),
     ),
   );
 
   it.effect("says nothing about a pull request that stands alone", () =>
     readChangeRequest.pipe(
-      Effect.map((changeRequest) => expect(changeRequest.stack).toBeUndefined()),
+      Effect.map((changeRequest) => expect(changeRequest.stackLadder).toBeUndefined()),
       Effect.provide(layerWithStack(Effect.succeed(null))),
     ),
   );
@@ -776,7 +777,7 @@ describe("getChangeRequest stacks", () => {
   it.effect("survives a host whose schema has never heard of stacks", () =>
     readChangeRequest.pipe(
       Effect.map((changeRequest) => {
-        expect(changeRequest.stack).toBeUndefined();
+        expect(changeRequest.stackLadder).toBeUndefined();
         expect(changeRequest.number).toBe(58);
       }),
       Effect.provide(

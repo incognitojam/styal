@@ -853,9 +853,9 @@ export function PullRequestSummaryTab({
         </div>
       </section>
 
-      {detail.stack === undefined ? null : (
-        <Section title="Stack" count={stackPositionLabel(detail.stack, detail.number)}>
-          <StackLadder stack={detail.stack} currentNumber={detail.number} />
+      {detail.stackLadder === undefined ? null : (
+        <Section title="Stack" count={stackPositionLabel(detail.stackLadder, detail.number)}>
+          <StackLadder stack={detail.stackLadder} currentNumber={detail.number} />
         </Section>
       )}
 

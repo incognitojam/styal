@@ -54,6 +54,7 @@ const CAPABILITIES: PullRequestCapabilities = {
   reviewers: { request: true, listCandidates: true },
   edit: { changeRequest: true, comment: true },
   stacks: true,
+  stackActions: true,
   labels: true,
 };
 
@@ -76,6 +77,7 @@ const CAPABILITIES: PullRequestCapabilities = {
  */
 export function gitHubViewerPermissions(access: GitHubViewerAccess): PullRequestViewerPermissions {
   return {
+    ...(access.canWrite ? { stackRebase: true } : {}),
     actions: [
       ...(access.canWrite ? (["merge"] as const) : []),
       // GitHub answers these per pull request: enabling also depends on the repository setting
@@ -439,7 +441,7 @@ export const make = Effect.gen(function* () {
             ...(detail.comparison?.behindBy == null
               ? {}
               : { behindBy: detail.comparison.behindBy }),
-            ...(detail.stack === null ? {} : { stack: detail.stack }),
+            ...(detail.stack === null ? {} : { stackLadder: detail.stack }),
           }),
         ),
       ),
@@ -599,6 +601,10 @@ export const make = Effect.gen(function* () {
           host: input.host,
           number: input.number,
           action: input.action,
+          ...(input.stackNumber === undefined ? {} : { stackNumber: input.stackNumber }),
+          ...(input.expectedStackHeads === undefined
+            ? {}
+            : { expectedStackHeads: input.expectedStackHeads }),
           ...(input.mergeMethod === undefined ? {} : { mergeMethod: input.mergeMethod }),
           ...(input.updateMethod === undefined ? {} : { updateMethod: input.updateMethod }),
         })
