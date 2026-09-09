@@ -4,9 +4,15 @@ const { addToast } = vi.hoisted(() => ({ addToast: vi.fn() }));
 vi.mock("../components/ui/toast", () => ({ toastManager: { add: addToast } }));
 
 class FakeAudioParam {
+  value = 1;
   readonly setValueAtTime = vi.fn();
   readonly linearRampToValueAtTime = vi.fn();
   readonly exponentialRampToValueAtTime = vi.fn();
+}
+
+class FakeMediaElementAudioSource {
+  readonly connect = vi.fn((destination: unknown) => destination);
+  readonly disconnect = vi.fn();
 }
 
 class FakeOscillator {
@@ -33,6 +39,7 @@ class FakeAudioContext {
   state: AudioContextState = "running";
   readonly oscillators: FakeOscillator[] = [];
   readonly gains: FakeGain[] = [];
+  readonly mediaElementSources: FakeMediaElementAudioSource[] = [];
   readonly createOscillator = vi.fn(() => {
     const oscillator = new FakeOscillator();
     this.oscillators.push(oscillator);
@@ -42,6 +49,11 @@ class FakeAudioContext {
     const gain = new FakeGain();
     this.gains.push(gain);
     return gain;
+  });
+  readonly createMediaElementSource = vi.fn(() => {
+    const source = new FakeMediaElementAudioSource();
+    this.mediaElementSources.push(source);
+    return source;
   });
   get oscillator(): FakeOscillator {
     const oscillator = this.oscillators[0];
@@ -183,6 +195,7 @@ describe("playCompletionSound", () => {
 
   it("plays Windows Ta-da from the desktop protocol", async () => {
     const { audioInstances, pause, play } = stubSampleAudio();
+    vi.stubGlobal("AudioContext", FakeAudioContext);
     const { playCompletionSound } = await import("./completionSound");
 
     playCompletionSound("windows-tada");
@@ -197,6 +210,8 @@ describe("playCompletionSound", () => {
     ]);
     expect(pause).toHaveBeenCalledOnce();
     expect(play).toHaveBeenCalledOnce();
+    expect(audioContextInstances[0]?.createMediaElementSource).toHaveBeenCalledOnce();
+    expect(audioContextInstances[0]?.gains[0]?.gain.value).toBe(3);
   });
 
   it("reports unavailable Windows Ta-da once without playing another sound", async () => {
@@ -216,7 +231,8 @@ describe("playCompletionSound", () => {
         title: "Windows Ta-da is unavailable",
       }),
     );
-    expect(audioContextInstances).toEqual([]);
+    expect(audioContextInstances).toHaveLength(1);
+    expect(audioContextInstances[0]?.oscillators).toEqual([]);
     playCompletionSound("windows-tada");
     expect(play).toHaveBeenCalledTimes(2);
     expect(audioInstances).toHaveLength(2);
@@ -231,7 +247,8 @@ describe("playCompletionSound", () => {
     playCompletionSound("windows-tada");
     await Promise.resolve();
     expect(addToast).not.toHaveBeenCalled();
-    expect(audioContextInstances).toEqual([]);
+    expect(audioContextInstances).toHaveLength(1);
+    expect(audioContextInstances[0]?.oscillators).toEqual([]);
   });
 
   it("does nothing when completion sounds are disabled", async () => {

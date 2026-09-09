@@ -5,6 +5,7 @@ const AVANTI_SAMPLE_URL = "/avanti.mp3";
 const AVANTI_SAMPLE_VOLUME = 0.28;
 const WINDOWS_TADA_SAMPLE_URL = "/_desktop/windows-tada.wav";
 const WINDOWS_TADA_SAMPLE_VOLUME = 1;
+const WINDOWS_TADA_SAMPLE_GAIN = 3;
 const RESOLVE_END_GAIN = 0.0001;
 const RESOLVE_TONES = [
   {
@@ -38,6 +39,10 @@ const RESOLVE_TONES = [
 
 let completionAudioContext: AudioContext | null = null;
 const sampleAudioByUrl = new Map<string, HTMLAudioElement>();
+const amplifiedSampleGraphByUrl = new Map<
+  string,
+  { source: MediaElementAudioSourceNode; gain: GainNode }
+>();
 let reportedWindowsTadaUnavailable = false;
 
 function getCompletionAudioContext(): AudioContext | null {
@@ -102,7 +107,12 @@ async function playProceduralCompletionSound(): Promise<void> {
   }
 }
 
-export function playSoundSample(url: string, volume: number, onMediaError?: () => void): void {
+export function playSoundSample(
+  url: string,
+  volume: number,
+  onMediaError?: () => void,
+  gainMultiplier = 1,
+): void {
   if (typeof Audio === "undefined") {
     return;
   }
@@ -116,10 +126,32 @@ export function playSoundSample(url: string, volume: number, onMediaError?: () =
       // MEDIA_ERR_ABORTED is an interruption, not an unavailable file.
       if (sample.error && sample.error.code !== 1) {
         sampleAudioByUrl.delete(url);
+        const graph = amplifiedSampleGraphByUrl.get(url);
+        graph?.source.disconnect();
+        graph?.gain.disconnect();
+        amplifiedSampleGraphByUrl.delete(url);
         onMediaError?.();
       }
     });
     sampleAudioByUrl.set(url, audio);
+  }
+
+  if (gainMultiplier > 1 && !amplifiedSampleGraphByUrl.has(url)) {
+    try {
+      const audioContext = getCompletionAudioContext();
+      if (audioContext !== null) {
+        const source = audioContext.createMediaElementSource(audio);
+        const gain = audioContext.createGain();
+        gain.gain.value = gainMultiplier;
+        source.connect(gain).connect(audioContext.destination);
+        amplifiedSampleGraphByUrl.set(url, { source, gain });
+        if (audioContext.state === "suspended") {
+          void audioContext.resume();
+        }
+      }
+    } catch {
+      // Fall back to the media element's unamplified output.
+    }
   }
 
   audio.volume = Math.max(0, Math.min(1, volume));
@@ -139,16 +171,21 @@ export function playCompletionSound(sound: CompletionSound): void {
     return;
   }
   if (sound === "windows-tada") {
-    playSoundSample(WINDOWS_TADA_SAMPLE_URL, WINDOWS_TADA_SAMPLE_VOLUME, () => {
-      if (reportedWindowsTadaUnavailable) return;
-      reportedWindowsTadaUnavailable = true;
-      toastManager.add({
-        type: "error",
-        title: "Windows Ta-da is unavailable",
-        description:
-          "The Windows sound file could not be loaded. Choose another completion sound in Settings → General.",
-      });
-    });
+    playSoundSample(
+      WINDOWS_TADA_SAMPLE_URL,
+      WINDOWS_TADA_SAMPLE_VOLUME,
+      () => {
+        if (reportedWindowsTadaUnavailable) return;
+        reportedWindowsTadaUnavailable = true;
+        toastManager.add({
+          type: "error",
+          title: "Windows Ta-da is unavailable",
+          description:
+            "The Windows sound file could not be loaded. Choose another completion sound in Settings → General.",
+        });
+      },
+      WINDOWS_TADA_SAMPLE_GAIN,
+    );
     return;
   }
   void playProceduralCompletionSound();
