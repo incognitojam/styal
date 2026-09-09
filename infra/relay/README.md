@@ -20,7 +20,7 @@ The relay currently owns:
 - Provisioning and tracking managed environment endpoints.
 - Issuing short-lived credentials used to connect clients to linked environments.
 - Listing linked environments and registered mobile devices for an account.
-- Registering mobile notification preferences and APNs tokens.
+- Registering mobile notification preferences and APNs or FCM tokens.
 - Receiving published agent activity and delivering notifications or Live Activity updates.
 - Persisting relay state and exposing relay-specific traces for diagnostics.
 
@@ -37,7 +37,7 @@ credential, or authorization behavior.
 - [`src/environments`](./src/environments) contains environment linking, credentials, endpoint
   provisioning, and connection flows.
 - [`src/agentActivity`](./src/agentActivity) contains mobile device registration, activity state,
-  APNs delivery, and queue processing.
+  APNs and FCM delivery, and queue processing.
 - [`src/auth`](./src/auth) contains relay token and DPoP proof handling.
 - [`src/persistence/schema.ts`](./src/persistence/schema.ts) defines persisted relay state. Keep
   schema and migration changes together.
@@ -85,11 +85,12 @@ vp run --filter t3code-relay deploy
 The stack provisions the Cloudflare Worker and queues, managed endpoint resources, database
 connectivity, and relay tracing resources. Copy [`infra/relay/.env.example`](./.env.example) to
 `infra/relay/.env` and fill in the deployment-specific values before deploying. Alchemy loads that
-file from the relay directory. Runtime secrets include Clerk credentials. APNs credentials are
-optional as an all-or-nothing group: leave all five `APNS_*` values unset until the mobile app
-ships and the relay deploys with push delivery disabled, while setting only some of them fails
-config resolution. Production adopts the configured API and tunnel DNS zones as retained
-Cloudflare resources. Personal stages reference the production-owned zones.
+file from the relay directory. Runtime secrets include Clerk credentials and optional FCM
+credentials for Android push. APNs credentials are optional as an all-or-nothing group: leave all
+five `APNS_*` values unset until the mobile app ships and the relay deploys with push delivery
+disabled, while setting only some of them fails config resolution. Production adopts the configured
+API and tunnel DNS zones as retained Cloudflare resources. Personal stages reference the
+production-owned zones.
 
 The `prod` Alchemy stage owns the retained Neon Postgres project `styal-relay` and is the shared
 hosted relay for stable and nightly clients. The first `prod` deploy adopts the existing Neon
@@ -149,6 +150,7 @@ The `production` GitHub environment must define these Actions secrets:
 - `AXIOM_TOKEN`
 - `CLERK_SECRET_KEY`
 - `APNS_PRIVATE_KEY` only when enabling mobile push, alongside the `APNS_*` variables above
+- `FCM_SERVICE_ACCOUNT` when Android push is enabled
 
 The account-scoped deployment credentials are consumed by Alchemy while provisioning relay stages;
 they are not bound into the relay Worker. `AXIOM_TOKEN` must be an advanced API token with the

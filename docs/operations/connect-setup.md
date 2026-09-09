@@ -77,6 +77,18 @@ builds, `styal-preview://app`. Update the array with
 The Clerk Electron integration handles token
 persistence and system-browser callback delivery.
 
+## Android native sign-in redirects
+
+Clerk's native Android SDK uses `clerk://<applicationId>.callback`. In the Clerk instance selected by the app's publishable key, add each supported package to **Native applications > Allowlist for mobile SSO redirect**:
+
+| Variant     | Callback                                   |
+| ----------- | ------------------------------------------ |
+| Development | `clerk://build.styal.app.dev.callback`     |
+| Preview     | `clerk://build.styal.app.preview.callback` |
+| Production  | `clerk://build.styal.app.callback`         |
+
+Preserve existing entries. These callbacks are separate from the `styal-dev` / `styal-preview` / `styal` navigation schemes. A private development build using the production Clerk key still needs its development callback allowed by that instance's administrator; rebuilding the same package does not change the allowlist.
+
 ## Desktop passkeys
 
 For a production macOS app with bundle ID `build.styal.app`:
