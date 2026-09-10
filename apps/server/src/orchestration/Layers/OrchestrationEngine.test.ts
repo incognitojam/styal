@@ -30,7 +30,7 @@ import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { TestClock } from "effect/testing";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import { PersistenceSqlError } from "../../persistence/Errors.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
@@ -1386,6 +1386,8 @@ describe("OrchestrationEngine", () => {
             },
           }),
       });
+      // Same-tick links must replace the old PR, not rely on timestamp ordering.
+      const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse(now()));
       try {
         const projectId = ProjectId.make("pr-race-project");
         const threadId = ThreadId.make("pr-race-thread");
@@ -1488,6 +1490,9 @@ describe("OrchestrationEngine", () => {
         if (change === "delete") return;
         const current = (await system.readModel()).threads[0];
         expect(current?.branchPullRequest ?? null).toBeNull();
+        expect(current?.pullRequests.map((link) => link.number)).toEqual(
+          change === "unlink" ? [] : change === "relink" ? [3] : [1],
+        );
         expect(current?.linkedPullRequest ?? null).toEqual(
           change === "unlink"
             ? null
@@ -1496,6 +1501,7 @@ describe("OrchestrationEngine", () => {
               : previous,
         );
       } finally {
+        clock.mockRestore();
         await system.dispose();
       }
     },
