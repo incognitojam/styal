@@ -2301,7 +2301,10 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           ...(mcpSession
             ? {
                 environment: {
-                  ...(sessionEnvironment ?? process.env),
+                  ...McpProviderSession.withAgentDeviceEnvironment(
+                    sessionEnvironment ?? process.env,
+                    mcpSession,
+                  ),
                   STYAL_MCP_BEARER_TOKEN: mcpSession.authorizationHeader.replace(/^Bearer\s+/, ""),
                 },
                 appServerArgs: [
@@ -2310,7 +2313,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
                   "-c",
                   `mcp_servers.${mcpServerName}.bearer_token_env_var="STYAL_MCP_BEARER_TOKEN"`,
                 ],
-                browserToolsAvailable: mcpSession.preview,
+                mcpCapabilities: mcpSession.capabilities,
               }
             : {}),
         };
