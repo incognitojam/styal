@@ -562,6 +562,29 @@ describe("styal browser developer instructions", () => {
     );
   });
 
+  it("keeps device instructions scoped to the credential and its MCP identity", () => {
+    for (const mode of ["default", "plan"] as const) {
+      for (const mcpServerName of ["styal", "t3-code"] as const) {
+        const instructions = buildCodexDeveloperInstructions(
+          mode,
+          runtime,
+          { browser: false, device: true },
+          "Synthetic project instructions",
+          mcpServerName,
+        );
+        NodeAssert.match(instructions, /device_open/);
+        NodeAssert.match(instructions, /host config and session flags/);
+        NodeAssert.ok(instructions.includes(`The \`${mcpServerName}\` MCP server`));
+        NodeAssert.match(instructions, /Synthetic project instructions/);
+        NodeAssert.doesNotMatch(instructions, /preview_open/);
+        NodeAssert.doesNotMatch(
+          buildCodexDeveloperInstructions(mode, runtime, { browser: true, device: false }),
+          /device_open/,
+        );
+      }
+    }
+  });
+
   it.effect("names the legacy MCP server for resumed legacy histories", () =>
     Effect.gen(function* () {
       const params = yield* buildTurnStartParams({

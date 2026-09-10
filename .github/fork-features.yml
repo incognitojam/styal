@@ -694,6 +694,7 @@ features:
       - Fresh provider sessions advertise the product-native MCP integration as `styal`, persist that choice for recovery, and identify styal as the harness in generated agent instructions and disclosures.
       - Successfully resumed pre-rename provider histories continue using `t3-code` without registering a second MCP namespace, while missing legacy histories restart cleanly under `styal`.
       - Provider ingestion and shared client presentation recognize both namespaces so historical tool calls remain readable across web and mobile.
+      - Device instructions use the session's MCP namespace and only appear with device access, while provider subprocesses retain their per-session environment overrides.
     implementation_paths:
       - apps/mobile/src/lib/threadActivity.ts
       - apps/server/src/mcp/McpHttpServer.ts
@@ -779,7 +780,7 @@ features:
     invariants:
       - Packaged builds ship as styal with their own application identifier, URL scheme, product name, and About-panel identity instead of presenting as upstream T3 Code.
       - Electron's application name is a stable identity slug rather than a display string, so OS credential storage keys stay in the same namespace as the user-data directory they protect.
-      - styal owns its base directory, user-data directory, and URL scheme, so it installs and runs alongside upstream T3 Code without sharing state.
+      - styal owns its base directory, user-data directory, and URL scheme, so it installs and runs alongside upstream T3 Code without sharing state; SSH device hosts keep their helpers under ~/.styal/device.
       - Windows fork packages use styal-specific package and uninstall identities, never block on a running T3 Code process, and remain visibly distinguishable across stable, nightly, and pull request preview builds.
       - Pull request preview builds install beside stable and nightly with their own app id, URL scheme, credential namespace, development artwork, and styal home, which the desktop passes to its local server, so testing a preview never opens or migrates the stable install's database.
       - Standalone CLI archives carry the styal executable, release artwork, license, and native resource monitor, and run with isolated styal state without requiring a host Node installation.
@@ -818,6 +819,7 @@ features:
       - apps/server/src/cli/triage.ts
       - apps/server/src/cloud/pinnedRuntime.ts
       - apps/server/src/cloud/serviceProtocol.ts
+      - apps/server/src/device/sshDeviceScript.ts
       - apps/server/src/provider/AntigravityInstallation.ts
       - apps/server/src/provider/Services/ProviderAuthService.ts
       - apps/server/vite.config.ts
@@ -843,6 +845,7 @@ features:
       - apps/desktop/src/app/DesktopAssets.ts
       - apps/desktop/src/app/DesktopEnvironment.ts
       - apps/mobile/app.config.ts
+      - apps/server/src/device/sshDeviceScript.ts
       - apps/web/src/branding.logic.ts
       - apps/web/src/branding.ts
       - apps/web/src/components/SidebarStageBackdrop.tsx
@@ -859,6 +862,7 @@ features:
       - apps/desktop/src/wsl/DesktopWslEnvironment.test.ts
       - apps/server/src/bin.test.ts
       - apps/server/src/cloud/bootService.test.ts
+      - apps/server/src/device/sshDeviceScript.test.ts
       - apps/web/src/branding.test.ts
       - apps/web/src/components/SidebarStageBackdrop.test.tsx
       - packages/ssh/src/runnerProcess.test.ts

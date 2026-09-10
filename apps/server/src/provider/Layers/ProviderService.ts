@@ -255,6 +255,9 @@ export interface ProviderServiceLiveOptions {
    * test see whether a credential was requested at all.
    */
   readonly issueMcpCredential?: typeof McpSessionRegistry.issueActiveMcpCredential;
+  readonly resolveWorkspaceEnvironment?: (
+    workspacePath: string,
+  ) => Effect.Effect<Record<string, string>, WorkspacePortAllocator.WorkspacePortAllocationError>;
 }
 
 interface TurnAnalyticsMetadata {

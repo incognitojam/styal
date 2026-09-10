@@ -2969,7 +2969,6 @@ export function makeOpenCodeAdapter(
               const mcpServerName = resolved.preservedHistory
                 ? resumeMcpServerName
                 : McpProviderSession.ACTIVE_MCP_SERVER_NAME;
-              const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
               if (mcpSession && !server.external) {
                 yield* runOpenCodeSdk("mcp.add", () =>
                   client.mcp.add({
