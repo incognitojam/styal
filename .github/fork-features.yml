@@ -2337,7 +2337,7 @@ features:
       - Descriptive Markdown file-link labels retain their authored text and formatting without an appended filename chip; labels naming the destination file retain compact chips, including line references, throughout chat and previews where file chips are supported.
       - Both file-link presentations retain the resolved destination and file-opening actions, including a visible interactive affordance when only file-options actions are available, and copying a rendered web link preserves its authored Markdown label without an added filename.
     implementation_paths:
-      - apps/mobile/modules/t3-markdown-text/src/NativeMarkdownSelectableText.ios.tsx
+      - apps/mobile/modules/t3-markdown-text/src/NativeMarkdownSelectableText.tsx
       - apps/mobile/modules/t3-markdown-text/src/markdownLinks.ts
       - apps/mobile/modules/t3-markdown-text/src/nativeMarkdownText.ts
       - apps/mobile/src/features/threads/ThreadFeed.tsx
