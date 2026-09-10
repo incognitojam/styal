@@ -44,6 +44,8 @@ interface Props {
   readonly bottomInset: number;
 }
 
+const PREVIEW_MINI_PLAYER_CORNER_RADIUS = 14;
+// Content sits inside the frame's 1px ring, so its clip is one pixel tighter.
 const MINI_PLAYER_CONTENT_RADIUS = 13;
 
 // Invisible grab zones straddling each edge; the cursor is the only affordance.
@@ -61,6 +63,10 @@ const RESIZE_HANDLES: ReadonlyArray<{
   { direction: "southeast", className: "-bottom-2 -right-2 size-4 cursor-nwse-resize" },
 ];
 
+/**
+ * Floats the thread's browser surface over chat. Native clipping and the DOM
+ * frame use the same radius so their separately composited edges stay aligned.
+ */
 export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const gestureRef = useRef<PointerGesture | null>(null);
@@ -195,7 +201,13 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
           aria-label="Floating browser preview"
           data-preview-mini-player={tabId}
           className="pointer-events-none absolute select-none"
-          style={{ left: frame.x, top: frame.y, width: frame.width, height: frame.height }}
+          style={{
+            left: frame.x,
+            top: frame.y,
+            width: frame.width,
+            height: frame.height,
+            borderRadius: PREVIEW_MINI_PLAYER_CORNER_RADIUS,
+          }}
         >
           <div className="group pointer-events-auto absolute right-2 top-2 z-[49] size-3">
             <div
@@ -269,7 +281,7 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
             </div>
           </div>
 
-          <div className="absolute inset-0 z-[47] rounded-[14px] bg-muted shadow-2xl/35" />
+          <div className="absolute inset-0 z-[47] rounded-[inherit] bg-muted shadow-2xl/35" />
           <BrowserSurfaceSlot
             tabId={runtimeTabId}
             visible={Boolean(desktopOverlay?.hasWebContents)}
@@ -279,9 +291,9 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
             layoutVersion={`${frame.x}:${frame.y}`}
             className="absolute inset-px"
           />
-          <div className="pointer-events-none absolute inset-0 z-[49] rounded-[14px] ring-1 ring-inset ring-border/80" />
+          <div className="pointer-events-none absolute inset-0 z-[49] rounded-[inherit] ring-1 ring-inset ring-border/80" />
           {!desktopOverlay?.hasWebContents ? (
-            <div className="pointer-events-none absolute inset-0 z-[49] flex items-center justify-center rounded-[14px] bg-muted text-xs text-muted-foreground">
+            <div className="pointer-events-none absolute inset-0 z-[49] flex items-center justify-center rounded-[inherit] bg-muted text-xs text-muted-foreground">
               Reconnecting preview…
             </div>
           ) : null}
