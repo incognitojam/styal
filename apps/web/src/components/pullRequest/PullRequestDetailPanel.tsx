@@ -1747,7 +1747,7 @@ function PullRequestDetailPanelBody({
                           render={
                             <Button
                               size="xs"
-                              variant="ghost"
+                              variant="outline"
                               aria-label={
                                 handoff?.startsWith("checkout") ? "Checking out..." : "Check out"
                               }
@@ -1827,7 +1827,7 @@ function PullRequestDetailPanelBody({
                       <span className="inline-flex shrink-0">
                         <Button
                           size="xs"
-                          variant="default"
+                          variant="destructive-outline"
                           disabled={handoff !== null}
                           onClick={startResolveConflicts}
                           aria-label={

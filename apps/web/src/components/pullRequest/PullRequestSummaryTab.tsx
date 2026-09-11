@@ -12,7 +12,6 @@ import {
   ChevronRightIcon,
   GitPullRequestClosedIcon,
   HammerIcon,
-  MessageSquareIcon,
   PencilIcon,
   RotateCcwIcon,
   SendIcon,
@@ -189,7 +188,7 @@ function CollapsedComment({
           <ChevronDownIcon
             aria-hidden
             className={cn(
-              "size-3.5 shrink-0 text-muted-foreground transition-transform",
+              "size-3.5 shrink-0 text-muted-foreground/60 transition-transform",
               open && "rotate-180",
             )}
           />
@@ -231,8 +230,8 @@ function MetaRow({
   children: ReactNode;
 }) {
   return (
-    <div className="grid min-h-8 grid-cols-[6rem_minmax(0,1fr)] items-center gap-2 py-1.5 text-xs">
-      <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+    <div className="grid min-w-0 grid-cols-[6rem_minmax(0,1fr)] items-center gap-2 text-xs">
+      <span className="flex items-center gap-1.5 text-muted-foreground">
         {icon}
         {label}
       </span>
@@ -243,16 +242,13 @@ function MetaRow({
 
 function Section({
   title,
-  count,
   defaultOpen = true,
   actions,
   children,
 }: {
   title: string;
-  count?: number | string;
   defaultOpen?: boolean;
-  /** Controls riding on the heading row itself. A sibling of the trigger, not a child of it —
-      a button cannot hold a button — and only while open, since they act on what is shown. */
+  /** Heading controls stay separate from the collapse trigger so they remain independently usable. */
   actions?: ReactNode;
   children: ReactNode;
 }) {
@@ -288,24 +284,19 @@ function Section({
           where it started. Opaque, because the rows it covers scroll beneath it. */}
       <div
         ref={headingRef}
-        className="sticky top-0 z-10 flex w-full items-center border-t border-border/60 bg-background pr-4"
+        className="sticky top-0 z-10 flex w-full items-center bg-background pr-4"
       >
-        {/* Title first, chevron riding to its right, count last: the row reads as a heading
-            with an affordance rather than a tree node. */}
-        <CollapsibleTrigger className="flex min-w-0 flex-1 items-center gap-1.5 px-4 py-3 text-left text-sm font-medium">
+        <CollapsibleTrigger className="flex min-w-0 flex-1 items-center gap-1.5 px-4 py-3 text-left text-xs font-medium text-muted-foreground hover:text-foreground">
           <span>{title}</span>
           <ChevronRightIcon
             aria-hidden
             className={cn(
-              "size-3.5 text-muted-foreground transition-transform",
+              "size-3.5 text-muted-foreground/60 transition-transform",
               open && "rotate-90",
             )}
           />
-          {count === undefined ? null : (
-            <span className="text-xs tabular-nums text-muted-foreground">{count}</span>
-          )}
         </CollapsibleTrigger>
-        {open ? actions : null}
+        {actions}
       </div>
       <CollapsiblePanel>
         <div className="px-4 pb-4">{children}</div>
@@ -601,8 +592,8 @@ export function PullRequestSummaryTab({
 
   return (
     <div className="h-full overflow-y-auto" data-pull-request-summary-scroll>
-      <section className="px-4 py-3">
-        <div>
+      <section className="px-4 py-2.5">
+        <div className="space-y-2">
           <MetaRow icon={<UsersIcon className="size-3.5" />} label="Reviewers">
             <span className="flex min-w-0 flex-wrap items-center gap-1.5">
               {reviewerEntries.length === 0 ? (
@@ -705,7 +696,7 @@ export function PullRequestSummaryTab({
                     return (
                       <span
                         key={label.name}
-                        className="inline-flex max-w-48 items-center gap-1.5 rounded-full border border-border/70 bg-muted/40 py-0.5 pl-1.5 pr-2 text-xs"
+                        className="inline-flex max-w-48 items-center gap-1.5 rounded-full bg-muted/40 py-0.5 pl-1.5 pr-2 text-xs"
                       >
                         <span
                           aria-hidden
@@ -727,19 +718,10 @@ export function PullRequestSummaryTab({
               </span>
             </MetaRow>
           ) : null}
-          <MetaRow icon={<MessageSquareIcon className="size-3.5" />} label="Comments">
-            {activityPending
-              ? "Loading conversation…"
-              : activityError
-                ? "Conversation unavailable"
-                : detail.commentCount === 1
-                  ? "1 comment"
-                  : `${detail.commentCount} comments`}
-          </MetaRow>
         </div>
       </section>
 
-      <Section title="Description">
+      <section aria-label="Description" className="px-4 pt-2 pb-4">
         <div className="group">
           {bodyScope === detail.url ? (
             <PullRequestMarkdownEditor
@@ -786,28 +768,25 @@ export function PullRequestSummaryTab({
             onRefresh={onRefresh}
           />
         </div>
-      </Section>
+      </section>
 
       <Section
         title="Comments"
-        {...(activityPending || activityError ? {} : { count: detail.commentCount })}
         actions={
-          !activityPending && !activityError && detail.comments.length > 0 ? (
-            <Button
-              size="xs"
-              variant="ghost"
-              className="h-7 shrink-0 px-2 text-[10px] text-muted-foreground"
-              aria-label={
-                commentOrder === "newest"
-                  ? "Show oldest comments first"
-                  : "Show newest comments first"
-              }
-              onClick={() => setCommentOrder((value) => (value === "newest" ? "oldest" : "newest"))}
-            >
-              <ArrowDownUpIcon aria-hidden className="size-3" />
-              {commentOrder === "newest" ? "Newest first" : "Oldest first"}
-            </Button>
-          ) : null
+          <Button
+            size="xs"
+            variant="ghost"
+            className="h-7 shrink-0 px-2 text-[10px] text-muted-foreground"
+            aria-label={
+              commentOrder === "newest"
+                ? "Show oldest comments first"
+                : "Show newest comments first"
+            }
+            onClick={() => setCommentOrder((value) => (value === "newest" ? "oldest" : "newest"))}
+          >
+            <ArrowDownUpIcon aria-hidden className="size-3" />
+            {commentOrder === "newest" ? "Newest first" : "Oldest first"}
+          </Button>
         }
       >
         {activityPending ? (
