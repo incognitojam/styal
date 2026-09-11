@@ -117,3 +117,6 @@ export const ACKNOWLEDGE_SHUTDOWN_CONFIRMATION_CHANNEL =
   "desktop:acknowledge-shutdown-confirmation";
 export const SHUTDOWN_RENDERER_READY_CHANNEL = "desktop:shutdown-renderer-ready";
 export const SHUTDOWN_CONFIRMATION_EXPIRED_CHANNEL = "desktop:shutdown-confirmation-expired";
+export const MAC_PERMISSION_HELPER_CHANNEL = "desktop:mac-permission-helper";
+
+export const CHECK_SYSTEM_PERMISSION_CHANNEL = "desktop:check-system-permission";
