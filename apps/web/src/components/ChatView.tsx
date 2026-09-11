@@ -682,7 +682,6 @@ function formatOutgoingPrompt(params: {
   const promptEffort = resolvePromptInjectedEffort(caps, params.effort);
   return applyClaudePromptEffortPrefix(params.text, promptEffort);
 }
-const COMPACT_CONTEXT_COMMAND = "/compact";
 const SCRIPT_TERMINAL_COLS = 120;
 const SCRIPT_TERMINAL_ROWS = 30;
 
@@ -5952,8 +5951,6 @@ export default function ChatView(props: ChatViewProps) {
     pendingApprovals.length > 0 ||
     pendingUserInputs.length > 0 ||
     showPlanFollowUpPrompt;
-  // onCompactContext sends its own turn and leaves the composer draft alone,
-  // so an unsent draft does not block compacting.
   const compactDisabled = compactThreadUnavailable;
   const compactDisabledReason = compactDisabled
     ? !activeProject
@@ -5962,101 +5959,92 @@ export default function ChatView(props: ChatViewProps) {
         ? "Compaction is unavailable for this provider"
         : "Compacting is unavailable right now"
     : null;
-  // Sends "/compact" as its own turn. It never reads or clears the composer
-  // draft (and omits composerDraftRevision so the server keeps its autosave),
-  // so compacting works with a half-written message in the composer.
-  // Upstream fixes the same bug in `pingdotgg/t3code#11103`, built on its
-  // server-side compaction command (`pingdotgg/t3code#9293`). When that chain is
-  // taken in, replace this function with upstream's version.
   const onCompactContext = useCallback(async () => {
-    if (!activeThread || compactDisabled || sendInFlightRef.current) return;
-    const sendCtx = composerRef.current?.getSendContext();
-    if (!sendCtx?.providerAvailable) return;
-    const { selectedModelSelection: ctxSelectedModelSelection } = sendCtx;
+    if (compactDisabled || !activeThread || !clientSettingsHydrated || sendInFlightRef.current) {
+      return;
+    }
+    const context = composerRef.current?.getSendContext();
+    if (!context?.providerAvailable) return;
 
-    const threadIdForSend = activeThread.id;
-    const messageIdForSend = newMessageId();
-    const messageCreatedAt = new Date().toISOString();
-
+    // Compaction is a standalone command; the draft and its attachments stay local.
+    const threadId = activeThread.id;
+    const messageId = newMessageId();
+    const createdAt = new Date().toISOString();
     sendInFlightRef.current = true;
-    beginLocalDispatch({ preparingWorktree: false });
-    setThreadError(threadIdForSend, null);
-    scrollToEnd();
-    setOptimisticUserMessages((existing) => [
-      ...existing,
+    beginLocalDispatch();
+    setThreadError(threadId, null);
+    setOptimisticUserMessages((messages) => [
+      ...messages,
       {
-        id: messageIdForSend,
+        id: messageId,
         role: "user",
-        text: COMPACT_CONTEXT_COMMAND,
+        text: "/compact",
         turnId: null,
-        createdAt: messageCreatedAt,
-        updatedAt: messageCreatedAt,
+        createdAt,
+        updatedAt: createdAt,
         streaming: false,
       },
     ]);
-
-    const settingsResult = await persistThreadSettingsForNextTurn({
-      threadId: threadIdForSend,
-      createdAt: messageCreatedAt,
-      modelSelection: ctxSelectedModelSelection,
-      ...(localCheckoutBranchMismatch ? { branch: localCheckoutBranchMismatch.currentBranch } : {}),
-      runtimeMode,
-      interactionMode,
-    });
-    let failure: AtomCommandResult<unknown, unknown> | null =
-      settingsResult._tag === "Failure" ? settingsResult : null;
-
-    if (failure === null) {
-      const startResult = await startThreadTurn({
-        environmentId,
-        input: {
-          threadId: threadIdForSend,
-          message: {
-            messageId: messageIdForSend,
-            role: "user",
-            text: COMPACT_CONTEXT_COMMAND,
-            attachments: [],
-          },
-          modelSelection: ctxSelectedModelSelection,
-          titleSeed: activeThread.title,
-          runtimeMode,
-          interactionMode,
-          createdAt: messageCreatedAt,
-        },
+    scrollToEnd();
+    try {
+      const settingsResult = await persistThreadSettingsForNextTurn({
+        threadId,
+        createdAt,
+        modelSelection: context.selectedModelSelection,
+        ...(localCheckoutBranchMismatch
+          ? { branch: localCheckoutBranchMismatch.currentBranch }
+          : {}),
+        runtimeMode,
+        interactionMode: context.interactionMode,
       });
-      failure = startResult._tag === "Failure" ? startResult : null;
+      const result =
+        settingsResult._tag === "Failure"
+          ? settingsResult
+          : await startThreadTurn({
+              environmentId,
+              input: {
+                threadId,
+                message: { messageId, role: "user", text: "/compact", attachments: [] },
+                modelSelection: context.selectedModelSelection,
+                runtimeMode,
+                interactionMode: context.interactionMode,
+                createdAt,
+              },
+            });
+      if (result._tag === "Failure") {
+        setOptimisticUserMessages((messages) =>
+          messages.filter((message) => message.id !== messageId),
+        );
+        resetLocalDispatch();
+        if (!isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          setThreadError(
+            threadId,
+            error instanceof Error ? error.message : "Failed to compact context.",
+          );
+        }
+      } else {
+        clearUsageLimitsFor(routeThreadKey);
+        queueAcceptedTurnVisitBaseline(threadId);
+        acknowledgeActiveThreadWoke();
+      }
+    } finally {
+      sendInFlightRef.current = false;
     }
-
-    sendInFlightRef.current = false;
-    if (failure === null) {
-      queueAcceptedTurnVisitBaseline(threadIdForSend);
-      acknowledgeActiveThreadWoke();
-      return;
-    }
-
-    setOptimisticUserMessages((existing) =>
-      existing.filter((message) => message.id !== messageIdForSend),
-    );
-    if (!isAtomCommandInterrupted(failure)) {
-      const error = squashAtomCommandFailure(failure);
-      setThreadError(
-        threadIdForSend,
-        error instanceof Error ? error.message : "Failed to compact the thread.",
-      );
-    }
-    resetLocalDispatch();
   }, [
     acknowledgeActiveThreadWoke,
     activeThread,
     beginLocalDispatch,
+    clearUsageLimitsFor,
+    clientSettingsHydrated,
     compactDisabled,
     composerRef,
     environmentId,
-    interactionMode,
     localCheckoutBranchMismatch,
     persistThreadSettingsForNextTurn,
     queueAcceptedTurnVisitBaseline,
     resetLocalDispatch,
+    routeThreadKey,
     runtimeMode,
     scrollToEnd,
     setThreadError,
