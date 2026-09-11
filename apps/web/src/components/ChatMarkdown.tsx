@@ -70,6 +70,7 @@ import React, {
 } from "react";
 import type { Components, Options as ReactMarkdownOptions } from "react-markdown";
 import ReactMarkdown from "react-markdown";
+import { createIncrementalMarkdownPlugin } from "../markdown-incremental";
 import { defaultUrlTransform } from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
@@ -3181,6 +3182,10 @@ function ChatMarkdown({
     localMediaPreview,
     setLocalMediaPreview,
   } = useChatMarkdownState({ text, referenceContext, ...props });
+  const incrementalParsing =
+    props.isStreaming === true &&
+    extraRemarkPlugins.length === 0 &&
+    /(?:^|\n) {0,3}(?:`{3}|~{3})/.test(text);
   // Held apart so a caller spelling the context inline does not reparse the body every render.
   const referenceHost = referenceContext?.host;
   const referenceRepository = referenceContext?.repository;
@@ -3188,15 +3193,17 @@ function ChatMarkdown({
     const base = lineBreaks
       ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS
       : CHAT_MARKDOWN_REMARK_PLUGINS;
+    const incremental = incrementalParsing ? [createIncrementalMarkdownPlugin()] : [];
     if (referenceHost === undefined || referenceRepository === undefined)
-      return [...base, ...extraRemarkPlugins];
+      return [...base, ...extraRemarkPlugins, ...incremental];
     // After remark-gfm, whose autolink literals are the links this rewrites as shorthand.
     return [
       ...base,
       [remarkGithubReferences, { host: referenceHost, repository: referenceRepository }],
       ...extraRemarkPlugins,
+      ...incremental,
     ] satisfies NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
-  }, [lineBreaks, referenceHost, referenceRepository, extraRemarkPlugins]);
+  }, [lineBreaks, referenceHost, referenceRepository, extraRemarkPlugins, incrementalParsing]);
 
   // react-markdown converts unparsed HTML nodes to text when skipHtml is false.
   // Keep that behavior explicit because literal mode depends on escaping the
