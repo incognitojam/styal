@@ -69,7 +69,6 @@ import {
 } from "../../providerInstances";
 import { getCustomModelOptionsByInstance } from "../../modelSelection";
 import {
-  buildSidebarProjectSnapshots,
   type SidebarProjectGroupMember,
   type SidebarProjectSnapshot,
 } from "../../sidebarProjectGrouping";
@@ -120,6 +119,7 @@ import {
   ProjectFaviconPickerDialog,
 } from "./ProjectFaviconPickerDialog";
 import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
+import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 
 const ProjectIconPickerDialog = lazy(() =>
   import("./ProjectIconPickerDialog").then((module) => ({
@@ -132,31 +132,6 @@ export const PROJECT_GROUPING_MODE_LABELS: Record<SidebarProjectGroupingMode, st
   repository_path: "Group by repository path",
   separate: "Keep separate",
 };
-
-/** Logical project groups for the settings page, sorted by display name. */
-export function useSettingsProjectGroups(): SidebarProjectSnapshot[] {
-  const projects = useProjects();
-  const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const { environments } = useEnvironments();
-  const environmentLabelById = useMemo(
-    () =>
-      new Map(
-        environments.map((environment) => [environment.environmentId, environment.label] as const),
-      ),
-    [environments],
-  );
-  return useMemo(
-    () =>
-      buildSidebarProjectSnapshots({
-        projects,
-        settings: projectGroupingSettings,
-        primaryEnvironmentId,
-        resolveEnvironmentLabel: (environmentId) => environmentLabelById.get(environmentId) ?? null,
-      }).sort((a, b) => a.displayName.localeCompare(b.displayName)),
-    [environmentLabelById, primaryEnvironmentId, projectGroupingSettings, projects],
-  );
-}
 
 function memberKey(member: { environmentId: string; id: string }): string {
   return `${member.environmentId}:${member.id}`;
@@ -194,9 +169,11 @@ function currentDefaultRepositoryLabel(state: SourceControlDefaultRepositoryStat
 export function ProjectSettingsPanel({
   projectKey,
   environmentId = null,
+  checkoutKey = null,
 }: {
   projectKey: string;
   environmentId?: EnvironmentId | null;
+  checkoutKey?: string | null;
 }) {
   const groups = useSettingsProjectGroups();
   const navigate = useNavigate();
@@ -205,9 +182,11 @@ export function ProjectSettingsPanel({
   const members = useMemo(
     () =>
       selected?.memberProjects.filter(
-        (member) => environmentId === null || member.environmentId === environmentId,
+        (member) =>
+          (environmentId === null || member.environmentId === environmentId) &&
+          (checkoutKey === null || member.physicalProjectKey === checkoutKey),
       ) ?? [],
-    [selected, environmentId],
+    [selected, environmentId, checkoutKey],
   );
 
   // Remember the members of the last rendered group so a grouping-rule change
@@ -215,6 +194,7 @@ export function ProjectSettingsPanel({
   const lastSelectionRef = useRef<{
     key: string;
     environmentId: EnvironmentId | null;
+    checkoutKey: string | null;
     memberKeys: string[];
   } | null>(null);
   useEffect(() => {
@@ -222,28 +202,38 @@ export function ProjectSettingsPanel({
     lastSelectionRef.current = {
       key: selected.projectKey,
       environmentId,
+      checkoutKey,
       memberKeys: members.map((member) => member.physicalProjectKey),
     };
-  }, [selected, members, environmentId]);
+  }, [selected, members, environmentId, checkoutKey]);
 
   // A grouping-rule change replaces the group key mid-visit; follow the
   // project to its new key instead of parking on the not-found state.
   useEffect(() => {
     if (members.length > 0) return;
     const last = lastSelectionRef.current;
-    if (last?.key !== projectKey || last.environmentId !== environmentId) return;
+    if (
+      last?.key !== projectKey ||
+      last.environmentId !== environmentId ||
+      last.checkoutKey !== checkoutKey
+    )
+      return;
     const successor = groups.find((group) =>
       group.memberProjects.some((member) => last.memberKeys.includes(member.physicalProjectKey)),
     );
     if (successor) {
       void navigate({
         to: "/settings/projects",
-        search: { project: successor.projectKey, machine: environmentId ?? undefined },
+        search: {
+          project: successor.projectKey,
+          machine: environmentId ?? undefined,
+          checkout: checkoutKey ?? undefined,
+        },
         replace: true,
         hashScrollIntoView: false,
       });
     }
-  }, [groups, navigate, projectKey, members.length, environmentId]);
+  }, [groups, navigate, projectKey, members.length, environmentId, checkoutKey]);
 
   if (!selected) {
     return (
@@ -257,7 +247,7 @@ export function ProjectSettingsPanel({
   if (members.length === 0)
     return (
       <p className="p-8 text-sm text-muted-foreground">
-        This project has no checkout on this machine.
+        This checkout is no longer available in the selected project and environment.
       </p>
     );
   const scopedGroup = {
@@ -268,7 +258,7 @@ export function ProjectSettingsPanel({
   };
   return (
     <ProjectDetail
-      key={`${selected.projectKey}:${environmentId ?? "all"}`}
+      key={`${selected.projectKey}:${environmentId ?? "all"}:${checkoutKey ?? "all"}`}
       group={scopedGroup}
       hasOtherMembers={members.length < selected.memberProjects.length}
     />
@@ -956,23 +946,14 @@ function ProjectDetail({
         draftStore.clearProjectDraftThreadId(projectRef);
       }
 
-      if (isWholeGroup) {
-        if (hasOtherMembers) {
-          void navigate({
-            to: "/settings/projects",
-            search: { project: group.projectKey, machine: undefined },
-            replace: true,
-          });
-        } else {
-          void navigate({ to: "/", replace: true });
-        }
+      if (isWholeGroup && !hasOtherMembers) {
+        void navigate({ to: "/", replace: true });
       }
     },
     [
       deleteProject,
       group.displayName,
       group.memberProjects.length,
-      group.projectKey,
       hasOtherMembers,
       navigate,
       reportFailure,
