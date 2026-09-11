@@ -71,8 +71,9 @@ Cloning a GitHub fork keeps your fork as `origin`, adds the repository it was fo
 cloning to contribute to it.
 
 A branch that tracks a remote belongs to that remote's repository, regardless of the default. To
-change the default later, open **Settings → Projects → Checkout → Default repository**. This is the
-same setting as `gh repo set-default`, so the two stay in agreement. Clones from other hosts or a
+change the default later, select the project in the Settings breadcrumb and change **Default
+repository** in the Project category; a project with several checkouts shows it under each
+checkout. This is the same setting as `gh repo set-default`, so the two stay in agreement. Clones from other hosts or a
 plain Git URL do not get this step.
 
 ## Create a pull request
