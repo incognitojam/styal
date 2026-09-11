@@ -1,4 +1,8 @@
 import { QuestionAnswerHistory } from "./QuestionAnswerHistory";
+import {
+  getQuestionAnswerPreview,
+  hasQuestionAnswer,
+} from "@t3tools/client-runtime/work-log/user-input";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { type AppSymbolName, SymbolView } from "../../components/AppSymbol";
@@ -728,6 +732,10 @@ const ThreadWorkLogRow = memo(function ThreadWorkLogRow(
       ? `+${fileChangeStat.additions} -${fileChangeStat.deletions}`
       : null;
   const previewText = [workEntryRowLabel(row), statText].filter(Boolean).join(" ");
+  const answerPreview = row.workEntry.questionAnswer
+    ? getQuestionAnswerPreview(row.workEntry.questionAnswer)
+    : null;
+  const accessiblePreview = [previewText, answerPreview].filter(Boolean).join(": ");
   const displayText = expanded
     ? [workEntryRowLabel(row, true), statText].filter(Boolean).join(" ")
     : previewText;
@@ -744,7 +752,7 @@ const ThreadWorkLogRow = memo(function ThreadWorkLogRow(
     >
       <Pressable
         accessibilityRole={canExpand ? "button" : undefined}
-        accessibilityLabel={failed ? `${previewText}, tool call failed` : previewText}
+        accessibilityLabel={failed ? `${accessiblePreview}, tool call failed` : accessiblePreview}
         accessibilityHint={
           canExpand
             ? `Double tap to ${expanded ? "hide" : "show"} full details. Long press to copy.`
@@ -805,6 +813,17 @@ const ThreadWorkLogRow = memo(function ThreadWorkLogRow(
                 numberOfLines={expanded ? undefined : 1}
               >
                 {displayText}
+                {answerPreview ? (
+                  <Text
+                    className={
+                      !expanded &&
+                      row.workEntry.questionAnswer &&
+                      hasQuestionAnswer(row.workEntry.questionAnswer)
+                        ? "text-foreground"
+                        : "text-foreground-subtle"
+                    }
+                  >{`  ${answerPreview}`}</Text>
+                ) : null}
               </Text>
             </>
           )}
