@@ -370,7 +370,7 @@ function CommentComposer({
   };
 
   return (
-    <div className="mt-3 space-y-2">
+    <div className="space-y-2">
       <Textarea
         // Locked while posting: the body is cleared on success, which would otherwise throw
         // away a new draft typed while the request was still in flight.
@@ -721,7 +721,7 @@ export function PullRequestSummaryTab({
         </div>
       </section>
 
-      <section aria-label="Description" className="px-4 pt-2 pb-4">
+      <section aria-label="Description" className="px-4 pt-2 pb-1">
         <div className="group">
           {bodyScope === detail.url ? (
             <PullRequestMarkdownEditor
@@ -922,7 +922,9 @@ export function PullRequestSummaryTab({
             )}
           </>
         )}
-        {/* Posting is a core capability and remains usable even if the activity read failed. */}
+      </Section>
+      <div className="px-4 pb-4">
+        {/* Posting stays available when the conversation is folded or its activity read failed. */}
         {detail.capabilities.comment && detail.viewerPermissions.comment ? (
           <CommentComposer
             reference={reference}
@@ -940,7 +942,7 @@ export function PullRequestSummaryTab({
             onCommented={onRefresh}
           />
         ) : null}
-      </Section>
+      </div>
     </div>
   );
 }
