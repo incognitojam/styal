@@ -504,8 +504,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
 }: MessagesTimelineProps) {
   const [expandedTurnIds, setExpandedTurnIds] = useState<ReadonlySet<TurnId>>(new Set());
   const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(new Set());
-  // Expanded spawn rows outlive virtualization and stay visible while their
-  // turn fold is collapsed, so a settling fleet is not pulled away mid-read.
+  // Preserve member disclosure state across virtualization.
   const [expandedSpawnEntryIds, setExpandedSpawnEntryIds] = useState<ReadonlySet<string>>(
     new Set(),
   );
@@ -670,10 +669,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     workspaceRoot: string | undefined;
     projection: MessagesTimelineRowsProjection;
   } | null>(null);
-  // Subagents still working keep their spawn row outside the turn fold. Same
-  // liveness rule as the row header (deriveAgentSpawnSummary): members while
-  // active, workflow coordinators until terminal. Keyed by content so the
-  // projection input keeps its identity across unrelated panel updates.
+  // Match the row header's liveness, retaining projection input identity
+  // across unrelated panel updates.
   const liveAgentTaskKey = useMemo(() => {
     if (agentPanelModel === undefined) return undefined;
     const ids: string[] = [];
@@ -709,7 +706,6 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         turnDiffSummaries,
         supportsConversationRollback,
         liveAgentTaskIds,
-        expandedSpawnEntryIds: paintedExpandedSpawnEntryIds,
       },
       previous?.threadKey === listIdentityKey && previous.workspaceRoot === workspaceRoot
         ? previous.projection
@@ -731,7 +727,6 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     turnDiffSummaries,
     supportsConversationRollback,
     liveAgentTaskIds,
-    paintedExpandedSpawnEntryIds,
   ]);
   const rows = useStableRows(rawRows, listIdentityKey);
   const minimapItems = useMemo(() => deriveTimelineMinimapItems(rows), [rows]);
