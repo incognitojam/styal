@@ -11,7 +11,6 @@ import {
   newIssueContextId,
   normalizeIssueContextSelection,
 } from "./issueContext";
-import { deriveDisplayedUserMessageState } from "./terminalContext";
 
 function makeIssue(overrides?: Partial<SourceControlIssue>): SourceControlIssue {
   return {
@@ -184,13 +183,23 @@ describe("extractTrailingIssueContexts", () => {
   });
 });
 
-describe("deriveDisplayedUserMessageState", () => {
-  it("strips the issue block from the visible transcript text", () => {
-    const prompt = appendIssueContextsToPrompt("Investigate this", [makeSelection()]);
-    const state = deriveDisplayedUserMessageState(prompt);
-    expect(state.visibleText).toBe("Investigate this");
-    expect(state.copyText).toBe(prompt);
-    expect(state.issueContexts.map((entry) => entry.header)).toEqual(["#123 Fix login crash"]);
+describe("extractTrailingIssueContexts with legacy context blocks", () => {
+  it("strips an issue block followed by blocks from before inline context references", () => {
+    const terminalBlock =
+      "<terminal_context>\n- Terminal 1 line 3:\n  3 | failed\n</terminal_context>";
+    const prompt = `${appendIssueContextsToPrompt("Investigate this", [makeSelection()])}\n\n${terminalBlock}`;
+    const extracted = extractTrailingIssueContexts(prompt);
+    expect(extracted.promptText).toBe(`Investigate this\n\n${terminalBlock}`);
+    expect(extracted.contexts.map((entry) => entry.header)).toEqual(["#123 Fix login crash"]);
+  });
+
+  it("leaves an issue block alone when prose follows it", () => {
+    const prompt = `${appendIssueContextsToPrompt("Investigate this", [makeSelection()])}\n\nMore text`;
+    expect(extractTrailingIssueContexts(prompt)).toEqual({
+      promptText: prompt,
+      contextCount: 0,
+      contexts: [],
+    });
   });
 });
 

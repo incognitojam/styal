@@ -46,3 +46,6 @@ node_modules/
 !.env.production.example
 
 /apps/server/dist-exe/
+
+# pnpm content-addressable store; never belongs in the repo.
+.pnpm-store/

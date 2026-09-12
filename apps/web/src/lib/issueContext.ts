@@ -11,8 +11,10 @@ const ISSUE_CONTEXT_COMMENT_LIMIT = 8_000;
 const ISSUE_CONTEXT_MAX_COMMENTS = 50;
 const ISSUE_CONTEXT_TITLE_LABEL_MAX = 60;
 
+// Messages sent before inline context references appended terminal, element and preview blocks
+// after the issue block; those stay in place for the legacy context upgrade to peel.
 const TRAILING_ISSUE_CONTEXT_BLOCK_PATTERN =
-  /\n*<issue_context>\n([\s\S]*?)\n<\/issue_context>\s*$/;
+  /\n*<issue_context>\n([\s\S]*?)\n<\/issue_context>(?=((?:\s*<(terminal_context|element_context|preview_annotation)>\n[\s\S]*?\n<\/\3>)*)\s*$)/;
 
 export interface IssueContextComment {
   author: string | null;
@@ -173,16 +175,15 @@ export function newIssueContextId(): string {
 }
 
 /**
- * Mirror image of `appendIssueContextsToPrompt` for transcript display. The
- * issue block is appended before the terminal/element blocks, so callers must
- * strip those two first for this trailing-anchored match to land.
+ * Mirror image of `appendIssueContextsToPrompt` for transcript display. Legacy
+ * context blocks that followed the issue block remain in `promptText`.
  */
 export function extractTrailingIssueContexts(prompt: string): ExtractedIssueContexts {
   const match = TRAILING_ISSUE_CONTEXT_BLOCK_PATTERN.exec(prompt);
   if (!match) {
     return { promptText: prompt, contextCount: 0, contexts: [] };
   }
-  const promptText = prompt.slice(0, match.index).replace(/\n+$/, "");
+  const promptText = `${prompt.slice(0, match.index).replace(/\n+$/, "")}${match[2] ?? ""}`;
   const contexts = parseIssueContextEntries(match[1] ?? "");
   return { promptText, contextCount: contexts.length, contexts };
 }

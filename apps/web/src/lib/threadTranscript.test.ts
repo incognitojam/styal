@@ -39,7 +39,7 @@ describe("buildThreadTranscript", () => {
   it("strips injected trailing context blocks from user prompts", () => {
     const transcript = buildThreadTranscript("Title", [
       message({
-        text: "Why did the tests fail?\n\n<terminal_context>\n- vp test:\n  1 failed\n</terminal_context>",
+        text: "Why did the tests fail?\n\n<terminal_context>\n- Terminal 1 line 12:\n  12 | 1 failed\n</terminal_context>",
       }),
     ]);
     expect(transcript.text).toContain("Why did the tests fail?");

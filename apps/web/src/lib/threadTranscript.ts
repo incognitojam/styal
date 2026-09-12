@@ -1,6 +1,8 @@
 import type { OrchestrationMessage } from "@t3tools/contracts";
+import { upgradeLegacyContextMessage } from "@t3tools/shared/composerContextLegacy";
+import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 
-import { deriveDisplayedUserMessageState } from "./terminalContext";
+import { extractTrailingIssueContexts } from "./issueContext";
 
 export type TranscriptMessage = Pick<
   OrchestrationMessage,
@@ -25,14 +27,20 @@ function attachmentSummary(message: TranscriptMessage): string | null {
   return `[Attached file${count === 1 ? "" : "s"}: ${names.join(", ")}${extraSummary}]`;
 }
 
+/** The prose the user wrote, with each inline context reference reduced to its label. */
+function visibleUserText(text: string): string {
+  const withoutIssues = extractTrailingIssueContexts(text).promptText;
+  return replaceComposerContextReferences(
+    upgradeLegacyContextMessage(withoutIssues).text,
+    (reference) => reference.label,
+  ).trim();
+}
+
 function messageBody(message: TranscriptMessage): string | null {
-  // User prompts carry injected trailing context blocks (terminal, element,
-  // issue) that the composer appended at send time; the transcript takes the
-  // visible text the user actually wrote, same as the timeline renders.
-  const text =
-    message.role === "user"
-      ? deriveDisplayedUserMessageState(message.text).visibleText.trim()
-      : message.text.trim();
+  // User prompts can end with an issue block the composer appended at send time, and messages
+  // sent before inline context references end with terminal and element blocks. The transcript
+  // takes the text the user actually wrote, as the timeline renders it.
+  const text = message.role === "user" ? visibleUserText(message.text) : message.text.trim();
   const attachments = attachmentSummary(message);
   const body = [text, attachments].filter((part) => part !== null && part.length > 0).join("\n\n");
   return body.length === 0 ? null : body;

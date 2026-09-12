@@ -1,6 +1,7 @@
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
 import { resolveThreadCurrentPullRequestLink } from "@t3tools/shared/threadPullRequests";
 import { useAtomValue } from "@effect/atom-react";
+import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import * as Schema from "effect/Schema";
 import {
   DndContext,
@@ -754,7 +755,10 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
   onDiscard: (draftId: DraftId) => void;
 }) {
   const { composer, draftId, onDiscard, onNavigate, session } = props;
-  const promptPreview = composer.prompt.trim().split("\n", 1)[0] ?? "";
+  const promptPreview =
+    replaceComposerContextReferences(composer.prompt, (occurrence) => occurrence.label)
+      .trim()
+      .split("\n", 1)[0] ?? "";
   // images mirrors persistedAttachments once rehydration finishes; before
   // that only the persisted list is populated, hence max not sum.
   const attachmentCount =
@@ -764,7 +768,6 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
     ) +
     composer.files.length +
     composer.terminalContexts.length +
-    composer.elementContexts.length +
     composer.previewAnnotations.length +
     composer.reviewComments.length;
   const preview =

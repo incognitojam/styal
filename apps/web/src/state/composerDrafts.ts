@@ -45,7 +45,6 @@ function commonFromDraft(draft: ComposerThreadDraftState): ComposerDraftCommon |
     draft.files.length > 0 ||
     draft.persistedAttachments.length > 0 ||
     draft.terminalContexts.length > 0 ||
-    draft.elementContexts.length > 0 ||
     draft.issueContexts.length > 0 ||
     draft.previewAnnotations.length > 0 ||
     draft.reviewComments.length > 0;
@@ -156,7 +155,6 @@ export function useServerComposerDraftSync(threadRef: ScopedThreadRef | null): v
           current.images.length === 0 &&
           current.persistedAttachments.length === 0 &&
           current.terminalContexts.length === 0 &&
-          current.elementContexts.length === 0 &&
           current.issueContexts.length === 0 &&
           current.previewAnnotations.length === 0 &&
           current.reviewComments.length === 0
@@ -206,7 +204,6 @@ export function useServerComposerDraftSync(threadRef: ScopedThreadRef | null): v
     controllerRef.current?.observeLocalChange();
   }, [
     draft.activeProvider,
-    draft.elementContexts,
     draft.images,
     draft.files,
     draft.interactionMode,

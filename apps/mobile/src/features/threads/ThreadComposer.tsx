@@ -29,7 +29,7 @@ import {
   useState,
   type RefObject,
 } from "react";
-import { Alert, Platform, Pressable, View, type ViewStyle } from "react-native";
+import { Alert, Keyboard, Platform, Pressable, View, type ViewStyle } from "react-native";
 import { FilePreviewModal, type FilePreviewSource } from "../../components/FilePreviewModal";
 import Animated, {
   FadeIn,
@@ -48,6 +48,10 @@ import {
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/remoteRegistration";
 import { scopedThreadKey } from "../../lib/scopedEntities";
+import { composerContextImportsAtom } from "../../state/use-composer-drafts";
+import type { ComposerDocumentAttachment } from "../../lib/composerContext";
+import { useProject } from "../../state/entities";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 
 import { AppText as Text } from "../../components/AppText";
 import {
@@ -56,6 +60,7 @@ import {
 } from "../../components/ComposerAttachmentStrip";
 import { GlassSurface } from "../../components/GlassSurface";
 import { ComposerEditor, type ComposerEditorHandle } from "../../components/ComposerEditor";
+import { fileRoutePathSegments } from "../files/filePath";
 import {
   ComposerInlineControl,
   ComposerToolbarButton,
@@ -63,10 +68,12 @@ import {
 } from "../../components/ComposerToolbar";
 import { ControlPill } from "../../components/ControlPill";
 import { ProviderIcon } from "../../components/ProviderIcon";
-import type {
-  DraftComposerAttachment,
-  DraftComposerFileAttachment,
+import {
+  composerStripAttachments,
+  type DraftComposerAttachment,
+  type DraftComposerFileAttachment,
 } from "../../lib/composerImages";
+import { collectComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import {
   buildModelOptions,
   groupByProvider,
@@ -260,6 +267,7 @@ export function ComposerSurface(props: {
 }
 
 export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposerProps) {
+  const project = useProject(scopeProjectRef(props.environmentId, props.selectedThread.projectId));
   const { materialYouStyleLayoutActive, themeVariables: materialTheme } =
     useAppearancePreferences();
   const composerPanel = materialTheme["--color-composer-panel"];
@@ -282,6 +290,20 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const [previewFile, setPreviewFile] = useState<FilePreviewSource | null>(null);
   const [previewVideo, setPreviewVideo] = useState<VideoPreviewSource | null>(null);
   const hasContent = props.draftMessage.trim().length > 0 || props.draftAttachments.length > 0;
+  // Attachment context ids are the attachment id, so the prompt alone says which attachments
+  // already read as an inline chip and need no strip tile.
+  const stripAttachments = useMemo(
+    () =>
+      composerStripAttachments(
+        props.draftAttachments,
+        new Set(
+          collectComposerContextReferences(props.draftMessage).map(
+            (occurrence) => occurrence.contextId as string,
+          ),
+        ),
+      ),
+    [props.draftAttachments, props.draftMessage],
+  );
   const showStopAction =
     !hasContent &&
     (props.selectedThread.session?.status === "running" ||
@@ -313,6 +335,18 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     );
   }, [props.serverConfig, props.selectedThread.modelSelection.instanceId]);
   const composerOwnerKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
+  const openDraftDocument = (attachment: ComposerDocumentAttachment) => {
+    Keyboard.dismiss();
+    navigation.navigate("ThreadAttachment", {
+      environmentId: String(props.environmentId),
+      threadId: String(props.selectedThread.id),
+      attachmentId: attachment.attachmentId,
+      name: attachment.name,
+      mimeType: attachment.mimeType,
+      sizeBytes: String(attachment.sizeBytes),
+      draftKey: composerOwnerKey,
+    });
+  };
   const { onSendMessage, onChangeDraftMessage, onShowUsageLimits } = props;
   // T3 owns /usage-limits only where Limits has data for the selected provider;
   // elsewhere the name stays the provider's own and is sent through untouched.
@@ -343,6 +377,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     ownerKey: composerOwnerKey,
     environmentId: props.environmentId,
     projectCwd: props.projectCwd,
+    pullRequestProjectId: props.serverConfig?.environment.capabilities.pullRequests
+      ? (project?.id ?? null)
+      : null,
+    pullRequestRepository: project?.repositoryIdentity?.displayName ?? null,
     selectedProviderStatus,
     hasThread: true,
     hasCompactableConversation: props.hasCompactableConversation,
@@ -379,9 +417,14 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     serverConfig: props.serverConfig,
     states: uploadStates,
   });
+  const contextImports = useAtomValue(composerContextImportsAtom);
   const sendBlockedReason = props.sendBlockedReason ?? attachmentBlockReason;
   const canSend =
-    hasContent && !voiceInput.blocksSubmission && sendBlockedReason === null && !modelUnavailable;
+    hasContent &&
+    !contextImports[composerOwnerKey] &&
+    !voiceInput.blocksSubmission &&
+    sendBlockedReason === null &&
+    !modelUnavailable;
 
   // Keep the feed inset aligned with the card or compact dictation strip.
   useEffect(() => {
@@ -594,12 +637,15 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         className="relative w-full self-center"
         style={{ maxWidth: props.contentMaxWidth }}
       >
-        {!voiceInput.isBusy && composerMenu.trigger && composerMenu.items.length > 0 ? (
+        {!voiceInput.isBusy &&
+        composerMenu.trigger &&
+        (composerMenu.items.length > 0 || composerMenu.trigger.kind === "pull-request") ? (
           <View className="absolute inset-x-0 bottom-full z-10 mb-2">
             <ComposerCommandPopover
               items={composerMenu.items}
               triggerKind={composerMenu.trigger.kind}
               isLoading={composerMenu.isLoading}
+              error={composerMenu.error}
               onSelect={composerMenu.onSelect}
             />
           </View>
@@ -636,7 +682,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
             className={isExpanded ? undefined : "flex-row items-center"}
             collapsed={showsCompactDictation}
           >
-            {isExpanded && props.draftAttachments.length > 0 ? (
+            {isExpanded && stripAttachments.length > 0 ? (
               <Animated.View
                 className="pb-2.5"
                 entering={COMPOSER_ATTACHMENT_ENTERING}
@@ -644,10 +690,21 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
               >
                 <ComposerAttachmentStrip
                   environmentId={props.environmentId}
-                  attachments={props.draftAttachments}
+                  attachments={stripAttachments}
                   onRemove={voiceInput.isBusy ? () => undefined : props.onRemoveDraftImage}
                   onPressPreview={voiceInput.isBusy ? undefined : onPressPreview}
                   onPressVideo={voiceInput.isBusy ? undefined : onPressVideo}
+                  onPressDocument={
+                    voiceInput.isBusy
+                      ? undefined
+                      : (attachment) =>
+                          openDraftDocument({
+                            attachmentId: attachment.id,
+                            name: attachment.name,
+                            mimeType: attachment.mimeType,
+                            sizeBytes: attachment.sizeBytes,
+                          })
+                  }
                 />
               </Animated.View>
             ) : null}
@@ -656,6 +713,17 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
               layout={COMPOSER_LAYOUT_TRANSITION}
             >
               <ComposerEditor
+                draftKey={composerOwnerKey}
+                environmentId={props.environmentId}
+                onOpenMention={(path) => {
+                  Keyboard.dismiss();
+                  navigation.navigate("ThreadFile", {
+                    environmentId: String(props.environmentId),
+                    threadId: String(props.selectedThread.id),
+                    path: fileRoutePathSegments(path),
+                  });
+                }}
+                onOpenAttachment={openDraftDocument}
                 ref={inputRef}
                 multiline
                 value={props.draftMessage}
@@ -693,9 +761,9 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 }}
               />
             </Animated.View>
-            {!isExpanded && !voiceInput.isBusy && props.draftAttachments.length > 0 ? (
+            {!isExpanded && !voiceInput.isBusy && stripAttachments.length > 0 ? (
               <View className="flex-row gap-1 pl-1">
-                {props.draftAttachments.slice(0, 3).map((attachment) => (
+                {stripAttachments.slice(0, 3).map((attachment) => (
                   <ComposerAttachmentThumbnail
                     environmentId={props.environmentId}
                     key={attachment.id}
@@ -707,10 +775,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                     onPressVideo={onPressVideo}
                   />
                 ))}
-                {props.draftAttachments.length > 3 ? (
+                {stripAttachments.length > 3 ? (
                   <View className="size-[30px] items-center justify-center rounded-lg bg-subtle-strong">
                     <Text className="text-foreground-muted text-2xs font-t3-bold">
-                      +{props.draftAttachments.length - 3}
+                      +{stripAttachments.length - 3}
                     </Text>
                   </View>
                 ) : null}
