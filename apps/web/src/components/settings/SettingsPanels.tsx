@@ -47,6 +47,7 @@ import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
 import {
+  APP_BASE_NAME,
   APP_COMMIT_HASH,
   APP_REPOSITORY,
   APP_VERSION,
@@ -3113,6 +3114,19 @@ export function GeneralSettingsPanel() {
               variant="outline"
             >
               View diagnostics
+            </Button>
+          }
+        />
+        <SettingsRow
+          {...searchableSetting("open-source-licenses")}
+          description={`Notices for dependencies, assets, and optional tools used by ${APP_BASE_NAME}.`}
+          control={
+            <Button
+              render={<Link to="/settings/open-source-licenses" />}
+              size="xs"
+              variant="outline"
+            >
+              View licenses
             </Button>
           }
         />
