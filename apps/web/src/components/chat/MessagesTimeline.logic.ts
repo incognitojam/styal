@@ -752,6 +752,7 @@ function deriveTurnFolds(input: {
   terminalAssistantMessageIds: ReadonlySet<string>;
   latestTurn: TimelineLatestTurn | null;
   unfoldedTurnIds: ReadonlySet<TurnId>;
+  liveAgentTaskIds: ReadonlySet<string> | undefined;
 }): ReadonlyMap<string, TurnFold> {
   interface TurnGroup {
     /** The turn and any turns that continued it after a server restart. */
@@ -841,11 +842,22 @@ function deriveTurnFolds(input: {
       if (entry.kind === "work" && entry.entry.questionAnswer !== undefined) {
         continue;
       }
-      // Agent-spawn CTA rows never fold: workflows outlive their launching
-      // turn (dynamic spawns, background execution), and folding the CTA
-      // when the turn settles makes a still-running fleet invisible.
+      // Workflows outlive their launching turn (dynamic spawns, background
+      // execution), so a spawn row with a live member or coordinator stays
+      // outside the fold instead of hiding a still-running fleet. Settled
+      // spawns fold with the rest of the turn. Without a live set (no agent
+      // panel model, as in the held paint during a thread switch) every
+      // spawn row stays out.
       if (entry.kind === "work" && entry.entry.agentSpawn !== undefined) {
-        continue;
+        const live = input.liveAgentTaskIds;
+        const { workflowId, agentTaskIds } = entry.entry.agentSpawn;
+        if (
+          live === undefined ||
+          (workflowId !== null && live.has(workflowId)) ||
+          agentTaskIds.some((taskId) => live.has(taskId))
+        ) {
+          continue;
+        }
       }
       // A findings report is the review's deliverable; the closing message
       // only points back at it.
@@ -1063,6 +1075,13 @@ export function deriveMessagesTimelineRows(input: {
   activeTurnStartedAt: string | null;
   turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
   supportsConversationRollback: boolean;
+  /**
+   * Task ids of subagents still working; their spawn row stays outside turn
+   * folds. Undefined means unknown, which keeps every spawn row out.
+   */
+  liveAgentTaskIds?: ReadonlySet<string> | undefined;
+  /** Spawn rows the user opened stay visible while their turn fold is collapsed. */
+  expandedSpawnEntryIds?: ReadonlySet<string> | undefined;
 }): MessagesTimelineRow[] {
   const turnDiffSummaryByAssistantMessageId = new Map<MessageId, TurnDiffSummary>();
   for (const summary of input.turnDiffSummaries) {
@@ -1106,11 +1125,15 @@ export function deriveMessagesTimelineRows(input: {
     terminalAssistantMessageIds,
     latestTurn: input.latestTurn ?? null,
     unfoldedTurnIds: activeVisualResponseTurnIds,
+    liveAgentTaskIds: input.liveAgentTaskIds,
   });
   const collapsedEntryIds = new Set<string>();
   for (const fold of foldsByAnchorEntryId.values()) {
     if (!input.expandedTurnIds?.has(fold.turnId)) {
       for (const entryId of fold.hiddenEntryIds) {
+        // An opened spawn row keeps its fold membership but is not pulled
+        // away mid-read when its last member settles.
+        if (input.expandedSpawnEntryIds?.has(entryId)) continue;
         collapsedEntryIds.add(entryId);
       }
     }
@@ -1136,7 +1159,6 @@ export function deriveMessagesTimelineRows(input: {
     if (
       !entryBelongsToActiveTurn(entry, index) ||
       entry.kind !== "work" ||
-      entry.entry.agentSpawn !== undefined ||
       entry.entry.questionAnswer !== undefined ||
       isStandaloneTimelineActivityKind(entry.entry.sourceActivityKind) ||
       entry.entry.tone === "error" ||
@@ -1152,9 +1174,14 @@ export function deriveMessagesTimelineRows(input: {
   );
   const activeWorkAnchor = activeToolEntries[0];
   const latestVisibleToolEntry = visibleActiveToolEntries.at(-1);
-  const latestRunningToolEntry = visibleActiveToolEntries.findLast((entry) =>
-    workEntryIsActiveTurnActivity(entry.entry),
-  );
+  const latestRunningToolEntry = visibleActiveToolEntries.findLast((entry) => {
+    const spawn = entry.entry.agentSpawn;
+    return spawn
+      ? entry === latestVisibleToolEntry &&
+          ((spawn.workflowId !== null && input.liveAgentTaskIds?.has(spawn.workflowId)) ||
+            spawn.agentTaskIds.some((taskId) => input.liveAgentTaskIds?.has(taskId)))
+      : workEntryIsActiveTurnActivity(entry.entry);
+  });
   const latestToolFailed =
     latestRunningToolEntry === undefined &&
     latestVisibleToolEntry !== undefined &&
@@ -1163,7 +1190,10 @@ export function deriveMessagesTimelineRows(input: {
   const latestToolKeepsActivityLive =
     latestRunningToolEntry !== undefined ||
     (latestVisibleToolEntry !== undefined &&
-      workEntryIndicatesToolSuccess(latestVisibleToolEntry.entry));
+      latestVisibleToolEntry.entry.agentSpawn === undefined &&
+      (workEntryIndicatesToolSuccess(latestVisibleToolEntry.entry) ||
+        (latestVisibleToolEntry.entry.toolLifecycleStatus === "completed" &&
+          !workEntryDisplayIndicatesToolFailure(latestVisibleToolEntry.entry))));
   const activeWorkPlacementEntryId = latestVisibleToolEntry?.id;
   const activeWorkRow =
     activeWorkAnchor && latestVisibleToolEntry && !latestToolFailed
@@ -1205,7 +1235,7 @@ export function deriveMessagesTimelineRows(input: {
     if (activeWorkRow === null) return;
     nextRows.push(activeWorkRow);
     hasActivityRow ||= activeWorkRow.active;
-    if (!activeWorkRow.expanded) return;
+    if (!activeWorkRow.expanded || activeWorkRow.entry.agentSpawn) return;
     nextRows.push(
       expandedWorkGroupRow(
         activeWorkRow.groupId,
@@ -1288,6 +1318,12 @@ export function deriveMessagesTimelineRows(input: {
         timelineEntry.entry.questionAnswer !== undefined ||
         timelineEntry.entry.tone === "error"
       ) {
+        const spawn = timelineEntry.entry.agentSpawn;
+        if (spawn && entryBelongsToActiveTurn(timelineEntry, index)) {
+          hasActivityRow ||=
+            (spawn.workflowId !== null && input.liveAgentTaskIds?.has(spawn.workflowId)) ||
+            spawn.agentTaskIds.some((taskId) => input.liveAgentTaskIds?.has(taskId));
+        }
         nextRows.push({
           kind: "work",
           id: timelineEntry.id,
