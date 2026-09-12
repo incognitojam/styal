@@ -915,9 +915,16 @@ export function shouldRecedeSidebarThread(input: {
   isActive: boolean;
   isSelected: boolean;
 }): boolean {
-  if (input.isActive || input.isSelected) return false;
+  // Approval needs a human just like Input, so it keeps full prominence too.
+  if (
+    input.isActive ||
+    input.isSelected ||
+    input.status === "input" ||
+    input.status === "approval"
+  ) {
+    return false;
+  }
   if (input.status === "working" || input.status === "monitoring") return true;
-  // Approval and input need a human, so they keep full prominence.
   if (input.status === "ready") return !input.isUnread && !input.isWoke;
   return false;
 }
@@ -951,21 +958,6 @@ export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): Si
     return "monitoring";
   }
   return "ready";
-}
-
-export function resolveSidebarThreadVisualState(input: {
-  status: SidebarThreadStatus;
-  isUnread: boolean;
-  isWoke: boolean;
-  isActive: boolean;
-  isSelected: boolean;
-}): { shouldRecede: boolean; shouldFade: boolean } {
-  const isBackgroundActivity = input.status === "working" || input.status === "monitoring";
-
-  return {
-    shouldRecede: shouldRecedeSidebarThread(input),
-    shouldFade: isBackgroundActivity && !input.isActive && !input.isSelected,
-  };
 }
 
 /** First VALID timestamp wins: `a ?? b` falls through on null, but a present-

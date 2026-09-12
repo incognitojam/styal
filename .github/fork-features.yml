@@ -2188,25 +2188,23 @@ features:
       retire_when: Upstream exposes equivalent cross-client setup action lifecycle detail, retained output, worktree-only setup safety, and isolation from later interactive terminal actions.
 
   - id: sidebar-attention-prominence
-    title: Keep threads awaiting input visually prominent
+    title: Keep threads awaiting approval visually prominent
     status: maintained
     prs: [224]
     invariants:
-      - Inactive threads awaiting approval or user input remain at full visual prominence because they require immediate attention.
-      - Working and Monitoring threads recede as background activity unless active or selected, without changing ready or failed presentation.
+      - Inactive threads awaiting approval stay at full visual prominence after they are read, like threads awaiting user input, because they require immediate attention.
     implementation_paths:
       - apps/web/src/components/Sidebar.logic.ts
-      - apps/web/src/components/Sidebar.tsx
     upstream_paths:
       - apps/web/src/components/Sidebar.logic.ts
-      - apps/web/src/components/Sidebar.tsx
     tests:
       - apps/web/src/components/Sidebar.logic.test.ts
     upstream:
       status: partial
       tracking:
+        - https://github.com/pingdotgg/t3code/pull/11461
         - https://github.com/pingdotgg/t3code/pull/9759
-      retire_when: Upstream distinguishes attention-required Approval and Input rows from dimmable Working and Monitoring background activity with equivalent precedence behavior.
+      retire_when: Upstream keeps read Approval rows at full prominence, as it already does for Input rows.
 
   - id: sidebar-last-message-time
     title: Choose the timestamp shown for thread activity

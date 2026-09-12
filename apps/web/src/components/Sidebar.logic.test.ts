@@ -25,7 +25,6 @@ import {
   resolveProjectStatusIndicator,
   resolveThreadRowClassName,
   resolveSidebarThreadStatus,
-  resolveSidebarThreadVisualState,
   resolveThreadStatusPill,
   resolveWorkingStartedAt,
   searchSidebarThreads,
@@ -386,6 +385,30 @@ describe("shouldRecedeSidebarThread", () => {
     },
   );
 
+  it.each(["approval", "input"] as const)("keeps a read %s thread prominent", (status) => {
+    expect(
+      shouldRecedeSidebarThread({
+        status,
+        isUnread: false,
+        isWoke: false,
+        isActive: false,
+        isSelected: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("recedes a read ready thread", () => {
+    expect(
+      shouldRecedeSidebarThread({
+        status: "ready",
+        isUnread: false,
+        isWoke: false,
+        isActive: false,
+        isSelected: false,
+      }),
+    ).toBe(true);
+  });
+
   it("keeps active and selected working threads prominent", () => {
     const input = {
       status: "working" as const,
@@ -397,6 +420,18 @@ describe("shouldRecedeSidebarThread", () => {
 
     expect(shouldRecedeSidebarThread({ ...input, isActive: true })).toBe(false);
     expect(shouldRecedeSidebarThread({ ...input, isSelected: true })).toBe(false);
+  });
+
+  it.each([false, true])("keeps input-required threads prominent with unread=%s", (isUnread) => {
+    expect(
+      shouldRecedeSidebarThread({
+        status: "input",
+        isUnread,
+        isWoke: false,
+        isActive: false,
+        isSelected: false,
+      }),
+    ).toBe(false);
   });
 });
 
@@ -875,46 +910,6 @@ describe("resolveSidebarThreadStatus", () => {
 
   it("defaults to ready with no session", () => {
     expect(resolveSidebarThreadStatus({ ...idle, session: null })).toBe("ready");
-  });
-});
-
-describe("resolveSidebarThreadVisualState", () => {
-  const visualState = (status: Parameters<typeof resolveSidebarThreadVisualState>[0]["status"]) =>
-    resolveSidebarThreadVisualState({
-      status,
-      isUnread: false,
-      isWoke: false,
-      isActive: false,
-      isSelected: false,
-    });
-
-  it("keeps human-attention states at full prominence", () => {
-    expect(visualState("approval")).toEqual({ shouldRecede: false, shouldFade: false });
-    expect(visualState("input")).toEqual({ shouldRecede: false, shouldFade: false });
-    expect(visualState("failed")).toEqual({ shouldRecede: false, shouldFade: false });
-  });
-
-  it("recedes background activity", () => {
-    expect(visualState("working")).toEqual({ shouldRecede: true, shouldFade: true });
-    expect(visualState("monitoring")).toEqual({ shouldRecede: true, shouldFade: true });
-  });
-
-  it("recedes read ready threads without fading the whole row", () => {
-    expect(visualState("ready")).toEqual({ shouldRecede: true, shouldFade: false });
-  });
-
-  it("does not recede the active or selected background thread", () => {
-    const base = {
-      status: "working" as const,
-      isUnread: false,
-      isWoke: false,
-    };
-    expect(resolveSidebarThreadVisualState({ ...base, isActive: true, isSelected: false })).toEqual(
-      { shouldRecede: false, shouldFade: false },
-    );
-    expect(resolveSidebarThreadVisualState({ ...base, isActive: false, isSelected: true })).toEqual(
-      { shouldRecede: false, shouldFade: false },
-    );
   });
 });
 
