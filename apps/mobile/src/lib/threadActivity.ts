@@ -365,6 +365,10 @@ function reviewFindingsOfActivityGroup(entry: ThreadFeedEntry): ReviewFindingsRe
     : undefined;
 }
 
+function isUserInputActivityGroup(entry: ThreadFeedActivityGroup): boolean {
+  return entry.activities.some((activity) => activity.workEntry.questionAnswer !== undefined);
+}
+
 function normalizeDraftAnswer(value: string | undefined): string | null {
   if (typeof value !== "string") {
     return null;
@@ -1873,11 +1877,12 @@ function groupAdjacentActivities(entries: ReadonlyArray<RawThreadFeedEntry>): Th
       continue;
     }
 
-    // Standalone activities and findings rows render on their own, so they
-    // get their own group.
+    // Standalone activities, findings rows and user input render on their own,
+    // so they get their own group.
     const standsAlone =
       isStandaloneTimelineActivityKind(entry.activity.workEntry.sourceActivityKind) ||
-      workEntryReviewFindings(entry.activity.workEntry) !== undefined;
+      workEntryReviewFindings(entry.activity.workEntry) !== undefined ||
+      entry.activity.workEntry.questionAnswer !== undefined;
     if (standsAlone || firstActivityEntry?.turnId !== entry.turnId) {
       flushGroup();
     }
@@ -2008,7 +2013,8 @@ function deriveThreadFeedTurnFolds(
             entry.id !== firstAssistantMessageId &&
             entry.id !== terminalAssistantMessageId &&
             // The closing message only points back at the findings.
-            reviewFindingsOfActivityGroup(entry) === undefined,
+            reviewFindingsOfActivityGroup(entry) === undefined &&
+            !(entry.type === "activity-group" && isUserInputActivityGroup(entry)),
         )
         .map((entry) => entry.id),
     );
@@ -2210,7 +2216,7 @@ function appendPresentedFeedEntry(
     result.push(entry);
     return;
   }
-  if (isStandaloneActivityGroup(entry)) {
+  if (isStandaloneActivityGroup(entry) || isUserInputActivityGroup(entry)) {
     result.push(entry);
     return;
   }
