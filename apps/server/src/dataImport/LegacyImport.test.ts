@@ -619,6 +619,7 @@ it.effect("imports selected history and safe preferences independently", () => {
     getSnapshotSequence: () => Effect.succeed({ snapshotSequence: 0 }),
     getCounts: () => Effect.succeed({ projectCount: 0, threadCount: 0 }),
     getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
+    getProjectShells: () => Effect.die("unused"),
     getProjectShellById: () => Effect.succeed(Option.none()),
     getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.none()),
 
@@ -944,6 +945,7 @@ it.effect("imports one thread at a time and resumes after an interrupted thread"
     getSnapshotSequence: () => Effect.succeed({ snapshotSequence: 0 }),
     getCounts: () => Effect.succeed({ projectCount: 0, threadCount: 0 }),
     getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
+    getProjectShells: () => Effect.die("unused"),
     getProjectShellById: () =>
       Effect.sync(() =>
         importedProjectIds.has("project-import")
@@ -1100,6 +1102,7 @@ it.effect("repairs provider context for threads imported by an earlier release",
     getSnapshotSequence: () => Effect.succeed({ snapshotSequence: 0 }),
     getCounts: () => Effect.succeed({ projectCount: 1, threadCount: 1 }),
     getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
+    getProjectShells: () => Effect.die("unused"),
     getProjectShellById: () => Effect.succeed(Option.some(importedProjectShell())),
     getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.none()),
 
