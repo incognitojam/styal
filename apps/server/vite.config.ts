@@ -38,7 +38,7 @@ export default mergeConfig(
       },
     },
     pack: {
-      entry: ["src/bin.ts"],
+      entry: packExecutable ? ["src/bin.ts"] : ["src/bin.ts", "src/claudeHistoryWorker.ts"],
       outDir: packExecutable ? "dist-exe" : "dist",
       sourcemap: !packExecutable,
       ...(packExecutable

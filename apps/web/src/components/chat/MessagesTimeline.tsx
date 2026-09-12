@@ -256,7 +256,7 @@ interface TimelineRowSharedState {
   workspaceRoot: string | undefined;
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   activeThreadEnvironmentId: EnvironmentId;
-  onRevertToTurnCount: (targetTurnCount: number) => void;
+  onRevertToTurnCount: (targetTurnCount: number, messageId: MessageId) => void;
   onUseArtifactTemplate: (template: CodexArtifactTemplate) => void;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onFileOpen: (attachment: ChatFileAttachment) => void;
@@ -377,7 +377,7 @@ interface MessagesTimelineProps {
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   onRunCodeBlock?: ((code: string) => void) | undefined;
   supportsConversationRollback: boolean;
-  onRevertToTurnCount: (targetTurnCount: number) => void;
+  onRevertToTurnCount: (targetTurnCount: number, messageId: MessageId) => void;
   onUseArtifactTemplate?: (template: CodexArtifactTemplate) => void;
   isRevertingCheckpoint: boolean;
   onImageExpand: (preview: ExpandedImagePreview) => void;
@@ -1646,7 +1646,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           </Tooltip>
           <div className="flex items-center gap-0.5">
             {typeof revertTurnCount === "number" && (
-              <RevertUserMessageButton turnCount={revertTurnCount} />
+              <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
             )}
             {displayedUserMessage.copyText && (
               <MessageCopyButton text={displayedUserMessage.copyText} variant="ghost" />
@@ -1658,7 +1658,13 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   );
 }
 
-function RevertUserMessageButton({ turnCount }: { turnCount: number }) {
+function RevertUserMessageButton({
+  turnCount,
+  messageId,
+}: {
+  turnCount: number;
+  messageId: MessageId;
+}) {
   const ctx = use(TimelineRowCtx);
   const activity = use(TimelineRowActivityCtx);
 
@@ -1671,14 +1677,14 @@ function RevertUserMessageButton({ turnCount }: { turnCount: number }) {
             size="xs"
             variant="ghost"
             disabled={activity.isRevertingCheckpoint || activity.isWorking}
-            onClick={() => ctx.onRevertToTurnCount(turnCount)}
-            aria-label="Revert to this message"
+            onClick={() => ctx.onRevertToTurnCount(turnCount, messageId)}
+            aria-label="Edit from here"
           />
         }
       >
         <Undo2Icon className="size-3" />
       </TooltipTrigger>
-      <TooltipPopup side="top">Revert to this message</TooltipPopup>
+      <TooltipPopup side="top">Edit from here</TooltipPopup>
     </Tooltip>
   );
 }
