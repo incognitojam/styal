@@ -3,6 +3,10 @@ import type { SharePayload } from "expo-sharing";
 
 import type { IncomingShareDraft } from "./incoming-share-model";
 import { IncomingShareInbox, type IncomingShareInboxDependencies } from "./incoming-share-inbox";
+import {
+  EMPTY_INCOMING_SHARE_PRESENTATION_STATE,
+  transitionIncomingSharePresentation,
+} from "./incoming-share-presentation";
 
 const PAYLOAD: SharePayload = {
   shareType: "text",
@@ -52,10 +56,35 @@ function createHarness(overrides: Partial<IncomingShareInboxDependencies> = {}) 
     now: () => "2026-07-16T08:00:00.000Z",
     ...overrides,
   };
-  return { inbox: new IncomingShareInbox(dependencies), persisted };
+  return { inbox: new IncomingShareInbox(dependencies), persisted, dependencies };
 }
 
 describe("IncomingShareInbox", () => {
+  it("does not restore a dismissed share when a fresh inbox loads after relaunch", async () => {
+    const { inbox, dependencies } = createHarness();
+    const [share] = await inbox.refresh({ ingestNative: true });
+    const requested = transitionIncomingSharePresentation(EMPTY_INCOMING_SHARE_PRESENTATION_STATE, {
+      isSheetPresented: false,
+      sheetShareId: null,
+      pendingShareId: share!.id,
+    });
+    const seen = transitionIncomingSharePresentation(requested.state, {
+      isSheetPresented: true,
+      sheetShareId: share!.id,
+      pendingShareId: share!.id,
+    });
+    const dismissed = transitionIncomingSharePresentation(seen.state, {
+      isSheetPresented: false,
+      sheetShareId: null,
+      pendingShareId: share!.id,
+    });
+    expect(dismissed.shareIdToDiscard).toBe(share!.id);
+    await inbox.consume(dismissed.shareIdToDiscard!);
+
+    const relaunched = new IncomingShareInbox(dependencies);
+    await expect(relaunched.refresh({ ingestNative: true })).resolves.toEqual([]);
+  });
+
   it("coalesces a replay of an already-persisted native handoff", async () => {
     const buildDraft = vi.fn(async ({ id, createdAt }) => ({
       draft: draft(id, createdAt),

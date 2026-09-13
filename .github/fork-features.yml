@@ -138,8 +138,11 @@ features:
       - Attachment count and aggregate-byte limits are enforced atomically, generic files render in message history, and legacy image attachments remain readable.
       - Web keeps send unavailable while attachment uploads block submission and exposes the recovery reason from the disabled send action.
       - Mobile retains local attachment bytes through draft, outbox, preview, upload, and signed-out account ownership; failed storage hydration or persistence must not authorize cleanup.
+      - Dismissing an incoming-share task picker removes its durable inbox entry and releases attachments only after checking ownership by other inbox items, composer drafts, outbox messages, and previews.
     implementation_paths:
       - apps/mobile/plugins/withShareExtensionDisplayName.cjs
+      - apps/mobile/src/features/sharing/IncomingShareProvider.tsx
+      - apps/mobile/src/features/sharing/incoming-share-presentation.ts
       - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/features/threads/pending-thread-feed.ts
       - apps/mobile/src/lib/attachmentUpload.ts
@@ -172,6 +175,8 @@ features:
       - apps/web/src/composerDraftStore.ts
       - packages/contracts/src/orchestration.ts
     tests:
+      - apps/mobile/src/features/sharing/incoming-share-inbox.test.ts
+      - apps/mobile/src/features/sharing/incoming-share-presentation.test.ts
       - apps/mobile/src/features/threads/pending-thread-feed.test.ts
       - apps/mobile/src/lib/attachmentUpload.test.ts
       - apps/mobile/src/lib/composerAttachmentUploadQueue.test.ts
