@@ -54,6 +54,7 @@ import { remarkGithubAlerts } from "../markdown-github-alerts";
 import { remarkGithubReferences } from "../markdown-github-references";
 import {
   githubReferenceHref,
+  GithubReferenceThreadContext,
   MISSING_GITHUB_REFERENCE_ATTRIBUTE,
   missingGithubReferenceTitle,
   useGithubReferenceOpener,
@@ -1751,7 +1752,8 @@ function ChatMarkdown({
     event.clipboardData.setData("text/plain", payload.text);
     event.clipboardData.setData("text/html", payload.html);
   }, []);
-  const openChangeRequestLink = useOpenChangeRequestLink(threadRef);
+  const surfaceThreadRef = use(GithubReferenceThreadContext);
+  const openChangeRequestLink = useOpenChangeRequestLink(threadRef ?? surfaceThreadRef);
   const resolveThreadPullRequest = useCallback(
     (href: string): ThreadLinkedPullRequest | null => {
       if (
@@ -1801,11 +1803,7 @@ function ChatMarkdown({
     [resolveThreadPullRequest, threadRef, updateThreadMetadata],
   );
   const lookupReference = useGithubReferenceResolutions(referenceContext, text);
-  const openReference = useGithubReferenceOpener(
-    lookupReference,
-    openChangeRequestLink,
-    referenceContext?.threadRef,
-  );
+  const openReference = useGithubReferenceOpener(lookupReference, openChangeRequestLink);
   const openExternalLinkInPreview = useCallback(
     (url: string) => {
       if (!threadRef) {

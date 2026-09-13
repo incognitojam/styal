@@ -23,8 +23,6 @@ export interface GithubReferenceSurface extends GithubReferenceContext {
   readonly environmentId: EnvironmentId;
   /** The checkout the question is asked from, which names the host it is asked of. */
   readonly cwd: string;
-  /** The thread this body is read beside, if any: a reference opens as a tab next to it. */
-  readonly threadRef?: ScopedThreadRef | undefined;
 }
 
 /** The thread a pull request surface is mounted beside, told to the bodies it renders. */
@@ -124,19 +122,14 @@ interface ReferenceClickEvent {
  * a browser. Holding the click to open it as a tab was not worth the pending click. */
 export function useGithubReferenceOpener(
   lookup: GithubReferenceLookup,
-  openChangeRequestLink: (
-    event: ReferenceClickEvent,
-    targetUrl: string,
-    targetThreadRef?: ScopedThreadRef,
-  ) => boolean,
-  threadRef: ScopedThreadRef | undefined,
+  openChangeRequestLink: (event: ReferenceClickEvent, targetUrl: string) => boolean,
 ): (event: ReferenceClickEvent, key: string, writtenHref: string) => void {
   return useCallback(
     (event, key, writtenHref) => {
       // A modifier means the browser, which the anchor's own default action already does.
       if (event.metaKey || event.ctrlKey) return;
-      openChangeRequestLink(event, githubReferenceHref(lookup(key), writtenHref), threadRef);
+      openChangeRequestLink(event, githubReferenceHref(lookup(key), writtenHref));
     },
-    [lookup, openChangeRequestLink, threadRef],
+    [lookup, openChangeRequestLink],
   );
 }

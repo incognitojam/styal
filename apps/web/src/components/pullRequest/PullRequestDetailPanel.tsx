@@ -408,22 +408,23 @@ type PullRequestDetailPanelProps = {
    */
   chromeVariant?: "full" | "collapse";
   /**
-   * The open thread's composer. Beside the thread whose own pull request this is, hand-offs
-   * land here instead of opening a new thread — the branch is already under the reader's feet.
+   * The hosting thread or draft's composer. A thread target also keeps PR links in tabs beside
+   * that thread, regardless of which PR is shown. In thread context, hand-offs land in this
+   * composer instead of opening a new thread.
    */
   composerDraftTarget?: ScopedThreadRef | DraftId;
 };
 
 /**
- * A `#123` in any body below opens as a tab beside this panel rather than replacing the page.
+ * A pull request link in any body below opens as a tab beside the thread hosting this panel.
  * Told through a context rather than a prop threaded down through the tabs, and provided out here
  * so the panel body below is untouched.
  */
 export function PullRequestDetailPanel(props: PullRequestDetailPanelProps) {
-  // Only where there is a thread to open beside: a draft target names no thread yet.
-  const target = props.context === "thread" ? props.composerDraftTarget : undefined;
-  const threadRef =
-    target !== undefined && typeof target === "object" && "threadId" in target ? target : undefined;
+  // Any PR tab beside a thread keeps links there, including another branch's PR whose
+  // checkout controls use page context. A draft target names no thread yet.
+  const target = props.composerDraftTarget;
+  const threadRef = typeof target === "string" ? undefined : target;
   return (
     <GithubReferenceThreadContext.Provider value={threadRef}>
       <PullRequestDetailPanelBody {...props} />

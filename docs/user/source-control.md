@@ -48,6 +48,7 @@ T3 Code works with the platforms your team already uses:
 
 - See if your current branch already has an open PR/MR
 - Open several reviews from the **Pull requests** page as tabs in the right panel
+- On web and desktop, follow pull request links in a thread's PR descriptions or comments to open another tab beside the same thread, including other PRs in a stack. The linked repository must be available in that thread's environment. Cmd/Ctrl-click opens the link in your browser.
 - Use **Checks** to see which GitHub checks are required by repository policy, including checks
   GitHub is still waiting to receive, and whether the pull request is ready to merge or blocked
 - When GitHub is waiting on repository requirements and auto-merge is available, **Auto-merge**

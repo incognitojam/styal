@@ -1,16 +1,13 @@
 import type { EnvironmentId, PullRequestDetailView } from "@t3tools/contracts";
 import { ExternalLinkIcon, LoaderCircleIcon, PaperclipIcon, PlayIcon } from "lucide-react";
-import { type ComponentPropsWithoutRef, useCallback, useContext, useMemo, useState } from "react";
+import { type ComponentPropsWithoutRef, useCallback, useMemo, useState } from "react";
 import type { ExtraProps } from "react-markdown";
 
 import { useAssetUrlState } from "~/assets/assetUrls";
 import { cn } from "~/lib/utils";
 
 import ChatMarkdown from "../ChatMarkdown";
-import {
-  GithubReferenceThreadContext,
-  type GithubReferenceSurface,
-} from "../chat/githubReferenceLinks";
+import type { GithubReferenceSurface } from "../chat/githubReferenceLinks";
 import {
   resolvePullRequestRepositoryImage,
   splitPullRequestBody,
@@ -124,7 +121,6 @@ export function PullRequestMarkdown({
   );
   // The host comes from the change request's own address, so an Enterprise install is read as
   // itself rather than as github.com.
-  const surfaceThreadRef = useContext(GithubReferenceThreadContext);
   const referenceContext = useMemo((): GithubReferenceSurface | undefined => {
     if (detail.provider !== "github") return undefined;
     let host: string;
@@ -138,16 +134,8 @@ export function PullRequestMarkdown({
       repository: detail.repository,
       environmentId,
       cwd: detail.workspaceRoot,
-      threadRef: surfaceThreadRef,
     };
-  }, [
-    detail.provider,
-    detail.repository,
-    detail.url,
-    detail.workspaceRoot,
-    environmentId,
-    surfaceThreadRef,
-  ]);
+  }, [detail.provider, detail.repository, detail.url, detail.workspaceRoot, environmentId]);
 
   const segments = splitPullRequestBody(text);
   return (
