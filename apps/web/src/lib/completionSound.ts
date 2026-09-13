@@ -27,13 +27,14 @@ export function playSoundSample(url: string, volume: number): void {
   });
 }
 
+export function completionSoundSample(sound: CompletionSound) {
+  if (sound === "none") return null;
+  return sound === "avanti"
+    ? { url: AVANTI_SAMPLE_URL, volume: AVANTI_SAMPLE_VOLUME }
+    : { url: RESOLVE_SAMPLE_URL, volume: 1 };
+}
+
 export function playCompletionSound(sound: CompletionSound): void {
-  if (sound === "none") {
-    return;
-  }
-  if (sound === "avanti") {
-    playSoundSample(AVANTI_SAMPLE_URL, AVANTI_SAMPLE_VOLUME);
-    return;
-  }
-  playSoundSample(RESOLVE_SAMPLE_URL, 1);
+  const sample = completionSoundSample(sound);
+  if (sample) playSoundSample(sample.url, sample.volume);
 }

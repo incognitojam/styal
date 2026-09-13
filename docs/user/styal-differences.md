@@ -98,6 +98,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   checked September 18, 2026, which does not include Rich Presence.
 - **A choice of completion sounds.** T3 Code already has sounds for completion and input requests.
   styal lets you select and preview Resolve or Avanti as the sound for those events, or turn it off.
+  Enable a sound mode in Thread notifications to use the selected sound for alerts.
   [Completion sounds](./thread-sidebar.md#completion-sounds).
 - **Relevant outage notices.** Sidebar notices surface GitHub, Claude, and OpenAI incidents relevant
   to your projects and providers. Alerts are configurable.

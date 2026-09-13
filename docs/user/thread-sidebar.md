@@ -156,6 +156,12 @@ finishes; the call's own result shows its status.
 
 ## Completion sounds
 
-On web and desktop, choose a **Completion sound** in **Settings → General** to hear
-when an agent finishes or asks for input: **Resolve**, **Avanti**, or none. A thread
-waiting for your input shows **Awaiting Input** until you answer.
+On web and desktop, enable **Thread notifications** in **Settings → General** for
+notifications, sound, or both when a thread finishes or needs input or approval.
+Alerts are off by default and apply to this device while styal is open. Browser
+notifications require permission and HTTPS (or localhost); sound can be used alone.
+
+Choose **Sound only** or **Notifications with sound**, then select a **Completion
+sound**: **Resolve**, **Avanti**, or none. Preview plays the selected sound even
+when alerts are off. A thread waiting for your input shows **Awaiting Input** until
+you answer.

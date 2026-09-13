@@ -1,4 +1,5 @@
 import { Spinner } from "~/components/ui/spinner";
+import { NotificationSettings } from "./NotificationSettings";
 import { ArchiveIcon, ArchiveX, ChevronRightIcon, SettingsIcon } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { CSSProperties, ReactNode } from "react";
@@ -542,6 +543,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.completionSound !== DEFAULT_UNIFIED_SETTINGS.completionSound
         ? ["Completion sound"]
         : []),
+      ...(settings.notificationMode !== DEFAULT_UNIFIED_SETTINGS.notificationMode
+        ? ["Thread notifications"]
+        : []),
       ...(settings.sidebarThreadPreviewCount !== DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount
         ? ["Visible threads"]
         : []),
@@ -667,6 +671,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.sidebarThreadPreviewCount,
       settings.showSkillsInSlashMenu,
       settings.timestampFormat,
+      settings.notificationMode,
       settings.wordWrap,
       followSystem,
       theme,
@@ -742,6 +747,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
       sidebarThreadTimestampMode: DEFAULT_UNIFIED_SETTINGS.sidebarThreadTimestampMode,
       completionSound: DEFAULT_UNIFIED_SETTINGS.completionSound,
+      notificationMode: DEFAULT_UNIFIED_SETTINGS.notificationMode,
       wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
       diffFilesCollapsed: DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed,
       diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
@@ -2304,6 +2310,7 @@ export function GeneralSettingsPanel() {
       </SettingsSection>
 
       <SettingsSection id="behavior" title="Behavior">
+        <NotificationSettings />
         <SettingsRow
           {...searchableSetting("claude-outage-alerts")}
           description="Shows affected Claude services in the sidebar during incidents, based on Anthropic's official status page."
@@ -2572,7 +2579,7 @@ export function GeneralSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("completion-sound")}
-          description="Choose whether styal plays a sound when a response finishes or the agent asks for your input."
+          description="Choose the sound used when Thread notifications includes sound. Preview plays it immediately."
           resetAction={
             settings.completionSound !== DEFAULT_UNIFIED_SETTINGS.completionSound ? (
               <SettingResetButton

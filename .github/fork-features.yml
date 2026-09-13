@@ -357,16 +357,15 @@ features:
 
   - id: completion-sounds
     title: Configurable agent completion sounds
-    status: maintained
+    status: review-needed
     prs: [5, 7, 19, 72, 249, 250]
     invariants:
       - Users can select, preview, and disable the sound played when an agent finishes or awaits input.
-      - Sound playback follows persisted client settings without firing repeatedly for the same turn state.
+      - Sound playback follows the opt-in notification mode and persisted sound choice without firing repeatedly for the same turn state.
       - Resolve is the fork's default completion sound, legacy Chime preferences migrate to it, and every offered sound uses a comparable playback level.
     implementation_paths:
-      - apps/web/src/components/TurnCompletionSound.tsx
+      - apps/web/src/components/ThreadNotificationCoordinator.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
-      - apps/web/src/lib/completionSound.logic.ts
       - apps/web/src/lib/completionSound.ts
       - packages/contracts/src/settings.ts
     upstream_paths:
@@ -375,12 +374,14 @@ features:
       - packages/contracts/src/settings.ts
     tests:
       - apps/desktop/src/settings/DesktopClientSettings.test.ts
-      - apps/web/src/lib/completionSound.logic.test.ts
+      - apps/web/src/components/ThreadNotificationCoordinator.test.tsx
       - apps/web/src/lib/completionSound.test.ts
+      - apps/web/src/threadNotifications.test.ts
       - packages/contracts/src/settings.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/11481
       retire_when: Upstream provides configurable completion and awaiting-input sounds with equivalent persistence and playback behavior.
 
   - id: composer-draft-sync

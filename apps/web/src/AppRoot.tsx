@@ -3,7 +3,6 @@ import { RouterProvider } from "@tanstack/react-router";
 
 import { ElectronBrowserHost } from "./browser/ElectronBrowserHost";
 import { ThreadVisitBaselineObserver } from "./components/ThreadVisitBaselineObserver";
-import { TurnCompletionSound } from "./components/TurnCompletionSound";
 import { PreviewAutomationHosts } from "./components/preview/PreviewAutomationHosts";
 import { QuitHoldOverlay } from "./components/QuitHoldOverlay";
 import { AppAtomRegistryProvider } from "./rpc/atomRegistry";
@@ -18,7 +17,6 @@ export function AppRoot({ router }: { readonly router: AppRouter }) {
   return (
     <AppAtomRegistryProvider>
       <RouterProvider router={router} />
-      <TurnCompletionSound />
       <ThreadVisitBaselineObserver />
       <PreviewAutomationHosts />
       <ElectronBrowserHost />
