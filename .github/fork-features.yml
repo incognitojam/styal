@@ -378,7 +378,7 @@ features:
       - packages/contracts/src/settings.ts
     tests:
       - apps/desktop/src/settings/DesktopClientSettings.test.ts
-      - apps/web/src/components/ThreadNotificationCoordinator.test.tsx
+      - apps/web/src/components/ThreadNotificationSounds.test.tsx
       - apps/web/src/threadNotifications.test.ts
       - packages/contracts/src/settings.test.ts
     upstream:

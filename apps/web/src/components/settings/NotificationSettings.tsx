@@ -83,7 +83,7 @@ export function NotificationSettings() {
         permissionMessage ??
         (needsPermission
           ? "System notifications need permission on this device. Sound follows your selected mode."
-          : "Alert when a thread finishes or needs input or approval. Applies to this device while styal is open.")
+          : "System alerts when a thread finishes, fails, or needs input or approval. Applies to this device while styal is open.")
       }
       control={
         <>
