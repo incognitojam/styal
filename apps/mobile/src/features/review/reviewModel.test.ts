@@ -84,7 +84,7 @@ describe("buildReviewSectionItems", () => {
       },
     ];
 
-    const loadedTurnId = getReviewSectionIdForCheckpoint(checkpoints[0]);
+    const loadedTurnId = getReviewSectionIdForCheckpoint(checkpoints[0]!);
     const items = buildReviewSectionItems({
       checkpoints,
       gitSections,
@@ -95,7 +95,7 @@ describe("buildReviewSectionItems", () => {
         },
       },
       loadingTurnIds: {
-        [getReviewSectionIdForCheckpoint(checkpoints[1])]: true,
+        [getReviewSectionIdForCheckpoint(checkpoints[1]!)]: true,
       },
       loadingGitSections: false,
     });
