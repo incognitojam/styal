@@ -163,7 +163,7 @@ describe("incomingShareIdOfSheetRoute", () => {
               name: "NewTaskSheet",
               state: {
                 routes: [
-                  { name: "NewTask", params: { incomingShareId: "share-1" } },
+                  { name: "NewTask", params: {} },
                   { name: "NewTaskDraft", params: { incomingShareId: "share-1" } },
                 ],
               },
