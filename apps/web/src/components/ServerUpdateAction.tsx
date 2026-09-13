@@ -4,6 +4,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import { CircleArrowUpIcon } from "lucide-react";
 import { type ComponentProps, useRef, useState } from "react";
 
 import { requestConfirmDialog } from "~/confirmDialog";
@@ -58,8 +59,10 @@ export interface ServerUpdateTarget {
   readonly continueThreadsAfterServerUpdate?: boolean;
 }
 
-type UpdateButtonProps = Pick<ComponentProps<typeof Button>, "variant" | "size"> & {
+type UpdateButtonProps = Pick<ComponentProps<typeof Button>, "variant" | "size" | "className"> & {
   readonly label?: string;
+  /** "icon" renders a compact icon button with the label in a tooltip. */
+  readonly appearance?: "button" | "icon";
 };
 
 /** The app can start this server's update itself; other servers need manual steps. */
@@ -168,6 +171,7 @@ export function ServerUpdatesAction({
   label = "Update all",
   variant = "outline",
   size = "xs",
+  className,
 }: UpdateButtonProps & {
   readonly targets: ReadonlyArray<ServerUpdateTarget>;
 }) {
@@ -190,6 +194,7 @@ export function ServerUpdatesAction({
     <Button
       size={size}
       variant={variant}
+      className={className}
       disabled={isPending || eligible.length === 0}
       onClick={() => void handleUpdate()}
     >
@@ -255,6 +260,8 @@ export function ServerUpdateAction({
   label = "Update",
   variant = "outline",
   size = "xs",
+  className,
+  appearance = "button",
 }: Omit<ServerUpdateTarget, "continueThreadsAfterServerUpdate"> & UpdateButtonProps) {
   const continueThreadsAfterServerUpdate = useEnvironmentSettings(
     environmentId,
@@ -306,78 +313,128 @@ export function ServerUpdateAction({
       targetVersion,
       serviceMigration ? "service" : "foreground",
     );
+    const instructions = (
+      <DialogPopup>
+        <DialogHeader>
+          <DialogTitle>Update {serverLabel}</DialogTitle>
+          <DialogDescription>
+            {serviceMigration
+              ? "This server needs a one-time service migration before it can update from the app."
+              : "This server does not support in-app updates. How you update it depends on how it was started."}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogPanel className="space-y-5 text-sm">
+          <p className="text-muted-foreground">
+            Let active work finish, then use a separate terminal or SSH session on {serverLabel}.
+            Keep the same data directory and connection settings, including any custom port or
+            Tailscale configuration.
+          </p>
+          <section className="space-y-2">
+            <p className="text-muted-foreground">
+              {serviceMigration ? (
+                <>
+                  This updates and restarts the background service, enabling future in-app updates.
+                  For a custom data directory, add your existing <code>--base-dir</code> option.
+                </>
+              ) : (
+                <>
+                  If you start styal from a terminal, stop the existing server, then run this with
+                  the same startup options. It starts a foreground server; it does not replace a
+                  running instance.
+                </>
+              )}
+            </p>
+            <div className="flex items-center gap-3 rounded-md bg-muted p-3">
+              <code className="min-w-0 flex-1 break-all text-xs">{command}</code>
+              <Button
+                size="xs"
+                variant="outline"
+                className="shrink-0"
+                aria-label={serviceMigration ? "Copy service update command" : "Copy start command"}
+                onClick={() =>
+                  copyToClipboard(command, {
+                    description: serviceMigration
+                      ? `Run this in a separate terminal on ${serverLabel} after active work finishes. It restarts the background service.`
+                      : `For a terminal-launched server on ${serverLabel}, stop the existing process first, then run this with the same startup options.`,
+                  })
+                }
+              >
+                Copy
+              </Button>
+            </div>
+          </section>
+          {!serviceMigration && (
+            <p className="text-muted-foreground">
+              If styal runs as a service or in a container, update it through your existing
+              deployment method.
+            </p>
+          )}
+        </DialogPanel>
+      </DialogPopup>
+    );
+    if (appearance === "icon") {
+      return (
+        <Dialog>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <DialogTrigger
+                  render={
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      className={className ?? "text-muted-foreground hover:text-foreground"}
+                      aria-label={`Update instructions for ${serverLabel}`}
+                    />
+                  }
+                />
+              }
+            >
+              <CircleArrowUpIcon className="size-3.5" />
+            </TooltipTrigger>
+            <TooltipPopup side="top">Update instructions</TooltipPopup>
+          </Tooltip>
+          {instructions}
+        </Dialog>
+      );
+    }
     return (
       <Dialog>
-        <DialogTrigger render={<Button size={size} variant={variant} />}>
+        <DialogTrigger render={<Button size={size} variant={variant} className={className} />}>
           Update instructions
         </DialogTrigger>
-        <DialogPopup>
-          <DialogHeader>
-            <DialogTitle>Update {serverLabel}</DialogTitle>
-            <DialogDescription>
-              {serviceMigration
-                ? "This server needs a one-time service migration before it can update from the app."
-                : "This server does not support in-app updates. How you update it depends on how it was started."}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogPanel className="space-y-5 text-sm">
-            <p className="text-muted-foreground">
-              Let active work finish, then use a separate terminal or SSH session on {serverLabel}.
-              Keep the same data directory and connection settings, including any custom port or
-              Tailscale configuration.
-            </p>
-            <section className="space-y-2">
-              <p className="text-muted-foreground">
-                {serviceMigration ? (
-                  <>
-                    This updates and restarts the background service, enabling future in-app
-                    updates. For a custom data directory, add your existing <code>--base-dir</code>{" "}
-                    option.
-                  </>
-                ) : (
-                  <>
-                    If you start styal from a terminal, stop the existing server, then run this with
-                    the same startup options. It starts a foreground server; it does not replace a
-                    running instance.
-                  </>
-                )}
-              </p>
-              <div className="flex items-center gap-3 rounded-md bg-muted p-3">
-                <code className="min-w-0 flex-1 break-all text-xs">{command}</code>
-                <Button
-                  size="xs"
-                  variant="outline"
-                  className="shrink-0"
-                  aria-label={
-                    serviceMigration ? "Copy service update command" : "Copy start command"
-                  }
-                  onClick={() =>
-                    copyToClipboard(command, {
-                      description: serviceMigration
-                        ? `Run this in a separate terminal on ${serverLabel} after active work finishes. It restarts the background service.`
-                        : `For a terminal-launched server on ${serverLabel}, stop the existing process first, then run this with the same startup options.`,
-                    })
-                  }
-                >
-                  Copy
-                </Button>
-              </div>
-            </section>
-            {!serviceMigration && (
-              <p className="text-muted-foreground">
-                If styal runs as a service or in a container, update it through your existing
-                deployment method.
-              </p>
-            )}
-          </DialogPanel>
-        </DialogPopup>
+        {instructions}
       </Dialog>
     );
   }
 
+  const actionLabel = label;
+  const onClick = () => void handleUpdate();
+
+  if (appearance === "icon") {
+    return (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              className={className ?? "text-muted-foreground hover:text-foreground"}
+              aria-label={`${actionLabel} for ${serverLabel}`}
+              onClick={onClick}
+            />
+          }
+        >
+          <CircleArrowUpIcon className="size-3.5" />
+        </TooltipTrigger>
+        <TooltipPopup side="top">{actionLabel}</TooltipPopup>
+      </Tooltip>
+    );
+  }
+
   return (
-    <Button size={size} variant={variant} onClick={() => void handleUpdate()}>
-      {label}
+    <Button size={size} variant={variant} className={className} onClick={onClick}>
+      {actionLabel}
     </Button>
   );
 }
