@@ -1,4 +1,4 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Components } from "react-markdown";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -29,8 +29,10 @@ vi.mock("~/lib/openPullRequestLink", () => ({
   findProjectForChangeRequest: () => undefined,
   matchesLinkedPullRequestUrl: () => false,
   parseChangeRequestUrl: () => null,
-  useOpenChangeRequestLink: () => vi.fn(),
+  useOpenChangeRequestLink: vi.fn(() => vi.fn()),
 }));
+
+import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
 
 import ChatMarkdown, {
   canUseMarkdownFileShellActions,
@@ -39,6 +41,46 @@ import ChatMarkdown, {
   shouldUseMarkdownFileBrowserPrimaryAction,
 } from "./ChatMarkdown";
 import { createStableMarkdownComponents } from "./chatMarkdownRenderers";
+import { GithubReferenceThreadContext } from "./chat/githubReferenceLinks";
+
+const surfaceThreadRef = {
+  environmentId: EnvironmentId.make("environment-1"),
+  threadId: ThreadId.make("surface-thread"),
+};
+const chatThreadRef = {
+  environmentId: EnvironmentId.make("environment-1"),
+  threadId: ThreadId.make("chat-thread"),
+};
+
+describe("ChatMarkdown PR link thread context", () => {
+  const text = "[Next PR](https://github.com/example/project/pull/42)";
+
+  it("routes full PR URLs using the surrounding PR tab's thread", () => {
+    renderToStaticMarkup(
+      <GithubReferenceThreadContext.Provider value={surfaceThreadRef}>
+        <ChatMarkdown cwd="/workspace/project" text={text} />
+      </GithubReferenceThreadContext.Provider>,
+    );
+
+    expect(useOpenChangeRequestLink).toHaveBeenLastCalledWith(surfaceThreadRef);
+  });
+
+  it("prefers the chat's explicit thread over the surrounding surface", () => {
+    renderToStaticMarkup(
+      <GithubReferenceThreadContext.Provider value={surfaceThreadRef}>
+        <ChatMarkdown cwd="/workspace/project" text={text} threadRef={chatThreadRef} />
+      </GithubReferenceThreadContext.Provider>,
+    );
+
+    expect(useOpenChangeRequestLink).toHaveBeenLastCalledWith(chatThreadRef);
+  });
+
+  it("keeps standalone PR pages without a thread target", () => {
+    renderToStaticMarkup(<ChatMarkdown cwd="/workspace/project" text={text} />);
+
+    expect(useOpenChangeRequestLink).toHaveBeenLastCalledWith(undefined);
+  });
+});
 
 describe("canUseMarkdownFileShellActions", () => {
   const environmentId = EnvironmentId.make("environment-1");

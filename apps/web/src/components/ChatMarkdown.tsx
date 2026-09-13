@@ -1803,11 +1803,7 @@ function ChatMarkdown({
     [resolveThreadPullRequest, threadRef, updateThreadMetadata],
   );
   const lookupReference = useGithubReferenceResolutions(referenceContext, text);
-  const openReference = useGithubReferenceOpener(
-    lookupReference,
-    openChangeRequestLink,
-    referenceContext?.threadRef,
-  );
+  const openReference = useGithubReferenceOpener(lookupReference, openChangeRequestLink);
   const openExternalLinkInPreview = useCallback(
     (url: string) => {
       if (!threadRef) {
