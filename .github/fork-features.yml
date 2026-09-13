@@ -448,6 +448,24 @@ features:
       tracking: []
       retire_when: The fork stops exposing a separately named agent integration or no longer needs compatibility with provider histories created under the pre-rename namespace.
 
+  - id: fork-analytics-destination
+    title: Deliver analytics to the styal PostHog project
+    status: maintained
+    prs: [314]
+    invariants:
+      - Server builds deliver anonymous product analytics to the styal PostHog EU Cloud project by default instead of the upstream T3 Code project, so fork usage never lands in upstream's analytics.
+      - Operators can disable collection with `T3CODE_TELEMETRY_ENABLED=false` and redirect delivery with `T3CODE_POSTHOG_KEY` and `T3CODE_POSTHOG_HOST` for development or self-hosted PostHog installations.
+    implementation_paths:
+      - apps/server/src/telemetry/AnalyticsService.ts
+    upstream_paths:
+      - apps/server/src/telemetry/AnalyticsService.ts
+    tests:
+      - apps/server/src/telemetry/AnalyticsService.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: The fork stops operating its own PostHog project, or upstream sources the default analytics destination from distribution configuration rather than hard-coded constants.
+
   - id: fork-analytics-identity
     title: Identify fork builds in analytics
     status: maintained
