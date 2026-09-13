@@ -104,7 +104,7 @@ import { useAppShortcuts } from "./features/shortcuts/useAppShortcuts";
 import { useIncomingShare } from "./features/sharing/IncomingShareProvider";
 import {
   EMPTY_INCOMING_SHARE_PRESENTATION_STATE,
-  incomingShareIdOfTopRoute,
+  incomingShareIdOfSheetRoute,
   transitionIncomingSharePresentation,
 } from "./features/sharing/incoming-share-presentation";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "./native/native-glass";
@@ -524,9 +524,9 @@ function RootStackLayout(props: {
   // Launcher app shortcuts: routes shortcut taps and tracks opened threads.
   useAppShortcuts(props.state);
   useEffect(() => {
-    const sheet = incomingShareIdOfTopRoute(props.state, "NewTaskSheet");
+    const sheet = incomingShareIdOfSheetRoute(props.state, "NewTaskSheet");
     const transition = transitionIncomingSharePresentation(sharePresentationRef.current, {
-      isSheetOnTop: sheet.isSheetOnTop,
+      isSheetPresented: sheet.isSheetPresented,
       sheetShareId: sheet.shareId,
       pendingShareId: pendingShare?.id ?? null,
     });

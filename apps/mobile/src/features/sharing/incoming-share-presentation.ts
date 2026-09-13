@@ -33,41 +33,43 @@ function incomingShareIdOfParams(params: object | undefined): string | null {
 }
 
 /**
- * The share id the new-task sheet is carrying, if it is the top route. Before
- * the nested navigator mounts, the id still sits in the `navigate` payload
+ * The share id the new-task sheet is carrying, if the sheet is anywhere in the
+ * root stack. Routes pushed above it (Add environment, a notification tap) do
+ * not close it, so they must not read as a dismissal. Before the nested
+ * navigator mounts, the id still sits in the `navigate` payload
  * (`params.params`); afterwards it lives on the nested route that owns it.
  */
-export function incomingShareIdOfTopRoute(
-  state: { readonly routes: ReadonlyArray<RouteLike>; readonly index: number },
+export function incomingShareIdOfSheetRoute(
+  state: { readonly routes: ReadonlyArray<RouteLike> },
   sheetRouteName: string,
-): { readonly isSheetOnTop: boolean; readonly shareId: string | null } {
-  const top = state.routes[state.index];
-  if (!top || top.name !== sheetRouteName) {
-    return { isSheetOnTop: false, shareId: null };
+): { readonly isSheetPresented: boolean; readonly shareId: string | null } {
+  const sheet = state.routes.find((route) => route.name === sheetRouteName);
+  if (!sheet) {
+    return { isSheetPresented: false, shareId: null };
   }
-  for (const route of top.state?.routes ?? []) {
+  for (const route of sheet.state?.routes ?? []) {
     const shareId = incomingShareIdOfParams(route.params);
-    if (shareId !== null) return { isSheetOnTop: true, shareId };
+    if (shareId !== null) return { isSheetPresented: true, shareId };
   }
   const payload =
-    top.params && "params" in top.params && typeof top.params.params === "object"
-      ? (top.params.params as object | null)
+    sheet.params && "params" in sheet.params && typeof sheet.params.params === "object"
+      ? (sheet.params.params as object | null)
       : null;
-  return { isSheetOnTop: true, shareId: incomingShareIdOfParams(payload ?? undefined) };
+  return { isSheetPresented: true, shareId: incomingShareIdOfParams(payload ?? undefined) };
 }
 
 /**
  * Decides when the pending inbox share opens the new-task sheet and when the
  * user has walked away from it. A share counts as dismissed only after the
- * sheet was seen carrying it; until then a missing sheet means the navigation
- * never landed (container not ready, another route won the race) and the
- * request is simply repeated. Dismissal discards the share so that sharing
+ * sheet was seen carrying it and then left the stack; until then a missing
+ * sheet means the navigation never landed (container not ready, another route
+ * won the race) and the request is simply repeated. Dismissal discards the share so that sharing
  * the same content again yields a fresh handoff instead of a silent no-op.
  */
 export function transitionIncomingSharePresentation(
   state: IncomingSharePresentationState,
   input: {
-    readonly isSheetOnTop: boolean;
+    readonly isSheetPresented: boolean;
     readonly sheetShareId: string | null;
     readonly pendingShareId: string | null;
   },
@@ -89,7 +91,7 @@ export function transitionIncomingSharePresentation(
   }
 
   if (state.presentedShareId === pendingShareId) {
-    if (input.isSheetOnTop) {
+    if (input.isSheetPresented) {
       if (input.sheetShareId === pendingShareId && !state.sheetSeen) {
         return { ...hold, state: { ...state, sheetSeen: true } };
       }
@@ -105,7 +107,7 @@ export function transitionIncomingSharePresentation(
     return { ...hold, shareIdToPresent: pendingShareId };
   }
 
-  if (input.isSheetOnTop) {
+  if (input.isSheetPresented) {
     // Someone else owns the sheet (a manual new task, or the sheet of a share
     // that was just consumed). Wait for it to close.
     return {

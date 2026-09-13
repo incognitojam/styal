@@ -2,13 +2,13 @@ import { describe, expect, it } from "@effect/vitest";
 
 import {
   EMPTY_INCOMING_SHARE_PRESENTATION_STATE,
-  incomingShareIdOfTopRoute,
+  incomingShareIdOfSheetRoute,
   transitionIncomingSharePresentation,
   type IncomingSharePresentationState,
 } from "./incoming-share-presentation";
 
-const closed = { isSheetOnTop: false, sheetShareId: null };
-const sheetWith = (shareId: string | null) => ({ isSheetOnTop: true, sheetShareId: shareId });
+const closed = { isSheetPresented: false, sheetShareId: null };
+const sheetWith = (shareId: string | null) => ({ isSheetPresented: true, sheetShareId: shareId });
 
 function present(shareId: string, state = EMPTY_INCOMING_SHARE_PRESENTATION_STATE) {
   const transition = transitionIncomingSharePresentation(state, {
@@ -100,6 +100,17 @@ describe("transitionIncomingSharePresentation", () => {
     expect(next.shareIdToPresent).toBe("share-2");
   });
 
+  it("holds while another route is pushed above the seen sheet", () => {
+    const state = seen("share-1", present("share-1"));
+    // Add environment / a notification tap push a root route over the sheet
+    // without closing it. incomingShareIdOfSheetRoute still reports the sheet.
+    const covered = transitionIncomingSharePresentation(state, {
+      ...sheetWith("share-1"),
+      pendingShareId: "share-1",
+    });
+    expect(covered).toEqual({ state, shareIdToPresent: null, shareIdToDiscard: null });
+  });
+
   it("clears everything when the inbox empties", () => {
     const state = seen("share-1", present("share-1"));
     expect(
@@ -109,12 +120,11 @@ describe("transitionIncomingSharePresentation", () => {
   });
 });
 
-describe("incomingShareIdOfTopRoute", () => {
+describe("incomingShareIdOfSheetRoute", () => {
   it("reads the id from the navigate payload before the nested navigator mounts", () => {
     expect(
-      incomingShareIdOfTopRoute(
+      incomingShareIdOfSheetRoute(
         {
-          index: 1,
           routes: [
             { name: "Home" },
             {
@@ -125,14 +135,13 @@ describe("incomingShareIdOfTopRoute", () => {
         },
         "NewTaskSheet",
       ),
-    ).toEqual({ isSheetOnTop: true, shareId: "share-1" });
+    ).toEqual({ isSheetPresented: true, shareId: "share-1" });
   });
 
   it("reads the id from the nested route once mounted, including the draft screen", () => {
     expect(
-      incomingShareIdOfTopRoute(
+      incomingShareIdOfSheetRoute(
         {
-          index: 1,
           routes: [
             { name: "Home" },
             {
@@ -148,14 +157,13 @@ describe("incomingShareIdOfTopRoute", () => {
         },
         "NewTaskSheet",
       ),
-    ).toEqual({ isSheetOnTop: true, shareId: "share-1" });
+    ).toEqual({ isSheetPresented: true, shareId: "share-1" });
   });
 
   it("reports a manual new task sheet without a share id", () => {
     expect(
-      incomingShareIdOfTopRoute(
+      incomingShareIdOfSheetRoute(
         {
-          index: 1,
           routes: [
             { name: "Home" },
             { name: "NewTaskSheet", state: { routes: [{ name: "NewTask", params: {} }] } },
@@ -163,15 +171,33 @@ describe("incomingShareIdOfTopRoute", () => {
         },
         "NewTaskSheet",
       ),
-    ).toEqual({ isSheetOnTop: true, shareId: null });
+    ).toEqual({ isSheetPresented: true, shareId: null });
   });
 
-  it("reports other top routes as not the sheet", () => {
+  it("still reports the sheet when a root route is pushed above it", () => {
     expect(
-      incomingShareIdOfTopRoute(
-        { index: 1, routes: [{ name: "NewTaskSheet" }, { name: "SettingsSheet" }] },
+      incomingShareIdOfSheetRoute(
+        {
+          routes: [
+            { name: "Home" },
+            {
+              name: "NewTaskSheet",
+              state: { routes: [{ name: "NewTask", params: { incomingShareId: "share-1" } }] },
+            },
+            { name: "ConnectionsNew" },
+          ],
+        },
         "NewTaskSheet",
       ),
-    ).toEqual({ isSheetOnTop: false, shareId: null });
+    ).toEqual({ isSheetPresented: true, shareId: "share-1" });
+  });
+
+  it("reports the sheet as gone once it leaves the stack", () => {
+    expect(
+      incomingShareIdOfSheetRoute(
+        { routes: [{ name: "Home" }, { name: "SettingsSheet" }] },
+        "NewTaskSheet",
+      ),
+    ).toEqual({ isSheetPresented: false, shareId: null });
   });
 });
