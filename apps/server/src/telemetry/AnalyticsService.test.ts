@@ -16,6 +16,7 @@ import * as AnalyticsService from "./AnalyticsService.ts";
 interface RecordedBatchRequest {
   readonly path: string;
   readonly body: {
+    readonly api_key?: string;
     readonly batch?: ReadonlyArray<{
       readonly event?: string;
       readonly properties?: {
@@ -33,6 +34,7 @@ interface RecordedBatchRequest {
 }
 
 interface RecordedBatchBody {
+  readonly api_key?: string;
   readonly batch: ReadonlyArray<{
     readonly event?: string;
     readonly properties?: {
@@ -47,6 +49,26 @@ interface RecordedBatchBody {
     };
   }>;
 }
+
+/** Accepts PostHog batch POSTs and records each parsed body for assertions. */
+const batchCaptureServer = (capturedRequests: Array<RecordedBatchRequest>) =>
+  HttpServer.serve(
+    Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      if (request.method !== "POST") {
+        return HttpServerResponse.empty({ status: 404 });
+      }
+
+      const payload = yield* request.json.pipe(
+        Effect.map((body) => body as RecordedBatchRequest["body"]),
+        Effect.orElseSucceed(() => null),
+      );
+
+      capturedRequests.push({ path: request.url, body: payload });
+
+      return HttpServerResponse.jsonUnsafe({});
+    }),
+  );
 
 it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
   it.effect("flush drains all buffered events across multiple batches", () =>
@@ -65,23 +87,7 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
           T3CODE_TELEMETRY_FLUSH_BATCH_SIZE: 20,
         }),
       );
-      const batchServerLayer = HttpServer.serve(
-        Effect.gen(function* () {
-          const request = yield* HttpServerRequest.HttpServerRequest;
-          if (request.method !== "POST") {
-            return HttpServerResponse.empty({ status: 404 });
-          }
-
-          const payload = yield* request.json.pipe(
-            Effect.map((body) => body as RecordedBatchRequest["body"]),
-            Effect.orElseSucceed(() => null),
-          );
-
-          capturedRequests.push({ path: request.url, body: payload });
-
-          return HttpServerResponse.jsonUnsafe({});
-        }),
-      );
+      const batchServerLayer = batchCaptureServer(capturedRequests);
       const runtimeLayer = telemetryLayer.pipe(
         Layer.provide(configLayer),
         Layer.provide(
@@ -148,6 +154,50 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
           ),
         ),
         true,
+      );
+    }),
+  );
+
+  it.effect("delivers to the styal PostHog project when only the host is overridden", () =>
+    Effect.gen(function* () {
+      const capturedRequests: Array<RecordedBatchRequest> = [];
+      const serverConfigLayer = ServerConfig.ServerConfig.layerTest(process.cwd(), {
+        prefix: "t3-telemetry-defaults-",
+      });
+      const telemetryLayer = AnalyticsService.layer.pipe(Layer.provideMerge(serverConfigLayer));
+      const configLayer = ConfigProvider.layer(
+        ConfigProvider.fromUnknown({ T3CODE_POSTHOG_HOST: "http://localhost" }),
+      );
+      const runtimeLayer = telemetryLayer.pipe(
+        Layer.provide(configLayer),
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.succeed(HostProcessPlatform, "linux"),
+            Layer.succeed(HostProcessArchitecture, "arm64"),
+          ),
+        ),
+        Layer.provideMerge(NodeHttpServer.layerTest),
+      );
+
+      yield* Effect.gen(function* () {
+        yield* Layer.launch(batchCaptureServer(capturedRequests)).pipe(Effect.forkScoped);
+        const analytics = yield* AnalyticsService.AnalyticsService;
+        yield* analytics.record("test.defaults.delivered");
+        yield* analytics.flush;
+      }).pipe(Effect.provide(runtimeLayer));
+
+      const batchRequests = capturedRequests.filter(
+        (request): request is RecordedBatchRequest & { readonly body: RecordedBatchBody } =>
+          Array.isArray(request.body?.batch),
+      );
+      assert.equal(batchRequests.length, 1);
+      assert.equal(
+        batchRequests[0]?.body.api_key,
+        "phc_JxxoS00Uo92aC59Jnuw4e0ckYpg8UOk9ZiQ6TCedKWC",
+      );
+      assert.deepEqual(
+        batchRequests[0]?.body.batch.map((event) => event.event),
+        ["test.defaults.delivered"],
       );
     }),
   );
