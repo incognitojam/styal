@@ -84,20 +84,35 @@ describe("transitionIncomingSharePresentation", () => {
     expect(present("share-1", empty.state).presentedShareId).toBe("share-1");
   });
 
-  it("presents the next queued share after the previous one is consumed", () => {
+  it("keeps tracking the open sheet's share when a newer share arrives, then discards it on close", () => {
     const state = seen("share-1", present("share-1"));
-    const consumedWhileOpen = transitionIncomingSharePresentation(state, {
+    const newerWhileOpen = transitionIncomingSharePresentation(state, {
       ...sheetWith("share-1"),
       pendingShareId: "share-2",
     });
-    expect(consumedWhileOpen.shareIdToPresent).toBeNull();
-    expect(consumedWhileOpen.shareIdToDiscard).toBeNull();
+    expect(newerWhileOpen).toEqual({ state, shareIdToPresent: null, shareIdToDiscard: null });
 
-    const next = transitionIncomingSharePresentation(consumedWhileOpen.state, {
+    const next = transitionIncomingSharePresentation(newerWhileOpen.state, {
+      ...closed,
+      pendingShareId: "share-2",
+    });
+    expect(next.shareIdToDiscard).toBe("share-1");
+    expect(next.shareIdToPresent).toBe("share-2");
+    expect(next.state).toEqual({
+      presentedShareId: "share-2",
+      sheetSeen: false,
+      discardedShareId: "share-1",
+    });
+  });
+
+  it("presents a newer share directly when the earlier request never landed", () => {
+    const requested = present("share-1");
+    const next = transitionIncomingSharePresentation(requested, {
       ...closed,
       pendingShareId: "share-2",
     });
     expect(next.shareIdToPresent).toBe("share-2");
+    expect(next.shareIdToDiscard).toBeNull();
   });
 
   it("holds while another route is pushed above the seen sheet", () => {

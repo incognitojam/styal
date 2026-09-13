@@ -63,8 +63,11 @@ export function incomingShareIdOfSheetRoute(
  * user has walked away from it. A share counts as dismissed only after the
  * sheet was seen carrying it and then left the stack; until then a missing
  * sheet means the navigation never landed (container not ready, another route
- * won the race) and the request is simply repeated. Dismissal discards the share so that sharing
- * the same content again yields a fresh handoff instead of a silent no-op.
+ * won the race) and the request is simply repeated. Dismissal discards the
+ * share so that sharing the same content again yields a fresh handoff instead
+ * of a silent no-op. The tracked share survives a newer pending one arriving
+ * while its sheet is still up, so closing that sheet discards it rather than
+ * letting it resurface after the newer share is handled.
  */
 export function transitionIncomingSharePresentation(
   state: IncomingSharePresentationState,
@@ -90,36 +93,31 @@ export function transitionIncomingSharePresentation(
     return hold;
   }
 
-  if (state.presentedShareId === pendingShareId) {
-    if (input.isSheetPresented) {
-      if (input.sheetShareId === pendingShareId && !state.sheetSeen) {
-        return { ...hold, state: { ...state, sheetSeen: true } };
-      }
-      return hold;
-    }
-    if (state.sheetSeen) {
-      return {
-        state: { presentedShareId: null, sheetSeen: false, discardedShareId: pendingShareId },
-        shareIdToPresent: null,
-        shareIdToDiscard: pendingShareId,
-      };
-    }
-    return { ...hold, shareIdToPresent: pendingShareId };
-  }
-
+  const tracked = state.presentedShareId;
   if (input.isSheetPresented) {
-    // Someone else owns the sheet (a manual new task, or the sheet of a share
-    // that was just consumed). Wait for it to close.
-    return {
-      state: { presentedShareId: null, sheetSeen: false, discardedShareId: null },
-      shareIdToPresent: null,
-      shareIdToDiscard: null,
-    };
+    if (tracked === null) {
+      // A sheet nobody here asked for (a manual new task). Wait for it to close.
+      return { ...hold, state: EMPTY_INCOMING_SHARE_PRESENTATION_STATE };
+    }
+    if (input.sheetShareId === tracked && !state.sheetSeen) {
+      return { ...hold, state: { ...state, sheetSeen: true } };
+    }
+    return hold;
   }
 
+  // The sheet is gone. A tracked share that was seen is dismissed; anything
+  // else is a request that never landed and is repeated. A consumed share can
+  // also land here (its sheet closed onto the thread); discarding it again is
+  // a no-op since the inbox no longer has it.
+  const shareIdToDiscard = tracked !== null && state.sheetSeen ? tracked : null;
+  const shareIdToPresent = shareIdToDiscard === pendingShareId ? null : pendingShareId;
   return {
-    state: { presentedShareId: pendingShareId, sheetSeen: false, discardedShareId: null },
-    shareIdToPresent: pendingShareId,
-    shareIdToDiscard: null,
+    state: {
+      presentedShareId: shareIdToPresent,
+      sheetSeen: false,
+      discardedShareId: shareIdToDiscard,
+    },
+    shareIdToPresent,
+    shareIdToDiscard,
   };
 }

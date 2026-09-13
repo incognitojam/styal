@@ -10,7 +10,7 @@ import {
   createNativeStackScreen,
   type NativeStackNavigationOptions,
 } from "@react-navigation/native-stack";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Platform,
   Pressable,
@@ -518,6 +518,7 @@ function RootStackLayout(props: {
   const navigation = useNavigation();
   const { pendingShare, discardShare } = useIncomingShare();
   const sharePresentationRef = useRef(EMPTY_INCOMING_SHARE_PRESENTATION_STATE);
+  const [sharePresentationRetry, setSharePresentationRetry] = useState(0);
   useAgentNotificationNavigation();
   // Presents the styal Link onboarding sheet after an in-session sign-in.
   useConnectOnboardingNavigation();
@@ -532,7 +533,16 @@ function RootStackLayout(props: {
     });
     sharePresentationRef.current = transition.state;
     if (transition.shareIdToDiscard) {
-      void discardShare(transition.shareIdToDiscard);
+      const shareId = transition.shareIdToDiscard;
+      discardShare(shareId).catch((error: unknown) => {
+        console.warn("[incoming-share] could not discard dismissed share", error);
+        // Drop the latch so the share is presented again instead of sitting
+        // in the inbox unreachable until the next foreground refresh.
+        if (sharePresentationRef.current.discardedShareId === shareId) {
+          sharePresentationRef.current = EMPTY_INCOMING_SHARE_PRESENTATION_STATE;
+          setSharePresentationRetry((attempt) => attempt + 1);
+        }
+      });
     }
     if (!transition.shareIdToPresent) {
       return;
@@ -541,7 +551,9 @@ function RootStackLayout(props: {
       screen: "NewTask",
       params: { incomingShareId: transition.shareIdToPresent },
     });
-  }, [discardShare, navigation, pendingShare, props.state]);
+    // Retry after a failed discard even when the inbox and routes are unchanged.
+    // eslint-disable-next-line react/exhaustive-effect-dependencies
+  }, [discardShare, navigation, pendingShare, props.state, sharePresentationRetry]);
   // Full pathname (sheets included) for keyboard-command scoping; the
   // workspace layout only reacts to the underlying non-overlay route.
   const path = getPathFromState(props.state, navigationPathConfig);
