@@ -501,7 +501,8 @@ function PullRequestCodeTab({
 
         const collapsed = isFileDiffCollapsed(
           fileKey,
-          foldOverride,
+          // A saved default of folded acts as the toolbar's choice until the reader makes one.
+          foldOverride ?? (settings.diffFilesCollapsed ? "folded" : null),
           fileFoldOverrides,
           shouldAutoFoldFileDiff(fileDiff, groups.size > 0, generatedPathSet),
         );
@@ -559,6 +560,7 @@ function PullRequestCodeTab({
       pendingComments,
       placedThreadIds,
       fileFoldOverrides,
+      settings.diffFilesCollapsed,
     ],
   );
   const lineStat = useMemo(() => getDiffLineStat(files), [files]);
