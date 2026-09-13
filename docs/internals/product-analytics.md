@@ -18,11 +18,16 @@ The metadata is not a person property or server-global current-client value.
 Two clients connected to one server can report different values at the same
 time.
 
-| Event                   | Description                                                                                                                                          |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `client.connected`      | The server accepted an authenticated WebSocket connection. Reconnects count again. Use this event for connection diagnostics, not active-use counts. |
-| `client.thread.started` | The server accepted a command that created a thread.                                                                                                 |
-| `client.turn.requested` | The server accepted a turn request. This is the standard active-use event.                                                                           |
+| Event                      | Description                                                                                                                                               |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `client.connected`         | The server accepted an authenticated WebSocket connection. Reconnects count again. Use this event for connection diagnostics, not active-use counts.      |
+| `client.thread.started`    | The server accepted a command that created a thread.                                                                                                      |
+| `client.turn.requested`    | The server accepted a turn request. This is the standard active-use event.                                                                                |
+| `client.thread.settled`    | The server accepted a command that settled a thread. Only explicit settles count; client-derived settled states (inactivity, merged pull request) do not. |
+| `client.thread.unsettled`  | The server accepted a command that un-settled a thread.                                                                                                   |
+| `client.thread.archived`   | The server accepted a command that archived a thread.                                                                                                     |
+| `client.thread.unarchived` | The server accepted a command that unarchived a thread.                                                                                                   |
+| `client.thread.deleted`    | The server accepted a command that deleted a thread.                                                                                                      |
 
 `provider.turn.sent` stays a provider execution event. It does not receive
 client metadata because a provider turn can continue after the requesting
@@ -30,7 +35,7 @@ client disconnects.
 
 ## Recommended properties
 
-Client properties appear on the three client events when the connected client
+Client properties appear on the client events when the connected client
 reports them. Older clients can omit every client property.
 
 | Property               | Values and meaning                                                                                                                                                                              |

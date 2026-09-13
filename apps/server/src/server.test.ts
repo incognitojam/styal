@@ -5547,6 +5547,72 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("records thread lifecycle analytics for client commands", () =>
+    Effect.gen(function* () {
+      const events: string[] = [];
+
+      yield* buildAppUnderTest({
+        layers: {
+          analyticsService: {
+            record: (event) => Effect.sync(() => void events.push(event)),
+          },
+          // thread.delete closes the thread's terminals after dispatch.
+          terminalManager: {
+            close: () => Effect.void,
+          },
+          orchestrationEngine: {
+            dispatch: () => Effect.succeed({ sequence: 1 }),
+          },
+        },
+      });
+
+      const threadId = ThreadId.make("thread-lifecycle");
+      const wsUrl = yield* getWsServerUrl("/ws?clientSurface=web");
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.gen(function* () {
+            const dispatch = client[ORCHESTRATION_WS_METHODS.dispatchCommand];
+            yield* dispatch({
+              type: "thread.settle",
+              commandId: CommandId.make("cmd-settle"),
+              threadId,
+            });
+            yield* dispatch({
+              type: "thread.unsettle",
+              commandId: CommandId.make("cmd-unsettle"),
+              threadId,
+              reason: "user",
+            });
+            yield* dispatch({
+              type: "thread.archive",
+              commandId: CommandId.make("cmd-archive"),
+              threadId,
+            });
+            yield* dispatch({
+              type: "thread.unarchive",
+              commandId: CommandId.make("cmd-unarchive"),
+              threadId,
+            });
+            yield* dispatch({
+              type: "thread.delete",
+              commandId: CommandId.make("cmd-delete"),
+              threadId,
+            });
+          }),
+        ),
+      );
+
+      assert.deepEqual(events, [
+        "client.connected",
+        "client.thread.settled",
+        "client.thread.unsettled",
+        "client.thread.archived",
+        "client.thread.unarchived",
+        "client.thread.deleted",
+      ]);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("keeps telemetry separate for simultaneous clients", () =>
     Effect.gen(function* () {
       const analyticsEvents: Array<{

@@ -492,6 +492,19 @@ const makeWsRpcLayer = (
                   analytics.record("client.turn.requested", clientAnalyticsProps),
                 )
               : analytics.record("client.turn.requested", clientAnalyticsProps);
+          // Thread lifecycle outcomes. These count how work moves through the
+          // app; the client-derived settled states (inactivity, merged PR) are
+          // never dispatched and so are not visible here.
+          case "thread.settle":
+            return analytics.record("client.thread.settled", clientAnalyticsProps);
+          case "thread.unsettle":
+            return analytics.record("client.thread.unsettled", clientAnalyticsProps);
+          case "thread.archive":
+            return analytics.record("client.thread.archived", clientAnalyticsProps);
+          case "thread.unarchive":
+            return analytics.record("client.thread.unarchived", clientAnalyticsProps);
+          case "thread.delete":
+            return analytics.record("client.thread.deleted", clientAnalyticsProps);
           default:
             return Effect.void;
         }

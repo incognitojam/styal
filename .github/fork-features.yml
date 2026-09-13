@@ -1541,6 +1541,25 @@ features:
       tracking: []
       retire_when: Upstream coordinates startup and cached-draft navigation so late bootstrap resolution never moves users away from an editable composer.
 
+  - id: thread-lifecycle-analytics
+    title: Record thread lifecycle analytics
+    status: maintained
+    prs: [330]
+    invariants:
+      - Accepted thread settle, unsettle, archive, unarchive, and delete commands each record a client analytics event that carries the connecting client's metadata.
+      - Lifecycle events record only after the server accepts the command, so rejected commands and client-derived settled states such as inactivity or a merged pull request record nothing.
+    implementation_paths:
+      - apps/server/src/ws.ts
+    upstream_paths:
+      - apps/server/src/ws.ts
+    tests:
+      - apps/server/src/server.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/8481
+      retire_when: Upstream records client analytics events for thread settle, unsettle, archive, unarchive, and delete commands with the same client metadata as thread creation.
+
   - id: thread-transcript-export
     title: Copy a complete thread transcript
     status: maintained
