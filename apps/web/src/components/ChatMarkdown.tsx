@@ -72,7 +72,11 @@ import React, {
   useState,
   type ReactNode,
 } from "react";
-import type { Components, Options as ReactMarkdownOptions } from "react-markdown";
+import type {
+  Components,
+  ExtraProps as ReactMarkdownExtraProps,
+  Options as ReactMarkdownOptions,
+} from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import { toHtml } from "hast-util-to-html";
 import { createIncrementalMarkdownPlugin } from "../markdown-incremental";
@@ -238,6 +242,10 @@ interface ChatMarkdownProps {
   extraRemarkPlugins?: NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
   /** Renders a `t3-context://` link as a chip; without it the link shows its label as text. */
   renderContextReference?: ((reference: ChatMarkdownContextReference) => ReactNode) | undefined;
+  /** Levels added to each markdown heading in the accessibility tree so the
+      text nests under the heading that introduces it, such as a chat message's
+      author. Rendered tags and their styling are unchanged. */
+  headingLevelOffset?: number | undefined;
 }
 
 export interface ChatMarkdownContextReference {
@@ -2186,6 +2194,7 @@ function useChatMarkdownState({
   imageBaseDir,
   onImageExpand,
   renderContextReference,
+  headingLevelOffset = 0,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
   const [localMediaPreview, setLocalMediaPreview] = useState<ExpandedImagePreview | null>(null);
@@ -2606,6 +2615,7 @@ function useChatMarkdownState({
       expandMedia,
       fileLinkChip,
       renderContextReference,
+      headingLevelOffset,
       imageBaseDir,
       imageRenderer,
       inlineCodeFileLinkMetaByText,
@@ -2639,6 +2649,7 @@ function useChatMarkdownState({
       expandMedia,
       fileLinkChip,
       renderContextReference,
+      headingLevelOffset,
       imageBaseDir,
       imageRenderer,
       inlineCodeFileLinkMetaByText,
@@ -2680,8 +2691,33 @@ const ChatMarkdownRendererContext = React.createContext<
   ReturnType<typeof useChatMarkdownState>["componentState"]
 >(null!);
 
+// Screen readers take a heading's level from its tag, which would let a `#` in a
+// message outrank the heading placed above it. Override only the exposed level:
+// the tag keeps driving the stylesheet and copy-as-markdown.
+function markdownHeadingRenderer(level: 1 | 2 | 3 | 4 | 5 | 6) {
+  const Tag = `h${level}` as const;
+  return function MarkdownHeading({
+    node: _node,
+    ...props
+  }: ComponentProps<typeof Tag> & ReactMarkdownExtraProps) {
+    const { headingLevelOffset } = use(ChatMarkdownRendererContext);
+    return (
+      <Tag
+        {...props}
+        aria-level={headingLevelOffset > 0 ? Math.min(level + headingLevelOffset, 6) : undefined}
+      />
+    );
+  };
+}
+
 // Keep component types stable when streaming changes the message state.
 const CHAT_MARKDOWN_COMPONENTS = {
+  h1: markdownHeadingRenderer(1),
+  h2: markdownHeadingRenderer(2),
+  h3: markdownHeadingRenderer(3),
+  h4: markdownHeadingRenderer(4),
+  h5: markdownHeadingRenderer(5),
+  h6: markdownHeadingRenderer(6),
   div: function MarkdownDiv({ node, children, ...props }) {
     const { onUseArtifactTemplate } = use(ChatMarkdownRendererContext);
     const artifactTemplate = artifactTemplateFromHastProperties(node?.properties);
