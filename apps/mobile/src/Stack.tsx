@@ -546,7 +546,11 @@ function RootStackLayout(props: {
         // Drop the latch so the share is presented again instead of sitting
         // in the inbox unreachable until the next foreground refresh.
         if (sharePresentationRef.current.discardedShareId === shareId) {
-          sharePresentationRef.current = EMPTY_INCOMING_SHARE_PRESENTATION_STATE;
+          // Only the latch: a newer share may already be presented.
+          sharePresentationRef.current = {
+            ...sharePresentationRef.current,
+            discardedShareId: null,
+          };
           setSharePresentationRetry((attempt) => attempt + 1);
         }
       });
