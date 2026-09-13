@@ -514,8 +514,15 @@ function ThreadOutboxDrainWorker() {
 function RootStackLayout(props: {
   readonly children: React.ReactNode;
   readonly state: NavigationState;
+  // The navigator's own helpers, not useNavigation(): the layout renders
+  // outside the helpers context, so useNavigation() falls back to the container
+  // ref, whose actions are dropped until the navigator's focus listener
+  // registers. Its effect runs after this one on the first commit.
+  readonly navigation: {
+    readonly navigate: (name: "NewTaskSheet", params: object) => void;
+  };
 }) {
-  const navigation = useNavigation();
+  const { navigation } = props;
   const { pendingShare, discardShare } = useIncomingShare();
   const sharePresentationRef = useRef(EMPTY_INCOMING_SHARE_PRESENTATION_STATE);
   const [sharePresentationRetry, setSharePresentationRetry] = useState(0);
