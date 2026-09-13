@@ -88,6 +88,13 @@ import * as Socket from "effect/unstable/socket/Socket";
 import { vi } from "vite-plus/test";
 
 const TEST_EPOCH = DateTime.makeUnsafe("1970-01-01T00:00:00.000Z");
+const SUCCESSFUL_GIT_EXECUTION = {
+  exitCode: ChildProcessSpawner.ExitCode(0),
+  stdout: "",
+  stderr: "",
+  stdoutTruncated: false,
+  stderrTruncated: false,
+};
 const decodeTransferThreadSnapshot = Schema.decodeUnknownEffect(
   Schema.fromJsonString(OrchestrationThreadDetailSnapshot),
 );
@@ -10931,7 +10938,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
         yield* buildAppUnderTest({
           layers: {
+            vcsDriver: {
+              isInsideWorkTree: () => Effect.succeed(true),
+            },
             gitVcsDriver: {
+              execute: () => Effect.succeed(SUCCESSFUL_GIT_EXECUTION),
               remoteExists,
               fetchRemote,
               remoteBranchExists,
@@ -11083,7 +11094,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       yield* buildAppUnderTest({
         layers: {
+          vcsDriver: {
+            isInsideWorkTree: () => Effect.succeed(true),
+          },
           gitVcsDriver: {
+            execute: () => Effect.succeed(SUCCESSFUL_GIT_EXECUTION),
             remoteExists,
             fetchRemote,
             remoteBranchExists,
@@ -11167,6 +11182,85 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("falls back to the project checkout when worktree mode targets a non-repository", () =>
+    Effect.gen(function* () {
+      const dispatchedCommands: Array<OrchestrationCommand> = [];
+      const createWorktree = vi.fn(
+        (_: Parameters<GitVcsDriver.GitVcsDriver["Service"]["createWorktree"]>[0]) =>
+          Effect.die(new Error("createWorktree must not run for a non-repository")),
+      );
+
+      yield* buildAppUnderTest({
+        layers: {
+          gitVcsDriver: {
+            execute: () => Effect.succeed(SUCCESSFUL_GIT_EXECUTION),
+            createWorktree,
+          },
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.sync(() => {
+                dispatchedCommands.push(command);
+                return { sequence: dispatchedCommands.length };
+              }),
+            readEvents: () => Stream.empty,
+          },
+        },
+      });
+
+      const createdAt = "2026-01-01T00:00:00.000Z";
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const response = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+            type: "thread.turn.start",
+            commandId: CommandId.make("cmd-bootstrap-turn-start-non-repo"),
+            threadId: ThreadId.make("thread-bootstrap-non-repo"),
+            message: {
+              messageId: MessageId.make("msg-bootstrap-non-repo"),
+              role: "user",
+              text: "hello",
+              attachments: [],
+            },
+            modelSelection: defaultModelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            bootstrap: {
+              createThread: {
+                projectId: defaultProjectId,
+                title: "Bootstrap Thread",
+                modelSelection: defaultModelSelection,
+                runtimeMode: "full-access",
+                interactionMode: "default",
+                branch: null,
+                worktreePath: null,
+                createdAt,
+              },
+              prepareWorktree: {
+                projectCwd: "/tmp/project",
+                baseBranch: "main",
+                branch: "t3code/bootstrap-refName",
+              },
+              runSetupScript: true,
+            },
+            createdAt,
+          }),
+        ),
+      );
+
+      assert.equal(response.sequence, 2);
+      assert.equal(createWorktree.mock.calls.length, 0);
+      assert.deepEqual(
+        dispatchedCommands.map((command) => command.type),
+        ["thread.create", "thread.turn.start"],
+      );
+      const finalCommand = dispatchedCommands[1];
+      assertTrue(finalCommand?.type === "thread.turn.start");
+      if (finalCommand?.type === "thread.turn.start") {
+        assert.equal(finalCommand.bootstrap, undefined);
+      }
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("records setup-script resolution failures without aborting bootstrap turn start", () =>
     Effect.gen(function* () {
       const dispatchedCommands: Array<OrchestrationCommand> = [];
@@ -11197,7 +11291,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       yield* buildAppUnderTest({
         layers: {
+          vcsDriver: {
+            isInsideWorkTree: () => Effect.succeed(true),
+          },
           gitVcsDriver: {
+            execute: () => Effect.succeed(SUCCESSFUL_GIT_EXECUTION),
             createWorktree,
             resolveCommit: () =>
               Effect.succeed({ commitSha: "1111111111111111111111111111111111111111" }),
@@ -11289,33 +11387,34 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       yield* buildAppUnderTest({
         layers: {
+          vcsDriver: {
+            isInsideWorkTree: () => Effect.succeed(true),
+          },
           gitVcsDriver: {
             createWorktree,
             // An unborn HEAD: git names the branch it would create, but no
             // commit exists for a worktree to be cut from.
-            resolveCommit: (input) =>
-              Effect.fail(
-                new GitCommandError({
-                  operation: "GitVcsDriver.resolveCommit",
-                  command: "git",
-                  cwd: input.cwd,
-                  detail: "fatal: Needed a single revision",
-                }),
+            execute: (input) =>
+              Effect.succeed(
+                input.args.includes("--verify")
+                  ? {
+                      ...SUCCESSFUL_GIT_EXECUTION,
+                      exitCode: ChildProcessSpawner.ExitCode(128),
+                      stderr: "fatal: Needed a single revision",
+                    }
+                  : SUCCESSFUL_GIT_EXECUTION,
               ),
-            statusDetailsLocal: () =>
+          },
+          gitManager: {
+            localStatus: () =>
               Effect.succeed({
                 isRepo: true,
                 hasHeadCommit: false,
-                hasOriginRemote: false,
-                isDefaultBranch: true,
-                branch: "main",
-                upstreamRef: null,
+                hasPrimaryRemote: false,
+                isDefaultRef: true,
+                refName: "main",
                 hasWorkingTreeChanges: true,
                 workingTree: { files: [], insertions: 0, deletions: 0 },
-                hasUpstream: false,
-                aheadCount: 0,
-                behindCount: 0,
-                aheadOfDefaultCount: 0,
               }),
           },
           orchestrationEngine: {
@@ -11373,10 +11472,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       assertInclude(String(error), "no commits yet");
       assert.equal(createWorktree.mock.calls.length, 0);
-      // The half-created thread is rolled back rather than left pointing at a
-      // worktree that was never made.
-      assertTrue(dispatchedCommands.some((command) => command.type === "thread.delete"));
-      assertTrue(dispatchedCommands.every((command) => command.type !== "thread.turn.start"));
+      // The base is checked before the thread is created, so nothing is left to roll back.
+      assert.deepEqual(dispatchedCommands, []);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -11409,7 +11506,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       );
       yield* buildAppUnderTest({
         layers: {
+          vcsDriver: {
+            isInsideWorkTree: () => Effect.succeed(true),
+          },
           gitVcsDriver: {
+            execute: () => Effect.succeed(SUCCESSFUL_GIT_EXECUTION),
             createWorktree,
             resolveCommit: () =>
               Effect.succeed({ commitSha: "1111111111111111111111111111111111111111" }),
@@ -11497,7 +11598,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       const config = yield* buildAppUnderTest({
         layers: {
+          vcsDriver: {
+            isInsideWorkTree: () => Effect.succeed(true),
+          },
           gitVcsDriver: {
+            execute: () => Effect.succeed(SUCCESSFUL_GIT_EXECUTION),
             createWorktree,
             resolveCommit: () =>
               Effect.succeed({ commitSha: "1111111111111111111111111111111111111111" }),
@@ -11708,7 +11813,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       yield* buildAppUnderTest({
         layers: {
+          vcsDriver: {
+            isInsideWorkTree: () => Effect.succeed(true),
+          },
           gitVcsDriver: {
+            execute: () => Effect.succeed(SUCCESSFUL_GIT_EXECUTION),
             createWorktree,
             resolveCommit: () =>
               Effect.succeed({ commitSha: "1111111111111111111111111111111111111111" }),

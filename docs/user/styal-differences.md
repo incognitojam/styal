@@ -37,7 +37,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [revision 451afcb](https://github.com/pingdotgg/t3code/tree/451afcb22d93f06cb24f9bc16703404564952553);
   either default can be changed. A newly initialized repository runs its first threads in the
   current checkout until it has a commit, then uses the worktree default again. T3 Code still
-  attempts to create the worktree in that state. [Working with threads](./thread-sidebar.md).
+  offers a new worktree in that state and runs the thread in the current checkout instead.
+  [Working with threads](./thread-sidebar.md).
 - **Stable development ports.** Each workspace gets a persistent range of ten ports. Agents,
   terminals, and project scripts receive the same assignment across restarts, so parallel workspaces
   can run development servers without choosing the same ports.
