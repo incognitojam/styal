@@ -10,11 +10,8 @@ import {
   ArrowDownUpIcon,
   ChevronDownIcon,
   ChevronRightIcon,
-  GitPullRequestClosedIcon,
   HammerIcon,
   PencilIcon,
-  RotateCcwIcon,
-  SendIcon,
   TagIcon,
   UsersIcon,
 } from "lucide-react";
@@ -28,7 +25,6 @@ import { formatRelativeTimeLabel } from "~/timestampFormat";
 
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
-import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
@@ -60,10 +56,6 @@ import { PullRequestReactionBar } from "./PullRequestReactions";
 import { PullRequestConversationGhost } from "./PullRequestGhosts";
 import { pullRequestLabelColor } from "./pullRequestList.logic";
 import { sectionCollapseAnchorScrollTop } from "./pullRequestSummaryScroll.logic";
-import {
-  pullRequestConversationDraftKey,
-  usePullRequestReviewStore,
-} from "./pullRequestReviewStore";
 
 /** One reviewer, however a host happens to have cased their login this time. */
 function reviewerKey(login: string): string {
@@ -305,118 +297,6 @@ function Section({
   );
 }
 
-function CommentComposer({
-  environmentId,
-  reference,
-  detail,
-  actionPending,
-  onCommentAction,
-  onCommented,
-}: {
-  environmentId: EnvironmentId;
-  reference: PullRequestRef;
-  detail: PullRequestDetailView;
-  actionPending: boolean;
-  onCommentAction: (
-    body: string,
-    action: "close" | "reopen",
-  ) => Promise<{ readonly commentPosted: boolean }>;
-  onCommented: () => void;
-}) {
-  // The PR panel unmounts when another right-panel surface is selected. Keep the draft outside
-  // this component so returning from Diff, Files, or another PR restores the right words.
-  const draftKey = pullRequestConversationDraftKey(environmentId, detail);
-  const body = usePullRequestReviewStore((store) => store.conversationDrafts[draftKey] ?? "");
-  const setConversationDraft = usePullRequestReviewStore((store) => store.setConversationDraft);
-  const clearConversationDraft = usePullRequestReviewStore((store) => store.clearConversationDraft);
-  const [submitting, setSubmitting] = useState<"comment" | "close" | "reopen" | null>(null);
-  const postComment = useAtomCommand(pullRequestEnvironment.comment, { reportFailure: false });
-  const followUpAction =
-    detail.state === "open" &&
-    detail.capabilities.actions.includes("close") &&
-    detail.viewerPermissions.actions.includes("close")
-      ? ("close" as const)
-      : detail.state === "closed" &&
-          detail.capabilities.actions.includes("reopen") &&
-          detail.viewerPermissions.actions.includes("reopen")
-        ? ("reopen" as const)
-        : null;
-
-  const submit = async (action: "comment" | "close" | "reopen") => {
-    const trimmed = body.trim();
-    if (trimmed.length === 0 || submitting !== null || actionPending) return;
-    setSubmitting(action);
-    if (action !== "comment") {
-      const result = await onCommentAction(trimmed, action);
-      if (result.commentPosted) clearConversationDraft(draftKey, body);
-      setSubmitting(null);
-      return;
-    }
-    const result = await postComment({
-      environmentId,
-      input: {
-        ...reference,
-        body: trimmed,
-      },
-    });
-    if (result._tag === "Failure") {
-      setSubmitting(null);
-      toastManager.add({ type: "error", title: "Could not post the comment" });
-      return;
-    }
-    clearConversationDraft(draftKey, body);
-    setSubmitting(null);
-    onCommented();
-  };
-
-  return (
-    <div className="space-y-2">
-      <Textarea
-        // Locked while posting: the body is cleared on success, which would otherwise throw
-        // away a new draft typed while the request was still in flight.
-        disabled={submitting !== null || actionPending}
-        value={body}
-        rows={3}
-        placeholder="Leave a comment"
-        aria-label="Comment on this pull request"
-        onChange={(event) => setConversationDraft(draftKey, event.target.value)}
-      />
-      <div className="flex justify-end gap-2">
-        {followUpAction === null ? null : (
-          <Button
-            size="xs"
-            variant={followUpAction === "close" ? "destructive-outline" : "outline"}
-            disabled={body.trim().length === 0 || submitting !== null || actionPending}
-            onClick={() => void submit(followUpAction)}
-          >
-            {followUpAction === "close" ? (
-              <GitPullRequestClosedIcon className="size-3.5" />
-            ) : (
-              <RotateCcwIcon className="size-3.5" />
-            )}
-            {submitting === followUpAction
-              ? followUpAction === "close"
-                ? "Closing..."
-                : "Reopening..."
-              : followUpAction === "close"
-                ? "Close with comment"
-                : "Reopen with comment"}
-          </Button>
-        )}
-        <Button
-          size="xs"
-          variant="outline"
-          disabled={body.trim().length === 0 || submitting !== null || actionPending}
-          onClick={() => void submit("comment")}
-        >
-          <SendIcon className="size-3.5" />
-          {submitting === "comment" ? "Posting..." : "Comment"}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 /**
  * What a first render of the conversation carries. A pull request with two hundred comments is
  * two hundred markdown documents, and the ones worth arriving for are the recent ones.
@@ -433,8 +313,6 @@ export function PullRequestSummaryTab({
   pendingFinding,
   fixFindingLabel = "Fix in a thread",
   onFixFinding,
-  actionPending,
-  onCommentAction,
   onRefresh,
 }: {
   environmentId: EnvironmentId;
@@ -447,11 +325,6 @@ export function PullRequestSummaryTab({
   pendingFinding?: string | null;
   fixFindingLabel?: string;
   onFixFinding?: (finding: PullRequestFinding) => void;
-  actionPending: boolean;
-  onCommentAction: (
-    body: string,
-    action: "close" | "reopen",
-  ) => Promise<{ readonly commentPosted: boolean }>;
   onRefresh: () => void;
 }) {
   // Keyed by the pull request, so opening another one starts at the end of its conversation
@@ -915,26 +788,6 @@ export function PullRequestSummaryTab({
           </>
         )}
       </Section>
-      <div className="px-4 pb-4">
-        {/* Posting stays available when the conversation is folded or its activity read failed. */}
-        {detail.capabilities.comment && detail.viewerPermissions.comment ? (
-          <CommentComposer
-            reference={reference}
-            key={JSON.stringify([
-              environmentId,
-              reference.projectId,
-              reference.host,
-              reference.repository,
-              reference.number,
-            ])}
-            environmentId={environmentId}
-            detail={detail}
-            actionPending={actionPending}
-            onCommentAction={onCommentAction}
-            onCommented={onRefresh}
-          />
-        ) : null}
-      </div>
     </div>
   );
 }
