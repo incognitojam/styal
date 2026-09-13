@@ -35,6 +35,8 @@ vi.mock("../state/shell", () => ({ environmentShell: { stateValueAtom: () => nul
 vi.mock("../threadNotifications", async (original) => ({
   ...(await original<typeof import("../threadNotifications")>()),
   playNotificationSound: state.play,
+  // The dock and taskbar badge has its own test; it draws on a canvas this stub lacks.
+  setNotificationBadge: vi.fn(),
 }));
 
 import { ThreadNotificationCoordinator } from "./ThreadNotificationCoordinator";
@@ -112,7 +114,11 @@ beforeEach(() => {
   notifications.length = 0;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("document", { addEventListener: vi.fn(), removeEventListener: vi.fn() });
-  vi.stubGlobal("window", { focus: vi.fn() });
+  vi.stubGlobal("window", {
+    focus: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  });
   vi.stubGlobal(
     "Notification",
     class {
