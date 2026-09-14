@@ -5,6 +5,7 @@ import {
   areasForPaths,
   catchupSinceIso,
   effectiveScanBoundary,
+  fetchMergedUpstreamPullRequests,
   fitTrackingIssueBody,
   landedUpstreamPullRequests,
   listedNumbers,
@@ -162,6 +163,39 @@ describe("upstream tracking issue", () => {
       writeTrackingState(body, { terminal: new Set([7, 9]) }),
       "intro\n\n<!-- upstream-tracking-terminal:7,9 -->\n",
     );
+  });
+
+  it("reconciles edited CRLF bodies without duplicating markers or orphaning notes", () => {
+    const since = "2026-08-02T00:00:00.000Z";
+    const edited = [
+      "intro",
+      "- [x] `#1` 2026-08-01 · `old fix` — skip: not needed",
+      "",
+      "  note belonging to the skipped fix",
+      "- [x] `#2` 2026-08-02 · `queued fix`",
+      "",
+      "  keep this queued direction",
+      "",
+      "<!-- upstream-tracking-terminal:9 -->",
+      `<!-- upstream-tracking-catchup-since:${since} -->`,
+      "",
+    ].join("\r\n");
+
+    const normalized = writeCatchupSince(edited, since);
+    assert.strictEqual(writeTerminalState(normalized, new Set([9])), normalized);
+    assert.strictEqual(catchupSinceIso(normalized), since);
+    assert.notInclude(normalized, "\r");
+
+    const update = prepareTrackingIssueUpdate({
+      body: normalized,
+      candidates: [pullRequest(2, since)],
+      landed: new Map(),
+      cutoffDate: "2026-08-02",
+    });
+    assert.deepEqual(update.pruned.prunedTerminal, [1]);
+    assert.notInclude(update.body, "note belonging to the skipped fix");
+    assert.include(update.body, "keep this queued direction");
+    assert.strictEqual(catchupSinceIso(update.body), since);
   });
 
   it("collapses touched paths to their top two segments", () => {
@@ -438,6 +472,69 @@ beneath it, then dispatch an agent with the ticked items. The list is appended b
       ),
     );
     assert.isTrue(upstreamPageReachesWindowBoundary([], "2026-09-05T09:00:00Z"));
+  });
+
+  it("rejects an incomplete capped scan instead of returning partial catch-up candidates", () => {
+    let calls = 0;
+    const fetchPage = () => {
+      calls += 1;
+      return JSON.stringify({
+        data: {
+          repository: {
+            pullRequests: {
+              pageInfo: { hasNextPage: true, endCursor: `page-${calls}` },
+              nodes: [
+                {
+                  ...pullRequest(calls, "2026-09-05T10:00:00Z"),
+                  updatedAt: "2026-09-05T10:00:00Z",
+                  mergeCommit: { oid: "a".repeat(40) },
+                  files: { nodes: [] },
+                },
+              ],
+            },
+          },
+        },
+      });
+    };
+
+    assert.throws(
+      () => fetchMergedUpstreamPullRequests("example/upstream", "2026-08-24T00:00:00Z", fetchPage),
+      "The tracking issue was not updated",
+    );
+    assert.strictEqual(calls, 20);
+  });
+
+  it("accepts a scan that reaches the window boundary on its final allowed page", () => {
+    let calls = 0;
+    const fetchPage = () => {
+      calls += 1;
+      const date = calls === 20 ? "2026-08-01T10:00:00Z" : "2026-09-05T10:00:00Z";
+      return JSON.stringify({
+        data: {
+          repository: {
+            pullRequests: {
+              pageInfo: { hasNextPage: true, endCursor: `page-${calls}` },
+              nodes: [
+                {
+                  ...pullRequest(calls, date),
+                  updatedAt: date,
+                  mergeCommit: { oid: "a".repeat(40) },
+                  files: { nodes: [] },
+                },
+              ],
+            },
+          },
+        },
+      });
+    };
+
+    const candidates = fetchMergedUpstreamPullRequests(
+      "example/upstream",
+      "2026-08-24T00:00:00Z",
+      fetchPage,
+    );
+    assert.strictEqual(calls, 20);
+    assert.lengthOf(candidates, 19);
   });
 
   it("refuses to edit an issue in the upstream repository", () => {

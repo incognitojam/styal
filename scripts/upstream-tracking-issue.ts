@@ -74,7 +74,7 @@ export function catchupSinceIso(body: string): string | undefined {
 function withoutTrackingState(body: string): string {
   const output: Array<string> = [];
   let removedState = false;
-  for (const line of body.split("\n")) {
+  for (const line of body.split(/\r?\n/u)) {
     if (TRACKING_STATE_LINE_PATTERN.test(line)) {
       while (output.at(-1)?.trim().length === 0) output.pop();
       removedState = true;
@@ -490,9 +490,10 @@ export function upstreamPageReachesWindowBoundary(
   return oldestUpdated === undefined || oldestUpdated < sinceIso;
 }
 
-function fetchMergedUpstreamPullRequests(
+export function fetchMergedUpstreamPullRequests(
   repository: string,
   sinceIso: string,
+  runCommand = run,
 ): ReadonlyArray<GraphQlPullRequest & { readonly sha: string }> {
   const [owner, name] = repository.split("/");
   const query = `query($owner:String!,$name:String!,$cursor:String){
@@ -517,7 +518,7 @@ function fetchMergedUpstreamPullRequests(
       `name=${name}`,
     ];
     if (cursor) args.push("-F", `cursor=${cursor}`);
-    const response = JSON.parse(run("gh", args)) as {
+    const response = JSON.parse(runCommand("gh", args)) as {
       readonly data: {
         readonly repository: {
           readonly pullRequests: {
@@ -539,10 +540,9 @@ function fetchMergedUpstreamPullRequests(
       break;
     }
     if (page === MAX_UPSTREAM_PAGES - 1) {
-      console.log(
-        `::warning::Upstream pull request scan reached the ${MAX_UPSTREAM_PAGES}-page safety cap before the configured window boundary.`,
+      throw new Error(
+        `Upstream pull request scan reached the ${MAX_UPSTREAM_PAGES}-page safety cap before the configured window boundary. The tracking issue was not updated; complete the scan before retrying catch-up.`,
       );
-      break;
     }
     if (connection.pageInfo.endCursor === null) {
       throw new Error("Upstream pagination has another page but did not return a cursor.");

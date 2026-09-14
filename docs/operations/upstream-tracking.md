@@ -42,10 +42,17 @@ never compacts queued or `review needed` entries; if those alone exceed the budg
 with a request to split or resolve the backlog. The run summary reports the effective scan boundary,
 body size, durable backlog count, and deferred count.
 
-For an initial catch-up, leave the repository variable unset or manually dispatch a window wide
-enough to reach the known divergence boundary. When a run reports zero deferred catch-up candidates,
-set `UPSTREAM_TRACKING_WINDOW_DAYS` to the desired steady-state window. Seven days is a practical
-starting point; it is an operating choice rather than a completeness boundary.
+For an initial catch-up, set the repository variable or manually dispatch a window wide enough to
+reach the known divergence boundary. The 14-day default may no longer reach that boundary. Keep the
+window wide enough during triage, and tick unresolved items that must survive the eventual narrower
+window. Zero deferred candidates means all candidates fit in the issue, not that they have all been
+triaged. Once catch-up and triage are complete, set `UPSTREAM_TRACKING_WINDOW_DAYS` to the desired
+steady-state window. Seven days is a practical starting point; it is an operating choice rather than
+a completeness boundary.
+
+The upstream scan stops after at most 20 pages. If it cannot reach the requested boundary within that
+limit, the run fails before updating the issue or clearing catch-up state. Resolve the scan limit
+before retrying; narrowing the window would omit part of the requested catch-up.
 
 A gap longer than the scan window can miss upstream merges. Recover by manually dispatching the
 workflow with a temporarily wider `since_days` value. If that scan defers candidates, its boundary
