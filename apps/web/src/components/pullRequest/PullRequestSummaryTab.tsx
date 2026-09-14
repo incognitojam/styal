@@ -235,11 +235,13 @@ function MetaRow({
 function Section({
   title,
   defaultOpen = true,
+  keepMounted = false,
   actions,
   children,
 }: {
   title: string;
   defaultOpen?: boolean;
+  keepMounted?: boolean;
   /** Heading controls stay separate from the collapse trigger so they remain independently usable. */
   actions?: ReactNode;
   children: ReactNode;
@@ -269,6 +271,7 @@ function Section({
     <Collapsible
       open={open}
       onOpenChange={setOpenWithScrollAnchor}
+      render={<section aria-label={title} />}
       data-pull-request-summary-section
     >
       {/* The heading rides the top of the scroll box the way a diff's file header does, so a
@@ -290,7 +293,7 @@ function Section({
         </CollapsibleTrigger>
         {actions}
       </div>
-      <CollapsiblePanel>
+      <CollapsiblePanel keepMounted={keepMounted}>
         <div className="px-4 pb-4">{children}</div>
       </CollapsiblePanel>
     </Collapsible>
@@ -465,7 +468,7 @@ export function PullRequestSummaryTab({
 
   return (
     <div className="h-full overflow-y-auto" data-pull-request-summary-scroll>
-      <section className="px-4 py-2.5">
+      <section className="px-4 pt-2.5 pb-1">
         <div className="space-y-2">
           <MetaRow icon={<UsersIcon className="size-3.5" />} label="Reviewers">
             <span className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -595,7 +598,7 @@ export function PullRequestSummaryTab({
         </div>
       </section>
 
-      <section aria-label="Description" className="px-4 pt-2 pb-1">
+      <Section key={`description:${detail.url}`} title="Description" keepMounted>
         <div className="group">
           {bodyScope === detail.url ? (
             <PullRequestMarkdownEditor
@@ -634,7 +637,7 @@ export function PullRequestSummaryTab({
             </div>
           )}
         </div>
-      </section>
+      </Section>
 
       <Section
         title="Comments"
