@@ -15,7 +15,11 @@ on:
         type: string
       source_prs:
         description: "Comma-separated upstream PR numbers matching candidate commit provenance"
-        required: true
+        required: false
+        type: string
+      source_commits:
+        description: "Comma-separated full upstream commit SHAs matching candidate provenance; supply PRs, commits, or both"
+        required: false
         type: string
 
 permissions:
@@ -38,6 +42,7 @@ jobs:
       candidate_sha: ${{ steps.candidate.outputs.candidate_sha }}
       ci_run_url: ${{ steps.ci.outputs.ci_run_url }}
       source_prs: ${{ steps.audit.outputs.source_prs }}
+      source_commits: ${{ steps.audit.outputs.source_commits }}
     steps:
       - name: Checkout trusted promotion code
         uses: actions/checkout@v6
@@ -116,11 +121,13 @@ jobs:
         name: Audit candidate with trusted main code
         env:
           EXPECTED_SOURCE_PRS: ${{ inputs.source_prs }}
+          EXPECTED_SOURCE_COMMITS: ${{ inputs.source_commits }}
         run: |
           vp run --filter @t3tools/scripts intake:check -- \
             --base "${{ steps.candidate.outputs.base_sha }}" \
             --head "${{ steps.candidate.outputs.candidate_sha }}" \
-            --expected-source-prs "$EXPECTED_SOURCE_PRS"
+            --expected-source-prs "$EXPECTED_SOURCE_PRS" \
+            --expected-source-commits "$EXPECTED_SOURCE_COMMITS"
 
       - id: ci
         name: Verify Fork CI for the reviewed SHA
@@ -130,6 +137,7 @@ jobs:
           CANDIDATE_BRANCH: ${{ steps.candidate.outputs.candidate_branch }}
           CANDIDATE_SHA: ${{ steps.candidate.outputs.candidate_sha }}
           SOURCE_PRS: ${{ steps.audit.outputs.source_prs }}
+          SOURCE_COMMITS: ${{ steps.audit.outputs.source_commits }}
         run: |
           set -euo pipefail
 
@@ -193,6 +201,7 @@ jobs:
             echo
             echo "- Candidate: \`$CANDIDATE_BRANCH\` at \`$CANDIDATE_SHA\`"
             echo "- Source PRs: \`$SOURCE_PRS\`"
+            echo "- Source commits: \`$SOURCE_COMMITS\`"
             echo "- Fork CI: $ci_run_url"
             echo "- Independent review: attested by the exact SHA supplied at dispatch"
             echo
@@ -240,6 +249,7 @@ jobs:
           CANDIDATE_SHA: ${{ needs.validate.outputs.candidate_sha }}
           CI_RUN_URL: ${{ needs.validate.outputs.ci_run_url }}
           SOURCE_PRS: ${{ needs.validate.outputs.source_prs }}
+          SOURCE_COMMITS: ${{ needs.validate.outputs.source_commits }}
         run: |
           set -euo pipefail
 
@@ -284,6 +294,7 @@ jobs:
             echo "- Branch: \`$CANDIDATE_BRANCH\`"
             echo "- Promoted SHA: \`$CANDIDATE_SHA\`"
             echo "- Source PRs: \`$SOURCE_PRS\`"
+            echo "- Source commits: \`$SOURCE_COMMITS\`"
             echo "- Verified Fork CI: $CI_RUN_URL"
             echo "- Push actor: \`${{ steps.porter_token.outputs.app-slug }}[bot]\`"
           } >> "$GITHUB_STEP_SUMMARY"
