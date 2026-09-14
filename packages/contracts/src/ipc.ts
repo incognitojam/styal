@@ -1264,6 +1264,8 @@ export interface DesktopBridge {
   // info (omits instances whose backend hasn't produced a config yet).
   // The primary backend is identified by id === PRIMARY_LOCAL_ENVIRONMENT_ID.
   getLocalEnvironmentBootstraps: () => readonly DesktopEnvironmentBootstrap[];
+  getLocalEnvironmentEnabled?: () => boolean;
+  setLocalEnvironmentEnabled?: (enabled: boolean) => Promise<void>;
   getLocalEnvironmentBearerToken: () => Promise<string>;
   setDiscordPresence?: (activity: DesktopDiscordPresenceActivity | null) => Promise<void>;
   getClientSettings: () => Promise<ClientSettings | null>;
