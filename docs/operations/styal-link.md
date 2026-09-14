@@ -16,18 +16,18 @@ JWT template, and the `t3-code-relay` audience.
 
 ## Fixed values
 
-| Value                   | styal                                                                                                                                    | Decided in                                                     |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| Hosted app origin       | `https://app.styal.build`                                                                                                                | `DEFAULT_HOSTED_APP_URL`, `packages/shared/src/connectAuth.ts` |
-| CLI OAuth redirect URIs | `http://127.0.0.1:34338/callback`, `https://app.styal.build/connect/callback`                                                            | `connectCallbackUrl(DEFAULT_HOSTED_APP_URL)`                   |
-| Desktop redirect URIs   | `styal-dev://app/` (dev), `styal-preview://app/` (PR previews), `styal://app/` (packaged)                                                | `apps/desktop`, see connect-setup.md                           |
-| macOS bundle ID         | `build.styal.app`, `build.styal.app.preview` (PR previews)                                                                               | `DESKTOP_APP_ID`, `scripts/build-desktop-artifact.ts`          |
-| Clerk application       | `styal` (`app_3IPih12l7JcyeHP2MlqFOESKdGN`)                                                                                              | Clerk Dashboard                                                |
-| Relay                   | `https://relay.styal.build`, deployed by `deploy-relay.yml` on push to main                                                              | `infra/relay/README.md`                                        |
-| Development relay       | `https://relay-dev.styal.build` (stage `dev`, development Clerk), deployed after the production relay                                    | `deploy-relay.yml`                                             |
-| Relay database          | Neon project `styal-relay` (`divine-frog-52827132`, `aws-eu-west-2`): prod adopts its `production` branch, dev stages fork Neon branches | `infra/relay/src/db.ts`                                        |
-| Relay API zone          | `styal.build` (`RELAY_API_ZONE_NAME`), so the relay serves `relay.styal.build`                                                           | `production` environment variable                              |
-| Managed tunnel zone     | `styal.link` (`RELAY_TUNNEL_ZONE_NAME`)                                                                                                  | `production` environment variable                              |
+| Value                   | styal                                                                                                                                    | Decided in                                                               |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Hosted app origin       | `https://app.styal.build`                                                                                                                | `DEFAULT_HOSTED_APP_URL`, `packages/shared/src/connectAuth.ts`           |
+| CLI OAuth redirect URIs | `http://127.0.0.1:34338/callback`                                                                                                        | `CLOUD_CLI_OAUTH_LOOPBACK_PORT`, `apps/server/src/cloud/publicConfig.ts` |
+| Desktop redirect URIs   | `styal-dev://app/` (dev), `styal-preview://app/` (PR previews), `styal://app/` (packaged)                                                | `apps/desktop`, see connect-setup.md                                     |
+| macOS bundle ID         | `build.styal.app`, `build.styal.app.preview` (PR previews)                                                                               | `DESKTOP_APP_ID`, `scripts/build-desktop-artifact.ts`                    |
+| Clerk application       | `styal` (`app_3IPih12l7JcyeHP2MlqFOESKdGN`)                                                                                              | Clerk Dashboard                                                          |
+| Relay                   | `https://relay.styal.build`, deployed by `deploy-relay.yml` on push to main                                                              | `infra/relay/README.md`                                                  |
+| Development relay       | `https://relay-dev.styal.build` (stage `dev`, development Clerk), deployed after the production relay                                    | `deploy-relay.yml`                                                       |
+| Relay database          | Neon project `styal-relay` (`divine-frog-52827132`, `aws-eu-west-2`): prod adopts its `production` branch, dev stages fork Neon branches | `infra/relay/src/db.ts`                                                  |
+| Relay API zone          | `styal.build` (`RELAY_API_ZONE_NAME`), so the relay serves `relay.styal.build`                                                           | `production` environment variable                                        |
+| Managed tunnel zone     | `styal.link` (`RELAY_TUNNEL_ZONE_NAME`)                                                                                                  | `production` environment variable                                        |
 
 Tunnel endpoints (`prod-<digest>.styal.link`) terminate at servers that styal users control, so they
 live on a registrable domain of their own, never under `styal.build`: the production Clerk instance
@@ -52,10 +52,10 @@ mutation first.
    `clerk api /jwt_templates`.
 3. **CLI OAuth application** named `styal CLI`
    ([connect-setup.md § CLI OAuth application](./connect-setup.md#cli-oauth-application)):
-   public client (PKCE), scopes `openid profile email`, and **both** redirect URIs from the table
-   above. The hosted callback must equal `connectCallbackUrl(DEFAULT_HOSTED_APP_URL)` exactly or
-   `styal link --headless` and SSH authorization fail. Its client ID is `CLERK_CLI_OAUTH_CLIENT_ID`.
-   Check with `clerk api /oauth_applications`.
+   public client (PKCE), scopes `openid profile email offline_access`, the redirect URI from the
+   table above, and `device_authorization_grant_enabled`, which `styal link --headless` and SSH
+   authorization need. Its client ID is `CLERK_CLI_OAUTH_CLIENT_ID`. Check with
+   `clerk api /oauth_applications`.
 4. **Native API** for desktop
    ([connect-setup.md § Desktop OAuth redirects](./connect-setup.md#desktop-oauth-redirects)):
    enabled, with `styal-dev://app/` allowlisted on dev and `styal://app/` and
