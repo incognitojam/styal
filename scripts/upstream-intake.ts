@@ -8,6 +8,7 @@ export interface UpstreamIntakeAuditInput {
   readonly commits: ReadonlyArray<string>;
   readonly commitMessages: ReadonlyArray<string>;
   readonly expectedSourcePullRequests?: ReadonlyArray<number>;
+  readonly expectedSourceCommits?: ReadonlyArray<string>;
   readonly mergeCommits: ReadonlyArray<string>;
   readonly mainIsAncestor: boolean;
   readonly changedPaths: ReadonlyArray<string>;
@@ -21,6 +22,7 @@ export interface UpstreamIntakeAudit {
   readonly manualReviewReasons: ReadonlyArray<string>;
   readonly overlapFeatureIds: ReadonlyArray<string>;
   readonly sourcePullRequests: ReadonlyArray<number>;
+  readonly sourceCommits: ReadonlyArray<string>;
   readonly summary: string;
 }
 
@@ -102,16 +104,23 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
 
   for (const [index, commit] of input.commits.entries()) {
     const message = input.commitMessages[index];
-    if (
-      message === undefined ||
-      parseUpstreamProvenance([message]).pullRequestNumbers.length === 0
-    ) {
+    const source = parseUpstreamProvenance(message === undefined ? [] : [message]);
+    if (source.pullRequestNumbers.length === 0 && source.commitShas.length === 0) {
       errors.push(`Candidate commit ${abbreviated(commit)} has no upstream source provenance.`);
     }
   }
 
   const provenance = parseUpstreamProvenance(input.commitMessages);
   errors.push(...provenance.errors);
+  if (
+    input.expectedSourceCommits !== undefined &&
+    input.expectedSourceCommits.join(",") !== provenance.commitShas.join(",")
+  ) {
+    errors.push(
+      "The supplied source commits do not exactly match the candidate's commit provenance.",
+    );
+  }
+
   if (
     input.expectedSourcePullRequests !== undefined &&
     input.expectedSourcePullRequests.join(",") !== provenance.pullRequestNumbers.join(",")
@@ -126,6 +135,9 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
   const manualReviewReasons = manualReviewRules
     .filter((rule) => input.changedPaths.some(rule.matches))
     .map((rule) => rule.description);
+  if (provenance.commitShas.length > 0) {
+    manualReviewReasons.push("explicit upstream commits require source-diff review");
+  }
   if (overlapFeatureIds.length > 0) {
     manualReviewReasons.push(`tracked fork feature paths overlap: ${overlapFeatureIds.join(", ")}`);
   }
@@ -167,6 +179,7 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
       ? "None"
       : provenance.pullRequestNumbers.map((number) => `\`pingdotgg/t3code#${number}\``).join(", ")
   } |
+| Upstream commits | ${provenance.commitShas.map((sha) => `\`${sha}\``).join(", ") || "None"} |
 | Decision | ${promotion} |
 ${errorSection}${manualReviewSection}${overlapSection}
 > This audit is report-only. It does not update \`main\`.
@@ -179,6 +192,7 @@ ${errorSection}${manualReviewSection}${overlapSection}
     manualReviewReasons,
     overlapFeatureIds,
     sourcePullRequests: provenance.pullRequestNumbers,
+    sourceCommits: provenance.commitShas,
     summary,
   };
 }

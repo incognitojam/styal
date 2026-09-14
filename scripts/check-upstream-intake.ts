@@ -12,7 +12,7 @@ import {
   validateForkFeatureLedger,
 } from "./fork-feature-ledger.ts";
 import { auditUpstreamIntakeCandidate } from "./upstream-intake.ts";
-import { parseSourcePullRequestInput } from "./upstream-provenance.ts";
+import { parseSourceCommitInput, parseSourcePullRequestInput } from "./upstream-provenance.ts";
 
 const repoRoot = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 
@@ -98,6 +98,14 @@ try {
 
   const commits = lines(git(["rev-list", "--reverse", `${baseSha}..${headSha}`]));
   const expectedSources = expectedSourcePullRequests();
+  const expectedCommitInput = optionalFlag("--expected-source-commits");
+  const expectedCommits =
+    expectedCommitInput === undefined ? undefined : parseSourceCommitInput(expectedCommitInput);
+  if (expectedCommits === null) {
+    throw new Error(
+      "--expected-source-commits must contain comma-separated full lowercase commit SHAs.",
+    );
+  }
 
   const audit = auditUpstreamIntakeCandidate({
     baseSha,
@@ -105,6 +113,7 @@ try {
     commits,
     commitMessages: commits.map((commit) => git(["show", "-s", "--format=%B", commit])),
     ...(expectedSources === undefined ? {} : { expectedSourcePullRequests: expectedSources }),
+    ...(expectedCommits === undefined ? {} : { expectedSourceCommits: expectedCommits }),
     mergeCommits: lines(
       git(["rev-list", "--min-parents=2", "--reverse", `${baseSha}..${headSha}`]),
     ),
@@ -122,6 +131,7 @@ try {
   writeOutput("base_sha", baseSha);
   writeOutput("head_sha", headSha);
   writeOutput("source_prs", audit.sourcePullRequests.join(","));
+  writeOutput("source_commits", audit.sourceCommits.join(","));
   for (const error of audit.errors) {
     process.stdout.write(`::error title=Invalid upstream intake candidate::${error}\n`);
   }

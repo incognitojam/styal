@@ -134,6 +134,41 @@ describe("upstream intake audit", () => {
     assert.include(result.summary, "Blocked");
   });
 
+  it("accepts commit-only intake and requires exact source review without inventing a PR", () => {
+    const sha = "d".repeat(40);
+    const result = audit({
+      commitMessages: [`fix: port direct upstream fix\n\nUpstream-Commit: ${sha}`],
+      expectedSourcePullRequests: [],
+      expectedSourceCommits: [sha],
+    });
+    assert.isTrue(result.valid);
+    assert.isFalse(result.automaticEligible);
+    assert.deepEqual(result.sourcePullRequests, []);
+    assert.deepEqual(result.sourceCommits, [sha]);
+    assert.include(result.summary, sha);
+  });
+
+  it("rejects omitted or mismatched source commits in mixed batches", () => {
+    const commitMessages = [`fix: port\n\nUpstream-PR: 1234\nUpstream-Commit: ${"d".repeat(40)}`];
+    for (const expectedSourceCommits of [[], ["e".repeat(40)]]) {
+      const result = audit({
+        commitMessages,
+        expectedSourcePullRequests: [1234],
+        expectedSourceCommits,
+      });
+      assert.isFalse(result.valid);
+      assert.include(result.errors.join("\n"), "source commits do not exactly match");
+    }
+    assert.isTrue(
+      audit({
+        commitMessages,
+        expectedSourcePullRequests: [1234],
+        expectedSourceCommits: ["d".repeat(40)],
+      }).valid,
+    );
+    assert.isFalse(audit({ expectedSourcePullRequests: [], expectedSourceCommits: [] }).valid);
+  });
+
   it("runs Fork CI and the intake audit for intake branches", () => {
     const workflow = parse(NodeFS.readFileSync(ciWorkflowPath, "utf8")) as {
       readonly concurrency: { readonly group: string; readonly "cancel-in-progress": string };
@@ -198,7 +233,8 @@ describe("upstream intake audit", () => {
 
     assert.isTrue(workflow.on.workflow_dispatch.inputs.candidate_branch?.required);
     assert.isTrue(workflow.on.workflow_dispatch.inputs.reviewed_sha?.required);
-    assert.isTrue(workflow.on.workflow_dispatch.inputs.source_prs?.required);
+    assert.isFalse(workflow.on.workflow_dispatch.inputs.source_prs?.required);
+    assert.isFalse(workflow.on.workflow_dispatch.inputs.source_commits?.required);
     assert.equal(workflow.permissions.actions, "read");
     assert.equal(workflow.permissions.contents, "read");
     assert.isFalse(workflow.concurrency["cancel-in-progress"]);
@@ -226,6 +262,10 @@ describe("upstream intake audit", () => {
     );
     assert.include(auditCandidate?.run ?? "", "intake:check");
     assert.include(auditCandidate?.run ?? "", '"$EXPECTED_SOURCE_PRS"');
+    assert.include(
+      auditCandidate?.run ?? "",
+      '--expected-source-commits "$EXPECTED_SOURCE_COMMITS"',
+    );
 
     const verifyCi = workflow.jobs.validate.steps.find(
       (step) => step.name === "Verify Fork CI for the reviewed SHA",

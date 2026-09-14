@@ -4,6 +4,7 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 
 import { parseUpstreamProvenance } from "./upstream-provenance.ts";
+import { scanUpstreamCommits } from "./upstream-commit-scan.ts";
 
 /**
  * Reconciles recent upstream pull requests into the fork's rolling intake
@@ -15,48 +16,83 @@ export interface UpstreamPullRequest {
   readonly title: string;
   readonly mergedAt: string;
   readonly areas: ReadonlyArray<string>;
+  readonly reviewReason?: string;
 }
 
-const TRACKING_LINE_PATTERN = /^- \[([ x])\] `#(\d+)` (\d{4}-\d{2}-\d{2})\b/u;
+export interface UpstreamCommit {
+  readonly sha: string;
+  readonly title: string;
+  readonly committedAt: string;
+  readonly areas: ReadonlyArray<string>;
+  readonly reviewReason: string;
+}
+
+export type UpstreamCandidate = UpstreamPullRequest | UpstreamCommit;
+
+export function candidateSource(candidate: UpstreamCandidate): string {
+  return "number" in candidate ? `#${candidate.number}` : `commit:${candidate.sha}`;
+}
+
+function candidateDate(candidate: UpstreamCandidate): string {
+  return "number" in candidate ? candidate.mergedAt : candidate.committedAt;
+}
+
+const TRACKING_LINE_PATTERN = /^- \[([ x])\] `(#\d+|commit:[0-9a-f]{40})` (\d{4}-\d{2}-\d{2})\b/u;
 const DISPOSITION_PATTERN = / — (promoted|already present|skip|review needed)\b/gu;
 const CHERRY_PICK_REFERENCE = /\(cherry picked from commit ([0-9a-f]{40})\)/gu;
 const TERMINAL_STATE_PATTERN = /^<!-- upstream-tracking-terminal:(.*?)-->$/gmu;
 const CATCHUP_SINCE_PATTERN = /^<!-- upstream-tracking-catchup-since:(.*?)-->$/gmu;
-const TRACKING_STATE_LINE_PATTERN = /^<!-- upstream-tracking-(?:terminal|catchup-since):.*-->$/u;
+const COMMIT_SCAN_HEAD_PATTERN = /^<!-- upstream-tracking-commit-scan-head:(.*?)-->$/gmu;
+const TRACKING_STATE_LINE_PATTERN =
+  /^<!-- upstream-tracking-(?:terminal|catchup-since|commit-scan-head):.*-->$/u;
 const TRACKING_BODY_TARGET_LENGTH = 55_000;
 const MAX_UPSTREAM_PAGES = 20;
 const OLD_INTRO = `Upstream pull requests not yet on \`main\`, newest last. Tick a box and add direction
 beneath it, then dispatch an agent with the ticked items. The list is appended by
 \`upstream-tracking.yml\`; edits here are preserved.
 `;
-const INTRO = `Upstream pull requests in the rolling intake window, oldest first. Tick an item
+const PR_INTRO = `Upstream pull requests in the rolling intake window, oldest first. Tick an item
 to retain and queue it, then add direction beneath it. Unticked items expire after the window. The
 tracker marks landed source provenance as \`promoted\`. Manual dispositions are \`already present\`,
 \`skip\`, and \`review needed\`; append them as \`— skip: reason\` (or the corresponding state).
 Queued items and \`review needed\` decisions remain until resolved.
 `;
+const INTRO = `${PR_INTRO}\nCommit entries outside the PR inventory require review and remain until explicitly resolved. Empty PR merge diffs are flagged for source review.\n`;
 
-export function listedNumbers(body: string): ReadonlySet<number> {
-  const numbers = body.split("\n").flatMap((line) => {
+export function listedSources(body: string): ReadonlySet<string> {
+  const sources = body.split("\n").flatMap((line) => {
     const match = line.match(TRACKING_LINE_PATTERN);
-    return match === null ? [] : [Number(match[2])];
+    return match === null ? [] : [match[2]!];
   });
-  return new Set(numbers);
+  return new Set(sources);
 }
 
-export function terminalStateNumbers(body: string): ReadonlySet<number> {
+export function terminalSources(body: string): ReadonlySet<string> {
   const matches = [...body.matchAll(TERMINAL_STATE_PATTERN)];
   if (matches.length > 1) throw new Error("The tracking issue contains multiple terminal markers.");
   const value = matches[0]?.[1]?.trim();
   if (value === undefined || value.length === 0) return new Set();
-  if (!/^[1-9]\d*(?:,[1-9]\d*)*$/u.test(value)) {
+  if (!/^(?:[1-9]\d*|commit:[0-9a-f]{40})(?:,(?:[1-9]\d*|commit:[0-9a-f]{40}))*$/u.test(value)) {
     throw new Error("The tracking issue terminal marker is malformed.");
   }
-  const numbers = value.split(",").map(Number);
-  if (!numbers.every(Number.isSafeInteger)) {
+  const values = value.split(",");
+  if (
+    !values.every((source) => source.startsWith("commit:") || Number.isSafeInteger(Number(source)))
+  ) {
     throw new Error("The tracking issue terminal marker contains an invalid pull request number.");
   }
-  return new Set(numbers);
+  return new Set(values.map((source) => (source.startsWith("commit:") ? source : `#${source}`)));
+}
+
+export function commitScanHead(body: string): string | undefined {
+  const matches = [...body.matchAll(COMMIT_SCAN_HEAD_PATTERN)];
+  if (matches.length > 1)
+    throw new Error("The tracking issue contains multiple commit scan markers.");
+  const value = matches[0]?.[1]?.trim();
+  if (value !== undefined && !/^[0-9a-f]{40}$/u.test(value)) {
+    throw new Error("The tracking issue commit scan marker is malformed.");
+  }
+  return value;
 }
 
 export function catchupSinceIso(body: string): string | undefined {
@@ -91,35 +127,59 @@ function withoutTrackingState(body: string): string {
 export function writeTrackingState(
   body: string,
   state: {
-    readonly terminal: ReadonlySet<number>;
+    readonly terminal: ReadonlySet<string>;
     readonly catchupSince?: string;
+    readonly commitScanHead?: string;
   },
 ): string {
   const content = withoutTrackingState(body);
   const markers: Array<string> = [];
   if (state.terminal.size > 0) {
-    const value = [...state.terminal].toSorted((left, right) => left - right).join(",");
+    const value = [...state.terminal]
+      .toSorted((left, right) =>
+        left.startsWith("#") && right.startsWith("#")
+          ? Number(left.slice(1)) - Number(right.slice(1))
+          : left.localeCompare(right),
+      )
+      .map((source) => (source.startsWith("#") ? source.slice(1) : source))
+      .join(",");
     markers.push(`<!-- upstream-tracking-terminal:${value} -->`);
   }
   if (state.catchupSince !== undefined) {
     markers.push(`<!-- upstream-tracking-catchup-since:${state.catchupSince} -->`);
   }
+  if (state.commitScanHead !== undefined) {
+    markers.push(`<!-- upstream-tracking-commit-scan-head:${state.commitScanHead} -->`);
+  }
   if (markers.length === 0) return `${content}\n`;
   return `${content}\n\n${markers.join("\n")}\n`;
 }
 
-export function writeTerminalState(body: string, numbers: ReadonlySet<number>): string {
+export function writeTerminalState(body: string, numbers: ReadonlySet<string>): string {
   const catchupSince = catchupSinceIso(body);
+  const head = commitScanHead(body);
   return writeTrackingState(body, {
     terminal: numbers,
     ...(catchupSince === undefined ? {} : { catchupSince }),
+    ...(head === undefined ? {} : { commitScanHead: head }),
   });
 }
 
 export function writeCatchupSince(body: string, sinceIso?: string): string {
+  const head = commitScanHead(body);
   return writeTrackingState(body, {
-    terminal: terminalStateNumbers(body),
+    terminal: terminalSources(body),
     ...(sinceIso === undefined ? {} : { catchupSince: sinceIso }),
+    ...(head === undefined ? {} : { commitScanHead: head }),
+  });
+}
+
+export function writeCommitScanHead(body: string, head: string): string {
+  const since = catchupSinceIso(body);
+  return writeTrackingState(body, {
+    terminal: terminalSources(body),
+    commitScanHead: head,
+    ...(since === undefined ? {} : { catchupSince: since }),
   });
 }
 
@@ -132,29 +192,31 @@ function inertInlineCode(value: string): string {
   return value.replaceAll("`", "'").replaceAll(/\s+/gu, " ").trim();
 }
 
-export function renderPullRequestLine(pullRequest: UpstreamPullRequest): string {
+export function renderCandidateLine(pullRequest: UpstreamCandidate): string {
   const title = inertInlineCode(pullRequest.title);
   const areas =
     pullRequest.areas.length > 0
       ? ` · ${pullRequest.areas.map((area) => `\`${inertInlineCode(area)}\``).join(", ")}`
       : "";
-  return `- [ ] \`#${pullRequest.number}\` ${pullRequest.mergedAt.slice(0, 10)} · \`${title}\`${areas}`;
+  const review =
+    pullRequest.reviewReason === undefined ? "" : ` — review needed: ${pullRequest.reviewReason}`;
+  return `- [ ] \`${candidateSource(pullRequest)}\` ${candidateDate(pullRequest).slice(0, 10)} · \`${title}\`${areas}${review}`;
 }
 
 export function appendUnlisted(
   body: string,
-  candidates: ReadonlyArray<UpstreamPullRequest>,
-): { readonly body: string; readonly added: ReadonlyArray<UpstreamPullRequest> } {
-  const listed = listedNumbers(body);
+  candidates: ReadonlyArray<UpstreamCandidate>,
+): { readonly body: string; readonly added: ReadonlyArray<UpstreamCandidate> } {
+  const listed = listedSources(body);
   const added = candidates
-    .filter((pullRequest) => !listed.has(pullRequest.number))
-    .toSorted((left, right) => left.mergedAt.localeCompare(right.mergedAt));
+    .filter((pullRequest) => !listed.has(candidateSource(pullRequest)))
+    .toSorted((left, right) => candidateDate(left).localeCompare(candidateDate(right)));
   if (added.length === 0) return { body, added };
 
   const base = body.trim().length === 0 ? `${INTRO}\n` : body;
   const lines = base.trimEnd().split("\n");
   for (const pullRequest of added) {
-    const date = pullRequest.mergedAt.slice(0, 10);
+    const date = candidateDate(pullRequest).slice(0, 10);
     const laterEntry = lines.findIndex((line) => {
       const match = line.match(TRACKING_LINE_PATTERN);
       return match !== null && (match[3] ?? "") > date;
@@ -162,13 +224,17 @@ export function appendUnlisted(
     const stateMarker = lines.findIndex((line) => line.startsWith("<!-- upstream-tracking-"));
     const insertion =
       laterEntry === -1 ? (stateMarker === -1 ? lines.length : stateMarker) : laterEntry;
-    lines.splice(insertion, 0, renderPullRequestLine(pullRequest));
+    lines.splice(insertion, 0, renderCandidateLine(pullRequest));
   }
   return { body: `${lines.join("\n")}\n`, added };
 }
 
 export function refreshTrackingIntro(body: string): string {
-  return body.startsWith(OLD_INTRO) ? INTRO + body.slice(OLD_INTRO.length) : body;
+  if (body.startsWith(INTRO)) return body;
+  for (const previous of [OLD_INTRO, PR_INTRO]) {
+    if (body.startsWith(previous)) return INTRO + body.slice(previous.length);
+  }
+  return body;
 }
 
 function trackingDispositionMatch(
@@ -187,9 +253,9 @@ function trackingDisposition(line: string): string | undefined {
 
 export function reconcilePromoted(
   body: string,
-  landed: ReadonlyMap<number, string>,
-): { readonly body: string; readonly reconciled: ReadonlyArray<number> } {
-  const reconciled: Array<number> = [];
+  landed: ReadonlyMap<string, string>,
+): { readonly body: string; readonly reconciled: ReadonlyArray<string> } {
+  const reconciled: Array<string> = [];
   const lines = body.split("\n").map((line) => {
     const match = line.match(TRACKING_LINE_PATTERN);
     if (match === null) return line;
@@ -202,10 +268,10 @@ export function reconcilePromoted(
     ) {
       return line;
     }
-    const number = Number(match[2]);
-    const forkSha = landed.get(number);
+    const source = match[2]!;
+    const forkSha = landed.get(source);
     if (forkSha === undefined) return line;
-    reconciled.push(number);
+    reconciled.push(source);
     const withoutReview =
       disposition?.kind === "review needed" ? line.slice(0, disposition.index) : line;
     return `${withoutReview.replace(/^- \[[ x]\]/u, "- [x]")} — promoted \`${forkSha.slice(0, 7)}\``;
@@ -218,15 +284,15 @@ export function pruneTrackingEntries(
   cutoffDate: string,
 ): {
   readonly body: string;
-  readonly prunedTerminal: ReadonlyArray<number>;
-  readonly expiredOpen: ReadonlyArray<number>;
-  readonly retainedBacklog: ReadonlyArray<number>;
+  readonly prunedTerminal: ReadonlyArray<string>;
+  readonly expiredOpen: ReadonlyArray<string>;
+  readonly retainedBacklog: ReadonlyArray<string>;
 } {
   const lines = body.split("\n");
   const kept: Array<string> = [];
-  const prunedTerminal: Array<number> = [];
-  const expiredOpen: Array<number> = [];
-  const retainedBacklog: Array<number> = [];
+  const prunedTerminal: Array<string> = [];
+  const expiredOpen: Array<string> = [];
+  const retainedBacklog: Array<string> = [];
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? "";
@@ -237,18 +303,18 @@ export function pruneTrackingEntries(
     }
 
     const checked = match[1] === "x";
-    const number = Number(match[2]);
+    const source = match[2]!;
     const disposition = trackingDisposition(line);
     const terminal =
       disposition === "promoted" || disposition === "already present" || disposition === "skip";
-    if (!terminal && (checked || disposition === "review needed")) {
-      retainedBacklog.push(number);
+    if (!terminal && (checked || disposition === "review needed" || source.startsWith("commit:"))) {
+      retainedBacklog.push(source);
       kept.push(line);
       continue;
     }
 
-    if (terminal) prunedTerminal.push(number);
-    else expiredOpen.push(number);
+    if (terminal) prunedTerminal.push(source);
+    else expiredOpen.push(source);
     while (index + 1 < lines.length) {
       const next = lines[index + 1] ?? "";
       if (/^[\t ]/u.test(next)) {
@@ -288,14 +354,14 @@ export function fitTrackingIssueBody(
   targetLength = TRACKING_BODY_TARGET_LENGTH,
 ): {
   readonly body: string;
-  readonly compactedTerminal: ReadonlyArray<number>;
-  readonly deferredOpen: ReadonlyArray<number>;
+  readonly compactedTerminal: ReadonlyArray<string>;
+  readonly deferredOpen: ReadonlyArray<string>;
   readonly backlogCount: number;
   readonly overflow: boolean;
 } {
   let lines = body.split("\n");
-  const compactedTerminal: Array<number> = [];
-  const deferredOpen: Array<number> = [];
+  const compactedTerminal: Array<string> = [];
+  const deferredOpen: Array<string> = [];
 
   for (const removeTerminal of [true, false]) {
     let index = removeTerminal ? 0 : lines.length - 1;
@@ -308,14 +374,15 @@ export function fitTrackingIssueBody(
       }
 
       const checked = match[1] === "x";
-      const number = Number(match[2]);
+      const source = match[2]!;
       const disposition = trackingDisposition(line);
       const terminal =
         disposition === "promoted" || disposition === "already present" || disposition === "skip";
-      const open = !checked && disposition !== "review needed" && !terminal;
+      const open =
+        !checked && disposition !== "review needed" && !terminal && !source.startsWith("commit:");
       if ((removeTerminal && terminal) || (!removeTerminal && open)) {
-        if (terminal) compactedTerminal.push(number);
-        else deferredOpen.push(number);
+        if (terminal) compactedTerminal.push(source);
+        else deferredOpen.push(source);
         lines = removeTrackingEntry(lines, index);
         if (!removeTerminal) index = Math.min(index - 1, lines.length - 1);
         continue;
@@ -331,7 +398,10 @@ export function fitTrackingIssueBody(
     const disposition = trackingDisposition(line);
     const terminal =
       disposition === "promoted" || disposition === "already present" || disposition === "skip";
-    return !terminal && (match[1] === "x" || disposition === "review needed");
+    return (
+      !terminal &&
+      (match[1] === "x" || disposition === "review needed" || match[2]!.startsWith("commit:"))
+    );
   }).length;
   return {
     body: fittedBody,
@@ -344,28 +414,45 @@ export function fitTrackingIssueBody(
 
 export function prepareTrackingIssueUpdate(input: {
   readonly body: string;
-  readonly candidates: ReadonlyArray<UpstreamPullRequest>;
-  readonly landed: ReadonlyMap<number, string>;
+  readonly candidates: ReadonlyArray<UpstreamCandidate>;
+  readonly landed: ReadonlyMap<string, string>;
   readonly cutoffDate: string;
   readonly targetLength?: number;
 }) {
-  const previousTerminal = terminalStateNumbers(input.body);
-  const candidateNumbers = new Set(input.candidates.map((pullRequest) => pullRequest.number));
+  const previousTerminal = terminalSources(input.body);
+  const candidateSources = new Set(input.candidates.map(candidateSource));
   const activeTerminal = new Set(
-    [...previousTerminal].filter((number) => candidateNumbers.has(number)),
+    [...previousTerminal].filter((number) => candidateSources.has(number)),
   );
   const appended = appendUnlisted(
     refreshTrackingIntro(input.body),
-    input.candidates.filter((pullRequest) => !activeTerminal.has(pullRequest.number)),
+    input.candidates.filter((pullRequest) => !activeTerminal.has(candidateSource(pullRequest))),
   );
-  const reconciled = reconcilePromoted(appended.body, input.landed);
+  const reviewReasons = new Map(
+    input.candidates.flatMap((candidate) =>
+      candidate.reviewReason === undefined
+        ? []
+        : [[candidateSource(candidate), candidate.reviewReason] as const],
+    ),
+  );
+  const flagged = appended.body
+    .split("\n")
+    .map((line) => {
+      const match = line.match(TRACKING_LINE_PATTERN);
+      const reason = match === null ? undefined : reviewReasons.get(match[2]!);
+      return reason !== undefined && trackingDisposition(line) === undefined
+        ? `${line} — review needed: ${reason}`
+        : line;
+    })
+    .join("\n");
+  const reconciled = reconcilePromoted(flagged, input.landed);
   const pruned = pruneTrackingEntries(reconciled.body, input.cutoffDate);
   for (const number of pruned.prunedTerminal) {
-    if (candidateNumbers.has(number)) activeTerminal.add(number);
+    if (candidateSources.has(number)) activeTerminal.add(number);
   }
 
-  const compactedTerminal: Array<number> = [];
-  const deferredOpen: Array<number> = [];
+  const compactedTerminal: Array<string> = [];
+  const deferredOpen: Array<string> = [];
   let bodyWithState = writeTerminalState(pruned.body, activeTerminal);
   let fitted: ReturnType<typeof fitTrackingIssueBody>;
   while (true) {
@@ -373,7 +460,7 @@ export function prepareTrackingIssueUpdate(input: {
     compactedTerminal.push(...pass.compactedTerminal);
     deferredOpen.push(...pass.deferredOpen);
     for (const number of pass.compactedTerminal) {
-      if (candidateNumbers.has(number)) activeTerminal.add(number);
+      if (candidateSources.has(number)) activeTerminal.add(number);
     }
     if (pass.compactedTerminal.length === 0) {
       fitted = {
@@ -394,14 +481,14 @@ export interface GitCommitMessage {
   readonly message: string;
 }
 
-export function landedUpstreamPullRequests(
+export function landedUpstreamSources(
   commits: ReadonlyArray<GitCommitMessage>,
   upstreamMergeCommits: ReadonlyMap<string, number>,
 ): {
-  readonly landed: ReadonlyMap<number, string>;
+  readonly landed: ReadonlyMap<string, string>;
   readonly errors: ReadonlyArray<string>;
 } {
-  const landed = new Map<number, string>();
+  const landed = new Map<string, string>();
   const errors: Array<string> = [];
 
   for (const commit of commits) {
@@ -410,11 +497,15 @@ export function landedUpstreamPullRequests(
       errors.push(`${commit.sha.slice(0, 12)}: ${error}`);
     }
     for (const number of provenance.pullRequestNumbers) {
-      if (!landed.has(number)) landed.set(number, commit.sha);
+      if (!landed.has(`#${number}`)) landed.set(`#${number}`, commit.sha);
+    }
+    for (const sha of provenance.commitShas) {
+      if (!landed.has(`commit:${sha}`)) landed.set(`commit:${sha}`, commit.sha);
     }
     for (const match of commit.message.matchAll(CHERRY_PICK_REFERENCE)) {
+      if (!landed.has(`commit:${match[1]}`)) landed.set(`commit:${match[1]}`, commit.sha);
       const number = upstreamMergeCommits.get(match[1] ?? "");
-      if (number !== undefined && !landed.has(number)) landed.set(number, commit.sha);
+      if (number !== undefined && !landed.has(`#${number}`)) landed.set(`#${number}`, commit.sha);
     }
   }
 
@@ -449,6 +540,7 @@ function gitCommitMessages(ref: string): ReadonlyArray<GitCommitMessage> {
     "log",
     "--regexp-ignore-case",
     "--grep=Upstream-PR:",
+    "--grep=Upstream-Commit:",
     "--grep=Source PRs:",
     "--grep=cherry picked from commit",
     "--format=%H%x1f%B%x1e",
@@ -581,24 +673,48 @@ function main(): void {
   const sinceIso = effectiveScanBoundary(currentIssue.body, configuredSinceIso);
   const pruneBefore = sinceIso.slice(0, 10);
   const merged = fetchMergedUpstreamPullRequests(upstream, sinceIso);
+  const reachable = merged.filter((pullRequest) => isAncestorOf(pullRequest.sha, upstreamRef));
   const upstreamMergeCommits = new Map(
-    merged.map((pullRequest) => [pullRequest.sha, pullRequest.number] as const),
+    reachable.map((pullRequest) => [pullRequest.sha, pullRequest.number] as const),
   );
-  const landedResult = landedUpstreamPullRequests(gitCommitMessages(mainRef), upstreamMergeCommits);
-  const candidates = merged
-    .filter((pullRequest) => isAncestorOf(pullRequest.sha, upstreamRef))
+  const savedHead = commitScanHead(currentIssue.body);
+  const commitScan = scanUpstreamCommits(
+    {
+      upstreamRepository: upstream,
+      upstreamRef,
+      mainRef,
+      pullRequestsByMergeSha: upstreamMergeCommits,
+      ...(savedHead === undefined ? {} : { previousHead: savedHead }),
+    },
+    run,
+  );
+  const landedResult = landedUpstreamSources(gitCommitMessages(mainRef), upstreamMergeCommits);
+  const landed = new Map(landedResult.landed);
+  const mainAncestors = new Set(run("git", ["rev-list", mainRef]).trim().split("\n"));
+  for (const source of listedSources(currentIssue.body)) {
+    if (source.startsWith("commit:") && mainAncestors.has(source.slice(7)))
+      landed.set(source, source.slice(7));
+  }
+  const emptyPullRequests = new Set(commitScan.emptyPullRequests);
+  const candidates: Array<UpstreamCandidate> = reachable
     .filter((pullRequest) => !isAncestorOf(pullRequest.sha, mainRef))
     .map((pullRequest) => ({
       number: pullRequest.number,
       title: pullRequest.title,
       mergedAt: pullRequest.mergedAt,
       areas: areasForPaths(pullRequest.files.nodes.map((file) => file.path)),
+      ...(emptyPullRequests.has(pullRequest.number)
+        ? {
+            reviewReason: "empty PR merge diff; inspect the source changes before choosing commits",
+          }
+        : {}),
     }));
+  candidates.push(...commitScan.commits);
 
   const update = prepareTrackingIssueUpdate({
-    body: writeCatchupSince(currentIssue.body, sinceIso),
+    body: writeCommitScanHead(writeCatchupSince(currentIssue.body, sinceIso), commitScan.head),
     candidates,
-    landed: landedResult.landed,
+    landed,
     cutoffDate: pruneBefore,
   });
   const { appended, reconciled, pruned, fitted } = update;
@@ -613,16 +729,16 @@ function main(): void {
     run("gh", ["issue", "edit", issue, "--repo", repository, "--body-file", "-"], nextBody);
   }
 
-  console.log(`Appended ${appended.added.length} pull request(s).`);
-  console.log(`Reconciled ${reconciled.reconciled.length} promoted pull request(s).`);
-  console.log(`Pruned ${pruned.prunedTerminal.length} old terminal pull request(s).`);
-  console.log(`Expired ${pruned.expiredOpen.length} old unqueued pull request(s).`);
-  console.log(`Compacted ${fitted.compactedTerminal.length} terminal pull request(s).`);
-  console.log(`Deferred ${fitted.deferredOpen.length} newer unqueued pull request(s).`);
+  console.log(`Appended ${appended.added.length} source entries.`);
+  console.log(`Reconciled ${reconciled.reconciled.length} promoted source entries.`);
+  console.log(`Pruned ${pruned.prunedTerminal.length} old terminal source entries.`);
+  console.log(`Expired ${pruned.expiredOpen.length} old unqueued source entries.`);
+  console.log(`Compacted ${fitted.compactedTerminal.length} terminal source entries.`);
+  console.log(`Deferred ${fitted.deferredOpen.length} newer unqueued source entries.`);
   if (pruned.retainedBacklog.length > 0) {
     console.log(
       `Retained backlog entries outside the rolling window: ${pruned.retainedBacklog
-        .map((number) => `\`#${number}\``)
+        .map((source) => `\`${source}\``)
         .join(", ")}`,
     );
   }
@@ -630,7 +746,11 @@ function main(): void {
 
 - Issue body: ${nextBody.length} / ${TRACKING_BODY_TARGET_LENGTH} operating characters
 - Scan boundary: ${sinceIso}
-- Durable backlog: ${fitted.backlogCount} pull request(s)
+- Commit scan: \`${commitScan.from}\` → \`${commitScan.head}\`
+- First-parent commits scanned: ${commitScan.scanned}
+- New commit review entries: ${commitScan.commits.length}
+- Empty PR merge diffs: ${commitScan.emptyPullRequests.map((number) => `\`#${number}\``).join(", ") || "None"}
+- Durable backlog: ${fitted.backlogCount} source entries
 - Deferred catch-up candidates: ${fitted.deferredOpen.length}
 - Appended: ${appended.added.length}
 - Reconciled as promoted: ${reconciled.reconciled.length}

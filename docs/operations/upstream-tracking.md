@@ -68,6 +68,41 @@ Nothing the workflow writes links to upstream or mentions anyone: numbers and ti
 backticks and no URLs are rendered. Keep that property when annotating, so the issue never creates
 cross-references or notifications on upstream's side.
 
+## Commits outside the PR inventory
+
+The same workflow walks upstream `main`'s first-parent history. The first run starts at the common
+ancestor of fork `main` and upstream `main`; subsequent runs start at the hidden
+`upstream-tracking-commit-scan-head` SHA in the issue body. This scan follows ancestry, not commit
+dates: a commit made months ago and pushed today must still be considered. The saved SHA advances
+only when the complete scan and issue update succeed. A history rewrite or a saved SHA outside the
+first-parent chain stops the run for maintainer review.
+
+PR merge commits are represented by the PR inventory. For other commits, the tracker checks GitHub's
+PR associations and suppresses an extra entry only when a merged PR is represented in that same
+inventory. Anything still unaccounted for gets a `commit:<full SHA>` row, initially marked
+`review needed`. These rows are observations of missing PR coverage, not proof that a maintainer
+pushed directly. Release bumps and automation changes are included for explicit triage.
+
+Unresolved commit entries neither expire nor defer during compaction, even if their review label is
+removed. Resolve them with `skip`, `already present`, or a promoted port. If durable entries exceed
+the issue budget, the update fails and the saved scan head does not advance. Once resolved, rows may
+compact normally; the saved head prevents rediscovery. Resetting that head can rediscover older
+decisions whose compact state has already been discarded, so review a proposed reset first.
+
+An empty PR merge diff is marked `review needed` as well. Inspect the PR's source changes and the
+surrounding upstream history rather than assuming its recorded merge SHA contains the implementation.
+The tracker never assigns preceding commits to a PR based on proximity or a PR number in a subject.
+For a non-PR merge, the commit row represents the diff against its first parent; commits reachable
+only through its other parents are not individually listed.
+
+Commit entries reconcile from full `Upstream-Commit:` trailers in fork `main`, literal ancestry, or
+the exact SHA recorded by `git cherry-pick -x`. A PR trailer alone does not resolve a separate commit
+entry. Commit discovery follows the saved SHA, while classification needs the PR inventory to cover
+the scanned range. After a long outage or an initial scan with a narrow PR window, a reachable merged
+PR outside that inventory stops the run with its number and merge date. Widen `since_days` to include
+that date and retry; the issue and commit scan head remain unchanged on failure. Narrowing the PR
+window never expires unresolved commit entries.
+
 ## Preparing an intake candidate
 
 Tick the boxes you want and add direction beneath each — what to keep of the fork's behaviour, which
@@ -77,9 +112,11 @@ those notes as its brief.
 Routine candidates use an `intake/<batch>` branch based on the current `main`. Preserve the individual
 upstream commits and their authors where they apply cleanly; a port may use fork-authored commits when
 the implementation must differ. Every intake commit records its source in commit metadata with a
-comma-separated trailer such as `Upstream-PR: 1234, 5678`. Fork pull requests may instead list escaped
+comma-separated trailer such as `Upstream-PR: 1234, 5678`, `Upstream-Commit: <full SHA>, <full SHA>`,
+or both. Commit SHAs must be complete, lowercase, 40-character values. Fork pull requests may list escaped
 `pingdotgg/t3code#1234` references beneath an exact `Source PRs:` section because this repository
-retains the body in the squash commit. Do not merge `main` into the branch. If `main` moves, rebase the
+retains the body in the squash commit; retain `Upstream-Commit:` lines there for commit sources.
+Do not merge `main` into the branch. If `main` moves, rebase the
 candidate and validate it again before promotion.
 
 Pushing an intake branch runs the same Fork CI jobs as a pull request, comparing the complete
@@ -102,9 +139,12 @@ Before dispatching promotion, give an independent model the candidate's complete
 diff, its audit report, and the upstream changes it is meant to carry. Resolve its findings, rerun Fork
 CI, and copy the full candidate commit id. Dispatch `Promote upstream intake` from `main` with the
 `intake/<batch>` branch, that exact commit id as `reviewed_sha`, and the comma-separated source pull
-request numbers as `source_prs`. Trusted validation requires that list to exactly match the candidate's
-commit provenance. This is durable bookkeeping, not proof that the candidate implements those pull
-requests; the independent review must verify that correspondence.
+request numbers as `source_prs` and/or full commit SHAs as `source_commits`. At least one source is
+required. Trusted validation requires both lists to exactly match the candidate's commit provenance;
+leaving an input empty asserts that it has no sources of that kind. Every candidate commit must name
+a PR, a commit SHA, or both. Explicit commit sources always require manual source-diff review. This
+is durable bookkeeping, not proof that the candidate implements those sources; the independent
+review must verify that correspondence.
 
 The validation job runs from the current trusted `main`, treats the candidate as data, repeats the
 ledger and structural audit, and requires a successful Fork CI push run with the complete expected

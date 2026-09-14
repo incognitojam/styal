@@ -4,20 +4,22 @@ import {
   appendUnlisted,
   areasForPaths,
   catchupSinceIso,
+  commitScanHead,
   effectiveScanBoundary,
   fetchMergedUpstreamPullRequests,
   fitTrackingIssueBody,
-  landedUpstreamPullRequests,
-  listedNumbers,
+  landedUpstreamSources,
+  listedSources,
   prepareTrackingIssueUpdate,
   pruneTrackingEntries,
   reconcilePromoted,
   refreshTrackingIntro,
-  renderPullRequestLine,
-  terminalStateNumbers,
+  renderCandidateLine,
+  terminalSources,
   upstreamPageReachesWindowBoundary,
   validateTrackingRepository,
   writeCatchupSince,
+  writeCommitScanHead,
   writeTerminalState,
   writeTrackingState,
 } from "./upstream-tracking-issue.ts";
@@ -45,7 +47,7 @@ describe("upstream tracking issue", () => {
     ]);
 
     assert.deepEqual(
-      added.map((p) => p.number),
+      added.map((p) => ("number" in p ? p.number : p.sha)),
       [99, 101, 102],
     );
     assert.include(next, "- [x] `#100` 2026-08-01");
@@ -68,7 +70,7 @@ describe("upstream tracking issue", () => {
   });
 
   it("never renders anything that links to or mentions upstream", () => {
-    const line = renderPullRequestLine({
+    const line = renderCandidateLine({
       number: 8694,
       title: "fix(mobile): thanks @someone, see `#8600` and https://example.com",
       mergedAt: "2026-08-29T12:00:00Z",
@@ -83,7 +85,7 @@ describe("upstream tracking issue", () => {
   });
 
   it("collapses title whitespace so issue markup cannot be injected", () => {
-    const line = renderPullRequestLine({
+    const line = renderCandidateLine({
       number: 9,
       title: "fix(web): safe\n- [ ] `#10` injected",
       mergedAt: "2026-08-29T00:00:00Z",
@@ -95,7 +97,7 @@ describe("upstream tracking issue", () => {
   });
 
   it("keeps scoped package paths from reading as mentions", () => {
-    const line = renderPullRequestLine({
+    const line = renderCandidateLine({
       number: 1,
       title: "chore: bump",
       mergedAt: "2026-08-29T00:00:00Z",
@@ -113,19 +115,91 @@ describe("upstream tracking issue", () => {
       "- [x] `#7` 2026-08-02 · `queued`",
     ].join("\n");
 
-    assert.deepEqual([...listedNumbers(body)], [5, 7]);
+    assert.deepEqual([...listedSources(body)], ["#5", "#7"]);
+  });
+
+  it("keeps commit entries through pruning and compaction and round-trips mixed state", () => {
+    const sha = "d".repeat(40);
+    const source = `commit:${sha}`;
+    const line = renderCandidateLine({
+      sha,
+      title: "fix: direct @someone `#123`",
+      committedAt: "2020-01-01T00:00:00Z",
+      areas: ["apps/web"],
+      reviewReason: "upstream commit outside the PR inventory",
+    });
+    assert.include(line, "— review needed:");
+    assert.notMatch(line.replaceAll(/`[^`]*`/g, ""), /@|#123/);
+    const body = writeCommitScanHead(
+      writeCatchupSince(line + "\n", "2026-08-24T00:00:00.000Z"),
+      sha,
+    );
+    assert.strictEqual(commitScanHead(body), sha);
+    assert.strictEqual(writeCommitScanHead(body.replaceAll("\n", "\r\n"), sha), body);
+    assert.strictEqual(commitScanHead(writeCatchupSince(body)), sha);
+    assert.strictEqual(commitScanHead(writeTerminalState(body, new Set(["#123", source]))), sha);
+    assert.deepEqual(
+      [...terminalSources(writeTerminalState(body, new Set([source, "#123"])))],
+      ["#123", source],
+    );
+    assert.deepEqual([...listedSources(body)], [source]);
+    // Clearing the display label must not strand a commit behind an advanced scan head.
+    const unlabelled = body.replace(
+      " — review needed: upstream commit outside the PR inventory",
+      "",
+    );
+    assert.include(pruneTrackingEntries(unlabelled, "2026-09-01").body, source);
+    const fitted = fitTrackingIssueBody(unlabelled, 10);
+    assert.isTrue(fitted.overflow);
+    assert.deepEqual(fitted.deferredOpen, []);
+    assert.strictEqual(commitScanHead(fitted.body), sha);
+    assert.throws(
+      () => commitScanHead("<!-- upstream-tracking-commit-scan-head:abc -->"),
+      "malformed",
+    );
+  });
+
+  it("flags an existing empty PR merge and keeps its separate implementation commit unresolved", () => {
+    const sha = "d".repeat(40);
+    const implementation = {
+      sha,
+      title: "implementation",
+      committedAt: "2026-09-01T00:00:00Z",
+      areas: ["apps/web"],
+      reviewReason: "upstream commit outside the PR inventory",
+    };
+    const pr = { ...pullRequest(123, "2026-09-01T00:00:00Z"), reviewReason: "empty PR merge diff" };
+    const first = prepareTrackingIssueUpdate({
+      body: renderCandidateLine(pullRequest(123, pr.mergedAt)),
+      candidates: [pr, implementation],
+      landed: new Map(),
+      cutoffDate: "2026-09-01",
+    });
+    assert.include(first.body, "— review needed: empty PR merge diff");
+    const prOnly = landedUpstreamSources(
+      [{ sha: "a".repeat(40), message: "fix: port\n\nUpstream-PR: 123" }],
+      new Map(),
+    );
+    const second = reconcilePromoted(first.body, prOnly.landed);
+    assert.deepEqual(second.reconciled, ["#123"]);
+    assert.include(second.body, renderCandidateLine(implementation));
+    const direct = landedUpstreamSources(
+      [{ sha: "b".repeat(40), message: `fix: direct\n\nUpstream-Commit: ${sha}` }],
+      new Map(),
+    );
+    assert.deepEqual(reconcilePromoted(second.body, direct.landed).reconciled, [`commit:${sha}`]);
   });
 
   it("round-trips compact terminal state without exposing active references", () => {
-    const body = writeTerminalState("intro\n- [ ] `#5` 2026-08-01 · `open`\n", new Set([9, 7]));
+    const body = writeTerminalState(
+      "intro\n- [ ] `#5` 2026-08-01 · `open`\n",
+      new Set(["#9", "#7"]),
+    );
 
-    assert.deepEqual([...terminalStateNumbers(body)], [7, 9]);
+    assert.deepEqual([...terminalSources(body)], ["#7", "#9"]);
     assert.include(body, "<!-- upstream-tracking-terminal:7,9 -->");
     assert.notInclude(body, "`#7`");
-    assert.throws(
-      () => terminalStateNumbers("<!-- upstream-tracking-terminal:7,nope -->"),
-      "malformed",
-    );
+    assert.throws(() => terminalSources("<!-- upstream-tracking-terminal:7,nope -->"), "malformed");
   });
 
   it("round-trips the fixed catch-up boundary while candidates are deferred", () => {
@@ -155,12 +229,12 @@ describe("upstream tracking issue", () => {
     let body = "intro\n";
     for (let run = 0; run < 4; run += 1) {
       body = writeCatchupSince(body, since);
-      body = writeTerminalState(body, new Set([9, 7]));
+      body = writeTerminalState(body, new Set(["#9", "#7"]));
       assert.strictEqual(body, expected);
     }
 
     assert.strictEqual(
-      writeTrackingState(body, { terminal: new Set([7, 9]) }),
+      writeTrackingState(body, { terminal: new Set(["#7", "#9"]) }),
       "intro\n\n<!-- upstream-tracking-terminal:7,9 -->\n",
     );
   });
@@ -182,7 +256,7 @@ describe("upstream tracking issue", () => {
     ].join("\r\n");
 
     const normalized = writeCatchupSince(edited, since);
-    assert.strictEqual(writeTerminalState(normalized, new Set([9])), normalized);
+    assert.strictEqual(writeTerminalState(normalized, new Set(["#9"])), normalized);
     assert.strictEqual(catchupSinceIso(normalized), since);
     assert.notInclude(normalized, "\r");
 
@@ -192,7 +266,7 @@ describe("upstream tracking issue", () => {
       landed: new Map(),
       cutoffDate: "2026-08-02",
     });
-    assert.deepEqual(update.pruned.prunedTerminal, [1]);
+    assert.deepEqual(update.pruned.prunedTerminal, ["#1"]);
     assert.notInclude(update.body, "note belonging to the skipped fix");
     assert.include(update.body, "keep this queued direction");
     assert.strictEqual(catchupSinceIso(update.body), since);
@@ -234,13 +308,13 @@ beneath it, then dispatch an agent with the ticked items. The list is appended b
     const first = reconcilePromoted(
       body,
       new Map([
-        [100, "a".repeat(40)],
-        [101, "b".repeat(40)],
+        ["#100", "a".repeat(40)],
+        ["#101", "b".repeat(40)],
       ]),
     );
-    const second = reconcilePromoted(first.body, new Map([[100, "c".repeat(40)]]));
+    const second = reconcilePromoted(first.body, new Map([["#100", "c".repeat(40)]]));
 
-    assert.deepEqual(first.reconciled, [100, 101]);
+    assert.deepEqual(first.reconciled, ["#100", "#101"]);
     assert.include(first.body, "- [x] `#100`");
     assert.include(first.body, "— promoted `aaaaaaa`");
     assert.include(first.body, "  preserve the fork behavior");
@@ -257,9 +331,9 @@ beneath it, then dispatch an agent with the ticked items. The list is appended b
     const result = reconcilePromoted(
       body,
       new Map([
-        [100, "a".repeat(40)],
-        [101, "b".repeat(40)],
-        [102, "c".repeat(40)],
+        ["#100", "a".repeat(40)],
+        ["#101", "b".repeat(40)],
+        ["#102", "c".repeat(40)],
       ]),
     );
 
@@ -267,7 +341,7 @@ beneath it, then dispatch an agent with the ticked items. The list is appended b
     assert.include(result.body, "`#101` 2026-08-01 · `x` — skip: conflicts with fork behavior");
     assert.include(result.body, "- [x] `#102` 2026-08-01 · `x` — promoted `ccccccc`");
     assert.notInclude(result.body, "review needed");
-    assert.deepEqual(result.reconciled, [102]);
+    assert.deepEqual(result.reconciled, ["#102"]);
   });
 
   it("does not mistake disposition words inside a title for state", () => {
@@ -280,13 +354,13 @@ beneath it, then dispatch an agent with the ticked items. The list is appended b
     const result = reconcilePromoted(
       body,
       new Map([
-        [100, "a".repeat(40)],
-        [101, "b".repeat(40)],
-        [102, "c".repeat(40)],
+        ["#100", "a".repeat(40)],
+        ["#101", "b".repeat(40)],
+        ["#102", "c".repeat(40)],
       ]),
     );
 
-    assert.deepEqual(result.reconciled, [100, 101, 102]);
+    assert.deepEqual(result.reconciled, ["#100", "#101", "#102"]);
     assert.include(result.body, "— promoted `aaaaaaa`");
   });
 
@@ -306,9 +380,9 @@ beneath it, then dispatch an agent with the ticked items. The list is appended b
     ].join("\n");
     const result = pruneTrackingEntries(body, "2026-08-01");
 
-    assert.deepEqual(result.prunedTerminal, [100]);
-    assert.deepEqual(result.expiredOpen, [104]);
-    assert.deepEqual(result.retainedBacklog, [101, 102]);
+    assert.deepEqual(result.prunedTerminal, ["#100"]);
+    assert.deepEqual(result.expiredOpen, ["#104"]);
+    assert.deepEqual(result.retainedBacklog, ["#101", "#102"]);
     assert.notInclude(result.body, "old promoted");
     assert.notInclude(result.body, "old note");
     assert.notInclude(result.body, "old untouched");
@@ -346,8 +420,8 @@ beneath it, then dispatch an agent with the ticked items. The list is appended b
     ].join("\n");
     const result = fitTrackingIssueBody(body, 260);
 
-    assert.deepEqual(result.compactedTerminal, [100]);
-    assert.deepEqual(result.deferredOpen, [104]);
+    assert.deepEqual(result.compactedTerminal, ["#100"]);
+    assert.deepEqual(result.deferredOpen, ["#104"]);
     assert.strictEqual(result.backlogCount, 2);
     assert.isFalse(result.overflow);
     assert.include(result.body, "candidate note");
@@ -383,7 +457,7 @@ beneath it, then dispatch an agent with the ticked items. The list is appended b
     assert.include(first.body, "`#1`");
     assert.include(first.body, "`#2`");
     assert.notInclude(first.body, "`#4`");
-    assert.include(first.fitted.deferredOpen, 4);
+    assert.include(first.fitted.deferredOpen, "#4");
 
     const decided = first.body.replace("`oldest`", "`oldest` — skip: not for the fork");
     const second = prepareTrackingIssueUpdate({
@@ -403,16 +477,18 @@ beneath it, then dispatch an agent with the ticked items. The list is appended b
 
     assert.notInclude(second.body, "`#1`");
     assert.include(second.body, "`#3`");
-    assert.include(terminalStateNumbers(second.body), 1);
+    assert.include(terminalSources(second.body), "#1");
     assert.notInclude(third.body, "`#1`");
     assert.notInclude(
-      third.appended.added.map((pullRequest) => pullRequest.number),
+      third.appended.added.map((pullRequest) =>
+        "number" in pullRequest ? pullRequest.number : pullRequest.sha,
+      ),
       1,
     );
   });
 
   it("derives landed sources from trailers, fork PR bodies, and cherry-pick metadata", () => {
-    const result = landedUpstreamPullRequests(
+    const result = landedUpstreamSources(
       [
         {
           sha: "a".repeat(40),
@@ -427,9 +503,12 @@ beneath it, then dispatch an agent with the ticked items. The list is appended b
       new Map([["c".repeat(40), 303]]),
     );
 
-    assert.deepEqual([...result.landed.keys()], [300, 301, 302, 303]);
-    assert.strictEqual(result.landed.get(300), "a".repeat(40));
-    assert.strictEqual(result.landed.get(303), "b".repeat(40));
+    assert.deepEqual(
+      [...result.landed.keys()],
+      ["#300", "#301", "#302", `commit:${"c".repeat(40)}`, "#303"],
+    );
+    assert.strictEqual(result.landed.get("#300"), "a".repeat(40));
+    assert.strictEqual(result.landed.get("#303"), "b".repeat(40));
     assert.deepEqual(result.errors, []);
   });
 
