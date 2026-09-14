@@ -268,12 +268,13 @@ export function CloudEnvironmentConnectRows({
     const statusText = savedConnection
       ? savedConnection.statusText
       : availability === "online"
-        ? "Available · Relay online"
+        ? "styal Link · Not added · Relay online"
         : availability === "offline"
-          ? "Available · Relay offline"
+          ? "styal Link · Not added · Relay offline"
           : availability === "checking"
-            ? "Available · Checking relay status…"
-            : (Option.getOrNull(error)?.message ?? "Available · Relay status unavailable");
+            ? "styal Link · Not added · Checking relay status…"
+            : (Option.getOrNull(error)?.message ??
+              "styal Link · Not added · Relay status unavailable");
     if (selection) {
       return (
         <label
@@ -366,7 +367,7 @@ export function CloudEnvironmentConnectRows({
               disabled={connectingEnvironmentIds.size > 0}
               onClick={() => void connectEnvironment(environment)}
             >
-              {connectingEnvironmentIds.has(environment.environmentId) ? "Connecting…" : "Connect"}
+              {connectingEnvironmentIds.has(environment.environmentId) ? "Adding…" : "Add"}
             </Button>
           )}
         </div>
