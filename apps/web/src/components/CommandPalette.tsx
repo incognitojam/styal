@@ -96,7 +96,7 @@ import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { normalizeIssueContextSelection } from "../lib/issueContext";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
-import { useProjects, useServerConfigs, useThreadShells } from "../state/entities";
+import { useProjects, useServerConfigs, useThreadShells, waitForProject } from "../state/entities";
 import { useThreadSearch } from "../state/queries";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
 import {
@@ -736,6 +736,9 @@ function OpenCommandPaletteDialog(props: {
     reportDefect: false,
   });
   const cloneRepository = useAtomCommand(sourceControlEnvironment.cloneRepository, {
+    reportFailure: false,
+  });
+  const startProjectClone = useAtomCommand(sourceControlEnvironment.startProjectClone, {
     reportFailure: false,
   });
   const { environments } = useEnvironments();
@@ -2595,53 +2598,102 @@ function OpenCommandPaletteDialog(props: {
       addProjectCloneFlow.repository?.parentNameWithOwner === undefined
         ? null
         : addProjectCloneFlow.repository;
+    // Only a fork needs naming: it is what lets the server wire up the
+    // upstream remote. Every other clone stays a plain URL clone, with no
+    // second repository lookup on the server.
+    const forkCloneInput = forkRepository
+      ? {
+          provider: forkRepository.provider,
+          repository: forkRepository.nameWithOwner,
+          ...(addProjectCloneFlow.defaultRepository
+            ? { defaultRepository: addProjectCloneFlow.defaultRepository }
+            : {}),
+        }
+      : {};
+    const showCloneFailure = (error: unknown) =>
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: `Clone failed on ${cloneEnvironmentLabel}`,
+          description: isSourceControlRepositoryError(error) ? error.detail : errorMessage(error),
+        }),
+      );
 
+    // Older servers only offer the blocking clone: the palette has to wait
+    // for git so it can add the project afterwards.
+    if (browseEnvironment?.serverConfig?.environment.capabilities.projectCloneTracking !== true) {
+      setIsRemoteProjectCloning(true);
+      const cloneResult = await cloneRepository({
+        environmentId: addProjectCloneFlow.environmentId,
+        input: {
+          ...forkCloneInput,
+          remoteUrl: addProjectCloneFlow.remoteUrl,
+          destinationPath,
+        },
+      });
+      setIsRemoteProjectCloning(false);
+      if (cloneResult._tag === "Failure") {
+        if (!isAtomCommandInterrupted(cloneResult)) {
+          showCloneFailure(squashAtomCommandFailure(cloneResult));
+        }
+        return;
+      }
+      // The clone itself succeeded, so this is a warning rather than a failure:
+      // the repository is on disk, just without the remote that was asked for.
+      if (forkRepository && !cloneResult.value.upstream) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Upstream remote not added",
+            description: `Cloned, but ${forkRepository.parentNameWithOwner} could not be wired up as a remote.`,
+          }),
+        );
+      }
+      await handleAddProject(cloneResult.value.cwd);
+      return;
+    }
+
+    // The server creates the project and clones in the background; progress
+    // shows in a toast and in the draft's composer banner, so the palette
+    // closes as soon as the clone is under way. Only problems found before
+    // git runs (bad destination, unknown repository) come back here.
+    const projectId = newProjectId();
     setIsRemoteProjectCloning(true);
-    const cloneResult = await cloneRepository({
+    const startResult = await startProjectClone({
       environmentId: addProjectCloneFlow.environmentId,
       input: {
-        // Only a fork needs naming: it is what lets the server wire up the
-        // upstream remote. Every other clone stays a plain URL clone, with no
-        // second repository lookup on the server.
-        ...(forkRepository
-          ? {
-              provider: forkRepository.provider,
-              repository: forkRepository.nameWithOwner,
-              ...(addProjectCloneFlow.defaultRepository
-                ? { defaultRepository: addProjectCloneFlow.defaultRepository }
-                : {}),
-            }
-          : {}),
+        projectId,
+        title: inferProjectTitleFromPath(destinationPath),
+        createdAt: new Date().toISOString(),
+        ...forkCloneInput,
         remoteUrl: addProjectCloneFlow.remoteUrl,
         destinationPath,
       },
     });
     setIsRemoteProjectCloning(false);
-    if (cloneResult._tag === "Failure") {
-      if (!isAtomCommandInterrupted(cloneResult)) {
-        const error = squashAtomCommandFailure(cloneResult);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: `Clone failed on ${cloneEnvironmentLabel}`,
-            description: isSourceControlRepositoryError(error) ? error.detail : errorMessage(error),
-          }),
-        );
+    if (startResult._tag === "Failure") {
+      if (!isAtomCommandInterrupted(startResult)) {
+        showCloneFailure(squashAtomCommandFailure(startResult));
       }
       return;
     }
-    // The clone itself succeeded, so this is a warning rather than a failure:
-    // the repository is on disk, just without the remote that was asked for.
-    if (forkRepository && !cloneResult.value.upstream) {
+    setOpen(false);
+    const projectRef = scopeProjectRef(addProjectCloneFlow.environmentId, projectId);
+    // The create event usually lands before this call returns; give the shell
+    // stream a moment so the draft opens with its project resolved instead of
+    // flashing the project picker.
+    await waitForProject(projectRef, 3_000).catch(() => null);
+    const navigationResult = await settlePromise(() => handleNewThread(projectRef));
+    if (navigationResult._tag === "Failure") {
+      const error = squashAtomCommandFailure(navigationResult);
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Upstream remote not added",
-          description: `Cloned, but ${forkRepository.parentNameWithOwner} could not be wired up as a remote.`,
+          title: "Failed to open project",
+          description: error instanceof Error ? error.message : "An error occurred.",
         }),
       );
     }
-    await handleAddProject(cloneResult.value.cwd);
   }
 
   const browseTo = useCallback(

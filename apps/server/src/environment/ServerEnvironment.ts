@@ -246,6 +246,7 @@ export const make = Effect.gen(function* () {
       threadPullRequestLinking: true,
       composerDraftSync: true,
       environmentIcon: true,
+      projectCloneTracking: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverSelfUpdate === "boot-service" || desktopAppUpdate
         ? {

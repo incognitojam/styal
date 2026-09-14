@@ -370,6 +370,32 @@ features:
       tracking: []
       retire_when: Upstream warns about Claude prompt cache loss on model and option changes, or Claude Code keeps the cache across them.
 
+  - id: clone-failure-guidance
+    title: Explain clone authentication and rate-limit failures
+    status: maintained
+    prs: [327]
+    invariants:
+      - A clone that fails because Git authentication failed says so and names how to set up Git credentials or SSH keys, including `gh auth login` and `gh auth setup-git` for GitHub HTTPS, instead of showing Git's output.
+      - A clone refused by a host rate limit says to wait and retry; other failures keep Git's last lines with credentials removed, and process failures such as a timeout keep their own message.
+      - Web and mobile show this detail without the internal operation and provider prefix, and the web failure heading names the environment the clone ran on.
+    rationale: Upstream shows Git's last lines for every clone failure, which for a private repository without credentials is a terminal-prompt error that does not say how to sign in.
+    implementation_paths:
+      - apps/mobile/src/features/projects/AddProjectScreen.tsx
+      - apps/server/src/sourceControl/SourceControlRepositoryService.ts
+      - apps/server/src/vcs/VcsProcess.ts
+      - apps/web/src/components/CommandPalette.tsx
+    upstream_paths:
+      - apps/mobile/src/features/projects/AddProjectScreen.tsx
+      - apps/server/src/sourceControl/SourceControlRepositoryService.ts
+      - apps/server/src/vcs/VcsProcess.ts
+      - apps/web/src/components/CommandPalette.tsx
+    tests:
+      - apps/server/src/sourceControl/SourceControlRepositoryService.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream gives clone authentication and rate-limit failures recovery guidance on web and mobile.
+
   - id: codex-default-effort
     title: Run Codex turns at the effort shown as default
     status: maintained
@@ -2608,31 +2634,36 @@ features:
     status: maintained
     prs: [123]
     invariants:
-      - Cloning a GitHub fork offers a default repository choice, keeps the fork as `origin`, and adds and fetches the parent as `upstream` without changing non-fork clone behavior.
+      - Cloning a GitHub fork offers a default repository choice, keeps the fork as `origin`, and adds and fetches the parent as `upstream` without changing non-fork clone behavior, whether the clone blocks or runs in the background.
       - T3 Code and the GitHub CLI share the selected default through `remote.<name>.gh-resolved`, and web and mobile allow that choice to be inspected, changed, or cleared after cloning.
       - Branch tracking remotes continue to take precedence for repository identity, while the default repository resolves otherwise ambiguous untracked branches.
     implementation_paths:
       - apps/mobile/src/features/projects/AddProjectScreen.tsx
       - apps/mobile/src/features/threads/git/GitDefaultRepositorySheet.tsx
+      - apps/server/src/project/ProjectCloneTracker.ts
       - apps/server/src/project/RepositoryIdentityResolver.ts
       - apps/server/src/sourceControl/GitHubCli.ts
       - apps/server/src/sourceControl/SourceControlRepositoryService.ts
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/settings/ProjectSettingsPanel.tsx
       - packages/client-runtime/src/operations/projects.ts
+      - packages/contracts/src/projectClone.ts
       - packages/contracts/src/sourceControl.ts
       - packages/shared/src/git.ts
     upstream_paths:
       - apps/mobile/src/features/projects/AddProjectScreen.tsx
+      - apps/server/src/project/ProjectCloneTracker.ts
       - apps/server/src/project/RepositoryIdentityResolver.ts
       - apps/server/src/sourceControl/GitHubCli.ts
       - apps/server/src/sourceControl/SourceControlRepositoryService.ts
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/settings/ProjectSettingsPanel.tsx
       - packages/client-runtime/src/operations/projects.ts
+      - packages/contracts/src/projectClone.ts
       - packages/contracts/src/sourceControl.ts
       - packages/shared/src/git.ts
     tests:
+      - apps/server/src/project/ProjectCloneTracker.test.ts
       - apps/server/src/project/RepositoryIdentityResolver.test.ts
       - apps/server/src/sourceControl/GitHubCli.test.ts
       - apps/server/src/sourceControl/SourceControlRepositoryService.test.ts
