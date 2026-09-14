@@ -5,8 +5,10 @@ import {
   resolveProjectScripts,
   setupProjectScript,
 } from "@t3tools/shared/projectScripts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -105,8 +107,24 @@ export interface ProjectSetupScriptRunnerResultStarted {
   readonly runId: string;
   readonly scriptId: string;
   readonly scriptName: string;
+  readonly scriptCommand: string;
   readonly terminalId: string;
   readonly cwd: string;
+  /**
+   * Resolves when the script's terminal process exits. The exit code is null
+   * when the terminal was closed, restarted or failed before the process
+   * exited. Only present when `observeCompletion` was requested.
+   */
+  readonly completion?: Effect.Effect<ProjectSetupScriptCompletion>;
+}
+
+export interface ProjectSetupScriptCompletion {
+  readonly exitCode: number | null;
+  readonly durationMs: number;
+}
+
+export interface ProjectSetupScriptOutputLine {
+  readonly line: string;
 }
 
 export interface ProjectSetupScriptRunnerResultNotAWorktree {
@@ -126,6 +144,14 @@ export interface ProjectSetupScriptRunnerInput {
   readonly projectCwd?: string;
   readonly worktreePath: string;
   readonly preferredTerminalId?: string;
+  /**
+   * Report the script's exit through `completion`, and forward cleaned output
+   * lines while it runs. The bootstrap flow uses this to drive the worktree
+   * setup card.
+   */
+  readonly observeCompletion?: {
+    readonly onOutputLine?: (line: string) => Effect.Effect<void>;
+  };
 }
 
 export class ProjectSetupScriptOperationError extends Schema.TaggedError<ProjectSetupScriptOperationError>()(
@@ -172,6 +198,24 @@ export class ProjectSetupScriptRunner extends Context.Service<
     ) => Effect.Effect<ProjectSetupScriptRunnerResult, ProjectSetupScriptRunnerError>;
   }
 >()("@styal/cli/project/ProjectSetupScriptRunner") {}
+
+const OUTPUT_LINE_MAX_LENGTH = 400;
+/** A partial line longer than this is a byte stream, not a line. Keep only the tail. */
+const PARTIAL_LINE_MAX_LENGTH = 4_096;
+
+/** Removes ANSI escape sequences and cursor controls so lines can be shown as plain text. */
+function stripTerminalControl(text: string): string {
+  return (
+    text
+      .replace(
+        // eslint-disable-next-line no-control-regex
+        /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]|\x1b[=>]/g,
+        "",
+      )
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "")
+  );
+}
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
@@ -362,6 +406,76 @@ export const make = Effect.gen(function* () {
   yield* forkParked(recoverInterruptedRuns());
   const serverSettings = yield* ServerSettings.ServerSettingsService;
 
+  /**
+   * Watches the setup terminal until its command process exits. Terminal
+   * output is a byte stream, so partial lines are buffered until a newline.
+   * The subscription is torn down once an exit, close, error or restart
+   * arrives.
+   */
+  const observeTerminalCompletion = (input: {
+    readonly threadId: string;
+    readonly terminalId: string;
+    readonly onOutputLine: ((line: string) => Effect.Effect<void>) | undefined;
+  }) =>
+    Effect.gen(function* () {
+      const startedAtMs = yield* Clock.currentTimeMillis;
+      const done = yield* Deferred.make<ProjectSetupScriptCompletion>();
+      let lineBuffer = "";
+      let settled = false;
+
+      const settle = (exitCode: number | null) =>
+        Effect.suspend(() => {
+          if (settled) return Effect.void;
+          settled = true;
+          return Clock.currentTimeMillis.pipe(
+            Effect.flatMap((nowMs) =>
+              Deferred.succeed(done, { exitCode, durationMs: nowMs - startedAtMs }),
+            ),
+            Effect.asVoid,
+          );
+        });
+
+      const handleLine = (rawLine: string) =>
+        Effect.suspend(() => {
+          const cleaned = stripTerminalControl(rawLine).trimEnd();
+          if (cleaned.length === 0 || input.onOutputLine === undefined) {
+            return Effect.void;
+          }
+          return input.onOutputLine(cleaned.slice(0, OUTPUT_LINE_MAX_LENGTH));
+        });
+
+      const unsubscribe = yield* terminalManager.subscribe((event) => {
+        if (event.threadId !== input.threadId || event.terminalId !== input.terminalId) {
+          return Effect.void;
+        }
+        switch (event.type) {
+          case "output": {
+            lineBuffer += event.data;
+            const lines = lineBuffer.split(/\r?\n/);
+            lineBuffer = lines.pop() ?? "";
+            // A script that never prints a newline must not grow this forever.
+            if (lineBuffer.length > PARTIAL_LINE_MAX_LENGTH) {
+              lineBuffer = lineBuffer.slice(-PARTIAL_LINE_MAX_LENGTH);
+            }
+            return Effect.forEach(lines, handleLine, { discard: true });
+          }
+          case "exited":
+            return settle(event.exitCode);
+          case "closed":
+          case "error":
+          case "restarted":
+            return settle(null);
+          default:
+            return Effect.void;
+        }
+      });
+
+      const completion = Deferred.await(done).pipe(
+        Effect.ensuring(Effect.sync(() => unsubscribe())),
+      );
+      return { completion, unsubscribe };
+    });
+
   const runForThread: ProjectSetupScriptRunner["Service"]["runForThread"] = Effect.fn(
     "ProjectSetupScriptRunner.runForThread",
   )(function* (input) {
@@ -511,6 +625,15 @@ export const make = Effect.gen(function* () {
       },
     }).pipe(Effect.ignoreCause({ log: true }));
 
+    // Subscribe before opening so an exit during the open cannot be missed.
+    const observed = input.observeCompletion
+      ? yield* observeTerminalCompletion({
+          threadId: input.threadId,
+          terminalId,
+          onOutputLine: input.observeCompletion.onOutputLine,
+        })
+      : undefined;
+
     const terminal = yield* terminalManager
       .openCommand({
         threadId: input.threadId,
@@ -547,9 +670,12 @@ export const make = Effect.gen(function* () {
             ),
           ),
         ),
+        // Nothing will ever settle the completion if the command never ran.
+        Effect.tapError(() => Effect.sync(() => observed?.unsubscribe())),
       );
 
     if (terminal.status === "error") {
+      observed?.unsubscribe();
       const startError = new ProjectSetupScriptOperationError({
         ...errorContext,
         operation: "openTerminal",
@@ -611,8 +737,10 @@ export const make = Effect.gen(function* () {
       runId,
       scriptId: script.id,
       scriptName: script.name,
+      scriptCommand: script.command,
       terminalId,
       cwd,
+      ...(observed ? { completion: observed.completion } : {}),
     } as const;
   });
 

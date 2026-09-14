@@ -329,9 +329,11 @@ describe("ProjectSetupScriptRunner", () => {
         status: "started",
         scriptId: "setup",
         scriptName: "Setup",
+        scriptCommand: "bun install",
         terminalId: "setup-setup",
         cwd: "/repo/worktrees/a",
       });
+      expect(result.status === "started" ? result.completion : null).toBeUndefined();
       expect(openCommand).toHaveBeenCalledWith({
         threadId: "thread-1",
         terminalId: "setup-setup",
@@ -360,6 +362,153 @@ describe("ProjectSetupScriptRunner", () => {
         expect.objectContaining({ scriptName: "Setup", scriptIcon: "configure" }),
       ]);
     }).pipe(Effect.provide(testLayer(project, { openCommand }, commands)));
+  });
+
+  it.effect("reports the command's exit and its output lines when completion is observed", () => {
+    const listeners = new Set<(event: TerminalEvent) => Effect.Effect<void>>();
+    const emit = (event: TerminalEvent) =>
+      Effect.forEach([...listeners], (listener) => listener(event), { discard: true });
+    const output = (data: string) =>
+      emit({ type: "output", threadId: "thread-1", terminalId: "setup-setup", data });
+    const project = makeProject([
+      {
+        id: "setup",
+        name: "Setup",
+        command: "bun install",
+        icon: "configure",
+        runOnWorktreeCreate: true,
+      },
+    ]);
+
+    return Effect.gen(function* () {
+      const runner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
+      const seen: string[] = [];
+      const result = yield* runner.runForThread({
+        threadId: "thread-1",
+        projectCwd: "/repo/project",
+        worktreePath: "/repo/worktrees/a",
+        observeCompletion: {
+          onOutputLine: (line) => Effect.sync(() => void seen.push(line)),
+        },
+      });
+      expect(result.status).toBe("started");
+      if (result.status !== "started" || !result.completion) {
+        throw new Error("expected an observed setup run");
+      }
+      // The outcome recorder and this run's observer both listen.
+      expect(listeners.size).toBe(2);
+
+      // Output arrives in chunks; partial lines are buffered until a newline,
+      // and control sequences are stripped.
+      yield* output("\u001b[32mResolving");
+      yield* output(" deps\u001b[0m\r\nDone in 2s\r\n");
+      yield* output("unfinished line");
+      // Another terminal's events do not count.
+      yield* emit({
+        type: "exited",
+        threadId: "thread-1",
+        terminalId: "other",
+        exitCode: 0,
+        exitSignal: null,
+      });
+      yield* emit({
+        type: "exited",
+        threadId: "thread-1",
+        terminalId: "setup-setup",
+        exitCode: 3,
+        exitSignal: null,
+      });
+
+      const completion = yield* result.completion;
+      expect(completion.exitCode).toBe(3);
+      expect(seen).toEqual(["Resolving deps", "Done in 2s"]);
+      // The run's subscription is torn down once the command exits.
+      expect(listeners.size).toBe(1);
+    }).pipe(
+      Effect.provide(
+        testLayer(project, {
+          openCommand: () =>
+            Effect.succeed({
+              threadId: "thread-1",
+              terminalId: "setup-setup",
+              cwd: "/repo/worktrees/a",
+              worktreePath: "/repo/worktrees/a",
+              status: "running" as const,
+              pid: 123,
+              history: "",
+              exitCode: null,
+              exitSignal: null,
+              label: "setup-setup",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+            }),
+          subscribe: (listener) =>
+            Effect.sync(() => {
+              listeners.add(listener);
+              return () => {
+                listeners.delete(listener);
+              };
+            }),
+        }),
+      ),
+    );
+  });
+
+  it.effect("settles an observed run without an exit code when its terminal closes", () => {
+    const listeners = new Set<(event: TerminalEvent) => Effect.Effect<void>>();
+    const project = makeProject([
+      {
+        id: "setup",
+        name: "Setup",
+        command: "bun install",
+        icon: "configure",
+        runOnWorktreeCreate: true,
+      },
+    ]);
+
+    return Effect.gen(function* () {
+      const runner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
+      const result = yield* runner.runForThread({
+        threadId: "thread-1",
+        projectCwd: "/repo/project",
+        worktreePath: "/repo/worktrees/a",
+        observeCompletion: {},
+      });
+      if (result.status !== "started" || !result.completion) {
+        throw new Error("expected an observed setup run");
+      }
+      yield* Effect.forEach(
+        [...listeners],
+        (listener) => listener({ type: "closed", threadId: "thread-1", terminalId: "setup-setup" }),
+        { discard: true },
+      );
+      expect((yield* result.completion).exitCode).toBeNull();
+    }).pipe(
+      Effect.provide(
+        testLayer(project, {
+          openCommand: () =>
+            Effect.succeed({
+              threadId: "thread-1",
+              terminalId: "setup-setup",
+              cwd: "/repo/worktrees/a",
+              worktreePath: "/repo/worktrees/a",
+              status: "running" as const,
+              pid: 123,
+              history: "",
+              exitCode: null,
+              exitSignal: null,
+              label: "setup-setup",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+            }),
+          subscribe: (listener) =>
+            Effect.sync(() => {
+              listeners.add(listener);
+              return () => {
+                listeners.delete(listener);
+              };
+            }),
+        }),
+      ),
+    );
   });
 
   it.effect("records setup command success and all interruptions as failure outcomes", () => {

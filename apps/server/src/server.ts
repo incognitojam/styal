@@ -114,6 +114,7 @@ import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
 import * as SourceControlRateLimit from "./sourceControl/SourceControlRateLimit.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
+import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import { ObservabilityLive } from "./observability/Layers/Observability.ts";
 import { reportStalledShutdown, traceShutdown } from "./observability/OpenSpans.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
@@ -350,6 +351,7 @@ const PullRequestServiceLive = PullRequestService.layer.pipe(
 
 const GitManagerLayerLive = GitManager.layer.pipe(
   Layer.provideMerge(ProjectSetupScriptRunner.layer.pipe(Layer.provide(ServerSettingsLayerLive))),
+  Layer.provideMerge(WorktreeSetupTracker.layer),
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(SourceControlProviderRegistryLayerLive),
   Layer.provideMerge(TextGeneration.layer),

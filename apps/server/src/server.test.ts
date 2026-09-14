@@ -151,6 +151,7 @@ import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
+import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as TerminalBrowserOpen from "./preview/TerminalBrowserOpen.ts";
@@ -931,7 +932,7 @@ const buildAppUnderTest = (options?: {
         }),
       ),
       Layer.provide(
-        Layer.merge(
+        Layer.mergeAll(
           Layer.mock(TerminalManager.TerminalManager)({
             ...options?.layers?.terminalManager,
           }),
@@ -942,6 +943,7 @@ const buildAppUnderTest = (options?: {
             openInPreview: () => Effect.void,
             ...options?.layers?.terminalBrowserOpen,
           }),
+          WorktreeSetupTracker.layer,
         ),
       ),
       Layer.provide(
@@ -10931,6 +10933,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               runId: "run-setup",
               scriptId: "setup",
               scriptName: "Setup",
+              scriptCommand: "npm install",
               terminalId: "setup-setup",
               cwd: "/tmp/bootstrap-worktree",
             }),
@@ -11042,12 +11045,23 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           "resolve-remote-commit",
           "create-worktree",
         ]);
-        assert.deepEqual(runForThread.mock.calls[0]?.[0], {
-          threadId: ThreadId.make("thread-bootstrap"),
-          projectId: defaultProjectId,
-          projectCwd: "/tmp/project",
-          worktreePath: "/tmp/bootstrap-worktree",
-        });
+        const runForThreadInput = runForThread.mock.calls[0]?.[0];
+        assert.deepEqual(
+          runForThreadInput && {
+            threadId: runForThreadInput.threadId,
+            projectId: runForThreadInput.projectId,
+            projectCwd: runForThreadInput.projectCwd,
+            worktreePath: runForThreadInput.worktreePath,
+          },
+          {
+            threadId: ThreadId.make("thread-bootstrap"),
+            projectId: defaultProjectId,
+            projectCwd: "/tmp/project",
+            worktreePath: "/tmp/bootstrap-worktree",
+          },
+        );
+        // Worktree bootstraps observe script completion so the setup card can show the exit code.
+        assert.isDefined(runForThreadInput?.observeCompletion);
         assert.deepEqual(refreshStatus.mock.calls[0]?.[0], "/tmp/bootstrap-worktree");
 
         const finalCommand = dispatchedCommands[2];
@@ -11500,6 +11514,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             runId: "run-setup",
             scriptId: "setup",
             scriptName: "Setup",
+            scriptCommand: "npm install",
             terminalId: "setup-setup",
             cwd: "/tmp/bootstrap-worktree",
           }),
