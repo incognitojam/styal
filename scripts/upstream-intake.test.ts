@@ -14,6 +14,7 @@ const promotionWorkflowPath = NodePath.resolve(
   repoRoot,
   ".github/workflows/promote-upstream-intake.yml",
 );
+const trackingWorkflowPath = NodePath.resolve(repoRoot, ".github/workflows/upstream-tracking.yml");
 const ledger = {
   version: 1,
   fork_repository: "example/fork",
@@ -43,6 +44,7 @@ function audit(overrides: Partial<Parameters<typeof auditUpstreamIntakeCandidate
     baseSha: "a".repeat(40),
     headSha: "b".repeat(40),
     commits: ["b".repeat(40)],
+    commitMessages: ["fix(server): synthetic change\n\nUpstream-PR: 1234"],
     mergeCommits: [],
     mainIsAncestor: true,
     changedPaths: ["apps/server/src/usage/usageReports.ts"],
@@ -59,7 +61,31 @@ describe("upstream intake audit", () => {
     assert.isTrue(result.automaticEligible);
     assert.deepEqual(result.manualReviewReasons, []);
     assert.include(result.summary, "Eligible for automatic promotion");
+    assert.include(result.summary, "`pingdotgg/t3code#1234`");
     assert.include(result.summary, "report-only");
+  });
+
+  it("blocks missing, malformed, or mismatched upstream provenance", () => {
+    const missing = audit({ commitMessages: ["fix(server): no source"] });
+    const malformed = audit({ commitMessages: ["Upstream-PR: nope"] });
+    const mismatched = audit({ expectedSourcePullRequests: [1235] });
+
+    assert.isFalse(missing.valid);
+    assert.include(missing.errors.join("\n"), "no upstream source provenance");
+    assert.isFalse(malformed.valid);
+    assert.include(malformed.errors.join("\n"), "comma-separated pull request numbers");
+    assert.isFalse(mismatched.valid);
+    assert.include(mismatched.errors.join("\n"), "do not exactly match");
+  });
+
+  it("requires provenance on every candidate commit", () => {
+    const result = audit({
+      commits: ["b".repeat(40), "c".repeat(40)],
+      commitMessages: ["fix(server): sourced\n\nUpstream-PR: 1234", "fix(server): unsourced"],
+    });
+
+    assert.isFalse(result.valid);
+    assert.include(result.errors.join("\n"), "Candidate commit cccccccccccc");
   });
 
   it("requires manual review for sensitive paths and fork feature overlap", () => {
@@ -159,6 +185,7 @@ describe("upstream intake audit", () => {
         readonly promote: {
           readonly needs: string;
           readonly environment: string;
+          readonly permissions: Record<string, string>;
           readonly steps: ReadonlyArray<{
             readonly name?: string;
             readonly uses?: string;
@@ -171,6 +198,7 @@ describe("upstream intake audit", () => {
 
     assert.isTrue(workflow.on.workflow_dispatch.inputs.candidate_branch?.required);
     assert.isTrue(workflow.on.workflow_dispatch.inputs.reviewed_sha?.required);
+    assert.isTrue(workflow.on.workflow_dispatch.inputs.source_prs?.required);
     assert.equal(workflow.permissions.actions, "read");
     assert.equal(workflow.permissions.contents, "read");
     assert.isFalse(workflow.concurrency["cancel-in-progress"]);
@@ -197,6 +225,7 @@ describe("upstream intake audit", () => {
       (step) => step.name === "Audit candidate with trusted main code",
     );
     assert.include(auditCandidate?.run ?? "", "intake:check");
+    assert.include(auditCandidate?.run ?? "", '"$EXPECTED_SOURCE_PRS"');
 
     const verifyCi = workflow.jobs.validate.steps.find(
       (step) => step.name === "Verify Fork CI for the reviewed SHA",
@@ -207,6 +236,7 @@ describe("upstream intake audit", () => {
 
     assert.equal(workflow.jobs.promote.needs, "validate");
     assert.equal(workflow.jobs.promote.environment, "upstream-intake-manual");
+    assert.equal(workflow.jobs.promote.permissions.actions, "write");
     const tokenStep = workflow.jobs.promote.steps.find(
       (step) => step.name === "Mint Styal Porter token",
     );
@@ -222,5 +252,37 @@ describe("upstream intake audit", () => {
     assert.include(promoteStep?.run ?? "", "git merge-base --is-ancestor");
     assert.include(promoteStep?.run ?? "", 'git push origin "${CANDIDATE_SHA}:refs/heads/main"');
     assert.notInclude(promoteStep?.run ?? "", "--force");
+
+    const refreshTracking = workflow.jobs.promote.steps.find(
+      (step) => step.name === "Refresh upstream tracking issue",
+    );
+    assert.include(refreshTracking?.run ?? "", "gh workflow run upstream-tracking.yml");
+  });
+
+  it("defaults to the catch-up window while allowing a steady-state repository setting", () => {
+    const workflow = parse(NodeFS.readFileSync(trackingWorkflowPath, "utf8")) as {
+      readonly on: {
+        readonly workflow_dispatch: {
+          readonly inputs: { readonly since_days: { readonly default?: string } };
+        };
+      };
+      readonly jobs: {
+        readonly track: {
+          readonly steps: ReadonlyArray<{
+            readonly name?: string;
+            readonly env?: Record<string, string>;
+            readonly run?: string;
+          }>;
+        };
+      };
+    };
+
+    assert.isUndefined(workflow.on.workflow_dispatch.inputs.since_days.default);
+    const reconcile = workflow.jobs.track.steps.find(
+      (step) => step.name === "Reconcile tracking issue",
+    );
+    assert.include(reconcile?.env?.SINCE_DAYS ?? "", "inputs.since_days");
+    assert.include(reconcile?.env?.SINCE_DAYS ?? "", "UPSTREAM_TRACKING_WINDOW_DAYS");
+    assert.include(reconcile?.run ?? "", '--since-days "$SINCE_DAYS"');
   });
 });
