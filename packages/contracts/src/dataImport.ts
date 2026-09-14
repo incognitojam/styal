@@ -29,7 +29,7 @@ export type LegacyImportProjectPreview = typeof LegacyImportProjectPreview.Type;
 
 /** The explicitly allowlisted server preferences that may cross an import boundary. */
 export const LegacyImportPreferences = Schema.Struct({
-  enableLegacyTokenStreaming: ServerSettings.fields.enableLegacyTokenStreaming,
+  responseStreamingMode: ServerSettings.fields.responseStreamingMode,
   enableProviderUpdateChecks: ServerSettings.fields.enableProviderUpdateChecks,
   enableAgentBrowserAccess: ServerSettings.fields.enableAgentBrowserAccess,
   backgroundActivity: ServerSettings.fields.backgroundActivity,

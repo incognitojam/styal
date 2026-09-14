@@ -3,6 +3,7 @@ import {
   LegacyImportPreferences,
   type LegacyImportPreferences as LegacyImportPreferencesValue,
   type LegacyImportPreview,
+  type ResponseStreamingMode,
   type ServerSettings,
   type SourceControlWritingStyleMode,
   type ThreadEnvMode,
@@ -19,6 +20,12 @@ const BACKGROUND_ACTIVITY_PROFILE_LABELS: Readonly<Record<BackgroundActivityProf
   balanced: "Balanced",
   performance: "Performance",
   "battery-saver": "Battery saver",
+};
+
+const RESPONSE_STREAMING_MODE_LABELS: Readonly<Record<ResponseStreamingMode, string>> = {
+  turn: "Wait for the full response",
+  paragraph: "Show finished paragraphs",
+  token: "Token by token (legacy)",
 };
 
 const THREAD_ENV_MODE_LABELS: Readonly<Record<ThreadEnvMode, string>> = {
@@ -225,10 +232,10 @@ export function buildPreferenceRows(
       comparisonValue: values.enableAgentBrowserAccess,
     },
     {
-      id: "legacy-token-streaming",
-      label: "Stream token by token (legacy)",
-      value: values.enableLegacyTokenStreaming ? "On" : "Off",
-      comparisonValue: values.enableLegacyTokenStreaming,
+      id: "response-streaming",
+      label: "Response streaming",
+      value: RESPONSE_STREAMING_MODE_LABELS[values.responseStreamingMode],
+      comparisonValue: values.responseStreamingMode,
     },
   ];
 }

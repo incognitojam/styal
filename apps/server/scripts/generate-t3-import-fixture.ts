@@ -78,7 +78,7 @@ const SCENARIO = {
 const SETTINGS = {
   defaultThreadEnvMode: "local",
   newWorktreesStartFromOrigin: false,
-  enableLegacyTokenStreaming: true,
+  responseStreamingMode: "token",
   enableProviderUpdateChecks: false,
   enableAgentBrowserAccess: false,
   addProjectBaseDirectory: "/tmp/t3-import-fixture/projects",

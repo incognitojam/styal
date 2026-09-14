@@ -12,7 +12,7 @@ const decodeServerSettingsJson = Schema.decodeUnknownSync(Schema.fromJsonString(
 
 export function selectLegacyImportPreferences(settings: ServerSettings): LegacyImportPreferences {
   return {
-    enableLegacyTokenStreaming: settings.enableLegacyTokenStreaming,
+    responseStreamingMode: settings.responseStreamingMode,
     enableProviderUpdateChecks: settings.enableProviderUpdateChecks,
     enableAgentBrowserAccess: settings.enableAgentBrowserAccess,
     backgroundActivity: settings.backgroundActivity,
