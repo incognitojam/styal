@@ -11,7 +11,6 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { buildRemoteNodeEnvScript } from "@t3tools/ssh/tunnel";
 import { satisfiesSemverRange } from "@t3tools/shared/semver";
-import { resolveWindowsSystemRoot } from "@t3tools/shared/shell";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import { parseWslDistroList, type WslDistro } from "./wslPathParsing.ts";
@@ -823,7 +822,7 @@ export const layer = Layer.effect(
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const fileSystem = yield* FileSystem.FileSystem;
-    const windir = resolveWindowsSystemRoot(process.env);
+    const windir = process.env.WINDIR ?? "C:\\Windows";
 
     const provideSpawner = <A, E>(
       effect: Effect.Effect<A, E, ChildProcessSpawner.ChildProcessSpawner>,

@@ -6,7 +6,6 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 
 import * as NetService from "@t3tools/shared/Net";
-import { resolveWindowsSystemRoot } from "@t3tools/shared/shell";
 import * as Crypto from "effect/Crypto";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
@@ -186,7 +185,11 @@ const bootstrap = Effect.gen(function* () {
     environment.platform === "win32"
       ? yield* environment.path
           .toFileUrl(
-            environment.path.join(resolveWindowsSystemRoot(process.env), "Media", "tada.wav"),
+            environment.path.join(
+              process.env.SystemRoot?.trim() || process.env.WINDIR?.trim() || "C:\\Windows",
+              "Media",
+              "tada.wav",
+            ),
           )
           .pipe(Effect.orElseSucceed(() => null))
       : null;
