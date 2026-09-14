@@ -50,6 +50,7 @@ export const ObservabilityLive = Layer.unwrap(
             : yield* OtlpTracer.make({
                 url: config.otlpTracesUrl,
                 exportInterval: `${config.otlpExportIntervalMs} millis`,
+                headers: config.otlpHeaders,
                 resource: {
                   serviceName: config.otlpServiceName,
                   attributes: {
@@ -83,6 +84,7 @@ export const ObservabilityLive = Layer.unwrap(
         : OtlpMetrics.layer({
             url: config.otlpMetricsUrl,
             exportInterval: `${config.otlpExportIntervalMs} millis`,
+            headers: config.otlpHeaders,
             resource: {
               serviceName: config.otlpServiceName,
               attributes: {
