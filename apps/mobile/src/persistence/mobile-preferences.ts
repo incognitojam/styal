@@ -32,6 +32,7 @@ export interface Preferences {
   readonly projectGroupingEnabled?: boolean;
   readonly projectGroupingMode?: SidebarProjectGroupingMode;
   readonly autoSettleOnMerge?: boolean;
+  readonly confirmThreadUnpin?: boolean;
   /**
    * Device-local mirror of the web `legacySidebarEnabled` setting. Mobile has
    * no client-settings sync, so the legacy grouped thread list is opted into
@@ -102,6 +103,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     projectGroupingEnabled?: boolean;
     projectGroupingMode?: SidebarProjectGroupingMode;
     autoSettleOnMerge?: boolean;
+    confirmThreadUnpin?: boolean;
     legacyThreadListEnabled?: boolean;
     planModeEnabled?: boolean;
     threadListV2SettledShelfExpanded?: boolean;
@@ -166,6 +168,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     parsed.projectGroupingMode === "separate"
   ) {
     preferences.projectGroupingMode = parsed.projectGroupingMode;
+  }
+  if (typeof parsed.confirmThreadUnpin === "boolean") {
+    preferences.confirmThreadUnpin = parsed.confirmThreadUnpin;
   }
   if (typeof parsed.autoSettleOnMerge === "boolean") {
     preferences.autoSettleOnMerge = parsed.autoSettleOnMerge;

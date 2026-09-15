@@ -2,6 +2,8 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell
 import { canSettle, canSnooze } from "@t3tools/client-runtime/state/thread-settled";
 import * as Cause from "effect/Cause";
 import * as Haptics from "expo-haptics";
+import { AsyncResult } from "effect/unstable/reactivity";
+import { mobilePreferencesAtom } from "../../state/preferences";
 import { useCallback, useRef } from "react";
 import { Alert } from "react-native";
 
@@ -399,6 +401,28 @@ export function useThreadListActions(): {
           "This environment's server does not support pinning yet. Update the server to use Pin.",
         );
         return false;
+      }
+      const preferences = appAtomRegistry.get(mobilePreferencesAtom);
+      if (!AsyncResult.isSuccess(preferences) || preferences.value.confirmThreadUnpin !== false) {
+        const confirmed = await new Promise<boolean>((resolve) => {
+          const title = "Unpin thread?";
+          const message = `“${thread.title}” will move out of your pinned section.`;
+          if (process.env.EXPO_OS === "ios") {
+            Alert.alert(title, message, [
+              { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+              { text: "Unpin", onPress: () => resolve(true) },
+            ]);
+          } else {
+            showConfirmDialog({
+              title,
+              message,
+              confirmText: "Unpin",
+              onConfirm: () => resolve(true),
+              onCancel: () => resolve(false),
+            });
+          }
+        });
+        if (!confirmed) return false;
       }
       selectionHaptic();
       const result = await unpinMutation({

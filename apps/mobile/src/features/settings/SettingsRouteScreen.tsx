@@ -543,6 +543,16 @@ function GeneralSettingsSection() {
         value={autoSettleOnMerge}
         onValueChange={(value) => savePreferences({ autoSettleOnMerge: value })}
       />
+      <SettingsSwitchRow
+        icon="pin"
+        label="Unpin confirmation"
+        subtitle="Ask before removing a thread from the pinned section."
+        value={
+          !AsyncResult.isSuccess(preferencesResult) ||
+          preferencesResult.value.confirmThreadUnpin !== false
+        }
+        onValueChange={(value) => savePreferences({ confirmThreadUnpin: value })}
+      />
       <SettingsRow icon="chart.bar.xaxis" label="Usage" target="SettingsUsage" />
     </SettingsSection>
   );

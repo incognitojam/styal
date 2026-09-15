@@ -121,6 +121,14 @@ describe("mobile connection storage", () => {
     vi.clearAllMocks();
   });
 
+  it("preserves an explicit opt-out of unpin confirmation across preference writes", async () => {
+    await savePreferencesPatch({ confirmThreadUnpin: false });
+    await savePreferencesPatch({ autoSettleOnMerge: true });
+    await expect(loadPreferences()).resolves.toMatchObject({ confirmThreadUnpin: false });
+    await savePreferencesPatch({ confirmThreadUnpin: true });
+    await expect(loadPreferences()).resolves.toMatchObject({ confirmThreadUnpin: true });
+  });
+
   it("persists relay-managed connections without their ephemeral access token", async () => {
     await saveConnection(managedConnection);
 
