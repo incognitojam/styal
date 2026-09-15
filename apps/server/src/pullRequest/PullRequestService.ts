@@ -24,6 +24,7 @@ import {
   pullRequestProviderRequirement,
   resolvePullRequestAuthorFilter,
   type OrchestrationProjectShell,
+  type ProjectId,
   type PullRequestAction,
   type PullRequestActionInput,
   type PullRequestActivity,
@@ -70,6 +71,7 @@ import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/source
 
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import { parseTurnDiffFilesFromUnifiedDiff } from "../checkpointing/Diffs.ts";
+import { AllowGitHubReserve } from "../sourceControl/GitHubCli.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as SourceControlRateLimit from "../sourceControl/SourceControlRateLimit.ts";
@@ -190,7 +192,7 @@ export class PullRequestService extends Context.Service<
       Scope.Scope
     >;
     readonly subscribeRefreshes: Stream.Stream<number>;
-    readonly refreshAfterTurn: Effect.Effect<void>;
+    readonly refreshAfterTurn: (projectId: ProjectId) => Effect.Effect<void>;
     readonly detail: (input: PullRequestRef) => Effect.Effect<PullRequestDetail, PullRequestError>;
     readonly activity: (
       input: PullRequestRef,
@@ -471,6 +473,7 @@ function withRateLimitBackoff(
       ),
       Effect.flatMap((lease) =>
         effect.pipe(
+          Effect.provideService(AllowGitHubReserve, allowPaused),
           Effect.tap(() => limits.recordSuccess({ ...key, lease })),
           Effect.tapError((error) =>
             error.reason === "rate-limited"
@@ -802,6 +805,18 @@ export const make = Effect.gen(function* () {
         );
       }),
     );
+
+  const canonicalRef = Effect.fn("PullRequestService.canonicalRef")(function* <
+    I extends PullRequestRef,
+  >(input: I) {
+    const project = yield* requireProject(input);
+    return {
+      ...input,
+      projectId: project.project.id,
+      host: project.host,
+      repository: project.repository,
+    };
+  });
 
   /**
    * What the signed-in account may do with this change request, asked of the host itself. Every
@@ -1850,7 +1865,11 @@ export const make = Effect.gen(function* () {
               .pipe(
                 // Once the authorized provider action starts, a failure may leave partial
                 // remote updates. Validation and permission failures above changed nothing.
-                Effect.ensuring(input.stackNumber === undefined ? Effect.void : refreshAfterTurn),
+                Effect.ensuring(
+                  input.stackNumber === undefined
+                    ? Effect.void
+                    : refreshAfterTurn(project.project.id),
+                ),
                 Effect.mapError(toPullRequestError("runAction")),
                 Effect.as(
                   project.api.kind === "azure-devops"
@@ -2485,20 +2504,29 @@ export const make = Effect.gen(function* () {
   // current without throwing away a large patch it did not ask to reload.
   let epochCounter = 0;
   let listingsEpoch = 0;
-  let turnRefreshEpoch = 0;
   type RefCacheScope = "detail" | "diff";
   type RefEpochs = Readonly<Record<RefCacheScope, number>>;
   const refEpochs = new Map<string, RefEpochs>();
+  const projectEpochs = new Map<ProjectId, number>();
+  let projectEpochFloor = 0;
   const REF_EPOCH_CAPACITY = 2_048;
   const refScope = (ref: PullRequestRef) =>
-    `${ref.projectId} ${ref.host?.toLowerCase() ?? ""} ${ref.repository.toLowerCase()} ${ref.number}`;
+    JSON.stringify([
+      ref.projectId,
+      ref.host?.toLowerCase() ?? "",
+      ref.repository.toLowerCase(),
+      ref.number,
+    ]);
   const refEpoch = (scope: RefCacheScope, ref: PullRequestRef) =>
-    Math.max(turnRefreshEpoch, refEpochs.get(refScope(ref))?.[scope] ?? 0);
+    Math.max(
+      projectEpochs.get(ref.projectId) ?? projectEpochFloor,
+      refEpochs.get(refScope(ref))?.[scope] ?? 0,
+    );
   // Keys carry the reference back out of the cache loader, so the slot layout is shared with
   // `refOfCacheKey` rather than read positionally at every loader.
-  const refCacheKey = (ref: CredentialRef) =>
+  const refCacheKey = (ref: CredentialRef, scope: RefCacheScope = "detail") =>
     JSON.stringify([
-      refEpoch("detail", ref),
+      refEpoch(scope, ref),
       ref.projectId,
       ref.host?.toLowerCase() ?? null,
       ref.repository.toLowerCase(),
@@ -2600,7 +2628,10 @@ export const make = Effect.gen(function* () {
         ),
       ),
     );
-    const payload = yield* readCache.get(key, encodedRead);
+    const payload = yield* readCache.get(key, encodedRead, [
+      `project:${input.projectId}`,
+      refScope(input),
+    ]);
     const decoded = yield* Schema.decodeUnknownEffect(codec)(payload).pipe(Effect.option);
     return Option.isSome(decoded) ? decoded.value : yield* lookup;
   });
@@ -2799,20 +2830,9 @@ export const make = Effect.gen(function* () {
 
   const diffCache = yield* Cache.makeWith(
     (key: string) => {
-      const [, projectId, host, repository, number, cursor, commit] = JSON.parse(key) as [
-        number,
-        string,
-        string | null,
-        string,
-        number,
-        string | null,
-        string | null,
-      ];
+      const [reference, cursor, commit] = JSON.parse(key) as [string, string | null, string | null];
       return diffUncached({
-        projectId,
-        ...(host === null ? {} : { host }),
-        repository,
-        number,
+        ...refOfCacheKey(reference),
         ...(cursor === null ? {} : { cursor }),
         ...(commit === null ? {} : { commit }),
       } as PullRequestDiffInput);
@@ -2821,18 +2841,14 @@ export const make = Effect.gen(function* () {
       capacity: DIFF_CACHE_CAPACITY,
       timeToLive: (exit, key) => {
         if (!Exit.isSuccess(exit)) return Duration.zero;
-        const commit = (JSON.parse(key) as ReadonlyArray<unknown>)[6];
+        const commit = (JSON.parse(key) as ReadonlyArray<unknown>)[2];
         return commit === null ? DIFF_CACHE_TTL : COMMIT_DIFF_CACHE_TTL;
       },
     },
   );
   const diff: PullRequestService["Service"]["diff"] = (input) => {
     const key = JSON.stringify([
-      refEpoch("diff", input),
-      input.projectId,
-      input.host?.toLowerCase() ?? null,
-      input.repository.toLowerCase(),
-      input.number,
+      refCacheKey(input, "diff"),
       input.cursor ?? null,
       input.commit ?? null,
       input.commit === undefined
@@ -2902,8 +2918,13 @@ export const make = Effect.gen(function* () {
   const invalidate: PullRequestService["Service"]["invalidate"] = (input) => {
     const reference = input.reference;
     if (reference !== undefined) {
-      return readCache.invalidate.pipe(
-        Effect.andThen(Effect.sync(() => bumpRefEpoch(reference, input.scope))),
+      return canonicalRef(reference).pipe(
+        Effect.flatMap((ref) =>
+          readCache
+            .invalidate(refScope(ref))
+            .pipe(Effect.andThen(Effect.sync(() => bumpRefEpoch(ref, input.scope)))),
+        ),
+        Effect.ignore,
       );
     }
     return Effect.sync(() => {
@@ -2912,12 +2933,22 @@ export const make = Effect.gen(function* () {
     }).pipe(Effect.andThen(Cache.invalidateAll(viewerFlights)));
   };
 
-  const refreshAfterTurn: PullRequestService["Service"]["refreshAfterTurn"] = Effect.suspend(() => {
-    turnRefreshEpoch = listingsEpoch = ++epochCounter;
-    return readCache.invalidate.pipe(
-      Effect.andThen(SubscriptionRef.set(pullRequestRefreshes, turnRefreshEpoch)),
-    );
-  });
+  const refreshAfterTurn: PullRequestService["Service"]["refreshAfterTurn"] = (projectId) =>
+    Effect.suspend(() => {
+      listingsEpoch = ++epochCounter;
+      projectEpochs.delete(projectId);
+      if (projectEpochs.size >= REF_EPOCH_CAPACITY) {
+        const oldest = projectEpochs.keys().next().value;
+        if (oldest !== undefined) {
+          projectEpochFloor = projectEpochs.get(oldest)!;
+          projectEpochs.delete(oldest);
+        }
+      }
+      projectEpochs.set(projectId, listingsEpoch);
+      return readCache
+        .invalidate(`project:${projectId}`)
+        .pipe(Effect.andThen(SubscriptionRef.set(pullRequestRefreshes, listingsEpoch)));
+    });
 
   // A mutation's own client re-reads right after it, and every other client's next read must
   // see the action too — so a write forgets the change request it touched and the listings its
@@ -2927,27 +2958,30 @@ export const make = Effect.gen(function* () {
       method: (input: I) => Effect.Effect<void, PullRequestError>,
     ): ((input: I) => Effect.Effect<void, PullRequestError>) =>
     (input) =>
-      readCache.invalidate.pipe(
-        Effect.andThen(method(input)),
-        Effect.ensuring(readCache.invalidate),
-        Effect.tap(() =>
-          Effect.sync(() => {
-            bumpRefEpoch(input);
-            listingsEpoch = ++epochCounter;
-          }),
-        ),
-      );
+      Effect.gen(function* () {
+        const ref = yield* canonicalRef(input);
+        yield* readCache.invalidate(refScope(ref)).pipe(
+          Effect.andThen(method(input)),
+          Effect.ensuring(readCache.invalidate(refScope(ref))),
+          Effect.tap(() =>
+            Effect.sync(() => {
+              bumpRefEpoch(ref);
+              listingsEpoch = ++epochCounter;
+            }),
+          ),
+        );
+      });
   const runActionAndInvalidate: PullRequestService["Service"]["runAction"] = Effect.fn(
     "PullRequestService.runActionAndInvalidate",
   )(function* (input) {
-    yield* readCache.invalidate;
+    const ref = yield* canonicalRef(input);
+    yield* readCache.invalidate(refScope(ref));
     const repository = yield* runAction(input).pipe(
-      Effect.ensuring(readCache.invalidate),
-      // A refusal often means this copy is out of date, such as a merge refused because the
-      // head moved. The next detail read goes to the host so a retry uses the current head.
-      Effect.tapError(() => Effect.sync(() => bumpRefEpoch(input, "detail"))),
+      Effect.ensuring(readCache.invalidate(refScope(ref))),
+      // Refresh a refused action so the next attempt uses the current host state.
+      Effect.tapError(() => Effect.sync(() => bumpRefEpoch(ref, "detail"))),
     );
-    bumpRefEpoch({ ...input, repository });
+    bumpRefEpoch({ ...ref, repository });
     listingsEpoch = ++epochCounter;
     if (input.action === "merge" || input.action === "enable-auto-merge") {
       // A merge can merely enqueue the PR or arm auto-merge, and arming it merges a PR that was
@@ -2974,26 +3008,26 @@ export const make = Effect.gen(function* () {
       read: (input: I, ...args: Args) => Effect.Effect<A, E>,
     ) =>
     (input: I, ...args: Args) =>
-      routingCredential.pipe(
-        Effect.flatMap((credential) =>
-          read(
-            credential === null
-              ? input
-              : {
-                  ...input,
-                  [credentialNamespace]: credential.credentialFingerprint,
-                },
-            ...args,
-          ),
-        ),
-      );
+      Effect.gen(function* () {
+        const ref = yield* canonicalRef(input);
+        const credential = yield* routingCredential;
+        return yield* read(
+          credential === null
+            ? ref
+            : { ...ref, [credentialNamespace]: credential.credentialFingerprint },
+          ...args,
+        );
+      });
 
   return PullRequestService.of({
     routing,
     routingIdentity,
     withRoutingCredential,
     list,
-    listStats,
+    listStats: (input) =>
+      Effect.forEach(input.refs, (ref) => canonicalRef(ref).pipe(Effect.option)).pipe(
+        Effect.flatMap((refs) => listStats({ ...input, refs: refs.flatMap(Option.toArray) })),
+      ),
     summary: credentialCached(summary),
     stack: credentialCached(stack),
     subscribeMerges: PubSub.subscribe(mergedPullRequests).pipe(
@@ -3006,7 +3040,7 @@ export const make = Effect.gen(function* () {
     detail: credentialCached(detail),
     activity: credentialCached(activity),
     threadComments,
-    diff,
+    diff: credentialCached(diff),
     diffFileContents,
     file,
     runAction: runActionAndInvalidate,
