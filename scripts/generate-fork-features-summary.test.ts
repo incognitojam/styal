@@ -1,5 +1,9 @@
 // @effect-diagnostics globalDate:off - Fixed native dates keep rendered release metadata deterministic.
+// @effect-diagnostics nodeBuiltinImport:off - Exercise the release script with the same native Node loader as CI.
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
 import { assert, describe, it } from "@effect/vitest";
+import { parse } from "yaml";
 import {
   buildChangeExtractionPrompt,
   cachedCapabilities,
@@ -66,6 +70,48 @@ const records: ReadonlyArray<ChangeRecord> = [
 ];
 
 describe("fork features summary", () => {
+  it("installs workspace dependencies before generating nightly features", () => {
+    const workflow = parse(
+      NodeFS.readFileSync(
+        new URL("../.github/workflows/fork-nightly.yml", import.meta.url),
+        "utf8",
+      ),
+    ) as {
+      readonly jobs: {
+        readonly release: {
+          readonly steps: ReadonlyArray<{
+            readonly id?: string;
+            readonly uses?: string;
+            readonly with?: { readonly "run-install"?: boolean };
+          }>;
+        };
+      };
+    };
+    const steps = workflow.jobs.release.steps;
+    const installIndex = steps.findIndex(
+      (step) => step.uses?.startsWith("voidzero-dev/setup-vp@") && step.with?.["run-install"],
+    );
+    const generateIndex = steps.findIndex((step) => step.id === "fork_features");
+
+    assert.isAtLeast(installIndex, 0, "The publish job must install the generator's dependencies.");
+    assert.isAbove(generateIndex, installIndex);
+  });
+
+  it("loads the generator and its ledger dependencies with native Node", () => {
+    const result = NodeChildProcess.spawnSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "--eval",
+        "await import(process.argv[1])",
+        new URL("./generate-fork-features-summary.ts", import.meta.url).href,
+      ],
+      { encoding: "utf8" },
+    );
+
+    assert.equal(result.status, 0, result.stderr);
+  });
+
   it("extracts pull request numbers only from merged commit subjects", () => {
     assert.equal(parsePullRequestNumber("feat(web): show outages (#14)"), 14);
     assert.equal(parsePullRequestNumber("fix: retain literal #14"), undefined);
