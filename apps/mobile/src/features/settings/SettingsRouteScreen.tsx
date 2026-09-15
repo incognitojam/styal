@@ -612,6 +612,9 @@ function GeneralSettingsSection() {
           savePreferences({ threadTimestampMode: value ? "last_message" : "last_prompted" })
         }
       />
+      {Platform.OS === "ios" ? (
+        <SettingsRow icon="keyboard" label="Keyboard" target="SettingsKeyboard" />
+      ) : null}
       <AutoSettleSettingsRows />
       <SettingsSwitchRow
         icon="pin"
