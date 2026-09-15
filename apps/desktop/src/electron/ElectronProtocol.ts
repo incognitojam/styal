@@ -11,6 +11,7 @@ import * as Electron from "electron";
 export const DESKTOP_HOST = "app";
 export const DESKTOP_PRODUCTION_SCHEME = "styal";
 export const DESKTOP_DEVELOPMENT_SCHEME = "styal-dev";
+export const WINDOWS_TADA_PATH = "/_desktop/windows-tada.wav";
 
 export function getDesktopScheme(isDevelopment: boolean): string {
   return isDevelopment ? DESKTOP_DEVELOPMENT_SCHEME : DESKTOP_PRODUCTION_SCHEME;
@@ -53,6 +54,7 @@ export interface DesktopProtocolRegistrationInput {
   readonly targetOrigin: URL;
   readonly backendOrigin: URL;
   readonly clerkFrontendApiHostname: string | undefined;
+  readonly windowsTadaFileUrl: URL | null;
 }
 
 export class ElectronProtocol extends Context.Service<
@@ -140,11 +142,35 @@ export const layerSchemePrivileges = Layer.effectDiscard(registerDesktopSchemePr
 async function proxyRequest(
   request: Request,
   targetOrigin: URL,
+  windowsTadaFileUrl: URL | null,
   contentSecurityPolicy: string,
 ): Promise<Response> {
   const requestUrl = new URL(request.url);
   if (requestUrl.host !== DESKTOP_HOST) {
     return new Response(null, { status: 404 });
+  }
+
+  if (requestUrl.pathname === WINDOWS_TADA_PATH) {
+    if (windowsTadaFileUrl === null || (request.method !== "GET" && request.method !== "HEAD")) {
+      return new Response(null, { status: 404 });
+    }
+    try {
+      const response = await Electron.net.fetch(windowsTadaFileUrl.toString(), {
+        method: request.method,
+      });
+      if (!response.ok) {
+        return new Response(null, { status: 404 });
+      }
+      const headers = new Headers(response.headers);
+      headers.set("Content-Type", "audio/wav");
+      return new Response(request.method === "HEAD" ? null : response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
+    } catch {
+      return new Response(null, { status: 404 });
+    }
   }
 
   const targetUrl = new URL(`${requestUrl.pathname}${requestUrl.search}`, targetOrigin);
@@ -215,7 +241,12 @@ export const make = Effect.gen(function* () {
         Effect.try({
           try: () => {
             Electron.protocol.handle(input.scheme, (request) =>
-              proxyRequest(request, input.targetOrigin, contentSecurityPolicy),
+              proxyRequest(
+                request,
+                input.targetOrigin,
+                input.windowsTadaFileUrl,
+                contentSecurityPolicy,
+              ),
             );
           },
           catch: (cause) => new ElectronProtocolRegistrationError({ scheme: input.scheme, cause }),

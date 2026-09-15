@@ -30,11 +30,17 @@ export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"])
 export type TimestampFormat = typeof TimestampFormat.Type;
 export const DEFAULT_TIMESTAMP_FORMAT: TimestampFormat = "locale";
 
-export const CompletionSound = Schema.Literals(["none", "resolve", "avanti"]);
+export const CompletionSound = Schema.Literals(["none", "resolve", "avanti", "windows-tada"]);
 export type CompletionSound = typeof CompletionSound.Type;
 export const DEFAULT_COMPLETION_SOUND: CompletionSound = "resolve";
 
-const PersistedCompletionSound = Schema.Literals(["none", "chime", "resolve", "avanti"]).pipe(
+const PersistedCompletionSound = Schema.Literals([
+  "none",
+  "chime",
+  "resolve",
+  "avanti",
+  "windows-tada",
+]).pipe(
   Schema.decodeTo(
     CompletionSound,
     SchemaTransformation.transformOrFail({
