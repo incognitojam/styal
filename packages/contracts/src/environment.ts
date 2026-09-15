@@ -9,6 +9,10 @@ import {
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
 
+/** Wire version for orchestration snapshots, streams, commands, and RPC payloads. */
+export const ORCHESTRATION_PROTOCOL_VERSION = 1;
+export const ORCHESTRATION_PROTOCOL_QUERY_PARAM = "orchestrationProtocol";
+
 export const ExecutionEnvironmentPlatformOs = Schema.Literals([
   "darwin",
   "linux",
@@ -182,6 +186,8 @@ export const ExecutionEnvironmentDescriptor = Schema.Struct({
   serverVersion: TrimmedNonEmptyString,
   /** npm identity; absent on older servers whose updates may still install t3. */
   serverPackageName: Schema.optionalKey(TrimmedNonEmptyString),
+  /** Missing metadata denotes protocol 1. Bump this for breaking wire changes. */
+  orchestrationProtocolVersion: Schema.optionalKey(Schema.Int),
   capabilities: ExecutionEnvironmentCapabilities,
 });
 export type ExecutionEnvironmentDescriptor = typeof ExecutionEnvironmentDescriptor.Type;
