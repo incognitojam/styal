@@ -193,7 +193,6 @@ jobs:
           merge-multiple: true
           path: release-assets
 
-      # The changelog generator loads the feature ledger through workspace packages.
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1
         with:
