@@ -338,7 +338,7 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=./apps/server...
+              - --filter=@styal/cli...
 
       - name: Build node-pty linux-x64 prebuild
         shell: bash
@@ -447,7 +447,7 @@ jobs:
           key: windows-release-packages-v1-${{ matrix.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install desktop dependencies
-        run: vp install --filter=@t3tools/desktop... --filter=./apps/server... --filter=@t3tools/scripts...
+        run: vp install --filter=@t3tools/desktop... --filter=@styal/cli... --filter=@t3tools/scripts...
 
       - name: Cache resource monitor
         id: resource_monitor_cache
@@ -759,7 +759,7 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=./apps/server...
+              - --filter=@styal/cli...
               - --filter=@t3tools/web...
               - --filter=@t3tools/scripts...
 
