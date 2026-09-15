@@ -1375,6 +1375,7 @@ it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-projection-atta
         const path = yield* Path.Path;
         const projectionPipeline = yield* OrchestrationProjectionPipeline;
         const eventStore = yield* OrchestrationEventStore;
+        const sql = yield* SqlClient.SqlClient;
         const { attachmentsDir } = yield* ServerConfig;
         const now = "2026-01-01T00:00:00.000Z";
         const projectId = ProjectId.make("project-replay");
@@ -1462,7 +1463,20 @@ it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-projection-atta
         yield* fileSystem.writeFileString(retriedAttachmentPath, "second incarnation");
         yield* fileSystem.writeFileString(goneAttachmentPath, "gone");
 
+        const commonJson =
+          '{"text":"keep my draft","modelSelection":null,"runtimeMode":null,"interactionMode":null}';
+        for (const threadId of [retriedThreadId, goneThreadId]) {
+          yield* sql`
+            INSERT INTO composer_drafts (
+              thread_id, revision, common_json, updated_at, client_mutation_id
+            ) VALUES (${threadId}, 1, ${commonJson}, ${now}, 'test:replay-composer-draft')
+          `;
+        }
         yield* projectionPipeline.bootstrap;
+        const drafts = yield* sql<{ readonly threadId: string; readonly commonJson: string }>`
+          SELECT thread_id AS "threadId", common_json AS "commonJson" FROM composer_drafts
+        `;
+        assert.deepEqual(drafts, [{ threadId: retriedThreadId, commonJson }]);
 
         assert.isTrue(yield* exists(retriedAttachmentPath));
         assert.isFalse(yield* exists(goneAttachmentPath));

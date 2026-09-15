@@ -914,11 +914,13 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           });
           if (!recreatedLater) {
             attachmentSideEffects.deletedThreadIds.add(event.payload.threadId);
+            // Composer drafts are current-state storage too: replaying an old
+            // deletion must not erase the new incarnation's unsent draft.
+            yield* sql`
+              DELETE FROM composer_drafts
+              WHERE thread_id = ${event.payload.threadId}
+            `.pipe(Effect.mapError(toPersistenceSqlError("delete thread composer draft")));
           }
-          yield* sql`
-            DELETE FROM composer_drafts
-            WHERE thread_id = ${event.payload.threadId}
-          `.pipe(Effect.mapError(toPersistenceSqlError("delete thread composer draft")));
           const existingRow = yield* projectionThreadRepository.getById({
             threadId: event.payload.threadId,
           });
