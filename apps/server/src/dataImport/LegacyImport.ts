@@ -706,7 +706,7 @@ export class LegacyImportService extends Context.Service<
       request: LegacyImportRequest,
     ) => Effect.Effect<LegacyImportResult, LegacyImportError>;
   }
->()("t3/dataImport/LegacyImport/LegacyImportService") {}
+>()("@styal/cli/dataImport/LegacyImport/LegacyImportService") {}
 
 export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportService")(
   function* ({

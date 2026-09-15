@@ -29,7 +29,7 @@ export class RepositoryIdentityResolver extends Context.Service<
   {
     readonly resolve: (cwd: string) => Effect.Effect<RepositoryIdentity | null>;
   }
->()("t3/project/RepositoryIdentityResolver") {}
+>()("@styal/cli/project/RepositoryIdentityResolver") {}
 
 function parseRemoteConfig(stdout: string): {
   readonly remotes: ReadonlyMap<string, string>;

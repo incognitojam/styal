@@ -1,0 +1,103 @@
+name: Fork CLI Build
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+      dist_tag:
+        required: true
+        type: string
+      publish:
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Pack and verify CLI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      T3CODE_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+      T3CODE_CLERK_JWT_TEMPLATE: ${{ vars.CLERK_JWT_TEMPLATE }}
+      T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ vars.CLERK_CLI_OAUTH_CLIENT_ID }}
+      T3CODE_RELAY_URL: ${{ vars.RELAY_URL }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=./apps/server...
+              - --filter=@t3tools/scripts...
+      - name: Align release versions
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
+      - name: Build CLI and bundled web app
+        run: vp run --filter ./apps/server build
+      - name: Download native resource monitors
+        uses: actions/download-artifact@v8
+        with:
+          pattern: cli-resource-monitor-*
+          path: cli-resource-monitors
+      - name: Bundle native resource monitors
+        shell: bash
+        run: |
+          set -euo pipefail
+          for platform in darwin-arm64 linux-x64 win32-x64; do
+            source="cli-resource-monitors/cli-resource-monitor-$platform"
+            target="apps/server/dist/resource-monitor/$platform"
+            test -d "$source"
+            mkdir -p "$target"
+            cp "$source"/styal-resource-monitor* "$target/"
+            if [ "$platform" != win32-x64 ]; then
+              chmod +x "$target/styal-resource-monitor"
+            fi
+          done
+      - name: Pack installable archive
+        run: node apps/server/scripts/cli.ts pack --output-directory cli-release --verbose
+      - name: Verify archive in a clean Node container
+        run: |
+          docker run --rm -v "$PWD/cli-release:/artifacts:ro" -v "$PWD/scripts/verify-cli-package.mjs:/verify.mjs:ro" node:24-bookworm node /verify.mjs /artifacts
+      - name: Upload CLI archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: cli-package
+          path: cli-release/*.tgz
+          if-no-files-found: error
+
+  publish:
+    name: Publish CLI to npm
+    needs: build
+    if: inputs.publish
+    # npm OIDC publishing requires a GitHub-hosted runner.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@v8
+        with:
+          name: cli-package
+          path: cli-release
+      - name: Publish verified archive
+        env:
+          DIST_TAG: ${{ inputs.dist_tag }}
+        run: npm publish cli-release/*.tgz --access public --tag "$DIST_TAG" --provenance

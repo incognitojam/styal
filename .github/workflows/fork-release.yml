@@ -137,10 +137,23 @@ jobs:
       sign_macos: true
     secrets: inherit
 
+  build_cli:
+    name: Build and publish CLI
+    needs: [prepare, build_desktop]
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/fork-cli-build.yml
+    with:
+      ref: ${{ needs.prepare.outputs.ref }}
+      version: ${{ needs.prepare.outputs.version }}
+      dist_tag: latest
+      publish: ${{ vars.STYAL_CLI_PUBLISH_ENABLED == 'true' && inputs.dry_run != true }}
+
   publish:
     name: Publish stable release
-    needs: [prepare, build_desktop]
-    if: needs.build_desktop.result == 'success'
+    needs: [prepare, build_desktop, build_cli]
+    if: needs.build_desktop.result == 'success' && needs.build_cli.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -157,6 +170,12 @@ jobs:
         with:
           pattern: desktop-*
           merge-multiple: true
+          path: release-assets
+
+      - name: Download CLI archive
+        uses: actions/download-artifact@v8
+        with:
+          name: cli-package
           path: release-assets
 
       - name: Render release notes

@@ -52,14 +52,14 @@ export function formatServiceStatus(
     return "styal service\n  Status: unavailable on this machine\n  Supported on: Linux with systemd, macOS with launchd";
   }
   if (!status.installed) {
-    return "styal service\n  Status: not installed\n  Next: Run `t3 service install`.";
+    return "styal service\n  Status: not installed\n  Next: Run `styal service install`.";
   }
   return [
     "styal service",
-    `  Status: ${status.current ? `installed · t3@${cliVersion}` : "needs an update or repair"}`,
+    `  Status: ${status.current ? `installed · @styal/cli@${cliVersion}` : "needs an update or repair"}`,
     `  Unit: ${status.unitPath}`,
     `  Logs: ${status.logPath}`,
-    ...(status.current ? [] : ["  Next: Run `npx t3@latest service update`."]),
+    ...(status.current ? [] : ["  Next: Run `npx @styal/cli@latest service update`."]),
   ].join("\n");
 }
 
@@ -80,11 +80,13 @@ const serviceInstallCommand = Command.make("install", projectLocationFlags).pipe
       Effect.gen(function* () {
         const result = yield* reconcileService();
         if (!result.changed) {
-          yield* Console.log(`styal service is already installed with t3@${packageJson.version}.`);
+          yield* Console.log(
+            `styal service is already installed with @styal/cli@${packageJson.version}.`,
+          );
           return;
         }
         yield* Console.log(
-          `${result.previouslyInstalled ? "Updated" : "Installed"} styal service with t3@${packageJson.version}.\nLogs: ${result.plan.logPath}`,
+          `${result.previouslyInstalled ? "Updated" : "Installed"} styal service with @styal/cli@${packageJson.version}.\nLogs: ${result.plan.logPath}`,
         );
       }),
     ),
@@ -93,7 +95,7 @@ const serviceInstallCommand = Command.make("install", projectLocationFlags).pipe
 
 const serviceUpdateCommand = Command.make("update", projectLocationFlags).pipe(
   Command.withDescription(
-    "Update or repair the background service using this CLI version. Use `npx t3@latest service update` for the latest release.",
+    "Update or repair the background service using this CLI version. Use `npx @styal/cli@latest service update` for the latest release.",
   ),
   Command.withHandler((flags) =>
     runServiceCommand(
@@ -101,11 +103,11 @@ const serviceUpdateCommand = Command.make("update", projectLocationFlags).pipe(
       Effect.gen(function* () {
         const result = yield* reconcileService();
         if (!result.changed) {
-          yield* Console.log(`styal service is already using t3@${packageJson.version}.`);
+          yield* Console.log(`styal service is already using @styal/cli@${packageJson.version}.`);
           return;
         }
         yield* Console.log(
-          `${result.previouslyInstalled ? "Updated" : "Installed"} styal service with t3@${packageJson.version}.\nLogs: ${result.plan.logPath}`,
+          `${result.previouslyInstalled ? "Updated" : "Installed"} styal service with @styal/cli@${packageJson.version}.\nLogs: ${result.plan.logPath}`,
         );
       }),
     ),

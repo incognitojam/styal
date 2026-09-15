@@ -14,6 +14,12 @@ const descriptor = {
 } as const;
 
 describe("ExecutionEnvironmentDescriptor", () => {
+  it("preserves npm identity while accepting descriptors from older servers", () => {
+    expect(decodeDescriptor(descriptor).serverPackageName).toBeUndefined();
+    expect(
+      decodeDescriptor({ ...descriptor, serverPackageName: "@styal/cli" }).serverPackageName,
+    ).toBe("@styal/cli");
+  });
   it("treats a missing pull-request capability as unsupported under version skew", () => {
     expect(decodeDescriptor(descriptor).capabilities.pullRequests).toBeUndefined();
   });

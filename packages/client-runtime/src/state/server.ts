@@ -8,6 +8,8 @@ import {
   type ServerSelfUpdateResult,
   WS_METHODS,
 } from "@t3tools/contracts";
+import { CLI_PACKAGE_NAME } from "@t3tools/shared/cliPackage";
+
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -83,7 +85,7 @@ export class ServerUpdateResumeTimeoutError extends Schema.TaggedErrorClass<Serv
   },
 ) {
   override get message(): string {
-    return `The server did not resume on t3@${this.targetVersion}.`;
+    return `The server did not resume on @styal/cli@${this.targetVersion}.`;
   }
 }
 
@@ -94,7 +96,7 @@ export class ServerUpdateProgressIncompleteError extends Schema.TaggedErrorClass
   },
 ) {
   override get message(): string {
-    return `The t3@${this.targetVersion} update ended before the server accepted the restart.`;
+    return `The @styal/cli@${this.targetVersion} update ended before the server accepted the restart.`;
   }
 }
 
@@ -107,7 +109,7 @@ export class ServerUpdateTerminalError extends Schema.TaggedErrorClass<ServerUpd
   },
 ) {
   override get message(): string {
-    return this.reason ?? `The t3@${this.targetVersion} update ${this.status}.`;
+    return this.reason ?? `The @styal/cli@${this.targetVersion} update ${this.status}.`;
   }
 }
 
@@ -564,6 +566,14 @@ export function createServerEnvironmentAtoms<R, E>(
               fromVersion,
               targetVersion,
             });
+
+            if (currentConfig?.environment.serverPackageName !== CLI_PACKAGE_NAME) {
+              return yield* new ServerUpdateTerminalError({
+                targetVersion,
+                status: "failed",
+                reason: `This server needs a local migration. Run npx ${CLI_PACKAGE_NAME}@${targetVersion} service update on the host before using remote updates.`,
+              });
+            }
 
             const supportsProgress =
               currentConfig?.environment.capabilities.serverSelfUpdateProgress === true;

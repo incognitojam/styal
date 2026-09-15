@@ -104,7 +104,7 @@ export class CheckpointStore extends Context.Service<
       input: ReadGeneratedDiffPathsInput,
     ) => Effect.Effect<ReadonlyArray<string>, CheckpointStoreError>;
   }
->()("t3/checkpointing/CheckpointStore") {}
+>()("@styal/cli/checkpointing/CheckpointStore") {}
 
 export const make = Effect.gen(function* () {
   const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;

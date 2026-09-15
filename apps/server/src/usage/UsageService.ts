@@ -95,7 +95,7 @@ export class UsageService extends Context.Service<
   {
     readonly readSummary: (input: UsageSummaryInput) => Effect.Effect<UsageSummary, UsageReadError>;
   }
->()("t3/usage/UsageService") {}
+>()("@styal/cli/usage/UsageService") {}
 
 /** Empty summary, for suites that only need the RPC surface to resolve. */
 export const layerTest = Layer.succeed(

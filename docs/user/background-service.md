@@ -1,38 +1,38 @@
-# Running T3 Code in the Background
+# Running styal in the Background
 
-On Linux and macOS, T3 Code can run as a background service for your user, so it is ready without
+On Linux and macOS, styal can run as a background service for your user, so it is ready without
 keeping a terminal open.
 
 ## Manage the Service
 
-Install it with the latest T3 Code release:
+Install it with the latest styal release:
 
 ```sh
-npx t3@latest service install
+npx @styal/cli@nightly service install
 ```
 
 Check whether it is installed:
 
 ```sh
-npx t3@latest service status
+npx @styal/cli@nightly service status
 ```
 
 Update or repair it:
 
 ```sh
-npx t3@latest service update
+npx @styal/cli@nightly service update
 ```
 
 Stop it and remove it from startup:
 
 ```sh
-npx t3@latest service uninstall
+npx @styal/cli@nightly service uninstall
 ```
 
-Updating restarts T3 Code briefly. Let active agent work and terminal commands finish first.
+Updating restarts styal briefly. Let active agent work and terminal commands finish first.
 If a remote update is already in progress, wait for it to finish before retrying a local update.
 
-The service runs a small stable launcher. Exact T3 Code versions are installed separately, so a
+The service runs a small stable launcher. Exact styal versions are installed separately, so a
 failed remote candidate can return to the previous version without rewriting the service
 definition. The launcher snapshots the database before a remote candidate starts, so database
 updates roll back with the server version. An older launcher may require one local
@@ -69,5 +69,25 @@ A few more macOS notes:
 styal Link may offer to install the service during setup so the host stays reachable in the
 background. This is only an onboarding shortcut: the service and styal Link are managed separately.
 
-Signing out of styal Link does not remove the service. Use `t3 service uninstall` when you no longer
-want T3 Code to start in the background.
+Signing out of styal Link does not remove the service. Use `styal service uninstall` when you no longer
+want styal to start in the background.
+
+## Migrating an Existing styal Installation
+
+If your styal server was built manually or its launcher installed the `t3` npm
+package, update once on the host using an exact released styal version:
+
+```sh
+npx @styal/cli@<version> service update
+```
+
+This installs the styal package and replaces the service launcher. Existing styal
+threads, settings, and projects stay in the same data directory. If you use a
+custom data directory, pass the same `--base-dir` you used before. Older package
+installs are retained; the new launcher uses a separate runtime directory.
+
+For a foreground process, stop your existing server after active work finishes,
+then start `npx @styal/cli@<version> serve` with your existing startup options.
+
+Containers without systemd or launchd should run `styal serve` under the container's
+process supervisor. The CLI does not install a service manager.

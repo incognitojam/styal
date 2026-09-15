@@ -46,7 +46,7 @@ export class WorkspacePortAllocator extends Context.Service<
       workspacePath: string,
     ) => Effect.Effect<Record<string, string>, WorkspacePortAllocationError>;
   }
->()("t3/workspace/WorkspacePortAllocator") {}
+>()("@styal/cli/workspace/WorkspacePortAllocator") {}
 
 function hashWorkspacePath(workspacePath: string): number {
   let hash = 2_166_136_261;

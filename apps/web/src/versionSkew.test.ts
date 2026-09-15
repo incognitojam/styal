@@ -8,6 +8,7 @@ vi.mock("./branding", () => branding);
 
 import { APP_VERSION } from "./branding";
 import {
+  manualServerUpdateCommand,
   buildVersionMismatchDismissalKey,
   dismissVersionMismatch,
   isVersionMismatchDismissed,
@@ -154,6 +155,33 @@ describe("versionSkew", () => {
       }),
     ).toBe("desktop-managed");
     expect(resolveServerSelfUpdateCapability(null)).toBeNull();
+  });
+
+  it("migrates legacy services locally and only remotely updates the styal package", () => {
+    const config = {
+      environment: {
+        environmentId: EnvironmentId.make("legacy-service"),
+        label: "Remote",
+        platform: { os: "linux" as const, arch: "x64" as const },
+        serverVersion: "0.0.35",
+        capabilities: { repositoryIdentity: true, serverSelfUpdate: "boot-service" as const },
+      },
+    };
+    expect(resolveServerSelfUpdateCapability(config)).toBe("service-migration");
+    expect(
+      resolveServerSelfUpdateCapability({
+        environment: { ...config.environment, serverPackageName: "t3" },
+      }),
+    ).toBe("service-migration");
+    expect(
+      resolveServerSelfUpdateCapability({
+        environment: { ...config.environment, serverPackageName: "@styal/cli" },
+      }),
+    ).toBe("boot-service");
+    expect(manualServerUpdateCommand("0.1.0-nightly.20260915.1", true)).toBe(
+      "npx @styal/cli@0.1.0-nightly.20260915.1 service update",
+    );
+    expect(manualServerUpdateCommand("0.1.0")).toBe("npx @styal/cli@0.1.0");
   });
 
   it("matches version-drift guidance to the advertised update path", () => {

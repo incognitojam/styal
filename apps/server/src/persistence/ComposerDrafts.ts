@@ -38,7 +38,7 @@ export class ComposerDraftRepository extends Context.Service<
       input: ComposerDraftGetInput,
     ) => Stream.Stream<ComposerDraftSnapshot, ComposerDraftPersistenceError>;
   }
->()("t3/persistence/ComposerDrafts/ComposerDraftRepository") {}
+>()("@styal/cli/persistence/ComposerDrafts/ComposerDraftRepository") {}
 
 const DbRow = Schema.Struct({
   threadId: ThreadId,

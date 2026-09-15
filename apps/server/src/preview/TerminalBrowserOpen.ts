@@ -174,7 +174,7 @@ export class TerminalBrowserOpen extends Context.Service<
       input: TerminalBrowserOpenPreviewInput,
     ) => Effect.Effect<void, PreviewAutomationError>;
   }
->()("t3/preview/TerminalBrowserOpen") {}
+>()("@styal/cli/preview/TerminalBrowserOpen") {}
 
 export const make = Effect.gen(function* TerminalBrowserOpenMake() {
   const config = yield* ServerConfig.ServerConfig;

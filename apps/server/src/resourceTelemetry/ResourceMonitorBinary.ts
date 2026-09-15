@@ -60,7 +60,7 @@ export class ResourceMonitorBinary extends Context.Service<
   {
     readonly resolve: Effect.Effect<string, ResourceMonitorBinaryError>;
   }
->()("t3/resourceTelemetry/ResourceMonitorBinary") {}
+>()("@styal/cli/resourceTelemetry/ResourceMonitorBinary") {}
 
 function binaryName(platform: NodeJS.Platform): string {
   return platform === "win32" ? "styal-resource-monitor.exe" : "styal-resource-monitor";

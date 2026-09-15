@@ -123,7 +123,7 @@ jobs:
       # repeated here because origin/nightly may have moved since.
       - name: Test previous nightly schema upgrade
         if: steps.candidate.outputs.has_changes == 'true'
-        run: vp run --filter t3 test:nightly-upgrade -- origin/nightly
+        run: vp run --filter ./apps/server test:nightly-upgrade -- origin/nightly
 
       - id: release_meta
         name: Resolve nightly version
@@ -163,16 +163,31 @@ jobs:
       force_notarization: ${{ inputs.force_notarization == true }}
     secrets: inherit
 
+  build_cli:
+    name: Build and publish CLI
+    needs: [prepare, build_desktop]
+    if: needs.prepare.outputs.has_changes == 'true'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/fork-cli-build.yml
+    with:
+      ref: ${{ needs.prepare.outputs.ref }}
+      version: ${{ needs.prepare.outputs.version }}
+      dist_tag: nightly
+      publish: ${{ vars.STYAL_CLI_PUBLISH_ENABLED == 'true' && inputs.dry_run != true }}
+
   release:
     name: Publish GitHub prerelease
-    needs: [prepare, build_desktop]
+    needs: [prepare, build_desktop, build_cli]
     permissions:
       contents: write
       issues: write
       pull-requests: read
     if: >-
       needs.prepare.outputs.has_changes == 'true' &&
-      needs.build_desktop.result == 'success'
+      needs.build_desktop.result == 'success' &&
+      needs.build_cli.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -191,6 +206,12 @@ jobs:
         with:
           pattern: desktop-*
           merge-multiple: true
+          path: release-assets
+
+      - name: Download CLI archive
+        uses: actions/download-artifact@v8
+        with:
+          name: cli-package
           path: release-assets
 
       - name: Setup Vite+

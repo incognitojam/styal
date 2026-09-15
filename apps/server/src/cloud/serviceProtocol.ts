@@ -1,7 +1,11 @@
 import type { ServerSelfUpdateOutcome } from "@t3tools/contracts";
 
-/** Protocol 2 snapshots SQLite before trials so migrations can be rolled back safely. */
-export const SERVICE_LAUNCHER_PROTOCOL = 2 as const;
+/**
+ * Protocol 3 selects @styal/cli from its isolated runtime directory, retaining
+ * protocol 2's SQLite snapshots for rollback. Older launchers select t3 and
+ * must be replaced with a local service update.
+ */
+export const SERVICE_LAUNCHER_PROTOCOL = 3 as const;
 export const SERVICE_LAUNCHER_CONTEXT_ENV = "T3_SERVICE_LAUNCHER_CONTEXT";
 export const SERVICE_LAUNCHER_FILE = "service-launcher.mjs";
 export const SERVICE_STATE_FILE = "service-state.json";

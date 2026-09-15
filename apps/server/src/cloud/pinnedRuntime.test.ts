@@ -18,10 +18,15 @@ const successfulRunner = (fs: FileSystem.FileSystem, path: Path.Path) =>
   ProcessRunner.ProcessRunner.of({
     run: (input) =>
       Effect.gen(function* () {
+        assert.equal(input.command, "npm");
+        assert.include(input.args, "@styal/cli@1.2.3");
+        assert.include(input.args, "--allow-scripts=node-pty");
+        assert.include(input.args, "--allow-scripts=msgpackr-extract");
+        assert.isFalse(input.args.some((arg) => arg.startsWith("t3@")));
         const prefixIndex = input.args.indexOf("--prefix");
         const stagingDir = input.args[prefixIndex + 1];
         if (stagingDir === undefined) return yield* Effect.die("missing npm --prefix");
-        const entry = path.join(stagingDir, "node_modules", "t3", "dist", "bin.mjs");
+        const entry = path.join(stagingDir, "node_modules", "@styal", "cli", "dist", "bin.mjs");
         yield* fs.makeDirectory(path.dirname(entry), { recursive: true }).pipe(Effect.orDie);
         yield* fs.writeFileString(entry, "export {};\n").pipe(Effect.orDie);
         return {
@@ -64,6 +69,29 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
       assert.deepEqual(installed, finalPaths);
       assert.isTrue(yield* fs.exists(finalPaths.entryPath));
       assert.equal(yield* fs.readFileString(finalPaths.sentinelPath), "1.2.3\n");
+    }),
+  );
+
+  it.effect("preserves a legacy t3 runtime with the same version", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "styal-runtime-migration-" });
+      const legacyDir = path.join(baseDir, "runtime", "versions", "1.2.3");
+      const legacyEntry = path.join(legacyDir, "node_modules", "t3", "dist", "bin.mjs");
+      yield* fs.makeDirectory(path.dirname(legacyEntry), { recursive: true });
+      yield* fs.writeFileString(legacyEntry, "legacy server still running\n");
+      yield* fs.writeFileString(path.join(legacyDir, ".install-complete"), "1.2.3\n");
+      const installed = yield* ensurePinnedRuntimeInstalled({
+        baseDir,
+        version: "1.2.3",
+        fs,
+        path,
+        runner: successfulRunner(fs, path),
+        validate: () => Effect.void,
+      });
+      assert.isTrue(yield* fs.exists(installed.entryPath));
+      assert.equal(yield* fs.readFileString(legacyEntry), "legacy server still running\n");
     }),
   );
 
@@ -169,7 +197,7 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
 
       yield* Deferred.await(started);
       yield* Fiber.interrupt(install);
-      const versionsDir = path.join(baseDir, "runtime", "versions");
+      const versionsDir = path.join(baseDir, "runtime", "styal-cli", "versions");
       assert.deepEqual(yield* fs.readDirectory(versionsDir), []);
     }),
   );

@@ -194,13 +194,13 @@ jobs:
           run-install: true
 
       - name: Test server
-        run: vp run --filter t3 test
+        run: vp run --filter ./apps/server test
 
       - name: Fetch previous fork nightly
         run: git fetch --no-tags origin '+refs/heads/nightly:refs/remotes/origin/nightly'
 
       - name: Test previous nightly schema upgrade
-        run: vp run --filter t3 test:nightly-upgrade -- origin/nightly
+        run: vp run --filter ./apps/server test:nightly-upgrade -- origin/nightly
 
   test_workspace:
     name: Fork Test (Workspace)

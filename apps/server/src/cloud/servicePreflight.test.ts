@@ -3,7 +3,7 @@ import { expect, it } from "@effect/vitest";
 import { runServicePreflight } from "./servicePreflight.ts";
 import { SERVICE_LAUNCHER_PROTOCOL } from "./serviceProtocol.ts";
 
-it("requires the database-snapshot launcher protocol", () => {
+it("requires the styal package launcher protocol", () => {
   expect(
     runServicePreflight({
       databasePath: "/missing/state.sqlite",

@@ -1,7 +1,7 @@
 # Fork nightly releases
 
 The `Fork Nightly` workflow takes the newest commit on `main` that Fork CI has passed, builds the
-supported desktop targets from it, and publishes a GitHub prerelease. It never modifies `main`.
+supported desktop targets and CLI package from it, and publishes a GitHub prerelease. It never modifies `main`.
 
 Fork CI is the only verifier: the nightly does not repeat its checks, tests, or desktop build. It
 walks `main` from the tip and skips any commit whose Fork CI run failed, so a briefly red `main` delays
@@ -93,3 +93,9 @@ the release's commit link, and their response bodies are never rendered as autho
 - macOS arm64: signed and Apple-notarized DMG, with ZIP and updater artifacts
 - Linux x64: unsigned AppImage
 - Windows x64: unsigned NSIS installer with bundled WSL support
+
+## CLI distribution
+
+Each release includes a verified `@styal/cli` npm archive. npm publication is enabled
+separately after the scope and trusted publishers are configured. See
+[CLI releases](./cli-release.md) for bootstrap and deployment verification.
