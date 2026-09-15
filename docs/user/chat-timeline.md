@@ -14,3 +14,13 @@ resolved path, while its label and **Copy relative path** action stay workspace-
 When previewing a Markdown file, relative images resolve from that file's folder. Images retain
 their authored dimensions and SVG fragment, and copying a workspace image preserves its Markdown
 reference.
+
+On web and desktop, select an image in an agent message to expand it. Images that link somewhere
+keep their link action.
+
+When a turn finishes on web and desktop, its final assistant response stays visible. Open **Worked
+for** to read earlier responses and tool activity from that turn.
+
+Codex file citations appear as file chips on web, desktop, and mobile. A reusable template created
+by Codex appears as a card with its name and type. Select **Use template** to add an editable prompt
+to the composer. Review or change the prompt, then send it when you are ready.

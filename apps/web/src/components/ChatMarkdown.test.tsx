@@ -258,8 +258,8 @@ describe("ChatMarkdown file option chips", () => {
       />,
     );
 
-    expect(html).toContain("index.ts · project/src");
-    expect(html).toContain("index.ts · project/test");
+    expect(html).toContain("index.ts · src");
+    expect(html).toContain("index.ts · test");
   });
 
   it("preserves rejected citations created by over-indented list recovery", () => {

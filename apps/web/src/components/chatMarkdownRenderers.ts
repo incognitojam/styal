@@ -2,6 +2,7 @@ import React, { type ReactNode } from "react";
 import type { Components } from "react-markdown";
 
 const STABLE_RENDERER_KEYS = [
+  "div",
   "p",
   "blockquote",
   "li",

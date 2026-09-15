@@ -22,3 +22,9 @@ Prefer a predictable A-to-Z list? The diff panel and the pull request Code tab e
 toggle in their toolbar, next to the stacked/split view control. Turn it off to sort files
 alphabetically by path and hide the tier tags; turn it on to return to relevance ordering. One
 choice covers both views and is remembered on that device.
+
+## Live workspace changes
+
+On web and desktop, file and diff panels refresh as the agent reports workspace changes. Refreshes
+preserve your selected file, expanded folders, diff scroll position, and collapsed files. A deleted
+file is removed from the selection when the refreshed tree no longer contains it.
