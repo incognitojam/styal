@@ -83,6 +83,11 @@ signing status, and artifact formats are rendered deterministically by
 If the OpenAI secret is absent or generation fails, the release continues with its existing
 commit-based notes and the rolling issue remains unchanged.
 
+The commit list resolves a subject's PR suffix against upstream when it matches an `Upstream-PR`
+trailer; other PR suffixes use the commit's repository. This preserves upstream links for cherry-picks
+and fork links for fork squash commits with a different PR number. Failed GitHub lookups fall back to
+the release's commit link, and their response bodies are never rendered as author names.
+
 ## Supported targets
 
 - macOS arm64: signed and Apple-notarized DMG, with ZIP and updater artifacts

@@ -255,39 +255,6 @@ jobs:
           git rev-parse --verify "${UPSTREAM_REF}^{commit}" >/dev/null
           source .github/scripts/release-changelog.sh
 
-          append_changes() {
-            local repository="$1"
-            shift
-
-            if (( $# == 0 )); then
-              return
-            fi
-
-            local sha short_sha subject title pull_number author
-            for sha in "$@"; do
-              short_sha="${sha:0:7}"
-              subject=$(git show -s --format=%s "$sha")
-              rendered_change_count=$((rendered_change_count + 1))
-              if [[ "$subject" =~ ^(.+)\ \(#([0-9]+)\)$ ]]; then
-                title="${BASH_REMATCH[1]}"
-                pull_number="${BASH_REMATCH[2]}"
-                author=$(gh api "repos/${repository}/pulls/${pull_number}" \
-                  --jq '.user.login' 2>/dev/null || true)
-                if [[ -n "$author" ]]; then
-                  printf -- '- %s ([%s#%s](https://github.com/%s/pull/%s)) by @%s\n' \
-                    "$title" "$repository" "$pull_number" "$repository" "$pull_number" "$author"
-                else
-                  printf -- '- %s ([%s#%s](https://github.com/%s/pull/%s))\n' \
-                    "$title" "$repository" "$pull_number" "$repository" "$pull_number"
-                fi
-              else
-                # shellcheck disable=SC2016 # Markdown backticks must remain literal.
-                printf -- '- %s ([`%s`](https://github.com/%s/commit/%s))\n' \
-                  "$subject" "$short_sha" "$repository" "$sha"
-              fi
-            done
-          }
-
           if [[ -n "$PREVIOUS_TAG" ]]; then
             git rev-parse --verify "${PREVIOUS_TAG}^{commit}" >/dev/null
             previous_upstream_ref=$(git merge-base "$PREVIOUS_TAG" "$UPSTREAM_REF")
@@ -307,7 +274,6 @@ jobs:
             list_fork_release_commits "$PREVIOUS_TAG" "$FORK_SOURCE_REF" "$UPSTREAM_REF"
           )
 
-          rendered_change_count=0
           {
             if [[ -f nightly-highlights.md ]]; then
               cat nightly-highlights.md
@@ -315,12 +281,12 @@ jobs:
             fi
             printf "## What's Changed\n\n"
             if (( ${#fork_changes[@]} > 0 )); then
-              append_changes "$GITHUB_REPOSITORY" "${fork_changes[@]}"
+              append_release_changes "$GITHUB_REPOSITORY" "${fork_changes[@]}"
             fi
             if (( ${#upstream_changes[@]} > 0 )); then
-              append_changes pingdotgg/t3code "${upstream_changes[@]}"
+              append_release_changes pingdotgg/t3code "${upstream_changes[@]}"
             fi
-            if (( rendered_change_count == 0 )); then
+            if (( ${#fork_changes[@]} + ${#upstream_changes[@]} == 0 )); then
               printf 'No user-facing changes.\n'
             fi
             # Compare the fork's own release tags. Comparing upstream refs named
