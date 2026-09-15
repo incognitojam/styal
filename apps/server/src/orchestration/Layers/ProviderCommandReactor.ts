@@ -1979,7 +1979,8 @@ const make = Effect.gen(function* () {
           return Effect.interrupt;
         }
         return Effect.logWarning("provider command reactor failed to find pending thread titles", {
-          cause: Cause.pretty(cause),
+          failureKind: Cause.hasDies(cause) ? "defect" : "failure",
+          reasonCount: cause.reasons.length,
         }).pipe(Effect.as({ interruptedRegenerations: [], refinementThreadIds: [] }));
       }),
     );
@@ -2022,7 +2023,8 @@ const make = Effect.gen(function* () {
         return Effect.logWarning(
           "provider command reactor failed to recover pending thread titles",
           {
-            cause: Cause.pretty(cause),
+            failureKind: Cause.hasDies(cause) ? "defect" : "failure",
+            reasonCount: cause.reasons.length,
           },
         );
       }),
