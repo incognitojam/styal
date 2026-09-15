@@ -123,6 +123,8 @@ An empty database is a bad test. Seed your worktree's `.styal` with a copy of re
 - The server is event-sourced and its async flows emit typed receipts. Wait on receipts and worker drains, never on sleeps or polling. A test that needs a timeout to pass is wrong.
 - Verify user-visible frontend changes with one integrated pass in a real client: `test-styal-app` for web, `test-styal-mobile` for mobile. The primary agent does this once after integrating. Subagents do not launch their own dev servers.
 
+For authorized mobile verification, a missing or outdated native client is a build step, not a blocker. Run `node scripts/mobile-native-client.ts ensure <ios|android> <device-id>` on the simulator host before starting Metro. It checks the local Expo fingerprint and builds/installs when needed. See `test-styal-mobile` for the full workflow.
+
 ## Pull requests
 
 - This repository is `incognitojam/styal`, a fork of `pingdotgg/t3code`. Treat the upstream repository as read-only: never open a PR against upstream unless the developer explicitly names upstream as the target and authorizes that contribution. A general request to open a PR authorizes a PR against the fork only.
