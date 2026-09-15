@@ -1236,6 +1236,40 @@ features:
       tracking: []
       retire_when: The fork stops shipping as a separately installable application or adopts a shared downstream-namespacing mechanism that preserves the same isolation and hosted-origin cleanup boundary.
 
+  - id: github-issue-thread-context
+    title: Start a thread from a GitHub issue
+    status: maintained
+    prs: [31]
+    invariants:
+      - The command palette lists the current project's open GitHub issues through the GitHub CLI, with distinct states for a missing CLI, missing authentication, and no open issues, and choosing one opens a new draft with the issue attached as a removable context chip.
+      - The attached issue persists with the draft across reloads without another CLI call and is appended to the outgoing prompt as an issue context block after the prose.
+      - A message queued while the agent is working keeps its issue context, sends it when the queued message goes out, and returns it to the composer when the queued message is cancelled or the turn is stopped.
+    implementation_paths:
+      - apps/server/src/sourceControl/GitHubSourceControlProvider.ts
+      - apps/server/src/sourceControl/SourceControlRepositoryService.ts
+      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/CommandPalette.tsx
+      - apps/web/src/components/chat/ComposerPendingIssueContexts.tsx
+      - apps/web/src/composerDraftStore.ts
+      - apps/web/src/lib/issueContext.ts
+      - apps/web/src/queuedMessageStore.ts
+      - packages/contracts/src/sourceControl.ts
+    upstream_paths:
+      - apps/server/src/sourceControl/GitHubSourceControlProvider.ts
+      - apps/server/src/sourceControl/SourceControlRepositoryService.ts
+      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/CommandPalette.tsx
+      - apps/web/src/composerDraftStore.ts
+      - apps/web/src/queuedMessageStore.ts
+      - packages/contracts/src/sourceControl.ts
+    tests:
+      - apps/web/src/composerDraftStore.test.ts
+      - apps/web/src/lib/issueContext.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream starts threads from GitHub issues with the issue attached as persistent composer context.
+
   - id: github-outage-status
     title: Provider outage status in the sidebar
     status: maintained
