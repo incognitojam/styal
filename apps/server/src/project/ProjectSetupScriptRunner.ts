@@ -642,7 +642,8 @@ export const make = Effect.gen(function* () {
         terminalId,
         cwd,
         worktreePath: input.worktreePath,
-        env,
+        // Setup may run before a terminal client attaches to answer color probes.
+        env: { ...env, NO_COLOR: "1", FORCE_COLOR: "0" },
         command: script.command,
         label: script.name,
       })
