@@ -2,6 +2,8 @@ import type { EnvironmentId, ServerConfig, ServerSelfUpdateCapability } from "@t
 import { compareSemverVersions, parseSemver } from "@t3tools/shared/semver";
 import * as Schema from "effect/Schema";
 
+import { CLI_PACKAGE_NAME } from "@t3tools/shared/cliPackage";
+
 import { APP_VERSION } from "./branding";
 import { getLocalStorageItem, setLocalStorageItem } from "./hooks/useLocalStorage";
 
@@ -77,29 +79,37 @@ export function resolveServerConfigVersionMismatch(
   return resolveVersionMismatch(serverConfig?.environment.serverVersion);
 }
 
-/** The update path the connected server offers, or null when it only
-    supports a manual relaunch (older servers, dev checkouts, Windows). */
+export type ServerUpdateCapability = ServerSelfUpdateCapability | "service-migration";
+
+/** Selects the update action, requiring a local migration for legacy packages. */
 export function resolveServerSelfUpdateCapability(
   serverConfig: Pick<ServerConfig, "environment"> | null | undefined,
-): ServerSelfUpdateCapability | null {
-  return serverConfig?.environment.capabilities.serverSelfUpdate ?? null;
+): ServerUpdateCapability | null {
+  const capability = serverConfig?.environment.capabilities.serverSelfUpdate ?? null;
+  if (capability === "desktop-managed") return capability;
+  if (serverConfig?.environment.serverPackageName !== CLI_PACKAGE_NAME) {
+    return capability === "boot-service" ? "service-migration" : null;
+  }
+  return capability;
 }
 
 /** The command to hand users whose server cannot update itself. */
-export function manualServerUpdateCommand(targetVersion: string): string {
-  return `npx t3@${targetVersion}`;
+export function manualServerUpdateCommand(targetVersion: string, serviceMigration = false): string {
+  return `npx ${CLI_PACKAGE_NAME}@${targetVersion}${serviceMigration ? " service update" : ""}`;
 }
 
 /** One sentence telling the user how to resolve version skew for a server,
     matched to the update path it offers. */
 export function serverUpdateGuidance(
-  capability: ServerSelfUpdateCapability | null,
+  capability: ServerUpdateCapability | null,
   serverLabel: string,
 ): string {
   switch (capability) {
     case "boot-service":
     case "respawn":
       return `Update the ${serverLabel} so they stay in sync.`;
+    case "service-migration":
+      return `Run the copied service update command on the ${serverLabel} once to migrate its launcher to styal.`;
     case "desktop-managed":
       return `Update the desktop app that runs the ${serverLabel}.`;
     default:

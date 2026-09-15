@@ -8,10 +8,11 @@ import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 const testState = vi.hoisted(() => ({
   updateServer: vi.fn(),
   toast: vi.fn(),
+  copy: vi.fn(),
 }));
 
 vi.mock("~/hooks/useCopyToClipboard", () => ({
-  useCopyToClipboard: () => ({ copyToClipboard: vi.fn() }),
+  useCopyToClipboard: () => ({ copyToClipboard: testState.copy }),
 }));
 vi.mock("~/state/server", () => ({
   serverEnvironment: { updateServer: Symbol("updateServer") },
@@ -47,6 +48,21 @@ describe("ServerUpdateAction", () => {
   beforeEach(() => {
     testState.updateServer.mockReset();
     testState.toast.mockReset();
+    testState.copy.mockReset();
+  });
+
+  it("copies a local migration command without asking a legacy server to install upstream", () => {
+    const action = ServerUpdateAction({
+      environmentId: "env-legacy" as EnvironmentId,
+      serverLabel: "Legacy server",
+      selfUpdate: "service-migration",
+      targetVersion: "0.1.0",
+    }) as ActionElement;
+    action.props.onClick?.();
+    expect(testState.copy).toHaveBeenCalledWith("npx @styal/cli@0.1.0 service update", {
+      command: "npx @styal/cli@0.1.0 service update",
+    });
+    expect(testState.updateServer).not.toHaveBeenCalled();
   });
 
   it("reports success only after the shared update flow reconnects", async () => {
@@ -64,7 +80,7 @@ describe("ServerUpdateAction", () => {
     expect(testState.toast).toHaveBeenCalledWith({
       type: "success",
       title: "Test server updated",
-      description: "Reconnected on t3@0.0.31.",
+      description: "Reconnected on @styal/cli@0.0.31.",
     });
   });
 

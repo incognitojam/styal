@@ -345,7 +345,7 @@ export class GitHubCli extends Context.Service<
       readonly force?: boolean;
     }) => Effect.Effect<void, GitHubCliError>;
   }
->()("t3/sourceControl/GitHubCli") {}
+>()("@styal/cli/sourceControl/GitHubCli") {}
 
 /** `gh repo view --json parent` reports the fork parent as owner/name, without its URLs. */
 const RawGitHubRepositoryParentSchema = Schema.Struct({

@@ -110,6 +110,7 @@ jobs:
               target: "dmg",
               arch: "arm64",
               rust_target: "aarch64-apple-darwin",
+              cli_platform: "darwin-arm64",
               artifact: "desktop-mac-arm64",
             },
             {
@@ -120,6 +121,7 @@ jobs:
               target: "AppImage",
               arch: "x64",
               rust_target: "x86_64-unknown-linux-gnu",
+              cli_platform: "linux-x64",
               artifact: "desktop-linux-x64",
             },
             {
@@ -131,6 +133,7 @@ jobs:
               target: "nsis",
               arch: "x64",
               rust_target: "x86_64-pc-windows-msvc",
+              cli_platform: "win32-x64",
               artifact: "desktop-win-x64",
             },
           ];
@@ -171,7 +174,7 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=t3...
+              - --filter=./apps/server...
 
       - name: Build node-pty linux-x64 prebuild
         shell: bash
@@ -269,7 +272,7 @@ jobs:
           run-install: |
             args:
               - --filter=@t3tools/desktop...
-              - --filter=t3...
+              - --filter=./apps/server...
               - --filter=@t3tools/scripts...
 
       - name: Setup Rust
@@ -433,4 +436,11 @@ jobs:
         with:
           name: ${{ matrix.artifact }}
           path: release-publish/*
+          if-no-files-found: error
+
+      - name: Upload native resource monitor for CLI
+        uses: actions/upload-artifact@v7
+        with:
+          name: cli-resource-monitor-${{ matrix.cli_platform }}
+          path: native/resource-monitor/target/${{ matrix.rust_target }}/release/styal-resource-monitor${{ matrix.platform == 'win' && '.exe' || '' }}
           if-no-files-found: error

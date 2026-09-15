@@ -31,6 +31,8 @@ import {
 
 interface PackageJson {
   name: string;
+  license: string;
+  description: string;
   repository: {
     type: string;
     url: string;
@@ -42,7 +44,6 @@ interface PackageJson {
   engines: Record<string, string>;
   files: string[];
   dependencies: Record<string, string>;
-  overrides: Record<string, string>;
 }
 
 const PackageJsonPrettyJson = fromJsonStringPretty(Schema.Unknown);
@@ -50,7 +51,6 @@ const encodePackageJson = Schema.encodeEffect(PackageJsonPrettyJson);
 
 const WorkspaceConfig = Schema.Struct({
   catalog: Schema.optional(Schema.Record(Schema.String, Schema.String)),
-  overrides: Schema.optional(Schema.Record(Schema.String, Schema.String)),
 });
 type WorkspaceConfig = typeof WorkspaceConfig.Type;
 const decodeWorkspaceConfig = Schema.decodeEffect(fromYaml(WorkspaceConfig));
@@ -163,6 +163,7 @@ const buildCmd = Command.make(
       );
 
       const webDist = path.join(repoRoot, "apps/web/dist");
+      yield* fs.copyFile(path.join(repoRoot, "LICENSE"), path.join(serverDir, "dist/LICENSE"));
       const clientTarget = path.join(serverDir, "dist/client");
 
       if (yield* fs.exists(webDist)) {
@@ -190,7 +191,7 @@ const createVpPmPublishArgs = (config: PublishCommandConfig): ReadonlyArray<stri
   const args = [
     "publish",
     "--filter",
-    "t3",
+    "./apps/server",
     "--access",
     config.access,
     "--tag",
@@ -204,104 +205,120 @@ const createVpPmPublishArgs = (config: PublishCommandConfig): ReadonlyArray<stri
   return args;
 };
 
-const publishCmd = Command.make(
-  "publish",
-  {
-    tag: Flag.string("tag").pipe(Flag.withDefault("latest")),
-    access: Flag.string("access").pipe(Flag.withDefault("public")),
-    appVersion: Flag.string("app-version").pipe(Flag.optional),
-    provenance: Flag.boolean("provenance").pipe(Flag.withDefault(false)),
-    dryRun: Flag.boolean("dry-run").pipe(Flag.withDefault(false)),
-    verbose: Flag.boolean("verbose").pipe(Flag.withDefault(false)),
-  },
-  (config) =>
-    Effect.gen(function* () {
-      const path = yield* Path.Path;
-      const fs = yield* FileSystem.FileSystem;
-      const repoRoot = yield* RepoRoot;
-      const serverDir = path.join(repoRoot, "apps/server");
-      const packageJsonPath = path.join(serverDir, "package.json");
+const makePackageCommand = (name: "pack" | "publish") =>
+  Command.make(
+    name,
+    {
+      tag: Flag.string("tag").pipe(Flag.withDefault("latest")),
+      access: Flag.string("access").pipe(Flag.withDefault("public")),
+      appVersion: Flag.string("app-version").pipe(Flag.optional),
+      outputDirectory: Flag.string("output-directory").pipe(Flag.withDefault(".")),
+      provenance: Flag.boolean("provenance").pipe(Flag.withDefault(false)),
+      dryRun: Flag.boolean("dry-run").pipe(Flag.withDefault(false)),
+      verbose: Flag.boolean("verbose").pipe(Flag.withDefault(false)),
+    },
+    (config) =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const fs = yield* FileSystem.FileSystem;
+        const repoRoot = yield* RepoRoot;
+        const serverDir = path.join(repoRoot, "apps/server");
+        const packageJsonPath = path.join(serverDir, "package.json");
 
-      // Assert build assets exist
-      for (const relPath of [
-        "dist/bin.mjs",
-        "dist/service-launcher.mjs",
-        "dist/client/index.html",
-      ]) {
-        const abs = path.join(serverDir, relPath);
-        if (!(yield* fs.exists(abs))) {
-          return yield* new ServerCliBuildAssetMissingError({ assetPath: abs });
+        // Assert build assets exist
+        for (const relPath of [
+          "dist/LICENSE",
+          "dist/bin.mjs",
+          "dist/service-launcher.mjs",
+          "dist/client/index.html",
+        ]) {
+          const abs = path.join(serverDir, relPath);
+          if (!(yield* fs.exists(abs))) {
+            return yield* new ServerCliBuildAssetMissingError({ assetPath: abs });
+          }
         }
-      }
 
-      yield* Effect.acquireUseRelease(
-        // Acquire: resolve publish metadata and read every original before mutation.
-        Effect.gen(function* () {
-          const version = Option.getOrElse(config.appVersion, () => serverPackageJson.version);
-          const workspaceConfig = yield* readWorkspaceConfig();
-          const workspaceCatalog = workspaceConfig.catalog ?? {};
-          const workspaceOverrides = workspaceConfig.overrides ?? {};
-          const pkg: PackageJson = {
-            name: serverPackageJson.name,
-            repository: serverPackageJson.repository,
-            bin: serverPackageJson.bin,
-            type: serverPackageJson.type,
-            version,
-            engines: serverPackageJson.engines,
-            files: serverPackageJson.files,
-            dependencies: resolveCatalogDependencies(
-              serverPackageJson.dependencies,
-              workspaceCatalog,
-              "apps/server",
-            ),
-            overrides: resolveCatalogDependencies(
-              workspaceOverrides,
-              workspaceCatalog,
-              "apps/server",
-            ),
-          };
-
-          return {
-            packageJsonString: yield* encodePackageJson(pkg),
-            originalPackageJson: yield* fs.readFile(packageJsonPath),
-            icons: yield* preparePublishIcons(repoRoot, serverDir, version),
-          };
-        }),
-        // Use: pnpm publish from the workspace root so pnpm-only workspace
-        // config, including override selectors, is interpreted correctly.
-        (resource) =>
+        yield* Effect.acquireUseRelease(
+          // Acquire: resolve publish metadata and read every original before mutation.
           Effect.gen(function* () {
-            yield* fs.writeFileString(packageJsonPath, `${resource.packageJsonString}\n`);
-            for (const icon of resource.icons) {
-              yield* fs.writeFile(icon.targetPath, icon.publish);
-            }
-            yield* Effect.log("[cli] Applied package metadata and publish icon overrides");
+            const version = Option.getOrElse(config.appVersion, () => serverPackageJson.version);
+            const workspaceConfig = yield* readWorkspaceConfig();
+            const workspaceCatalog = workspaceConfig.catalog ?? {};
+            const pkg: PackageJson = {
+              name: serverPackageJson.name,
+              license: serverPackageJson.license,
+              description: serverPackageJson.description,
+              repository: serverPackageJson.repository,
+              bin: serverPackageJson.bin,
+              type: serverPackageJson.type,
+              version,
+              engines: serverPackageJson.engines,
+              files: serverPackageJson.files,
+              dependencies: resolveCatalogDependencies(
+                serverPackageJson.dependencies,
+                workspaceCatalog,
+                "apps/server",
+              ),
+            };
 
-            const args = createVpPmPublishArgs(config);
-            const spawnCommand = yield* resolveSpawnCommand("vp", ["pm", ...args]);
+            return {
+              packageJsonString: yield* encodePackageJson(pkg),
+              originalPackageJson: yield* fs.readFile(packageJsonPath),
+              icons: yield* preparePublishIcons(repoRoot, serverDir, version),
+            };
+          }),
+          // Pack or publish only resolved public metadata; workspace overrides
+          // are install-time pnpm configuration, not npm package metadata.
+          (resource) =>
+            Effect.gen(function* () {
+              yield* fs.writeFileString(packageJsonPath, `${resource.packageJsonString}\n`);
+              for (const icon of resource.icons) {
+                yield* fs.writeFile(icon.targetPath, icon.publish);
+              }
+              yield* Effect.log("[cli] Applied package metadata and publish icon overrides");
 
-            yield* Effect.log(`[cli] Running: vp pm ${args.join(" ")}`);
-            yield* runCommand(
-              ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-                cwd: repoRoot,
-                stdout: config.verbose ? "inherit" : "ignore",
-                stderr: "inherit",
-                shell: spawnCommand.shell,
-              }),
-            );
-          }),
-        // Release: restore every file even if applying overrides or publishing fails.
-        (resource) =>
-          Effect.gen(function* () {
-            yield* fs.writeFile(packageJsonPath, resource.originalPackageJson);
-            for (const icon of resource.icons) {
-              yield* fs.writeFile(icon.targetPath, icon.original);
-            }
-            if (config.verbose) yield* Effect.log("[cli] Restored original publish assets");
-          }),
-      );
-    }),
-).pipe(Command.withDescription("Publish the server package to npm."));
+              const outputDirectory = path.resolve(repoRoot, config.outputDirectory);
+              if (name === "pack") yield* fs.makeDirectory(outputDirectory, { recursive: true });
+              const args =
+                name === "pack"
+                  ? [
+                      "pack",
+                      serverDir,
+                      "--pack-destination",
+                      outputDirectory,
+                      ...(config.dryRun ? ["--dry-run"] : []),
+                    ]
+                  : ["pm", ...createVpPmPublishArgs(config)];
+              const spawnCommand = yield* resolveSpawnCommand(name === "pack" ? "npm" : "vp", args);
+
+              yield* Effect.log(`[cli] Running: ${spawnCommand.command} ${args.join(" ")}`);
+              yield* runCommand(
+                ChildProcess.make(spawnCommand.command, spawnCommand.args, {
+                  cwd: repoRoot,
+                  stdout: config.verbose ? "inherit" : "ignore",
+                  stderr: "inherit",
+                  shell: spawnCommand.shell,
+                }),
+              );
+            }),
+          // Release: restore every file even if applying overrides or publishing fails.
+          (resource) =>
+            Effect.gen(function* () {
+              yield* fs.writeFile(packageJsonPath, resource.originalPackageJson);
+              for (const icon of resource.icons) {
+                yield* fs.writeFile(icon.targetPath, icon.original);
+              }
+              if (config.verbose) yield* Effect.log("[cli] Restored original publish assets");
+            }),
+        );
+      }),
+  ).pipe(
+    Command.withDescription(
+      name === "pack"
+        ? "Pack an installable server archive without publishing."
+        : "Publish the server package to npm.",
+    ),
+  );
 
 // ---------------------------------------------------------------------------
 // root command
@@ -309,7 +326,7 @@ const publishCmd = Command.make(
 
 const cli = Command.make("cli").pipe(
   Command.withDescription("T3 server build & publish CLI."),
-  Command.withSubcommands([buildCmd, publishCmd]),
+  Command.withSubcommands([buildCmd, makePackageCommand("pack"), makePackageCommand("publish")]),
 );
 
 Command.run(cli, { version: "0.0.0" }).pipe(

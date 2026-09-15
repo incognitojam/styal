@@ -550,7 +550,7 @@ export class LegacyImportPreviewService extends Context.Service<
       projectId: string,
     ) => Effect.Effect<Option.Option<LegacyImportProjectPreviewType>>;
   }
->()("t3/dataImport/LegacyImportPreview/LegacyImportPreviewService") {}
+>()("@styal/cli/dataImport/LegacyImportPreview/LegacyImportPreviewService") {}
 
 export const makeLegacyImportPreviewService = Effect.fn(
   "LegacyImportPreview.makeLegacyImportPreviewService",

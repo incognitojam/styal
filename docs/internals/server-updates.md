@@ -1,6 +1,6 @@
 # Server Update Architecture
 
-> For maintainers. Using T3 Code? See [docs/user](../user/).
+> For maintainers. Using styal? See [docs/user](../user/).
 
 Remote server updates use one stable launcher selected by the platform service manager (systemd on
 Linux, launchd on macOS). Foreground CLI processes do not self-update, and a running server never
@@ -12,10 +12,10 @@ The service files under `<baseDir>/runtime` are:
 
 - `service-launcher.mjs`, the stable process selected by the service manager;
 - `service-state.json`, the launcher's durable selection state;
-- `versions/<version>`, immutable exact-version npm installs.
+- `styal-cli/versions/<version>`, immutable exact-version npm installs.
 
-The launcher is the only runtime writer of `service-state.json`. `t3 service install` and
-`t3 service update` may replace the launcher and state while the unit is stopped. Server children
+The launcher is the only runtime writer of `service-state.json`. `styal service install` and
+`styal service update` may replace the launcher and state while the unit is stopped. Server children
 only communicate with the launcher over their inherited IPC channel.
 
 The state contains one active version and, at most, one update record:
@@ -29,7 +29,7 @@ Every write uses same-directory replacement plus file and directory fsync.
 
 ## Remote Update
 
-1. The active server installs `t3@<target>` into a unique staging directory.
+1. The active server installs `@styal/cli@<target>` into a unique staging directory.
 2. The target runs `__service-preflight` and verifies that the stable launcher supports its update
    protocol.
 3. The staging directory is renamed to its immutable version path only after preflight succeeds.
@@ -65,7 +65,7 @@ The protocol version is part of the safety boundary. A target that requires data
 blocked when the installed launcher is too old. Upgrade the launcher once with:
 
 ```sh
-npx t3@<version> service update
+npx @styal/cli@<version> service update
 ```
 
 The local command stops the unit, selects the new launcher and exact runtime, then restarts the
@@ -97,3 +97,22 @@ manual command; the old detached foreground respawn path no longer exists.
 - Service installation: `apps/server/src/cloud/bootService.ts`
 - Activation boundary: `apps/server/src/serverRuntimeStartup.ts` and `serverActivation.ts`
 - Client outcome correlation: `packages/client-runtime/src/state/server.ts`
+
+## CLI Package Identity
+
+The launcher and installer select `@styal/cli` from
+`runtime/styal-cli/versions/<version>/node_modules/@styal/cli/dist/bin.mjs`.
+The directory is separate from legacy `runtime/versions/<version>` installs so a
+matching version cannot reuse or remove a running `t3` package.
+
+Launcher protocol 3 requires this layout. Older launchers fail preflight and need
+one local `npx @styal/cli@<version> service update`, which prepares the new runtime
+before stopping the service and replacing its launcher. Database and project paths
+are unchanged. Remote rollback operates between runtimes using the new layout;
+the one-time launcher migration is a local operation.
+
+Environment descriptors advertise `serverPackageName`. Clients offer the local
+service migration command for older boot services with an absent or different
+package identity, and the shared update command refuses to send a remote update
+to them. This prevents a new styal client from asking an old server to fetch
+`t3@<styal-version>` during the rollout.

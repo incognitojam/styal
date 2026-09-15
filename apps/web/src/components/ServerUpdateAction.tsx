@@ -1,4 +1,4 @@
-import type { EnvironmentId, ServerSelfUpdateCapability } from "@t3tools/contracts";
+import type { EnvironmentId } from "@t3tools/contracts";
 import type { ServerUpdateStage, ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import {
   isAtomCommandInterrupted,
@@ -8,7 +8,7 @@ import {
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { manualServerUpdateCommand } from "~/versionSkew";
+import { manualServerUpdateCommand, type ServerUpdateCapability } from "~/versionSkew";
 import { Button } from "./ui/button";
 import { toastManager } from "./ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
@@ -80,7 +80,7 @@ export function ServerUpdateAction({
 }: {
   readonly environmentId: EnvironmentId;
   readonly serverLabel: string;
-  readonly selfUpdate: ServerSelfUpdateCapability | null;
+  readonly selfUpdate: ServerUpdateCapability | null;
   readonly targetVersion: string;
   readonly label?: string;
 }) {
@@ -129,7 +129,7 @@ export function ServerUpdateAction({
       toastManager.add({
         type: "success",
         title: `${serverLabel} updated`,
-        description: `Reconnected on t3@${result.value.targetVersion}.`,
+        description: `Reconnected on @styal/cli@${result.value.targetVersion}.`,
       });
     } finally {
       pendingUpdateEnvironmentIds.delete(environmentId);
@@ -144,8 +144,8 @@ export function ServerUpdateAction({
     );
   }
 
-  if (selfUpdate === null) {
-    const command = manualServerUpdateCommand(targetVersion);
+  if (selfUpdate === null || selfUpdate === "service-migration") {
+    const command = manualServerUpdateCommand(targetVersion, selfUpdate === "service-migration");
     return (
       <Button size="xs" variant="outline" onClick={() => copyToClipboard(command, { command })}>
         Copy update command
