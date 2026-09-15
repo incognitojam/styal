@@ -145,7 +145,7 @@ const waitForPreviewCaptureSurface = async (
 };
 
 const isPreviewWebviewRendering = (runtimeTabId: string): boolean => {
-  const wrapper = findPreviewWebview(runtimeTabId)?.closest<HTMLElement>("[data-preview-viewport]");
+  const wrapper = findBrowserWebview(runtimeTabId)?.closest<HTMLElement>("[data-preview-viewport]");
   return wrapper?.getAttribute("data-preview-rendering") === "active";
 };
 

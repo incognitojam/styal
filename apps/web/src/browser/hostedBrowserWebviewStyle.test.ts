@@ -120,6 +120,7 @@ describe("resolveHostedBrowserWebviewWrapperStyle", () => {
       resolveHostedBrowserWebviewWrapperStyle({
         active: false,
         captureActive: true,
+        renderingActive: true,
         rect: null,
         hiddenSize: { width: 1280, height: 800 },
       }),
@@ -140,6 +141,7 @@ describe("resolveHostedBrowserWebviewWrapperStyle", () => {
       resolveHostedBrowserWebviewWrapperStyle({
         active: true,
         captureActive: true,
+        renderingActive: true,
         rect: { x: 12, y: 34, width: 800, height: 600 },
         hiddenSize: { width: 1280, height: 800 },
       }),
