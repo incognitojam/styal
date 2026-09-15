@@ -1003,7 +1003,7 @@ features:
   - id: fork-distribution-identity
     title: Keep fork builds distinctly identifiable
     status: maintained
-    prs: [3, 27, 29, 49, 56, 235, 242, 243, 244, 245, 281, 287, 302, 335, 378]
+    prs: [3, 27, 29, 49, 56, 235, 242, 243, 244, 245, 281, 287, 302, 335, 344, 378]
     invariants:
       - Packaged builds ship as styal with their own application identifier, URL scheme, product name, and About-panel identity instead of presenting as upstream T3 Code.
       - Electron's application name is a stable identity slug rather than a display string, so OS credential storage keys stay in the same namespace as the user-data directory they protect.
@@ -1022,6 +1022,7 @@ features:
       - Canonical brand asset paths and icon geometry stay shared across desktop, mobile configuration, web packaging, and export tooling so production and nightly artwork cannot silently diverge.
       - The macOS installer backgrounds and the Dev and Nightly sidebar and send-button artwork use styal's channel grounds and sewing motifs (pinked linen, cutting mat, starry horizon) rather than upstream's T3 Code installer and stage artwork.
       - Linux desktop entries, SnapShot D-Bus names, the GNOME Shell extension, and the KDE and Hyprland capture helpers use styal identities (`build.styal.Styal`, `snap-shot@styal.build`, `styal-*-snap-shot`) so they cannot collide with an upstream T3 Code install.
+      - Mobile production and preview profiles retain styal identity and fork Expo configuration; Android distribution uses installable APKs without store submission, while iOS submits to TestFlight.
     implementation_paths:
       - .github/workflows/desktop-macos-preview.yml
       - .github/workflows/fork-cli-archives.yml
@@ -1031,6 +1032,7 @@ features:
       - .github/workflows/fork-js-bundle.yml
       - .github/workflows/fork-nightly.yml
       - .github/workflows/fork-release.yml
+      - .github/workflows/mobile-eas-production.yml
       - apps/desktop/gnome-extension/bundle.json
       - apps/desktop/gnome-extension/captureService.js
       - apps/desktop/package.json
@@ -1048,6 +1050,7 @@ features:
       - apps/desktop/src/snapShot/KdeSnapShot.ts
       - apps/desktop/src/wsl/DesktopWslEnvironment.ts
       - apps/mobile/app.config.ts
+      - apps/mobile/eas.json
       - apps/server/package.json
       - apps/server/src/bin.ts
       - apps/server/src/cli/triage.ts
