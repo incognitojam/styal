@@ -41,6 +41,9 @@ In Settings, open your Claude provider and set **Auto-compact after** to a token
 reaches about 300,000 tokens, without changing the model's context window. Leave the field
 empty to keep Claude Code's default behavior.
 
+The context meter uses token usage reported with Claude's messages. Its automatic-compaction
+policy note may be unavailable; the **Auto-compact after** setting still applies.
+
 On web and desktop, when you return to an older Claude thread with a large context, T3 Code
 offers to compact the conversation before you continue. You can also select **Compact context**
 from the context meter. On every client, you can enter `/compact` in the message composer, and

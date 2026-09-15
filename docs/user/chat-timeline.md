@@ -10,3 +10,7 @@ worktree directory is omitted because the thread already provides that context.
 
 Source paths written in messages may become clickable file chips. Opening a chip uses its full
 resolved path, while its label and **Copy relative path** action stay workspace-relative.
+
+When previewing a Markdown file, relative images resolve from that file's folder. Images retain
+their authored dimensions and SVG fragment, and copying a workspace image preserves its Markdown
+reference.

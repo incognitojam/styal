@@ -3,6 +3,10 @@
 Edit keybindings from **Settings** → **Keybindings**. That page lists every command, its current
 shortcut, whether it is a default or your own, and warns about conflicts.
 
+Each shortcut has its own settings row, with controls that stack on narrow windows. Select
+**When** to edit its conditions; removal controls distinguish clearing all conditions from
+removing one condition or a nested group.
+
 The same configuration lives in `~/.styal/userdata/keybindings.json` on the machine running the
 server, if you prefer editing it directly. T3 Code writes the built-in defaults into that file on
 first run, and adds any new defaults on later startups unless a rule of yours already claims the
