@@ -333,7 +333,7 @@ describe("previewStateStore (single-tab)", () => {
     expect(state.snapshot?.canGoBack).toBe(false);
   });
 
-  it("does not publish duplicate desktop browser state", () => {
+  it("deduplicates desktop state while publishing viewport fallback changes", () => {
     const snapshot = makeSnapshot();
     applyPreviewServerSnapshot(ref, snapshot);
     const overlay = {
@@ -342,6 +342,7 @@ describe("previewStateStore (single-tab)", () => {
       canGoForward: false,
       loading: false,
       zoomFactor: 1,
+      viewportFallback: false,
       pictureInPicture: false,
       colorScheme: "system" as const,
       audioMuted: false,
@@ -360,9 +361,12 @@ describe("previewStateStore (single-tab)", () => {
 
     applyPreviewDesktopState(ref, snapshot.tabId, overlay);
     applyPreviewDesktopState(ref, snapshot.tabId, { ...overlay, favicon: { ...overlay.favicon } });
-    unsubscribe();
-
     expect(updateCount).toBe(1);
+
+    applyPreviewDesktopState(ref, snapshot.tabId, { ...overlay, viewportFallback: true });
+    expect(updateCount).toBe(2);
+    expect(readThreadPreviewState(ref).desktopOverlay?.viewportFallback).toBe(true);
+    unsubscribe();
   });
 
   it("retains multiple tabs and switches active desktop state", () => {

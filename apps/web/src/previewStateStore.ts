@@ -382,6 +382,7 @@ function isPreviewStateEqual(
       previous.canGoForward === next.canGoForward &&
       previous.loading === next.loading &&
       previous.zoomFactor === next.zoomFactor &&
+      previous.viewportFallback === next.viewportFallback &&
       previous.pictureInPicture === next.pictureInPicture &&
       previous.colorScheme === next.colorScheme &&
       previous.audioMuted === next.audioMuted &&
