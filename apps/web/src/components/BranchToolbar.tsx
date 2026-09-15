@@ -57,6 +57,8 @@ interface BranchToolbarProps {
   onComposerFocusRequest?: () => void;
   availableEnvironments?: readonly EnvironmentOption[];
   onEnvironmentChange?: (environmentId: EnvironmentId) => void;
+  /** Set when a worktree cannot be cut yet, e.g. a repository with no commits. */
+  worktreeUnavailableReason?: string | null;
 }
 
 interface MobileRunContextSelectorProps {
@@ -72,6 +74,7 @@ interface MobileRunContextSelectorProps {
   onEnvModeChange: (mode: EnvMode) => void;
   previousWorktreeLabel: string | null;
   onUsePreviousWorktree: () => void;
+  worktreeUnavailableReason: string | null;
 }
 
 const MobileRunContextSelector = memo(function MobileRunContextSelector({
@@ -87,6 +90,7 @@ const MobileRunContextSelector = memo(function MobileRunContextSelector({
   onEnvModeChange,
   previousWorktreeLabel,
   onUsePreviousWorktree,
+  worktreeUnavailableReason,
 }: MobileRunContextSelectorProps) {
   const activeEnvironment = useMemo(
     () => availableEnvironments?.find((env) => env.environmentId === environmentId) ?? null,
@@ -194,10 +198,18 @@ const MobileRunContextSelector = memo(function MobileRunContextSelector({
                 </span>
               </span>
             </MenuRadioItem>
-            <MenuRadioItem disabled={envModeLocked} value="worktree">
+            <MenuRadioItem
+              disabled={envModeLocked || worktreeUnavailableReason !== null}
+              value="worktree"
+            >
               <span className="flex min-w-0 items-center gap-1.5">
                 <FolderGit2Icon className="size-3" />
                 <span className="min-w-0 truncate">{resolveEnvModeLabel("worktree")}</span>
+                {worktreeUnavailableReason ? (
+                  <span className="min-w-0 truncate text-muted-foreground">
+                    {worktreeUnavailableReason}
+                  </span>
+                ) : null}
               </span>
             </MenuRadioItem>
             {previousWorktreeLabel ? (
@@ -389,6 +401,7 @@ export const BranchToolbar = memo(function BranchToolbar({
   onComposerFocusRequest,
   availableEnvironments,
   onEnvironmentChange,
+  worktreeUnavailableReason = null,
 }: BranchToolbarProps) {
   const threadRef = useMemo(
     () => scopeThreadRef(environmentId, threadId),
@@ -485,6 +498,7 @@ export const BranchToolbar = memo(function BranchToolbar({
           onEnvModeChange={onEnvModeChange}
           previousWorktreeLabel={previousWorktreeLabel}
           onUsePreviousWorktree={onUsePreviousWorktree}
+          worktreeUnavailableReason={worktreeUnavailableReason}
         />
       ) : (
         <div className="flex min-w-0 flex-1 items-center gap-1">
@@ -513,6 +527,7 @@ export const BranchToolbar = memo(function BranchToolbar({
               onEnvModeChange={onEnvModeChange}
               previousWorktreeLabel={previousWorktreeLabel}
               onUsePreviousWorktree={onUsePreviousWorktree}
+              worktreeUnavailableReason={worktreeUnavailableReason}
             />
           ) : null}
         </div>

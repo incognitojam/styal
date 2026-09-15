@@ -27,6 +27,7 @@ import {
   type EnvironmentConnectionPresentation,
 } from "@t3tools/client-runtime/connection";
 import { wasBootstrapThreadDeleted } from "@t3tools/client-runtime/errors";
+import { worktreeNeedsFirstCommit } from "@t3tools/client-runtime/state/vcs";
 import {
   changeRequestAutoSettles,
   effectiveSettled,
@@ -4429,9 +4430,15 @@ function ChatViewContent(props: ChatViewProps) {
       ? (pendingServerThreadStartFromOriginByThreadId[activeThread?.id ?? ""] ??
         primaryServerSettings.newWorktreesStartFromOrigin)
       : false;
+  const firstCommitNeededForWorktree = worktreeNeedsFirstCommit(
+    gitStatusQuery.data,
+    startFromOrigin,
+  );
+  const worktreeUnavailableReason = firstCommitNeededForWorktree ? "Needs a first commit" : null;
   const sendEnvMode = resolveSendEnvMode({
     requestedEnvMode: envMode,
     isGitRepo,
+    worktreeNeedsFirstCommit: firstCommitNeededForWorktree,
   });
   const localCheckoutBranchMismatch = useMemo(
     () =>
@@ -7338,7 +7345,7 @@ function ChatViewContent(props: ChatViewProps) {
                                 startFromOrigin={startFromOrigin}
                                 onStartFromOriginChange={onStartFromOriginChange}
                                 {...(canOverrideServerThreadEnvMode
-                                  ? { effectiveEnvModeOverride: envMode }
+                                  ? { effectiveEnvModeOverride: sendEnvMode }
                                   : {})}
                                 {...(canOverrideServerThreadEnvMode
                                   ? {
@@ -7348,6 +7355,7 @@ function ChatViewContent(props: ChatViewProps) {
                                     }
                                   : {})}
                                 envLocked={envLocked}
+                                worktreeUnavailableReason={worktreeUnavailableReason}
                                 onComposerFocusRequest={scheduleComposerFocus}
                                 {...(canCheckoutPullRequestIntoThread
                                   ? { onCheckoutPullRequestRequest: openPullRequestDialog }

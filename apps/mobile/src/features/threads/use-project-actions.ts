@@ -37,6 +37,8 @@ export function useCreateProjectThread() {
       readonly interactionMode: ProviderInteractionMode;
       readonly initialMessageText: string;
       readonly initialAttachments: ReadonlyArray<DraftComposerImageAttachment>;
+      /** Set when the project has nothing a worktree could branch from. */
+      readonly worktreeUnavailable?: boolean;
       /** Reuse identifiers from a queued pending task instead of minting new ones. */
       readonly turnMetadata?: TurnCommandMetadata;
     }) => {
@@ -50,6 +52,9 @@ export function useCreateProjectThread() {
         environmentMode: input.envMode,
         branch: input.branch,
         initialMessageText,
+        ...(input.worktreeUnavailable !== undefined
+          ? { worktreeUnavailable: input.worktreeUnavailable }
+          : {}),
       });
       if (validationError !== null) {
         setPendingConnectionError(validationError.message);

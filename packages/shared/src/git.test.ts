@@ -172,6 +172,58 @@ describe("applyGitStatusStreamEvent", () => {
       pr: null,
     });
   });
+
+  it("keeps an unborn repository unborn across a remote update", () => {
+    // Publishing a repository adds an origin without pushing, so a remote
+    // update lands while the repository still has no commits. Losing the flag
+    // here would re-enable worktree mode that the server still refuses.
+    const current: VcsStatusResult = {
+      isRepo: true,
+      hasHeadCommit: false,
+      hasPrimaryRemote: true,
+      isDefaultRef: true,
+      refName: "main",
+      hasWorkingTreeChanges: true,
+      workingTree: {
+        files: [{ path: "src/demo.ts", insertions: 1, deletions: 0 }],
+        insertions: 1,
+        deletions: 0,
+      },
+      hasUpstream: false,
+      aheadCount: 0,
+      behindCount: 0,
+      pr: null,
+    };
+
+    const merged = applyGitStatusStreamEvent(current, {
+      _tag: "remoteUpdated",
+      remote: { hasUpstream: false, aheadCount: 0, behindCount: 0, pr: null },
+    });
+
+    expect(merged.hasHeadCommit).toBe(false);
+  });
+
+  it("leaves the commit flag absent when the server never sent one", () => {
+    const current: VcsStatusResult = {
+      isRepo: true,
+      hasPrimaryRemote: true,
+      isDefaultRef: true,
+      refName: "main",
+      hasWorkingTreeChanges: false,
+      workingTree: { files: [], insertions: 0, deletions: 0 },
+      hasUpstream: false,
+      aheadCount: 0,
+      behindCount: 0,
+      pr: null,
+    };
+
+    const merged = applyGitStatusStreamEvent(current, {
+      _tag: "remoteUpdated",
+      remote: { hasUpstream: false, aheadCount: 0, behindCount: 0, pr: null },
+    });
+
+    expect("hasHeadCommit" in merged).toBe(false);
+  });
 });
 
 describe("parseGitRemoteConfig", () => {

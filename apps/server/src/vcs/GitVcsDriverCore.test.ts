@@ -1266,6 +1266,31 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         }
       }),
     );
+
+    it.effect("reports hasHeadCommit false while HEAD is unborn", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* driver.initRepo({ cwd });
+        yield* git(cwd, ["config", "user.email", "test@test.com"]);
+        yield* git(cwd, ["config", "user.name", "Test"]);
+        yield* writeTextFile(cwd, "initial.ts", "// first file\n");
+
+        const unborn = yield* driver.statusDetails(cwd);
+
+        // git names the branch it would create, so the ref name alone cannot
+        // tell this repository apart from one that has commits.
+        assert.equal(unborn.isRepo, true);
+        assert.equal(unborn.branch, yield* git(cwd, ["symbolic-ref", "--short", "HEAD"]));
+        assert.equal(unborn.hasHeadCommit, false);
+
+        yield* git(cwd, ["add", "initial.ts"]);
+        yield* git(cwd, ["commit", "-m", "initial commit"]);
+
+        const born = yield* driver.statusDetails(cwd);
+        assert.equal(born.hasHeadCommit, true);
+      }),
+    );
   });
 
   describe("refName operations", () => {

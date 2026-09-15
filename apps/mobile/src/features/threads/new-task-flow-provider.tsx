@@ -69,7 +69,7 @@ import {
   useSavedRemoteConnections,
 } from "../../state/use-remote-environment-registry";
 import { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import { type VcsRef } from "@t3tools/client-runtime/state/vcs";
+import { type VcsRef, worktreeNeedsFirstCommit } from "@t3tools/client-runtime/state/vcs";
 import {
   buildHomeProjectScopes,
   sortHomeProjectScopes,
@@ -141,6 +141,8 @@ type NewTaskFlowContextValue = {
   readonly hasMoreBranches: boolean;
   readonly availableBranches: ReadonlyArray<VcsRef>;
   readonly currentCheckoutBranchName: string | null;
+  /** Set while the project has nothing a worktree could branch from. */
+  readonly worktreeUnavailable: boolean;
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
   readonly planModeEnabled: boolean;
@@ -389,7 +391,8 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     projectSetting: selectedProject?.defaultThreadEnvMode,
     projectFilePending: t3ProjectFileQuery.isPending,
   });
-  const workspaceMode = selectedProjectDraft.workspaceSelection?.mode ?? defaultWorkspaceMode;
+  const requestedWorkspaceMode =
+    selectedProjectDraft.workspaceSelection?.mode ?? defaultWorkspaceMode;
   const selectedBranchName = selectedProjectDraft.workspaceSelection?.branch ?? null;
   const selectedWorktreePath = selectedProjectDraft.workspaceSelection?.worktreePath ?? null;
   // Keep the user's explicit choice separate from the resolved display value:
@@ -571,6 +574,13 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       : null,
   );
   const currentCheckoutBranchName = projectGitStatus.data?.refName ?? null;
+  const worktreeUnavailable = worktreeNeedsFirstCommit(projectGitStatus.data, startFromOrigin);
+  // A repository with no commits has nothing a worktree could branch from, so
+  // the draft runs in the checkout — where the agent can make that first
+  // commit itself. The stored selection is untouched; the moment a commit
+  // exists, worktree mode means something again and takes effect.
+  const workspaceMode: WorkspaceMode =
+    requestedWorkspaceMode === "worktree" && worktreeUnavailable ? "local" : requestedWorkspaceMode;
 
   const filteredBranches = useMemo(() => {
     const query = branchQuery.trim().toLowerCase();
@@ -1019,6 +1029,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       hasMoreBranches,
       availableBranches,
       currentCheckoutBranchName,
+      worktreeUnavailable,
       runtimeMode,
       interactionMode,
       planModeEnabled,
@@ -1067,6 +1078,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       buildPendingTaskMessage,
       cancelEditingPendingTask,
       currentCheckoutBranchName,
+      worktreeUnavailable,
       editingPendingTask,
       environments,
       expandedProvider,

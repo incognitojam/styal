@@ -603,8 +603,38 @@ describe("getStartedThreadModelChangeBlockReason", () => {
 
 describe("resolveSendEnvMode", () => {
   it("keeps worktree mode only for git repositories", () => {
-    expect(resolveSendEnvMode({ requestedEnvMode: "worktree", isGitRepo: true })).toBe("worktree");
-    expect(resolveSendEnvMode({ requestedEnvMode: "worktree", isGitRepo: false })).toBe("local");
+    expect(
+      resolveSendEnvMode({
+        requestedEnvMode: "worktree",
+        isGitRepo: true,
+        worktreeNeedsFirstCommit: false,
+      }),
+    ).toBe("worktree");
+    expect(
+      resolveSendEnvMode({
+        requestedEnvMode: "worktree",
+        isGitRepo: false,
+        worktreeNeedsFirstCommit: false,
+      }),
+    ).toBe("local");
+  });
+
+  it("runs in the checkout while the repository has no commits", () => {
+    expect(
+      resolveSendEnvMode({
+        requestedEnvMode: "worktree",
+        isGitRepo: true,
+        worktreeNeedsFirstCommit: true,
+      }),
+    ).toBe("local");
+    // The clamp only rewrites worktree requests; an explicit local stays local.
+    expect(
+      resolveSendEnvMode({
+        requestedEnvMode: "local",
+        isGitRepo: true,
+        worktreeNeedsFirstCommit: true,
+      }),
+    ).toBe("local");
   });
 });
 

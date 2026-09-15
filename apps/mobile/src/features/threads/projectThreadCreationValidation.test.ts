@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolveProjectThreadCreationBranch } from "./projectThreadCreationValidation";
+import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+
+import {
+  resolveProjectThreadCreationBranch,
+  validateProjectThreadCreation,
+} from "./projectThreadCreationValidation";
 
 describe("resolveProjectThreadCreationBranch", () => {
   it("uses the live checkout for an untouched local draft label and recorded branch", () => {
@@ -51,5 +56,47 @@ describe("resolveProjectThreadCreationBranch", () => {
         currentCheckoutBranch: "feature/x",
       }),
     ).toBe("main");
+  });
+});
+
+describe("validateProjectThreadCreation", () => {
+  const base = {
+    environmentId: EnvironmentId.make("env-1"),
+    projectId: ProjectId.make("project-1"),
+    initialMessageText: "do the thing",
+  };
+
+  it("refuses a worktree draft when the repository has no commits", () => {
+    const error = validateProjectThreadCreation({
+      ...base,
+      environmentMode: "worktree",
+      // git names an unborn branch, so a base branch alone is not enough.
+      branch: "main",
+      worktreeUnavailable: true,
+    });
+
+    expect(error?._tag).toBe("ProjectThreadFirstCommitRequiredError");
+    expect(error?.message).toContain("no commits yet");
+  });
+
+  it("allows a local draft in a repository with no commits", () => {
+    expect(
+      validateProjectThreadCreation({
+        ...base,
+        environmentMode: "local",
+        branch: "main",
+        worktreeUnavailable: true,
+      }),
+    ).toBeNull();
+  });
+
+  it("allows a worktree draft when the field is absent, as on older servers", () => {
+    expect(
+      validateProjectThreadCreation({
+        ...base,
+        environmentMode: "worktree",
+        branch: "main",
+      }),
+    ).toBeNull();
   });
 });
