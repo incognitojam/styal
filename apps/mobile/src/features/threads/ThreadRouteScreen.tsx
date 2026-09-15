@@ -26,6 +26,7 @@ import {
 import { Alert, Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWorkspaceState } from "../../state/workspace";
+import { useEnvironmentShellState } from "../../state/shell";
 import { clearPendingThreadCreationOutcome } from "../../state/pending-thread-creation-state";
 import { useEnvironmentQuery } from "../../state/query";
 import { dismissGitActionResult, useGitActionProgress } from "../../state/use-vcs-action-state";
@@ -87,6 +88,7 @@ import {
   ThreadInspectorContentStack,
   type ThreadInspectorMode,
 } from "./thread-inspector-content-stack";
+import { threadRouteIsHydrating } from "./thread-route-hydration";
 
 interface ThreadInspectorSelection {
   readonly routeThreadIdentity: string | null;
@@ -122,7 +124,11 @@ interface ThreadRouteScreenProps extends ThreadRouteScreenRouteProps {
   readonly renderInspector?: (headerInset: number) => ReactNode;
 }
 
-function ThreadUnavailableScreen() {
+/** Shows recovery only after the target route has reached a terminal unavailable state. */
+function ThreadUnavailableScreen(props: {
+  readonly actionLabel: string;
+  readonly onAction: () => void;
+}) {
   return (
     <ScrollView
       contentInsetAdjustmentBehavior="automatic"
@@ -137,6 +143,8 @@ function ThreadUnavailableScreen() {
       <EmptyState
         title="Thread unavailable"
         detail="This thread is not available in the current mobile snapshot."
+        actionLabel={props.actionLabel}
+        onAction={props.onAction}
       />
     </ScrollView>
   );
@@ -151,6 +159,9 @@ export function ThreadRouteScreen(props: ThreadRouteScreenProps) {
   const threadIdRaw = firstRouteParam(params.threadId);
   const environmentId = environmentIdRaw ? EnvironmentId.make(environmentIdRaw) : null;
   const routeEnvironmentRuntime = useRemoteEnvironmentRuntime(environmentId);
+  const routeEnvironmentShellState = useEnvironmentShellState(environmentId);
+  const { onReconnectEnvironment } = useRemoteConnections();
+  const navigation = useNavigation();
   const routeConnectionState =
     routeEnvironmentRuntime?.connectionState ?? (environmentId ? "available" : connectionState);
   const routeThreadKey =
@@ -176,16 +187,36 @@ export function ThreadRouteScreen(props: ThreadRouteScreenProps) {
     return <ThreadRouteContent {...props} selectedThreadDetailState={selectedThreadDetailState} />;
   }
 
-  const stillHydrating =
-    workspaceState.isLoadingConnections ||
-    routeConnectionState === "connecting" ||
-    routeConnectionState === "reconnecting";
+  const stillHydrating = threadRouteIsHydrating({
+    isLoadingConnections: workspaceState.isLoadingConnections,
+    connectionState: routeConnectionState,
+    shellStatus: routeEnvironmentShellState.status,
+    shellHasError: Option.isSome(routeEnvironmentShellState.error),
+    detailStatus: selectedThreadDetailState.status,
+    detailHasError: Option.isSome(selectedThreadDetailState.error),
+  });
 
   if (stillHydrating) {
     return <OpeningThreadLoadingScreen />;
   }
 
-  return <ThreadUnavailableScreen />;
+  return (
+    <ThreadUnavailableScreen
+      actionLabel={
+        routeEnvironmentRuntime === null ? "Manage environments" : "Reconnect environment"
+      }
+      onAction={() => {
+        if (routeEnvironmentRuntime !== null) {
+          onReconnectEnvironment(environmentId);
+          return;
+        }
+        navigation.navigate("SettingsSheet", {
+          screen: "SettingsContent",
+          params: { screen: "SettingsEnvironments" },
+        });
+      }}
+    />
+  );
 }
 
 function ThreadRouteContent(
