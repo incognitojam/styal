@@ -366,6 +366,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["composer rest resting scroll wheel conversation timeline shrink minimize"],
   },
   {
+    id: "follow-up-behavior",
+    title: "Follow-up behavior",
+    to: "/settings/general",
+    searchTerms: ["queue steer running turn send default behavior composer"],
+  },
+  {
     id: "turn-usage",
     title: "Turn usage",
     to: "/settings/general",
