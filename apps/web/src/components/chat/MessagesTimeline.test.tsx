@@ -932,6 +932,7 @@ describe("MessagesTimeline", () => {
               createdAt: "2026-03-17T19:12:28.000Z",
               label: "Context compacted",
               tone: "info",
+              sourceActivityKind: "context-compaction",
             },
           },
         ]}
@@ -940,6 +941,10 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain("Context compacted");
     expect(markup).toContain("Work Log");
+    // Same glyph and same theme-derived hue as the folded-turn marker, so one
+    // event reads the same whether its turn is expanded or collapsed.
+    const iconClasses = /<span class="([^"]*size-6[^"]*)"/.exec(markup)?.[1];
+    expect(iconClasses).toContain("text-update-prominent");
   });
 
   it("renders folded activity counts with an emphasized context compaction marker", () => {
@@ -998,11 +1003,15 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain(", 1 terminal command");
     expect(markup).toContain(", 1 context compaction");
     expect(markup).toContain("data-base-ui-tooltip-trigger");
-    // The marker earns its emphasis from full-strength foreground. Solid-control
-    // fills such as the theme action color read below 3:1 as text on the canvas,
-    // which left the marker dimmer than the muted stats it is meant to outrank.
+    // The marker carries the theme's hue through update-prominent, which lifts
+    // the accent until it out-reads the muted stats. The raw action color is a
+    // solid-control fill and reads below 3:1 as text, so it stays out of here.
+    // Hover mixes the hue toward the row's foreground, so the marker responds
+    // like its neighbours without giving up rest-state contrast to an alpha fade.
     const compactionClasses = /<span class="([^"]*ms-1[^"]*)"/.exec(markup)?.[1];
-    expect(compactionClasses).toContain("text-foreground");
+    expect(compactionClasses).toContain("text-update-prominent");
+    expect(compactionClasses).not.toContain("text-update-prominent/");
+    expect(compactionClasses).toContain("group-hover/turn-fold:text-[color-mix(");
     expect(compactionClasses).not.toContain("text-primary");
     expect(markup).toContain('aria-expanded="false"');
   });

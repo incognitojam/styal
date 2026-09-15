@@ -157,6 +157,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --color-error: var(--error);
   --color-error-surface: var(--error-surface);
   --color-update-foreground: var(--update-foreground);
+  --color-update-prominent: var(--update-prominent);
   --color-update: var(--update);
   --color-update-surface: var(--update-surface);
   --color-success-foreground: var(--success-foreground);
@@ -1435,6 +1436,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --warning-surface: color-mix(in srgb, var(--warning) 8%, transparent);
   --update: var(--primary);
   --update-foreground: var(--primary);
+  /* Resolved late, so the dark variant's --update-foreground flows through. */
+  --update-prominent: var(--update-foreground);
   --update-surface: color-mix(in srgb, var(--update) 12%, transparent);
   /* Keep every sidebar primitive on the same light surface hierarchy, including
      portaled mobile sheets and settings navigation outside the app sidebar. */
@@ -1594,6 +1597,7 @@ html[data-theme-id]:not([data-theme-id=""]) {
   --warning-surface: var(--app-theme-warning-surface);
   --update: var(--app-theme-update);
   --update-foreground: var(--app-theme-update-foreground);
+  --update-prominent: var(--app-theme-update-prominent, var(--update-foreground));
   --update-surface: var(--app-theme-update-surface);
   --border: var(--app-theme-border);
   --input: var(--app-theme-input);
