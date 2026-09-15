@@ -1,13 +1,22 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
-import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import { assert, it } from "@effect/vitest";
 
 const repoRoot = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 const helperPath = NodePath.resolve(repoRoot, ".github/scripts/release-changelog.sh");
+
+function createFixture(): string {
+  const scratchRoot = NodePath.join(repoRoot, ".scratch");
+  NodeFS.mkdirSync(scratchRoot, { recursive: true });
+  const fixtureRoot = NodeFS.mkdtempSync(NodePath.join(scratchRoot, "release-changelog-test-"));
+  runGit(fixtureRoot, "init");
+  runGit(fixtureRoot, "config", "user.name", "Release Changelog Test");
+  runGit(fixtureRoot, "config", "user.email", "release-changelog@example.com");
+  return fixtureRoot;
+}
 
 function runGit(cwd: string, ...args: ReadonlyArray<string>): string {
   const result = NodeChildProcess.spawnSync("git", args, { cwd, encoding: "utf8" });
@@ -53,15 +62,9 @@ function listForkReleaseCommits(
 }
 
 it("does not attribute upstream commits to the fork after a rebase", () => {
-  const fixtureRoot = NodeFS.mkdtempSync(
-    NodePath.join(NodeOS.tmpdir(), "styal-release-changelog-"),
-  );
+  const fixtureRoot = createFixture();
 
   try {
-    runGit(fixtureRoot, "init");
-    runGit(fixtureRoot, "config", "user.name", "Release Changelog Test");
-    runGit(fixtureRoot, "config", "user.email", "release-changelog@example.com");
-
     commitFile(fixtureRoot, "base.txt", "base\n", "feat: base");
     runGit(fixtureRoot, "switch", "-c", "previous-release");
     commitFile(fixtureRoot, "fork-one.txt", "fork one\n", "feat(fork): first change (#1)");
@@ -98,6 +101,173 @@ it("does not attribute upstream commits to the fork after a rebase", () => {
       rebasedForkCommit,
       forkCommit,
     ]);
+  } finally {
+    NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+it.each([
+  {
+    name: "fork pull request",
+    message: "fix: synthetic change (#42)",
+    lookupOutput: "release-author",
+    lookupStatus: 0,
+    pullRepository: "example/fork",
+    author: "release-author",
+  },
+  {
+    name: "cherry-picked upstream pull request",
+    message: "fix: synthetic change (#42)\n\nUpstream-PR: 42",
+    lookupOutput: "upstream-author",
+    lookupStatus: 0,
+    pullRepository: "pingdotgg/t3code",
+    author: "upstream-author",
+  },
+  {
+    name: "comma-separated upstream provenance",
+    message: "fix: synthetic change (#42)\n\nupstream-pr: 41, 42",
+    lookupOutput: "upstream-author",
+    lookupStatus: 0,
+    pullRepository: "pingdotgg/t3code",
+    author: "upstream-author",
+  },
+  {
+    name: "fork squash with a distinct upstream source PR",
+    message: "fix: synthetic change (#42)\n\nUpstream-PR: 142",
+    lookupOutput: "release-author",
+    lookupStatus: 0,
+    pullRepository: "example/fork",
+    author: "release-author",
+  },
+  {
+    name: "404 response body on stdout",
+    message: "fix: synthetic change (#42)\n\nUpstream-PR: 42",
+    lookupOutput:
+      '{"message":"Not Found","documentation_url":"https://docs.github.com/rest/pulls/pulls#get-a-pull-request","status":"404"}',
+    lookupStatus: 1,
+    pullRepository: "pingdotgg/t3code",
+    author: "",
+  },
+  {
+    name: "rate-limited lookup",
+    message: "fix: synthetic change (#42)",
+    lookupOutput: '{"message":"API rate limit exceeded","status":"403"}',
+    lookupStatus: 1,
+    pullRepository: "example/fork",
+    author: "",
+  },
+  {
+    name: "missing author",
+    message: "fix: synthetic change (#42)",
+    lookupOutput: "",
+    lookupStatus: 0,
+    pullRepository: "example/fork",
+    author: "",
+  },
+  {
+    name: "malformed author",
+    message: "fix: synthetic change (#42)",
+    lookupOutput: '{"message":"unexpected response"}',
+    lookupStatus: 0,
+    pullRepository: "example/fork",
+    author: "",
+  },
+  {
+    name: "bot author",
+    message: "fix: synthetic change (#42)",
+    lookupOutput: "release-bot[bot]",
+    lookupStatus: 0,
+    pullRepository: "example/fork",
+    author: "release-bot[bot]",
+  },
+  {
+    name: "commit without a pull request",
+    message: "fix: synthetic change",
+    lookupOutput: "",
+    lookupStatus: 0,
+    pullRepository: "",
+    author: "",
+  },
+])("renders $name", ({ message, lookupOutput, lookupStatus, pullRepository, author }) => {
+  const fixtureRoot = createFixture();
+  try {
+    const sha = commitFile(fixtureRoot, "change.txt", "synthetic change\n", message);
+    const lookupLog = NodePath.join(fixtureRoot, "lookups.txt");
+    NodeFS.writeFileSync(lookupLog, "");
+    const result = NodeChildProcess.spawnSync(
+      "bash",
+      [
+        "-c",
+        `set -euo pipefail
+source "$1"
+lookup_output="$3"
+lookup_status="$4"
+lookup_log="$5"
+gh() {
+  printf '%s\\n' "$2" >> "$lookup_log"
+  printf '%s\\n' "$lookup_output"
+  return "$lookup_status"
+}
+append_release_changes example/fork "$2"`,
+        "release-changelog-test",
+        helperPath,
+        sha,
+        lookupOutput,
+        String(lookupStatus),
+        lookupLog,
+      ],
+      { cwd: fixtureRoot, encoding: "utf8" },
+    );
+    if (result.error) throw result.error;
+    assert.equal(result.status, 0, result.stderr);
+    const subject = message.split("\n")[0];
+    const expected =
+      lookupStatus === 0 && pullRepository !== ""
+        ? `- fix: synthetic change ([${pullRepository}#42](https://github.com/${pullRepository}/pull/42))${author === "" ? "" : ` by @${author}`}\n`
+        : `- ${subject} ([\`${sha.slice(0, 7)}\`](https://github.com/example/fork/commit/${sha}))\n`;
+    assert.equal(result.stdout, expected);
+    assert.equal(
+      NodeFS.readFileSync(lookupLog, "utf8"),
+      pullRepository === "" ? "" : `repos/${pullRepository}/pulls/42\n`,
+    );
+  } finally {
+    NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+it("keeps repository attribution local to each entry in a mixed release", () => {
+  const fixtureRoot = createFixture();
+  try {
+    const upstreamSha = commitFile(
+      fixtureRoot,
+      "upstream.txt",
+      "upstream change\n",
+      "fix: upstream change (#42)\n\nUpstream-PR: 42",
+    );
+    const forkSha = commitFile(fixtureRoot, "fork.txt", "fork change\n", "fix: fork change (#43)");
+    const result = NodeChildProcess.spawnSync(
+      "bash",
+      [
+        "-c",
+        `set -euo pipefail
+source "$1"
+gh() { printf 'release-author\\n'; }
+append_release_changes example/fork
+append_release_changes example/fork "$2" "$3"`,
+        "release-changelog-test",
+        helperPath,
+        upstreamSha,
+        forkSha,
+      ],
+      { cwd: fixtureRoot, encoding: "utf8" },
+    );
+    if (result.error) throw result.error;
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(
+      result.stdout,
+      "- fix: upstream change ([pingdotgg/t3code#42](https://github.com/pingdotgg/t3code/pull/42)) by @release-author\n" +
+        "- fix: fork change ([example/fork#43](https://github.com/example/fork/pull/43)) by @release-author\n",
+    );
   } finally {
     NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
   }
