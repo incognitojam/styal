@@ -86,7 +86,7 @@ npm 12 requires permission to run native dependency install scripts. When using
 npm 12 or newer, install with:
 
 ```sh
-npm install -g @styal/cli@nightly --allow-scripts=node-pty --allow-scripts=msgpackr-extract
+npm install -g @styal/cli@nightly --allow-scripts=node-pty,msgpackr-extract
 ```
 
-Then run `styal`. The background-service updater supplies these flags automatically.
+Then run `styal`. The background-service updater configures these approvals automatically.

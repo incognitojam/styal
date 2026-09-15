@@ -29,18 +29,17 @@ const state = NodePath.join(root, "state");
 const project = NodePath.join(root, "project");
 NodeFS.mkdirSync(project, { recursive: true });
 NodeFS.writeFileSync(NodePath.join(project, "README.md"), "Synthetic CLI verification project.\n");
+NodeFS.mkdirSync(install, { recursive: true });
+NodeFS.writeFileSync(
+  NodePath.join(install, "package.json"),
+  JSON.stringify({
+    private: true,
+    allowScripts: { "node-pty": true, "msgpackr-extract": true },
+  }),
+);
 NodeChildProcess.execFileSync(
   "npm",
-  [
-    "install",
-    "--prefix",
-    install,
-    "--no-audit",
-    "--no-fund",
-    "--allow-scripts=node-pty",
-    "--allow-scripts=msgpackr-extract",
-    archive,
-  ],
+  ["install", "--prefix", install, "--no-audit", "--no-fund", archive],
   {
     stdio: "inherit",
   },

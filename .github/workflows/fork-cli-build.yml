@@ -71,6 +71,9 @@ jobs:
       - name: Verify archive in a clean Node container
         run: |
           docker run --rm -v "$PWD/cli-release:/artifacts:ro" -v "$PWD/scripts/verify-cli-package.mjs:/verify.mjs:ro" node:24-bookworm node /verify.mjs /artifacts
+      - name: Verify native installs with npm 12
+        run: |
+          docker run --rm -v "$PWD/cli-release:/artifacts:ro" -v "$PWD/scripts/verify-cli-package.mjs:/verify.mjs:ro" node:24-bookworm sh -c 'npm install --prefix /verification/npm12 npm@12 && PATH="/verification/npm12/node_modules/.bin:$PATH" node /verify.mjs /artifacts'
       - name: Upload CLI archive
         uses: actions/upload-artifact@v7
         with:

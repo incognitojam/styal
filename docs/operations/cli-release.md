@@ -22,7 +22,8 @@ metadata. It restores the source manifest and icons even if packing fails. The
 container installs the archive with npm and exercises the executable, native
 terminal, launcher compatibility, bundled web app, pairing, authenticated project
 snapshot, and persistence across a server restart. It has no workspace dependencies
-or host provider credentials mounted. CI adds the native monitors built by the
+or host provider credentials mounted. CI repeats the check with npm 12 and explicit
+local-manifest approvals for native install scripts. CI adds the native monitors built by the
 three desktop jobs before packing.
 
 ## First publication

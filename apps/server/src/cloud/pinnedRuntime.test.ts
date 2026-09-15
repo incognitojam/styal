@@ -20,12 +20,14 @@ const successfulRunner = (fs: FileSystem.FileSystem, path: Path.Path) =>
       Effect.gen(function* () {
         assert.equal(input.command, "npm");
         assert.include(input.args, "@styal/cli@1.2.3");
-        assert.include(input.args, "--allow-scripts=node-pty");
-        assert.include(input.args, "--allow-scripts=msgpackr-extract");
         assert.isFalse(input.args.some((arg) => arg.startsWith("t3@")));
         const prefixIndex = input.args.indexOf("--prefix");
         const stagingDir = input.args[prefixIndex + 1];
         if (stagingDir === undefined) return yield* Effect.die("missing npm --prefix");
+        const manifest = yield* fs
+          .readFileString(path.join(stagingDir, "package.json"))
+          .pipe(Effect.orDie);
+        assert.include(manifest, '"allowScripts":{"node-pty":true,"msgpackr-extract":true}');
         const entry = path.join(stagingDir, "node_modules", "@styal", "cli", "dist", "bin.mjs");
         yield* fs.makeDirectory(path.dirname(entry), { recursive: true }).pipe(Effect.orDie);
         yield* fs.writeFileString(entry, "export {};\n").pipe(Effect.orDie);

@@ -154,7 +154,21 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
 
   return yield* Effect.gen(function* () {
     const installStep = "installing the pinned styal runtime (this can take a few minutes)";
-    // npm 12 requires explicit permission for native dependency install scripts.
+    // npm 12 reads local-install script approvals from the project's manifest.
+    yield* fs
+      .writeFileString(
+        input.path.join(stagingDir, "package.json"),
+        '{"private":true,"allowScripts":{"node-pty":true,"msgpackr-extract":true}}\n',
+      )
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new PinnedRuntimeInstallError({
+              step: "preparing native dependency installation",
+              cause,
+            }),
+        ),
+      );
     yield* runner
       .run({
         command: "npm",
@@ -164,8 +178,6 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
           stagingDir,
           "--no-fund",
           "--no-audit",
-          "--allow-scripts=node-pty",
-          "--allow-scripts=msgpackr-extract",
           `${CLI_PACKAGE_NAME}@${input.version}`,
         ],
         // Native dependencies may compile from source on slower machines.
