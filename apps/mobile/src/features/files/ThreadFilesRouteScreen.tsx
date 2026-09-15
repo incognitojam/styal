@@ -21,7 +21,7 @@ import { LoadingScreen } from "../../components/LoadingScreen";
 import { resolveFileSelectionNavigationAction } from "../../lib/adaptive-navigation";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
-import { useThemeColor } from "../../lib/useThemeColor";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import { useEnvironmentQuery } from "../../state/query";
@@ -137,11 +137,11 @@ function FileContent(props: {
   return (
     <View className="flex-1 bg-sheet">
       {props.truncated ? (
-        <View className="border-b border-amber-200 bg-amber-50 px-4 py-2 dark:border-amber-900/60 dark:bg-amber-950/40">
-          <Text className="text-2xs font-t3-bold uppercase text-amber-700 dark:text-amber-300">
+        <View className="border-b border-warning-border bg-warning px-4 py-2">
+          <Text className="text-2xs font-t3-bold uppercase text-warning-foreground">
             Partial file
           </Text>
-          <Text className="text-xs leading-snug text-amber-800 dark:text-amber-200">
+          <Text className="text-xs leading-snug text-warning-foreground">
             Preview limited to the first 1 MB of a truncated file.
           </Text>
         </View>
@@ -212,7 +212,7 @@ function FilesUnavailable() {
 }
 
 function FilesToolbarBottomFade() {
-  const sheetColor = String(useThemeColor("--color-sheet"));
+  const sheetColor = String(useUniwindTheme()["--color-sheet"]);
 
   if (process.env.EXPO_OS !== "ios") {
     return null;
@@ -247,8 +247,8 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const isAndroid = Platform.OS === "android";
   const { themeAppearance: highlightTheme } = useAppearancePreferences();
-  const iconColor = String(useThemeColor("--color-icon-muted"));
-  const sheetSurfaceColor = String(useThemeColor("--color-sheet-solid"));
+  const theme = useUniwindTheme();
+  const sheetSurfaceColor = theme["--color-sheet-solid"];
   const { cwd, environmentId, projectName, selectedThread, threadId } = useThreadFilesWorkspace(
     props.route.params,
   );
@@ -415,7 +415,12 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
             ]}
           />
           <View className="flex-row items-center gap-2 border-b border-border px-3 py-2">
-            <SymbolView name="magnifyingglass" size={17} tintColor={iconColor} type="monochrome" />
+            <SymbolView
+              name="magnifyingglass"
+              size={17}
+              tintColorClassName={"accent-icon-muted"}
+              type="monochrome"
+            />
             <TextInput
               accessibilityLabel="Search files"
               autoCapitalize="none"
@@ -469,7 +474,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
   useAdaptiveWorkspacePaneRole("inspector");
   const navigation = useNavigation();
   const { fileInspector, panes, toggleAuxiliaryPane } = useAdaptiveWorkspaceLayout();
-  const iconColor = useThemeColor("--color-icon");
+  const iconColor = useUniwindTheme()["--color-icon"];
   const isAndroid = Platform.OS === "android";
   const params = props.route.params;
   const relativePath = normalizeRoutePath(params.path);

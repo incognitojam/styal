@@ -1,8 +1,5 @@
-import type { MobileThemeVariables } from "./mobileTheme";
-
-/** The existing T3 Code mobile palette, retained as the upgrade-safe default. */
-export const DEFAULT_MOBILE_THEME_VARIABLES = {
-  light: {
+{
+  "light": {
     "--color-screen": "#f2f2f7",
     "--color-sheet": "rgba(242, 242, 247, 0.98)",
     "--color-sheet-solid": "#f2f2f7",
@@ -31,6 +28,9 @@ export const DEFAULT_MOBILE_THEME_VARIABLES = {
     "--color-switch-active-thumb": "#ffffff",
     "--color-switch-inactive-track": "rgba(0, 0, 0, 0.08)",
     "--color-switch-inactive-thumb": "#8e8e93",
+    "--color-warning": "#fffbeb",
+    "--color-warning-border": "#fde68a",
+    "--color-warning-foreground": "#b45309",
     "--color-danger": "#fef2f2",
     "--color-danger-border": "rgba(239, 68, 68, 0.12)",
     "--color-danger-foreground": "#dc2626",
@@ -67,9 +67,9 @@ export const DEFAULT_MOBILE_THEME_VARIABLES = {
     "--color-drawer-shadow": "rgba(0, 0, 0, 0.12)",
     "--color-dot-separator": "rgba(0, 0, 0, 0.2)",
     "--color-wordmark": "#262626",
-    "--color-chevron": "rgba(0, 0, 0, 0.2)",
+    "--color-chevron": "rgba(0, 0, 0, 0.2)"
   },
-  dark: {
+  "dark": {
     "--color-screen": "#0a0a0a",
     "--color-sheet": "rgba(14, 14, 14, 0.98)",
     "--color-sheet-solid": "#0e0e0e",
@@ -98,6 +98,9 @@ export const DEFAULT_MOBILE_THEME_VARIABLES = {
     "--color-switch-active-thumb": "#ffffff",
     "--color-switch-inactive-track": "rgba(255, 255, 255, 0.06)",
     "--color-switch-inactive-thumb": "#8e8e93",
+    "--color-warning": "rgba(69, 26, 3, 0.4)",
+    "--color-warning-border": "rgba(120, 53, 15, 0.6)",
+    "--color-warning-foreground": "#fcd34d",
     "--color-danger": "rgba(239, 68, 68, 0.14)",
     "--color-danger-border": "rgba(248, 113, 113, 0.18)",
     "--color-danger-foreground": "#fca5a5",
@@ -134,6 +137,6 @@ export const DEFAULT_MOBILE_THEME_VARIABLES = {
     "--color-drawer-shadow": "rgba(0, 0, 0, 0.32)",
     "--color-dot-separator": "rgba(255, 255, 255, 0.2)",
     "--color-wordmark": "#f5f5f5",
-    "--color-chevron": "rgba(255, 255, 255, 0.2)",
-  },
-} as const satisfies Readonly<Record<"light" | "dark", MobileThemeVariables>>;
+    "--color-chevron": "rgba(255, 255, 255, 0.2)"
+  }
+}

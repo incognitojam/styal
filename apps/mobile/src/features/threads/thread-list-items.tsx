@@ -19,7 +19,7 @@ import { cn } from "../../lib/cn";
 import { HOME_HORIZONTAL_INSET } from "../../lib/layoutMetrics";
 import { relativeTime } from "../../lib/time";
 import { themeColorWithAlpha } from "../../lib/mobileTheme";
-import { useThemeColor } from "../../lib/useThemeColor";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import { useThreadPr, type ThreadPr } from "../../state/use-thread-pr";
 import type { HomeGroupDisplayAction } from "../home/homeListItems";
@@ -87,7 +87,6 @@ export const ThreadListGroupHeader = memo(function ThreadListGroupHeader(props: 
   readonly newThreadTarget?: EnvironmentProject | null;
   readonly onNewThread?: (project: EnvironmentProject) => void;
 }) {
-  const iconMutedColor = useThemeColor("--color-icon-muted");
   const { groupKey, onGroupAction, onNewThread } = props;
   const newThreadTarget = props.newThreadTarget ?? null;
   const compact = props.variant === "compact";
@@ -171,7 +170,7 @@ export const ThreadListGroupHeader = memo(function ThreadListGroupHeader(props: 
           <SymbolView
             name="plus"
             size={compact ? 20 : 16}
-            tintColor={iconMutedColor}
+            tintColorClassName={"accent-icon-muted"}
             type="monochrome"
             weight="medium"
           />
@@ -190,7 +189,6 @@ export const ThreadListShowMoreRow = memo(function ThreadListShowMoreRow(props: 
   readonly groupKey: string;
   readonly onGroupAction: (key: string, action: HomeGroupDisplayAction) => void;
 }) {
-  const iconSubtleColor = useThemeColor("--color-icon-subtle");
   const showsMore = props.hiddenCount > 0;
   const compact = props.variant === "compact";
   const { groupKey, onGroupAction } = props;
@@ -221,7 +219,7 @@ export const ThreadListShowMoreRow = memo(function ThreadListShowMoreRow(props: 
         <SymbolView
           name={icon}
           size={10}
-          tintColor={iconSubtleColor}
+          tintColorClassName={"accent-icon-subtle"}
           type="monochrome"
           weight="semibold"
         />
@@ -275,10 +273,6 @@ export const PendingTaskListRow = memo(function PendingTaskListRow(props: {
   readonly onDeletePendingTask: (pendingTask: PendingNewTask) => void;
 }) {
   const compact = props.variant === "compact";
-  const separatorColor = useThemeColor("--color-separator");
-  const iconSubtleColor = useThemeColor("--color-icon-subtle");
-  const mutedColor = useThemeColor("--color-foreground-muted");
-  const pressedBackgroundColor = useThemeColor("--color-subtle");
 
   const { pendingTask, onSelectPendingTask, onDeletePendingTask } = props;
   const timestamp = relativeTime(pendingTask.message.createdAt);
@@ -294,8 +288,8 @@ export const PendingTaskListRow = memo(function PendingTaskListRow(props: {
   );
 
   const statusPill = (
-    <View className="rounded-full bg-zinc-500/12 px-1.5 py-0.5 dark:bg-zinc-500/16">
-      <Text className="text-3xs font-t3-bold text-zinc-600 dark:text-zinc-300">Pending</Text>
+    <View className="rounded-full bg-subtle px-1.5 py-0.5">
+      <Text className="text-3xs font-t3-bold text-foreground-muted">Pending</Text>
     </View>
   );
 
@@ -305,7 +299,7 @@ export const PendingTaskListRow = memo(function PendingTaskListRow(props: {
         <SymbolView
           name="tray.and.arrow.up"
           size={10}
-          tintColor={compact ? iconSubtleColor : mutedColor}
+          tintColorClassName={compact ? "accent-icon-subtle" : "accent-foreground-muted"}
           type="monochrome"
         />
         <Text
@@ -326,25 +320,11 @@ export const PendingTaskListRow = memo(function PendingTaskListRow(props: {
       accessibilityHint="Opens the queued task for editing"
       accessibilityLabel={pendingTask.title}
       accessibilityRole="button"
-      className="bg-screen"
+      className="bg-screen active:opacity-70"
       onPress={() => onSelectPendingTask(pendingTask)}
-      style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
     >
-      <View
-        style={{
-          paddingLeft: THREAD_LIST_COMPACT_INSET,
-          paddingRight: 18,
-          paddingTop: 10,
-        }}
-      >
-        <View
-          style={{
-            gap: 3,
-            borderBottomWidth: props.isLast ? 0 : 1,
-            borderBottomColor: separatorColor,
-            paddingBottom: 10,
-          }}
-        >
+      <View className="pr-[18px] pt-[10px]" style={{ paddingLeft: THREAD_LIST_COMPACT_INSET }}>
+        <View className={cn("gap-[3px] pb-[10px]", !props.isLast && "border-b border-separator")}>
           <View className="flex-row items-center justify-between gap-2">
             <Text className="flex-1 text-lg font-t3-bold text-foreground" numberOfLines={1}>
               {pendingTask.title}
@@ -355,7 +335,7 @@ export const PendingTaskListRow = memo(function PendingTaskListRow(props: {
               <SymbolView
                 name="chevron.right"
                 size={13}
-                tintColor={iconSubtleColor}
+                tintColorClassName={"accent-icon-subtle"}
                 type="monochrome"
               />
             </View>
@@ -369,16 +349,16 @@ export const PendingTaskListRow = memo(function PendingTaskListRow(props: {
       accessibilityHint="Opens the queued task for editing"
       accessibilityLabel={pendingTask.title}
       accessibilityRole="button"
+      className="active:bg-subtle"
       onPress={() => onSelectPendingTask(pendingTask)}
-      style={({ pressed }) => ({
-        backgroundColor: pressed ? pressedBackgroundColor : "transparent",
+      style={{
         borderRadius: SIDEBAR_ROW_RADIUS,
         cursor: "pointer",
         minHeight: 64,
         justifyContent: "center",
         paddingHorizontal: 12,
         paddingVertical: 10,
-      })}
+      }}
     >
       <View className="gap-[3px]">
         <View className="flex-row items-center justify-between gap-2">
@@ -446,13 +426,12 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
   // thread, so a hover highlight can't leak across rows.
   const [hovered, setHovered] = useRecyclingState(false);
 
-  const separatorColor = useThemeColor("--color-separator");
-  const iconSubtleColor = useThemeColor("--color-icon-subtle");
-  const screenColor = useThemeColor("--color-screen");
-  const drawerColor = useThemeColor("--color-drawer");
-  const pressedBackgroundColor = useThemeColor("--color-subtle");
-  const selectedBackgroundColor = useThemeColor("--color-user-bubble");
-  const selectedForegroundColor = useThemeColor("--color-user-bubble-foreground");
+  const theme = useUniwindTheme();
+  const screenColor = theme["--color-screen"];
+  const drawerColor = theme["--color-drawer"];
+  const pressedBackgroundColor = theme["--color-subtle"];
+  const selectedBackgroundColor = theme["--color-user-bubble"];
+  const selectedForegroundColor = theme["--color-user-bubble-foreground"];
 
   const { thread, onSelectThread, onArchiveThread, onDeleteThread, onRegenerateThreadTitle } =
     props;
@@ -568,28 +547,14 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
         accessibilityHint="Swipe left for archive and delete actions"
         accessibilityLabel={threadAccessibilityLabel}
         accessibilityRole="button"
-        className="bg-screen"
+        className="bg-screen active:opacity-70"
         onPress={() => {
           close();
           onSelectThread(thread);
         }}
-        style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
       >
-        <View
-          style={{
-            paddingLeft: THREAD_LIST_COMPACT_INSET,
-            paddingRight: 18,
-            paddingTop: 10,
-          }}
-        >
-          <View
-            style={{
-              gap: 3,
-              borderBottomWidth: props.isLast ? 0 : 1,
-              borderBottomColor: separatorColor,
-              paddingBottom: 10,
-            }}
-          >
+        <View className="pr-[18px] pt-[10px]" style={{ paddingLeft: THREAD_LIST_COMPACT_INSET }}>
+          <View className={cn("gap-[3px] pb-[10px]", !props.isLast && "border-b border-separator")}>
             <View className="flex-row items-center justify-between gap-2">
               <Text className="flex-1 text-lg font-t3-bold text-foreground" numberOfLines={1}>
                 {thread.title}
@@ -600,7 +565,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
                 <SymbolView
                   name="chevron.right"
                   size={13}
-                  tintColor={iconSubtleColor}
+                  tintColorClassName={"accent-icon-subtle"}
                   type="monochrome"
                 />
               </View>

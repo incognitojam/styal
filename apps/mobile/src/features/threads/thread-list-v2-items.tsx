@@ -16,11 +16,10 @@ import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { cn } from "../../lib/cn";
 import { relativeTime } from "../../lib/time";
-import { useThemeColor } from "../../lib/useThemeColor";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import { useThreadPr } from "../../state/use-thread-pr";
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
-import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { buildThreadTitleRegenerationMenuItems } from "./thread-title-regeneration-menu";
 import {
   resolveThreadListV2ChangeRequestState,
@@ -52,10 +51,10 @@ const MONO_FONT = Platform.select({
 const STATUS_LABEL_BY_STATUS: Partial<
   Record<ThreadListV2Status, { label: string; className: string }>
 > = {
-  approval: { label: "Approval", className: "text-amber-700 dark:text-amber-300" },
-  input: { label: "Input", className: "text-indigo-600 dark:text-indigo-300" },
-  working: { label: "Working", className: "text-sky-600 dark:text-sky-400" },
-  failed: { label: "Failed", className: "text-red-700 dark:text-red-300" },
+  approval: { label: "Approval", className: "text-warning-foreground" },
+  input: { label: "Input", className: "text-foreground-secondary" },
+  working: { label: "Working", className: "text-foreground-secondary" },
+  failed: { label: "Failed", className: "text-danger-foreground" },
 };
 
 function threadTimeLabel(thread: EnvironmentThreadShell): string {
@@ -93,7 +92,6 @@ export const ThreadListV2SectionDivider = memo(function ThreadListV2SectionDivid
   readonly label: string;
   readonly pane?: "screen" | "sidebar";
 }) {
-  const borderColor = useThemeColor("--color-border");
   return (
     <View
       className={cn(
@@ -102,13 +100,10 @@ export const ThreadListV2SectionDivider = memo(function ThreadListV2SectionDivid
       )}
     >
       <Text className="text-xs font-t3-medium text-foreground-tertiary">{props.label}</Text>
-      <View className="h-px flex-1" style={{ backgroundColor: borderColor }} />
+      <View className="h-px flex-1 bg-border" />
     </View>
   );
 });
-
-const SNOOZE_ACCENT_LIGHT = "#2563eb";
-const SNOOZE_ACCENT_DARK = "#60a5fa";
 
 export const ThreadListV2SnoozedShelfHeader = memo(function ThreadListV2SnoozedShelfHeader(props: {
   readonly count: number;
@@ -117,7 +112,6 @@ export const ThreadListV2SnoozedShelfHeader = memo(function ThreadListV2SnoozedS
   readonly onToggle: () => void;
   readonly pane?: "screen" | "sidebar";
 }) {
-  const { themeAppearance: colorScheme } = useAppearancePreferences();
   return (
     <Pressable
       accessibilityHint={
@@ -134,14 +128,14 @@ export const ThreadListV2SnoozedShelfHeader = memo(function ThreadListV2SnoozedS
       onPress={props.onToggle}
       style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
     >
-      <Text className="text-xs font-t3-medium text-blue-600 dark:text-blue-400">
+      <Text className="text-xs font-t3-medium text-foreground-secondary">
         {props.expanded ? "Snoozed" : `Snoozed (${props.count})`}
       </Text>
-      <View className="h-px flex-1 bg-blue-500/20 dark:bg-blue-400/15" />
+      <View className="h-px flex-1 bg-primary/20" />
       <SymbolView
         name="chevron.down"
         size={10}
-        tintColor={colorScheme === "dark" ? SNOOZE_ACCENT_DARK : SNOOZE_ACCENT_LIGHT}
+        tintColorClassName="accent-icon-muted"
         type="monochrome"
         style={{ transform: [{ rotate: props.expanded ? "180deg" : "0deg" }] }}
       />
@@ -156,7 +150,6 @@ export const ThreadListV2SettledShelfHeader = memo(function ThreadListV2SettledS
   readonly onToggle: () => void;
   readonly pane?: "screen" | "sidebar";
 }) {
-  const mutedColor = useThemeColor("--color-foreground-muted");
   return (
     <Pressable
       accessibilityHint={
@@ -180,7 +173,7 @@ export const ThreadListV2SettledShelfHeader = memo(function ThreadListV2SettledS
       <SymbolView
         name="chevron.down"
         size={10}
-        tintColor={mutedColor}
+        tintColorClassName={"accent-foreground-muted"}
         type="monochrome"
         style={{ transform: [{ rotate: props.expanded ? "180deg" : "0deg" }] }}
       />
@@ -213,8 +206,6 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
   readonly onDeletePendingTask: (pendingTask: PendingNewTask) => void;
 }) {
   const { pendingTask, onSelectPendingTask, onDeletePendingTask } = props;
-  const drawerColor = useThemeColor("--color-drawer");
-  const pressedBackgroundColor = useThemeColor("--color-subtle");
   const sidebarPane = props.pane === "sidebar";
   const projectTitle =
     props.projectTitle ?? props.project?.title ?? pendingTask.creation.projectTitle ?? "";
@@ -280,15 +271,15 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
           accessibilityHint="Opens the queued task for editing"
           accessibilityLabel={pendingTask.title}
           accessibilityRole="button"
+          className={sidebarPane ? "bg-drawer active:bg-subtle" : undefined}
           onPress={() => onSelectPendingTask(pendingTask)}
           style={
             sidebarPane
-              ? ({ pressed }) => ({
-                  backgroundColor: pressed ? pressedBackgroundColor : drawerColor,
+              ? {
                   borderRadius: SIDEBAR_V2_ROW_RADIUS,
                   paddingHorizontal: 12,
                   paddingVertical: 10,
-                })
+                }
               : ({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })
           }
         >
@@ -418,11 +409,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     onChangeRequestState?.(threadKey, changeRequest);
   }, [onChangeRequestState, prState, prUpdatedAt, thread.linkedPullRequest, threadKey]);
 
-  const screenColor = useThemeColor("--color-screen");
-  const drawerColor = useThemeColor("--color-drawer");
-  const pressedBackgroundColor = useThemeColor("--color-subtle");
-  const selectedBackgroundColor = useThemeColor("--color-user-bubble");
-  const pinTintColor = useThemeColor("--color-foreground-muted");
+  const theme = useUniwindTheme();
+  const screenColor = theme["--color-screen"];
+  const drawerColor = theme["--color-drawer"];
+  const pressedBackgroundColor = theme["--color-subtle"];
+  const selectedBackgroundColor = theme["--color-user-bubble"];
   const sidebarPane = props.pane === "sidebar";
   const selected = props.selected === true;
 
@@ -699,7 +690,12 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           {props.projectTitle ?? props.project?.title ?? ""}
         </Text>
         {pinnedRow ? (
-          <SymbolView name="pin" size={11} tintColor={pinTintColor} type="monochrome" />
+          <SymbolView
+            name="pin"
+            size={11}
+            tintColorClassName={"accent-foreground-muted"}
+            type="monochrome"
+          />
         ) : null}
         <Text
           className={cn(
@@ -735,9 +731,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           <Text
             className={cn(
               "flex-1 text-xs",
-              selected
-                ? "text-user-bubble-foreground-muted"
-                : "text-red-600/80 dark:text-red-400/80",
+              selected ? "text-user-bubble-foreground-muted" : "text-danger-foreground",
             )}
             numberOfLines={1}
           >
@@ -905,7 +899,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               selected
                 ? "text-user-bubble-foreground-muted"
                 : snoozedRow
-                  ? "text-blue-600 dark:text-blue-400"
+                  ? "text-foreground-secondary"
                   : "text-foreground-tertiary",
             )}
             style={{ fontFamily: MONO_FONT }}
