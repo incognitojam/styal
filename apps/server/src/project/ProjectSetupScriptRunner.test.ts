@@ -332,6 +332,7 @@ describe("ProjectSetupScriptRunner", () => {
         scriptCommand: "bun install",
         terminalId: "setup-setup",
         cwd: "/repo/worktrees/a",
+        async: true,
       });
       expect(result.status === "started" ? result.completion : null).toBeUndefined();
       expect(openCommand).toHaveBeenCalledWith({

@@ -110,6 +110,8 @@ export interface ProjectSetupScriptRunnerResultStarted {
   readonly scriptCommand: string;
   readonly terminalId: string;
   readonly cwd: string;
+  /** False when the script's `async` flag asks the agent to wait for it. */
+  readonly async: boolean;
   /**
    * Resolves when the script's terminal process exits. The exit code is null
    * when the terminal was closed, restarted or failed before the process
@@ -740,6 +742,7 @@ export const make = Effect.gen(function* () {
       scriptCommand: script.command,
       terminalId,
       cwd,
+      async: script.async !== false,
       ...(observed ? { completion: observed.completion } : {}),
     } as const;
   });
