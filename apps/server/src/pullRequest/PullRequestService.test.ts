@@ -202,6 +202,7 @@ function makeService(input: {
             input.readGeneratedDiffPaths ?? (() => Effect.succeed<ReadonlyArray<string>>([])),
         }),
         Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+          resolveLink: () => undefined,
           resolveHandle:
             input.resolveHandle ?? (() => Effect.die("Unexpected provider refinement")),
         }),
