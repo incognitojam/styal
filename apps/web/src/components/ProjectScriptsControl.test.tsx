@@ -2,7 +2,7 @@ import type { ProjectScript, ResolvedKeybindingsConfig } from "@t3tools/contract
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
-import ProjectScriptsControl from "./ProjectScriptsControl";
+import ProjectScriptsControl, { openAddProjectScriptEditor } from "./ProjectScriptsControl";
 
 const EMPTY_KEYBINDINGS: ResolvedKeybindingsConfig = [];
 const PRIMARY_SCRIPT: ProjectScript = {
@@ -13,12 +13,23 @@ const PRIMARY_SCRIPT: ProjectScript = {
   runOnWorktreeCreate: false,
 };
 
-function renderControl(scripts: ReadonlyArray<ProjectScript>) {
+function renderControl(
+  scripts: ReadonlyArray<ProjectScript>,
+  legacyScripts: ReadonlyArray<ProjectScript> = [],
+  hasLegacyConfig = legacyScripts.length > 0,
+  canEdit = true,
+  actionSource: "local" | "styal.json" = "styal.json",
+) {
   return renderToStaticMarkup(
     <ProjectScriptsControl
       scripts={scripts}
+      actionSource={actionSource}
+      legacyScripts={legacyScripts}
+      hasLegacyConfig={hasLegacyConfig}
+      canEdit={canEdit}
       keybindings={EMPTY_KEYBINDINGS}
       onRunScript={() => {}}
+      onMigrateLegacyScripts={async () => undefined as never}
       onAddScript={async () => undefined as never}
       onUpdateScript={async () => undefined as never}
       onDeleteScript={async () => undefined as never}
@@ -45,6 +56,17 @@ function expectResponsiveXsControl(markup: string | undefined) {
 }
 
 describe("ProjectScriptsControl compact controls", () => {
+  it("refreshes file actions before opening the Add action editor", () => {
+    const calls: string[] = [];
+
+    openAddProjectScriptEditor({
+      refreshFileScripts: () => calls.push("refresh"),
+      openEditor: () => calls.push("open"),
+    });
+
+    expect(calls).toEqual(["refresh", "open"]);
+  });
+
   it("keeps the primary Run control compact and expands it with its label", () => {
     const html = renderControl([PRIMARY_SCRIPT]);
 
@@ -61,5 +83,36 @@ describe("ProjectScriptsControl compact controls", () => {
     expect(html).toContain(
       'class="sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5"',
     );
+  });
+
+  it("runs a styal.json action directly without importing it", () => {
+    const html = renderControl([PRIMARY_SCRIPT]);
+
+    expectResponsiveXsControl(buttonTag(html, "Run Dev"));
+    expect(html).not.toContain('aria-label="Add action"');
+    expect(html).not.toContain("styal.json");
+  });
+
+  it("keeps a local action behind migration once styal.json exists", () => {
+    const html = renderControl([], [PRIMARY_SCRIPT]);
+
+    expect(buttonTag(html, "Run Dev")).toBeUndefined();
+    expect(buttonTag(html, "Project actions")).toBeDefined();
+  });
+
+  it("offers migration for a legacy config without actions", () => {
+    const html = renderControl([], [], true);
+
+    expect(buttonTag(html, "Project actions")).toBeDefined();
+  });
+
+  it("runs local actions when styal.json is absent", () => {
+    const html = renderControl([PRIMARY_SCRIPT], [], true, true, "local");
+
+    expectResponsiveXsControl(buttonTag(html, "Run Dev"));
+  });
+
+  it("disables Add action while the project file is unavailable", () => {
+    expect(buttonTag(renderControl([], [], false, false), "Add action")).toContain("disabled");
   });
 });

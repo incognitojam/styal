@@ -1,11 +1,12 @@
 import type { ProjectReadFileResult } from "@t3tools/contracts";
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectReadFileError } from "@t3tools/contracts";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
   clearProjectFileQueryData,
   confirmProjectFileQueryData,
   getOptimisticProjectFileQueryData,
+  isProjectFileNotFoundFailure,
   resolveProjectFileQueryData,
   setProjectFileQueryData,
 } from "./projectFilesQueryState";
@@ -47,5 +48,28 @@ describe("project files queries", () => {
     expect(
       confirmProjectFileQueryData(environmentId, "/repo", "convex.json", '{"nodeVersion":"22"}'),
     ).toBe(true);
+  });
+
+  it("distinguishes a missing file from other read failures", () => {
+    expect(
+      isProjectFileNotFoundFailure(
+        new ProjectReadFileError({
+          cwd: "/repo",
+          relativePath: "styal.json",
+          failure: "not_found",
+          operation: "realpath-target",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isProjectFileNotFoundFailure(
+        new ProjectReadFileError({
+          cwd: "/repo",
+          relativePath: "styal.json",
+          failure: "operation_failed",
+          operation: "realpath-target",
+        }),
+      ),
+    ).toBe(false);
   });
 });

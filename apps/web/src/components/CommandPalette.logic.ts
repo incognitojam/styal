@@ -1,10 +1,12 @@
 import {
   type FilesystemBrowseEntry,
   type KeybindingCommand,
+  type ThreadEnvMode,
   THREAD_JUMP_KEYBINDING_COMMANDS,
 } from "@t3tools/contracts";
 import { filterFilesystemBrowseEntries } from "@t3tools/client-runtime/state/filesystem";
 import type { SidebarThreadSortOrder } from "@t3tools/contracts/settings";
+import { resolveDefaultThreadEnvMode } from "@t3tools/shared/threadEnvMode";
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
 import { type ReactNode } from "react";
@@ -15,6 +17,17 @@ import { type Project, type SidebarThreadSummary, type Thread } from "../types";
 export const RECENT_THREAD_LIMIT = 12;
 export const ITEM_ICON_CLASS = "size-4 text-icon-muted";
 export const ADDON_ICON_CLASS = "size-4";
+
+export function resolveNewProjectDraftEnvMode(input: {
+  readonly projectFileDefault: ThreadEnvMode | null;
+  readonly globalDefault: ThreadEnvMode;
+}): ThreadEnvMode {
+  return resolveDefaultThreadEnvMode({
+    projectSetting: null,
+    projectFile: input.projectFileDefault,
+    globalDefault: input.globalDefault,
+  });
+}
 
 export function browseInputEndPaddingClass(input: {
   readonly willCreateProjectPath: boolean;

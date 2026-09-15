@@ -1,0 +1,116 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { it, describe, expect } from "@effect/vitest";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Path from "effect/Path";
+
+import * as StyalProjectFileLoader from "./StyalProjectFileLoader.ts";
+
+const TestLayer = Layer.empty.pipe(
+  Layer.provideMerge(StyalProjectFileLoader.layer),
+  Layer.provideMerge(NodeServices.layer),
+);
+
+const makeTempDir = Effect.gen(function* () {
+  const fileSystem = yield* FileSystem.FileSystem;
+  return yield* fileSystem.makeTempDirectoryScoped({
+    prefix: "styal-project-file-",
+  });
+});
+
+const writeProjectFile = Effect.fn("writeProjectFile")(function* (cwd: string, contents: string) {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  yield* fileSystem.writeFileString(path.join(cwd, "styal.json"), contents).pipe(Effect.orDie);
+});
+
+it.layer(TestLayer)("StyalProjectFileLoader", (it) => {
+  describe("load", () => {
+    it.effect("loads and decodes a valid styal.json", () =>
+      Effect.gen(function* () {
+        const loader = yield* StyalProjectFileLoader.StyalProjectFileLoader;
+        const cwd = yield* makeTempDir;
+        yield* writeProjectFile(
+          cwd,
+          `{
+            // JSONC is tolerated
+            "iconPath": "assets/logo.svg",
+            "scripts": [{ "name": "Dev", "command": "pnpm dev" }],
+          }`,
+        );
+
+        const loaded = yield* loader.load(cwd);
+
+        expect(Option.isSome(loaded)).toBe(true);
+        if (Option.isSome(loaded)) {
+          expect(loaded.value.iconPath).toBe("assets/logo.svg");
+          expect(loaded.value.scripts).toEqual([{ name: "Dev", command: "pnpm dev" }]);
+        }
+      }),
+    );
+
+    it.effect("returns none when styal.json is missing", () =>
+      Effect.gen(function* () {
+        const loader = yield* StyalProjectFileLoader.StyalProjectFileLoader;
+        const cwd = yield* makeTempDir;
+
+        const loaded = yield* loader.load(cwd);
+
+        expect(Option.isNone(loaded)).toBe(true);
+      }),
+    );
+
+    it.effect("reports file presence independently of whether it is valid", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir;
+        const loader = yield* StyalProjectFileLoader.StyalProjectFileLoader;
+
+        expect(yield* loader.exists(cwd)).toBe(false);
+        yield* writeProjectFile(cwd, "{ not json");
+        expect(yield* loader.exists(cwd)).toBe(true);
+      }),
+    );
+
+    it.effect("does not load the legacy t3.json filename", () =>
+      Effect.gen(function* () {
+        const loader = yield* StyalProjectFileLoader.StyalProjectFileLoader;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* fileSystem
+          .writeFileString(path.join(cwd, "t3.json"), '{ "iconPath": "legacy.svg" }')
+          .pipe(Effect.orDie);
+
+        const loaded = yield* loader.load(cwd);
+
+        expect(Option.isNone(loaded)).toBe(true);
+      }),
+    );
+
+    it.effect("returns none for malformed JSON without failing", () =>
+      Effect.gen(function* () {
+        const loader = yield* StyalProjectFileLoader.StyalProjectFileLoader;
+        const cwd = yield* makeTempDir;
+        yield* writeProjectFile(cwd, "{ not json");
+
+        const loaded = yield* loader.load(cwd);
+
+        expect(Option.isNone(loaded)).toBe(true);
+      }),
+    );
+
+    it.effect("returns none for schema-invalid files without failing", () =>
+      Effect.gen(function* () {
+        const loader = yield* StyalProjectFileLoader.StyalProjectFileLoader;
+        const cwd = yield* makeTempDir;
+        yield* writeProjectFile(cwd, '{ "scripts": [{ "name": "Dev" }] }');
+
+        const loaded = yield* loader.load(cwd);
+
+        expect(Option.isNone(loaded)).toBe(true);
+      }),
+    );
+  });
+});

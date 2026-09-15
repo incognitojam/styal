@@ -1,10 +1,11 @@
 import {
-  T3_PROJECT_FILE_NAME,
+  STYAL_PROJECT_FILE_NAME,
   type EnvironmentId,
-  type T3ProjectFile,
-  type T3ProjectFileScript,
+  type ProjectScript,
+  type StyalProjectFile,
 } from "@t3tools/contracts";
-import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
+import { projectScriptsFromStyalFile } from "@t3tools/shared/projectScripts";
+import { parseStyalProjectFile } from "@t3tools/shared/styalProjectFile";
 import { useMemo } from "react";
 
 import {
@@ -12,32 +13,39 @@ import {
   useProjectFileQuery,
 } from "~/components/files/projectFilesQueryState";
 
-const NO_SCRIPTS: ReadonlyArray<T3ProjectFileScript> = [];
+const NO_SCRIPTS: ReadonlyArray<ProjectScript> = [];
 
-export interface T3ProjectFileState {
+export interface StyalProjectFileState {
   /**
-   * - `valid`: t3.json exists and decoded.
-   * - `invalid`: t3.json exists but fails to decode (the server then ignores
+   * - `valid`: styal.json exists and decoded.
+   * - `invalid`: styal.json exists but fails to decode (the server then ignores
    *   the whole file, including `iconPath` and every script).
-   * - `missing`: no readable t3.json at the workspace root.
+   * - `missing`: no readable styal.json at the workspace root.
    * - `loading`: the file query has not settled yet.
    */
   status: "loading" | "missing" | "invalid" | "valid";
   /** The decoded file when status is `valid`, null otherwise. */
-  file: T3ProjectFile | null;
-  scripts: ReadonlyArray<T3ProjectFileScript>;
+  file: StyalProjectFile | null;
+  /** Original JSONC text, retained so action edits can preserve unrelated fields and comments. */
+  contents: string | null;
+  scripts: ReadonlyArray<ProjectScript>;
   refresh: () => void;
 }
 
 /**
- * Decoded state of the project's checked-in `t3.json`, including whether the
+ * Decoded state of the project's checked-in `styal.json`, including whether the
  * file exists but is broken — which the runtime otherwise swallows silently.
  */
-export function useT3ProjectFileState(
+export function useStyalProjectFileState(
   environmentId: EnvironmentId,
   cwd: string | null,
-): T3ProjectFileState {
-  const query = useProjectFileQuery(environmentId, cwd ?? "", T3_PROJECT_FILE_NAME, cwd !== null);
+): StyalProjectFileState {
+  const query = useProjectFileQuery(
+    environmentId,
+    cwd ?? "",
+    STYAL_PROJECT_FILE_NAME,
+    cwd !== null,
+  );
   const contents = query.data && !query.data.truncated ? query.data.contents : null;
   const missing = isProjectFileNotFoundFailure(query.failure);
   const unavailable = query.data?.truncated === true || (query.error !== null && !missing);
@@ -47,15 +55,17 @@ export function useT3ProjectFileState(
       return {
         status: isPending ? "loading" : unavailable ? "invalid" : "missing",
         file: null,
+        contents: null,
         scripts: NO_SCRIPTS,
         refresh: query.refresh,
       } as const;
     }
-    const file = parseT3ProjectFile(contents);
+    const file = parseStyalProjectFile(contents);
     if (file === null) {
       return {
         status: "invalid",
         file: null,
+        contents,
         scripts: NO_SCRIPTS,
         refresh: query.refresh,
       } as const;
@@ -63,20 +73,20 @@ export function useT3ProjectFileState(
     return {
       status: "valid",
       file,
-      scripts: file.scripts ?? NO_SCRIPTS,
+      contents,
+      scripts: projectScriptsFromStyalFile(file.scripts ?? []),
       refresh: query.refresh,
     } as const;
   }, [contents, isPending, missing, query.refresh, unavailable]);
 }
 
 /**
- * Scripts declared in the project's checked-in `t3.json`, offered in the
- * scripts menu for import. Missing, truncated, or invalid files resolve to
- * an empty list.
+ * Runnable scripts declared in the project's checked-in `styal.json`. Missing,
+ * truncated, or invalid files resolve to an empty list.
  */
-export function useT3ProjectFileScripts(
+export function useStyalProjectFileScripts(
   environmentId: EnvironmentId,
   cwd: string | null,
-): ReadonlyArray<T3ProjectFileScript> {
-  return useT3ProjectFileState(environmentId, cwd).scripts;
+): ReadonlyArray<ProjectScript> {
+  return useStyalProjectFileState(environmentId, cwd).scripts;
 }

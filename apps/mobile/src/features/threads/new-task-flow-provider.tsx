@@ -14,9 +14,11 @@ import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
   MessageId,
+  STYAL_PROJECT_FILE_NAME,
   T3_PROJECT_FILE_NAME,
   ThreadId,
 } from "@t3tools/contracts";
+import { parseStyalProjectFile } from "@t3tools/shared/styalProjectFile";
 import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
 import {
   isDefaultThreadEnvModeSettled,
@@ -362,32 +364,50 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const attachments = selectedProjectDraft.attachments;
   // Default mode until the user picks one explicitly — same resolution web
   // uses for new draft threads: per-project setting, then the repo's
-  // checked-in t3.json, then the server's configured default.
-  const t3ProjectFileQuery = useEnvironmentQuery(
+  // checked-in styal.json (or legacy t3.json), then the server's configured default.
+  const styalProjectFileQuery = useEnvironmentQuery(
     selectedProject !== null && selectedProject.workspaceRoot !== ""
+      ? projectEnvironment.readFile({
+          environmentId: selectedProject.environmentId,
+          input: { cwd: selectedProject.workspaceRoot, relativePath: STYAL_PROJECT_FILE_NAME },
+        })
+      : null,
+  );
+  const styalProjectFileData = styalProjectFileQuery.data as ProjectReadFileResult | null;
+  const legacyProjectFileQuery = useEnvironmentQuery(
+    selectedProject !== null &&
+      selectedProject.workspaceRoot !== "" &&
+      !styalProjectFileQuery.isPending &&
+      styalProjectFileData === null
       ? projectEnvironment.readFile({
           environmentId: selectedProject.environmentId,
           input: { cwd: selectedProject.workspaceRoot, relativePath: T3_PROJECT_FILE_NAME },
         })
       : null,
   );
-  const t3ProjectFileData = t3ProjectFileQuery.data as ProjectReadFileResult | null;
-  const t3ProjectFileDefaultMode = useMemo(() => {
-    if (t3ProjectFileData === null || t3ProjectFileData.truncated) return null;
-    return parseT3ProjectFile(t3ProjectFileData.contents)?.defaultThreadEnvMode ?? null;
-  }, [t3ProjectFileData]);
+  const legacyProjectFileData = legacyProjectFileQuery.data as ProjectReadFileResult | null;
+  const projectFileDefaultMode = useMemo(() => {
+    if (styalProjectFileData !== null) {
+      if (styalProjectFileData.truncated) return null;
+      return parseStyalProjectFile(styalProjectFileData.contents)?.defaultThreadEnvMode ?? null;
+    }
+    if (legacyProjectFileData === null || legacyProjectFileData.truncated) return null;
+    return parseT3ProjectFile(legacyProjectFileData.contents)?.defaultThreadEnvMode ?? null;
+  }, [legacyProjectFileData, styalProjectFileData]);
   const defaultWorkspaceMode: WorkspaceMode = resolveDefaultThreadEnvMode({
     projectSetting: selectedProject?.defaultThreadEnvMode,
-    projectFile: t3ProjectFileDefaultMode,
+    projectFile: projectFileDefaultMode,
     globalDefault: selectedEnvironmentServerConfig?.settings.defaultThreadEnvMode ?? "local",
   });
   // While unsettled the resolved default is provisional. Nothing may write
   // it into the draft during that window (the auto-branch effect does), or
-  // the frozen interim value beats the t3.json default once it loads.
+  // the frozen interim value beats the project-file default once it loads.
   const defaultWorkspaceModeSettled = isDefaultThreadEnvModeSettled({
     explicitMode: selectedProjectDraft.workspaceSelection?.mode,
     projectSetting: selectedProject?.defaultThreadEnvMode,
-    projectFilePending: t3ProjectFileQuery.isPending,
+    projectFilePending:
+      styalProjectFileQuery.isPending ||
+      (styalProjectFileData === null && legacyProjectFileQuery.isPending),
   });
   const workspaceMode = selectedProjectDraft.workspaceSelection?.mode ?? defaultWorkspaceMode;
   const selectedBranchName = selectedProjectDraft.workspaceSelection?.branch ?? null;

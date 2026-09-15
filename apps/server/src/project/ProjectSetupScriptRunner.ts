@@ -25,6 +25,7 @@ import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSn
 import * as ProjectionThreadActivities from "../persistence/Services/ProjectionThreadActivities.ts";
 import { forkParked } from "../serverActivation.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
+import * as StyalProjectFileLoader from "./StyalProjectFileLoader.ts";
 
 type SetupRunOutcome =
   | {
@@ -177,6 +178,7 @@ export const make = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
   const projectionThreadActivities =
     yield* ProjectionThreadActivities.ProjectionThreadActivityRepository;
+  const styalProjectFileLoader = yield* StyalProjectFileLoader.StyalProjectFileLoader;
   const activeRunsRef = yield* SynchronizedRef.make(new Map<string, ActiveSetupRun>());
   let nextRunSequence = 0;
 
@@ -400,6 +402,14 @@ export const make = Effect.gen(function* () {
       return yield* new ProjectSetupScriptProjectNotFoundError(errorContext);
     }
 
+    // A checkout that has adopted styal.json no longer uses database-backed
+    // actions. Checked-in setup actions remain manual until explicit project
+    // trust is supported.
+    if (yield* styalProjectFileLoader.exists(input.worktreePath)) {
+      return { status: "no-script" } as const;
+    }
+
+    // Preserve automatic setup only for projects that have not migrated yet.
     const script = setupProjectScript(project.scripts);
     if (!script) {
       return {
@@ -415,7 +425,7 @@ export const make = Effect.gen(function* () {
 
     // The script was written for a fresh worktree, so running it over the project
     // root is destructive rather than merely useless: a setup line that links
-    // $T3CODE_PROJECT_ROOT/.env into the cwd would clobber the file it links to.
+    // $STYAL_PROJECT_ROOT/.env into the cwd would clobber the file it links to.
     if (
       isSetupScriptOutsideWorktree({
         script,

@@ -2,12 +2,27 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   isSetupScriptOutsideWorktree,
+  projectScriptsFromStyalFile,
   projectScriptRuntimeEnv,
   withT3CodeProjectEnvironmentAliases,
 } from "./projectScripts.ts";
 
 const setupScript = { runOnWorktreeCreate: true } as const;
 const regularScript = { runOnWorktreeCreate: false } as const;
+
+describe("projectScriptsFromStyalFile", () => {
+  it("keeps checked-in actions manual", () => {
+    expect(projectScriptsFromStyalFile([{ id: "setup", name: "Setup", command: "vp i" }])).toEqual([
+      {
+        id: "setup",
+        name: "Setup",
+        command: "vp i",
+        icon: "play",
+        runOnWorktreeCreate: false,
+      },
+    ]);
+  });
+});
 
 describe("isSetupScriptOutsideWorktree", () => {
   it("allows a setup script in a worktree of its project", () => {

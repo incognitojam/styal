@@ -252,6 +252,8 @@ function filesystemBrowseFailureContext(error: WorkspaceEntries.WorkspaceEntries
   }
 }
 
+const isNotFoundFileSystemCause = Schema.is(Schema.Struct({ code: Schema.Literal("ENOENT") }));
+
 function projectFileFailureContext(
   error:
     | WorkspaceFileSystem.WorkspaceFileSystemError
@@ -267,6 +269,14 @@ function projectFileFailureContext(
     case "WorkspacePathOutsideRootError":
       return { failure: "workspace_path_outside_root" };
     case "WorkspaceFileSystemOperationError":
+      if (error.operation === "realpath-target" && isNotFoundFileSystemCause(error.cause)) {
+        return {
+          failure: "not_found",
+          resolvedPath: error.resolvedPath,
+          operation: error.operation,
+          operationPath: error.operationPath,
+        };
+      }
       return {
         failure: "operation_failed",
         resolvedPath: error.resolvedPath,

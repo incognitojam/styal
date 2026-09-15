@@ -140,9 +140,9 @@ T3CODE_RELAY_URL=<relay URL, written automatically by a relay deploy>
 Do not `cp .env.example .env`: the tracked example is upstream's and points a styal-branded build at
 T3's production Clerk instance and relay. It is left untouched so upstream picks stay clean.
 
-In styal-managed worktrees the `t3.json` setup script symlinks `$T3CODE_PROJECT_ROOT/.env` (and
-`infra/relay/.env`) into each worktree, so populate the file once in the original checkout rather
-than replacing the symlink.
+Run the repository's **Setup Worktree** action after creating a worktree. It symlinks
+`$STYAL_PROJECT_ROOT/.env` (and `infra/relay/.env`) into that worktree, so populate the file once in
+the original checkout rather than replacing the symlink. Checked-in actions always remain manual.
 
 ## Verifying a build
 

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://styal.build/schema/styal.json",
+  "iconPath": "assets/dev/blueprint-web-apple-touch-180.png",
+  "scripts": [
+    {
+      "id": "dev",
+      "name": "Dev",
+      "command": "vp run dev",
+      "icon": "play"
+    },
+    {
+      "id": "dev-desktop",
+      "name": "Dev Desktop",
+      "command": "vp run dev:desktop",
+      "icon": "desktop"
+    },
+    {
+      "id": "setup-worktree",
+      "name": "Setup Worktree",
+      "command": "vp i && if [ -n \"$STYAL_WORKTREE_PATH\" ]; then ln -sf \"$STYAL_PROJECT_ROOT/.env\" .env && ln -sf \"$STYAL_PROJECT_ROOT/infra/relay/.env\" infra/relay/.env; else echo \"Not in a worktree - skipping .env symlinks\"; fi && node apps/web/scripts/warm-dep-cache.ts",
+      "icon": "configure"
+    }
+  ]
+}

@@ -86,6 +86,7 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { normalizeIssueContextSelection } from "../lib/issueContext";
+import { readProjectFileDefaultThreadEnvMode } from "../lib/projectFileDefaults";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { useProjects, useThreadShells } from "../state/entities";
 import { useThreadSearch } from "../state/queries";
@@ -140,6 +141,7 @@ import {
   ITEM_ICON_CLASS,
   RECENT_THREAD_LIMIT,
   reduceCommandPaletteUiState,
+  resolveNewProjectDraftEnvMode,
   type SearchOverlayMode,
 } from "./CommandPalette.logic";
 import { orderItemsByPreferredIds, sortLogicalProjectsForSidebar } from "./Sidebar.logic";
@@ -157,7 +159,11 @@ import {
   ThreadCommandSubtitle,
 } from "./ThreadCommandSubtitle";
 import { ThreadRowLeadingStatus, ThreadRowTrailingStatus } from "./ThreadStatusIndicators";
-import { primaryServerKeybindingsAtom, primaryServerProvidersAtom } from "../state/server";
+import {
+  primaryServerKeybindingsAtom,
+  primaryServerProvidersAtom,
+  primaryServerSettingsAtom,
+} from "../state/server";
 import {
   deriveProviderInstanceEntries,
   resolveDefaultProviderModelSelection,
@@ -688,6 +694,7 @@ function OpenCommandPaletteDialog(props: {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { theme, themeHalves, resolvedTheme } = useTheme();
   const providers = useAtomValue(primaryServerProvidersAtom);
+  const primaryServerSettings = useAtomValue(primaryServerSettingsAtom);
   const providerEntryByEnvironmentAndInstanceId = useMemo(() => {
     const map = new Map<string, ProviderInstanceEntry>();
     for (const environment of environments) {
@@ -2128,8 +2135,17 @@ function OpenCommandPaletteDialog(props: {
         return;
       }
 
+      const projectFileDefault = await readProjectFileDefaultThreadEnvMode(
+        input.environmentId,
+        cwd,
+      );
       const navigationResult = await settlePromise(() =>
-        handleNewThread(scopeProjectRef(input.environmentId, projectId)),
+        handleNewThread(scopeProjectRef(input.environmentId, projectId), {
+          envMode: resolveNewProjectDraftEnvMode({
+            projectFileDefault,
+            globalDefault: primaryServerSettings.defaultThreadEnvMode,
+          }),
+        }),
       );
       if (navigationResult._tag === "Failure") {
         const error = squashAtomCommandFailure(navigationResult);
@@ -2152,6 +2168,7 @@ function OpenCommandPaletteDialog(props: {
       primaryEnvironmentId,
       projects,
       providers,
+      primaryServerSettings.defaultThreadEnvMode,
       setOpen,
       clientSettings.sidebarThreadSortOrder,
       threads,

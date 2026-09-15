@@ -9,8 +9,29 @@ import {
   filterPinnedBrowseEntries,
   filterCommandPaletteGroups,
   reduceCommandPaletteUiState,
+  resolveNewProjectDraftEnvMode,
   type CommandPaletteGroup,
 } from "./CommandPalette.logic";
+
+describe("resolveNewProjectDraftEnvMode", () => {
+  it("uses the checkout file before the global default for the initial draft", () => {
+    expect(
+      resolveNewProjectDraftEnvMode({
+        projectFileDefault: "local",
+        globalDefault: "worktree",
+      }),
+    ).toBe("local");
+  });
+
+  it("falls back to the global default when the checkout has no valid setting", () => {
+    expect(
+      resolveNewProjectDraftEnvMode({
+        projectFileDefault: null,
+        globalDefault: "worktree",
+      }),
+    ).toBe("worktree");
+  });
+});
 
 describe("browseInputEndPaddingClass", () => {
   it("reserves the widest space for the create action", () => {
