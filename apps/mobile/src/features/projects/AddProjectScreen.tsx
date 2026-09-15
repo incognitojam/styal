@@ -242,7 +242,7 @@ function RepositoryOwnerAvatar(props: {
     : null;
 
   if (avatarUrl === null || hasFailed) {
-    return <SourceControlIcon kind={props.provider} size={18} colorClassName="text-icon" />;
+    return <SourceControlIcon kind={props.provider} size={18} colorClassName="accent-icon" />;
   }
 
   return (
