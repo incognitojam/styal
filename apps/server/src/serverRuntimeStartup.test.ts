@@ -164,6 +164,7 @@ it.effect("resolveAutoBootstrapWelcomeTargets returns existing project and threa
       } as never),
       Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
         getUserInputActivity: () => Effect.die("unused"),
+        listActivitiesByKind: () => Effect.succeed([]),
         getCommandReadModel: () => Effect.die("unused"),
         getSnapshot: () => Effect.die("unused"),
         getShellSnapshot: () => Effect.die("unused"),
@@ -293,6 +294,7 @@ it.effect.each([
       } as never),
       Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
         getUserInputActivity: () => Effect.die("unused"),
+        listActivitiesByKind: () => Effect.succeed([]),
         getCommandReadModel: () => Effect.die("unused"),
         getSnapshot: () => Effect.die("unused"),
         getShellSnapshot: () => Effect.die("unused"),
@@ -380,6 +382,8 @@ it.effect(
         Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
           getEventReplayStats: () => Effect.die("unused"),
           getThreadRuntimeContext: () => Effect.die("unused"),
+          getUserInputActivity: () => Effect.die("unused"),
+          listActivitiesByKind: () => Effect.succeed([]),
           getCommandReadModel: () => Effect.die("unused"),
           getSnapshot: () => Effect.die("unused"),
           getShellSnapshot: () => Effect.die("unused"),
@@ -397,7 +401,6 @@ it.effect(
           getTurnStartMessage: () => Effect.die("unused"),
           getThreadShellById: () => Effect.die("unused"),
           getThreadDetailById: () => Effect.die("unused"),
-          getUserInputActivity: () => Effect.die("unused"),
           getThreadDetailSnapshot: () => Effect.die("unused"),
           searchThreads: () => Effect.succeed({ matches: [] }),
         }),
@@ -445,6 +448,7 @@ it.effect("resolveAutoBootstrapWelcomeTargets preserves typed UUID generation fa
       } as never),
       Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
         getUserInputActivity: () => Effect.die("unused"),
+        listActivitiesByKind: () => Effect.succeed([]),
         getCommandReadModel: () => Effect.die("unused"),
         getSnapshot: () => Effect.die("unused"),
         getShellSnapshot: () => Effect.die("unused"),

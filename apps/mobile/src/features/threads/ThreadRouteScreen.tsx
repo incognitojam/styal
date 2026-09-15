@@ -820,6 +820,23 @@ function ThreadRouteContent(
     connectionState: routeConnectionState,
   });
   const serverConfig = routeEnvironmentRuntime?.serverConfig ?? null;
+  // A worktree bootstrap records a running setup on the thread before its
+  // turn, so a thread opened from another device (or after a restart) shows
+  // the same preparing state the sending client does. A starting session is
+  // not enough on its own: an ordinary first turn projects one too.
+  const awaitingBootstrapTurn = useMemo(
+    () =>
+      selectedThreadDetail !== null &&
+      selectedThreadDetail.latestTurn === null &&
+      selectedThreadDetail.activities.some(
+        (activity) =>
+          activity.kind === "worktree-setup" &&
+          typeof activity.payload === "object" &&
+          activity.payload !== null &&
+          (activity.payload as { phase?: unknown }).phase === "running",
+      ),
+    [selectedThreadDetail],
+  );
   const creationState =
     selectedThreadCreation?.outcome?.kind === "failed"
       ? {
@@ -827,7 +844,7 @@ function ThreadRouteContent(
           reason: selectedThreadCreation.outcome.reason,
           onEditTask: handleEditFailedCreation,
         }
-      : selectedThreadCreation !== null
+      : selectedThreadCreation !== null || awaitingBootstrapTurn
         ? { kind: "preparing" as const }
         : null;
   const renderThreadRouteBody = (showActionControls: boolean) => (

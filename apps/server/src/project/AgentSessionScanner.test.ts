@@ -39,7 +39,8 @@ const makeProjectionSnapshotQueryLayer = (importedWorkspaceRoots: ReadonlyArray<
     getEventReplayStats: () => Effect.die("unused"),
     getThreadRuntimeContext: () => Effect.die("unused"),
     getCommandReadModel: () => Effect.die("unused"),
-
+    getUserInputActivity: () => Effect.die("unused"),
+    listActivitiesByKind: () => Effect.die("unused"),
     getSnapshot: () => Effect.die("unused"),
     getShellSnapshot: () =>
       Effect.succeed({
@@ -62,7 +63,6 @@ const makeProjectionSnapshotQueryLayer = (importedWorkspaceRoots: ReadonlyArray<
     getThreadShellById: () => Effect.die("unused"),
     getTurnStartMessage: () => Effect.die("unused"),
     getThreadDetailById: () => Effect.die("unused"),
-    getUserInputActivity: () => Effect.die("unused"),
     getThreadDetailSnapshot: () => Effect.die("unused"),
     searchThreads: () => Effect.die("unused"),
   });

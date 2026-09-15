@@ -629,6 +629,7 @@ it.effect("imports selected history and safe preferences independently", () => {
     getThreadShellById: () => Effect.succeed(Option.none()),
     getThreadDetailById: () => Effect.succeed(Option.none()),
     getUserInputActivity: () => Effect.die("unused"),
+    listActivitiesByKind: () => Effect.die("unused"),
     getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
   } satisfies ProjectionSnapshotQueryShape);
 
@@ -960,6 +961,7 @@ it.effect("imports one thread at a time and resumes after an interrupted thread"
     getThreadShellById: () => Effect.succeed(Option.none()),
     getThreadDetailById: () => Effect.succeed(Option.none()),
     getUserInputActivity: () => Effect.die("unused"),
+    listActivitiesByKind: () => Effect.die("unused"),
     getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
   } satisfies ProjectionSnapshotQueryShape);
   const dependencies = Layer.mergeAll(
@@ -1112,6 +1114,7 @@ it.effect("repairs provider context for threads imported by an earlier release",
     getThreadShellById: () => Effect.succeed(Option.none()),
     getThreadDetailById: () => Effect.succeed(Option.none()),
     getUserInputActivity: () => Effect.die("unused"),
+    listActivitiesByKind: () => Effect.die("unused"),
     getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
   } satisfies ProjectionSnapshotQueryShape);
   const dependencies = Layer.mergeAll(

@@ -44,7 +44,7 @@ import {
   WS_METHODS,
   WsRpcGroup,
   EditorId,
-  type WorktreeSetupSnapshot,
+  WorktreeSetupSnapshot,
   type WorktreeSetupStageId,
 } from "@t3tools/contracts";
 import {
@@ -11210,14 +11210,22 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           ),
         );
 
-        assert.equal(response.sequence, 4);
+        assert.equal(response.sequence, 6);
         assert.deepEqual(
           dispatchedCommands.map((command) => command.type),
-          ["thread.create", "thread.session.set", "thread.meta.update", "thread.turn.start"],
+          [
+            "thread.create",
+            "thread.message.user.append",
+            "thread.activity.append",
+            "thread.session.set",
+            "thread.meta.update",
+            "thread.turn.start",
+            "thread.activity.append",
+          ],
         );
         // The checkout can take minutes, so the thread reads as working from
         // the moment setup starts rather than only once the turn is dispatched.
-        const preparingCommand = dispatchedCommands[1];
+        const preparingCommand = dispatchedCommands[3];
         assertTrue(preparingCommand?.type === "thread.session.set");
         if (preparingCommand?.type === "thread.session.set") {
           assert.equal(preparingCommand.session.status, "starting");
@@ -11274,7 +11282,31 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.isDefined(runForThreadInput?.observeCompletion);
         assert.deepEqual(refreshStatus.mock.calls[0]?.[0], "/tmp/bootstrap-worktree");
 
-        const finalCommand = dispatchedCommands[3];
+        const setupActivities = dispatchedCommands.filter(
+          (command): command is Extract<OrchestrationCommand, { type: "thread.activity.append" }> =>
+            command.type === "thread.activity.append",
+        );
+        assert.deepEqual(
+          setupActivities.map((command) => command.activity.kind),
+          ["worktree-setup", "worktree-setup"],
+        );
+        // The setup record is upserted under one id: running once the thread
+        // exists, settled at the end, so a late client renders the outcome
+        // without the in-memory tracker.
+        const runningActivity = setupActivities[0]?.activity;
+        const settledActivity = setupActivities.at(-1)?.activity;
+        assert.equal(runningActivity?.id, settledActivity?.id);
+        assert.equal(settledActivity?.tone, "info");
+        assertTrue(Schema.is(WorktreeSetupSnapshot)(runningActivity?.payload));
+        if (Schema.is(WorktreeSetupSnapshot)(runningActivity?.payload)) {
+          assert.equal(runningActivity.payload.phase, "running");
+        }
+        assertTrue(Schema.is(WorktreeSetupSnapshot)(settledActivity?.payload));
+        if (Schema.is(WorktreeSetupSnapshot)(settledActivity?.payload)) {
+          assert.equal(settledActivity.payload.phase, "done");
+          assert.equal(settledActivity.payload.threadId, ThreadId.make("thread-bootstrap"));
+        }
+        const finalCommand = dispatchedCommands[5];
         assertTrue(finalCommand?.type === "thread.turn.start");
         if (finalCommand?.type === "thread.turn.start") {
           assert.equal(finalCommand.bootstrap, undefined);
@@ -11471,13 +11503,19 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         ),
       );
 
-      assert.equal(response.sequence, 2);
+      assert.equal(response.sequence, 4);
       assert.equal(createWorktree.mock.calls.length, 0);
       assert.deepEqual(
         dispatchedCommands.map((command) => command.type),
-        ["thread.create", "thread.turn.start"],
+        [
+          "thread.create",
+          "thread.message.user.append",
+          "thread.activity.append",
+          "thread.turn.start",
+          "thread.activity.append",
+        ],
       );
-      const finalCommand = dispatchedCommands[1];
+      const finalCommand = dispatchedCommands[3];
       assertTrue(finalCommand?.type === "thread.turn.start");
       if (finalCommand?.type === "thread.turn.start") {
         assert.equal(finalCommand.bootstrap, undefined);
@@ -11578,20 +11616,23 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         ),
       );
 
-      assert.equal(response.sequence, 5);
+      assert.equal(response.sequence, 7);
       assert.deepEqual(
         dispatchedCommands.map((command) => command.type),
         [
           "thread.create",
+          "thread.message.user.append",
+          "thread.activity.append",
           "thread.session.set",
           "thread.meta.update",
           "thread.activity.append",
           "thread.turn.start",
+          "thread.activity.append",
         ],
       );
       const setupFailureActivity = dispatchedCommands.find(
         (command): command is Extract<OrchestrationCommand, { type: "thread.activity.append" }> =>
-          command.type === "thread.activity.append",
+          command.type === "thread.activity.append" && command.activity.kind !== "worktree-setup",
       );
       assert.equal(setupFailureActivity?.activity.kind, "setup-script.failed");
       assert.deepEqual(setupFailureActivity?.activity.payload, {
@@ -11703,7 +11744,16 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assertInclude(String(error), "no commits yet");
       assert.equal(createWorktree.mock.calls.length, 0);
       // The base is checked before the thread is created, so nothing is left to roll back.
-      assert.deepEqual(dispatchedCommands, []);
+      // Only the best-effort setup record is attempted, which a real engine rejects for a
+      // thread that was never created.
+      assert.deepEqual(
+        dispatchedCommands.map((command) =>
+          command.type === "thread.activity.append"
+            ? `${command.type}:${command.activity.kind}`
+            : command.type,
+        ),
+        ["thread.activity.append:worktree-setup"],
+      );
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -11801,16 +11851,27 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         ),
       );
 
-      assert.equal(response.sequence, 4);
+      assert.equal(response.sequence, 6);
       assert.deepEqual(
         dispatchedCommands.map((command) => command.type),
-        ["thread.create", "thread.session.set", "thread.meta.update", "thread.turn.start"],
+        [
+          "thread.create",
+          "thread.message.user.append",
+          "thread.activity.append",
+          "thread.session.set",
+          "thread.meta.update",
+          "thread.turn.start",
+          "thread.activity.append",
+        ],
       );
       const setupActivities = dispatchedCommands.filter(
         (command): command is Extract<OrchestrationCommand, { type: "thread.activity.append" }> =>
           command.type === "thread.activity.append",
       );
-      assert.deepEqual(setupActivities, []);
+      assert.deepEqual(
+        setupActivities.map((command) => command.activity.kind),
+        ["worktree-setup", "worktree-setup"],
+      );
       assertTrue(
         setupActivities.every((command) => command.activity.kind !== "setup-script.failed"),
       );
@@ -11956,8 +12017,15 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(stageStatus(running, "agent"), "pending");
       assert.isFalse(turnStarted());
 
+      // The client that sent the message goes away mid-setup (a reload or a
+      // dropped socket). The bootstrap belongs to the server, not the
+      // connection: the thread already exists for every client, so it must
+      // finish and start the turn regardless.
+      yield* Fiber.interrupt(dispatchFiber);
+      assert.isFalse(turnStarted());
+
       yield* Deferred.succeed(scriptExit, undefined);
-      yield* Fiber.join(dispatchFiber);
+      yield* snapshotWhere((snapshot) => stageStatus(snapshot, "agent") === "done");
       assertTrue(turnStarted());
       const settled = yield* snapshotWhere((snapshot) => snapshot.phase !== "running");
       assert.equal(settled.phase, "done");
@@ -12066,7 +12134,14 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.strictEqual(result.failure.bootstrapThreadDisposition, "deleted");
       assert.deepEqual(
         dispatchedCommands.map((command) => command.type),
-        ["thread.create", "thread.session.set", "thread.delete"],
+        [
+          "thread.create",
+          "thread.message.user.append",
+          "thread.activity.append",
+          "thread.session.set",
+          "thread.activity.append",
+          "thread.delete",
+        ],
       );
       assert.isDefined(pendingAttachmentId);
       assert.isTrue(
@@ -12179,7 +12254,12 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           }),
         ),
       );
-      assert.deepEqual(trace, ["thread.create", "drain:1", "thread.turn.start"]);
+      assert.deepEqual(trace, [
+        "thread.create",
+        "drain:1",
+        "thread.message.user.append",
+        "thread.turn.start",
+      ]);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -12266,11 +12346,19 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.strictEqual(result.failure.bootstrapThreadDisposition, undefined);
       assert.deepEqual(
         dispatchedCommands.map((command) => command.type),
-        ["thread.create", "thread.session.set", "thread.delete", "thread.session.set"],
+        [
+          "thread.create",
+          "thread.message.user.append",
+          "thread.activity.append",
+          "thread.session.set",
+          "thread.activity.append",
+          "thread.delete",
+          "thread.session.set",
+        ],
       );
       // The surviving thread must not keep its preparing session, or it would
       // read as working forever.
-      const failedSession = dispatchedCommands[3];
+      const failedSession = dispatchedCommands[6];
       assertTrue(failedSession?.type === "thread.session.set");
       if (failedSession?.type === "thread.session.set") {
         assert.equal(failedSession.session.status, "error");

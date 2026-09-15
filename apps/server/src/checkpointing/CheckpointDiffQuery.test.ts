@@ -77,6 +77,7 @@ describe("CheckpointDiffQuery.layer", () => {
         Layer.provideMerge(
           Layer.succeed(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
             getUserInputActivity: () => Effect.die("unused"),
+            listActivitiesByKind: () => Effect.die("unused"),
             getCommandReadModel: () =>
               Effect.die("CheckpointDiffQuery should not request the command read model"),
             getSnapshot: () =>
@@ -193,6 +194,7 @@ describe("CheckpointDiffQuery.layer", () => {
         Layer.provideMerge(
           Layer.succeed(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
             getUserInputActivity: () => Effect.die("unused"),
+            listActivitiesByKind: () => Effect.die("unused"),
             getCommandReadModel: () =>
               Effect.die("CheckpointDiffQuery should not request the command read model"),
             getSnapshot: () =>
@@ -327,6 +329,7 @@ describe("CheckpointDiffQuery.layer", () => {
             getThreadShellById: () => Effect.succeed(Option.none()),
             getThreadDetailById: () => Effect.succeed(Option.none()),
             getUserInputActivity: () => Effect.die("unused"),
+            listActivitiesByKind: () => Effect.die("unused"),
             getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
             searchThreads: () => Effect.succeed({ matches: [] }),
           }),
@@ -390,6 +393,7 @@ describe("CheckpointDiffQuery.layer", () => {
         Layer.provideMerge(
           Layer.succeed(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
             getUserInputActivity: () => Effect.die("unused"),
+            listActivitiesByKind: () => Effect.die("unused"),
             getCommandReadModel: () =>
               Effect.die("CheckpointDiffQuery should not request the command read model"),
             getSnapshot: () =>
@@ -466,6 +470,7 @@ describe("CheckpointDiffQuery.layer", () => {
         Layer.provideMerge(
           Layer.succeed(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
             getUserInputActivity: () => Effect.die("unused"),
+            listActivitiesByKind: () => Effect.die("unused"),
             getCommandReadModel: () =>
               Effect.die("CheckpointDiffQuery should not request the command read model"),
             getSnapshot: () =>
@@ -527,6 +532,7 @@ describe("CheckpointDiffQuery.layer", () => {
         Layer.provideMerge(
           Layer.succeed(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
             getUserInputActivity: () => Effect.die("unused"),
+            listActivitiesByKind: () => Effect.die("unused"),
             getCommandReadModel: () =>
               Effect.die("CheckpointDiffQuery should not request the command read model"),
             getSnapshot: () =>
