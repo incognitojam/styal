@@ -10,6 +10,9 @@ worktree directory is omitted because the thread already provides that context.
 
 Source paths written in messages may become clickable file chips. Opening a chip uses its full
 resolved path, while its label and **Copy relative path** action stay workspace-relative.
+File links with descriptive text keep that text and its formatting, followed by a compact file
+chip. Select either the text or the chip to open the same file. On mobile, tap either part to
+open the file viewer. Labels that already name the file remain a single chip.
 
 When previewing a Markdown file, relative images resolve from that file's folder. Images retain
 their authored dimensions and SVG fragment, and copying a workspace image preserves its Markdown

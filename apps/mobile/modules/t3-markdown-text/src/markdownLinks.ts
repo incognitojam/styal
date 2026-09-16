@@ -43,6 +43,17 @@ export type MarkdownLinkPresentation =
 
 export type MarkdownFileIcon = keyof typeof MARKDOWN_FILE_ICON_SOURCES;
 
+/** Only replace a link's words with a file chip when they name the destination. */
+export function isMarkdownFileLinkLabel(
+  label: string,
+  file: Extract<MarkdownLinkPresentation, { kind: "file" }>,
+): boolean {
+  const trimmed = label.trim();
+  if (!trimmed || trimmed === fileLabel(file.path) || trimmed === file.label) return true;
+  const labelLink = resolveMarkdownLinkPresentation(trimmed);
+  return labelLink.kind === "file" && labelLink.path === file.path;
+}
+
 const FILE_ICON_BY_NAME: Readonly<Record<string, MarkdownFileIcon>> = {
   ".babelrc": "babel",
   ".babelrc.json": "babel",

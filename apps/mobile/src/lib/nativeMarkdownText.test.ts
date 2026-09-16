@@ -43,7 +43,7 @@ describe("nativeMarkdownTextRuns", () => {
         {
           type: "link",
           href: "file:///repo/README.md#L12",
-          children: [{ type: "text", content: "ignored label" }],
+          children: [{ type: "text", content: "README.md" }],
         },
       ],
     };
@@ -60,6 +60,50 @@ describe("nativeMarkdownTextRuns", () => {
         href: "file:///repo/README.md#L12",
         fileIcon: "readme",
       },
+    ]);
+  });
+
+  it("preserves a linked phrase and its formatting before the file chip", () => {
+    const href = "/workspace/project/review.md";
+    const node: MarkdownNode = {
+      type: "paragraph",
+      children: [
+        { type: "text", content: "I've " },
+        {
+          type: "link",
+          href,
+          children: [
+            { type: "text", content: "corrected the packet and " },
+            { type: "bold", children: [{ type: "text", content: "reassessed the chain" }] },
+          ],
+        },
+        { type: "text", content: ". My recommendation follows." },
+      ],
+    };
+
+    expect(nativeMarkdownTextRuns(node)).toEqual([
+      { text: "I've " },
+      { text: "corrected the packet and ", href, fileLinkLabel: true },
+      { text: "reassessed the chain", href, fileLinkLabel: true, bold: true },
+      { text: " ", href, fileLinkLabel: true },
+      { text: "review.md", href, fileIcon: "markdown" },
+      { text: ". My recommendation follows." },
+    ]);
+  });
+
+  it("keeps a code label tappable separately from its file chip and line reference", () => {
+    const href = "/workspace/project/localApi.ts:22";
+    expect(
+      nativeMarkdownTextRuns({
+        type: "paragraph",
+        children: [
+          { type: "link", href, children: [{ type: "code_inline", content: "readLocalApi()" }] },
+        ],
+      }),
+    ).toEqual([
+      { text: "readLocalApi()", code: true, href, fileLinkLabel: true },
+      { text: " ", href, fileLinkLabel: true },
+      { text: "localApi.ts:22", href, fileIcon: "typescript" },
     ]);
   });
 

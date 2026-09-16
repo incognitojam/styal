@@ -1056,6 +1056,7 @@ interface MarkdownFileLinkProps {
   workspaceRelativePath: string | null;
   line?: number | undefined;
   label: string;
+  children?: ReactNode;
   copyMarkdown: string;
   theme: "light" | "dark";
   threadRef?: ScopedThreadRef | undefined;
@@ -1439,6 +1440,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
   workspaceRelativePath,
   line,
   label,
+  children,
   copyMarkdown,
   theme,
   threadRef,
@@ -1701,6 +1703,24 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
     canOpenInBrowser,
     canOpenInPanel,
   });
+  const linkClassName = cn(
+    children === undefined
+      ? [CHAT_FILE_TAG_CHIP_CLASS_NAME, MARKDOWN_FILE_LINK_CLASS_NAME]
+      : "chat-markdown-file-reference inline max-w-full cursor-pointer select-text",
+    className,
+  );
+  const chipContent = <FileTagChipContent path={iconPath} label={label} theme={theme} selectable />;
+  const content =
+    children === undefined ? (
+      chipContent
+    ) : (
+      <>
+        <span className="chat-markdown-file-link-label">{children}</span>{" "}
+        <span className={cn(CHAT_FILE_TAG_CHIP_CLASS_NAME, MARKDOWN_FILE_CHIP_CLASS_NAME)}>
+          {chipContent}
+        </span>
+      </>
+    );
 
   return (
     <Tooltip>
@@ -1709,11 +1729,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
           hasPrimaryAction ? (
             <a
               href={href}
-              className={cn(
-                CHAT_FILE_TAG_CHIP_CLASS_NAME,
-                MARKDOWN_FILE_LINK_CLASS_NAME,
-                className,
-              )}
+              className={linkClassName}
               data-markdown-copy={copyMarkdown}
               onClick={(event) => {
                 event.preventDefault();
@@ -1730,24 +1746,19 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
               }}
               onContextMenu={handleContextMenu}
             >
-              <FileTagChipContent path={iconPath} label={label} theme={theme} selectable />
+              {content}
             </a>
           ) : (
             <button
               type="button"
-              aria-label={`File options for ${label}`}
+              aria-label={`File options for ${children === undefined ? label : `${nodeToPlainText(children)} (${label})`}`}
               aria-haspopup="menu"
-              className={cn(
-                CHAT_FILE_TAG_CHIP_CLASS_NAME,
-                MARKDOWN_FILE_LINK_CLASS_NAME,
-                "select-text",
-                className,
-              )}
+              className={cn(linkClassName, "text-left select-text")}
               data-markdown-copy={copyMarkdown}
               onClick={handleContextMenu}
               onContextMenu={handleContextMenu}
             >
-              <FileTagChipContent path={iconPath} label={label} theme={theme} selectable />
+              {content}
             </button>
           )
         }
@@ -1756,8 +1767,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
         side="top"
         className="max-w-[min(40rem,calc(100vw-2rem))] font-mono text-[11px] leading-tight"
       >
-        {/* The full path: the chip already shows the shortened form, and a link
-            to the workspace root collapses to a bare label that repeats it. */}
+        {/* Show the full destination for both compact chips and descriptive links. */}
         <div className="overflow-x-auto whitespace-nowrap [scrollbar-color:color-mix(in_srgb,var(--contrast-border)_78%,transparent)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[color-mix(in_srgb,var(--contrast-border)_78%,transparent)] [&::-webkit-scrollbar-track]:bg-transparent">
           {targetPath}
         </div>
@@ -1778,6 +1788,7 @@ function areMarkdownFileLinkPropsEqual(
     previous.workspaceRelativePath === next.workspaceRelativePath &&
     previous.line === next.line &&
     previous.label === next.label &&
+    previous.children === next.children &&
     previous.copyMarkdown === next.copyMarkdown &&
     previous.theme === next.theme &&
     previous.threadRef === next.threadRef &&
@@ -2100,6 +2111,7 @@ function ChatMarkdown({
       fileLinkMeta: MarkdownFileLinkMeta,
       copyMarkdown: string,
       className?: string,
+      children?: ReactNode,
     ) => {
       const parentSuffix = fileLinkParentSuffixByPath.get(
         fileLinkMeta.filePath.replaceAll("\\", "/"),
@@ -2143,7 +2155,9 @@ function ChatMarkdown({
               : undefined
           }
           className={className}
-        />
+        >
+          {children}
+        </MarkdownFileLink>
       );
     };
 
@@ -2383,10 +2397,25 @@ function ChatMarkdown({
           );
         }
 
+        const linkLabel = nodeToPlainText(children).trim();
+        const labelMeta = resolveMarkdownFileLinkMeta(linkLabel, cwd);
+        const isPathLabel =
+          linkLabel.length === 0 ||
+          linkLabel === fileLinkMeta.basename ||
+          linkLabel ===
+            fileLinkMeta.basename + fileLinkMeta.targetPath.slice(fileLinkMeta.filePath.length) ||
+          labelMeta?.filePath === fileLinkMeta.filePath;
+        const labelStart = node?.children[0]?.position?.start.offset;
+        const labelEnd = node?.children.at(-1)?.position?.end.offset;
+        const copyLabel =
+          labelStart !== undefined && labelEnd !== undefined
+            ? text.slice(labelStart, labelEnd)
+            : linkLabel;
         return fileLinkChip(
           fileLinkMeta,
-          `[${fileLinkMeta.basename}](${normalizedHref})`,
+          `[${copyLabel || fileLinkMeta.basename}](${normalizedHref})`,
           props.className,
+          isPathLabel ? undefined : <MarkdownLinkContext value>{children}</MarkdownLinkContext>,
         );
       },
       code({ node, children, className, ...props }) {
