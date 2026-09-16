@@ -182,7 +182,6 @@ jobs:
     needs: [prepare, build_desktop, build_cli]
     permissions:
       contents: write
-      issues: write
       pull-requests: read
     if: >-
       needs.prepare.outputs.has_changes == 'true' &&
@@ -213,54 +212,6 @@ jobs:
         with:
           name: cli-package
           path: release-assets
-
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: true
-
-      # Extraction reads every commit the fork carries, so without this each run
-      # re-reads all of them. A miss only costs the extraction it skipped.
-      - name: Restore changelog extraction cache
-        uses: actions/cache@v5
-        with:
-          path: ~/.cache/styal-changelog
-          key: changelog-records-${{ github.run_id }}
-          restore-keys: changelog-records-
-
-      - id: fork_features
-        name: Generate fork features and improvements
-        continue-on-error: true
-        env:
-          FORK_SOURCE_REF: ${{ needs.prepare.outputs.ref }}
-          GITHUB_TOKEN: ${{ github.token }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_FORK_CHANGELOG_API_KEY }}
-          PREVIOUS_TAG: ${{ needs.prepare.outputs.previous_tag }}
-          UPSTREAM_REF: ${{ needs.prepare.outputs.upstream_ref }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [[ -z "$OPENAI_API_KEY" ]]; then
-            echo "OPENAI_FORK_CHANGELOG_API_KEY is not configured; keeping commit-based release notes."
-            echo "generated=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          git fetch --no-tags origin "$FORK_SOURCE_REF"
-          node scripts/generate-fork-features-summary.ts \
-            --fork-ref "$FORK_SOURCE_REF" \
-            --upstream-ref "$UPSTREAM_REF" \
-            --previous-release-ref "$PREVIOUS_TAG" \
-            --fork-repository "$GITHUB_REPOSITORY" \
-            --upstream-repository pingdotgg/t3code \
-            --output fork-features.md \
-            --nightly-output nightly-highlights.md \
-            --records-cache "$HOME/.cache/styal-changelog/records.json" \
-            --exclude-mobile-only-nightly
-          echo "generated=true" >> "$GITHUB_OUTPUT"
 
       - name: Generate prerelease notes
         shell: bash
@@ -298,10 +249,6 @@ jobs:
           )
 
           {
-            if [[ -f nightly-highlights.md ]]; then
-              cat nightly-highlights.md
-              printf '\n'
-            fi
             printf "## What's Changed\n\n"
             if (( ${#fork_changes[@]} > 0 )); then
               append_release_changes "$GITHUB_REPOSITORY" "${fork_changes[@]}"
@@ -417,15 +364,6 @@ jobs:
         run: |
           git fetch origin '+refs/heads/nightly:refs/remotes/origin/nightly' || true
           git push --force-with-lease origin HEAD:refs/heads/nightly
-
-      - name: Update rolling fork features issue
-        if: inputs.dry_run != true && steps.fork_features.outputs.generated == 'true'
-        continue-on-error: true
-        env:
-          FORK_FEATURES_ISSUE_NUMBER: "43"
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: gh issue edit "$FORK_FEATURES_ISSUE_NUMBER" --body-file fork-features.md
 
   notify_failure:
     name: Notify Discord of failure

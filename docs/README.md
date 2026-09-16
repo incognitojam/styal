@@ -2,6 +2,7 @@
 
 ## Using T3 Code
 
+- [How styal differs from T3 Code](./user/styal-differences.md)
 - [Install and first run](./user/install.md)
 - [Permission modes](./user/permission-modes.md)
 - [Keyboard shortcuts](./user/keybindings.md)

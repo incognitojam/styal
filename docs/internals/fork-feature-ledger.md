@@ -1,11 +1,10 @@
 # Fork feature ledger
 
 The fork feature ledger at `.github/fork-features.yml` records the behavioral capabilities that the
-fork deliberately maintains beyond upstream. It complements the commit patch stack and the generated
-fork-features issue:
+fork deliberately maintains beyond upstream. It complements the commit patch stack:
 
 - commits preserve how the implementation changed;
-- the generated issue summarizes what users receive;
+- [How styal differs from T3 Code](../user/styal-differences.md) gives users a curated overview;
 - the ledger states what behavior maintainers intend to preserve, where upstream changes can affect
   it, and which tests provide evidence.
 
@@ -40,6 +39,15 @@ Add a ledger entry when a pull request creates a new maintained divergence. Add 
 numbers, invariants, paths, and test evidence to the existing entry when repairing or extending one.
 Keep implementation and upstream paths distinct, entries sorted by ID, and values within structured
 lists sorted.
+
+When a change adds, materially changes, or removes a notable user-facing difference, update
+`docs/user/styal-differences.md` in the same pull request. Use the ledger's invariants and the relevant
+user guides as evidence, group related capabilities, and describe user outcomes rather than every
+fix. Check every highlight against the current upstream implementation, not just the ledger, and
+record the comparison revision in the overview. Name the specific difference when upstream already
+offers the underlying feature, and remove highlights whose described behavior is now shared.
+The overview is maintained through reviewed edits; it is not generated from nightly commits or every
+ledger entry.
 
 Review a capability when an upstream integration changes one of its upstream paths, when its tests
 need conflict resolution, or when the port changes the fork's implementation. Record upstream

@@ -74,6 +74,12 @@ The most common defect in this repo is a change that works on the path you teste
 - **Connection modes.** Local, remote/relay, and tunnel behave differently. Multi-device and multi-environment cases are real.
 - **Docs.** `docs/` splits by audience. Behavior changes that a user would notice belong in `docs/user/` (shipped-product voice, no repo tooling or source paths); architecture and contributor changes in `docs/internals/`; runbooks in `docs/operations/`; new vocabulary in `docs/internals/glossary.md`.
 
+### Maintaining fork differences
+
+- [How styal differs from T3 Code](docs/user/styal-differences.md) is the curated user-facing overview. Update it in the same PR when a notable difference is added, materially changed, or removed. Check the current upstream implementation before claiming a difference, describe refinements precisely, and record the comparison revision. Remove highlights when the described behavior becomes shared.
+- The [fork feature ledger](.github/fork-features.yml) records maintained capabilities, invariants, implementation paths, and test evidence. Update the relevant entry when changing fork behavior; add an entry for a new maintained divergence. Its coverage is incremental, and inclusion is not proof that a feature remains exclusive to styal.
+- Follow the [ledger maintenance guide](docs/internals/fork-feature-ledger.md) for upstream overlap and retirement decisions. Keep the overview concise rather than copying every ledger entry. Nightly changelogs use PR and commit titles; the overview is maintained through reviewed edits.
+
 ## Dev servers
 
 - `vp i` installs. Worktrees get this from the t3.json setup script; if module resolution looks broken, it probably did not run.
