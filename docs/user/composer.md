@@ -4,17 +4,33 @@ Messages can contain up to 120,000 characters. If a draft is longer, T3 Code kee
 composer and shows how many characters need to be removed. Shorten the draft or split it into
 multiple messages, then send again in the same thread.
 
+On mobile, an empty composer shows an interrupt button while the agent is working. Adding text
+or an attachment replaces it with the send button. This applies to both compact and expanded
+composers.
+
 You can attach images up to 10 MB. On servers that support file uploads, you can also
-attach text files, PDFs, ZIP archives, and other files. Each file can be up to the limit advertised
+attach videos, text files, PDFs, ZIP archives, and other files. Each file can be up to the limit advertised
 by the server, capped at 50 MB. Each message can contain up to eight attachments and 50 MB in total. Files
 upload directly to the environment, where your agent can read, copy, or edit them by their file path.
 
 On web and desktop, attachments upload as soon as you add them. The send button becomes available
-after every upload finishes. Failed uploads can be retried or removed. On mobile, the **+** control
-offers Photos, and adds Files when the connected server supports file uploads. You can share a file
-into T3 Code from any app through the system share sheet. Mobile uploads happen when the message
+after every upload finishes. Failed uploads can be retried or removed. On mobile, tap **+** to open
+the photo library from either the compact or expanded composer. When the connected server supports
+file uploads, **+** opens a menu beside the button with **Photo Library** and **Choose Files**.
+Videos use the server's file upload limit. You can also share photos, videos, and files into
+T3 Code from other apps through the system share sheet. Mobile uploads happen when the message
 sends, so queued messages keep their files until they deliver. Select a received file on mobile
 to save it or open it in another app through the system share sheet.
+
+Select a video attachment before or after sending to play it. Web and desktop use the browser's
+built-in controls and stream received videos from the environment. On mobile, videos open in a full-screen player with native playback controls.
+Supported videos show a thumbnail in the conversation and composer.
+On iOS, received videos stream from their environment as they play. Android downloads the video before playback. Supported formats and codecs
+depend on the browser or device; you can save an unsupported video to open it in another app.
+
+On iOS, the system player zooms from the attachment. Swipe down or tap Close to return to the
+conversation or draft. Touch and hold the attachment, then choose **Save or share video** to open
+the system share options. On Android, use **Save or share video** inside the preview.
 
 If you reload before a file finishes uploading, the draft keeps the file's name and shows **Attach
 again** next to it. Attach the file again or remove it, then send. Uploaded draft files are kept

@@ -9,6 +9,7 @@ import { decodeOtlpTraceRecords } from "@t3tools/shared/observability";
 import { normalizePreviewUrl } from "@t3tools/shared/preview";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
+import * as Etag from "effect/unstable/http/Etag";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -79,6 +80,8 @@ const DOWNLOAD_MIME_TYPE_PATTERN = /^[\w!#$&^.+-]+\/[\w!#$&^.+-]+$/;
 const isSafeDownloadMimeType = (mimeType: string): boolean =>
   DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType) &&
   !/(?:^text\/html$|\/xml(?:$|-)|\+xml$)/i.test(mimeType.trim().toLowerCase());
+const isSafeInlineVideoMimeType = (mimeType: string): boolean =>
+  DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType) && mimeType.toLowerCase().startsWith("video/");
 
 /** RFC 6266 disposition with an ASCII fallback name plus a UTF-8 `filename*`. */
 export function downloadContentDisposition(fileName?: string): string {
@@ -108,6 +111,7 @@ export function assetResponseHeaders(
   },
 ): Record<string, string> {
   const lowerPath = filePath.toLowerCase();
+  const inlineVideoMimeType = options?.mimeType?.split(";", 1)[0]?.trim();
   return {
     "Cache-Control": "private, max-age=3600",
     "X-Content-Type-Options": "nosniff",
@@ -120,14 +124,93 @@ export function assetResponseHeaders(
               ? options.mimeType
               : "application/octet-stream",
         }
-      : lowerPath.endsWith(".html") || lowerPath.endsWith(".htm")
-        ? { "Content-Type": "text/html; charset=utf-8" }
-        : {}),
+      : inlineVideoMimeType !== undefined && isSafeInlineVideoMimeType(inlineVideoMimeType)
+        ? { "Content-Type": inlineVideoMimeType }
+        : lowerPath.endsWith(".html") || lowerPath.endsWith(".htm")
+          ? { "Content-Type": "text/html; charset=utf-8" }
+          : {}),
     ...(!options?.download && lowerPath.endsWith(".svg")
       ? { "Content-Security-Policy": SVG_CONTENT_SECURITY_POLICY }
       : {}),
   };
 }
+
+/** A single byte range for native video readers; unsupported range syntax uses the full file. */
+function assetByteRange(header: string, size: bigint) {
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(header.trim());
+  if (!match || (!match[1] && !match[2])) return null;
+  const first = match[1] ? BigInt(match[1]) : null;
+  const last = match[2] ? BigInt(match[2]) : null;
+  if (first !== null && last !== null && last < first) return null;
+  if (size === 0n || (first !== null && first >= size) || (first === null && last === 0n)) {
+    return { _tag: "Unsatisfiable" as const };
+  }
+  const start = first ?? (last! >= size ? 0n : size - last!);
+  const end = first === null || last === null || last >= size ? size - 1n : last;
+  if (
+    !Number.isSafeInteger(Number(start)) ||
+    !Number.isSafeInteger(Number(end)) ||
+    !Number.isSafeInteger(Number(end - start + 1n))
+  ) {
+    return { _tag: "Unsatisfiable" as const };
+  }
+  return {
+    _tag: "Range" as const,
+    offset: start,
+    bytesToRead: end - start + 1n,
+    contentRange: `bytes ${start}-${end}/${size}`,
+  };
+}
+
+export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
+  asset: {
+    readonly path: string;
+    readonly download?: boolean;
+    readonly fileName?: string;
+    readonly mimeType?: string;
+  },
+  rangeHeader?: string,
+  ifRangeHeader?: string,
+  method: "GET" | "HEAD" = "GET",
+) {
+  const headers = assetResponseHeaders(asset.path, asset);
+  if (headers["Content-Type"]?.toLowerCase().startsWith("video/")) {
+    headers["Accept-Ranges"] = "bytes";
+    if (method === "GET" && rangeHeader) {
+      const fs = yield* FileSystem.FileSystem;
+      const info = yield* fs.stat(asset.path);
+      if (ifRangeHeader !== undefined) {
+        // NodeHttpPlatform uses this strong generator for its file response validators.
+        const etag = yield* Etag.Generator.pipe(
+          Effect.flatMap((generator) => generator.fromFileInfo(info)),
+          Effect.provide(Etag.layer),
+        );
+        const matchesValidator =
+          (etag._tag === "Strong" && ifRangeHeader === Etag.toString(etag)) ||
+          (info.mtime._tag === "Some" && ifRangeHeader === info.mtime.value.toUTCString());
+        if (!matchesValidator) {
+          return yield* HttpServerResponse.file(asset.path, { status: 200, headers });
+        }
+      }
+      const range = assetByteRange(rangeHeader, info.size);
+      if (range?._tag === "Unsatisfiable") {
+        return HttpServerResponse.empty({
+          status: 416,
+          headers: { ...headers, "Content-Range": `bytes */${info.size}` },
+        });
+      }
+      if (range?._tag === "Range") {
+        return yield* HttpServerResponse.file(asset.path, {
+          status: 206,
+          offset: range.offset,
+          bytesToRead: range.bytesToRead,
+          headers: { ...headers, "Content-Range": range.contentRange },
+        });
+      }
+    }
+  }
+  return yield* HttpServerResponse.file(asset.path, { status: 200, headers });
+});
 
 export const httpCompressionLayer = HttpRouter.middleware(HttpMiddleware.compression(), {
   global: true,
@@ -397,19 +480,12 @@ export const assetRouteLayer = Layer.unwrap(
             },
           });
         }
-        return yield* HttpServerResponse.file(asset.path, {
-          status: 200,
-          headers: assetResponseHeaders(
-            asset.path,
-            asset.download
-              ? {
-                  download: true,
-                  ...(asset.fileName !== undefined ? { fileName: asset.fileName } : {}),
-                  ...(asset.mimeType !== undefined ? { mimeType: asset.mimeType } : {}),
-                }
-              : undefined,
-          ),
-        }).pipe(
+        return yield* assetFileResponse(
+          asset,
+          request.method === "GET" ? request.headers.range : undefined,
+          request.headers["if-range"],
+          request.method === "HEAD" ? "HEAD" : "GET",
+        ).pipe(
           Effect.orElseSucceed(() =>
             HttpServerResponse.text("Internal Server Error", { status: 500 }),
           ),

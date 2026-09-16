@@ -38,4 +38,6 @@ Mobile copies picked or shared files into its owned Documents attachment directo
 shares, and queued messages retain those copies until ownership transfers or the content is removed.
 Uploads happen during send; retries verify saved upload references and can upload the owned local
 copy again if the server upload expired. Cleanup waits for successful hydration and durable writes
-of every owner; a read or decode failure must never be treated as an empty owner set.
+of every owner; a read or decode failure must never be treated as an empty owner set. Active video
+previews, thumbnail extraction, and share copies retain a temporary file reference until they finish,
+even when the originating attachment has been sent or removed.

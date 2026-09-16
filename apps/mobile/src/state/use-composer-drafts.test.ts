@@ -115,6 +115,7 @@ import {
   mergeComposerDraftContentState,
   releaseUnusedComposerAttachmentFiles,
   removeComposerDraftsForEnvironment,
+  retainComposerAttachmentFileForPreview,
   restoreComposerDraftSnapshotState,
   setComposerDraftText,
   undoComposerDraftMerge,
@@ -231,40 +232,49 @@ describe("mobile composer drafts", () => {
     });
   });
 
-  it("caps appended attachments at the send limit against the live draft", () => {
+  it("releases videos rejected by the live draft limit and keeps accepted files", async () => {
+    const outboxLoad = vi.spyOn(threadOutboxManager, "load").mockResolvedValue(true);
+    onTestFinished(() => outboxLoad.mockRestore());
+    const cleanup = Promise.withResolvers<void>();
+    composerAttachmentCleanupMocks.remove.mockImplementationOnce(async () => {
+      cleanup.resolve();
+    });
     const makeAttachment = (id: string) => ({
       id,
       type: "file" as const,
-      name: `${id}.pdf`,
-      mimeType: "application/pdf",
+      name: `${id}.mov`,
+      mimeType: "video/quicktime",
       sizeBytes: 42,
-      fileUri: `file:///documents/t3-composer-attachments/${id}.pdf`,
+      fileUri: `file:///documents/t3-composer-attachments/${id}.mov`,
     });
+    const draftKey = "new-task:environment-1:project-cap";
     const existing = Array.from({ length: 7 }, (_, index) => makeAttachment(`held-${index}`));
     appAtomRegistry.set(composerDraftsAtom, {
-      "environment-1:thread-cap": { text: "send this", attachments: existing },
+      [draftKey]: { text: "send this", attachments: existing },
     });
 
-    const rejected = appendComposerDraftAttachments("environment-1:thread-cap", [
+    const rejected = appendComposerDraftAttachments(draftKey, [
       makeAttachment("incoming-1"),
       makeAttachment("incoming-2"),
     ]);
 
     expect(rejected).toBe(1);
-    const draft = appAtomRegistry.get(composerDraftsAtom)["environment-1:thread-cap"];
+    const draft = appAtomRegistry.get(composerDraftsAtom)[draftKey];
     expect(draft?.attachments).toHaveLength(8);
     expect(draft?.attachments.at(-1)?.id).toBe("incoming-1");
+    await cleanup.promise;
+    expect(composerAttachmentCleanupMocks.remove).toHaveBeenCalledExactlyOnceWith(
+      makeAttachment("incoming-2").fileUri,
+    );
 
     // Restore paths bypass the cap so a failed send never drops its files.
     const overflowRejected = appendComposerDraftAttachments(
-      "environment-1:thread-cap",
+      draftKey,
       [makeAttachment("restored-1")],
       { allowOverflow: true },
     );
     expect(overflowRejected).toBe(0);
-    expect(
-      appAtomRegistry.get(composerDraftsAtom)["environment-1:thread-cap"]?.attachments,
-    ).toHaveLength(9);
+    expect(appAtomRegistry.get(composerDraftsAtom)[draftKey]?.attachments).toHaveLength(9);
   });
 
   it("keeps shared attachment files until every draft releases them", async () => {
@@ -318,6 +328,82 @@ describe("mobile composer drafts", () => {
 
     expect(composerAttachmentCleanupMocks.remove).not.toHaveBeenCalled();
     expect(composerAttachmentCleanupMocks.releaseUploads).not.toHaveBeenCalled();
+  });
+
+  it("keeps a removed file until both playback and a share copy finish", async () => {
+    const outboxLoad = vi.spyOn(threadOutboxManager, "load").mockResolvedValue(true);
+    onTestFinished(() => outboxLoad.mockRestore());
+    const fileName = "33333333-3333-4333-8333-333333333333-recording.mp4";
+    const file = {
+      id: "file-preview",
+      type: "file" as const,
+      name: "recording.mp4",
+      mimeType: "video/mp4",
+      sizeBytes: 42,
+      fileUri: `file:///private/var/mobile/Containers/Data/Application/11111111-1111-4111-8111-111111111111/Documents/t3-composer-attachments/${fileName}`,
+    };
+    const currentFile = {
+      ...file,
+      fileUri: `file:///var/mobile/Containers/Data/Application/22222222-2222-4222-8222-222222222222/Documents/t3-composer-attachments/${fileName}`,
+    };
+    const releasePlayback = retainComposerAttachmentFileForPreview(file);
+    const releaseShareCopy = retainComposerAttachmentFileForPreview(currentFile);
+    onTestFinished(releasePlayback);
+    onTestFinished(releaseShareCopy);
+
+    await releaseUnusedComposerAttachmentFiles([currentFile]);
+    expect(composerAttachmentCleanupMocks.remove).not.toHaveBeenCalled();
+
+    releasePlayback();
+    releasePlayback();
+    await releaseUnusedComposerAttachmentFiles([file]);
+    expect(composerAttachmentCleanupMocks.remove).not.toHaveBeenCalled();
+
+    const deleted = Promise.withResolvers<void>();
+    composerAttachmentCleanupMocks.remove.mockImplementationOnce(async () => {
+      deleted.resolve();
+      return undefined;
+    });
+    releaseShareCopy();
+    await deleted.promise;
+
+    expect(composerAttachmentCleanupMocks.remove.mock.calls).toEqual([[currentFile.fileUri]]);
+  });
+
+  it("preserves a preview opened while cleanup is checking the incoming inbox", async () => {
+    const outboxLoad = vi.spyOn(threadOutboxManager, "load").mockResolvedValue(true);
+    onTestFinished(() => outboxLoad.mockRestore());
+    const file = {
+      id: "file-opening-preview",
+      type: "file" as const,
+      name: "recording.mp4",
+      mimeType: "video/mp4",
+      sizeBytes: 42,
+      fileUri: "file:///documents/t3-composer-attachments/recording.mp4",
+    };
+    const ownershipReadStarted = Promise.withResolvers<void>();
+    const ownershipRead = Promise.withResolvers<[]>();
+    incomingShareStorageMocks.load.mockImplementationOnce(() => {
+      ownershipReadStarted.resolve();
+      return ownershipRead.promise;
+    });
+
+    const cleanup = releaseUnusedComposerAttachmentFiles([file]);
+    await ownershipReadStarted.promise;
+    const release = retainComposerAttachmentFileForPreview(file);
+    onTestFinished(release);
+    ownershipRead.resolve([]);
+    await cleanup;
+    expect(composerAttachmentCleanupMocks.remove).not.toHaveBeenCalled();
+
+    const deleted = Promise.withResolvers<void>();
+    composerAttachmentCleanupMocks.remove.mockImplementationOnce(async () => {
+      deleted.resolve();
+      return undefined;
+    });
+    release();
+    await deleted.promise;
+    expect(composerAttachmentCleanupMocks.remove.mock.calls).toEqual([[file.fileUri]]);
   });
 
   it("removes an unreferenced local file and its pending upload", async () => {

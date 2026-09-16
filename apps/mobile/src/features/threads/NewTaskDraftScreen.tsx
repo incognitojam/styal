@@ -1,3 +1,4 @@
+import { ComposerAttachmentButton } from "../../components/ComposerAttachmentButton";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import {
   StackActions,
@@ -31,6 +32,7 @@ import {
 } from "../../components/ComposerToolbar";
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { ComposerAttachmentStrip } from "../../components/ComposerAttachmentStrip";
+import { VideoPreviewModal, type VideoPreviewSource } from "../../components/VideoPreviewModal";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
@@ -46,7 +48,8 @@ import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
 import {
   convertPastedImagesToAttachments,
   pickComposerFiles,
-  pickComposerImages,
+  pickComposerMedia,
+  type DraftComposerFileAttachment,
 } from "../../lib/composerImages";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import {
@@ -151,6 +154,23 @@ export function NewTaskDraftScreen(props: {
   const promptInputRef = useRef<ComposerEditorHandle>(null);
   const loadedBranchesProjectKeyRef = useRef<string | null>(null);
   const [isComposerFocused, setIsComposerFocused] = useState(false);
+  const [previewVideo, setPreviewVideo] = useState<VideoPreviewSource | null>(null);
+  const wasFocusedBeforeVideoRef = useRef(false);
+  const openVideoPreview = useCallback(
+    (attachment: DraftComposerFileAttachment, sourceIdentifier: string) => {
+      wasFocusedBeforeVideoRef.current = isComposerFocused;
+      setPreviewVideo((current) => current ?? { type: "local", attachment, sourceIdentifier });
+    },
+    [isComposerFocused],
+  );
+  const closeVideoPreview = useCallback(() => {
+    setPreviewVideo(null);
+    if (wasFocusedBeforeVideoRef.current) {
+      setTimeout(() => {
+        if (navigation.isFocused()) promptInputRef.current?.focus();
+      }, 100);
+    }
+  }, [navigation]);
   const settingsSheetPresentation = useThreadSettingsSheetPresentation({
     editorRef: promptInputRef,
     isEditorFocused: isComposerFocused,
@@ -692,12 +712,20 @@ export function NewTaskDraftScreen(props: {
   });
   const showBranchLoading = flow.branchesLoading && flow.availableBranches.length === 0;
 
-  async function handlePickImages(): Promise<void> {
+  async function handlePickMedia(): Promise<void> {
     if (isComposerInteractionLocked) {
       return;
     }
-    const result = await pickComposerImages({ existingCount: flow.attachments.length });
-    const rejectedCount = result.images.length > 0 ? flow.appendAttachments(result.images) : 0;
+    const capabilities = selectedEnvironmentServerConfig?.environment.capabilities;
+    const result = await pickComposerMedia({
+      existingCount: flow.attachments.length,
+      maxVideoBytes:
+        capabilities?.attachmentUploads === true
+          ? capabilities.fileAttachments?.maxUploadBytes
+          : undefined,
+    });
+    const rejectedCount =
+      result.attachments.length > 0 ? flow.appendAttachments(result.attachments) : 0;
     const problems = [
       ...(result.error ? [result.error] : []),
       ...(rejectedCount > 0
@@ -705,7 +733,7 @@ export function NewTaskDraftScreen(props: {
         : []),
     ];
     if (problems.length > 0) {
-      Alert.alert("Could not attach photo", problems.join("\n\n"));
+      Alert.alert("Could not attach photo or video", problems.join("\n\n"));
     }
   }
 
@@ -1115,6 +1143,7 @@ export function NewTaskDraftScreen(props: {
               imageBorderRadius={16}
               imageSize={72}
               onRemove={isComposerInteractionLocked ? () => undefined : flow.removeAttachment}
+              onPressVideo={isComposerInteractionLocked ? undefined : openVideoPreview}
             />
           </View>
         ) : null}
@@ -1123,22 +1152,13 @@ export function NewTaskDraftScreen(props: {
 
         <ComposerToolbarRow paddingBottom={0} paddingHorizontal={0} paddingTop={4}>
           <ComposerToolbarScroller contentPaddingRight={8} fadeSurface="sheet">
-            <ComposerToolbarButton
-              accessibilityLabel="Add attachment"
+            <ComposerAttachmentButton
               disabled={isComposerInteractionLocked}
-              icon="plus"
-              onPress={() => {
-                if (selectedEnvironmentServerConfig?.environment.capabilities.fileAttachments) {
-                  Alert.alert("Add attachment", undefined, [
-                    { text: "Photos", onPress: () => void handlePickImages() },
-                    { text: "Files", onPress: () => void handlePickFiles() },
-                    { text: "Cancel", style: "cancel" },
-                  ]);
-                  return;
-                }
-                void handlePickImages();
-              }}
-              showChevron={false}
+              supportsFiles={Boolean(
+                selectedEnvironmentServerConfig?.environment.capabilities.fileAttachments,
+              )}
+              onPickMedia={handlePickMedia}
+              onPickFiles={handlePickFiles}
             />
             <ComposerInlineControl
               accessibilityLabel="Model and reasoning settings"
@@ -1182,6 +1202,7 @@ export function NewTaskDraftScreen(props: {
           />
         </ComposerToolbarRow>
       </ComposerSurface>
+      <VideoPreviewModal source={previewVideo} onRequestClose={closeVideoPreview} />
     </View>
   );
 

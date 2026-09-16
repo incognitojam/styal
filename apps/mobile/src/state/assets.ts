@@ -2,9 +2,11 @@ import { useAtomValue } from "@effect/atom-react";
 import { createAssetEnvironmentAtoms, resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { useEffect, useState } from "react";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 import { usePreparedConnection } from "./session";
+import { useAtomQueryRunner } from "./use-atom-query-runner";
 
 export const assetEnvironment = createAssetEnvironmentAtoms(connectionAtomRuntime);
 
@@ -43,4 +45,47 @@ export function useAssetUrl(
 ): string | null {
   const state = useAssetUrlState(environmentId, resource);
   return state._tag === "Success" ? state.url : null;
+}
+
+/** A newly opened player waits for a fresh capability instead of pinning a stale cached URL. */
+export function useFreshAttachmentUrlState(
+  environmentId: EnvironmentId | null,
+  resource: Extract<AssetResource, { readonly _tag: "attachment" }> | null,
+): AssetUrlState {
+  const preparedConnection = usePreparedConnection(environmentId);
+  const httpBaseUrl =
+    preparedConnection._tag === "Some" ? preparedConnection.value.httpBaseUrl : null;
+  const createUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
+    refresh: true,
+    reportFailure: false,
+  });
+  const [state, setState] = useState<AssetUrlState>({ _tag: "Loading" });
+  const attachmentId = resource?.attachmentId;
+  const fileName = resource?.fileName;
+  const mimeType = resource?.mimeType;
+  useEffect(() => {
+    let canceled = false;
+    setState({ _tag: "Loading" });
+    if (environmentId === null || httpBaseUrl === null || attachmentId === undefined) return;
+    void createUrl({
+      environmentId,
+      input: {
+        resource: {
+          _tag: "attachment",
+          attachmentId,
+          ...(fileName !== undefined ? { fileName } : {}),
+          ...(mimeType !== undefined ? { mimeType } : {}),
+        },
+      },
+    }).then((result) => {
+      if (canceled) return;
+      const url =
+        result._tag === "Success" ? resolveAssetUrl(httpBaseUrl, result.value.relativeUrl) : null;
+      setState(url === null ? { _tag: "Failure" } : { _tag: "Success", url });
+    });
+    return () => {
+      canceled = true;
+    };
+  }, [environmentId, httpBaseUrl, attachmentId, fileName, mimeType, createUrl]);
+  return state;
 }
