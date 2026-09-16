@@ -20,8 +20,9 @@ You can add more computers before continuing:
   paste the pairing link. You can also run `npx @styal/cli serve --host <address>` and
   use `npx @styal/cli pair` when the server is already reachable on your network.
 
-Saved computers and computers discovered through styal Link are selected by
-default. Uncheck any you do not want to set up; this does not disconnect them.
+Select the saved or linked computers you want to set up. Signing in to styal Link
+shows your computers without adding connections; selecting a new computer connects it.
+Unchecking a computer removes it from setup without disconnecting it.
 Continue when your selected computers are connected. Setup checks
 agents across the selected computers, then offers project import grouped by computer.
 

@@ -71,7 +71,6 @@ export function CloudEnvironmentConnectRows({
   readonly empty?: ReactNode;
   readonly onDiscoveryReady?: () => void;
   readonly selection?: {
-    readonly autoSelectedComputers?: Set<EnvironmentId>;
     readonly selectedIds: ReadonlySet<EnvironmentId>;
     readonly onChange: (environmentId: EnvironmentId, selected: boolean) => void;
   };
@@ -163,25 +162,6 @@ export function CloudEnvironmentConnectRows({
       environment.environmentId !== primaryEnvironmentId &&
       (showSavedEnvironments || !savedById.has(environment.environmentId)),
   );
-  const selectNewComputers = useEffectEvent(() => {
-    const seen = selection?.autoSelectedComputers;
-    if (!selection || !seen) return;
-    for (const { environment } of visibleEnvironments) {
-      const id = environment.environmentId;
-      if (seen.has(id)) continue;
-      seen.add(id);
-      selection.onChange(id, true);
-      if (!savedById.has(id)) {
-        void connectEnvironment(environment).then((connected) => {
-          if (!connected) selection.onChange(id, false);
-        });
-      }
-    }
-  });
-  useEffect(() => {
-    selectNewComputers();
-  }, [environmentsState.environments]);
-
   // Discovery clears its list on refresh, so poll only until a machine appears.
   const shouldRefreshWhileEmpty =
     refreshWhileEmpty && visibleEnvironments.length === 0 && !environmentsState.offline;
