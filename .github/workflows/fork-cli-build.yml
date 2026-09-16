@@ -103,4 +103,4 @@ jobs:
       - name: Publish verified archive
         env:
           DIST_TAG: ${{ inputs.dist_tag }}
-        run: npm publish cli-release/*.tgz --access public --tag "$DIST_TAG" --provenance
+        run: npm publish ./cli-release/*.tgz --access public --tag "$DIST_TAG" --provenance
