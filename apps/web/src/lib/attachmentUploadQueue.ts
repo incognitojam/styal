@@ -1,3 +1,4 @@
+import { usePromptStashStore } from "../promptStashStore";
 import {
   PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES,
   type ChatAttachment,
@@ -133,6 +134,17 @@ function stampDraftFileUpload(job: UploadJob, attachmentId: string): void {
 }
 
 function deletePendingUpload(environmentId: EnvironmentId, attachmentId: string): void {
+  // A failed durable restore can leave both the draft and stash owning this upload.
+  if (
+    usePromptStashStore
+      .getState()
+      .entries.some((entry) =>
+        entry.files?.some(
+          (file) => file.environmentId === environmentId && file.attachmentId === attachmentId,
+        ),
+      )
+  )
+    return;
   deletePendingAttachmentUpload({
     registry: appAtomRegistry,
     remove: attachmentEnvironment.remove,
@@ -510,6 +522,25 @@ export function releasePersistedAttachmentUpload(input: {
     releaseAttachmentUpload(input.id);
   }
   deletePendingUpload(input.environmentId, input.attachmentId);
+}
+
+/** Releases a stash copy only when no composer still owns the same upload. */
+export function releaseStashedAttachmentUpload(input: {
+  readonly id: string;
+  readonly environmentId: EnvironmentId;
+  readonly attachmentId: string;
+}): void {
+  if (
+    Object.values(useComposerDraftStore.getState().draftsByThreadKey).some((draft) =>
+      draft.files.some(
+        (file) =>
+          file.uploadEnvironmentId === input.environmentId &&
+          file.uploadedAttachmentId === input.attachmentId,
+      ),
+    )
+  )
+    return;
+  releasePersistedAttachmentUpload(input);
 }
 
 export function retryAttachmentUpload(input: {

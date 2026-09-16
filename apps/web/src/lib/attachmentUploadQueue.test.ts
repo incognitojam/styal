@@ -1,3 +1,4 @@
+import { usePromptStashStore } from "../promptStashStore";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -50,6 +51,7 @@ import {
   releaseDraftAttachment,
   releaseDraftAttachments,
   releasePersistedAttachmentUpload,
+  releaseStashedAttachmentUpload,
   retryAttachmentUpload,
   startAttachmentUpload,
   useAttachmentUploadStore,
@@ -142,7 +144,65 @@ function makeFile(id: string): ComposerFileAttachment {
 }
 
 describe("attachmentUploadQueue", () => {
+  it("keeps a retained stash upload when its restored draft is removed", () => {
+    const file = {
+      ...makeFile("retained"),
+      uploadedAttachmentId: "pending-retained",
+      uploadEnvironmentId: firstEnvironment,
+    };
+    usePromptStashStore.setState({
+      entries: [
+        {
+          id: "stash",
+          prompt: "Review",
+          createdAt: "2026-09-01T00:00:00Z",
+          attachments: [],
+          droppedImageNames: [],
+          files: [
+            {
+              id: file.id,
+              name: file.name,
+              mimeType: file.mimeType,
+              sizeBytes: file.sizeBytes,
+              attachmentId: file.uploadedAttachmentId,
+              environmentId: firstEnvironment,
+            },
+          ],
+        },
+      ],
+    });
+    releaseDraftAttachment(file);
+    expect(mocks.runAtomCommand).not.toHaveBeenCalled();
+    usePromptStashStore.setState({ entries: [] });
+    releaseStashedAttachmentUpload({
+      id: file.id,
+      environmentId: firstEnvironment,
+      attachmentId: file.uploadedAttachmentId,
+    });
+    expect(mocks.runAtomCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a restored draft upload when its retained stash is removed", () => {
+    const file = {
+      ...makeFile("restored"),
+      uploadedAttachmentId: "pending-restored",
+      uploadEnvironmentId: firstEnvironment,
+    };
+    const threadRef = scopeThreadRef(firstEnvironment, ThreadId.make("retained-stash-thread"));
+    useComposerDraftStore.getState().addFiles(threadRef, [file]);
+    releaseStashedAttachmentUpload({
+      id: file.id,
+      environmentId: firstEnvironment,
+      attachmentId: file.uploadedAttachmentId,
+    });
+    expect(mocks.runAtomCommand).not.toHaveBeenCalled();
+    useComposerDraftStore.getState().removeFile(threadRef, file.id);
+    releaseDraftAttachment(file);
+    expect(mocks.runAtomCommand).toHaveBeenCalledTimes(1);
+  });
+
   beforeEach(() => {
+    usePromptStashStore.setState({ entries: [] });
     TestXmlHttpRequest.requests = [];
     mocks.createAssetUrl.mockReset();
     mocks.createAssetUrl.mockImplementation((target: unknown) => target);

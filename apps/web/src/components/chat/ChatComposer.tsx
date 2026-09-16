@@ -96,9 +96,10 @@ import {
 } from "./composerAttachmentFiles";
 import {
   readAttachmentUpload,
+  forgetCompletedAttachmentUpload,
   releaseAttachmentUpload,
   releaseDraftAttachment,
-  releasePersistedAttachmentUpload,
+  releaseStashedAttachmentUpload,
   retryAttachmentUpload,
   startAttachmentUpload,
   useAttachmentUploadStore,
@@ -918,7 +919,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         continue;
       }
       const upload = uploadsByImageId[file.id];
-      if (upload?.status === "ready" && upload.environmentId === environmentId) {
+      if (
+        upload?.status === "ready" &&
+        upload.environmentId === environmentId &&
+        !composerFileNeedsReattach(file)
+      ) {
         setComposerDraftFileUpload(
           composerDraftTarget,
           file.id,
@@ -2357,6 +2362,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           .filter((_, index) => verifications[index]?.status === "missing")
           .map((file) => file.attachmentId),
       );
+      for (const file of filesToVerify) {
+        if (expiredAttachmentIds.has(file.attachmentId)) forgetCompletedAttachmentUpload(file.id);
+      }
 
       // A thread switch during the verify await would mix the new thread's
       // prompt with this invocation's captured target. Nothing was taken yet,
@@ -2591,7 +2599,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (restoredDraft?.nonPersistedImageIds.length === 0 && persistComposerDraftsNow()) {
         const { durable } = takeStashEntry(entry.id);
         if (durable) {
-          for (const upload of uploadsToRelease) releasePersistedAttachmentUpload(upload);
+          for (const upload of uploadsToRelease) releaseStashedAttachmentUpload(upload);
         }
       } else {
         toastManager.add({
@@ -2669,7 +2677,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       const { entry: removed, durable } = takeStashEntry(entry.id);
       if (durable && removed) {
         for (const file of removed.files ?? []) {
-          releasePersistedAttachmentUpload({
+          releaseStashedAttachmentUpload({
             id: file.id,
             environmentId: file.environmentId,
             attachmentId: file.attachmentId,
@@ -2795,7 +2803,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
       if (evicted) {
         for (const file of evicted.files ?? []) {
-          releasePersistedAttachmentUpload({
+          releaseStashedAttachmentUpload({
             id: file.id,
             environmentId: file.environmentId,
             attachmentId: file.attachmentId,
