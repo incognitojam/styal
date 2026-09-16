@@ -14,6 +14,7 @@ import * as Cause from "effect/Cause";
 import * as Data from "effect/Data";
 import { AsyncResult } from "effect/unstable/reactivity";
 
+import { resolveBrowserDefaults, browserDefaultOpenViewport } from "./browserDefaults";
 import { resolveAssetUrl } from "~/assets/assetUrls";
 import {
   applyPreviewServerSnapshot,
@@ -31,6 +32,14 @@ export class BrowserPreviewUnavailableError extends Data.TaggedError(
   readonly message: string;
 }> {}
 
+export class BrowserSettingsReadError extends Data.TaggedError("BrowserSettingsReadError")<{
+  readonly cause: unknown;
+}> {
+  override get message(): string {
+    return "Saved browser settings could not be loaded.";
+  }
+}
+
 export type OpenPreviewMutation<E = unknown> = (input: {
   readonly environmentId: EnvironmentId;
   readonly input: PreviewOpenInput;
@@ -40,10 +49,19 @@ export async function openUrlInPreview<E>(input: {
   readonly threadRef: ScopedThreadRef;
   readonly url: string;
   readonly openPreview: OpenPreviewMutation<E>;
-}): Promise<AtomCommandResult<void, E>> {
+}): Promise<AtomCommandResult<void, E | BrowserSettingsReadError>> {
+  const defaults = await resolveBrowserDefaults().catch(
+    (cause: unknown) => new BrowserSettingsReadError({ cause }),
+  );
+  if (defaults instanceof BrowserSettingsReadError)
+    return AsyncResult.failure(Cause.fail(defaults));
   const result = await input.openPreview({
     environmentId: input.threadRef.environmentId,
-    input: { threadId: input.threadRef.threadId, url: input.url },
+    input: {
+      threadId: input.threadRef.threadId,
+      url: input.url,
+      viewport: browserDefaultOpenViewport(defaults),
+    },
   });
   return mapAtomCommandResult(result, (snapshot) => {
     applyPreviewServerSnapshot(input.threadRef, snapshot);
@@ -61,7 +79,12 @@ export async function openFileInPreview<AssetError, PreviewError>(input: {
     readonly input: { readonly resource: AssetResource };
   }) => Promise<AtomCommandResult<AssetCreateUrlResult, AssetError>>;
   readonly openPreview: OpenPreviewMutation<PreviewError>;
-}): Promise<AtomCommandResult<void, AssetError | PreviewError | BrowserPreviewUnavailableError>> {
+}): Promise<
+  AtomCommandResult<
+    void,
+    AssetError | PreviewError | BrowserPreviewUnavailableError | BrowserSettingsReadError
+  >
+> {
   if (!isPreviewSupportedInRuntime()) {
     return AsyncResult.failure(
       Cause.fail(

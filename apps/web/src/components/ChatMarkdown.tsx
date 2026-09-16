@@ -172,6 +172,7 @@ import {
   openFileInPreview,
   openUrlInPreview,
   BrowserPreviewUnavailableError,
+  BrowserSettingsReadError,
 } from "../browser/openFileInPreview";
 import { createStableMarkdownComponents } from "./chatMarkdownRenderers";
 
@@ -1975,6 +1976,18 @@ function ChatMarkdown({
       }
       return openUrlInPreview({ threadRef, url, openPreview }).then((result) => {
         if (result._tag === "Success") recordVisitForThread(threadRef, url);
+        else if (!isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          if (error instanceof BrowserSettingsReadError) {
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: "Unable to open link in browser",
+                description: error.message,
+              }),
+            );
+          }
+        }
         return result;
       });
     },
@@ -1987,6 +2000,7 @@ function ChatMarkdown({
       const result = await openExternalLinkInPreview(url);
       if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
       reportMarkdownActionFailure({ operation: "open-link-in-preview", target: url }, result.cause);
+      if (squashAtomCommandFailure(result) instanceof BrowserSettingsReadError) return;
       try {
         await readLocalApi()?.shell.openExternal(url);
       } catch (cause) {

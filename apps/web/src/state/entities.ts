@@ -219,6 +219,10 @@ export function useThreadSession(ref: ScopedThreadRef | null): OrchestrationSess
   );
 }
 
+export function readProjects() {
+  return appAtomRegistry.get(environmentProjects.projectsAtom);
+}
+
 export function readProject(ref: ScopedProjectRef): EnvironmentProject | null {
   return appAtomRegistry.get(environmentProjects.projectAtom(ref));
 }

@@ -8,6 +8,10 @@ import type {
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 
 import { browserDefaultOpenViewport, resolveBrowserDefaults } from "~/browser/browserDefaults";
+import * as Cause from "effect/Cause";
+import { AsyncResult } from "effect/unstable/reactivity";
+import { BrowserSettingsReadError } from "~/browser/openFileInPreview";
+
 import { applyPreviewServerSnapshot, rememberPreviewUrl } from "~/previewStateStore";
 
 interface OpenPreviewSessionInput<E> {
@@ -23,13 +27,18 @@ interface OpenPreviewSessionInput<E> {
 
 export async function openPreviewSession<E>(
   input: OpenPreviewSessionInput<E>,
-): Promise<AtomCommandResult<PreviewSessionSnapshot, E>> {
+): Promise<AtomCommandResult<PreviewSessionSnapshot, E | BrowserSettingsReadError>> {
+  const defaults = await resolveBrowserDefaults().catch(
+    (cause: unknown) => new BrowserSettingsReadError({ cause }),
+  );
+  if (defaults instanceof BrowserSettingsReadError)
+    return AsyncResult.failure(Cause.fail(defaults));
   const result = await input.openPreview({
     environmentId: input.threadRef.environmentId,
     input: {
       threadId: input.threadRef.threadId,
       ...(input.url === undefined ? {} : { url: input.url }),
-      viewport: input.viewport ?? browserDefaultOpenViewport(await resolveBrowserDefaults()),
+      viewport: input.viewport ?? browserDefaultOpenViewport(defaults),
     },
   });
   if (result._tag === "Failure") {

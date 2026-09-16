@@ -17,6 +17,7 @@ features:
       - apps/server/src/ws.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/ThreadTerminalDrawer.tsx
+      - apps/web/src/components/onboarding/WelcomeWizard.tsx
       - apps/web/src/hooks/useTerminalCloseConfirmation.ts
       - apps/web/src/lib/terminalCloseConfirm.ts
       - packages/client-runtime/src/state/terminal.ts
@@ -415,6 +416,7 @@ features:
       - apps/mobile/src/lib/threadActivity.ts
       - apps/server/src/mcp/McpHttpServer.ts
       - apps/server/src/mcp/McpProviderSession.ts
+      - apps/server/src/project/AgentSessionImporter.ts
       - apps/server/src/provider/CodexDeveloperInstructions.ts
       - apps/server/src/provider/Layers/ClaudeAdapter.ts
       - apps/server/src/provider/Layers/CodexAdapter.ts

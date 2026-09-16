@@ -301,6 +301,19 @@ export function resolvePackageManagedProviderMaintenance(
         makeNpmGlobalProviderMaintenanceCapabilities(definition)
       );
     }
+    // Onboarding can install standalone Codex before this fork carries its
+    // native updater. Never replace that installation with an npm install.
+    if (
+      definition.provider === "codex" &&
+      commandPaths.some((commandPath) =>
+        normalizeCommandPath(commandPath).includes("/packages/standalone/"),
+      )
+    ) {
+      return makeManualOnlyProviderMaintenanceCapabilities({
+        provider: definition.provider,
+        packageName: definition.npmPackageName,
+      });
+    }
     if (commandPaths.some(isVitePlusGlobalCommandPath)) {
       return makeVitePlusGlobalProviderMaintenanceCapabilities(definition);
     }

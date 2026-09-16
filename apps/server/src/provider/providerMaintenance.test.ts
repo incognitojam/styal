@@ -19,6 +19,7 @@ import {
   ProviderVersionCache,
   resolveLatestProviderVersion,
   resolveProviderMaintenanceCapabilitiesEffect,
+  resolvePackageManagedProviderMaintenance,
 } from "./providerMaintenance.ts";
 
 const driver = (value: string) => ProviderDriverKind.make(value);
@@ -597,4 +598,24 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
       update: null,
     });
   });
+});
+
+// The Windows installer exposes a junction; ownership is identified by realpath.
+it.each([
+  ["/opt/tools/codex", "/home/developer/.codex/packages/standalone/current/bin/codex"],
+  [
+    "C:\\Users\\Developer\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe",
+    "C:\\Users\\Developer\\.codex\\packages\\standalone\\current\\bin\\codex.exe",
+  ],
+])("does not offer npm updates for standalone Codex at %s", (visiblePath, realPath) => {
+  const capabilities = resolvePackageManagedProviderMaintenance(
+    {
+      provider: driver("codex"),
+      npmPackageName: "@openai/codex",
+      homebrewFormula: "codex",
+      nativeUpdate: null,
+    },
+    { binaryPath: "codex", resolvedCommandPath: visiblePath, realCommandPath: realPath },
+  );
+  expect(capabilities.update).toBeNull();
 });

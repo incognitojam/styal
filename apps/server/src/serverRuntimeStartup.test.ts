@@ -92,6 +92,8 @@ it.effect("launchStartupHeartbeat does not block the caller while counts are loa
           getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
           getProjectShellById: () => Effect.succeed(Option.none()),
           getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.none()),
+
+          getImportedAgentSessionSources: () => Effect.succeed([]),
           getThreadCheckpointContext: () => Effect.succeed(Option.none()),
           getFullThreadDiffContext: () => Effect.succeed(Option.none()),
           getThreadShellById: () => Effect.succeed(Option.none()),
@@ -156,6 +158,7 @@ it.effect("resolveAutoBootstrapWelcomeTargets returns existing project and threa
           ),
         getProjectShellById: () => Effect.die("unused"),
         getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.some(bootstrapThreadId)),
+        getImportedAgentSessionSources: () => Effect.die("unused"),
         getThreadCheckpointContext: () => Effect.succeed(Option.none()),
         getFullThreadDiffContext: () => Effect.succeed(Option.none()),
         getThreadShellById: () => Effect.die("unused"),
@@ -178,6 +181,8 @@ it.effect("resolveAutoBootstrapWelcomeTargets returns existing project and threa
     assert.deepStrictEqual(targets, {
       bootstrapProjectId,
       bootstrapThreadId,
+      bootstrapProjectCreated: false,
+      bootstrapThreadCreated: false,
     });
     assert.deepStrictEqual(yield* Ref.get(dispatchCalls), []);
   });
@@ -201,6 +206,8 @@ it.effect("resolveAutoBootstrapWelcomeTargets creates a project and thread when 
         getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
         getProjectShellById: () => Effect.die("unused"),
         getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.none()),
+
+        getImportedAgentSessionSources: () => Effect.succeed([]),
         getThreadCheckpointContext: () => Effect.succeed(Option.none()),
         getFullThreadDiffContext: () => Effect.succeed(Option.none()),
         getThreadShellById: () => Effect.die("unused"),
@@ -224,6 +231,58 @@ it.effect("resolveAutoBootstrapWelcomeTargets creates a project and thread when 
     assert.equal(typeof targets.bootstrapThreadId, "string");
     assert.deepStrictEqual(yield* Ref.get(dispatchCalls), ["project.create", "thread.create"]);
   }),
+);
+
+it.effect(
+  "resolveAutoBootstrapWelcomeTargets preserves a project created before thread failure",
+  () =>
+    Effect.gen(function* () {
+      const dispatchCalls = yield* Ref.make<ReadonlyArray<string>>([]);
+      const targets = yield* ServerRuntimeStartup.resolveAutoBootstrapWelcomeTargets.pipe(
+        Effect.provideService(ServerConfig.ServerConfig, {
+          cwd: "/tmp/startup-project",
+          autoBootstrapProjectFromCwd: true,
+        } as never),
+        Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
+          getCommandReadModel: () => Effect.die("unused"),
+          getSnapshot: () => Effect.die("unused"),
+          getShellSnapshot: () => Effect.die("unused"),
+          getArchivedShellSnapshot: () => Effect.die("unused"),
+          getSnapshotSequence: () => Effect.die("unused"),
+          getCounts: () => Effect.die("unused"),
+
+          getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
+          getProjectShellById: () => Effect.die("unused"),
+          getFirstActiveThreadIdByProjectId: () => Effect.die("thread lookup failed"),
+          getImportedAgentSessionSources: () => Effect.die("unused"),
+          getThreadCheckpointContext: () => Effect.succeed(Option.none()),
+          getFullThreadDiffContext: () => Effect.succeed(Option.none()),
+
+          getThreadShellById: () => Effect.die("unused"),
+          getThreadDetailById: () => Effect.die("unused"),
+          getThreadDetailSnapshot: () => Effect.die("unused"),
+          searchThreads: () => Effect.succeed({ matches: [] }),
+        }),
+        Effect.provideService(OrchestrationEngine.OrchestrationEngineService, {
+          readEvents: () => Stream.empty,
+
+          dispatch: (command) =>
+            Ref.update(dispatchCalls, (calls) => [...calls, command.type]).pipe(
+              Effect.as({ sequence: 1 }),
+            ),
+          streamDomainEvents: Stream.empty,
+
+          latestSequence: Effect.succeed(0),
+        } satisfies OrchestrationEngine.OrchestrationEngineService["Service"]),
+        Effect.provide(NodeServices.layer),
+      );
+
+      assert.equal(typeof targets.bootstrapProjectId, "string");
+      assert.equal(targets.bootstrapProjectCreated, true);
+      assert.equal(targets.bootstrapThreadId, undefined);
+      assert.equal(targets.bootstrapThreadCreated, undefined);
+      assert.deepStrictEqual(yield* Ref.get(dispatchCalls), ["project.create"]);
+    }),
 );
 
 it.effect("resolveAutoBootstrapWelcomeTargets preserves typed UUID generation failures", () =>
@@ -252,6 +311,8 @@ it.effect("resolveAutoBootstrapWelcomeTargets preserves typed UUID generation fa
         getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
         getProjectShellById: () => Effect.die("unused"),
         getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.none()),
+
+        getImportedAgentSessionSources: () => Effect.succeed([]),
         getThreadCheckpointContext: () => Effect.succeed(Option.none()),
         getFullThreadDiffContext: () => Effect.succeed(Option.none()),
         getThreadShellById: () => Effect.die("unused"),
@@ -278,4 +339,32 @@ it.effect("resolveAutoBootstrapWelcomeTargets preserves typed UUID generation fa
     assert.strictEqual(error, uuidError);
     assert.deepStrictEqual(yield* Ref.get(dispatchCalls), []);
   }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("completeAutoBootstrapWelcome settles failures without bootstrap targets", () =>
+  Effect.gen(function* () {
+    const completion = yield* ServerRuntimeStartup.completeAutoBootstrapWelcome(
+      Effect.fail("bootstrap failed"),
+    );
+
+    assert.deepStrictEqual(completion, { bootstrapStatus: "complete" });
+  }),
+);
+
+it.effect("completeAutoBootstrapWelcome settles unexpected defects", () =>
+  Effect.gen(function* () {
+    const completion = yield* ServerRuntimeStartup.completeAutoBootstrapWelcome(
+      Effect.die("bootstrap defect"),
+    );
+
+    assert.deepStrictEqual(completion, { bootstrapStatus: "complete" });
+  }),
+);
+
+it.effect("completeAutoBootstrapWelcome settles an empty bootstrap result", () =>
+  Effect.gen(function* () {
+    const completion = yield* ServerRuntimeStartup.completeAutoBootstrapWelcome(Effect.succeed({}));
+
+    assert.deepStrictEqual(completion, { bootstrapStatus: "complete" });
+  }),
 );

@@ -619,6 +619,8 @@ it.effect("imports selected history and safe preferences independently", () => {
     getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
     getProjectShellById: () => Effect.succeed(Option.none()),
     getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.none()),
+
+    getImportedAgentSessionSources: () => Effect.succeed([]),
     getThreadCheckpointContext: () => Effect.succeed(Option.none()),
     getFullThreadDiffContext: () => Effect.succeed(Option.none()),
     getThreadShellById: () => Effect.succeed(Option.none()),
@@ -770,7 +772,13 @@ it.effect("repairs an existing import from source linkage and remains rebuild-st
         ? snapshot.value.thread.messages.map((message) => message.text)
         : [];
     });
-    assert.notInclude(yield* messageTexts(), "Initial prompt");
+    // The oldest page now includes turnless history before repair. The repair
+    // still needs to recover the prompt's association with its original turn.
+    const beforeRepair = yield* sql<{ readonly pendingMessageId: string | null }>`
+      SELECT pending_message_id AS "pendingMessageId" FROM projection_turns
+      WHERE thread_id = ${threadId} AND turn_id = 'turn-one'
+    `;
+    assert.deepStrictEqual(beforeRepair, [{ pendingMessageId: null }]);
 
     const loadDestinationState = () =>
       Effect.gen(function* () {
@@ -934,6 +942,8 @@ it.effect("imports one thread at a time and resumes after an interrupted thread"
           : Option.none(),
       ),
     getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.none()),
+
+    getImportedAgentSessionSources: () => Effect.succeed([]),
     getThreadCheckpointContext: () => Effect.succeed(Option.none()),
     getFullThreadDiffContext: () => Effect.succeed(Option.none()),
     getThreadShellById: () => Effect.succeed(Option.none()),
@@ -1076,6 +1086,8 @@ it.effect("repairs provider context for threads imported by an earlier release",
     getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
     getProjectShellById: () => Effect.succeed(Option.some(importedProjectShell())),
     getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.none()),
+
+    getImportedAgentSessionSources: () => Effect.succeed([]),
     getThreadCheckpointContext: () => Effect.succeed(Option.none()),
     getFullThreadDiffContext: () => Effect.succeed(Option.none()),
     getThreadShellById: () => Effect.succeed(Option.none()),
