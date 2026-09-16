@@ -727,6 +727,20 @@ describe("makeAggregateState", () => {
     expect(aggregate?.updatedAt).toBe("1970-01-01T00:59:00.000Z");
   });
 
+  it.each(["completed", "failed"] as const)(
+    "hides %s rows retained until hourly cleanup",
+    (phase) => {
+      const retained = { ...state, phase, updatedAt: "1970-01-01T00:01:00.000Z" };
+      expect(
+        AgentActivityPublisher.makeAggregateState({
+          activeStates: [retained],
+          terminalState: null,
+          nowMs: hourMs,
+        }),
+      ).toBeNull();
+    },
+  );
+
   it("drops finished threads from the aggregate after the display window", () => {
     const active: RelayAgentActivityState = {
       ...state,

@@ -2,6 +2,39 @@
 
 > For maintainers. Using T3 Code? See [docs/user](../user/).
 
+## Cleanup and idle database compute
+
+The relay prunes expired DPoP proofs and old terminal activity rows hourly, at minute zero UTC.
+Proof age is checked during verification, and activity display expiry is checked while building
+aggregates. Physical cleanup can therefore lag those expiry windows without extending them.
+Hourly maintenance leaves room for Neon's five-minute idle timeout; regular relay traffic or
+connection-pool checks may still prevent suspension.
+
+### Verification and rollout
+
+Before merging, run the focused DPoP and agent activity tests. They verify replay rejection, proof
+expiry, and display expiry for rows retained between maintenance runs. These checks establish
+application behavior, not production compute savings.
+
+A push to `main` triggers `.github/workflows/deploy-relay.yml`; a pull request does not deploy a
+preview relay. After the production deployment succeeds:
+
+1. Exercise normal relay discovery/connection and agent activity delivery.
+2. Verify `relay.cron.prune_expired_state` runs hourly in Axiom.
+3. Allow an otherwise idle interval after the five-minute suspend timeout, away from the hourly
+   cleanup. Check Neon endpoint state and start/suspend operations through its control-plane API
+   or console, rather than repeatedly querying Postgres.
+4. Compare compute consumption over comparable before/after periods using CU-hours per elapsed
+   hour, ideally over a day with similar traffic. Record whether suspension occurs. Query execution
+   time is not billed CU time, and query statistics reset when Neon suspends.
+
+Avoid polling `/health` during the idle measurement: it queries Postgres and can wake the database
+or postpone suspension. If compute stays active, correlate request traffic and connection checks
+before changing more settings. `SELECT 1` statistics alone cannot distinguish health probes from
+connection checks.
+
+## Tracing resources
+
 The relay Alchemy stack owns a shared Axiom trace setup:
 
 - `t3-code-relay-traces-prod`, the OpenTelemetry trace dataset shared by the Worker, mobile app, and

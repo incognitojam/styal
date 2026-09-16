@@ -256,7 +256,9 @@ export const ApiLive = Api.make(
         ),
     );
 
-    yield* Cloudflare.Workers.cron("*/5 * * * *", () =>
+    // Expiry is enforced on reads and proof verification. Sweep hourly so
+    // maintenance leaves idle gaps longer than Neon's five-minute suspend timer.
+    yield* Cloudflare.Workers.cron("0 * * * *", () =>
       DpopProofs.DpopProofReplay.pipe(
         Effect.flatMap((dpopProofs) => dpopProofs.pruneExpired),
         // Terminal thread rows are kept briefly so finished agents show as

@@ -96,6 +96,49 @@ function consumeEachProofOnce() {
 }
 
 describe("DpopProofReplay.verifyAndConsume", () => {
+  it.effect("enforces proof expiry while consumed rows await hourly cleanup", () => {
+    const now = DateTime.makeUnsafe("2026-05-25T12:00:00.000Z");
+    const request = {
+      method: "POST",
+      url: "https://relay.example.com/v1/environments/env/connect",
+    };
+    const proof = makeDpopProof({
+      ...request,
+      iat: now.epochMilliseconds / 1_000,
+      jti: "proof-retained",
+    });
+
+    return Effect.gen(function* () {
+      const replay = yield* DpopProofs.DpopProofReplay;
+      const input = { ...request, proof: proof.proof, expectedThumbprint: proof.thumbprint };
+      expect(yield* replay.verifyAndConsume({ ...input, now })).toBe(proof.thumbprint);
+      expect(
+        yield* Effect.flip(
+          replay.verifyAndConsume({ ...input, now: DateTime.add(now, { minutes: 4 }) }),
+        ),
+      ).toMatchObject({ code: "replayed" });
+      expect(
+        yield* Effect.flip(
+          replay.verifyAndConsume({ ...input, now: DateTime.add(now, { minutes: 45 }) }),
+        ),
+      ).toMatchObject({ code: "time_window" });
+
+      const fresh = makeDpopProof({
+        ...request,
+        iat: now.epochMilliseconds / 1_000 + 45 * 60,
+        jti: "proof-fresh",
+      });
+      expect(
+        yield* replay.verifyAndConsume({
+          ...request,
+          proof: fresh.proof,
+          expectedThumbprint: fresh.thumbprint,
+          now: DateTime.add(now, { minutes: 45 }),
+        }),
+      ).toBe(fresh.thumbprint);
+    }).pipe(Effect.provide(layer(consumeEachProofOnce())));
+  });
+
   it.effect("reports a signed proof outside the time window", () => {
     const now = DateTime.makeUnsafe("2026-05-25T12:00:00.000Z");
     const proof = makeDpopProof({
