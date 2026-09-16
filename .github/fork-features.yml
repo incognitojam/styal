@@ -1412,7 +1412,7 @@ features:
     prs: [351]
     invariants:
       - Normal managed services retain the direct in-app Update action in chat and Connections settings.
-      - Manual update instructions show one command for the advertised capability, reserving service update for detected legacy services and otherwise explaining that serve starts a foreground server after the existing process is stopped.
+      - Manual update instructions reserve service update for detected legacy services; absent update capability is treated as an unknown installation, with serve qualified for terminal launches and service or container users directed to their existing deployment method.
       - Foreground start commands are labeled as starts and preserve guidance to reuse the existing data directory and startup options rather than implying that launching another process updates a running server.
     implementation_paths:
       - apps/web/src/components/ServerUpdateAction.tsx

@@ -170,7 +170,7 @@ export function ServerUpdateAction({
             <DialogDescription>
               {serviceMigration
                 ? "This server needs a one-time service migration before it can update from the app."
-                : "This server does not support in-app updates. Stop the existing server before starting the new version."}
+                : "This server does not support in-app updates. How you update it depends on how it was started."}
             </DialogDescription>
           </DialogHeader>
           <DialogPanel className="space-y-5 text-sm">
@@ -189,8 +189,9 @@ export function ServerUpdateAction({
                   </>
                 ) : (
                   <>
-                    Run this with your existing startup options after stopping the server. It starts
-                    a foreground server; it does not replace a running instance.
+                    If you start styal from a terminal, stop the existing server, then run this with
+                    the same startup options. It starts a foreground server; it does not replace a
+                    running instance.
                   </>
                 )}
               </p>
@@ -207,7 +208,7 @@ export function ServerUpdateAction({
                     copyToClipboard(command, {
                       description: serviceMigration
                         ? `Run this in a separate terminal on ${serverLabel} after active work finishes. It restarts the background service.`
-                        : `Stop the existing server on ${serverLabel} first, then run this with the same startup options.`,
+                        : `For a terminal-launched server on ${serverLabel}, stop the existing process first, then run this with the same startup options.`,
                     })
                   }
                 >
@@ -215,6 +216,12 @@ export function ServerUpdateAction({
                 </Button>
               </div>
             </section>
+            {!serviceMigration && (
+              <p className="text-muted-foreground">
+                If styal runs as a service or in a container, update it through your existing
+                deployment method.
+              </p>
+            )}
           </DialogPanel>
         </DialogPopup>
       </Dialog>

@@ -36,8 +36,9 @@ close terminals opened inside styal.
 
 Managed services offer **Update** in the chat notice and **Settings → Connections** when a
 newer version is available. For detected legacy services, **Update instructions** provides the
-one-time service migration command. Other servers get instructions to stop the existing server
-and start the new version with the same startup options. A start command launches another server;
+one-time service migration command. When the installation method is unknown, the instructions
+explain how to restart a terminal-launched server with the same startup options and direct service
+or container users to their existing deployment method. A start command launches another server;
 it does not update an existing service.
 
 The service runs a small stable launcher. Exact styal versions are installed separately, so a
