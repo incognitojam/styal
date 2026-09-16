@@ -41,5 +41,8 @@ export function resolveOpenAIStatusNotice(
     components === undefined ? null : withStatusPageComponents(summary, components);
   return resolveStatusPageNotice(completeSummary ?? summary, "OpenAI", {
     ignoredComponents: OPENAI_IGNORED_COMPONENTS,
+    // OpenAI also reports this Work-only incident without assigning components.
+    // Match the whole title so a wider disruption still surfaces.
+    ignoredIncidentPatterns: [/^Elevated errors in ChatGPT Work\.?$/i],
   });
 }

@@ -165,4 +165,5 @@ reports a disruption, T3 Code shows affected services above **Settings** in the 
 sidebar. The alert includes Codex API, CLI, Codex Web, and the VS Code extension alongside the
 OpenAI API services developers commonly use. Consumer surfaces such as Sora, voice mode, and image
 generation stay quiet, because no Codex turn calls them. Select the notice to open the official
-OpenAI Status page.
+OpenAI Status page. The “Elevated errors in ChatGPT Work” incident also stays quiet when OpenAI
+lists no affected services; incidents explicitly affecting Codex or shared services still appear.
