@@ -1675,21 +1675,12 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
   const linkClassName = cn(
     children === undefined
       ? [CHAT_FILE_TAG_CHIP_CLASS_NAME, MARKDOWN_FILE_LINK_CLASS_NAME]
-      : "chat-markdown-file-reference inline max-w-full cursor-pointer select-text",
+      : "chat-markdown-file-text",
     className,
   );
-  const chipContent = <FileTagChipContent path={iconPath} label={label} theme={theme} selectable />;
-  const content =
-    children === undefined ? (
-      chipContent
-    ) : (
-      <>
-        <span className="chat-markdown-file-link-label">{children}</span>{" "}
-        <span className={cn(CHAT_FILE_TAG_CHIP_CLASS_NAME, MARKDOWN_FILE_CHIP_CLASS_NAME)}>
-          {chipContent}
-        </span>
-      </>
-    );
+  const content = children ?? (
+    <FileTagChipContent path={iconPath} label={label} theme={theme} selectable />
+  );
 
   return (
     <Tooltip>
@@ -2089,7 +2080,7 @@ function ChatMarkdown({
    * renderers that close over this message's metadata. useMemo keeps them stable until that
    * metadata changes. */
   const markdownComponents = useMemo<Components>(() => {
-    const fileLinkChip = (
+    const renderFileLink = (
       fileLinkMeta: MarkdownFileLinkMeta,
       copyMarkdown: string,
       className?: string,
@@ -2393,7 +2384,7 @@ function ChatMarkdown({
           labelStart !== undefined && labelEnd !== undefined
             ? text.slice(labelStart, labelEnd)
             : linkLabel;
-        return fileLinkChip(
+        return renderFileLink(
           fileLinkMeta,
           `[${copyLabel || fileLinkMeta.basename}](${normalizedHref})`,
           props.className,
@@ -2407,7 +2398,7 @@ function ChatMarkdown({
             inlineCodeFileLinkMetaByText.get(codeText.trim()) ??
             resolveInlineCodeFileLinkMeta(codeText, cwd);
           if (fileLinkMeta) {
-            return fileLinkChip(fileLinkMeta, `\`${codeText}\``);
+            return renderFileLink(fileLinkMeta, `\`${codeText}\``);
           }
         }
         return (

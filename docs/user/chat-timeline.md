@@ -12,6 +12,11 @@ Source paths written in messages may become clickable file chips. Opening a chip
 resolved path, while its label and **Copy relative path** action stay workspace-relative.
 Click or tap the linked text or file chip to open the file.
 
+File links with descriptive labels, such as **Organizing threads**, keep their original linked
+text and formatting without an added filename chip. Links whose labels name the file, such as
+`docs/settings.ts:12`, use a compact file chip. This distinction applies in chat messages and
+Markdown previews, including paragraphs and lists.
+
 When previewing a Markdown file, relative images resolve from that file's folder. Images retain
 their authored dimensions and SVG fragment, and copying a workspace image preserves its Markdown
 reference.

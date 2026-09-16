@@ -16,7 +16,6 @@ export interface NativeMarkdownTextRun {
   readonly href?: string;
   readonly externalHost?: string;
   readonly fileIcon?: MarkdownFileIcon;
-  readonly fileLinkLabel?: boolean;
   readonly skillName?: string;
   readonly skillLabel?: string;
   readonly role?:
@@ -57,7 +56,6 @@ interface RunContext {
   readonly href?: string;
   readonly externalHost?: string;
   readonly fileIcon?: MarkdownFileIcon;
-  readonly fileLinkLabel?: boolean;
   readonly role?: NativeMarkdownTextRun["role"];
   readonly headingLevel?: number;
   readonly depth?: number;
@@ -145,7 +143,6 @@ function sameRunStyle(left: NativeMarkdownTextRun, right: NativeMarkdownTextRun)
     left.href === right.href &&
     left.externalHost === right.externalHost &&
     left.fileIcon === right.fileIcon &&
-    left.fileLinkLabel === right.fileLinkLabel &&
     left.skillName === right.skillName &&
     left.skillLabel === right.skillLabel &&
     left.role === right.role &&
@@ -176,7 +173,6 @@ function appendRun(
     ...(context.href ? { href: context.href } : {}),
     ...(context.externalHost ? { externalHost: context.externalHost } : {}),
     ...(context.fileIcon ? { fileIcon: context.fileIcon } : {}),
-    ...(context.fileLinkLabel ? { fileLinkLabel: true } : {}),
     ...(context.role ? { role: context.role } : {}),
     ...(context.headingLevel ? { headingLevel: context.headingLevel } : {}),
     ...(context.depth ? { depth: context.depth } : {}),
@@ -307,9 +303,7 @@ function appendNode(
       const presentation = resolveMarkdownLinkPresentation(node.href ?? "");
       if (presentation.kind === "file") {
         if (!isMarkdownFileLinkLabel(nodeTextContent(node), presentation)) {
-          const labelContext = { ...context, href: presentation.href, fileLinkLabel: true };
-          appendChildren(runs, node, labelContext);
-          appendRun(runs, " ", labelContext);
+          return appendChildren(runs, node, { ...context, href: presentation.href });
         }
         return appendRun(runs, presentation.label, {
           ...context,
