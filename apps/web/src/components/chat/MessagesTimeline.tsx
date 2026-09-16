@@ -35,6 +35,8 @@ import {
   workEntryViewedImagePath,
   workEntryIndicatesToolFailure,
   workEntryIsStoppedToolCall,
+  summarizeToolGroup,
+  omitSupersededLifecycleMarkers,
 } from "@t3tools/client-runtime/work-log/presentation";
 import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
 import type {
@@ -201,10 +203,12 @@ import { useAssistantCitationTarget, type CitationHistoryPage } from "./useAssis
 import {
   computeStableMessagesTimelineRows,
   deriveMessagesTimelineRowsWithState,
+  LIVE_ACTIVITY_ROW_ID,
   deriveUnsettledTurnId,
   type MessagesTimelineRowsProjection,
   liveWorkEntryLabel,
   normalizeCompactToolLabel,
+  workEntryIsActiveTurnActivity,
   resolveAssistantMessageCopyState,
   resolveTimelineIsAtEnd,
   resolveTimelineMinimapHasPersistentGutter,
@@ -324,7 +328,7 @@ interface TimelineRowSharedState {
   onToggleWorkGroup: (groupId: string, anchorKey: string, expanded?: boolean) => void;
   onToggleWorkEntry: (anchorKey: string, collapsed: boolean) => void;
   onToggleSpawnRow: (entryId: string, expanded: boolean) => void;
-  onToggleReasoning: (messageId: string, expanded: boolean) => void;
+  onToggleReasoning: (messageId: string, expanded: boolean, anchorKey: string) => void;
   expandedReasoningMessageIds: ReadonlySet<string>;
   workGroupViewState: WorkGroupViewState;
   agentPanelModel: AgentPanelModel;
@@ -725,10 +729,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     [expandedWorkGroupIds, suspendEndScrollMaintenanceForDisclosure],
   );
   const onToggleReasoning = useCallback(
-    (messageId: string, expanded: boolean) => {
-      // The anchor must be the timeline row id, which for a message row is the
-      // message id, or position restoration is skipped for every row.
-      suspendEndScrollMaintenanceForDisclosure(messageId, !expanded);
+    (messageId: string, expanded: boolean, anchorKey: string) => {
+      suspendEndScrollMaintenanceForDisclosure(anchorKey, !expanded);
       setExpandedReasoningMessageIds((current) => {
         if (current.has(messageId) === expanded) return current;
         const next = new Set(current);
@@ -1554,6 +1556,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
                   row.kind === "work" ||
                   row.kind === "work-live" ||
                   row.kind === "work-toggle" ||
+                  row.kind === "activity-group" ||
                   row.kind === "thinking" ||
                   row.kind === "worktree-setup"
                 ? "pb-2"
@@ -1579,6 +1582,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
         />
       ) : null}
       {row.kind === "work-live" ? <LiveWorkEntryTimelineRow row={row} /> : null}
+      {row.kind === "activity-group" ? <ActivityGroupTimelineRow row={row} /> : null}
       {row.kind === "work-toggle" ? <WorkGroupToggleTimelineRow row={row} /> : null}
       {row.kind === "turn-fold" ? <TurnFoldTimelineRow row={row} /> : null}
       {row.kind === "standalone-activity" ? <StandaloneActivityTimelineRow row={row} /> : null}
@@ -2605,6 +2609,108 @@ function BackgroundWorktreeSetupChip({ snapshot }: { snapshot: WorktreeSetupSnap
   );
 }
 
+function ActivityGroupTimelineRow({
+  row,
+}: {
+  row: Extract<TimelineRow, { kind: "activity-group" }>;
+}) {
+  const ctx = use(TimelineRowCtx);
+  const work = omitSupersededLifecycleMarkers(
+    row.entries.flatMap((entry) =>
+      entry.kind === "work" && workEntryIsVisibleInGroup(entry.entry, row.active)
+        ? [entry.entry]
+        : [],
+    ),
+    (entry) => entry,
+  );
+  const thoughtCount = row.entries.filter((entry) => entry.kind === "message").length;
+  const lastThoughtIndex = row.entries.findLastIndex((entry) => entry.kind === "message");
+  const trailingWork = omitSupersededLifecycleMarkers(
+    row.entries
+      .slice(lastThoughtIndex + 1)
+      .flatMap((entry) =>
+        entry.kind === "work" && workEntryIsVisibleInGroup(entry.entry, row.active)
+          ? [entry.entry]
+          : [],
+      ),
+    (entry) => entry,
+  );
+  const liveWork = trailingWork.findLast(workEntryIsActiveTurnActivity) ?? trailingWork.at(-1);
+  const thinking = row.active && liveWork === undefined;
+  const iconWork = row.active ? liveWork : work.at(-1);
+  const label = row.active
+    ? liveWork
+      ? liveWorkEntryLabel(liveWork, ctx.workspaceRoot, true)
+      : "Thinking"
+    : work.length > 0
+      ? summarizeToolGroup(work)
+      : `Thought${thoughtCount > 1 ? ` (×${thoughtCount})` : ""}`;
+  const details: ReactNode[] = [];
+  if (row.expanded) {
+    for (let index = 0; index < row.entries.length; index += 1) {
+      const entry = row.entries[index]!;
+      if (entry.kind === "work") {
+        const entries = [entry.entry];
+        while (row.entries[index + 1]?.kind === "work") {
+          const next = row.entries[++index]!;
+          if (next.kind === "work") entries.push(next.entry);
+        }
+        details.push(
+          <WorkGroupSection
+            key={entry.id}
+            anchorKey={entry.id}
+            disclosureAnchorKey={row.id}
+            groupedEntries={omitSupersededLifecycleMarkers(entries, (entry) => entry)}
+            isExpandedToolGroup
+          />,
+        );
+      } else {
+        const messages = [entry.message];
+        while (row.entries[index + 1]?.kind === "message") {
+          const next = row.entries[++index]!;
+          if (next.kind === "message") messages.push(next.message);
+        }
+        details.push(
+          <ReasoningTimelineRow
+            key={entry.id}
+            disclosureAnchorKey={row.id}
+            row={{
+              kind: "message",
+              id: row.active && index === row.entries.length - 1 ? LIVE_ACTIVITY_ROW_ID : entry.id,
+              createdAt: entry.createdAt,
+              message: entry.message,
+              reasoningMessages: messages,
+              durationStart: entry.createdAt,
+              showAssistantMeta: false,
+              showAssistantCopyButton: false,
+              assistantCopyStreaming: false,
+            }}
+          />,
+        );
+      }
+    }
+  }
+  return (
+    <div>
+      <button
+        type="button"
+        className="group/live-work flex min-h-6 w-full max-w-full cursor-pointer items-center rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+        aria-expanded={row.expanded}
+        onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
+      >
+        <LiveActivityRow
+          label={label}
+          iconName={iconWork ? workEntryIconName(iconWork) : "brain"}
+          toolIcon={iconWork?.toolIcon ?? iconWork?.toolSource?.icon}
+          active={row.active}
+          shimmer={thinking}
+        />
+      </button>
+      {row.expanded ? <div className="mt-2 space-y-2">{details}</div> : null}
+    </div>
+  );
+}
+
 function ThinkingTimelineRow() {
   const { isCompacting, isPreparingWorktree } = use(TimelineRowActivityCtx);
   // Reserve the activity row during setup so the handoff keeps the same height.
@@ -2624,28 +2730,35 @@ function ThinkingTimelineRow() {
  */
 const ReasoningTimelineRow = memo(function ReasoningTimelineRow({
   row,
+  disclosureAnchorKey = row.id,
 }: {
   row: Extract<TimelineRow, { kind: "message" }>;
+  disclosureAnchorKey?: string;
 }) {
   const ctx = use(TimelineRowCtx);
   const { isWorking, unsettledTurnId } = use(TimelineRowActivityCtx);
   const { message } = row;
+  const messages = row.reasoningMessages ?? [message];
   // A block left open by a crashed provider or a restarted server never gets
   // its completion. Only the live turn may claim to still be thinking, so a
   // settled turn cannot shimmer "Thinking" at the user forever.
   const streaming =
-    Boolean(message.streaming) &&
+    row.id === LIVE_ACTIVITY_ROW_ID &&
+    messages.some((reasoningMessage) => reasoningMessage.streaming) &&
     isWorking &&
     message.turnId !== null &&
     message.turnId === unsettledTurnId;
   const expanded = ctx.expandedReasoningMessageIds.has(message.id);
   const { onToggleReasoning } = ctx;
   const toggle = useCallback(() => {
-    onToggleReasoning(message.id, !expanded);
-  }, [expanded, message.id, onToggleReasoning]);
-  const label = streaming ? "Thinking" : "Thought";
+    onToggleReasoning(message.id, !expanded, disclosureAnchorKey);
+  }, [expanded, message.id, disclosureAnchorKey, onToggleReasoning]);
+  const label = `${streaming ? "Thinking" : "Thought"}${messages.length > 1 ? ` (×${messages.length})` : ""}`;
 
-  if (message.text.trim().length === 0 && !streaming) {
+  if (
+    messages.every((reasoningMessage) => reasoningMessage.text.trim().length === 0) &&
+    !streaming
+  ) {
     return null;
   }
 
@@ -2679,18 +2792,21 @@ const ReasoningTimelineRow = memo(function ReasoningTimelineRow({
         </span>
       </button>
       {expanded ? (
-        <div className="mt-1 ms-7 max-h-96 overflow-auto rounded-md bg-muted/40 px-3 py-2 text-secondary-label select-text">
-          <ChatMarkdown
-            text={message.text}
-            cwd={ctx.markdownCwd}
-            threadRef={ctx.threadRef ?? undefined}
-            isStreaming={streaming}
-            lineBreaks
-            skills={ctx.skills}
-            headingLevelOffset={MESSAGE_HEADING_LEVEL}
-            onUseArtifactTemplate={ctx.onUseArtifactTemplate}
-            onImageExpand={ctx.onImageExpand}
-          />
+        <div className="mt-1 ms-7 flex max-h-96 flex-col gap-3 overflow-auto rounded-md bg-muted/40 px-3 py-2 text-secondary-label select-text">
+          {messages.map((reasoningMessage) => (
+            <ChatMarkdown
+              key={reasoningMessage.id}
+              text={reasoningMessage.text}
+              cwd={ctx.markdownCwd}
+              threadRef={ctx.threadRef ?? undefined}
+              isStreaming={streaming && reasoningMessage.streaming}
+              lineBreaks
+              skills={ctx.skills}
+              headingLevelOffset={MESSAGE_HEADING_LEVEL}
+              onUseArtifactTemplate={ctx.onUseArtifactTemplate}
+              onImageExpand={ctx.onImageExpand}
+            />
+          ))}
         </div>
       ) : null}
     </div>
@@ -2742,19 +2858,21 @@ function WorkingTimer({ createdAt }: { createdAt: string }) {
 /** Renders standalone activity or one bounded, virtualized expanded tool group. */
 const WorkGroupSection = memo(function WorkGroupSection({
   anchorKey,
+  disclosureAnchorKey = anchorKey,
   groupedEntries,
   isExpandedToolGroup,
   displayLabel,
 }: {
   anchorKey: string;
+  disclosureAnchorKey?: string;
   groupedEntries: Extract<MessagesTimelineRow, { kind: "work" }>["groupedEntries"];
   isExpandedToolGroup: boolean;
   displayLabel?: string | undefined;
 }) {
   const { workspaceRoot, routeThreadKey, onToggleWorkEntry } = use(TimelineRowCtx);
   const onToggleStandaloneEntry = useCallback(
-    (collapsed: boolean) => onToggleWorkEntry(anchorKey, collapsed),
-    [anchorKey, onToggleWorkEntry],
+    (collapsed: boolean) => onToggleWorkEntry(disclosureAnchorKey, collapsed),
+    [disclosureAnchorKey, onToggleWorkEntry],
   );
   const nonEmptyEntries = useMemo(
     () => groupedEntries.filter((entry) => workEntryIsVisibleInGroup(entry, isExpandedToolGroup)),
@@ -2767,6 +2885,7 @@ const WorkGroupSection = memo(function WorkGroupSection({
       <ExpandedWorkGroupEntries
         key={`${routeThreadKey}:${anchorKey}`}
         anchorKey={anchorKey}
+        disclosureAnchorKey={disclosureAnchorKey}
         entries={nonEmptyEntries}
         workspaceRoot={workspaceRoot}
       />
@@ -2793,10 +2912,12 @@ const WorkGroupSection = memo(function WorkGroupSection({
 
 function ExpandedWorkGroupEntries({
   anchorKey,
+  disclosureAnchorKey,
   entries,
   workspaceRoot,
 }: {
   anchorKey: string;
+  disclosureAnchorKey: string;
   entries: TimelineWorkEntry[];
   workspaceRoot: string | undefined;
 }) {
@@ -2822,9 +2943,9 @@ function ExpandedWorkGroupEntries({
   const groupView = useMemo(
     () => ({
       state: viewState,
-      onToggleEntry: (collapsed: boolean) => onToggleWorkEntry(anchorKey, collapsed),
+      onToggleEntry: (collapsed: boolean) => onToggleWorkEntry(disclosureAnchorKey, collapsed),
     }),
-    [anchorKey, onToggleWorkEntry, viewState],
+    [disclosureAnchorKey, onToggleWorkEntry, viewState],
   );
   const updateScrollFades = useCallback(() => {
     const element = listRef.current?.getScrollableNode();
