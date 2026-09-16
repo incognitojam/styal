@@ -407,7 +407,9 @@ describe("ProjectSetupScriptRunner", () => {
       // Output arrives in chunks; partial lines are buffered until a newline,
       // and control sequences are stripped.
       yield* output("\u001b[32mResolving");
-      yield* output(" deps\u001b[0m\r\nDone in 2s\r\n");
+      yield* output(" deps\u001b[0m\r\n");
+      // Progress redraws separated by bare carriage returns are their own lines.
+      yield* output("Progress: 1/3\rProgress: 2/3\rProgress: 3/3\r\nDone in 2s\r\n");
       yield* output("unfinished line");
       // Another terminal's events do not count.
       yield* emit({
@@ -427,7 +429,13 @@ describe("ProjectSetupScriptRunner", () => {
 
       const completion = yield* result.completion;
       expect(completion.exitCode).toBe(3);
-      expect(seen).toEqual(["Resolving deps", "Done in 2s"]);
+      expect(seen).toEqual([
+        "Resolving deps",
+        "Progress: 1/3",
+        "Progress: 2/3",
+        "Progress: 3/3",
+        "Done in 2s",
+      ]);
       // The run's subscription is torn down once the command exits.
       expect(listeners.size).toBe(1);
     }).pipe(

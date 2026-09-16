@@ -453,7 +453,10 @@ export const make = Effect.gen(function* () {
         switch (event.type) {
           case "output": {
             lineBuffer += event.data;
-            const lines = lineBuffer.split(/\r?\n/);
+            // A bare carriage return is how installers redraw a progress line in
+            // place; each redraw becomes a short line of its own instead of
+            // being glued into one long one.
+            const lines = lineBuffer.split(/\r\n|\r|\n/);
             lineBuffer = lines.pop() ?? "";
             // A script that never prints a newline must not grow this forever.
             if (lineBuffer.length > PARTIAL_LINE_MAX_LENGTH) {
