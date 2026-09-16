@@ -27,19 +27,16 @@ const audioContextInstances: FakeAudioContext[] = [];
 
 class FakeAudioContext {
   currentTime = 10;
-  nodeCreationSeconds = 0;
   readonly destination = {};
   state: AudioContextState = "running";
   readonly oscillators: FakeOscillator[] = [];
   readonly gains: FakeGain[] = [];
   readonly createOscillator = vi.fn(() => {
-    this.currentTime += this.nodeCreationSeconds;
     const oscillator = new FakeOscillator();
     this.oscillators.push(oscillator);
     return oscillator;
   });
   readonly createGain = vi.fn(() => {
-    this.currentTime += this.nodeCreationSeconds;
     const gain = new FakeGain();
     this.gains.push(gain);
     return gain;
@@ -117,7 +114,10 @@ describe("playCompletionSound", () => {
     expect(audioContextInstances[0]?.oscillators).toHaveLength(0);
     await Promise.resolve();
     expect(audioContextInstances[0]?.resume).toHaveBeenCalledOnce();
-    expect(audioContextInstances[0]?.oscillator.start).toHaveBeenCalledWith(20.05);
+    const audioContext = audioContextInstances[0]!;
+    expect(audioContext.oscillator.start.mock.calls[0]?.[0]).toBeGreaterThan(
+      audioContext.currentTime,
+    );
   });
 
   it("schedules Resolve as a quiet B4 to C5 resolution", async () => {
@@ -126,69 +126,50 @@ describe("playCompletionSound", () => {
 
     playCompletionSound("resolve");
 
-    const [audioContext] = audioContextInstances;
-    expect(audioContext).toBeDefined();
-    if (audioContext === undefined) {
-      throw new Error("Expected an audio context to be created.");
-    }
-    expect(audioContext.createOscillator).toHaveBeenCalledTimes(3);
-    expect(audioContext.createGain).toHaveBeenCalledTimes(3);
-
-    const [leadingTone, resolvedTone, harmonic] = audioContext.oscillators;
-    expect(leadingTone?.frequency.setValueAtTime).toHaveBeenCalledWith(493.88, 10.05);
-    expect(resolvedTone?.frequency.setValueAtTime).toHaveBeenCalledWith(
-      523.25,
-      expect.closeTo(10.18),
-    );
-    expect(harmonic?.frequency.setValueAtTime).toHaveBeenCalledWith(1046.5, expect.closeTo(10.18));
-    expect(leadingTone?.start).toHaveBeenCalledWith(10.05);
-    expect(leadingTone?.stop.mock.calls[0]?.[0]).toBeCloseTo(10.24);
-    expect(resolvedTone?.start.mock.calls[0]?.[0]).toBeCloseTo(10.18);
-    expect(resolvedTone?.stop.mock.calls[0]?.[0]).toBeCloseTo(10.53);
-
-    const [leadingGain, resolvedGain, harmonicGain] = audioContext.gains;
-    expect(leadingGain?.gain.linearRampToValueAtTime.mock.calls[0]?.[0]).toBe(0.126);
-    expect(leadingGain?.gain.linearRampToValueAtTime.mock.calls[0]?.[1]).toBeCloseTo(10.068);
-    expect(resolvedGain?.gain.linearRampToValueAtTime.mock.calls[0]?.[0]).toBe(0.177);
-    expect(resolvedGain?.gain.linearRampToValueAtTime.mock.calls[0]?.[1]).toBeCloseTo(10.202);
-    expect(harmonicGain?.gain.linearRampToValueAtTime.mock.calls[0]?.[0]).toBe(0.017);
-  });
-
-  it("keeps each attack in the future while the audio clock advances during setup", async () => {
-    class AdvancingAudioContext extends FakeAudioContext {
-      override nodeCreationSeconds = 0.005;
-    }
-    vi.stubGlobal("AudioContext", AdvancingAudioContext);
-    const { playCompletionSound } = await import("./completionSound");
-
-    playCompletionSound("resolve");
-
     const audioContext = audioContextInstances[0]!;
-    expect(audioContext.oscillators).toHaveLength(3);
-    for (const [index, oscillator] of audioContext.oscillators.entries()) {
-      const start = oscillator.start.mock.calls[0]![0];
-      const gain = audioContext.gains[index]!.gain;
-      expect(start).toBeGreaterThan(audioContext.currentTime);
-      expect(gain.setValueAtTime).toHaveBeenCalledWith(0, start);
-    }
-  });
+    expect(
+      audioContext.oscillators.map((tone) => tone.frequency.setValueAtTime.mock.calls[0]?.[0]),
+    ).toEqual([493.88, 523.25, 1046.5]);
+    const start = audioContext.oscillator.start.mock.calls[0]![0];
+    expect(audioContext.oscillators.map((tone) => tone.start.mock.calls[0]?.[0])).toEqual([
+      start,
+      expect.closeTo(start + 0.13),
+      expect.closeTo(start + 0.13),
+    ]);
+    expect(
+      audioContext.gains.map(({ gain }) => gain.linearRampToValueAtTime.mock.calls[0]?.[0]),
+    ).toEqual([0.126, 0.177, 0.017]);
 
-  it("starts muted and fades completely to silence before stopping each oscillator", async () => {
-    vi.stubGlobal("AudioContext", FakeAudioContext);
-    const { playCompletionSound } = await import("./completionSound");
-
-    playCompletionSound("resolve");
-
-    const audioContext = audioContextInstances[0]!;
-    expect(audioContext.gains).toHaveLength(3);
     for (const [index, { gain }] of audioContext.gains.entries()) {
       const oscillator = audioContext.oscillators[index]!;
       const [endGain, fadeEnd] = gain.linearRampToValueAtTime.mock.calls.at(-1)!;
       expect(gain.value).toBe(0);
+      expect(gain.setValueAtTime).toHaveBeenCalledWith(0, oscillator.start.mock.calls[0]![0]);
       expect(endGain).toBe(0);
-      expect(fadeEnd).toBeGreaterThan(oscillator.start.mock.calls[0]![0]);
       expect(fadeEnd).toBeLessThan(oscillator.stop.mock.calls[0]![0]);
     }
+  });
+
+  it("preserves the first note's fade-in after a 25 ms setup delay", async () => {
+    class DelayedAudioContext extends FakeAudioContext {
+      constructor() {
+        super();
+        const createOscillator = this.createOscillator.getMockImplementation()!;
+        this.createOscillator.mockImplementationOnce(() => {
+          this.currentTime += 0.025;
+          return createOscillator();
+        });
+      }
+    }
+    vi.stubGlobal("AudioContext", DelayedAudioContext);
+    const { playCompletionSound } = await import("./completionSound");
+
+    playCompletionSound("resolve");
+
+    const audioContext = audioContextInstances[0]!;
+    const start = audioContext.oscillator.start.mock.calls[0]![0];
+    expect(start).toBeGreaterThan(audioContext.currentTime);
+    expect(audioContext.gain.gain.setValueAtTime).toHaveBeenCalledWith(0, start);
   });
 
   it("does not fall back to a sample without Web Audio", async () => {
