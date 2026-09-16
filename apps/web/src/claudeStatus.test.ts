@@ -130,6 +130,26 @@ describe("Claude status notice", () => {
     ).toBe("Outage: API");
   });
 
+  it.each([
+    "Issues with Google Play subscriptions",
+    "Google Play subscription purchases are unavailable",
+  ])("ignores the componentless incident %j", (name) => {
+    expect(
+      resolveClaudeStatusNotice(
+        statusSummary({
+          incidents: [
+            {
+              components: [],
+              impact: "minor",
+              name,
+              status: "identified",
+            },
+          ],
+        }),
+      ),
+    ).toBeNull();
+  });
+
   it("falls back to the incident count when a single incident names no service", () => {
     const notice = resolveClaudeStatusNotice(
       statusSummary({

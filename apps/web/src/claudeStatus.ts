@@ -16,10 +16,15 @@ const CLAUDE_IGNORED_COMPONENTS = [
   "Claude for Government",
 ];
 
+const CLAUDE_IGNORED_INCIDENT_PATTERNS = [
+  /\bgoogle play\b.*\bsubscriptions?\b|\bsubscriptions?\b.*\bgoogle play\b/i,
+];
+
 export type ClaudeStatusNotice = StatusPageNotice;
 
 export function resolveClaudeStatusNotice(input: unknown): ClaudeStatusNotice | null {
   return resolveStatusPageNotice(input, "Claude", {
     ignoredComponents: CLAUDE_IGNORED_COMPONENTS,
+    ignoredIncidentPatterns: CLAUDE_IGNORED_INCIDENT_PATTERNS,
   });
 }
