@@ -2039,9 +2039,10 @@ features:
       - apps/web/src/components/pullRequest/PullRequestMarkdown.test.tsx
       - apps/web/src/components/pullRequest/pullRequestMarkdown.logic.test.ts
     upstream:
-      status: unassessed
-      tracking: []
-      retire_when: Upstream renders authenticated repository-backed pull request images through an equivalently bounded and environment-scoped asset path.
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/11706
+      retire_when: Upstream resolves repository-relative pull request images against the pull request head through an equivalently bounded and environment-scoped asset path.
 
   - id: pull-request-diff-expansion
     title: Open reviewable pull request diffs by default

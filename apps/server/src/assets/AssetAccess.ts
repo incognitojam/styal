@@ -1,6 +1,7 @@
 import type { AssetResource, ProjectId as ProjectIdType } from "@t3tools/contracts";
 import {
   AssetAttachmentNotFoundError,
+  AssetGitHubMediaUrlValidationError,
   AssetPreviewTypeValidationError,
   AssetProjectFaviconInspectionError,
   AssetProjectFaviconNotFoundError,
@@ -29,6 +30,7 @@ import {
   readImageDimensions,
   type ImageDimensions,
 } from "@t3tools/shared/imageDimensions";
+import { githubMediaFetchUrl, githubMediaFileName } from "@t3tools/shared/githubMedia";
 import { PROJECT_FAVICON_FALLBACK_MARKER } from "@t3tools/shared/projectFavicon";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
@@ -147,6 +149,14 @@ const AssetClaimsSchema = Schema.Union([
     app: ToolActivityNativeAppReference,
     expiresAt: Schema.Number,
   }),
+  Schema.Struct({
+    version: Schema.Literal(1),
+    kind: Schema.Literal("github-media"),
+    /** Already narrowed to a GitHub media host at mint time; the signature is what keeps it there. */
+    url: Schema.String,
+    cwd: Schema.String,
+    expiresAt: Schema.Number,
+  }),
 ]);
 type AssetClaims = typeof AssetClaimsSchema.Type;
 
@@ -170,6 +180,14 @@ export type ResolvedAsset =
       readonly number: number;
       readonly path: string;
       readonly revision?: string;
+    }
+  | {
+      readonly kind: "github-media";
+      readonly url: string;
+      readonly cwd: string;
+      /** When the signed URL that granted this stops working, which bounds how long a client
+          may keep the bytes it fetched with it. */
+      readonly expiresAt: number;
     };
 
 function decodeClaims(encodedPayload: string): AssetClaims | null {
@@ -694,6 +712,21 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
       fileName = "native-app-icon.png";
       break;
     }
+    case "github-media": {
+      const fetchUrl = githubMediaFetchUrl(input.resource.url);
+      if (fetchUrl === null) {
+        return yield* new AssetGitHubMediaUrlValidationError({});
+      }
+      claims = {
+        version: 1,
+        kind: "github-media",
+        url: fetchUrl,
+        cwd: input.resource.cwd,
+        expiresAt,
+      };
+      fileName = githubMediaFileName(fetchUrl);
+      break;
+    }
   }
 
   const secretStore = yield* ServerSecretStore.ServerSecretStore;
@@ -802,6 +835,15 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       number: claims.number,
       path: claims.path,
       ...(claims.revision === undefined ? {} : { revision: claims.revision }),
+    } satisfies ResolvedAsset;
+  }
+
+  if (claims.kind === "github-media") {
+    return {
+      kind: "github-media",
+      url: claims.url,
+      cwd: claims.cwd,
+      expiresAt: claims.expiresAt,
     } satisfies ResolvedAsset;
   }
 
