@@ -1,16 +1,16 @@
 # Import T3 Code data
 
-Use **Settings → Import data** on web or desktop to bring projects, threads, and preferences from T3 Code into styal.
+Use **Settings → Import data** on web or desktop, or the Projects step during setup, to bring projects, threads, and preferences from T3 Code into styal. The same screen also offers Claude Code and Codex history; see [Import your projects](welcome-wizard.md#import-your-projects).
 
 ## Choose a server
 
-Import runs on the server selected at the top of the page. That server checks its own default T3 Code data in `~/.t3/userdata`, so repeat the import for each server that has an older installation.
+Use the computer selector to review each server. Selections are kept separately, and **Import** runs them across the selected computers. Each server checks its own default T3 Code data in `~/.t3/userdata`.
 
 T3 Code can stay open while you import. styal reads its database without modifying it and takes a consistent snapshot of the selected project history.
 
 ## Import projects and threads
 
-The project list separates projects that will transfer into styal from projects that are already there and have missing threads. Transfer rows show how many threads and scripts they include. A project can also appear when an earlier import needs its history or provider context repaired. Select the projects you want, then choose **Import projects**.
+The T3 Code list shows thread counts and identifies projects already in styal, along with scripts or repairs when applicable. A project can also appear when an earlier import needs its history or provider context repaired. Select the projects you want, then choose **Import** (or **Import & finish** during setup). Completed projects are deselected; failed projects remain selected for retry.
 
 The list refreshes while the page is open, so projects added to or removed from the old installation appear automatically.
 
@@ -24,7 +24,7 @@ If the old database refers to an attachment file that is no longer present, stya
 
 ## Import preferences
 
-The Preferences table compares the current value in styal with the value after import. **Import preferences** applies the values shown in the table to the selected server. It includes:
+Preferences are unchecked by default. Select **Bring over T3 Code preferences** on each computer where you want them applied. **Review changes** compares the current value with the value after import, showing only differences. Preferences apply to that computer when you choose **Import**, independently of project selection. They include:
 
 - background activity policy and refresh intervals;
 - host and client idle or power-saving behavior;
@@ -33,7 +33,7 @@ The Preferences table compares the current value in styal with the value after i
 - source-control writing style, custom instructions, and change-request templates; and
 - legacy token streaming.
 
-When every value already matches, the import button is disabled.
+When every value already matches, the preferences checkbox is disabled.
 
 Connections, provider sign-ins, credentials, tokens, and active sessions stay separate. Client-local choices such as appearance, fonts, and keybindings are not part of the server preference import.
 

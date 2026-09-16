@@ -185,14 +185,17 @@ export function WelcomeWizard({
   return (
     <Dialog open disablePointerDismissal onOpenChange={(_, event) => event.cancel()}>
       <DialogPopup
-        className="max-w-xl overflow-x-hidden overflow-y-auto"
+        className={cn(
+          "max-w-xl overflow-x-hidden overflow-y-auto",
+          step === "import" && "flex max-h-[calc(100dvh-2rem)] flex-col overflow-y-hidden",
+        )}
         bottomStickOnMobile={false}
         showCloseButton={false}
         initialFocus={() => document.getElementById("onboarding-pairing-url") ?? true}
       >
         <DialogTitle className="sr-only">Set up styal</DialogTitle>
         <div className="flex min-h-0 flex-col">
-          <DialogHeader className="gap-4">
+          <DialogHeader className="shrink-0 gap-4">
             <div className="flex items-baseline gap-1.5" role="img" aria-label="styal">
               <span className="text-[1.4rem] font-medium tracking-tight text-muted-foreground">
                 styal
@@ -209,7 +212,10 @@ export function WelcomeWizard({
             />
           </DialogHeader>
 
-          <WizardPanel className="min-w-0">
+          <WizardPanel
+            animateHeight={step !== "import"}
+            className={cn("min-w-0", step === "import" && "flex min-h-0 flex-col")}
+          >
             {step === "connection" ? (
               <ConnectionStep
                 expandPairingInitially={!localAvailable && !hasCloudPublicConfig()}
@@ -244,7 +250,6 @@ export function WelcomeWizard({
             ) : (
               <OnboardingImportStep
                 environmentIds={setupIds}
-                isImporting={isImporting}
                 setIsImporting={setIsImporting}
                 onDone={finish}
               />

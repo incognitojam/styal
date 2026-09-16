@@ -73,8 +73,9 @@ export function WizardPanel({
   className,
   children,
   holdHeight = false,
+  animateHeight = true,
   ...props
-}: ComponentProps<"div"> & { readonly holdHeight?: boolean }) {
+}: ComponentProps<"div"> & { readonly holdHeight?: boolean; readonly animateHeight?: boolean }) {
   return (
     <div
       data-slot="dialog-panel"
@@ -84,7 +85,11 @@ export function WizardPanel({
       )}
       {...props}
     >
-      <AnimatedHeight holdHeight={holdHeight}>{children}</AnimatedHeight>
+      {animateHeight ? (
+        <AnimatedHeight holdHeight={holdHeight}>{children}</AnimatedHeight>
+      ) : (
+        children
+      )}
     </div>
   );
 }

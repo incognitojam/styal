@@ -279,7 +279,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "legacy-import-source",
     title: "Import from T3 Code",
     to: "/settings/import",
-    // The detected-source card is the destination for both import entries.
+    // Both sources share the Import data page.
+    targetId: "import-data",
+  },
+  {
+    id: "cli-history-import",
+    title: "Import Claude Code and Codex history",
+    to: "/settings/import",
     targetId: "import-data",
   },
   {

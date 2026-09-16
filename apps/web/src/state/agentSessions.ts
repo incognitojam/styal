@@ -8,7 +8,7 @@ import { connectionAtomRuntime } from "../connection/runtime";
 
 /**
  * Scan of Claude Code / Codex home directories on an environment, surfacing
- * project candidates for the welcome wizard's import step. The scan walks the
+ * project candidates for the shared setup and Settings importer. The scan walks the
  * filesystem server-side, so results are cached briefly and refreshed when the
  * import step remounts.
  */

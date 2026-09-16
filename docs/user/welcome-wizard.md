@@ -51,26 +51,26 @@ terminal metadata while the terminal process can use them.
 
 ## Import your projects
 
-Choose an import source on the Projects step:
+The Projects step uses the same importer as **Settings → Import data**. Switch
+between the computers selected during setup and choose projects from **T3 Code**
+and **Claude Code / Codex**. Each computer keeps its selection when you switch tabs.
+The footer totals your choices across computers.
 
-- **T3 Code data** uses the same importer as Settings → Import data. Choose one of
-  your selected computers, then import projects and conversations, preferences,
-  or both. Data is read from that computer's default T3 home and imported into
-  styal on the same computer.
-- **Claude/Codex history** finds projects and conversations in the CLI history
-  on your selected computers.
-
-Each source is checked when you open it. Return to import options to use the
-other source, then choose Continue to finish setup. Importing is optional.
-Navigation is disabled while an import runs. A scan failure in one source does
-not stop you from opening the other source or finishing setup.
+Choose **Import & finish** to import the selection, or **Skip for now** to finish
+without importing. Both sources remain available in Settings after setup.
+Navigation is disabled while an import runs. Sources are checked independently;
+a scan failure in one does not prevent importing from the other.
 
 ### T3 Code data
 
-The T3 Code importer previews projects before importing and supports retrying
-failed projects. Already imported data is handled in the same way as in Settings.
-Preferences have their own import action, so importing projects does not also
-replace your preferences. You can revisit Settings → Import data after setup.
+Projects and conversations are read from each computer's default T3 home and
+imported into styal on that same computer. Completed projects are deselected;
+failed projects remain selected for retry.
+
+Preferences are optional. Select **Bring over T3 Code preferences** for each
+computer where you want them applied. **Review changes** compares the current
+and imported values, showing only differences. Importing projects alone does
+not replace preferences.
 
 ### Claude/Codex history
 
