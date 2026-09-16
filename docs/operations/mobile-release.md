@@ -21,8 +21,23 @@ builds are not submitted to Google Play.
    `group.build.styal.app` in the Apple Developer portal and assign it to
    `build.styal.app`, `build.styal.app.sharing`, and `build.styal.app.widgets`.
    EAS cannot create or link App Groups when authenticating with an API key.
-4. Configure the project's environment-specific styal Link authentication, relay,
-   and notification settings when those features are enabled.
+4. Configure styal Link's public settings in the Expo project's production and
+   preview environments, using the existing production GitHub variables:
+
+   | GitHub variable         | EAS variable                   |
+   | ----------------------- | ------------------------------ |
+   | `CLERK_PUBLISHABLE_KEY` | `T3CODE_CLERK_PUBLISHABLE_KEY` |
+   | `CLERK_JWT_TEMPLATE`    | `T3CODE_CLERK_JWT_TEMPLATE`    |
+   | `RELAY_URL`             | `T3CODE_RELAY_URL`             |
+
+   Both distributed variants use production styal Link; local development uses
+   the development configuration described in [styal Link](../internals/styal-link.md).
+   Register `build.styal.app` with the signing team in Clerk's production Native
+   API settings. Verify that its Apple association file includes the app under
+   `webcredentials.apps` before testing native passkeys.
+   Notification delivery needs separate push credentials and relay configuration;
+   enabling the iOS push entitlement alone does not configure delivery.
+
 5. Once the distribution workflow and app ID are correct on `main`, add the
    GitHub `EXPO_TOKEN` secret. Set `STYAL_MOBILE_RELEASE_ENABLED=true` to enable
    production builds and over-the-air updates.
@@ -37,8 +52,7 @@ eas credentials:configure-build --platform android --profile production
 ```
 
 The iOS app and its two extensions can share one distribution certificate, but
-each needs its own App
-Store provisioning profile. Verify that all three profiles contain
+each needs its own App Store provisioning profile. Verify that all three contain
 `group.build.styal.app`; the main app also needs production push notifications
 and Sign in with Apple entitlements.
 
@@ -53,12 +67,22 @@ Credentials are stored in EAS. Keep private keys out of the repository. Successf
 credential setup does not verify a native build or TestFlight upload; complete
 the release checks below after the first builds finish.
 
+The repository-root `.easignore` excludes local state, scratch files, credentials,
+dependencies, and generated native projects from build uploads. EAS uses it in
+place of all `.gitignore` files, so keep its exclusions aligned when those change.
+
 ## Build and distribute
 
 Run **Mobile EAS Production** with `mode=build` and the desired platform. Selecting
 `all` schedules an iOS build with automatic TestFlight submission and an Android
 APK build without store submission. Download the Android artifact from the EAS
 build page and share its installation link with testers.
+
+The optional version override commits the new version before building. It uses
+the fork's `NIGHTLY_APP_CLIENT_ID` variable and `NIGHTLY_APP_PRIVATE_KEY` secret;
+the GitHub App must have permission to push version commits to the selected branch.
+Leaving the override blank uses the version already in source and requires no
+GitHub App token.
 
 The production profile uses `build.styal.app` on both platforms. The preview
 profile uses `build.styal.app.preview` and a separate update channel. Preview iOS

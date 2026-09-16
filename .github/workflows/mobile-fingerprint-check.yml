@@ -23,6 +23,7 @@ on:
       - patches/**
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
+      - .easignore
       - .github/workflows/mobile-fingerprint-check.yml
 
 concurrency:

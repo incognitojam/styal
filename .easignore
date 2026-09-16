@@ -1,0 +1,93 @@
+# EAS replaces all .gitignore files when this file exists.
+# Keep these base exclusions aligned with .gitignore and apps/mobile/.gitignore.
+
+node_modules
+.bun
+.turbo
+.DS_Store
+*.log
+*.tsbuildinfo
+apps/*/dist
+infra/*/dist
+.astro
+packages/*/dist
+.env
+.env.local
+build/
+.logs/
+release/
+release-mock/
+.t3
+.styal
+.idea/
+apps/web/.playwright
+apps/web/playwright-report
+apps/web/src/components/__screenshots__
+.vitest-*
+__screenshots__/
+.tanstack
+squashfs-root/
+.vercel
+.gstack/
+.plans/
+dist-electron/
+.electron-runtime/
+.showcase/
+apps/mobile/.showcase/
+artifacts/app-store/screenshots/
+.github/pr-assets/
+native/**/target/
+node_modules/
+.alchemy/
+*.log
+.env*
+!.env.example
+
+# Mobile build exclusions
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/apps/mobile/ios
+/apps/mobile/android
+
+# Worktree-only data and credentials are never build inputs.
+.scratch/
+.repos/
+.vite-hooks/
+.cursor/

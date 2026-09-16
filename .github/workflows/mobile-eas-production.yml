@@ -4,7 +4,7 @@ name: Mobile EAS Production
 # Under the fingerprint runtime-version policy the fingerprint must be computed
 # in the same OS/pnpm as the EAS build; a macOS `eas build` computes a different
 # fingerprint (platform-specific deps + pnpm version) and errors. On this Linux
-# runner, with corepack pinning pnpm 10.24 in eas.json, local == build.
+# runner, with corepack using package.json's pnpm version, local == build.
 #
 # Every merge to main that touches the mobile app reconciles, per platform:
 #   1. Distribution builds: if the latest production build's version differs from
@@ -64,6 +64,7 @@ on:
       - patches/**
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
+      - .easignore
       - .github/workflows/mobile-eas-production.yml
 
 # Serialize runs so OTAs publish in merge order. GitHub keeps at most one
@@ -102,13 +103,13 @@ jobs:
           fi
 
       - id: version_app_token
-        name: Mint release app token for version override
+        name: Mint fork app token for version override
         if: steps.expo-token.outputs.present == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'build' && inputs.version != ''
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
+          client-id: ${{ vars.NIGHTLY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.NIGHTLY_APP_PRIVATE_KEY }}
+          permission-contents: write
 
       - name: Checkout
         if: steps.expo-token.outputs.present == 'true'
