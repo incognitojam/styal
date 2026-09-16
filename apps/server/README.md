@@ -2,6 +2,14 @@
 
 Run the styal server and bundled web client for coding agents.
 
+On Linux, install Python 3, Make, and a C++ compiler before installing the CLI.
+The native terminal dependency builds during npm installation. On Debian or Ubuntu:
+
+```sh
+sudo apt-get update
+sudo apt-get install -y build-essential python3
+```
+
 ```sh
 npx @styal/cli@nightly
 ```
