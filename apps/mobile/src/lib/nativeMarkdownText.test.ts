@@ -63,7 +63,7 @@ describe("nativeMarkdownTextRuns", () => {
     ]);
   });
 
-  it("preserves a linked phrase and its formatting before the file chip", () => {
+  it("preserves a linked phrase and its formatting without a file chip", () => {
     const href = "/workspace/project/review.md";
     const node: MarkdownNode = {
       type: "paragraph",
@@ -83,15 +83,13 @@ describe("nativeMarkdownTextRuns", () => {
 
     expect(nativeMarkdownTextRuns(node)).toEqual([
       { text: "I've " },
-      { text: "corrected the packet and ", href, fileLinkLabel: true },
-      { text: "reassessed the chain", href, fileLinkLabel: true, bold: true },
-      { text: " ", href, fileLinkLabel: true },
-      { text: "review.md", href, fileIcon: "markdown" },
+      { text: "corrected the packet and ", href },
+      { text: "reassessed the chain", href, bold: true },
       { text: ". My recommendation follows." },
     ]);
   });
 
-  it("keeps a code label tappable separately from its file chip and line reference", () => {
+  it("keeps descriptive code labels tappable without a file chip", () => {
     const href = "/workspace/project/localApi.ts:22";
     expect(
       nativeMarkdownTextRuns({
@@ -100,11 +98,7 @@ describe("nativeMarkdownTextRuns", () => {
           { type: "link", href, children: [{ type: "code_inline", content: "readLocalApi()" }] },
         ],
       }),
-    ).toEqual([
-      { text: "readLocalApi()", code: true, href, fileLinkLabel: true },
-      { text: " ", href, fileLinkLabel: true },
-      { text: "localApi.ts:22", href, fileIcon: "typescript" },
-    ]);
+    ).toEqual([{ text: "readLocalApi()", code: true, href }]);
   });
 
   it("keeps hard breaks and collapses soft breaks", () => {

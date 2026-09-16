@@ -155,11 +155,11 @@ describe("ChatMarkdown file option chips", () => {
       );
 
       expect(html).toContain(`href="${href}"`);
-      expect(html).toContain(`class="chat-markdown-file-link-label">${label}</span> `);
+      expect(html).toContain(`>${label}</a>`);
       expect(html).toContain("</a>. My recommendation follows.");
       expect(html).toContain(`data-markdown-copy="[${label}](${href})"`);
-      expect(html).toContain("chat-markdown-file-reference");
-      expect(html).toContain('class="truncate leading-tight">review.md</span>');
+      expect(html).not.toContain("chat-markdown-file-link");
+      expect(html).not.toContain('class="truncate leading-tight">review.md</span>');
       expect(html.match(/<a\s/g)).toHaveLength(1);
     },
   );
@@ -174,14 +174,14 @@ describe("ChatMarkdown file option chips", () => {
 
     expect(html).toContain("Read <strong>the updated</strong> <code>docs/review.md</code> report");
     expect(html).toContain('aria-haspopup="menu"');
-    expect(html).toContain('class="truncate leading-tight">review.md</span>');
+    expect(html).not.toContain('class="truncate leading-tight">review.md</span>');
     expect(html).toContain(
       'data-markdown-copy="[Read **the updated** `docs/review.md` report](/workspace/project/review.md)"',
     );
     expect(html.match(/<button\s/g)).toHaveLength(1);
   });
 
-  it("keeps reference-link labels and line numbers alongside the chip", () => {
+  it("keeps reference-link labels with line numbers in the destination", () => {
     const html = renderToStaticMarkup(
       <ChatMarkdown
         cwd="/workspace/project"
@@ -190,10 +190,8 @@ describe("ChatMarkdown file option chips", () => {
       />,
     );
 
-    expect(html).toContain(
-      '<span class="chat-markdown-file-link-label"><strong>schema</strong></span>',
-    );
-    expect(html).toContain("settings.ts · L157");
+    expect(html).toContain("<strong>schema</strong>");
+    expect(html).not.toContain("settings.ts · L157");
     expect(html).toContain('data-markdown-copy="[**schema**](/workspace/project/settings.ts:157)"');
     expect(html.match(/<a\s/g)).toHaveLength(1);
   });

@@ -2228,8 +2228,8 @@ code {
   text-decoration: none;
 }
 
-.chat-markdown a:not(.chat-markdown-file-link, .chat-markdown-file-reference):hover,
-.chat-markdown a:not(.chat-markdown-file-link, .chat-markdown-file-reference):focus-visible {
+.chat-markdown a:not(.chat-markdown-file-link):hover,
+.chat-markdown a:not(.chat-markdown-file-link):focus-visible {
   background-image: radial-gradient(circle, currentcolor 0.75px, transparent 1px);
   background-position: left bottom;
   background-repeat: repeat-x;
@@ -2293,31 +2293,6 @@ code {
 
 .chat-markdown .chat-markdown-file-link:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 70%, transparent);
-}
-
-.chat-markdown .chat-markdown-file-reference {
-  color: inherit;
-  text-decoration: none;
-}
-
-.chat-markdown
-  .chat-markdown-file-reference:is(:hover, :focus-visible)
-  .chat-markdown-file-link-label {
-  text-decoration: underline dotted;
-  text-decoration-color: var(--muted-foreground);
-  text-underline-offset: 0.2em;
-}
-
-.chat-markdown .chat-markdown-file-reference:hover .chat-markdown-file-link {
-  background-color: color-mix(in oklab, var(--accent) 70%, transparent);
-}
-
-.chat-markdown .chat-markdown-file-reference:focus-visible {
-  outline: none;
-}
-
-.chat-markdown .chat-markdown-file-reference:focus-visible .chat-markdown-file-link {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 70%, transparent);
 }
 

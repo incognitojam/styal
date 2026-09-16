@@ -20,7 +20,6 @@ function runKeySignature(run: NativeMarkdownTextRun): string {
     run.href,
     run.externalHost,
     run.fileIcon,
-    run.fileLinkLabel,
     run.skillName,
     run.skillLabel,
     run.role,
@@ -57,7 +56,7 @@ function runStyle(run: NativeMarkdownTextRun, textStyle: NativeMarkdownTextStyle
   const hasParagraphStyle = run.headIndent !== undefined;
   const textDecorationLine = run.strikethrough
     ? "line-through"
-    : run.href && !isFile && !run.fileLinkLabel
+    : run.href && !isFile
       ? "underline"
       : "none";
 
@@ -66,7 +65,7 @@ function runStyle(run: NativeMarkdownTextRun, textStyle: NativeMarkdownTextStyle
       ? textStyle.fileTextColor
       : isSkill
         ? textStyle.skillTextColor
-        : run.href && !run.fileLinkLabel
+        : run.href
           ? textStyle.linkColor
           : isHeading
             ? textStyle.strongColor

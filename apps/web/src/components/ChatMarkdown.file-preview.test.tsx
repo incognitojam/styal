@@ -70,27 +70,31 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-describe("Markdown file preview links", () => {
+describe.each(["chat", "preview"])("Markdown file links in %s", (surface) => {
+  const renderMarkdown = (text: string) =>
+    surface === "chat" ? (
+      <ChatMarkdown cwd="/workspace/project" text={text} threadRef={threadRef} />
+    ) : (
+      <FileMarkdownPreview
+        cwd="/workspace/project"
+        relativePath="README.md"
+        text={text}
+        threadRef={threadRef}
+      />
+    );
   it.each([
     "[Organizing **threads**](docs/thread-sidebar.md)",
     "- [Organizing **threads**](docs/thread-sidebar.md)",
     "1. [Organizing **threads**][guide]\n\n[guide]: docs/thread-sidebar.md",
   ])("keeps authored text and opens the linked file: %s", async (text) => {
     await act(async () => {
-      renderer = create(
-        <FileMarkdownPreview
-          cwd="/workspace/project"
-          relativePath="README.md"
-          text={text}
-          threadRef={threadRef}
-        />,
-      );
+      renderer = create(renderMarkdown(text));
     });
     expect(visibleText(renderer!.toJSON()).trim()).toBe("Organizing threads");
     expect(renderer!.root.findByType("strong").children).toEqual(["threads"]);
 
     await act(async () => {
-      renderer!.root.findByType("a").props.onClick({
+      renderer!.root.findAllByType("a")[0]!.props.onClick({
         preventDefault() {},
         stopPropagation() {},
       });
@@ -102,22 +106,16 @@ describe("Markdown file preview links", () => {
     });
   });
 
-  it("keeps path labels and inline code as authored while opening a requested line", async () => {
+  it("keeps explicit path references as chips while opening a requested line", async () => {
     await act(async () => {
       renderer = create(
-        <FileMarkdownPreview
-          cwd="/workspace/project"
-          relativePath="README.md"
-          text="[docs/settings.ts:12](docs/settings.ts:12) and `src/main.ts`"
-          threadRef={threadRef}
-        />,
+        renderMarkdown("[docs/settings.ts:12](docs/settings.ts:12) and `src/main.ts`"),
       );
     });
-    expect(visibleText(renderer!.toJSON()).trim()).toBe("docs/settings.ts:12 and src/main.ts");
-    expect(renderer!.root.findAllByType("a")).toHaveLength(1);
-    expect(renderer!.root.findByType("code").children).toEqual(["src/main.ts"]);
+    expect(visibleText(renderer!.toJSON()).trim()).toBe("settings.ts · L12 and main.ts");
+    expect(renderer!.root.findAllByType("a")).toHaveLength(2);
     await act(async () => {
-      renderer!.root.findByType("a").props.onClick({
+      renderer!.root.findAllByType("a")[0]!.props.onClick({
         preventDefault() {},
         stopPropagation() {},
       });
@@ -128,32 +126,18 @@ describe("Markdown file preview links", () => {
     });
   });
 
-  it("switches between chat chips and document text without changing the Markdown", async () => {
-    const text = "- [Organizing threads](docs/thread-sidebar.md) and `src/main.ts`";
+  it("updates between descriptive labels and path chips for the same destination", async () => {
     await act(async () => {
-      renderer = create(
-        <ChatMarkdown cwd="/workspace/project" text={text} threadRef={threadRef} />,
-      );
+      renderer = create(renderMarkdown("[docs/settings.ts:12](docs/settings.ts:12)"));
     });
-    expect(visibleText(renderer!.toJSON()).trim()).toBe(
-      "Organizing threads thread-sidebar.md and main.ts",
-    );
+    expect(visibleText(renderer!.toJSON()).trim()).toBe("settings.ts · L12");
     await act(async () => {
-      renderer!.update(
-        <ChatMarkdown
-          cwd="/workspace/project"
-          text={text}
-          threadRef={threadRef}
-          fileLinkStyle="text"
-        />,
-      );
+      renderer!.update(renderMarkdown("[Default **settings**](docs/settings.ts:12)"));
     });
-    expect(visibleText(renderer!.toJSON()).trim()).toBe("Organizing threads and src/main.ts");
+    expect(visibleText(renderer!.toJSON()).trim()).toBe("Default settings");
     await act(async () => {
-      renderer!.update(<ChatMarkdown cwd="/workspace/project" text={text} threadRef={threadRef} />);
+      renderer!.update(renderMarkdown("[docs/settings.ts:12](docs/settings.ts:12)"));
     });
-    expect(visibleText(renderer!.toJSON()).trim()).toBe(
-      "Organizing threads thread-sidebar.md and main.ts",
-    );
+    expect(visibleText(renderer!.toJSON()).trim()).toBe("settings.ts · L12");
   });
 });

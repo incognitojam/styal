@@ -951,21 +951,24 @@ function useMarkdownStyles(
       link: ({ node, children, href = "" }) => {
         const presentation = resolveMarkdownLinkPresentation(href);
         if (presentation.kind === "file") {
-          const hasDescriptiveLabel = !isMarkdownFileLinkLabel(getTextContent(node), presentation);
+          const isPathLabel = isMarkdownFileLinkLabel(getTextContent(node), presentation);
           return (
             <NativeText
               accessibilityRole="link"
               onPress={() => onLinkPress(href)}
-              style={{ color: inlineTextColor }}
+              style={{ color: isPathLabel ? inlineTextColor : markdownLinkColor }}
             >
-              {hasDescriptiveLabel ? <>{children} </> : null}
-              <NativeText className="font-t3-bold">
-                <Image
-                  source={markdownFileIconSource(presentation.icon)}
-                  style={markdownLinkStyles.inlineIcon}
-                />
-                {presentation.label}
-              </NativeText>
+              {isPathLabel ? (
+                <NativeText className="font-t3-bold">
+                  <Image
+                    source={markdownFileIconSource(presentation.icon)}
+                    style={markdownLinkStyles.inlineIcon}
+                  />
+                  {presentation.label}
+                </NativeText>
+              ) : (
+                children
+              )}
             </NativeText>
           );
         }
