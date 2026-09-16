@@ -945,6 +945,7 @@ import {
   PaperclipIcon,
   PencilRulerIcon,
   PlayIcon,
+  ShieldIcon,
   XIcon,
 } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
@@ -6253,13 +6254,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               <ComposerBanner.Root
                 data-chat-composer-top-drawer="true"
                 variant={activePendingApproval ? "warning" : "info"}
+                density={activePendingApproval ? "spacious" : "default"}
               >
                 {activePendingApproval ? (
                   <ComposerBanner.Row
-                    layout="wrap-actions"
+                    layout="approval"
                     data-chat-composer-collapsed-controls="true"
                   >
-                    <ComposerBanner.Icon />
+                    <ComposerBanner.Icon>
+                      <ShieldIcon />
+                    </ComposerBanner.Icon>
                     <ComposerBanner.Content>
                       <ComposerPendingApprovalPanel
                         approval={activePendingApproval}
@@ -6936,6 +6940,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       showMobilePendingAnswerActions && "max-sm:pb-11",
                       isComposerResting &&
                         "max-h-8 min-h-8 overflow-hidden whitespace-pre! leading-8",
+                      isComposerApprovalState && "min-h-8",
                     )}
                     placeholderClassName={cn(
                       isComposerResting &&
@@ -6951,8 +6956,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onPaste={onComposerPaste}
                     placeholder={
                       isComposerApprovalState
-                        ? (activePendingApproval?.detail ??
-                          "Resolve this approval request to continue")
+                        ? "Resolve this approval request to continue"
                         : activePendingProgress
                           ? isChoiceOnlyPendingQuestion
                             ? "Choose an option above"
