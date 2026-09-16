@@ -34,6 +34,7 @@ import {
   type NodeStyleOverrides,
   type PartialMarkdownTheme,
 } from "react-native-nitro-markdown";
+import { getTextContent } from "react-native-nitro-markdown/headless";
 import {
   ActivityIndicator,
   Image,
@@ -98,7 +99,10 @@ import { MOBILE_TYPOGRAPHY } from "../../lib/typography";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { useAppearanceCodeSurface } from "../settings/appearance/useAppearanceCodeSurface";
 import { markdownFileIconSource } from "@t3tools/mobile-markdown-text/file-icons";
-import { resolveMarkdownLinkPresentation } from "@t3tools/mobile-markdown-text/links";
+import {
+  isMarkdownFileLinkLabel,
+  resolveMarkdownLinkPresentation,
+} from "@t3tools/mobile-markdown-text/links";
 import {
   deriveThreadFeedPresentation,
   type ThreadFeedEntry,
@@ -823,20 +827,24 @@ function useMarkdownStyles(
       preserveSoftBreaks: boolean,
       highlightCode: boolean,
     ): CustomRenderers => ({
-      link: ({ children, href = "" }) => {
+      link: ({ node, children, href = "" }) => {
         const presentation = resolveMarkdownLinkPresentation(href);
         if (presentation.kind === "file") {
+          const hasDescriptiveLabel = !isMarkdownFileLinkLabel(getTextContent(node), presentation);
           return (
             <NativeText
-              className="font-t3-bold"
+              accessibilityRole="link"
               onPress={() => onLinkPress(href)}
               style={{ color: inlineTextColor }}
             >
-              <Image
-                source={markdownFileIconSource(presentation.icon)}
-                style={markdownLinkStyles.inlineIcon}
-              />
-              {presentation.label}
+              {hasDescriptiveLabel ? <>{children} </> : null}
+              <NativeText className="font-t3-bold">
+                <Image
+                  source={markdownFileIconSource(presentation.icon)}
+                  style={markdownLinkStyles.inlineIcon}
+                />
+                {presentation.label}
+              </NativeText>
             </NativeText>
           );
         }

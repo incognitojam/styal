@@ -140,6 +140,80 @@ describe("hasMarkdownFilePrimaryAction", () => {
 });
 
 describe("ChatMarkdown file option chips", () => {
+  it.each([true, false])(
+    "preserves descriptive file link text with parseRawHtml=%s",
+    (parseRawHtml) => {
+      const href = "/workspace/project/.scratch/review.md";
+      const label = "corrected the packet and reassessed the chain";
+      const html = renderToStaticMarkup(
+        <ChatMarkdown
+          cwd="/workspace/project"
+          environmentId={surfaceThreadRef.environmentId}
+          text={`I've [${label}](${href}). My recommendation follows.`}
+          parseRawHtml={parseRawHtml}
+        />,
+      );
+
+      expect(html).toContain(`href="${href}"`);
+      expect(html).toContain(`class="chat-markdown-file-link-label">${label}</span> `);
+      expect(html).toContain("</a>. My recommendation follows.");
+      expect(html).toContain(`data-markdown-copy="[${label}](${href})"`);
+      expect(html).toContain("chat-markdown-file-reference");
+      expect(html).toContain('class="truncate leading-tight">review.md</span>');
+      expect(html.match(/<a\s/g)).toHaveLength(1);
+    },
+  );
+
+  it("preserves emphasis and inline code inside descriptive file links", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown
+        cwd="/workspace/project"
+        text="[Read **the updated** `docs/review.md` report](/workspace/project/review.md)"
+      />,
+    );
+
+    expect(html).toContain("Read <strong>the updated</strong> <code>docs/review.md</code> report");
+    expect(html).toContain('aria-haspopup="menu"');
+    expect(html).toContain('class="truncate leading-tight">review.md</span>');
+    expect(html).toContain(
+      'data-markdown-copy="[Read **the updated** `docs/review.md` report](/workspace/project/review.md)"',
+    );
+    expect(html.match(/<button\s/g)).toHaveLength(1);
+  });
+
+  it("keeps reference-link labels and line numbers alongside the chip", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown
+        cwd="/workspace/project"
+        environmentId={surfaceThreadRef.environmentId}
+        text={"See the [**schema**][settings].\n\n[settings]: /workspace/project/settings.ts:157"}
+      />,
+    );
+
+    expect(html).toContain(
+      '<span class="chat-markdown-file-link-label"><strong>schema</strong></span>',
+    );
+    expect(html).toContain("settings.ts · L157");
+    expect(html).toContain('data-markdown-copy="[**schema**](/workspace/project/settings.ts:157)"');
+    expect(html.match(/<a\s/g)).toHaveLength(1);
+  });
+
+  it.each(["review.md", "review.md:12", "docs/review.md", "/workspace/project/docs/review.md"])(
+    "keeps path label %s as a compact file chip",
+    (label) => {
+      const html = renderToStaticMarkup(
+        <ChatMarkdown
+          cwd="/workspace/project"
+          text={`[${label}](/workspace/project/docs/review.md:12)`}
+        />,
+      );
+
+      expect(html).toContain("chat-markdown-file-link");
+      expect(html).not.toContain("chat-markdown-file-reference");
+      expect(html).toContain("review.md · L12");
+    },
+  );
+
   it("keeps the fallback button text selectable", () => {
     const html = renderToStaticMarkup(
       <ChatMarkdown cwd="/tmp/project" text="[Source](/tmp/project/src/main.ts)" />,
@@ -467,7 +541,7 @@ describe("ChatMarkdown Windows file links", () => {
       <ChatMarkdown
         cwd="C:/Users/shawn/project"
         environmentId={environmentId}
-        text="[Open](C:/Users/shawn/project/src/main.ts)"
+        text="[main.ts](C:/Users/shawn/project/src/main.ts)"
         lineBreaks={!parseRawHtml}
         parseRawHtml={parseRawHtml}
       />,
@@ -482,7 +556,7 @@ describe("ChatMarkdown Windows file links", () => {
       <ChatMarkdown
         cwd="C:/Users/shawn/project"
         environmentId={environmentId}
-        text={String.raw`[Open](C:\Users\shawn\project\src\main.ts)`}
+        text={String.raw`[main.ts](C:\Users\shawn\project\src\main.ts)`}
         lineBreaks={!parseRawHtml}
         parseRawHtml={parseRawHtml}
       />,
@@ -499,7 +573,7 @@ describe("ChatMarkdown Windows file links", () => {
         <ChatMarkdown
           cwd="C:/Users/shawn/project"
           environmentId={environmentId}
-          text={String.raw`[Source](C:\Users\shawn\project\src\index.ts) and [Test](C:\Users\shawn\project\test\index.ts)`}
+          text={String.raw`[index.ts](C:\Users\shawn\project\src\index.ts) and [index.ts](C:\Users\shawn\project\test\index.ts)`}
           lineBreaks={!parseRawHtml}
           parseRawHtml={parseRawHtml}
         />,
@@ -518,7 +592,7 @@ describe("ChatMarkdown Windows file links", () => {
         <ChatMarkdown
           cwd="C:/Users/shawn/project"
           environmentId={environmentId}
-          text={`[Source](${path}) and \`${path}\``}
+          text={`[main.ts](${path}) and \`${path}\``}
           lineBreaks={!parseRawHtml}
           parseRawHtml={parseRawHtml}
         />,
@@ -534,7 +608,7 @@ describe("ChatMarkdown Windows file links", () => {
       <ChatMarkdown
         cwd="C:/Users/shawn/project"
         environmentId={environmentId}
-        text={"[Open][source]\n\n[source]: C:/Users/shawn/project/src/main.ts"}
+        text={"[main.ts][source]\n\n[source]: C:/Users/shawn/project/src/main.ts"}
         lineBreaks={!parseRawHtml}
         parseRawHtml={parseRawHtml}
       />,
