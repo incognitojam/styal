@@ -6,6 +6,14 @@ styal is a web and desktop GUI for running coding agents on your machine.
 
 Node.js `^22.16 || ^23.11 || >=24.10` on the machine that runs the styal server.
 
+On Linux, npm builds the CLI's native terminal dependency during installation. Install
+Python 3, Make, and a C++ compiler first. On Debian or Ubuntu:
+
+```sh
+sudo apt-get update
+sudo apt-get install -y build-essential python3
+```
+
 At least one provider CLI, installed and authenticated. See [Providers](#providers) below.
 
 ## Run Without Installing
