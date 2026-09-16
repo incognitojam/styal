@@ -1686,36 +1686,52 @@ features:
   - id: workspace-path-presentation
     title: Keep workspace file paths concise and actionable
     status: maintained
-    prs: [89, 129]
+    prs: [89, 129, 337, 354]
     invariants:
       - Scoped tool activity and Markdown file chips on web and mobile omit generated worktree directory names and display workspace-relative paths, while paths outside the workspace remain absolute.
       - Opening a file still uses its full resolved target, while visible labels and Copy relative path actions retain the scoped path.
       - Open-in-editor menus can copy their resolved project, worktree, or file target and report clipboard success or failure.
+      - Descriptive Markdown file-link labels retain their authored text and formatting without an appended filename chip; labels naming the destination file retain compact chips, including line references, throughout chat and previews where file chips are supported.
+      - Both file-link presentations retain the resolved destination and file-opening actions, and copying a rendered web link preserves its authored Markdown label without an added filename.
     implementation_paths:
+      - apps/mobile/modules/t3-markdown-text/src/NativeMarkdownSelectableText.ios.tsx
+      - apps/mobile/modules/t3-markdown-text/src/markdownLinks.ts
+      - apps/mobile/modules/t3-markdown-text/src/nativeMarkdownText.ts
+      - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/web/src/components/ChatMarkdown.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/chat/OpenInPicker.tsx
+      - apps/web/src/components/files/FileMarkdownPreview.tsx
       - apps/web/src/filePathDisplay.ts
+      - apps/web/src/index.css
       - apps/web/src/markdown-links.ts
       - packages/shared/src/filePathDisplay.ts
     upstream_paths:
+      - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/web/src/components/ChatMarkdown.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/chat/OpenInPicker.tsx
+      - apps/web/src/components/files/FileMarkdownPreview.tsx
       - apps/web/src/filePathDisplay.ts
+      - apps/web/src/index.css
       - apps/web/src/markdown-links.ts
     tests:
+      - apps/mobile/src/lib/markdownLinks.test.ts
+      - apps/mobile/src/lib/nativeMarkdownText.test.ts
       - apps/mobile/src/lib/threadActivity.test.ts
+      - apps/web/src/components/ChatMarkdown.file-preview.test.tsx
+      - apps/web/src/components/ChatMarkdown.test.tsx
       - apps/web/src/components/chat/ChatHeader.test.ts
       - apps/web/src/components/chat/MessagesTimeline.test.tsx
       - apps/web/src/filePathDisplay.test.ts
+      - apps/web/src/markdown-clipboard.test.ts
       - apps/web/src/markdown-links.test.ts
     upstream:
       status: unassessed
       tracking: []
-      retire_when: Upstream presents equivalent workspace-scoped paths across clients while preserving full file targets and copy actions.
+      retire_when: Upstream presents equivalent workspace-scoped paths across clients, preserves descriptive Markdown link labels without redundant chips while retaining chips for file-path labels, and preserves full file targets and authored-label copy actions.
 
   - id: workspace-thread-organization
     title: Organize threads around isolated workspaces
