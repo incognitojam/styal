@@ -205,38 +205,58 @@ features:
       retire_when: Upstream synchronizes equivalent composer draft state across clients and safely migrates installations carrying the fork schema.
 
   - id: data-import-from-t3-code
-    title: Import projects and history from T3 Code
+    title: Shared T3 Code and CLI history import
     status: maintained
-    prs: [294, 297, 298, 300]
+    prs: [294, 297, 298, 300, 349]
     invariants:
       - A selected styal environment can preview and import projects, missing threads, attachments, provider continuations, and supported server preferences from a live T3 Code database, including older fork databases, without modifying the source.
       - Existing styal project configuration wins while each imported thread and its verified attachments commit atomically, so interrupted or repeated imports resume without duplication.
       - Credentials, connections, provider sign-ins, active sessions, and client-local preferences remain isolated, while affected earlier imports can restore provider context only after their loaded sessions stop.
+      - Setup and Settings share one importer for T3 Code data and Claude Code or Codex history; setup offers only its selected computers while Settings offers saved computers, and switching computers preserves their separate selections.
+      - Server preferences require explicit opt-in per computer and show changed values before import; project selection alone never applies preferences.
+      - Partial imports keep failed work selected for retry and clear completed selections; pending imports remain locked across Settings remounts, and leaving the page prevents subsequent requests in the batch.
     implementation_paths:
       - apps/server/src/dataImport/LegacyImport.ts
       - apps/server/src/dataImport/LegacyImportPreferences.ts
       - apps/server/src/dataImport/LegacyImportPreview.ts
+      - apps/web/src/components/import/DataImportPanel.tsx
+      - apps/web/src/components/import/ImportComputer.tsx
+      - apps/web/src/components/import/ImportDataView.tsx
+      - apps/web/src/components/import/useHistoryImport.ts
+      - apps/web/src/components/import/useLegacyImport.ts
+      - apps/web/src/components/onboarding/OnboardingImportStep.tsx
+      - apps/web/src/components/settings/DataImportSettings.logic.ts
       - apps/web/src/components/settings/DataImportSettings.tsx
       - apps/web/src/state/dataImport.ts
       - packages/contracts/src/dataImport.ts
     upstream_paths:
       - apps/server/src/assets/AssetAccess.ts
       - apps/server/src/orchestration/Layers/OrchestrationEngine.ts
+      - apps/server/src/project/AgentSessionImporter.ts
       - apps/server/src/ws.ts
+      - apps/web/src/components/onboarding/WelcomeWizard.tsx
       - apps/web/src/components/settings/SettingsSidebarNav.tsx
       - apps/web/src/components/settings/settingsSearch.ts
+      - apps/web/src/onboarding/projectImport.logic.ts
+      - apps/web/src/onboarding/useProjectScans.ts
+      - apps/web/src/state/agentSessions.ts
       - packages/contracts/src/index.ts
       - packages/contracts/src/rpc.ts
     tests:
       - apps/server/src/dataImport/LegacyImport.test.ts
       - apps/server/src/dataImport/LegacyImportPreview.test.ts
+      - apps/web/src/components/import/useHistoryImport.test.ts
+      - apps/web/src/components/import/useLegacyImport.test.ts
       - apps/web/src/components/settings/DataImportSettings.logic.test.ts
+      - apps/web/src/components/settings/settingsSearch.test.ts
+      - apps/web/src/onboarding/projectImport.logic.test.ts
       - apps/web/src/state/dataImport.test.ts
       - packages/contracts/src/dataImport.test.ts
     upstream:
-      status: unassessed
-      tracking: []
-      retire_when: The fork no longer supports migration from T3 Code installations or replaces this importer with an equivalent safe cross-distribution transfer path.
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/blob/384de0858d1f59ca2ad7c660544a5290fd9138cb/apps/web/src/components/onboarding/WelcomeWizard.tsx
+      retire_when: The fork replaces this implementation with equivalent safe T3 Code migration and CLI history import in setup and Settings, preserving computer scope, preference opt-in, retry behavior, and pending-import locks, or deliberately retires those capabilities.
 
   - id: desktop-background-updates
     title: Download desktop updates in the background and install on quit
