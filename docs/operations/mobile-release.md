@@ -16,6 +16,11 @@ builds are not submitted to Google Play.
    extensions, and the Android keystore. Configure the App Store Connect API key
    used by EAS Submit. Keep Android's signing key stable across APK releases so
    users can install updates over an existing installation.
+   Provisioning through the Apple API requires a team API key with Admin access.
+   Before creating iOS provisioning profiles, register the App Group
+   `group.build.styal.app` in the Apple Developer portal and assign it to
+   `build.styal.app`, `build.styal.app.sharing`, and `build.styal.app.widgets`.
+   EAS cannot create or link App Groups when authenticating with an API key.
 4. Configure the project's environment-specific styal Link authentication, relay,
    and notification settings when those features are enabled.
 5. Once the distribution workflow and app ID are correct on `main`, add the
