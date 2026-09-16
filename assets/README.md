@@ -6,7 +6,7 @@ The three Icon Composer projects are the source of truth for full application ic
 - `nightly/app-icon.icon`
 - `prod/app-icon.icon`
 
-Each project uses `text.svg` for the T3 mark and `background.svg` when the background is a vector layer. Additional layers use semantic names that describe their role and placement.
+Each project uses `text.svg` for the styal mark and `background.svg` when the background is a vector layer. Additional layers use semantic names that describe their role and placement.
 
 Run `vp run icons:export` from the repository root to regenerate the tracked iOS, Linux, Windows, and web assets. The development web exports are also copied to `apps/web/public` for the browser favicon and splash screen. Run `vp run icons:check` to verify that the generated assets and public copies match their sources without changing files.
 
@@ -49,16 +49,31 @@ Verify every result is 1024×1024 and has the classic macOS safe area: an 824×8
 
 Do not edit the generated PNG or ICO files directly.
 
-## Android adaptive foreground
+## Mobile marks
 
 `apps/mobile/assets/android-icon-foreground.svg` is the source of truth for the foreground used by
-the normal Android adaptive launcher icon. Export its paired PNG after changing it:
+the Android adaptive launcher icon, monochrome themed icon, and launcher shortcuts. Its outlined
+`s` comes from `assets/brand/mark.svg`. Export both PNGs after changing it:
 
 ```sh
 rsvg-convert -w 432 -h 432 \
   -o apps/mobile/assets/android-icon-foreground.png \
   apps/mobile/assets/android-icon-foreground.svg
+rsvg-convert -w 432 -h 432 \
+  -o apps/mobile/assets/android-icon-mark.png \
+  apps/mobile/assets/android-icon-foreground.svg
+rsvg-convert -w 96 -h 96 \
+  -o apps/mobile/assets/android-notification-icon.png \
+  apps/mobile/assets/android-notification-icon.svg
 ```
 
-The foreground must remain transparent and keep the T3 mark inside Android's adaptive-icon safe
-zone. `android-icon-mark.png` remains a flat silhouette for Android's monochrome themed icon.
+The foreground must remain transparent and keep the styal mark inside Android's adaptive-icon safe
+zone. The notification SVG uses the same white silhouette with padding on a transparent canvas.
+Variant backgrounds in `apps/mobile/app.config.ts` follow the palette in `docs/brand.md`.
+
+`apps/mobile/assets/widget/StyalMark.svg` is the same outlined mark with a fixed black fill for
+the iOS widget and Live Activity template image. `StyalWordmark.tsx` in the mobile components
+directory carries the outlined `assets/brand/wordmark.svg` for both home headers.
+
+Launcher, notification, and widget assets require a new native build; an OTA update alone cannot
+replace them.
