@@ -1673,7 +1673,9 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
     canOpenInPanel,
   });
   const linkClassName = cn(
-    children === undefined && [CHAT_FILE_TAG_CHIP_CLASS_NAME, MARKDOWN_FILE_LINK_CLASS_NAME],
+    children === undefined
+      ? [CHAT_FILE_TAG_CHIP_CLASS_NAME, MARKDOWN_FILE_LINK_CLASS_NAME]
+      : "chat-markdown-file-text",
     className,
   );
   const content = children ?? (
