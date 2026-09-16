@@ -51,20 +51,6 @@ describe("ServerUpdateAction", () => {
     testState.copy.mockReset();
   });
 
-  it("copies a local migration command without asking a legacy server to install upstream", () => {
-    const action = ServerUpdateAction({
-      environmentId: "env-legacy" as EnvironmentId,
-      serverLabel: "Legacy server",
-      selfUpdate: "service-migration",
-      targetVersion: "0.1.0",
-    }) as ActionElement;
-    action.props.onClick?.();
-    expect(testState.copy).toHaveBeenCalledWith("npx @styal/cli@0.1.0 service update", {
-      command: "npx @styal/cli@0.1.0 service update",
-    });
-    expect(testState.updateServer).not.toHaveBeenCalled();
-  });
-
   it("reports success only after the shared update flow reconnects", async () => {
     testState.updateServer.mockResolvedValue(
       AsyncResult.success({ targetVersion: "0.0.31", method: "boot-service" as const }),

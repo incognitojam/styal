@@ -10,6 +10,15 @@ import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { manualServerUpdateCommand, type ServerUpdateCapability } from "~/versionSkew";
 import { Button } from "./ui/button";
+import {
+  Dialog,
+  DialogDescription,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+  DialogTrigger,
+} from "./ui/dialog";
 import { toastManager } from "./ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
@@ -87,19 +96,19 @@ export function ServerUpdateAction({
   const updateServer = useAtomCommand(serverEnvironment.updateServer, {
     reportFailure: false,
   });
-  const { copyToClipboard } = useCopyToClipboard<{ command: string }>({
-    target: "update command",
-    onCopy: ({ command }) => {
+  const { copyToClipboard } = useCopyToClipboard<{ description: string }>({
+    target: "command",
+    onCopy: ({ description }) => {
       toastManager.add({
         type: "success",
-        title: "Update command copied",
-        description: `Run \`${command}\` on ${serverLabel} to update it.`,
+        title: "Command copied",
+        description,
       });
     },
     onError: (error) => {
       toastManager.add({
         type: "error",
-        title: "Could not copy update command",
+        title: "Could not copy command",
         description: error.message,
       });
     },
@@ -145,11 +154,76 @@ export function ServerUpdateAction({
   }
 
   if (selfUpdate === null || selfUpdate === "service-migration") {
-    const command = manualServerUpdateCommand(targetVersion, selfUpdate === "service-migration");
+    const serviceCommand = manualServerUpdateCommand(targetVersion, "service");
+    const foregroundCommand = manualServerUpdateCommand(targetVersion, "foreground");
     return (
-      <Button size="xs" variant="outline" onClick={() => copyToClipboard(command, { command })}>
-        Copy update command
-      </Button>
+      <Dialog>
+        <DialogTrigger render={<Button size="xs" variant="outline" />}>
+          Update instructions
+        </DialogTrigger>
+        <DialogPopup>
+          <DialogHeader>
+            <DialogTitle>Update {serverLabel}</DialogTitle>
+            <DialogDescription>
+              {selfUpdate === "service-migration"
+                ? "This server needs a one-time service migration before it can update from the app."
+                : "This server does not support in-app updates. Choose the instructions for how it is run."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogPanel className="space-y-5 text-sm">
+            <p className="text-muted-foreground">
+              Let active work finish, then use a separate terminal or SSH session on {serverLabel}.
+              Keep the same data directory and connection settings, including any custom port or
+              Tailscale configuration.
+            </p>
+            <section className="space-y-2">
+              <h3 className="font-medium">Background service · Linux or macOS</h3>
+              <p className="text-muted-foreground">
+                Update and restart the styal service. If it is not installed, this installs it and
+                enables future in-app updates; stop any manually started server first. For a custom
+                data directory, add your existing <code>--base-dir</code> option.
+              </p>
+              <code className="block break-all rounded-md bg-muted p-3 text-xs">
+                {serviceCommand}
+              </code>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  copyToClipboard(serviceCommand, {
+                    description: `Run this in a separate terminal on ${serverLabel} after active work finishes. It restarts the background service.`,
+                  })
+                }
+              >
+                Copy service update command
+              </Button>
+            </section>
+            {selfUpdate === null && (
+              <section className="space-y-2">
+                <h3 className="font-medium">Foreground server</h3>
+                <p className="text-muted-foreground">
+                  Stop the existing server first, then run this with your existing startup options.
+                  This starts a foreground server; it does not replace a running instance.
+                </p>
+                <code className="block break-all rounded-md bg-muted p-3 text-xs">
+                  {foregroundCommand}
+                </code>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    copyToClipboard(foregroundCommand, {
+                      description: `Stop the existing server on ${serverLabel} first, then run this with the same startup options.`,
+                    })
+                  }
+                >
+                  Copy start command
+                </Button>
+              </section>
+            )}
+          </DialogPanel>
+        </DialogPopup>
+      </Dialog>
     );
   }
 

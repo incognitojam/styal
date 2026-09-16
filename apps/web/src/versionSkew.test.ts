@@ -178,10 +178,18 @@ describe("versionSkew", () => {
         environment: { ...config.environment, serverPackageName: "@styal/cli" },
       }),
     ).toBe("boot-service");
-    expect(manualServerUpdateCommand("0.1.0-nightly.20260915.1", true)).toBe(
+    expect(
+      resolveServerSelfUpdateCapability({
+        environment: {
+          ...config.environment,
+          capabilities: { repositoryIdentity: true },
+        },
+      }),
+    ).toBeNull();
+    expect(manualServerUpdateCommand("0.1.0-nightly.20260915.1", "service")).toBe(
       "npx @styal/cli@0.1.0-nightly.20260915.1 service update",
     );
-    expect(manualServerUpdateCommand("0.1.0")).toBe("npx @styal/cli@0.1.0");
+    expect(manualServerUpdateCommand("0.1.0", "foreground")).toBe("npx @styal/cli@0.1.0 serve");
   });
 
   it("matches version-drift guidance to the advertised update path", () => {
@@ -192,7 +200,7 @@ describe("versionSkew", () => {
       "Update the desktop app that runs the Desktop server.",
     );
     expect(serverUpdateGuidance(null, "Local server")).toBe(
-      "Relaunch the Local server with the copied command to sync them.",
+      "Follow the update instructions for how the Local server is installed.",
     );
   });
 });
