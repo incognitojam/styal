@@ -27,6 +27,32 @@ builds are not submitted to Google Play.
    GitHub `EXPO_TOKEN` secret. Set `STYAL_MOBILE_RELEASE_ENABLED=true` to enable
    production builds and over-the-air updates.
 
+### Signing and submission credentials
+
+From `apps/mobile`, configure the production signing credentials:
+
+```sh
+eas credentials:configure-build --platform ios --profile production
+eas credentials:configure-build --platform android --profile production
+```
+
+The iOS app and its two extensions can share one distribution certificate, but
+each needs its own App
+Store provisioning profile. Verify that all three profiles contain
+`group.build.styal.app`; the main app also needs production push notifications
+and Sign in with Apple entitlements.
+
+Configure upload credentials separately with `eas credentials --platform ios`.
+Select `production`, then **App Store Connect → Set up your project to use an API
+Key for EAS Submit**, and select the main `styal` target. Import an existing key
+using its `.p8` file, key ID, and issuer ID. The Developer key used for uploads can
+be separate from the Admin key used for provisioning. Importing an existing key
+does not require signing in with an Apple ID; decline that optional login prompt.
+
+Credentials are stored in EAS. Keep private keys out of the repository. Successful
+credential setup does not verify a native build or TestFlight upload; complete
+the release checks below after the first builds finish.
+
 ## Build and distribute
 
 Run **Mobile EAS Production** with `mode=build` and the desired platform. Selecting
