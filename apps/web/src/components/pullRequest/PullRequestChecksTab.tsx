@@ -20,7 +20,6 @@ import {
   CircleDashedIcon,
   CircleDotIcon,
   CircleHelpIcon,
-  GitPullRequestDraftIcon,
   HammerIcon,
   ShieldAlertIcon,
 } from "lucide-react";
@@ -39,6 +38,7 @@ import {
   pullRequestChecksStatePresentation,
   summarizePullRequestChecks,
 } from "./pullRequestPresentation";
+import { PullRequestGlyph } from "./pullRequestIcons";
 
 /** A check the reader can act on: the two outcomes that leave something to reproduce. */
 function isFailing(check: PullRequestCheck): boolean {
@@ -49,7 +49,7 @@ const MERGE_POLICY_PRESENTATION = {
   draft: {
     label: "Draft",
     compactLabel: "Draft",
-    Icon: GitPullRequestDraftIcon,
+    Icon: PullRequestGlyph.draft,
     toneClassName: "text-zinc-500 dark:text-zinc-400/80",
   },
   ready: {

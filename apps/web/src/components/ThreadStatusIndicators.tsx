@@ -14,7 +14,7 @@ import {
   visibleThreadPullRequests,
   type ThreadPullRequestBadge,
 } from "@t3tools/shared/threadPullRequests";
-import { FolderGit2Icon, GitPullRequestArrowIcon, LayersIcon, TerminalIcon } from "lucide-react";
+import { FolderGit2Icon, TerminalIcon } from "lucide-react";
 import { useMemo, type MouseEvent, type PointerEvent } from "react";
 import { buttonVariants, InlineButton } from "./ui/button";
 import { cn } from "../lib/utils";
@@ -31,11 +31,17 @@ import type { SidebarThreadSummary } from "../types";
 import { formatWorktreePathForDisplay } from "../worktreeCleanup";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { pullRequestListLines, type PullRequestListLine } from "./pullRequest/pullRequestListLines";
+import {
+  PULL_REQUEST_STATE_PRESENTATION,
+  PullRequestGlyph,
+  type PullRequestGlyphIcon,
+} from "./pullRequest/pullRequestIcons";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 
 export interface PrStatusIndicator {
   label: string;
   colorClass: string;
+  Icon: PullRequestGlyphIcon;
   tooltip: string;
   tooltipLead: string;
   tooltipTitle: string;
@@ -125,16 +131,55 @@ export {
   type ThreadPullRequestBadge,
 } from "@t3tools/shared/threadPullRequests";
 
-/** The glyph a row's badge wears: the layers icon for a stack, the pull-request one otherwise. */
-function ThreadPullRequestBadgeIcon({
-  icon,
-  className,
+export interface ThreadPullRequestBadgePresentation {
+  readonly Icon: PullRequestGlyphIcon;
+  readonly toneClassName: string;
+  readonly label: string;
+  readonly text: string | number;
+}
+
+/** Resolve the complete badge appearance before rendering it in the sidebar or composer. */
+export function resolveThreadPullRequestBadgePresentation({
+  badge,
+  number,
+  url,
+  status,
 }: {
-  icon: "stack" | "pull-request";
-  className?: string | undefined;
-}) {
-  const Icon = icon === "stack" ? LayersIcon : GitPullRequestArrowIcon;
-  return <Icon aria-hidden className={cn("size-3 shrink-0", className)} />;
+  readonly badge: ThreadPullRequestBadge | null;
+  readonly number?: number | undefined;
+  readonly url?: string | undefined;
+  readonly status: PrStatusIndicator | null;
+}): ThreadPullRequestBadgePresentation | null {
+  // The badge already folds every visible link into one state, draft included, so both the
+  // stack and the linked count index the shared table directly rather than the single-PR resolver.
+  if (badge?.kind === "stack") {
+    const aggregate = PULL_REQUEST_STATE_PRESENTATION[badge.state];
+    return {
+      Icon: PullRequestGlyph.stack,
+      toneClassName: aggregate.toneClassName,
+      label: `Stack of ${badge.layers} pull requests, ${aggregate.label.toLowerCase()}`,
+      text: badge.layers,
+    };
+  }
+  if (number === undefined || url === undefined) return null;
+
+  const tooltip = status?.tooltip ?? `PR #${number}, status pending`;
+  if (badge?.kind === "pull-request" && badge.others > 0) {
+    // Unrelated links fold into one state, so a count of merged PRs reads as merged.
+    const aggregate = PULL_REQUEST_STATE_PRESENTATION[badge.state];
+    return {
+      Icon: aggregate.Icon,
+      toneClassName: aggregate.toneClassName,
+      label: `${tooltip}, and ${badge.others} more linked; overall ${aggregate.label.toLowerCase()}`,
+      text: `${number}+${badge.others}`,
+    };
+  }
+  return {
+    Icon: status?.Icon ?? PullRequestGlyph.pullRequest,
+    toneClassName: status?.colorClass ?? "text-muted-foreground",
+    label: tooltip,
+    text: number,
+  };
 }
 
 /** The complete linked-PR control shared by the sidebar and composer footer. */
@@ -155,16 +200,9 @@ export function ThreadPullRequestBadgeControl({
   onOpenStack: () => void;
   onOpenPullRequest: (event: MouseEvent<HTMLAnchorElement>) => void;
 }) {
+  const presentation = resolveThreadPullRequestBadgePresentation({ badge, number, url, status });
+  if (presentation === null) return null;
   const isStack = badge?.kind === "stack";
-  const additionalCount = badge?.kind === "pull-request" && badge.others > 0 ? badge.others : null;
-  if (!isStack && (number === undefined || url === undefined)) return null;
-  const label = isStack
-    ? `Stack of ${badge.layers} pull requests, ${badge.state}`
-    : `${status?.tooltip ?? `PR #${number}, status pending`}${
-        badge?.kind === "pull-request" && badge.others > 0
-          ? `, and ${badge.others} more linked; overall ${badge.state}`
-          : ""
-      }`;
   const className = cn(
     variant === "ghost"
       ? buttonVariants({ variant: "ghost", size: "xs" })
@@ -172,14 +210,12 @@ export function ThreadPullRequestBadgeControl({
     "text-xs tabular-nums",
     variant === "ghost" &&
       "font-normal text-xs! active:scale-100 [--control-icon-color:currentColor]",
-    badge !== null && (isStack || additionalCount !== null)
-      ? PR_STATE_COLOR_CLASS[badge.state]
-      : (status?.colorClass ?? "text-muted-foreground"),
+    presentation.toneClassName,
   );
   const content = (
     <>
-      <ThreadPullRequestBadgeIcon icon={badge?.kind ?? "pull-request"} />
-      {isStack ? badge.layers : additionalCount !== null ? `${number}+${additionalCount}` : number}
+      <presentation.Icon aria-hidden className="size-3 shrink-0" />
+      {presentation.text}
     </>
   );
   const prLinkProps = {
@@ -187,7 +223,7 @@ export function ThreadPullRequestBadgeControl({
     target: "_blank",
     rel: "noopener noreferrer",
     className,
-    "aria-label": label,
+    "aria-label": presentation.label,
     onPointerDown: (event: PointerEvent<HTMLAnchorElement>) => event.stopPropagation(),
     onClick: onOpenPullRequest,
   };
@@ -199,7 +235,7 @@ export function ThreadPullRequestBadgeControl({
           isStack ? (
             <InlineButton
               className={className}
-              aria-label={label}
+              aria-label={presentation.label}
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.preventDefault();
@@ -214,7 +250,7 @@ export function ThreadPullRequestBadgeControl({
       >
         {content}
       </TooltipTrigger>
-      <TooltipPopup side="top">{label}</TooltipPopup>
+      <TooltipPopup side="top">{presentation.label}</TooltipPopup>
     </Tooltip>
   );
 }
@@ -302,7 +338,10 @@ function PullRequestMiniListRow({
           className={cn("size-3 shrink-0", presentation.toneClassName)}
         />
       ) : (
-        <GitPullRequestArrowIcon aria-hidden className="size-3 shrink-0 stroke-muted-foreground" />
+        <PullRequestGlyph.pullRequest
+          aria-hidden
+          className="size-3 shrink-0 stroke-muted-foreground"
+        />
       )}
       <span className="shrink-0 font-mono tabular-nums">#{number}</span>
       <span className="min-w-0 truncate text-foreground/75">{title}</span>
@@ -313,35 +352,6 @@ function PullRequestMiniListRow({
       ) : null}
     </li>
   );
-}
-
-/** The ink each pull-request state wears in the sidebar, shared by the number and stack badges. */
-const PR_STATE_COLOR_CLASS: Record<ThreadPullRequestBadge["state"], string> = {
-  open: "text-emerald-600 dark:text-emerald-300/90",
-  merged: "text-violet-600 dark:text-violet-300/90",
-  closed: "text-red-600 dark:text-red-300/90",
-  draft: "text-zinc-500 dark:text-zinc-400/80",
-};
-
-/**
- * The tone a settled row's number returns to on hover, which is the one the change request
- * wears everywhere else. A draft has no louder tone to restore — muted is already its own
- * colour — so hovering one deliberately barely moves.
- */
-export function settledPrHoverColorClass(
-  pr: Pick<NonNullable<ThreadPr>, "state"> & { readonly isDraft?: boolean | undefined },
-): string {
-  if (pr.state === "open" && pr.isDraft === true) {
-    return "group-hover/sidebar-row:text-zinc-500 dark:group-hover/sidebar-row:text-zinc-400/80";
-  }
-  switch (pr.state) {
-    case "open":
-      return "group-hover/sidebar-row:text-emerald-600 dark:group-hover/sidebar-row:text-emerald-300/90";
-    case "merged":
-      return "group-hover/sidebar-row:text-violet-600 dark:group-hover/sidebar-row:text-violet-300/90";
-    case "closed":
-      return "group-hover/sidebar-row:text-red-600 dark:group-hover/sidebar-row:text-red-300/90";
-  }
 }
 
 /**
@@ -361,6 +371,7 @@ export function prStatusIndicator(
   return {
     label: `${presentation.shortName} ${state.label.toLowerCase()}`,
     colorClass: state.toneClassName,
+    Icon: state.Icon,
     tooltip: `${tooltipLead}: ${pr.title}`,
     tooltipLead,
     tooltipTitle: pr.title,
@@ -543,7 +554,7 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
         </Tooltip>
       ) : null}
       {pendingLink ? (
-        <GitPullRequestArrowIcon
+        <PullRequestGlyph.pullRequest
           className="size-3 text-muted-foreground"
           aria-label={`PR #${pendingLink.number}, status pending`}
         />

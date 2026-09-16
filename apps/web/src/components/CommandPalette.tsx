@@ -53,8 +53,6 @@ import {
   FileSearchIcon,
   FolderIcon,
   FolderPlusIcon,
-  GitPullRequestIcon,
-  GitPullRequestArrowIcon,
   LinkIcon,
   MessageSquareIcon,
   PaletteIcon,
@@ -195,6 +193,7 @@ import { useScopedProjectGroup } from "../sidebarProjectScopeStore";
 import type { Project } from "../types";
 import { useFocusPullRequestTab, useViewPullRequest } from "../lib/viewPullRequest";
 import { getSourceControlPresentation } from "../sourceControlPresentation";
+import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
@@ -2005,7 +2004,7 @@ function OpenCommandPaletteDialog(props: {
       value: "action:link-pull-request",
       searchTerms: ["link", "pull request", "pr", "attach", "stack"],
       title: "Link pull request to thread",
-      icon: <GitPullRequestArrowIcon className={ITEM_ICON_CLASS} />,
+      icon: <PullRequestGlyph.link className={ITEM_ICON_CLASS} />,
       run: async () => {
         openLinkPullRequestDialog(threadRef);
       },
@@ -2017,7 +2016,7 @@ function OpenCommandPaletteDialog(props: {
         searchTerms: ["pull requests", "linked", "stack", "prs"],
         title: "Show linked pull requests",
         disabled: visibleThreadPullRequests(activeThread.pullRequests).length === 0,
-        icon: <GitPullRequestArrowIcon className={ITEM_ICON_CLASS} />,
+        icon: <PullRequestGlyph.link className={ITEM_ICON_CLASS} />,
         run: async () => {
           useRightPanelStore.getState().open(threadRef, "pull-requests");
         },
@@ -2070,7 +2069,7 @@ function OpenCommandPaletteDialog(props: {
         ? `Checking ${changeRequestTerminology.singular} status…`
         : `No open ${changeRequestTerminology.singular} for this thread`,
     disabled: !canFocusPullRequestTab,
-    icon: <GitPullRequestIcon className={ITEM_ICON_CLASS} />,
+    icon: <PullRequestGlyph.pullRequest className={ITEM_ICON_CLASS} />,
     shortcutCommand: "sourceControl.focusPullRequestTab",
     run: focusPullRequestTab,
   });
