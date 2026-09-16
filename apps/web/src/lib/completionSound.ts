@@ -2,7 +2,7 @@ import type { CompletionSound } from "@t3tools/contracts";
 
 const AVANTI_SAMPLE_URL = "/avanti.mp3";
 const AVANTI_SAMPLE_VOLUME = 0.28;
-const RESOLVE_END_GAIN = 0.0001;
+const RESOLVE_SCHEDULE_AHEAD_SECONDS = 0.05;
 const RESOLVE_TONES = [
   {
     frequencyHz: 493.88,
@@ -49,7 +49,8 @@ function getCompletionAudioContext(): AudioContext | null {
 }
 
 function scheduleCompletionResolve(audioContext: AudioContext): void {
-  const now = audioContext.currentTime;
+  // Leave time to queue the envelope before the audio thread starts the first tone.
+  const now = audioContext.currentTime + RESOLVE_SCHEDULE_AHEAD_SECONDS;
 
   for (const tone of RESOLVE_TONES) {
     const oscillator = audioContext.createOscillator();
@@ -60,10 +61,11 @@ function scheduleCompletionResolve(audioContext: AudioContext): void {
 
     oscillator.type = "sine";
     oscillator.frequency.setValueAtTime(tone.frequencyHz, start);
-    gain.gain.setValueAtTime(RESOLVE_END_GAIN, start);
+    gain.gain.value = 0;
+    gain.gain.setValueAtTime(0, start);
     gain.gain.linearRampToValueAtTime(tone.peakGain, start + tone.attackSeconds);
     gain.gain.exponentialRampToValueAtTime(tone.peakGain * tone.sustainRatio, releaseStart);
-    gain.gain.linearRampToValueAtTime(RESOLVE_END_GAIN, end);
+    gain.gain.linearRampToValueAtTime(0, end);
 
     oscillator.connect(gain).connect(audioContext.destination);
     oscillator.addEventListener(
