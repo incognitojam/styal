@@ -64,6 +64,14 @@ authenticated.
 - `node apps/server/scripts/t3-sqlite-state.ts <query|exec> --base-dir <path> ...`: Inspects or seeds
   an isolated T3 SQLite database; writes create a private backup first.
 
+## Sound assets
+
+Run `node scripts/generate-resolve-sound.ts` to regenerate `apps/web/public/resolve.wav`.
+The script uses only Node builtins and contains the tone frequencies, timing, and gain envelope.
+It writes a 0.48-second, 48 kHz mono PCM WAV with the playback volume and fades baked in.
+Commit the generated WAV alongside any changes to the generator; it is shipped as a static asset
+and played through the same sample player as Avanti on web and desktop.
+
 ## Desktop artifacts
 
 - `vp run dist:desktop:artifact --platform <mac|linux|win> --target <target> --arch <arch>`: Builds a desktop artifact for a specific platform/target/arch.
