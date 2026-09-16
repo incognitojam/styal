@@ -2280,26 +2280,27 @@ function ChatViewContent(props: ChatViewProps) {
           ) : (
             "Server update available"
           ),
-        description:
-          updateInProgress || updateFailed ? (
-            <ServerUpdateProgress state={serverUpdateState} />
-          ) : versionMismatchSelfUpdate === "desktop-managed" ? (
-            serverUpdateGuidance(versionMismatchSelfUpdate, versionMismatchServerLabel)
-          ) : null,
+        description: updateFailed ? (
+          <ServerUpdateProgress state={serverUpdateState} />
+        ) : !updateInProgress && versionMismatchSelfUpdate === "desktop-managed" ? (
+          serverUpdateGuidance(versionMismatchSelfUpdate, versionMismatchServerLabel)
+        ) : null,
         // The desktop-managed guidance is already the description; the action
         // slot would only repeat it.
-        actions:
-          updateInProgress ||
-          !versionMismatch ||
-          versionMismatchSelfUpdate === "desktop-managed" ? undefined : (
-            <ServerUpdateAction
-              environmentId={serverUpdateEnvironmentId}
-              serverLabel={versionMismatchServerLabel}
-              selfUpdate={versionMismatchSelfUpdate}
-              targetVersion={versionMismatch.clientVersion}
-              label={updateFailed ? "Retry" : "Update"}
-            />
-          ),
+        actions: updateInProgress ? (
+          <ServerUpdateProgress
+            state={serverUpdateState}
+            className="mt-0 whitespace-nowrap text-muted-foreground"
+          />
+        ) : !versionMismatch || versionMismatchSelfUpdate === "desktop-managed" ? undefined : (
+          <ServerUpdateAction
+            environmentId={serverUpdateEnvironmentId}
+            serverLabel={versionMismatchServerLabel}
+            selfUpdate={versionMismatchSelfUpdate}
+            targetVersion={versionMismatch.clientVersion}
+            label={updateFailed ? "Retry" : "Update"}
+          />
+        ),
         ...(updateInProgress || updateFailed || !versionMismatchDismissKey
           ? {}
           : {
