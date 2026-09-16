@@ -194,20 +194,26 @@ export function ServerUpdateAction({
                   </>
                 )}
               </p>
-              <code className="block break-all rounded-md bg-muted p-3 text-xs">{command}</code>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() =>
-                  copyToClipboard(command, {
-                    description: serviceMigration
-                      ? `Run this in a separate terminal on ${serverLabel} after active work finishes. It restarts the background service.`
-                      : `Stop the existing server on ${serverLabel} first, then run this with the same startup options.`,
-                  })
-                }
-              >
-                {serviceMigration ? "Copy service update command" : "Copy start command"}
-              </Button>
+              <div className="flex items-center gap-3 rounded-md bg-muted p-3">
+                <code className="min-w-0 flex-1 break-all text-xs">{command}</code>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  className="shrink-0"
+                  aria-label={
+                    serviceMigration ? "Copy service update command" : "Copy start command"
+                  }
+                  onClick={() =>
+                    copyToClipboard(command, {
+                      description: serviceMigration
+                        ? `Run this in a separate terminal on ${serverLabel} after active work finishes. It restarts the background service.`
+                        : `Stop the existing server on ${serverLabel} first, then run this with the same startup options.`,
+                    })
+                  }
+                >
+                  Copy
+                </Button>
+              </div>
             </section>
           </DialogPanel>
         </DialogPopup>
