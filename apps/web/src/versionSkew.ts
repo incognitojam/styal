@@ -93,9 +93,12 @@ export function resolveServerSelfUpdateCapability(
   return capability;
 }
 
-/** The command to hand users whose server cannot update itself. */
-export function manualServerUpdateCommand(targetVersion: string, serviceMigration = false): string {
-  return `npx ${CLI_PACKAGE_NAME}@${targetVersion}${serviceMigration ? " service update" : ""}`;
+/** Manual commands require an explicit choice of how the server is run. */
+export function manualServerUpdateCommand(
+  targetVersion: string,
+  installation: "service" | "foreground",
+): string {
+  return `npx ${CLI_PACKAGE_NAME}@${targetVersion} ${installation === "service" ? "service update" : "serve"}`;
 }
 
 /** One sentence telling the user how to resolve version skew for a server,
@@ -109,11 +112,11 @@ export function serverUpdateGuidance(
     case "respawn":
       return `Update the ${serverLabel} so they stay in sync.`;
     case "service-migration":
-      return `Run the copied service update command on the ${serverLabel} once to migrate its launcher to styal.`;
+      return `Follow the update instructions on the ${serverLabel} once to migrate its launcher to styal.`;
     case "desktop-managed":
       return `Update the desktop app that runs the ${serverLabel}.`;
     default:
-      return `Relaunch the ${serverLabel} with the copied command to sync them.`;
+      return `Follow the update instructions for how the ${serverLabel} is installed.`;
   }
 }
 

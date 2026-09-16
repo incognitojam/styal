@@ -31,6 +31,15 @@ npx @styal/cli@nightly service uninstall
 
 Updating restarts styal briefly. Let active agent work and terminal commands finish first.
 If a remote update is already in progress, wait for it to finish before retrying a local update.
+Run local service commands in a separate terminal or SSH session: restarting the service can
+close terminals opened inside styal.
+
+Managed services offer **Update** in the chat notice and **Settings → Connections** when a
+newer version is available. For detected legacy services, **Update instructions** provides the
+one-time service migration command. When the installation method is unknown, the instructions
+explain how to restart a terminal-launched server with the same startup options and direct service
+or container users to their existing deployment method. A start command launches another server;
+it does not update an existing service.
 
 The service runs a small stable launcher. Exact styal versions are installed separately, so a
 failed remote candidate can return to the previous version without rewriting the service
@@ -74,8 +83,8 @@ want styal to start in the background.
 
 ## Migrating an Existing styal Installation
 
-If your styal server was built manually or its launcher installed the `t3` npm
-package, update once on the host using an exact released styal version:
+If your background service's launcher installed the `t3` npm package, migrate it once on the
+host using an exact released styal version:
 
 ```sh
 npx @styal/cli@<version> service update

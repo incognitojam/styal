@@ -11,6 +11,15 @@ import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { manualServerUpdateCommand, type ServerUpdateCapability } from "~/versionSkew";
 import { Button } from "./ui/button";
+import {
+  Dialog,
+  DialogDescription,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+  DialogTrigger,
+} from "./ui/dialog";
 import { toastManager } from "./ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
@@ -95,19 +104,19 @@ export function ServerUpdateAction({
   const updateServer = useAtomCommand(serverEnvironment.updateServer, {
     reportFailure: false,
   });
-  const { copyToClipboard } = useCopyToClipboard<{ command: string }>({
-    target: "update command",
-    onCopy: ({ command }) => {
+  const { copyToClipboard } = useCopyToClipboard<{ description: string }>({
+    target: "command",
+    onCopy: ({ description }) => {
       toastManager.add({
         type: "success",
-        title: "Update command copied",
-        description: `Run \`${command}\` on ${serverLabel} to update it.`,
+        title: "Command copied",
+        description,
       });
     },
     onError: (error) => {
       toastManager.add({
         type: "error",
-        title: "Could not copy update command",
+        title: "Could not copy command",
         description: error.message,
       });
     },
@@ -153,11 +162,77 @@ export function ServerUpdateAction({
   }
 
   if (selfUpdate === null || selfUpdate === "service-migration") {
-    const command = manualServerUpdateCommand(targetVersion, selfUpdate === "service-migration");
+    const serviceMigration = selfUpdate === "service-migration";
+    const command = manualServerUpdateCommand(
+      targetVersion,
+      serviceMigration ? "service" : "foreground",
+    );
     return (
-      <Button size="xs" variant="outline" onClick={() => copyToClipboard(command, { command })}>
-        Copy update command
-      </Button>
+      <Dialog>
+        <DialogTrigger render={<Button size="xs" variant="outline" />}>
+          Update instructions
+        </DialogTrigger>
+        <DialogPopup>
+          <DialogHeader>
+            <DialogTitle>Update {serverLabel}</DialogTitle>
+            <DialogDescription>
+              {serviceMigration
+                ? "This server needs a one-time service migration before it can update from the app."
+                : "This server does not support in-app updates. How you update it depends on how it was started."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogPanel className="space-y-5 text-sm">
+            <p className="text-muted-foreground">
+              Let active work finish, then use a separate terminal or SSH session on {serverLabel}.
+              Keep the same data directory and connection settings, including any custom port or
+              Tailscale configuration.
+            </p>
+            <section className="space-y-2">
+              <p className="text-muted-foreground">
+                {serviceMigration ? (
+                  <>
+                    This updates and restarts the background service, enabling future in-app
+                    updates. For a custom data directory, add your existing <code>--base-dir</code>{" "}
+                    option.
+                  </>
+                ) : (
+                  <>
+                    If you start styal from a terminal, stop the existing server, then run this with
+                    the same startup options. It starts a foreground server; it does not replace a
+                    running instance.
+                  </>
+                )}
+              </p>
+              <div className="flex items-center gap-3 rounded-md bg-muted p-3">
+                <code className="min-w-0 flex-1 break-all text-xs">{command}</code>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  className="shrink-0"
+                  aria-label={
+                    serviceMigration ? "Copy service update command" : "Copy start command"
+                  }
+                  onClick={() =>
+                    copyToClipboard(command, {
+                      description: serviceMigration
+                        ? `Run this in a separate terminal on ${serverLabel} after active work finishes. It restarts the background service.`
+                        : `For a terminal-launched server on ${serverLabel}, stop the existing process first, then run this with the same startup options.`,
+                    })
+                  }
+                >
+                  Copy
+                </Button>
+              </div>
+            </section>
+            {!serviceMigration && (
+              <p className="text-muted-foreground">
+                If styal runs as a service or in a container, update it through your existing
+                deployment method.
+              </p>
+            )}
+          </DialogPanel>
+        </DialogPopup>
+      </Dialog>
     );
   }
 

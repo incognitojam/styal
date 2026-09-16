@@ -1407,6 +1407,31 @@ features:
       tracking: []
       retire_when: Upstream distinguishes replacement-turn handoffs from same-turn follow-ups and settles both without false ready or Working states.
 
+  - id: server-update-guidance
+    title: Match server update instructions to the advertised capability
+    status: maintained
+    prs: [351]
+    invariants:
+      - Normal managed services retain the direct in-app Update action in chat and Connections settings.
+      - Manual update instructions reserve service update for detected legacy services; absent update capability is treated as an unknown installation, with serve qualified for terminal launches and service or container users directed to their existing deployment method.
+      - Foreground start commands are labeled as starts and preserve guidance to reuse the existing data directory and startup options rather than implying that launching another process updates a running server.
+    implementation_paths:
+      - apps/web/src/components/ServerUpdateAction.tsx
+      - apps/web/src/versionSkew.ts
+      - docs/user/background-service.md
+    upstream_paths:
+      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/ServerUpdateAction.tsx
+      - apps/web/src/components/settings/ConnectionsSettings.tsx
+      - apps/web/src/versionSkew.ts
+    tests:
+      - apps/web/src/components/ServerUpdateAction.test.tsx
+      - apps/web/src/versionSkew.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream provides equivalent capability-specific update guidance that distinguishes legacy service migration from foreground starts while preserving direct updates for managed services.
+
   - id: setup-script-observability
     title: Keep setup scripts safe and inspectable
     status: maintained
