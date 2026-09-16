@@ -195,6 +195,8 @@ function activeIncidentsDescription(incidents: ReadonlyArray<StatusPageIncidentI
 export interface StatusPageRelevance {
   /** Component names, hostname suffix optional, whose disruption cannot reach styal. */
   readonly ignoredComponents: ReadonlyArray<string>;
+  /** Incident-name patterns for unrelated disruptions with no assigned component. */
+  readonly ignoredIncidentPatterns?: ReadonlyArray<RegExp>;
 }
 
 export function resolveStatusPageNotice(
@@ -227,6 +229,13 @@ export function resolveStatusPageNotice(
       // only the components we care about rather than diluting the scope. One
       // naming no component at all is unattributable, not irrelevant.
       const relevant = scope.filter((name) => !isIgnoredComponent(name));
+      if (
+        scope.length === 0 &&
+        relevance?.ignoredIncidentPatterns?.some((pattern) => pattern.test(incident.name))
+      ) {
+        ignoredAnyDisruption = true;
+        return [];
+      }
       if (scope.length > 0 && relevant.length === 0) {
         ignoredAnyDisruption = true;
         return [];
