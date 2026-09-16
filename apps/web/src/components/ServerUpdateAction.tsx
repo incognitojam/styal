@@ -6,6 +6,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { cn } from "~/lib/utils";
 import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { manualServerUpdateCommand, type ServerUpdateCapability } from "~/versionSkew";
@@ -39,12 +40,17 @@ function updateFailureMessage(error: unknown): string {
  */
 export function ServerUpdateProgress({
   state,
+  className,
 }: {
   readonly state: Exclude<ServerUpdateState, { status: "idle" }>;
+  readonly className?: string;
 }) {
   if (state.status === "failed") {
     return (
-      <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-destructive" role="alert">
+      <div
+        className={cn("mt-1 flex min-w-0 items-center gap-2 text-xs text-destructive", className)}
+        role="alert"
+      >
         <span className="size-1.5 shrink-0 rounded-full bg-destructive" aria-hidden="true" />
         <Tooltip>
           <TooltipTrigger render={<span className="min-w-0 truncate">{state.message}</span>} />
@@ -56,9 +62,11 @@ export function ServerUpdateProgress({
     );
   }
   return (
-    <div className="mt-1 flex items-center gap-2 text-xs font-medium text-foreground">
+    <div
+      className={cn("mt-1 flex items-center gap-2 text-xs font-medium text-foreground", className)}
+    >
       <span
-        className="size-1.5 shrink-0 animate-status-pulse rounded-full bg-foreground"
+        className="size-1.5 shrink-0 animate-status-pulse rounded-full bg-current"
         aria-hidden="true"
       />
       <span>{serverUpdateStageLabel(state.stage)}</span>
