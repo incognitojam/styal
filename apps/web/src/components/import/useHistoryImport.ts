@@ -22,7 +22,7 @@ import { projectEnvironment } from "../../state/projects";
 import { useAtomCommand } from "../../state/use-atom-command";
 import type { ImportOutcome } from "./types";
 
-/** The existing CLI import pipeline, shared by setup and Settings. */
+/** The CLI history import pipeline used during first setup. */
 export function useHistoryImport(environmentId: EnvironmentId) {
   const environmentIds = useMemo(() => [environmentId], [environmentId]);
   const scans = useProjectScans(environmentIds);
@@ -77,7 +77,7 @@ export function useHistoryImport(environmentId: EnvironmentId) {
     // already landed this session (re-creating them would only trip the
     // duplicate-root invariant and read as a failure).
     // Successful rows are deselected after each run. An explicit re-selection
-    // may import newly written history without leaving Settings.
+    // may import remaining history before finishing setup.
     for (const candidate of selection) importedProjects.delete(candidate.key);
     let importedProjectsCount = 0;
     let importedThreadCount = 0;

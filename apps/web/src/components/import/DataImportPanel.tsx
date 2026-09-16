@@ -4,18 +4,27 @@ import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { useProjects } from "../../state/entities";
 import { dataImportBatchPendingCount, legacyImportPendingCount } from "../../state/dataImport";
-import { ImportComputer } from "./ImportComputer";
+import { LegacyImportComputer, HistoryImportComputer } from "./ImportComputer";
 import { ImportDataView } from "./ImportDataView";
 import { importErrorMessage } from "./useLegacyImport";
-import type { ComputerImporter, ComputerImportSummary } from "./types";
+import type {
+  ComputerImporter,
+  ComputerImportSummary,
+  ImportSource,
+  LegacyImportStage,
+} from "./types";
 
-/** Setup and Settings use the same mounted importers; only scope and completion differ. */
+/** Runs one selected source across computers; T3 migration shares its setup and Settings flow. */
 export function DataImportPanel({
   environmentIds,
+  source,
+  onBack,
   onDone,
   onBusyChange,
 }: {
   environmentIds?: readonly EnvironmentId[];
+  source: ImportSource;
+  onBack?: () => void;
   onDone?: (projectRef?: ScopedProjectRef) => Promise<boolean>;
   onBusyChange?: (busy: boolean) => void;
 }) {
@@ -23,6 +32,7 @@ export function DataImportPanel({
   const environments = environmentIds
     ? allEnvironments.filter((environment) => environmentIds.includes(environment.environmentId))
     : allEnvironments;
+  const [stage, setStage] = useState<LegacyImportStage>("projects");
   const primary = usePrimaryEnvironmentId();
   const [selectedId, setSelectedId] = useState<EnvironmentId | null>(primary);
   const activeId =
@@ -58,6 +68,7 @@ export function DataImportPanel({
       mounted.current = false;
     };
   }, []);
+  const [progress, setProgress] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [landing, setLanding] = useState<ScopedProjectRef>();
@@ -107,6 +118,7 @@ export function DataImportPanel({
           continue;
         }
         try {
+          setProgress(`Importing from ${environment.label}…`);
           const result = await importer.run();
           if (!result.success) {
             success = false;
@@ -129,12 +141,14 @@ export function DataImportPanel({
       registry.update(dataImportBatchPendingCount, (count) => Math.max(0, count - 1));
       runningRef.current = false;
       setRunning(false);
+      setProgress(null);
     }
   };
   const skip = async () => {
     if (!onDone || busy || runningRef.current) return;
     setAwaitingCompletion(true);
   };
+  const Computer = source === "legacy" ? LegacyImportComputer : HistoryImportComputer;
   return (
     <ImportDataView
       computers={environments.map((environment) => ({
@@ -146,19 +160,25 @@ export function DataImportPanel({
       summary={summary}
       busy={busy}
       setup={!!onDone}
+      source={source}
+      stage={stage}
+      onStageChange={setStage}
+      onBack={onBack}
+      progress={progress}
       onImport={() => void run()}
       onSkip={() => void skip()}
       message={message}
       error={error}
     >
       {environments.map((environment) => (
-        <ImportComputer
+        <Computer
           key={environment.environmentId}
           environmentId={environment.environmentId}
           label={environment.label}
           active={activeId === environment.environmentId}
           connected={environment.connection.phase === "connected"}
           busy={busy}
+          stage={stage}
           onSummary={onSummary}
           ref={(importer) => {
             if (importer) importers.current.set(environment.environmentId, importer);

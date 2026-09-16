@@ -1,26 +1,30 @@
 import {
   ArrowRightIcon,
-  ChevronRightIcon,
+  ChevronLeftIcon,
   FolderIcon,
   LoaderCircleIcon,
   MonitorIcon,
   RefreshCwIcon,
   TriangleAlertIcon,
 } from "lucide-react";
-import { type ReactNode, useId, useMemo, useState } from "react";
+import { type ReactNode, useId, useMemo } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 
 import { cn } from "../../lib/utils";
+import { ClaudeAI, OpenAI, type Icon } from "../Icons";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { ScrollArea } from "../ui/scroll-area";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import type {
   ComputerImportSummary,
   ImportComputerOption,
   ImportPreferencesModel,
   ImportProjectRow,
+  ImportSource,
   ImportSourceModel,
+  LegacyImportStage,
 } from "./types";
 
 function formatCount(value: number): string {
@@ -31,12 +35,27 @@ function plural(value: number, singular: string, many = `${singular}s`): string 
   return `${formatCount(value)} ${value === 1 ? singular : many}`;
 }
 
+/** CLI rows carry the mark of the tool the conversations came from. */
+const PROVIDER_ICONS: Record<"claudeAgent" | "codex", Icon> = {
+  claudeAgent: ClaudeAI,
+  codex: OpenAI,
+};
+
+const PROVIDER_LABELS: Record<"claudeAgent" | "codex", string> = {
+  claudeAgent: "Claude Code",
+  codex: "Codex",
+};
+
+function providerSummary(providers: readonly ("claudeAgent" | "codex")[]): string {
+  return `${providers.map((provider) => PROVIDER_LABELS[provider]).join(" and ")} history`;
+}
+
 /**
- * Two value columns on narrow screens with the setting name spanning them, and a
- * name column joining from `sm` up. Header and rows share it so columns align.
+ * Two value columns while the card is narrow, with the setting name spanning them,
+ * and a name column joining from `@md` up. Header and rows share it so columns align.
  */
 const PREFERENCE_GRID_COLUMNS =
-  "grid-cols-2 sm:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,1fr)]";
+  "grid-cols-2 @md/prefs:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,1fr)]";
 
 function valueClassName(monospace: boolean | undefined): string {
   return monospace ? "break-all font-mono text-xs" : "break-words tabular-nums";
@@ -73,8 +92,9 @@ function SourceNote({
 
 /**
  * One import source: a header strip that doubles as the select-all control and the
- * live tally, then the project rows. Every state (scanning, empty, failed) stays
- * inside this section so a broken source never takes the other sources down.
+ * live tally, then the project rows. The source name is the page heading, so the
+ * strip spends its width on the control instead of repeating it. Every state
+ * (scanning, empty, failed) stays inside this section.
  */
 export function ImportSourceView({
   source,
@@ -117,22 +137,34 @@ export function ImportSourceView({
       aria-labelledby={headingId}
       className="overflow-hidden rounded-lg border border-border/60 bg-card"
     >
-      <div className="flex min-h-10 min-w-0 items-center gap-2.5 border-b border-border/60 bg-muted/20 px-3 py-2">
-        <Checkbox
-          checked={allSelected}
-          indeterminate={selectedCount > 0 && !allSelected}
-          disabled={disabled || total === 0}
-          onCheckedChange={selectAll}
-          aria-label={`${allSelected ? "Deselect" : "Select"} all ${source.title} projects`}
-        />
-        <h3
-          id={headingId}
-          className="min-w-0 flex-1 text-[13px] font-semibold tracking-[-0.005em] text-foreground"
+      <h3 id={headingId} className="sr-only">
+        {source.title}
+      </h3>
+      <div className="flex min-h-11 min-w-0 items-center gap-2.5 border-b border-border/60 bg-muted/20 px-3 py-2">
+        <label
+          className={cn(
+            "flex min-w-0 flex-1 items-center gap-3",
+            disabled || total === 0 ? "cursor-default" : "cursor-pointer",
+          )}
         >
-          {source.title}
-        </h3>
+          <Checkbox
+            checked={allSelected}
+            indeterminate={selectedCount > 0 && !allSelected}
+            disabled={disabled || total === 0}
+            onCheckedChange={selectAll}
+            aria-label={`${allSelected ? "Deselect" : "Select"} all ${source.title} projects`}
+          />
+          <span
+            className={cn(
+              "min-w-0 truncate text-[13px] font-medium",
+              total === 0 ? "text-muted-foreground" : "text-foreground",
+            )}
+          >
+            {source.title === "T3 Code (yngatech)" ? source.title : "Select all"}
+          </span>
+        </label>
         {total > 0 ? (
-          <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
             {formatCount(selectedCount)} of {formatCount(total)}
             <span aria-hidden> · </span>
             <span className="sr-only">, </span>
@@ -142,7 +174,7 @@ export function ImportSourceView({
         <Button
           size="icon-micro"
           variant="ghost-muted"
-          className={cn("shrink-0", total > 0 ? "ml-1.5" : "ml-auto")}
+          className="ml-1 shrink-0"
           onClick={source.refresh}
           disabled={disabled || source.pending}
           aria-label={`Rescan ${source.title}`}
@@ -178,11 +210,12 @@ export function ImportSourceView({
             const title = project.title.trim() || "Untitled project";
             const path = project.path.trim();
             const showPath = path.length > 0 && (repeatedTitles.get(project.title) ?? 0) > 1;
+            const providers = project.providers ?? [];
             return (
               <label
                 key={project.id}
                 className={cn(
-                  "flex min-w-0 items-center gap-3 px-3 py-2 transition-colors has-[:focus-visible]:bg-muted/40 motion-reduce:transition-none",
+                  "flex min-w-0 items-center gap-3 px-3 py-2.5 transition-colors has-[:focus-visible]:bg-muted/40 motion-reduce:transition-none",
                   disabled ? "cursor-default" : "cursor-pointer hover:bg-muted/30",
                 )}
               >
@@ -191,11 +224,18 @@ export function ImportSourceView({
                   disabled={disabled}
                   onCheckedChange={(checked) => toggleProject(project, checked === true)}
                 />
-                <span
-                  aria-hidden
-                  className="flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-muted/40 text-muted-foreground"
-                >
-                  <FolderIcon className="size-3.5" />
+                <span className="flex shrink-0 items-center gap-1 text-muted-foreground">
+                  {providers.length > 0 ? (
+                    <>
+                      {providers.map((provider) => {
+                        const ProviderIcon = PROVIDER_ICONS[provider];
+                        return <ProviderIcon key={provider} className="size-3.5" aria-hidden />;
+                      })}
+                      <span className="sr-only">{providerSummary(providers)}</span>
+                    </>
+                  ) : (
+                    <FolderIcon className="size-3.5" aria-hidden />
+                  )}
                 </span>
                 <Tooltip>
                   <TooltipTrigger render={<span className="flex min-w-0 flex-1 flex-col" />}>
@@ -247,8 +287,8 @@ export function ImportSourceView({
 }
 
 /**
- * Preferences ride along with the projects: one optional checkbox, and the exact
- * before/after values behind a disclosure for anyone who wants to check them.
+ * The preferences step: one opt-in checkbox in the strip, then the exact
+ * before/after values for every setting the import would change.
  */
 export function ImportPreferencesView({
   preferences,
@@ -258,83 +298,60 @@ export function ImportPreferencesView({
   disabled: boolean;
 }) {
   const titleId = useId();
-  const detailId = useId();
-  const [expanded, setExpanded] = useState(false);
   const changes = useMemo(
     () => preferences.changes.filter(({ changed }) => changed),
     [preferences.changes],
   );
   const hasChanges = changes.length > 0;
-  const open = expanded && hasChanges;
   const checked = preferences.selected && hasChanges;
   const error = preferences.error ?? null;
 
   return (
-    <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
-      <div className="flex min-w-0 items-start gap-3 px-3 py-2.5">
+    <section
+      aria-labelledby={titleId}
+      className="@container/prefs overflow-hidden rounded-lg border border-border/60 bg-card"
+    >
+      <div className="flex min-h-11 min-w-0 items-center gap-2.5 border-b border-border/60 bg-muted/20 px-3 py-2">
         <label
           className={cn(
-            "flex min-w-0 flex-1 items-start gap-3",
+            "flex min-w-0 flex-1 items-center gap-3",
             disabled || !hasChanges ? "cursor-default" : "cursor-pointer",
           )}
         >
           <Checkbox
-            className="mt-px"
             checked={checked}
             disabled={disabled || !hasChanges}
             onCheckedChange={(value) => preferences.select(value === true)}
             aria-labelledby={titleId}
           />
-          <span className="min-w-0">
-            <span
-              id={titleId}
-              className={cn(
-                "block text-[13px] font-medium",
-                hasChanges ? "text-foreground" : "text-muted-foreground",
-              )}
-            >
-              Bring over T3 Code preferences
-            </span>
-            <span className="block text-xs leading-[1.45] text-muted-foreground">
-              <span className="break-words">{preferences.computer}</span>
-              <span aria-hidden> · </span>
-              <span className="sr-only">, </span>
-              {hasChanges ? plural(changes.length, "change") : "no changes"}
-            </span>
+          <span
+            id={titleId}
+            className={cn(
+              "min-w-0 text-[13px] font-medium",
+              hasChanges ? "text-foreground" : "text-muted-foreground",
+            )}
+          >
+            Bring over T3 Code preferences
           </span>
         </label>
         {hasChanges ? (
-          <Button
-            size="compact"
-            variant="ghost-muted"
-            className="shrink-0"
-            aria-expanded={open}
-            aria-controls={detailId}
-            onClick={() => setExpanded((current) => !current)}
-          >
-            <ChevronRightIcon
-              className={cn(
-                "transition-transform motion-reduce:transition-none",
-                open && "rotate-90",
-              )}
-              aria-hidden
-            />
-            Review changes
-          </Button>
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+            {plural(changes.length, "change")}
+          </span>
         ) : null}
       </div>
 
       {hasChanges ? (
-        <div id={detailId} hidden={!open} className="border-t border-border/60 bg-muted/10">
+        <>
           {/* Visual column headers only; every cell carries its own screen-reader label. */}
           <div
             aria-hidden
             className={cn(
-              "grid items-center gap-x-4 border-b border-border/60 px-3 py-1.5 text-[11px] font-medium tracking-[0.02em] text-muted-foreground/80 uppercase",
+              "grid items-center gap-x-4 border-b border-border/60 px-3 py-2 text-[11px] font-medium tracking-[0.02em] text-muted-foreground/80 uppercase",
               PREFERENCE_GRID_COLUMNS,
             )}
           >
-            <span className="hidden sm:block">Setting</span>
+            <span className="hidden @md/prefs:block">Setting</span>
             <span>Now</span>
             <span>After import</span>
           </div>
@@ -343,11 +360,11 @@ export function ImportPreferencesView({
               <div
                 key={row.id}
                 className={cn(
-                  "grid items-baseline gap-x-4 gap-y-0.5 px-3 py-2",
+                  "grid items-baseline gap-x-4 gap-y-1 px-3 py-3",
                   PREFERENCE_GRID_COLUMNS,
                 )}
               >
-                <dt className="col-span-2 min-w-0 text-[13px] leading-[1.5] text-foreground sm:col-span-1">
+                <dt className="col-span-2 min-w-0 text-[13px] leading-[1.5] text-foreground @md/prefs:col-span-1">
                   {row.label}
                 </dt>
                 <dd
@@ -375,21 +392,15 @@ export function ImportPreferencesView({
               </div>
             ))}
           </dl>
-        </div>
+        </>
       ) : null}
 
       {error !== null ? (
-        <div className="border-t border-border/60">
-          <SourceNote tone="error" icon={<TriangleAlertIcon className="size-3.5" aria-hidden />}>
-            {error}
-          </SourceNote>
-        </div>
+        <SourceNote tone="error" icon={<TriangleAlertIcon className="size-3.5" aria-hidden />}>
+          {error}
+        </SourceNote>
       ) : null}
-      {preferences.message ? (
-        <div className="border-t border-border/60">
-          <SourceNote>{preferences.message}</SourceNote>
-        </div>
-      ) : null}
+      {preferences.message ? <SourceNote>{preferences.message}</SourceNote> : null}
     </section>
   );
 }
@@ -409,10 +420,16 @@ function summaryText(summary: ComputerImportSummary): string {
   return parts.length > 0 ? parts.join(" · ") : "Nothing selected";
 }
 
+const LEGACY_STAGES = [
+  { stage: "projects", label: "Projects" },
+  { stage: "preferences", label: "Preferences" },
+] as const satisfies readonly { stage: LegacyImportStage; label: string }[];
+
 /**
- * The import surface itself: one scroller for the computer's sources, one footer
- * that always states the whole selection and commits it. Setup and Settings render
- * the same thing; only the heading and the primary label differ.
+ * The import surface itself: a heading that names the source and, for T3 Code,
+ * the step you are on; one scroller for the chosen computer; one footer that
+ * always states the whole selection and commits it. Setup and Settings render the
+ * same thing; only the back target, the skip action and the primary label differ.
  */
 export function ImportDataView({
   computers,
@@ -421,6 +438,11 @@ export function ImportDataView({
   summary,
   busy,
   setup,
+  source,
+  stage,
+  onStageChange,
+  onBack,
+  progress,
   onImport,
   onSkip,
   message,
@@ -433,74 +455,137 @@ export function ImportDataView({
   summary: ComputerImportSummary;
   busy: boolean;
   setup: boolean;
+  source: ImportSource;
+  stage: LegacyImportStage;
+  onStageChange: (stage: LegacyImportStage) => void;
+  onBack?: (() => void) | undefined;
+  progress: string | null;
   onImport: () => void;
   onSkip: () => void;
   message: string | null;
   error: string | null;
   children: ReactNode;
 }) {
-  const computersLabelId = useId();
-  const canImport = !busy && (summary.projects > 0 || summary.preferences > 0);
+  const legacy = source === "legacy";
+  // Projects are optional on the way to preferences, so this step always continues.
+  const choosing = legacy && stage === "projects";
+  const canImport = summary.projects > 0 || summary.preferences > 0;
+  const back = legacy && stage === "preferences" ? () => onStageChange("projects") : onBack;
+  const computerItems = useMemo(
+    () => computers.map((computer) => ({ value: computer.id, label: computer.label })),
+    [computers],
+  );
 
   return (
     /* Setup gets its height from the wizard's constrained column; Settings falls back to
        a viewport-relative ceiling, so the footer stays on screen either way. */
     <div
-      className="flex max-h-[min(40rem,calc(100dvh-9rem))] min-h-0 w-full flex-1 flex-col"
+      className="@container/import flex max-h-[min(40rem,calc(100dvh-9rem))] min-h-0 w-full flex-1 flex-col"
       aria-busy={busy || undefined}
     >
+      <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-2 pb-4">
+        {back ? (
+          <Button
+            size="icon-sm"
+            variant="ghost-muted"
+            className="-ml-1.5 shrink-0"
+            onClick={back}
+            disabled={busy}
+            aria-label="Back"
+          >
+            <ChevronLeftIcon />
+          </Button>
+        ) : null}
+        <h2
+          className={cn(
+            "min-w-0 flex-1 font-semibold tracking-[-0.015em] text-foreground",
+            setup ? "text-lg" : "text-base",
+          )}
+        >
+          {legacy ? "T3 Code" : "Claude Code / Codex"}
+        </h2>
+        {legacy ? (
+          <div
+            role="group"
+            aria-label="Import steps"
+            className="flex shrink-0 items-center gap-0.5 rounded-lg bg-zinc-25 p-0.5 ring-1 ring-black/5 dark:bg-white/4 dark:ring-white/5"
+          >
+            {LEGACY_STAGES.map((step) => {
+              const active = step.stage === stage;
+              return (
+                <button
+                  key={step.stage}
+                  type="button"
+                  disabled={busy}
+                  aria-current={active ? "step" : undefined}
+                  onClick={() => onStageChange(step.stage)}
+                  className={cn(
+                    "cursor-pointer rounded-md px-2 py-1 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 motion-reduce:transition-none",
+                    active
+                      ? "bg-card text-foreground shadow-xs ring-1 ring-black/5 dark:shadow-none dark:ring-white/5"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {step.label}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+
       <ScrollArea
         scrollFade
         scrollbarGutter
         className="min-h-0 flex-1 rounded-none [&_[data-slot=scroll-area-scrollbar]]:opacity-100"
       >
         <div className="flex min-w-0 flex-col gap-4 pb-1">
-          {setup ? (
-            <h2 className="text-xl font-semibold tracking-[-0.02em] text-foreground">
-              Bring your projects into styal
-            </h2>
-          ) : null}
-
-          {computers.length > 0 ? (
-            <div className="min-w-0">
-              <p
-                id={computersLabelId}
-                className="mb-2 text-[11px] font-medium tracking-[0.04em] text-muted-foreground/80 uppercase"
-              >
-                Computer
-              </p>
-              <div
-                role="group"
-                aria-labelledby={computersLabelId}
-                className="flex flex-col gap-1 rounded-xl bg-zinc-25 p-1 ring-1 ring-black/5 sm:flex-row dark:bg-white/4 dark:ring-white/5"
-              >
-                {computers.map((computer) => {
-                  const active = computer.id === activeId;
-                  return (
-                    <button
-                      key={computer.id}
-                      type="button"
-                      aria-pressed={active}
-                      disabled={busy}
-                      onClick={() => onSelectComputer(computer.id)}
-                      className={cn(
-                        "flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 motion-reduce:transition-none",
-                        active
-                          ? "bg-card text-foreground shadow-xs ring-1 ring-black/5 dark:shadow-none dark:ring-white/5"
-                          : "text-muted-foreground hover:bg-card/60 hover:text-foreground",
-                      )}
-                    >
-                      <MonitorIcon className="size-3.5 shrink-0" aria-hidden />
-                      <span className="min-w-0 truncate font-medium">{computer.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ) : (
+          {computers.length === 0 ? (
             <p className="py-8 text-center text-[13px] text-muted-foreground">
               No computers connected.
             </p>
+          ) : computers.length === 1 ? (
+            <p className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+              <MonitorIcon className="size-3.5 shrink-0" aria-hidden />
+              <span className="min-w-0 truncate">{computers[0]?.label}</span>
+            </p>
+          ) : (
+            <div className="flex min-w-0 items-center gap-2.5">
+              {/* The trigger carries the same name for assistive tech. */}
+              <span
+                aria-hidden
+                className="shrink-0 text-[11px] font-medium tracking-[0.04em] text-muted-foreground/80 uppercase"
+              >
+                Computer
+              </span>
+              <Select
+                items={computerItems}
+                value={activeId ?? null}
+                disabled={busy}
+                onValueChange={(value) => {
+                  if (value !== null) onSelectComputer(value as EnvironmentId);
+                }}
+              >
+                <SelectTrigger
+                  size="sm"
+                  aria-label="Computer"
+                  className="min-w-0 flex-1 @md/import:max-w-72"
+                >
+                  <MonitorIcon className="size-3.5 shrink-0" aria-hidden />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectPopup>
+                  {computers.map((computer) => (
+                    <SelectItem key={computer.id} value={computer.id}>
+                      <span className="flex min-w-0 items-center gap-2">
+                        <MonitorIcon className="size-3.5 shrink-0" aria-hidden />
+                        <span className="min-w-0 truncate">{computer.label}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            </div>
           )}
 
           {/* Gap, not space-y: hidden computers are not flex items, so no stray margins. */}
@@ -508,13 +593,20 @@ export function ImportDataView({
         </div>
       </ScrollArea>
 
-      <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-3 border-t border-border/60 pt-3">
-        <div className="min-w-48 flex-1 space-y-1">
+      <div className="flex shrink-0 flex-col gap-2.5 border-t border-border/60 pt-3 @md/import:flex-row @md/import:items-center @md/import:gap-4">
+        <div className="min-w-0 flex-1 space-y-1">
           <p
-            className="text-xs leading-[1.45] tabular-nums text-muted-foreground"
+            className="flex min-w-0 items-center gap-1.5 text-xs leading-[1.45] tabular-nums text-muted-foreground"
             aria-live="polite"
           >
-            {summaryText(summary)}
+            {busy && progress !== null ? (
+              <>
+                <LoaderCircleIcon className="size-3.5 shrink-0 animate-spin" aria-hidden />
+                <span className="min-w-0 truncate">{progress}</span>
+              </>
+            ) : (
+              <span className="min-w-0 break-words">{summaryText(summary)}</span>
+            )}
           </p>
           {error !== null ? (
             <p
@@ -531,16 +623,23 @@ export function ImportDataView({
             </p>
           ) : null}
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center justify-end gap-2">
           {setup ? (
             <Button variant="ghost" onClick={onSkip} disabled={busy}>
               Skip for now
             </Button>
           ) : null}
-          <Button onClick={onImport} disabled={!canImport}>
-            {busy ? <LoaderCircleIcon className="animate-spin" aria-hidden /> : null}
-            {busy ? "Importing…" : setup ? "Import & finish" : "Import"}
-          </Button>
+          {choosing ? (
+            <Button onClick={() => onStageChange("preferences")} disabled={busy}>
+              Continue
+              <ArrowRightIcon className="size-3.5" aria-hidden />
+            </Button>
+          ) : (
+            <Button onClick={onImport} disabled={busy || !canImport}>
+              {busy ? <LoaderCircleIcon className="animate-spin" aria-hidden /> : null}
+              {busy ? "Importing…" : setup ? "Import & finish" : "Import"}
+            </Button>
+          )}
         </div>
       </div>
     </div>

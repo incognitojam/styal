@@ -103,6 +103,12 @@ describe("searchSettings", () => {
     });
   });
 
+  it("does not offer setup-only CLI history import in Settings", () => {
+    for (const query of ["Claude Code", "Codex", "history"]) {
+      expect(searchSettings(query).filter((item) => item.to === "/settings/import")).toEqual([]);
+    }
+  });
+
   it("routes legacy data import searches to the import preview", () => {
     expect(searchSettings("import data")[0]).toMatchObject({
       id: "import-data",

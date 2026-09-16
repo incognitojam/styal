@@ -1,6 +1,9 @@
 import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
 import type { PreferenceComparisonRow } from "../settings/DataImportSettings.logic";
 
+export type ImportSource = "legacy" | "history";
+export type LegacyImportStage = "projects" | "preferences";
+
 export interface ImportOutcome {
   readonly success: boolean;
   readonly projectRef?: ScopedProjectRef | undefined;
@@ -13,6 +16,7 @@ export interface ImportProjectRow {
   readonly threads: number;
   readonly selected: boolean;
   readonly detail?: string | undefined;
+  readonly providers?: readonly ("claudeAgent" | "codex")[] | undefined;
 }
 
 export interface ImportSourceModel {
@@ -27,7 +31,6 @@ export interface ImportSourceModel {
 }
 
 export interface ImportPreferencesModel {
-  readonly computer: string;
   readonly changes: readonly PreferenceComparisonRow[];
   readonly selected: boolean;
   readonly select: (selected: boolean) => void;

@@ -205,15 +205,15 @@ features:
       retire_when: Upstream synchronizes equivalent composer draft state across clients and safely migrates installations carrying the fork schema.
 
   - id: data-import-from-t3-code
-    title: Shared T3 Code and CLI history import
+    title: T3 Code migration in setup and Settings
     status: maintained
     prs: [294, 297, 298, 300, 349]
     invariants:
       - A selected styal environment can preview and import projects, missing threads, attachments, provider continuations, and supported server preferences from a live T3 Code database, including older fork databases, without modifying the source.
       - Existing styal project configuration wins while each imported thread and its verified attachments commit atomically, so interrupted or repeated imports resume without duplication.
       - Credentials, connections, provider sign-ins, active sessions, and client-local preferences remain isolated, while affected earlier imports can restore provider context only after their loaded sessions stop.
-      - Setup and Settings share one importer for T3 Code data and Claude Code or Codex history; setup offers only its selected computers while Settings offers saved computers, and switching computers preserves their separate selections.
-      - Server preferences require explicit opt-in per computer and show changed values before import; project selection alone never applies preferences.
+      - Setup offers T3 Code migration or CLI history as separate choices; Settings exposes only T3 Code migration and never starts CLI history scans. T3 migration shares components and commands between both entry points.
+      - T3 projects and optional preferences have separate steps; switching steps or computers preserves selections, setup stays scoped to selected computers, and preferences require explicit opt-in per computer.
       - Partial imports keep failed work selected for retry and clear completed selections; pending imports remain locked across Settings remounts, and leaving the page prevents subsequent requests in the batch.
     implementation_paths:
       - apps/server/src/dataImport/LegacyImport.ts
@@ -222,6 +222,7 @@ features:
       - apps/web/src/components/import/DataImportPanel.tsx
       - apps/web/src/components/import/ImportComputer.tsx
       - apps/web/src/components/import/ImportDataView.tsx
+      - apps/web/src/components/import/ImportSourceChooser.tsx
       - apps/web/src/components/import/useHistoryImport.ts
       - apps/web/src/components/import/useLegacyImport.ts
       - apps/web/src/components/onboarding/OnboardingImportStep.tsx
@@ -256,7 +257,7 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/blob/384de0858d1f59ca2ad7c660544a5290fd9138cb/apps/web/src/components/onboarding/WelcomeWizard.tsx
-      retire_when: The fork replaces this implementation with equivalent safe T3 Code migration and CLI history import in setup and Settings, preserving computer scope, preference opt-in, retry behavior, and pending-import locks, or deliberately retires those capabilities.
+      retire_when: The fork replaces this implementation with equivalent safe T3 Code migration in setup and Settings, with CLI history limited to setup, preserving computer scope, separate preference review, explicit opt-in, retry behavior, and pending-import locks, or deliberately retires those capabilities.
 
   - id: desktop-background-updates
     title: Download desktop updates in the background and install on quit

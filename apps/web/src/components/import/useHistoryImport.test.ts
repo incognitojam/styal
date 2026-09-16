@@ -52,7 +52,7 @@ const render = () => {
   hooks.beginRender();
   return useHistoryImport(environmentId);
 };
-describe("shared CLI history importer", () => {
+describe("setup CLI history importer", () => {
   beforeEach(() => {
     hooks.reset();
     mocks.create.mockReset();

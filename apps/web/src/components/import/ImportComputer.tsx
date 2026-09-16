@@ -1,9 +1,9 @@
-import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
+import { useEffect, useImperativeHandle, type Ref } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { ImportPreferencesView, ImportSourceView } from "./ImportDataView";
 import { useHistoryImport } from "./useHistoryImport";
-import { importErrorMessage, useLegacyImport } from "./useLegacyImport";
-import type { ComputerImporter, ComputerImportSummary, ImportOutcome } from "./types";
+import { useLegacyImport } from "./useLegacyImport";
+import type { ComputerImporter, ComputerImportSummary, LegacyImportStage } from "./types";
 
 const UNAVAILABLE = {
   "current-database": "This computer already runs on this T3 Code data.",
@@ -12,16 +12,7 @@ const UNAVAILABLE = {
   "unreadable-database": "Could not read the T3 Code database. Check its permissions, then rescan.",
 };
 
-/** Mounted once per computer so tab changes preserve selections and retry state. */
-export function ImportComputer({
-  environmentId,
-  label,
-  active,
-  connected,
-  busy,
-  onSummary,
-  ref,
-}: {
+interface ImportComputerProps {
   environmentId: EnvironmentId;
   label: string;
   active: boolean;
@@ -29,22 +20,23 @@ export function ImportComputer({
   busy: boolean;
   onSummary: (id: EnvironmentId, summary: ComputerImportSummary) => void;
   ref: Ref<ComputerImporter>;
-}) {
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
+}
+
+/** Mounted once per computer so changing computers or steps preserves selections. */
+export function LegacyImportComputer({
+  environmentId,
+  label,
+  active,
+  connected,
+  busy,
+  onSummary,
+  ref,
+  stage,
+}: ImportComputerProps & { stage: LegacyImportStage }) {
   const legacy = useLegacyImport(environmentId, busy);
-  const history = useHistoryImport(environmentId);
   const selectedLegacyIds = new Set(legacy.selected.map((project) => project.projectId));
-  const selectedHistoryKeys = new Set(history.selected.map((project) => project.key));
-  const projects = legacy.selected.length + history.selected.length;
-  const threads =
-    legacy.selected.reduce((total, project) => total + project.threadCount, 0) +
-    history.selected.reduce((total, project) => total + project.threadCount, 0);
+  const projects = legacy.selected.length;
+  const threads = legacy.selected.reduce((total, project) => total + project.threadCount, 0);
   const preferences = legacy.selectedPreferences ? 1 : 0;
   useEffect(
     () => onSummary(environmentId, { projects, threads, preferences }),
@@ -54,23 +46,7 @@ export function ImportComputer({
     run: async () => {
       if (!connected && (projects > 0 || preferences > 0))
         throw new Error(`${label} is not connected.`);
-      // A failure in one source still allows the other source to finish.
-      const outcomes: ImportOutcome[] = [];
-      const errors: string[] = [];
-      for (const run of [legacy.run, history.run]) {
-        if (!mounted.current) return { success: false };
-        try {
-          outcomes.push(await run());
-        } catch (error) {
-          outcomes.push({ success: false });
-          errors.push(importErrorMessage(error));
-        }
-      }
-      if (errors.length) throw new Error(errors.join(" · "));
-      return {
-        success: outcomes.every((outcome) => outcome.success),
-        projectRef: outcomes.find((outcome) => outcome.projectRef)?.projectRef,
-      };
+      return legacy.run();
     },
   }));
   const available = legacy.preview?.status === "available" ? legacy.preview : null;
@@ -82,44 +58,105 @@ export function ImportComputer({
           Waiting for {label} to connect.
         </p>
       ) : null}
-      <ImportSourceView
-        disabled={busy || !connected}
-        source={{
-          title: available?.sourceKind === "t3-code-yngatech" ? "T3 Code (yngatech)" : "T3 Code",
-          projects: legacy.projects.map((project) => ({
-            id: project.projectId,
-            title: project.title.trim() || "Untitled project",
-            path: project.workspaceRoot,
-            threads: project.threadCount,
-            selected: selectedLegacyIds.has(project.projectId),
-            detail:
-              [
-                project.isExistingProject ? "Already in styal" : null,
-                project.contextRepairCount > 0
-                  ? `${project.contextRepairCount} ${project.contextRepairCount === 1 ? "repair" : "repairs"}`
-                  : null,
-                project.scriptCount > 0
-                  ? `${project.scriptCount} ${project.scriptCount === 1 ? "script" : "scripts"}`
-                  : null,
-              ]
-                .filter(Boolean)
-                .join(" · ") || undefined,
-          })),
-          pending: legacy.query.isPending && legacy.preview === null,
-          error: legacy.error ?? legacy.query.error,
-          message:
-            legacy.preview?.status === "not-found"
-              ? "No T3 Code data found in the default T3 home."
-              : legacy.preview?.status === "unavailable"
-                ? UNAVAILABLE[legacy.preview.reason]
-                : available && available.projects.length === 0
-                  ? "No T3 Code projects found."
-                  : undefined,
-          notice: legacy.notice,
-          refresh: legacy.query.refresh,
-          select: legacy.setSelection,
-        }}
-      />
+      {stage === "projects" ? (
+        <ImportSourceView
+          disabled={busy || !connected}
+          source={{
+            title: available?.sourceKind === "t3-code-yngatech" ? "T3 Code (yngatech)" : "T3 Code",
+            projects: legacy.projects.map((project) => ({
+              id: project.projectId,
+              title: project.title.trim() || "Untitled project",
+              path: project.workspaceRoot,
+              threads: project.threadCount,
+              selected: selectedLegacyIds.has(project.projectId),
+              detail:
+                [
+                  project.isExistingProject ? "Already in styal" : null,
+                  project.contextRepairCount > 0
+                    ? `${project.contextRepairCount} ${project.contextRepairCount === 1 ? "repair" : "repairs"}`
+                    : null,
+                  project.scriptCount > 0
+                    ? `${project.scriptCount} ${project.scriptCount === 1 ? "script" : "scripts"}`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || undefined,
+            })),
+            pending: legacy.query.isPending && legacy.preview === null,
+            error: legacy.error ?? legacy.query.error,
+            message:
+              legacy.preview?.status === "not-found"
+                ? "No T3 Code data found in the default T3 home."
+                : legacy.preview?.status === "unavailable"
+                  ? UNAVAILABLE[legacy.preview.reason]
+                  : available && available.projects.length === 0
+                    ? "No T3 Code projects found."
+                    : undefined,
+            notice: legacy.notice,
+            refresh: legacy.query.refresh,
+            select: legacy.setSelection,
+          }}
+        />
+      ) : available ? (
+        <ImportPreferencesView
+          disabled={busy || !connected}
+          preferences={{
+            changes: legacy.changes,
+            selected: legacy.selectedPreferences,
+            select: legacy.setIncludeSettings,
+            error: legacy.preferencesError,
+            message:
+              preferencePreview?.status === "available"
+                ? legacy.changes.length === 0
+                  ? "Preferences already match"
+                  : undefined
+                : preferencePreview?.status === "unreadable"
+                  ? "T3 Code preferences could not be read."
+                  : "No T3 Code preferences found.",
+          }}
+        />
+      ) : (
+        <p role="status" className="text-sm text-muted-foreground">
+          {legacy.query.isPending
+            ? "Checking T3 Code preferences…"
+            : (legacy.query.error ?? "No T3 Code preferences available.")}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** CLI discovery belongs to first setup; Settings never mounts this component. */
+export function HistoryImportComputer({
+  environmentId,
+  label,
+  active,
+  connected,
+  busy,
+  onSummary,
+  ref,
+}: ImportComputerProps) {
+  const history = useHistoryImport(environmentId);
+  const selectedHistoryKeys = new Set(history.selected.map((project) => project.key));
+  const projects = history.selected.length;
+  const threads = history.selected.reduce((total, project) => total + project.threadCount, 0);
+  useEffect(
+    () => onSummary(environmentId, { projects, threads, preferences: 0 }),
+    [environmentId, onSummary, projects, threads],
+  );
+  useImperativeHandle(ref, () => ({
+    run: async () => {
+      if (!connected && projects > 0) throw new Error(`${label} is not connected.`);
+      return history.run();
+    },
+  }));
+  return (
+    <div hidden={!active} className="space-y-5" aria-label={label}>
+      {!connected ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          Waiting for {label} to connect.
+        </p>
+      ) : null}
       <ImportSourceView
         disabled={busy || !connected}
         source={{
@@ -127,6 +164,7 @@ export function ImportComputer({
           projects: history.candidates.map((project) => ({
             id: project.key,
             title: project.title,
+            providers: project.sources,
             path: project.path,
             threads: project.threadCount,
             selected: selectedHistoryKeys.has(project.key),
@@ -144,26 +182,6 @@ export function ImportComputer({
           select: history.setSelected,
         }}
       />
-      {available ? (
-        <ImportPreferencesView
-          disabled={busy || !connected}
-          preferences={{
-            computer: label,
-            changes: legacy.changes,
-            selected: legacy.selectedPreferences,
-            select: legacy.setIncludeSettings,
-            error: legacy.preferencesError,
-            message:
-              preferencePreview?.status === "available"
-                ? legacy.changes.length === 0
-                  ? "Preferences already match"
-                  : undefined
-                : preferencePreview?.status === "unreadable"
-                  ? "T3 Code preferences could not be read."
-                  : "No T3 Code preferences found.",
-          }}
-        />
-      ) : null}
     </div>
   );
 }

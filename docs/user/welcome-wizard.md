@@ -51,15 +51,14 @@ terminal metadata while the terminal process can use them.
 
 ## Import your projects
 
-The Projects step uses the same importer as **Settings → Import data**. Switch
-between the computers selected during setup and choose projects from **T3 Code**
-and **Claude Code / Codex**. Each computer keeps its selection when you switch tabs.
-The footer totals your choices across computers.
+Choose **T3 Code** to migrate an existing installation, or **Claude Code / Codex**
+to import CLI conversation history. Setup imports one source at a time. Each
+source only checks the computers selected earlier in setup.
 
 Choose **Import & finish** to import the selection, or **Skip for now** to finish
-without importing. Both sources remain available in Settings after setup.
-Navigation is disabled while an import runs. Sources are checked independently;
-a scan failure in one does not prevent importing from the other.
+without importing. Navigation is disabled while an import runs. T3 Code migration
+remains available in **Settings → Import data**; CLI history import is available
+only during first setup.
 
 ### T3 Code data
 
@@ -67,10 +66,13 @@ Projects and conversations are read from each computer's default T3 home and
 imported into styal on that same computer. Completed projects are deselected;
 failed projects remain selected for retry.
 
-Preferences are optional. Select **Bring over T3 Code preferences** for each
-computer where you want them applied. **Review changes** compares the current
-and imported values, showing only differences. Importing projects alone does
-not replace preferences.
+T3 migration is available in setup and Settings. Choose projects,
+then continue to the separate **Preferences** step. Selections are retained when
+you change steps or computers, and the footer totals your choices across computers.
+
+Preferences are optional and unchecked by default. Review the changed values and
+select **Bring over T3 Code preferences** for each computer where you want them
+applied. Importing projects alone does not replace preferences.
 
 ### Claude/Codex history
 
@@ -96,8 +98,9 @@ unreadable or unparseable conversations.
 
 Each import attempt reads up to 100 conversation files and 64 MiB per project,
 with up to 100,000 input records. Run import again to continue a large batch.
-Completed conversations are not imported again. You can continue without the
-remaining history.
+Conversations already imported through this CLI history flow are not imported again.
+This does not deduplicate against conversations migrated from T3 Code or created
+directly in styal. You can continue without the remaining history.
 
 You can continue without configuring agents or importing projects, or return to an earlier step
 using the setup progress bar. Navigation pauses while an import is running.
