@@ -828,7 +828,7 @@ features:
     prs: [341]
     invariants:
       - Web and desktop Markdown tables in messages and file previews start from the Word wrap preference and let wrapped rows grow to show complete cell content within the available width where headings can fit.
-      - Each table can switch between fitting the available width and horizontal scrolling without retaining measured column minimum widths; scrolling mode keeps full values on one line without ellipsis truncation.
+      - The existing Expand table cells and Collapse table cells controls switch between wrapped and single-line rows without retaining measured column minimum widths; collapsed cells keep full values accessible by horizontal scrolling without ellipsis truncation.
       - Tables that must overflow retain discoverable scrollbars, including dense wrapped tables whose headings cannot fit without breaking words.
     implementation_paths:
       - apps/web/src/components/ChatMarkdown.tsx

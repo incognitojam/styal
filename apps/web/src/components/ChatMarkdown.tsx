@@ -1,6 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
-  ArrowLeftRightIcon,
   CheckIcon,
   ChevronRightIcon,
   CopyIcon,
@@ -11,8 +10,10 @@ import {
   InfoIcon,
   LightbulbIcon,
   MailIcon,
+  Maximize2Icon,
   MessageSquareIcon,
   MessageSquareWarningIcon,
+  Minimize2Icon,
   OctagonAlertIcon,
   TerminalIcon,
   PresentationIcon,
@@ -616,7 +617,7 @@ function MarkdownTable({ children, ...props }: React.ComponentProps<"table">) {
   const [expanded, setExpanded] = useState(readInitialWordWrapSetting);
   const [copied, setCopied] = useState(false);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const expandLabel = expanded ? "Scroll table horizontally" : "Fit table to width";
+  const expandLabel = expanded ? "Collapse table cells" : "Expand table cells";
   const copyLabel = copied ? "Copied" : "Copy table";
 
   const handleCopy = useCallback((format: "markdown" | "csv") => {
@@ -679,11 +680,7 @@ function MarkdownTable({ children, ...props }: React.ComponentProps<"table">) {
               />
             }
           >
-            {expanded ? (
-              <ArrowLeftRightIcon className="size-3" />
-            ) : (
-              <WrapTextIcon className="size-3" />
-            )}
+            {expanded ? <Minimize2Icon className="size-3" /> : <Maximize2Icon className="size-3" />}
           </TooltipTrigger>
           <TooltipPopup side="top">{expandLabel}</TooltipPopup>
         </Tooltip>
