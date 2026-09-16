@@ -154,8 +154,11 @@ export function ServerUpdateAction({
   }
 
   if (selfUpdate === null || selfUpdate === "service-migration") {
-    const serviceCommand = manualServerUpdateCommand(targetVersion, "service");
-    const foregroundCommand = manualServerUpdateCommand(targetVersion, "foreground");
+    const serviceMigration = selfUpdate === "service-migration";
+    const command = manualServerUpdateCommand(
+      targetVersion,
+      serviceMigration ? "service" : "foreground",
+    );
     return (
       <Dialog>
         <DialogTrigger render={<Button size="xs" variant="outline" />}>
@@ -165,9 +168,9 @@ export function ServerUpdateAction({
           <DialogHeader>
             <DialogTitle>Update {serverLabel}</DialogTitle>
             <DialogDescription>
-              {selfUpdate === "service-migration"
+              {serviceMigration
                 ? "This server needs a one-time service migration before it can update from the app."
-                : "This server does not support in-app updates. Choose the instructions for how it is run."}
+                : "This server does not support in-app updates. Stop the existing server before starting the new version."}
             </DialogDescription>
           </DialogHeader>
           <DialogPanel className="space-y-5 text-sm">
@@ -177,50 +180,35 @@ export function ServerUpdateAction({
               Tailscale configuration.
             </p>
             <section className="space-y-2">
-              <h3 className="font-medium">Background service · Linux or macOS</h3>
               <p className="text-muted-foreground">
-                Update and restart the styal service. If it is not installed, this installs it and
-                enables future in-app updates; stop any manually started server first. For a custom
-                data directory, add your existing <code>--base-dir</code> option.
+                {serviceMigration ? (
+                  <>
+                    This updates and restarts the background service, enabling future in-app
+                    updates. For a custom data directory, add your existing <code>--base-dir</code>{" "}
+                    option.
+                  </>
+                ) : (
+                  <>
+                    Run this with your existing startup options after stopping the server. It starts
+                    a foreground server; it does not replace a running instance.
+                  </>
+                )}
               </p>
-              <code className="block break-all rounded-md bg-muted p-3 text-xs">
-                {serviceCommand}
-              </code>
+              <code className="block break-all rounded-md bg-muted p-3 text-xs">{command}</code>
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() =>
-                  copyToClipboard(serviceCommand, {
-                    description: `Run this in a separate terminal on ${serverLabel} after active work finishes. It restarts the background service.`,
+                  copyToClipboard(command, {
+                    description: serviceMigration
+                      ? `Run this in a separate terminal on ${serverLabel} after active work finishes. It restarts the background service.`
+                      : `Stop the existing server on ${serverLabel} first, then run this with the same startup options.`,
                   })
                 }
               >
-                Copy service update command
+                {serviceMigration ? "Copy service update command" : "Copy start command"}
               </Button>
             </section>
-            {selfUpdate === null && (
-              <section className="space-y-2">
-                <h3 className="font-medium">Foreground server</h3>
-                <p className="text-muted-foreground">
-                  Stop the existing server first, then run this with your existing startup options.
-                  This starts a foreground server; it does not replace a running instance.
-                </p>
-                <code className="block break-all rounded-md bg-muted p-3 text-xs">
-                  {foregroundCommand}
-                </code>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() =>
-                    copyToClipboard(foregroundCommand, {
-                      description: `Stop the existing server on ${serverLabel} first, then run this with the same startup options.`,
-                    })
-                  }
-                >
-                  Copy start command
-                </Button>
-              </section>
-            )}
           </DialogPanel>
         </DialogPopup>
       </Dialog>

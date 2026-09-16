@@ -35,8 +35,9 @@ Run local service commands in a separate terminal or SSH session: restarting the
 close terminals opened inside styal.
 
 Managed services offer **Update** in the chat notice and **Settings → Connections** when a
-newer version is available. If the server cannot update itself, **Update instructions** explains
-the background-service and foreground-server commands. A start command launches another server;
+newer version is available. For detected legacy services, **Update instructions** provides the
+one-time service migration command. Other servers get instructions to stop the existing server
+and start the new version with the same startup options. A start command launches another server;
 it does not update an existing service.
 
 The service runs a small stable launcher. Exact styal versions are installed separately, so a
