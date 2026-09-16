@@ -4,13 +4,22 @@ Messages can contain up to 120,000 characters. If a draft is longer, T3 Code kee
 composer and shows how many characters need to be removed. Shorten the draft or split it into
 multiple messages, then send again in the same thread.
 
-Drop images, source files, text, Markdown, PDFs, or other files onto the chat to attach them. A
-message can contain up to 8 attachments. Images can be up to 10 MB, other files up to 50 MB, and
-the combined attachments can total up to 50 MB. T3 Code saves each attachment in the connected
-environment and gives the agent its local path.
+You can attach images up to 10 MB. On servers that support file uploads, you can also
+attach text files, PDFs, ZIP archives, and other files. Each file can be up to the limit advertised
+by the server, capped at 50 MB. Each message can contain up to eight attachments and 50 MB in total. Files
+upload directly to the environment, where your agent can read, copy, or edit them by their file path.
 
-On servers that support direct uploads, attachments upload as soon as you add them. The send button
-becomes available after every upload finishes. Failed uploads can be retried or removed.
+On web and desktop, attachments upload as soon as you add them. The send button becomes available
+after every upload finishes. Failed uploads can be retried or removed. On mobile, the **+** control
+offers Photos, and adds Files when the connected server supports file uploads. You can share a file
+into T3 Code from any app through the system share sheet. Mobile uploads happen when the message
+sends, so queued messages keep their files until they deliver. Select a received file on mobile
+to save it or open it in another app through the system share sheet.
+
+If you reload before a file finishes uploading, the draft keeps the file's name and shows **Attach
+again** next to it. Attach the file again or remove it, then send. Uploaded draft files are kept
+for 24 hours; after that they also need to be attached again. Draft text and settings can sync
+between devices, but draft attachments stay with the client that added them.
 
 On web and desktop, HEIC and HEIF photos are automatically converted to JPEG when you drag them into
 the composer or paste them into a message.
@@ -18,6 +27,15 @@ the composer or paste them into a message.
 On mobile, the model picker shows each OpenCode model's upstream provider, such as Anthropic,
 GitHub Copilot, or OpenCode Zen, beneath its name. Search by that provider name to narrow the list
 when starting a thread or changing an existing thread's model.
+
+## Prompt stash
+
+Use the default shortcut, `Cmd+S` on macOS or `Ctrl+S` on Windows and Linux, to stash the current
+prompt and its attachments after all file uploads finish. Restore the entry later from the stash
+menu. Stashes that contain files must be restored in the environment where those files were
+uploaded. Stashed files stay uploaded on the server for 24 hours. If you restore an entry after
+that, the file comes back with **Attach again** next to it. Attach the file again or remove it, then
+send.
 
 ## Commands and skills
 

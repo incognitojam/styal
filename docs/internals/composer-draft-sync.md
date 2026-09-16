@@ -20,3 +20,22 @@ A turn-start command may carry the composer revision captured at send time. Mobi
 revision alongside an offline outbox message and forwards it when delivery eventually succeeds.
 After the turn command is durably accepted, the server conditionally writes a tombstone at that
 revision. This prevents a delayed send from erasing a newer edit from another client.
+
+## Attachment ownership
+
+Web and desktop keep uploaded generic files as environment-scoped pending-upload references in
+local draft and stash storage. File bytes are uploaded directly to the environment. These references
+are not part of the synchronized `common` section. Pending uploads expire after 24 hours; missing
+uploads and files whose upload did not finish hydrate as **Attach again** rows. Existing image draft
+encoding remains unchanged.
+
+Legacy web file drafts and stashes may contain data URLs. Keep those bytes until upload succeeds
+and a replacement reference has been durably written. Failed uploads or browser-storage writes must
+leave the old copy recoverable. Stash migration uses separate upload jobs so it cannot release a
+pending upload still owned by a composer draft.
+
+Mobile copies picked or shared files into its owned Documents attachment directory. Drafts, incoming
+shares, and queued messages retain those copies until ownership transfers or the content is removed.
+Uploads happen during send; retries verify saved upload references and can upload the owned local
+copy again if the server upload expired. Cleanup waits for successful hydration and durable writes
+of every owner; a read or decode failure must never be treated as an empty owner set.

@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema";
 import { create } from "zustand";
 
-import { PersistedComposerAttachment } from "./composerDraftStore";
+import { PersistedComposerAttachment, PersistedComposerFileAttachment } from "./composerDraftStore";
 import { createMemoryStorage, type StateStorage } from "./lib/storage";
 
 export const PROMPT_STASH_STORAGE_KEY = "styal:prompt-stash:v2";
@@ -20,16 +20,15 @@ export const MAX_STASH_ENTRIES = 20;
 export const MAX_STASH_ENTRY_ATTACHMENT_CHARS = 2_700_000;
 
 /**
- * A stashed prompt carries only what every provider can accept: text and
- * image attachments. Deliberately no provider instance or model selection —
- * the point of stashing is to move a prompt into a different thread or
- * provider, so restoring must never drag the old model choice along.
+ * Stashed files keep signed-upload references instead of storing their bytes.
+ * Image payloads remain subject to the localStorage budget.
  */
 const StashEntrySchema = Schema.Struct({
   id: Schema.String,
   createdAt: Schema.String,
   prompt: Schema.String,
   attachments: Schema.Array(PersistedComposerAttachment),
+  files: Schema.optionalKey(Schema.Array(PersistedComposerFileAttachment)),
   /** Names of images that exceeded the attachment budget and were not saved. */
   droppedImageNames: Schema.Array(Schema.String),
   /**
@@ -194,6 +193,11 @@ interface PromptStashStoreState {
      */
     durable: boolean;
   };
+  /** Atomically replace legacy file bytes only after their server uploads are ready. */
+  migrateEntryFiles: (
+    entryId: string,
+    files: ReadonlyArray<PersistedComposerFileAttachment>,
+  ) => boolean;
   /**
    * Removes and returns an entry from the queue (restore + delete).
    * `durable` is false when the removal could not be persisted, meaning a
@@ -230,6 +234,38 @@ export const usePromptStashStore = create<PromptStashStoreState>()((set, get) =>
     }
     set(() => ({ entries: nextEntries }));
     return { evicted, written: true, durable };
+  },
+  migrateEntryFiles: (entryId, files) => {
+    const entries = get().entries;
+    const current = entries.find((entry) => entry.id === entryId);
+    if (!current) return false;
+    const legacyFiles = current.attachments.filter((attachment) => attachment.type === "file");
+    if (
+      legacyFiles.length !== files.length ||
+      legacyFiles.some(
+        (legacy) =>
+          !files.some(
+            (file) =>
+              file.id === legacy.id &&
+              file.name === legacy.name &&
+              file.mimeType === legacy.mimeType &&
+              file.sizeBytes === legacy.sizeBytes,
+          ),
+      )
+    )
+      return false;
+    const nextEntries = entries.map((entry) =>
+      entry.id !== entryId
+        ? entry
+        : {
+            ...entry,
+            attachments: entry.attachments.filter((attachment) => attachment.type !== "file"),
+            files: [...(entry.files ?? []), ...files],
+          },
+    );
+    if (!persistEntries(nextEntries).durable) return false;
+    set({ entries: nextEntries });
+    return true;
   },
   takeEntry: (entryId) => {
     const entries = get().entries;

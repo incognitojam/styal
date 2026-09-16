@@ -500,7 +500,11 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
   // images mirrors persistedAttachments once rehydration finishes; before
   // that only the persisted list is populated, hence max not sum.
   const attachmentCount =
-    Math.max(composer.images.length, composer.persistedAttachments.length) +
+    Math.max(
+      composer.images.length,
+      composer.persistedAttachments.filter((attachment) => attachment.type !== "file").length,
+    ) +
+    composer.files.length +
     composer.terminalContexts.length +
     composer.elementContexts.length +
     composer.previewAnnotations.length +

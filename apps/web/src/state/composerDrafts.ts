@@ -39,6 +39,7 @@ export function readComposerDraftRevision(threadRef: ScopedThreadRef): number | 
 function commonFromDraft(draft: ComposerThreadDraftState): ComposerDraftCommon | null {
   const hasLocalOnlyContext =
     draft.images.length > 0 ||
+    draft.files.length > 0 ||
     draft.persistedAttachments.length > 0 ||
     draft.terminalContexts.length > 0 ||
     draft.elementContexts.length > 0 ||
@@ -163,6 +164,7 @@ export function useServerComposerDraftSync(threadRef: ScopedThreadRef | null): v
     draft.activeProvider,
     draft.elementContexts,
     draft.images,
+    draft.files,
     draft.interactionMode,
     draft.issueContexts,
     draft.modelSelectionByProvider,
