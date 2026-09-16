@@ -12,6 +12,10 @@ Source paths written in messages may become clickable file chips. Opening a chip
 resolved path, while its label and **Copy relative path** action stay workspace-relative.
 Click or tap the linked text or file chip to open the file.
 
+On web and desktop, Markdown file previews keep file links as their original linked text without
+adding filename chips. Inline code stays as code, including paths. File links still open the file
+and offer the usual file actions.
+
 When previewing a Markdown file, relative images resolve from that file's folder. Images retain
 their authored dimensions and SVG fragment, and copying a workspace image preserves its Markdown
 reference.

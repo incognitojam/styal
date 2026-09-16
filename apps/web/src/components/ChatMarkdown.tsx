@@ -190,6 +190,8 @@ interface ChatMarkdownProps {
   lineBreaks?: boolean;
   /** Parse sanitized raw HTML instead of displaying its source text. */
   parseRawHtml?: boolean;
+  /** Keep authored file links and inline code intact in document previews. */
+  fileLinkStyle?: "chip" | "text";
   /** Runs completed shell-language fences in the thread terminal. */
   onRunCodeBlock?: ((code: string) => void) | undefined;
   /** A surface-specific image renderer, used when the source needs authenticated resolution. */
@@ -1026,6 +1028,7 @@ interface MarkdownFileLinkProps {
   line?: number | undefined;
   label: string;
   children?: ReactNode;
+  showChip: boolean;
   copyMarkdown: string;
   theme: "light" | "dark";
   threadRef?: ScopedThreadRef | undefined;
@@ -1410,6 +1413,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
   line,
   label,
   children,
+  showChip,
   copyMarkdown,
   theme,
   threadRef,
@@ -1673,23 +1677,25 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
     canOpenInPanel,
   });
   const linkClassName = cn(
-    children === undefined
-      ? [CHAT_FILE_TAG_CHIP_CLASS_NAME, MARKDOWN_FILE_LINK_CLASS_NAME]
-      : "chat-markdown-file-reference inline max-w-full cursor-pointer select-text",
+    showChip &&
+      (children === undefined
+        ? [CHAT_FILE_TAG_CHIP_CLASS_NAME, MARKDOWN_FILE_LINK_CLASS_NAME]
+        : "chat-markdown-file-reference inline max-w-full cursor-pointer select-text"),
     className,
   );
   const chipContent = <FileTagChipContent path={iconPath} label={label} theme={theme} selectable />;
-  const content =
-    children === undefined ? (
-      chipContent
-    ) : (
-      <>
-        <span className="chat-markdown-file-link-label">{children}</span>{" "}
-        <span className={cn(CHAT_FILE_TAG_CHIP_CLASS_NAME, MARKDOWN_FILE_CHIP_CLASS_NAME)}>
-          {chipContent}
-        </span>
-      </>
-    );
+  const content = !showChip ? (
+    children
+  ) : children === undefined ? (
+    chipContent
+  ) : (
+    <>
+      <span className="chat-markdown-file-link-label">{children}</span>{" "}
+      <span className={cn(CHAT_FILE_TAG_CHIP_CLASS_NAME, MARKDOWN_FILE_CHIP_CLASS_NAME)}>
+        {chipContent}
+      </span>
+    </>
+  );
 
   return (
     <Tooltip>
@@ -1758,6 +1764,7 @@ function areMarkdownFileLinkPropsEqual(
     previous.line === next.line &&
     previous.label === next.label &&
     previous.children === next.children &&
+    previous.showChip === next.showChip &&
     previous.copyMarkdown === next.copyMarkdown &&
     previous.theme === next.theme &&
     previous.threadRef === next.threadRef &&
@@ -1782,6 +1789,7 @@ function ChatMarkdown({
   className,
   lineBreaks = false,
   parseRawHtml = true,
+  fileLinkStyle = "chip",
   onRunCodeBlock,
   imageRenderer,
   referenceContext,
@@ -2089,7 +2097,7 @@ function ChatMarkdown({
    * renderers that close over this message's metadata. useMemo keeps them stable until that
    * metadata changes. */
   const markdownComponents = useMemo<Components>(() => {
-    const fileLinkChip = (
+    const renderFileLink = (
       fileLinkMeta: MarkdownFileLinkMeta,
       copyMarkdown: string,
       className?: string,
@@ -2118,6 +2126,7 @@ function ChatMarkdown({
           line={fileLinkMeta.line}
           label={labelParts.join(" · ")}
           copyMarkdown={copyMarkdown}
+          showChip={fileLinkStyle === "chip"}
           theme={resolvedTheme}
           threadRef={threadRef}
           {...(canUseShellActions ? { onOpen: openInPreferredEditor } : {})}
@@ -2393,21 +2402,23 @@ function ChatMarkdown({
           labelStart !== undefined && labelEnd !== undefined
             ? text.slice(labelStart, labelEnd)
             : linkLabel;
-        return fileLinkChip(
+        return renderFileLink(
           fileLinkMeta,
           `[${copyLabel || fileLinkMeta.basename}](${normalizedHref})`,
           props.className,
-          isPathLabel ? undefined : <MarkdownLinkContext value>{children}</MarkdownLinkContext>,
+          fileLinkStyle === "chip" && isPathLabel ? undefined : (
+            <MarkdownLinkContext value>{children}</MarkdownLinkContext>
+          ),
         );
       },
       code({ node, children, className, ...props }) {
-        if (node?.properties?.dataInlineCode != null) {
+        if (fileLinkStyle === "chip" && node?.properties?.dataInlineCode != null) {
           const codeText = nodeToPlainText(children);
           const fileLinkMeta =
             inlineCodeFileLinkMetaByText.get(codeText.trim()) ??
             resolveInlineCodeFileLinkMeta(codeText, cwd);
           if (fileLinkMeta) {
-            return fileLinkChip(fileLinkMeta, `\`${codeText}\``);
+            return renderFileLink(fileLinkMeta, `\`${codeText}\``);
           }
         }
         return (
@@ -2514,6 +2525,7 @@ function ChatMarkdown({
     cwd,
     diffThemeName,
     fileLinkParentSuffixByPath,
+    fileLinkStyle,
     inlineCodeFileLinkMetaByText,
     imageRenderer,
     imageBaseDir,
