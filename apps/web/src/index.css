@@ -2365,14 +2365,10 @@ code {
   background: transparent !important;
 }
 
-/* Diagnostics-style tables: row separators only, uppercase headers, and a
-   scroll-fade container for horizontal overflow. The root chat-markdown
-   wrapping rules (overflow-wrap: anywhere) would let columns shrink to single
-   characters and defeat the overflow — restore word-boundary wrapping so the
-   min column width is the longest word. */
+/* Tables fit the available width when wrapping is enabled. Dense tables can
+   switch to single-line cells in a horizontal scroll container. */
 .chat-markdown table {
   width: 100%;
-  min-width: max-content;
   border-collapse: collapse;
   overflow-wrap: normal;
   word-break: normal;
@@ -2396,14 +2392,19 @@ code {
   border-bottom: 1px solid color-mix(in srgb, var(--contrast-border) 60%, transparent);
 }
 
-/* Collapsed (default): single-line cells truncate so arbitrary chat content
-   cannot blow the column out; the footer toggle expands cells to wrap. */
+/* Scrolling keeps complete values on one line, including long identifiers. */
+.chat-markdown .chat-markdown-table-container[data-expanded="false"] table {
+  min-width: max-content;
+}
+
 .chat-markdown .chat-markdown-table-container[data-expanded="false"] th,
 .chat-markdown .chat-markdown-table-container[data-expanded="false"] td {
-  overflow: hidden;
-  max-width: 24rem;
-  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.chat-markdown .chat-markdown-table-container[data-expanded="true"] th,
+.chat-markdown .chat-markdown-table-container[data-expanded="true"] td {
+  white-space: normal;
 }
 
 .chat-markdown .chat-markdown-table-container[data-expanded="true"] td {

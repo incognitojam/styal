@@ -16,6 +16,12 @@ When previewing a Markdown file, relative images resolve from that file's folder
 their authored dimensions and SVG fragment, and copying a workspace image preserves its Markdown
 reference.
 
+On web and desktop, Markdown tables wrap to fit the available width when **Word wrap** is enabled.
+Use the button below a table to switch between **Scroll table horizontally** and **Fit table to
+width**. Horizontal scrolling keeps dense tables and long values on one line without truncating
+them. Tables with more columns than can fit may still scroll to keep their headings readable.
+This works in messages and Markdown file previews.
+
 On web and desktop, select an image in an agent message to expand it. Images that link somewhere
 keep their link action.
 
