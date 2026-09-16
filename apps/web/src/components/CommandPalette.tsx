@@ -2277,7 +2277,7 @@ function OpenCommandPaletteDialog(props: {
           repositoryInput: rawRepository,
           repository,
           parentNameWithOwner: repository.parentNameWithOwner,
-          remoteUrl: repository.sshUrl,
+          remoteUrl: getDefaultCloneUrl(repository),
         });
         setHighlightedItemValue(null);
         setQuery("");
