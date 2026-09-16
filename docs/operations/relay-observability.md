@@ -2,6 +2,11 @@
 
 > For maintainers. Using T3 Code? See [docs/user](../user/).
 
+The relay prunes expired DPoP proofs and old terminal activity rows hourly, at minute zero UTC,
+so maintenance leaves room for Neon to suspend when idle. Proof and activity display expiry are
+enforced independently of cleanup. After deployment, verify that Neon suspends and compute usage
+falls; other relay traffic may still keep it awake.
+
 The relay Alchemy stack owns a shared Axiom trace setup:
 
 - `t3-code-relay-traces-prod`, the OpenTelemetry trace dataset shared by the Worker, mobile app, and
