@@ -34,7 +34,9 @@ function SourceChoice({
         "hover:border-border hover:bg-accent/50 disabled:pointer-events-none disabled:opacity-64 motion-reduce:transition-none",
       )}
     >
-      <span className="flex w-10 shrink-0 items-center gap-1.5 text-muted-foreground">{icon}</span>
+      <span className="flex w-10 shrink-0 items-center justify-center gap-1.5 text-muted-foreground">
+        {icon}
+      </span>
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-medium text-foreground">{title}</span>
         <span className="mt-0.5 block text-[13px] leading-[1.45] text-muted-foreground">
