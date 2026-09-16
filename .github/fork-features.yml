@@ -822,6 +822,37 @@ features:
       tracking: []
       retire_when: Upstream routes local chat and terminal links through an environment-aware integrated browser with an external fallback.
 
+  - id: markdown-table-layout
+    title: Fit Markdown tables to the available width
+    status: review-needed
+    prs: [341]
+    invariants:
+      - Web and desktop Markdown tables in messages and file previews start from the Word wrap preference and let wrapped rows grow to show complete cell content within the available width where headings can fit.
+      - The existing Expand table cells and Collapse table cells controls switch between wrapped and single-line rows without retaining measured column minimum widths; collapsed cells keep full values accessible by horizontal scrolling without ellipsis truncation.
+      - Tables that must overflow retain discoverable scrollbars, including dense wrapped tables whose headings cannot fit without breaking words.
+    implementation_paths:
+      - apps/web/src/components/ChatMarkdown.tsx
+      - apps/web/src/components/files/FileMarkdownPreview.tsx
+      - apps/web/src/index.css
+    upstream_paths:
+      - apps/web/src/components/ChatMarkdown.tsx
+      - apps/web/src/components/files/FileMarkdownPreview.tsx
+      - apps/web/src/components/ui/scroll-area.tsx
+      - apps/web/src/index.css
+    # Layout and mode switching were verified in the real client at 480, 640,
+    # and 848 pixel content widths; PR 341 contains the screenshot evidence.
+    # Settings tests cover the Word wrap default, not browser layout.
+    tests:
+      - packages/contracts/src/settings.test.ts
+    upstream:
+      status: partial
+      # PR 8868 exposes scrollbars only. At the assessed upstream commit,
+      # expansion still locks column widths and collapsed cells truncate.
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/e8ca3a82806dff84438d5aba66b693468f7ca426
+        - https://github.com/pingdotgg/t3code/pull/8868
+      retire_when: Upstream provides equivalent width-fitting wrapped tables, reversible untruncated horizontal scrolling without locked column widths, and discoverable overflow across shared web and desktop Markdown surfaces while preserving the Word wrap preference.
+
   - id: missing-workspace-provider-guard
     title: Fail provider startup clearly for missing workspaces
     status: maintained
