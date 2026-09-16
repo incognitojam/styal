@@ -220,7 +220,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
     }),
   );
 
-  it.effect("prefixes project instructions only on the first fresh Cursor prompt", () =>
+  it.effect("prefixes project instructions only on the first ordinary fresh Cursor prompt", () =>
     Effect.gen(function* () {
       const adapter = yield* CursorAdapter;
       const settings = yield* ServerSettingsService;
@@ -243,6 +243,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
         additionalInstructions: "Prefer focused tests.",
         runtimeMode: "full-access",
       });
+      yield* adapter.sendTurn({ threadId, input: "/goal status" });
       yield* adapter.sendTurn({ threadId, input: "First request" });
       yield* adapter.sendTurn({ threadId, input: "Second request" });
       yield* adapter.stopSession(threadId);
@@ -253,8 +254,14 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
         (entry.params as { prompt?: Array<{ type?: string; text?: string }> } | undefined)
           ?.prompt ?? [];
 
+      // A native command reaches Cursor unchanged; the instructions wait for the
+      // first ordinary prompt.
       assert.deepStrictEqual(
         promptBlocks(prompts[0] ?? {}).map((block) => block.text),
+        ["/goal status"],
+      );
+      assert.deepStrictEqual(
+        promptBlocks(prompts[1] ?? {}).map((block) => block.text),
         [
           "<additional_instructions>\nPrefer focused tests.\n</additional_instructions>",
           "First request",
@@ -262,7 +269,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
         ],
       );
       assert.deepStrictEqual(
-        promptBlocks(prompts[1] ?? {}).map((block) => block.text),
+        promptBlocks(prompts[2] ?? {}).map((block) => block.text),
         ["Second request", buildRuntimeInstructions({ harness: "Cursor" })],
       );
     }),
@@ -351,7 +358,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
     }),
   );
 
-  it.effect("sends selected project skills in Cursor's native slash form", () =>
+  it.effect("sends skills in Cursor's native form and preserves exact slash command input", () =>
     Effect.gen(function* () {
       const adapter = yield* CursorAdapter;
       const settings = yield* ServerSettingsService;
@@ -396,6 +403,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
           ],
         ],
       );
+      yield* adapter.sendTurn({ threadId, input: "/copy-request-id" });
       yield* adapter.stopSession(threadId);
 
       const requests = yield* Effect.promise(() => readJsonLines(requestLogPath));
@@ -409,6 +417,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
             { type: "text", text: "please /review this" },
             { type: "text", text: buildRuntimeInstructions({ harness: "Cursor" }) },
           ],
+          [{ type: "text", text: "/copy-request-id" }],
         ],
       );
     }),
