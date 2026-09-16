@@ -273,6 +273,7 @@ export const make = Effect.gen(function* () {
   const prepareDestination = Effect.fn("SourceControlRepositoryService.prepareDestination")(
     function* (destinationPath: string) {
       const normalizedDestination = yield* normalizeDestinationPath(destinationPath);
+      const parentPath = path.dirname(normalizedDestination);
       if (yield* fileSystem.exists(normalizedDestination)) {
         const entries = yield* fileSystem
           .readDirectory(normalizedDestination, { recursive: false })
@@ -294,13 +295,14 @@ export const make = Effect.gen(function* () {
             detail: "Destination path already exists and is not empty.",
           });
         }
-      } else {
-        yield* fileSystem.makeDirectory(path.dirname(normalizedDestination), { recursive: true });
+      } else if (!(yield* fileSystem.exists(parentPath))) {
+        // Windows rejects mkdir on a drive root even with recursive: true.
+        yield* fileSystem.makeDirectory(parentPath, { recursive: true });
       }
 
       return {
         destinationPath: normalizedDestination,
-        parentPath: path.dirname(normalizedDestination),
+        parentPath,
         directoryName: path.basename(normalizedDestination),
       };
     },

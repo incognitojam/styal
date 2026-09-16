@@ -76,6 +76,7 @@ function makeLayer(input: {
   readonly provider?: SourceControlProvider.SourceControlProvider["Service"];
   readonly git?: Partial<GitVcsDriver.GitVcsDriver["Service"]>;
   readonly fileSystem?: FileSystem.FileSystem;
+  readonly pathLayer?: typeof NodePath.layer;
 }) {
   const serviceLayer = SourceControlRepositoryService.layer.pipe(
     Layer.provide(
@@ -110,7 +111,7 @@ function makeLayer(input: {
   return input.fileSystem
     ? serviceLayer.pipe(
         Layer.provide(Layer.succeed(FileSystem.FileSystem, input.fileSystem)),
-        Layer.provideMerge(NodePath.layer),
+        Layer.provideMerge(input.pathLayer ?? NodePath.layer),
       )
     : serviceLayer.pipe(Layer.provideMerge(NodeServices.layer));
 }
@@ -781,6 +782,79 @@ it.effect("preserves clone process failures such as timeouts", () =>
       }),
     ),
   ),
+);
+
+it.effect("clones beneath a Windows drive root without trying to create the root", () => {
+  const cloneCalls: Array<{ cwd: string; args: ReadonlyArray<string> }> = [];
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const result = yield* service.cloneRepository({
+      remoteUrl: CLONE_URLS.url,
+      destinationPath: "D:\\t3code",
+    });
+
+    assert.strictEqual(result.cwd, "D:\\t3code");
+    assert.deepStrictEqual(cloneCalls, [
+      { cwd: "D:\\", args: ["clone", CLONE_URLS.url, "t3code"] },
+    ]);
+  }).pipe(
+    Effect.provide(
+      makeLayer({
+        pathLayer: NodePath.layerWin32,
+        fileSystem: FileSystem.makeNoop({
+          exists: (path) => Effect.succeed(path === "D:\\"),
+          makeDirectory: (path) =>
+            path === "D:\\"
+              ? Effect.fail(
+                  PlatformError.systemError({
+                    _tag: "PermissionDenied",
+                    module: "FileSystem",
+                    method: "makeDirectory",
+                    pathOrDescriptor: path,
+                  }),
+                )
+              : Effect.void,
+        }),
+        git: {
+          execute: (input) =>
+            Effect.sync(() => {
+              cloneCalls.push({ cwd: input.cwd, args: input.args });
+              return processOutput();
+            }),
+        },
+      }),
+    ),
+  );
+});
+
+it.effect("creates missing parent directories before cloning", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-source-control-clone-parent-" });
+    const parent = `${root}/projects/nested`;
+
+    yield* Effect.gen(function* () {
+      const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+      yield* service.cloneRepository({
+        remoteUrl: CLONE_URLS.url,
+        destinationPath: `${parent}/t3code`,
+      });
+    }).pipe(
+      Effect.provide(
+        makeLayer({
+          git: {
+            execute: (input) =>
+              Effect.gen(function* () {
+                assert.strictEqual(input.cwd, parent);
+                assert.strictEqual((yield* fs.stat(parent).pipe(Effect.orDie)).type, "Directory");
+                return processOutput();
+              }),
+          },
+        }),
+      ),
+    );
+  }).pipe(Effect.provide(NodeServices.layer)),
 );
 
 it.effect("preserves destination probe failures instead of treating them as missing paths", () => {
