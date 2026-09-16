@@ -11,13 +11,13 @@
 styal is an open-source control plane for coding agents. It lets you run and direct provider CLIs such as Claude Code, Codex, Cursor, Grok Build, and OpenCode from desktop and web clients.
 
 > [!IMPORTANT]
-> styal is early in its transition to an independent product and is not yet offered as a supported public release. Hosted web and remote infrastructure, repeatable nightly and release builds, and production deployment are still being brought online. A styal mobile release will come later.
+> styal is in active development. The hosted web app at [app.styal.build](https://app.styal.build) is live, with rough edges and incomplete functionality. Importing T3 Code projects and preferences works. The mobile app is a work in progress.
 
 ## About this fork
 
 styal began as a fork of [T3 Code](https://github.com/pingdotgg/t3code), created by the team at [Ping](https://ping.gg). It continues to track `pingdotgg/t3code` as upstream while developing its own branding, product direction, design language, and user interface.
 
-The fork already carries behavior beyond upstream. See the rolling [styal features and improvements](https://github.com/incognitojam/styal/issues/43) summary for the user-facing differences, or the maintainer-facing [fork feature ledger](./.github/fork-features.yml) for the capabilities and tests preserved during upstream rebases.
+See [How styal differs from T3 Code](./docs/user/styal-differences.md) for an overview of its workspace, agent, and review features. The maintainer-facing [fork feature ledger](./.github/fork-features.yml) records the capabilities and tests preserved during upstream integration.
 
 The transition is intentionally gradual. Inherited package names, source paths, documentation, and application copy will continue to reference T3 Code until the corresponding styal surface is ready to own.
 

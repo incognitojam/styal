@@ -1,0 +1,64 @@
+# How styal differs from T3 Code
+
+styal builds on T3 Code with its own choices around workspaces, agent sessions, and code review.
+This overview highlights additions and refinements compared with
+[T3 Code as of September 16, 2026](https://github.com/pingdotgg/t3code/tree/ed123897943e9175d4a0e92a5a8a09d200573336).
+The differences evolve as both projects develop.
+
+styal is in active development. The hosted web app at [app.styal.build](https://app.styal.build) is
+live, with rough edges and incomplete functionality. Importing T3 Code projects and preferences
+works. This overview focuses on desktop and web; the mobile app is a work in progress.
+
+## Workspaces and agent sessions
+
+- **Worktree defaults and workspace grouping.** Both apps support isolated Git worktrees. styal
+  defaults new threads to a worktree, while T3 Code defaults to the local checkout; either default can
+  be changed. styal also keeps threads sharing a workspace together in the sidebar.
+  [Organizing threads](./thread-sidebar.md).
+- **Stable development ports.** Each workspace gets a persistent range of ten ports. Agents,
+  terminals, and project scripts receive the same assignment across restarts, so parallel workspaces
+  can run development servers without choosing the same ports.
+  [Workspace ports](./project-settings.md#stable-workspace-ports).
+- **Project instructions across providers.** Set additional instructions once for a project and use
+  them across its checkouts and agent sessions with Codex, Claude, Cursor, Grok, and OpenCode.
+  [Project instructions](./project-settings.md#give-agents-project-instructions).
+- **Drafts that follow you.** Existing-thread draft text and model settings sync between clients
+  connected to the same server. Attachments and other device-specific context stay local; drafts
+  containing that context are withheld from other clients to avoid sending an incomplete message.
+  [Composer drafts](./composer-drafts.md).
+
+## GitHub and code review
+
+- **Forks with an explicit destination.** Cloning a GitHub fork configures its parent remote and lets
+  you choose the default repository for pull requests and issues. The choice stays consistent with
+  the GitHub CLI, while branches that track a remote keep their own repository association.
+  [Source control integrations](./source-control.md).
+- **A dedicated view of required checks.** T3 Code already displays checks and supports auto-merge.
+  styal adds a separate Checks tab that identifies checks required by repository policy and shows
+  required checks that have not reported yet. Its merge action accounts for GitHub's policy blockers,
+  including pending reviews or an out-of-date branch.
+  [Code review](./source-control.md#manage-code-reviews-without-context-switching).
+
+## Staying oriented while agents work
+
+- **A choice of completion sounds.** T3 Code already has sounds for completion and input requests.
+  styal lets you select and preview Resolve or Avanti as the sound for those events, or turn it off.
+  [Completion sounds](./thread-sidebar.md#completion-sounds).
+- **Relevant outage notices.** Sidebar notices surface GitHub, Claude, and OpenAI incidents relevant
+  to your projects and providers. Alerts are configurable.
+  [GitHub](./source-control.md), [Claude](./providers-claude.md),
+  and [Codex](./providers-codex.md).
+- **Fewer terminal-close prompts.** T3 Code already asks for confirmation when closing a terminal.
+  styal checks whether a foreground process or setup command is still active, so idle terminals close
+  immediately while active work retains the confirmation.
+- **Complete conversation export.** Copy a thread's user and assistant messages as Markdown,
+  including history that is not currently loaded in the view.
+  [Transcripts](./thread-sidebar.md#copying-a-transcript).
+
+## Bringing your work from T3 Code
+
+- **Import without replacing your existing setup.** Bring projects, threads, attachments, and
+  supported preferences into styal while leaving the T3 Code installation intact. Existing styal
+  project settings take precedence, and interrupted imports can resume without duplicating completed
+  threads. Credentials and active sessions remain separate.
+  [Import T3 Code data](./importing-t3-code-data.md).
