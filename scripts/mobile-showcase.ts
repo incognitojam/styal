@@ -715,9 +715,9 @@ async function buildIos(): Promise<string> {
     "xcodebuild",
     [
       "-workspace",
-      NodePath.join(MOBILE_ROOT, "ios/T3Code.xcworkspace"),
+      NodePath.join(MOBILE_ROOT, "ios/styal.xcworkspace"),
       "-scheme",
-      "T3Code",
+      "styal",
       "-configuration",
       "Debug",
       "-sdk",
