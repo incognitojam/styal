@@ -9,7 +9,7 @@ import {
 import { act, createRef, useLayoutEffect, type ReactNode, type Ref } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { LegendListRef, MaintainScrollAtEndOptions } from "@legendapp/list/react";
 import { shouldUseRestingComposerLayout } from "../composerFooterLayout";
 import { useComposerFocusState } from "./useComposerFocusState";
@@ -143,42 +143,55 @@ vi.mock("../DiffWorkerPoolProvider", () => ({
 // statically. Importing it inside a `beforeAll` instead put the module graph's
 // transform cost under a hook timeout, and on a loaded machine that timeout
 // tripped and skipped all 18 tests in this file without failing it.
-vi.hoisted(() => {
-  const classList = {
-    add: () => {},
-    remove: () => {},
-    toggle: () => {},
-    contains: () => false,
-  };
+const { stubDomGlobals } = vi.hoisted(() => {
+  const ElementStub = class ElementStub {};
 
-  vi.stubGlobal("localStorage", {
-    getItem: () => null,
-    setItem: () => {},
-    removeItem: () => {},
-    clear: () => {},
-  });
-  vi.stubGlobal("window", {
-    matchMedia: () => ({
-      matches: false,
+  function stubDomGlobals() {
+    const classList = {
+      add: () => {},
+      remove: () => {},
+      toggle: () => {},
+      contains: () => false,
+    };
+
+    vi.stubGlobal("Element", ElementStub);
+    vi.stubGlobal("localStorage", {
+      getItem: () => null,
+      setItem: () => {},
+      removeItem: () => {},
+      clear: () => {},
+    });
+    vi.stubGlobal("window", {
+      Element: ElementStub,
+      matchMedia: () => ({
+        matches: false,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }),
       addEventListener: () => {},
       removeEventListener: () => {},
-    }),
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    requestAnimationFrame: (callback: FrameRequestCallback) => {
-      callback(0);
-      return 0;
-    },
-    cancelAnimationFrame: () => {},
-    desktopBridge: undefined,
-  });
-  vi.stubGlobal("document", {
-    documentElement: {
-      classList,
-      offsetHeight: 0,
-    },
-  });
+      requestAnimationFrame: (callback: FrameRequestCallback) => {
+        callback(0);
+        return 0;
+      },
+      cancelAnimationFrame: () => {},
+      desktopBridge: undefined,
+    });
+    vi.stubGlobal("document", {
+      documentElement: {
+        classList,
+        offsetHeight: 0,
+      },
+    });
+  }
+
+  stubDomGlobals();
+  return { stubDomGlobals };
 });
+
+// The scroll-settling test clears every global stub; mounted timeline rows
+// still touch `window` through the tooltip's focus handling.
+beforeEach(stubDomGlobals);
 
 const ACTIVE_THREAD_ENVIRONMENT_ID = EnvironmentId.make("environment-local");
 const MESSAGE_CREATED_AT = "2026-03-17T19:12:28.000Z";
