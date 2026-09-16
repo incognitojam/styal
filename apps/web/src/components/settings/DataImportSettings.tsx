@@ -1011,7 +1011,21 @@ const MemoizedAvailablePreview = memo(
 );
 
 export function DataImportSettingsPanel() {
-  const { environments } = useEnvironments();
+  return <DataImportPanel />;
+}
+
+/** The same T3 Code import flow in Settings and first-run setup. */
+export function DataImportPanel({
+  environmentIds,
+  embedded = false,
+}: {
+  readonly environmentIds?: readonly EnvironmentId[];
+  readonly embedded?: boolean;
+}) {
+  const { environments: allEnvironments } = useEnvironments();
+  const environments = environmentIds
+    ? allEnvironments.filter((environment) => environmentIds.includes(environment.environmentId))
+    : allEnvironments;
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<EnvironmentId | null>(
     primaryEnvironmentId,
@@ -1210,6 +1224,33 @@ export function DataImportSettingsPanel() {
     );
   })();
 
+  const content = (
+    <>
+      {environmentTabs}
+      <div
+        className="pt-5"
+        aria-live="polite"
+        aria-busy={isInitialScanPending || isRescanning || isImporting}
+      >
+        {body}
+      </div>
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="min-w-0">
+        <div className="flex items-center justify-between gap-3 px-3">
+          <p className="truncate text-sm font-medium">
+            {environments.length > 1 ? "Selected computers" : serverLabel}
+          </p>
+          {rescanHeaderButton}
+        </div>
+        {content}
+      </div>
+    );
+  }
+
   return (
     <SettingsPageContainer>
       <SettingsSection
@@ -1225,14 +1266,7 @@ export function DataImportSettingsPanel() {
             .
           </span>
         </p>
-        {environmentTabs}
-        <div
-          className="pt-5"
-          aria-live="polite"
-          aria-busy={isInitialScanPending || isRescanning || isImporting}
-        >
-          {body}
-        </div>
+        {content}
       </SettingsSection>
     </SettingsPageContainer>
   );

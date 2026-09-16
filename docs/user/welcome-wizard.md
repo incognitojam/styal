@@ -24,7 +24,7 @@ Select the saved or linked computers you want to set up. Signing in to styal Lin
 shows your computers without adding connections; selecting a new computer connects it.
 Unchecking a computer removes it from setup without disconnecting it.
 Continue when your selected computers are connected. Setup checks
-agents across the selected computers, then offers project import grouped by computer.
+agents across the selected computers, then offers two import sources.
 
 If styal cannot confirm the workspace during startup, the setup flow shows
 **Still connecting** instead of opening the app. Select **Reload** to try again.
@@ -51,6 +51,29 @@ terminal metadata while the terminal process can use them.
 
 ## Import your projects
 
+Choose an import source on the Projects step:
+
+- **T3 Code data** uses the same importer as Settings → Import data. Choose one of
+  your selected computers, then import projects and conversations, preferences,
+  or both. Data is read from that computer's default T3 home and imported into
+  styal on the same computer.
+- **Claude/Codex history** finds projects and conversations in the CLI history
+  on your selected computers.
+
+Each source is checked when you open it. Return to import options to use the
+other source, then choose Continue to finish setup. Importing is optional.
+Navigation is disabled while an import runs. A scan failure in one source does
+not stop you from opening the other source or finishing setup.
+
+### T3 Code data
+
+The T3 Code importer previews projects before importing and supports retrying
+failed projects. Already imported data is handled in the same way as in Settings.
+Preferences have their own import action, so importing projects does not also
+replace your preferences. You can revisit Settings → Import data after setup.
+
+### Claude/Codex history
+
 styal finds directories that Claude Code or Codex has used. The default
 selection includes projects active within the last 30 days. Use the checkboxes
 to include older projects or change the selection.
@@ -59,7 +82,8 @@ A large or malformed history can reach the scan limit. styal keeps the
 projects it found and warns when projects or conversations may be missing.
 
 Imported projects include Codex and Claude conversations active within the last
-30 days. You can continue those conversations in styal.
+30 days. You can continue those conversations in styal. If the scan fails on a computer
+running an older styal version, update that computer and retry.
 
 Conversation import is best effort. styal keeps the first user prompt and the
 newest remaining visible user and assistant messages, with 200 messages total.
