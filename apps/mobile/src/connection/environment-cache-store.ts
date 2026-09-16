@@ -21,9 +21,11 @@ const SHELL_SNAPSHOT_CACHE_SCHEMA_VERSION = 1;
 // v3 adds windowed (paginated) snapshots carrying `page` metadata; the bump
 // makes pre-pagination clients discard the record instead of decoding a
 // partial thread as complete (rollback safety). v4 refreshes cached activity
-// payloads after ACP tool arguments joined the compact server projection, and
-// v5 so completions carry the `startedAt` their dropped updates held.
-const THREAD_SNAPSHOT_CACHE_SCHEMA_VERSION = 5;
+// payloads after ACP tool arguments joined the compact server projection,
+// v5 so completions carry the `startedAt` their dropped updates held, and v6
+// reloads pre-thinking caches whose system-role fallback would otherwise
+// survive afterSequence resume and hide settled reasoning messages.
+const THREAD_SNAPSHOT_CACHE_SCHEMA_VERSION = 6;
 const SERVER_CONFIG_CACHE_SCHEMA_VERSION = 1;
 const VCS_REFS_CACHE_SCHEMA_VERSION = 1;
 

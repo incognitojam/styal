@@ -1808,6 +1808,7 @@ const makeWsRpcLayer = (
                 }),
             threadResumeCompletionMarker: true,
             threadSnapshotPagination: true,
+            reasoningMessages: true,
           };
         });
 
@@ -2216,7 +2217,7 @@ const makeWsRpcLayer = (
                   );
                 return Option.map(snapshot, (value) => ({
                   kind: "snapshot" as const,
-                  snapshot: projectThreadDetailSnapshot(value),
+                  snapshot: projectThreadDetailSnapshot(value, input.reasoningMessages === true),
                 }));
               });
               const loadThreadSnapshotItem = Effect.fn("ws.loadThreadSnapshotItem")(function* () {
@@ -2242,7 +2243,9 @@ const makeWsRpcLayer = (
                 }
                 return events.map((event) => ({
                   kind: "event" as const,
-                  event: alreadyProjected ? event : projectActivityEvent(event),
+                  event: alreadyProjected
+                    ? event
+                    : projectActivityEvent(event, input.reasoningMessages === true),
                 }));
               });
 
@@ -2276,7 +2279,7 @@ const makeWsRpcLayer = (
                 Stream.filter(isThisThreadDetailEvent),
                 Stream.map((event) => ({
                   kind: "event" as const,
-                  event,
+                  event: projectActivityEvent(event, input.reasoningMessages === true),
                 })),
               );
 

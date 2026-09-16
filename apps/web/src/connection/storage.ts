@@ -52,7 +52,7 @@ const SERVER_CONFIG_STORE_NAME = "server-config";
 const VCS_REFS_STORE_NAME = "vcs-refs";
 const CATALOG_KEY = "document";
 const SHELL_SNAPSHOT_CACHE_SCHEMA_VERSION = 1;
-const THREAD_SNAPSHOT_CACHE_SCHEMA_VERSION = 6;
+const THREAD_SNAPSHOT_CACHE_SCHEMA_VERSION = 7;
 
 const StoredShellSnapshot = Schema.Struct({
   schemaVersion: Schema.Literal(SHELL_SNAPSHOT_CACHE_SCHEMA_VERSION),
@@ -67,9 +67,10 @@ const StoredShellSnapshotJson = Schema.fromJsonString(StoredShellSnapshot);
 // v2 record, silently drop the unknown `page` field, and treat the partial
 // thread as complete forever. v4 refreshes cached activity payloads after
 // command exit codes were added to the compact server projection, v5 after
-// ACP tool arguments joined it, and v6 so completions carry the `startedAt`
-// their dropped updates held. Older entries fail to decode and are treated as
-// a cold cache.
+// ACP tool arguments joined it, v6 so completions carry the `startedAt` their
+// dropped updates held, and v7 reloads pre-thinking caches: their fallback
+// system roles cannot recover settled reasoning messages by resuming
+// afterSequence. Older entries fail to decode and are treated as a cold cache.
 const StoredThreadSnapshot = Schema.Struct({
   schemaVersion: Schema.Literal(THREAD_SNAPSHOT_CACHE_SCHEMA_VERSION),
   environmentId: EnvironmentId,
