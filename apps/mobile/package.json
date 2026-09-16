@@ -143,7 +143,8 @@
     "autolinking": {
       "buildFromSource": [
         "react-native-screens",
-        "@react-native-menu/menu"
+        "@react-native-menu/menu",
+        "expo-sharing"
       ]
     }
   },
