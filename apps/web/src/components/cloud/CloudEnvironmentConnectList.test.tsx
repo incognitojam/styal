@@ -178,9 +178,25 @@ describe("cloud onboarding discovery", () => {
     expect(renderer!.root.findByType("button").children).toEqual(["Connect"]);
   });
 
-  it("connects and selects discovered computers by default without overwriting deselection", async () => {
-    discovery.listEnvironments.mockResolvedValue(linkedMachines);
-    const autoSelectedComputers = new Set<EnvironmentId>();
+  it("waits for selection before connecting and preserves deselection across discovery refreshes", async () => {
+    const offlineMachineId = EnvironmentId.make("offline-computer");
+    const onlineMachine = linkedMachines.get(newMachineId)!;
+    const machines: DiscoveredEnvironments = new Map([
+      ...linkedMachines,
+      [
+        offlineMachineId,
+        {
+          ...onlineMachine,
+          environment: {
+            ...onlineMachine.environment,
+            environmentId: offlineMachineId,
+            label: "Home desktop",
+          },
+          availability: "offline",
+        },
+      ],
+    ]);
+    discovery.listEnvironments.mockResolvedValue(machines);
     function Setup() {
       const [selectedIds, setSelectedIds] = useState<ReadonlySet<EnvironmentId>>(new Set());
       return (
@@ -189,7 +205,6 @@ describe("cloud onboarding discovery", () => {
           savedEnvironments={[]}
           showSavedEnvironments
           selection={{
-            autoSelectedComputers,
             selectedIds,
             onChange: (id, checked) =>
               setSelectedIds((current) => {
@@ -206,15 +221,22 @@ describe("cloud onboarding discovery", () => {
       renderer = create(<Setup />);
     });
 
+    expect(discovery.register).not.toHaveBeenCalled();
+    const checkboxes = () => renderer!.root.findAllByType("input");
+    expect(checkboxes().map((input) => input.props.checked)).toEqual([false, false]);
+    await act(async () => {
+      await checkboxes()[0]!.props.onChange({ target: { checked: true } });
+    });
     expect(discovery.register).toHaveBeenCalledTimes(1);
-    expect(renderer!.root.findByType("input").props.checked).toBe(true);
+    expect(discovery.register.mock.calls[0]![0].target.environmentId).toBe(newMachineId);
+    expect(checkboxes().map((input) => input.props.checked)).toEqual([true, false]);
     await act(async () => {
-      await renderer!.root.findByType("input").props.onChange({ target: { checked: false } });
+      await checkboxes()[0]!.props.onChange({ target: { checked: false } });
     });
     await act(async () => {
-      publish({ ...discovery.state!, environments: new Map(linkedMachines) });
+      publish({ ...discovery.state!, environments: new Map(machines) });
     });
-    expect(renderer!.root.findByType("input").props.checked).toBe(false);
+    expect(checkboxes().map((input) => input.props.checked)).toEqual([false, false]);
     expect(discovery.register).toHaveBeenCalledTimes(1);
   });
 

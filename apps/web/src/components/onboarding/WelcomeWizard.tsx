@@ -100,7 +100,6 @@ export function WelcomeWizard({
   const [step, setStep] = useState<WizardStep>("connection");
   const { environments } = useEnvironments();
   const [selection, setSelection] = useState<ReadonlySet<EnvironmentId> | null>(null);
-  const autoSelectedComputers = useRef(new Set<EnvironmentId>());
   const [setupIds, setSetupIds] = useState<readonly EnvironmentId[]>([]);
   const [isImporting, setIsImporting] = useState(false);
   const [terminalSessions, setTerminalSessions] = useState<
@@ -145,22 +144,6 @@ export function WelcomeWizard({
   const finishingPromiseRef = useRef<Promise<boolean> | null>(null);
   const completionErrorToastIdRef = useRef<ReturnType<typeof toastManager.add> | null>(null);
   const primaryEnvironment = usePrimaryEnvironment();
-  useEffect(() => {
-    const newComputers = environments.filter(
-      (environment) => !autoSelectedComputers.current.has(environment.environmentId),
-    );
-    if (newComputers.length === 0) return;
-    for (const environment of newComputers) {
-      autoSelectedComputers.current.add(environment.environmentId);
-    }
-    setSelection(
-      (current) =>
-        new Set([
-          ...(current ?? []),
-          ...newComputers.map((environment) => environment.environmentId),
-        ]),
-    );
-  }, [environments]);
   const selectedIds =
     selection ?? new Set(primaryEnvironment ? [primaryEnvironment.environmentId] : []);
   const scans = useProjectScans(step === "import" ? setupIds : NO_ENVIRONMENTS);
@@ -247,7 +230,6 @@ export function WelcomeWizard({
               <ConnectionStep
                 expandPairingInitially={!localAvailable && !hasCloudPublicConfig()}
                 selectedIds={selectedIds}
-                autoSelectedComputers={autoSelectedComputers.current}
                 onSelectionChange={setSelection}
                 onToggleEnvironment={(environmentId, checked) =>
                   setSelection((current) => {
@@ -293,7 +275,6 @@ export function WelcomeWizard({
 // ── Step 1: connection choice ────────────────────────────────
 
 function ConnectionStep({
-  autoSelectedComputers,
   expandPairingInitially,
   selectedIds,
   onSelectionChange,
@@ -301,7 +282,6 @@ function ConnectionStep({
   onContinue,
   onPaired,
 }: {
-  readonly autoSelectedComputers: Set<EnvironmentId>;
   readonly expandPairingInitially: boolean;
   readonly selectedIds: ReadonlySet<EnvironmentId>;
   readonly onSelectionChange: (ids: ReadonlySet<EnvironmentId>) => void;
@@ -382,7 +362,6 @@ function ConnectionStep({
       <div className="mt-4 space-y-2">
         {cloudEnabled ? (
           <ConnectAccountOption
-            autoSelectedComputers={autoSelectedComputers}
             disabled={isPairing}
             selectedIds={selectedIds}
             onToggleEnvironment={onToggleEnvironment}
@@ -439,12 +418,10 @@ function ConnectionStep({
 }
 
 function ConnectAccountOption({
-  autoSelectedComputers,
   disabled,
   selectedIds,
   onToggleEnvironment,
 }: {
-  readonly autoSelectedComputers: Set<EnvironmentId>;
   readonly disabled: boolean;
   readonly selectedIds: ReadonlySet<EnvironmentId>;
   readonly onToggleEnvironment: (environmentId: EnvironmentId, checked: boolean) => void;
@@ -502,7 +479,7 @@ function ConnectAccountOption({
                 savedEnvironments={environments}
                 showSavedEnvironments
                 onDiscoveryReady={onDiscoveryReady}
-                selection={{ selectedIds, onChange: onToggleEnvironment, autoSelectedComputers }}
+                selection={{ selectedIds, onChange: onToggleEnvironment }}
                 refreshWhileEmpty
                 empty={
                   <p className="py-3 text-sm text-muted-foreground">No computers linked yet.</p>
