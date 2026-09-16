@@ -94,6 +94,7 @@ const testLayer = (
           }),
         readEvents: () => Stream.empty,
         streamDomainEvents: Stream.empty,
+        subscribeDomainEvents: Effect.succeed(Stream.empty),
         latestSequence: Effect.succeed(0),
       }),
     ),

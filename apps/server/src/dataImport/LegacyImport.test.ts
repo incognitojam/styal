@@ -594,6 +594,7 @@ it.effect("imports selected history and safe preferences independently", () => {
         return { eventCount: events.length, sequence: events.length };
       }),
     streamDomainEvents: Stream.empty,
+    subscribeDomainEvents: Effect.succeed(Stream.empty),
     latestSequence: Effect.succeed(0),
   });
   const emptyReadModel: OrchestrationReadModel = {
@@ -912,6 +913,7 @@ it.effect("imports one thread at a time and resumes after an interrupted thread"
         return Effect.succeed({ eventCount: events.length, sequence: events.length });
       }),
     streamDomainEvents: Stream.empty,
+    subscribeDomainEvents: Effect.succeed(Stream.empty),
     latestSequence: Effect.succeed(0),
   });
   const emptyReadModel: OrchestrationReadModel = {
@@ -1061,6 +1063,7 @@ it.effect("repairs provider context for threads imported by an earlier release",
         return { eventCount: events.length, sequence: 0 };
       }),
     streamDomainEvents: Stream.empty,
+    subscribeDomainEvents: Effect.succeed(Stream.empty),
     latestSequence: Effect.succeed(0),
   });
   const emptyReadModel: OrchestrationReadModel = {

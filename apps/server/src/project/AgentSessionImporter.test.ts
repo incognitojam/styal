@@ -224,6 +224,8 @@ it.layer(NodeServices.layer)("AgentSessionImporter", (it) => {
 
           streamDomainEvents: Stream.empty,
 
+          subscribeDomainEvents: Effect.succeed(Stream.empty),
+
           latestSequence: Effect.succeed(0),
         });
         const directory = ProviderSessionDirectory.ProviderSessionDirectory.of({
@@ -329,6 +331,8 @@ it.layer(NodeServices.layer)("AgentSessionImporter", (it) => {
 
           streamDomainEvents: Stream.empty,
 
+          subscribeDomainEvents: Effect.succeed(Stream.empty),
+
           latestSequence: Effect.succeed(0),
         });
         const directory = ProviderSessionDirectory.ProviderSessionDirectory.of({
@@ -392,6 +396,8 @@ it.layer(NodeServices.layer)("AgentSessionImporter", (it) => {
           readEvents: () => Stream.empty,
 
           streamDomainEvents: Stream.empty,
+
+          subscribeDomainEvents: Effect.succeed(Stream.empty),
 
           latestSequence: Effect.succeed(0),
         });
@@ -463,6 +469,8 @@ it.layer(NodeServices.layer)("AgentSessionImporter", (it) => {
 
           streamDomainEvents: Stream.empty,
 
+          subscribeDomainEvents: Effect.succeed(Stream.empty),
+
           latestSequence: Effect.succeed(0),
         });
 
@@ -499,6 +507,8 @@ it.layer(NodeServices.layer)("AgentSessionImporter", (it) => {
           readEvents: () => Stream.empty,
 
           streamDomainEvents: Stream.empty,
+
+          subscribeDomainEvents: Effect.succeed(Stream.empty),
 
           latestSequence: Effect.succeed(0),
         });

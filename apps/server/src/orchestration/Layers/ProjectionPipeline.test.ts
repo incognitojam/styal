@@ -1,4 +1,5 @@
 import {
+  DEFAULT_PROVIDER_INTERACTION_MODE,
   CheckpointRef,
   CommandId,
   CorrelationId,
@@ -9,6 +10,7 @@ import {
   TurnId,
   type OrchestrationEvent,
   ProviderInstanceId,
+  type ProviderDriverKind,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -3514,6 +3516,213 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
       assert.isNull(detail.session);
     }),
   );
+  it.effect("cleans attachments only after the command receipt commits", () =>
+    Effect.gen(function* () {
+      const engine = yield* OrchestrationEngineService;
+      const sql = yield* SqlClient.SqlClient;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const { attachmentsDir } = yield* ServerConfig;
+      const createdAt = "2026-01-01T00:00:00.000Z";
+      const projectId = ProjectId.make("project-outer-rollback");
+      const threadId = ThreadId.make("thread-outer-rollback");
+      const cleanupFailureThreadId = ThreadId.make("thread-cleanup-failure");
+      const commandId = CommandId.make("cmd-outer-rollback-delete");
+      const attachmentPath = path.join(
+        attachmentsDir,
+        "thread-outer-rollback-00000000-0000-4000-8000-000000000001.png",
+      );
+      const blockedAttachmentPath = path.join(
+        attachmentsDir,
+        "thread-cleanup-failure-00000000-0000-4000-8000-000000000001.png",
+      );
+
+      yield* engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("cmd-outer-rollback-project"),
+        projectId,
+        title: "Outer rollback project",
+        workspaceRoot: "/tmp/project-outer-rollback",
+        createdAt,
+      });
+      for (const id of [threadId, cleanupFailureThreadId]) {
+        yield* engine.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make(`cmd-create-${id}`),
+          threadId: id,
+          projectId,
+          title: "Attachment cleanup thread",
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+          },
+          runtimeMode: "full-access",
+          branch: null,
+          worktreePath: null,
+          createdAt,
+        });
+      }
+
+      yield* fileSystem.makeDirectory(attachmentsDir, { recursive: true });
+      yield* fileSystem.writeFileString(attachmentPath, "keep this attachment");
+      yield* sql`
+        CREATE TRIGGER fail_attachment_command_receipt
+        BEFORE INSERT ON orchestration_command_receipts
+        WHEN NEW.command_id = 'cmd-outer-rollback-delete' AND NEW.status = 'accepted'
+        BEGIN
+          SELECT RAISE(FAIL, 'forced receipt failure');
+        END
+      `;
+      const deleteCommand = { type: "thread.delete", commandId, threadId } as const;
+      const dispatchError = yield* engine.dispatch(deleteCommand).pipe(Effect.flip);
+      assert.equal(dispatchError._tag, "PersistenceSqlError");
+      assert.equal(yield* fileSystem.readFileString(attachmentPath), "keep this attachment");
+      const rolledBackThreads = yield* sql<{ readonly deletedAt: string | null }>`
+        SELECT deleted_at AS "deletedAt" FROM projection_threads WHERE thread_id = ${threadId}
+      `;
+      assert.deepEqual(rolledBackThreads, [{ deletedAt: null }]);
+      const rolledBackEvents = yield* sql`
+        SELECT sequence FROM orchestration_events WHERE command_id = ${commandId}
+      `;
+      assert.deepEqual(rolledBackEvents, []);
+      const rolledBackReceipts = yield* sql`
+        SELECT status FROM orchestration_command_receipts WHERE command_id = ${commandId}
+      `;
+      assert.deepEqual(rolledBackReceipts, []);
+      yield* sql`DROP TRIGGER fail_attachment_command_receipt`;
+
+      const result = yield* engine.dispatch(deleteCommand);
+      assert.isFalse(yield* exists(attachmentPath));
+      const committedReceipts = yield* sql<{
+        readonly status: string;
+        readonly resultSequence: number;
+      }>`
+        SELECT status, result_sequence AS "resultSequence"
+        FROM orchestration_command_receipts WHERE command_id = ${commandId}
+      `;
+      assert.deepEqual(committedReceipts, [
+        { status: "accepted", resultSequence: result.sequence },
+      ]);
+
+      // Removing a nonempty directory as a file fails after the command commits.
+      yield* fileSystem.makeDirectory(blockedAttachmentPath);
+      yield* fileSystem.writeFileString(path.join(blockedAttachmentPath, "keep.txt"), "keep");
+      const cleanupFailureCommandId = CommandId.make("cmd-cleanup-failure-delete");
+      yield* engine.dispatch({
+        type: "thread.delete",
+        commandId: cleanupFailureCommandId,
+        threadId: cleanupFailureThreadId,
+      });
+      assert.isTrue(yield* exists(blockedAttachmentPath));
+      const cleanupFailureReceipts = yield* sql<{ readonly status: string }>`
+        SELECT status FROM orchestration_command_receipts
+        WHERE command_id = ${cleanupFailureCommandId}
+      `;
+      assert.deepEqual(cleanupFailureReceipts, [{ status: "accepted" }]);
+    }),
+  );
+
+  it.effect("keeps attachments when historical import continuation persistence rolls back", () =>
+    Effect.gen(function* () {
+      const engine = yield* OrchestrationEngineService;
+      const sql = yield* SqlClient.SqlClient;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const { attachmentsDir } = yield* ServerConfig;
+      const createdAt = "2026-01-01T00:00:00.000Z";
+      const projectId = ProjectId.make("project-import-rollback");
+      const threadId = ThreadId.make("thread-import-rollback");
+      const commandId = CommandId.make("cmd-import-rollback-delete");
+      const attachmentPath = path.join(
+        attachmentsDir,
+        "thread-import-rollback-00000000-0000-4000-8000-000000000001.png",
+      );
+      yield* engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("cmd-import-rollback-project"),
+        projectId,
+        title: "Import rollback project",
+        workspaceRoot: "/tmp/project-import-rollback",
+        createdAt,
+      });
+      for (const id of [threadId]) {
+        yield* engine.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make(`cmd-create-${id}`),
+          threadId: id,
+          projectId,
+          title: "Attachment cleanup thread",
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+          },
+          runtimeMode: "full-access",
+          branch: null,
+          worktreePath: null,
+          createdAt,
+        });
+      }
+
+      yield* fileSystem.makeDirectory(attachmentsDir, { recursive: true });
+      yield* fileSystem.writeFileString(attachmentPath, "keep this attachment");
+      yield* sql`
+        CREATE TRIGGER fail_attachment_command_receipt
+        BEFORE INSERT ON provider_session_runtime
+        WHEN NEW.thread_id = 'thread-import-rollback'
+        BEGIN
+          SELECT RAISE(FAIL, 'forced receipt failure');
+        END
+      `;
+      const deletedEvent = {
+        type: "thread.deleted",
+        eventId: EventId.make("evt-import-rollback-delete"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: createdAt,
+        commandId,
+        causationEventId: null,
+        correlationId: CorrelationId.make(commandId),
+        metadata: { historyImport: true },
+        payload: { threadId, deletedAt: createdAt },
+      } as const;
+      const continuation = {
+        threadId,
+        provider: "codex" as ProviderDriverKind,
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        runtimeMode: "full-access" as const,
+        lastSeenAt: createdAt,
+        resumeCursor: { threadId: "provider-import-rollback" },
+      };
+      const dispatchError = yield* engine.importHistoricalEvents!([deletedEvent], {
+        continuation,
+      }).pipe(Effect.flip);
+      assert.equal(dispatchError._tag, "PersistenceSqlError");
+      assert.equal(yield* fileSystem.readFileString(attachmentPath), "keep this attachment");
+      const rolledBackThreads = yield* sql<{ readonly deletedAt: string | null }>`
+        SELECT deleted_at AS "deletedAt" FROM projection_threads WHERE thread_id = ${threadId}
+      `;
+      assert.deepEqual(rolledBackThreads, [{ deletedAt: null }]);
+      const rolledBackEvents = yield* sql`
+        SELECT sequence FROM orchestration_events WHERE command_id = ${commandId}
+      `;
+      assert.deepEqual(rolledBackEvents, []);
+      const rolledBackReceipts = yield* sql`
+        SELECT status FROM orchestration_command_receipts WHERE command_id = ${commandId}
+      `;
+      assert.deepEqual(rolledBackReceipts, []);
+      yield* sql`DROP TRIGGER fail_attachment_command_receipt`;
+
+      const result = yield* engine.importHistoricalEvents!([deletedEvent], { continuation });
+      assert.equal(result.eventCount, 1);
+      assert.isFalse(yield* exists(attachmentPath));
+      const committedThreads = yield* sql<{ readonly deletedAt: string | null }>`
+        SELECT deleted_at AS "deletedAt" FROM projection_threads WHERE thread_id = ${threadId}
+      `;
+      assert.deepEqual(committedThreads, [{ deletedAt: createdAt }]);
+    }),
+  );
 });
 
 it.layer(BaseTestLayer)("imported thread shell projection", (it) => {
@@ -3605,6 +3814,293 @@ it.layer(BaseTestLayer)("imported thread shell projection", (it) => {
       });
       yield* projectionPipeline.projectEvent(sessionEvent);
       assert.deepEqual(yield* readLatestUserMessageAt, [{ latestUserMessageAt: null }]);
+    }),
+  );
+});
+
+it.layer(
+  Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-projection-attachments-overwrite-")),
+)("OrchestrationProjectionPipeline", (it) => {
+  it.effect("prunes reverted attachments only after every projector commits", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const { attachmentsDir } = yield* ServerConfig;
+      const now = "2026-01-01T00:00:00.000Z";
+      const threadId = ThreadId.make("Thread Revert.Files");
+      const keepAttachmentId = "thread-revert-files-00000000-0000-4000-8000-000000000001";
+      const keepFileAttachmentId = "thread-revert-files-00000000-0000-4000-8000-000000000004-pdf";
+      const removeAttachmentId = "thread-revert-files-00000000-0000-4000-8000-000000000002";
+      const otherThreadAttachmentId =
+        "thread-revert-files-extra-00000000-0000-4000-8000-000000000003";
+
+      const appendAndProject = (event: Parameters<typeof eventStore.append>[0]) =>
+        eventStore
+          .append(event)
+          .pipe(Effect.flatMap((savedEvent) => projectionPipeline.projectEvent(savedEvent)));
+
+      yield* appendAndProject({
+        type: "project.created",
+        eventId: EventId.make("evt-revert-files-1"),
+        aggregateKind: "project",
+        aggregateId: ProjectId.make("project-revert-files"),
+        occurredAt: now,
+        commandId: CommandId.make("cmd-revert-files-1"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-revert-files-1"),
+        metadata: {},
+        payload: {
+          projectId: ProjectId.make("project-revert-files"),
+          title: "Project Revert Files",
+          workspaceRoot: "/tmp/project-revert-files",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      yield* appendAndProject({
+        type: "thread.created",
+        eventId: EventId.make("evt-revert-files-2"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-revert-files-2"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-revert-files-2"),
+        metadata: {},
+        payload: {
+          threadId,
+          projectId: ProjectId.make("project-revert-files"),
+          title: "Thread Revert Files",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+          },
+          runtimeMode: "full-access",
+          branch: null,
+          worktreePath: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      yield* appendAndProject({
+        type: "thread.turn-diff-completed",
+        eventId: EventId.make("evt-revert-files-3"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-revert-files-3"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-revert-files-3"),
+        metadata: {},
+        payload: {
+          threadId,
+          turnId: TurnId.make("turn-keep"),
+          checkpointTurnCount: 1,
+          checkpointRef: CheckpointRef.make("refs/t3/checkpoints/thread-revert-files/turn/1"),
+          status: "ready",
+          files: [],
+          assistantMessageId: MessageId.make("message-keep"),
+          completedAt: now,
+        },
+      });
+
+      yield* appendAndProject({
+        type: "thread.message-sent",
+        eventId: EventId.make("evt-revert-files-4"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-revert-files-4"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-revert-files-4"),
+        metadata: {},
+        payload: {
+          threadId,
+          messageId: MessageId.make("message-keep"),
+          role: "assistant",
+          text: "Keep",
+          attachments: [
+            {
+              type: "image",
+              id: keepAttachmentId,
+              name: "keep.png",
+              mimeType: "image/png",
+              sizeBytes: 5,
+            },
+            {
+              type: "file",
+              id: keepFileAttachmentId,
+              name: "keep.pdf",
+              mimeType: "application/pdf",
+              sizeBytes: 5,
+            },
+          ],
+          turnId: TurnId.make("turn-keep"),
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      yield* appendAndProject({
+        type: "thread.turn-diff-completed",
+        eventId: EventId.make("evt-revert-files-5"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-revert-files-5"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-revert-files-5"),
+        metadata: {},
+        payload: {
+          threadId,
+          turnId: TurnId.make("turn-remove"),
+          checkpointTurnCount: 2,
+          checkpointRef: CheckpointRef.make("refs/t3/checkpoints/thread-revert-files/turn/2"),
+          status: "ready",
+          files: [],
+          assistantMessageId: MessageId.make("message-remove"),
+          completedAt: now,
+        },
+      });
+
+      yield* appendAndProject({
+        type: "thread.message-sent",
+        eventId: EventId.make("evt-revert-files-6"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-revert-files-6"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-revert-files-6"),
+        metadata: {},
+        payload: {
+          threadId,
+          messageId: MessageId.make("message-remove"),
+          role: "assistant",
+          text: "Remove",
+          attachments: [
+            {
+              type: "image",
+              id: removeAttachmentId,
+              name: "remove.png",
+              mimeType: "image/png",
+              sizeBytes: 5,
+            },
+          ],
+          turnId: TurnId.make("turn-remove"),
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      const keepPath = path.join(attachmentsDir, `${keepAttachmentId}.png`);
+      const keepFilePath = path.join(attachmentsDir, `${keepFileAttachmentId}.pdf`);
+      const removePath = path.join(attachmentsDir, `${removeAttachmentId}.png`);
+      yield* fileSystem.makeDirectory(attachmentsDir, { recursive: true });
+      yield* fileSystem.writeFileString(keepPath, "keep");
+      yield* fileSystem.writeFileString(keepFilePath, "keep");
+      yield* fileSystem.writeFileString(removePath, "remove");
+      const otherThreadPath = path.join(attachmentsDir, `${otherThreadAttachmentId}.png`);
+      yield* fileSystem.writeFileString(otherThreadPath, "other");
+      assert.isTrue(yield* exists(keepPath));
+      assert.isTrue(yield* exists(removePath));
+      assert.isTrue(yield* exists(otherThreadPath));
+
+      const revertedEvent = yield* eventStore.append({
+        type: "thread.reverted",
+        eventId: EventId.make("evt-revert-files-7"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-revert-files-7"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-revert-files-7"),
+        metadata: {},
+        payload: {
+          threadId,
+          turnCount: 1,
+        },
+      });
+
+      yield* sql`
+        CREATE TRIGGER fail_revert_projection
+        BEFORE UPDATE ON projection_state
+        WHEN NEW.projector = 'projection.threads'
+        BEGIN
+          SELECT RAISE(FAIL, 'forced later projector failure');
+        END
+      `;
+      const projectionError = yield* projectionPipeline
+        .projectEvent(revertedEvent)
+        .pipe(Effect.flip);
+      assert.equal(projectionError._tag, "PersistenceSqlError");
+      assert.isTrue(yield* exists(removePath));
+      const rolledBackMessages = yield* sql<{ readonly messageId: string }>`
+        SELECT message_id AS "messageId" FROM projection_thread_messages
+        WHERE message_id = 'message-remove'
+      `;
+      assert.deepEqual(rolledBackMessages, [{ messageId: "message-remove" }]);
+      yield* sql`DROP TRIGGER fail_revert_projection`;
+
+      const laterAttachmentId = "thread-revert-files-00000000-0000-4000-8000-000000000005";
+      const laterPath = path.join(attachmentsDir, `${laterAttachmentId}.png`);
+      yield* fileSystem.writeFileString(laterPath, "added after revert");
+      const cleanup = yield* sql.withTransaction(
+        Effect.gen(function* () {
+          const cleanup = yield* projectionPipeline.projectEventDeferred(revertedEvent);
+          yield* appendAndProject({
+            type: "thread.message-sent",
+            eventId: EventId.make("evt-revert-files-later"),
+            aggregateKind: "thread",
+            aggregateId: threadId,
+            occurredAt: now,
+            commandId: CommandId.make("cmd-revert-files-later"),
+            causationEventId: null,
+            correlationId: CorrelationId.make("cmd-revert-files-later"),
+            metadata: {},
+            payload: {
+              threadId,
+              messageId: MessageId.make("message-later"),
+              role: "user",
+              text: "Later attachment",
+              attachments: [
+                {
+                  type: "image",
+                  id: laterAttachmentId,
+                  name: "later.png",
+                  mimeType: "image/png",
+                  sizeBytes: 5,
+                },
+              ],
+              turnId: null,
+              streaming: false,
+              createdAt: now,
+              updatedAt: now,
+            },
+          });
+          assert.isTrue(yield* exists(removePath));
+          // Return the cleanup effect so the caller runs it after the outer transaction commits.
+          // @effect-diagnostics-next-line returnEffectInGen:off
+          return cleanup;
+        }),
+      );
+      assert.isTrue(yield* exists(removePath));
+      yield* cleanup;
+
+      assert.isTrue(yield* exists(keepPath));
+      assert.isTrue(yield* exists(keepFilePath));
+      assert.isFalse(yield* exists(removePath));
+      assert.isTrue(yield* exists(laterPath));
+      assert.isTrue(yield* exists(otherThreadPath));
     }),
   );
 });
