@@ -20,6 +20,7 @@ T3 Code works with the platforms your team already uses:
 - Open the Command Palette (`Cmd/Ctrl + K`) → **Add Project**
 - Choose **GitHub repository**, **GitLab repository**, **Bitbucket repository**, **Azure DevOps repository**, or paste any **Git URL**
 - Enter the repository path (`owner/repo`, `group/project`, `workspace/repository`, or `project/repository`) or a full Git URL, pick a destination, and start coding
+- GitHub repositories, including forks, use HTTPS by default. To use SSH, choose **Git URL** and paste the SSH clone URL.
 
 **Forks come wired up**
 
