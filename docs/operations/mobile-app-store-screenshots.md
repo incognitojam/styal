@@ -1,6 +1,6 @@
 # Mobile app-store screenshot harness
 
-> For maintainers. Using T3 Code? See [docs/user](../user/).
+> For maintainers. Using styal? See [docs/user](../user/).
 
 The screenshot harness runs the real mobile application against three disposable local T3
 environments. It creates an isolated base directory and server for each environment, real Git
@@ -103,10 +103,15 @@ appearance settings can never drift apart.
 
 Run the `Mobile Showcase Screenshots` workflow from GitHub's Actions tab, choose `all`, `ios`, or
 `android`, select `light`, `dark`, or `both`, and pick a palette (or `all`, which raises each job's
-timeout from 60 to 300 minutes). The default dispatch captures both appearances of the `t3-code`
-palette and runs iOS and Android concurrently: iPhone and iPad capture on a
-12-vCPU Blacksmith macOS runner, while Android phone, 7-inch tablet, and 10-inch tablet capture on a
-16-vCPU Blacksmith Linux runner with a KVM-accelerated x86_64 emulator.
+timeout from 120 to 300 minutes). The default dispatch captures both appearances of the `t3-code`
+palette and runs iOS and Android concurrently: iPhone and iPad capture on the standard GitHub-hosted
+`macos-26` Apple Silicon runner, while Android phone, 7-inch tablet, and 10-inch tablet capture on
+`ubuntu-24.04` with a KVM-accelerated x86_64 emulator. No Blacksmith subscription is required.
+
+Enable the workflow in the fork's Actions settings before its first dispatch. Screenshot capture
+is manual and separate from signed EAS release builds; store-listing screenshots are not required
+for TestFlight testing. A Mac with Xcode and the configured simulators can run the same harness
+locally using the commands below.
 
 Every job uploads its PNGs even when capture fails, which makes partial runs useful for diagnosis.
 The separate validation step is success-gated: it runs before upload only when capture succeeds. If
