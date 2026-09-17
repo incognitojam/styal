@@ -147,7 +147,6 @@ import {
   isStackedPullRequestBase,
   pullRequestActionMenuHasGroup,
   pullRequestActionNeedsHostRefresh,
-  pullRequestComposerTarget,
   pullRequestCheckoutCommand,
   pullRequestFindingKey,
   pullRequestHandoffLabels,
@@ -514,9 +513,8 @@ type PullRequestDetailPanelProps = {
    */
   chromeVariant?: "full" | "collapse";
   /**
-   * The hosting thread or draft's composer. A thread target also keeps PR links in tabs beside
-   * that thread, regardless of which PR is shown. In thread context, hand-offs land in this
-   * composer instead of opening a new thread.
+   * The open thread's composer. A thread target also keeps PR links in tabs beside that thread,
+   * regardless of which PR is shown.
    */
   composerDraftTarget?: ScopedThreadRef | DraftId;
   /**
@@ -1114,10 +1112,7 @@ function PullRequestDetailPanelBody({
     reviewComments?: ReadonlyArray<ReviewCommentContext>;
   };
 
-  // Beside the thread whose own pull request this is, a task belongs in that thread's composer:
-  // the branch is already checked out under it, so opening a second thread would only scatter
-  // the work.
-  const attachTarget = pullRequestComposerTarget(context, composerDraftTarget);
+  const attachTarget = composerDraftTarget ?? null;
   const handoffLabels = pullRequestHandoffLabels(attachTarget !== null);
 
   const writeTaskToComposer = (target: ScopedThreadRef | DraftId, task: ThreadTask) => {
