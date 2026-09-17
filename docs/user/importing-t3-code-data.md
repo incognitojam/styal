@@ -24,7 +24,7 @@ If the old database refers to an attachment file that is no longer present, stya
 
 ## Import preferences
 
-Preferences are unchecked by default. In the preferences section (the **Preferences** step during setup), compare the current values with the values after import, then select **Bring over T3 Code preferences** on each computer where you want them applied. The comparison shows only differences. You can return to **Projects** without losing your selections. Preferences apply to that computer when you choose **Import**, independently of project selection. They include:
+Differing preferences are selected by default. In the preferences section (the **Preferences** step during setup), compare the current values with the values after import. Clear **Bring over T3 Code preferences** on any computer where you want to keep the current values. The comparison shows only differences. You can return to **Projects** without losing your selections. Preferences apply to that computer when you choose **Import**, independently of project selection. They include:
 
 - background activity policy and refresh intervals;
 - host and client idle or power-saving behavior;

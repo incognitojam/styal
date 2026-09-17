@@ -60,7 +60,7 @@ export function useLegacyImport(environmentId: EnvironmentId, busy: boolean) {
   const selected = projects.filter(
     (project) => selection === null || selection.has(project.projectId),
   );
-  const [includeSettings, setIncludeSettings] = useState(false);
+  const [includeSettings, setIncludeSettings] = useState(true);
   const preferences = available?.preferences;
   const changes = useMemo(
     () =>

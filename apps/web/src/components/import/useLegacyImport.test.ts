@@ -88,9 +88,29 @@ describe("shared T3 importer", () => {
         },
       },
     };
-    mocks.command.mockResolvedValue(result());
+    mocks.command.mockImplementation(async ({ input }) =>
+      input.includeSettings
+        ? {
+            _tag: "Success",
+            value: { ...result().value, projects: [], settings: { status: "imported" } },
+          }
+        : result(),
+    );
   });
-  it("imports selected projects without implicitly applying preferences", async () => {
+  it("imports differing preferences by default with a separate request", async () => {
+    const importer = render();
+    expect(importer.selectedPreferences).toBe(true);
+    await importer.run();
+    expect(mocks.command.mock.calls.map(([request]) => request.input)).toEqual([
+      { projectIds: ["one", "two"], includeSettings: false },
+      { projectIds: [], includeSettings: true },
+    ]);
+    expect(render().selected).toHaveLength(0);
+    expect(render().selectedPreferences).toBe(false);
+  });
+  it("preserves an opt-out when preview data refreshes", async () => {
+    render().setIncludeSettings(false);
+    mocks.query.data = structuredClone(mocks.query.data);
     const importer = render();
     expect(importer.selectedPreferences).toBe(false);
     await importer.run();
@@ -98,7 +118,24 @@ describe("shared T3 importer", () => {
       environmentId,
       input: { projectIds: ["one", "two"], includeSettings: false },
     });
-    expect(render().selected).toHaveLength(0);
+  });
+  it("selects preferences when discovery finishes, but not when values already match", () => {
+    const available = mocks.query.data;
+    mocks.query.data = null;
+    expect(render().selectedPreferences).toBe(false);
+    mocks.query.data = available;
+    expect(render().selectedPreferences).toBe(true);
+    mocks.query.data = {
+      status: "available",
+      sourceKind: "t3-code",
+      schemaVersion: 1,
+      projects: [],
+      preferences: {
+        status: "available",
+        values: selectLegacyImportPreferences(DEFAULT_SERVER_SETTINGS),
+      },
+    };
+    expect(render().selectedPreferences).toBe(false);
   });
   it("keeps only failed projects selected and retries those", async () => {
     mocks.command.mockResolvedValueOnce(result(["two"]));
@@ -111,7 +148,7 @@ describe("shared T3 importer", () => {
       input: { projectIds: ["two"], includeSettings: false },
     });
   });
-  it("runs opted-in preferences independently after a partial project import", async () => {
+  it("runs selected preferences independently after a partial project import", async () => {
     render().setIncludeSettings(true);
     mocks.command.mockResolvedValueOnce(result(["two"])).mockResolvedValueOnce({
       _tag: "Success",
@@ -124,7 +161,7 @@ describe("shared T3 importer", () => {
     });
     expect(render().selectedPreferences).toBe(false);
   });
-  it("retains opted-in preferences when their import fails", async () => {
+  it("retains selected preferences when their import fails", async () => {
     const importer = render();
     importer.setSelection(new Set());
     importer.setIncludeSettings(true);
@@ -217,6 +254,7 @@ describe("shared T3 importer", () => {
     expect(render(true).progress?.projects).toHaveLength(0);
   });
   it("does not import anything when projects are skipped and preferences are not selected", async () => {
+    render().setIncludeSettings(false);
     expect(await render().run({ includeProjects: false })).toEqual({
       success: true,
       projectRef: undefined,
