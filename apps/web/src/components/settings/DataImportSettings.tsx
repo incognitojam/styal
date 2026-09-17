@@ -1166,7 +1166,7 @@ export function DataImportSettingsPanel() {
     if (data.status === "available") {
       return (
         <MemoizedAvailablePreview
-          key={`${environmentId}:${data.sourceKind}`}
+          key={environmentId}
           preview={data}
           serverLabel={serverLabel}
           environmentId={environmentId}

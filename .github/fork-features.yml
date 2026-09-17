@@ -205,8 +205,7 @@ features:
     status: maintained
     prs: [294, 297, 298, 300]
     invariants:
-      - Import sources use the T3 Code identity without distribution-specific detection.
-      - A selected styal environment can preview and import projects, missing threads, attachments, provider continuations, and supported server preferences from a live T3 Code database without modifying the source.
+      - A selected styal environment can preview and import projects, missing threads, attachments, provider continuations, and supported server preferences from a live T3 Code database, including older fork databases, without modifying the source.
       - Existing styal project configuration wins while each imported thread and its verified attachments commit atomically, so interrupted or repeated imports resume without duplication.
       - Credentials, connections, provider sign-ins, active sessions, and client-local preferences remain isolated, while affected earlier imports can restore provider context only after their loaded sessions stop.
     implementation_paths:
