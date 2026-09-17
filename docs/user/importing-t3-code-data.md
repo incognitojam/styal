@@ -36,3 +36,9 @@ The Preferences table compares the current value in styal with the value after i
 When every value already matches, the import button is disabled.
 
 Connections, provider sign-ins, credentials, tokens, and active sessions stay separate. Client-local choices such as appearance, fonts, and keybindings are not part of the server preference import.
+
+## Older fork installations
+
+Importing data from an older fork still works. If you instead reuse its data directory directly,
+first start it with a fixed release from August 9, 2026 or later that includes the legacy database
+repair. Installations that have already run a fixed release can upgrade normally.

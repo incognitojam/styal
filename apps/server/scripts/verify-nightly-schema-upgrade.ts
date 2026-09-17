@@ -8,7 +8,6 @@ import * as NodeURL from "node:url";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
-import CurrentForkMigration0001 from "../src/persistence/ForkMigrations/001_ComposerDrafts.ts";
 import * as CurrentForkMigrations from "../src/persistence/ForkMigrations.ts";
 import * as CurrentMigrations from "../src/persistence/Migrations.ts";
 import * as NodeSqliteClient from "../src/persistence/NodeSqliteClient.ts";
@@ -93,23 +92,18 @@ const runOnDatabase = <A, E>(
     Effect.scoped(effect.pipe(Effect.provide(NodeSqliteClient.layer({ filename: databasePath })))),
   );
 
-const assertCurrentState = async (
-  databasePath: string,
-  threadId: string,
-  expectedRepair: boolean,
-): Promise<void> => {
+const assertCurrentState = async (databasePath: string, threadId: string): Promise<void> => {
   const state = await runOnDatabase(
     databasePath,
     Effect.gen(function* () {
-      const firstRun = yield* CurrentForkMigrations.runAllMigrations();
+      yield* CurrentForkMigrations.runAllMigrations();
       const histories = yield* readHistories();
       const draft = yield* readDraft(threadId);
       const secondRun = yield* CurrentForkMigrations.runAllMigrations();
-      return { firstRun, histories, draft, secondRun } as const;
+      return { histories, draft, secondRun } as const;
     }),
   );
 
-  NodeAssert.equal(state.firstRun.repairedLegacyHistory, expectedRepair);
   NodeAssert.deepStrictEqual(
     state.histories.upstream,
     manifestRows(CurrentMigrations.migrationManifest),
@@ -124,7 +118,6 @@ const assertCurrentState = async (
   NodeAssert.deepStrictEqual(state.secondRun, {
     upstream: [],
     fork: [],
-    repairedLegacyHistory: false,
   });
 };
 
@@ -171,14 +164,6 @@ try {
   const previousForkMigrations: typeof CurrentForkMigrations = await import(
     NodeURL.pathToFileURL(NodePath.join(previousPersistenceRoot, "ForkMigrations.ts")).href
   );
-  const previousForkMigration0001: typeof CurrentForkMigration0001 = (
-    await import(
-      NodeURL.pathToFileURL(
-        NodePath.join(previousPersistenceRoot, "ForkMigrations/001_ComposerDrafts.ts"),
-      ).href
-    )
-  ).default;
-
   const splitDatabasePath = NodePath.join(tempRoot, "post-split.sqlite");
   const previousSplitState = await runOnDatabase(
     splitDatabasePath,
@@ -196,25 +181,9 @@ try {
     previousSplitState.fork,
     manifestRows(previousForkMigrations.forkMigrationManifest),
   );
-  await assertCurrentState(splitDatabasePath, "post-split-thread", false);
+  await assertCurrentState(splitDatabasePath, "post-split-thread");
 
-  const legacyDatabasePath = NodePath.join(tempRoot, "legacy-pre-split.sqlite");
-  await runOnDatabase(
-    legacyDatabasePath,
-    Effect.gen(function* () {
-      const sql = yield* SqlClient.SqlClient;
-      yield* previousMigrations.runMigrations({ toMigrationInclusive: 38 });
-      yield* previousForkMigration0001;
-      yield* sql`
-        INSERT INTO effect_sql_migrations (migration_id, name)
-        VALUES (39, 'ComposerDrafts')
-      `;
-      yield* insertDraft("legacy-pre-split-thread");
-    }),
-  );
-  await assertCurrentState(legacyDatabasePath, "legacy-pre-split-thread", true);
-
-  process.stdout.write(`Verified schema upgrades from ${previousRef} (post-split and legacy).\n`);
+  process.stdout.write(`Verified schema upgrades from ${previousRef}.\n`);
 } finally {
   NodeFS.rmSync(tempRoot, { recursive: true, force: true });
 }
