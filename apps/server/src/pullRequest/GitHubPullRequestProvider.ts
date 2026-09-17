@@ -398,6 +398,7 @@ export const make = Effect.gen(function* () {
         Effect.map(
           ([detail, repository, viewerAccess, requiredChecks]): ProviderChangeRequestDetail => ({
             ...detail.pullRequest,
+            author: withAvatar(detail.pullRequest.author, new Map<string, string>(), input.host),
             checks: withWorkflowApprovals(
               applyRequiredCheckPolicy(
                 requiredChecks === null

@@ -450,6 +450,72 @@ const openDetail = {
   commits: [],
 };
 
+describe("core detail author avatars", () => {
+  const cases = [
+    {
+      author: { login: "octocat", name: null, avatarUrl: null },
+      host: "github.com",
+      expected: "https://github.com/octocat.png?size=80",
+    },
+    {
+      author: { login: "octocat", name: null, avatarUrl: null },
+      host: "ghe.example.com",
+      expected: "https://ghe.example.com/octocat.png?size=80",
+    },
+    {
+      author: { login: "octocat", name: null, avatarUrl: "https://avatars.example/octocat.png" },
+      host: "github.com",
+      expected: "https://avatars.example/octocat.png",
+    },
+    {
+      author: { login: "dependabot[bot]", name: null, avatarUrl: null },
+      host: "github.com",
+      expected: null,
+    },
+    { author: null, host: "github.com", expected: null },
+  ];
+
+  for (const { author, host, expected } of cases) {
+    it.effect(`returns the avatar for ${author?.login ?? "ghost"} on ${host}: ${expected}`, () =>
+      Effect.gen(function* () {
+        const provider = yield* make;
+        const detail = yield* provider.getChangeRequest({
+          cwd: "/w",
+          repository: "acme/web",
+          host,
+          number: 7,
+        });
+        expect(detail.author?.avatarUrl ?? null).toBe(expected);
+        expect(detail.author?.login ?? null).toBe(author?.login ?? null);
+      }).pipe(
+        Effect.provide(
+          Layer.mock(GitHubPullRequestCli.GitHubPullRequestCli)({
+            getPullRequestDetail: () =>
+              Effect.succeed({ ...openDetail, author, isCrossRepository: false }),
+            getPullRequestBaseComparison: () =>
+              Effect.succeed({ behindBy: 0, viewerCanUpdate: true }),
+            getRequiredChecks: () => Effect.succeed([]),
+            getBranchPolicy: () =>
+              Effect.succeed({ requiredChecks: [], allowedMergeMethods: null }),
+            getRepositoryAccess: () =>
+              Effect.succeed({
+                canWrite: true,
+                mergeCapabilities: { merge: true, squash: true, rebase: true },
+              }),
+            getViewerAccess: () =>
+              Effect.succeed({
+                canWrite: true,
+                canTriage: true,
+                canUpdate: true,
+                didAuthor: false,
+              }),
+          }),
+        ),
+      ),
+    );
+  }
+});
+
 it.effect("does not classify same-repository gates as fork workflow approvals", () =>
   Effect.gen(function* () {
     const provider = yield* make;
