@@ -47,6 +47,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import {
   ArrowLeftIcon,
+  ChartNoAxesColumnIcon,
   CircleDotIcon,
   CornerLeftUpIcon,
   ExternalLinkIcon,
@@ -206,6 +207,7 @@ import type { Project } from "../types";
 import { useFocusPullRequestTab, useViewPullRequest } from "../lib/viewPullRequest";
 import { getSourceControlPresentation } from "../sourceControlPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
+import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
@@ -2337,6 +2339,34 @@ function OpenCommandPaletteDialog(props: {
         themeHalves,
         initialAppearance: resolvedTheme,
       });
+    },
+  });
+
+  if (
+    environments.some(
+      (environment) => environment.serverConfig?.environment.capabilities.pullRequests === true,
+    )
+  ) {
+    actionItems.push({
+      kind: "action",
+      value: "action:pull-requests",
+      searchTerms: ["pull requests", "prs", "pr", "github", "review", "merge", "branch"],
+      title: "Open pull requests",
+      icon: <PullRequestGlyph.pullRequest className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        await navigate({ to: "/pull-requests", search: readPullRequestListPreferences() });
+      },
+    });
+  }
+
+  actionItems.push({
+    kind: "action",
+    value: "action:usage",
+    searchTerms: ["usage", "use", "tokens", "cost", "spend", "limits", "stats", "analytics"],
+    title: "Open usage",
+    icon: <ChartNoAxesColumnIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({ to: "/usage" });
     },
   });
 
