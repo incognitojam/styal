@@ -12,6 +12,7 @@ other devices so they cannot send an incomplete version of it.
 Sending clears only the server revision that was visible when Send was pressed. If another device
 has already changed the draft, that newer revision is preserved. Mobile keeps this revision with a
 queued message, so the same protection applies when an offline send is delivered later.
+The composer stays cleared even if an earlier draft save finishes after you send.
 
 Drafts are stored by the T3 Code server for that environment. They are not shared between separate
 servers, even if both servers contain a thread with the same name.

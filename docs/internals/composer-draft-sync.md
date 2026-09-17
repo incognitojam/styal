@@ -20,6 +20,10 @@ A turn-start command may carry the composer revision captured at send time. Mobi
 revision alongside an offline outbox message and forwards it when delivery eventually succeeds.
 After the turn command is durably accepted, the server conditionally writes a tombstone at that
 revision. This prevents a delayed send from erasing a newer edit from another client.
+An in-flight draft update's own subscription echo acknowledges its revision without replacing
+local content, so it cannot restore text cleared by a send. Other devices' updates still apply to
+a clean composer while the response is pending. Delayed responses cannot roll back a newer
+revision already received through the subscription.
 
 ## Attachment ownership
 

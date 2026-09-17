@@ -96,7 +96,7 @@ export function createComposerDraftSyncController(options: {
   let currentRevision = 0;
   let lastSynced: ComposerDraftCommon | null = null;
   let cancelScheduledTask: (() => void) | null = null;
-  let inFlight = false;
+  let inFlightMutationId: string | null = null;
   let pendingAfterFlight = false;
 
   const cancelTimer = () => {
@@ -116,6 +116,8 @@ export function createComposerDraftSyncController(options: {
   };
 
   const acceptSnapshotMetadata = (snapshot: ComposerDraftSnapshot) => {
+    // The subscription may have already delivered a newer revision than this response.
+    if (snapshot.revision < currentRevision) return;
     currentRevision = snapshot.revision;
     lastSynced = canonicalComposerDraftCommon(snapshot.common);
     options.onRevisionChange?.(snapshot);
@@ -123,7 +125,7 @@ export function createComposerDraftSyncController(options: {
 
   const flush = async () => {
     if (disposed || !initialized) return;
-    if (inFlight) {
+    if (inFlightMutationId !== null) {
       pendingAfterFlight = true;
       return;
     }
@@ -132,14 +134,14 @@ export function createComposerDraftSyncController(options: {
 
     const baseRevision = currentRevision;
     const clientMutationId = options.createMutationId();
-    inFlight = true;
+    inFlightMutationId = clientMutationId;
     const result = await options.update({
       threadId: options.threadId,
       baseRevision,
       common: sent,
       clientMutationId,
     });
-    inFlight = false;
+    inFlightMutationId = null;
     if (disposed) return;
 
     if (result === null) {
@@ -195,7 +197,11 @@ export function createComposerDraftSyncController(options: {
       return;
     }
 
-    const wasClean = composerDraftCommonEquals(local, lastSynced);
+    // Our own save echo acknowledges an earlier local value; applying it could
+    // restore text cleared by a send. Other devices can still update a clean draft.
+    const wasClean =
+      (inFlightMutationId === null || snapshot.clientMutationId !== inFlightMutationId) &&
+      composerDraftCommonEquals(local, lastSynced);
     acceptSnapshotMetadata(snapshot);
     if (wasClean && options.canApplyRemote()) {
       options.applyRemote(remote);
