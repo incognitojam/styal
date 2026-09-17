@@ -91,10 +91,15 @@ const requestDesktopShutdownAndWait = Effect.fn("desktop.lifecycle.requestShutdo
   ): Effect.fn.Return<
     number,
     never,
-    DesktopShutdown.DesktopShutdown | DesktopWindow.DesktopWindow
+    DesktopShutdown.DesktopShutdown | DesktopWindow.DesktopWindow | ElectronApp.ElectronApp
   > {
     const shutdown = yield* DesktopShutdown.DesktopShutdown;
     const desktopWindow = yield* DesktopWindow.DesktopWindow;
+    const electronApp = yield* ElectronApp.ElectronApp;
+    // The final window-all-closed event can arrive after cleanup removes the
+    // scoped listeners. Without a listener Electron quits immediately, before
+    // the updater can stage its installer. Keep this last close under our control.
+    yield* electronApp.once("window-all-closed", () => {});
     const shutdownStartedAt = yield* Clock.currentTimeMillis;
     yield* logLifecycleInfo("desktop shutdown requested");
     yield* desktopWindow.flushMainWindowBounds;

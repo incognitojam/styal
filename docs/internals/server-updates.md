@@ -103,6 +103,10 @@ handoff timeout fall back to ordinary quit. Explicit **Restart to update** retai
 behavior. macOS reads `autoRunAppAfterInstall` rather than the `quitAndInstall` arguments, so the
 Electron adapter sets that property explicitly for both paths.
 
+Shutdown retains a one-shot `window-all-closed` listener while draining cleanup. Native delivery
+can follow removal of the scoped lifecycle listeners; without a remaining listener, Electron's
+default quit would bypass the update handoff.
+
 ## Source Map
 
 - Launcher and state machine: `apps/server/src/serviceLauncher.ts`

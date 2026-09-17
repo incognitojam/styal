@@ -4,6 +4,9 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
+import * as Scope from "effect/Scope";
+import * as Exit from "effect/Exit";
+import * as NodeEvents from "node:events";
 
 import type * as Electron from "electron";
 
@@ -130,6 +133,57 @@ const makeLifecycleLayer = (
   );
 
 describe("DesktopLifecycle", () => {
+  it.effect("keeps a late window close from exiting before the update handoff", () =>
+    Effect.gen(function* () {
+      const events = new NodeEvents.EventEmitter();
+      const installed = yield* Deferred.make<void>();
+      let prematureQuit = false;
+      const electronApp = makeElectronApp({
+        on: (eventName, listener) =>
+          Effect.acquireRelease(
+            Effect.sync(() => {
+              events.on(eventName, listener);
+            }),
+            () =>
+              Effect.sync(() => {
+                events.removeListener(eventName, listener);
+              }),
+          ).pipe(Effect.asVoid),
+        once: (eventName, listener) =>
+          Effect.sync(() => {
+            events.once(eventName, listener);
+          }),
+      });
+      yield* Effect.gen(function* () {
+        const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
+        const shutdown = yield* DesktopShutdown.DesktopShutdown;
+        const listenerScope = yield* Scope.make();
+        yield* lifecycle.register.pipe(Scope.provide(listenerScope));
+        events.emit("before-quit", { preventDefault: () => undefined });
+        yield* shutdown.awaitRequest;
+        yield* Scope.close(listenerScope, Exit.void);
+        // Electron defaults to quitting when this event has no subscribers.
+        // Native delivery can follow the removal of the scoped app listeners.
+        prematureQuit = !events.emit("window-all-closed");
+        yield* shutdown.markComplete;
+        yield* Deferred.await(installed);
+        assert.isFalse(prematureQuit);
+      }).pipe(
+        Effect.provide(
+          makeLifecycleLayer(
+            "darwin",
+            electronApp,
+            Effect.void,
+            Effect.void,
+            Effect.void,
+            Effect.void,
+            Deferred.succeed(installed, undefined).pipe(Effect.as(true)),
+          ),
+        ),
+      );
+    }),
+  );
+
   for (const platform of ["darwin", "win32", "linux"] satisfies ReadonlyArray<NodeJS.Platform>) {
     it.effect(`lets the updater's quit event proceed on ${platform}`, () => {
       const appListeners = new Map<string, (...args: readonly unknown[]) => void>();

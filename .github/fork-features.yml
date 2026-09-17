@@ -240,6 +240,7 @@ features:
     invariants:
       - Available desktop updates download automatically while preserving accurate available, downloading, downloaded, install, and retry state across updater events and pre-install refreshes.
       - Downloaded updates install on normal app quit; the sidebar only offers restart once an installer is ready, while Settings retains checks, progress, and retries.
+      - A late native window-close event cannot bypass cleanup and the selected-channel installer handoff after scoped lifecycle listeners are removed.
       - Changing update channels clears installation eligibility; only a ready download from the selected channel may install on quit, including on macOS where native staging waits until shutdown.
     implementation_paths:
       - apps/desktop/src/app/DesktopLifecycle.ts
