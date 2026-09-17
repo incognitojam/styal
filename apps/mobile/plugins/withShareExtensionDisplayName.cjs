@@ -78,6 +78,10 @@ function withExtensionDisplayNameBuildSetting(config, displayName) {
       const buildConfiguration = buildConfigurations[reference.value];
       if (buildConfiguration?.buildSettings) {
         buildConfiguration.buildSettings.INFOPLIST_KEY_CFBundleDisplayName = `"${displayName}"`;
+        // This target has no CocoaPods xcconfig, but inherits React Native's
+        // project-wide compiler wrappers when EAS enables ccache. Their
+        // REACT_NATIVE_PATH is relative to PODS_ROOT, which must also exist here.
+        buildConfiguration.buildSettings.PODS_ROOT ??= '"$(SRCROOT)/Pods"';
       }
     }
     return cfg;
