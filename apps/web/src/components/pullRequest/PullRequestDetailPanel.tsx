@@ -154,6 +154,7 @@ import {
   PULL_REQUEST_MERGE_METHOD_LABELS,
   readableFailure,
   readPullRequestDetailSnapshot,
+  resolvePullRequestReferenceHost,
   resolveDisplayedPullRequestDetail,
   resolvePullRequestPrimaryControl,
   allowsSinglePullRequestMerge,
@@ -563,18 +564,23 @@ function PullRequestDetailPanelBody({
     explicitThreadRef ??
     (typeof composerDraftTarget === "string" ? null : (composerDraftTarget ?? null));
   const environmentConfigs = useServerConfigs();
+  const projects = useProjects();
+  const repositoryIdentity = projects.find(
+    (project) =>
+      project.id === requestedReference.projectId && project.environmentId === environmentId,
+  )?.repositoryIdentity;
   const supportsThreadPullRequests =
     environmentConfigs.get(environmentId)?.environment.capabilities.threadPullRequests === true;
   const reference = useMemo(
     () =>
       supportsThreadPullRequests
-        ? requestedReference
+        ? resolvePullRequestReferenceHost(requestedReference, repositoryIdentity)
         : {
             projectId: requestedReference.projectId,
             repository: requestedReference.repository,
             number: requestedReference.number,
           },
-    [requestedReference, supportsThreadPullRequests],
+    [requestedReference, repositoryIdentity, supportsThreadPullRequests],
   );
   const pullRequestKey = `${reference.projectId}:${reference.host ?? ""}:${reference.repository}#${reference.number}`;
   const matchingListEntry =
@@ -924,7 +930,6 @@ function PullRequestDetailPanelBody({
   const newThread = useNewThreadHandler();
   const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const projects = useProjects();
   const unavailableGitHubUrl = useMemo(() => {
     const identity = projects.find(
       (project) => project.id === reference.projectId && project.environmentId === environmentId,
