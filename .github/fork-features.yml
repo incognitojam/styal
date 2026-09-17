@@ -53,6 +53,7 @@ features:
       - Attachment count and aggregate-byte limits are enforced atomically, generic files render in message history, and legacy image attachments remain readable.
       - Mobile retains local attachment bytes through draft, outbox, preview, upload, and signed-out account ownership; failed storage hydration or persistence must not authorize cleanup.
     implementation_paths:
+      - apps/mobile/plugins/withShareExtensionDisplayName.cjs
       - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/lib/attachmentUpload.ts
       - apps/mobile/src/lib/composerAttachmentUploadQueue.ts
