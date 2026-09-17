@@ -1,5 +1,6 @@
 import { VideoPreviewModal, type VideoPreviewSource } from "../../components/VideoPreviewModal";
 import { ComposerAttachmentButton } from "../../components/ComposerAttachmentButton";
+import { useAtomValue } from "@effect/atom-react";
 import type {
   EnvironmentId,
   MessageId,
@@ -14,6 +15,11 @@ import type { ReactNode } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { ActivityIndicator, Platform, Pressable, View, type ViewStyle } from "react-native";
 import ImageViewing from "react-native-image-viewing";
+import {
+  composerAttachmentUploadBlockReason,
+  composerAttachmentsStillUploading,
+  composerAttachmentUploadsAtom,
+} from "../../state/composer-attachment-uploads";
 import Animated, {
   FadeIn,
   FadeInDown,
@@ -262,7 +268,15 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   // Opening and presentation count as active so the composer stays expanded
   // while focus moves between its native editor and the settings picker.
   const isExpanded = isFocused || settingsSheetPresentation.isActive;
-  const canSend = hasContent;
+  const uploadStates = useAtomValue(composerAttachmentUploadsAtom);
+  const attachmentBlockReason = composerAttachmentUploadBlockReason({
+    environmentId: props.environmentId,
+    attachments: props.draftAttachments,
+    connected: props.connectionState === "connected",
+    serverConfig: props.serverConfig,
+    states: uploadStates,
+  });
+  const canSend = hasContent && attachmentBlockReason === null;
 
   // Notify the parent from the derived value, not focus events: the parent
   // sizes the feed inset from this, and blur-during-sheet would otherwise
@@ -313,8 +327,18 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     props.selectedThread.session?.status === "running" ||
     props.selectedThread.session?.status === "starting";
 
+  const attachmentsUploading =
+    props.connectionState === "connected" &&
+    composerAttachmentsStillUploading({
+      environmentId: props.environmentId,
+      attachments: props.draftAttachments,
+      serverConfig: props.serverConfig,
+      states: uploadStates,
+    });
   const sendLabel =
-    props.connectionState !== "connected" || props.queueCount > 0 ? "Queue" : "Send";
+    props.connectionState !== "connected" || props.queueCount > 0 || attachmentsUploading
+      ? "Queue"
+      : "Send";
   const currentModelSelection = props.selectedThread.modelSelection;
   const currentRuntimeMode = props.selectedThread.runtimeMode;
   const connectionStatus = composerConnectionStatus({
@@ -533,6 +557,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
               exiting={FadeOut.duration(120)}
             >
               <ComposerAttachmentStrip
+                environmentId={props.environmentId}
                 attachments={props.draftAttachments}
                 onRemove={props.onRemoveDraftImage}
                 onPressImage={onPressImage}
@@ -582,6 +607,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
             <View className="flex-row gap-1 pl-1">
               {props.draftAttachments.slice(0, 3).map((attachment) => (
                 <ComposerAttachmentThumbnail
+                  environmentId={props.environmentId}
                   key={attachment.id}
                   attachment={attachment}
                   size={30}
@@ -606,6 +632,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 <ControlPill icon="stop.fill" variant="danger" onPress={props.onStopThread} />
               ) : (
                 <ControlPill
+                  accessibilityLabel={attachmentBlockReason ?? sendLabel}
                   icon="arrow.up"
                   variant="primary"
                   disabled={!canSend}
@@ -645,7 +672,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 ) : null}
               </ComposerToolbarScroller>
               <ComposerToolbarButton
-                accessibilityLabel={sendLabel}
+                accessibilityLabel={attachmentBlockReason ?? sendLabel}
                 icon="arrow.up"
                 variant="primary"
                 disabled={!canSend}

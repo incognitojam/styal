@@ -1,4 +1,5 @@
 import { ComposerAttachmentButton } from "../../components/ComposerAttachmentButton";
+import { useAtomValue } from "@effect/atom-react";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import {
   StackActions,
@@ -32,6 +33,11 @@ import {
 } from "../../components/ComposerToolbar";
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { ComposerAttachmentStrip } from "../../components/ComposerAttachmentStrip";
+import {
+  composerAttachmentUploadBlockReason,
+  composerAttachmentsStillUploading,
+  composerAttachmentUploadsAtom,
+} from "../../state/composer-attachment-uploads";
 import { VideoPreviewModal, type VideoPreviewSource } from "../../components/VideoPreviewModal";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { SymbolView } from "../../components/AppSymbol";
@@ -151,6 +157,28 @@ export function NewTaskDraftScreen(props: {
     connectedEnvironments.find(
       (environment) => environment.environmentId === selectedProject.environmentId,
     )?.connectionState === "connected";
+  const uploadStates = useAtomValue(composerAttachmentUploadsAtom);
+  const attachmentBlockReason = selectedProject
+    ? composerAttachmentUploadBlockReason({
+        environmentId: selectedProject.environmentId,
+        attachments: flow.attachments,
+        connected: environmentConnected,
+        serverConfig: selectedEnvironmentServerConfig,
+        states: uploadStates,
+      })
+    : null;
+  // A connected composer with uploads still in flight queues the task rather
+  // than making the user wait: the outbox drain finishes the upload and sends.
+  const attachmentsUploading =
+    environmentConnected &&
+    selectedProject !== null &&
+    composerAttachmentsStillUploading({
+      environmentId: selectedProject.environmentId,
+      attachments: flow.attachments,
+      serverConfig: selectedEnvironmentServerConfig,
+      states: uploadStates,
+    });
+  const queuesInsteadOfStarting = !environmentConnected || attachmentsUploading;
   const promptInputRef = useRef<ComposerEditorHandle>(null);
   const loadedBranchesProjectKeyRef = useRef<string | null>(null);
   const [isComposerFocused, setIsComposerFocused] = useState(false);
@@ -809,6 +837,7 @@ export function NewTaskDraftScreen(props: {
     const initialMessageText = draft.text.trim();
 
     if (
+      attachmentBlockReason !== null ||
       !modelSelection ||
       initialMessageText.length === 0 ||
       flow.submitting ||
@@ -829,10 +858,11 @@ export function NewTaskDraftScreen(props: {
 
     const editingPendingTask = flow.editingPendingTask;
 
-    if (!environmentConnected) {
-      // Offline: park the task in the outbox; the drain sends it when the
-      // environment reconnects. Editing an existing pending task re-queues it
-      // under its original identifiers.
+    if (queuesInsteadOfStarting) {
+      // Offline, or an attachment is still uploading: park the task in the
+      // outbox and let the drain send it once the environment is reachable
+      // and the bytes are on the server. Editing an existing pending task
+      // re-queues it under its original identifiers.
       const metadata = editingPendingTask
         ? {
             threadId: editingPendingTask.threadId,
@@ -958,6 +988,7 @@ export function NewTaskDraftScreen(props: {
 
   const isAndroid = Platform.OS === "android";
   const canStart =
+    attachmentBlockReason === null &&
     Boolean(flow.selectedProject) &&
     Boolean(flow.selectedModel) &&
     flow.prompt.trim().length > 0 &&
@@ -1139,6 +1170,7 @@ export function NewTaskDraftScreen(props: {
         {flow.attachments.length > 0 ? (
           <View className="pb-2.5">
             <ComposerAttachmentStrip
+              environmentId={selectedProject.environmentId}
               attachments={flow.attachments}
               imageBorderRadius={16}
               imageSize={72}
@@ -1192,10 +1224,17 @@ export function NewTaskDraftScreen(props: {
           </ComposerToolbarScroller>
           <ComposerToolbarButton
             accessibilityLabel={
-              flow.submitting ? "Starting task" : environmentConnected ? "Start task" : "Queue task"
+              attachmentBlockReason ??
+              (flow.submitting
+                ? "Starting task"
+                : attachmentsUploading
+                  ? "Queue task, sends when uploads finish"
+                  : environmentConnected
+                    ? "Start task"
+                    : "Queue task")
             }
             disabled={!canStart}
-            icon={environmentConnected ? "arrow.up" : "tray.and.arrow.up"}
+            icon={queuesInsteadOfStarting ? "tray.and.arrow.up" : "arrow.up"}
             onPress={() => void handleStart()}
             showChevron={false}
             variant="primary"

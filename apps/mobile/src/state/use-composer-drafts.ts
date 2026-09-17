@@ -24,7 +24,14 @@ import {
 import type { DraftComposerAttachment, DraftComposerFileAttachment } from "../lib/composerImages";
 import { SerializedAsyncQueue } from "../lib/serialized-async-queue";
 import { appAtomRegistry } from "./atom-registry";
+import {
+  decodeQueuedThreadMessage,
+  encodeQueuedThreadMessage,
+  QueuedThreadMessageSchema,
+  type QueuedThreadMessage,
+} from "./thread-outbox-model";
 import { flushThreadOutbox, threadOutboxManager } from "./thread-outbox";
+import { composerDraftEnvironmentId } from "../lib/composerAttachmentUploadQueue";
 
 const COMPOSER_DRAFTS_SCHEMA_VERSION = 1;
 const COMPOSER_DRAFTS_DIRECTORY = "composer-drafts";
@@ -93,6 +100,16 @@ const ComposerDraftSchema = Schema.Struct({
 const PersistedComposerDraftsSchema = Schema.Struct({
   schemaVersion: Schema.Literal(COMPOSER_DRAFTS_SCHEMA_VERSION),
   drafts: Schema.Record(Schema.String, ComposerDraftSchema),
+  cloudAccountId: Schema.optional(Schema.String),
+  signedOutDrafts: Schema.optional(
+    Schema.Record(
+      Schema.String,
+      Schema.Struct({
+        drafts: Schema.Record(Schema.String, ComposerDraftSchema),
+        queuedMessages: Schema.Array(QueuedThreadMessageSchema),
+      }),
+    ),
+  ),
 });
 
 const decodePersistedComposerDraftsDocument = Schema.decodeUnknownSync(
@@ -112,6 +129,21 @@ export const composerDraftsLoadedAtom = Atom.make(false).pipe(
   Atom.keepAlive,
   Atom.withLabel("mobile:composer-drafts-loaded"),
 );
+
+interface SignedOutDrafts {
+  readonly drafts: Record<string, ComposerDraft>;
+  readonly queuedMessages: ReadonlyArray<QueuedThreadMessage>;
+}
+
+interface ComposerCloudDraftState {
+  readonly accountId: string | null;
+  readonly signedOut: Record<string, SignedOutDrafts>;
+}
+
+export const composerCloudDraftsAtom = Atom.make<ComposerCloudDraftState>({
+  accountId: null,
+  signedOut: {},
+}).pipe(Atom.keepAlive);
 
 let loadPromise: Promise<void> | null = null;
 let persistRetryNeeded = false;
@@ -155,11 +187,36 @@ function isEmptyDraft(draft: ComposerDraft): boolean {
   );
 }
 
-export function decodePersistedComposerDrafts(value: unknown): Record<string, ComposerDraft> {
+export function decodePersistedComposerState(value: unknown): {
+  readonly drafts: Record<string, ComposerDraft>;
+  readonly cloudDrafts: ComposerCloudDraftState;
+} {
   const parsed = decodePersistedComposerDraftsDocument(value);
-  return Object.fromEntries(
-    Object.entries(parsed.drafts).filter(([, draft]) => !isEmptyDraft(draft)),
-  );
+  return {
+    drafts: Object.fromEntries(
+      Object.entries(parsed.drafts)
+        // importedShareIds are share-import receipts: a contentless draft
+        // carrying one is not empty, or the same native share would be
+        // re-imported after restart.
+        .filter(([, draft]) => !isEmptyDraft(draft) || (draft.importedShareIds?.length ?? 0) > 0),
+    ),
+    cloudDrafts: {
+      accountId: parsed.cloudAccountId ?? null,
+      signedOut: Object.fromEntries(
+        Object.entries(parsed.signedOutDrafts ?? {}).map(([id, saved]) => [
+          id,
+          {
+            drafts: saved.drafts,
+            queuedMessages: saved.queuedMessages.map(decodeQueuedThreadMessage),
+          },
+        ]),
+      ),
+    },
+  };
+}
+
+export function decodePersistedComposerDrafts(value: unknown): Record<string, ComposerDraft> {
+  return decodePersistedComposerState(value).drafts;
 }
 
 async function getComposerDraftsFile() {
@@ -169,17 +226,22 @@ async function getComposerDraftsFile() {
   return new File(directory, COMPOSER_DRAFTS_FILE);
 }
 
-async function loadPersistedComposerDrafts(): Promise<Record<string, ComposerDraft>> {
+async function loadPersistedComposerState(): Promise<
+  ReturnType<typeof decodePersistedComposerState>
+> {
   let operation: ComposerDraftPersistenceError["operation"] = "open";
   try {
     const file = await getComposerDraftsFile();
     if (!file.exists) {
-      return {};
+      return {
+        drafts: {},
+        cloudDrafts: { accountId: null, signedOut: {} },
+      };
     }
     operation = "read";
     const raw = await file.text();
     operation = "decode";
-    return decodePersistedComposerDrafts(JSON.parse(raw) as unknown);
+    return decodePersistedComposerState(JSON.parse(raw) as unknown);
   } catch (cause) {
     throw new ComposerDraftPersistenceError({
       operation,
@@ -190,17 +252,36 @@ async function loadPersistedComposerDrafts(): Promise<Record<string, ComposerDra
   }
 }
 
-async function writePersistedComposerDrafts(drafts: Record<string, ComposerDraft>): Promise<void> {
+async function writePersistedComposerState(
+  drafts: Record<string, ComposerDraft>,
+  cloudDrafts = appAtomRegistry.get(composerCloudDraftsAtom),
+): Promise<void> {
   let operation: ComposerDraftPersistenceError["operation"] = "open";
   try {
     const file = await getComposerDraftsFile();
     operation = "encode";
     const nonEmptyDrafts = Object.fromEntries(
-      Object.entries(drafts).filter(([, draft]) => !isEmptyDraft(draft)),
+      Object.entries(drafts).filter(
+        ([, draft]) => !isEmptyDraft(draft) || (draft.importedShareIds?.length ?? 0) > 0,
+      ),
     );
     const document = {
       schemaVersion: COMPOSER_DRAFTS_SCHEMA_VERSION,
       drafts: nonEmptyDrafts,
+      ...(cloudDrafts.accountId ? { cloudAccountId: cloudDrafts.accountId } : {}),
+      ...(Object.keys(cloudDrafts.signedOut).length > 0
+        ? {
+            signedOutDrafts: Object.fromEntries(
+              Object.entries(cloudDrafts.signedOut).map(([id, saved]) => [
+                id,
+                {
+                  drafts: saved.drafts,
+                  queuedMessages: saved.queuedMessages.map(encodeQueuedThreadMessage),
+                },
+              ]),
+            ),
+          }
+        : {}),
     } as const;
     const encoded = JSON.stringify(document);
     operation = "write";
@@ -231,7 +312,7 @@ export async function flushComposerDrafts(): Promise<void> {
       persistRetryNeeded = false;
       try {
         await persistenceQueue.run(() =>
-          writePersistedComposerDrafts(appAtomRegistry.get(composerDraftsAtom)),
+          writePersistedComposerState(appAtomRegistry.get(composerDraftsAtom)),
         );
       } catch (error) {
         persistRetryNeeded = true;
@@ -240,6 +321,13 @@ export async function flushComposerDrafts(): Promise<void> {
     }
     await persistenceQueue.run(() => Promise.resolve());
   } while (persistTimer !== null || persistRetryNeeded);
+}
+
+function signedOutAttachmentOwners() {
+  return Object.values(appAtomRegistry.get(composerCloudDraftsAtom).signedOut).flatMap((saved) => [
+    ...Object.values(saved.drafts),
+    ...saved.queuedMessages,
+  ]);
 }
 
 function isComposerAttachmentFileReferenced(fileUri: string): boolean {
@@ -251,7 +339,7 @@ function isComposerAttachmentFileReferenced(fileUri: string): boolean {
   const queuedMessages = Object.values(
     appAtomRegistry.get(threadOutboxManager.queuedMessagesByThreadKeyAtom),
   ).flat();
-  return [...drafts, ...queuedMessages].some((owner) =>
+  return [...drafts, ...queuedMessages, ...signedOutAttachmentOwners()].some((owner) =>
     owner.attachments.some(
       (attachment) =>
         attachment.type === "file" &&
@@ -268,10 +356,9 @@ function isComposerAttachmentUploadReferenced(
   const queuedMessages = Object.values(
     appAtomRegistry.get(threadOutboxManager.queuedMessagesByThreadKeyAtom),
   ).flat();
-  return [...drafts, ...queuedMessages].some((owner) =>
+  return [...drafts, ...queuedMessages, ...signedOutAttachmentOwners()].some((owner) =>
     owner.attachments.some(
       (attachment) =>
-        attachment.type === "file" &&
         attachment.uploadEnvironmentId === environmentId &&
         attachment.uploadedAttachmentId === attachmentId,
     ),
@@ -289,7 +376,6 @@ export async function releaseUnusedComposerAttachmentFiles(
   const uploadCandidates = new Map<EnvironmentId, Set<string>>();
   for (const attachment of attachments) {
     if (
-      attachment.type !== "file" ||
       attachment.uploadEnvironmentId === undefined ||
       attachment.uploadedAttachmentId === undefined
     ) {
@@ -299,7 +385,7 @@ export async function releaseUnusedComposerAttachmentFiles(
     ids.add(attachment.uploadedAttachmentId);
     uploadCandidates.set(attachment.uploadEnvironmentId, ids);
   }
-  if (candidates.size === 0) {
+  if (candidates.size === 0 && uploadCandidates.size === 0) {
     return;
   }
 
@@ -387,7 +473,11 @@ export async function releaseUnusedComposerAttachmentFiles(
 export function scheduleUnusedComposerAttachmentCleanup(
   attachments: ReadonlyArray<DraftComposerAttachment>,
 ): void {
-  if (!attachments.some((attachment) => attachment.type === "file")) {
+  if (
+    !attachments.some(
+      (attachment) => attachment.type === "file" || attachment.uploadedAttachmentId !== undefined,
+    )
+  ) {
     return;
   }
   void releaseUnusedComposerAttachmentFiles(attachments).catch((error) => {
@@ -395,7 +485,7 @@ export function scheduleUnusedComposerAttachmentCleanup(
   });
 }
 
-/** Keeps previews usable after send/removal, then retries the normal ownership cleanup. */
+/** Keeps a native preview or upload readable until it finishes, then retries ownership cleanup. */
 export function retainComposerAttachmentFileForPreview(
   attachment: DraftComposerFileAttachment,
 ): () => void {
@@ -415,7 +505,7 @@ function schedulePersistComposerDrafts(): void {
     void persistenceQueue.run(async () => {
       try {
         await waitForComposerDraftsLoaded();
-        await writePersistedComposerDrafts(appAtomRegistry.get(composerDraftsAtom));
+        await writePersistedComposerState(appAtomRegistry.get(composerDraftsAtom));
         persistRetryNeeded = false;
       } catch (error) {
         // A failed debounce has no timer left. A later final flush must retry
@@ -432,9 +522,10 @@ export function ensureComposerDraftsLoaded(): void {
   if (loadPromise !== null) {
     return;
   }
-  const loading = loadPersistedComposerDrafts().then((persistedDrafts) => {
+  const loading = loadPersistedComposerState().then((persisted) => {
+    appAtomRegistry.set(composerCloudDraftsAtom, persisted.cloudDrafts);
     const current = appAtomRegistry.get(composerDraftsAtom);
-    appAtomRegistry.set(composerDraftsAtom, { ...persistedDrafts, ...current });
+    appAtomRegistry.set(composerDraftsAtom, { ...persisted.drafts, ...current });
     appAtomRegistry.set(composerDraftsLoadedAtom, true);
   });
   loadPromise = loading;
@@ -462,6 +553,192 @@ export async function waitForComposerDraftsLoaded(): Promise<void> {
   if (loadPromise !== null) {
     await loadPromise;
   }
+}
+
+export async function getComposerCloudAccountId(): Promise<string | null> {
+  await waitForComposerDraftsLoaded();
+  return appAtomRegistry.get(composerCloudDraftsAtom).accountId;
+}
+
+/** Save an account's local work before its relay environments are removed. */
+export async function archiveCloudComposerDrafts(
+  accountId: string | null,
+  environmentIds: ReadonlySet<EnvironmentId>,
+): Promise<void> {
+  await waitForComposerDraftsLoaded();
+  if (!(await threadOutboxManager.load())) throw new Error("Could not preserve queued messages.");
+  await flushThreadOutbox();
+  const cloud = appAtomRegistry.get(composerCloudDraftsAtom);
+  const owner = accountId ?? cloud.accountId;
+  if (owner === null) return;
+  const queued = Object.values(
+    appAtomRegistry.get(threadOutboxManager.queuedMessagesByThreadKeyAtom),
+  ).flat();
+  const current = appAtomRegistry.get(composerDraftsAtom);
+  const remaining = { ...current };
+  const savedDrafts = { ...cloud.signedOut[owner]?.drafts };
+  for (const [key, draft] of Object.entries(current)) {
+    const environmentId = composerDraftEnvironmentId(key, queued);
+    if (environmentId !== null && environmentIds.has(environmentId)) {
+      savedDrafts[key] = draft;
+      delete remaining[key];
+    }
+  }
+  const savedMessages = new Map(
+    (cloud.signedOut[owner]?.queuedMessages ?? []).map((message) => [message.messageId, message]),
+  );
+  for (const message of queued) {
+    if (environmentIds.has(message.environmentId)) savedMessages.set(message.messageId, message);
+  }
+  appAtomRegistry.set(composerDraftsAtom, remaining);
+  appAtomRegistry.set(composerCloudDraftsAtom, {
+    // Keep the owner through removal. A crash or failed cleanup can retry it
+    // on cold start before a different account activates.
+    accountId: owner,
+    signedOut: {
+      ...cloud.signedOut,
+      [owner]: { drafts: savedDrafts, queuedMessages: [...savedMessages.values()] },
+    },
+  });
+  schedulePersistComposerDrafts();
+  await flushComposerDrafts();
+}
+
+function sameDraftAttachmentIds(
+  left: ReadonlyArray<DraftComposerAttachment>,
+  right: ReadonlyArray<DraftComposerAttachment>,
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((attachment, index) => attachment.id === right[index]?.id)
+  );
+}
+
+/** An in-flight delivery can finish after sign-out took its snapshot. */
+export async function removeDeliveredCloudQueuedMessage(
+  message: QueuedThreadMessage,
+): Promise<void> {
+  await waitForComposerDraftsLoaded();
+  const cloud = appAtomRegistry.get(composerCloudDraftsAtom);
+  const signedOut = { ...cloud.signedOut };
+  let changed = false;
+  for (const [accountId, saved] of Object.entries(signedOut)) {
+    const archived = saved.queuedMessages.find(
+      (candidate) =>
+        candidate.environmentId === message.environmentId &&
+        candidate.messageId === message.messageId,
+    );
+    if (
+      !archived ||
+      archived.commandId !== message.commandId ||
+      archived.threadId !== message.threadId ||
+      archived.text !== message.text ||
+      !sameDraftAttachmentIds(archived.attachments, message.attachments)
+    )
+      continue;
+    // Upload ids may change during preparation; user edits must remain recoverable.
+    if (
+      JSON.stringify([
+        archived.modelSelection,
+        archived.runtimeMode,
+        archived.interactionMode,
+        archived.creation,
+      ]) !==
+      JSON.stringify([
+        message.modelSelection,
+        message.runtimeMode,
+        message.interactionMode,
+        message.creation,
+      ])
+    )
+      continue;
+    const editorKey = `pending-task:${message.messageId}`;
+    const editor = saved.drafts[editorKey];
+    if (
+      editor &&
+      (editor.text !== message.text ||
+        !sameDraftAttachmentIds(editor.attachments, message.attachments) ||
+        (editor.modelSelection !== undefined &&
+          JSON.stringify(editor.modelSelection) !== JSON.stringify(message.modelSelection)) ||
+        (editor.runtimeMode !== undefined && editor.runtimeMode !== message.runtimeMode) ||
+        (editor.interactionMode !== undefined &&
+          editor.interactionMode !== message.interactionMode) ||
+        (editor.workspaceSelection !== undefined &&
+          (editor.workspaceSelection.mode !== message.creation?.workspaceMode ||
+            editor.workspaceSelection.branch !== message.creation?.branch ||
+            editor.workspaceSelection.worktreePath !== message.creation?.worktreePath ||
+            (editor.workspaceSelection.startFromOrigin ?? false) !==
+              (message.creation?.startFromOrigin ?? false))))
+    )
+      continue;
+    const drafts = { ...saved.drafts };
+    delete drafts[editorKey];
+    signedOut[accountId] = {
+      drafts,
+      queuedMessages: saved.queuedMessages.filter((candidate) => candidate !== archived),
+    };
+    changed = true;
+  }
+  if (!changed) return;
+  appAtomRegistry.set(composerCloudDraftsAtom, { ...cloud, signedOut });
+  schedulePersistComposerDrafts();
+  try {
+    await flushComposerDrafts();
+  } catch (error) {
+    // The live outbox can still remove this acknowledged message. Keep the
+    // archive update pending so a later successful flush lands it too.
+    schedulePersistComposerDrafts();
+    throw error;
+  }
+}
+
+/** Restores only this account, before its connections can deliver queued turns. */
+export async function restoreCloudComposerDrafts(accountId: string): Promise<void> {
+  await waitForComposerDraftsLoaded();
+  const cloud = appAtomRegistry.get(composerCloudDraftsAtom);
+  const saved = cloud.signedOut[accountId];
+  if (saved) {
+    if (!(await threadOutboxManager.load())) throw new Error("Could not restore queued messages.");
+    for (const message of saved.queuedMessages) {
+      const alreadyQueued = Object.values(
+        appAtomRegistry.get(threadOutboxManager.queuedMessagesByThreadKeyAtom),
+      )
+        .flat()
+        .some((current) => current.messageId === message.messageId);
+      if (!alreadyQueued) await threadOutboxManager.enqueue(message);
+    }
+    updateComposerDrafts((current) => {
+      const restored = { ...current };
+      for (const [key, draft] of Object.entries(saved.drafts)) {
+        const existing = current[key];
+        const attachmentIds = new Set(existing?.attachments.map((attachment) => attachment.id));
+        restored[key] = existing
+          ? {
+              ...draft,
+              ...existing,
+              text: mergeComposerDraftText(existing.text, draft.text),
+              // A concurrent import must not lose files, even above the send limit.
+              attachments: [
+                ...existing.attachments,
+                ...draft.attachments.filter((attachment) => !attachmentIds.has(attachment.id)),
+              ],
+              importedShareIds: [
+                ...new Set([
+                  ...(existing.importedShareIds ?? []),
+                  ...(draft.importedShareIds ?? []),
+                ]),
+              ],
+            }
+          : draft;
+      }
+      return restored;
+    });
+  }
+  const signedOut = { ...cloud.signedOut };
+  delete signedOut[accountId];
+  appAtomRegistry.set(composerCloudDraftsAtom, { accountId, signedOut });
+  schedulePersistComposerDrafts();
+  await flushComposerDrafts();
 }
 
 function updateComposerDrafts(
@@ -592,6 +869,41 @@ export function removeComposerDraftAttachment(draftKey: string, imageId: string)
   scheduleUnusedComposerAttachmentCleanup(
     previousAttachments.filter((attachment) => attachment.id === imageId),
   );
+}
+
+/** Stamps a finished upload without overwriting text, removals, or newer attachments. */
+export function setComposerDraftAttachmentUpload(
+  draftKey: string,
+  attachment: DraftComposerAttachment,
+): boolean {
+  let previous: DraftComposerAttachment | undefined;
+  updateComposerDrafts((current) => {
+    const draft = current[draftKey];
+    previous = draft?.attachments.find((candidate) => candidate.id === attachment.id);
+    if (!draft || !previous) return current;
+    if (
+      previous.uploadedAttachmentId === attachment.uploadedAttachmentId &&
+      previous.uploadEnvironmentId === attachment.uploadEnvironmentId
+    )
+      return current;
+    return {
+      ...current,
+      [draftKey]: {
+        ...draft,
+        attachments: draft.attachments.map((candidate) =>
+          candidate.id === attachment.id
+            ? {
+                ...candidate,
+                uploadedAttachmentId: attachment.uploadedAttachmentId,
+                uploadEnvironmentId: attachment.uploadEnvironmentId,
+              }
+            : candidate,
+        ),
+      },
+    };
+  });
+  if (previous) scheduleUnusedComposerAttachmentCleanup([previous]);
+  return previous !== undefined;
 }
 
 export function updateComposerDraftSettings(
@@ -830,7 +1142,7 @@ export async function mergeComposerDraftContent(
   if (next !== current) {
     appAtomRegistry.set(composerDraftsAtom, next);
   }
-  await persistenceQueue.run(() => writePersistedComposerDrafts(next));
+  await persistenceQueue.run(() => writePersistedComposerState(next));
   return { skippedAttachmentCount };
 }
 
@@ -853,7 +1165,7 @@ export async function restoreComposerDraftSnapshot(
     snapshot,
   );
   appAtomRegistry.set(composerDraftsAtom, next);
-  await persistenceQueue.run(() => writePersistedComposerDrafts(next));
+  await persistenceQueue.run(() => writePersistedComposerState(next));
 }
 
 export function sameComposerDraftState(a: ComposerDraft, b: ComposerDraft): boolean {
@@ -950,7 +1262,7 @@ export async function undoComposerDraftMerge(
     merged,
   );
   appAtomRegistry.set(composerDraftsAtom, next);
-  await persistenceQueue.run(() => writePersistedComposerDrafts(next));
+  await persistenceQueue.run(() => writePersistedComposerState(next));
 }
 
 export function clearComposerDraftContent(
@@ -1022,7 +1334,7 @@ export async function clearComposerDraftsEnvironment(environmentId: EnvironmentI
     persistTimer = null;
   }
   appAtomRegistry.set(composerDraftsAtom, next);
-  await persistenceQueue.run(() => writePersistedComposerDrafts(next));
+  await persistenceQueue.run(() => writePersistedComposerState(next));
   await releaseUnusedComposerAttachmentFiles(removedAttachments);
 }
 

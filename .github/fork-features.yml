@@ -51,8 +51,13 @@ features:
     invariants:
       - Web and mobile can attach generic files while supported images retain native provider handling, and every provider receives a safe persisted local path with MIME type and size.
       - Attachment count and aggregate-byte limits are enforced atomically, generic files render in message history, and legacy image attachments remain readable.
+      - Mobile retains local attachment bytes through draft, outbox, preview, upload, and signed-out account ownership; failed storage hydration or persistence must not authorize cleanup.
     implementation_paths:
       - apps/mobile/src/features/threads/ThreadFeed.tsx
+      - apps/mobile/src/lib/attachmentUpload.ts
+      - apps/mobile/src/lib/composerAttachmentUploadQueue.ts
+      - apps/mobile/src/state/composer-attachment-uploads.ts
+      - apps/mobile/src/state/use-composer-drafts.ts
       - apps/server/src/attachmentStore.ts
       - apps/server/src/orchestration/Normalizer.ts
       - apps/server/src/provider/Layers/ProviderService.ts
@@ -63,6 +68,10 @@ features:
       - packages/contracts/src/orchestration.ts
     upstream_paths:
       - apps/mobile/src/features/threads/ThreadFeed.tsx
+      - apps/mobile/src/lib/attachmentUpload.ts
+      - apps/mobile/src/lib/composerAttachmentUploadQueue.ts
+      - apps/mobile/src/state/composer-attachment-uploads.ts
+      - apps/mobile/src/state/use-composer-drafts.ts
       - apps/server/src/attachmentStore.ts
       - apps/server/src/orchestration/Normalizer.ts
       - apps/server/src/provider/Layers/ProviderService.ts
@@ -72,6 +81,10 @@ features:
       - apps/web/src/composerDraftStore.ts
       - packages/contracts/src/orchestration.ts
     tests:
+      - apps/mobile/src/lib/attachmentUpload.test.ts
+      - apps/mobile/src/lib/composerAttachmentUploadQueue.test.ts
+      - apps/mobile/src/state/use-composer-drafts.test.ts
+      - apps/mobile/src/state/use-thread-outbox-drain.test.ts
       - apps/server/src/assets/AssetAccess.test.ts
       - apps/server/src/attachmentStore.test.ts
       - apps/server/src/orchestration/Normalizer.test.ts
@@ -83,9 +96,12 @@ features:
     upstream:
       status: partial
       tracking:
+        - https://github.com/pingdotgg/t3code/pull/10404
         - https://github.com/pingdotgg/t3code/pull/8235
         - https://github.com/pingdotgg/t3code/pull/8236
         - https://github.com/pingdotgg/t3code/pull/8237
+        - https://github.com/pingdotgg/t3code/pull/8978
+        - https://github.com/pingdotgg/t3code/pull/9710
       retire_when: Upstream completes generic persisted file attachments across web and mobile clients with equivalent admission limits, rendering, draft persistence, and backward compatibility.
 
   - id: claude-model-manifest-policy
