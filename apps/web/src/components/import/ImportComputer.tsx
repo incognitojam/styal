@@ -92,8 +92,7 @@ export function LegacyImportComputer({
             <ImportSourceView
               disabled={busy || !connected}
               source={{
-                title:
-                  available?.sourceKind === "t3-code-yngatech" ? "T3 Code (yngatech)" : "T3 Code",
+                title: "T3 Code",
                 projects: legacy.projects.map((project) => ({
                   id: project.projectId,
                   legacyFavicon: { environmentId, projectId: project.projectId },

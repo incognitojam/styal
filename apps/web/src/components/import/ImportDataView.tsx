@@ -162,7 +162,7 @@ export function ImportSourceView({
               total === 0 ? "text-muted-foreground" : "text-foreground",
             )}
           >
-            {source.title === "T3 Code (yngatech)" ? source.title : "Select all"}
+            Select all
           </span>
         </label>
         {total > 0 ? (
