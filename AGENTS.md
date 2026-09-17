@@ -173,5 +173,5 @@ Full glossary with file links: `docs/internals/glossary.md`
 
 ## Additional tips
 
-- Ask permission before computer use that could interrupt the user's work, including controlling their active browser or desktop, moving the pointer, typing into active applications, or changing focus. CDP access alone does not establish isolation; check which browser session it controls. Permission already granted for the relevant action does not need to be requested again.
+- Ask permission before doing computer use. Isolated browser verification as described above does not require additional permission. CDP access alone does not establish isolation; check which browser session it controls. Permission already granted for the relevant action does not need to be requested again.
 - Security is important, but should not be over-indexed on, especially for dev mode/maintainer-only features.
