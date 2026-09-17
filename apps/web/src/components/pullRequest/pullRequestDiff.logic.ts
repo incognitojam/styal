@@ -118,3 +118,21 @@ export function isFileDiffCollapsed(
   const foldedByDefault = foldOverride === null ? autoFolded : foldOverride === "folded";
   return foldedByDefault;
 }
+
+/**
+ * The reader's fold choices after a file was ticked off, or put back.
+ *
+ * Clearing a file puts it away and un-clearing brings it back, so the tick moves the fold as if
+ * the reader had pressed the chevron themselves. The choice is stored as that file's override,
+ * which the toolbar clears, so "collapse all" still ticks nothing off.
+ */
+export function toggleFileDiffFoldForViewed(
+  fileKey: string,
+  viewed: boolean,
+  fileFoldOverrides: ReadonlyMap<string, boolean>,
+): ReadonlyMap<string, boolean> {
+  if (fileFoldOverrides.get(fileKey) === viewed) return fileFoldOverrides;
+  const next = new Map(fileFoldOverrides);
+  next.set(fileKey, viewed);
+  return next;
+}

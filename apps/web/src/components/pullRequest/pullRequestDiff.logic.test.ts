@@ -7,6 +7,7 @@ import {
   isLineInFileDiff,
   PULL_REQUEST_DIFF_AUTO_FOLD_LINE_THRESHOLD,
   shouldAutoFoldFileDiff,
+  toggleFileDiffFoldForViewed,
   type PullRequestDiffSlice,
 } from "./pullRequestDiff.logic";
 
@@ -203,5 +204,39 @@ describe("shouldAutoFoldFileDiff", () => {
     expect(
       shouldAutoFoldFileDiff({ name: "bun.lock", unifiedLineCount: 10 } as FileDiffMetadata, true),
     ).toBe(false);
+  });
+});
+
+describe("toggleFileDiffFoldForViewed", () => {
+  it("puts a file away when it is ticked off", () => {
+    expect([...toggleFileDiffFoldForViewed("a.ts", true, new Map())]).toEqual([["a.ts", true]]);
+  });
+
+  it("brings a file back when the tick is taken off", () => {
+    expect([...toggleFileDiffFoldForViewed("a.ts", false, new Map([["a.ts", true]]))]).toEqual([
+      ["a.ts", false],
+    ]);
+  });
+
+  it("opens a file that was folded automatically when the tick is taken off", () => {
+    expect([...toggleFileDiffFoldForViewed("large.ts", false, new Map())]).toEqual([
+      ["large.ts", false],
+    ]);
+  });
+
+  it("leaves the fold alone when it already says what the tick does", () => {
+    const folded = new Map([["a.ts", true]]);
+    expect(toggleFileDiffFoldForViewed("a.ts", true, folded)).toBe(folded);
+  });
+
+  it("touches only the file that was ticked", () => {
+    const overrides = new Map([
+      ["a.ts", true],
+      ["b.ts", true],
+    ]);
+    expect([...toggleFileDiffFoldForViewed("a.ts", false, overrides)]).toEqual([
+      ["a.ts", false],
+      ["b.ts", true],
+    ]);
   });
 });
