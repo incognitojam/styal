@@ -60,7 +60,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 - **Import without replacing your existing setup.** Bring projects, threads, attachments, and
   supported preferences into styal while leaving the T3 Code installation intact. Existing styal
   project settings take precedence, and interrupted imports can resume without duplicating completed
-  threads. Credentials and active sessions remain separate.
+  threads. Migration is available during setup and later in Settings; setup reviews differing
+  preferences in a separate step.[^import-comparison] Credentials and active sessions remain separate.
   [Import T3 Code data](./importing-t3-code-data.md).
 
 ## Desktop updates
@@ -71,3 +72,5 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [Updating styal](./updating.md). Compared with
   [T3 Code revision 1ab2dfb](https://github.com/pingdotgg/t3code/tree/1ab2dfb5a7bd2996f79407b5d02cae6132a7626c),
   which disables automatic downloads and installation on quit.
+
+[^import-comparison]: Setup compared with [T3 Code revision 1ab2dfb](https://github.com/pingdotgg/t3code/tree/1ab2dfb5a7bd2996f79407b5d02cae6132a7626c), checked September 17, 2026.
