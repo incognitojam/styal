@@ -317,6 +317,7 @@ export const make = Effect.gen(function* () {
   const currentMainWindow = electronWindow.currentMainOrFirst.pipe(Effect.flatMap(withoutSplash));
   const focusedMainWindow = electronWindow.focusedMainOrFirst.pipe(Effect.flatMap(withoutSplash));
 
+  let shutdownCloseAllowed = false;
   const closeMainForShutdown = currentMainWindow.pipe(
     Effect.flatMap(
       Option.match({
@@ -335,6 +336,7 @@ export const make = Effect.gen(function* () {
             };
             window.once("closed", complete);
             try {
+              shutdownCloseAllowed = true;
               window.close();
             } catch (cause) {
               window.removeListener("closed", complete);
@@ -625,7 +627,12 @@ export const make = Effect.gen(function* () {
     window.on("move", scheduleBoundsPersist);
     window.on("maximize", scheduleBoundsPersist);
     window.on("unmaximize", scheduleBoundsPersist);
-    window.on("close", () => {
+    window.on("close", (event) => {
+      if (environment.platform !== "darwin" && !shutdownCloseAllowed) {
+        event.preventDefault();
+        void runPromise(electronApp.quit);
+        return;
+      }
       runFork(
         Effect.all([logWindowInfo("main window close requested"), flushBoundsPersist], {
           discard: true,

@@ -1,3 +1,4 @@
+import * as DesktopShutdownGuard from "../app/DesktopShutdownGuard.ts";
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import type { DesktopUpdateState } from "@t3tools/contracts";
@@ -23,6 +24,7 @@ import * as DesktopState from "../app/DesktopState.ts";
 import * as DesktopUpdates from "./DesktopUpdates.ts";
 
 interface UpdatesHarnessOptions {
+  readonly confirmShutdown?: Effect.Effect<boolean>;
   readonly checkForUpdates?: Effect.Effect<
     void,
     ElectronUpdater.ElectronUpdaterCheckForUpdatesError
@@ -211,6 +213,11 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
       : DesktopAppSettings.layer;
 
   const layer = DesktopUpdates.layer.pipe(
+    Layer.provideMerge(
+      Layer.succeed(DesktopShutdownGuard.DesktopShutdownGuard, {
+        confirm: () => options.confirmShutdown ?? Effect.succeed(true),
+      }),
+    ),
     Layer.provideMerge(updaterLayer),
     Layer.provideMerge(windowLayer),
     Layer.provideMerge(backendLayer),
@@ -1199,4 +1206,26 @@ describe("DesktopUpdates", () => {
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
+  it.effect("cancelling restart preserves the download and allows a later retry", () =>
+    Effect.gen(function* () {
+      let confirmed = false;
+      const harness = makeHarness({ confirmShutdown: Effect.sync(() => confirmed) });
+      yield* Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        const state = yield* DesktopState.DesktopState;
+        yield* updates.configure;
+        harness.emit("update-available", { version: "1.2.4" });
+        yield* flushCallbacks;
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+        assert.isFalse((yield* updates.install).accepted);
+        assert.isFalse(yield* Ref.get(state.quitting));
+        assert.equal((yield* updates.getState).downloadedVersion, "1.2.4");
+        assert.deepEqual(harness.installs, []);
+        confirmed = true;
+        assert.isTrue((yield* updates.install).accepted);
+        assert.lengthOf(harness.installs, 1);
+      }).pipe(Effect.scoped, Effect.provide(harness.layer));
+    }),
+  );
 });

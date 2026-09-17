@@ -10,6 +10,7 @@ import type * as Electron from "electron";
 
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as DesktopObservability from "./DesktopObservability.ts";
+import * as DesktopShutdownGuard from "./DesktopShutdownGuard.ts";
 import * as DesktopShutdown from "./DesktopShutdown.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
@@ -31,6 +32,7 @@ export class DesktopLifecycleRelaunchError extends Schema.TaggedErrorClass<Deskt
 }
 
 export type DesktopLifecycleRuntimeServices =
+  | DesktopShutdownGuard.DesktopShutdownGuard
   | DesktopEnvironment.DesktopEnvironment
   | DesktopObservability.DesktopTrace
   | DesktopShutdown.DesktopShutdown
@@ -45,14 +47,14 @@ type DesktopLifecycleRegistrationServices =
   | DesktopUpdates.DesktopUpdates;
 
 /**
- * @effect-expect-leaking DesktopEnvironment | DesktopShutdown | DesktopState | DesktopTrace | DesktopUpdates | DesktopWindow | ElectronApp | ElectronTheme | ElectronWindow
+ * @effect-expect-leaking DesktopShutdownGuard | DesktopEnvironment | DesktopShutdown | DesktopState | DesktopTrace | DesktopUpdates | DesktopWindow | ElectronApp | ElectronTheme | ElectronWindow
  */
 export class DesktopLifecycle extends Context.Service<
   DesktopLifecycle,
   {
     readonly relaunch: (
       reason: string,
-    ) => Effect.Effect<void, never, DesktopLifecycleRuntimeServices>;
+    ) => Effect.Effect<boolean, never, DesktopLifecycleRuntimeServices>;
     readonly register: Effect.Effect<
       void,
       never,
@@ -241,10 +243,13 @@ export const make = DesktopLifecycle.of({
     const electronApp = yield* ElectronApp.ElectronApp;
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const state = yield* DesktopState.DesktopState;
+    if (yield* Ref.get(state.quitting)) return false;
+    const guard = yield* DesktopShutdownGuard.DesktopShutdownGuard;
+    if (!(yield* guard.confirm("restart"))) return false;
     yield* logLifecycleInfo("desktop relaunch requested", { reason });
-    yield* Effect.gen(function* () {
+    yield* Ref.set(state.quitting, true);
+    return yield* Effect.gen(function* () {
       yield* Effect.yieldNow;
-      yield* Ref.set(state.quitting, true);
       yield* requestDesktopShutdownAndWait();
       yield* DesktopObservability.flushTrace;
       if (environment.isDevelopment) {
@@ -262,7 +267,7 @@ export const make = DesktopLifecycle.of({
         return logLifecycleError(error.message, { error });
       }),
       Effect.forkDetach,
-      Effect.asVoid,
+      Effect.as(true),
     );
   }),
   register: Effect.gen(function* () {
@@ -274,6 +279,7 @@ export const make = DesktopLifecycle.of({
     const runEffect = Effect.runPromiseWith(context);
     const runSync = Effect.runSyncWith(context);
     let quitAllowed = false;
+    let quitCheckPending = false;
     let updaterQuitAllowed = false;
     yield* electronTheme.onUpdated(() => {
       void runEffect(
@@ -292,15 +298,44 @@ export const make = DesktopLifecycle.of({
       );
     });
     yield* electronApp.on("before-quit", (event: Electron.Event) => {
-      handleBeforeQuit(
-        event,
-        runEffect,
-        runSync,
-        () => quitAllowed || updaterQuitAllowed,
-        () => {
-          quitAllowed = true;
-        },
-      );
+      if (quitAllowed || updaterQuitAllowed) {
+        handleBeforeQuit(
+          event,
+          runEffect,
+          runSync,
+          () => true,
+          () => {},
+        );
+        return;
+      }
+      event.preventDefault();
+      if (quitCheckPending) return;
+      quitCheckPending = true;
+      void runEffect(
+        Effect.gen(function* () {
+          const state = yield* DesktopState.DesktopState;
+          if (yield* Ref.get(state.quitting)) {
+            quitCheckPending = false;
+            return;
+          }
+          const guard = yield* DesktopShutdownGuard.DesktopShutdownGuard;
+          if (!(yield* guard.confirm("quit"))) {
+            quitCheckPending = false;
+            return;
+          }
+          handleBeforeQuit(
+            event,
+            runEffect,
+            runSync,
+            () => false,
+            () => {
+              quitAllowed = true;
+            },
+          );
+        }),
+      ).catch(() => {
+        quitCheckPending = false;
+      });
     });
     yield* electronApp.on("activate", () => {
       void runEffect(

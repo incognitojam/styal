@@ -1,3 +1,4 @@
+import * as DesktopShutdownGuard from "../../app/DesktopShutdownGuard.ts";
 import { DesktopWslStateSchema } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -40,16 +41,23 @@ function makeWslBackendLayer(input: { readonly onReconcile?: Effect.Effect<void>
   );
 }
 
-function makeLifecycleLayer(relaunchReasons: Array<string>) {
+function makeLifecycleLayer(relaunchReasons: Array<string>, accepted = true) {
   return Layer.succeed(
     DesktopLifecycle.DesktopLifecycle,
     DesktopLifecycle.DesktopLifecycle.of({
       relaunch: (reason) =>
         Effect.sync(() => {
           relaunchReasons.push(reason);
+          return accepted;
         }),
       register: Effect.void,
     }),
+  ).pipe(
+    Layer.provideMerge(
+      Layer.succeed(DesktopShutdownGuard.DesktopShutdownGuard, {
+        confirm: () => Effect.succeed(true),
+      }),
+    ),
   );
 }
 
@@ -90,6 +98,34 @@ const unusedLifecycleRuntimeLayer = Layer.mergeAll(
 );
 
 describe("WSL IPC", () => {
+  it.effect("restores WSL preferences when the restart is cancelled", () => {
+    const initial = {
+      ...DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS,
+      wslBackendEnabled: true,
+      wslOnly: true,
+      wslDistro: "TestDistro",
+    };
+    return Effect.gen(function* () {
+      const settings = yield* DesktopAppSettings.DesktopAppSettings;
+      assert.isTrue((yield* invokeSetWslBackendEnabled(false)).enabled);
+      assert.deepEqual(yield* settings.get, initial);
+      assert.equal((yield* invokeSetWslDistro("Replacement")).distro, "TestDistro");
+      assert.deepEqual(yield* settings.get, initial);
+      assert.isTrue((yield* invokeSetWslOnly(false)).wslOnly);
+      assert.deepEqual(yield* settings.get, initial);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          DesktopAppSettings.layerTest(initial),
+          DesktopWslEnvironment.layerTest({ isAvailable: true }),
+          makeWslBackendLayer(),
+          makeLifecycleLayer([], false),
+          unusedLifecycleRuntimeLayer,
+        ),
+      ),
+    );
+  });
+
   it.effect("stages dual-backend preferences before enabling without relaunching", () => {
     const relaunchReasons: Array<string> = [];
     const layer = Layer.mergeAll(

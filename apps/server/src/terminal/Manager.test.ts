@@ -1020,6 +1020,7 @@ it.layer(
         terminalIds: [DEFAULT_TERMINAL_ID],
       });
       expect(idle.confirmationTerminalIds).toEqual([]);
+      expect(yield* manager.shutdownPreflight).toBe(0);
 
       inspect = {
         hasRunningSubprocess: true,
@@ -1031,6 +1032,9 @@ it.layer(
         terminalIds: [DEFAULT_TERMINAL_ID],
       });
       expect(active.confirmationTerminalIds).toEqual([DEFAULT_TERMINAL_ID]);
+      expect(yield* manager.shutdownPreflight).toBe(1);
+      yield* manager.open(openInput({ threadId: "thread-remote" }));
+      expect(yield* manager.shutdownPreflight).toBe(2);
     }),
   );
 
@@ -1054,6 +1058,7 @@ it.layer(
         terminalIds: ["setup-preview"],
       });
       expect(running.confirmationTerminalIds).toEqual(["setup-preview"]);
+      expect(yield* manager.shutdownPreflight).toBe(1);
 
       const exited = yield* Deferred.make<void>();
       const unsubscribe = yield* manager.subscribe((event) =>
@@ -1071,6 +1076,7 @@ it.layer(
         terminalIds: ["setup-preview"],
       });
       expect(afterExit.confirmationTerminalIds).toEqual([]);
+      expect(yield* manager.shutdownPreflight).toBe(0);
     }),
   );
 

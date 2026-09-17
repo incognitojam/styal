@@ -107,6 +107,30 @@ Shutdown retains a one-shot `window-all-closed` listener while draining cleanup.
 can follow removal of the scoped lifecycle listeners; without a remaining listener, Electron's
 default quit would bypass the update handoff.
 
+## Desktop shutdown activity checks
+
+`DesktopShutdownGuard` checks every backend registered in the desktop pool before manual Quit,
+relaunch, or explicit update installation. Deliberately stopped instances are skipped. Each running
+instance is queried through its authenticated `/api/environment/activity` endpoint with a three-second
+budget. Missing configuration, invalid responses, and unavailable instances require confirmation;
+they never count as idle. The native dialog defaults to Cancel and duplicate requests are suppressed.
+
+The server combines lightweight thread projections with live provider sessions, including pending
+approvals/input, starting turns, and background work. Terminal checks reuse the fresh close preflight,
+including finite commands and conservative handling when process inspection fails. Results cover all
+clients of that environment without loading message bodies or transmitting thread names. Connections
+to independent remote servers do not block desktop shutdown because this app does not own their lifetime.
+
+Idle manual requests proceed without a dialog. Windows and Linux window closes route through Quit
+before destroying the main window, so cancellation retains it. macOS window-close behavior and the
+hold-to-quit shortcut stay unchanged. OS/process termination signals and updater-controlled final quits
+bypass interactive checks. Cancellation leaves the downloaded installer eligible for a later attempt. Restart-triggering network
+and WSL settings changes restore their previous values when relaunch is declined.
+
+This is a point-in-time check, not a shutdown lease: new work can arrive after the response. Do not use
+it alone to authorize unattended restart; that needs an admission barrier spanning activity inspection
+and shutdown. Service updates are not changed by this desktop guard.
+
 ## Source Map
 
 - Launcher and state machine: `apps/server/src/serviceLauncher.ts`

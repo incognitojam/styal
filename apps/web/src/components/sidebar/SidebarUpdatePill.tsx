@@ -2,14 +2,12 @@ import { TriangleAlertIcon } from "lucide-react";
 import { useCallback, useState } from "react";
 import { isElectron } from "../../env";
 import { cn } from "../../lib/utils";
-import { ensureLocalApi } from "../../localApi";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
   getArm64IntelBuildWarningDescription,
   getDesktopUpdateActionError,
   getDesktopUpdateButtonTooltip,
-  getDesktopUpdateInstallConfirmationMessage,
   resolveDesktopUpdateButtonAction,
   shouldShowArm64IntelBuildWarning,
   shouldShowDesktopUpdateButton,
@@ -107,26 +105,6 @@ function SidebarUpdateControl() {
 
     setIsActionPending(true);
 
-    let confirmed = false;
-    try {
-      confirmed = await ensureLocalApi().dialogs.confirm(
-        getDesktopUpdateInstallConfirmationMessage(state),
-      );
-    } catch (error) {
-      setIsActionPending(false);
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Could not confirm update",
-          description: error instanceof Error ? error.message : "Update confirmation failed.",
-        }),
-      );
-      return;
-    }
-    if (!confirmed) {
-      setIsActionPending(false);
-      return;
-    }
     void bridge
       .installUpdate()
       .then((result) => {

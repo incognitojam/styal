@@ -200,6 +200,9 @@ export class TerminalManager extends Context.Service<
     ) => Effect.Effect<TerminalSessionSnapshot, TerminalError>;
 
     /** Inspect current process state immediately before a user-requested close. */
+    /** Fresh close checks for every terminal owned by this host. */
+    readonly shutdownPreflight: Effect.Effect<number, TerminalError>;
+
     readonly closePreflight: (
       input: TerminalClosePreflightInput,
     ) => Effect.Effect<TerminalClosePreflightResult, TerminalError>;
@@ -2992,6 +2995,20 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     clear,
     restart,
     closePreflight,
+    shutdownPreflight: Effect.gen(function* () {
+      const state = yield* readManagerState;
+      const threads = new Map<string, string[]>();
+      for (const session of state.sessions.values()) {
+        if (session.status === "exited" || session.status === "error") continue;
+        const ids = threads.get(session.threadId) ?? [];
+        ids.push(session.terminalId);
+        threads.set(session.threadId, ids);
+      }
+      const results = yield* Effect.forEach([...threads], ([threadId, terminalIds]) =>
+        closePreflight({ threadId, terminalIds }),
+      );
+      return results.reduce((count, result) => count + result.confirmationTerminalIds.length, 0);
+    }),
     close,
     subscribe,
     subscribeMetadata,

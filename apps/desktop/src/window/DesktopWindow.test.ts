@@ -195,6 +195,8 @@ const desktopWindowBoundsEquivalence = Schema.toEquivalence(
 );
 
 function makeTestLayer(input: {
+  readonly platform?: NodeJS.Platform;
+  readonly quit?: Effect.Effect<void>;
   readonly window: Electron.BrowserWindow;
   readonly createCount: Ref.Ref<number>;
   readonly mainWindow: Ref.Ref<Option.Option<Electron.BrowserWindow>>;
@@ -268,12 +270,18 @@ function makeTestLayer(input: {
     Layer.provide(
       Layer.mergeAll(
         desktopAssetsLayer,
-        desktopEnvironmentLayer,
+        Layer.effect(
+          DesktopEnvironment.DesktopEnvironment,
+          Effect.map(DesktopEnvironment.DesktopEnvironment, (environment) => ({
+            ...environment,
+            platform: input.platform ?? environment.platform,
+          })),
+        ).pipe(Layer.provide(desktopEnvironmentLayer)),
         desktopAppSettingsLayer,
         desktopClientSettingsLayer,
         desktopServerExposureLayer,
         DesktopState.layer,
-        electronAppLayer,
+        input.quit ? Layer.mock(ElectronApp.ElectronApp)({ quit: input.quit }) : electronAppLayer,
         electronMenuLayer,
         Layer.succeed(ElectronShell.ElectronShell, {
           openExternal: (url) =>
@@ -441,6 +449,51 @@ describe("DesktopWindow", () => {
       }),
     );
   });
+
+  for (const platform of ["win32", "linux"] as const) {
+    it.effect(`keeps the ${platform} window open until guarded shutdown closes it`, () =>
+      Effect.gen(function* () {
+        const fake = makeFakeBrowserWindow();
+        const createCount = yield* Ref.make(0);
+        const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+        let quits = 0;
+        const layer = makeTestLayer({
+          window: fake.window,
+          createCount,
+          mainWindow,
+          platform,
+          quit: Effect.sync(() => {
+            quits++;
+          }),
+        });
+        yield* Effect.gen(function* () {
+          const window = yield* DesktopWindow.DesktopWindow;
+          yield* window.handleBackendReady(new URL("http://127.0.0.1:3773"));
+          let prevented = false;
+          fake.windowListeners.get("close")?.({
+            preventDefault: () => {
+              prevented = true;
+            },
+          });
+          assert.isTrue(prevented);
+          assert.equal(quits, 1);
+          assert.equal(fake.close.mock.calls.length, 0);
+          const closing = yield* window.closeMainForShutdown.pipe(Effect.forkChild);
+          yield* Effect.yieldNow;
+          prevented = false;
+          fake.windowListeners.get("close")?.({
+            preventDefault: () => {
+              prevented = true;
+            },
+          });
+          assert.isFalse(prevented);
+          assert.equal(quits, 1);
+          fake.windowListeners.get("closed")?.();
+          yield* Fiber.join(closing);
+        }).pipe(Effect.provide(layer));
+      }),
+    );
+  }
 
   it.effect("does not open a development window until the backend is ready", () =>
     Effect.gen(function* () {
