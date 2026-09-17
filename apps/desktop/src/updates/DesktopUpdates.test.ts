@@ -42,6 +42,7 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
   let downloadCount = 0;
   let allowDowngrade = false;
   let fullChangelog = false;
+  let autoInstallOnAppQuit = false;
   const feedUrls: ElectronUpdater.ElectronUpdaterFeedUrl[] = [];
   const listeners = new Map<string, Set<(...args: readonly unknown[]) => void>>();
   const sentStates: DesktopUpdateState[] = [];
@@ -69,7 +70,10 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
         feedUrls.push(options);
       }),
     setAutoDownload: () => Effect.void,
-    setAutoInstallOnAppQuit: () => Effect.void,
+    setAutoInstallOnAppQuit: (value) =>
+      Effect.sync(() => {
+        autoInstallOnAppQuit = value;
+      }),
     setChannel: () => Effect.void,
     setAllowPrerelease: () => Effect.void,
     allowDowngrade: Effect.sync(() => allowDowngrade),
@@ -218,6 +222,7 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
     downloadCount: () => downloadCount,
     feedUrls: () => feedUrls,
     fullChangelog: () => fullChangelog,
+    autoInstallOnAppQuit: () => autoInstallOnAppQuit,
     listenerCount: () =>
       Array.from(listeners.values()).reduce(
         (total, eventListeners) => total + eventListeners.size,
@@ -283,6 +288,7 @@ describe("DesktopUpdates", () => {
 
           const state = yield* updates.getState;
           assert.equal(state.enabled, true);
+          assert.isTrue(harness.autoInstallOnAppQuit());
           assert.equal(state.status, "idle");
           assert.deepEqual(harness.feedUrls(), [
             { provider: "generic", url: "http://localhost:4141" },

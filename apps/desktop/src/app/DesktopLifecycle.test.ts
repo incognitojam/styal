@@ -244,6 +244,50 @@ describe("DesktopLifecycle", () => {
     }),
   );
 
+  it.effect("allows the final quit only after backend cleanup completes", () =>
+    Effect.gen(function* () {
+      const appListeners = new Map<string, (...args: readonly unknown[]) => void>();
+      const finalQuit = yield* Deferred.make<void>();
+      const electronApp = makeElectronApp({
+        on: (eventName, listener) =>
+          Effect.sync(() => {
+            appListeners.set(
+              eventName,
+              listener as unknown as (...args: readonly unknown[]) => void,
+            );
+          }),
+        quit: Effect.sync(() => {
+          let prevented = false;
+          appListeners.get("before-quit")?.({
+            preventDefault: () => {
+              prevented = true;
+            },
+          });
+          assert.isFalse(prevented);
+        }).pipe(Effect.andThen(Deferred.succeed(finalQuit, undefined)), Effect.asVoid),
+      });
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
+          const shutdown = yield* DesktopShutdown.DesktopShutdown;
+          yield* lifecycle.register;
+          let prevented = false;
+          appListeners.get("before-quit")?.({
+            preventDefault: () => {
+              prevented = true;
+            },
+          });
+          yield* shutdown.awaitRequest;
+          assert.isTrue(prevented);
+          assert.isFalse(yield* Deferred.isDone(finalQuit));
+          yield* shutdown.markComplete;
+          yield* Deferred.await(finalQuit);
+        }),
+      ).pipe(Effect.provide(makeLifecycleLayer("win32", electronApp)));
+    }),
+  );
+
   it.effect("closes the main window before requesting application cleanup", () =>
     Effect.gen(function* () {
       const appListeners = new Map<string, (...args: readonly unknown[]) => void>();

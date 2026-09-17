@@ -62,3 +62,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   project settings take precedence, and interrupted imports can resume without duplicating completed
   threads. Credentials and active sessions remain separate.
   [Import T3 Code data](./importing-t3-code-data.md).
+
+## Desktop updates
+
+- **Updates ready for your next launch.** styal downloads updates in the background and installs
+  them when you quit. The sidebar shows an icon only when you can restart to update immediately;
+  checks, download progress, and retries are available in Settings.
+  [Updating styal](./updating.md). Compared with
+  [T3 Code revision 1ab2dfb](https://github.com/pingdotgg/t3code/tree/1ab2dfb5a7bd2996f79407b5d02cae6132a7626c),
+  which disables automatic downloads and installation on quit.

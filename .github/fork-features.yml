@@ -234,12 +234,12 @@ features:
       retire_when: The fork no longer supports migration from T3 Code installations or replaces this importer with an equivalent safe cross-distribution transfer path.
 
   - id: desktop-background-updates
-    title: Download desktop updates in the background
+    title: Download desktop updates in the background and install on quit
     status: maintained
     prs: [110, 128]
     invariants:
       - Available desktop updates download automatically while preserving accurate available, downloading, downloaded, install, and retry state across updater events and pre-install refreshes.
-      - The sidebar reports background download progress quietly, then clearly offers restart and install or retry without losing a queued installer after check, download, or background errors.
+      - Downloaded updates install on normal app quit; the sidebar only offers restart once an installer is ready, while Settings retains checks, progress, and retries.
     implementation_paths:
       - apps/desktop/src/updates/DesktopUpdates.ts
       - apps/desktop/src/updates/updateMachine.ts
@@ -255,6 +255,7 @@ features:
       - apps/web/src/components/sidebar/SidebarUpdatePill.tsx
       - packages/contracts/src/ipc.ts
     tests:
+      - apps/desktop/src/app/DesktopLifecycle.test.ts
       - apps/desktop/src/updates/DesktopUpdates.test.ts
       - apps/desktop/src/updates/updateMachine.test.ts
       - apps/web/src/components/desktopUpdate.logic.test.ts
@@ -263,7 +264,7 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/6269
-      retire_when: Upstream automatically downloads desktop updates and exposes equivalent progress, queued-installer preservation, retry, and install state through the client UI.
+      retire_when: Upstream automatically downloads desktop updates, installs them on quit, and exposes equivalent queued-installer preservation, retry, and restart state through the client UI.
 
   - id: desktop-graceful-shutdown
     title: Bounded graceful desktop shutdown

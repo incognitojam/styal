@@ -35,17 +35,24 @@ const baseState: DesktopUpdateState = {
 };
 
 describe("desktop update button state", () => {
-  it("shows a download action when an update is available", () => {
+  it.each(["idle", "checking", "disabled"] as const)(
+    "hides the sidebar icon while %s",
+    (status) => {
+      expect(shouldShowDesktopUpdateButton({ ...baseState, status })).toBe(false);
+    },
+  );
+
+  it("keeps an available download out of the sidebar while retaining its Settings action", () => {
     const state: DesktopUpdateState = {
       ...baseState,
       status: "available",
       availableVersion: "1.1.0",
     };
-    expect(shouldShowDesktopUpdateButton(state)).toBe(true);
+    expect(shouldShowDesktopUpdateButton(state)).toBe(false);
     expect(resolveDesktopUpdateButtonAction(state)).toBe("download");
   });
 
-  it("keeps retry action available after a download error", () => {
+  it("keeps download retry in Settings without showing a sidebar icon", () => {
     const state: DesktopUpdateState = {
       ...baseState,
       status: "error",
@@ -54,7 +61,7 @@ describe("desktop update button state", () => {
       errorContext: "download",
       canRetry: true,
     };
-    expect(shouldShowDesktopUpdateButton(state)).toBe(true);
+    expect(shouldShowDesktopUpdateButton(state)).toBe(false);
     expect(resolveDesktopUpdateButtonAction(state)).toBe("download");
     expect(getDesktopUpdateButtonTooltip(state)).toContain("Click to retry");
   });
@@ -122,14 +129,14 @@ describe("desktop update button state", () => {
     expect(resolveDesktopUpdateButtonAction(state)).toBe("none");
   });
 
-  it("disables the button while downloading", () => {
+  it("hides the sidebar button while retaining disabled download progress in Settings", () => {
     const state: DesktopUpdateState = {
       ...baseState,
       status: "downloading",
       availableVersion: "1.1.0",
       downloadPercent: 42.5,
     };
-    expect(shouldShowDesktopUpdateButton(state)).toBe(true);
+    expect(shouldShowDesktopUpdateButton(state)).toBe(false);
     expect(isDesktopUpdateButtonDisabled(state)).toBe(true);
     expect(getDesktopUpdateButtonTooltip(state)).toContain("42%");
   });
