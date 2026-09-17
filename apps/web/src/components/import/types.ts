@@ -35,6 +35,7 @@ export interface ImportSourceModel {
 }
 
 export interface ImportPreferencesModel {
+  readonly matches: boolean;
   readonly changes: readonly PreferenceComparisonRow[];
   readonly selected: boolean;
   readonly select: (selected: boolean) => void;

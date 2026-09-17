@@ -33,7 +33,7 @@ Preferences are unchecked by default. In the preferences section (the **Preferen
 - source-control writing style, custom instructions, and change-request templates; and
 - legacy token streaming.
 
-When every value already matches, the preferences checkbox is disabled.
+When every value already matches, a **Preferences already match** status replaces the comparison and checkbox.
 
 Connections, provider sign-ins, credentials, tokens, and active sessions stay separate. Client-local choices such as appearance, fonts, and keybindings are not part of the server preference import.
 

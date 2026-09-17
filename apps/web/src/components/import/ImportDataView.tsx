@@ -1,5 +1,6 @@
 import {
   ArrowRightIcon,
+  CheckIcon,
   ChevronLeftIcon,
   FolderIcon,
   LoaderCircleIcon,
@@ -314,6 +315,16 @@ export function ImportPreferencesView({
   const hasChanges = changes.length > 0;
   const checked = preferences.selected && hasChanges;
   const error = preferences.error ?? null;
+
+  if (preferences.matches && !hasChanges && error === null) {
+    return (
+      <section role="status" className="rounded-lg border border-border/60 bg-card">
+        <SourceNote icon={<CheckIcon className="size-3.5 text-primary" aria-hidden />}>
+          Preferences already match
+        </SourceNote>
+      </section>
+    );
+  }
 
   return (
     <section

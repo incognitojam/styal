@@ -122,15 +122,14 @@ export function LegacyImportComputer({
               <ImportPreferencesView
                 disabled={busy || !connected}
                 preferences={{
+                  matches: preferencePreview?.status === "available" && legacy.changes.length === 0,
                   changes: legacy.changes,
                   selected: legacy.selectedPreferences,
                   select: legacy.setIncludeSettings,
                   error: legacy.preferencesError,
                   message:
                     preferencePreview?.status === "available"
-                      ? legacy.changes.length === 0
-                        ? "Preferences already match"
-                        : undefined
+                      ? undefined
                       : preferencePreview?.status === "unreadable"
                         ? "T3 Code preferences could not be read."
                         : "No T3 Code preferences found.",
