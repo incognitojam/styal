@@ -96,7 +96,8 @@ export function createComposerDraftSyncController(options: {
   let currentRevision = 0;
   let lastSynced: ComposerDraftCommon | null = null;
   let cancelScheduledTask: (() => void) | null = null;
-  let inFlightMutationId: string | null = null;
+  let inFlight = false;
+  let lastIssuedMutationId: string | null = null;
   let pendingAfterFlight = false;
 
   const cancelTimer = () => {
@@ -125,7 +126,7 @@ export function createComposerDraftSyncController(options: {
 
   const flush = async () => {
     if (disposed || !initialized) return;
-    if (inFlightMutationId !== null) {
+    if (inFlight) {
       pendingAfterFlight = true;
       return;
     }
@@ -134,14 +135,15 @@ export function createComposerDraftSyncController(options: {
 
     const baseRevision = currentRevision;
     const clientMutationId = options.createMutationId();
-    inFlightMutationId = clientMutationId;
+    inFlight = true;
+    lastIssuedMutationId = clientMutationId;
     const result = await options.update({
       threadId: options.threadId,
       baseRevision,
       common: sent,
       clientMutationId,
     });
-    inFlightMutationId = null;
+    inFlight = false;
     if (disposed) return;
 
     if (result === null) {
@@ -199,8 +201,9 @@ export function createComposerDraftSyncController(options: {
 
     // Our own save echo acknowledges an earlier local value; applying it could
     // restore text cleared by a send. Other devices can still update a clean draft.
+    // Retain the mutation ID after transport failure: the write may have succeeded.
     const wasClean =
-      (inFlightMutationId === null || snapshot.clientMutationId !== inFlightMutationId) &&
+      (lastIssuedMutationId === null || snapshot.clientMutationId !== lastIssuedMutationId) &&
       composerDraftCommonEquals(local, lastSynced);
     acceptSnapshotMetadata(snapshot);
     if (wasClean && options.canApplyRemote()) {

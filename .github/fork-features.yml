@@ -173,7 +173,7 @@ features:
     prs: [23, 39, 44, 69, 195]
     invariants:
       - Existing-thread draft text and settings synchronize without overwriting newer local edits; attachments remain client-owned and are not synchronized across devices.
-      - An in-flight draft autosave cannot restore sent text through its own subscription echo or block another device's changes to a clean composer; delayed responses cannot roll back newer revisions.
+      - The latest issued draft autosave cannot restore sent text through its own subscription echo, including after transport failure, or block another device's changes to a clean composer; delayed responses cannot roll back newer revisions.
       - Web file drafts persist environment-scoped upload references; legacy local file bytes remain until a replacement reference is durable. Mobile drafts and queued messages retain owned file copies until delivery or removal.
       - The web and mobile source implementations use the same server-backed draft contract and fork-owned migration history; desktop inherits the web implementation.
       - Sidebar thread rows indicate unsent prompts, attachments, or context without treating model, provider, runtime, or interaction choices alone as a user draft.

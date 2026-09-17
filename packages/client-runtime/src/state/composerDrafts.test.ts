@@ -103,13 +103,13 @@ describe("composer draft sync controller", () => {
     expect(scheduler.hasTask()).toBe(false);
   });
 
-  it.each(["subscription-first", "response-first"])(
+  it.each(["subscription-first", "response-first", "after-transport-failure"])(
     "keeps a sent composer empty when its pending autosave arrives %s",
     async (order) => {
       let local: ComposerDraftCommon | null = null;
       const writes: Array<{ baseRevision: number; common: ComposerDraftCommon | null }> = [];
       const scheduler = makeScheduler();
-      const autosave = Promise.withResolvers<ComposerDraftUpdateResult>();
+      const autosave = Promise.withResolvers<ComposerDraftUpdateResult | null>();
       const controller = createComposerDraftSyncController({
         threadId: THREAD_ID,
         readLocal: () => local,
@@ -136,9 +136,11 @@ describe("composer draft sync controller", () => {
       controller.observeLocalChange();
       const saved = snapshot(1, LOCAL, "mutation-1");
       if (order === "subscription-first") controller.observeSnapshot(saved);
-      autosave.resolve({ _tag: "accepted", snapshot: saved });
+      autosave.resolve(
+        order === "after-transport-failure" ? null : { _tag: "accepted", snapshot: saved },
+      );
       await scheduler.run();
-      if (order === "response-first") controller.observeSnapshot(saved);
+      if (order !== "subscription-first") controller.observeSnapshot(saved);
 
       expect(local).toBeNull();
       await scheduler.run();
