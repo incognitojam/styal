@@ -279,7 +279,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "legacy-import-source",
     title: "Import from T3 Code",
     to: "/settings/import",
-    // The detected-source card is the destination for both import entries.
     targetId: "import-data",
   },
   {

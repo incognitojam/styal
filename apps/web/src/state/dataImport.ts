@@ -51,3 +51,9 @@ export const importLegacyData: typeof importLegacyDataRpc = {
     }
   },
 };
+
+/** Keeps a shared import batch locked across page navigation and remounts. */
+export const dataImportBatchPendingCount = Atom.make(0).pipe(
+  Atom.keepAlive,
+  Atom.withLabel("environment-data:import-batch-pending"),
+);

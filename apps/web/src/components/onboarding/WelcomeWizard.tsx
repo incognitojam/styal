@@ -2,17 +2,16 @@ import { useAuth } from "@clerk/react";
 import { useAtomValue } from "@effect/atom-react";
 import type {
   EnvironmentId,
-  ProjectId,
   ScopedProjectRef,
   ServerConfig,
   ServerProvider,
 } from "@t3tools/contracts";
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { CommandId, ProviderDriverKind, ThreadId } from "@t3tools/contracts";
+import { ProviderDriverKind, ThreadId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import {
   ArrowRightIcon,
@@ -33,25 +32,17 @@ import { hasCloudPublicConfig } from "../../cloud/publicConfig";
 import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
 import { useCompleteOnboarding } from "../../onboarding/firstRun";
 import {
-  partitionOnboardingProjects,
-  onboardingProjectKey,
-  resolveOnboardingLandingProject,
-  resolveOnboardingProjectId,
-} from "../../onboarding/projectImport.logic";
-import {
   getOnboardingProviderState,
   resolveOnboardingProviderInstallCommand,
   resolveOnboardingProviderLoginCommand,
   selectOnboardingProvidersByDriver,
 } from "../../onboarding/providerReadiness.logic";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
-import { newProjectId, randomUUID } from "../../lib/utils";
-import { agentSessionImport } from "../../state/agentSessions";
-import { readProjects, useProjects } from "../../state/entities";
+import { randomUUID } from "../../lib/utils";
+import { legacyImportPendingCount } from "../../state/dataImport";
+import { OnboardingImportStep } from "./OnboardingImportStep";
 import { useEnvironments, usePrimaryEnvironment } from "../../state/environments";
 import { isOnboardingRelayEnvironment } from "../../onboarding/targetEnvironment.logic";
-import { useProjectScans } from "../../onboarding/useProjectScans";
-import { projectEnvironment } from "../../state/projects";
 import { serverEnvironment } from "../../state/server";
 import { terminalEnvironment } from "../../state/terminal";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -64,9 +55,7 @@ import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { Input } from "../ui/input";
-import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { ScrollArea } from "../ui/scroll-area";
-import { Spinner } from "../ui/spinner";
 import { WizardPanel, WizardSteps } from "../ui/wizard";
 import { Dialog, DialogHeader, DialogPopup, DialogTitle } from "../ui/dialog";
 import { toastManager } from "../ui/toast";
@@ -76,17 +65,15 @@ import { cn } from "../../lib/utils";
  * First-run welcome wizard. Rendered over the workspace at `/welcome` on a
  * fresh install (no completed-onboarding flag, empty workspace). Flow per the
  * onboarding overhaul spec: connection choice → sign-in/pair (remote paths) →
- * agent setup with inline install terminal → project import → main screen.
+ * agent setup with inline install terminal → projects → optional preferences → main screen.
  * Every step past the connection gate is skippable; the whole wizard is
  * re-runnable by clearing the flag.
  */
 
-type WizardStep = "connection" | "agents" | "import";
-const NO_ENVIRONMENTS: readonly EnvironmentId[] = [];
+type WizardStep = "connection" | "agents" | "projects" | "preferences";
 
 const AGENT_ONBOARDING_THREAD_ID = ThreadId.make("onboarding-agent-setup");
 const ONBOARDING_STAGES = ["Connect", "Agents", "Projects"] as const;
-const SCAN_LIMIT_MESSAGE = "Scan limit reached. Some projects or conversations may be missing.";
 
 export function WelcomeWizard({
   localAvailable,
@@ -100,8 +87,11 @@ export function WelcomeWizard({
   const [step, setStep] = useState<WizardStep>("connection");
   const { environments } = useEnvironments();
   const [selection, setSelection] = useState<ReadonlySet<EnvironmentId> | null>(null);
+  const [hasPreferences, setHasPreferences] = useState(false);
   const [setupIds, setSetupIds] = useState<readonly EnvironmentId[]>([]);
-  const [isImporting, setIsImporting] = useState(false);
+  const [isBatchImporting, setIsImporting] = useState(false);
+  const pendingLegacyImports = useAtomValue(legacyImportPendingCount);
+  const isImporting = isBatchImporting || pendingLegacyImports > 0;
   const [terminalSessions, setTerminalSessions] = useState<
     ReadonlyMap<EnvironmentId, AgentTerminalSession>
   >(new Map());
@@ -146,17 +136,18 @@ export function WelcomeWizard({
   const primaryEnvironment = usePrimaryEnvironment();
   const selectedIds =
     selection ?? new Set(primaryEnvironment ? [primaryEnvironment.environmentId] : []);
-  const scans = useProjectScans(step === "import" ? setupIds : NO_ENVIRONMENTS);
-  const isLoadingProjects =
-    step === "import" &&
-    scans.every((scan) => scan.data === null) &&
-    scans.some((scan) => scan.isPending);
   const startSetup = (ids: readonly EnvironmentId[]) => {
     if (ids.length === 0) return;
     setSetupIds(ids);
     setStep("agents");
   };
-  const stageIndex = step === "agents" ? 1 : step === "import" ? 2 : 0;
+  const stageIndex =
+    step === "agents" ? 1 : step === "projects" ? 2 : step === "preferences" ? 3 : 0;
+  const importStep = step === "projects" || step === "preferences";
+  const stages =
+    hasPreferences || step === "preferences"
+      ? [...ONBOARDING_STAGES, "Preferences"]
+      : ONBOARDING_STAGES;
   const finish = useCallback(
     (projectRef?: ScopedProjectRef) => {
       if (finishingPromiseRef.current !== null) return finishingPromiseRef.current;
@@ -201,31 +192,37 @@ export function WelcomeWizard({
   return (
     <Dialog open disablePointerDismissal onOpenChange={(_, event) => event.cancel()}>
       <DialogPopup
-        className="max-w-xl overflow-x-hidden overflow-y-auto"
+        className={cn(
+          "max-w-xl overflow-x-hidden overflow-y-auto",
+          importStep && "flex max-h-[calc(100dvh-2rem)] flex-col overflow-y-hidden",
+        )}
         bottomStickOnMobile={false}
         showCloseButton={false}
         initialFocus={() => document.getElementById("onboarding-pairing-url") ?? true}
       >
         <DialogTitle className="sr-only">Set up styal</DialogTitle>
         <div className="flex min-h-0 flex-col">
-          <DialogHeader className="gap-4">
+          <DialogHeader className="shrink-0 gap-4">
             <div className="flex items-baseline gap-1.5" role="img" aria-label="styal">
               <span className="text-[1.4rem] font-medium tracking-tight text-muted-foreground">
                 styal
               </span>
             </div>
             <WizardSteps
-              steps={ONBOARDING_STAGES}
+              steps={stages}
               currentStep={stageIndex}
               isStepDisabled={(index) => isImporting || index >= stageIndex}
               onStepChange={(index) => {
                 if (isImporting || index > stageIndex) return;
-                void changeStep(index === 0 ? "connection" : "agents");
+                void changeStep(index === 0 ? "connection" : index === 1 ? "agents" : "projects");
               }}
             />
           </DialogHeader>
 
-          <WizardPanel className="min-w-0" holdHeight={isLoadingProjects}>
+          <WizardPanel
+            animateHeight={setupIds.length === 0}
+            className={cn("min-w-0", importStep && "flex min-h-0 flex-col")}
+          >
             {step === "connection" ? (
               <ConnectionStep
                 expandPairingInitially={!localAvailable && !hasCloudPublicConfig()}
@@ -255,16 +252,23 @@ export function WelcomeWizard({
                 environmentIds={setupIds}
                 terminalSessions={terminalSessions}
                 onTerminalSessionChange={changeTerminalSession}
-                onContinue={() => void changeStep("import")}
+                onContinue={() => void changeStep("projects")}
               />
-            ) : (
-              <ImportStep
-                scans={scans}
-                isImporting={isImporting}
-                setIsImporting={setIsImporting}
-                onDone={finish}
-              />
-            )}
+            ) : null}
+            {setupIds.length > 0 ? (
+              <div hidden={!importStep} className="min-h-0">
+                <OnboardingImportStep
+                  key={JSON.stringify(setupIds)}
+                  environmentIds={setupIds}
+                  stage={step === "preferences" ? "preferences" : "projects"}
+                  setIsImporting={setIsImporting}
+                  onDone={finish}
+                  onContinue={() => void changeStep("preferences")}
+                  onBack={() => void changeStep("projects")}
+                  onPreferencesAvailable={setHasPreferences}
+                />
+              </div>
+            ) : null}
           </WizardPanel>
         </div>
       </DialogPopup>
@@ -981,342 +985,6 @@ function AgentInstallTerminal({
 }
 
 // ── Step 4: import ───────────────────────────────────────────
-
-function ImportStep({
-  scans,
-  isImporting,
-  setIsImporting,
-  onDone,
-}: {
-  readonly scans: ReturnType<typeof useProjectScans>;
-  readonly isImporting: boolean;
-  readonly setIsImporting: (value: boolean) => void;
-  readonly onDone: (projectRef?: ScopedProjectRef) => Promise<boolean>;
-}) {
-  const { environments } = useEnvironments();
-  const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
-  const importThreads = useAtomCommand(agentSessionImport, { reportFailure: false });
-  const projects = useProjects();
-  const [selectedPaths, setSelectedPaths] = useState<ReadonlySet<string> | null>(null);
-  const [importError, setImportError] = useState("");
-  const [landingProject, setLandingProject] = useState<ScopedProjectRef | null>(null);
-  // Keep project creation attempts separate from completed history imports so both can retry.
-  const importedProjectsRef = useRef(new Map<string, ScopedProjectRef>());
-  const projectsWithImportedHistoryRef = useRef(new Map<string, ScopedProjectRef>());
-  const lastImportSelectionRef = useRef<ReadonlyArray<string>>([]);
-  const projectAttemptsRef = useRef(
-    new Map<string, { readonly projectId: ProjectId; readonly commandId: CommandId }>(),
-  );
-  const importGenerationRef = useRef(0);
-
-  // Ignore command completions after leaving the import step.
-  useEffect(() => {
-    importGenerationRef.current += 1;
-    return () => {
-      importGenerationRef.current += 1;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (
-      landingProject !== null &&
-      projects.some(
-        (project) =>
-          project.id === landingProject.projectId &&
-          project.environmentId === landingProject.environmentId,
-      )
-    ) {
-      setLandingProject(null);
-      void onDone(landingProject).then((completed) => {
-        if (!completed) setIsImporting(false);
-      });
-    }
-  }, [landingProject, onDone, projects, setIsImporting]);
-
-  const { available: candidates, recent } = useMemo(
-    () =>
-      partitionOnboardingProjects(
-        scans.flatMap((scan) =>
-          (scan.data?.candidates ?? []).map((candidate) => ({
-            ...candidate,
-            environmentId: scan.environmentId,
-            key: onboardingProjectKey(scan.environmentId, candidate.path),
-          })),
-        ),
-      ),
-    [scans],
-  );
-  const selected = candidates.filter((candidate) =>
-    selectedPaths
-      ? selectedPaths.has(candidate.key)
-      : recent.some((item) => item.key === candidate.key),
-  );
-
-  const finishAfterImport = () => {
-    const projectRef = resolveOnboardingLandingProject(
-      lastImportSelectionRef.current,
-      projectsWithImportedHistoryRef.current,
-      importedProjectsRef.current,
-    );
-    if (projectRef === undefined) {
-      void onDone();
-      return;
-    }
-    setIsImporting(true);
-    setLandingProject(projectRef);
-  };
-
-  const runImport = async (selection: typeof candidates) => {
-    if (isImporting) return;
-    if (selection.length === 0) {
-      void onDone();
-      return;
-    }
-    setIsImporting(true);
-    setImportError("");
-    lastImportSelectionRef.current = selection.map((candidate) => candidate.key);
-    const importGeneration = importGenerationRef.current;
-    const importedProjects = importedProjectsRef.current;
-    const projectAttempts = projectAttemptsRef.current;
-    // Interrupted imports are neither failures nor successes — the command was
-    // superseded or the environment dropped — but they still didn't land, so
-    // they must not read as "imported everything". Retries skip paths that
-    // already landed this session (re-creating them would only trip the
-    // duplicate-root invariant and read as a failure).
-    let importedProjectsCount =
-      importedProjects.size > 0
-        ? selection.filter((candidate) => importedProjects.has(candidate.key)).length
-        : 0;
-    let importedThreadCount = 0;
-    let skippedThreadCount = 0;
-    const refreshEnvironments = new Set<EnvironmentId>();
-    for (const candidate of selection) {
-      const { environmentId } = candidate;
-      if (
-        importGeneration !== importGenerationRef.current ||
-        importedProjects !== importedProjectsRef.current
-      ) {
-        return;
-      }
-      if (importedProjects.has(candidate.key)) continue;
-      let projectId = resolveOnboardingProjectId(readProjects(), environmentId, candidate);
-      if (projectId === null) {
-        let attempt = projectAttempts.get(candidate.key);
-        if (attempt === undefined) {
-          const nextProjectId = newProjectId();
-          attempt = {
-            projectId: nextProjectId,
-            commandId: CommandId.make(`onboarding:project:create:${nextProjectId}`),
-          };
-          projectAttempts.set(candidate.key, attempt);
-        }
-        projectId = attempt.projectId;
-        const result = await createProject({
-          environmentId,
-          input: {
-            projectId,
-            commandId: attempt.commandId,
-            title: candidate.title,
-            workspaceRoot: candidate.path,
-            createWorkspaceRootIfMissing: false,
-            defaultModelSelection: null,
-          },
-        });
-        if (
-          importGeneration !== importGenerationRef.current ||
-          importedProjects !== importedProjectsRef.current
-        ) {
-          return;
-        }
-        if (result._tag !== "Success") {
-          if (!isAtomCommandInterrupted(result)) {
-            projectAttempts.delete(candidate.key);
-            refreshEnvironments.add(environmentId);
-          }
-          continue;
-        }
-      }
-
-      const threadImportResult = await importThreads({
-        environmentId,
-        input: { projectId, expectedWorkspaceRoot: candidate.path },
-      });
-      if (
-        importGeneration !== importGenerationRef.current ||
-        importedProjects !== importedProjectsRef.current
-      ) {
-        return;
-      }
-      if (threadImportResult._tag === "Success") {
-        importedThreadCount += threadImportResult.value.importedCount;
-        skippedThreadCount += threadImportResult.value.skippedCount;
-        if (threadImportResult.value.importedCount > 0) {
-          projectsWithImportedHistoryRef.current.set(
-            candidate.key,
-            scopeProjectRef(environmentId, projectId),
-          );
-        }
-        if (threadImportResult.value.skippedCount === 0) {
-          importedProjectsCount += 1;
-          importedProjects.set(candidate.key, scopeProjectRef(environmentId, projectId));
-        }
-      } else if (!isAtomCommandInterrupted(threadImportResult)) {
-        projectAttempts.delete(candidate.key);
-        refreshEnvironments.add(environmentId);
-      }
-    }
-    for (const scan of scans) {
-      if (refreshEnvironments.has(scan.environmentId)) scan.refresh();
-    }
-    setIsImporting(false);
-    if (importedProjectsCount < selection.length) {
-      if (importedThreadCount > 0 && skippedThreadCount > 0) {
-        setImportError(
-          `Imported ${importedThreadCount} ${importedThreadCount === 1 ? "thread" : "threads"}. ${skippedThreadCount} ${skippedThreadCount === 1 ? "thread" : "threads"} could not be imported.`,
-        );
-      } else if (skippedThreadCount > 0) {
-        setImportError(
-          `${skippedThreadCount} ${skippedThreadCount === 1 ? "thread could" : "threads could"} not be imported.`,
-        );
-      } else if (importedThreadCount > 0) {
-        setImportError(
-          `Imported ${importedThreadCount} ${importedThreadCount === 1 ? "thread" : "threads"}. Some thread history could not be imported.`,
-        );
-      } else {
-        setImportError("Could not import thread history.");
-      }
-      return;
-    }
-    finishAfterImport();
-  };
-
-  if (scans.every((scan) => scan.data === null) && scans.some((scan) => scan.isPending)) {
-    return (
-      <div className="flex h-full min-h-40 flex-col">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Your projects</h1>
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 py-6">
-          <Spinner className="size-5 text-muted-foreground" />
-          <p className="text-center text-sm text-muted-foreground">
-            Looking for projects from Claude Code and Codex…
-          </p>
-        </div>
-        <div className="flex justify-end">
-          <Button variant="ghost-muted" onClick={() => void onDone()}>
-            Do not import projects
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <StepShell
-      title="Choose your projects"
-      description="Import projects and conversations from your selected computers."
-    >
-      <ScrollArea
-        scrollFade
-        className="mt-5 h-auto max-h-80 [&_[data-slot=scroll-area-scrollbar]]:opacity-100"
-      >
-        <div className="space-y-5 pr-3">
-          {scans.map((scan) => {
-            const groupCandidates = candidates.filter(
-              (candidate) => candidate.environmentId === scan.environmentId,
-            );
-            const label =
-              environments.find((environment) => environment.environmentId === scan.environmentId)
-                ?.label ?? "Computer";
-            return (
-              <fieldset
-                key={scan.environmentId}
-                className="min-w-0 space-y-1.5"
-                disabled={isImporting}
-              >
-                <legend className="mb-2 text-sm font-medium">{label}</legend>
-                {scan.isPending && scan.data === null ? (
-                  <div className="flex items-center gap-2 py-3 text-sm text-muted-foreground">
-                    <Spinner className="size-4" />
-                    Looking for projects…
-                  </div>
-                ) : scan.error !== null ? (
-                  <div
-                    role="alert"
-                    className="flex items-center justify-between gap-3 text-sm text-muted-foreground"
-                  >
-                    <span>Could not check projects. {scan.error}</span>
-                    <Button variant="ghost" size="sm" onClick={scan.refresh}>
-                      Retry
-                    </Button>
-                  </div>
-                ) : groupCandidates.length === 0 ? (
-                  <p className="py-2 text-sm text-muted-foreground">
-                    No existing Claude Code or Codex projects found.
-                  </p>
-                ) : null}
-                {scan.data?.truncated ? (
-                  <p className="text-xs text-muted-foreground" role="status">
-                    {SCAN_LIMIT_MESSAGE}
-                  </p>
-                ) : null}
-                {groupCandidates.map((candidate) => (
-                  <label
-                    key={candidate.key}
-                    className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-border bg-background px-2.5 py-2 has-disabled:cursor-default"
-                  >
-                    <Checkbox
-                      checked={selected.some((item) => item.key === candidate.key)}
-                      onCheckedChange={(checked) => {
-                        const next = new Set(selected.map((item) => item.key));
-                        if (checked) next.add(candidate.key);
-                        else next.delete(candidate.key);
-                        setSelectedPaths(next);
-                      }}
-                    />
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={<span className="min-w-0 flex-1 truncate font-mono text-xs" />}
-                      >
-                        {candidate.path}
-                      </TooltipTrigger>
-                      <TooltipPopup className="max-w-96 break-all font-mono">
-                        {candidate.path}
-                      </TooltipPopup>
-                    </Tooltip>
-                    <span className="shrink-0 whitespace-nowrap text-[11px] text-muted-foreground">
-                      {candidate.sources
-                        .map((source) => (source === "claudeAgent" ? "Claude" : "Codex"))
-                        .join(", ")}{" "}
-                      · {candidate.threadCount} {candidate.threadCount === 1 ? "thread" : "threads"}
-                    </span>
-                  </label>
-                ))}
-              </fieldset>
-            );
-          })}
-        </div>
-      </ScrollArea>
-      {importError ? <p className="mt-3 text-sm text-destructive">{importError}</p> : null}
-      <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
-        <Button
-          variant="ghost-muted"
-          disabled={isImporting}
-          onClick={importError ? finishAfterImport : () => void onDone()}
-        >
-          {importError ? "Continue without the rest" : "Do not import projects"}
-        </Button>
-        <Button
-          autoFocus
-          disabled={isImporting || selected.length === 0}
-          onClick={() => void runImport(selected)}
-        >
-          {isImporting
-            ? "Importing…"
-            : `Import ${selected.length} ${selected.length === 1 ? "project" : "projects"}`}
-        </Button>
-      </div>
-    </StepShell>
-  );
-}
 
 // ── Shared bits ──────────────────────────────────────────────
 
