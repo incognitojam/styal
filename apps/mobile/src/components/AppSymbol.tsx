@@ -9,6 +9,7 @@ import IconAlertTriangle from "@tabler/icons-react-native/IconAlertTriangle";
 import IconApps from "@tabler/icons-react-native/IconApps";
 import IconArchive from "@tabler/icons-react-native/IconArchive";
 import IconArrowBackUp from "@tabler/icons-react-native/IconArrowBackUp";
+import IconArrowLeft from "@tabler/icons-react-native/IconArrowLeft";
 import IconArrowDownCircle from "@tabler/icons-react-native/IconArrowDownCircle";
 import IconArrowRightCircle from "@tabler/icons-react-native/IconArrowRightCircle";
 import IconArrowUp from "@tabler/icons-react-native/IconArrowUp";
@@ -36,8 +37,10 @@ import IconClock from "@tabler/icons-react-native/IconClock";
 import IconCode from "@tabler/icons-react-native/IconCode";
 import IconCopy from "@tabler/icons-react-native/IconCopy";
 import IconDeviceDesktop from "@tabler/icons-react-native/IconDeviceDesktop";
+import IconDatabase from "@tabler/icons-react-native/IconDatabase";
 import IconDeviceLaptop from "@tabler/icons-react-native/IconDeviceLaptop";
 import IconDots from "@tabler/icons-react-native/IconDots";
+import IconDotsVertical from "@tabler/icons-react-native/IconDotsVertical";
 import IconDotsCircleHorizontal from "@tabler/icons-react-native/IconDotsCircleHorizontal";
 import IconEdit from "@tabler/icons-react-native/IconEdit";
 import IconExternalLink from "@tabler/icons-react-native/IconExternalLink";
@@ -95,13 +98,13 @@ import IconX from "@tabler/icons-react-native/IconX";
 import type { SFSymbol, SymbolViewProps } from "expo-symbols";
 import IconBug from "@tabler/icons-react-native/IconBug";
 import IconChecklist from "@tabler/icons-react-native/IconChecklist";
-import IconDatabase from "@tabler/icons-react-native/IconDatabase";
 import IconFlask from "@tabler/icons-react-native/IconFlask";
 import IconSend from "@tabler/icons-react-native/IconSend";
 import { withUniwind } from "uniwind";
 
 const ANDROID_ICON_BY_SF_SYMBOL: Partial<Record<SFSymbol, Icon>> = {
   "arrow.branch": IconGitBranch,
+  "arrow.left": IconArrowLeft,
   "arrow.clockwise": IconRefresh,
   "arrow.down.circle": IconArrowDownCircle,
   "arrow.right.circle": IconArrowRightCircle,
@@ -152,6 +155,8 @@ const ANDROID_ICON_BY_SF_SYMBOL: Partial<Record<SFSymbol, Icon>> = {
   gearshape: IconSettings,
   hammer: IconHammer,
   "info.circle": IconInfoCircle,
+  internaldrive: IconDatabase,
+  keyboard: IconKeyboard,
   ladybug: IconBug,
   laptopcomputer: IconDeviceLaptop,
   link: IconLink,
@@ -170,6 +175,7 @@ const ANDROID_ICON_BY_SF_SYMBOL: Partial<Record<SFSymbol, Icon>> = {
   "pin.slash": IconPinnedOff,
   play: IconPlayerPlay,
   plus: IconPlus,
+  minus: IconMinus,
   "qrcode.viewfinder": IconQrcode,
   paperplane: IconSend,
   "point.3.connected.trianglepath.dotted": IconNetwork,
@@ -224,6 +230,7 @@ const ANDROID_ICON_BY_MATERIAL_NAME: Record<string, Icon> = {
   keyboard_arrow_down: IconChevronDown,
   keyboard_arrow_up: IconChevronUp,
   keyboard_hide: IconKeyboardHide,
+  more_vert: IconDotsVertical,
   play_arrow: IconPlayerPlay,
   public: IconWorld,
   remove: IconMinus,
