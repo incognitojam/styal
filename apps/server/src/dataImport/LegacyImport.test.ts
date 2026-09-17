@@ -483,21 +483,17 @@ it.effect("reads durable history without carrying live provider state", () => {
   }).pipe(
     Effect.tap((snapshot) =>
       Effect.sync(() => {
-        assert.strictEqual(snapshot.sourceKind, "t3-code-yngatech");
-        assert.deepStrictEqual(snapshot.projects[0]?.threadIds, [ThreadId.make("thread-import")]);
+        assert.deepStrictEqual(snapshot[0]?.threadIds, [ThreadId.make("thread-import")]);
+        assert.deepStrictEqual(snapshot[0]?.continuations.get(ThreadId.make("thread-import")), {
+          threadId: ThreadId.make("thread-import"),
+          provider: "codex" as ProviderDriverKind,
+          providerInstanceId: "codex" as ProviderInstanceId,
+          runtimeMode: "full-access",
+          lastSeenAt: "2026-01-01T00:00:00.000Z",
+          resumeCursor: { threadId: "provider-thread-import" },
+        });
         assert.deepStrictEqual(
-          snapshot.projects[0]?.continuations.get(ThreadId.make("thread-import")),
-          {
-            threadId: ThreadId.make("thread-import"),
-            provider: "codex" as ProviderDriverKind,
-            providerInstanceId: "codex" as ProviderInstanceId,
-            runtimeMode: "full-access",
-            lastSeenAt: "2026-01-01T00:00:00.000Z",
-            resumeCursor: { threadId: "provider-thread-import" },
-          },
-        );
-        assert.deepStrictEqual(
-          snapshot.projects[0]?.events.map((event) => event.type),
+          snapshot[0]?.events.map((event) => event.type),
           [
             "project.created",
             "thread.created",
@@ -510,7 +506,7 @@ it.effect("reads durable history without carrying live provider state", () => {
             "thread.turn-prompt-linked",
           ],
         );
-        const messageEvent = snapshot.projects[0]?.events.find(
+        const messageEvent = snapshot[0]?.events.find(
           (event) =>
             event.type === "thread.message-sent" && event.payload.messageId === "message-assistant",
         );
@@ -519,14 +515,14 @@ it.effect("reads durable history without carrying live provider state", () => {
           assert.strictEqual(messageEvent.payload.text, "Hello there");
           assert.isFalse(messageEvent.payload.streaming);
         }
-        const activityEvent = snapshot.projects[0]?.events.find(
+        const activityEvent = snapshot[0]?.events.find(
           (event) => event.type === "thread.activity-appended",
         );
         assert.strictEqual(activityEvent?.type, "thread.activity-appended");
         if (activityEvent?.type === "thread.activity-appended") {
           assert.strictEqual(activityEvent.payload.activity.summary, "Final progress update");
         }
-        const titleEvent = snapshot.projects[0]?.events.find(
+        const titleEvent = snapshot[0]?.events.find(
           (event) => event.type === "thread.meta-updated",
         );
         assert.strictEqual(titleEvent?.type, "thread.meta-updated");
@@ -537,7 +533,7 @@ it.effect("reads durable history without carrying live provider state", () => {
             updatedAt: "2026-01-01T00:00:00.000Z",
           });
         }
-        const promptLinkEvent = snapshot.projects[0]?.events.at(-1);
+        const promptLinkEvent = snapshot[0]?.events.at(-1);
         assert.strictEqual(promptLinkEvent?.type, "thread.turn-prompt-linked");
         if (promptLinkEvent?.type === "thread.turn-prompt-linked") {
           assert.deepStrictEqual(promptLinkEvent.payload, {
@@ -761,7 +757,7 @@ it.effect("repairs an existing import from source linkage and remains rebuild-st
       currentDatabasePath: NodePath.join(tempDirectory, "destination.sqlite"),
       projectIds: ["project-import"],
     });
-    const preRepairEvents = (source.projects[0]?.events ?? [])
+    const preRepairEvents = (source[0]?.events ?? [])
       .filter((event) => event.type !== "thread.turn-prompt-linked")
       .map(({ sequence: _sequence, ...event }) => event);
     yield* engine.importHistoricalEvents!(preRepairEvents);

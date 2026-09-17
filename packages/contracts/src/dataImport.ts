@@ -4,9 +4,6 @@ import * as Schema from "effect/Schema";
 import { NonNegativeInt, PositiveInt } from "./baseSchemas.ts";
 import { ServerSettings } from "./settings.ts";
 
-export const LegacyImportSourceKind = Schema.Literals(["t3-code", "t3-code-yngatech"]);
-export type LegacyImportSourceKind = typeof LegacyImportSourceKind.Type;
-
 export const LegacyImportUnavailableReason = Schema.Literals([
   "current-database",
   "unsupported-database",
@@ -58,7 +55,8 @@ export type LegacyImportPreferencesPreview = typeof LegacyImportPreferencesPrevi
 
 const LegacyImportAvailablePreview = Schema.Struct({
   status: Schema.Literal("available"),
-  sourceKind: LegacyImportSourceKind,
+  // Older clients require this field; older servers can send the former fork label.
+  sourceKind: Schema.Literals(["t3-code", "t3-code-yngatech"]),
   projects: Schema.Array(LegacyImportProjectPreview),
   schemaVersion: Schema.NullOr(PositiveInt),
   preferences: Schema.optional(LegacyImportPreferencesPreview),
@@ -113,7 +111,7 @@ export const LegacyImportSettingsResult = Schema.Struct({
 export type LegacyImportSettingsResult = typeof LegacyImportSettingsResult.Type;
 
 export const LegacyImportResult = Schema.Struct({
-  sourceKind: LegacyImportSourceKind,
+  sourceKind: Schema.Literals(["t3-code", "t3-code-yngatech"]),
   projects: Schema.Array(LegacyImportProjectResult),
   settings: Schema.optional(LegacyImportSettingsResult),
   importedProjectCount: NonNegativeInt,

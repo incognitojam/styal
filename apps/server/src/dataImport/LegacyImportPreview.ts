@@ -6,7 +6,6 @@ import * as NodePath from "node:path";
 import {
   type LegacyImportPreview,
   type LegacyImportProjectPreview as LegacyImportProjectPreviewType,
-  NonNegativeInt,
   PositiveInt,
   ThreadId,
 } from "@t3tools/contracts";
@@ -31,7 +30,6 @@ export interface ReadonlyDatabase {
 }
 
 const TableRows = Schema.Array(Schema.Struct({ name: Schema.String }));
-const CountRows = Schema.Array(Schema.Struct({ count: NonNegativeInt }));
 const SourceProjectRows = Schema.Array(
   Schema.Struct({
     projectId: Schema.String,
@@ -69,7 +67,6 @@ const MigrationVersionRows = Schema.Array(
 );
 const EventIdRows = Schema.Array(Schema.Struct({ eventId: Schema.String }));
 const decodeTableRows = Schema.decodeUnknownSync(TableRows);
-const decodeCountRows = Schema.decodeUnknownSync(CountRows);
 const decodeSourceProjectRows = Schema.decodeUnknownSync(SourceProjectRows);
 const decodeSourceProjectScripts = Schema.decodeUnknownSync(
   Schema.fromJsonString(SourceProjectScripts),
@@ -333,18 +330,11 @@ export function inspectOpenDatabase(
     }
 
     let schemaVersion: number | null = null;
-    let hasLegacyForkFingerprint = false;
     if (tableNames.has("effect_sql_migrations")) {
       const migrationVersionRows = decodeMigrationVersionRows(
         database.all("SELECT MAX(migration_id) AS schemaVersion FROM effect_sql_migrations"),
       );
       schemaVersion = migrationVersionRows[0]?.schemaVersion ?? null;
-      const legacyMigrationRows = decodeCountRows(
-        database.all(
-          "SELECT COUNT(*) AS count FROM effect_sql_migrations WHERE migration_id = 39 AND name = 'ComposerDrafts'",
-        ),
-      );
-      hasLegacyForkFingerprint = (legacyMigrationRows[0]?.count ?? 0) > 0;
     }
 
     const projectColumns = new Set(
@@ -459,10 +449,7 @@ export function inspectOpenDatabase(
 
     return {
       status: "available",
-      sourceKind:
-        tableNames.has("yngatech_sql_migrations") || hasLegacyForkFingerprint
-          ? "t3-code-yngatech"
-          : "t3-code",
+      sourceKind: "t3-code",
       projects,
       schemaVersion,
     };

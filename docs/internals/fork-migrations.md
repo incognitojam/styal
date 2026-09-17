@@ -20,12 +20,25 @@ Review enforces this rule: a fork PR must not touch `apps/server/src/persistence
 anything under `apps/server/src/persistence/Migrations/`. Only a PR that deliberately brings an
 upstream migration in may change those paths, and it should carry upstream's change verbatim.
 The server test job and Fork Nightly also build disposable databases with the migration source from
-the released `nightly` branch, then run the candidate's full migration pass. This checks both the
-split upstream/fork histories and the legacy pre-split composer-draft history.
+the released `nightly` branch, then run the candidate's full migration pass. This checks the
+separate upstream/fork histories and confirms composer drafts survive the upgrade.
 
-The fork previously shipped `39_ComposerDrafts` in the upstream history. Before either migration
-pass, the server recognizes that exact ID and name, applies upstream migration 39's guarded schema
-change, records the composer migration as fork migration `1_ComposerDrafts`, and rewrites migration
-39's name to its canonical upstream value. Applying the schema change directly also repairs users
-who briefly switched to an upstream build and already recorded migration 40. Keep this compatibility
-repair until installations from before the split no longer need a direct upgrade.
+## Retired pre-split repair
+
+The one-time repair for `39_ComposerDrafts` in the upstream history has been removed. Supported
+in-place upgrades assume the installation has already run a fixed release from August 9, 2026 or
+later. A database that still records `ComposerDrafts` as upstream migration 39 must pass through
+an intermediate release containing the repair before starting this version. Otherwise, migration
+39's required `default_thread_env_mode` column is absent and server startup fails.
+
+For recovery, stop the server and back up the affected data directory. Run a known fixed release
+against that directory, such as
+[the first fixed nightly](https://github.com/incognitojam/styal/releases/tag/v0.0.33-nightly.20260809.126),
+and let it finish startup before returning to the current version. The repair canonicalizes upstream
+migration 39 and records `1_ComposerDrafts` in the fork history. Do not merely rename the ledger entry:
+that leaves the required schema change unapplied.
+
+This retires the repair tracked in [issue #62](https://github.com/incognitojam/styal/issues/62).
+The `yngatech_sql_migrations` ledger and fork migration `1_ComposerDrafts` remain permanent.
+Read-only import from legacy T3 Code databases does not run startup migrations on the source and
+remains supported.

@@ -5,7 +5,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
-import ForkMigration0001 from "../src/persistence/ForkMigrations/001_ComposerDrafts.ts";
+import { runForkMigrations } from "../src/persistence/ForkMigrations.ts";
 import { migrationManifest, runMigrations } from "../src/persistence/Migrations.ts";
 import * as NodeSqliteClient from "../src/persistence/NodeSqliteClient.ts";
 import { runMigrateDevDb } from "./migrate-dev-db.ts";
@@ -19,7 +19,6 @@ const withDatabase = <A, E>(
  * `stopped-thread` qualifies for the clone. */
 const createFixtureSource = Effect.fn("createMigrateDevDbFixtureSource")(function* (
   baseDir: string,
-  migrationState: "current" | "legacy-fork" = "current",
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -30,16 +29,7 @@ const createFixtureSource = Effect.fn("createMigrateDevDbFixtureSource")(functio
     databasePath,
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      if (migrationState === "legacy-fork") {
-        yield* runMigrations({ toMigrationInclusive: 38 });
-        yield* ForkMigration0001;
-        yield* sql`
-          INSERT INTO effect_sql_migrations (migration_id, name)
-          VALUES (39, 'ComposerDrafts')
-        `;
-      } else {
-        yield* runMigrations();
-      }
+      yield* runMigrations();
       // The real shared db carries this column from a branch build without a
       // matching migration; reproduce that drift so the filter is exercised.
       yield* sql`ALTER TABLE projection_threads ADD COLUMN monitor_json TEXT`;
@@ -143,18 +133,19 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
     }),
   );
 
-  it.effect("repairs legacy fork migration history before pruning", () =>
+  it.effect("preserves fork migration history and prunes composer drafts", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const sourceDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-legacy-" });
+      const sourceDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-fork-" });
       const destDir = yield* fs.makeTempDirectoryScoped({
-        prefix: "migrate-dev-db-legacy-dest-",
+        prefix: "migrate-dev-db-fork-dest-",
       });
-      const source = yield* createFixtureSource(sourceDir, "legacy-fork");
+      const source = yield* createFixtureSource(sourceDir);
       yield* withDatabase(
         source,
         Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
+          yield* runForkMigrations({ toMigrationInclusive: 1 });
           yield* sql`
             INSERT INTO composer_drafts (
               thread_id,
@@ -174,7 +165,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         { sharedHome: sourceDir },
       );
 
-      assert.include(result.executedMigrations, "40_ProjectionProjectFaviconPath");
+      assert.include(result.executedMigrations, "fork:2_WorkspacePortAllocations");
       const migrated = yield* withDatabase(
         result.databasePath,
         Effect.gen(function* () {

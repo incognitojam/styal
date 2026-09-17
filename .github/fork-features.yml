@@ -174,7 +174,7 @@ features:
     invariants:
       - Existing-thread draft text and settings synchronize without overwriting newer local edits; attachments remain client-owned and are not synchronized across devices.
       - Web file drafts persist environment-scoped upload references; legacy local file bytes remain until a replacement reference is durable. Mobile drafts and queued messages retain owned file copies until delivery or removal.
-      - The web and mobile source implementations use the same server-backed draft contract and fork-owned migration history; desktop inherits the web implementation.
+      - The web and mobile source implementations use the same server-backed draft contract and fork-owned migration history; desktop inherits the web implementation. Pre-split databases require an intermediate fixed release before an in-place upgrade.
       - Sidebar thread rows indicate unsent prompts, attachments, or context without treating model, provider, runtime, or interaction choices alone as a user draft.
     implementation_paths:
       - apps/mobile/src/state/use-composer-drafts.ts
@@ -206,7 +206,7 @@ features:
     status: maintained
     prs: [294, 297, 298, 300]
     invariants:
-      - A selected styal environment can preview and import projects, missing threads, attachments, provider continuations, and supported server preferences from a live T3 Code database without modifying the source.
+      - A selected styal environment can preview and import projects, missing threads, attachments, provider continuations, and supported server preferences from a live T3 Code database, including older fork databases, without modifying the source.
       - Existing styal project configuration wins while each imported thread and its verified attachments commit atomically, so interrupted or repeated imports resume without duplication.
       - Credentials, connections, provider sign-ins, active sessions, and client-local preferences remain isolated, while affected earlier imports can restore provider context only after their loaded sessions stop.
     implementation_paths:
@@ -229,6 +229,7 @@ features:
       - apps/server/src/dataImport/LegacyImportPreview.test.ts
       - apps/web/src/components/settings/DataImportSettings.logic.test.ts
       - apps/web/src/state/dataImport.test.ts
+      - packages/contracts/src/dataImport.test.ts
     upstream:
       status: unassessed
       tracking: []

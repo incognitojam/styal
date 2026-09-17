@@ -626,7 +626,7 @@ it.effect("reads a live WAL database without copying or quiescing it", () => {
   );
 });
 
-it.effect("recognizes the yngatech fork migration table", () => {
+it.effect("previews databases with the old fork migration table as T3 Code", () => {
   const tempDirectory = makeTempDirectory();
   const sourceDatabasePath = NodePath.join(tempDirectory, "legacy.sqlite");
   createProjectionDatabase(sourceDatabasePath, { forkTable: true });
@@ -638,7 +638,7 @@ it.effect("recognizes the yngatech fork migration table", () => {
       Effect.sync(() => {
         assert.strictEqual(preview.status, "available");
         if (preview.status === "available") {
-          assert.strictEqual(preview.sourceKind, "t3-code-yngatech");
+          assert.strictEqual(preview.sourceKind, "t3-code");
         }
       }),
     ),
@@ -648,7 +648,7 @@ it.effect("recognizes the yngatech fork migration table", () => {
   );
 });
 
-it.effect("recognizes the legacy yngatech migration fingerprint", () => {
+it.effect("previews pre-split fork databases as T3 Code", () => {
   const tempDirectory = makeTempDirectory();
   const sourceDatabasePath = NodePath.join(tempDirectory, "legacy.sqlite");
   createProjectionDatabase(sourceDatabasePath, {
@@ -663,7 +663,7 @@ it.effect("recognizes the legacy yngatech migration fingerprint", () => {
       Effect.sync(() => {
         assert.strictEqual(preview.status, "available");
         if (preview.status === "available") {
-          assert.strictEqual(preview.sourceKind, "t3-code-yngatech");
+          assert.strictEqual(preview.sourceKind, "t3-code");
         }
       }),
     ),

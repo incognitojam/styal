@@ -11,7 +11,6 @@ import {
   type LegacyImportProjectPreview,
   type LegacyImportRequest,
   type LegacyImportResult,
-  type LegacyImportSourceKind,
   NonNegativeInt,
   OrchestrationAggregateKind,
   OrchestrationEvent,
@@ -102,11 +101,6 @@ interface LegacySourceProjectPlan {
   readonly repairEvents: ReadonlyMap<ThreadId, ReadonlyArray<OrchestrationEvent>>;
   readonly continuations: ReadonlyMap<ThreadId, HistoricalProviderContinuation>;
   readonly events: ReadonlyArray<OrchestrationEvent>;
-}
-
-interface LegacySourceSnapshot {
-  readonly sourceKind: LegacyImportSourceKind;
-  readonly projects: ReadonlyArray<LegacySourceProjectPlan>;
 }
 
 const OMITTED_EVENT_TYPES = new Set<OrchestrationEvent["type"]>([
@@ -355,7 +349,7 @@ function inspectSelectedProjects(
   database: ReadonlyDatabase,
   selectedProjectIds: ReadonlySet<string>,
   destination: LegacyImportDestinationState,
-): LegacySourceSnapshot {
+): ReadonlyArray<LegacySourceProjectPlan> {
   const preview = inspectOpenDatabase(database);
   if (preview.status !== "available") {
     const reason =
@@ -469,7 +463,7 @@ function inspectSelectedProjects(
       } satisfies LegacySourceProjectPlan;
     });
     database.exec("COMMIT");
-    return { sourceKind: preview.sourceKind, projects };
+    return projects;
   } catch (error) {
     try {
       database.exec("ROLLBACK");
@@ -491,7 +485,7 @@ export const readLegacySourceSnapshot = Effect.fn("LegacyImport.readLegacySource
     readonly currentDatabasePath: string;
     readonly projectIds: ReadonlyArray<string>;
     readonly destination?: LegacyImportDestinationState;
-  }): Effect.fn.Return<LegacySourceSnapshot, LegacyImportError, never> {
+  }): Effect.fn.Return<ReadonlyArray<LegacySourceProjectPlan>, LegacyImportError, never> {
     if (!NodeFS.existsSync(sourceDatabasePath)) {
       return yield* sourceFailure("source-not-found", "No T3 Code data was found on this server.");
     }
@@ -745,7 +739,7 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
       }
 
       const destination = yield* loadCurrentDestinationState();
-      const source = yield* readLegacySourceSnapshot({
+      const sourceProjects = yield* readLegacySourceSnapshot({
         sourceDatabasePath,
         currentDatabasePath: config.dbPath,
         projectIds: request.projectIds,
@@ -755,7 +749,7 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
       const importedThreadIds = new Set(destination.threadIds);
       const projectResults: LegacyImportResult["projects"][number][] = [];
 
-      for (const plan of source.projects) {
+      for (const plan of sourceProjects) {
         const sourceProjectId = plan.projectId;
         const sameIdProject = yield* snapshots
           .getProjectShellById(sourceProjectId)
@@ -996,7 +990,7 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
           result.status === "imported" || (result.status === "merged" && result.threadCount > 0),
       );
       return {
-        sourceKind: source.sourceKind,
+        sourceKind: "t3-code",
         projects: projectResults,
         ...(settings === undefined ? {} : { settings }),
         importedProjectCount: importedProjects.length,

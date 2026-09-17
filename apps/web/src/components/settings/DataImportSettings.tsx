@@ -25,7 +25,6 @@ import type {
   LegacyImportRequest,
   LegacyImportResult,
   LegacyImportSettingsResult,
-  LegacyImportSourceKind,
   LegacyImportUnavailableReason,
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
@@ -77,11 +76,6 @@ import {
 import { providerSettingsTabClassName } from "./providerSettingsTabs";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
-
-const SOURCE_LABELS: Readonly<Record<LegacyImportSourceKind, string>> = {
-  "t3-code": "T3 Code",
-  "t3-code-yngatech": "T3 Code (yngatech)",
-};
 
 const UNAVAILABLE_COPY: Readonly<
   Record<LegacyImportUnavailableReason, { readonly title: string; readonly description: string }>
@@ -459,7 +453,6 @@ function AvailablePreview({
   const existingGroupId = useId();
   const existingGroupNoteId = useId();
 
-  const sourceLabel = SOURCE_LABELS[preview.sourceKind];
   // Backend sort order is meaningful, so each group keeps it.
   const newProjects = useMemo(
     () => preview.projects.filter((project) => !project.isExistingProject),
@@ -575,7 +568,7 @@ function AvailablePreview({
         toastManager.add({
           type: "success",
           title: "Preferences imported",
-          description: `${formatSettingCount(LEGACY_IMPORT_PREFERENCE_COUNT)} on ${serverLabel} now match ${sourceLabel}.`,
+          description: `${formatSettingCount(LEGACY_IMPORT_PREFERENCE_COUNT)} on ${serverLabel} now match T3 Code.`,
         });
       }
     } catch (error) {
@@ -675,7 +668,7 @@ function AvailablePreview({
       >
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 sm:px-4">
           <h3 className="min-w-0 truncate text-base font-semibold tracking-[-0.015em] text-foreground">
-            {sourceLabel}
+            T3 Code
           </h3>
         </div>
 
@@ -1173,7 +1166,7 @@ export function DataImportSettingsPanel() {
     if (data.status === "available") {
       return (
         <MemoizedAvailablePreview
-          key={`${environmentId}:${data.sourceKind}`}
+          key={environmentId}
           preview={data}
           serverLabel={serverLabel}
           environmentId={environmentId}
