@@ -44,6 +44,19 @@ describe("Discord Rich Presence settings", () => {
   });
 });
 
+describe("ClientSettings rich text composer", () => {
+  it("enables rich text for new and existing settings without a saved preference", () => {
+    expect(decodeClientSettings({}).composerRichTextEnabled).toBe(true);
+    expect(decodeClientSettings({ sendShortcut: "mod-enter" }).composerRichTextEnabled).toBe(true);
+  });
+
+  it("preserves an explicit opt-out through patches and persistence", () => {
+    const preference = { composerRichTextEnabled: false };
+    expect(decodeClientSettingsPatch(preference)).toEqual(preference);
+    expect(encodeClientSettings(decodeClientSettings(preference))).toMatchObject(preference);
+  });
+});
+
 describe("ServerSettings default permissions", () => {
   it("keeps full access for settings saved before a default was configured", () => {
     expect(decodeServerSettings({}).defaultRuntimeMode).toBe("full-access");
