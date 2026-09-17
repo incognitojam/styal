@@ -373,7 +373,7 @@ export interface TurnFoldActivitySummary {
   kind: TurnFoldActivityKind;
   count: number;
 }
-export const LIVE_ACTIVITY_ROW_ID = "live-activity-row";
+const LIVE_ACTIVITY_ROW_ID = "live-activity-row";
 
 type ActivityEntry = Extract<TimelineEntry, { kind: "message" | "work" }>;
 
@@ -384,8 +384,7 @@ function isActivityEntry(entry: TimelineEntry): entry is ActivityEntry {
         entry.entry.agentSpawn === undefined &&
         entry.entry.questionAnswer === undefined &&
         !isStandaloneTimelineActivityKind(entry.entry.sourceActivityKind) &&
-        entry.entry.tone !== "error" &&
-        !workEntryDisplayIndicatesToolFailure(entry.entry);
+        entry.entry.tone !== "error";
 }
 
 export type MessagesTimelineRow =
@@ -457,7 +456,6 @@ export type MessagesTimelineRow =
       createdAt: string;
       message: ChatMessage;
       durationStart: string;
-      reasoningMessages?: ReadonlyArray<ChatMessage>;
       showAssistantMeta: boolean;
       showAssistantCopyButton: boolean;
       assistantCopyStreaming: boolean;
@@ -1380,7 +1378,9 @@ export function deriveMessagesTimelineRows(input: {
         const active =
           input.isWorking &&
           activityTurnId === unsettledTurnId &&
-          cursor === input.timelineEntries.length;
+          cursor === input.timelineEntries.length &&
+          !latestToolFailed &&
+          (latestVisibleToolEntry === undefined || latestToolKeepsActivityLive);
         const groupId =
           timelineEntry.kind === "work"
             ? workGroupId(timelineEntry.id, timelineEntry.entry)
