@@ -173,5 +173,5 @@ Full glossary with file links: `docs/internals/glossary.md`
 
 ## Additional tips
 
-- Ask permission before doing computer use. Isolated browser verification as described above does not require additional permission. CDP access alone does not establish isolation; check which browser session it controls. Permission already granted for the relevant action does not need to be requested again.
+- Ask permission before doing computer use: controlling the user's desktop or active applications through mouse, keyboard, or other UI automation. Isolated headless browsers, CDP attached to a dedicated test browser, and styal's built-in MCP/preview tools do not require additional permission when they do not interfere with the user's active browser or desktop. CDP access alone does not establish isolation; check which browser session it controls. Permission already granted for the relevant action does not need to be requested again.
 - Security is important, but should not be over-indexed on, especially for dev mode/maintainer-only features.
