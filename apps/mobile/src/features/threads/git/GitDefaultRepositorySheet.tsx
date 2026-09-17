@@ -155,7 +155,7 @@ export function GitDefaultRepositorySheet(_props: GitDefaultRepositorySheetProps
           {state === null ? (
             <View className="flex-row items-center gap-3 px-4 py-3">
               <SymbolView
-                name="arrow.triangle.2.circlepath"
+                name="arrow.clockwise"
                 size={15}
                 tintColorClassName="accent-icon"
                 type="monochrome"
