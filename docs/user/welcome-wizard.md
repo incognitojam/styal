@@ -66,9 +66,15 @@ Projects and conversations are read from each computer's default T3 home and
 imported into styal on that same computer. Completed projects are deselected;
 failed projects remain selected for retry.
 
-T3 migration is available in setup and Settings. Choose projects,
-then continue to the separate **Preferences** step. Selections are retained when
-you change steps or computers, and the footer totals your choices across computers.
+During setup, select projects, then choose
+**Continue to preferences** to review optional preferences before importing.
+Back returns from Preferences to Projects, and from Projects to the source chooser
+during setup. Selections are retained when you change steps or computers, and
+the footer totals your choices across computers. Settings shows projects and
+preferences together with a direct **Import** action.
+
+While importing, the main panel shows remaining threads and repairs, preference
+imports, and completed work for each computer. Counts refresh every 30 seconds.
 
 Preferences are optional and unchecked by default. Review the changed values and
 select **Bring over T3 Code preferences** for each computer where you want them

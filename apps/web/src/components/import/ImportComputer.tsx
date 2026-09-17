@@ -2,6 +2,7 @@ import { useEffect, useImperativeHandle, type Ref } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { ImportPreferencesView, ImportSourceView } from "./ImportDataView";
 import { useHistoryImport } from "./useHistoryImport";
+import { LegacyImportProgressView } from "./LegacyImportProgressView";
 import { useLegacyImport } from "./useLegacyImport";
 import type { ComputerImporter, ComputerImportSummary, LegacyImportStage } from "./types";
 
@@ -18,6 +19,8 @@ interface ImportComputerProps {
   active: boolean;
   connected: boolean;
   busy: boolean;
+  setup: boolean;
+  importing: boolean;
   onSummary: (id: EnvironmentId, summary: ComputerImportSummary) => void;
   ref: Ref<ComputerImporter>;
 }
@@ -32,6 +35,8 @@ export function LegacyImportComputer({
   onSummary,
   ref,
   stage,
+  setup,
+  importing,
 }: ImportComputerProps & { stage: LegacyImportStage }) {
   const legacy = useLegacyImport(environmentId, busy);
   const selectedLegacyIds = new Set(legacy.selected.map((project) => project.projectId));
@@ -52,75 +57,94 @@ export function LegacyImportComputer({
   const available = legacy.preview?.status === "available" ? legacy.preview : null;
   const preferencePreview = available?.preferences;
   return (
-    <div hidden={!active} className="space-y-5" aria-label={label}>
-      {!connected ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          Waiting for {label} to connect.
-        </p>
-      ) : null}
-      {stage === "projects" ? (
-        <ImportSourceView
-          disabled={busy || !connected}
-          source={{
-            title: available?.sourceKind === "t3-code-yngatech" ? "T3 Code (yngatech)" : "T3 Code",
-            projects: legacy.projects.map((project) => ({
-              id: project.projectId,
-              title: project.title.trim() || "Untitled project",
-              path: project.workspaceRoot,
-              threads: project.threadCount,
-              selected: selectedLegacyIds.has(project.projectId),
-              detail:
-                [
-                  project.isExistingProject ? "Already in styal" : null,
-                  project.contextRepairCount > 0
-                    ? `${project.contextRepairCount} ${project.contextRepairCount === 1 ? "repair" : "repairs"}`
-                    : null,
-                  project.scriptCount > 0
-                    ? `${project.scriptCount} ${project.scriptCount === 1 ? "script" : "scripts"}`
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ") || undefined,
-            })),
-            pending: legacy.query.isPending && legacy.preview === null,
-            error: legacy.error ?? legacy.query.error,
-            message:
-              legacy.preview?.status === "not-found"
-                ? "No T3 Code data found in the default T3 home."
-                : legacy.preview?.status === "unavailable"
-                  ? UNAVAILABLE[legacy.preview.reason]
-                  : available && available.projects.length === 0
-                    ? "No T3 Code projects found."
-                    : undefined,
-            notice: legacy.notice,
-            refresh: legacy.query.refresh,
-            select: legacy.setSelection,
-          }}
-        />
-      ) : available ? (
-        <ImportPreferencesView
-          disabled={busy || !connected}
-          preferences={{
-            changes: legacy.changes,
-            selected: legacy.selectedPreferences,
-            select: legacy.setIncludeSettings,
-            error: legacy.preferencesError,
-            message:
-              preferencePreview?.status === "available"
-                ? legacy.changes.length === 0
-                  ? "Preferences already match"
-                  : undefined
-                : preferencePreview?.status === "unreadable"
-                  ? "T3 Code preferences could not be read."
-                  : "No T3 Code preferences found.",
-          }}
+    <div hidden={!active && !importing} className="space-y-5" aria-label={label}>
+      {importing ? (
+        <LegacyImportProgressView
+          label={label}
+          progress={legacy.progress}
+          preview={legacy.query.data}
+          selected={legacy.selected}
+          preferences={legacy.selectedPreferences}
+          pending={legacy.query.isPending}
+          error={legacy.query.error}
         />
       ) : (
-        <p role="status" className="text-sm text-muted-foreground">
-          {legacy.query.isPending
-            ? "Checking T3 Code preferences…"
-            : (legacy.query.error ?? "No T3 Code preferences available.")}
-        </p>
+        <>
+          {!connected ? (
+            <p role="status" className="text-sm text-muted-foreground">
+              Waiting for {label} to connect.
+            </p>
+          ) : null}
+          {!setup || stage === "projects" ? (
+            <ImportSourceView
+              disabled={busy || !connected}
+              source={{
+                title:
+                  available?.sourceKind === "t3-code-yngatech" ? "T3 Code (yngatech)" : "T3 Code",
+                projects: legacy.projects.map((project) => ({
+                  id: project.projectId,
+                  legacyFavicon: { environmentId, projectId: project.projectId },
+                  title: project.title.trim() || "Untitled project",
+                  path: project.workspaceRoot,
+                  threads: project.threadCount,
+                  selected: selectedLegacyIds.has(project.projectId),
+                  detail:
+                    [
+                      project.isExistingProject ? "Already in styal" : null,
+                      project.contextRepairCount > 0
+                        ? `${project.contextRepairCount} ${project.contextRepairCount === 1 ? "repair" : "repairs"}`
+                        : null,
+                      project.scriptCount > 0
+                        ? `${project.scriptCount} ${project.scriptCount === 1 ? "script" : "scripts"}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") || undefined,
+                })),
+                pending: legacy.query.isPending && legacy.preview === null,
+                error: legacy.error ?? legacy.query.error,
+                message:
+                  legacy.preview?.status === "not-found"
+                    ? "No T3 Code data found in the default T3 home."
+                    : legacy.preview?.status === "unavailable"
+                      ? UNAVAILABLE[legacy.preview.reason]
+                      : available && available.projects.length === 0
+                        ? "No T3 Code projects found."
+                        : undefined,
+                notice: legacy.notice,
+                refresh: legacy.query.refresh,
+                select: legacy.setSelection,
+              }}
+            />
+          ) : null}
+          {!setup || stage === "preferences" ? (
+            available ? (
+              <ImportPreferencesView
+                disabled={busy || !connected}
+                preferences={{
+                  changes: legacy.changes,
+                  selected: legacy.selectedPreferences,
+                  select: legacy.setIncludeSettings,
+                  error: legacy.preferencesError,
+                  message:
+                    preferencePreview?.status === "available"
+                      ? legacy.changes.length === 0
+                        ? "Preferences already match"
+                        : undefined
+                      : preferencePreview?.status === "unreadable"
+                        ? "T3 Code preferences could not be read."
+                        : "No T3 Code preferences found.",
+                }}
+              />
+            ) : (
+              <p role="status" className="text-sm text-muted-foreground">
+                {legacy.query.isPending
+                  ? "Checking T3 Code preferences…"
+                  : (legacy.query.error ?? "No T3 Code preferences available.")}
+              </p>
+            )
+          ) : null}
+        </>
       )}
     </div>
   );

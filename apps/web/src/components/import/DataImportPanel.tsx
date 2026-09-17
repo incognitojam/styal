@@ -164,7 +164,7 @@ export function DataImportPanel({
       stage={stage}
       onStageChange={setStage}
       onBack={onBack}
-      progress={progress}
+      progress={progress ?? (awaitingCompletion ? "Finishing setup…" : null)}
       onImport={() => void run()}
       onSkip={() => void skip()}
       message={message}
@@ -178,6 +178,8 @@ export function DataImportPanel({
           active={activeId === environment.environmentId}
           connected={environment.connection.phase === "connected"}
           busy={busy}
+          setup={!!onDone}
+          importing={source === "legacy" && (progress !== null || awaitingCompletion)}
           stage={stage}
           onSummary={onSummary}
           ref={(importer) => {

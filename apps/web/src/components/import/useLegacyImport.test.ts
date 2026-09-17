@@ -146,4 +146,58 @@ describe("shared T3 importer", () => {
     expect(render(true).preview).toBe(original);
     expect(render(false).preview).toEqual({ status: "not-found" });
   });
+  it("keeps the batch visible through project, preference, and completion receipts", async () => {
+    render().setIncludeSettings(true);
+    let completeProjects!: (value: ReturnType<typeof result>) => void;
+    let completePreferences!: (value: unknown) => void;
+    mocks.command
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            completeProjects = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            completePreferences = resolve;
+          }),
+      );
+    const running = render().run();
+    expect(render(true).progress).toMatchObject({ phase: "projects", preferences: "queued" });
+    mocks.query.data = {
+      status: "available",
+      sourceKind: "t3-code",
+      schemaVersion: 1,
+      projects: [project("two")],
+    };
+    expect(render(true).progress?.projects.map((p) => p.projectId)).toEqual(["one", "two"]);
+    expect(render(true).query.data).toBe(mocks.query.data);
+    completeProjects(result());
+    await Promise.resolve();
+    expect(render(true).progress).toMatchObject({
+      phase: "preferences",
+      preferences: "importing",
+      result: result().value,
+    });
+    completePreferences({
+      _tag: "Success",
+      value: { ...result().value, projects: [], settings: { status: "imported" } },
+    });
+    await running;
+    expect(render(true).progress).toMatchObject({ phase: "done", preferences: "complete" });
+  });
+  it("does not mark a failed import complete when its preview becomes empty", async () => {
+    mocks.command.mockResolvedValueOnce(result(["two"]));
+    await render().run();
+    mocks.query.data = {
+      status: "available",
+      sourceKind: "t3-code",
+      schemaVersion: 1,
+      projects: [],
+    };
+    expect(
+      render(true).progress?.result?.projects.find((p) => p.sourceProjectId === "two")?.status,
+    ).toBe("failed");
+  });
 });

@@ -3,6 +3,8 @@ import {
   ProjectId,
   type EnvironmentId,
   type LegacyImportPreview,
+  type LegacyImportProjectPreview,
+  type LegacyImportResult,
   type ScopedProjectRef,
 } from "@t3tools/contracts";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
@@ -23,6 +25,14 @@ import type { ImportOutcome } from "./types";
 
 export function importErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "The selected data could not be imported.";
+}
+
+export interface LegacyImportProgress {
+  readonly projects: readonly LegacyImportProjectPreview[];
+  readonly phase: "projects" | "preferences" | "done";
+  readonly result?: LegacyImportResult;
+  readonly projectsError?: string;
+  readonly preferences: "queued" | "importing" | "complete" | "failed" | null;
 }
 
 export function useLegacyImport(environmentId: EnvironmentId, busy: boolean) {
@@ -63,8 +73,17 @@ export function useLegacyImport(environmentId: EnvironmentId, busy: boolean) {
   const [error, setError] = useState<string | null>(null);
   const [preferencesError, setPreferencesError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string>();
+  const [progress, setProgress] = useState<LegacyImportProgress | null>(null);
+  useEffect(() => {
+    if (!busy) setProgress(null);
+  }, [busy]);
 
   const run = async (): Promise<ImportOutcome> => {
+    setProgress({
+      projects: selected,
+      phase: selected.length > 0 ? "projects" : "preferences",
+      preferences: selectedPreferences ? "queued" : null,
+    });
     setError(null);
     setPreferencesError(null);
     setNotice(undefined);
@@ -77,13 +96,14 @@ export function useLegacyImport(environmentId: EnvironmentId, busy: boolean) {
         input: { projectIds: selected.map((p) => p.projectId), includeSettings: false },
       });
       if (result._tag === "Failure") {
-        setError(
-          isAtomCommandInterrupted(result)
-            ? "Import interrupted. Retry when this computer reconnects."
-            : importErrorMessage(squashAtomCommandFailure(result)),
-        );
+        const message = isAtomCommandInterrupted(result)
+          ? "Import interrupted. Retry when this computer reconnects."
+          : importErrorMessage(squashAtomCommandFailure(result));
+        setError(message);
+        setProgress((current) => current && { ...current, projectsError: message });
         success = false;
       } else {
+        setProgress((current) => current && { ...current, result: result.value });
         const firstProject = result.value.projects.find((project) => project.status !== "failed");
         if (firstProject)
           projectRef = scopeProjectRef(environmentId, ProjectId.make(firstProject.targetProjectId));
@@ -109,11 +129,15 @@ export function useLegacyImport(environmentId: EnvironmentId, busy: boolean) {
     }
     if (!mounted.current) return { success: false };
     if (selectedPreferences) {
+      setProgress(
+        (current) => current && { ...current, phase: "preferences", preferences: "importing" },
+      );
       const result = await command({
         environmentId,
         input: { projectIds: [], includeSettings: true },
       });
       if (result._tag === "Failure") {
+        setProgress((current) => current && { ...current, preferences: "failed" });
         setPreferencesError(
           isAtomCommandInterrupted(result)
             ? "Import interrupted. Retry when this computer reconnects."
@@ -121,20 +145,24 @@ export function useLegacyImport(environmentId: EnvironmentId, busy: boolean) {
         );
         success = false;
       } else if (result.value.settings?.status !== "imported") {
+        setProgress((current) => current && { ...current, preferences: "failed" });
         setPreferencesError(
           result.value.settings?.detail ?? "Preferences could not be imported. Rescan and retry.",
         );
         success = false;
       } else {
+        setProgress((current) => current && { ...current, preferences: "complete" });
         setIncludeSettings(false);
         query.refresh();
       }
     }
+    setProgress((current) => current && { ...current, phase: "done" });
     return { success, projectRef };
   };
 
   return {
     query,
+    progress,
     preview,
     projects,
     selected,

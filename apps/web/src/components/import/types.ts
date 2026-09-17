@@ -16,6 +16,10 @@ export interface ImportProjectRow {
   readonly threads: number;
   readonly selected: boolean;
   readonly detail?: string | undefined;
+  readonly legacyFavicon?: {
+    readonly environmentId: EnvironmentId;
+    readonly projectId: string;
+  };
   readonly providers?: readonly ("claudeAgent" | "codex")[] | undefined;
 }
 

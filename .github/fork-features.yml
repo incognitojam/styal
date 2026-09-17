@@ -213,7 +213,7 @@ features:
       - Existing styal project configuration wins while each imported thread and its verified attachments commit atomically, so interrupted or repeated imports resume without duplication.
       - Credentials, connections, provider sign-ins, active sessions, and client-local preferences remain isolated, while affected earlier imports can restore provider context only after their loaded sessions stop.
       - Setup offers T3 Code migration or CLI history as separate choices; Settings exposes only T3 Code migration and never starts CLI history scans. T3 migration shares components and commands between both entry points.
-      - T3 projects and optional preferences have separate steps; switching steps or computers preserves selections, setup stays scoped to selected computers, and preferences require explicit opt-in per computer.
+      - T3 projects and optional preferences use sequential setup steps with stable dimensions and one Settings page; switching steps or computers preserves selections, setup stays scoped to selected computers, and preferences require explicit opt-in per computer. In-progress imports show remaining work and confirmed completion per computer.
       - Partial imports keep failed work selected for retry and clear completed selections; pending imports remain locked across Settings remounts, and leaving the page prevents subsequent requests in the batch.
     implementation_paths:
       - apps/server/src/dataImport/LegacyImport.ts
@@ -223,6 +223,7 @@ features:
       - apps/web/src/components/import/ImportComputer.tsx
       - apps/web/src/components/import/ImportDataView.tsx
       - apps/web/src/components/import/ImportSourceChooser.tsx
+      - apps/web/src/components/import/LegacyImportProgressView.tsx
       - apps/web/src/components/import/useHistoryImport.ts
       - apps/web/src/components/import/useLegacyImport.ts
       - apps/web/src/components/onboarding/OnboardingImportStep.tsx
@@ -257,7 +258,7 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/blob/384de0858d1f59ca2ad7c660544a5290fd9138cb/apps/web/src/components/onboarding/WelcomeWizard.tsx
-      retire_when: The fork replaces this implementation with equivalent safe T3 Code migration in setup and Settings, with CLI history limited to setup, preserving computer scope, separate preference review, explicit opt-in, retry behavior, and pending-import locks, or deliberately retires those capabilities.
+      retire_when: The fork replaces this implementation with equivalent safe T3 Code migration in setup and Settings, with CLI history limited to setup, preserving computer scope, sequential preference review, explicit opt-in, retry behavior, and pending-import locks, or deliberately retires those capabilities.
 
   - id: desktop-background-updates
     title: Download desktop updates in the background and install on quit

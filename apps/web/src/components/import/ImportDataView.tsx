@@ -13,6 +13,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { cn } from "../../lib/utils";
 import { ClaudeAI, OpenAI, type Icon } from "../Icons";
 import { Button } from "../ui/button";
+import { ProjectFavicon } from "../ProjectFavicon";
 import { Checkbox } from "../ui/checkbox";
 import { ScrollArea } from "../ui/scroll-area";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
@@ -233,6 +234,14 @@ export function ImportSourceView({
                       })}
                       <span className="sr-only">{providerSummary(providers)}</span>
                     </>
+                  ) : project.legacyFavicon ? (
+                    <span aria-hidden>
+                      <ProjectFavicon
+                        environmentId={project.legacyFavicon.environmentId}
+                        legacyProjectId={project.legacyFavicon.projectId}
+                        className="size-3.5"
+                      />
+                    </span>
                   ) : (
                     <FolderIcon className="size-3.5" aria-hidden />
                   )}
@@ -413,23 +422,18 @@ function summaryText(summary: ComputerImportSummary): string {
   if (summary.preferences > 0) {
     parts.push(
       summary.preferences === 1
-        ? "preferences"
-        : `preferences on ${plural(summary.preferences, "computer")}`,
+        ? "Preferences included"
+        : `Preferences on ${plural(summary.preferences, "computer")}`,
     );
   }
   return parts.length > 0 ? parts.join(" · ") : "Nothing selected";
 }
 
-const LEGACY_STAGES = [
-  { stage: "projects", label: "Projects" },
-  { stage: "preferences", label: "Preferences" },
-] as const satisfies readonly { stage: LegacyImportStage; label: string }[];
-
 /**
  * The import surface itself: a heading that names the source and, for T3 Code,
- * the step you are on; one scroller for the chosen computer; one footer that
+ * the current step; one scroller for the chosen computer; one footer that
  * always states the whole selection and commits it. Setup and Settings render the
- * same thing; only the back target, the skip action and the primary label differ.
+ * shared content; setup guides the review through two steps, Settings shows both.
  */
 export function ImportDataView({
   computers,
@@ -467,20 +471,23 @@ export function ImportDataView({
   children: ReactNode;
 }) {
   const legacy = source === "legacy";
-  // Projects are optional on the way to preferences, so this step always continues.
-  const choosing = legacy && stage === "projects";
+  const choosing = setup && legacy && stage === "projects";
+  const back =
+    setup && legacy && stage === "preferences" ? () => onStageChange("projects") : onBack;
+  const importing = legacy && busy && progress !== null;
   const canImport = summary.projects > 0 || summary.preferences > 0;
-  const back = legacy && stage === "preferences" ? () => onStageChange("projects") : onBack;
   const computerItems = useMemo(
     () => computers.map((computer) => ({ value: computer.id, label: computer.label })),
     [computers],
   );
 
   return (
-    /* Setup gets its height from the wizard's constrained column; Settings falls back to
-       a viewport-relative ceiling, so the footer stays on screen either way. */
+    // Both steps occupy the same viewport-bounded height so their controls stay in place.
     <div
-      className="@container/import flex max-h-[min(40rem,calc(100dvh-9rem))] min-h-0 w-full flex-1 flex-col"
+      className={cn(
+        "@container/import flex min-h-0 w-full flex-col",
+        setup ? "h-[min(40rem,calc(100dvh-14rem))] shrink-0" : "gap-4",
+      )}
       aria-busy={busy || undefined}
     >
       <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-2 pb-4">
@@ -491,7 +498,9 @@ export function ImportDataView({
             className="-ml-1.5 shrink-0"
             onClick={back}
             disabled={busy}
-            aria-label="Back"
+            aria-label={
+              legacy && stage === "preferences" ? "Back to projects" : "Back to import sources"
+            }
           >
             <ChevronLeftIcon />
           </Button>
@@ -504,33 +513,15 @@ export function ImportDataView({
         >
           {legacy ? "T3 Code" : "Claude Code / Codex"}
         </h2>
-        {legacy ? (
-          <div
-            role="group"
-            aria-label="Import steps"
-            className="flex shrink-0 items-center gap-0.5 rounded-lg bg-zinc-25 p-0.5 ring-1 ring-black/5 dark:bg-white/4 dark:ring-white/5"
-          >
-            {LEGACY_STAGES.map((step) => {
-              const active = step.stage === stage;
-              return (
-                <button
-                  key={step.stage}
-                  type="button"
-                  disabled={busy}
-                  aria-current={active ? "step" : undefined}
-                  onClick={() => onStageChange(step.stage)}
-                  className={cn(
-                    "cursor-pointer rounded-md px-2 py-1 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 motion-reduce:transition-none",
-                    active
-                      ? "bg-card text-foreground shadow-xs ring-1 ring-black/5 dark:shadow-none dark:ring-white/5"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {step.label}
-                </button>
-              );
-            })}
-          </div>
+        {legacy && setup && !importing ? (
+          <p aria-live="polite" className="shrink-0 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">
+              {choosing ? "Projects" : "Preferences"}
+            </span>
+            <span aria-hidden> · </span>
+            <span className="sr-only">, step </span>
+            {choosing ? "1" : "2"} of 2
+          </p>
         ) : null}
       </div>
 
@@ -540,7 +531,12 @@ export function ImportDataView({
         className="min-h-0 flex-1 rounded-none [&_[data-slot=scroll-area-scrollbar]]:opacity-100"
       >
         <div className="flex min-w-0 flex-col gap-4 pb-1">
-          {computers.length === 0 ? (
+          {importing ? (
+            <div role="status" className="space-y-1">
+              <h3 className="text-lg font-semibold">Importing T3 Code data</h3>
+              <p className="text-sm text-muted-foreground">{progress}</p>
+            </div>
+          ) : computers.length === 0 ? (
             <p className="py-8 text-center text-[13px] text-muted-foreground">
               No computers connected.
             </p>
@@ -623,7 +619,7 @@ export function ImportDataView({
             </p>
           ) : null}
         </div>
-        <div className="flex shrink-0 items-center justify-end gap-2">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
           {setup ? (
             <Button variant="ghost" onClick={onSkip} disabled={busy}>
               Skip for now
@@ -631,8 +627,7 @@ export function ImportDataView({
           ) : null}
           {choosing ? (
             <Button onClick={() => onStageChange("preferences")} disabled={busy}>
-              Continue
-              <ArrowRightIcon className="size-3.5" aria-hidden />
+              Continue to preferences
             </Button>
           ) : (
             <Button onClick={onImport} disabled={busy || !canImport}>
