@@ -92,6 +92,8 @@ Imported projects include Codex and Claude conversations active within the last
 30 days. You can continue those conversations in styal. If the scan fails on a computer
 running an older styal version, update that computer and retry.
 
+During import, each selected project shows whether it is queued, importing, complete, or could not be imported. Completed counts come from the import result. Failed projects stay selected so you can retry.
+
 Conversation import is best effort. styal keeps the first user prompt and the
 newest remaining visible user and assistant messages, with 200 messages total.
 It omits tool activity and attachments. For Codex, it omits generated setup
@@ -119,8 +121,8 @@ saved preferences, or all values already match.
 
 This step is independent of the project source: you can import preferences after
 choosing Claude Code / Codex history, T3 Code projects, or skipping projects.
-Preferences are unchecked by default. Review the changed values and select
-**Bring over T3 Code preferences** for each computer where you want them applied.
+Differing preferences are selected by default. Review the changed values and clear
+**Bring over T3 Code preferences** on any computer where you want to keep the current values.
 **Import & finish** imports your selected projects and preferences; **Finish**
 completes setup if nothing is selected. Importing projects alone does not replace
 preferences.

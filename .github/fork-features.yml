@@ -213,7 +213,7 @@ features:
       - Existing styal project configuration wins while each imported thread and its verified attachments commit atomically, so interrupted or repeated imports resume without duplication.
       - Credentials, connections, provider sign-ins, active sessions, and client-local preferences remain isolated, while affected earlier imports can restore provider context only after their loaded sessions stop.
       - Setup offers T3 Code migration or CLI history as separate choices; Settings exposes only T3 Code migration and never starts CLI history scans. T3 migration shares components and commands between both entry points.
-      - Projects and optional Preferences are top-level setup steps with stable dimensions; Preferences is discovered on selected computers during Agents and omitted when no values differ, independently of the project source. Settings keeps one import page; switching steps or computers preserves selections, setup stays scoped to selected computers, and differing preferences start selected with an opt-out per computer. In-progress imports show remaining work and confirmed completion per computer.
+      - Projects and optional Preferences are top-level setup steps with stable dimensions; Preferences is discovered on selected computers during Agents and omitted when no values differ, independently of the project source. Settings keeps one import page; switching steps or computers preserves selections, setup stays scoped to selected computers, and differing preferences start selected with an opt-out per computer. In-progress imports show remaining work and confirmed completion per computer; CLI history shows queued, importing, completed, and failed projects, including while finishing from Preferences.
       - Partial imports keep failed work selected for retry and clear completed selections; pending imports remain locked across Settings remounts, and leaving the page prevents subsequent requests in the batch.
     implementation_paths:
       - apps/server/src/dataImport/LegacyImport.ts
@@ -222,6 +222,7 @@ features:
       - apps/web/src/components/import/DataImportPanel.tsx
       - apps/web/src/components/import/ImportComputer.tsx
       - apps/web/src/components/import/ImportDataView.tsx
+      - apps/web/src/components/import/ImportProgressView.tsx
       - apps/web/src/components/import/ImportSourceChooser.tsx
       - apps/web/src/components/import/LegacyImportProgressView.tsx
       - apps/web/src/components/import/useHistoryImport.ts

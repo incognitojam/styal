@@ -1,7 +1,8 @@
 import { useEffect, useImperativeHandle, type Ref } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { ImportPreferencesView, ImportSourceView } from "./ImportDataView";
-import { useHistoryImport } from "./useHistoryImport";
+import { useHistoryImport, type HistoryImportProgress } from "./useHistoryImport";
+import { ImportProgressView } from "./ImportProgressView";
 import { LegacyImportProgressView } from "./LegacyImportProgressView";
 import { useLegacyImport } from "./useLegacyImport";
 import type { ComputerImporter, ComputerImportSummary, LegacyImportStage } from "./types";
@@ -170,8 +171,9 @@ export function HistoryImportComputer({
   busy,
   onSummary,
   ref,
+  importing,
 }: ImportComputerProps) {
-  const history = useHistoryImport(environmentId);
+  const history = useHistoryImport(environmentId, busy);
   const selectedHistoryKeys = new Set(history.selected.map((project) => project.key));
   const projects = history.selected.length;
   const threads = history.selected.reduce((total, project) => total + project.threadCount, 0);
@@ -185,6 +187,36 @@ export function HistoryImportComputer({
       return history.run();
     },
   }));
+  if (importing) {
+    const progress: readonly HistoryImportProgress[] =
+      history.progress ??
+      history.selected.map((project) => ({
+        key: project.key,
+        title: project.title,
+        status: "queued",
+      }));
+    return (
+      <ImportProgressView
+        label={`${label} · Claude Code / Codex`}
+        rows={progress.map((project) => ({
+          id: project.key,
+          title: project.title.trim() || "Untitled project",
+          complete: project.status === "complete",
+          failed: project.status === "failed",
+          status:
+            project.status === "queued"
+              ? "Queued"
+              : project.status === "importing"
+                ? "Importing…"
+                : project.status === "complete"
+                  ? `Complete · ${project.importedCount ?? 0} imported`
+                  : project.skippedCount
+                    ? `${project.importedCount ?? 0} imported · ${project.skippedCount} could not import`
+                    : "Could not import history",
+        }))}
+      />
+    );
+  }
   if (!active) return null;
   return (
     <div className="space-y-5" aria-label={label}>

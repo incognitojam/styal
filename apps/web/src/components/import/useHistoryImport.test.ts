@@ -119,4 +119,34 @@ describe("setup CLI history importer", () => {
       mocks.create.mock.calls[0]?.[0].input.commandId,
     );
   });
+  it("shows queued and active projects until each command confirms its result", async () => {
+    type Receipt = { _tag: "Success"; value: { importedCount: number; skippedCount: number } };
+    let completeFirst!: (receipt: Receipt) => void;
+    let completeSecond!: (receipt: Receipt) => void;
+    const first = new Promise<Receipt>((resolve) => {
+      completeFirst = resolve;
+    });
+    const second = new Promise<Receipt>((resolve) => {
+      completeSecond = resolve;
+    });
+    mocks.importThreads.mockReturnValueOnce(first).mockReturnValueOnce(second);
+    const running = render().run();
+    expect(render().progress?.map((row) => row.status)).toEqual(["importing", "queued"]);
+    completeFirst({ _tag: "Success", value: { importedCount: 2, skippedCount: 0 } });
+    await first;
+    expect(render().progress?.map((row) => row.status)).toEqual(["complete", "importing"]);
+    completeSecond({ _tag: "Success", value: { importedCount: 1, skippedCount: 1 } });
+    expect((await running).success).toBe(false);
+    expect(render().progress).toMatchObject([
+      { title: "one", status: "complete", importedCount: 2 },
+      { title: "two", status: "failed", importedCount: 1, skippedCount: 1 },
+    ]);
+    expect(render().selected.map((project) => project.title)).toEqual(["two"]);
+  });
+  it("marks a rejected command as failed and continues the remaining projects", async () => {
+    mocks.importThreads.mockRejectedValueOnce(new Error("Connection lost"));
+    expect((await render().run()).success).toBe(false);
+    expect(render().progress?.map((row) => row.status)).toEqual(["failed", "complete"]);
+    expect(render().selected.map((project) => project.title)).toEqual(["one"]);
+  });
 });

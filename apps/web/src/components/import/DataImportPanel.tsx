@@ -218,6 +218,25 @@ export function DataImportPanel({
           message={message}
           error={error}
         >
+          {source === "history"
+            ? environments.map((environment) => (
+                <HistoryImportComputer
+                  key={environment.environmentId}
+                  environmentId={environment.environmentId}
+                  label={environment.label}
+                  active={activeId === environment.environmentId && stage === "projects"}
+                  connected={environment.connection.phase === "connected"}
+                  busy={busy}
+                  setup={!!onDone}
+                  importing={progress !== null || awaitingCompletion}
+                  onSummary={onHistorySummary}
+                  ref={(importer) => {
+                    if (importer) historyImporters.current.set(environment.environmentId, importer);
+                    else historyImporters.current.delete(environment.environmentId);
+                  }}
+                />
+              ))
+            : null}
           {environments.map((environment) => (
             <LegacyImportComputer
               key={environment.environmentId}
@@ -240,25 +259,6 @@ export function DataImportPanel({
               }}
             />
           ))}
-          {source === "history"
-            ? environments.map((environment) => (
-                <HistoryImportComputer
-                  key={environment.environmentId}
-                  environmentId={environment.environmentId}
-                  label={environment.label}
-                  active={activeId === environment.environmentId && stage === "projects"}
-                  connected={environment.connection.phase === "connected"}
-                  busy={busy}
-                  setup={!!onDone}
-                  importing={false}
-                  onSummary={onHistorySummary}
-                  ref={(importer) => {
-                    if (importer) historyImporters.current.set(environment.environmentId, importer);
-                    else historyImporters.current.delete(environment.environmentId);
-                  }}
-                />
-              ))
-            : null}
         </ImportDataView>
       </div>
     </>

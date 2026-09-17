@@ -22,8 +22,20 @@ import { projectEnvironment } from "../../state/projects";
 import { useAtomCommand } from "../../state/use-atom-command";
 import type { ImportOutcome } from "./types";
 
+export interface HistoryImportProgress {
+  readonly key: string;
+  readonly title: string;
+  readonly status: "queued" | "importing" | "complete" | "failed";
+  readonly importedCount?: number;
+  readonly skippedCount?: number;
+}
+
 /** The CLI history import pipeline used during first setup. */
-export function useHistoryImport(environmentId: EnvironmentId) {
+export function useHistoryImport(environmentId: EnvironmentId, busy = false) {
+  const [progress, setProgress] = useState<readonly HistoryImportProgress[] | null>(null);
+  useEffect(() => {
+    if (!busy) setProgress(null);
+  }, [busy]);
   const environmentIds = useMemo(() => [environmentId], [environmentId]);
   const scans = useProjectScans(environmentIds);
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
@@ -69,6 +81,19 @@ export function useHistoryImport(environmentId: EnvironmentId) {
     setImportError("");
     lastImportSelectionRef.current = selection.map((candidate) => candidate.key);
     const importGeneration = importGenerationRef.current;
+    setProgress(
+      selection.map((candidate) => ({
+        key: candidate.key,
+        title: candidate.title,
+        status: "queued",
+      })),
+    );
+    const updateProgress = (key: string, update: Partial<HistoryImportProgress>) => {
+      if (importGeneration !== importGenerationRef.current) return;
+      setProgress(
+        (rows) => rows?.map((row) => (row.key === key ? { ...row, ...update } : row)) ?? null,
+      );
+    };
     const importedProjects = importedProjectsRef.current;
     const projectAttempts = projectAttemptsRef.current;
     // Interrupted imports are neither failures nor successes — the command was
@@ -91,28 +116,50 @@ export function useHistoryImport(environmentId: EnvironmentId) {
       ) {
         return { success: false };
       }
-      let projectId = resolveOnboardingProjectId(readProjects(), environmentId, candidate);
-      if (projectId === null) {
-        let attempt = projectAttempts.get(candidate.key);
-        if (attempt === undefined) {
-          const nextProjectId = newProjectId();
-          attempt = {
-            projectId: nextProjectId,
-            commandId: CommandId.make(`onboarding:project:create:${nextProjectId}`),
-          };
-          projectAttempts.set(candidate.key, attempt);
+      updateProgress(candidate.key, { status: "importing" });
+      try {
+        let projectId = resolveOnboardingProjectId(readProjects(), environmentId, candidate);
+        if (projectId === null) {
+          let attempt = projectAttempts.get(candidate.key);
+          if (attempt === undefined) {
+            const nextProjectId = newProjectId();
+            attempt = {
+              projectId: nextProjectId,
+              commandId: CommandId.make(`onboarding:project:create:${nextProjectId}`),
+            };
+            projectAttempts.set(candidate.key, attempt);
+          }
+          projectId = attempt.projectId;
+          const result = await createProject({
+            environmentId,
+            input: {
+              projectId,
+              commandId: attempt.commandId,
+              title: candidate.title,
+              workspaceRoot: candidate.path,
+              createWorkspaceRootIfMissing: false,
+              defaultModelSelection: null,
+            },
+          });
+          if (
+            importGeneration !== importGenerationRef.current ||
+            importedProjects !== importedProjectsRef.current
+          ) {
+            return { success: false };
+          }
+          if (result._tag !== "Success") {
+            updateProgress(candidate.key, { status: "failed" });
+            if (!isAtomCommandInterrupted(result)) {
+              projectAttempts.delete(candidate.key);
+              refreshEnvironments.add(environmentId);
+            }
+            continue;
+          }
         }
-        projectId = attempt.projectId;
-        const result = await createProject({
+
+        const threadImportResult = await importThreads({
           environmentId,
-          input: {
-            projectId,
-            commandId: attempt.commandId,
-            title: candidate.title,
-            workspaceRoot: candidate.path,
-            createWorkspaceRootIfMissing: false,
-            defaultModelSelection: null,
-          },
+          input: { projectId, expectedWorkspaceRoot: candidate.path },
         });
         if (
           importGeneration !== importGenerationRef.current ||
@@ -120,40 +167,33 @@ export function useHistoryImport(environmentId: EnvironmentId) {
         ) {
           return { success: false };
         }
-        if (result._tag !== "Success") {
-          if (!isAtomCommandInterrupted(result)) {
+        if (threadImportResult._tag === "Success") {
+          updateProgress(candidate.key, {
+            status: threadImportResult.value.skippedCount === 0 ? "complete" : "failed",
+            importedCount: threadImportResult.value.importedCount,
+            skippedCount: threadImportResult.value.skippedCount,
+          });
+          importedThreadCount += threadImportResult.value.importedCount;
+          skippedThreadCount += threadImportResult.value.skippedCount;
+          if (threadImportResult.value.importedCount > 0) {
+            projectsWithImportedHistoryRef.current.set(
+              candidate.key,
+              scopeProjectRef(environmentId, projectId),
+            );
+          }
+          if (threadImportResult.value.skippedCount === 0) {
+            importedProjectsCount += 1;
+            importedProjects.set(candidate.key, scopeProjectRef(environmentId, projectId));
+          }
+        } else {
+          updateProgress(candidate.key, { status: "failed" });
+          if (!isAtomCommandInterrupted(threadImportResult)) {
             projectAttempts.delete(candidate.key);
             refreshEnvironments.add(environmentId);
           }
-          continue;
         }
-      }
-
-      const threadImportResult = await importThreads({
-        environmentId,
-        input: { projectId, expectedWorkspaceRoot: candidate.path },
-      });
-      if (
-        importGeneration !== importGenerationRef.current ||
-        importedProjects !== importedProjectsRef.current
-      ) {
-        return { success: false };
-      }
-      if (threadImportResult._tag === "Success") {
-        importedThreadCount += threadImportResult.value.importedCount;
-        skippedThreadCount += threadImportResult.value.skippedCount;
-        if (threadImportResult.value.importedCount > 0) {
-          projectsWithImportedHistoryRef.current.set(
-            candidate.key,
-            scopeProjectRef(environmentId, projectId),
-          );
-        }
-        if (threadImportResult.value.skippedCount === 0) {
-          importedProjectsCount += 1;
-          importedProjects.set(candidate.key, scopeProjectRef(environmentId, projectId));
-        }
-      } else if (!isAtomCommandInterrupted(threadImportResult)) {
-        projectAttempts.delete(candidate.key);
+      } catch {
+        updateProgress(candidate.key, { status: "failed" });
         refreshEnvironments.add(environmentId);
       }
     }
@@ -195,6 +235,7 @@ export function useHistoryImport(environmentId: EnvironmentId) {
   };
 
   return {
+    progress,
     scan: scans[0]!,
     candidates,
     selected,
