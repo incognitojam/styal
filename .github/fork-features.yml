@@ -236,7 +236,7 @@ features:
   - id: desktop-background-updates
     title: Download desktop updates in the background and install on quit
     status: maintained
-    prs: [110, 128]
+    prs: [110, 128, 358]
     invariants:
       - Available desktop updates download automatically while preserving accurate available, downloading, downloaded, install, and retry state across updater events and pre-install refreshes.
       - Downloaded updates install on normal app quit; the sidebar only offers restart once an installer is ready, while Settings retains checks, progress, and retries.
