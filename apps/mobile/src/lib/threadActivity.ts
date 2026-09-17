@@ -529,9 +529,9 @@ function deriveWorkLogEntries(
   const ordered = Arr.sort(activities, activityOrder);
   const entries: DerivedWorkLogEntry[] = [];
   for (const activity of foldUserInputActivities(ordered)) {
-    // Mobile has no setup card, so a failed setup surfaces as an error row.
+    // The setup card owns its snapshot, including failed and cancelled outcomes.
     // The setup script's own rows stay visible, like other work log entries.
-    if (activity.kind === "worktree-setup" && activity.tone !== "error") continue;
+    if (activity.kind === "worktree-setup") continue;
     if (activity.kind === "tool.started") continue;
     // Like web: an agent's task.started row anchors its batch. It has a fixed
     // id and timestamp, unlike progress ticks, whose stable per-task id is
