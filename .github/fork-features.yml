@@ -183,8 +183,8 @@ features:
       - apps/server/src/persistence/ForkMigrations/001_ComposerDrafts.ts
       - apps/web/src/components/Sidebar.tsx
       - apps/web/src/composerDraftStore.ts
-      - packages/contracts/src/composerDraft.ts
       - packages/client-runtime/src/state/composerDrafts.ts
+      - packages/contracts/src/composerDraft.ts
     upstream_paths:
       - apps/server/src/server.ts
       - apps/server/src/ws.ts
