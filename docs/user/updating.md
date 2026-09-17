@@ -22,9 +22,14 @@ The update does not remove saved threads, settings, or project files.
 
 ## Desktop App Updates
 
-The desktop app downloads its own updates in the background. Once an update is ready, select
-**Restart to update** when you are ready to close styal. styal always asks for confirmation
-before restarting, and a failed background download remains available to retry.
+The desktop app checks for updates and downloads them in the background. Downloaded updates install
+automatically when you quit styal, ready for your next launch. On macOS, closing the last window
+leaves the app running; use **Quit** to exit and install the update.
+
+Once an update is ready, the sidebar shows a **Restart to update** icon if you want to apply it
+immediately. styal asks for confirmation before restarting. Update checks, download progress, and
+retries remain available in Settings. Changing the update track cancels installation of a pending
+update from the previous track; styal waits for a download from the newly selected track.
 
 ## Choose the Action You See
 

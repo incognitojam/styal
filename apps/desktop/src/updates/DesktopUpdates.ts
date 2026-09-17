@@ -161,6 +161,8 @@ export class DesktopUpdates extends Context.Service<
     readonly check: (reason: string) => Effect.Effect<DesktopUpdateCheckResult>;
     readonly download: Effect.Effect<DesktopUpdateActionResult>;
     readonly install: Effect.Effect<DesktopUpdateActionResult>;
+    /** Called after shutdown cleanup; true means the updater owns the final quit. */
+    readonly installOnQuit: Effect.Effect<boolean>;
   }
 >()("@t3tools/desktop/updates/DesktopUpdates") {}
 
@@ -733,6 +735,7 @@ export const make = Effect.gen(function* () {
       Effect.flatMap(
         Effect.fn("desktop.updates.applyUpdateDownloaded")(function* (info) {
           const state = yield* Ref.get(updateStateRef);
+          if (resolveDefaultDesktopUpdateChannel(info.version) !== state.channel) return;
           yield* setState(reduceDesktopUpdateStateOnDownloadComplete(state, info.version));
           yield* logUpdaterInfo("update downloaded", { version: info.version });
         }),
@@ -779,6 +782,8 @@ export const make = Effect.gen(function* () {
       yield* Ref.set(updaterConfiguredRef, true);
 
       yield* electronUpdater.setAutoDownload(false);
+      // Stage only in electron-updater until shutdown. Native macOS staging cannot
+      // be cancelled by switching this flag off after a channel change.
       yield* electronUpdater.setAutoInstallOnAppQuit(false);
       yield* applyAutoUpdaterChannel(settings.updateChannel);
       yield* electronUpdater.setDisableDifferentialDownload(
@@ -880,6 +885,36 @@ export const make = Effect.gen(function* () {
         state: yield* Ref.get(updateStateRef),
       };
     }).pipe(Effect.withSpan("desktop.updates.download")),
+    installOnQuit: Effect.gen(function* () {
+      const state = yield* Ref.get(updateStateRef);
+      if (
+        !(yield* Ref.get(desktopState.quitting)) ||
+        !(yield* Ref.get(updaterConfiguredRef)) ||
+        !state.enabled ||
+        state.downloadedVersion === null ||
+        resolveDefaultDesktopUpdateChannel(state.downloadedVersion) !== state.channel ||
+        (state.status !== "downloaded" &&
+          !(
+            state.status === "error" &&
+            (state.errorContext === null || state.errorContext === "install")
+          )) ||
+        !(yield* tryStartUpdateAction("install"))
+      ) {
+        return false;
+      }
+      return yield* electronUpdater
+        .quitAndInstall({
+          isSilent: true,
+          isForceRunAfter: false,
+        })
+        .pipe(
+          Effect.timeout("30 seconds"),
+          Effect.as(true),
+          Effect.catchCause((cause) =>
+            logUpdaterError("could not install update on quit", { cause }).pipe(Effect.as(false)),
+          ),
+        );
+    }).pipe(Effect.withSpan("desktop.updates.installOnQuit")),
     install: Effect.gen(function* () {
       if (yield* Ref.get(desktopState.quitting)) {
         return {

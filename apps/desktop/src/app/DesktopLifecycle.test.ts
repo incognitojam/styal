@@ -4,6 +4,9 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
+import * as Scope from "effect/Scope";
+import * as Exit from "effect/Exit";
+import * as NodeEvents from "node:events";
 
 import type * as Electron from "electron";
 
@@ -16,6 +19,8 @@ import * as DesktopObservability from "./DesktopObservability.ts";
 import * as DesktopShutdown from "./DesktopShutdown.ts";
 import * as DesktopState from "./DesktopState.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
+import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
+import * as Option from "effect/Option";
 
 const makeElectronApp = (
   overrides: Partial<ElectronApp.ElectronApp["Service"]> = {},
@@ -91,8 +96,22 @@ const makeLifecycleLayer = (
   closeMainForShutdown: Effect.Effect<void> = Effect.void,
   destroyAll: Effect.Effect<void> = Effect.void,
   activate: Effect.Effect<void> = Effect.void,
+  installOnQuit: Effect.Effect<boolean> = Effect.succeed(false),
 ) =>
   DesktopLifecycle.layer.pipe(
+    Layer.provideMerge(
+      Layer.succeed(DesktopUpdates.DesktopUpdates, {
+        getState: Effect.die("unexpected update state read"),
+        emitState: Effect.void,
+        disabledReason: Effect.succeed(Option.none()),
+        configure: Effect.void,
+        setChannel: () => Effect.die("unexpected channel change"),
+        check: () => Effect.die("unexpected update check"),
+        download: Effect.die("unexpected download"),
+        install: Effect.die("unexpected install"),
+        installOnQuit,
+      }),
+    ),
     Layer.provideMerge(Layer.succeed(ElectronApp.ElectronApp, electronApp)),
     Layer.provideMerge(electronThemeLayer),
     Layer.provideMerge(makeElectronWindowLayer(destroyAll)),
@@ -114,6 +133,57 @@ const makeLifecycleLayer = (
   );
 
 describe("DesktopLifecycle", () => {
+  it.effect("keeps a late window close from exiting before the update handoff", () =>
+    Effect.gen(function* () {
+      const events = new NodeEvents.EventEmitter();
+      const installed = yield* Deferred.make<void>();
+      let prematureQuit = false;
+      const electronApp = makeElectronApp({
+        on: (eventName, listener) =>
+          Effect.acquireRelease(
+            Effect.sync(() => {
+              events.on(eventName, listener);
+            }),
+            () =>
+              Effect.sync(() => {
+                events.removeListener(eventName, listener);
+              }),
+          ).pipe(Effect.asVoid),
+        once: (eventName, listener) =>
+          Effect.sync(() => {
+            events.once(eventName, listener);
+          }),
+      });
+      yield* Effect.gen(function* () {
+        const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
+        const shutdown = yield* DesktopShutdown.DesktopShutdown;
+        const listenerScope = yield* Scope.make();
+        yield* lifecycle.register.pipe(Scope.provide(listenerScope));
+        events.emit("before-quit", { preventDefault: () => undefined });
+        yield* shutdown.awaitRequest;
+        yield* Scope.close(listenerScope, Exit.void);
+        // Electron defaults to quitting when this event has no subscribers.
+        // Native delivery can follow the removal of the scoped app listeners.
+        prematureQuit = !events.emit("window-all-closed");
+        yield* shutdown.markComplete;
+        yield* Deferred.await(installed);
+        assert.isFalse(prematureQuit);
+      }).pipe(
+        Effect.provide(
+          makeLifecycleLayer(
+            "darwin",
+            electronApp,
+            Effect.void,
+            Effect.void,
+            Effect.void,
+            Effect.void,
+            Deferred.succeed(installed, undefined).pipe(Effect.as(true)),
+          ),
+        ),
+      );
+    }),
+  );
+
   for (const platform of ["darwin", "win32", "linux"] satisfies ReadonlyArray<NodeJS.Platform>) {
     it.effect(`lets the updater's quit event proceed on ${platform}`, () => {
       const appListeners = new Map<string, (...args: readonly unknown[]) => void>();
@@ -243,6 +313,75 @@ describe("DesktopLifecycle", () => {
       ).pipe(Effect.provide(makeLifecycleLayer("darwin", electronApp, flushTrace)));
     }),
   );
+
+  for (const updaterOwnsQuit of [false, true]) {
+    it.effect(`waits for cleanup before final quit (updater handoff: ${updaterOwnsQuit})`, () =>
+      Effect.gen(function* () {
+        const appListeners = new Map<string, (...args: readonly unknown[]) => void>();
+        const finalQuit = yield* Deferred.make<void>();
+        let installCount = 0;
+        let quitCount = 0;
+        const installOnQuit = Effect.gen(function* () {
+          installCount += 1;
+          if (updaterOwnsQuit) yield* Deferred.succeed(finalQuit, undefined);
+          return updaterOwnsQuit;
+        });
+        const electronApp = makeElectronApp({
+          on: (eventName, listener) =>
+            Effect.sync(() => {
+              appListeners.set(
+                eventName,
+                listener as unknown as (...args: readonly unknown[]) => void,
+              );
+            }),
+          quit: Effect.sync(() => {
+            quitCount += 1;
+            let prevented = false;
+            appListeners.get("before-quit")?.({
+              preventDefault: () => {
+                prevented = true;
+              },
+            });
+            assert.isFalse(prevented);
+          }).pipe(Effect.andThen(Deferred.succeed(finalQuit, undefined)), Effect.asVoid),
+        });
+
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
+            const shutdown = yield* DesktopShutdown.DesktopShutdown;
+            yield* lifecycle.register;
+            let prevented = false;
+            appListeners.get("before-quit")?.({
+              preventDefault: () => {
+                prevented = true;
+              },
+            });
+            yield* shutdown.awaitRequest;
+            assert.isTrue(prevented);
+            assert.isFalse(yield* Deferred.isDone(finalQuit));
+            assert.equal(installCount, 0);
+            yield* shutdown.markComplete;
+            yield* Deferred.await(finalQuit);
+            assert.equal(installCount, 1);
+            assert.equal(quitCount, updaterOwnsQuit ? 0 : 1);
+          }),
+        ).pipe(
+          Effect.provide(
+            makeLifecycleLayer(
+              "win32",
+              electronApp,
+              Effect.void,
+              Effect.void,
+              Effect.void,
+              Effect.void,
+              installOnQuit,
+            ),
+          ),
+        );
+      }),
+    );
+  }
 
   it.effect("closes the main window before requesting application cleanup", () =>
     Effect.gen(function* () {
