@@ -616,9 +616,13 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             return upsertSurface(current, surface);
           }),
         ),
-      openFile: (ref, relativePath, line) =>
+      openFile: (ref, requestedPath, line) =>
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) => {
+            // Workspace entry paths use '/', including on Windows.
+            const relativePath = /^[A-Za-z]:\/+$/.test(requestedPath)
+              ? requestedPath
+              : requestedPath.replace(/\/+$/, "") || requestedPath;
             const withoutStandaloneExplorer = current.surfaces.filter(
               (surface) => surface.kind !== "files",
             );
