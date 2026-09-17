@@ -88,6 +88,21 @@ advertise remote self-update only when they have valid launcher context and a li
 Desktop-managed servers direct the user to update the desktop app. Other process shapes provide a
 manual command; the old detached foreground respawn path no longer exists.
 
+## Desktop Updates on Quit
+
+Desktop downloads stay staged in electron-updater until installation is requested. Its
+`autoInstallOnAppQuit` flag intentionally stays off: switching update tracks resets styal's ready
+state but does not remove the library's queued installer. On macOS, enabling the flag also hands the
+download to Squirrel, after which changing the JavaScript flag cannot cancel native installation.
+
+After normal shutdown closes the windows and drains backend cleanup, `DesktopLifecycle` asks
+`DesktopUpdates.installOnQuit` whether a ready download still belongs to the selected track. Only
+that download is handed to the installer, silently and without relaunching. A track change or failed
+replacement download leaves the old installer ineligible. Native staging errors or a 30-second
+handoff timeout fall back to ordinary quit. Explicit **Restart to update** retains its relaunch
+behavior. macOS reads `autoRunAppAfterInstall` rather than the `quitAndInstall` arguments, so the
+Electron adapter sets that property explicitly for both paths.
+
 ## Source Map
 
 - Launcher and state machine: `apps/server/src/serviceLauncher.ts`

@@ -32,6 +32,8 @@ interface UpdatesHarnessOptions {
   readonly setUpdateChannelError?: DesktopAppSettings.DesktopSettingsWriteError;
   readonly setDisableDifferentialDownload?: Effect.Effect<void>;
   readonly stopBackend?: Effect.Effect<void>;
+  readonly installWait?: Effect.Effect<void>;
+  readonly installError?: ElectronUpdater.ElectronUpdaterQuitAndInstallError;
   readonly env?: Record<string, string | undefined>;
 }
 
@@ -43,6 +45,7 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
   let allowDowngrade = false;
   let fullChangelog = false;
   let autoInstallOnAppQuit = false;
+  const installs: Array<{ isSilent: boolean; isForceRunAfter: boolean }> = [];
   const feedUrls: ElectronUpdater.ElectronUpdaterFeedUrl[] = [];
   const listeners = new Map<string, Set<(...args: readonly unknown[]) => void>>();
   const sentStates: DesktopUpdateState[] = [];
@@ -92,7 +95,16 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
     downloadUpdate: Effect.sync(() => {
       downloadCount += 1;
     }).pipe(Effect.andThen(options.downloadUpdate ?? Effect.void)),
-    quitAndInstall: () => Effect.void,
+    quitAndInstall: (flags) =>
+      Effect.sync(() => {
+        installs.push(flags);
+      }).pipe(
+        Effect.andThen(
+          options.installError
+            ? Effect.fail(options.installError)
+            : (options.installWait ?? Effect.void),
+        ),
+      ),
     on: (eventName, listener) =>
       Effect.acquireRelease(
         Effect.sync(() => {
@@ -218,6 +230,7 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
 
   return {
     layer,
+    installs,
     checkCount: () => checkCount,
     downloadCount: () => downloadCount,
     feedUrls: () => feedUrls,
@@ -288,7 +301,7 @@ describe("DesktopUpdates", () => {
 
           const state = yield* updates.getState;
           assert.equal(state.enabled, true);
-          assert.isTrue(harness.autoInstallOnAppQuit());
+          assert.isFalse(harness.autoInstallOnAppQuit());
           assert.equal(state.status, "idle");
           assert.deepEqual(harness.feedUrls(), [
             { provider: "generic", url: "http://localhost:4141" },
@@ -910,6 +923,147 @@ describe("DesktopUpdates", () => {
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
+
+  for (const outcome of [
+    "no-update",
+    "check-failed",
+    "download-failed",
+    "replacement-ready",
+  ] as const) {
+    it.effect(`does not install the old channel on quit after ${outcome}`, () => {
+      let check = Effect.void as Effect.Effect<
+        void,
+        ElectronUpdater.ElectronUpdaterCheckForUpdatesError
+      >;
+      const harness = makeHarness({
+        checkForUpdates: Effect.suspend(() => check),
+        ...(outcome === "download-failed"
+          ? {
+              downloadUpdate: Effect.fail(
+                new ElectronUpdater.ElectronUpdaterDownloadUpdateError({
+                  channel: "latest",
+                  cause: new Error("replacement download failed"),
+                }),
+              ),
+            }
+          : {}),
+      });
+      return Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          const desktopState = yield* DesktopState.DesktopState;
+          yield* updates.configure;
+          yield* updates.setChannel("nightly");
+          harness.emit("update-downloaded", { version: "1.2.4-nightly.20260820.1" });
+          yield* flushCallbacks;
+          assert.equal((yield* updates.getState).downloadedVersion, "1.2.4-nightly.20260820.1");
+          check =
+            outcome === "check-failed"
+              ? Effect.fail(
+                  new ElectronUpdater.ElectronUpdaterCheckForUpdatesError({
+                    channel: "latest",
+                    cause: new Error("offline"),
+                  }),
+                )
+              : Effect.sync(() => {
+                  if (outcome === "download-failed" || outcome === "replacement-ready") {
+                    harness.emit("update-available", { version: "1.2.4" });
+                  } else {
+                    harness.emit("update-not-available");
+                  }
+                });
+          yield* updates.setChannel("latest");
+          yield* flushCallbacks;
+          if (outcome === "download-failed") {
+            assert.equal((yield* updates.getState).errorContext, "download");
+          }
+          // A delayed old-channel event must not rearm installation either.
+          harness.emit("update-downloaded", { version: "1.2.4-nightly.20260820.1" });
+          yield* flushCallbacks;
+          assert.isNull((yield* updates.getState).downloadedVersion);
+          if (outcome === "replacement-ready") {
+            harness.emit("update-downloaded", { version: "1.2.4" });
+            yield* flushCallbacks;
+          }
+          yield* Ref.set(desktopState.quitting, true);
+          assert.equal(yield* updates.installOnQuit, outcome === "replacement-ready");
+          assert.deepEqual(
+            harness.installs,
+            outcome === "replacement-ready" ? [{ isSilent: true, isForceRunAfter: false }] : [],
+          );
+          assert.isFalse(harness.autoInstallOnAppQuit());
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    });
+  }
+
+  it.effect(
+    "keeps a same-channel download eligible and installs only after shutdown begins",
+    () => {
+      const harness = makeHarness();
+      return Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          const desktopState = yield* DesktopState.DesktopState;
+          yield* updates.configure;
+          harness.emit("update-downloaded", { version: "1.2.4" });
+          yield* flushCallbacks;
+          yield* updates.setChannel("latest");
+          assert.isFalse(yield* updates.installOnQuit);
+          assert.deepEqual(harness.installs, []);
+          yield* Ref.set(desktopState.quitting, true);
+          assert.isTrue(yield* updates.installOnQuit);
+          assert.isFalse(yield* updates.installOnQuit);
+          assert.deepEqual(harness.installs, [{ isSilent: true, isForceRunAfter: false }]);
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    },
+  );
+
+  it.effect("lets normal quit finish when native staging fails", () => {
+    const harness = makeHarness({
+      installError: new ElectronUpdater.ElectronUpdaterQuitAndInstallError({
+        channel: "latest",
+        isSilent: true,
+        isForceRunAfter: false,
+        cause: new Error("native staging failed"),
+      }),
+    });
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        const desktopState = yield* DesktopState.DesktopState;
+        yield* updates.configure;
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+        yield* Ref.set(desktopState.quitting, true);
+        assert.isFalse(yield* updates.installOnQuit);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("bounds a stalled native staging handoff so normal quit can finish", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const harness = makeHarness({
+        installWait: Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
+      });
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          const desktopState = yield* DesktopState.DesktopState;
+          yield* updates.configure;
+          harness.emit("update-downloaded", { version: "1.2.4" });
+          yield* flushCallbacks;
+          yield* Ref.set(desktopState.quitting, true);
+          const install = yield* updates.installOnQuit.pipe(Effect.forkChild);
+          yield* Deferred.await(started);
+          yield* TestClock.adjust("30 seconds");
+          assert.isFalse(yield* Fiber.join(install));
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    }),
+  );
 
   it.effect("persists channel changes through the settings service", () => {
     const harness = makeHarness();

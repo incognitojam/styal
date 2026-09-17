@@ -28,7 +28,8 @@ leaves the app running; use **Quit** to exit and install the update.
 
 Once an update is ready, the sidebar shows a **Restart to update** icon if you want to apply it
 immediately. styal asks for confirmation before restarting. Update checks, download progress, and
-retries remain available in Settings.
+retries remain available in Settings. Changing the update track cancels installation of a pending
+update from the previous track; styal waits for a download from the newly selected track.
 
 ## Choose the Action You See
 

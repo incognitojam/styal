@@ -15,6 +15,7 @@ import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopState from "./DesktopState.ts";
+import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 
 export class DesktopLifecycleRelaunchError extends Schema.TaggedErrorClass<DesktopLifecycleRelaunchError>()(
@@ -40,10 +41,11 @@ export type DesktopLifecycleRuntimeServices =
 
 type DesktopLifecycleRegistrationServices =
   | DesktopLifecycleRuntimeServices
-  | ElectronWindow.ElectronWindow;
+  | ElectronWindow.ElectronWindow
+  | DesktopUpdates.DesktopUpdates;
 
 /**
- * @effect-expect-leaking DesktopEnvironment | DesktopShutdown | DesktopState | DesktopTrace | DesktopWindow | ElectronApp | ElectronTheme | ElectronWindow
+ * @effect-expect-leaking DesktopEnvironment | DesktopShutdown | DesktopState | DesktopTrace | DesktopUpdates | DesktopWindow | ElectronApp | ElectronTheme | ElectronWindow
  */
 export class DesktopLifecycle extends Context.Service<
   DesktopLifecycle,
@@ -148,6 +150,8 @@ const quitElectronAfterShutdown = Effect.fn("desktop.lifecycle.quitElectronAfter
       "requesting Electron quit",
       shutdownStartedAt,
     );
+    const updates = yield* DesktopUpdates.DesktopUpdates;
+    if (yield* updates.installOnQuit) return;
     yield* electronApp.quit;
     yield* recordQuitMilestone(
       "electron-quit-request-returned",

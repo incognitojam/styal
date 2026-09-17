@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 
 import { autoUpdater } from "electron-updater";
+import { app } from "electron";
 
 type AutoUpdater = typeof autoUpdater;
 
@@ -140,15 +141,44 @@ export const make = ElectronUpdater.of({
   quitAndInstall: ({ isSilent, isForceRunAfter }) =>
     Effect.suspend(() => {
       const channel = autoUpdater.channel;
-      return Effect.try({
-        try: () => autoUpdater.quitAndInstall(isSilent, isForceRunAfter),
-        catch: (cause) =>
-          new ElectronUpdaterQuitAndInstallError({
-            channel,
-            isSilent,
-            isForceRunAfter,
-            cause,
-          }),
+      const fail = (cause: unknown) =>
+        new ElectronUpdaterQuitAndInstallError({
+          channel,
+          isSilent,
+          isForceRunAfter,
+          cause,
+        });
+      // MacUpdater ignores quitAndInstall's arguments and reads this property.
+      autoUpdater.autoRunAppAfterInstall = isForceRunAfter;
+      if (isForceRunAfter) {
+        return Effect.try({
+          try: () => autoUpdater.quitAndInstall(isSilent, isForceRunAfter),
+          catch: fail,
+        });
+      }
+      // Native macOS staging finishes asynchronously. If it fails, let the
+      // lifecycle finish quitting instead of leaving an invisible app running.
+      return Effect.callback<void, ElectronUpdaterQuitAndInstallError>((resume) => {
+        const onError = (cause: unknown) => {
+          cleanup();
+          resume(Effect.fail(fail(cause)));
+        };
+        const onQuit = () => {
+          cleanup();
+          resume(Effect.void);
+        };
+        const cleanup = () => {
+          autoUpdater.removeListener("error", onError);
+          app.removeListener("quit", onQuit);
+        };
+        autoUpdater.once("error", onError);
+        app.once("quit", onQuit);
+        try {
+          autoUpdater.quitAndInstall(isSilent, isForceRunAfter);
+        } catch (cause) {
+          onError(cause);
+        }
+        return Effect.sync(cleanup);
       });
     }),
   on: (eventName, listener) => {

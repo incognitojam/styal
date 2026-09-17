@@ -240,7 +240,10 @@ features:
     invariants:
       - Available desktop updates download automatically while preserving accurate available, downloading, downloaded, install, and retry state across updater events and pre-install refreshes.
       - Downloaded updates install on normal app quit; the sidebar only offers restart once an installer is ready, while Settings retains checks, progress, and retries.
+      - Changing update channels clears installation eligibility; only a ready download from the selected channel may install on quit, including on macOS where native staging waits until shutdown.
     implementation_paths:
+      - apps/desktop/src/app/DesktopLifecycle.ts
+      - apps/desktop/src/electron/ElectronUpdater.ts
       - apps/desktop/src/updates/DesktopUpdates.ts
       - apps/desktop/src/updates/updateMachine.ts
       - apps/web/src/components/desktopUpdate.logic.ts
@@ -256,6 +259,7 @@ features:
       - packages/contracts/src/ipc.ts
     tests:
       - apps/desktop/src/app/DesktopLifecycle.test.ts
+      - apps/desktop/src/electron/ElectronUpdater.test.ts
       - apps/desktop/src/updates/DesktopUpdates.test.ts
       - apps/desktop/src/updates/updateMachine.test.ts
       - apps/web/src/components/desktopUpdate.logic.test.ts
