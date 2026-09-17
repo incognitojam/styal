@@ -30,7 +30,7 @@ before restarting, and a failed background download remains available to retry.
 
 | Action                     | What to do                                                                                                                                                                |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Update server**          | Available for the styal Linux background service. Select the button and leave styal open while it prepares, tests, restarts, and reconnects.                              |
+| **Update server**          | Available for the styal background service on Linux and macOS. Select the button and leave styal open while it prepares, tests, restarts, and reconnects.                 |
 | **Update the desktop app** | Open the styal desktop app on the machine that runs the server and install the app update there. Reopen it if needed.                                                     |
 | **Copy update command**    | Copy the command, open a terminal on the server machine, stop the current styal server, and relaunch it with the copied command and any startup options you normally use. |
 
