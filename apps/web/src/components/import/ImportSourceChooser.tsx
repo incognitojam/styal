@@ -49,19 +49,24 @@ function SourceChoice({
 }
 
 /**
- * First screen of the setup import step. Settings never renders it: only T3 Code
- * migration is offered there.
+ * First screen of the top-level Projects step, before a source is picked. The
+ * Preferences step is discovered independently of this project-source choice.
+ * Settings never renders the chooser: only T3 Code migration is offered there.
  */
 export function ImportSourceChooser({
   onSelect,
   onSkip,
   busy,
   error,
+  skipLabel = "Skip for now",
+  skipDisabled = false,
 }: {
   onSelect: (source: ImportSource) => void;
   onSkip: () => void;
   busy: boolean;
   error: string | null;
+  skipLabel?: string;
+  skipDisabled?: boolean;
 }) {
   return (
     <div className="flex min-w-0 flex-col" aria-busy={busy || undefined}>
@@ -73,7 +78,7 @@ export function ImportSourceChooser({
         <SourceChoice
           icon={<FolderIcon className="size-4.5" aria-hidden />}
           title="T3 Code"
-          detail="Projects, conversations, and preferences"
+          detail="Projects and conversations"
           disabled={busy}
           onClick={() => onSelect("legacy")}
         />
@@ -102,9 +107,9 @@ export function ImportSourceChooser({
       ) : null}
 
       <div className="mt-6 flex shrink-0 items-center justify-end gap-2 border-t border-border/60 pt-3">
-        <Button variant="ghost" onClick={onSkip} disabled={busy}>
+        <Button variant="ghost" onClick={onSkip} disabled={busy || skipDisabled}>
           {busy ? <LoaderCircleIcon className="animate-spin" aria-hidden /> : null}
-          Skip for now
+          {skipLabel}
         </Button>
       </div>
     </div>

@@ -200,4 +200,28 @@ describe("shared T3 importer", () => {
       render(true).progress?.result?.projects.find((p) => p.sourceProjectId === "two")?.status,
     ).toBe("failed");
   });
+  it("imports preferences without importing the default T3 project selection", async () => {
+    render().setIncludeSettings(true);
+    mocks.command.mockResolvedValueOnce({
+      _tag: "Success",
+      value: { ...result().value, projects: [], settings: { status: "imported" } },
+    });
+    const outcome = await render().run({ includeProjects: false });
+    expect(outcome).toEqual({ success: true, projectRef: undefined });
+    expect(mocks.command).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: { projectIds: [], includeSettings: true },
+    });
+    expect(render().selected).toHaveLength(2);
+    expect(render().selectedPreferences).toBe(false);
+    expect(render(true).progress?.projects).toHaveLength(0);
+  });
+  it("does not import anything when projects are skipped and preferences are not selected", async () => {
+    expect(await render().run({ includeProjects: false })).toEqual({
+      success: true,
+      projectRef: undefined,
+    });
+    expect(mocks.command).not.toHaveBeenCalled();
+    expect(render().selected).toHaveLength(2);
+  });
 });

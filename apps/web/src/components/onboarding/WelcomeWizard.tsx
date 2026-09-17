@@ -65,12 +65,12 @@ import { cn } from "../../lib/utils";
  * First-run welcome wizard. Rendered over the workspace at `/welcome` on a
  * fresh install (no completed-onboarding flag, empty workspace). Flow per the
  * onboarding overhaul spec: connection choice → sign-in/pair (remote paths) →
- * agent setup with inline install terminal → project import → main screen.
+ * agent setup with inline install terminal → projects → optional preferences → main screen.
  * Every step past the connection gate is skippable; the whole wizard is
  * re-runnable by clearing the flag.
  */
 
-type WizardStep = "connection" | "agents" | "import";
+type WizardStep = "connection" | "agents" | "projects" | "preferences";
 
 const AGENT_ONBOARDING_THREAD_ID = ThreadId.make("onboarding-agent-setup");
 const ONBOARDING_STAGES = ["Connect", "Agents", "Projects"] as const;
@@ -87,10 +87,11 @@ export function WelcomeWizard({
   const [step, setStep] = useState<WizardStep>("connection");
   const { environments } = useEnvironments();
   const [selection, setSelection] = useState<ReadonlySet<EnvironmentId> | null>(null);
+  const [hasPreferences, setHasPreferences] = useState(false);
   const [setupIds, setSetupIds] = useState<readonly EnvironmentId[]>([]);
-  const [isHistoryImporting, setIsImporting] = useState(false);
+  const [isBatchImporting, setIsImporting] = useState(false);
   const pendingLegacyImports = useAtomValue(legacyImportPendingCount);
-  const isImporting = isHistoryImporting || pendingLegacyImports > 0;
+  const isImporting = isBatchImporting || pendingLegacyImports > 0;
   const [terminalSessions, setTerminalSessions] = useState<
     ReadonlyMap<EnvironmentId, AgentTerminalSession>
   >(new Map());
@@ -140,7 +141,13 @@ export function WelcomeWizard({
     setSetupIds(ids);
     setStep("agents");
   };
-  const stageIndex = step === "agents" ? 1 : step === "import" ? 2 : 0;
+  const stageIndex =
+    step === "agents" ? 1 : step === "projects" ? 2 : step === "preferences" ? 3 : 0;
+  const importStep = step === "projects" || step === "preferences";
+  const stages =
+    hasPreferences || step === "preferences"
+      ? [...ONBOARDING_STAGES, "Preferences"]
+      : ONBOARDING_STAGES;
   const finish = useCallback(
     (projectRef?: ScopedProjectRef) => {
       if (finishingPromiseRef.current !== null) return finishingPromiseRef.current;
@@ -187,7 +194,7 @@ export function WelcomeWizard({
       <DialogPopup
         className={cn(
           "max-w-xl overflow-x-hidden overflow-y-auto",
-          step === "import" && "flex max-h-[calc(100dvh-2rem)] flex-col overflow-y-hidden",
+          importStep && "flex max-h-[calc(100dvh-2rem)] flex-col overflow-y-hidden",
         )}
         bottomStickOnMobile={false}
         showCloseButton={false}
@@ -202,19 +209,19 @@ export function WelcomeWizard({
               </span>
             </div>
             <WizardSteps
-              steps={ONBOARDING_STAGES}
+              steps={stages}
               currentStep={stageIndex}
               isStepDisabled={(index) => isImporting || index >= stageIndex}
               onStepChange={(index) => {
                 if (isImporting || index > stageIndex) return;
-                void changeStep(index === 0 ? "connection" : "agents");
+                void changeStep(index === 0 ? "connection" : index === 1 ? "agents" : "projects");
               }}
             />
           </DialogHeader>
 
           <WizardPanel
-            animateHeight={step !== "import"}
-            className={cn("min-w-0", step === "import" && "flex min-h-0 flex-col")}
+            animateHeight={setupIds.length === 0}
+            className={cn("min-w-0", importStep && "flex min-h-0 flex-col")}
           >
             {step === "connection" ? (
               <ConnectionStep
@@ -245,15 +252,23 @@ export function WelcomeWizard({
                 environmentIds={setupIds}
                 terminalSessions={terminalSessions}
                 onTerminalSessionChange={changeTerminalSession}
-                onContinue={() => void changeStep("import")}
+                onContinue={() => void changeStep("projects")}
               />
-            ) : (
-              <OnboardingImportStep
-                environmentIds={setupIds}
-                setIsImporting={setIsImporting}
-                onDone={finish}
-              />
-            )}
+            ) : null}
+            {setupIds.length > 0 ? (
+              <div hidden={!importStep} className="min-h-0">
+                <OnboardingImportStep
+                  key={JSON.stringify(setupIds)}
+                  environmentIds={setupIds}
+                  stage={step === "preferences" ? "preferences" : "projects"}
+                  setIsImporting={setIsImporting}
+                  onDone={finish}
+                  onContinue={() => void changeStep("preferences")}
+                  onBack={() => void changeStep("projects")}
+                  onPreferencesAvailable={setHasPreferences}
+                />
+              </div>
+            ) : null}
           </WizardPanel>
         </div>
       </DialogPopup>

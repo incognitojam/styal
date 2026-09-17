@@ -37,23 +37,36 @@ export function LegacyImportComputer({
   stage,
   setup,
   importing,
-}: ImportComputerProps & { stage: LegacyImportStage }) {
+  includeProjects,
+}: ImportComputerProps & { stage: LegacyImportStage; includeProjects: boolean }) {
   const legacy = useLegacyImport(environmentId, busy);
   const selectedLegacyIds = new Set(legacy.selected.map((project) => project.projectId));
-  const projects = legacy.selected.length;
-  const threads = legacy.selected.reduce((total, project) => total + project.threadCount, 0);
+  const projects = includeProjects ? legacy.selected.length : 0;
+  const threads = includeProjects
+    ? legacy.selected.reduce((total, project) => total + project.threadCount, 0)
+    : 0;
   const preferences = legacy.selectedPreferences ? 1 : 0;
+  const preferenceChanges = legacy.changes.length;
+  const previewPending = legacy.preview === null && legacy.query.error === null;
   useEffect(
-    () => onSummary(environmentId, { projects, threads, preferences }),
-    [environmentId, onSummary, projects, threads, preferences],
+    () =>
+      onSummary(environmentId, {
+        projects,
+        threads,
+        preferences,
+        preferenceChanges,
+        previewPending,
+      }),
+    [environmentId, onSummary, projects, threads, preferences, preferenceChanges, previewPending],
   );
   useImperativeHandle(ref, () => ({
     run: async () => {
       if (!connected && (projects > 0 || preferences > 0))
         throw new Error(`${label} is not connected.`);
-      return legacy.run();
+      return legacy.run({ includeProjects });
     },
   }));
+  if (!active && !importing) return null;
   const available = legacy.preview?.status === "available" ? legacy.preview : null;
   const preferencePreview = available?.preferences;
   return (
@@ -63,7 +76,7 @@ export function LegacyImportComputer({
           label={label}
           progress={legacy.progress}
           preview={legacy.query.data}
-          selected={legacy.selected}
+          selected={includeProjects ? legacy.selected : []}
           preferences={legacy.selectedPreferences}
           pending={legacy.query.isPending}
           error={legacy.query.error}
@@ -173,8 +186,9 @@ export function HistoryImportComputer({
       return history.run();
     },
   }));
+  if (!active) return null;
   return (
-    <div hidden={!active} className="space-y-5" aria-label={label}>
+    <div className="space-y-5" aria-label={label}>
       {!connected ? (
         <p role="status" className="text-sm text-muted-foreground">
           Waiting for {label} to connect.

@@ -441,10 +441,11 @@ function summaryText(summary: ComputerImportSummary): string {
 }
 
 /**
- * The import surface itself: a heading that names the source and, for T3 Code,
- * the current step; one scroller for the chosen computer; one footer that
- * always states the whole selection and commits it. Setup and Settings render the
- * shared content; setup guides the review through two steps, Settings shows both.
+ * The import surface itself: a heading that names what is under review — the
+ * source while projects are picked, Preferences on its own step; one scroller for
+ * the chosen computer; one footer that always states the whole selection and
+ * commits it. Setup and Settings render the shared content; setup reaches this
+ * view once per top-level step, Settings shows every section on one page.
  */
 export function ImportDataView({
   computers,
@@ -455,7 +456,8 @@ export function ImportDataView({
   setup,
   source,
   stage,
-  onStageChange,
+  onContinue,
+  checkingPreferences,
   onBack,
   progress,
   onImport,
@@ -470,9 +472,10 @@ export function ImportDataView({
   summary: ComputerImportSummary;
   busy: boolean;
   setup: boolean;
-  source: ImportSource;
+  source: ImportSource | null;
   stage: LegacyImportStage;
-  onStageChange: (stage: LegacyImportStage) => void;
+  onContinue?: (() => void) | undefined;
+  checkingPreferences: boolean;
   onBack?: (() => void) | undefined;
   progress: string | null;
   onImport: () => void;
@@ -482,10 +485,8 @@ export function ImportDataView({
   children: ReactNode;
 }) {
   const legacy = source === "legacy";
-  const choosing = setup && legacy && stage === "projects";
-  const back =
-    setup && legacy && stage === "preferences" ? () => onStageChange("projects") : onBack;
-  const importing = legacy && busy && progress !== null;
+  const back = onBack;
+  const importing = busy && progress !== null;
   const canImport = summary.projects > 0 || summary.preferences > 0;
   const computerItems = useMemo(
     () => computers.map((computer) => ({ value: computer.id, label: computer.label })),
@@ -509,9 +510,7 @@ export function ImportDataView({
             className="-ml-1.5 shrink-0"
             onClick={back}
             disabled={busy}
-            aria-label={
-              legacy && stage === "preferences" ? "Back to projects" : "Back to import sources"
-            }
+            aria-label={stage === "preferences" ? "Back to projects" : "Back to import sources"}
           >
             <ChevronLeftIcon />
           </Button>
@@ -522,18 +521,12 @@ export function ImportDataView({
             setup ? "text-lg" : "text-base",
           )}
         >
-          {legacy ? "T3 Code" : "Claude Code / Codex"}
+          {setup && stage === "preferences"
+            ? "Preferences"
+            : legacy
+              ? "T3 Code"
+              : "Claude Code / Codex"}
         </h2>
-        {legacy && setup && !importing ? (
-          <p aria-live="polite" className="shrink-0 text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">
-              {choosing ? "Projects" : "Preferences"}
-            </span>
-            <span aria-hidden> · </span>
-            <span className="sr-only">, step </span>
-            {choosing ? "1" : "2"} of 2
-          </p>
-        ) : null}
       </div>
 
       <ScrollArea
@@ -543,9 +536,11 @@ export function ImportDataView({
       >
         <div className="flex min-w-0 flex-col gap-4 pb-1">
           {importing ? (
-            <div role="status" className="space-y-1">
-              <h3 className="text-lg font-semibold">Importing T3 Code data</h3>
-              <p className="text-sm text-muted-foreground">{progress}</p>
+            // The footer's live region already announces `progress`; this block is
+            // the visual anchor only, so it must not repeat the announcement.
+            <div className="space-y-1">
+              <h3 className="text-base font-semibold text-foreground">Importing data</h3>
+              <p className="text-[13px] leading-[1.45] text-muted-foreground">{progress}</p>
             </div>
           ) : computers.length === 0 ? (
             <p className="py-8 text-center text-[13px] text-muted-foreground">
@@ -631,19 +626,35 @@ export function ImportDataView({
           ) : null}
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-          {setup ? (
-            <Button variant="ghost" onClick={onSkip} disabled={busy}>
-              Skip for now
+          {setup && stage === "projects" ? (
+            <Button variant="ghost" onClick={onSkip} disabled={busy || checkingPreferences}>
+              {onContinue ? "Skip projects" : "Skip for now"}
             </Button>
           ) : null}
-          {choosing ? (
-            <Button onClick={() => onStageChange("preferences")} disabled={busy}>
-              Continue to preferences
+          {onContinue ? (
+            <Button onClick={onContinue} disabled={busy || checkingPreferences}>
+              {checkingPreferences ? (
+                <LoaderCircleIcon className="animate-spin" aria-hidden />
+              ) : null}
+              {checkingPreferences ? "Checking preferences…" : "Continue"}
             </Button>
           ) : (
-            <Button onClick={onImport} disabled={busy || !canImport}>
-              {busy ? <LoaderCircleIcon className="animate-spin" aria-hidden /> : null}
-              {busy ? "Importing…" : setup ? "Import & finish" : "Import"}
+            <Button
+              onClick={onImport}
+              disabled={busy || checkingPreferences || (!setup && !canImport)}
+            >
+              {busy || checkingPreferences ? (
+                <LoaderCircleIcon className="animate-spin" aria-hidden />
+              ) : null}
+              {busy
+                ? "Importing…"
+                : checkingPreferences
+                  ? "Checking preferences…"
+                  : setup
+                    ? canImport
+                      ? "Import & finish"
+                      : "Finish"
+                    : "Import"}
             </Button>
           )}
         </div>

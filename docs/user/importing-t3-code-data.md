@@ -1,6 +1,6 @@
 # Import T3 Code data
 
-Use **Settings → Import data** on web or desktop, or the Projects step during setup, to bring projects, threads, and preferences from T3 Code into styal. During setup, choose **T3 Code** as the import source. Claude Code and Codex history are a separate option available only during first setup; see [Import your projects](welcome-wizard.md#import-your-projects).
+Use **Settings → Import data** on web or desktop, or during setup, to bring projects, threads, and preferences from T3 Code into styal. During setup, choose **T3 Code** in Projects; differing T3 preferences appear in their own **Preferences** step regardless of the project source. Claude Code and Codex history are a separate option available only during first setup; see [Import your projects](welcome-wizard.md#import-your-projects).
 
 ## Choose a server
 
@@ -10,7 +10,7 @@ T3 Code can stay open while you import. styal reads its database without modifyi
 
 ## Import projects and threads
 
-The T3 Code list shows thread counts and identifies projects already in styal, along with scripts or repairs when applicable. A project can also appear when an earlier import needs its history or provider context repaired. In Settings, select projects and review optional preferences on the same page, then choose **Import**. During setup, choose **Continue to preferences**, review the preferences, then choose **Import & finish**. Completed projects are deselected; failed projects remain selected for retry.
+The T3 Code list shows thread counts and identifies projects already in styal, along with scripts or repairs when applicable. A project can also appear when an earlier import needs its history or provider context repaired. In Settings, select projects and review optional preferences on the same page, then choose **Import**. During setup, choose **Continue** when a Preferences step is available, then **Import & finish** after the final review. If there are no differing preferences, import directly from Projects. Completed projects are deselected; failed projects remain selected for retry.
 
 The list refreshes while the page is open, so projects added to or removed from the old installation appear automatically. During import, a progress view shows the selected projects and preferences for each computer. Remaining thread and repair counts refresh automatically; completed requests are marked complete.
 

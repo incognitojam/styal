@@ -44,6 +44,8 @@ export interface ImportPreferencesModel {
 }
 
 export interface ComputerImportSummary {
+  readonly preferenceChanges?: number;
+  readonly previewPending?: boolean;
   readonly projects: number;
   readonly threads: number;
   readonly preferences: number;

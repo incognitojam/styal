@@ -1,7 +1,9 @@
 # Welcome wizard
 
 styal shows a setup flow when you open a new installation or connect to the
-hosted app for the first time. Existing workspaces skip this flow.
+hosted app for the first time. Existing workspaces skip this flow. Setup has
+**Connect**, **Agents**, and **Projects** steps, plus **Preferences** when a
+selected computer has T3 Code preferences that differ from styal.
 
 ## Connect your computers
 
@@ -52,11 +54,14 @@ terminal metadata while the terminal process can use them.
 ## Import your projects
 
 Choose **T3 Code** to migrate an existing installation, or **Claude Code / Codex**
-to import CLI conversation history. Setup imports one source at a time. Each
-source only checks the computers selected earlier in setup.
+to import CLI conversation history. Setup imports projects from one source at a
+time. Each source only checks the computers selected earlier in setup.
 
-Choose **Import & finish** to import the selection, or **Skip for now** to finish
-without importing. Navigation is disabled while an import runs. T3 Code migration
+When there are preferences to review, **Continue** opens the top-level
+**Preferences** step. **Skip projects** also opens Preferences, without selecting
+any projects. Otherwise, **Import & finish** imports the project selection and
+completes setup; **Skip for now** on the source chooser finishes without importing.
+Nothing is imported until the final review. Navigation is disabled while an import runs. T3 Code migration
 remains available in **Settings → Import data**; CLI history import is available
 only during first setup.
 
@@ -66,19 +71,13 @@ Projects and conversations are read from each computer's default T3 home and
 imported into styal on that same computer. Completed projects are deselected;
 failed projects remain selected for retry.
 
-During setup, select projects, then choose
-**Continue to preferences** to review optional preferences before importing.
-Back returns from Preferences to Projects, and from Projects to the source chooser
-during setup. Selections are retained when you change steps or computers, and
-the footer totals your choices across computers. Settings shows projects and
-preferences together with a direct **Import** action.
+Selections are retained when you return to Projects or Agents using the setup
+progress bar, or change computers. The footer totals your choices across
+computers. Settings shows projects and preferences together with a direct
+**Import** action.
 
 While importing, the main panel shows remaining threads and repairs, preference
 imports, and completed work for each computer. Counts refresh every 30 seconds.
-
-Preferences are optional and unchecked by default. Review the changed values and
-select **Bring over T3 Code preferences** for each computer where you want them
-applied. Importing projects alone does not replace preferences.
 
 ### Claude/Codex history
 
@@ -110,3 +109,18 @@ directly in styal. You can continue without the remaining history.
 
 You can continue without configuring agents or importing projects, or return to an earlier step
 using the setup progress bar. Navigation pauses while an import is running.
+
+## Review preferences
+
+After selecting computers, styal checks their T3 Code preferences while you review
+agents. The **Preferences** step appears only if at least one selected computer
+has differing values. It is omitted when there is no T3 Code installation, no
+saved preferences, or all values already match.
+
+This step is independent of the project source: you can import preferences after
+choosing Claude Code / Codex history, T3 Code projects, or skipping projects.
+Preferences are unchecked by default. Review the changed values and select
+**Bring over T3 Code preferences** for each computer where you want them applied.
+**Import & finish** imports your selected projects and preferences; **Finish**
+completes setup if nothing is selected. Importing projects alone does not replace
+preferences.

@@ -19,8 +19,9 @@ export function WizardSteps({
 }) {
   const Step = onStepChange ? "button" : "div";
   return (
+    // Let long labels such as Preferences use more of the available width.
     <ol
-      className="grid auto-cols-fr grid-flow-col gap-1 rounded-xl bg-zinc-25 p-1 ring-1 ring-black/5 dark:bg-white/4 dark:ring-white/5"
+      className="grid auto-cols-auto grid-flow-col gap-1 rounded-xl bg-zinc-25 p-1 ring-1 ring-black/5 dark:bg-white/4 dark:ring-white/5"
       role="list"
       aria-label="Setup progress"
     >
@@ -54,10 +55,12 @@ export function WizardSteps({
             >
               {index < currentStep ? <CheckIcon className="size-4 shrink-0" /> : index + 1}
             </span>
+            {/* Narrow rails keep only the current label, so the step you are on is
+                still named while the rest stay as numbers. */}
             <span
               className={cn(
-                "min-w-0 truncate text-sm font-medium max-sm:hidden",
-                index === currentStep ? "text-foreground" : "text-muted-foreground",
+                "min-w-0 truncate text-sm font-medium",
+                index === currentStep ? "text-foreground" : "text-muted-foreground max-sm:hidden",
               )}
             >
               {step}

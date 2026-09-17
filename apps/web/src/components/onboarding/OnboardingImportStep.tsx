@@ -1,49 +1,35 @@
 import { useState } from "react";
-import { ImportSourceChooser } from "../import/ImportSourceChooser";
-import type { ImportSource } from "../import/types";
 import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
+import type { ImportSource, LegacyImportStage } from "../import/types";
 import { DataImportPanel } from "../import/DataImportPanel";
 
+/** Keep selections mounted across the top-level Projects and Preferences steps. */
 export function OnboardingImportStep({
   environmentIds,
+  stage,
   setIsImporting,
   onDone,
+  onContinue,
+  onBack,
+  onPreferencesAvailable,
 }: {
   readonly environmentIds: readonly EnvironmentId[];
+  readonly stage: LegacyImportStage;
   readonly setIsImporting: (value: boolean) => void;
   readonly onDone: (projectRef?: ScopedProjectRef) => Promise<boolean>;
+  readonly onContinue: () => void;
+  readonly onBack: () => void;
+  readonly onPreferencesAvailable: (available: boolean) => void;
 }) {
   const [source, setSource] = useState<ImportSource | null>(null);
-  const [finishing, setFinishing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const skip = async () => {
-    if (finishing) return;
-    setFinishing(true);
-    setIsImporting(true);
-    setError(null);
-    try {
-      await onDone();
-    } catch {
-      setError("Could not finish setup. Please try again.");
-    } finally {
-      setFinishing(false);
-      setIsImporting(false);
-    }
-  };
-  if (source === null)
-    return (
-      <ImportSourceChooser
-        onSelect={setSource}
-        onSkip={() => void skip()}
-        busy={finishing}
-        error={error}
-      />
-    );
   return (
     <DataImportPanel
-      key={source}
       source={source}
-      onBack={() => setSource(null)}
+      onSourceChange={setSource}
+      stage={stage}
+      onBack={stage === "preferences" ? onBack : () => setSource(null)}
+      onContinue={onContinue}
+      onPreferencesAvailable={onPreferencesAvailable}
       environmentIds={environmentIds}
       onBusyChange={setIsImporting}
       onDone={onDone}

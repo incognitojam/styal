@@ -5,6 +5,7 @@ import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environmen
 import { useProjects } from "../../state/entities";
 import { dataImportBatchPendingCount, legacyImportPendingCount } from "../../state/dataImport";
 import { LegacyImportComputer, HistoryImportComputer } from "./ImportComputer";
+import { ImportSourceChooser } from "./ImportSourceChooser";
 import { ImportDataView } from "./ImportDataView";
 import { importErrorMessage } from "./useLegacyImport";
 import type {
@@ -14,16 +15,24 @@ import type {
   LegacyImportStage,
 } from "./types";
 
-/** Runs one selected source across computers; T3 migration shares its setup and Settings flow. */
+/** Runs the chosen project source and optional T3 preferences across selected computers. */
 export function DataImportPanel({
   environmentIds,
   source,
   onBack,
   onDone,
   onBusyChange,
+  stage = "projects",
+  onSourceChange,
+  onContinue,
+  onPreferencesAvailable,
 }: {
   environmentIds?: readonly EnvironmentId[];
-  source: ImportSource;
+  source: ImportSource | null;
+  stage?: LegacyImportStage;
+  onSourceChange?: (source: ImportSource | null) => void;
+  onContinue?: () => void;
+  onPreferencesAvailable?: (available: boolean) => void;
   onBack?: () => void;
   onDone?: (projectRef?: ScopedProjectRef) => Promise<boolean>;
   onBusyChange?: (busy: boolean) => void;
@@ -32,12 +41,12 @@ export function DataImportPanel({
   const environments = environmentIds
     ? allEnvironments.filter((environment) => environmentIds.includes(environment.environmentId))
     : allEnvironments;
-  const [stage, setStage] = useState<LegacyImportStage>("projects");
   const primary = usePrimaryEnvironmentId();
   const [selectedId, setSelectedId] = useState<EnvironmentId | null>(primary);
   const activeId =
     environments.find((environment) => environment.environmentId === selectedId)?.environmentId ??
     environments[0]?.environmentId;
+  const historyImporters = useRef(new Map<EnvironmentId, ComputerImporter>());
   const importers = useRef(new Map<EnvironmentId, ComputerImporter>());
   const [summaries, setSummaries] = useState<ReadonlyMap<EnvironmentId, ComputerImportSummary>>(
     new Map(),
@@ -45,12 +54,29 @@ export function DataImportPanel({
   const onSummary = useCallback((id: EnvironmentId, summary: ComputerImportSummary) => {
     setSummaries((current) => new Map(current).set(id, summary));
   }, []);
+  const [historySummaries, setHistorySummaries] = useState<
+    ReadonlyMap<EnvironmentId, ComputerImportSummary>
+  >(new Map());
+  const onHistorySummary = useCallback((id: EnvironmentId, summary: ComputerImportSummary) => {
+    setHistorySummaries((current) => new Map(current).set(id, summary));
+  }, []);
+  const preferencesAvailable = environments.some(
+    (environment) => (summaries.get(environment.environmentId)?.preferenceChanges ?? 0) > 0,
+  );
+  const preferencesPending = environments.some(
+    (environment) => summaries.get(environment.environmentId)?.previewPending !== false,
+  );
+  useEffect(() => {
+    onPreferencesAvailable?.(preferencesAvailable);
+  }, [onPreferencesAvailable, preferencesAvailable]);
   const summary = environments.reduce(
     (total, environment) => {
       const next = summaries.get(environment.environmentId);
+      const history =
+        source === "history" ? historySummaries.get(environment.environmentId) : undefined;
       return {
-        projects: total.projects + (next?.projects ?? 0),
-        threads: total.threads + (next?.threads ?? 0),
+        projects: total.projects + (next?.projects ?? 0) + (history?.projects ?? 0),
+        threads: total.threads + (next?.threads ?? 0) + (history?.threads ?? 0),
         preferences: total.preferences + (next?.preferences ?? 0),
       };
     },
@@ -107,10 +133,12 @@ export function DataImportPanel({
     let firstProject = landing;
     const failures: string[] = [];
     try {
-      const batch = environments.map((environment) => ({
-        environment,
-        importer: importers.current.get(environment.environmentId),
-      }));
+      const batch = environments.flatMap((environment) => [
+        ...(source === "history"
+          ? [{ environment, importer: historyImporters.current.get(environment.environmentId) }]
+          : []),
+        { environment, importer: importers.current.get(environment.environmentId) },
+      ]);
       for (const { environment, importer } of batch) {
         if (!mounted.current) return;
         if (!importer) {
@@ -146,48 +174,93 @@ export function DataImportPanel({
   };
   const skip = async () => {
     if (!onDone || busy || runningRef.current) return;
-    setAwaitingCompletion(true);
+    onSourceChange?.(null);
+    if (preferencesAvailable && onContinue) onContinue();
+    else setAwaitingCompletion(true);
   };
-  const Computer = source === "legacy" ? LegacyImportComputer : HistoryImportComputer;
   return (
-    <ImportDataView
-      computers={environments.map((environment) => ({
-        id: environment.environmentId,
-        label: environment.label,
-      }))}
-      activeId={activeId}
-      onSelectComputer={setSelectedId}
-      summary={summary}
-      busy={busy}
-      setup={!!onDone}
-      source={source}
-      stage={stage}
-      onStageChange={setStage}
-      onBack={onBack}
-      progress={progress ?? (awaitingCompletion ? "Finishing setup…" : null)}
-      onImport={() => void run()}
-      onSkip={() => void skip()}
-      message={message}
-      error={error}
-    >
-      {environments.map((environment) => (
-        <Computer
-          key={environment.environmentId}
-          environmentId={environment.environmentId}
-          label={environment.label}
-          active={activeId === environment.environmentId}
-          connected={environment.connection.phase === "connected"}
+    <>
+      {source === null && stage === "projects" ? (
+        <ImportSourceChooser
+          onSelect={(next) => onSourceChange?.(next)}
+          onSkip={() => void skip()}
+          busy={busy}
+          skipDisabled={preferencesPending}
+          skipLabel={
+            preferencesPending
+              ? "Checking preferences…"
+              : preferencesAvailable
+                ? "Skip projects"
+                : "Skip for now"
+          }
+          error={error}
+        />
+      ) : null}
+      <div hidden={source === null && stage === "projects"}>
+        <ImportDataView
+          computers={environments.map((environment) => ({
+            id: environment.environmentId,
+            label: environment.label,
+          }))}
+          activeId={activeId}
+          onSelectComputer={setSelectedId}
+          summary={summary}
           busy={busy}
           setup={!!onDone}
-          importing={source === "legacy" && (progress !== null || awaitingCompletion)}
+          source={source}
           stage={stage}
-          onSummary={onSummary}
-          ref={(importer) => {
-            if (importer) importers.current.set(environment.environmentId, importer);
-            else importers.current.delete(environment.environmentId);
-          }}
-        />
-      ))}
-    </ImportDataView>
+          onContinue={stage === "projects" && preferencesAvailable ? onContinue : undefined}
+          checkingPreferences={!!onDone && preferencesPending}
+          onBack={onBack}
+          progress={progress ?? (awaitingCompletion ? "Finishing setup…" : null)}
+          onImport={() => void run()}
+          onSkip={() => void skip()}
+          message={message}
+          error={error}
+        >
+          {environments.map((environment) => (
+            <LegacyImportComputer
+              key={environment.environmentId}
+              environmentId={environment.environmentId}
+              label={environment.label}
+              active={
+                activeId === environment.environmentId &&
+                (source === "legacy" || stage === "preferences")
+              }
+              includeProjects={source === "legacy"}
+              connected={environment.connection.phase === "connected"}
+              busy={busy}
+              setup={!!onDone}
+              importing={progress !== null || awaitingCompletion}
+              stage={stage}
+              onSummary={onSummary}
+              ref={(importer) => {
+                if (importer) importers.current.set(environment.environmentId, importer);
+                else importers.current.delete(environment.environmentId);
+              }}
+            />
+          ))}
+          {source === "history"
+            ? environments.map((environment) => (
+                <HistoryImportComputer
+                  key={environment.environmentId}
+                  environmentId={environment.environmentId}
+                  label={environment.label}
+                  active={activeId === environment.environmentId && stage === "projects"}
+                  connected={environment.connection.phase === "connected"}
+                  busy={busy}
+                  setup={!!onDone}
+                  importing={false}
+                  onSummary={onHistorySummary}
+                  ref={(importer) => {
+                    if (importer) historyImporters.current.set(environment.environmentId, importer);
+                    else historyImporters.current.delete(environment.environmentId);
+                  }}
+                />
+              ))
+            : null}
+        </ImportDataView>
+      </div>
+    </>
   );
 }

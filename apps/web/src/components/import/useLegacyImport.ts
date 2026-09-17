@@ -78,10 +78,11 @@ export function useLegacyImport(environmentId: EnvironmentId, busy: boolean) {
     if (!busy) setProgress(null);
   }, [busy]);
 
-  const run = async (): Promise<ImportOutcome> => {
+  const run = async ({ includeProjects = true } = {}): Promise<ImportOutcome> => {
+    const selectedProjects = includeProjects ? selected : [];
     setProgress({
-      projects: selected,
-      phase: selected.length > 0 ? "projects" : "preferences",
+      projects: selectedProjects,
+      phase: selectedProjects.length > 0 ? "projects" : "preferences",
       preferences: selectedPreferences ? "queued" : null,
     });
     setError(null);
@@ -90,10 +91,10 @@ export function useLegacyImport(environmentId: EnvironmentId, busy: boolean) {
     let success = true;
     let projectRef: ScopedProjectRef | undefined;
     // Keep the existing independent requests: a project failure cannot apply preferences implicitly.
-    if (selected.length > 0) {
+    if (selectedProjects.length > 0) {
       const result = await command({
         environmentId,
-        input: { projectIds: selected.map((p) => p.projectId), includeSettings: false },
+        input: { projectIds: selectedProjects.map((p) => p.projectId), includeSettings: false },
       });
       if (result._tag === "Failure") {
         const message = isAtomCommandInterrupted(result)
