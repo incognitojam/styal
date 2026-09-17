@@ -115,7 +115,7 @@ An empty database is a bad test. Seed your worktree's `.styal` with a copy of re
 - **Do not run repo-wide checks.** No `vp check`, no `vp run -r test`, no `vp run -r typecheck` unless I ask. CI owns the full suite.
 - Backend behavior changes ship with focused tests for that behavior.
 - The server is event-sourced and its async flows emit typed receipts. Wait on receipts and worker drains, never on sleeps or polling. A test that needs a timeout to pass is wrong.
-- Upon request, user-visible frontend changes should get one integrated pass in a real client: `test-t3-app` for web, `test-t3-mobile` for mobile. The primary agent does this once after integrating. Subagents do not launch their own dev servers. Isolated headless browsers, CDP attached to a dedicated test browser, and styal's built-in MCP/preview tools may be used without additional permission when they do not interfere with the user's active browser or desktop.
+- Verify user-visible frontend changes with one integrated pass in a real client: `test-t3-app` for web, `test-t3-mobile` for mobile. The primary agent does this once after integrating. Subagents do not launch their own dev servers.
 
 ## Pull requests
 
@@ -173,5 +173,5 @@ Full glossary with file links: `docs/internals/glossary.md`
 
 ## Additional tips
 
-- Ask permission before doing computer use: controlling the user's desktop or active applications through mouse, keyboard, or other UI automation. Isolated headless browsers, CDP attached to a dedicated test browser, and styal's built-in MCP/preview tools do not require additional permission when they do not interfere with the user's active browser or desktop. CDP access alone does not establish isolation; check which browser session it controls. Permission already granted for the relevant action does not need to be requested again.
+- Verify your work using isolated tools, such as a headless browser. Avoid interfering with the user's applications, mouse, or keyboard; ask permission before any action that could do so.
 - Security is important, but should not be over-indexed on, especially for dev mode/maintainer-only features.
