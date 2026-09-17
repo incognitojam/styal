@@ -2652,7 +2652,7 @@ features:
       - Existing threads receive the latest message timestamp during migration; new messages advance it and reverting a turn recalculates it from retained messages without reading message bodies into sidebar summaries.
     implementation_paths:
       - apps/mobile/src/features/home/HomeScreen.tsx
-      - apps/mobile/src/features/settings/SettingsRouteScreen.tsx
+      - apps/mobile/src/features/settings/SettingsThreadsRouteScreen.tsx
       - apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx
       - apps/mobile/src/features/threads/thread-list-items.tsx
       - apps/mobile/src/features/threads/thread-list-v2-items.tsx
@@ -2889,6 +2889,28 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/pull/7476
       retire_when: Upstream provides equivalent full-snapshot transcript export from every thread action surface with safe clipboard ordering.
+
+  - id: thread-unpin-confirmation
+    title: Confirm unpinning threads by default on every client
+    status: maintained
+    prs: []
+    invariants:
+      - Unpinning a thread asks for confirmation by default on web, desktop, and mobile; web and desktop turn it off in Settings and mobile has its own device-local switch.
+      - Mobile asks before unpinning from the home list and the thread sidebar, and an explicit opt-out survives later preference writes.
+    rationale: The fork's import of upstream's web confirmation (fork commit 75082f7ea3) turned it on by default and extended it to mobile; upstream ships it off by default and web-only.
+    implementation_paths:
+      - apps/mobile/src/features/home/useThreadListActions.ts
+      - apps/mobile/src/features/settings/SettingsThreadsRouteScreen.tsx
+    upstream_paths:
+      - apps/mobile/src/features/home/useThreadListActions.ts
+      - apps/mobile/src/persistence/mobile-preferences.ts
+      - packages/contracts/src/settings.ts
+    tests:
+      - apps/mobile/src/lib/storage.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream confirms unpinning by default and offers the confirmation on mobile.
 
   - id: turn-token-usage
     title: Show token usage under each agent turn

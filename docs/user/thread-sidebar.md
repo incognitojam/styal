@@ -35,7 +35,8 @@ and worktree while you stay in the new thread composer. This requires a Git proj
 Pin a thread from its menu to keep it above your active work.
 
 Unpinning asks for confirmation by default. Turn this off in **Settings → General →
-Unpin confirmation**; the preference is saved separately on each device.
+Unpin confirmation** on web and desktop, or **Settings → Thread behavior** on mobile; the
+preference is saved separately on each device.
 
 On web and desktop, you can also drag files from your computer onto any thread row:
 the thread opens and the files are attached in its composer, ready for
@@ -84,7 +85,7 @@ continues to use settlement time.
 
 Thread times show when you last prompted the agent by default. To include agent replies, choose
 **Last message** in **Settings → General → Thread timestamp** on web or desktop, or enable
-**Show last message time** in mobile Settings. This changes the displayed time, not the order.
+**Show last message time** in **Settings → Thread behavior** on mobile. This changes the displayed time, not the order.
 For an older connected server, **Last message** uses the latest thread activity time until that
 server is updated; other activity can make this an approximation of the last reply.
 
@@ -125,9 +126,9 @@ prevent automatic settlement. An open pull request does not prevent inactivity
 settlement, but an old closed or merged pull request does not settle work you
 resumed after it closed.
 
-Change these rules in **Settings → General**. They continue to run when your apps
-are closed. On web and desktop, choose an environment at the top to change only
-its rules, or **All environments** to update connected environments together.
+Change these rules in **Settings → General** on web and desktop, or **Settings → Thread behavior** on mobile.
+They continue to run when your apps are closed. On web and desktop, choose an environment at the
+top to change only its rules, or **All environments** to update connected environments together.
 Mixed values show where the selected environments disagree. Mobile applies these
 rules to connected environments that support shared settings. Offline environments
 and older servers keep their previous values. Changing a rule does not reopen

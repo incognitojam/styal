@@ -38,8 +38,8 @@ Each completed Codex, Claude Code, OpenCode, or Antigravity turn shows the token
 timestamp. Hover the figure on web or desktop, or tap it on mobile, for input tokens and the share
 served from cache, output and reasoning tokens, and cache writes. The figure covers the main agent
 only; subagent tokens are not included. Turns that finished before your server recorded usage show
-nothing. To hide the figures, turn off **Settings → General → Turn usage**. On mobile the setting
-applies to that device.
+nothing. To hide the figures, turn off **Settings → General → Turn usage**. On mobile, the setting
+is in **Settings → Thread behavior** and applies to that device.
 
 ## Set custom model prices
 
