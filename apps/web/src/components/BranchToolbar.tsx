@@ -66,6 +66,7 @@ export interface BranchToolbarHandle {
 }
 
 interface BranchToolbarProps {
+  forceNewWorktree?: boolean;
   ref?: Ref<BranchToolbarHandle>;
   environmentId: EnvironmentId;
   threadId: ThreadId;
@@ -90,6 +91,7 @@ interface BranchToolbarProps {
 }
 
 interface MobileRunContextSelectorProps {
+  forceNewWorktree: boolean;
   autoEnvironmentLabel?: string | undefined;
   onAutoEnvironment?: (() => void) | undefined;
   envLocked: boolean;
@@ -108,6 +110,7 @@ interface MobileRunContextSelectorProps {
 }
 
 const MobileRunContextSelector = memo(function MobileRunContextSelector({
+  forceNewWorktree,
   autoEnvironmentLabel,
   onAutoEnvironment,
   envLocked,
@@ -135,11 +138,13 @@ const MobileRunContextSelector = memo(function MobileRunContextSelector({
       : activeWorktreePath
         ? FolderGitIcon
         : FolderIcon;
-  const workspaceLabel = envModeLocked
-    ? resolveLockedWorkspaceLabel(activeWorktreePath)
-    : effectiveEnvMode === "worktree"
-      ? resolveEnvModeLabel("worktree")
-      : resolveCurrentWorkspaceLabel(activeWorktreePath);
+  const workspaceLabel = forceNewWorktree
+    ? resolveEnvModeLabel("worktree")
+    : envModeLocked
+      ? resolveLockedWorkspaceLabel(activeWorktreePath)
+      : effectiveEnvMode === "worktree"
+        ? resolveEnvModeLabel("worktree")
+        : resolveCurrentWorkspaceLabel(activeWorktreePath);
   const isLocked = envLocked || envModeLocked;
   const workspaceIcon = (
     <Tooltip>
@@ -272,7 +277,7 @@ const MobileRunContextSelector = memo(function MobileRunContextSelector({
               onEnvModeChange(value as EnvMode);
             }}
           >
-            <MenuRadioItem disabled={envModeLocked} value="local">
+            <MenuRadioItem disabled={envModeLocked || forceNewWorktree} value="local">
               <span className="flex min-w-0 items-center gap-1.5">
                 {activeWorktreePath ? (
                   <FolderGitIcon className="size-3" />
@@ -487,6 +492,7 @@ function useLabelsOverflow(element: HTMLDivElement | null): boolean {
 }
 
 export const BranchToolbar = memo(function BranchToolbar({
+  forceNewWorktree = false,
   ref,
   environmentId,
   threadId,
@@ -526,9 +532,11 @@ export const BranchToolbar = memo(function BranchToolbar({
       : null;
   const activeProject = useProject(activeProjectRef);
   const hasActiveThread = serverThread !== null || draftThread !== null;
-  const activeWorktreePath = serverThread?.worktreePath ?? draftThread?.worktreePath ?? null;
+  const activeWorktreePath = forceNewWorktree
+    ? null
+    : (serverThread?.worktreePath ?? draftThread?.worktreePath ?? null);
   const effectiveEnvMode =
-    effectiveEnvModeOverride ??
+    (forceNewWorktree ? "worktree" : effectiveEnvModeOverride) ??
     resolveEffectiveEnvMode({
       activeWorktreePath,
       hasServerThread: serverThread !== null,
@@ -539,7 +547,8 @@ export const BranchToolbar = memo(function BranchToolbar({
   // "Previous worktree" hops a draft into the most recently active worktree
   // of this project — the "keep going where I just was" follow-up flow. Only
   // drafts can hop; started server threads have their workspace pinned.
-  const canUsePreviousWorktree = draftThread !== null && serverThread === null && !envModeLocked;
+  const canUsePreviousWorktree =
+    draftThread !== null && serverThread === null && !envModeLocked && !forceNewWorktree;
   const projectRefsForWorktreeLookup = useMemo(
     () => (canUsePreviousWorktree && activeProjectRef ? [activeProjectRef] : []),
     [canUsePreviousWorktree, activeProjectRef],
@@ -618,6 +627,7 @@ export const BranchToolbar = memo(function BranchToolbar({
       {showGitControls ? (
         <div className="contents @3xl/composer-surface:hidden">
           <MobileRunContextSelector
+            forceNewWorktree={forceNewWorktree}
             autoEnvironmentLabel={autoEnvironmentLabel}
             onAutoEnvironment={onAutoEnvironment}
             envLocked={envLocked}
@@ -665,6 +675,7 @@ export const BranchToolbar = memo(function BranchToolbar({
           )}
           {showGitControls ? (
             <BranchToolbarEnvModeSelector
+              forceNewWorktree={forceNewWorktree}
               envLocked={envModeLocked}
               effectiveEnvMode={effectiveEnvMode}
               activeWorktreePath={activeWorktreePath}
@@ -691,13 +702,18 @@ export const BranchToolbar = memo(function BranchToolbar({
 
       {showGitControls ? (
         <BranchToolbarBranchSelector
+          forceNewWorktree={forceNewWorktree}
           ref={branchSelectorRef}
           className="min-w-0 flex-initial justify-end @3xl/composer-surface:ml-auto"
           environmentId={environmentId}
           threadId={threadId}
           {...(draftId ? { draftId } : {})}
           envLocked={envLocked}
-          {...(effectiveEnvModeOverride ? { effectiveEnvModeOverride } : {})}
+          {...(forceNewWorktree
+            ? { effectiveEnvModeOverride: "worktree" }
+            : effectiveEnvModeOverride
+              ? { effectiveEnvModeOverride }
+              : {})}
           {...(activeThreadBranchOverride !== undefined ? { activeThreadBranchOverride } : {})}
           {...(onActiveThreadBranchOverrideChange ? { onActiveThreadBranchOverrideChange } : {})}
           startFromOrigin={startFromOrigin}
