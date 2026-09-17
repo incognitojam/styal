@@ -483,7 +483,7 @@ it.effect("reads durable history without carrying live provider state", () => {
   }).pipe(
     Effect.tap((snapshot) =>
       Effect.sync(() => {
-        assert.strictEqual(snapshot.sourceKind, "t3-code-yngatech");
+        assert.strictEqual(snapshot.sourceKind, "t3-code");
         assert.deepStrictEqual(snapshot.projects[0]?.threadIds, [ThreadId.make("thread-import")]);
         assert.deepStrictEqual(
           snapshot.projects[0]?.continuations.get(ThreadId.make("thread-import")),

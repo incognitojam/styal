@@ -4,7 +4,7 @@ Use **Settings → Import data** on web or desktop to bring projects, threads, a
 
 ## Choose a server
 
-Import runs on the server selected at the top of the page. That server checks its own default T3 Code data in `~/.t3/userdata`, so repeat the import for each server that has an older installation. styal recognizes both regular T3 Code data and T3 Code (yngatech) data in that location.
+Import runs on the server selected at the top of the page. That server checks its own default T3 Code data in `~/.t3/userdata`, so repeat the import for each server that has an older installation.
 
 T3 Code can stay open while you import. styal reads its database without modifying it and takes a consistent snapshot of the selected project history.
 

@@ -29,3 +29,11 @@ change, records the composer migration as fork migration `1_ComposerDrafts`, and
 39's name to its canonical upstream value. Applying the schema change directly also repairs users
 who briefly switched to an upstream build and already recorded migration 40. Keep this compatibility
 repair until installations from before the split no longer need a direct upgrade.
+
+Review removal on or after **October 9, 2026**, two months after the first fixed nightly on
+August 9, 2026, as tracked in [issue #62](https://github.com/incognitojam/styal/issues/62).
+This is a review date, not an automatic expiry. Before removal, give known fork users a reasonable
+opportunity to update through a fixed release, confirm with them where practical, preserve a
+documented recovery path for legacy migration 39 databases, and run the focused fork migration and
+startup migration tests. Remove only the one-time repair and its specific tests and documentation;
+keep `yngatech_sql_migrations` and fork migration `1_ComposerDrafts` permanently.

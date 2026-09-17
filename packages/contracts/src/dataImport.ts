@@ -4,7 +4,7 @@ import * as Schema from "effect/Schema";
 import { NonNegativeInt, PositiveInt } from "./baseSchemas.ts";
 import { ServerSettings } from "./settings.ts";
 
-export const LegacyImportSourceKind = Schema.Literals(["t3-code", "t3-code-yngatech"]);
+export const LegacyImportSourceKind = Schema.Literal("t3-code");
 export type LegacyImportSourceKind = typeof LegacyImportSourceKind.Type;
 
 export const LegacyImportUnavailableReason = Schema.Literals([
