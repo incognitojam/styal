@@ -1,8 +1,15 @@
+import * as Exit from "effect/Exit";
+import { runtime } from "../../lib/runtime";
+import { unregisterAgentAwarenessDeviceForCurrentUser } from "../agent-awareness/remoteRegistration";
 import { managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { appAtomRegistry } from "../../state/atom-registry";
-import { activateCloudRelayAccount, deactivateCloudRelayAccount } from "./CloudAuthProvider";
+import {
+  cleanUpCloudRelayAccount,
+  activateCloudRelayAccount,
+  deactivateCloudRelayAccount,
+} from "./CloudAuthProvider";
 import { setAgentAwarenessRelayTokenProvider } from "../agent-awareness/remoteRegistration";
 
 vi.mock("@clerk/expo", () => ({
@@ -51,6 +58,21 @@ afterEach(() => {
 });
 
 describe("CloudAuthProvider relay account isolation", () => {
+  it("clears cached credentials and device registration even if the draft archive fails", async () => {
+    vi.mocked(runtime.runPromiseExit).mockResolvedValue(Exit.succeed(undefined));
+    const previousTokenProvider = async () => "synthetic-token";
+    const archiveError = new Error("Draft archive is unreadable");
+    await expect(
+      cleanUpCloudRelayAccount(async () => {
+        throw archiveError;
+      }, previousTokenProvider),
+    ).rejects.toBe(archiveError);
+    expect(unregisterAgentAwarenessDeviceForCurrentUser).toHaveBeenCalledWith(
+      previousTokenProvider,
+    );
+    expect(runtime.runPromiseExit).toHaveBeenCalledTimes(2);
+  });
+
   it("clears relay and agent-awareness credentials before cleanup can fail", async () => {
     const tokenProvider = async () => "account-1-token";
     activateCloudRelayAccount("account-1", tokenProvider);

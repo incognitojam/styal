@@ -911,6 +911,19 @@ describe("mobile composer drafts", () => {
     expect(appAtomRegistry.get(composerDraftsAtom)).toEqual(drafts);
   });
 
+  it("does not rewrite an unchanged durable cloud account when storage becomes unwritable", async () => {
+    vi.useFakeTimers();
+    await restoreCloudComposerDrafts("account-1");
+    const persisted = composerDraftFileMocks.getDocument();
+    composerDraftFileMocks.setWriteError(new Error("Storage is full"));
+    await expect(restoreCloudComposerDrafts("account-1")).resolves.toBeUndefined();
+    expect(composerDraftFileMocks.getDocument()).toBe(persisted);
+    setComposerDraftText("direct:thread", "An edit still needs to be saved");
+    await expect(restoreCloudComposerDrafts("account-1")).rejects.toMatchObject({
+      operation: "write",
+    });
+  });
+
   it("blocks overwrite and account activation when an archived queue cannot be decoded", async () => {
     vi.useFakeTimers();
     composerDraftFileMocks.setDocument({

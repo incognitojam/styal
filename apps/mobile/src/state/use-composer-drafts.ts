@@ -697,6 +697,12 @@ export async function restoreCloudComposerDrafts(accountId: string): Promise<voi
   await waitForComposerDraftsLoaded();
   const cloud = appAtomRegistry.get(composerCloudDraftsAtom);
   const saved = cloud.signedOut[accountId];
+  if (!saved && cloud.accountId === accountId) {
+    // Retry any earlier failed write, but an unchanged, durable account does
+    // not need another disk write before its connections can activate.
+    await flushComposerDrafts();
+    return;
+  }
   if (saved) {
     if (!(await threadOutboxManager.load())) throw new Error("Could not restore queued messages.");
     for (const message of saved.queuedMessages) {

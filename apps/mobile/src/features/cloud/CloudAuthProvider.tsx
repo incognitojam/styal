@@ -34,6 +34,32 @@ function resetManagedRelayTokenCache() {
   );
 }
 
+/** Credential cleanup must finish even when preserving local drafts fails. */
+export async function cleanUpCloudRelayAccount(
+  removeEnvironments: () => Promise<void>,
+  previousTokenProvider: (() => Promise<string | null>) | null,
+): Promise<void> {
+  try {
+    await removeEnvironments();
+  } finally {
+    const results = await Promise.all([
+      resetManagedRelayTokenCache(),
+      ...(previousTokenProvider
+        ? [
+            settleAsyncResult(() =>
+              runtime.runPromiseExit(
+                unregisterAgentAwarenessDeviceForCurrentUser(previousTokenProvider),
+              ),
+            ),
+          ]
+        : []),
+    ]);
+    for (const result of results) {
+      reportAtomCommandResult(result, { label: "cloud account cleanup" });
+    }
+  }
+}
+
 export function deactivateCloudRelayAccount(): void {
   setAgentAwarenessRelayTokenProvider(null);
   setManagedRelaySession(appAtomRegistry, null);
@@ -93,24 +119,10 @@ function CloudAuthBridge(props: { readonly children: ReactNode }) {
       } | null,
       accountId: string | null,
     ) => {
-      const removal = await removeRelayEnvironments(accountId);
-      if (removal._tag !== "Success") throw squashAtomCommandFailure(removal);
-      const cleanup = [
-        resetManagedRelayTokenCache(),
-        ...(previous
-          ? [
-              settleAsyncResult(() =>
-                runtime.runPromiseExit(
-                  unregisterAgentAwarenessDeviceForCurrentUser(previous.provider),
-                ),
-              ),
-            ]
-          : []),
-      ];
-      const results = await Promise.all(cleanup);
-      for (const result of results) {
-        reportAtomCommandResult(result, { label: "cloud account cleanup" });
-      }
+      await cleanUpCloudRelayAccount(async () => {
+        const removal = await removeRelayEnvironments(accountId);
+        if (removal._tag !== "Success") throw squashAtomCommandFailure(removal);
+      }, previous?.provider ?? null);
     };
     const queueAccountCleanup = (previous: typeof previousTokenProviderRef.current) => {
       const previousTransition = accountTransitionRef.current ?? Promise.resolve();
