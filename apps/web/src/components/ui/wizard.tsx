@@ -1,5 +1,5 @@
 import { CheckIcon } from "lucide-react";
-import type { ComponentProps } from "react";
+import { type ComponentProps, useLayoutEffect, useRef } from "react";
 
 import { cn } from "../../lib/utils";
 import { AnimatedHeight } from "../AnimatedHeight";
@@ -17,16 +17,82 @@ export function WizardSteps({
   readonly isStepDisabled?: (step: number) => boolean;
   readonly onStepChange?: (step: number) => void;
 }) {
+  const stepsRef = useRef<HTMLOListElement>(null);
+  const previousLayout = useRef<{
+    width: number;
+    items: Map<string, { left: number; width: number }>;
+  } | null>(null);
+  const layoutKey = JSON.stringify([steps, currentStep]);
+  useLayoutEffect(() => {
+    const list = stepsRef.current;
+    if (!list) return;
+    const bounds = list.getBoundingClientRect();
+    const items = Array.from(list.children) as HTMLElement[];
+    const next = {
+      width: bounds.width,
+      items: new Map(
+        items.map((item) => {
+          const rect = item.getBoundingClientRect();
+          return [item.dataset.step!, { left: rect.left - bounds.left, width: rect.width }];
+        }),
+      ),
+    };
+    const previous = previousLayout.current;
+    previousLayout.current = next;
+    if (
+      !previous ||
+      Math.abs(previous.width - next.width) > 0.5 ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    )
+      return;
+
+    // Hold the final grid tracks while pills animate; animated widths must not
+    // feed back into auto-sized columns and cause another layout jump.
+    list.style.gridTemplateColumns = items
+      .map((item) => `${next.items.get(item.dataset.step!)!.width}px`)
+      .join(" ");
+    const animations = items.flatMap((item) => {
+      const to = next.items.get(item.dataset.step!)!;
+      const from = previous.items.get(item.dataset.step!);
+      if (!from)
+        return [
+          item.animate([{ opacity: 0 }, { opacity: 0, offset: 0.5 }, { opacity: 1 }], {
+            duration: 240,
+            easing: "ease-out",
+          }),
+        ];
+      if (Math.abs(from.left - to.left) < 0.5 && Math.abs(from.width - to.width) < 0.5) return [];
+      return [
+        item.animate(
+          [
+            { transform: `translateX(${from.left - to.left}px)`, width: `${from.width}px` },
+            { transform: "translateX(0)", width: `${to.width}px` },
+          ],
+          { duration: 200, easing: "ease-out" },
+        ),
+      ];
+    });
+    let cancelled = false;
+    void Promise.allSettled(animations.map((animation) => animation.finished)).then(() => {
+      if (!cancelled) list.style.removeProperty("grid-template-columns");
+    });
+    return () => {
+      cancelled = true;
+      for (const animation of animations) animation.cancel();
+      list.style.removeProperty("grid-template-columns");
+    };
+  }, [layoutKey]);
   const Step = onStepChange ? "button" : "div";
   return (
     // Let long labels such as Preferences use more of the available width.
     <ol
+      ref={stepsRef}
       className="grid auto-cols-auto grid-flow-col gap-1 rounded-xl bg-zinc-25 p-1 ring-1 ring-black/5 dark:bg-white/4 dark:ring-white/5"
       role="list"
       aria-label="Setup progress"
     >
       {steps.map((step, index) => (
-        <li key={step} className="min-w-0">
+        <li key={step} data-step={step} className="min-w-0">
           <Step
             {...(onStepChange
               ? { type: "button" as const, disabled: isStepDisabled?.(index) }
