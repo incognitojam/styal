@@ -228,6 +228,7 @@ features:
       - apps/server/src/dataImport/LegacyImportPreview.test.ts
       - apps/web/src/components/settings/DataImportSettings.logic.test.ts
       - apps/web/src/state/dataImport.test.ts
+      - packages/contracts/src/dataImport.test.ts
     upstream:
       status: unassessed
       tracking: []

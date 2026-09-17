@@ -55,8 +55,8 @@ export type LegacyImportPreferencesPreview = typeof LegacyImportPreferencesPrevi
 
 const LegacyImportAvailablePreview = Schema.Struct({
   status: Schema.Literal("available"),
-  // Older clients require this field when decoding import responses.
-  sourceKind: Schema.Literal("t3-code"),
+  // Older clients require this field; older servers can send the former fork label.
+  sourceKind: Schema.Literals(["t3-code", "t3-code-yngatech"]),
   projects: Schema.Array(LegacyImportProjectPreview),
   schemaVersion: Schema.NullOr(PositiveInt),
   preferences: Schema.optional(LegacyImportPreferencesPreview),
@@ -111,7 +111,7 @@ export const LegacyImportSettingsResult = Schema.Struct({
 export type LegacyImportSettingsResult = typeof LegacyImportSettingsResult.Type;
 
 export const LegacyImportResult = Schema.Struct({
-  sourceKind: Schema.Literal("t3-code"),
+  sourceKind: Schema.Literals(["t3-code", "t3-code-yngatech"]),
   projects: Schema.Array(LegacyImportProjectResult),
   settings: Schema.optional(LegacyImportSettingsResult),
   importedProjectCount: NonNegativeInt,
