@@ -311,7 +311,7 @@ features:
   - id: desktop-discord-rich-presence
     title: Opt-in Discord activity with active thread and project counts
     status: maintained
-    prs: []
+    prs: [369]
     invariants:
       - Desktop presence is off by default and publishes only aggregate unsettled thread and project counts from live environments.
       - Presence includes a View on GitHub button linking to the public styal repository.
