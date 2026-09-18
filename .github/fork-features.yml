@@ -275,18 +275,32 @@ features:
     status: maintained
     prs: [110, 128, 358]
     invariants:
+      - Desktop activity authentication remains available for the host process lifetime, including the first quit after days of uptime and renewal after bearer expiry.
+      - In-app shutdown dialogs appear only for active or unknown work and name the threads and terminal sessions that will be interrupted; inspection warnings appear only for activity that could not be checked.
+      - Manual desktop quits and restarts check every owned backend; active or unknown host activity requires confirmation, and cancellation preserves windows and downloaded updates.
+      - Shutdown confirmation is available on recovery screens; failed presentation alone arms a subsequent Quit override that preserves cleanup, cannot be consumed by restart actions, and clears when the renderer recovers or displays a dialog.
       - Available desktop updates download automatically while preserving accurate available, downloading, downloaded, install, and retry state across updater events and pre-install refreshes.
       - Downloaded updates install on normal app quit; the sidebar only offers restart once an installer is ready, while Settings retains checks, progress, and retries.
       - A late native window-close event cannot bypass cleanup and the selected-channel installer handoff after scoped lifecycle listeners are removed.
       - Changing update channels clears installation eligibility; only a ready download from the selected channel may install on quit, including on macOS where native staging waits until shutdown.
     implementation_paths:
       - apps/desktop/src/app/DesktopLifecycle.ts
+      - apps/desktop/src/app/DesktopShutdownConfirmation.ts
+      - apps/desktop/src/app/DesktopShutdownGuard.ts
       - apps/desktop/src/electron/ElectronUpdater.ts
+      - apps/desktop/src/ipc/methods/serverExposure.ts
+      - apps/desktop/src/ipc/methods/shutdownConfirmation.ts
+      - apps/desktop/src/ipc/methods/wsl.ts
       - apps/desktop/src/updates/DesktopUpdates.ts
       - apps/desktop/src/updates/updateMachine.ts
+      - apps/server/src/auth/PairingGrantStore.ts
+      - apps/server/src/environment/HostActivity.ts
+      - apps/web/src/AppRoot.tsx
+      - apps/web/src/components/ConfirmDialogHost.tsx
       - apps/web/src/components/desktopUpdate.logic.ts
       - apps/web/src/components/sidebar/DesktopUpdateStatusIcon.tsx
       - apps/web/src/components/sidebar/SidebarUpdatePill.tsx
+      - apps/web/src/confirmDialog.ts
       - packages/contracts/src/ipc.ts
     upstream_paths:
       - apps/desktop/src/updates/DesktopUpdates.ts
@@ -297,10 +311,20 @@ features:
       - packages/contracts/src/ipc.ts
     tests:
       - apps/desktop/src/app/DesktopLifecycle.test.ts
+      - apps/desktop/src/app/DesktopShutdownConfirmation.test.ts
+      - apps/desktop/src/app/DesktopShutdownGuard.test.ts
+      - apps/desktop/src/backend/DesktopServerExposure.test.ts
       - apps/desktop/src/electron/ElectronUpdater.test.ts
+      - apps/desktop/src/ipc/methods/wsl.test.ts
       - apps/desktop/src/updates/DesktopUpdates.test.ts
       - apps/desktop/src/updates/updateMachine.test.ts
+      - apps/desktop/src/window/DesktopWindow.test.ts
+      - apps/server/src/auth/EnvironmentAuth.test.ts
+      - apps/server/src/auth/PairingGrantStore.test.ts
+      - apps/server/src/environment/HostActivity.test.ts
+      - apps/server/src/terminal/Manager.test.ts
       - apps/web/src/components/desktopUpdate.logic.test.ts
+      - apps/web/src/confirmDialog.test.ts
       - apps/web/src/state/desktopUpdate.test.ts
     upstream:
       status: partial

@@ -1,3 +1,4 @@
+import * as DesktopShutdownGuard from "../app/DesktopShutdownGuard.ts";
 import {
   DesktopUpdateChannelSchema,
   type DesktopRuntimeInfo,
@@ -249,6 +250,7 @@ function isArm64HostRunningIntelBuild(runtimeInfo: DesktopRuntimeInfo): boolean 
 }
 
 export const make = Effect.gen(function* () {
+  const guard = yield* DesktopShutdownGuard.DesktopShutdownGuard;
   const config = yield* DesktopConfig.DesktopConfig;
   const pool = yield* DesktopBackendPool.DesktopBackendPool;
   const desktopState = yield* DesktopState.DesktopState;
@@ -503,6 +505,15 @@ export const make = Effect.gen(function* () {
       return { accepted: false, completed: false };
     }
 
+    if (
+      !(yield* guard.confirm(
+        "restart",
+        `Install update ${state.downloadedVersion} and restart styal?`,
+      ))
+    ) {
+      yield* finishUpdateAction("install");
+      return { accepted: false, completed: false };
+    }
     yield* Ref.set(desktopState.quitting, true);
 
     return yield* Effect.gen(function* () {

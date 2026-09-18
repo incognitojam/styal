@@ -107,6 +107,42 @@ Shutdown retains a one-shot `window-all-closed` listener while draining cleanup.
 can follow removal of the scoped lifecycle listeners; without a remaining listener, Electron's
 default quit would bypass the update handoff.
 
+## Desktop shutdown activity checks
+
+`DesktopShutdownGuard` checks every backend registered in the desktop pool before manual Quit,
+relaunch, or explicit update installation. Deliberately stopped instances are skipped. Each running
+instance is queried through its authenticated `/api/environment/activity` endpoint with a three-second
+budget. Missing configuration, invalid responses, and unavailable instances require confirmation;
+they never count as idle. The desktop bootstrap credential remains valid for the owning server process
+lifetime, so a first check after days of uptime or a later bearer renewal still works. User pairing
+links and issued bearer sessions keep their normal expiry. The existing in-app confirmation dialog presents active or unknown work; idle checks
+proceed immediately. Duplicate requests are suppressed. The confirmation host is mounted outside authentication and recovery gates. The main process reopens
+the main window when needed and gives the renderer five seconds to acknowledge that the dialog is
+active, rather than merely queued. Once displayed, it waits for the user without a deadline.
+
+Failed presentation expires the request and allows a subsequent explicit Quit to bypass confirmation
+while retaining normal shutdown and cleanup. Update installation and settings restarts cannot consume
+this override. Displaying a dialog or recovering the renderer clears it; late acknowledgments and
+responses to expired requests are ignored. Closing the window cancels the request without arming an
+override. Unknown activity is never treated as idle.
+
+The server combines lightweight thread projections with live provider sessions, including pending
+approvals/input, starting turns, and background work. Terminal checks reuse the fresh close preflight,
+including finite commands and conservative handling when process inspection fails. Failed terminal
+inspections are counted separately so the dialog distinguishes running work from unknown activity. Results cover all
+clients of that environment without loading message bodies or transmitting thread names. Connections
+to independent remote servers do not block desktop shutdown because this app does not own their lifetime.
+
+Idle manual requests proceed without a dialog. Windows and Linux window closes route through Quit
+before destroying the main window, so cancellation retains it. macOS window-close behavior and the
+hold-to-quit shortcut stay unchanged. OS/process termination signals and updater-controlled final quits
+bypass interactive checks. Cancellation leaves the downloaded installer eligible for a later attempt. Restart-triggering network
+and WSL settings changes restore their previous values when relaunch is declined.
+
+This is a point-in-time check, not a shutdown lease: new work can arrive after the response. Do not use
+it alone to authorize unattended restart; that needs an admission barrier spanning activity inspection
+and shutdown. Service updates are not changed by this desktop guard.
+
 ## Source Map
 
 - Launcher and state machine: `apps/server/src/serviceLauncher.ts`

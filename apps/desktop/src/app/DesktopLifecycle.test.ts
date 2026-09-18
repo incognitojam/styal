@@ -1,3 +1,4 @@
+import * as DesktopShutdownGuard from "./DesktopShutdownGuard.ts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -97,8 +98,12 @@ const makeLifecycleLayer = (
   destroyAll: Effect.Effect<void> = Effect.void,
   activate: Effect.Effect<void> = Effect.void,
   installOnQuit: Effect.Effect<boolean> = Effect.succeed(false),
+  confirmShutdown: Effect.Effect<boolean> = Effect.succeed(true),
 ) =>
   DesktopLifecycle.layer.pipe(
+    Layer.provideMerge(
+      Layer.succeed(DesktopShutdownGuard.DesktopShutdownGuard, { confirm: () => confirmShutdown }),
+    ),
     Layer.provideMerge(
       Layer.succeed(DesktopUpdates.DesktopUpdates, {
         getState: Effect.die("unexpected update state read"),
@@ -133,6 +138,66 @@ const makeLifecycleLayer = (
   );
 
 describe("DesktopLifecycle", () => {
+  it.effect(
+    "cancelling quit leaves the window and backend alive, then permits a fresh attempt",
+    () =>
+      Effect.gen(function* () {
+        const events = new NodeEvents.EventEmitter();
+        const finished = yield* Deferred.make<void>();
+        let confirm = false;
+        let checks = 0;
+        let closes = 0;
+        const app = makeElectronApp({
+          on: (name, listener) =>
+            Effect.acquireRelease(
+              Effect.sync(() => {
+                events.on(name, listener);
+              }),
+              () =>
+                Effect.sync(() => {
+                  events.removeListener(name, listener);
+                }),
+            ).pipe(Effect.asVoid),
+        });
+        yield* Effect.gen(function* () {
+          const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
+          const state = yield* DesktopState.DesktopState;
+          const shutdown = yield* DesktopShutdown.DesktopShutdown;
+          yield* lifecycle.register;
+          events.emit("before-quit", { preventDefault: () => undefined });
+          assert.equal(checks, 1);
+          assert.equal(closes, 0);
+          assert.isFalse(yield* Ref.get(state.quitting));
+          confirm = true;
+          events.emit("before-quit", { preventDefault: () => undefined });
+          events.emit("before-quit", { preventDefault: () => undefined });
+          yield* shutdown.awaitRequest;
+          assert.equal(checks, 2);
+          assert.equal(closes, 1);
+          yield* shutdown.markComplete;
+          yield* Deferred.await(finished);
+        }).pipe(
+          Effect.provide(
+            makeLifecycleLayer(
+              "win32",
+              app,
+              Effect.void,
+              Effect.sync(() => {
+                closes++;
+              }),
+              Effect.void,
+              Effect.void,
+              Deferred.succeed(finished, undefined).pipe(Effect.as(true)),
+              Effect.sync(() => {
+                checks++;
+                return confirm;
+              }),
+            ),
+          ),
+        );
+      }),
+  );
+
   it.effect("keeps a late window close from exiting before the update handoff", () =>
     Effect.gen(function* () {
       const events = new NodeEvents.EventEmitter();

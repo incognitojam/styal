@@ -1,3 +1,12 @@
+import * as DesktopLifecycle from "../app/DesktopLifecycle.ts";
+import * as DesktopShutdownGuard from "../app/DesktopShutdownGuard.ts";
+import * as DesktopShutdown from "../app/DesktopShutdown.ts";
+import * as DesktopState from "../app/DesktopState.ts";
+import * as DesktopObservability from "../app/DesktopObservability.ts";
+import * as DesktopWindow from "../window/DesktopWindow.ts";
+import * as ElectronApp from "../electron/ElectronApp.ts";
+import * as ElectronTheme from "../electron/ElectronTheme.ts";
+import { setServerExposureMode, setTailscaleServeEnabled } from "../ipc/methods/serverExposure.ts";
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -144,6 +153,36 @@ const withHarness = <A, E, R>(
   }).pipe(Effect.provide(NodeServices.layer), Effect.scoped);
 
 describe("DesktopServerExposure", () => {
+  it.effect("restores network preferences when restart is cancelled", () => {
+    const initial = { ...DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS };
+    const layer = Layer.mergeAll(
+      makeLayer({
+        baseDir: "/synthetic",
+        networkInterfaces: lanNetworkInterfaces,
+        desktopSettingsLayer: DesktopAppSettings.layerTest(initial),
+      }),
+      Layer.mock(DesktopLifecycle.DesktopLifecycle)({ relaunch: () => Effect.succeed(false) }),
+      Layer.mock(DesktopShutdownGuard.DesktopShutdownGuard)({}),
+      Layer.mock(DesktopShutdown.DesktopShutdown)({}),
+      DesktopState.layer,
+      Layer.mock(DesktopObservability.DesktopTrace)({}),
+      Layer.mock(DesktopWindow.DesktopWindow)({}),
+      Layer.mock(ElectronApp.ElectronApp)({}),
+      Layer.mock(ElectronTheme.ElectronTheme)({}),
+    ).pipe(Layer.provideMerge(NodeServices.layer));
+    return Effect.gen(function* () {
+      const exposure = yield* DesktopServerExposure.DesktopServerExposure;
+      const settings = yield* DesktopAppSettings.DesktopAppSettings;
+      const before = yield* exposure.configureFromSettings({ port: 3773 });
+      yield* setServerExposureMode.handler("network-accessible");
+      assert.deepEqual(yield* settings.get, initial);
+      assert.deepEqual(yield* exposure.getState, before);
+      yield* setTailscaleServeEnabled.handler({ enabled: true, port: 8443 });
+      assert.deepEqual(yield* settings.get, initial);
+      assert.deepEqual(yield* exposure.getState, before);
+    }).pipe(Effect.provide(layer));
+  });
+
   it.effect("falls back to local-only without losing the requested network preference", () =>
     withHarness(
       emptyNetworkInterfaces,

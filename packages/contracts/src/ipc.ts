@@ -1088,7 +1088,22 @@ export const DesktopDiscordPresenceActivity = Schema.Struct({
 });
 export type DesktopDiscordPresenceActivity = typeof DesktopDiscordPresenceActivity.Type;
 
+export const DesktopShutdownConfirmationRequestSchema = Schema.Struct({
+  requestId: Schema.Int,
+  message: Schema.String,
+});
+export type DesktopShutdownConfirmationRequest =
+  typeof DesktopShutdownConfirmationRequestSchema.Type;
+
 export interface DesktopBridge {
+  acknowledgeShutdownConfirmation: (requestId: number) => Promise<void>;
+  shutdownRendererReady: () => Promise<void>;
+  onShutdownConfirmationExpired: (listener: (requestId: number) => void) => () => void;
+  getShutdownConfirmation: () => Promise<DesktopShutdownConfirmationRequest | null>;
+  onShutdownConfirmation: (
+    listener: (request: DesktopShutdownConfirmationRequest) => void,
+  ) => () => void;
+  resolveShutdownConfirmation: (requestId: number, confirmed: boolean) => Promise<void>;
   getAppBranding: () => DesktopAppBranding | null;
   /** The desktop client's OS platform, read from Electron's preload process. */
   getClientPlatform?: () => string;

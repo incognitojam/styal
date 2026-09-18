@@ -70,6 +70,10 @@ const makeTerminalManagerLayer = (
     resize: () => Effect.void,
     clear: () => Effect.void,
     restart: () => Effect.die(new Error("unused")),
+    shutdownPreflight: Effect.succeed({
+      terminalsRequiringConfirmation: 0,
+      terminalsWithUnknownActivity: 0,
+    }),
     closePreflight: () => Effect.die(new Error("unused")),
     close: () => Effect.void,
     subscribe: overrides.subscribe ?? (() => Effect.succeed(() => undefined)),

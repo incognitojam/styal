@@ -1,9 +1,11 @@
 import { useEffect, useSyncExternalStore } from "react";
 
 import {
+  acknowledgeConfirmDialogPresentation,
   completeConfirmDialogClose,
   readConfirmDialogState,
   registerConfirmDialogHost,
+  requestConfirmDialog,
   respondToConfirmDialog,
   subscribeConfirmDialog,
 } from "../confirmDialog";
@@ -59,6 +61,57 @@ export function ConfirmDialogHost() {
   );
 
   useEffect(() => registerConfirmDialogHost(), []);
+
+  useEffect(() => {
+    acknowledgeConfirmDialogPresentation(state);
+  }, [state]);
+
+  useEffect(() => {
+    const bridge = window.desktopBridge;
+    if (!bridge?.onShutdownConfirmation) return;
+    let disposed = false;
+    let latestRequestId = 0;
+    const requests = new Map<number, AbortController>();
+    const show: Parameters<typeof bridge.onShutdownConfirmation>[0] = (request) => {
+      if (disposed || request.requestId <= latestRequestId) return;
+      latestRequestId = request.requestId;
+      const controller = new AbortController();
+      requests.set(request.requestId, controller);
+      void (async () => {
+        const confirmed = await (requestConfirmDialog(request.message, undefined, {
+          signal: controller.signal,
+          onPresented: () => {
+            void bridge.acknowledgeShutdownConfirmation(request.requestId).catch(() => {});
+          },
+        }) ?? false);
+        await bridge.resolveShutdownConfirmation(request.requestId, confirmed);
+      })()
+        .catch(() => {
+          // A closing renderer may lose its IPC connection.
+        })
+        .finally(() => requests.delete(request.requestId));
+    };
+    const unsubscribe = bridge.onShutdownConfirmation(show);
+    const unsubscribeExpired = bridge.onShutdownConfirmationExpired((requestId) => {
+      latestRequestId = Math.max(latestRequestId, requestId);
+      requests.get(requestId)?.abort();
+      // Processing expiry proves this host has recovered, even after a stalled render.
+      void bridge.shutdownRendererReady().catch(() => {});
+    });
+    void bridge.shutdownRendererReady().catch(() => {});
+    void bridge
+      .getShutdownConfirmation()
+      .then((request) => {
+        if (request) show(request);
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+      unsubscribe();
+      unsubscribeExpired();
+      for (const controller of requests.values()) controller.abort();
+    };
+  }, []);
 
   const copy = resolveConfirmDialogCopy(state.status === "idle" ? "" : state.message);
   const confirmVariant = state.status === "idle" ? "default" : state.variant;

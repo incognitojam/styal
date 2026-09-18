@@ -93,6 +93,7 @@ export const EnvironmentInternalErrorReason = Schema.Literals([
   "client_sessions_load_failed",
   "client_session_revoke_failed",
   "orchestration_snapshot_failed",
+  "host_activity_failed",
   "orchestration_thread_snapshot_failed",
   "orchestration_dispatch_failed",
   "internal_error",
@@ -614,7 +615,25 @@ export class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
     }),
   ) {}
 
+/** Fresh host activity; counts cover all clients connected to this environment. */
+export const HostActivity = Schema.Struct({
+  activeSessions: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  waitingSessions: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  terminalsRequiringConfirmation: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  terminalsWithUnknownActivity: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+});
+export type HostActivity = typeof HostActivity.Type;
+
+export class EnvironmentActivityHttpApi extends HttpApiGroup.make("activity").add(
+  HttpApiEndpoint.get("get", "/api/environment/activity", {
+    headers: OptionalBearerHeaders,
+    success: HostActivity,
+    error: EnvironmentScopedOperationErrors,
+  }).middleware(EnvironmentAuthenticatedAuth),
+) {}
+
 export class EnvironmentHttpApi extends HttpApi.make("environment")
+  .add(EnvironmentActivityHttpApi)
   .add(EnvironmentMetadataHttpApi)
   .add(EnvironmentAuthHttpApi)
   .add(EnvironmentOrchestrationHttpApi)

@@ -14,7 +14,6 @@ import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL } from "../branding";
 import { resolveServerBackedAppDisplayName } from "../branding.logic";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
-import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { FirstRunGate } from "../components/onboarding/FirstRunGate";
 import { ConnectOnboardingDialog } from "../components/cloud/ConnectOnboardingDialog";
 import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstallDialog";
@@ -131,7 +130,6 @@ function RootRouteView() {
           <ContrastAppearanceSync />
           <GlassAppearanceSync />
           <FontAppearanceSync />
-          <ConfirmDialogHost />
           <CommandPalette>
             <AppSidebarLayout>
               <Outlet />
@@ -179,7 +177,6 @@ function RootRouteView() {
           <ConnectOnboardingDialog />
           <SshPasswordPromptDialog />
           <DiscordPresenceSync />
-          <ConfirmDialogHost />
           <SlowRpcRequestToastCoordinator />
           <HostedStaticEnvironmentBootstrap />
           {primaryEnvironmentAuthenticated ? (

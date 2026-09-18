@@ -66,7 +66,11 @@ export const setWslBackendEnabled = makeIpcMethod({
       : previousSettings.wslBackendEnabled && previousSettings.wslOnly;
     if (changedWslOnlyPrimary && change.changed) {
       const state = yield* readWslState;
-      yield* lifecycle.relaunch(`wslBackendEnabled=${enabled}`);
+      if (!(yield* lifecycle.relaunch(`wslBackendEnabled=${enabled}`))) {
+        yield* appSettings.setWslBackendEnabled(previousSettings.wslBackendEnabled);
+        yield* appSettings.setWslOnly(previousSettings.wslOnly);
+        return yield* readWslState;
+      }
       return state;
     }
     // Reconcile is idempotent and never fails; no need for a swap-style
@@ -86,6 +90,7 @@ export const setWslDistro = makeIpcMethod({
     const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
     const wslBackend = yield* DesktopWslBackend.DesktopWslBackend;
     const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
+    const previousSettings = yield* appSettings.get;
     const change = yield* appSettings.setWslDistro(distro);
     const settings = yield* appSettings.get;
     // In active wsl-only mode the pool's primary IS the WSL backend, and its
@@ -93,7 +98,10 @@ export const setWslDistro = makeIpcMethod({
     // When WSL is disabled, this only stages a preference for the next enable.
     if (settings.wslBackendEnabled && settings.wslOnly && change.changed) {
       const state = yield* readWslState;
-      yield* lifecycle.relaunch(`wslDistro=${distro ?? "default"}`);
+      if (!(yield* lifecycle.relaunch(`wslDistro=${distro ?? "default"}`))) {
+        yield* appSettings.setWslDistro(previousSettings.wslDistro);
+        return yield* readWslState;
+      }
       return state;
     }
     yield* wslBackend.reconcile;
@@ -112,10 +120,14 @@ export const setWslOnly = makeIpcMethod({
     // relaunch and applied by the subsequent enable call.
     const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
     const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
+    const previousSettings = yield* appSettings.get;
     const change = yield* appSettings.setWslOnly(enabled);
     const state = yield* readWslState;
     if (state.enabled && change.changed) {
-      yield* lifecycle.relaunch(`wslOnly=${enabled}`);
+      if (!(yield* lifecycle.relaunch(`wslOnly=${enabled}`))) {
+        yield* appSettings.setWslOnly(previousSettings.wslOnly);
+        return yield* readWslState;
+      }
     }
     return state;
   }),

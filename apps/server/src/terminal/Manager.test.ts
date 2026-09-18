@@ -1020,6 +1020,10 @@ it.layer(
         terminalIds: [DEFAULT_TERMINAL_ID],
       });
       expect(idle.confirmationTerminalIds).toEqual([]);
+      expect(yield* manager.shutdownPreflight).toEqual({
+        terminalsRequiringConfirmation: 0,
+        terminalsWithUnknownActivity: 0,
+      });
 
       inspect = {
         hasRunningSubprocess: true,
@@ -1031,6 +1035,15 @@ it.layer(
         terminalIds: [DEFAULT_TERMINAL_ID],
       });
       expect(active.confirmationTerminalIds).toEqual([DEFAULT_TERMINAL_ID]);
+      expect(yield* manager.shutdownPreflight).toEqual({
+        terminalsRequiringConfirmation: 1,
+        terminalsWithUnknownActivity: 0,
+      });
+      yield* manager.open(openInput({ threadId: "thread-remote" }));
+      expect(yield* manager.shutdownPreflight).toEqual({
+        terminalsRequiringConfirmation: 2,
+        terminalsWithUnknownActivity: 0,
+      });
     }),
   );
 
@@ -1054,6 +1067,10 @@ it.layer(
         terminalIds: ["setup-preview"],
       });
       expect(running.confirmationTerminalIds).toEqual(["setup-preview"]);
+      expect(yield* manager.shutdownPreflight).toEqual({
+        terminalsRequiringConfirmation: 1,
+        terminalsWithUnknownActivity: 0,
+      });
 
       const exited = yield* Deferred.make<void>();
       const unsubscribe = yield* manager.subscribe((event) =>
@@ -1071,6 +1088,10 @@ it.layer(
         terminalIds: ["setup-preview"],
       });
       expect(afterExit.confirmationTerminalIds).toEqual([]);
+      expect(yield* manager.shutdownPreflight).toEqual({
+        terminalsRequiringConfirmation: 0,
+        terminalsWithUnknownActivity: 0,
+      });
     }),
   );
 
@@ -1222,6 +1243,11 @@ it.layer(
         Effect.sync(() => failedCalls >= 3),
         "1200 millis",
       );
+
+      expect(yield* manager.shutdownPreflight).toEqual({
+        terminalsRequiringConfirmation: 1,
+        terminalsWithUnknownActivity: 1,
+      });
 
       // A failed snapshot is not authoritative: no terminal flips to idle.
       const activityEvents = (yield* getEvents).filter((event) => event.type === "activity");
