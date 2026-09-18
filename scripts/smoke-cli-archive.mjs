@@ -4,9 +4,9 @@ import * as NodeAssert from "node:assert/strict";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeEvents from "node:events";
 import * as NodeFS from "node:fs";
-import * as NodeModule from "node:module";
 import * as NodePath from "node:path";
 import * as NodeNet from "node:net";
+import * as NodeURL from "node:url";
 
 // oxlint-disable-next-line t3code/no-global-process-runtime -- This standalone artifact verifier runs outside the workspace Effect runtime.
 const platform = process.platform;
@@ -73,31 +73,18 @@ NodeAssert.equal(preflight(3).status, "blocked");
 NodeAssert.equal(preflight(4).status, "ready");
 runCli("project", "add", project, "--title", "CLI verification", "--base-dir", state);
 
-// Exercise the native terminal from the extracted archive, not the workspace.
-const require = NodeModule.createRequire(NodePath.join(install, "smoke.cjs"));
-const pty = require("node-pty");
-await new Promise((resolve, reject) => {
-  const terminal = pty.spawn(
-    platform === "win32" ? NodePath.join(env.SystemRoot, "System32", "cmd.exe") : "/bin/sh",
-    platform === "win32"
-      ? ["/d", "/c", "echo styal-terminal-ok"]
-      : ["-c", "printf styal-terminal-ok"],
-    { cwd: project, env },
-  );
-  let output = "";
-  terminal.onData((chunk) => {
-    output += chunk;
-  });
-  terminal.onExit(({ exitCode }) => {
-    try {
-      NodeAssert.equal(exitCode, 0);
-      NodeAssert.match(output, /styal-terminal-ok/);
-      resolve();
-    } catch (error) {
-      reject(error);
-    }
-  });
-});
+// Isolate node-pty's Windows output worker, which survives natural shell exit.
+// The probe exits explicitly after its assertions; the full verifier must still
+// release its own resources and exit naturally.
+NodeChildProcess.execFileSync(
+  process.execPath,
+  [
+    NodeURL.fileURLToPath(new URL("./lib/smoke-native-terminal.mjs", import.meta.url)),
+    install,
+    project,
+  ],
+  { env, encoding: "utf8", timeout: 60_000 },
+);
 
 const listener = NodeNet.createServer();
 listener.listen(0, "127.0.0.1");
