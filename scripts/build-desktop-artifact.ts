@@ -959,6 +959,11 @@ export const MAC_FILE_EXCLUSIONS = [
 // extracts the sidecar to a version-keyed directory (see DesktopWslServerTree).
 export const WSL_RUNTIME_ARCHIVE_NAME = "wsl-runtime.tar.gz";
 export const WSL_RUNTIME_ARCHIVE_HASH_NAME = `${WSL_RUNTIME_ARCHIVE_NAME}.sha256`;
+export const bundlesWslRuntime = (input: {
+  readonly platform: typeof BuildPlatform.Type;
+  readonly runtimeArchivePath: string | undefined;
+}): boolean => input.platform === "win" && input.runtimeArchivePath !== undefined;
+
 export const WSL_RUNTIME_EXTRA_RESOURCES = [
   { from: `apps/desktop/prod-resources/${WSL_RUNTIME_ARCHIVE_NAME}`, to: WSL_RUNTIME_ARCHIVE_NAME },
   {
@@ -3165,8 +3170,8 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     yield* preflightWindowsDesktopBuild({
       arch: options.arch,
       bundlesWslRuntime: bundlesWslRuntime({
-        arch: options.arch,
-        prebuildPath: options.wslPrebuild,
+        platform: options.platform,
+        runtimeArchivePath: options.wslRuntime,
       }),
     });
   }
@@ -3469,7 +3474,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
             provisioningProfilePath: macPasskeySigning.provisioningProfilePath,
           }
         : undefined,
-      options.platform === "win" && options.wslRuntime !== undefined,
+      bundlesWslRuntime({ platform: options.platform, runtimeArchivePath: options.wslRuntime }),
     ),
     dependencies: stageDependencies,
     devDependencies: {
@@ -3528,7 +3533,10 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     });
   }
 
-  if (options.platform === "win" && options.wslRuntime !== undefined) {
+  if (
+    options.wslRuntime !== undefined &&
+    bundlesWslRuntime({ platform: options.platform, runtimeArchivePath: options.wslRuntime })
+  ) {
     yield* stageWslRuntimeArchive({
       sourceArchivePath: options.wslRuntime,
       archivePath: path.join(stageProdResourcesDir, WSL_RUNTIME_ARCHIVE_NAME),
@@ -3631,7 +3639,10 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       appExecutableName: `${resolveDesktopProductName(appVersion)}.exe`,
       targetArch: options.arch,
       appVersion,
-      expectWslRuntime: options.wslRuntime !== undefined,
+      expectWslRuntime: bundlesWslRuntime({
+        platform: options.platform,
+        runtimeArchivePath: options.wslRuntime,
+      }),
       verbose: options.verbose,
     });
   }
