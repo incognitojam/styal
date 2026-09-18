@@ -5112,6 +5112,9 @@ function ChatViewContent(props: ChatViewProps) {
   // Sends "/compact" as its own turn. It never reads or clears the composer
   // draft (and omits composerDraftRevision so the server keeps its autosave),
   // so compacting works with a half-written message in the composer.
+  // Upstream fixes the same bug in `pingdotgg/t3code#11103`, built on its
+  // server-side compaction command (`pingdotgg/t3code#9293`). When that chain is
+  // taken in, replace this function with upstream's version.
   const onCompactContext = useCallback(async () => {
     if (!activeThread || compactDisabled || sendInFlightRef.current) return;
     const sendCtx = composerRef.current?.getSendContext();
