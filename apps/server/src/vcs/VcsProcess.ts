@@ -1,7 +1,9 @@
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Match from "effect/Match";
+import * as Schedule from "effect/Schedule";
 import * as Semaphore from "effect/Semaphore";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
@@ -58,6 +60,8 @@ const OUTPUT_TRUNCATED_MARKER = "\n\n[truncated]";
 const VCS_PROCESS_CONCURRENCY = 8;
 const GITHUB_PROCESS_CONCURRENCY = 4;
 
+export const CHECKPOINT_CAPTURE_OPERATION = "GitVcsDriver.checkpoints.captureCheckpoint";
+
 /**
  * Exported for callers that allow a non-zero exit to keep the output — `gh api graphql` exits
  * non-zero for a partial answer it still prints — and so must classify the exit themselves.
@@ -111,6 +115,11 @@ export const classifyNonZeroExit = (command: string, stderr: string): VcsProcess
 
   return "command-failed";
 };
+
+// Classify before discarding stderr; keep paths and process output out of errors.
+const isTransientGitExit = (stderr: string) =>
+  /unable to create [^\n]*\.lock['"]?: file exists/i.test(stderr) ||
+  /(?:unable to stat|lstat\(|error: open\()[^\n]+: no such file or directory/i.test(stderr);
 
 export const make = Effect.gen(function* () {
   const processRunner = yield* ProcessRunner.ProcessRunner;
@@ -175,6 +184,7 @@ export const make = Effect.gen(function* () {
     }
 
     if (!input.allowNonZeroExit && result.code !== 0) {
+      const failureKind = classifyNonZeroExit(input.command, result.stderr);
       return yield* VcsProcessExitError.fromProcessExit(
         baseError,
         {
@@ -182,7 +192,10 @@ export const make = Effect.gen(function* () {
           stderr: result.stderr,
           stderrTruncated: result.stderrTruncated,
         },
-        classifyNonZeroExit(input.command, result.stderr),
+        failureKind,
+        input.command === "git" &&
+          failureKind === "command-failed" &&
+          isTransientGitExit(result.stderr),
       );
     }
 
@@ -199,6 +212,26 @@ export const make = Effect.gen(function* () {
 
   const run = Effect.fn("VcsProcess.run")(function* (input: VcsProcessInput) {
     const bounded = vcsProcesses.withPermits(1)(runUnbounded(input));
+    if (
+      input.command === "git" &&
+      input.operation === CHECKPOINT_CAPTURE_OPERATION &&
+      input.onStdoutChunk === undefined
+    ) {
+      // Retry the failed command, retaining the private index/tree and recovery's outer deadline.
+      return yield* bounded.pipe(
+        Effect.tapError((error) =>
+          Effect.logDebug("checkpoint Git command failed", {
+            operation: input.operation,
+            errorTag: error._tag,
+          }),
+        ),
+        Effect.retry({
+          times: 2,
+          while: (error) => error._tag === "VcsProcessExitError" && error.retryable === true,
+          schedule: Schedule.spaced(Duration.millis(75)),
+        }),
+      );
+    }
     return yield* input.command === "gh" ? githubProcesses.withPermits(1)(bounded) : bounded;
   });
 
