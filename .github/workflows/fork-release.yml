@@ -128,12 +128,13 @@ jobs:
 
   build_desktop:
     name: Build desktop artifacts
-    needs: prepare
+    needs: [prepare, build_cli_archives]
     uses: ./.github/workflows/fork-desktop-build.yml
     with:
       ref: ${{ needs.prepare.outputs.ref }}
       version: ${{ needs.prepare.outputs.version }}
       target: all
+      cli_archives_ready: true
       sign_macos: true
     secrets: inherit
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // @effect-diagnostics nodeBuiltinImport:off - Node's typed junction API avoids Windows symlink privileges while keeping the probe isolated.
 
+import * as NodeCrypto from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeModule from "node:module";
 
@@ -164,6 +165,7 @@ interface BuildCliInput {
   readonly mockUpdates: Option.Option<boolean>;
   readonly mockUpdateServerPort: Option.Option<number>;
   readonly wslPrebuild: Option.Option<string>;
+  readonly wslRuntime?: Option.Option<string>;
 }
 
 function detectHostBuildPlatform(hostPlatform: string): typeof BuildPlatform.Type | undefined {
@@ -520,6 +522,17 @@ export class DesktopBuildNoArtifactsProducedError extends Schema.TaggedErrorClas
   }
 }
 
+export class WslRuntimeArchiveMissingError extends Schema.TaggedErrorClass<WslRuntimeArchiveMissingError>()(
+  "WslRuntimeArchiveMissingError",
+  {
+    archivePath: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `WSL runtime archive not found at ${this.archivePath}.`;
+  }
+}
+
 export class WslNodePtyPrebuildMissingError extends Schema.TaggedErrorClass<WslNodePtyPrebuildMissingError>()(
   "WslNodePtyPrebuildMissingError",
   {
@@ -562,6 +575,8 @@ const WindowsPackagedPayloadValidationReason = Schema.Literals([
   "sidecar-invalid",
   "unpacked-native-missing",
   "resource-monitor-missing",
+  "wsl-runtime-missing",
+  "wsl-runtime-invalid",
   "file-limit-exceeded",
 ]);
 
@@ -766,6 +781,7 @@ interface ResolvedBuildOptions {
   readonly mockUpdates: boolean;
   readonly mockUpdateServerPort: number | undefined;
   readonly wslPrebuild: string | undefined;
+  readonly wslRuntime?: string | undefined;
 }
 
 interface StagePackageJson {
@@ -795,6 +811,8 @@ export const DESKTOP_FILE_EXCLUSIONS = [
   // Windows stages the server sidecar below prod-resources so electron-builder
   // can copy it using project-relative extraResources matchers. Keep those
   // staging inputs out of app.asar; they are emitted once at resources/.
+  "!apps/desktop/prod-resources/wsl-runtime.tar.gz",
+  "!apps/desktop/prod-resources/wsl-runtime.tar.gz.sha256",
   "!apps/desktop/prod-resources/windows-server",
   "!apps/desktop/prod-resources/windows-server/**/*",
 ] as const;
@@ -810,6 +828,16 @@ export const MAC_FILE_EXCLUSIONS = [
 // the server from inside server.asar via the asar-aware ELECTRON_RUN_AS_NODE
 // runtime; the WSL backend cannot read asar archives, so enabling WSL lazily
 // extracts the sidecar to a version-keyed directory (see DesktopWslServerTree).
+export const WSL_RUNTIME_ARCHIVE_NAME = "wsl-runtime.tar.gz";
+export const WSL_RUNTIME_ARCHIVE_HASH_NAME = `${WSL_RUNTIME_ARCHIVE_NAME}.sha256`;
+export const WSL_RUNTIME_EXTRA_RESOURCES = [
+  { from: `apps/desktop/prod-resources/${WSL_RUNTIME_ARCHIVE_NAME}`, to: WSL_RUNTIME_ARCHIVE_NAME },
+  {
+    from: `apps/desktop/prod-resources/${WSL_RUNTIME_ARCHIVE_HASH_NAME}`,
+    to: WSL_RUNTIME_ARCHIVE_HASH_NAME,
+  },
+] as const;
+
 export const WINDOWS_SERVER_ASAR_RESOURCE = "server.asar";
 // dlopen/spawn need real files, so native modules, shared libraries, and
 // helper executables live in the server.asar.unpacked sibling (the standard
@@ -1273,6 +1301,7 @@ const BuildEnvConfig = Config.all({
   // produced by the Linux CI job and handed to the Windows packaging job. Placed
   // into the staged node-pty so the WSL backend ships a ready binary and never
   // compiles on the user's machine.
+  wslRuntime: Config.string("STYAL_DESKTOP_WSL_RUNTIME").pipe(Config.option),
   wslPrebuild: Config.string("T3CODE_DESKTOP_WSL_PREBUILD").pipe(Config.option),
 });
 
@@ -1381,6 +1410,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     mockUpdates,
     mockUpdateServerPort,
     wslPrebuild,
+    wslRuntime: Option.getOrUndefined(input.wslRuntime ?? env.wslRuntime),
   } satisfies ResolvedBuildOptions;
 });
 
@@ -2083,6 +2113,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
         readonly provisioningProfilePath: string;
       }
     | undefined,
+  wslRuntimeBundled = false,
 ) {
   const buildConfig: Record<string, unknown> = {
     appId: DESKTOP_APP_ID,
@@ -2100,6 +2131,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     extraResources: [
       ...DESKTOP_EXTRA_RESOURCES,
       ...(platform === "win" ? WINDOWS_SERVER_EXTRA_RESOURCES : []),
+      ...(platform === "win" && wslRuntimeBundled ? WSL_RUNTIME_EXTRA_RESOURCES : []),
     ],
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
@@ -2238,6 +2270,44 @@ const assertPlatformBuildResources = Effect.fn("assertPlatformBuildResources")(f
     yield* stageWindowsIcons(stageResourcesDir, iconAssets.windowsIconIco);
   }
 });
+
+export const stageWslRuntimeArchive = Effect.fn("stageWslRuntimeArchive")(function* (input: {
+  readonly sourceArchivePath: string;
+  readonly archivePath: string;
+  readonly hashPath: string;
+}) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const sourceExists = yield* fs
+    .exists(input.sourceArchivePath)
+    .pipe(Effect.orElseSucceed(() => false));
+  if (!sourceExists) {
+    return yield* new WslRuntimeArchiveMissingError({ archivePath: input.sourceArchivePath });
+  }
+  yield* fs.makeDirectory(path.dirname(input.archivePath), { recursive: true });
+  yield* fs.copyFile(input.sourceArchivePath, input.archivePath);
+  const hash = NodeCrypto.createHash("sha256");
+  yield* fs
+    .stream(input.archivePath)
+    .pipe(Stream.runForEach((chunk) => Effect.sync(() => hash.update(chunk))));
+  const digest = hash.digest("hex");
+  yield* fs.writeFileString(input.hashPath, `${digest}\n`);
+  yield* Effect.log(
+    `[desktop-artifact] Staged WSL runtime archive at ${input.archivePath} (${digest}).`,
+  );
+});
+
+// Mirrors cliArchiveStem in scripts/build-cli-archive.ts (which imports from
+// this module, so it cannot be imported here). WSL runs the same CPU arch as
+// the Windows host.
+export const wslRuntimeArchiveStem = (version: string, arch: typeof BuildArch.Type): string =>
+  `styal-${version}-linux-${arch}`;
+
+export const parseWslRuntimeArchiveMembers = (listing: string): ReadonlyArray<string> =>
+  listing
+    .split(/\r?\n/)
+    .map((member) => member.replace(/^\.\//, "").replace(/\/$/, ""))
+    .filter((member) => member.length > 0);
 
 // Stage the prebuilt Linux node-pty binary into the packaged app so the WSL
 // backend never compiles on the user's machine. node-pty publishes no Linux
@@ -2558,6 +2628,8 @@ export const verifyWindowsPrimaryFffNativeLoad = Effect.fn(
 export const validateWindowsPackagedPayload = Effect.fn(
   "desktopArtifact.validateWindowsPackagedPayload",
 )(function* (input: {
+  readonly expectWslRuntime?: boolean;
+  readonly appVersion?: string;
   readonly stageDistDir: string;
   readonly appExecutableName: string;
   readonly targetArch: typeof BuildArch.Type;
@@ -2658,6 +2730,104 @@ export const validateWindowsPackagedPayload = Effect.fn(
       packagedAppDir,
       missingFiles: ["resource-monitor/styal-resource-monitor.exe"],
     });
+  }
+
+  const wslArchivePath = path.join(resourcesDir, WSL_RUNTIME_ARCHIVE_NAME);
+  const wslArchiveHashPath = path.join(resourcesDir, WSL_RUNTIME_ARCHIVE_HASH_NAME);
+  const [hasWslArchive, hasWslArchiveHash] = yield* Effect.all([
+    isFile(wslArchivePath),
+    isFile(wslArchiveHashPath),
+  ]);
+  if (input.expectWslRuntime === true && (!hasWslArchive || !hasWslArchiveHash)) {
+    return yield* new WindowsPackagedPayloadValidationError({
+      reason: "wsl-runtime-missing",
+      packagedAppDir,
+      missingFiles: [
+        ...(hasWslArchive ? [] : [WSL_RUNTIME_ARCHIVE_NAME]),
+        ...(hasWslArchiveHash ? [] : [WSL_RUNTIME_ARCHIVE_HASH_NAME]),
+      ],
+    });
+  }
+  if (hasWslArchive !== hasWslArchiveHash) {
+    return yield* new WindowsPackagedPayloadValidationError({
+      reason: "wsl-runtime-missing",
+      packagedAppDir,
+      missingFiles: [hasWslArchive ? WSL_RUNTIME_ARCHIVE_HASH_NAME : WSL_RUNTIME_ARCHIVE_NAME],
+    });
+  }
+  if (hasWslArchive && hasWslArchiveHash) {
+    const invalidWslRuntime = (cause: unknown) =>
+      new WindowsPackagedPayloadValidationError({
+        reason: "wsl-runtime-invalid",
+        packagedAppDir,
+        cause,
+      });
+    const recordedHash = yield* fs
+      .readFileString(wslArchiveHashPath)
+      .pipe(Effect.mapError(invalidWslRuntime));
+    const expectedHash = recordedHash.trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(expectedHash)) {
+      return yield* invalidWslRuntime(new Error("invalid WSL runtime SHA-256 sidecar"));
+    }
+    const archiveHash = NodeCrypto.createHash("sha256");
+    yield* fs.stream(wslArchivePath).pipe(
+      Stream.runForEach((chunk) => Effect.sync(() => archiveHash.update(chunk))),
+      Effect.mapError(invalidWslRuntime),
+    );
+    const actualHash = archiveHash.digest("hex");
+    if (actualHash !== expectedHash) {
+      return yield* invalidWslRuntime(
+        new Error(`WSL runtime SHA-256 mismatch: expected ${expectedHash}, got ${actualHash}`),
+      );
+    }
+
+    const listing = yield* spawnAndCollectOutput(
+      ChildProcess.make("tar", ["-tzf", WSL_RUNTIME_ARCHIVE_NAME], {
+        cwd: resourcesDir,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      }),
+    ).pipe(Effect.mapError(invalidWslRuntime));
+    if (listing.exitCode !== 0) {
+      return yield* invalidWslRuntime(
+        new Error(`tar could not list WSL runtime archive: ${listing.stderr.trim()}`),
+      );
+    }
+    const members = parseWslRuntimeArchiveMembers(listing.stdout);
+    // A release archive unpacks to one directory named after its stem; the
+    // desktop app's WSL install script relies on that layout to find `styal`.
+    const stem = wslRuntimeArchiveStem(input.appVersion ?? "", input.targetArch);
+    const topLevel = new Set(members.map((member) => member.split("/")[0]));
+    if (topLevel.size !== 1 || !topLevel.has(stem)) {
+      return yield* invalidWslRuntime(
+        new Error(
+          `WSL runtime archive must contain a single top-level directory ${stem}, found ${[...topLevel].join(", ") || "nothing"}`,
+        ),
+      );
+    }
+    const requiredMembers = [
+      `${stem}/styal`,
+      `${stem}/client`,
+      `${stem}/node_modules`,
+      `${stem}/node_modules/node-pty/build/Release/pty.node`,
+    ];
+    const missingMembers = requiredMembers.filter((member) => !members.includes(member));
+    if (missingMembers.length > 0) {
+      return yield* new WindowsPackagedPayloadValidationError({
+        reason: "wsl-runtime-invalid",
+        packagedAppDir,
+        missingFiles: missingMembers,
+        cause: new Error("WSL runtime archive is not a Linux CLI release archive"),
+      });
+    }
+    // The CLI archive runs the single-executable, never a loose server bundle.
+    const bundleEntry = members.find((member) => member.endsWith("/bin.mjs"));
+    if (bundleEntry !== undefined) {
+      return yield* invalidWslRuntime(
+        new Error(`WSL runtime archive contains a server bundle entry ${bundleEntry}`),
+      );
+    }
   }
 
   const fileCount = yield* countPayloadFiles(packagedAppDir);
@@ -2995,6 +3165,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
             provisioningProfilePath: macPasskeySigning.provisioningProfilePath,
           }
         : undefined,
+      options.platform === "win" && options.wslRuntime !== undefined,
     ),
     dependencies: stageDependencies,
     devDependencies: {
@@ -3050,6 +3221,14 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       wslPrebuildPath: options.wslPrebuild,
       asarPath: windowsServerAsarPath,
       verbose: options.verbose,
+    });
+  }
+
+  if (options.platform === "win" && options.wslRuntime !== undefined) {
+    yield* stageWslRuntimeArchive({
+      sourceArchivePath: options.wslRuntime,
+      archivePath: path.join(stageProdResourcesDir, WSL_RUNTIME_ARCHIVE_NAME),
+      hashPath: path.join(stageProdResourcesDir, WSL_RUNTIME_ARCHIVE_HASH_NAME),
     });
   }
 
@@ -3147,6 +3326,8 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       stageDistDir,
       appExecutableName: `${resolveDesktopProductName(appVersion)}.exe`,
       targetArch: options.arch,
+      appVersion,
+      expectWslRuntime: options.wslRuntime !== undefined,
       verbose: options.verbose,
     });
   }
@@ -3228,6 +3409,12 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
   mockUpdateServerPort: Flag.integer("mock-update-server-port").pipe(
     Flag.withSchema(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 }))),
     Flag.withDescription("Mock update server port (env: T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT)."),
+    Flag.optional,
+  ),
+  wslRuntime: Flag.string("wsl-runtime").pipe(
+    Flag.withDescription(
+      "Linux styal CLI archive for the packaged WSL backend (env: STYAL_DESKTOP_WSL_RUNTIME).",
+    ),
     Flag.optional,
   ),
   wslPrebuild: Flag.string("wsl-prebuild").pipe(

@@ -16,6 +16,10 @@ on:
         required: false
         default: all
         type: string
+      cli_archives_ready:
+        description: Reuse CLI archives built by the parent release workflow
+        default: false
+        type: boolean
       sign_macos:
         description: Sign and notarize the macOS artifact
         required: false
@@ -148,6 +152,16 @@ jobs:
           process.stdout.write(`matrix=${JSON.stringify({ include: selected })}\n`);
           NODE
 
+  build_wsl_runtime:
+    name: Build Linux CLI for WSL
+    needs: configure
+    if: ${{ !inputs.cli_archives_ready && (inputs.target == 'all' || inputs.target == 'windows-x64') }}
+    uses: ./.github/workflows/fork-cli-archives.yml
+    with:
+      ref: ${{ inputs.ref }}
+      version: ${{ inputs.version }}
+      target: linux-x64
+
   # node-pty publishes no Linux prebuilt and the WSL backend runs under the
   # distro's own (Linux) Node. Build it on Linux for the Windows package so WSL
   # works without a first-launch compiler, node-gyp, or network connection.
@@ -196,7 +210,7 @@ jobs:
 
   build:
     name: Build ${{ matrix.label }}
-    needs: [configure, build_wsl_node_pty]
+    needs: [configure, build_wsl_node_pty, build_wsl_runtime]
     # A failed WSL prebuild should fail the Windows matrix entry at its download
     # step without preventing independent macOS and Linux entries from running.
     if: ${{ !cancelled() && needs.configure.result == 'success' }}
@@ -283,6 +297,12 @@ jobs:
       - name: Align package versions
         run: node scripts/update-release-package-versions.ts "${{ inputs.version }}"
 
+      - name: Download Linux CLI runtime for WSL
+        if: matrix.platform == 'win'
+        uses: actions/download-artifact@v8
+        with:
+          name: cli-archive-linux-x64
+          path: wsl-runtime
       - name: Download WSL node-pty prebuild
         if: matrix.platform == 'win'
         uses: actions/download-artifact@v8
@@ -327,6 +347,7 @@ jobs:
         shell: bash
         env:
           T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
+          RELEASE_VERSION: ${{ inputs.version }}
           SIGN_MACOS: ${{ inputs.sign_macos }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
@@ -405,6 +426,7 @@ jobs:
             args+=(--signed)
           elif [[ "${{ matrix.platform }}" == "win" ]]; then
             args+=(--wsl-prebuild "$GITHUB_WORKSPACE/wsl-prebuild/pty.node")
+            args+=(--wsl-runtime "$GITHUB_WORKSPACE/wsl-runtime/styal-${RELEASE_VERSION}-linux-x64.tar.gz")
           fi
 
           vp run dist:desktop:artifact "${args[@]}"

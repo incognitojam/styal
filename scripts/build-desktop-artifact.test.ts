@@ -9,9 +9,13 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import {
+  stageWslRuntimeArchive,
+  wslRuntimeArchiveStem,
+  WSL_RUNTIME_ARCHIVE_NAME,
+  WSL_RUNTIME_ARCHIVE_HASH_NAME,
   BundleNotSelfContainedError,
   BuildCommandFailedError,
   DesktopDmgBackgroundSourceMissingError,
@@ -68,6 +72,43 @@ import {
 } from "./build-desktop-artifact.ts";
 import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 
+// A minimal stand-in for the Linux CLI release archive: one top-level
+// directory named after the archive stem holding the executable, the web
+// client, and the runtime externals with node-pty built from source.
+const makeLinuxCliArchiveFixture = Effect.fn("test.makeLinuxCliArchiveFixture")(function* (input: {
+  readonly root: string;
+  readonly stem: string;
+  readonly extraMembers?: ReadonlyArray<string>;
+  readonly omitMembers?: ReadonlyArray<string>;
+}) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const contentRoot = path.join(input.root, "content");
+  const members = [
+    `${input.stem}/styal`,
+    `${input.stem}/client/index.html`,
+    `${input.stem}/node_modules/node-pty/package.json`,
+    `${input.stem}/node_modules/node-pty/build/Release/pty.node`,
+    ...(input.extraMembers ?? []),
+  ].filter((member) => !(input.omitMembers ?? []).includes(member));
+  for (const member of members) {
+    const memberPath = path.join(contentRoot, member);
+    yield* fs.makeDirectory(path.dirname(memberPath), { recursive: true });
+    yield* fs.writeFileString(memberPath, member);
+  }
+  const archivePath = path.join(input.root, `${input.stem}.tar.gz`);
+  const tar = yield* spawner.spawn(
+    ChildProcess.make("tar", ["-czf", archivePath, "-C", contentRoot, "."], {
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "pipe",
+    }),
+  );
+  assert.equal(Number(yield* tar.exitCode), 0);
+  return archivePath;
+});
+
 function mockProcess(exitCode: number) {
   return ChildProcessSpawner.makeHandle({
     pid: ChildProcessSpawner.ProcessId(1),
@@ -105,9 +146,12 @@ function iconResizeSpawnerLayer(
   );
 }
 
+const WINDOWS_PAYLOAD_FIXTURE_VERSION = "1.2.3";
+
 const makeWindowsPayloadFixture = Effect.fn("test.makeWindowsPayloadFixture")(function* (input: {
   readonly copyUnpackedNatives: boolean;
   readonly serverEntrySource?: string;
+  readonly wslRuntime?: "valid" | "loose-server-tree" | "missing-pty" | "bad-digest";
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -140,9 +184,36 @@ const makeWindowsPayloadFixture = Effect.fn("test.makeWindowsPayloadFixture")(fu
     path.join(resourcesDir, "resource-monitor/styal-resource-monitor.exe"),
     "monitor",
   );
-  const appExecutableName = "t3code.exe";
+  const appExecutableName = "styal.exe";
   yield* fs.writeFileString(path.join(packagedAppDir, appExecutableName), "electron");
   yield* fs.writeFileString(path.join(packagedAppDir, "chrome_crashpad_handler.exe"), "crashpad");
+
+  if (input.wslRuntime !== undefined) {
+    const stem = wslRuntimeArchiveStem(WINDOWS_PAYLOAD_FIXTURE_VERSION, "x64");
+    const sourceArchivePath =
+      input.wslRuntime === "loose-server-tree"
+        ? // The old hand-rolled runtime: apps/server/dist + node_modules at the
+          // archive root, no single stem directory, no `styal` executable.
+          yield* makeLinuxCliArchiveFixture({
+            root: path.join(tempDir, "wsl-runtime"),
+            stem: "apps",
+            omitMembers: ["apps/styal", "apps/client/index.html"],
+            extraMembers: ["apps/server/dist/bin.mjs", "node_modules/node-pty/package.json"],
+          })
+        : yield* makeLinuxCliArchiveFixture({
+            root: path.join(tempDir, "wsl-runtime"),
+            stem,
+            ...(input.wslRuntime === "missing-pty"
+              ? { omitMembers: [`${stem}/node_modules/node-pty/build/Release/pty.node`] }
+              : {}),
+          });
+    const archivePath = path.join(resourcesDir, WSL_RUNTIME_ARCHIVE_NAME);
+    const hashPath = path.join(resourcesDir, WSL_RUNTIME_ARCHIVE_HASH_NAME);
+    yield* stageWslRuntimeArchive({ sourceArchivePath, archivePath, hashPath });
+    if (input.wslRuntime === "bad-digest") {
+      yield* fs.writeFileString(hashPath, `${"0".repeat(64)}\n`);
+    }
+  }
 
   return {
     stageDistDir,
@@ -154,6 +225,131 @@ const makeWindowsPayloadFixture = Effect.fn("test.makeWindowsPayloadFixture")(fu
 });
 
 it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
+  it.effect("accepts an embedded Linux CLI release archive with a matching digest", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fixture = yield* makeWindowsPayloadFixture({
+          copyUnpackedNatives: true,
+          wslRuntime: "valid",
+        });
+        const result = yield* validateWindowsPackagedPayload({
+          stageDistDir: fixture.stageDistDir,
+          appExecutableName: fixture.appExecutableName,
+          targetArch: "x64",
+          appVersion: WINDOWS_PAYLOAD_FIXTURE_VERSION,
+          expectWslRuntime: true,
+        });
+
+        assert.equal(result.packagedAppDir, fixture.packagedAppDir);
+      }),
+    ).pipe(Effect.provideService(HostProcessPlatform, "linux")),
+  );
+
+  it.effect("rejects an embedded archive built for a different release version", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fixture = yield* makeWindowsPayloadFixture({
+          copyUnpackedNatives: true,
+          wslRuntime: "valid",
+        });
+        const error = yield* validateWindowsPackagedPayload({
+          stageDistDir: fixture.stageDistDir,
+          appExecutableName: fixture.appExecutableName,
+          targetArch: "x64",
+          appVersion: "9.9.9",
+          expectWslRuntime: true,
+        }).pipe(Effect.flip);
+
+        assert.instanceOf(error, WindowsPackagedPayloadValidationError);
+        assert.equal(error.reason, "wsl-runtime-invalid");
+      }),
+    ),
+  );
+
+  it.effect("rejects a Windows package missing its expected WSL runtime", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fixture = yield* makeWindowsPayloadFixture({ copyUnpackedNatives: true });
+        const error = yield* validateWindowsPackagedPayload({
+          stageDistDir: fixture.stageDistDir,
+          appExecutableName: fixture.appExecutableName,
+          targetArch: "x64",
+          appVersion: WINDOWS_PAYLOAD_FIXTURE_VERSION,
+          expectWslRuntime: true,
+        }).pipe(Effect.flip);
+
+        assert.instanceOf(error, WindowsPackagedPayloadValidationError);
+        assert.equal(error.reason, "wsl-runtime-missing");
+      }),
+    ),
+  );
+
+  it.effect("rejects a loose server tree that is not a Linux CLI release archive", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fixture = yield* makeWindowsPayloadFixture({
+          copyUnpackedNatives: true,
+          wslRuntime: "loose-server-tree",
+        });
+        const error = yield* validateWindowsPackagedPayload({
+          stageDistDir: fixture.stageDistDir,
+          appExecutableName: fixture.appExecutableName,
+          targetArch: "x64",
+          appVersion: WINDOWS_PAYLOAD_FIXTURE_VERSION,
+          expectWslRuntime: true,
+        }).pipe(Effect.flip);
+
+        assert.instanceOf(error, WindowsPackagedPayloadValidationError);
+        assert.equal(error.reason, "wsl-runtime-invalid");
+      }),
+    ),
+  );
+
+  it.effect("rejects an embedded archive without the Linux node-pty binary", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fixture = yield* makeWindowsPayloadFixture({
+          copyUnpackedNatives: true,
+          wslRuntime: "missing-pty",
+        });
+        const error = yield* validateWindowsPackagedPayload({
+          stageDistDir: fixture.stageDistDir,
+          appExecutableName: fixture.appExecutableName,
+          targetArch: "x64",
+          appVersion: WINDOWS_PAYLOAD_FIXTURE_VERSION,
+          expectWslRuntime: true,
+        }).pipe(Effect.flip);
+
+        assert.instanceOf(error, WindowsPackagedPayloadValidationError);
+        assert.equal(error.reason, "wsl-runtime-invalid");
+        assert.deepStrictEqual(error.missingFiles, [
+          `${wslRuntimeArchiveStem(WINDOWS_PAYLOAD_FIXTURE_VERSION, "x64")}/node_modules/node-pty/build/Release/pty.node`,
+        ]);
+      }),
+    ),
+  );
+
+  it.effect("rejects an emitted WSL archive whose sidecar digest does not match", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fixture = yield* makeWindowsPayloadFixture({
+          copyUnpackedNatives: true,
+          wslRuntime: "bad-digest",
+        });
+        const error = yield* validateWindowsPackagedPayload({
+          stageDistDir: fixture.stageDistDir,
+          appExecutableName: fixture.appExecutableName,
+          targetArch: "x64",
+          appVersion: WINDOWS_PAYLOAD_FIXTURE_VERSION,
+          expectWslRuntime: true,
+        }).pipe(Effect.flip);
+
+        assert.instanceOf(error, WindowsPackagedPayloadValidationError);
+        assert.equal(error.reason, "wsl-runtime-invalid");
+      }),
+    ),
+  );
+
   it("resolves the dedicated nightly updater channel from nightly versions", () => {
     assert.equal(resolveDesktopUpdateChannel("0.0.17-nightly.20260413.42"), "nightly");
     assert.equal(resolveDesktopUpdateChannel("0.0.17"), "latest");
@@ -444,6 +640,8 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.deepStrictEqual(DESKTOP_ELECTRON_LANGUAGES, ["en-US"]);
     assert.deepStrictEqual(DESKTOP_FILE_EXCLUSIONS, [
       "!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**/*",
+      "!apps/desktop/prod-resources/wsl-runtime.tar.gz",
+      "!apps/desktop/prod-resources/wsl-runtime.tar.gz.sha256",
       "!apps/desktop/prod-resources/windows-server",
       "!apps/desktop/prod-resources/windows-server/**/*",
     ]);
