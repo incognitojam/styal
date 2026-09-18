@@ -1091,6 +1091,29 @@ features:
       tracking: []
       retire_when: Upstream preserves project scope across sidebar state and every new-thread entry point.
 
+  - id: provider-server-settings-isolation
+    title: Keep the server's own settings out of agent processes
+    status: maintained
+    prs: [365]
+    invariants:
+      - A provider process inherits the user's environment without the server's own settings, launcher context, or dev web build variables, so a styal server an agent starts cannot adopt the running server's port, state directory, or Tailscale Serve mapping.
+      - Variables addressed to the child survive, including per-session workspace ports, a provider instance's configured environment, and the Codex launch args override.
+      - Terminals and provider processes share one rule for which inherited variables are withheld.
+    implementation_paths:
+      - apps/server/src/provider/ProviderInstanceEnvironment.ts
+      - apps/server/src/serverOwnedEnvironment.ts
+      - apps/server/src/terminal/Manager.ts
+    upstream_paths:
+      - apps/server/src/provider/ProviderInstanceEnvironment.ts
+      - apps/server/src/terminal/Manager.ts
+    tests:
+      - apps/server/src/provider/ProviderInstanceEnvironment.test.ts
+      - apps/server/src/terminal/Manager.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream withholds the server's own environment from provider processes with equivalent coverage of launcher context and per-session variables.
+
   - id: provider-subscription-limits
     title: Show provider subscription usage limits
     status: review-needed
