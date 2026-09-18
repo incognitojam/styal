@@ -5,10 +5,10 @@ import { stripServerOwnedEnvironment } from "../serverOwnedEnvironment.ts";
 import { T3CODE_CODEX_LAUNCH_ARGS_ENV } from "./Layers/codexLaunchArgs.ts";
 
 /**
- * What a provider process inherits from the server. Agents run arbitrary
- * commands, including `vp run dev` and other styal servers, so the server's
- * own settings stay behind. The Codex launch args override is read back out of
- * this environment by the Codex adapter, so it passes through.
+ * The server's environment without its own settings, used as the base for
+ * provider processes. Agents can start other styal servers, which must not
+ * inherit this server's settings. `T3CODE_CODEX_LAUNCH_ARGS` is kept because
+ * the Codex adapter reads it from this environment.
  */
 export function inheritedProviderEnvironment(
   env: NodeJS.ProcessEnv = process.env,
@@ -17,8 +17,8 @@ export function inheritedProviderEnvironment(
 }
 
 /**
- * Layers a provider instance's configured variables over `baseEnv`. A caller
- * that passes its own `baseEnv` owns its contents; nothing is stripped from it.
+ * Applies a provider instance's configured variables on top of `baseEnv`. An
+ * explicit `baseEnv` is used as given; only the default is filtered.
  */
 export function mergeProviderInstanceEnvironment(
   environment: ProviderInstanceEnvironment | undefined,

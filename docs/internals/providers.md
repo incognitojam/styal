@@ -54,23 +54,24 @@ driver kinds absent from the manifest have no legacy concept.
 ## Process environment
 
 Every driver builds its process environment with `mergeProviderInstanceEnvironment`
-(`apps/server/src/provider/ProviderInstanceEnvironment.ts`), and uses the result for sessions, text
-generation, and status probes alike. The base is the server's environment with its own variables
-withheld: `T3CODE_*`, `STYAL_HOME`, the service launcher context, Electron's runtime flags, and the
-dev web build's `VITE_*` and `PORT`. Agents run arbitrary commands, including other styal servers.
-One that inherits those adopts the running server's identity: it binds the same port, opens the same
-state directory, and replaces the machine-wide Tailscale Serve mapping, then removes it on exit.
+(`apps/server/src/provider/ProviderInstanceEnvironment.ts`) and uses the result for sessions, text
+generation, and status probes. The base is the server's environment with the server-owned variables
+removed: `T3CODE_*`, `STYAL_HOME`, the service launcher variables, Electron's runtime flags, and the
+dev web build's `VITE_*` and `PORT`. Agents can start other styal servers. A server that inherited
+these variables would bind the same port, open the same state directory, and replace the
+machine-wide Tailscale Serve mapping, then remove that mapping on exit.
 
-The rule lives in `apps/server/src/serverOwnedEnvironment.ts` and terminals apply the same one. It
-is a blocklist on purpose, since an allowlist silently drops proxies, toolchain variables, and
-display settings the user's tools need.
+The rule is defined in `apps/server/src/serverOwnedEnvironment.ts`, and terminals use it too. It is
+a blocklist because an allowlist would also remove proxy settings, toolchain variables, and display
+settings that the user's tools need.
 
-Variables addressed to the child are layered on afterward and survive: a provider instance's
-configured environment, the per-session workspace variables from `WorkspacePortAllocator`, and the
-bearer token Codex uses for the styal MCP server. `T3CODE_CODEX_LAUNCH_ARGS` is the one inherited
-`T3CODE_*` name that passes through, because the Codex adapter reads it back out of this
-environment. A new server setting needs no change here; a new server-prefixed variable meant for
-providers must be added to that pass-through.
+Variables intended for the provider process are applied after filtering, so they are not removed: a
+provider instance's configured environment, the per-session workspace variables from
+`WorkspacePortAllocator`, and the bearer token Codex uses for the styal MCP server.
+`T3CODE_CODEX_LAUNCH_ARGS` is the only inherited `T3CODE_*` variable that is kept, because the Codex
+adapter reads it from this environment. Adding a server setting requires no change here. A new
+`T3CODE_*` variable that providers must inherit has to be added to the `keep` list in
+`inheritedProviderEnvironment`.
 
 ## Attachment access
 

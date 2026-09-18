@@ -11,12 +11,11 @@ const SERVER_OWNED_ENV_KEYS = new Set([
 ]);
 
 /**
- * True for variables that configure this server process rather than the
- * user's session: its own settings (`T3CODE_*`, `STYAL_HOME`), whatever
- * launched it (the service launcher, Electron), and the dev web build
- * (`VITE_*`, `PORT`). A second styal server started from a child that inherits
- * them adopts this server's identity — its port, its state directory, its
- * Tailscale Serve mapping.
+ * True for variables that configure this server process: its settings
+ * (`T3CODE_*`, `STYAL_HOME`), variables set by the service launcher or
+ * Electron, and the dev web build's `VITE_*` and `PORT`. A styal server started
+ * from a child process that inherits them would use this server's port, state
+ * directory, and Tailscale Serve mapping.
  */
 export function isServerOwnedEnvKey(key: string): boolean {
   const normalizedKey = key.toUpperCase();
@@ -28,10 +27,10 @@ export function isServerOwnedEnvKey(key: string): boolean {
 }
 
 /**
- * The environment a terminal or provider process should inherit from the
- * server. Deliberately a blocklist: an allowlist silently strips things like
- * PSModulePath, DISPLAY, proxies, and toolchain variables. `keep` names
- * server-prefixed variables that are addressed to the child.
+ * Returns `env` without the server-owned variables, for terminals and provider
+ * processes. This is a blocklist because an allowlist would also remove
+ * variables users rely on, such as PSModulePath, DISPLAY, proxy settings, and
+ * toolchain variables. Names listed in `keep` are not removed.
  */
 export function stripServerOwnedEnvironment(
   env: NodeJS.ProcessEnv,

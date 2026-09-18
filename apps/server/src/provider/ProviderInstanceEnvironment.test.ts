@@ -11,7 +11,7 @@ import {
 } from "./ProviderInstanceEnvironment.ts";
 
 describe("inheritedProviderEnvironment", () => {
-  it("leaves the server's own settings behind", () => {
+  it("removes server-owned variables", () => {
     expect(
       inheritedProviderEnvironment({
         PATH: "/bin",
@@ -29,7 +29,7 @@ describe("inheritedProviderEnvironment", () => {
     ).toEqual({ PATH: "/bin", ANTHROPIC_API_KEY: "sk-ant-test" });
   });
 
-  it("keeps the Codex launch args override the Codex adapter reads back", () => {
+  it("keeps T3CODE_CODEX_LAUNCH_ARGS", () => {
     expect(
       inheritedProviderEnvironment({
         T3CODE_CODEX_LAUNCH_ARGS: "--strict-config",
@@ -82,7 +82,7 @@ describe("mergeProviderInstanceEnvironment", () => {
     ).toEqual({ ...baseEnv, CUSTOM_VALUE: "~/.custom" });
   });
 
-  it("keeps server-prefixed variables that the caller or instance supplies", () => {
+  it("does not filter an explicit base or instance-configured variables", () => {
     expect(
       mergeProviderInstanceEnvironment(
         [{ name: "T3CODE_HOST", value: "configured", sensitive: false }],
