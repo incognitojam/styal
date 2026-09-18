@@ -71,6 +71,7 @@ describe("searchSettings", () => {
   it("hides desktop-only settings from browser search", () => {
     expect(SETTINGS_SEARCH_ITEMS.some((item) => item.id === "quit-confirmation")).toBe(true);
     expect(searchSettings("quit confirmation")).toEqual([]);
+    expect(searchSettings("discord")).toEqual([]);
   });
 
   it("keeps catalog result ids unique", () => {

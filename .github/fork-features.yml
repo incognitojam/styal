@@ -308,6 +308,35 @@ features:
         - https://github.com/pingdotgg/t3code/pull/6269
       retire_when: Upstream automatically downloads desktop updates, installs them on quit, and exposes equivalent queued-installer preservation, retry, and restart state through the client UI.
 
+  - id: desktop-discord-rich-presence
+    title: Opt-in Discord activity with active thread and project counts
+    status: maintained
+    prs: []
+    invariants:
+      - Desktop presence is off by default and publishes only aggregate unsettled thread and project counts from live environments.
+      - Archived, settled, and snoozed threads are excluded using sidebar lifecycle rules; projects are scoped by environment.
+      - Disabling, reaching zero active threads, closing the window, or losing the renderer clears presence; Discord restarts reconnect automatically.
+      - The integration stays on the desktop client for local and remote environments; browser and mobile clients do not publish presence.
+    implementation_paths:
+      - apps/desktop/src/discord/DesktopDiscordPresence.ts
+      - apps/desktop/src/ipc/methods/discordPresence.ts
+      - apps/web/src/components/desktop/DiscordPresenceSync.tsx
+      - apps/web/src/discordPresence.ts
+      - packages/contracts/src/ipc.ts
+      - packages/contracts/src/settings.ts
+    upstream_paths:
+      - apps/desktop/src/preload.ts
+      - packages/contracts/src/ipc.ts
+      - packages/contracts/src/settings.ts
+    tests:
+      - apps/desktop/src/discord/DesktopDiscordPresence.test.ts
+      - apps/web/src/discordPresence.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/5714
+      retire_when: Upstream ships opt-in desktop presence with equivalent lifecycle counts and cleanup behavior.
+
   - id: desktop-graceful-shutdown
     title: Bounded graceful desktop shutdown
     status: maintained

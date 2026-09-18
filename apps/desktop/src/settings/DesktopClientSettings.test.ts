@@ -20,6 +20,7 @@ const clientSettings: ClientSettings = {
   browserAutoShowFloatingPreview: false,
   claudeStatusAlertsEnabled: false,
   confirmQuit: true,
+  discordRichPresence: false,
   completionSound: "none",
   confirmThreadArchive: true,
   confirmThreadDelete: false,

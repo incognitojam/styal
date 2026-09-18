@@ -11,6 +11,7 @@
 - [Reading the chat timeline](./user/chat-timeline.md)
 - [How diffs order their files](./user/diff-file-order.md)
 - [Organizing threads](./user/thread-sidebar.md)
+- [Discord Rich Presence](./user/discord-rich-presence.md)
 - [Review usage](./user/usage.md)
 - [Project icons and workspace ports](./user/project-settings.md)
 - [Import T3 Code data](./user/importing-t3-code-data.md)

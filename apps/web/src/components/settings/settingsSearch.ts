@@ -196,6 +196,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     desktopOnly: true,
   },
   {
+    id: "discord-rich-presence",
+    title: "Discord Rich Presence",
+    to: "/settings/appearance",
+    desktopOnly: true,
+  },
+  {
     id: "text-generation-model",
     title: "Text generation model",
     to: "/settings/general",

@@ -179,6 +179,8 @@ export const ClientSettingsSchema = Schema.Struct({
   // Desktop-only: require holding the quit shortcut (Cmd/Ctrl+Q) before the
   // app quits; a quick tap only shows a hint. Browser clients ignore it.
   confirmQuit: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  // Desktop-only, opt-in sharing of aggregate activity with the local Discord client.
+  discordRichPresence: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   completionSound: PersistedCompletionSound.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_COMPLETION_SOUND)),
   ),
@@ -930,6 +932,7 @@ export const ClientSettingsPatch = Schema.Struct({
   browserDefaultAppearance: Schema.optionalKey(PreviewAppearancePreference),
   browserAutoShowFloatingPreview: Schema.optionalKey(Schema.Boolean),
   confirmQuit: Schema.optionalKey(Schema.Boolean),
+  discordRichPresence: Schema.optionalKey(Schema.Boolean),
   completionSound: Schema.optionalKey(CompletionSound),
   confirmThreadArchive: Schema.optionalKey(Schema.Boolean),
   confirmThreadDelete: Schema.optionalKey(Schema.Boolean),

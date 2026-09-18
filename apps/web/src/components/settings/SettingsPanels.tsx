@@ -1213,6 +1213,31 @@ export function AppearanceSettingsPanel() {
       </SettingsSection>
 
       <TypographySection />
+      {isElectron ? (
+        <SettingsSection title="Activity sharing">
+          <SettingsRow
+            {...searchableSetting("discord-rich-presence")}
+            description="Show your active thread and project counts in Discord. Settled, snoozed, and archived threads are excluded. Names and conversation content are never shared. Requires Discord running on this computer."
+            resetAction={
+              settings.discordRichPresence ? (
+                <SettingResetButton
+                  label="Discord Rich Presence"
+                  onClick={() => updateSettings({ discordRichPresence: false })}
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.discordRichPresence}
+                onCheckedChange={(checked) =>
+                  updateSettings({ discordRichPresence: Boolean(checked) })
+                }
+                aria-label="Discord Rich Presence"
+              />
+            }
+          />
+        </SettingsSection>
+      ) : null}
     </SettingsPageContainer>
   );
 }

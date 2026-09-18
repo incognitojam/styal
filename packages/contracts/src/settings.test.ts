@@ -21,6 +21,17 @@ const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
+describe("Discord Rich Presence settings", () => {
+  it("defaults existing installs to off and persists an explicit opt-in", () => {
+    expect(decodeClientSettings({}).discordRichPresence).toBe(false);
+    const settings = decodeClientSettings({ discordRichPresence: true });
+    expect(decodeClientSettings(encodeClientSettings(settings)).discordRichPresence).toBe(true);
+    expect(decodeClientSettingsPatch({ discordRichPresence: false })).toEqual({
+      discordRichPresence: false,
+    });
+  });
+});
+
 describe("ClaudeSettings auto-compaction", () => {
   it("uses Claude's default threshold when no override is configured", () => {
     expect(decodeClaudeSettings({}).autoCompactWindow).toBe("");

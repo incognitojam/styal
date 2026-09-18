@@ -26,6 +26,7 @@ import {
 import * as PreviewManager from "../preview/Manager.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopClientSettings from "../settings/DesktopClientSettings.ts";
+import * as DesktopDiscordPresence from "../discord/DesktopDiscordPresence.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import { makeQuitHoldHandler } from "./QuitHold.ts";
 
@@ -274,6 +275,7 @@ export const make = Effect.gen(function* () {
   const previewManager = yield* PreviewManager.PreviewManager;
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
   const clientSettings = yield* DesktopClientSettings.DesktopClientSettings;
+  const discordPresence = yield* DesktopDiscordPresence.DesktopDiscordPresence;
   const electronApp = yield* ElectronApp.ElectronApp;
   // Window-side latch for the primary backend's readiness. Set by
   // handleBackendReady (driven by the pool's onReady callback), cleared
@@ -634,6 +636,7 @@ export const make = Effect.gen(function* () {
       runFork(logWindowWarning("main window renderer prevented unload"));
     });
     window.webContents.once("destroyed", () => {
+      runFork(discordPresence.setActivity(null));
       runFork(logWindowInfo("main window web contents destroyed"));
     });
     window.webContents.on("devtools-closed", () => {
@@ -733,6 +736,7 @@ export const make = Effect.gen(function* () {
       },
     );
     window.webContents.on("render-process-gone", (_event, details) => {
+      runFork(discordPresence.setActivity(null));
       const recoverable =
         details.reason === "crashed" ||
         details.reason === "oom" ||
