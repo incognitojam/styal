@@ -620,6 +620,7 @@ export const HostActivity = Schema.Struct({
   activeSessions: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   waitingSessions: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   terminalsRequiringConfirmation: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  terminalsWithUnknownActivity: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 });
 export type HostActivity = typeof HostActivity.Type;
 

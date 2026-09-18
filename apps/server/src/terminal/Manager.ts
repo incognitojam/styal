@@ -20,6 +20,7 @@ import {
   TerminalResizeError,
   TerminalSessionLookupError,
   TerminalWriteError,
+  type HostActivity,
   type TerminalAttachInput,
   type TerminalAttachStreamEvent,
   type TerminalClearInput,
@@ -199,10 +200,13 @@ export class TerminalManager extends Context.Service<
       input: TerminalRestartInput,
     ) => Effect.Effect<TerminalSessionSnapshot, TerminalError>;
 
-    /** Inspect current process state immediately before a user-requested close. */
     /** Fresh close checks for every terminal owned by this host. */
-    readonly shutdownPreflight: Effect.Effect<number, TerminalError>;
+    readonly shutdownPreflight: Effect.Effect<
+      Pick<HostActivity, "terminalsRequiringConfirmation" | "terminalsWithUnknownActivity">,
+      TerminalError
+    >;
 
+    /** Inspect current process state immediately before a user-requested close. */
     readonly closePreflight: (
       input: TerminalClosePreflightInput,
     ) => Effect.Effect<TerminalClosePreflightResult, TerminalError>;
@@ -2219,15 +2223,17 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
   const closePreflightLocked = Effect.fn("terminal.closePreflightLocked")(function* (
     input: TerminalClosePreflightInput,
-  ): Effect.fn.Return<TerminalClosePreflightResult> {
+  ): Effect.fn.Return<TerminalClosePreflightResult & { unknownTerminalIds: string[] }> {
     const terminalIds = [...new Set(input.terminalIds)];
     const confirmationTerminalIds = new Set<string>();
+    const unknownTerminalIds = new Set<string>();
     const inspectableSessions: Array<TerminalSessionState & { pid: number }> = [];
 
     for (const terminalId of terminalIds) {
       const session = yield* getSession(input.threadId, terminalId);
       if (Option.isNone(session)) {
         confirmationTerminalIds.add(terminalId);
+        unknownTerminalIds.add(terminalId);
         continue;
       }
 
@@ -2243,6 +2249,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
       if (current.status !== "running" || !current.process || !Number.isInteger(current.pid)) {
         confirmationTerminalIds.add(terminalId);
+        unknownTerminalIds.add(terminalId);
         continue;
       }
 
@@ -2262,6 +2269,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       if (Option.isNone(subprocessInspector)) {
         for (const session of inspectableSessions) {
           confirmationTerminalIds.add(session.terminalId);
+          unknownTerminalIds.add(session.terminalId);
         }
       } else {
         yield* Effect.forEach(
@@ -2283,7 +2291,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
                   reason,
                 }).pipe(
                   Effect.tap(() =>
-                    Effect.sync(() => confirmationTerminalIds.add(session.terminalId)),
+                    Effect.sync(() => {
+                      confirmationTerminalIds.add(session.terminalId);
+                      unknownTerminalIds.add(session.terminalId);
+                    }),
                   ),
                 ),
               ),
@@ -2294,6 +2305,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     }
 
     return {
+      unknownTerminalIds: [...unknownTerminalIds],
       confirmationTerminalIds: terminalIds.filter((terminalId) =>
         confirmationTerminalIds.has(terminalId),
       ),
@@ -2301,7 +2313,9 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   });
 
   const closePreflight: TerminalManager["Service"]["closePreflight"] = (input) =>
-    withThreadLock(input.threadId, closePreflightLocked(input));
+    withThreadLock(input.threadId, closePreflightLocked(input)).pipe(
+      Effect.map(({ confirmationTerminalIds }) => ({ confirmationTerminalIds })),
+    );
 
   const pollSubprocessActivity = Effect.fn("terminal.pollSubprocessActivity")(function* () {
     const state = yield* readManagerState;
@@ -3005,9 +3019,18 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         threads.set(session.threadId, ids);
       }
       const results = yield* Effect.forEach([...threads], ([threadId, terminalIds]) =>
-        closePreflight({ threadId, terminalIds }),
+        withThreadLock(threadId, closePreflightLocked({ threadId, terminalIds })),
       );
-      return results.reduce((count, result) => count + result.confirmationTerminalIds.length, 0);
+      return {
+        terminalsRequiringConfirmation: results.reduce(
+          (count, result) => count + result.confirmationTerminalIds.length,
+          0,
+        ),
+        terminalsWithUnknownActivity: results.reduce(
+          (count, result) => count + result.unknownTerminalIds.length,
+          0,
+        ),
+      };
     }),
     close,
     subscribe,

@@ -119,7 +119,8 @@ links and issued bearer sessions keep their normal expiry. The native dialog def
 
 The server combines lightweight thread projections with live provider sessions, including pending
 approvals/input, starting turns, and background work. Terminal checks reuse the fresh close preflight,
-including finite commands and conservative handling when process inspection fails. Results cover all
+including finite commands and conservative handling when process inspection fails. Failed terminal
+inspections are counted separately so the dialog distinguishes running work from unknown activity. Results cover all
 clients of that environment without loading message bodies or transmitting thread names. Connections
 to independent remote servers do not block desktop shutdown because this app does not own their lifetime.
 

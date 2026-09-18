@@ -13,10 +13,11 @@ import * as ElectronDialog from "../electron/ElectronDialog.ts";
 export type ShutdownAction = "quit" | "restart";
 export type ActivityCheck = HostActivity | null;
 
-export function shutdownConfirmationDetail(checks: ReadonlyArray<ActivityCheck>): string | null {
+export function shutdownConfirmation(checks: ReadonlyArray<ActivityCheck>, action: ShutdownAction) {
   let active = 0;
   let waiting = 0;
   let terminals = 0;
+  let uncheckedTerminals = 0;
   let unknown = checks.length === 0;
   for (const check of checks) {
     if (check === null) {
@@ -25,25 +26,38 @@ export function shutdownConfirmationDetail(checks: ReadonlyArray<ActivityCheck>)
     }
     active += check.activeSessions;
     waiting += check.waitingSessions;
-    terminals += check.terminalsRequiringConfirmation;
+    terminals += check.terminalsRequiringConfirmation - check.terminalsWithUnknownActivity;
+    uncheckedTerminals += check.terminalsWithUnknownActivity;
   }
   const lines: string[] = [];
-  if (active) lines.push(`${active} agent session${active === 1 ? " is" : "s are"} working.`);
+  if (active) lines.push(`${active} thread${active === 1 ? "" : "s"} will be stopped.`);
   if (waiting)
     lines.push(
-      `${waiting} agent session${waiting === 1 ? " is" : "s are"} waiting for input or approval.`,
+      `${waiting} thread${waiting === 1 ? "" : "s"} waiting for input or approval will be stopped.`,
     );
   if (terminals)
+    lines.push(`${terminals} terminal session${terminals === 1 ? "" : "s"} will be stopped.`);
+  if (uncheckedTerminals)
     lines.push(
-      `${terminals} terminal session${terminals === 1 ? " has" : "s have"} running work or could not be checked.`,
+      `Activity could not be checked for ${uncheckedTerminals} terminal session${uncheckedTerminals === 1 ? "" : "s"}.`,
     );
   if (unknown) lines.push("Activity could not be checked for every local environment.");
   if (!lines.length) return null;
-  return [
-    ...lines,
-    "",
-    "Continuing stops the environments hosted by this app, including work started from other devices.",
-  ].join("\n");
+  const verb = action === "quit" ? "Quit" : "Restart";
+  if (unknown || uncheckedTerminals)
+    lines.push(
+      "",
+      `${action === "quit" ? "Quitting" : "Restarting"} will stop any work hosted by this app.`,
+    );
+  return {
+    message:
+      active || terminals
+        ? `${verb} with running work?`
+        : waiting
+          ? `${verb} with waiting threads?`
+          : `${verb} without checking activity?`,
+    detail: lines.join("\n"),
+  };
 }
 
 export class DesktopShutdownGuard extends Context.Service<
@@ -76,6 +90,7 @@ export const make = Effect.gen(function* () {
                     activeSessions: 0,
                     waitingSessions: 0,
                     terminalsRequiringConfirmation: 0,
+                    terminalsWithUnknownActivity: 0,
                   };
                 }
                 const option = yield* instance.currentConfig;
@@ -117,15 +132,14 @@ export const make = Effect.gen(function* () {
               ),
             { concurrency: "unbounded" },
           );
-          const detail = shutdownConfirmationDetail(checks);
-          if (detail === null) return true;
+          const confirmation = shutdownConfirmation(checks, action);
+          if (confirmation === null) return true;
           const verb = action === "quit" ? "Quit" : "Restart";
           return yield* dialog
             .showMessageBox({
               type: "warning",
               title: `${verb} styal?`,
-              message: `${verb} while work may be interrupted?`,
-              detail,
+              ...confirmation,
               buttons: ["Cancel", `${verb} anyway`],
               defaultId: 0,
               cancelId: 0,

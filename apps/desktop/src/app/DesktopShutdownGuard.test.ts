@@ -15,6 +15,7 @@ const idle: HostActivity = {
   activeSessions: 0,
   waitingSessions: 0,
   terminalsRequiringConfirmation: 0,
+  terminalsWithUnknownActivity: 0,
 };
 function harness(
   options: {
@@ -128,7 +129,7 @@ describe("DesktopShutdownGuard", () => {
       assert.lengthOf(h.messages, 0);
       active = true;
       assert.isFalse(yield* guard.confirm("restart"));
-      assert.include(h.messages[0]!, "1 agent session is working");
+      assert.include(h.messages[0]!, "1 thread will be stopped");
       assert.equal(h.checks(), 4);
       assert.equal(h.exchanges(), 2);
     }).pipe(Effect.provide(h.layer));
@@ -142,7 +143,7 @@ describe("DesktopShutdownGuard", () => {
     return Effect.gen(function* () {
       const guard = yield* Guard.DesktopShutdownGuard;
       assert.isTrue(yield* guard.confirm("restart"));
-      assert.include(h.messages[0]!, "2 agent sessions are waiting");
+      assert.include(h.messages[0]!, "2 threads waiting for input or approval will be stopped");
       assert.include(h.messages[0]!, "2 terminal sessions");
     }).pipe(Effect.provide(h.layer));
   });
@@ -195,4 +196,54 @@ describe("DesktopShutdownGuard", () => {
       }).pipe(Effect.provide(h.layer));
     }),
   );
+});
+
+describe("shutdown confirmation copy", () => {
+  it("states known work directly without an inspection warning", () => {
+    assert.deepEqual(
+      Guard.shutdownConfirmation(
+        [{ ...idle, activeSessions: 1, terminalsRequiringConfirmation: 1 }],
+        "quit",
+      ),
+      {
+        message: "Quit with running work?",
+        detail: "1 thread will be stopped.\n1 terminal session will be stopped.",
+      },
+    );
+  });
+  it("separates busy terminals from failed inspections across environments", () => {
+    assert.deepEqual(
+      Guard.shutdownConfirmation(
+        [
+          { ...idle, terminalsRequiringConfirmation: 2, terminalsWithUnknownActivity: 1 },
+          { ...idle, terminalsRequiringConfirmation: 1 },
+        ],
+        "restart",
+      ),
+      {
+        message: "Restart with running work?",
+        detail:
+          "2 terminal sessions will be stopped.\nActivity could not be checked for 1 terminal session.\n\nRestarting will stop any work hosted by this app.",
+      },
+    );
+  });
+  it("does not claim running work when only inspection failed", () => {
+    assert.deepEqual(
+      Guard.shutdownConfirmation(
+        [{ ...idle, terminalsRequiringConfirmation: 1, terminalsWithUnknownActivity: 1 }],
+        "quit",
+      ),
+      {
+        message: "Quit without checking activity?",
+        detail:
+          "Activity could not be checked for 1 terminal session.\n\nQuitting will stop any work hosted by this app.",
+      },
+    );
+  });
+  it("describes waiting threads separately", () => {
+    assert.deepEqual(Guard.shutdownConfirmation([{ ...idle, waitingSessions: 1 }], "restart"), {
+      message: "Restart with waiting threads?",
+      detail: "1 thread waiting for input or approval will be stopped.",
+    });
+  });
 });

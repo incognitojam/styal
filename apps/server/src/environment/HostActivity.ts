@@ -53,10 +53,10 @@ export const inspectHostActivity = Effect.gen(function* () {
   const projection = yield* ProjectionSnapshotQuery;
   const providers = yield* ProviderService;
   const terminals = yield* TerminalManager;
-  const terminalsRequiringConfirmation = yield* terminals.shutdownPreflight;
+  const terminalActivity = yield* terminals.shutdownPreflight;
   const snapshot = yield* projection.getShellSnapshot();
   const sessions = yield* providers.listSessions();
-  return { ...summarizeHostSessions(snapshot.threads, sessions), terminalsRequiringConfirmation };
+  return { ...summarizeHostSessions(snapshot.threads, sessions), ...terminalActivity };
 });
 
 export const hostActivityHttpApiLayer = HttpApiBuilder.group(
