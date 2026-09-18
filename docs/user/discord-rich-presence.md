@@ -4,8 +4,8 @@ In the desktop app, open **Settings → General → Activity sharing** and enabl
 **Discord Rich Presence**. It is off by default. Discord must be running on the same
 computer, with activity sharing enabled in Discord.
 
-Your activity shows **styal**, with a summary such as **3 active threads** and
-**Across 2 projects**. Active means unsettled, including threads waiting for you;
+Your activity shows **styal**, with a summary such as
+**3 active threads across 2 projects**. Active means unsettled, including threads waiting for you;
 it does not mean an agent is currently generating a response. Archived and snoozed
 threads are excluded. Automatic settlement follows your sidebar preferences.
 A **View on GitHub** button links to the public styal repository.

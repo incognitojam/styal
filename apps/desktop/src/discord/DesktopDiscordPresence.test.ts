@@ -41,14 +41,12 @@ describe("Discord presence lifecycle", () => {
     await controller.setActivity({ activeThreads: 3, activeProjects: 2 });
     await controller.setActivity({ activeThreads: 3, activeProjects: 2 });
     expect(client.user.setActivity).toHaveBeenCalledExactlyOnceWith({
-      details: "3 active threads",
-      state: "Across 2 projects",
+      details: "3 active threads across 2 projects",
       buttons: [{ label: "View on GitHub", url: "https://github.com/incognitojam/styal" }],
     });
     await controller.setActivity({ activeThreads: 1, activeProjects: 1 });
     expect(client.user.setActivity).toHaveBeenLastCalledWith({
-      details: "1 active thread",
-      state: "Across 1 project",
+      details: "1 active thread across 1 project",
       buttons: [{ label: "View on GitHub", url: "https://github.com/incognitojam/styal" }],
     });
     await controller.setActivity(null);
