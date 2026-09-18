@@ -658,6 +658,7 @@ features:
       - scripts/lib/brand-assets.test.ts
       - scripts/lib/cli-external-packages.test.ts
       - scripts/lib/macos-icon-safe-area.test.ts
+      - scripts/lib/smoke-native-terminal.test.ts
       - scripts/smoke-cli-archive.mjs
       - scripts/verify-cli-package.mjs
     upstream:
