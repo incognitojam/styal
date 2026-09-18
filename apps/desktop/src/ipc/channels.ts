@@ -90,3 +90,8 @@ export const PREVIEW_POINTER_EVENT_CHANNEL = "desktop:preview-pointer-event";
 export const SHUTDOWN_CONFIRMATION_CHANNEL = "desktop:shutdown-confirmation";
 export const GET_SHUTDOWN_CONFIRMATION_CHANNEL = "desktop:get-shutdown-confirmation";
 export const RESOLVE_SHUTDOWN_CONFIRMATION_CHANNEL = "desktop:resolve-shutdown-confirmation";
+
+export const ACKNOWLEDGE_SHUTDOWN_CONFIRMATION_CHANNEL =
+  "desktop:acknowledge-shutdown-confirmation";
+export const SHUTDOWN_RENDERER_READY_CHANNEL = "desktop:shutdown-renderer-ready";
+export const SHUTDOWN_CONFIRMATION_EXPIRED_CHANNEL = "desktop:shutdown-confirmation-expired";

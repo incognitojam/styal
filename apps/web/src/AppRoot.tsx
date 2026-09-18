@@ -1,3 +1,4 @@
+import { ConfirmDialogHost } from "./components/ConfirmDialogHost";
 import { RouterProvider } from "@tanstack/react-router";
 
 import { ElectronBrowserHost } from "./browser/ElectronBrowserHost";
@@ -22,6 +23,7 @@ export function AppRoot({ router }: { readonly router: AppRouter }) {
       <PreviewAutomationHosts />
       <ElectronBrowserHost />
       <QuitHoldOverlay />
+      <ConfirmDialogHost />
     </AppAtomRegistryProvider>
   );
 }

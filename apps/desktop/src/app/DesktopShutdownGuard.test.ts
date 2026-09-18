@@ -22,12 +22,14 @@ function harness(
     activity?: (host: string) => Effect.Effect<unknown>;
     dialog?: Effect.Effect<number>;
     stopped?: boolean;
+    quitOverride?: boolean;
     status?: number;
   } = {},
 ) {
   const messages: string[] = [];
   let checks = 0;
   let exchanges = 0;
+  let overrideChecks = 0;
   const instances = ["primary", "wsl"].map(
     (id, index): DesktopBackendPool.DesktopBackendInstance => ({
       id: DesktopBackendPool.BackendInstanceId(id),
@@ -100,6 +102,12 @@ function harness(
   );
   const dialog = Layer.succeed(DesktopShutdownConfirmation.DesktopShutdownConfirmation, {
     current: Effect.succeed(null),
+    acknowledge: () => Effect.void,
+    rendererReady: Effect.void,
+    consumeQuitOverride: Effect.sync(() => {
+      overrideChecks++;
+      return options.quitOverride ?? false;
+    }),
     resolve: () => Effect.void,
     request: (message) =>
       Effect.gen(function* () {
@@ -110,6 +118,7 @@ function harness(
   return {
     messages,
     checks: () => checks,
+    overrideChecks: () => overrideChecks,
     exchanges: () => exchanges,
     layer: Guard.layer.pipe(Layer.provide(Layer.mergeAll(pool, http, dialog))),
   };
@@ -248,4 +257,23 @@ describe("shutdown confirmation copy", () => {
         "1 thread waiting for input or approval will be interrupted. Make sure you're ready before continuing.",
     });
   });
+});
+
+it.effect("only an explicit quit can consume the failed-presentation escape", () => {
+  const h = harness({
+    quitOverride: true,
+    activity: () => Effect.succeed({ ...idle, activeSessions: 1 }),
+  });
+  return Effect.gen(function* () {
+    const guard = yield* Guard.DesktopShutdownGuard;
+    assert.isFalse(yield* guard.confirm("restart", "Install update 9.0.363 and restart styal?"));
+    assert.isFalse(yield* guard.confirm("restart"));
+    assert.equal(h.overrideChecks(), 0);
+    assert.lengthOf(h.messages, 2);
+    const checks = h.checks();
+    assert.isTrue(yield* guard.confirm("quit"));
+    assert.equal(h.overrideChecks(), 1);
+    assert.equal(h.checks(), checks);
+    assert.lengthOf(h.messages, 2);
+  }).pipe(Effect.provide(h.layer));
 });

@@ -82,6 +82,7 @@ export const make = Effect.gen(function* () {
     confirm: (action, title) =>
       Effect.gen(function* () {
         if (pending) return false;
+        if (action === "quit" && (yield* dialog.consumeQuitOverride)) return true;
         pending = true;
         return yield* Effect.gen(function* () {
           const instances = yield* pool.list;

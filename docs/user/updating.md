@@ -34,6 +34,9 @@ or activity cannot be checked, styal shows a summary and lets you cancel or cont
 the app running and the update ready. The hold-to-quit keyboard setting still protects against
 accidental shortcuts. On macOS, closing a window alone does not stop the host.
 
+If a confirmation cannot be displayed, styal cancels that attempt. If the app remains unresponsive,
+choose **Quit** again after five seconds to exit with normal cleanup. This can interrupt running work.
+
 Update checks, download progress, and retries remain available in Settings. Changing the update track cancels installation of a pending
 update from the previous track; styal waits for a download from the newly selected track.
 

@@ -116,9 +116,15 @@ budget. Missing configuration, invalid responses, and unavailable instances requ
 they never count as idle. The desktop bootstrap credential remains valid for the owning server process
 lifetime, so a first check after days of uptime or a later bearer renewal still works. User pairing
 links and issued bearer sessions keep their normal expiry. The existing in-app confirmation dialog presents active or unknown work; idle checks
-proceed immediately. Duplicate requests are suppressed. The main process retains the pending request
-until the renderer responds, reopening the main window when needed. Closing or reloading that
-renderer cancels the request.
+proceed immediately. Duplicate requests are suppressed. The confirmation host is mounted outside authentication and recovery gates. The main process reopens
+the main window when needed and gives the renderer five seconds to acknowledge that the dialog is
+active, rather than merely queued. Once displayed, it waits for the user without a deadline.
+
+Failed presentation expires the request and allows a subsequent explicit Quit to bypass confirmation
+while retaining normal shutdown and cleanup. Update installation and settings restarts cannot consume
+this override. Displaying a dialog or recovering the renderer clears it; late acknowledgments and
+responses to expired requests are ignored. Closing the window cancels the request without arming an
+override. Unknown activity is never treated as idle.
 
 The server combines lightweight thread projections with live provider sessions, including pending
 approvals/input, starting turns, and background work. Terminal checks reuse the fresh close preflight,

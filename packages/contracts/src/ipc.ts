@@ -1096,6 +1096,9 @@ export type DesktopShutdownConfirmationRequest =
   typeof DesktopShutdownConfirmationRequestSchema.Type;
 
 export interface DesktopBridge {
+  acknowledgeShutdownConfirmation: (requestId: number) => Promise<void>;
+  shutdownRendererReady: () => Promise<void>;
+  onShutdownConfirmationExpired: (listener: (requestId: number) => void) => () => void;
   getShutdownConfirmation: () => Promise<DesktopShutdownConfirmationRequest | null>;
   onShutdownConfirmation: (
     listener: (request: DesktopShutdownConfirmationRequest) => void,

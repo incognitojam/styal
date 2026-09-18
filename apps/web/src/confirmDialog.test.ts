@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
+  acknowledgeConfirmDialogPresentation,
   completeConfirmDialogClose,
   readConfirmDialogState,
   registerConfirmDialogHost,
@@ -101,4 +102,82 @@ describe("confirm dialog coordinator", () => {
     unregister();
     return expect(confirmation).resolves.toBe(true);
   });
+});
+
+it("acknowledges only the committed active confirmation, never a queued request", async () => {
+  resetConfirmDialogForTests();
+  const unregister = registerConfirmDialogHost();
+  let presented = 0;
+  const first = requireConfirmation(requestConfirmDialog("Unrelated action?"));
+  const second = requireConfirmation(
+    requestConfirmDialog("Quit?", undefined, {
+      onPresented: () => {
+        presented++;
+      },
+    }),
+  );
+  acknowledgeConfirmDialogPresentation(readConfirmDialogState());
+  expect(presented).toBe(0);
+  respondToConfirmDialog(false);
+  await first;
+  completeConfirmDialogClose();
+  expect(presented).toBe(0);
+  const renderedState = readConfirmDialogState();
+  acknowledgeConfirmDialogPresentation(renderedState);
+  acknowledgeConfirmDialogPresentation(renderedState);
+  expect(presented).toBe(1);
+  respondToConfirmDialog(true);
+  await expect(second).resolves.toBe(true);
+  unregister();
+});
+
+it("removes expired queued shutdown requests without dismissing another dialog", async () => {
+  resetConfirmDialogForTests();
+  const unregister = registerConfirmDialogHost();
+  const controller = new AbortController();
+  let presented = false;
+  const first = requireConfirmation(requestConfirmDialog("Unrelated action?"));
+  const queued = requireConfirmation(
+    requestConfirmDialog("Quit?", undefined, {
+      signal: controller.signal,
+      onPresented: () => {
+        presented = true;
+      },
+    }),
+  );
+  controller.abort();
+  await expect(queued).resolves.toBe(false);
+  expect(readConfirmDialogState()).toMatchObject({
+    status: "confirming",
+    message: "Unrelated action?",
+  });
+  respondToConfirmDialog(false);
+  await first;
+  completeConfirmDialogClose();
+  expect(readConfirmDialogState()).toEqual({ status: "idle" });
+  expect(presented).toBe(false);
+  unregister();
+});
+
+it("dismisses an expired active request and ignores a stale presentation effect", async () => {
+  resetConfirmDialogForTests();
+  const unregister = registerConfirmDialogHost();
+  const controller = new AbortController();
+  let presented = false;
+  const request = requireConfirmation(
+    requestConfirmDialog("Quit?", undefined, {
+      signal: controller.signal,
+      onPresented: () => {
+        presented = true;
+      },
+    }),
+  );
+  const stale = readConfirmDialogState();
+  controller.abort();
+  acknowledgeConfirmDialogPresentation(stale);
+  await expect(request).resolves.toBe(false);
+  expect(presented).toBe(false);
+  expect(readConfirmDialogState().status).toBe("closing");
+  completeConfirmDialogClose();
+  unregister();
 });

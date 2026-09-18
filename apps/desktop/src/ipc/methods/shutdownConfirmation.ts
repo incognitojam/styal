@@ -26,3 +26,21 @@ export const resolveShutdownConfirmation = DesktopIpc.makeIpcMethod({
     yield* confirmation.resolve(requestId, confirmed);
   }),
 });
+
+export const acknowledgeShutdownConfirmation = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.ACKNOWLEDGE_SHUTDOWN_CONFIRMATION_CHANNEL,
+  payload: Schema.Int,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.acknowledgeShutdownConfirmation")(function* (requestId) {
+    yield* (yield* DesktopShutdownConfirmation.DesktopShutdownConfirmation).acknowledge(requestId);
+  }),
+});
+
+export const shutdownRendererReady = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.SHUTDOWN_RENDERER_READY_CHANNEL,
+  payload: Schema.Void,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.shutdownRendererReady")(function* () {
+    yield* (yield* DesktopShutdownConfirmation.DesktopShutdownConfirmation).rendererReady;
+  }),
+});

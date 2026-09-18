@@ -17,6 +17,8 @@ type PendingConfirmation = {
   readonly message: string;
   readonly variant: ConfirmDialogVariant;
   readonly resolve: (confirmed: boolean) => void;
+  readonly onPresented?: () => void;
+  presented: boolean;
 };
 
 const idleState: ConfirmDialogState = { status: "idle" };
@@ -80,15 +82,31 @@ export function registerConfirmDialogHost(): () => void {
 export function requestConfirmDialog(
   message: string,
   options?: ConfirmDialogOptions,
+  lifecycle?: { readonly onPresented?: () => void; readonly signal?: AbortSignal },
 ): Promise<boolean> | undefined {
   if (registeredHostCount === 0) return undefined;
+  if (lifecycle?.signal?.aborted) return Promise.resolve(false);
 
   const confirmation = new Promise<boolean>((resolve) => {
     const pending = {
       message,
       variant: options?.variant ?? "default",
-      resolve,
+      resolve: (confirmed: boolean) => {
+        lifecycle?.signal?.removeEventListener("abort", cancel);
+        resolve(confirmed);
+      },
+      ...(lifecycle?.onPresented ? { onPresented: lifecycle.onPresented } : {}),
+      presented: false,
     } satisfies PendingConfirmation;
+    function cancel() {
+      if (activeConfirmation === pending) {
+        respondToConfirmDialog(false);
+      } else {
+        queuedConfirmations = queuedConfirmations.filter((entry) => entry !== pending);
+        pending.resolve(false);
+      }
+    }
+    lifecycle?.signal?.addEventListener("abort", cancel, { once: true });
     if (activeConfirmation || state.status === "closing") {
       queuedConfirmations.push(pending);
       return;
@@ -99,6 +117,19 @@ export function requestConfirmDialog(
   });
 
   return confirmation;
+}
+
+/** Called after the host commits the active dialog, never when merely queued. */
+export function acknowledgeConfirmDialogPresentation(renderedState: ConfirmDialogState): void {
+  if (
+    renderedState !== state ||
+    state.status !== "confirming" ||
+    !activeConfirmation ||
+    activeConfirmation.presented
+  )
+    return;
+  activeConfirmation.presented = true;
+  activeConfirmation.onPresented?.();
 }
 
 export function respondToConfirmDialog(confirmed: boolean): void {
