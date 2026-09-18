@@ -198,7 +198,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "discord-rich-presence",
     title: "Discord Rich Presence",
-    to: "/settings/appearance",
+    to: "/settings/general",
     desktopOnly: true,
   },
   {

@@ -1,6 +1,6 @@
 # Discord Rich Presence
 
-In the desktop app, open **Settings → Appearance → Activity sharing** and enable
+In the desktop app, open **Settings → General → Activity sharing** and enable
 **Discord Rich Presence**. It is off by default. Discord must be running on the same
 computer, with activity sharing enabled in Discord.
 
