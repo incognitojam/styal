@@ -1649,6 +1649,8 @@ it.layer(
           PORT: "5173",
           STYAL_HOME: "/home/example/.styal",
           T3CODE_PORT: "3773",
+          T3_SERVICE_LAUNCHER_CONTEXT: '{"childVersion":"9.9.9"}',
+          T3_BOOT_SERVICE_UNIT: "styal.service",
           VITE_DEV_SERVER_URL: "http://localhost:5173",
           TEST_TERMINAL_KEEP: "keep-me",
         },
@@ -1661,6 +1663,8 @@ it.layer(
       expect(spawnInput.env.PORT).toBeUndefined();
       expect(spawnInput.env.STYAL_HOME).toBeUndefined();
       expect(spawnInput.env.T3CODE_PORT).toBeUndefined();
+      expect(spawnInput.env.T3_SERVICE_LAUNCHER_CONTEXT).toBeUndefined();
+      expect(spawnInput.env.T3_BOOT_SERVICE_UNIT).toBeUndefined();
       expect(spawnInput.env.VITE_DEV_SERVER_URL).toBeUndefined();
       // Arbitrary host env vars must pass through — terminals inherit the
       // user's environment apart from the explicit blocklist.

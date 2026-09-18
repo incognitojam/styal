@@ -51,6 +51,28 @@ probes, respect the `enableProviderUpdateChecks` setting, and never fail a provi
 Codex and Claude drivers apply the classification to every snapshot with `applyModelManifest`;
 driver kinds absent from the manifest have no legacy concept.
 
+## Process environment
+
+Every driver builds its process environment with `mergeProviderInstanceEnvironment`
+(`apps/server/src/provider/ProviderInstanceEnvironment.ts`) and uses the result for sessions, text
+generation, and status probes. The base is the server's environment with the server-owned variables
+removed: `T3CODE_*`, `STYAL_HOME`, the service launcher variables, Electron's runtime flags, and the
+dev web build's `VITE_*` and `PORT`. Agents can start other styal servers. A server that inherited
+these variables would bind the same port, open the same state directory, and replace the
+machine-wide Tailscale Serve mapping, then remove that mapping on exit.
+
+The rule is defined in `apps/server/src/serverOwnedEnvironment.ts`, and terminals use it too. It is
+a blocklist because an allowlist would also remove proxy settings, toolchain variables, and display
+settings that the user's tools need.
+
+Variables intended for the provider process are applied after filtering, so they are not removed: a
+provider instance's configured environment, the per-session workspace variables from
+`WorkspacePortAllocator`, and the bearer token Codex uses for the styal MCP server.
+`T3CODE_CODEX_LAUNCH_ARGS` is the only inherited `T3CODE_*` variable that is kept, because the Codex
+adapter reads it from this environment. Adding a server setting requires no change here. A new
+`T3CODE_*` variable that providers must inherit has to be added to the `keep` list in
+`inheritedProviderEnvironment`.
+
 ## Attachment access
 
 The server stores uploaded attachments in its attachment directory, outside the project workspace.
