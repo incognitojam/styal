@@ -38,6 +38,7 @@ import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopState from "../app/DesktopState.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopClientSettings from "../settings/DesktopClientSettings.ts";
+import * as DesktopDiscordPresence from "../discord/DesktopDiscordPresence.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
@@ -262,6 +263,9 @@ function makeTestLayer(input: {
 
   return DesktopWindow.layer.pipe(
     Layer.provide(
+      Layer.mock(DesktopDiscordPresence.DesktopDiscordPresence)({ setActivity: () => Effect.void }),
+    ),
+    Layer.provide(
       Layer.mergeAll(
         desktopAssetsLayer,
         desktopEnvironmentLayer,
@@ -366,6 +370,11 @@ const makeSplashScenario = (createOutcomes: readonly (Electron.BrowserWindow | n
     } satisfies ElectronWindow.ElectronWindow["Service"];
 
     const layer = DesktopWindow.layer.pipe(
+      Layer.provide(
+        Layer.mock(DesktopDiscordPresence.DesktopDiscordPresence)({
+          setActivity: () => Effect.void,
+        }),
+      ),
       Layer.provide(
         Layer.mergeAll(
           desktopAssetsLayer,

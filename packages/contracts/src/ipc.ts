@@ -1082,6 +1082,12 @@ export const DesktopPreviewAutomationWaitForInputSchema = Schema.Struct({
   input: PreviewAutomationWaitForInput,
 });
 
+export const DesktopDiscordPresenceActivity = Schema.Struct({
+  activeThreads: Schema.Int.check(Schema.isGreaterThan(0)),
+  activeProjects: Schema.Int.check(Schema.isGreaterThan(0)),
+});
+export type DesktopDiscordPresenceActivity = typeof DesktopDiscordPresenceActivity.Type;
+
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
   /** The desktop client's OS platform, read from Electron's preload process. */
@@ -1098,6 +1104,7 @@ export interface DesktopBridge {
   // The primary backend is identified by id === PRIMARY_LOCAL_ENVIRONMENT_ID.
   getLocalEnvironmentBootstraps: () => readonly DesktopEnvironmentBootstrap[];
   getLocalEnvironmentBearerToken: () => Promise<string>;
+  setDiscordPresence?: (activity: DesktopDiscordPresenceActivity | null) => Promise<void>;
   getClientSettings: () => Promise<ClientSettings | null>;
   setClientSettings: (settings: ClientSettings) => Promise<void>;
   getConnectionCatalog?: () => Promise<string | null>;
