@@ -1,6 +1,10 @@
 import * as Effect from "effect/Effect";
 
 import * as DesktopIpc from "./DesktopIpc.ts";
+import {
+  getShutdownConfirmation,
+  resolveShutdownConfirmation,
+} from "./methods/shutdownConfirmation.ts";
 import { getClientSettings, setClientSettings } from "./methods/clientSettings.ts";
 import { setDiscordPresence } from "./methods/discordPresence.ts";
 import {
@@ -91,6 +95,8 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(showContextMenu);
   yield* ipc.handle(openExternal);
   yield* ipc.handle(probeRemoteEditors);
+  yield* ipc.handle(getShutdownConfirmation);
+  yield* ipc.handle(resolveShutdownConfirmation);
   yield* ipc.handle(getUpdateState);
   yield* ipc.handle(setUpdateChannel);
   yield* ipc.handle(downloadUpdate);

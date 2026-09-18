@@ -8,7 +8,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientRequest } from "effect/unstable/http";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
-import * as ElectronDialog from "../electron/ElectronDialog.ts";
+import * as DesktopShutdownConfirmation from "./DesktopShutdownConfirmation.ts";
 
 export type ShutdownAction = "quit" | "restart";
 export type ActivityCheck = HostActivity | null;
@@ -70,7 +70,7 @@ export class DesktopShutdownGuard extends Context.Service<
 export const make = Effect.gen(function* () {
   const pool = yield* DesktopBackendPool.DesktopBackendPool;
   const http = yield* HttpClient.HttpClient;
-  const dialog = yield* ElectronDialog.ElectronDialog;
+  const dialog = yield* DesktopShutdownConfirmation.DesktopShutdownConfirmation;
   const tokens = new Map<string, { credential: string; bearer: string; expiresAt: number }>();
   let pending = false;
   return DesktopShutdownGuard.of({
@@ -134,21 +134,7 @@ export const make = Effect.gen(function* () {
           );
           const confirmation = shutdownConfirmation(checks, action);
           if (confirmation === null) return true;
-          const verb = action === "quit" ? "Quit" : "Restart";
-          return yield* dialog
-            .showMessageBox({
-              type: "warning",
-              title: `${verb} styal?`,
-              ...confirmation,
-              buttons: ["Cancel", `${verb} anyway`],
-              defaultId: 0,
-              cancelId: 0,
-              noLink: true,
-            })
-            .pipe(
-              Effect.map((result) => result.response === 1),
-              Effect.catchCause(() => Effect.succeed(false)),
-            );
+          return yield* dialog.request(`${confirmation.message}\n\n${confirmation.detail}`);
         }).pipe(
           Effect.ensuring(
             Effect.sync(() => {

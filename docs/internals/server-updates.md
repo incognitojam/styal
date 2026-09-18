@@ -115,7 +115,10 @@ instance is queried through its authenticated `/api/environment/activity` endpoi
 budget. Missing configuration, invalid responses, and unavailable instances require confirmation;
 they never count as idle. The desktop bootstrap credential remains valid for the owning server process
 lifetime, so a first check after days of uptime or a later bearer renewal still works. User pairing
-links and issued bearer sessions keep their normal expiry. The native dialog defaults to Cancel and duplicate requests are suppressed.
+links and issued bearer sessions keep their normal expiry. The existing in-app confirmation dialog presents active or unknown work; idle checks
+proceed immediately. Duplicate requests are suppressed. The main process retains the pending request
+until the renderer responds, reopening the main window when needed. Closing or reloading that
+renderer cancels the request.
 
 The server combines lightweight thread projections with live provider sessions, including pending
 approvals/input, starting turns, and background work. Terminal checks reuse the fresh close preflight,

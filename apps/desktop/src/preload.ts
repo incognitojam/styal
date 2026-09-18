@@ -1,5 +1,6 @@
 import type {
   DesktopBridge,
+  DesktopShutdownConfirmationRequest,
   DesktopPreviewPointerEvent,
   DesktopPreviewRecordingFrame,
   DesktopPreviewTabState,
@@ -31,6 +32,17 @@ function unwrapEnsureSshEnvironmentResult(result: unknown) {
 }
 
 contextBridge.exposeInMainWorld("desktopBridge", {
+  getShutdownConfirmation: () => ipcRenderer.invoke(IpcChannels.GET_SHUTDOWN_CONFIRMATION_CHANNEL),
+  onShutdownConfirmation: (listener) => {
+    const wrapped = (
+      _event: Electron.IpcRendererEvent,
+      request: DesktopShutdownConfirmationRequest,
+    ) => listener(request);
+    ipcRenderer.on(IpcChannels.SHUTDOWN_CONFIRMATION_CHANNEL, wrapped);
+    return () => ipcRenderer.removeListener(IpcChannels.SHUTDOWN_CONFIRMATION_CHANNEL, wrapped);
+  },
+  resolveShutdownConfirmation: (requestId, confirmed) =>
+    ipcRenderer.invoke(IpcChannels.RESOLVE_SHUTDOWN_CONFIRMATION_CHANNEL, { requestId, confirmed }),
   getAppBranding: () => {
     const result = ipcRenderer.sendSync(IpcChannels.GET_APP_BRANDING_CHANNEL);
     if (typeof result !== "object" || result === null) {

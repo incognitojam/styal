@@ -80,7 +80,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 - **Confirm only when quitting may interrupt work.** Desktop quits and restarts check agents and
   terminal work across the environments hosted by the app, including work started from other devices.
-  Idle hosts proceed without a dialog; active work or an unavailable check requires confirmation.
+  Idle hosts proceed without a dialog; active work or an unavailable check requires an in-app confirmation.
   Compared with [T3 Code revision d4d5d12](https://github.com/pingdotgg/t3code/tree/d4d5d12e8ba086cfbf79ca3adeb4156b46ead665),
   whose desktop lifecycle does not check host activity before quitting.
 

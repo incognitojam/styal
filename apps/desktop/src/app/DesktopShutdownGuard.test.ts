@@ -8,7 +8,7 @@ import * as Option from "effect/Option";
 import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
-import * as ElectronDialog from "../electron/ElectronDialog.ts";
+import * as DesktopShutdownConfirmation from "./DesktopShutdownConfirmation.ts";
 import * as Guard from "./DesktopShutdownGuard.ts";
 
 const idle: HostActivity = {
@@ -98,14 +98,13 @@ function harness(
       }),
     ),
   );
-  const dialog = Layer.succeed(ElectronDialog.ElectronDialog, {
-    pickFolder: () => Effect.die("unexpected picker"),
-    pickFiles: () => Effect.die("unexpected picker"),
-    showErrorBox: () => Effect.void,
-    showMessageBox: (message) =>
+  const dialog = Layer.succeed(DesktopShutdownConfirmation.DesktopShutdownConfirmation, {
+    current: Effect.succeed(null),
+    resolve: () => Effect.void,
+    request: (message) =>
       Effect.gen(function* () {
-        messages.push(message.detail ?? "");
-        return { response: yield* options.dialog ?? Effect.succeed(0), checkboxChecked: false };
+        messages.push(message);
+        return (yield* options.dialog ?? Effect.succeed(0)) === 1;
       }),
   });
   return {

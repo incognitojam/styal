@@ -4,6 +4,7 @@ import {
   completeConfirmDialogClose,
   readConfirmDialogState,
   registerConfirmDialogHost,
+  requestConfirmDialog,
   respondToConfirmDialog,
   subscribeConfirmDialog,
 } from "../confirmDialog";
@@ -59,6 +60,34 @@ export function ConfirmDialogHost() {
   );
 
   useEffect(() => registerConfirmDialogHost(), []);
+
+  useEffect(() => {
+    const bridge = window.desktopBridge;
+    if (!bridge?.onShutdownConfirmation) return;
+    let disposed = false;
+    let latestRequestId = 0;
+    const show: Parameters<typeof bridge.onShutdownConfirmation>[0] = (request) => {
+      if (disposed || request.requestId <= latestRequestId) return;
+      latestRequestId = request.requestId;
+      void (async () => {
+        const confirmed = await (requestConfirmDialog(request.message) ?? false);
+        await bridge.resolveShutdownConfirmation(request.requestId, confirmed);
+      })().catch(() => {
+        /* A closing renderer may lose its IPC connection. */
+      });
+    };
+    const unsubscribe = bridge.onShutdownConfirmation(show);
+    void bridge
+      .getShutdownConfirmation()
+      .then((request) => {
+        if (request) show(request);
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
+  }, []);
 
   const copy = resolveConfirmDialogCopy(state.status === "idle" ? "" : state.message);
   const confirmVariant = state.status === "idle" ? "default" : state.variant;
