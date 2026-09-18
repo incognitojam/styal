@@ -74,6 +74,7 @@ import type {
 } from "../../lib/threadActivity";
 import { PendingApprovalCard } from "./PendingApprovalCard";
 import { PendingUserInputCard } from "./PendingUserInputCard";
+import { ThreadCreationFailedCard } from "./ThreadCreationFailedCard";
 import {
   derivePendingUserInputMaxHeight,
   ESTIMATED_KEYBOARD_HEIGHT,
@@ -96,6 +97,10 @@ export interface ThreadDetailScreenProps {
   readonly environmentLabel: string | null;
   readonly selectedThreadFeed: ReadonlyArray<ThreadFeedEntry>;
   readonly activeWorkStartedAt: string | null;
+  readonly creationState:
+    | { readonly kind: "preparing" }
+    | { readonly kind: "failed"; readonly reason: string; readonly onEditTask: () => void }
+    | null;
   readonly activePendingApproval: PendingApproval | null;
   readonly respondingApprovalId: ApprovalRequestId | null;
   readonly activePendingUserInput: PendingUserInput | null;
@@ -746,6 +751,19 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
               </Animated.View>
             ) : null}
             <View className="w-full self-center" style={{ maxWidth: contentMaxWidth }}>
+              {props.creationState?.kind === "failed" ? (
+                <Animated.View
+                  className="shrink-0 px-4"
+                  style={{ paddingBottom: composerBottomInset }}
+                  entering={FadeInDown.duration(220)}
+                  exiting={FadeOut.duration(140)}
+                >
+                  <ThreadCreationFailedCard
+                    reason={props.creationState.reason}
+                    onEditTask={props.creationState.onEditTask}
+                  />
+                </Animated.View>
+              ) : null}
               {props.activePendingApproval || props.activePendingUserInput ? (
                 <Animated.View
                   className="shrink-0 gap-3 px-4 pb-3"
@@ -790,7 +808,13 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
 
             {/* Hidden (not unmounted) while a user-input request owns the
                 composer slot, so composer drafts and editor state survive. */}
-            <View style={activeUserInputRequestId !== null ? { display: "none" } : undefined}>
+            <View
+              style={
+                activeUserInputRequestId !== null || props.creationState?.kind === "failed"
+                  ? { display: "none" }
+                  : undefined
+              }
+            >
               <ThreadComposer
                 editorRef={composerEditorRef}
                 draftMessage={props.draftMessage}
@@ -806,6 +830,9 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                 queueCount={props.selectedThreadQueueCount}
                 environmentId={props.environmentId}
                 projectCwd={props.projectWorkspaceRoot}
+                sendBlockedReason={
+                  props.creationState?.kind === "preparing" ? "Starting the task…" : null
+                }
                 bottomInset={composerBottomInset}
                 onChangeDraftMessage={props.onChangeDraftMessage}
                 onPickDraftMedia={props.onPickDraftMedia}

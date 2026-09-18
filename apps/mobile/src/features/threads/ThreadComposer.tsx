@@ -91,6 +91,7 @@ export interface ThreadComposerProps {
   readonly queueCount: number;
   readonly environmentId: EnvironmentId;
   readonly projectCwd: string | null;
+  readonly sendBlockedReason?: string | null;
   readonly editorRef?: RefObject<ComposerEditorHandle | null>;
   readonly onChangeDraftMessage: (value: string) => void;
   readonly onPickDraftMedia: () => Promise<void>;
@@ -265,7 +266,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     serverConfig: props.serverConfig,
     states: uploadStates,
   });
-  const canSend = hasContent && attachmentBlockReason === null;
+  const sendBlockedReason = props.sendBlockedReason ?? attachmentBlockReason;
+  const canSend = hasContent && sendBlockedReason === null;
 
   // Notify the parent from the derived value, not focus events: the parent
   // sizes the feed inset from this, and blur-during-sheet would otherwise
@@ -621,7 +623,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 <ControlPill icon="stop.fill" variant="danger" onPress={props.onStopThread} />
               ) : (
                 <ControlPill
-                  accessibilityLabel={attachmentBlockReason ?? sendLabel}
+                  accessibilityLabel={sendBlockedReason ?? sendLabel}
                   icon="arrow.up"
                   variant="primary"
                   disabled={!canSend}
@@ -661,7 +663,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 ) : null}
               </ComposerToolbarScroller>
               <ComposerToolbarButton
-                accessibilityLabel={attachmentBlockReason ?? sendLabel}
+                accessibilityLabel={sendBlockedReason ?? sendLabel}
                 icon="arrow.up"
                 variant="primary"
                 disabled={!canSend}

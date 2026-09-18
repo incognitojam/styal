@@ -86,6 +86,7 @@ import {
   resolveNewTaskBranchWorktreePath,
   resolveNewTaskLocalWorkspaceSelection,
 } from "./new-task-context-presentation";
+import { resolveProjectThreadCreationBranch } from "./projectThreadCreationValidation";
 
 type WorkspaceMode = "local" | "worktree";
 
@@ -173,7 +174,10 @@ type NewTaskFlowContextValue = {
   readonly beginEditingPendingTask: (messageId: string) => boolean;
   readonly finishEditingPendingTask: () => void;
   readonly cancelEditingPendingTask: () => void;
-  readonly buildPendingTaskMessage: (metadata: TurnCommandMetadata) => QueuedThreadMessage | null;
+  readonly buildPendingTaskMessage: (
+    metadata: TurnCommandMetadata,
+    options?: { readonly currentCheckoutBranch?: string | null },
+  ) => QueuedThreadMessage | null;
   readonly setPrompt: (value: string) => void;
   readonly replaceAttachments: (attachments: ReadonlyArray<DraftComposerAttachment>) => void;
   /** Appends draft attachments; returns how many the live cap rejected. */
@@ -837,7 +841,10 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   }, []);
 
   const buildPendingTaskMessage = useCallback(
-    (metadata: TurnCommandMetadata): QueuedThreadMessage | null => {
+    (
+      metadata: TurnCommandMetadata,
+      options?: { readonly currentCheckoutBranch?: string | null },
+    ): QueuedThreadMessage | null => {
       if (!selectedProject || !selectedProjectDraftKey) {
         return null;
       }
@@ -892,7 +899,11 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
           // queued local task drains days later against whatever is checked
           // out then, so recording a queue-time guess would pin a stale label
           // to a thread that ran somewhere else.
-          branch: workspaceSelection?.branch ?? null,
+          branch: resolveProjectThreadCreationBranch({
+            workspaceMode: mode,
+            selectedBranch: workspaceSelection?.branch ?? null,
+            currentCheckoutBranch: options?.currentCheckoutBranch ?? null,
+          }),
           worktreePath: mode === "worktree" ? null : (workspaceSelection?.worktreePath ?? null),
           // The draft only carries the flag when the user touched it; fall
           // back to the resolved default (server settings) so queued tasks

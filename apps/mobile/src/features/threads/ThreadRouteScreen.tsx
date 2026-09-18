@@ -20,6 +20,7 @@ import {
 import { Alert, Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWorkspaceState } from "../../state/workspace";
+import { clearPendingThreadCreationOutcome } from "../../state/pending-thread-creation-state";
 import { useEnvironmentQuery } from "../../state/query";
 import { dismissGitActionResult, useGitActionProgress } from "../../state/use-vcs-action-state";
 import { vcsEnvironment } from "../../state/vcs";
@@ -194,8 +195,12 @@ function ThreadRouteContent(
   } = useAdaptiveWorkspaceLayout();
   const { connectionState } = useRemoteConnectionStatus();
   const { onReconnectEnvironment } = useRemoteConnections();
-  const { selectedThread, selectedThreadProject, selectedEnvironmentConnection } =
-    useThreadSelection();
+  const {
+    selectedThread,
+    selectedThreadCreation,
+    selectedThreadProject,
+    selectedEnvironmentConnection,
+  } = useThreadSelection();
   const selectedThreadDetailState = props.selectedThreadDetailState;
   const selectedThreadDetail = Option.getOrNull(selectedThreadDetailState.data);
   // "Load earlier turns" header state for windowed (paginated) thread loads.
@@ -225,6 +230,23 @@ function ThreadRouteContent(
   const threadId = firstRouteParam(params.threadId);
   const routeThreadIdentity =
     environmentIdRaw !== null && threadId !== null ? `${environmentIdRaw}:${threadId}` : null;
+  const handleEditFailedCreation = useCallback(() => {
+    const creation = selectedThreadCreation?.message;
+    if (!creation?.creation || routeThreadIdentity === null) {
+      return;
+    }
+    clearPendingThreadCreationOutcome(routeThreadIdentity);
+    navigation.dispatch(
+      StackActions.replace("NewTaskSheet", {
+        screen: "NewTaskDraft",
+        params: {
+          environmentId: String(creation.environmentId),
+          projectId: String(creation.creation.projectId),
+          title: creation.creation.projectTitle,
+        },
+      }),
+    );
+  }, [navigation, routeThreadIdentity, selectedThreadCreation]);
   const [inspectorSelection, setInspectorSelection] = useState<ThreadInspectorSelection | null>(
     () => (props.renderInspector ? { routeThreadIdentity, mode: "route" } : null),
   );
@@ -783,6 +805,16 @@ function ThreadRouteContent(
     connectionState: routeConnectionState,
   });
   const serverConfig = routeEnvironmentRuntime?.serverConfig ?? null;
+  const creationState =
+    selectedThreadCreation?.outcome?.kind === "failed"
+      ? {
+          kind: "failed" as const,
+          reason: selectedThreadCreation.outcome.reason,
+          onEditTask: handleEditFailedCreation,
+        }
+      : selectedThreadCreation !== null
+        ? { kind: "preparing" as const }
+        : null;
   const renderThreadRouteBody = (showActionControls: boolean) => (
     <>
       <ThreadGitControls {...threadGitControlProps} showActionControls={showActionControls} />
@@ -797,7 +829,12 @@ function ThreadRouteContent(
           connectionError={routeConnectionError}
           environmentLabel={selectedEnvironmentConnection?.environmentLabel ?? null}
           selectedThreadFeed={composer.selectedThreadFeed}
-          activeWorkStartedAt={composer.activeWorkStartedAt}
+          activeWorkStartedAt={
+            creationState?.kind === "preparing"
+              ? (selectedThreadCreation?.message.createdAt ?? composer.activeWorkStartedAt)
+              : composer.activeWorkStartedAt
+          }
+          creationState={creationState}
           activePendingApproval={requests.activePendingApproval}
           respondingApprovalId={requests.respondingApprovalId}
           activePendingUserInput={requests.activePendingUserInput}

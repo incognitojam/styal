@@ -39,6 +39,7 @@ import { buildThreadFeed } from "../lib/threadActivity";
 import { acknowledgedThreadMessagesAtom } from "./acknowledged-thread-messages";
 import { appendPendingThreadMessages } from "../features/threads/pending-thread-feed";
 import { appAtomRegistry } from "../state/atom-registry";
+import { pendingThreadCreationMessage } from "./pending-thread-creation";
 import {
   appendComposerDraftAttachments,
   appendComposerDraftText,
@@ -109,7 +110,11 @@ export function useThreadDraftForThread(input: {
 }
 
 export function useThreadComposerState() {
-  const { selectedThread: selectedThreadShell, selectedEnvironmentRuntime } = useThreadSelection();
+  const {
+    selectedThread: selectedThreadShell,
+    selectedThreadCreation,
+    selectedEnvironmentRuntime,
+  } = useThreadSelection();
   const selectedThreadDetail = useSelectedThreadDetail();
   const composerDrafts = useAtomValue(composerDraftsAtom);
   const dispatchingQueuedMessageId = useAtomValue(dispatchingQueuedMessageIdAtom);
@@ -138,22 +143,44 @@ export function useThreadComposerState() {
   );
   useServerComposerDraftSync(selectedThreadRef);
   const selectedThreadQueuedMessages = useMemo(
-    () => (selectedThreadKey ? (queuedMessagesByThreadKey[selectedThreadKey] ?? []) : []),
+    () =>
+      selectedThreadKey
+        ? (queuedMessagesByThreadKey[selectedThreadKey] ?? []).filter(
+            (message) => message.creation === undefined,
+          )
+        : [],
     [queuedMessagesByThreadKey, selectedThreadKey],
   );
   const selectedThreadFeed = useMemo(() => {
     const submissions = selectedThreadKey
       ? (feedbackSubmissionsByThreadKey[selectedThreadKey] ?? [])
       : [];
+    const creationMessage = selectedThreadCreation?.message
+      ? pendingThreadCreationMessage(selectedThreadCreation.message)
+      : null;
+    const localMessages = [
+      ...(creationMessage !== null &&
+      !selectedThreadDetail?.messages.some((message) => message.id === creationMessage.id)
+        ? [creationMessage]
+        : []),
+      ...submissions.flatMap((submission) =>
+        submission.status === "interrupted"
+          ? []
+          : [codexFeedbackMessage(submission), codexFeedbackMessage(submission, "assistant")],
+      ),
+    ];
     const feed = selectedThreadDetail
-      ? buildThreadFeed(selectedThreadDetail, {
-          localMessages: submissions.flatMap((submission) =>
-            submission.status === "interrupted"
-              ? []
-              : [codexFeedbackMessage(submission), codexFeedbackMessage(submission, "assistant")],
-          ),
-        })
-      : [];
+      ? buildThreadFeed(selectedThreadDetail, { localMessages })
+      : creationMessage !== null
+        ? [
+            {
+              type: "message" as const,
+              id: creationMessage.id,
+              createdAt: creationMessage.createdAt,
+              message: creationMessage,
+            },
+          ]
+        : [];
 
     const pendingAcknowledgments = acknowledgedMessages.filter(
       (message) =>
@@ -167,6 +194,7 @@ export function useThreadComposerState() {
   }, [
     feedbackSubmissionsByThreadKey,
     selectedThreadDetail,
+    selectedThreadCreation,
     selectedThreadKey,
     selectedThreadQueuedMessages,
     acknowledgedMessages,
@@ -218,7 +246,7 @@ export function useThreadComposerState() {
   }, [selectedThreadDetail, selectedThreadSessionActivity, selectedThreadShell]);
 
   const onSendMessage = useCallback(async () => {
-    if (!selectedThreadShell) {
+    if (!selectedThreadShell || selectedThreadCreation !== null) {
       return null;
     }
 
@@ -361,6 +389,7 @@ export function useThreadComposerState() {
   }, [
     selectedEnvironmentRuntime?.connectionState,
     selectedEnvironmentRuntime?.serverConfig,
+    selectedThreadCreation,
     selectedThreadDetail,
     selectedThreadRef,
     selectedThreadShell,

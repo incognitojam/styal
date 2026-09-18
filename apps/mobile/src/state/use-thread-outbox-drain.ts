@@ -27,6 +27,11 @@ import {
 import { appAtomRegistry } from "./atom-registry";
 import { useProjects, useServerConfigs, useThreadShells } from "./entities";
 import {
+  clearPendingThreadCreationOutcome,
+  pendingThreadCreationOutcomesAtom,
+  recordPendingThreadCreationOutcome,
+} from "./pending-thread-creation-state";
+import {
   confirmThreadOutboxMessageQueued,
   ensureThreadOutboxLoaded,
   threadOutboxManager,
@@ -439,6 +444,13 @@ export async function restoreRejectedQueuedMessage(
     // The queued message is gone; from here the draft owns the content and
     // must never be rolled back.
     rollback = null;
+    if (queuedMessage.creation) {
+      recordPendingThreadCreationOutcome({
+        kind: "failed",
+        message: queuedMessage,
+        reason: message,
+      });
+    }
     setPendingConnectionError(message);
     return "restored";
   } catch (error) {
@@ -519,6 +531,7 @@ export function useThreadOutboxDrain(): void {
   const queuedMessagesByThreadKey = useThreadOutboxMessages();
   const shellStatuses = useThreadOutboxShellStatuses();
   const threads = useThreadShells();
+  const creationOutcomes = useAtomValue(pendingThreadCreationOutcomesAtom);
   const projects = useProjects();
   const serverConfigs = useServerConfigs();
   const { connectedEnvironments } = useRemoteConnectionStatus();
@@ -849,6 +862,7 @@ export function useThreadOutboxDrain(): void {
       if (failure?.action === "restore") {
         return restoreQueuedMessage(persistedMessage, failure.message);
       }
+      recordPendingThreadCreationOutcome({ kind: "delivered", message: persistedMessage });
       const outcome = await completeQueuedMessageDelivery(persistedMessage, deliveryRevision);
       if (outcome === "edited") {
         if (appAtomRegistry.get(editingQueuedMessageIdsAtom)[queuedMessage.messageId]) {
@@ -871,6 +885,24 @@ export function useThreadOutboxDrain(): void {
     },
     [makeDeliveryHelpers, restoreQueuedMessage, serverConfigs, startTurn],
   );
+
+  useEffect(() => {
+    for (const [threadKey, outcome] of Object.entries(creationOutcomes)) {
+      if (
+        outcome.kind === "delivered" &&
+        threads.some(
+          (thread) =>
+            scopedThreadKey(thread.environmentId, thread.id) === threadKey &&
+            (thread.latestTurn !== null ||
+              thread.session?.status === "error" ||
+              thread.session?.status === "stopped" ||
+              thread.session?.status === "interrupted"),
+        )
+      ) {
+        clearPendingThreadCreationOutcome(threadKey);
+      }
+    }
+  }, [creationOutcomes, threads]);
 
   useEffect(() => {
     if (dispatchingQueuedMessageId !== null) {

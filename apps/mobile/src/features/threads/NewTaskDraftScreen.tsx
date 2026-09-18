@@ -2,10 +2,12 @@ import { ComposerAttachmentButton } from "../../components/ComposerAttachmentBut
 import { useAtomValue } from "@effect/atom-react";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import {
+  CommonActions,
   StackActions,
   useFocusEffect,
   useNavigation,
   usePreventRemove,
+  type NavigationAction,
 } from "@react-navigation/native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Platform, Pressable, ScrollView, View } from "react-native";
@@ -18,10 +20,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useFontFamily } from "../../lib/useFontFamily";
 
-import {
-  isAtomCommandInterrupted,
-  squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
 import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "@t3tools/contracts";
 
 import { ComposerEditor, type ComposerEditorHandle } from "../../components/ComposerEditor";
@@ -60,7 +58,6 @@ import {
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import {
   clearComposerDraftContent,
-  flushComposerDrafts,
   getComposerDraftSnapshot,
   mergeComposerDraftContent,
   restoreComposerDraftSnapshot,
@@ -72,11 +69,9 @@ import { resolveSelectableModelSelection } from "../../lib/modelOptions";
 import { deriveThreadTitleFromPrompt } from "../../lib/projectThreadStartTurn";
 import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/remoteRegistration";
 import { enqueueThreadOutboxMessage } from "../../state/thread-outbox";
-import { removeThreadOutboxMessage } from "../../state/thread-outbox-removal";
 import { useRemoteConnectionStatus } from "../../state/use-remote-environment-registry";
 import { useNewTaskFlow } from "./new-task-flow-provider";
 import { resolveProjectThreadCreationBranch } from "./projectThreadCreationValidation";
-import { useCreateProjectThread } from "./use-project-actions";
 import { resolveDraftProjectSelection } from "./new-task-project-selection";
 import {
   resolveNewTaskBranchLabel,
@@ -133,7 +128,6 @@ export function NewTaskDraftScreen(props: {
   readonly incomingShareId?: string;
 }) {
   const projects = useProjects();
-  const createProjectThread = useCreateProjectThread();
   const flow = useNewTaskFlow();
   const navigation = useNavigation();
   const {
@@ -250,6 +244,9 @@ export function NewTaskDraftScreen(props: {
   const [isCancellingShareImport, setIsCancellingShareImport] = useState(false);
   const [cancelledIncomingShareId, setCancelledIncomingShareId] = useState<string | null>(null);
   const [isReturningToProjectPicker, setIsReturningToProjectPicker] = useState(false);
+  const [submitNavigationAction, setSubmitNavigationAction] = useState<NavigationAction | null>(
+    null,
+  );
   const [shareImportAttempt, setShareImportAttempt] = useState(0);
   const startedShareImportKeyRef = useRef<string | null>(null);
   const cancellingShareImportKeyRef = useRef<string | null>(null);
@@ -299,12 +296,23 @@ export function NewTaskDraftScreen(props: {
     onChangeDraftMessage: flow.setPrompt,
     onUpdateInteractionMode: flow.planModeEnabled ? flow.setInteractionMode : undefined,
   });
-  usePreventRemove(
+  const preventRemove =
     (isIncomingShareTransferPending && !isProjectPickerReturnActive) ||
-      isCancellingShareImport ||
-      flow.submitting,
-    () => undefined,
-  );
+    isCancellingShareImport ||
+    flow.submitting;
+  usePreventRemove(preventRemove, () => undefined);
+  useEffect(() => {
+    if (preventRemove || submitNavigationAction === null) {
+      return;
+    }
+
+    // Let the guard update reach the parent sheet before navigating.
+    const frame = requestAnimationFrame(() => {
+      setSubmitNavigationAction(null);
+      (navigation.getParent() ?? navigation).dispatch(submitNavigationAction);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [navigation, preventRemove, submitNavigationAction]);
   const hasImportedIncomingShare = Boolean(
     props.incomingShareId &&
     flow.draftKey &&
@@ -827,13 +835,6 @@ export function NewTaskDraftScreen(props: {
       ) ?? flow.selectedModel;
     const workspaceMode = draft.workspaceSelection?.mode ?? flow.workspaceMode;
     const selectedBranchName = draft.workspaceSelection?.branch ?? flow.selectedBranchName;
-    const selectedWorktreePath =
-      draft.workspaceSelection?.worktreePath ?? flow.selectedWorktreePath;
-    const startFromOrigin = draft.workspaceSelection?.startFromOrigin ?? flow.startFromOrigin;
-    const runtimeMode = draft.runtimeMode ?? flow.runtimeMode;
-    const interactionMode = flow.planModeEnabled
-      ? (draft.interactionMode ?? flow.interactionMode)
-      : "default";
     const initialMessageText = draft.text.trim();
 
     if (
@@ -858,117 +859,57 @@ export function NewTaskDraftScreen(props: {
 
     const editingPendingTask = flow.editingPendingTask;
 
-    if (queuesInsteadOfStarting) {
-      // Offline, or an attachment is still uploading: park the task in the
-      // outbox and let the drain send it once the environment is reachable
-      // and the bytes are on the server. Editing an existing pending task
-      // re-queues it under its original identifiers.
-      const metadata = editingPendingTask
-        ? {
-            threadId: editingPendingTask.threadId,
-            commandId: editingPendingTask.commandId,
-            messageId: editingPendingTask.messageId,
-            createdAt: editingPendingTask.createdAt,
-          }
-        : makeTurnCommandMetadata();
-      const message = flow.buildPendingTaskMessage(metadata);
-      if (!message) {
-        return;
-      }
-      flow.setSubmitting(true);
-      try {
-        await enqueueThreadOutboxMessage(message);
-      } catch (error) {
-        Alert.alert(
-          "Could not queue task",
-          error instanceof Error ? error.message : "The task could not be saved to the outbox.",
-        );
-        return;
-      } finally {
-        flow.setSubmitting(false);
-      }
-      if (editingPendingTask) {
-        flow.finishEditingPendingTask();
-      } else {
-        // Drop the workspace selection with the content: the next task should
-        // re-resolve mode/branch/origin from the server's configured defaults
-        // instead of resurrecting this task's picks.
-        clearComposerDraftContent(draftKey, { clearWorkspaceSelection: true });
-      }
-      navigation.getParent()?.goBack();
+    const metadata = editingPendingTask
+      ? {
+          threadId: editingPendingTask.threadId,
+          commandId: editingPendingTask.commandId,
+          messageId: editingPendingTask.messageId,
+          createdAt: editingPendingTask.createdAt,
+        }
+      : makeTurnCommandMetadata();
+    const message = flow.buildPendingTaskMessage(metadata, {
+      currentCheckoutBranch: queuesInsteadOfStarting ? null : flow.currentCheckoutBranchName,
+    });
+    if (!message) {
       return;
     }
-
+    if (!queuesInsteadOfStarting) {
+      armAgentAwarenessLiveActivityForLocalWork({
+        environmentId: selectedProject.environmentId,
+        threadTitle: deriveThreadTitleFromPrompt(initialMessageText),
+        projectTitle: selectedProject.title,
+      });
+    }
     flow.setSubmitting(true);
-    // Arm the lock-screen card before the async thread creation: backgrounding
-    // the app right after tapping submit would otherwise reject the foreground
-    // -only Activity start. If creation fails, the token registration's replay
-    // finds no work and ends the card within seconds.
-    armAgentAwarenessLiveActivityForLocalWork({
-      environmentId: selectedProject.environmentId,
-      threadTitle: deriveThreadTitleFromPrompt(initialMessageText),
-      projectTitle: selectedProject.title,
-    });
-    const creationBranch = resolveProjectThreadCreationBranch({
-      workspaceMode,
-      selectedBranch: selectedBranchName,
-      currentCheckoutBranch: flow.currentCheckoutBranchName,
-    });
-    const result = await createProjectThread({
-      project: selectedProject,
-      modelSelection,
-      envMode: workspaceMode,
-      branch: creationBranch,
-      worktreePath: workspaceMode === "worktree" ? null : selectedWorktreePath,
-      startFromOrigin,
-      runtimeMode,
-      interactionMode,
-      initialMessageText,
-      initialAttachments: draft.attachments,
-      onAttachmentsUploaded: async (attachments) => {
-        flow.replaceAttachments(attachments);
-        await flushComposerDrafts();
-      },
-      ...(editingPendingTask
-        ? {
-            turnMetadata: {
-              threadId: editingPendingTask.threadId,
-              commandId: editingPendingTask.commandId,
-              messageId: editingPendingTask.messageId,
-              createdAt: editingPendingTask.createdAt,
-            },
-          }
-        : {}),
-    });
-    flow.setSubmitting(false);
-
-    if (result._tag === "Failure") {
-      if (!isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
-        Alert.alert(
-          "Could not start task",
-          error instanceof Error ? error.message : "The task could not be started.",
-        );
-      }
+    try {
+      await enqueueThreadOutboxMessage(message);
+    } catch (error) {
+      Alert.alert(
+        "Could not queue task",
+        error instanceof Error ? error.message : "The task could not be saved to the outbox.",
+      );
       return;
+    } finally {
+      flow.setSubmitting(false);
     }
-
+    const draftSnapshot = getComposerDraftSnapshot(draftKey);
     if (editingPendingTask) {
-      try {
-        await removeThreadOutboxMessage(editingPendingTask);
-      } catch (error) {
-        console.warn("[new-task] failed to remove delivered pending task", error);
-      }
       flow.finishEditingPendingTask();
     } else {
-      clearComposerDraftContent(draftKey, { clearWorkspaceSelection: true });
+      clearComposerDraftContent(draftKey, {
+        clearWorkspaceSelection: true,
+        deferAttachmentCleanup: true,
+      });
     }
-    navigation.dispatch(
-      StackActions.replace("Thread", {
-        environmentId: String(result.value.environmentId),
-        threadId: String(result.value.threadId),
-      }),
+    setSubmitNavigationAction(
+      queuesInsteadOfStarting
+        ? CommonActions.goBack()
+        : StackActions.replace("Thread", {
+            environmentId: String(message.environmentId),
+            threadId: String(message.threadId),
+          }),
     );
+    scheduleUnusedComposerAttachmentCleanup(draftSnapshot.attachments);
   }
 
   if (!selectedProject) {

@@ -10,16 +10,9 @@ import {
 
 import { toUploadChatImageAttachments, type DraftComposerAttachment } from "./composerImages";
 import type { UploadedMobileAttachment } from "./attachmentUpload";
+import { deriveThreadTitleFromPrompt } from "./threadTitle";
 
-export function deriveThreadTitleFromPrompt(value: string): string {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return "New thread";
-  }
-
-  const compact = trimmed.replace(/\s+/g, " ");
-  return compact.length <= 72 ? compact : `${compact.slice(0, 69).trimEnd()}...`;
-}
+export { deriveThreadTitleFromPrompt } from "./threadTitle";
 
 export interface ProjectThreadStartTurnSpec {
   readonly projectId: ProjectId;
