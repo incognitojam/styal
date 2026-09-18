@@ -113,7 +113,9 @@ default quit would bypass the update handoff.
 relaunch, or explicit update installation. Deliberately stopped instances are skipped. Each running
 instance is queried through its authenticated `/api/environment/activity` endpoint with a three-second
 budget. Missing configuration, invalid responses, and unavailable instances require confirmation;
-they never count as idle. The native dialog defaults to Cancel and duplicate requests are suppressed.
+they never count as idle. The desktop bootstrap credential remains valid for the owning server process
+lifetime, so a first check after days of uptime or a later bearer renewal still works. User pairing
+links and issued bearer sessions keep their normal expiry. The native dialog defaults to Cancel and duplicate requests are suppressed.
 
 The server combines lightweight thread projections with live provider sessions, including pending
 approvals/input, starting turns, and background work. Terminal checks reuse the fresh close preflight,

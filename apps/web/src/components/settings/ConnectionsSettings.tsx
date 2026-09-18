@@ -2742,14 +2742,9 @@ export function ConnectionsSettings() {
     if (change.kind === "enable") return;
     setPendingWslChange(null);
     if (change.kind === "disable") {
-      void applyWslSettingChange(async () => {
-        const next = await desktopBridge.setWslBackendEnabled(false);
-        if (change.wasWslOnly) {
-          // Clearing wsl-only relaunches onto the Windows backend.
-          return await desktopBridge.setWslOnly(false);
-        }
-        return next;
-      });
+      // The desktop clears both preferences atomically, or restores both
+      // when the shutdown guard is cancelled. Do not start another restart.
+      void applyWslSettingChange(() => desktopBridge.setWslBackendEnabled(false));
       return;
     }
     if (change.kind === "distro") {

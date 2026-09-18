@@ -167,21 +167,31 @@ it.layer(NodeServices.layer)("PairingGrantStore.layer", (it) => {
     ),
   );
 
-  it.effect("reports seeded desktop bootstrap credentials as expired after their ttl", () =>
+  it.effect("still expires ordinary pairing links after their TTL", () =>
+    Effect.gen(function* () {
+      const grants = yield* PairingGrantStore.PairingGrantStore;
+      const pairing = yield* grants.issueOneTimeToken();
+      yield* TestClock.adjust(Duration.minutes(6));
+      const error = yield* Effect.flip(grants.consume(pairing.credential));
+      expect(error._tag).toBe("ExpiredBootstrapCredentialError");
+    }).pipe(Effect.provide(makePairingGrantStoreLayer())),
+  );
+
+  it.effect("keeps desktop bootstrap available for the lifetime of a long-running host", () =>
     Effect.gen(function* () {
       const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
 
-      // The desktop-bootstrap grant lives for 24h. Within that window
-      // it stays reusable.
-      yield* TestClock.adjust(Duration.hours(12));
-      const stillValid = yield* bootstrapCredentials.consume("desktop-bootstrap-token");
-      expect(stillValid.method).toBe("desktop-bootstrap");
+      // The first shutdown check may happen days after launch, and later
+      // checks must still be able to replace an expired bearer session.
+      yield* TestClock.adjust(Duration.hours(25));
+      const first = yield* bootstrapCredentials.consume("desktop-bootstrap-token");
+      expect(first.method).toBe("desktop-bootstrap");
+      expect(first.expiresAt).toBeNull();
 
-      yield* TestClock.adjust(Duration.hours(13));
-      const expired = yield* Effect.flip(bootstrapCredentials.consume("desktop-bootstrap-token"));
-
-      expect(expired._tag).toBe("ExpiredBootstrapCredentialError");
-      expect(expired.message).toContain("Bootstrap credential expired");
+      yield* TestClock.adjust(Duration.days(31));
+      const renewed = yield* bootstrapCredentials.consume("desktop-bootstrap-token");
+      expect(renewed.method).toBe("desktop-bootstrap");
+      expect(renewed.scopes).toEqual(first.scopes);
     }).pipe(
       Effect.provide(
         Layer.merge(

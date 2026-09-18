@@ -2,6 +2,8 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { AuthAdministrativeScopes } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Duration from "effect/Duration";
+import * as TestClock from "effect/testing/TestClock";
 import * as Layer from "effect/Layer";
 
 import * as ServerConfig from "../config.ts";
@@ -124,6 +126,34 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
 
       expect(error._tag).toBe("ServerAuthScopeNotGrantedError");
     }).pipe(Effect.provide(makeEnvironmentAuthLayer())),
+  );
+
+  it.effect("exchanges a desktop seed after a day and renews an expired bearer", () =>
+    Effect.gen(function* () {
+      const auth = yield* EnvironmentAuth.EnvironmentAuth;
+      const sessions = yield* SessionStore.SessionStore;
+      yield* TestClock.adjust(Duration.hours(25));
+      const first = yield* auth.exchangeBootstrapCredentialForAccessToken(
+        "synthetic-desktop-seed",
+        ["orchestration:read"],
+        requestMetadata,
+      );
+      const authenticate = (token: string) =>
+        auth.authenticateHttpRequest(makeCookieRequest(sessions.cookieName, token));
+      expect((yield* authenticate(first.access_token)).scopes).toEqual(["orchestration:read"]);
+
+      yield* TestClock.adjust(Duration.seconds(first.expires_in + 1));
+      yield* Effect.flip(authenticate(first.access_token));
+      const renewed = yield* auth.exchangeBootstrapCredentialForAccessToken(
+        "synthetic-desktop-seed",
+        ["orchestration:read"],
+        requestMetadata,
+      );
+      expect((yield* authenticate(renewed.access_token)).scopes).toEqual(["orchestration:read"]);
+      expect(renewed.access_token).not.toBe(first.access_token);
+    }).pipe(
+      Effect.provide(makeEnvironmentAuthLayer({ desktopBootstrapToken: "synthetic-desktop-seed" })),
+    ),
   );
 
   it.effect("inherits a constrained pairing grant when token exchange omits scope", () =>

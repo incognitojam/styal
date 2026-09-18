@@ -275,6 +275,7 @@ features:
     status: maintained
     prs: [110, 128, 358]
     invariants:
+      - Desktop activity authentication remains available for the host process lifetime, including the first quit after days of uptime and renewal after bearer expiry.
       - Manual desktop quits and restarts skip confirmation only when every owned backend is idle; active or unknown host activity requires confirmation, and cancellation preserves windows and downloaded updates.
       - Available desktop updates download automatically while preserving accurate available, downloading, downloaded, install, and retry state across updater events and pre-install refreshes.
       - Downloaded updates install on normal app quit; the sidebar only offers restart once an installer is ready, while Settings retains checks, progress, and retries.
@@ -288,6 +289,7 @@ features:
       - apps/desktop/src/ipc/methods/wsl.ts
       - apps/desktop/src/updates/DesktopUpdates.ts
       - apps/desktop/src/updates/updateMachine.ts
+      - apps/server/src/auth/PairingGrantStore.ts
       - apps/server/src/environment/HostActivity.ts
       - apps/web/src/components/desktopUpdate.logic.ts
       - apps/web/src/components/sidebar/DesktopUpdateStatusIcon.tsx
@@ -309,6 +311,8 @@ features:
       - apps/desktop/src/updates/DesktopUpdates.test.ts
       - apps/desktop/src/updates/updateMachine.test.ts
       - apps/desktop/src/window/DesktopWindow.test.ts
+      - apps/server/src/auth/EnvironmentAuth.test.ts
+      - apps/server/src/auth/PairingGrantStore.test.ts
       - apps/server/src/environment/HostActivity.test.ts
       - apps/server/src/terminal/Manager.test.ts
       - apps/web/src/components/desktopUpdate.logic.test.ts
