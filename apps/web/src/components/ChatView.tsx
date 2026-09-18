@@ -597,6 +597,7 @@ function formatOutgoingPrompt(params: {
   const promptEffort = resolvePromptInjectedEffort(caps, params.effort);
   return applyClaudePromptEffortPrefix(params.text, promptEffort);
 }
+const COMPACT_CONTEXT_COMMAND = "/compact";
 const SCRIPT_TERMINAL_COLS = 120;
 const SCRIPT_TERMINAL_ROWS = 30;
 
@@ -5100,17 +5101,114 @@ function ChatViewContent(props: ChatViewProps) {
     feedbackUploading ||
     pendingApprovals.length > 0 ||
     pendingUserInputs.length > 0 ||
-    showPlanFollowUpPrompt ||
-    composerHasUnsentContent;
+    showPlanFollowUpPrompt;
   const compactDisabledReason = compactDisabled
-    ? composerHasUnsentContent
-      ? "Send or clear your draft before compacting"
-      : !activeProject
-        ? "Choose a project before compacting"
-        : !compactionProviderAvailable
-          ? "Enable a Claude provider before compacting"
-          : "Compacting is unavailable right now"
+    ? !activeProject
+      ? "Choose a project before compacting"
+      : !compactionProviderAvailable
+        ? "Enable a Claude provider before compacting"
+        : "Compacting is unavailable right now"
     : null;
+  // Sends "/compact" as its own turn. It never reads or clears the composer
+  // draft (and omits composerDraftRevision so the server keeps its autosave),
+  // so compacting works with a half-written message in the composer.
+  // Upstream fixes the same bug in `pingdotgg/t3code#11103`, built on its
+  // server-side compaction command (`pingdotgg/t3code#9293`). When that chain is
+  // taken in, replace this function with upstream's version.
+  const onCompactContext = useCallback(async () => {
+    if (!activeThread || compactDisabled || sendInFlightRef.current) return;
+    const sendCtx = composerRef.current?.getSendContext();
+    if (!sendCtx?.providerAvailable) return;
+    const { selectedModelSelection: ctxSelectedModelSelection } = sendCtx;
+
+    const threadIdForSend = activeThread.id;
+    const messageIdForSend = newMessageId();
+    const messageCreatedAt = new Date().toISOString();
+
+    sendInFlightRef.current = true;
+    beginLocalDispatch({ preparingWorktree: false });
+    setThreadError(threadIdForSend, null);
+    scrollToEnd();
+    setOptimisticUserMessages((existing) => [
+      ...existing,
+      {
+        id: messageIdForSend,
+        role: "user",
+        text: COMPACT_CONTEXT_COMMAND,
+        turnId: null,
+        createdAt: messageCreatedAt,
+        updatedAt: messageCreatedAt,
+        streaming: false,
+      },
+    ]);
+
+    const settingsResult = await persistThreadSettingsForNextTurn({
+      threadId: threadIdForSend,
+      createdAt: messageCreatedAt,
+      modelSelection: ctxSelectedModelSelection,
+      ...(localCheckoutBranchMismatch ? { branch: localCheckoutBranchMismatch.currentBranch } : {}),
+      runtimeMode,
+      interactionMode,
+    });
+    let failure: AtomCommandResult<unknown, unknown> | null =
+      settingsResult._tag === "Failure" ? settingsResult : null;
+
+    if (failure === null) {
+      const startResult = await startThreadTurn({
+        environmentId,
+        input: {
+          threadId: threadIdForSend,
+          message: {
+            messageId: messageIdForSend,
+            role: "user",
+            text: COMPACT_CONTEXT_COMMAND,
+            attachments: [],
+          },
+          modelSelection: ctxSelectedModelSelection,
+          titleSeed: activeThread.title,
+          runtimeMode,
+          interactionMode,
+          createdAt: messageCreatedAt,
+        },
+      });
+      failure = startResult._tag === "Failure" ? startResult : null;
+    }
+
+    sendInFlightRef.current = false;
+    if (failure === null) {
+      queueAcceptedTurnVisitBaseline(threadIdForSend);
+      acknowledgeActiveThreadWoke();
+      return;
+    }
+
+    setOptimisticUserMessages((existing) =>
+      existing.filter((message) => message.id !== messageIdForSend),
+    );
+    if (!isAtomCommandInterrupted(failure)) {
+      const error = squashAtomCommandFailure(failure);
+      setThreadError(
+        threadIdForSend,
+        error instanceof Error ? error.message : "Failed to compact the thread.",
+      );
+    }
+    resetLocalDispatch();
+  }, [
+    acknowledgeActiveThreadWoke,
+    activeThread,
+    beginLocalDispatch,
+    compactDisabled,
+    composerRef,
+    environmentId,
+    interactionMode,
+    localCheckoutBranchMismatch,
+    persistThreadSettingsForNextTurn,
+    queueAcceptedTurnVisitBaseline,
+    resetLocalDispatch,
+    runtimeMode,
+    scrollToEnd,
+    setThreadError,
+    startThreadTurn,
+  ]);
   const resumeCompactionBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
     if (
       !activeThread ||
@@ -5140,7 +5238,7 @@ function ChatViewContent(props: ChatViewProps) {
         disabled={compactDisabled}
         onClick={() => {
           if (compactDisabled) return;
-          composerRef.current?.compactContext();
+          void onCompactContext();
         }}
       >
         Compact
@@ -5168,10 +5266,10 @@ function ChatViewContent(props: ChatViewProps) {
     activeThread,
     compactDisabled,
     compactDisabledReason,
-    composerRef,
     dismissedResumeCompactionKeys,
     nativeResumeCompactionDismissed,
     nowMinute,
+    onCompactContext,
     pendingUserInputs.length,
     phase,
     resumeCompactionKey,
@@ -7544,6 +7642,7 @@ function ChatViewContent(props: ChatViewProps) {
                             activeContextWindow={activeContextWindow}
                             compactDisabled={compactDisabled}
                             compactDisabledReason={compactDisabledReason}
+                            onCompactContext={onCompactContext}
                             resolvedTheme={resolvedTheme}
                             settings={settings}
                             keybindings={keybindings}

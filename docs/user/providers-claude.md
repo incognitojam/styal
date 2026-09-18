@@ -46,7 +46,8 @@ policy note may be unavailable; the **Auto-compact after** setting still applies
 
 On web and desktop, when you return to an older Claude thread with a large context, T3 Code
 offers to compact the conversation before you continue. You can also select **Compact context**
-from the context meter. On every client, you can enter `/compact` in the message composer, and
+from the context meter. Both leave a message you are still drafting in the composer untouched. On
+every client, you can enter `/compact` in the message composer, and
 Claude can show its own resume prompt when you continue an old session.
 
 ## Where Claude Skills Are Loaded
