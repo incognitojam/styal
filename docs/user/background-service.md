@@ -64,8 +64,8 @@ A few more macOS notes:
   Without that, the install command reports an error at the final start step, but the agent is
   fully installed and starts at the next login.
 - macOS may show privacy prompts for protected folders such as Desktop, Documents, or Downloads,
-  attributed to a bare `node` process, or deny access without a prompt. If agent work fails to
-  read those folders, grant Full Disk Access to the node binary listed in the launch agent's
+  attributed to the styal executable, or deny access without a prompt. If agent work fails to
+  read those folders, grant Full Disk Access to the executable listed in the launch agent's
   `ProgramArguments`.
 - The agent appears under System Settings → General → Login Items. If it was switched off there,
   or disabled with `launchctl disable`, macOS will not start it at login until you switch it back
@@ -83,17 +83,19 @@ want styal to start in the background.
 
 ## Migrating an Existing styal Installation
 
-If your background service's launcher installed the `t3` npm package, migrate it once on the
+If your background service uses an older npm-based launcher, migrate it once on the
 host using an exact released styal version:
 
 ```sh
 npx @styal/cli@<version> service update
 ```
 
-This installs the styal package and replaces the service launcher. Existing styal
+This installs the styal executable archive and replaces the service launcher. Existing styal
 threads, settings, and projects stay in the same data directory. If you use a
 custom data directory, pass the same `--base-dir` you used before. Older package
-installs are retained; the new launcher uses a separate runtime directory.
+installs are retained; the new launcher uses a separate runtime directory. This
+migration requires a restart. A remote update reports the exact local migration
+command instead of attempting an incompatible launcher switch.
 
 For a foreground process, stop your existing server after active work finishes,
 then start `npx @styal/cli@<version> serve` with your existing startup options.

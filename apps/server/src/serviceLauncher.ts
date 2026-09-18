@@ -9,8 +9,6 @@ import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 
-import { CLI_PACKAGE_NAME } from "@t3tools/shared/cliPackage";
-
 import type {
   PendingServiceUpdate,
   ServiceLauncherChildMessage,
@@ -27,9 +25,9 @@ import {
   SERVICE_LAUNCHER_CONTEXT_ENV,
   SERVICE_LAUNCHER_PROTOCOL,
   SERVICE_STATE_FILE,
+  SERVICE_RESTART_PENDING_FILE,
   SERVICE_STOP_MARKER_FILE,
 } from "./cloud/serviceProtocol.ts";
-import { isEntrypoint } from "./entrypoint.ts";
 
 const HANDOFF_DELAY_MS = 2_000;
 const PREPARED_TIMEOUT_MS = 120_000;
@@ -45,10 +43,11 @@ interface ManagedChild {
 }
 
 const runtimePaths = (baseDir: string, version: string) => {
-  const versionDir = NodePath.join(baseDir, "runtime", "styal-cli", "versions", version);
+  const versionDir = NodePath.join(baseDir, "runtime", "styal-executable", "versions", version);
   return {
     versionDir,
-    entryPath: NodePath.join(versionDir, "node_modules", CLI_PACKAGE_NAME, "dist", "bin.mjs"),
+    // oxlint-disable-next-line t3code/no-global-process-runtime -- The standalone launcher runs outside Effect and selects its own executable.
+    entryPath: NodePath.join(versionDir, process.platform === "win32" ? "styal.exe" : "styal"),
     sentinelPath: NodePath.join(versionDir, ".install-complete"),
   };
 };
@@ -354,6 +353,9 @@ export class Launcher {
   }
 
   async #recover(): Promise<void> {
+    await NodeFSP.rm(NodePath.join(this.#baseDir, "runtime", SERVICE_RESTART_PENDING_FILE), {
+      force: true,
+    });
     // A fresh launcher means servers are running again: any stop marker from
     // a previous explicit stop is stale and must not make a future update
     // handoff release its tunnel.
@@ -404,7 +406,7 @@ export class Launcher {
       childVersion: version,
       ...(update === undefined ? {} : { update }),
     };
-    const child = NodeChildProcess.spawn(process.execPath, [paths.entryPath, "serve"], {
+    const child = NodeChildProcess.spawn(paths.entryPath, ["serve"], {
       env: {
         ...launcherChildEnvironment(this.#baseDir, process.env),
         [SERVICE_LAUNCHER_CONTEXT_ENV]: JSON.stringify(context),
@@ -633,7 +635,7 @@ export function resolveLauncherBaseDir(environment: NodeJS.ProcessEnv): string |
   return environment.T3CODE_HOME?.trim() || undefined;
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const baseDir = resolveLauncherBaseDir(process.env);
   if (baseDir === undefined || baseDir === "") {
     throw new Error("STYAL_HOME is required by the styal service launcher.");
@@ -641,18 +643,4 @@ async function main(): Promise<void> {
   const statePath = NodePath.join(baseDir, "runtime", SERVICE_STATE_FILE);
   const state = await readServiceState(statePath);
   await new Launcher(baseDir, state).run();
-}
-
-if (
-  isEntrypoint({
-    moduleUrl: import.meta.url,
-    entryPath: process.argv[1],
-    runtimeMain: import.meta.main,
-  })
-) {
-  main().catch((cause: unknown) => {
-    const error = cause instanceof Error ? cause : new Error(String(cause));
-    process.stderr.write(`[service-launcher] ${error.message}\n`);
-    process.exitCode = 1;
-  });
 }

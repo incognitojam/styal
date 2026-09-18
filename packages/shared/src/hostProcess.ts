@@ -1,3 +1,4 @@
+import * as NodeSea from "node:sea";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as NodeOS from "node:os";
@@ -60,3 +61,14 @@ export const HostProcessUserId = Context.Reference<number | undefined>(
 );
 
 export const isHostWindows = Effect.map(HostProcessPlatform, (platform) => platform === "win32");
+
+/** Whether this process runs the embedded CLI rather than a Node script. */
+export const HostProcessIsExecutable = Context.Reference<boolean>(
+  "@t3tools/shared/hostProcess/HostProcessIsExecutable",
+  { defaultValue: () => NodeSea.isSea() },
+);
+/** Preserve the invoked symlink name when Node resolves process.execPath. */
+export const HostProcessInvokedAs = Context.Reference<string>(
+  "@t3tools/shared/hostProcess/HostProcessInvokedAs",
+  { defaultValue: () => process.argv0 },
+);

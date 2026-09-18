@@ -151,21 +151,33 @@ jobs:
 
   build_desktop:
     name: Build desktop artifacts
-    needs: prepare
+    needs: [prepare, build_cli_archives]
     if: needs.prepare.outputs.has_changes == 'true'
     uses: ./.github/workflows/fork-desktop-build.yml
     with:
       ref: ${{ needs.prepare.outputs.ref }}
       version: ${{ needs.prepare.outputs.version }}
       target: all
+      cli_archives_ready: true
       sign_macos: true
       check_notarization: true
       force_notarization: ${{ inputs.force_notarization == true }}
     secrets: inherit
 
+  build_cli_archives:
+    name: Build standalone CLI archives
+    needs: prepare
+    if: needs.prepare.outputs.has_changes == 'true'
+    uses: ./.github/workflows/fork-cli-archives.yml
+    with:
+      ref: ${{ needs.prepare.outputs.ref }}
+      version: ${{ needs.prepare.outputs.version }}
+      sign_macos: true
+    secrets: inherit
+
   build_cli:
     name: Build and publish CLI
-    needs: [prepare, build_desktop]
+    needs: [prepare, build_cli_archives]
     if: needs.prepare.outputs.has_changes == 'true'
     permissions:
       contents: read
@@ -179,14 +191,14 @@ jobs:
 
   release:
     name: Publish GitHub prerelease
-    needs: [prepare, build_desktop, build_cli]
+    needs: [prepare, build_desktop, build_cli, build_cli_archives]
     permissions:
       contents: write
       pull-requests: read
     if: >-
       needs.prepare.outputs.has_changes == 'true' &&
       needs.build_desktop.result == 'success' &&
-      needs.build_cli.result == 'success'
+      needs.build_cli.result == 'success' && needs.build_cli_archives.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -204,6 +216,13 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           pattern: desktop-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Download standalone CLI archives and checksums
+        uses: actions/download-artifact@v8
+        with:
+          pattern: cli-archive-*
           merge-multiple: true
           path: release-assets
 

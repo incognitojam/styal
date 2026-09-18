@@ -23,6 +23,8 @@ export { shouldBundleCliDependency };
 const repoEnv = loadRepoEnv();
 const cliBuildChannel = packageJson.version.includes("-nightly.") ? "nightly" : "latest";
 
+const packExecutable = process.env.STYAL_PACK_EXE === "1";
+
 export default mergeConfig(
   baseConfig,
   defineConfig({
@@ -37,8 +39,11 @@ export default mergeConfig(
     },
     pack: {
       entry: ["src/bin.ts"],
-      outDir: "dist",
-      sourcemap: true,
+      outDir: packExecutable ? "dist-exe" : "dist",
+      sourcemap: !packExecutable,
+      ...(packExecutable
+        ? { exe: { fileName: "styal", outDir: "dist-exe", seaConfig: { useCodeCache: false } } }
+        : {}),
       clean: true,
       deps: {
         // Both halves are required. `alwaysBundle` forces the JS dependencies in

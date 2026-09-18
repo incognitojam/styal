@@ -5,7 +5,11 @@ import {
   type ServerSelfUpdateProgressStage,
   type ServerSelfUpdateResult,
 } from "@t3tools/contracts";
-import { HostProcessExecutablePath } from "@t3tools/shared/hostProcess";
+import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as Config from "effect/Config";
+import * as Option from "effect/Option";
+import { HttpClient } from "effect/unstable/http";
+import { CLI_RELEASE_BASE_URL_ENV } from "@t3tools/shared/cliRelease";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -18,6 +22,7 @@ import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import {
   ensurePinnedRuntimeInstalled,
+  pinnedRuntimeCommand,
   PinnedRuntimeInstallError,
   PinnedRuntimePreflightBlockedError,
 } from "./pinnedRuntime.ts";
@@ -51,7 +56,12 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
   const runner = yield* ProcessRunner.ProcessRunner;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const execPath = yield* HostProcessExecutablePath;
+  const platform = yield* HostProcessPlatform;
+  const arch = yield* HostProcessArchitecture;
+  const httpClient = yield* HttpClient.HttpClient;
+  const releaseBaseUrl = Option.getOrUndefined(
+    yield* Config.string(CLI_RELEASE_BASE_URL_ENV).pipe(Config.option),
+  );
   const inFlight = yield* Ref.make(false);
 
   const capability: ServerSelfUpdateCapability | null =
@@ -91,12 +101,16 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
         fs,
         path,
         runner,
+        httpClient,
+        platform,
+        arch,
+        releaseBaseUrl,
         validate: (runtime) =>
           runner
             .run({
-              command: execPath,
+              command: pinnedRuntimeCommand(runtime).command,
               args: [
-                runtime.entryPath,
+                ...pinnedRuntimeCommand(runtime).args,
                 "__service-preflight",
                 "--database-path",
                 serverConfig.dbPath,

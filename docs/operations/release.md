@@ -246,26 +246,13 @@ NSIS differential packaging remains enabled. A sidecar layout transition can
 produce a larger one-time download; subsequent small releases retain their
 blockmaps, with a 60 MB maximum for a representative sidecar-to-sidecar update.
 
-## 0) npm OIDC trusted publishing setup (CLI)
+## CLI archives and npm publication
 
-The workflow invokes `node apps/server/scripts/cli.ts publish` after aligning package versions. That
-script temporarily prepares the `t3` package, then runs `vp pm publish --filter t3 ...` from the
-repository root so workspace publish configuration is applied correctly.
-
-Checklist:
-
-1. Confirm npm org/user owns package `t3` (or rename package first if needed).
-2. In npm package settings, configure Trusted Publisher:
-   - Provider: GitHub Actions
-   - Repository: this repo
-   - Workflow file: `.github/workflows/release.yml`
-   - Environment (if used): match your npm trusted publishing config
-3. Ensure npm account and org policies allow trusted publishing for the package.
-4. Create release tag `vX.Y.Z` and push; workflow will:
-   - align the release package versions to `X.Y.Z`
-   - build web + server
-   - invoke the CLI publish script with npm dist-tag `latest`
-5. Nightly runs invoke the same publish script with npm dist-tag `nightly`.
+The fork's release workflows build native CLI archives, verify them, and produce
+`@styal/cli` plus its platform packages from those same bytes. They publish platform
+packages before the launcher. Windows desktop packaging consumes the Linux CLI
+archive for WSL. See [CLI releases](./cli-release.md) for the supported matrix,
+trusted-publisher setup, local verification, and service migration checks.
 
 ## 1) Release validation and unsigned builds
 

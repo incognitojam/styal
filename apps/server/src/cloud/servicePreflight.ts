@@ -24,8 +24,7 @@ export function runServicePreflight(input: {
     return {
       status: "blocked",
       version,
-      reason:
-        "This release requires a newer styal service launcher. Update it on the server machine.",
+      reason: `This release requires the styal executable service launcher (protocol ${SERVICE_LAUNCHER_PROTOCOL}). On the server machine, run: npx @styal/cli@${version} service update`,
     };
   }
 

@@ -3,27 +3,29 @@ import * as NodeAssert from "node:assert/strict";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeEvents from "node:events";
 import * as NodeFS from "node:fs";
+import * as NodeNet from "node:net";
 import * as NodeModule from "node:module";
 import * as NodePath from "node:path";
 
 const archivesDirectory = process.argv[2];
 NodeAssert.ok(archivesDirectory, "Pass a directory containing one CLI archive.");
-const archives = NodeFS.readdirSync(archivesDirectory).filter((entry) => entry.endsWith(".tgz"));
-NodeAssert.equal(archives.length, 1, "Expected exactly one CLI archive.");
-const archive = NodePath.resolve(archivesDirectory, archives[0]);
+const archive = NodePath.resolve(archivesDirectory, "cli.tgz");
+// oxlint-disable-next-line t3code/no-global-process-runtime -- This isolated install smoke exercises the actual host platform.
+const platformKey = `${process.platform}-${process.arch}`;
+const platformArchive = NodePath.resolve(archivesDirectory, `cli-${platformKey}.tgz`);
 const manifest = JSON.parse(
   NodeChildProcess.execFileSync("tar", ["-xOf", archive, "package/package.json"], {
     encoding: "utf8",
   }),
 );
 NodeAssert.equal(manifest.name, "@styal/cli");
-NodeAssert.deepEqual(manifest.bin, { styal: "./dist/bin.mjs" });
+NodeAssert.deepEqual(manifest.bin, { styal: "./bin/styal.js" });
 NodeAssert.equal(manifest.repository.url, "https://github.com/incognitojam/styal");
 NodeAssert.equal(manifest.license, "MIT");
 NodeAssert.ok(!JSON.stringify(manifest).includes("catalog:"));
 NodeAssert.ok(!JSON.stringify(manifest).includes("workspace:"));
 
-const root = NodePath.resolve("/verification");
+const root = NodePath.resolve(process.argv[3] ?? ".scratch/cli-distribution-npm-smoke");
 const install = NodePath.join(root, "install");
 const state = NodePath.join(root, "state");
 const project = NodePath.join(root, "project");
@@ -39,14 +41,41 @@ NodeFS.writeFileSync(
 );
 NodeChildProcess.execFileSync(
   "npm",
-  ["install", "--prefix", install, "--no-audit", "--no-fund", archive],
+  [
+    "install",
+    "--prefix",
+    install,
+    "--no-audit",
+    "--no-fund",
+    "--ignore-scripts",
+    platformArchive,
+    archive,
+  ],
   {
     stdio: "inherit",
   },
 );
+// A second npm operation must retain every bundled native dependency.
+NodeChildProcess.execFileSync(
+  "npm",
+  ["install", "--prefix", install, "--offline", "--ignore-scripts", "--no-audit", "--no-fund"],
+  { stdio: "inherit" },
+);
 const cli = NodePath.join(install, "node_modules", ".bin", "styal");
+const env = {
+  PATH: process.env.PATH,
+  HOME: NodePath.join(root, "home"),
+  STYAL_HOME: state,
+  NO_COLOR: "1",
+};
+NodeFS.mkdirSync(env.HOME, { recursive: true });
 const runCli = (...args) =>
-  NodeChildProcess.execFileSync(cli, args, { cwd: project, encoding: "utf8", timeout: 60_000 });
+  NodeChildProcess.execFileSync(cli, args, {
+    cwd: project,
+    env,
+    encoding: "utf8",
+    timeout: 60_000,
+  });
 NodeAssert.match(
   runCli("--version"),
   new RegExp(`styal v${manifest.version.replaceAll(".", "\\.")}\\s*$`),
@@ -62,13 +91,30 @@ const preflight = (protocol) =>
       String(protocol),
     ),
   );
-NodeAssert.equal(preflight(2).status, "blocked");
-NodeAssert.equal(preflight(3).status, "ready");
+NodeAssert.equal(preflight(3).status, "blocked");
+NodeAssert.equal(preflight(4).status, "ready");
+// Existing npm services call this entry directly during preflight.
+const legacyPreflight = JSON.parse(
+  NodeChildProcess.execFileSync(
+    process.execPath,
+    [
+      NodePath.join(install, "node_modules/@styal/cli/dist/bin.mjs"),
+      "__service-preflight",
+      "--database-path",
+      NodePath.join(state, "userdata/state.sqlite"),
+      "--launcher-protocol",
+      "3",
+    ],
+    { env, encoding: "utf8", timeout: 60_000 },
+  ),
+);
+NodeAssert.equal(legacyPreflight.status, "blocked");
+NodeAssert.match(legacyPreflight.reason, /service update/);
 runCli("project", "add", project, "--title", "CLI verification", "--base-dir", state);
 
 // Exercise the native dependency installed from npm, not a workspace copy.
 const require = NodeModule.createRequire(
-  NodePath.join(install, "node_modules/@styal/cli/package.json"),
+  NodePath.join(install, `node_modules/@styal/cli-${platformKey}/package.json`),
 );
 const pty = require("node-pty");
 await new Promise((resolve, reject) => {
@@ -88,12 +134,19 @@ await new Promise((resolve, reject) => {
   });
 });
 
-const origin = "http://127.0.0.1:3773";
+const listener = NodeNet.createServer();
+listener.listen(0, "127.0.0.1");
+await NodeEvents.once(listener, "listening");
+const port = listener.address().port;
+await new Promise((resolve, reject) =>
+  listener.close((error) => (error ? reject(error) : resolve())),
+);
+const origin = `http://127.0.0.1:${port}`;
 async function exerciseServer(iteration) {
   const server = NodeChildProcess.spawn(
     cli,
-    ["serve", "--host", "127.0.0.1", "--port", "3773", "--base-dir", state],
-    { cwd: project, stdio: ["ignore", "pipe", "pipe"] },
+    ["serve", "--host", "127.0.0.1", "--port", String(port), "--no-browser", "--base-dir", state],
+    { cwd: project, env, stdio: ["ignore", "pipe", "pipe"] },
   );
   let output = "";
   const exited = NodeEvents.once(server, "exit");

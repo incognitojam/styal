@@ -4,19 +4,36 @@ styal is a web and desktop GUI for running coding agents on your machine.
 
 ## Requirements
 
-Node.js `^22.16 || ^23.11 || >=24.10` on the machine that runs the styal server.
-
-On Linux, npm builds the CLI's native terminal dependency during installation. Install
-Python 3, Make, and a C++ compiler first. On Debian or Ubuntu:
-
-```sh
-sudo apt-get update
-sudo apt-get install -y build-essential python3
-```
+Supported platforms are Apple Silicon macOS, Linux x64/arm64 (glibc), and Windows
+x64/arm64. Intel macOS is unsupported. styal includes its own server runtime and
+native dependencies. Installing through npm needs Node and npm to run the launcher;
+the standalone installer needs neither Node nor a compiler.
 
 At least one provider CLI, installed and authenticated. See [Providers](#providers) below.
 
-## Run Without Installing
+## Install the CLI
+
+On macOS or Linux:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/incognitojam/styal/main/scripts/install.sh | STYAL_CHANNEL=nightly sh
+```
+
+On Windows, in PowerShell:
+
+```powershell
+$env:STYAL_CHANNEL = "nightly"
+irm https://raw.githubusercontent.com/incognitojam/styal/main/scripts/install.ps1 | iex
+```
+
+The installer verifies the release checksum and adds a `styal` launcher under
+`~/.local/bin`. Follow its PATH instructions if that directory is not on your PATH.
+Set `STYAL_VERSION` to install an exact version, or `STYAL_CHANNEL=stable` for stable
+releases. Run `styal update` to install a newer version and choose whether to restart
+an installed background service. `styal uninstall` removes the managed runtime and
+service while keeping projects, threads, and settings.
+
+## Run with npm
 
 ```bash
 npx @styal/cli@nightly
@@ -32,12 +49,30 @@ npm install -g @styal/cli@nightly
 styal --help
 ```
 
-The package is `@styal/cli`; the installed command is `styal`. Nightly releases use
+The npm package installs the matching prebuilt executable; native compilation and
+install-script approvals are unnecessary. The package is `@styal/cli`; the installed command is `styal`. Nightly releases use
 `@nightly`. Use `@latest` for stable releases once one is available.
+
+## Standalone archive
+
+Download the `styal-<version>-<platform>-<arch>` archive for your machine from
+[GitHub Releases](https://github.com/incognitojam/styal/releases), alongside its
+`SHA256SUMS` file. Extract the whole archive and run `./styal serve` (`styal.exe serve`
+on Windows) from the extracted directory. Keep the executable with its accompanying
+folders; copying the executable alone is insufficient.
+
+Archives support Apple Silicon Macs, Linux x64 and arm64, and Windows x64 and arm64.
+Intel Macs are unsupported. The server needs neither a separate Node installation
+nor a compiler. Your provider CLIs may still require Node.
 
 ## Desktop App
 
 Download a styal installer from [GitHub Releases](https://github.com/incognitojam/styal/releases).
+
+Windows packages include the Linux CLI used by the WSL backend. On first use, styal
+verifies and caches it inside your distro. Later launches reuse that cache. WSL
+needs neither Node nor a compiler to run styal, although your provider CLIs may need
+Node. A healthy new runtime replaces older caches while retaining the previous one.
 
 ## Providers
 
@@ -87,14 +122,3 @@ For multi-account setups, see [Codex](./providers-codex.md) and [Claude](./provi
 - [Remote access](./remote-access.md): connect from a phone, tablet, or another desktop
 - [Keeping styal in sync](./updating.md): client and server version skew
 - [Running in the background](./background-service.md): Linux background service
-
-## npm 12 and native dependencies
-
-npm 12 requires permission to run native dependency install scripts. When using
-npm 12 or newer, install with:
-
-```sh
-npm install -g @styal/cli@nightly --allow-scripts=node-pty,msgpackr-extract
-```
-
-Then run `styal`. The background-service updater configures these approvals automatically.

@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -128,6 +129,8 @@ it("rejects contradictory service state", () => {
 });
 
 it.layer(NodeServices.layer)("service state persistence", (it) => {
+  // Managed services support Linux/macOS; subprocess fixtures use POSIX shebangs.
+  const serviceProcessTest = it.effect.skipIf(HostProcessPlatform.defaultValue() === "win32");
   it.effect("durably replaces and strictly reads one state document", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -144,16 +147,20 @@ it.layer(NodeServices.layer)("service state persistence", (it) => {
     }),
   );
 
-  it.effect("serializes shutdown with launcher recovery", () =>
+  serviceProcessTest("serializes shutdown with launcher recovery", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-launcher-stop-" });
       const statePath = path.join(root, "runtime", "service-state.json");
-      const versionDir = path.join(root, "runtime", "styal-cli", "versions", "1.0.0");
-      const entryPath = path.join(versionDir, "node_modules", "@styal", "cli", "dist", "bin.mjs");
+      const versionDir = path.join(root, "runtime", "styal-executable", "versions", "1.0.0");
+      const entryPath = path.join(versionDir, "styal");
       yield* fs.makeDirectory(path.dirname(entryPath), { recursive: true });
-      yield* fs.writeFileString(entryPath, "setInterval(() => {}, 1_000);\n");
+      yield* fs.writeFileString(
+        entryPath,
+        `#!${process.execPath}\nsetInterval(() => {}, 1_000);\n`,
+      );
+      yield* fs.chmod(entryPath, 0o755);
       yield* fs.writeFileString(path.join(versionDir, ".install-complete"), "1.0.0\n");
       yield* Effect.promise(() =>
         writeServiceState(statePath, {
@@ -174,7 +181,7 @@ it.layer(NodeServices.layer)("service state persistence", (it) => {
     }),
   );
 
-  it.effect("commits only after the trial reports prepared", () =>
+  serviceProcessTest("commits only after the trial reports prepared", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -200,10 +207,11 @@ if (context.update?.status === "pending") {
 }
 `;
       for (const version of ["1.0.0", "1.1.0"]) {
-        const versionDir = path.join(root, "runtime", "styal-cli", "versions", version);
-        const entryPath = path.join(versionDir, "node_modules", "@styal", "cli", "dist", "bin.mjs");
+        const versionDir = path.join(root, "runtime", "styal-executable", "versions", version);
+        const entryPath = path.join(versionDir, "styal");
         yield* fs.makeDirectory(path.dirname(entryPath), { recursive: true });
-        yield* fs.writeFileString(entryPath, childSource);
+        yield* fs.writeFileString(entryPath, `#!${process.execPath}\n${childSource}`);
+        yield* fs.chmod(entryPath, 0o755);
         yield* fs.writeFileString(path.join(versionDir, ".install-complete"), `${version}\n`);
       }
       yield* Effect.promise(() =>
@@ -227,7 +235,7 @@ if (context.update?.status === "pending") {
     }),
   );
 
-  it.effect("rolls back a trial that reports the wrong update ID", () =>
+  serviceProcessTest("rolls back a trial that reports the wrong update ID", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -250,10 +258,11 @@ if (context.update?.status === "pending") {
 }
 `;
       for (const version of ["1.0.0", "1.1.0"]) {
-        const versionDir = path.join(root, "runtime", "styal-cli", "versions", version);
-        const entryPath = path.join(versionDir, "node_modules", "@styal", "cli", "dist", "bin.mjs");
+        const versionDir = path.join(root, "runtime", "styal-executable", "versions", version);
+        const entryPath = path.join(versionDir, "styal");
         yield* fs.makeDirectory(path.dirname(entryPath), { recursive: true });
-        yield* fs.writeFileString(entryPath, childSource);
+        yield* fs.writeFileString(entryPath, `#!${process.execPath}\n${childSource}`);
+        yield* fs.chmod(entryPath, 0o755);
         yield* fs.writeFileString(path.join(versionDir, ".install-complete"), `${version}\n`);
       }
       yield* Effect.promise(() =>
@@ -281,7 +290,7 @@ if (context.update?.status === "pending") {
     }),
   );
 
-  it.effect("restores the database when a migrating trial exits", () =>
+  serviceProcessTest("restores the database when a migrating trial exits", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -309,10 +318,11 @@ if (context.update?.status === "pending") {
 }
 `;
       for (const version of ["1.0.0", "1.1.0"]) {
-        const versionDir = path.join(root, "runtime", "styal-cli", "versions", version);
-        const entryPath = path.join(versionDir, "node_modules", "@styal", "cli", "dist", "bin.mjs");
+        const versionDir = path.join(root, "runtime", "styal-executable", "versions", version);
+        const entryPath = path.join(versionDir, "styal");
         yield* fs.makeDirectory(path.dirname(entryPath), { recursive: true });
-        yield* fs.writeFileString(entryPath, childSource);
+        yield* fs.writeFileString(entryPath, `#!${process.execPath}\n${childSource}`);
+        yield* fs.chmod(entryPath, 0o755);
         yield* fs.writeFileString(path.join(versionDir, ".install-complete"), `${version}\n`);
       }
       yield* Effect.promise(() =>
