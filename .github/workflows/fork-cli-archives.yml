@@ -72,7 +72,7 @@ jobs:
     timeout-minutes: 60
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(inputs.target == 'linux-x64' && '{"include":[{"key":"linux-x64","platform":"linux","arch":"x64","runner":"ubuntu-24.04"}]}' || '{"include":[{"key":"darwin-arm64","platform":"mac","arch":"arm64","runner":"macos-15"},{"key":"linux-x64","platform":"linux","arch":"x64","runner":"ubuntu-24.04"},{"key":"linux-arm64","platform":"linux","arch":"arm64","runner":"ubuntu-24.04-arm"},{"key":"win32-x64","platform":"win","arch":"x64","runner":"windows-2025"},{"key":"win32-arm64","platform":"win","arch":"arm64","runner":"windows-11-arm"}]}') }}
+      matrix: ${{ fromJSON(inputs.target == 'linux-x64' && '{"include":[{"key":"linux-x64","platform":"linux","arch":"x64","runner":"ubuntu-24.04","rust_target":"x86_64-unknown-linux-gnu"}]}' || '{"include":[{"key":"darwin-arm64","platform":"mac","arch":"arm64","runner":"macos-15","rust_target":"aarch64-apple-darwin"},{"key":"linux-x64","platform":"linux","arch":"x64","runner":"ubuntu-24.04","rust_target":"x86_64-unknown-linux-gnu"},{"key":"linux-arm64","platform":"linux","arch":"arm64","runner":"ubuntu-24.04-arm","rust_target":"aarch64-unknown-linux-gnu"},{"key":"win32-x64","platform":"win","arch":"x64","runner":"windows-2025","rust_target":"x86_64-pc-windows-msvc"},{"key":"win32-arm64","platform":"win","arch":"arm64","runner":"windows-11-arm","rust_target":"aarch64-pc-windows-msvc"}]}') }}
     env:
       T3CODE_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
       T3CODE_CLERK_JWT_TEMPLATE: ${{ vars.CLERK_JWT_TEMPLATE }}
@@ -90,7 +90,16 @@ jobs:
             args:
               - --filter=@styal/cli...
               - --filter=@t3tools/scripts...
+      - name: Cache resource monitor
+        id: resource_monitor_cache
+        uses: actions/cache@v6
+        with:
+          path: native/resource-monitor/target/${{ matrix.rust_target }}/release/styal-resource-monitor${{ matrix.platform == 'win' && '.exe' || '' }}
+          key: resource-monitor-${{ matrix.rust_target }}-${{ hashFiles('native/resource-monitor/Cargo.lock', 'native/resource-monitor/Cargo.toml', 'native/resource-monitor/src/**') }}
       - uses: dtolnay/rust-toolchain@stable
+        if: steps.resource_monitor_cache.outputs.cache-hit != 'true'
+        with:
+          targets: ${{ matrix.rust_target }}
       - name: Align release versions
         shell: bash
         env:
@@ -105,13 +114,14 @@ jobs:
           VP_NODE_VERSION: "26.8.2"
         run: node apps/server/scripts/cli.ts build-exe --verbose
       - name: Build resource monitor
-        run: cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml
+        if: steps.resource_monitor_cache.outputs.cache-hit != 'true'
+        run: cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml --target ${{ matrix.rust_target }}
       - name: Stage resource monitor
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .scratch/cli-resource-monitor/${{ matrix.key }}
-          cp native/resource-monitor/target/release/styal-resource-monitor${{ matrix.platform == 'win' && '.exe' || '' }} .scratch/cli-resource-monitor/${{ matrix.key }}/
+          cp native/resource-monitor/target/${{ matrix.rust_target }}/release/styal-resource-monitor${{ matrix.platform == 'win' && '.exe' || '' }} .scratch/cli-resource-monitor/${{ matrix.key }}/
       - name: Import macOS signing credentials
         if: matrix.platform == 'mac' && inputs.sign_macos
         shell: bash
