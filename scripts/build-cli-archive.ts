@@ -9,7 +9,7 @@
  * Layout inside the archive (a single top-level directory named after the
  * archive stem):
  *
- *   t3 | styal.exe          the single-executable
+ *   styal | styal.exe       the single-executable
  *   client/              web app served by the server
  *   resource-monitor/    per-platform Rust helper, same paths as the npm package
  *   node_modules/        runtime externals (node-pty, msgpackr-extract, fff)
@@ -545,6 +545,17 @@ const buildCliArchive = Effect.fn("buildCliArchive")(function* (input: {
 
   const executablePath = path.join(contentDir, executableName);
   if (input.platform === "mac") {
+    // node-pty's published macOS helper has mode 0644, but posix_spawn needs
+    // an executable file. Set the mode before signing and archiving it.
+    yield* fs.chmod(
+      path.join(
+        contentDir,
+        "node_modules/node-pty/prebuilds",
+        cliArchivePlatformKey(input.platform, input.arch),
+        "spawn-helper",
+      ),
+      0o755,
+    );
     yield* signMacArchiveContents({ repoRoot, contentDir, executablePath });
   } else if (input.platform === "win") {
     yield* signWindowsExecutable(executablePath);
