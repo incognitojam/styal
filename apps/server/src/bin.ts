@@ -37,7 +37,7 @@ class ConnectPublicConfigMissingError extends CliError.UserError {
 }
 
 const linkUnavailableCommand = Command.make("link", {
-  command: Argument.string("command").pipe(Argument.variadic),
+  command: Argument.String("command").pipe(Argument.variadic),
 }).pipe(
   Command.withDescription("styal Link is unavailable in builds without public configuration."),
   Command.withAlias("connect"),

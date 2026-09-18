@@ -149,7 +149,7 @@ export const ApiLive = Api.make(
     }
     const fcmServiceAccount = Option.getOrUndefined(
       Option.filter(
-        yield* Config.option(Config.redacted("FCM_SERVICE_ACCOUNT")),
+        yield* Config.option(Config.Redacted("FCM_SERVICE_ACCOUNT")),
         (value) => Redacted.value(value).trim().length > 0,
       ),
     );
@@ -161,9 +161,9 @@ export const ApiLive = Api.make(
     const axiomIngestToken = yield* observability.workerIngestToken.token;
     const axiomTracesEndpoint = yield* observability.traces.otelTracesEndpoint;
 
-    const clerkSecretKey = yield* Config.redacted("CLERK_SECRET_KEY");
-    const clerkPublishableKey = yield* Config.string("CLERK_PUBLISHABLE_KEY");
-    const clerkJwtAudience = yield* Config.string("CLERK_JWT_AUDIENCE");
+    const clerkSecretKey = yield* Config.Redacted("CLERK_SECRET_KEY");
+    const clerkPublishableKey = yield* Config.String("CLERK_PUBLISHABLE_KEY");
+    const clerkJwtAudience = yield* Config.String("CLERK_JWT_AUDIENCE");
 
     const cloudMintPrivateKey = yield* cloudMintKeyPair.privateKey;
     const cloudMintPublicKey = yield* cloudMintKeyPair.publicKey;

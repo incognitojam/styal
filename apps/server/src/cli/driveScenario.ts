@@ -85,8 +85,8 @@ const prepareScenario = Effect.fn("drive.prepareScenario")(function* (
 });
 
 export const driveScenarioCommand = Command.make("scenario", {
-  file: Argument.string("file").pipe(Argument.withDescription("Version 1 scenario JSON file.")),
-  homeDir: Flag.string("home-dir").pipe(
+  file: Argument.String("file").pipe(Argument.withDescription("Version 1 scenario JSON file.")),
+  homeDir: Flag.String("home-dir").pipe(
     Flag.withDescription("New, nonexistent T3 home to populate. Existing paths are refused."),
   ),
 }).pipe(
@@ -122,8 +122,8 @@ export const driveScenarioCommand = Command.make("scenario", {
 );
 
 export const driveServeCommand = Command.make("serve", {
-  file: Argument.string("file"),
-  homeDir: Flag.string("home-dir").pipe(
+  file: Argument.String("file"),
+  homeDir: Flag.String("home-dir").pipe(
     Flag.withDescription("New, nonexistent home for the demo server."),
   ),
   port: sharedServerCommandFlags.port,
@@ -172,7 +172,7 @@ export const driveServeCommand = Command.make("serve", {
 );
 
 export const driveExampleCommand = Command.make("example", {
-  workspace: Flag.string("workspace").pipe(
+  workspace: Flag.String("workspace").pipe(
     Flag.withDescription("Existing project workspace path to reference in the example."),
   ),
 }).pipe(

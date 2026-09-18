@@ -21,7 +21,7 @@ export default Alchemy.Stack(
   Effect.gen(function* () {
     // The zone must already exist in the Cloudflare account; Alchemy infers it
     // from this hostname rather than creating DNS for us.
-    const domain = yield* Config.nonEmptyString("STYAL_WEB_DOMAIN");
+    const domain = yield* Config.NonEmptyString("STYAL_WEB_DOMAIN");
 
     const site = yield* Cloudflare.Website.StaticSite("Web", {
       cwd: "../..",

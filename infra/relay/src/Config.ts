@@ -67,7 +67,7 @@ const apnsConfigNames = [
 ] as const;
 
 const optionalString = (name: (typeof apnsConfigNames)[number]) =>
-  Config.string(name).pipe(Config.withDefault(""));
+  Config.String(name).pipe(Config.withDefault(""));
 
 /**
  * Resolves the APNs credential group all-or-nothing. CI passes unset GitHub
@@ -81,7 +81,7 @@ export const apnsCredentialsConfig: Effect.Effect<ApnsCredentials | null, Config
     const teamId = yield* optionalString("APNS_TEAM_ID");
     const keyId = yield* optionalString("APNS_KEY_ID");
     const bundleId = yield* optionalString("APNS_BUNDLE_ID");
-    const privateKey = yield* Config.redacted("APNS_PRIVATE_KEY").pipe(
+    const privateKey = yield* Config.Redacted("APNS_PRIVATE_KEY").pipe(
       Config.withDefault(Redacted.make("")),
     );
 

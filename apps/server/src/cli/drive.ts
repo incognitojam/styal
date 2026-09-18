@@ -35,8 +35,8 @@ import {
 } from "./driveScenario.ts";
 
 const connectionFlags = {
-  baseDir: Flag.string("home-dir").pipe(Flag.withAlias("base-dir"), Flag.optional),
-  url: Flag.string("url").pipe(
+  baseDir: Flag.String("home-dir").pipe(Flag.withAlias("base-dir"), Flag.optional),
+  url: Flag.String("url").pipe(
     Flag.withDescription("Running environment origin; authenticate with T3_DRIVE_TOKEN."),
     Flag.optional,
   ),
@@ -88,7 +88,7 @@ const withConnection = Effect.fn("drive.withConnection")(function* <A, E, R>(
         message: "--url must be an HTTP(S) origin without credentials, path, query, or fragment.",
       });
     }
-    const token = yield* Config.redacted("T3_DRIVE_TOKEN");
+    const token = yield* Config.Redacted("T3_DRIVE_TOKEN");
     return yield* call(origin, Redacted.value(token));
   }
 
@@ -122,7 +122,7 @@ const printJson = (value: unknown) => encodeJson(value).pipe(Effect.flatMap(Cons
 
 const snapshotCommand = Command.make("snapshot", {
   ...connectionFlags,
-  thread: Flag.string("thread").pipe(
+  thread: Flag.String("thread").pipe(
     Flag.optional,
     Flag.withDescription("Thread id for full messages, activities, and state."),
   ),
@@ -146,7 +146,7 @@ const snapshotCommand = Command.make("snapshot", {
 
 const dispatchCommand = Command.make("dispatch", {
   ...connectionFlags,
-  file: Argument.string("file").pipe(
+  file: Argument.String("file").pipe(
     Argument.withDescription("JSON client command. See styal drive schema."),
   ),
 }).pipe(
@@ -170,8 +170,8 @@ const dispatchCommand = Command.make("dispatch", {
 
 const sendCommand = Command.make("send", {
   ...connectionFlags,
-  thread: Argument.string("thread"),
-  text: Argument.string("text"),
+  thread: Argument.String("thread"),
+  text: Argument.String("text"),
 }).pipe(
   Command.withDescription(
     "Send a real user message using the thread's current model and permission modes.",
@@ -208,7 +208,7 @@ const sendCommand = Command.make("send", {
 );
 
 const schemaCommand = Command.make("schema", {
-  scenario: Flag.boolean("scenario").pipe(Flag.withDefault(false)),
+  scenario: Flag.Boolean("scenario").pipe(Flag.withDefault(false)),
 }).pipe(
   Command.withDescription(
     "Print JSON Schema for live commands, or --scenario for isolated scenarios.",
