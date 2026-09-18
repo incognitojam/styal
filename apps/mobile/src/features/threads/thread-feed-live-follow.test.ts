@@ -129,6 +129,16 @@ describe("resolveThreadFeedLiveFollow", () => {
     ).toBe(true);
   });
 
+  it("stops following when an expanded disclosure leaves the reader above the end", () => {
+    expect(
+      resolveThreadFeedLiveFollow(true, {
+        type: "disclosure-settled",
+        isAtEnd: false,
+        userScrollSessionActive: false,
+      }),
+    ).toBe(false);
+  });
+
   it("re-arms after an explicit reset", () => {
     expect(resolveThreadFeedLiveFollow(false, { type: "reset" })).toBe(true);
   });
