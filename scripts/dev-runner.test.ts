@@ -335,6 +335,32 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       }),
     );
 
+    it.effect("strips an inherited Tailscale Serve opt-in in every mode", () =>
+      Effect.gen(function* () {
+        for (const mode of ["dev", "dev:server", "dev:web", "dev:desktop"] as const) {
+          const env = yield* createDevRunnerEnv({
+            mode,
+            baseEnv: {
+              T3CODE_TAILSCALE_SERVE: "true",
+              T3CODE_TAILSCALE_SERVE_PORT: "443",
+            },
+            serverOffset: 0,
+            webOffset: 0,
+            t3Home: undefined,
+            browser: undefined,
+            autoBootstrapProjectFromCwd: undefined,
+            logWebSocketEvents: undefined,
+            host: undefined,
+            port: undefined,
+            devUrl: undefined,
+          });
+
+          assert.equal(env.T3CODE_TAILSCALE_SERVE, undefined, mode);
+          assert.equal(env.T3CODE_TAILSCALE_SERVE_PORT, undefined, mode);
+        }
+      }),
+    );
+
     it.effect("does not force websocket logging on in dev mode when unset", () =>
       Effect.gen(function* () {
         const env = yield* createDevRunnerEnv({

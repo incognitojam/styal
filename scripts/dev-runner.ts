@@ -353,13 +353,19 @@ export function createDevRunnerEnv({
       delete output.STYAL_HOME;
     }
 
-    // A dev-runner server is never launcher-managed. When the shell that runs
-    // this script was itself spawned by the machine's managed t3 service (an
-    // agent working inside styal), these leak through and the child server
-    // fails startup with "The service launcher started a different t3 version"
-    // (serviceLauncherClient.ts resolveStartup).
+    // An agent working inside styal runs this script from a shell spawned by
+    // the machine's installed styal service, so that server's own settings
+    // leak in. None of them apply to a dev server:
+    // - The launcher context fails startup with "The service launcher started
+    //   a different t3 version" (serviceLauncherClient.ts resolveStartup).
+    // - Tailscale Serve holds one mapping per HTTPS port for the whole
+    //   machine, so the dev server would repoint the installed server's
+    //   tailnet URL at itself, then switch Serve off on exit. Dev uses
+    //   `--share`, which claims its own port.
     delete output.T3_SERVICE_LAUNCHER_CONTEXT;
     delete output.T3_BOOT_SERVICE_UNIT;
+    delete output.T3CODE_TAILSCALE_SERVE;
+    delete output.T3CODE_TAILSCALE_SERVE_PORT;
 
     if (!isDesktopMode) {
       output.T3CODE_PORT = String(serverPort);
