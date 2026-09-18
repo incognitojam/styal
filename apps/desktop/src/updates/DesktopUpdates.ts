@@ -505,7 +505,12 @@ export const make = Effect.gen(function* () {
       return { accepted: false, completed: false };
     }
 
-    if (!(yield* guard.confirm("restart"))) {
+    if (
+      !(yield* guard.confirm(
+        "restart",
+        `Install update ${state.downloadedVersion} and restart styal?`,
+      ))
+    ) {
       yield* finishUpdateAction("install");
       return { accepted: false, completed: false };
     }

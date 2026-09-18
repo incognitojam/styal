@@ -276,7 +276,7 @@ features:
     prs: [110, 128, 358]
     invariants:
       - Desktop activity authentication remains available for the host process lifetime, including the first quit after days of uptime and renewal after bearer expiry.
-      - In-app shutdown dialogs appear only for active or unknown work and name the threads and terminal sessions that will stop; inspection warnings appear only for activity that could not be checked.
+      - In-app shutdown dialogs appear only for active or unknown work and name the threads and terminal sessions that will be interrupted; inspection warnings appear only for activity that could not be checked.
       - Manual desktop quits and restarts skip confirmation only when every owned backend is idle; active or unknown host activity requires confirmation, and cancellation preserves windows and downloaded updates.
       - Available desktop updates download automatically while preserving accurate available, downloading, downloaded, install, and retry state across updater events and pre-install refreshes.
       - Downloaded updates install on normal app quit; the sidebar only offers restart once an installer is ready, while Settings retains checks, progress, and retries.

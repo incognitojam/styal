@@ -127,8 +127,9 @@ describe("DesktopShutdownGuard", () => {
       assert.isTrue(yield* guard.confirm("quit"));
       assert.lengthOf(h.messages, 0);
       active = true;
-      assert.isFalse(yield* guard.confirm("restart"));
-      assert.include(h.messages[0]!, "1 thread will be stopped");
+      assert.isFalse(yield* guard.confirm("restart", "Install update 9.0.363 and restart styal?"));
+      assert.include(h.messages[0]!, "Install update 9.0.363 and restart styal?");
+      assert.include(h.messages[0]!, "1 thread will be interrupted");
       assert.equal(h.checks(), 4);
       assert.equal(h.exchanges(), 2);
     }).pipe(Effect.provide(h.layer));
@@ -142,7 +143,7 @@ describe("DesktopShutdownGuard", () => {
     return Effect.gen(function* () {
       const guard = yield* Guard.DesktopShutdownGuard;
       assert.isTrue(yield* guard.confirm("restart"));
-      assert.include(h.messages[0]!, "2 threads waiting for input or approval will be stopped");
+      assert.include(h.messages[0]!, "2 threads waiting for input or approval will be interrupted");
       assert.include(h.messages[0]!, "2 terminal sessions");
     }).pipe(Effect.provide(h.layer));
   });
@@ -206,7 +207,8 @@ describe("shutdown confirmation copy", () => {
       ),
       {
         message: "Quit with running work?",
-        detail: "1 thread will be stopped.\n1 terminal session will be stopped.",
+        detail:
+          "1 thread will be interrupted.\n1 terminal session will be interrupted. Make sure you're ready before continuing.",
       },
     );
   });
@@ -222,7 +224,7 @@ describe("shutdown confirmation copy", () => {
       {
         message: "Restart with running work?",
         detail:
-          "2 terminal sessions will be stopped.\nActivity could not be checked for 1 terminal session.\n\nRestarting will stop any work hosted by this app.",
+          "2 terminal sessions will be interrupted.\nActivity could not be checked for 1 terminal session.\n\nRestarting will stop any work hosted by this app. Make sure you're ready before continuing.",
       },
     );
   });
@@ -235,14 +237,15 @@ describe("shutdown confirmation copy", () => {
       {
         message: "Quit without checking activity?",
         detail:
-          "Activity could not be checked for 1 terminal session.\n\nQuitting will stop any work hosted by this app.",
+          "Activity could not be checked for 1 terminal session.\n\nQuitting will stop any work hosted by this app. Make sure you're ready before continuing.",
       },
     );
   });
   it("describes waiting threads separately", () => {
     assert.deepEqual(Guard.shutdownConfirmation([{ ...idle, waitingSessions: 1 }], "restart"), {
       message: "Restart with waiting threads?",
-      detail: "1 thread waiting for input or approval will be stopped.",
+      detail:
+        "1 thread waiting for input or approval will be interrupted. Make sure you're ready before continuing.",
     });
   });
 });

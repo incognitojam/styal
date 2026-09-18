@@ -13,7 +13,11 @@ import * as DesktopShutdownConfirmation from "./DesktopShutdownConfirmation.ts";
 export type ShutdownAction = "quit" | "restart";
 export type ActivityCheck = HostActivity | null;
 
-export function shutdownConfirmation(checks: ReadonlyArray<ActivityCheck>, action: ShutdownAction) {
+export function shutdownConfirmation(
+  checks: ReadonlyArray<ActivityCheck>,
+  action: ShutdownAction,
+  title?: string,
+) {
   let active = 0;
   let waiting = 0;
   let terminals = 0;
@@ -30,13 +34,13 @@ export function shutdownConfirmation(checks: ReadonlyArray<ActivityCheck>, actio
     uncheckedTerminals += check.terminalsWithUnknownActivity;
   }
   const lines: string[] = [];
-  if (active) lines.push(`${active} thread${active === 1 ? "" : "s"} will be stopped.`);
+  if (active) lines.push(`${active} thread${active === 1 ? "" : "s"} will be interrupted.`);
   if (waiting)
     lines.push(
-      `${waiting} thread${waiting === 1 ? "" : "s"} waiting for input or approval will be stopped.`,
+      `${waiting} thread${waiting === 1 ? "" : "s"} waiting for input or approval will be interrupted.`,
     );
   if (terminals)
-    lines.push(`${terminals} terminal session${terminals === 1 ? "" : "s"} will be stopped.`);
+    lines.push(`${terminals} terminal session${terminals === 1 ? "" : "s"} will be interrupted.`);
   if (uncheckedTerminals)
     lines.push(
       `Activity could not be checked for ${uncheckedTerminals} terminal session${uncheckedTerminals === 1 ? "" : "s"}.`,
@@ -51,19 +55,20 @@ export function shutdownConfirmation(checks: ReadonlyArray<ActivityCheck>, actio
     );
   return {
     message:
-      active || terminals
+      title ??
+      (active || terminals
         ? `${verb} with running work?`
         : waiting
           ? `${verb} with waiting threads?`
-          : `${verb} without checking activity?`,
-    detail: lines.join("\n"),
+          : `${verb} without checking activity?`),
+    detail: `${lines.join("\n")} Make sure you're ready before continuing.`,
   };
 }
 
 export class DesktopShutdownGuard extends Context.Service<
   DesktopShutdownGuard,
   {
-    readonly confirm: (action: ShutdownAction) => Effect.Effect<boolean>;
+    readonly confirm: (action: ShutdownAction, title?: string) => Effect.Effect<boolean>;
   }
 >()("@t3tools/desktop/app/DesktopShutdownGuard") {}
 
@@ -74,7 +79,7 @@ export const make = Effect.gen(function* () {
   const tokens = new Map<string, { credential: string; bearer: string; expiresAt: number }>();
   let pending = false;
   return DesktopShutdownGuard.of({
-    confirm: (action) =>
+    confirm: (action, title) =>
       Effect.gen(function* () {
         if (pending) return false;
         pending = true;
@@ -132,7 +137,7 @@ export const make = Effect.gen(function* () {
               ),
             { concurrency: "unbounded" },
           );
-          const confirmation = shutdownConfirmation(checks, action);
+          const confirmation = shutdownConfirmation(checks, action, title);
           if (confirmation === null) return true;
           return yield* dialog.request(`${confirmation.message}\n\n${confirmation.detail}`);
         }).pipe(
