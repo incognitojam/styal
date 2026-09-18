@@ -293,16 +293,6 @@ export function inspectLegacyImportDestinationState(
 
 export const openReadonlyDatabase = Effect.fn("LegacyImportPreview.openReadonlyDatabase")(
   function* (databasePath: string) {
-    if (process.versions.bun !== undefined) {
-      const { Database } = yield* Effect.promise(() => import("bun:sqlite"));
-      const database = new Database(databasePath, { readonly: true, strict: true });
-      return {
-        exec: (sql) => database.exec(sql),
-        all: (sql, parameters = []) => database.query(sql).all(...parameters),
-        close: () => database.close(),
-      } satisfies ReadonlyDatabase;
-    }
-
     const { DatabaseSync } = yield* Effect.promise(() => import("node:sqlite"));
     const database = new DatabaseSync(databasePath, { readOnly: true });
     return {

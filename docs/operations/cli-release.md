@@ -71,3 +71,42 @@ launcher tests cover update commit and database rollback; the container verifies
 foreground restart without requiring systemd. See the [background service
 migration instructions](../user/background-service.md#migrating-an-existing-styal-installation)
 for manually built hosts.
+
+## Standalone archives
+
+Fork Nightly and Fork Release additionally build `styal-<version>-<platform>-<arch>`
+archives and attach `SHA256SUMS`. The native matrix covers macOS arm64, Linux
+x64/arm64, and Windows x64/arm64. Intel macOS is unsupported. Each archive contains
+the executable, web client, license, native dependencies, and resource monitor.
+Node and native build tools are needed on the build runner, not the destination.
+Provider CLIs may still need their own Node installation.
+
+The archive job runs independently of desktop packaging. It shares the web build
+across targets and builds and verifies each executable on its own architecture.
+The npm package and existing service installation path remain available during
+this first distribution phase. Building an archive does not migrate a service.
+
+To verify a local Linux x64 archive (with `.scratch/` ignored):
+
+```sh
+vp run --filter ./apps/server build
+VP_NODE_VERSION=26.8.2 node apps/server/scripts/cli.ts build-exe --verbose
+cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml
+mkdir -p .scratch/cli-resource-monitor/linux-x64
+cp native/resource-monitor/target/release/styal-resource-monitor .scratch/cli-resource-monitor/linux-x64/
+VP_NODE_VERSION=26.8.2 node scripts/build-cli-archive.ts --platform linux --arch x64 --version <version> --resource-monitor-dir .scratch/cli-resource-monitor --output-dir .scratch/cli-archives
+VP_NODE_VERSION=26.8.2 node scripts/smoke-cli-archive.mjs .scratch/cli-archives/styal-<version>-linux-x64.tar.gz <version>
+```
+
+Use the version compiled into the executable. Release workflows align package
+versions before building. Keep the archive builder and verifier on the same Node
+version as the executable so native addon verification uses the matching ABI.
+The smoke check extracts into synthetic scratch state, runs without Node on PATH,
+opens a bundled terminal, pairs a client, reads its authenticated project snapshot,
+and verifies persistence after restart. Logs remain in the reported scratch path.
+
+macOS release archives use the fork's Developer ID certificate and notarization
+credentials; local builds use ad hoc signing. Windows archives follow the fork's
+unsigned Windows release policy unless Azure Trusted Signing is explicitly
+configured. Checksums are generated only after every target's verification passes,
+and cover the final archive bytes after signing.

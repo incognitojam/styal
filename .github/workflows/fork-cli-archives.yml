@@ -1,0 +1,201 @@
+name: Fork CLI Archives
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+      sign_macos:
+        default: false
+        type: boolean
+    secrets:
+      CSC_LINK:
+        required: false
+      CSC_KEY_PASSWORD:
+        required: false
+      APPLE_API_KEY:
+        required: false
+      APPLE_API_KEY_ID:
+        required: false
+      APPLE_API_ISSUER:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    name: Build shared CLI client bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      T3CODE_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+      T3CODE_CLERK_JWT_TEMPLATE: ${{ vars.CLERK_JWT_TEMPLATE }}
+      T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ vars.CLERK_CLI_OAUTH_CLIENT_ID }}
+      T3CODE_RELAY_URL: ${{ vars.RELAY_URL }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@styal/cli...
+              - --filter=@t3tools/scripts...
+      - name: Align release versions
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
+      - name: Build server and web client
+        run: vp run --filter ./apps/server build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cli-shared-bundle
+          path: apps/server/dist
+          if-no-files-found: error
+
+  archive:
+    name: CLI archive (${{ matrix.key }})
+    needs: bundle
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { key: darwin-arm64, platform: mac, arch: arm64, runner: macos-15 }
+          - { key: linux-x64, platform: linux, arch: x64, runner: ubuntu-24.04 }
+          - { key: linux-arm64, platform: linux, arch: arm64, runner: ubuntu-24.04-arm }
+          - { key: win32-x64, platform: win, arch: x64, runner: windows-2025 }
+          - { key: win32-arm64, platform: win, arch: arm64, runner: windows-11-arm }
+    env:
+      T3CODE_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+      T3CODE_CLERK_JWT_TEMPLATE: ${{ vars.CLERK_JWT_TEMPLATE }}
+      T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ vars.CLERK_CLI_OAUTH_CLIENT_ID }}
+      T3CODE_RELAY_URL: ${{ vars.RELAY_URL }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@styal/cli...
+              - --filter=@t3tools/scripts...
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Align release versions
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
+      - uses: actions/download-artifact@v8
+        with:
+          name: cli-shared-bundle
+          path: apps/server/dist
+      - name: Build executable on its native architecture
+        env:
+          VP_NODE_VERSION: "26.8.2"
+        run: node apps/server/scripts/cli.ts build-exe --verbose
+      - name: Build resource monitor
+        run: cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml
+      - name: Stage resource monitor
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .scratch/cli-resource-monitor/${{ matrix.key }}
+          cp native/resource-monitor/target/release/styal-resource-monitor${{ matrix.platform == 'win' && '.exe' || '' }} .scratch/cli-resource-monitor/${{ matrix.key }}/
+      - name: Import macOS signing credentials
+        if: matrix.platform == 'mac' && inputs.sign_macos
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -euo pipefail
+          umask 077
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER; do
+            test -n "${!name}" || { echo "Missing signing configuration: $name" >&2; exit 1; }
+          done
+          mkdir -p .scratch/cli-signing
+          printf '%s' "$CSC_LINK" | base64 -D > .scratch/cli-signing/certificate.p12
+          keychain="$PWD/.scratch/cli-signing/build.keychain-db"
+          password="$(openssl rand -hex 24)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import .scratch/cli-signing/certificate.p12 -k "$keychain" -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain"
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          identity="$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*"\(Developer ID Application:.*\)".*/\1/p' | head -1)"
+          test -n "$identity"
+          echo "STYAL_CLI_MAC_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+          printf '%s' "$APPLE_API_KEY" > .scratch/cli-signing/AuthKey.p8
+          echo "APPLE_API_KEY=$PWD/.scratch/cli-signing/AuthKey.p8" >> "$GITHUB_ENV"
+      - name: Build archive and verify extracted runtime
+        shell: bash
+        env:
+          VP_NODE_VERSION: "26.8.2"
+          RELEASE_VERSION: ${{ inputs.version }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -euo pipefail
+          node scripts/build-cli-archive.ts --platform ${{ matrix.platform }} --arch ${{ matrix.arch }} --version "$RELEASE_VERSION" --resource-monitor-dir .scratch/cli-resource-monitor --output-dir .scratch/cli-archives
+          node scripts/smoke-cli-archive.mjs .scratch/cli-archives/styal-* "$RELEASE_VERSION"
+      - name: Remove macOS signing credentials
+        if: always() && matrix.platform == 'mac' && inputs.sign_macos
+        shell: bash
+        run: |
+          security delete-keychain "$PWD/.scratch/cli-signing/build.keychain-db" || true
+          rm -rf .scratch/cli-signing
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cli-archive-${{ matrix.key }}
+          path: .scratch/cli-archives/*
+          if-no-files-found: error
+
+  checksums:
+    name: Verify archive inventory and hash final bytes
+    needs: archive
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: cli-archive-*
+          merge-multiple: true
+          path: cli-archives
+      - name: Write checksums
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          cd cli-archives
+          files=()
+          for key in darwin-arm64 linux-x64 linux-arm64 win32-x64 win32-arm64; do
+            extension=tar.gz
+            [[ "$key" == win32-* ]] && extension=zip
+            file="styal-$RELEASE_VERSION-$key.$extension"
+            test -f "$file"
+            files+=("$file")
+          done
+          sha256sum "${files[@]}" > SHA256SUMS
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cli-archive-checksums
+          path: cli-archives/SHA256SUMS
+          if-no-files-found: error

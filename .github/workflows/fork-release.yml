@@ -137,6 +137,16 @@ jobs:
       sign_macos: true
     secrets: inherit
 
+  build_cli_archives:
+    name: Build standalone CLI archives
+    needs: prepare
+    uses: ./.github/workflows/fork-cli-archives.yml
+    with:
+      ref: ${{ needs.prepare.outputs.ref }}
+      version: ${{ needs.prepare.outputs.version }}
+      sign_macos: true
+    secrets: inherit
+
   build_cli:
     name: Build and publish CLI
     needs: [prepare, build_desktop]
@@ -152,8 +162,8 @@ jobs:
 
   publish:
     name: Publish stable release
-    needs: [prepare, build_desktop, build_cli]
-    if: needs.build_desktop.result == 'success' && needs.build_cli.result == 'success'
+    needs: [prepare, build_desktop, build_cli, build_cli_archives]
+    if: needs.build_desktop.result == 'success' && needs.build_cli.result == 'success' && needs.build_cli_archives.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -169,6 +179,13 @@ jobs:
         uses: actions/download-artifact@v5
         with:
           pattern: desktop-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Download standalone CLI archives and checksums
+        uses: actions/download-artifact@v8
+        with:
+          pattern: cli-archive-*
           merge-multiple: true
           path: release-assets
 

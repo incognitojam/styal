@@ -580,14 +580,18 @@ features:
   - id: fork-distribution-identity
     title: Keep fork builds distinctly identifiable
     status: maintained
-    prs: [3, 27, 29, 49, 56, 235, 242, 243, 244, 245, 281, 287, 302]
+    prs: [3, 27, 29, 49, 56, 235, 242, 243, 244, 245, 281, 287, 302, 335]
     invariants:
       - Packaged builds ship as styal with their own application identifier, URL scheme, product name, and About-panel identity instead of presenting as upstream T3 Code.
       - Electron's application name is a stable identity slug rather than a display string, so OS credential storage keys stay in the same namespace as the user-data directory they protect.
       - styal owns its base directory, user-data directory, and URL scheme, so it installs and runs alongside upstream T3 Code without sharing state.
       - Windows fork packages use styal-specific package and uninstall identities, never block on a running T3 Code process, and remain visibly distinguishable across Alpha and Nightly builds.
+      - Standalone CLI archives carry the styal executable, release artwork, license, and native resource monitor, and run with isolated styal state without requiring a host Node installation.
       - Canonical brand asset paths and icon geometry stay shared across desktop, mobile configuration, web packaging, and export tooling so production and nightly artwork cannot silently diverge.
     implementation_paths:
+      - .github/workflows/fork-cli-archives.yml
+      - apps/server/vite.config.ts
+      - scripts/build-cli-archive.ts
       - apps/desktop/package.json
       - apps/desktop/resources/installer.nsh
       - apps/desktop/src/app/DesktopAssets.ts
@@ -613,6 +617,8 @@ features:
       - scripts/export-brand-icons.ts
       - scripts/lib/brand-assets.ts
     tests:
+      - scripts/smoke-cli-archive.mjs
+      - scripts/lib/cli-external-packages.test.ts
       - apps/desktop/src/app/DesktopAppIdentity.test.ts
       - apps/desktop/src/app/DesktopAssets.test.ts
       - apps/web/src/branding.test.ts

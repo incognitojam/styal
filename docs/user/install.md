@@ -4,7 +4,8 @@ styal is a web and desktop GUI for running coding agents on your machine.
 
 ## Requirements
 
-Node.js `^22.16 || ^23.11 || >=24.10` on the machine that runs the styal server.
+For npm installation, Node.js `^22.16 || ^23.11 || >=24.10` on the machine that runs
+the styal server. Standalone archives include their own runtime.
 
 On Linux, npm builds the CLI's native terminal dependency during installation. Install
 Python 3, Make, and a C++ compiler first. On Debian or Ubuntu:
@@ -34,6 +35,18 @@ styal --help
 
 The package is `@styal/cli`; the installed command is `styal`. Nightly releases use
 `@nightly`. Use `@latest` for stable releases once one is available.
+
+## Standalone archive
+
+Download the `styal-<version>-<platform>-<arch>` archive for your machine from
+[GitHub Releases](https://github.com/incognitojam/styal/releases), alongside its
+`SHA256SUMS` file. Extract the whole archive and run `./styal serve` (`styal.exe serve`
+on Windows) from the extracted directory. Keep the executable with its accompanying
+folders; copying the executable alone is insufficient.
+
+Archives support Apple Silicon Macs, Linux x64 and arm64, and Windows x64 and arm64.
+Intel Macs are unsupported. The server needs neither a separate Node installation
+nor a compiler. Your provider CLIs may still require Node.
 
 ## Desktop App
 
