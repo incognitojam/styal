@@ -9,6 +9,18 @@ import * as GitHubPullRequestCli from "./GitHubPullRequestCli.ts";
 import { gitHubViewerPermissions, loginAvatarUrl, make } from "./GitHubPullRequestProvider.ts";
 import type { GitHubReviewThreadComments } from "./gitHubPullRequestJson.ts";
 
+const coreFields = {
+  checksTruncated: false,
+  comparison: { behindBy: 0, viewerCanUpdate: true },
+  viewerAccess: {
+    canWrite: true,
+    canTriage: true,
+    canUpdate: true,
+    didAuthor: false,
+    mergeCapabilities: { merge: true, squash: true, rebase: true },
+  },
+};
+
 it.effect("maps credential verification failures without relabeling operation failures", () =>
   Effect.gen(function* () {
     let verificationFails = true;
@@ -251,7 +263,7 @@ describe("gitHubViewerPermissions", () => {
     ]);
   });
 
-  it.effect("uses the small viewer-access read for core permissions", () =>
+  it.effect("uses the permissions carried by the core read without a second request", () =>
     Effect.gen(function* () {
       const provider = yield* make;
       const detail = yield* provider.getChangeRequest({
@@ -314,6 +326,9 @@ describe("gitHubViewerPermissions", () => {
         Layer.mock(GitHubPullRequestCli.GitHubPullRequestCli)({
           getPullRequestDetail: () =>
             Effect.succeed({
+              ...coreFields,
+              comparison: null,
+              viewerAccess: { ...coreFields.viewerAccess, canWrite: false, canTriage: false },
               authorId: null,
               number: 7,
               title: "Pull request 7",
@@ -323,9 +338,9 @@ describe("gitHubViewerPermissions", () => {
               headRepositoryOwner: null,
               headBranch: "feat/page",
               baseBranch: "main",
-              state: "open",
+              state: "open" as const,
               isDraft: false,
-              mergeability: "mergeable",
+              mergeability: "mergeable" as const,
               reviewDecision: null,
               additions: 1,
               deletions: 1,
@@ -342,32 +357,29 @@ describe("gitHubViewerPermissions", () => {
               checks: [
                 {
                   name: "build",
-                  status: "success",
+                  status: "success" as const,
                   description: null,
                   url: "https://example.test/checks/build",
                 },
               ],
               comments: [],
               commits: [],
-            }),
-          getRepositoryAccess: () =>
-            GitHubCli.PinnedGitHubCredential.pipe(
-              Effect.map((credential) => ({
-                canWrite: false,
-                mergeCapabilities: {
-                  merge: true,
-                  squash: credential?.credentialFingerprint !== "restricted",
-                  rebase: true,
-                },
-              })),
+            }).pipe(
+              Effect.flatMap((detail) =>
+                GitHubCli.PinnedGitHubCredential.pipe(
+                  Effect.map((credential) => ({
+                    ...detail,
+                    viewerAccess: {
+                      ...detail.viewerAccess,
+                      mergeCapabilities: {
+                        ...detail.viewerAccess.mergeCapabilities,
+                        squash: credential?.credentialFingerprint !== "restricted",
+                      },
+                    },
+                  })),
+                ),
+              ),
             ),
-          getViewerAccess: () =>
-            Effect.succeed({
-              canWrite: false,
-              canTriage: false,
-              canUpdate: true,
-              didAuthor: false,
-            }),
           getRequiredChecks: () =>
             Effect.succeed([{ name: "build", url: "https://example.test/checks/build" }]),
           getBranchPolicy: () =>
@@ -419,6 +431,7 @@ describe("gitHubViewerPermissions", () => {
           getBranchPolicy: () => Effect.succeed({ requiredChecks: [], allowedMergeMethods: null }),
           getPullRequestDetail: () =>
             Effect.succeed({
+              ...coreFields,
               authorId: null,
               number: 7,
               title: "Pull request 7",
@@ -467,13 +480,14 @@ describe("gitHubViewerPermissions", () => {
             ]),
           getPullRequestBaseComparison: () =>
             Effect.succeed({ behindBy: 0, viewerCanUpdate: true }),
-          getRepositoryAccess: () =>
+          getViewerAccess: () =>
             Effect.succeed({
               canWrite: true,
+              canTriage: true,
+              canUpdate: true,
+              didAuthor: false,
               mergeCapabilities: { merge: true, squash: true, rebase: true },
             }),
-          getViewerAccess: () =>
-            Effect.succeed({ canWrite: true, canTriage: true, canUpdate: true, didAuthor: false }),
         }),
       ),
     ),
@@ -481,6 +495,7 @@ describe("gitHubViewerPermissions", () => {
 });
 
 const openDetail = {
+  ...coreFields,
   authorId: null,
   number: 7,
   title: "Pull request 7",
@@ -554,29 +569,51 @@ describe("core detail author avatars", () => {
           Layer.mock(GitHubPullRequestCli.GitHubPullRequestCli)({
             getPullRequestDetail: () =>
               Effect.succeed({ ...openDetail, author, isCrossRepository: false }),
-            getPullRequestBaseComparison: () =>
-              Effect.succeed({ behindBy: 0, viewerCanUpdate: true }),
             getRequiredChecks: () => Effect.succeed([]),
             getBranchPolicy: () =>
               Effect.succeed({ requiredChecks: [], allowedMergeMethods: null }),
-            getRepositoryAccess: () =>
-              Effect.succeed({
-                canWrite: true,
-                mergeCapabilities: { merge: true, squash: true, rebase: true },
-              }),
-            getViewerAccess: () =>
-              Effect.succeed({
-                canWrite: true,
-                canTriage: true,
-                canUpdate: true,
-                didAuthor: false,
-              }),
           }),
         ),
       ),
     );
   }
 });
+
+it.effect(
+  "uses the core comparison and permissions while preserving workflow approval checks",
+  () =>
+    Effect.gen(function* () {
+      const provider = yield* make.pipe(
+        Effect.provide(
+          Layer.mock(GitHubPullRequestCli.GitHubPullRequestCli)({
+            getPullRequestDetail: () =>
+              Effect.succeed({ ...openDetail, comparison: { behindBy: 2, viewerCanUpdate: true } }),
+            listWorkflowRunsRequiringApproval: () =>
+              Effect.succeed([{ id: 123, name: "tests", url: "https://example.com/runs/123" }]),
+            getRequiredChecks: () => Effect.succeed([]),
+            getBranchPolicy: () =>
+              Effect.succeed({ requiredChecks: [], allowedMergeMethods: null }),
+          }),
+        ),
+      );
+
+      const detail = yield* provider.getChangeRequest({
+        cwd: "/w",
+        repository: "acme/web",
+        host: "github.com",
+        number: 7,
+      });
+
+      expect(detail.behindBy).toBe(2);
+      expect(detail.workflowApprovalsRequired).toBe(1);
+      expect(detail.checks).toContainEqual({
+        name: "tests",
+        status: "action-required",
+        description: "A maintainer must approve this workflow before it can run.",
+        url: "https://example.com/runs/123",
+      });
+    }),
+);
 
 it.effect("does not classify same-repository gates as fork workflow approvals", () =>
   Effect.gen(function* () {
@@ -599,13 +636,14 @@ it.effect("does not classify same-repository gates as fork workflow approvals", 
         getPullRequestBaseComparison: () => Effect.succeed({ behindBy: 0, viewerCanUpdate: true }),
         listWorkflowRunsRequiringApproval: () =>
           Effect.die("same-repository pull requests must not probe fork workflow approvals"),
-        getRepositoryAccess: () =>
+        getViewerAccess: () =>
           Effect.succeed({
             canWrite: true,
+            canTriage: true,
+            canUpdate: true,
+            didAuthor: false,
             mergeCapabilities: { merge: true, squash: true, rebase: true },
           }),
-        getViewerAccess: () =>
-          Effect.succeed({ canWrite: true, canTriage: true, canUpdate: true, didAuthor: false }),
       }),
     ),
   ),
@@ -648,13 +686,14 @@ it.effect("keeps an unsafe workflow approval scope visible as unknown", () =>
               limit: 1_000,
             }),
           ),
-        getRepositoryAccess: () =>
+        getViewerAccess: () =>
           Effect.succeed({
             canWrite: true,
+            canTriage: true,
+            canUpdate: true,
+            didAuthor: false,
             mergeCapabilities: { merge: true, squash: true, rebase: true },
           }),
-        getViewerAccess: () =>
-          Effect.succeed({ canWrite: true, canTriage: true, canUpdate: true, didAuthor: false }),
       }),
     ),
   ),
@@ -689,13 +728,14 @@ it.effect("propagates workflow discovery rate limits", () =>
               cause: new Error("rate limited"),
             }),
           ),
-        getRepositoryAccess: () =>
+        getViewerAccess: () =>
           Effect.succeed({
             canWrite: true,
+            canTriage: true,
+            canUpdate: true,
+            didAuthor: false,
             mergeCapabilities: { merge: true, squash: true, rebase: true },
           }),
-        getViewerAccess: () =>
-          Effect.succeed({ canWrite: true, canTriage: true, canUpdate: true, didAuthor: false }),
       }),
     ),
   ),
@@ -725,7 +765,13 @@ describe("getViewerPermissions", () => {
           getViewerAccess: () =>
             Effect.sync(() => {
               accessReads++;
-              return { canWrite: true, canTriage: true, canUpdate: true, didAuthor: false };
+              return {
+                canWrite: true,
+                canTriage: true,
+                canUpdate: true,
+                didAuthor: false,
+                mergeCapabilities: { merge: true, squash: true, rebase: true },
+              };
             }),
         }),
       ),
@@ -742,7 +788,13 @@ describe("getViewerPermissions", () => {
       getPullRequestDetail: () => Effect.succeed(openDetail),
       getPullRequestBaseComparison: () => comparison,
       getViewerAccess: () =>
-        Effect.succeed({ canWrite: true, canTriage: true, canUpdate: true, didAuthor: false }),
+        Effect.succeed({
+          canWrite: true,
+          canTriage: true,
+          canUpdate: true,
+          didAuthor: false,
+          mergeCapabilities: { merge: true, squash: true, rebase: true },
+        }),
     });
 
   it.effect("offers update-branch when the comparison grants it", () =>
@@ -788,7 +840,13 @@ describe("getViewerPermissions", () => {
           getViewerAccess: (input) =>
             Effect.sync(() => {
               viewerAllowReserve = input.allowReserve;
-              return { canWrite: true, canTriage: true, canUpdate: true, didAuthor: false };
+              return {
+                canWrite: true,
+                canTriage: true,
+                canUpdate: true,
+                didAuthor: false,
+                mergeCapabilities: { merge: true, squash: true, rebase: true },
+              };
             }),
         }),
       ),
@@ -823,7 +881,13 @@ describe("getViewerPermissions", () => {
               }),
             ),
           getViewerAccess: () =>
-            Effect.succeed({ canWrite: true, canTriage: true, canUpdate: true, didAuthor: false }),
+            Effect.succeed({
+              canWrite: true,
+              canTriage: true,
+              canUpdate: true,
+              didAuthor: false,
+              mergeCapabilities: { merge: true, squash: true, rebase: true },
+            }),
         }),
       ),
     ),

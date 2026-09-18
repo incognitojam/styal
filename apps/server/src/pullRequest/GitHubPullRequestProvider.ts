@@ -1,7 +1,4 @@
-import * as Cache from "effect/Cache";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
 import type {
   PullRequestActor,
   PullRequestCapabilities,
@@ -11,7 +8,6 @@ import type {
 } from "@t3tools/contracts";
 
 import * as GitHubPullRequestCli from "./GitHubPullRequestCli.ts";
-import { PinnedGitHubCredential } from "../sourceControl/GitHubCli.ts";
 import {
   PullRequestProviderError,
   type PullRequestProviderFailure,
@@ -195,35 +191,6 @@ const rendersEmpty = (body: string): boolean =>
 export const make = Effect.gen(function* () {
   const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
 
-  const repositoryAccessCache = yield* Cache.makeWith(
-    (key: string) => {
-      const [cwd, repository, host] = JSON.parse(key) as [string, string, string];
-      return cli.getRepositoryAccess({ cwd, repository, host });
-    },
-    {
-      capacity: 128,
-      timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.minutes(10) : Duration.zero),
-    },
-  );
-  const getRepositoryAccess = (input: {
-    readonly cwd: string;
-    readonly repository: string;
-    readonly host: string;
-  }) =>
-    PinnedGitHubCredential.pipe(
-      Effect.flatMap((credential) =>
-        Cache.get(
-          repositoryAccessCache,
-          JSON.stringify([
-            input.cwd,
-            input.repository,
-            input.host,
-            credential?.credentialFingerprint ?? null,
-          ]),
-        ),
-      ),
-    );
-
   const fail = (operation: string) => (error: GitHubPullRequestCli.GitHubPullRequestCliError) =>
     new PullRequestProviderError({
       provider: "github",
@@ -342,6 +309,9 @@ export const make = Effect.gen(function* () {
     getChangeRequestStack: (input) =>
       cli.getPullRequestStack(input).pipe(Effect.mapError(fail("getChangeRequestStack"))),
 
+    getChangeRequestPreview: (input) =>
+      cli.getPullRequestPreview(input).pipe(Effect.mapError(fail("getChangeRequestPreview"))),
+
     getChangeRequest: (input) =>
       Effect.all(
         [
@@ -349,18 +319,6 @@ export const make = Effect.gen(function* () {
             Effect.flatMap((pullRequest) =>
               Effect.all(
                 {
-                  // Only an open pull request can be behind anything worth saying so about, and
-                  // only one whose head repository is known can be compared at all. A failed
-                  // comparison is unknown: the banner is an offer, never a blocker.
-                  comparison:
-                    pullRequest.state !== "open" || pullRequest.headRepositoryOwner === null
-                      ? Effect.succeed(null)
-                      : cli
-                          .getPullRequestBaseComparison({
-                            ...input,
-                            headRef: `${pullRequest.headRepositoryOwner}:${pullRequest.headBranch}`,
-                          })
-                          .pipe(Effect.orElseSucceed(() => null)),
                   // Policy is per base branch, so it follows detail. Failure means no synthetic
                   // rows and no narrowing of the strategies on offer; the independently reported
                   // required-check read can still decorate runs.
@@ -372,7 +330,7 @@ export const make = Effect.gen(function* () {
                       baseBranch: pullRequest.baseBranch,
                     })
                     .pipe(Effect.orElseSucceed(() => null)),
-                  // A fork workflow awaiting approval is absent from the normal checks rollup.
+                  // Fork workflows awaiting approval are absent from the normal check rollup.
                   workflowApprovals:
                     pullRequest.state !== "open" || pullRequest.isCrossRepository !== true
                       ? Effect.succeed({
@@ -406,67 +364,62 @@ export const make = Effect.gen(function* () {
                               }),
                             ),
                 },
-                { concurrency: 3 },
+                { concurrency: 2 },
               ).pipe(Effect.map((metadata) => ({ pullRequest, ...metadata }))),
             ),
           ),
-          getRepositoryAccess({
-            cwd: input.cwd,
-            repository: input.repository,
-            host: input.host,
-          }),
-          // A small permissions query replaces the deeply paginated review-thread walk on the
-          // core path. Writes ask again immediately before mutating, so this is presentation.
-          cli.getViewerAccess(input),
           // Required-ness enriches the checks but must not blank the whole detail on a host whose
           // GraphQL schema predates it. Null means unknown; an empty array is GitHub saying none.
           cli.getRequiredChecks(input).pipe(Effect.orElseSucceed(() => null)),
         ],
-        { concurrency: 4 },
+        { concurrency: 2 },
       ).pipe(
         Effect.mapError(fail("getChangeRequest")),
         Effect.map(
-          ([detail, repository, viewerAccess, requiredChecks]): ProviderChangeRequestDetail => ({
-            ...detail.pullRequest,
-            author: withAvatar(detail.pullRequest.author, new Map<string, string>(), input.host),
+          ([
+            { pullRequest, branchPolicy, workflowApprovals },
+            requiredChecks,
+          ]): ProviderChangeRequestDetail => ({
+            ...pullRequest,
+            author: withAvatar(pullRequest.author, new Map<string, string>(), input.host),
             checks: withWorkflowApprovals(
               applyRequiredCheckPolicy(
                 requiredChecks === null
-                  ? detail.pullRequest.checks
-                  : markRequiredChecks(detail.pullRequest.checks, requiredChecks),
-                detail.branchPolicy?.requiredChecks ?? [],
+                  ? pullRequest.checks
+                  : markRequiredChecks(pullRequest.checks, requiredChecks),
+                branchPolicy?.requiredChecks ?? [],
               ),
-              detail.workflowApprovals.runs,
-              detail.workflowApprovals.unavailable,
+              workflowApprovals.runs,
+              workflowApprovals.unavailable,
             ),
-            ...(detail.workflowApprovals.unavailable
+            ...(workflowApprovals.unavailable
               ? {}
-              : { workflowApprovalsRequired: detail.workflowApprovals.runs.length }),
-            reviewers: detail.pullRequest.reviewRequestLogins.map((login) => ({
+              : { workflowApprovalsRequired: workflowApprovals.runs.length }),
+            reviewers: pullRequest.reviewRequestLogins.map((login) => ({
               login,
               name: null,
               avatarUrl: null,
             })),
             mergeCapabilities: narrowMergeCapabilities(
-              repository.mergeCapabilities,
-              detail.branchPolicy?.allowedMergeMethods ?? null,
+              pullRequest.viewerAccess.mergeCapabilities,
+              branchPolicy?.allowedMergeMethods ?? null,
             ),
-            ...(detail.branchPolicy?.requiresUpToDateBranch === undefined
+            ...(branchPolicy?.requiresUpToDateBranch === undefined
               ? {}
-              : { requiresUpToDateBranch: detail.branchPolicy.requiresUpToDateBranch }),
+              : { requiresUpToDateBranch: branchPolicy.requiresUpToDateBranch }),
             viewerPermissions: gitHubViewerPermissions({
-              ...viewerAccess,
-              canUpdateBranch: detail.comparison?.viewerCanUpdate === true,
+              ...pullRequest.viewerAccess,
+              canUpdateBranch: pullRequest.comparison?.viewerCanUpdate === true,
             }),
             baseComparison:
-              detail.comparison === null || detail.comparison.behindBy === null
+              pullRequest.comparison === null || pullRequest.comparison.behindBy === null
                 ? "unknown"
-                : detail.comparison.behindBy > 0
+                : pullRequest.comparison.behindBy > 0
                   ? "behind"
                   : "up-to-date",
-            ...(detail.comparison?.behindBy == null
+            ...(pullRequest.comparison?.behindBy == null
               ? {}
-              : { behindBy: detail.comparison.behindBy }),
+              : { behindBy: pullRequest.comparison.behindBy }),
           }),
         ),
       ),
