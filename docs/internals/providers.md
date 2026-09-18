@@ -51,6 +51,27 @@ probes, respect the `enableProviderUpdateChecks` setting, and never fail a provi
 Codex and Claude drivers apply the classification to every snapshot with `applyModelManifest`;
 driver kinds absent from the manifest have no legacy concept.
 
+## Process environment
+
+Every driver builds its process environment with `mergeProviderInstanceEnvironment`
+(`apps/server/src/provider/ProviderInstanceEnvironment.ts`), and uses the result for sessions, text
+generation, and status probes alike. The base is the server's environment with its own variables
+withheld: `T3CODE_*`, `STYAL_HOME`, the service launcher context, Electron's runtime flags, and the
+dev web build's `VITE_*` and `PORT`. Agents run arbitrary commands, including other styal servers.
+One that inherits those adopts the running server's identity: it binds the same port, opens the same
+state directory, and replaces the machine-wide Tailscale Serve mapping, then removes it on exit.
+
+The rule lives in `apps/server/src/serverOwnedEnvironment.ts` and terminals apply the same one. It
+is a blocklist on purpose, since an allowlist silently drops proxies, toolchain variables, and
+display settings the user's tools need.
+
+Variables addressed to the child are layered on afterward and survive: a provider instance's
+configured environment, the per-session workspace variables from `WorkspacePortAllocator`, and the
+bearer token Codex uses for the styal MCP server. `T3CODE_CODEX_LAUNCH_ARGS` is the one inherited
+`T3CODE_*` name that passes through, because the Codex adapter reads it back out of this
+environment. A new server setting needs no change here; a new server-prefixed variable meant for
+providers must be added to that pass-through.
+
 ## Attachment access
 
 The server stores uploaded attachments in its attachment directory, outside the project workspace.
