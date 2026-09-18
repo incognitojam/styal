@@ -106,6 +106,7 @@ const testLayer = (
       Layer.succeed(ProjectionThreadActivities.ProjectionThreadActivityRepository, {
         upsert: () => Effect.void,
         listByThreadId: () => Effect.succeed([]),
+        listUserInputLifecycleByThreadId: () => Effect.succeed([]),
         listTaskLifecycleByTaskId: () => Effect.succeed([]),
         listUnfinishedSetupRuns: () => Effect.succeed([]),
         deleteByThreadId: () => Effect.void,
