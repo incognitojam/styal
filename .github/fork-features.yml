@@ -763,7 +763,7 @@ features:
   - id: github-outage-status
     title: Provider outage status in the sidebar
     status: maintained
-    prs: [14, 136, 180, 183, 196, 200, 212, 277, 280]
+    prs: [14, 136, 180, 183, 196, 200, 212, 277, 280, 373]
     invariants:
       - Enabled clients distinguish GitHub, Claude, and OpenAI incidents from missing or malformed status responses.
       - Sidebar notices are scoped to relevant projects or providers and remain readable without blocking ordinary work.
