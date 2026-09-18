@@ -295,6 +295,8 @@ describe.each([
           rightPanelFocus: false,
           previewFocus: false,
           previewOpen: false,
+          isWeb: true,
+          isDesktop: false,
         })}
       />,
     );
