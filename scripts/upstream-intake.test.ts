@@ -276,6 +276,10 @@ describe("upstream intake audit", () => {
     assert.include(verifyCi?.run ?? "", '--commit "$CANDIDATE_SHA"');
     assert.include(verifyCi?.run ?? "", '"Fork Intake Audit"');
     assert.include(verifyCi?.run ?? "", '"Fork Test (Workspace)"');
+    assert.include(
+      verifyCi?.run ?? "",
+      "$GITHUB_REPOSITORY/compare/main...${GITHUB_REPOSITORY/\\//:}:$CANDIDATE_BRANCH",
+    );
 
     assert.equal(workflow.jobs.promote.needs, "validate");
     assert.equal(workflow.jobs.promote.environment, "upstream-intake-manual");
