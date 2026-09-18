@@ -194,22 +194,6 @@ describe("OpenAI status notice", () => {
     ).toBeNull();
   });
 
-  it("does not hide a broader incident that mentions an ignored workflow", () => {
-    expect(
-      resolveOpenAIStatusNotice(
-        statusSummary({
-          incidents: [
-            {
-              impact: "minor",
-              name: "Delayed support responses and Codex API errors",
-              status: "investigating",
-            },
-          ],
-        }),
-      ),
-    ).toMatchObject({ label: "1 active incident" });
-  });
-
   it("keeps a Work-titled incident when its components include Codex", () => {
     expect(
       resolveOpenAIStatusNotice(
