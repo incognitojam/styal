@@ -178,7 +178,13 @@ const stageRuntimeExternals = Effect.fn("stageRuntimeExternals")(function* (inpu
   }
   const dependencies = {
     ...selectCliRuntimeExternalDependencies(serverDependencies),
-    ...resolveFffNativeDependencies(input.platform, input.arch, fffNodeVersion),
+    // The embedded Linux Node runtime targets glibc. A required musl package
+    // would make npm reject a subsequent install on these same machines.
+    ...Object.fromEntries(
+      Object.entries(
+        resolveFffNativeDependencies(input.platform, input.arch, fffNodeVersion),
+      ).filter(([name]) => !name.endsWith("-musl")),
+    ),
   };
   const patchedDependencies = createStagePatchedDependencies(
     workspace.patchedDependencies ?? {},
@@ -205,6 +211,13 @@ const stageRuntimeExternals = Effect.fn("stageRuntimeExternals")(function* (inpu
         patchedDependencies,
         overrides: resolveCatalogDependencies(workspace.overrides ?? {}, catalog, "apps/server"),
       }),
+      // Desktop Windows staging also carries Linux modules for its fallback.
+      // Each CLI archive carries only dependencies its own executable loads.
+      supportedArchitectures: {
+        os: [input.platform === "mac" ? "darwin" : input.platform === "win" ? "win32" : "linux"],
+        cpu: [input.arch],
+        ...(input.platform === "linux" ? { libc: ["glibc"] } : {}),
+      },
       nodeLinker: "hoisted",
     }),
   );

@@ -69,8 +69,8 @@ const preflight = (protocol) =>
       String(protocol),
     ),
   );
-NodeAssert.equal(preflight(2).status, "blocked");
-NodeAssert.equal(preflight(3).status, "ready");
+NodeAssert.equal(preflight(3).status, "blocked");
+NodeAssert.equal(preflight(4).status, "ready");
 runCli("project", "add", project, "--title", "CLI verification", "--base-dir", state);
 
 // Exercise the native terminal from the extracted archive, not the workspace.
@@ -107,11 +107,54 @@ await new Promise((resolve, reject) =>
   listener.close((error) => (error ? reject(error) : resolve())),
 );
 const origin = `http://127.0.0.1:${port}`;
-async function exerciseServer(iteration) {
+async function exerciseServer(iteration, managed = false) {
+  // Runtime state is persisted after HTTP activation. Observe its atomic rename
+  // rather than racing the earlier pairing announcement or polling the disk.
+  let resolveRuntimeState;
+  let runtimeStateDeadline;
+  const runtimeStateReady = new Promise((resolve, reject) => {
+    resolveRuntimeState = resolve;
+    runtimeStateDeadline = setTimeout(
+      () => reject(new Error("Server did not persist its runtime state.")),
+      60_000,
+    );
+  });
+  const runtimeWatcher = NodeFS.watch(NodePath.join(state, "userdata"), (_event, filename) => {
+    if (String(filename) !== "server-runtime.json") return;
+    try {
+      resolveRuntimeState(
+        JSON.parse(
+          NodeFS.readFileSync(NodePath.join(state, "userdata/server-runtime.json"), "utf8"),
+        ),
+      );
+    } catch {
+      /* Atomic replacement can emit a removal event before the rename. */
+    }
+  });
   const server = NodeChildProcess.spawn(
     cli,
-    ["serve", "--host", "127.0.0.1", "--port", String(port), "--no-browser", "--base-dir", state],
-    { cwd: project, env, stdio: ["ignore", "pipe", "pipe"] },
+    managed
+      ? ["__service-launcher"]
+      : [
+          "serve",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          String(port),
+          "--no-browser",
+          "--base-dir",
+          state,
+        ],
+    {
+      cwd: project,
+      env: {
+        ...env,
+        T3CODE_PORT: String(port),
+        T3CODE_HOST: "127.0.0.1",
+        T3CODE_NO_BROWSER: "true",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
   );
   let output = "";
   const exited = NodeEvents.once(server, "exit");
@@ -140,6 +183,18 @@ async function exerciseServer(iteration) {
         reject(new Error(`Server exited before readiness: ${code}`));
       });
     });
+    // The remote bootstrap uses these helpers when no host Node is installed.
+    const runtimeState = await runtimeStateReady;
+    NodeAssert.equal(runtimeState.serviceManaged, managed);
+    NodeAssert.equal(
+      runCli("__ssh-helper", "runtime-port", NodePath.join(state, "userdata/server-runtime.json")),
+      `${runtimeState.pid} ${port}`,
+    );
+    const portFile = NodePath.join(root, "ssh-port");
+    NodeFS.writeFileSync(portFile, String(port));
+    const availablePort = Number(runCli("__ssh-helper", "pick-port", portFile, String(port), "20"));
+    NodeAssert.ok(availablePort > port && availablePort < port + 20);
+    runCli("__ssh-helper", "wait-ready", String(port), "2000", "1000");
     const index = await fetch(origin);
     NodeAssert.equal(index.status, 200);
     NodeAssert.match(await index.text(), /<html/i);
@@ -170,6 +225,8 @@ async function exerciseServer(iteration) {
       `Pass ${iteration}: bundled web, matching version, pairing, authenticated project snapshot.`,
     );
   } finally {
+    clearTimeout(runtimeStateDeadline);
+    runtimeWatcher.close();
     server.kill("SIGTERM");
     const deadline = setTimeout(() => server.kill("SIGKILL"), 10_000);
     try {
@@ -182,6 +239,16 @@ async function exerciseServer(iteration) {
 }
 await exerciseServer(1);
 await exerciseServer(2);
+if (platform !== "win32") {
+  const versionDir = NodePath.join(state, "runtime/styal-executable/versions", expectedVersion);
+  NodeFS.cpSync(install, versionDir, { recursive: true });
+  NodeFS.writeFileSync(NodePath.join(versionDir, ".install-complete"), `${expectedVersion}\n`);
+  NodeFS.writeFileSync(
+    NodePath.join(state, "runtime/service-state.json"),
+    JSON.stringify({ protocol: 4, activeVersion: expectedVersion }),
+  );
+  await exerciseServer(3, true);
+}
 NodeAssert.ok(NodeFS.readFileSync(NodePath.join(state, "userdata/state.sqlite")).length > 0);
 console.log(
   "CLI archive verified: install, executable, launcher compatibility, native terminal, pairing, and persistence across restart.",

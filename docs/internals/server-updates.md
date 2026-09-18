@@ -10,9 +10,11 @@ edits its service definition or durable service state.
 
 The service files under `<baseDir>/runtime` are:
 
-- `service-launcher.mjs`, the stable process selected by the service manager;
 - `service-state.json`, the launcher's durable selection state;
-- `styal-cli/versions/<version>`, immutable exact-version npm installs.
+- `styal-executable/versions/<version>`, immutable verified release archives.
+
+The service manager selects an archive's `styal __service-launcher`. That process
+spawns the selected archive executable directly; neither needs a host Node runtime.
 
 The launcher is the only runtime writer of `service-state.json`. `styal service install` and
 `styal service update` may replace the launcher and state while the unit is stopped. Server children
@@ -29,7 +31,7 @@ Every write uses same-directory replacement plus file and directory fsync.
 
 ## Remote Update
 
-1. The active server installs `@styal/cli@<target>` into a unique staging directory.
+1. The active server downloads the exact styal release archive, verifies its SHA-256 against the release checksum file, and extracts it into a unique staging directory.
 2. The target runs `__service-preflight` and verifies that the stable launcher supports its update
    protocol.
 3. The staging directory is renamed to its immutable version path only after preflight succeeds.
@@ -119,16 +121,24 @@ default quit would bypass the update handoff.
 
 ## CLI Package Identity
 
-The launcher and installer select `@styal/cli` from
-`runtime/styal-cli/versions/<version>/node_modules/@styal/cli/dist/bin.mjs`.
-The directory is separate from legacy `runtime/versions/<version>` installs so a
-matching version cannot reuse or remove a running `t3` package.
+The launcher and installer select `runtime/styal-executable/versions/<version>/styal`
+(`styal.exe` on Windows). Archives come from `incognitojam/styal`. The directory is
+separate from both legacy `runtime/versions` and protocol 3's `runtime/styal-cli`
+installs, so a matching version cannot reuse or remove an old npm runtime.
 
-Launcher protocol 3 requires this layout. Older launchers fail preflight and need
-one local `npx @styal/cli@<version> service update`, which prepares the new runtime
-before stopping the service and replacing its launcher. Database and project paths
-are unchanged. Remote rollback operates between runtimes using the new layout;
-the one-time launcher migration is a local operation.
+Launcher protocol 4 requires this executable layout. Protocol 3's integer was fork-local:
+upstream also used 3 for a different layout, so their numbers are not interchangeable.
+Older launchers fail preflight and need one local
+`npx @styal/cli@<version> service update`. The npm launcher retains `dist/bin.mjs`
+so old updaters can run that preflight and display its migration guidance. It must
+remain until the supported npm-based installations have migrated.
+
+The local command prepares the archive before stopping the service. If activation
+fails, it restores the stopped service's state and unit definition, reloads the
+service manager configuration, and attempts recovery. Migration cannot defer the
+restart while an older launcher is running. Protocol 4 updates may defer restart;
+`.restart-pending` keeps status accurate until the new launcher starts. Data paths
+and the remote database rollback boundary are unchanged.
 
 Environment descriptors advertise `serverPackageName`. Clients offer the local
 service migration command for older boot services with an absent or different

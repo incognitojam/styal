@@ -9,6 +9,10 @@ on:
       version:
         required: true
         type: string
+      target:
+        description: all or linux-x64 (for standalone Windows builds)
+        default: all
+        type: string
       sign_macos:
         default: false
         type: boolean
@@ -68,13 +72,7 @@ jobs:
     timeout-minutes: 60
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - { key: darwin-arm64, platform: mac, arch: arm64, runner: macos-15 }
-          - { key: linux-x64, platform: linux, arch: x64, runner: ubuntu-24.04 }
-          - { key: linux-arm64, platform: linux, arch: arm64, runner: ubuntu-24.04-arm }
-          - { key: win32-x64, platform: win, arch: x64, runner: windows-2025 }
-          - { key: win32-arm64, platform: win, arch: arm64, runner: windows-11-arm }
+      matrix: ${{ fromJSON(inputs.target == 'linux-x64' && '{"include":[{"key":"linux-x64","platform":"linux","arch":"x64","runner":"ubuntu-24.04"}]}' || '{"include":[{"key":"darwin-arm64","platform":"mac","arch":"arm64","runner":"macos-15"},{"key":"linux-x64","platform":"linux","arch":"x64","runner":"ubuntu-24.04"},{"key":"linux-arm64","platform":"linux","arch":"arm64","runner":"ubuntu-24.04-arm"},{"key":"win32-x64","platform":"win","arch":"x64","runner":"windows-2025"},{"key":"win32-arm64","platform":"win","arch":"arm64","runner":"windows-11-arm"}]}') }}
     env:
       T3CODE_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
       T3CODE_CLERK_JWT_TEMPLATE: ${{ vars.CLERK_JWT_TEMPLATE }}
@@ -186,7 +184,9 @@ jobs:
           set -euo pipefail
           cd cli-archives
           files=()
-          for key in darwin-arm64 linux-x64 linux-arm64 win32-x64 win32-arm64; do
+          keys=(linux-x64)
+          if [ "${{ inputs.target }}" = all ]; then keys=(darwin-arm64 linux-x64 linux-arm64 win32-x64 win32-arm64); fi
+          for key in "${keys[@]}"; do
             extension=tar.gz
             [[ "$key" == win32-* ]] && extension=zip
             file="styal-$RELEASE_VERSION-$key.$extension"

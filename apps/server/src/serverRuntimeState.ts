@@ -18,6 +18,7 @@ export const PersistedServerRuntimeState = Schema.Struct({
   // Dev is single-origin: browsers must pair through this URL, not `origin`.
   devUrl: Schema.optional(Schema.String),
   startedAt: Schema.String,
+  serviceManaged: Schema.optional(Schema.Boolean),
 });
 export type PersistedServerRuntimeState = typeof PersistedServerRuntimeState.Type;
 
@@ -54,6 +55,7 @@ export const makePersistedServerRuntimeState = (input: {
   Effect.map(DateTime.now, (now) => ({
     version: 1,
     pid: process.pid,
+    serviceManaged: process.env.T3_SERVICE_LAUNCHER_CONTEXT !== undefined,
     ...(input.config.host ? { host: input.config.host } : {}),
     port: input.port,
     origin: runtimeOriginForConfig(input.config, input.port),
@@ -155,3 +157,12 @@ export const readPersistedServerRuntimeState = (path: string) =>
         ),
     }),
   );
+
+export const isProcessAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+};

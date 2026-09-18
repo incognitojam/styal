@@ -1,6 +1,11 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import { HostProcessExecutablePath } from "@t3tools/shared/hostProcess";
+import {
+  HostProcessExecutablePath,
+  HostProcessPlatform,
+  HostProcessArchitecture,
+} from "@t3tools/shared/hostProcess";
+import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -31,11 +36,11 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
   const runner = ProcessRunner.ProcessRunner.of({
     run: (input) =>
       Effect.gen(function* () {
-        if (input.command === "npm") {
+        if (input.command === "tar") {
           order.push("install");
-          const prefix = input.args[input.args.indexOf("--prefix") + 1];
-          if (prefix === undefined) return yield* Effect.die("missing npm prefix");
-          const entry = path.join(prefix, "node_modules", "@styal", "cli", "dist", "bin.mjs");
+          const prefix = input.args[input.args.indexOf("-C") + 1];
+          if (prefix === undefined) return yield* Effect.die("missing extraction directory");
+          const entry = path.join(prefix, "styal");
           yield* fs.makeDirectory(path.dirname(entry), { recursive: true }).pipe(Effect.orDie);
           yield* fs.writeFileString(entry, "export {};\n").pipe(Effect.orDie);
           return {
@@ -85,8 +90,28 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
   const config = yield* ServerConfig.ServerConfig.pipe(
     Effect.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
   );
+  const bytes = new TextEncoder().encode("archive fixture");
+  const digest = yield* Effect.promise(() => crypto.subtle.digest("SHA-256", bytes));
+  const checksum = Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+  const httpClient = HttpClient.make((request) =>
+    Effect.succeed(
+      HttpClientResponse.fromWeb(
+        request,
+        new Response(
+          request.url.endsWith("/SHA256SUMS")
+            ? `${checksum}  styal-1.1.0-linux-x64.tar.gz\n`
+            : bytes,
+        ),
+      ),
+    ),
+  );
   const selfUpdate = yield* ServerSelfUpdate.make().pipe(
     Effect.provideService(ProcessRunner.ProcessRunner, runner),
+    Effect.provideService(HttpClient.HttpClient, httpClient),
+    Effect.provideService(HostProcessPlatform, "linux"),
+    Effect.provideService(HostProcessArchitecture, "x64"),
     Effect.provideService(ServiceLauncherClient.ServiceLauncherClient, launcher),
     Effect.provideService(HostProcessExecutablePath, "/usr/bin/node"),
     Effect.provide(ServerConfig.layer({ ...config, mode: options.mode ?? "web" })),

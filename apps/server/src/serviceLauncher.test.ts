@@ -150,10 +150,14 @@ it.layer(NodeServices.layer)("service state persistence", (it) => {
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-launcher-stop-" });
       const statePath = path.join(root, "runtime", "service-state.json");
-      const versionDir = path.join(root, "runtime", "styal-cli", "versions", "1.0.0");
-      const entryPath = path.join(versionDir, "node_modules", "@styal", "cli", "dist", "bin.mjs");
+      const versionDir = path.join(root, "runtime", "styal-executable", "versions", "1.0.0");
+      const entryPath = path.join(versionDir, "styal");
       yield* fs.makeDirectory(path.dirname(entryPath), { recursive: true });
-      yield* fs.writeFileString(entryPath, "setInterval(() => {}, 1_000);\n");
+      yield* fs.writeFileString(
+        entryPath,
+        `#!${process.execPath}\nsetInterval(() => {}, 1_000);\n`,
+      );
+      yield* fs.chmod(entryPath, 0o755);
       yield* fs.writeFileString(path.join(versionDir, ".install-complete"), "1.0.0\n");
       yield* Effect.promise(() =>
         writeServiceState(statePath, {
@@ -200,10 +204,11 @@ if (context.update?.status === "pending") {
 }
 `;
       for (const version of ["1.0.0", "1.1.0"]) {
-        const versionDir = path.join(root, "runtime", "styal-cli", "versions", version);
-        const entryPath = path.join(versionDir, "node_modules", "@styal", "cli", "dist", "bin.mjs");
+        const versionDir = path.join(root, "runtime", "styal-executable", "versions", version);
+        const entryPath = path.join(versionDir, "styal");
         yield* fs.makeDirectory(path.dirname(entryPath), { recursive: true });
-        yield* fs.writeFileString(entryPath, childSource);
+        yield* fs.writeFileString(entryPath, `#!${process.execPath}\n${childSource}`);
+        yield* fs.chmod(entryPath, 0o755);
         yield* fs.writeFileString(path.join(versionDir, ".install-complete"), `${version}\n`);
       }
       yield* Effect.promise(() =>
@@ -250,10 +255,11 @@ if (context.update?.status === "pending") {
 }
 `;
       for (const version of ["1.0.0", "1.1.0"]) {
-        const versionDir = path.join(root, "runtime", "styal-cli", "versions", version);
-        const entryPath = path.join(versionDir, "node_modules", "@styal", "cli", "dist", "bin.mjs");
+        const versionDir = path.join(root, "runtime", "styal-executable", "versions", version);
+        const entryPath = path.join(versionDir, "styal");
         yield* fs.makeDirectory(path.dirname(entryPath), { recursive: true });
-        yield* fs.writeFileString(entryPath, childSource);
+        yield* fs.writeFileString(entryPath, `#!${process.execPath}\n${childSource}`);
+        yield* fs.chmod(entryPath, 0o755);
         yield* fs.writeFileString(path.join(versionDir, ".install-complete"), `${version}\n`);
       }
       yield* Effect.promise(() =>
@@ -309,10 +315,11 @@ if (context.update?.status === "pending") {
 }
 `;
       for (const version of ["1.0.0", "1.1.0"]) {
-        const versionDir = path.join(root, "runtime", "styal-cli", "versions", version);
-        const entryPath = path.join(versionDir, "node_modules", "@styal", "cli", "dist", "bin.mjs");
+        const versionDir = path.join(root, "runtime", "styal-executable", "versions", version);
+        const entryPath = path.join(versionDir, "styal");
         yield* fs.makeDirectory(path.dirname(entryPath), { recursive: true });
-        yield* fs.writeFileString(entryPath, childSource);
+        yield* fs.writeFileString(entryPath, `#!${process.execPath}\n${childSource}`);
+        yield* fs.chmod(entryPath, 0o755);
         yield* fs.writeFileString(path.join(versionDir, ".install-complete"), `${version}\n`);
       }
       yield* Effect.promise(() =>

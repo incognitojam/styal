@@ -149,7 +149,7 @@ jobs:
 
   build_cli:
     name: Build and publish CLI
-    needs: [prepare, build_desktop]
+    needs: [prepare, build_cli_archives]
     permissions:
       contents: read
       id-token: write

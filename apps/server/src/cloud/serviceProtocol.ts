@@ -1,13 +1,9 @@
 import type { ServerSelfUpdateOutcome } from "@t3tools/contracts";
 
-/**
- * Protocol 3 selects @styal/cli from its isolated runtime directory, retaining
- * protocol 2's SQLite snapshots for rollback. Older launchers select t3 and
- * must be replaced with a local service update.
- */
-export const SERVICE_LAUNCHER_PROTOCOL = 3 as const;
+/** Protocol 4 requires isolated styal executable archives. Protocol 3 selected npm runtimes. */
+export const SERVICE_LAUNCHER_PROTOCOL = 4 as const;
 export const SERVICE_LAUNCHER_CONTEXT_ENV = "T3_SERVICE_LAUNCHER_CONTEXT";
-export const SERVICE_LAUNCHER_FILE = "service-launcher.mjs";
+export const SERVICE_RESTART_PENDING_FILE = ".restart-pending";
 export const SERVICE_STATE_FILE = "service-state.json";
 /** Written by the launcher just before an explicit stop kills its child, so
     the child can tell "the service is going away" from "the launcher is about
@@ -250,4 +246,18 @@ export function decodeServiceLauncherParentMessage(
   return value.type === "committed" && typeof value.updateId === "string"
     ? { type: value.type, updateId: value.updateId }
     : undefined;
+}
+
+/** Read the version before migrating a service from an older launcher protocol. */
+export function serviceStateActiveVersion(value: string): string | undefined {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isRecord(parsed) &&
+      typeof parsed.activeVersion === "string" &&
+      isExactServiceVersion(parsed.activeVersion)
+      ? parsed.activeVersion
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }

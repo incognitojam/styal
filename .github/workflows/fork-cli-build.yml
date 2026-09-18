@@ -45,40 +45,26 @@ jobs:
         env:
           RELEASE_VERSION: ${{ inputs.version }}
         run: node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
-      - name: Build CLI and bundled web app
-        run: vp run --filter ./apps/server build
-      - name: Download native resource monitors
+      - name: Download verified release archives
         uses: actions/download-artifact@v8
         with:
-          pattern: cli-resource-monitor-*
-          path: cli-resource-monitors
-      - name: Bundle native resource monitors
-        shell: bash
+          pattern: cli-archive-*
+          merge-multiple: true
+          path: cli-archives
+      - name: Verify release bytes
+        run: cd cli-archives && sha256sum --check SHA256SUMS
+      - name: Build platform packages and npm launcher
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: node scripts/build-npm-platform-packages.ts --archives-dir cli-archives --version "$RELEASE_VERSION" --output-dir cli-release
+      - name: Verify npm install and legacy preflight in a clean container
         run: |
-          set -euo pipefail
-          for platform in darwin-arm64 linux-x64 win32-x64; do
-            source="cli-resource-monitors/cli-resource-monitor-$platform"
-            target="apps/server/dist/resource-monitor/$platform"
-            test -d "$source"
-            mkdir -p "$target"
-            cp "$source"/styal-resource-monitor* "$target/"
-            if [ "$platform" != win32-x64 ]; then
-              chmod +x "$target/styal-resource-monitor"
-            fi
-          done
-      - name: Pack installable archive
-        run: node apps/server/scripts/cli.ts pack --output-directory cli-release --verbose
-      - name: Verify archive in a clean Node container
-        run: |
-          docker run --rm -v "$PWD/cli-release:/artifacts:ro" -v "$PWD/scripts/verify-cli-package.mjs:/verify.mjs:ro" node:24-bookworm node /verify.mjs /artifacts
-      - name: Verify native installs with npm 12
-        run: |
-          docker run --rm -v "$PWD/cli-release:/artifacts:ro" -v "$PWD/scripts/verify-cli-package.mjs:/verify.mjs:ro" node:24-bookworm sh -c 'npm install --prefix /verification/npm12 npm@12 && PATH="/verification/npm12/node_modules/.bin:$PATH" node /verify.mjs /artifacts'
-      - name: Upload CLI archive
+          docker run --rm -v "$PWD/cli-release/@styal:/artifacts:ro" -v "$PWD/scripts/verify-cli-package.mjs:/verify.mjs:ro" node:26-bookworm node /verify.mjs /artifacts /verification
+      - name: Upload npm packages
         uses: actions/upload-artifact@v7
         with:
           name: cli-package
-          path: cli-release/*.tgz
+          path: cli-release/@styal/*.tgz
           if-no-files-found: error
 
   publish:
@@ -103,4 +89,11 @@ jobs:
       - name: Publish verified archive
         env:
           DIST_TAG: ${{ inputs.dist_tag }}
-        run: npm publish ./cli-release/*.tgz --access public --tag "$DIST_TAG" --provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Publish all five exact-version dependencies before their launcher.
+          for key in darwin-arm64 linux-x64 linux-arm64 win32-x64 win32-arm64; do
+            npm publish "./cli-release/cli-$key.tgz" --access public --tag "$DIST_TAG" --provenance
+          done
+          npm publish ./cli-release/cli.tgz --access public --tag "$DIST_TAG" --provenance

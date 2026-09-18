@@ -14,28 +14,6 @@ export class ServerCliCommandExitError extends Schema.TaggedErrorClass<ServerCli
   }
 }
 
-export class ServerCliPublishIconSourceMissingError extends Schema.TaggedErrorClass<ServerCliPublishIconSourceMissingError>()(
-  "ServerCliPublishIconSourceMissingError",
-  {
-    sourcePath: Schema.String,
-  },
-) {
-  override get message(): string {
-    return `Missing publish icon source: ${this.sourcePath}`;
-  }
-}
-
-export class ServerCliPublishIconTargetMissingError extends Schema.TaggedErrorClass<ServerCliPublishIconTargetMissingError>()(
-  "ServerCliPublishIconTargetMissingError",
-  {
-    targetPath: Schema.String,
-  },
-) {
-  override get message(): string {
-    return `Missing publish icon target: ${this.targetPath}. Run the build subcommand first.`;
-  }
-}
-
 export class ServerCliDevelopmentIconSourceMissingError extends Schema.TaggedErrorClass<ServerCliDevelopmentIconSourceMissingError>()(
   "ServerCliDevelopmentIconSourceMissingError",
   {

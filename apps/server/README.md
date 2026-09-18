@@ -2,13 +2,9 @@
 
 Run the styal server and bundled web client for coding agents.
 
-On Linux, install Python 3, Make, and a C++ compiler before installing the CLI.
-The native terminal dependency builds during npm installation. On Debian or Ubuntu:
-
-```sh
-sudo apt-get update
-sudo apt-get install -y build-essential python3
-```
+Supports Apple Silicon macOS, Linux x64/arm64 (glibc), and Windows x64/arm64. Intel
+macOS is unsupported. npm installs a launcher and the matching prebuilt executable;
+it does not compile native dependencies. Standalone archives include the same runtime.
 
 ```sh
 npx @styal/cli@nightly
@@ -36,19 +32,12 @@ styal service install
 styal service status
 ```
 
-To install a specific version and update an existing styal service, run `npx @styal/cli@<version> service update` on the host. This replaces older styal launchers that installed the upstream `t3` package. Existing styal data is retained. Let active agent work finish before restarting the service.
+To install a specific version and update an existing styal service, run `npx @styal/cli@<version> service update` on the host. This migrates older npm-based styal service launchers to executable archives. Existing styal data is retained. Let active agent work finish before restarting the service.
 
 Containers without a service manager should run `styal serve --no-browser` under their container's process supervisor.
 
 Source and releases: [incognitojam/styal](https://github.com/incognitojam/styal).
 
-## npm 12 and native dependencies
-
-npm 12 requires permission to run native dependency install scripts. When using
-npm 12 or newer, install with:
-
-```sh
-npm install -g @styal/cli@nightly --allow-scripts=node-pty,msgpackr-extract
-```
-
-Then run `styal`. The background-service updater configures these approvals automatically.
+Update an installed runtime with `styal update`. Remove managed runtimes and the
+background service with `styal uninstall`; projects, threads, and settings are kept.
+For an npm installation, remove its launcher with `npm uninstall -g @styal/cli`.
