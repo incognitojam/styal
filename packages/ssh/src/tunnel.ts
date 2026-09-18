@@ -243,7 +243,9 @@ function applyScriptPlaceholders(
 ): string {
   let result = template;
   for (const [token, value] of Object.entries(replacements)) {
-    result = result.replaceAll(`@@${token}@@`, value);
+    // Embedded shell scripts use $$ for their PID. A replacement string would
+    // interpret that as a single $, corrupting lock ownership and runner identity.
+    result = result.replaceAll(`@@${token}@@`, () => value);
   }
   return result;
 }
@@ -639,7 +641,10 @@ if [ -n "$DEFAULT_RUNTIME_INFO" ]; then
   DEFAULT_RUNTIME_PID="\${DEFAULT_RUNTIME_INFO%% *}"
   DEFAULT_REMOTE_PORT="\${DEFAULT_RUNTIME_INFO#* }"
 fi
-if [ -n "$DEFAULT_REMOTE_PORT" ]; then
+# A server launched by this SSH connection writes the same runtime record.
+# Keep its ownership and runner-change handling instead of stopping it and
+# then claiming its now-closed port belongs to an external service.
+if [ -n "$DEFAULT_REMOTE_PORT" ] && [ "$DEFAULT_RUNTIME_PID" != "$REMOTE_PID" ]; then
   REMOTE_PORT="$DEFAULT_REMOTE_PORT"
   if wait_ready "@@T3_REUSE_READY_TIMEOUT_MS@@"; then
     if [ "$REMOTE_MANAGED" = "managed" ]; then
