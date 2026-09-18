@@ -179,6 +179,21 @@ describe("OpenAI status notice", () => {
     ).toBeNull();
   });
 
+  it.each([
+    "SSO sign-in and SCIM provisioning issues",
+    "Overbilling for OpenAI-hosted containers in the Agent API",
+    "Delayed support responses",
+  ])("ignores the unrelated componentless incident %j", (name) => {
+    expect(
+      resolveOpenAIStatusNotice(
+        statusSummary({
+          indicator: "minor",
+          incidents: [{ impact: "none", name, status: "investigating" }],
+        }),
+      ),
+    ).toBeNull();
+  });
+
   it("keeps a Work-titled incident when its components include Codex", () => {
     expect(
       resolveOpenAIStatusNotice(
