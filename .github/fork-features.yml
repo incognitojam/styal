@@ -767,6 +767,7 @@ features:
     invariants:
       - Enabled clients distinguish GitHub, Claude, and OpenAI incidents from missing or malformed status responses.
       - Sidebar notices are scoped to relevant projects or providers and remain readable without blocking ordinary work.
+      - Provider-specific filters omit incidents confined to surfaces styal does not use while retaining broader or unattributable disruptions.
     implementation_paths:
       - apps/web/src/claudeStatus.ts
       - apps/web/src/components/settings/SettingsPanels.tsx
