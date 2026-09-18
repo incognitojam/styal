@@ -314,6 +314,7 @@ features:
     prs: []
     invariants:
       - Desktop presence is off by default and publishes only aggregate unsettled thread and project counts from live environments.
+      - Presence includes a View on GitHub button linking to the public styal repository.
       - Archived, settled, and snoozed threads are excluded using sidebar lifecycle rules; projects are scoped by environment.
       - Disabling, reaching zero active threads, closing the window, or losing the renderer clears presence; Discord restarts reconnect automatically.
       - The integration stays on the desktop client for local and remote environments; browser and mobile clients do not publish presence.

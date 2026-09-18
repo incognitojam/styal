@@ -32,7 +32,7 @@ afterEach(() => {
 });
 
 describe("Discord presence lifecycle", () => {
-  it("connects lazily, publishes only counts, deduplicates updates, and clears on disable", async () => {
+  it("connects lazily, publishes counts and the public repository link, deduplicates updates, and clears on disable", async () => {
     const client = fakeClient();
     const create = vi.fn(() => client);
     const controller = new DiscordPresenceController(create);
@@ -43,11 +43,13 @@ describe("Discord presence lifecycle", () => {
     expect(client.user.setActivity).toHaveBeenCalledExactlyOnceWith({
       details: "3 active threads",
       state: "Across 2 projects",
+      buttons: [{ label: "View on GitHub", url: "https://github.com/incognitojam/styal" }],
     });
     await controller.setActivity({ activeThreads: 1, activeProjects: 1 });
     expect(client.user.setActivity).toHaveBeenLastCalledWith({
       details: "1 active thread",
       state: "Across 1 project",
+      buttons: [{ label: "View on GitHub", url: "https://github.com/incognitojam/styal" }],
     });
     await controller.setActivity(null);
     expect(client.user.clearActivity).toHaveBeenCalledTimes(1);

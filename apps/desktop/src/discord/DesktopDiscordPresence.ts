@@ -16,7 +16,11 @@ export interface DiscordRpcClient {
   readonly isConnected: boolean;
   readonly user:
     | {
-        setActivity: (activity: { details: string; state: string }) => Promise<unknown>;
+        setActivity: (activity: {
+          details: string;
+          state: string;
+          buttons: { label: string; url: string }[];
+        }) => Promise<unknown>;
         clearActivity: () => Promise<unknown>;
       }
     | undefined;
@@ -34,6 +38,7 @@ export function formatDiscordPresence(activity: DesktopDiscordPresenceActivity) 
   return {
     details: `${activity.activeThreads} active ${activity.activeThreads === 1 ? "thread" : "threads"}`,
     state: `Across ${activity.activeProjects} ${activity.activeProjects === 1 ? "project" : "projects"}`,
+    buttons: [{ label: "View on GitHub", url: "https://github.com/incognitojam/styal" }],
   };
 }
 
