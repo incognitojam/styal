@@ -195,11 +195,13 @@ jobs:
           done
 
           ci_run_url="$(jq -r '.[0].url' <<< "$run_json")"
+          compare_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/main...${GITHUB_REPOSITORY/\//:}:$CANDIDATE_BRANCH"
           echo "ci_run_url=$ci_run_url" >> "$GITHUB_OUTPUT"
           {
             echo "## Promotion validation"
             echo
             echo "- Candidate: \`$CANDIDATE_BRANCH\` at \`$CANDIDATE_SHA\`"
+            echo "- Compare: [\`main...$CANDIDATE_BRANCH\`]($compare_url)"
             echo "- Source PRs: \`$SOURCE_PRS\`"
             echo "- Source commits: \`$SOURCE_COMMITS\`"
             echo "- Fork CI: $ci_run_url"
