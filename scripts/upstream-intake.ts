@@ -177,7 +177,12 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
 | Upstream PRs | ${
     provenance.pullRequestNumbers.length === 0
       ? "None"
-      : provenance.pullRequestNumbers.map((number) => `\`pingdotgg/t3code#${number}\``).join(", ")
+      : provenance.pullRequestNumbers
+          .map(
+            (number) =>
+              `[pingdotgg/t3code#${number}](https://github.com/pingdotgg/t3code/pull/${number})`,
+          )
+          .join(", ")
   } |
 | Upstream commits | ${provenance.commitShas.map((sha) => `\`${sha}\``).join(", ") || "None"} |
 | Decision | ${promotion} |

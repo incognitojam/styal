@@ -61,7 +61,10 @@ describe("upstream intake audit", () => {
     assert.isTrue(result.automaticEligible);
     assert.deepEqual(result.manualReviewReasons, []);
     assert.include(result.summary, "Eligible for automatic promotion");
-    assert.include(result.summary, "`pingdotgg/t3code#1234`");
+    assert.include(
+      result.summary,
+      "[pingdotgg/t3code#1234](https://github.com/pingdotgg/t3code/pull/1234)",
+    );
     assert.include(result.summary, "report-only");
   });
 
