@@ -67,7 +67,7 @@ import {
 import { TouchableOpacity } from "react-native-gesture-handler";
 import ImageViewing from "react-native-image-viewing";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, { FadeIn, FadeInUp, type SharedValue } from "react-native-reanimated";
+import Animated, { FadeIn, type SharedValue } from "react-native-reanimated";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { IOS_NAV_BAR_HEIGHT } from "../../lib/layoutMetrics";
 import { useFontFamily } from "../../lib/useFontFamily";
@@ -135,6 +135,8 @@ import {
   ThreadWorkLog,
   WORK_GROUP_TOGGLE_HEIGHT,
 } from "./thread-work-log";
+import { appendPendingThreadMessages, type PendingThreadFeedEntry } from "./pending-thread-feed";
+import type { QueuedThreadMessage } from "../../state/thread-outbox-model";
 import { useMarkdownCodeHighlight } from "./markdownCodeHighlightState";
 import { assetEnvironment, useAssetUrl, useAssetUrlState } from "../../state/assets";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
@@ -179,6 +181,9 @@ function isFreshTimestamp(input: string): boolean {
 }
 
 export interface ThreadFeedProps {
+  readonly queuedMessages: ReadonlyArray<QueuedThreadMessage>;
+  readonly dispatchingMessageId: MessageId | null;
+  readonly onEditPendingMessage: (message: QueuedThreadMessage) => void;
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly workspaceRoot?: string | null;
@@ -1259,8 +1264,15 @@ function useMarkdownStyles(
 }
 
 function renderFeedEntry(
-  info: { item: ThreadFeedEntry; index: number },
-  props: Pick<ThreadFeedProps, "environmentId" | "onUseArtifactTemplate" | "skills"> & {
+  info: { item: PendingThreadFeedEntry; index: number },
+  props: Pick<
+    ThreadFeedProps,
+    | "environmentId"
+    | "onUseArtifactTemplate"
+    | "skills"
+    | "dispatchingMessageId"
+    | "onEditPendingMessage"
+  > & {
     readonly copiedRowId: string | null;
     readonly expandedWorkRows: Record<string, boolean>;
     readonly terminalAssistantMessageIds: ReadonlySet<string>;
@@ -1347,12 +1359,8 @@ function renderFeedEntry(
       !message.streaming;
 
     if (isUser) {
-      const enterAnimated = isFreshTimestamp(message.createdAt);
       return (
-        <Animated.View
-          className="mb-5 items-end"
-          {...(enterAnimated ? { entering: FadeInUp.duration(220) } : {})}
-        >
+        <View className="mb-5 items-end">
           <View
             className="min-w-0 gap-2 rounded-[20px] px-3.5 py-2.5"
             style={{
@@ -1375,6 +1383,26 @@ function renderFeedEntry(
                 renderImage={props.renderMarkdownImage}
               />
             ) : null}
+            {entry.pendingMessage?.attachments.map((attachment) =>
+              attachment.type === "image" && attachment.uploadedAttachmentId ? (
+                <MessageAttachmentImage
+                  key={attachment.id}
+                  environmentId={props.environmentId}
+                  attachmentId={attachment.uploadedAttachmentId}
+                  className="h-[140px] w-[180px] rounded-[14px]"
+                  onPressImage={props.onPressImage}
+                />
+              ) : attachment.type === "image" ? (
+                <Image
+                  key={attachment.id}
+                  source={{ uri: attachment.previewUri }}
+                  accessibilityLabel={attachment.name}
+                  style={{ width: 180, height: 140, borderRadius: 14 }}
+                />
+              ) : (
+                <MessageAttachmentUnknown key={attachment.id} name={attachment.name} />
+              ),
+            )}
             {attachments.map((attachment) => {
               return isImageAttachment(attachment) ? (
                 <MessageAttachmentImage
@@ -1398,8 +1426,24 @@ function renderFeedEntry(
           </View>
           <View className="mt-1 flex-row items-center justify-end gap-1 pr-0.5">
             <Text className="font-t3-medium text-xs tabular-nums text-foreground-secondary">
-              {timestampLabel}
+              {entry.pendingMessage && !entry.acknowledged ? "Pending" : timestampLabel}
             </Text>
+            {entry.pendingMessage &&
+            !entry.acknowledged &&
+            !entry.pendingMessage.creation &&
+            entry.pendingMessage.messageId !== props.dispatchingMessageId ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Edit pending message"
+                hitSlop={8}
+                className="size-7 items-center justify-center"
+                onPress={() => {
+                  if (entry.pendingMessage) props.onEditPendingMessage(entry.pendingMessage);
+                }}
+              >
+                <SymbolView name="pencil" size={14} tintColor={iconSubtleColor} />
+              </Pressable>
+            ) : null}
             {message.text.trim().length > 0 ? (
               <CopyTextButton
                 accessibilityLabel="Copy message"
@@ -1410,7 +1454,7 @@ function renderFeedEntry(
               />
             ) : null}
           </View>
-        </Animated.View>
+        </View>
       );
     }
 
@@ -1941,6 +1985,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   // Keep row-local interaction props in extraData so disclosures and copy feedback repaint.
   const listAppearanceData = useMemo(
     () => ({
+      dispatchingMessageId: props.dispatchingMessageId,
       copiedRowId,
       expandedWorkRows,
       iconSubtleColor,
@@ -1950,6 +1995,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       viewportWidth,
     }),
     [
+      props.dispatchingMessageId,
       copiedRowId,
       expandedWorkRows,
       iconSubtleColor,
@@ -2086,14 +2132,19 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   }, [expandedWorkGroups]);
   const presentedFeed = useMemo(
     () =>
-      deriveThreadFeedPresentation(
+      appendPendingThreadMessages(
+        deriveThreadFeedPresentation(
+          props.feed,
+          props.latestTurn,
+          expandedTurnIds,
+          expandedWorkGroupIds,
+          props.activeWorkStartedAt,
+        ),
         props.feed,
-        props.latestTurn,
-        expandedTurnIds,
-        expandedWorkGroupIds,
-        props.activeWorkStartedAt,
+        props.queuedMessages,
       ),
     [
+      props.queuedMessages,
       expandedTurnIds,
       expandedWorkGroupIds,
       props.activeWorkStartedAt,
@@ -2109,7 +2160,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   // (composer plus any pending approval / user-input card) so the remounted
   // list's scroll math gets the true value; on Android the declarative
   // contentInset floor below covers the window before this effect lands.
-  const listMountKey = `${feedThreadKey}:${props.feed.length === 0 ? "empty" : "filled"}`;
+  const listMountKey = `${feedThreadKey}:${presentedFeed.length === 0 ? "empty" : "filled"}`;
   useLayoutEffect(() => {
     const bottom = props.contentInsetEndAdjustment.value;
     if (bottom > 0) {
@@ -2327,9 +2378,11 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   );
 
   const renderItem = useCallback(
-    (info: { item: ThreadFeedEntry; index: number }) =>
+    (info: { item: PendingThreadFeedEntry; index: number }) =>
       renderFeedEntry(info, {
         environmentId: props.environmentId,
+        dispatchingMessageId: props.dispatchingMessageId,
+        onEditPendingMessage: props.onEditPendingMessage,
         copiedRowId,
         expandedWorkRows,
         terminalAssistantMessageIds,
@@ -2352,6 +2405,8 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         onUseArtifactTemplate: props.onUseArtifactTemplate,
       }),
     [
+      props.dispatchingMessageId,
+      props.onEditPendingMessage,
       copiedRowId,
       expandedWorkRows,
       terminalAssistantMessageIds,
@@ -2376,7 +2431,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     ],
   );
 
-  if (props.contentPresentation.kind === "unavailable") {
+  if (props.contentPresentation.kind === "unavailable" && props.queuedMessages.length === 0) {
     return (
       <ThreadFeedPlaceholder
         title={props.contentPresentation.title}
@@ -2449,17 +2504,13 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             // targets land one safe-area short of the true resting offset.
             adjustedInsetCompensation={usesNativeAutomaticInsets ? insets.bottom : 0}
             freeze={props.freeze}
-            // Animated: on send, the optimistic message's dataChange fires
-            // maintainScrollAtEnd before any render-cycle suppression could
-            // engage — an instant snap there teleports the feed to the anchor
-            // instead of scrolling to it. Keeping it enabled (animated) during
-            // anchor scrolls also lets it correct a scroll that landed on a
-            // stale end target once the anchor row finishes measuring.
+            // Follow the measured end immediately. Animating toward an estimated
+            // end races row measurement when a pending message is acknowledged.
             maintainScrollAtEnd={
               disclosureToggleSettling || !endFollowEnabled
                 ? false
                 : {
-                    animated: true,
+                    animated: false,
                     on: {
                       dataChange: true,
                       itemLayout: true,
@@ -2467,7 +2518,9 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
                     },
                   }
             }
-            maintainVisibleContentPosition={maintainVisibleContentPosition}
+            maintainVisibleContentPosition={
+              endFollowEnabled && !disclosureToggleSettling ? false : maintainVisibleContentPosition
+            }
             data={presentedFeed}
             extraData={listAppearanceData}
             renderItem={renderItem}
@@ -2532,7 +2585,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             }}
           />
         </View>
-        {props.feed.length === 0 &&
+        {presentedFeed.length === 0 &&
         props.activeWorkStartedAt === null &&
         props.contentPresentation.kind === "ready" ? (
           <View pointerEvents="none" style={StyleSheet.absoluteFill}>

@@ -1,3 +1,4 @@
+import { acknowledgedThreadMessagesAtom } from "./acknowledged-thread-messages";
 import {
   CommandId,
   EnvironmentId,
@@ -91,6 +92,7 @@ vi.mock("./use-atom-command", () => ({
 vi.mock("./use-thread-outbox", async () => {
   const { Atom } = await import("effect/unstable/reactivity");
   return {
+    dispatchingQueuedMessageIdAtom: Atom.make<MessageId | null>(null).pipe(Atom.keepAlive),
     editingQueuedMessageIdsAtom: Atom.make<Record<string, boolean>>({}).pipe(Atom.keepAlive),
     useThreadOutboxMessages: () => ({}),
     useThreadOutboxShellStatuses: () => new Map(),
@@ -187,6 +189,7 @@ function remainingMessages(): ReadonlyArray<QueuedThreadMessage> {
 }
 
 beforeEach(() => {
+  appAtomRegistry.set(acknowledgedThreadMessagesAtom, []);
   harness.draftFile.setDocument({ schemaVersion: 1, drafts: {} });
 });
 
@@ -322,6 +325,19 @@ describe("thread outbox attachment preparation", () => {
 });
 
 describe("thread outbox drain delivery cleanup", () => {
+  it("retains the visible message before removing the durable queue until its server echo", async () => {
+    const message = queuedMessage({ messageId: "pending-echo", text: "Keep me visible" });
+    await harness.manager.enqueue(message);
+    harness.removeOutboxMessage.mockImplementationOnce(async () => {
+      expect(appAtomRegistry.get(acknowledgedThreadMessagesAtom)).toEqual([message]);
+    });
+    await expect(
+      completeQueuedMessageDelivery(message, harness.manager.revisionOf(message.messageId)),
+    ).resolves.toBe("removed");
+    expect(remainingMessages()).toEqual([]);
+    expect(appAtomRegistry.get(acknowledgedThreadMessagesAtom)).toEqual([message]);
+  });
+
   it("removes an acknowledged outbox item even when the sign-out archive write fails", async () => {
     const message = queuedMessage({ messageId: "archive-write-failure", text: "Delivered" });
     await harness.manager.enqueue(message);
@@ -405,6 +421,7 @@ describe("thread outbox drain delivery cleanup", () => {
     );
     expect(remainingMessages()).toEqual([]);
     expect(acknowledged).toEqual(new Set());
+    expect(appAtomRegistry.get(acknowledgedThreadMessagesAtom)).toEqual([message]);
   });
 
   it("keeps an edited message and its files when delivery cleanup loses the revision race", async () => {
@@ -432,6 +449,7 @@ describe("thread outbox drain delivery cleanup", () => {
     await expect(completeQueuedMessageDelivery(message, deliveryRevision)).resolves.toBe("removed");
 
     expect(remainingMessages()).toEqual([]);
+    expect(appAtomRegistry.get(acknowledgedThreadMessagesAtom)).toEqual([message]);
   });
 
   it("keeps a delivered message when its editor opens during storage removal", async () => {

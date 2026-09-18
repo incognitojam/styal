@@ -13,13 +13,17 @@ import {
 } from "@t3tools/contracts";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import * as Cause from "effect/Cause";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/unstable/reactivity";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { scopedProjectKey, scopedThreadKey } from "../lib/scopedEntities";
 import { buildProjectThreadStartTurnInput } from "../lib/projectThreadStartTurn";
 import { prepareTurnAttachments, type PreparedTurnAttachments } from "../lib/attachmentUpload";
 import { randomHex } from "../lib/uuid";
+import {
+  retainAcknowledgedThreadMessage,
+  forgetAcknowledgedThreadMessage,
+} from "./acknowledged-thread-messages";
 import { appAtomRegistry } from "./atom-registry";
 import { useProjects, useServerConfigs, useThreadShells } from "./entities";
 import {
@@ -59,6 +63,7 @@ import {
 } from "./use-composer-drafts";
 import { useAtomCommand } from "./use-atom-command";
 import {
+  dispatchingQueuedMessageIdAtom,
   editingQueuedMessageIdsAtom,
   useThreadOutboxMessages,
   useThreadOutboxShellStatuses,
@@ -67,11 +72,6 @@ import {
   setPendingConnectionError,
   useRemoteConnectionStatus,
 } from "./use-remote-environment-registry";
-
-export const dispatchingQueuedMessageIdAtom = Atom.make<MessageId | null>(null).pipe(
-  Atom.keepAlive,
-  Atom.withLabel("mobile:thread-outbox:dispatching-message-id"),
-);
 
 function beginDispatchingQueuedMessage(queuedMessageId: MessageId): void {
   appAtomRegistry.set(dispatchingQueuedMessageIdAtom, queuedMessageId);
@@ -197,6 +197,7 @@ export async function completeQueuedMessageDelivery(
     if (appAtomRegistry.get(editingQueuedMessageIdsAtom)[queuedMessage.messageId]) {
       return "edited";
     }
+    retainAcknowledgedThreadMessage(queuedMessage);
     // Removal also releases the message's local attachment files.
     const removed = await removeThreadOutboxMessage(
       queuedMessage,
@@ -204,6 +205,7 @@ export async function completeQueuedMessageDelivery(
       () => !appAtomRegistry.get(editingQueuedMessageIdsAtom)[queuedMessage.messageId],
     );
     if (!removed) {
+      forgetAcknowledgedThreadMessage(queuedMessage);
       console.warn(
         "[thread-outbox] delivered message was edited before cleanup; keeping the newer message",
         {
@@ -216,6 +218,7 @@ export async function completeQueuedMessageDelivery(
     }
     return "removed";
   } catch (error) {
+    forgetAcknowledgedThreadMessage(queuedMessage);
     console.warn("[thread-outbox] failed to remove delivered queued message", {
       environmentId: queuedMessage.environmentId,
       threadId: queuedMessage.threadId,
@@ -238,12 +241,16 @@ export async function removeAcknowledgedExistingThreadMessage(
         error,
       });
     });
+    retainAcknowledgedThreadMessage(queuedMessage);
     const removed = await removeThreadOutboxMessage(queuedMessage);
     if (removed) {
       acknowledgedMessageIds.delete(queuedMessage.messageId);
+    } else {
+      forgetAcknowledgedThreadMessage(queuedMessage);
     }
     return removed;
   } catch (error) {
+    forgetAcknowledgedThreadMessage(queuedMessage);
     console.warn("[thread-outbox] failed to remove acknowledged queued message", {
       environmentId: queuedMessage.environmentId,
       threadId: queuedMessage.threadId,

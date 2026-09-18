@@ -55,9 +55,12 @@ features:
     implementation_paths:
       - apps/mobile/plugins/withShareExtensionDisplayName.cjs
       - apps/mobile/src/features/threads/ThreadFeed.tsx
+      - apps/mobile/src/features/threads/pending-thread-feed.ts
       - apps/mobile/src/lib/attachmentUpload.ts
       - apps/mobile/src/lib/composerAttachmentUploadQueue.ts
+      - apps/mobile/src/state/acknowledged-thread-messages.ts
       - apps/mobile/src/state/composer-attachment-uploads.ts
+      - apps/mobile/src/state/edit-pending-thread-message.ts
       - apps/mobile/src/state/use-composer-drafts.ts
       - apps/server/src/attachmentStore.ts
       - apps/server/src/orchestration/Normalizer.ts
@@ -82,8 +85,10 @@ features:
       - apps/web/src/composerDraftStore.ts
       - packages/contracts/src/orchestration.ts
     tests:
+      - apps/mobile/src/features/threads/pending-thread-feed.test.ts
       - apps/mobile/src/lib/attachmentUpload.test.ts
       - apps/mobile/src/lib/composerAttachmentUploadQueue.test.ts
+      - apps/mobile/src/state/edit-pending-thread-message.test.ts
       - apps/mobile/src/state/use-composer-drafts.test.ts
       - apps/mobile/src/state/use-thread-outbox-drain.test.ts
       - apps/server/src/assets/AssetAccess.test.ts
@@ -98,6 +103,7 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/10404
+        - https://github.com/pingdotgg/t3code/pull/10449
         - https://github.com/pingdotgg/t3code/pull/8235
         - https://github.com/pingdotgg/t3code/pull/8236
         - https://github.com/pingdotgg/t3code/pull/8237
@@ -172,12 +178,14 @@ features:
     status: maintained
     prs: [23, 39, 44, 69, 195]
     invariants:
+      - Mobile pending messages stay visible through upload and acknowledgment; editing persists their text and attachments into the existing draft before removing the queued copy.
       - Existing-thread draft text and settings synchronize without overwriting newer local edits; attachments remain client-owned and are not synchronized across devices.
       - The latest issued draft autosave cannot restore sent text through its own subscription echo, including after transport failure, or block another device's changes to a clean composer; delayed responses cannot roll back newer revisions.
       - Web file drafts persist environment-scoped upload references; legacy local file bytes remain until a replacement reference is durable. Mobile drafts and queued messages retain owned file copies until delivery or removal.
       - The web and mobile source implementations use the same server-backed draft contract and fork-owned migration history; desktop inherits the web implementation. Pre-split databases require an intermediate fixed release before an in-place upgrade.
       - Sidebar thread rows indicate unsent prompts, attachments, or context without treating model, provider, runtime, or interaction choices alone as a user draft.
     implementation_paths:
+      - apps/mobile/src/state/edit-pending-thread-message.ts
       - apps/mobile/src/state/use-composer-drafts.ts
       - apps/server/src/persistence/ComposerDrafts.ts
       - apps/server/src/persistence/ForkMigrations/001_ComposerDrafts.ts
@@ -194,6 +202,7 @@ features:
       - packages/client-runtime/src/rpc/client.ts
       - packages/contracts/src/rpc.ts
     tests:
+      - apps/mobile/src/state/edit-pending-thread-message.test.ts
       - apps/mobile/src/state/use-composer-drafts.test.ts
       - apps/server/src/persistence/ComposerDrafts.test.ts
       - apps/server/src/persistence/ForkMigrations.test.ts

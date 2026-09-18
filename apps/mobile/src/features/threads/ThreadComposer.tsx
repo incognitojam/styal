@@ -20,13 +20,7 @@ import {
   composerAttachmentsStillUploading,
   composerAttachmentUploadsAtom,
 } from "../../state/composer-attachment-uploads";
-import Animated, {
-  FadeIn,
-  FadeInDown,
-  FadeOut,
-  FadeOutDown,
-  LinearTransition,
-} from "react-native-reanimated";
+import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/remoteRegistration";
 import { scopedThreadKey } from "../../lib/scopedEntities";
@@ -218,12 +212,7 @@ const ComposerConnectionStatusPill = memo(function ComposerConnectionStatusPill(
 }) {
   const isReconnecting = props.status.kind !== "unavailable";
   return (
-    <Animated.View
-      className="absolute inset-x-0 bottom-full items-center pb-2"
-      entering={FadeInDown.duration(180)}
-      exiting={FadeOutDown.duration(140)}
-      pointerEvents="box-none"
-    >
+    <View className="absolute inset-x-0 bottom-full items-center pb-2" pointerEvents="box-none">
       <Pressable
         accessibilityRole="button"
         onPress={props.onPress}
@@ -241,7 +230,7 @@ const ComposerConnectionStatusPill = memo(function ComposerConnectionStatusPill(
           {props.status.label}
         </Text>
       </Pressable>
-    </Animated.View>
+    </View>
   );
 });
 
@@ -682,16 +671,6 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
             </ComposerToolbarRow>
           ) : null}
         </ComposerSurface>
-
-        {/* Queue count */}
-        {props.queueCount > 0 ? (
-          <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)}>
-            <Text className="pt-2 text-xs text-foreground-muted">
-              {props.queueCount} queued message{props.queueCount === 1 ? "" : "s"} will send
-              automatically.
-            </Text>
-          </Animated.View>
-        ) : null}
       </Animated.View>
 
       <VideoPreviewModal source={previewVideo} onRequestClose={closePreview} />

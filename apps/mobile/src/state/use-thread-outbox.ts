@@ -7,6 +7,11 @@ import { appAtomRegistry } from "./atom-registry";
 import { environmentShell } from "./shell";
 import { threadOutboxManager } from "./thread-outbox";
 
+export const dispatchingQueuedMessageIdAtom = Atom.make<MessageId | null>(null).pipe(
+  Atom.keepAlive,
+  Atom.withLabel("mobile:thread-outbox:dispatching-message-id"),
+);
+
 const threadOutboxShellStatusesAtom = Atom.make(
   (get): ReadonlyMap<EnvironmentId, EnvironmentShellStatus> => {
     const statuses = new Map<EnvironmentId, EnvironmentShellStatus>();

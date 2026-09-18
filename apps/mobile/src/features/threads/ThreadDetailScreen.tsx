@@ -33,6 +33,7 @@ import {
 } from "react";
 import { isLiquidGlassSupported, LiquidGlassView } from "@callstack/liquid-glass";
 import {
+  Alert,
   AppState,
   Keyboard,
   Platform,
@@ -62,6 +63,8 @@ import type { StatusTone } from "../../components/StatusPill";
 import type { DraftComposerAttachment } from "../../lib/composerImages";
 import { CHAT_CONTENT_MAX_WIDTH, type LayoutVariant } from "../../lib/layout";
 import { IOS_NAV_BAR_HEIGHT } from "../../lib/layoutMetrics";
+import { editPendingThreadMessage } from "../../state/edit-pending-thread-message";
+import type { QueuedThreadMessage } from "../../state/thread-outbox-model";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import type {
   PendingApproval,
@@ -110,6 +113,8 @@ export interface ThreadDetailScreenProps {
   readonly projectWorkspaceRoot: string | null;
   readonly threadCwd: string | null;
   readonly selectedThreadQueueCount: number;
+  readonly queuedMessages: ReadonlyArray<QueuedThreadMessage>;
+  readonly dispatchingMessageId: MessageId | null;
   readonly serverConfig: T3ServerConfig | null;
   readonly layoutVariant?: LayoutVariant;
   readonly usesAutomaticContentInsets?: boolean;
@@ -476,11 +481,13 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   useEffect(() => {
     if (
       submittedMessageId === null ||
+      anchorMessageId !== submittedMessageId ||
       lastScrolledSubmittedMessageIdRef.current === submittedMessageId ||
       contentPresentationKind !== "ready" ||
-      !selectedThreadFeed.some(
+      (!selectedThreadFeed.some(
         (entry) => entry.type === "message" && entry.id === submittedMessageId,
-      )
+      ) &&
+        !props.queuedMessages.some((message) => message.messageId === submittedMessageId))
     ) {
       return;
     }
@@ -519,9 +526,11 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     });
     return () => cancelAnimationFrame(frame);
   }, [
+    anchorMessageId,
     submittedMessageId,
     freeze,
     contentPresentationKind,
+    props.queuedMessages,
     selectedThreadFeed,
     scrollMessageToEnd,
     selectedThreadKey,
@@ -557,6 +566,22 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     selectedThreadFeed,
     selectedThreadKey,
   ]);
+
+  const handleEditPendingMessage = useCallback(async (message: QueuedThreadMessage) => {
+    try {
+      if (
+        (await editPendingThreadMessage(message)) &&
+        selectedThreadKeyRef.current === scopedThreadKey(message.environmentId, message.threadId)
+      ) {
+        composerEditorRef.current?.focus();
+      }
+    } catch (error) {
+      Alert.alert(
+        "Could not edit message",
+        error instanceof Error ? error.message : "Please try again.",
+      );
+    }
+  }, []);
 
   const collapseComposer = useCallback(() => {
     composerEditorRef.current?.blur();
@@ -635,6 +660,9 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
             threadId={props.selectedThread.id}
             workspaceRoot={props.threadCwd}
             feed={props.selectedThreadFeed}
+            queuedMessages={props.queuedMessages}
+            dispatchingMessageId={props.dispatchingMessageId}
+            onEditPendingMessage={handleEditPendingMessage}
             contentPresentation={props.contentPresentation}
             agentLabel={agentLabel}
             latestTurn={props.selectedThread.latestTurn}

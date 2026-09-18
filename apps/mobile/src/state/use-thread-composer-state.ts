@@ -36,6 +36,8 @@ import type { DraftComposerImageAttachment } from "../lib/composerImages";
 import { scopedThreadKey } from "../lib/scopedEntities";
 import { copyTextWithHaptic } from "../lib/copyTextWithHaptic";
 import { buildThreadFeed } from "../lib/threadActivity";
+import { acknowledgedThreadMessagesAtom } from "./acknowledged-thread-messages";
+import { appendPendingThreadMessages } from "../features/threads/pending-thread-feed";
 import { appAtomRegistry } from "../state/atom-registry";
 import {
   appendComposerDraftAttachments,
@@ -55,7 +57,7 @@ import { setPendingConnectionError } from "../state/use-remote-environment-regis
 import { useSelectedThreadDetail } from "../state/use-thread-detail";
 import { useThreadSelection } from "../state/use-thread-selection";
 import { enqueueThreadOutboxMessage } from "./thread-outbox";
-import { useThreadOutboxMessages } from "./use-thread-outbox";
+import { dispatchingQueuedMessageIdAtom, useThreadOutboxMessages } from "./use-thread-outbox";
 import { threadEnvironment } from "./threads";
 import { useAtomCommand } from "./use-atom-command";
 import {
@@ -110,6 +112,8 @@ export function useThreadComposerState() {
   const { selectedThread: selectedThreadShell, selectedEnvironmentRuntime } = useThreadSelection();
   const selectedThreadDetail = useSelectedThreadDetail();
   const composerDrafts = useAtomValue(composerDraftsAtom);
+  const dispatchingQueuedMessageId = useAtomValue(dispatchingQueuedMessageIdAtom);
+  const acknowledgedMessages = useAtomValue(acknowledgedThreadMessagesAtom);
   const queuedMessagesByThreadKey = useThreadOutboxMessages();
   const [feedbackSubmissionsByThreadKey, setFeedbackSubmissionsByThreadKey] = useState<
     Record<string, ReadonlyArray<CodexFeedbackSubmission>>
@@ -138,20 +142,46 @@ export function useThreadComposerState() {
     [queuedMessagesByThreadKey, selectedThreadKey],
   );
   const selectedThreadFeed = useMemo(() => {
-    if (!selectedThreadDetail) {
-      return [];
-    }
     const submissions = selectedThreadKey
       ? (feedbackSubmissionsByThreadKey[selectedThreadKey] ?? [])
       : [];
-    return buildThreadFeed(selectedThreadDetail, {
-      localMessages: submissions.flatMap((submission) =>
-        submission.status === "interrupted"
-          ? []
-          : [codexFeedbackMessage(submission), codexFeedbackMessage(submission, "assistant")],
-      ),
-    });
-  }, [feedbackSubmissionsByThreadKey, selectedThreadDetail, selectedThreadKey]);
+    const feed = selectedThreadDetail
+      ? buildThreadFeed(selectedThreadDetail, {
+          localMessages: submissions.flatMap((submission) =>
+            submission.status === "interrupted"
+              ? []
+              : [codexFeedbackMessage(submission), codexFeedbackMessage(submission, "assistant")],
+          ),
+        })
+      : [];
+
+    const pendingAcknowledgments = acknowledgedMessages.filter(
+      (message) =>
+        scopedThreadKey(message.environmentId, message.threadId) === selectedThreadKey &&
+        !selectedThreadQueuedMessages.some((queued) => queued.messageId === message.messageId),
+    );
+    if (pendingAcknowledgments.length === 0) return feed;
+    return appendPendingThreadMessages(feed, feed, pendingAcknowledgments).map((entry) =>
+      entry.pendingMessage ? { ...entry, acknowledged: true } : entry,
+    );
+  }, [
+    feedbackSubmissionsByThreadKey,
+    selectedThreadDetail,
+    selectedThreadKey,
+    selectedThreadQueuedMessages,
+    acknowledgedMessages,
+  ]);
+  useEffect(() => {
+    const echoedIds = new Set(selectedThreadDetail?.messages.map((message) => message.id));
+    if (acknowledgedMessages.some((message) => echoedIds.has(message.messageId))) {
+      appAtomRegistry.set(
+        acknowledgedThreadMessagesAtom,
+        appAtomRegistry
+          .get(acknowledgedThreadMessagesAtom)
+          .filter((message) => !echoedIds.has(message.messageId)),
+      );
+    }
+  }, [acknowledgedMessages, selectedThreadDetail]);
 
   const selectedDraft = selectedThreadKey ? composerDrafts[selectedThreadKey] : null;
   const draftMessage = selectedDraft?.text ?? "";
@@ -501,6 +531,8 @@ export function useThreadComposerState() {
   return {
     selectedThreadFeed,
     selectedThreadQueueCount,
+    selectedThreadQueuedMessages,
+    dispatchingQueuedMessageId,
     activeWorkStartedAt,
     draftMessage,
     draftAttachments,
