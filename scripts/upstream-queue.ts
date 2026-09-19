@@ -166,6 +166,17 @@ export function nextBatch(entries: QueueEntry[], count: number): QueueEntry[] {
   return batch;
 }
 
+/** Produce provenance trailers for a fork PR that incorporates the complete selected batch. */
+export function formatBatchFooter(entries: QueueEntry[]): string | null {
+  if (!entries.length) return null;
+  const prs = [...new Set(entries.flatMap((entry) => (entry.pr === null ? [] : [entry.pr])))];
+  return [
+    "PR description footer (assumes you incorporate the whole listed batch):",
+    ...(prs.length ? [`Upstream-PR: ${prs.join(", ")}`] : []),
+    `Upstream-Commit: ${entries.map((entry) => entry.sha).join(", ")}`,
+  ].join("\n");
+}
+
 export function reconciledThrough(baseline: string, entries: QueueEntry[]): string {
   let through = baseline;
   for (const entry of entries) {
@@ -463,6 +474,10 @@ function main() {
       );
       if (command === "explain")
         for (const evidence of entry.evidence) console.log(`  ${abbreviateShas(evidence)}`);
+    }
+    if (command === "next") {
+      const footer = formatBatchFooter(selected);
+      if (footer) console.log(`\n${footer}`);
     }
   }
 }

@@ -9,6 +9,7 @@ import {
   decodeState,
   ensureScratchDirectory,
   fetchAssociations,
+  formatBatchFooter,
   nextBatch,
   readIntegrations,
   reconcile,
@@ -188,6 +189,31 @@ describe("chronological upstream queue", () => {
     assert.throws(() => nextBatch(entries, 0), "positive integer");
     assert.throws(() => nextBatch(entries, 1.5), "positive integer");
     assert.deepEqual(nextBatch([], 20), []);
+  });
+
+  it("formats copyable provenance for the complete selected batch", () => {
+    const entries = reconcile(
+      [integration(1, 8321), integration(2, 8321), integration(3), integration(4, 8585)],
+      [],
+      {},
+    );
+
+    assert.equal(
+      formatBatchFooter(entries),
+      [
+        "PR description footer (assumes you incorporate the whole listed batch):",
+        "Upstream-PR: 8321, 8585",
+        `Upstream-Commit: ${sha(1)}, ${sha(2)}, ${sha(3)}, ${sha(4)}`,
+      ].join("\n"),
+    );
+    assert.equal(
+      formatBatchFooter([entries[2]!]),
+      [
+        "PR description footer (assumes you incorporate the whole listed batch):",
+        `Upstream-Commit: ${sha(3)}`,
+      ].join("\n"),
+    );
+    assert.isNull(formatBatchFooter([]));
   });
 
   it("uses verified merged associations and rejects ambiguous or incomplete PR boundaries", () => {
