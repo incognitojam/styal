@@ -18,14 +18,7 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { useAtomCommand } from "../state/use-atom-command";
 import { resolveRelayClerkTokenOptions } from "./publicConfig";
 
-let relayTokenProvider: (() => Promise<string | null>) | null = null;
-
-export async function readManagedRelayClerkToken(): Promise<string | null> {
-  return relayTokenProvider?.() ?? null;
-}
-
 export function deactivateManagedRelayAuthentication(): void {
-  relayTokenProvider = null;
   setManagedRelaySession(appAtomRegistry, null);
 }
 
@@ -45,7 +38,6 @@ export function activateManagedRelayAuthentication(
   accountId: string,
   readClerkToken: () => Promise<string | null>,
 ): void {
-  relayTokenProvider = readClerkToken;
   setManagedRelaySession(appAtomRegistry, {
     accountId,
     readClerkToken,

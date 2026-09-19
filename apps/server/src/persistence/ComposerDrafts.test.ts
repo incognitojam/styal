@@ -8,7 +8,7 @@ import { runAllMigrations } from "./ForkMigrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 const layer = it.layer(
-  ComposerDrafts.layer.pipe(Layer.provideMerge(NodeSqliteClient.layerMemory())),
+  ComposerDrafts.layer.pipe(Layer.provideMerge(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
 
 layer("ComposerDraftRepository", (it) => {

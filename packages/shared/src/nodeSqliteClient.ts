@@ -41,11 +41,6 @@ export interface SqliteClientConfig {
   readonly transformQueryNames?: ((str: string) => string) | undefined;
 }
 
-export interface SqliteMemoryClientConfig extends Omit<
-  SqliteClientConfig,
-  "filename" | "readonly"
-> {}
-
 export class UnsupportedNodeSqliteVersionError extends Schema.TaggedError<UnsupportedNodeSqliteVersionError>()(
   "UnsupportedNodeSqliteVersionError",
   {
@@ -91,9 +86,8 @@ const checkNodeSqliteCompat = () => {
   return Effect.void;
 };
 
-const makeWithDatabase = Effect.fn("makeWithDatabase")(function* (
+const make = Effect.fn("makeWithDatabase")(function* (
   options: SqliteClientConfig,
-  openDatabase: () => NodeSqlite.DatabaseSync,
 ): Effect.fn.Return<Client.SqlClient, SqlError, Scope.Scope | Reactivity.Reactivity> {
   yield* checkNodeSqliteCompat();
 
@@ -105,7 +99,11 @@ const makeWithDatabase = Effect.fn("makeWithDatabase")(function* (
   const makeConnection = Effect.gen(function* () {
     const scope = yield* Effect.scope;
     const db = yield* Effect.try({
-      try: openDatabase,
+      try: () =>
+        new NodeSqlite.DatabaseSync(options.filename, {
+          readOnly: options.readonly ?? false,
+          allowExtension: options.allowExtension ?? false,
+        }),
       catch: (cause) =>
         new SqlError({
           reason: classifySqliteError(cause, {
@@ -286,46 +284,5 @@ const makeWithDatabase = Effect.fn("makeWithDatabase")(function* (
   });
 });
 
-const make = (
-  options: SqliteClientConfig,
-): Effect.Effect<Client.SqlClient, SqlError, Scope.Scope | Reactivity.Reactivity> =>
-  makeWithDatabase(
-    options,
-    () =>
-      new NodeSqlite.DatabaseSync(options.filename, {
-        readOnly: options.readonly ?? false,
-        allowExtension: options.allowExtension ?? false,
-      }),
-  );
-
-const makeMemory = (
-  config: SqliteMemoryClientConfig = {},
-): Effect.Effect<Client.SqlClient, SqlError, Scope.Scope | Reactivity.Reactivity> =>
-  makeWithDatabase(
-    {
-      ...config,
-      filename: ":memory:",
-      readonly: false,
-    },
-    () => {
-      const database = new NodeSqlite.DatabaseSync(":memory:", {
-        allowExtension: config.allowExtension ?? false,
-      });
-      return database;
-    },
-  );
-
-export const layerConfig = (
-  config: Config.Wrap<SqliteClientConfig>,
-): Layer.Layer<Client.SqlClient, Config.ConfigError | SqlError> =>
-  Layer.effect(Client.SqlClient, Config.unwrap(config).pipe(Effect.flatMap(make))).pipe(
-    Layer.provide(Reactivity.layer),
-  );
-
 export const layer = (config: SqliteClientConfig): Layer.Layer<Client.SqlClient, SqlError> =>
   Layer.effect(Client.SqlClient, make(config)).pipe(Layer.provide(Reactivity.layer));
-
-export const layerMemory = (
-  config: SqliteMemoryClientConfig = {},
-): Layer.Layer<Client.SqlClient, SqlError> =>
-  Layer.effect(Client.SqlClient, makeMemory(config)).pipe(Layer.provide(Reactivity.layer));

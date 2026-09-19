@@ -12,7 +12,7 @@ import {
 import { migrationManifest, runMigrations } from "./Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
-const upstreamLayer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
+const upstreamLayer = it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })));
 
 upstreamLayer("ForkMigrations canonical upstream upgrade", (it) => {
   it.effect("leaves canonical upstream migration 39 untouched", () =>
@@ -114,51 +114,57 @@ const readLatestMessageAt = Effect.gen(function* () {
   `;
 });
 
-it.layer(NodeSqliteClient.layerMemory())("ForkMigrations latest message time", (it) => {
-  it.effect("backfills the last message time without using later thread updates", () =>
-    Effect.gen(function* () {
-      yield* runMigrations();
-      yield* runForkMigrations({ toMigrationInclusive: 3 });
-      yield* insertSyntheticThread;
+it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
+  "ForkMigrations latest message time",
+  (it) => {
+    it.effect("backfills the last message time without using later thread updates", () =>
+      Effect.gen(function* () {
+        yield* runMigrations();
+        yield* runForkMigrations({ toMigrationInclusive: 3 });
+        yield* insertSyntheticThread;
 
-      yield* runForkMigrations({ toMigrationInclusive: 4 });
+        yield* runForkMigrations({ toMigrationInclusive: 4 });
 
-      assert.deepEqual(yield* readLatestMessageAt, [
-        { latestMessageAt: "2026-01-01T10:13:00.000Z" },
-      ]);
-    }),
-  );
-});
+        assert.deepEqual(yield* readLatestMessageAt, [
+          { latestMessageAt: "2026-01-01T10:13:00.000Z" },
+        ]);
+      }),
+    );
+  },
+);
 
-it.layer(NodeSqliteClient.layerMemory())("ForkMigrations misplaced upstream record", (it) => {
-  it.effect("moves a nightly's upstream 51 record into the fork history", () =>
-    Effect.gen(function* () {
-      const sql = yield* SqlClient.SqlClient;
-      // A nightly from 2026-09-29 ran this migration as upstream 51.
-      yield* runMigrations({ toMigrationInclusive: 50 });
-      yield* runForkMigrations({ toMigrationInclusive: 3 });
-      yield* insertSyntheticThread;
-      yield* sql`ALTER TABLE projection_threads ADD COLUMN latest_message_at TEXT`;
-      yield* sql`UPDATE projection_threads SET latest_message_at = '2026-01-01T10:20:00.000Z'`;
-      yield* sql`
+it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
+  "ForkMigrations misplaced upstream record",
+  (it) => {
+    it.effect("moves a nightly's upstream 51 record into the fork history", () =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        // A nightly from 2026-09-29 ran this migration as upstream 51.
+        yield* runMigrations({ toMigrationInclusive: 50 });
+        yield* runForkMigrations({ toMigrationInclusive: 3 });
+        yield* insertSyntheticThread;
+        yield* sql`ALTER TABLE projection_threads ADD COLUMN latest_message_at TEXT`;
+        yield* sql`UPDATE projection_threads SET latest_message_at = '2026-01-01T10:20:00.000Z'`;
+        yield* sql`
         INSERT INTO effect_sql_migrations (migration_id, name)
         VALUES (51, 'ProjectionThreadLatestMessageAt')
       `;
 
-      yield* runAllMigrations();
+        yield* runAllMigrations();
 
-      const upstreamRecord = yield* sql<{ readonly name: string }>`
+        const upstreamRecord = yield* sql<{ readonly name: string }>`
         SELECT name FROM effect_sql_migrations WHERE migration_id = 51
       `;
-      assert.notDeepInclude(upstreamRecord, { name: "ProjectionThreadLatestMessageAt" });
-      const forkRecord = yield* sql<{ readonly name: string }>`
+        assert.notDeepInclude(upstreamRecord, { name: "ProjectionThreadLatestMessageAt" });
+        const forkRecord = yield* sql<{ readonly name: string }>`
         SELECT name FROM yngatech_sql_migrations WHERE migration_id = 4
       `;
-      assert.deepEqual(forkRecord, [{ name: "ProjectionThreadLatestMessageAt" }]);
-      // The column is kept as it was; the fork migration does not backfill it again.
-      assert.deepEqual(yield* readLatestMessageAt, [
-        { latestMessageAt: "2026-01-01T10:20:00.000Z" },
-      ]);
-    }),
-  );
-});
+        assert.deepEqual(forkRecord, [{ name: "ProjectionThreadLatestMessageAt" }]);
+        // The column is kept as it was; the fork migration does not backfill it again.
+        assert.deepEqual(yield* readLatestMessageAt, [
+          { latestMessageAt: "2026-01-01T10:20:00.000Z" },
+        ]);
+      }),
+    );
+  },
+);

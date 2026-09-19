@@ -7,7 +7,7 @@ import { runForkMigrations } from "../ForkMigrations.ts";
 import { runMigrations } from "../Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
-const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
+const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })));
 
 layer("003_ProjectAdditionalInstructions", (it) => {
   it.effect("adds nullable additional instructions to project projections", () =>
