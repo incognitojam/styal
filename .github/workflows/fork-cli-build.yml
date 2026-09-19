@@ -9,12 +9,13 @@ on:
       version:
         required: true
         type: string
-      dist_tag:
+      operation:
+        description: Build and verify packages, or publish previously built packages
         required: true
         type: string
-      publish:
-        default: false
-        type: boolean
+      dist_tag:
+        default: latest
+        type: string
 
 permissions:
   contents: read
@@ -22,6 +23,7 @@ permissions:
 jobs:
   build:
     name: Pack and verify CLI
+    if: inputs.operation == 'build'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
@@ -69,8 +71,7 @@ jobs:
 
   publish:
     name: Publish CLI to npm
-    needs: build
-    if: inputs.publish
+    if: inputs.operation == 'publish'
     # npm OIDC publishing requires a GitHub-hosted runner.
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -78,6 +79,11 @@ jobs:
       contents: read
       id-token: write
     steps:
+      # Use the workflow revision, not an older release candidate's scripts.
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: scripts/check-cli-release-freshness.ts
+          sparse-checkout-cone-mode: false
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
@@ -89,11 +95,57 @@ jobs:
       - name: Publish verified archive
         env:
           DIST_TAG: ${{ inputs.dist_tag }}
+          RELEASE_VERSION: ${{ inputs.version }}
         shell: bash
         run: |
           set -euo pipefail
+
+          node scripts/check-cli-release-freshness.ts
+
+          publish_or_verify() {
+            local package_name="$1"
+            local archive="$2"
+            local package_spec="${package_name}@${RELEASE_VERSION}"
+            local local_integrity
+            local published_integrity
+            local published_tag
+            local view_output
+            local view_status
+
+            local_integrity="sha512-$(openssl dgst -sha512 -binary "$archive" | openssl base64 -A)"
+
+            set +e
+            view_output=$(npm view "$package_spec" dist.integrity --json 2>&1)
+            view_status=$?
+            set -e
+
+            if (( view_status == 0 )); then
+              published_integrity=$(jq -er 'select(type == "string" and length > 0)' <<<"$view_output")
+              if [[ "$published_integrity" != "$local_integrity" ]]; then
+                echo "Published $package_spec does not match $archive." >&2
+                echo "Published integrity: $published_integrity" >&2
+                echo "Expected integrity:  $local_integrity" >&2
+                return 1
+              fi
+              published_tag=$(npm view "$package_name" dist-tags --json | jq -r --arg tag "$DIST_TAG" '.[$tag] // empty')
+              if [[ "$published_tag" != "$RELEASE_VERSION" ]]; then
+                echo "Published $package_spec has matching bytes, but $package_name@$DIST_TAG points at ${published_tag:-<missing>}. Repair the channel tag before retrying." >&2
+                return 1
+              fi
+              echo "$package_spec is already published with the verified bytes and channel tag."
+              return 0
+            fi
+
+            if ! grep -q 'E404' <<<"$view_output"; then
+              printf '%s\n' "$view_output" >&2
+              return "$view_status"
+            fi
+
+            npm publish "$archive" --access public --tag "$DIST_TAG" --provenance
+          }
+
           # Publish all five exact-version dependencies before their launcher.
           for key in darwin-arm64 linux-x64 linux-arm64 win32-x64 win32-arm64; do
-            npm publish "./cli-release/cli-$key.tgz" --access public --tag "$DIST_TAG" --provenance
+            publish_or_verify "@styal/cli-$key" "./cli-release/cli-$key.tgz"
           done
-          npm publish ./cli-release/cli.tgz --access public --tag "$DIST_TAG" --provenance
+          publish_or_verify "@styal/cli" ./cli-release/cli.tgz

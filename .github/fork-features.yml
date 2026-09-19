@@ -610,7 +610,7 @@ features:
   - id: fork-distribution-identity
     title: Keep fork builds distinctly identifiable
     status: maintained
-    prs: [3, 27, 29, 49, 56, 235, 242, 243, 244, 245, 281, 287, 302, 335]
+    prs: [3, 27, 29, 49, 56, 235, 242, 243, 244, 245, 281, 287, 302, 335, 378]
     invariants:
       - Packaged builds ship as styal with their own application identifier, URL scheme, product name, and About-panel identity instead of presenting as upstream T3 Code.
       - Electron's application name is a stable identity slug rather than a display string, so OS credential storage keys stay in the same namespace as the user-data directory they protect.
@@ -618,10 +618,15 @@ features:
       - Windows fork packages use styal-specific package and uninstall identities, never block on a running T3 Code process, and remain visibly distinguishable across Alpha and Nightly builds.
       - Standalone CLI archives carry the styal executable, release artwork, license, and native resource monitor, and run with isolated styal state without requiring a host Node installation.
       - npm, service updates, SSH, and WSL select styal release archives and isolated styal homes; protocol 4 prevents older npm launchers from switching into the executable layout remotely.
+      - npm publication starts only after every release artifact has passed its build verification, and a retry accepts an existing package version only when its registry integrity matches the exact tarball being released and its channel tag points to that version.
+      - Stale release retries are rejected before npm publication or integrity acceptance when any package channel tag is newer; nightly source promotion cannot move the branch backward.
       - CLI help and triage copy identify styal, and a bare CLI invocation shows command guidance while explicit `start` and `serve` commands own server startup.
       - Canonical brand asset paths and icon geometry stay shared across desktop, mobile configuration, web packaging, and export tooling so production and nightly artwork cannot silently diverge.
     implementation_paths:
       - .github/workflows/fork-cli-archives.yml
+      - .github/workflows/fork-cli-build.yml
+      - .github/workflows/fork-nightly.yml
+      - .github/workflows/fork-release.yml
       - apps/desktop/package.json
       - apps/desktop/resources/installer.nsh
       - apps/desktop/src/app/DesktopAssets.ts
@@ -644,6 +649,7 @@ features:
       - scripts/build-cli-archive.ts
       - scripts/build-desktop-artifact.ts
       - scripts/build-npm-platform-packages.ts
+      - scripts/check-cli-release-freshness.ts
       - scripts/export-brand-icons.ts
       - scripts/lib/brand-assets.ts
       - scripts/lib/macos-icon-safe-area.ts
@@ -668,6 +674,7 @@ features:
       - apps/web/src/branding.test.ts
       - packages/ssh/src/runnerProcess.test.ts
       - scripts/build-desktop-artifact.test.ts
+      - scripts/check-cli-release-freshness.test.ts
       - scripts/lib/brand-assets.test.ts
       - scripts/lib/cli-external-packages.test.ts
       - scripts/lib/macos-icon-safe-area.test.ts
