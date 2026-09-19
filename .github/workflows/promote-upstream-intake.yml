@@ -229,7 +229,7 @@ jobs:
     timeout-minutes: 10
     environment: upstream-intake-manual
     permissions:
-      actions: write
+      actions: read
       contents: read
     steps:
       - id: porter_token
@@ -311,15 +311,3 @@ jobs:
             echo "- Verified Fork CI: $CI_RUN_URL"
             echo "- Push actor: \`${{ steps.porter_token.outputs.app-slug }}[bot]\`"
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - id: refresh_tracking
-        name: Refresh upstream tracking issue
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run upstream-tracking.yml --repo "$GITHUB_REPOSITORY" --ref main
-
-      - name: Report deferred tracking refresh
-        if: steps.refresh_tracking.outcome == 'failure'
-        run: |
-          echo "::warning::The promotion succeeded, but the immediate tracking refresh could not be dispatched. The daily tracker will reconcile it."
