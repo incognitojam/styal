@@ -170,10 +170,11 @@ export function nextBatch(entries: QueueEntry[], count: number): QueueEntry[] {
 export function formatBatchFooter(entries: QueueEntry[]): string | null {
   if (!entries.length) return null;
   const prs = [...new Set(entries.flatMap((entry) => (entry.pr === null ? [] : [entry.pr])))];
+  const commits = entries.filter((entry) => entry.pr === null).map((entry) => entry.sha);
   return [
     "PR description footer (assumes you incorporate the whole listed batch):",
     ...(prs.length ? [`Upstream-PR: ${prs.join(", ")}`] : []),
-    `Upstream-Commit: ${entries.map((entry) => entry.sha).join(", ")}`,
+    ...(commits.length ? [`Upstream-Commit: ${commits.join(", ")}`] : []),
   ].join("\n");
 }
 

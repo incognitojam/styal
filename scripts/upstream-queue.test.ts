@@ -203,7 +203,14 @@ describe("chronological upstream queue", () => {
       [
         "PR description footer (assumes you incorporate the whole listed batch):",
         "Upstream-PR: 8321, 8585",
-        `Upstream-Commit: ${sha(1)}, ${sha(2)}, ${sha(3)}, ${sha(4)}`,
+        `Upstream-Commit: ${sha(3)}`,
+      ].join("\n"),
+    );
+    assert.equal(
+      formatBatchFooter([entries[0]!, entries[1]!, entries[3]!]),
+      [
+        "PR description footer (assumes you incorporate the whole listed batch):",
+        "Upstream-PR: 8321, 8585",
       ].join("\n"),
     );
     assert.equal(
