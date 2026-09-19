@@ -215,6 +215,7 @@ describe("upstream intake audit", () => {
           readonly if: string;
           readonly steps: ReadonlyArray<{
             readonly name?: string;
+            readonly if?: string;
             readonly uses?: string;
             readonly run?: string;
             readonly with?: Record<string, string>;
@@ -238,6 +239,7 @@ describe("upstream intake audit", () => {
     assert.isTrue(workflow.on.workflow_dispatch.inputs.reviewed_sha?.required);
     assert.isFalse(workflow.on.workflow_dispatch.inputs.source_prs?.required);
     assert.isFalse(workflow.on.workflow_dispatch.inputs.source_commits?.required);
+    assert.isTrue(workflow.on.workflow_dispatch.inputs.prerequisites_reviewed?.required);
     assert.equal(workflow.permissions.actions, "read");
     assert.equal(workflow.permissions.contents, "read");
     assert.isFalse(workflow.concurrency["cancel-in-progress"]);
@@ -268,6 +270,15 @@ describe("upstream intake audit", () => {
     assert.include(
       auditCandidate?.run ?? "",
       '--expected-source-commits "$EXPECTED_SOURCE_COMMITS"',
+    );
+
+    const prerequisiteReview = workflow.jobs.validate.steps.find(
+      (step) => step.name === "Verify prerequisite review",
+    );
+    assert.equal(prerequisiteReview?.if, "inputs.prerequisites_reviewed != true");
+    assert.include(
+      prerequisiteReview?.run ?? "",
+      "requires an explicit upstream prerequisite review",
     );
 
     const verifyCi = workflow.jobs.validate.steps.find(

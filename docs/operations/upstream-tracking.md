@@ -114,6 +114,14 @@ its direct upstream prerequisites, corrections, and follow-ups before preparing 
 coherent group when upstream has already supplied the correction instead of recreating that fix in the
 fork.
 
+For every source, inspect its actual merge or squash commit against its first parent, not only the pull
+request description. Treat identifiers, files, and behavior that its patch changes or removes as
+possible prerequisites. If any are absent from the fork, trace their introduction with upstream history
+and blame, then check the tracker for that source. Intake the prerequisite first, or stop and cite its
+recorded skip decision; do not silently resolve the conflict by deleting the dependent change or by
+writing a compensating fork adaptation. Repeat this check after conflict resolution by comparing the
+candidate with every source diff and accounting for anything the candidate leaves out.
+
 Apply upstream commits unchanged whenever they apply. Preserve their individual commits and authors,
 including internal names and implementation choices that do not affect a documented fork difference.
 Do not use routine intake to rebrand internals, refactor the upstream implementation, add speculative
@@ -170,6 +178,9 @@ empty asserts that it has no sources of that kind. Every candidate commit must n
 or both. Explicit commit sources always require manual source-diff review. This is durable bookkeeping,
 not proof that the candidate implements those sources; the independent review must verify that
 correspondence.
+
+Set `prerequisites_reviewed` only after the source-assumption and post-conflict checks above are
+complete. Promotion rejects a dispatch without that explicit attestation.
 
 The validation job runs from the current trusted `main`, treats the candidate as data, repeats the
 ledger and structural audit, and requires a successful Fork CI push run with the complete expected
