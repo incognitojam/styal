@@ -179,6 +179,9 @@ jobs:
     name: Build and verify CLI
     needs: [prepare, build_cli_archives]
     if: needs.prepare.outputs.has_changes == 'true'
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/fork-cli-build.yml
     with:
       ref: ${{ needs.prepare.outputs.ref }}
