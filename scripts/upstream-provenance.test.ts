@@ -23,4 +23,36 @@ describe("upstream commit provenance", () => {
       assert.lengthOf(source.errors, 1);
     }
   });
+
+  it("reads provenance trailers wrapped by GitHub", () => {
+    const first = "a".repeat(40);
+    const second = "b".repeat(40);
+    const source = parseUpstreamProvenance([
+      [
+        "fix: synthetic squash commit",
+        "",
+        "Upstream-PR: 5302, 5769, 9843,",
+        "10105, 10285, 10289,",
+        "10301, 11316",
+        `Upstream-Commit: ${first},`,
+        second,
+      ].join("\n"),
+    ]);
+
+    assert.deepEqual(
+      source.pullRequestNumbers,
+      [5302, 5769, 9843, 10105, 10285, 10289, 10301, 11316],
+    );
+    assert.deepEqual(source.commitShas, [first, second]);
+    assert.deepEqual(source.errors, []);
+  });
+
+  it("does not treat unrelated numeric lines after complete trailers as provenance", () => {
+    const source = parseUpstreamProvenance([
+      "fix: synthetic squash commit\n\nUpstream-PR: 5302\n5769, 9843",
+    ]);
+
+    assert.deepEqual(source.pullRequestNumbers, [5302]);
+    assert.deepEqual(source.errors, []);
+  });
 });

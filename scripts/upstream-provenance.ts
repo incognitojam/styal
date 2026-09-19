@@ -1,9 +1,11 @@
 const SOURCE_PRS_HEADING = /^(?:#{1,6}\s+)?Source PRs?:?\s*$/iu;
 const ESCAPED_SOURCE_LIST_ITEM = /^\s*-\s+`pingdotgg\/t3code#([1-9]\d*)`\s*$/u;
-const UPSTREAM_PR_TRAILER = /^Upstream-PR:\s*([^\r\n]*)$/gimu;
-const UPSTREAM_COMMIT_TRAILER = /^Upstream-Commit:[\t ]*([^\r\n]*)$/gimu;
+const UPSTREAM_PR_TRAILER = /^Upstream-PR:[\t ]*(.*)$/iu;
+const UPSTREAM_COMMIT_TRAILER = /^Upstream-Commit:[\t ]*(.*)$/iu;
 const SOURCE_PR_LIST = /^\s*[1-9]\d*(?:\s*,\s*[1-9]\d*)*\s*$/u;
 const SOURCE_COMMIT_LIST = /^\s*[0-9a-f]{40}(?:\s*,\s*[0-9a-f]{40})*\s*$/u;
+const SOURCE_PR_LIST_FRAGMENT = /^\s*[1-9]\d*(?:\s*,\s*[1-9]\d*)*\s*,?\s*$/u;
+const SOURCE_COMMIT_LIST_FRAGMENT = /^\s*[0-9a-f]{40}(?:\s*,\s*[0-9a-f]{40})*\s*,?\s*$/u;
 
 export interface UpstreamProvenance {
   readonly pullRequestNumbers: ReadonlyArray<number>;
@@ -19,6 +21,29 @@ function parseNumberList(value: string): ReadonlyArray<number> | null {
   if (!SOURCE_PR_LIST.test(value)) return null;
   const numbers = value.split(",").map((part) => Number(part.trim()));
   return numbers.every(Number.isSafeInteger) ? sortedNumbers(numbers) : null;
+}
+
+function trailerValues(
+  message: string,
+  trailer: RegExp,
+  continuation: RegExp,
+): ReadonlyArray<string> {
+  const values: Array<string> = [];
+  const lines = message.split(/\r?\n/u);
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = (lines[index] ?? "").match(trailer);
+    if (match === null) continue;
+
+    let value = match[1] ?? "";
+    while (value.trimEnd().endsWith(",")) {
+      const next = lines[index + 1];
+      if (next === undefined || !continuation.test(next)) break;
+      value += next;
+      index += 1;
+    }
+    values.push(value);
+  }
+  return values;
 }
 
 function sourceSectionNumbers(message: string): ReadonlyArray<number> {
@@ -49,8 +74,12 @@ export function parseUpstreamProvenance(messages: ReadonlyArray<string>): Upstre
 
   for (const message of messages) {
     for (const number of sourceSectionNumbers(message)) pullRequestNumbers.add(number);
-    for (const match of message.matchAll(UPSTREAM_COMMIT_TRAILER)) {
-      const parsed = parseSourceCommitInput(match[1] ?? "");
+    for (const value of trailerValues(
+      message,
+      UPSTREAM_COMMIT_TRAILER,
+      SOURCE_COMMIT_LIST_FRAGMENT,
+    )) {
+      const parsed = parseSourceCommitInput(value);
       if (parsed === null || parsed.length === 0) {
         errors.push(
           "Upstream-Commit metadata must contain comma-separated full lowercase commit SHAs.",
@@ -59,8 +88,8 @@ export function parseUpstreamProvenance(messages: ReadonlyArray<string>): Upstre
       }
       for (const sha of parsed) commitShas.add(sha);
     }
-    for (const match of message.matchAll(UPSTREAM_PR_TRAILER)) {
-      const parsed = parseNumberList(match[1] ?? "");
+    for (const value of trailerValues(message, UPSTREAM_PR_TRAILER, SOURCE_PR_LIST_FRAGMENT)) {
+      const parsed = parseNumberList(value);
       if (parsed === null) {
         errors.push("Upstream-PR metadata must contain comma-separated pull request numbers.");
         continue;
