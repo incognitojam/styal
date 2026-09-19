@@ -833,10 +833,15 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         threadId,
         runtimeMode: "full-access",
       });
-      NodeAssert.deepEqual(oldSession.resumeCursor, { schemaVersion: 1, sessionId: "ses_old" });
+      NodeAssert.deepEqual(oldSession.resumeCursor, {
+        schemaVersion: 1,
+        sessionId: "ses_old",
+        mcpServerName: "styal",
+      });
       NodeAssert.deepEqual(replacement.resumeCursor, {
         schemaVersion: 1,
         sessionId: "ses_replacement",
+        mcpServerName: "styal",
       });
 
       abortRelease.resolve(undefined);
@@ -889,6 +894,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       NodeAssert.deepEqual(replacement.resumeCursor, {
         schemaVersion: 1,
         sessionId: "ses_connecting_replacement",
+        mcpServerName: "styal",
       });
 
       abortRelease.resolve(undefined);
