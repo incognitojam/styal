@@ -30,7 +30,17 @@ export interface QueueEntry extends Integration {
   disposition: "pending" | "recorded" | "already present" | "skip";
 }
 
+type Run = (command: string, args: string[]) => string;
+
 const fullSha = /^[0-9a-f]{40}$/u;
+
+/** Let Git choose the shortest object name that remains unambiguous in this repository. */
+export function shortenCommitSha(sha: string, run: Run): string {
+  const shortSha = run("git", ["rev-parse", "--short", "--verify", `${sha}^{commit}`]).trim();
+  if (!/^[0-9a-f]{4,40}$/u.test(shortSha))
+    throw new Error(`Git returned an invalid abbreviated commit SHA for ${sha}.`);
+  return shortSha;
+}
 
 /** Keep local caches and test fixtures ignored, including in fresh CI checkouts. */
 export function ensureScratchDirectory(root: string): string {
@@ -175,8 +185,6 @@ export function advanceBaseline(
   return { ...state, baseline: source };
 }
 
-type Run = (command: string, args: string[]) => string;
-
 /** Require both boundaries on the first-parent chain; ancestry alone admits side branches. */
 export function readIntegrations(state: IntakeState, run: Run): Integration[] {
   const chain = run("git", ["rev-list", "--first-parent", state.target]).trim().split("\n");
@@ -310,6 +318,15 @@ function main() {
       encoding: "utf8",
       maxBuffer: 64 * 1024 * 1024,
     });
+  const shortShas = new Map<string, string>();
+  const shortSha = (sha: string) => {
+    const cached = shortShas.get(sha);
+    if (cached) return cached;
+    const abbreviated = shortenCommitSha(sha, run);
+    shortShas.set(sha, abbreviated);
+    return abbreviated;
+  };
+  const abbreviateShas = (text: string) => text.replace(/[0-9a-f]{40}/gu, shortSha);
   const statePath = NodePath.resolve(root, values.state);
   const state = decodeState(NodeFS.readFileSync(statePath, "utf8"));
   const fork = run("git", [
@@ -362,7 +379,7 @@ function main() {
   );
   if (command === "target") {
     NodeFS.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
-    console.log(`Target set to ${state.target}`);
+    console.log(`Target set to ${shortSha(state.target)}`);
     return;
   }
   const forkLog = run("git", ["log", "--format=%H%x00%B%x00", fork]).split("\0");
@@ -375,7 +392,7 @@ function main() {
     const advanced = advanceBaseline(state, entries, source!);
     NodeFS.writeFileSync(statePath, `${JSON.stringify(advanced, null, 2)}\n`);
     console.log(
-      `Baseline advanced to ${advanced.baseline}; commit the state change after reviewing the evidence.`,
+      `Baseline advanced to ${shortSha(advanced.baseline)}; commit the state change after reviewing the evidence.`,
     );
     return;
   }
@@ -416,14 +433,14 @@ function main() {
   if (values.json) console.log(JSON.stringify({ ...summary, entries: selected }, null, 2));
   else {
     console.log(
-      `Fork ${fork}\nUpstream ${upstream}\nBaseline ${state.baseline}\nTarget ${state.target}\nReconciled through ${through}\n${pending.length}/${entries.length} commits pending (${summary.pendingPRs} PRs, ${summary.pendingDirectCommits} direct/unassociated commits); ${summary.recordedCommits} recorded, ${summary.exceptions} exceptions.\n${summary.beyondTarget} upstream commits beyond target.\nRecorded provenance is import evidence, not proof of current patch equivalence.`,
+      `Fork ${shortSha(fork)}\nUpstream ${shortSha(upstream)}\nBaseline ${shortSha(state.baseline)}\nTarget ${shortSha(state.target)}\nReconciled through ${shortSha(through)}\n${pending.length}/${entries.length} commits pending (${summary.pendingPRs} PRs, ${summary.pendingDirectCommits} direct/unassociated commits); ${summary.recordedCommits} recorded, ${summary.exceptions} exceptions.\n${summary.beyondTarget} upstream commits beyond target.\nRecorded provenance is import evidence, not proof of current patch equivalence.`,
     );
     for (const entry of selected) {
       console.log(
-        `${entry.sha} ${entry.pr === null ? "commit" : `#${entry.pr}`} [${entry.disposition}] ${entry.title}${entry.empty ? " [empty first-parent diff: inspect source history]" : ""}`,
+        `${shortSha(entry.sha)} ${entry.pr === null ? "commit" : `#${entry.pr}`} [${entry.disposition}] ${entry.title}${entry.empty ? " [empty first-parent diff: inspect source history]" : ""}`,
       );
       if (command === "explain")
-        for (const evidence of entry.evidence) console.log(`  ${evidence}`);
+        for (const evidence of entry.evidence) console.log(`  ${abbreviateShas(evidence)}`);
     }
   }
 }

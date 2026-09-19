@@ -12,6 +12,7 @@ import {
   readIntegrations,
   reconcile,
   reconciledThrough,
+  shortenCommitSha,
 } from "./upstream-queue.ts";
 import type { Integration } from "./upstream-queue.ts";
 
@@ -25,6 +26,18 @@ const integration = (n: number, pr: number | null = null): Integration => ({
 });
 
 describe("chronological upstream queue", () => {
+  it("asks Git for an unambiguous abbreviated commit SHA", () => {
+    const commit = sha(42);
+    const calls: [string, string[]][] = [];
+    const result = shortenCommitSha(commit, (command, args) => {
+      calls.push([command, args]);
+      return "0000002a\n";
+    });
+
+    assert.equal(result, "0000002a");
+    assert.deepEqual(calls, [["git", ["rev-parse", "--short", "--verify", `${commit}^{commit}`]]]);
+  });
+
   it("advances only through fully accounted-for PR boundaries and retains reasoned exceptions", () => {
     const state = {
       upstreamRepository: "example/upstream",
