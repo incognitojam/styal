@@ -108,6 +108,7 @@ jobs:
             local package_spec="${package_name}@${RELEASE_VERSION}"
             local local_integrity
             local published_integrity
+            local published_tag
             local view_output
             local view_status
 
@@ -126,7 +127,12 @@ jobs:
                 echo "Expected integrity:  $local_integrity" >&2
                 return 1
               fi
-              echo "$package_spec is already published with the verified bytes."
+              published_tag=$(npm view "$package_name" dist-tags --json | jq -r --arg tag "$DIST_TAG" '.[$tag] // empty')
+              if [[ "$published_tag" != "$RELEASE_VERSION" ]]; then
+                echo "Published $package_spec has matching bytes, but $package_name@$DIST_TAG points at ${published_tag:-<missing>}. Repair the channel tag before retrying." >&2
+                return 1
+              fi
+              echo "$package_spec is already published with the verified bytes and channel tag."
               return 0
             fi
 

@@ -114,3 +114,100 @@ it("nightly promotion allows forward/equal pushes and rejects a stale release-on
     NodeFS.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+// Run the workflow's real retry function with registry responses supplied by a
+// shell npm stub, so these cases cannot publish or change public package tags.
+describe.each([
+  ["latest", "1.2.3", "1.2.2"],
+  ["nightly", "1.2.3-nightly.20260919.100", "1.2.3-nightly.20260918.99"],
+])("verified %s publication retries", (tag, version, older) => {
+  it.each([
+    "matching",
+    "older",
+    "missing",
+    "registry-error",
+    "invalid-json",
+    "wrong-bytes",
+    "unpublished",
+  ])("%s registry state", (scenario) => {
+    const root = NodePath.resolve(import.meta.dirname, "..");
+    NodeChildProcess.execFileSync("git", ["check-ignore", "-q", ".scratch"], { cwd: root });
+    NodeFS.mkdirSync(NodePath.resolve(root, ".scratch"), { recursive: true });
+    const directory = NodeFS.mkdtempSync(NodePath.resolve(root, ".scratch/release-retry-"));
+    try {
+      NodeFS.writeFileSync(NodePath.join(directory, "archive.tgz"), "synthetic release bytes");
+      const workflow = parse(
+        NodeFS.readFileSync(NodePath.join(root, ".github/workflows/fork-cli-build.yml"), "utf8"),
+      );
+      const command: string = workflow.jobs.publish.steps.find(
+        (step: { name?: string }) => step.name === "Publish verified archive",
+      ).run;
+      const retryFunction = command.slice(
+        command.indexOf("publish_or_verify()"),
+        command.indexOf("# Publish all five"),
+      );
+      const result = NodeChildProcess.spawnSync(
+        "bash",
+        [
+          "-c",
+          `
+set -euo pipefail
+integrity="sha512-$(openssl dgst -sha512 -binary archive.tgz | openssl base64 -A)"
+npm() {
+  if [[ "$1" == publish ]]; then
+    echo published >> calls
+    return 0
+  fi
+  if [[ "$3" == dist.integrity ]]; then
+    if [[ "$SCENARIO" == unpublished ]]; then
+      echo E404 >&2
+      return 1
+    fi
+    if [[ "$SCENARIO" == wrong-bytes ]]; then
+      echo '"sha512-wrong"'
+    else
+      printf '"%s"\\n' "$integrity"
+    fi
+    return 0
+  fi
+  if [[ "$SCENARIO" == registry-error ]]; then
+    echo registry-unavailable >&2
+    return 1
+  fi
+  printf '%s\\n' "$TAGS_JSON"
+}
+${retryFunction}
+publish_or_verify @styal/cli ./archive.tgz
+`,
+        ],
+        {
+          cwd: directory,
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            RELEASE_VERSION: version,
+            DIST_TAG: tag,
+            SCENARIO: scenario,
+            TAGS_JSON:
+              scenario === "invalid-json"
+                ? "invalid json"
+                : JSON.stringify(
+                    scenario === "missing" ? {} : { [tag]: scenario === "older" ? older : version },
+                  ),
+          },
+        },
+      );
+      if (scenario === "matching" || scenario === "unpublished") {
+        expect(result.status, result.stderr).toBe(0);
+      } else {
+        expect(result.status).not.toBe(0);
+      }
+      if (scenario === "older" || scenario === "missing") {
+        expect(result.stderr).toContain("Repair the channel tag before retrying");
+      }
+      expect(NodeFS.existsSync(NodePath.join(directory, "calls"))).toBe(scenario === "unpublished");
+    } finally {
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+});
