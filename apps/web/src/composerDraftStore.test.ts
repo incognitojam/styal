@@ -2517,9 +2517,13 @@ describe("composerDraftStore model seed migration", () => {
   const staleDraftId = DraftId.make("draft-legacy-stale-model");
   const explicitDraftId = DraftId.make("draft-legacy-explicit-model");
   const typedDraftId = DraftId.make("draft-legacy-typed-model");
+  const fileDraftId = DraftId.make("draft-legacy-file-only-model");
+  const issueDraftId = DraftId.make("draft-legacy-issue-only-model");
   const staleThreadId = ThreadId.make("thread-legacy-stale-model");
   const explicitThreadId = ThreadId.make("thread-legacy-explicit-model");
   const typedThreadId = ThreadId.make("thread-legacy-typed-model");
+  const fileThreadId = ThreadId.make("thread-legacy-file-only-model");
+  const issueThreadId = ThreadId.make("thread-legacy-issue-only-model");
   const serverThreadId = ThreadId.make("thread-server-model");
   const serverThreadKey = scopedThreadKey(scopeThreadRef(TEST_ENVIRONMENT_ID, serverThreadId));
   const projectId = ProjectId.make("project-model-migration");
@@ -2611,6 +2615,42 @@ describe("composerDraftStore model seed migration", () => {
               modelSelectionByProvider: { [CODEX_INSTANCE]: staleSelection },
               activeProvider: CODEX_INSTANCE,
             },
+            [fileDraftId]: {
+              prompt: "",
+              attachments: [],
+              files: [
+                {
+                  id: "file_migration_report",
+                  name: "migration-report.pdf",
+                  mimeType: "application/pdf",
+                  sizeBytes: 512,
+                },
+              ],
+              modelSelectionByProvider: { [CODEX_INSTANCE]: staleSelection },
+              activeProvider: CODEX_INSTANCE,
+            },
+            [issueDraftId]: {
+              prompt: "",
+              attachments: [],
+              issueContexts: [
+                {
+                  id: "issue_migration_context",
+                  threadId: issueThreadId,
+                  attachedAt: "2026-08-01T00:00:00.000Z",
+                  provider: "github",
+                  repository: "example/project",
+                  number: 42,
+                  title: "Preserve issue context",
+                  url: "https://example.com/issues/42",
+                  state: "open",
+                  author: "example-user",
+                  body: "Synthetic migration context",
+                  comments: [],
+                },
+              ],
+              modelSelectionByProvider: { [CODEX_INSTANCE]: staleSelection },
+              activeProvider: CODEX_INSTANCE,
+            },
             [explicitDraftId]: {
               prompt: "",
               attachments: [],
@@ -2629,6 +2669,8 @@ describe("composerDraftStore model seed migration", () => {
             [staleDraftId]: draftThread(staleThreadId),
             [explicitDraftId]: draftThread(explicitThreadId),
             [typedDraftId]: draftThread(typedThreadId),
+            [fileDraftId]: draftThread(fileThreadId),
+            [issueDraftId]: draftThread(issueThreadId),
           },
           logicalProjectDraftThreadKeyByLogicalProjectKey: {
             [logicalProjectKey]: staleDraftId,
@@ -2648,6 +2690,16 @@ describe("composerDraftStore model seed migration", () => {
       });
       expect(draftByKey(typedDraftId)).toMatchObject({
         prompt: "keep this prompt",
+        modelSelectionByProvider: { [CODEX_INSTANCE]: staleSelection },
+        activeProvider: CODEX_INSTANCE,
+      });
+      expect(draftByKey(fileDraftId)).toMatchObject({
+        files: [{ id: "file_migration_report", name: "migration-report.pdf" }],
+        modelSelectionByProvider: { [CODEX_INSTANCE]: staleSelection },
+        activeProvider: CODEX_INSTANCE,
+      });
+      expect(draftByKey(issueDraftId)).toMatchObject({
+        issueContexts: [{ id: "issue_migration_context", number: 42 }],
         modelSelectionByProvider: { [CODEX_INSTANCE]: staleSelection },
         activeProvider: CODEX_INSTANCE,
       });
