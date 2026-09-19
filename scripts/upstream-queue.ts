@@ -5,7 +5,7 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeUtil from "node:util";
-import { parseUpstreamProvenance } from "./upstream-provenance.ts";
+import { parseUpstreamProvenance, withoutFencedExamples } from "./upstream-provenance.ts";
 
 export interface IntakeState {
   upstreamRepository: string;
@@ -117,7 +117,9 @@ export function reconcile(
     if (provenance.errors.length) throw new Error(`${commit.sha}: ${provenance.errors.join(" ")}`);
     for (const sha of provenance.commitShas) add(commits, sha, `Upstream-Commit in ${commit.sha}`);
     for (const pr of provenance.pullRequestNumbers) add(prs, pr, `PR provenance in ${commit.sha}`);
-    for (const match of commit.message.matchAll(/\(cherry picked from commit ([0-9a-f]{40})\)/gu)) {
+    for (const match of withoutFencedExamples(commit.message).matchAll(
+      /\(cherry picked from commit ([0-9a-f]{40})\)/gu,
+    )) {
       add(commits, match[1]!, `cherry-pick -x in ${commit.sha}`);
     }
   }

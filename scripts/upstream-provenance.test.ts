@@ -3,6 +3,30 @@ import { assert, describe, it } from "@effect/vitest";
 import { parseSourceCommitInput, parseUpstreamProvenance } from "./upstream-provenance.ts";
 
 describe("upstream commit provenance", () => {
+  it("ignores fenced PR-description examples while retaining actual import metadata", () => {
+    const source = parseUpstreamProvenance([
+      [
+        "Tool documentation",
+        "```text",
+        "Upstream-PR: 123,",
+        "456",
+        `Upstream-Commit: ${"a".repeat(40)}`,
+        "```",
+        "~~~~",
+        "Source PRs:",
+        "- `pingdotgg/t3code#789`",
+        "~~~",
+        "Upstream-PR: 111",
+        "~~~~",
+        "",
+        "Upstream-PR: 222",
+        `Upstream-Commit: ${"b".repeat(40)}`,
+      ].join("\n"),
+    ]);
+    assert.deepEqual(source.pullRequestNumbers, [222]);
+    assert.deepEqual(source.commitShas, ["b".repeat(40)]);
+    assert.deepEqual(source.errors, []);
+  });
   it("reads full commit SHAs alongside PR provenance without treating incidental references as sources", () => {
     const first = "a".repeat(40);
     const second = "b".repeat(40);

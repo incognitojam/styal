@@ -13,6 +13,32 @@ export interface UpstreamProvenance {
   readonly errors: ReadonlyArray<string>;
 }
 
+/** Squash messages retain Markdown examples from PR descriptions, not just import metadata. */
+export function withoutFencedExamples(message: string): string {
+  let fence: string | undefined;
+  return message
+    .split(/\r?\n/u)
+    .map((line) => {
+      const marker = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/u);
+      if (fence !== undefined) {
+        if (
+          marker &&
+          marker[1]![0] === fence[0] &&
+          marker[1]!.length >= fence.length &&
+          !marker[2]!.trim()
+        )
+          fence = undefined;
+        return "";
+      }
+      if (marker) {
+        fence = marker[1];
+        return "";
+      }
+      return line;
+    })
+    .join("\n");
+}
+
 function sortedNumbers(numbers: Iterable<number>): ReadonlyArray<number> {
   return [...new Set(numbers)].toSorted((left, right) => left - right);
 }
@@ -72,7 +98,8 @@ export function parseUpstreamProvenance(messages: ReadonlyArray<string>): Upstre
   const commitShas = new Set<string>();
   const errors: Array<string> = [];
 
-  for (const message of messages) {
+  for (const rawMessage of messages) {
+    const message = withoutFencedExamples(rawMessage);
     for (const number of sourceSectionNumbers(message)) pullRequestNumbers.add(number);
     for (const value of trailerValues(
       message,
