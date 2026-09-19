@@ -95,7 +95,9 @@ it.each([
     encoding: "utf8",
     input: `
 node() { return 0; }
-openssl() { printf fixture; }
+openssl() {
+  if [[ "$1" == base64 ]]; then cat; else printf fixture; fi
+}
 npm() {
   case "$1:$3" in
     publish:--access) echo published ;;
