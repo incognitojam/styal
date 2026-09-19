@@ -109,15 +109,31 @@ Tick the boxes you want and add direction beneath each — what to keep of the f
 related changes to take together, or why to skip. Then dispatch an agent with the ticked items and
 those notes as its brief.
 
-Routine candidates use an `intake/<batch>` branch based on the current `main`. Preserve the individual
-upstream commits and their authors where they apply cleanly; a port may use fork-authored commits when
-the implementation must differ. Every intake commit records its source in commit metadata with a
-comma-separated trailer such as `Upstream-PR: 1234, 5678`, `Upstream-Commit: <full SHA>, <full SHA>`,
-or both. Commit SHAs must be complete, lowercase, 40-character values. Fork pull requests may list escaped
+Routine candidates use an `intake/<batch>` branch based on the current `main`. Inspect each source and
+its direct upstream prerequisites, corrections, and follow-ups before preparing the candidate. Take a
+coherent group when upstream has already supplied the correction instead of recreating that fix in the
+fork.
+
+Apply upstream commits unchanged whenever they apply. Preserve their individual commits and authors,
+including internal names and implementation choices that do not affect a documented fork difference.
+Do not use routine intake to rebrand internals, refactor the upstream implementation, add speculative
+coverage or documentation, or fix unrelated defects. Upstream has already reviewed and tested this
+code; Fork CI establishes whether those unchanged commits integrate with the fork.
+
+A fork-authored adaptation is appropriate only when the upstream change cannot apply, build, or run
+against the fork, or when it would break an explicit maintainer direction or an invariant recorded in
+the fork feature ledger. Keep the adaptation as small as possible and in a separate commit after the
+upstream commits. Its commit message must identify the concrete incompatibility or preserved invariant.
+If a direct upstream follow-up supplies the needed fix, intake that source rather than writing a local
+substitute. Product naming alone does not justify changing internal or otherwise non-user-facing details.
+
+Every intake commit records its source in commit metadata with a comma-separated trailer such as
+`Upstream-PR: 1234, 5678`, `Upstream-Commit: <full SHA>, <full SHA>`, or both. Commit SHAs must be
+complete, lowercase, 40-character values. Fork pull requests may list escaped
 `pingdotgg/t3code#1234` references beneath an exact `Source PRs:` section because this repository
-retains the body in the squash commit; retain `Upstream-Commit:` lines there for commit sources.
-Do not merge `main` into the branch. If `main` moves, rebase the
-candidate and validate it again before promotion.
+retains the body in the squash commit; retain `Upstream-Commit:` lines there for commit sources. Do not
+merge `main` into the branch. If `main` moves, rebase the candidate and validate it again before
+promotion.
 
 Pushing an intake branch runs the same Fork CI jobs as a pull request, comparing the complete
 `main...candidate` diff rather than only the latest push. `Fork Intake Audit` also verifies that the
@@ -133,24 +149,34 @@ upstream pull requests or issues carried by the candidate stay in backticks. The
 inspect upstream source changes that the resulting diff intentionally leaves out. Upstream migration
 files may only change in a reviewed intake, carried verbatim.
 
+Review and validation should concentrate on source completeness, direct upstream fixes, conflicts with
+the current fork, ledger invariants, and any fork-authored adaptation. Do not repeat upstream's full
+manual or platform test plan for unchanged commits. Add targeted local validation only when a conflict
+resolution or fork adaptation changes behavior, or when the candidate touches a migration or another
+fork-specific integration boundary that Fork CI cannot establish.
+
 ## Manual promotion
 
 Before dispatching promotion, give an independent model the candidate's complete `main...candidate`
-diff, its audit report, and the upstream changes it is meant to carry. Resolve its findings, rerun Fork
-CI, and copy the full candidate commit id. Dispatch `Promote upstream intake` from `main` with the
-`intake/<batch>` branch, that exact commit id as `reviewed_sha`, and the comma-separated source pull
-request numbers as `source_prs` and/or full commit SHAs as `source_commits`. At least one source is
-required. Trusted validation requires both lists to exactly match the candidate's commit provenance;
-leaving an input empty asserts that it has no sources of that kind. Every candidate commit must name
-a PR, a commit SHA, or both. Explicit commit sources always require manual source-diff review. This
-is durable bookkeeping, not proof that the candidate implements those sources; the independent
-review must verify that correspondence.
+diff, its audit report, and the upstream changes it is meant to carry. The review verifies source
+correspondence, intentional omissions, fork compatibility, and the necessity and scope of every
+fork-authored adaptation. It does not re-review unchanged upstream implementation choices. Resolve
+findings within that boundary, rerun Fork CI when the candidate bytes change, and copy the full
+candidate commit id. Dispatch `Promote upstream intake` from `main` with the `intake/<batch>` branch,
+that exact commit id as `reviewed_sha`, and the comma-separated source pull request numbers as
+`source_prs` and/or full commit SHAs as `source_commits`. At least one source is required. Trusted
+validation requires both lists to exactly match the candidate's commit provenance; leaving an input
+empty asserts that it has no sources of that kind. Every candidate commit must name a PR, a commit SHA,
+or both. Explicit commit sources always require manual source-diff review. This is durable bookkeeping,
+not proof that the candidate implements those sources; the independent review must verify that
+correspondence.
 
 The validation job runs from the current trusted `main`, treats the candidate as data, repeats the
 ledger and structural audit, and requires a successful Fork CI push run with the complete expected
 job set for the exact branch and commit. Supplying `reviewed_sha` is the dispatcher's attestation that
-the independent review covered those exact bytes. A successful validation requests approval through
-the `upstream-intake-manual` environment; the Styal Porter credential is unavailable before approval.
+the scoped independent review covered those exact bytes. A successful validation requests approval
+through the `upstream-intake-manual` environment; the Styal Porter credential is unavailable before
+approval.
 Candidates that modify the fork-owned Fork CI workflow remain pull-request-only so they cannot define
 the evidence used to promote themselves.
 
