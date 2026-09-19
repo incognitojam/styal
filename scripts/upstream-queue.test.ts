@@ -254,6 +254,40 @@ describe("chronological upstream queue", () => {
     );
   });
 
+  it("reconciles imports through intermediate branches once their merge commits reach the target", () => {
+    const pr = {
+      number: 12,
+      mergedAt: "2026-01-01",
+      baseRefName: "release/cli",
+      baseRepository: { nameWithOwner: "example/upstream" },
+      mergeCommit: { oid: sha(2) },
+    };
+    const integrations = [integration(1), integration(2), integration(3)];
+    const cache = {
+      [sha(1)]: [pr],
+      [sha(2)]: [pr],
+      [sha(3)]: [{ ...pr, baseRepository: { nameWithOwner: "example/other" } }],
+    };
+    const associated = associatePRs(integrations, cache, "example/upstream", new Set([sha(2)]));
+    assert.deepEqual(
+      associated.map((entry) => entry.pr),
+      [12, 12, null],
+    );
+    const entries = reconcile(associated, [{ sha: sha(20), message: "Upstream-PR: 12" }], {});
+    assert.deepEqual(
+      entries.map((entry) => entry.disposition),
+      ["recorded", "recorded", "pending"],
+    );
+    assert.deepEqual(
+      nextBatch(entries, 20).map((entry) => entry.sha),
+      [sha(3)],
+    );
+    assert.throws(
+      () => associatePRs(integrations, cache, "example/upstream", new Set()),
+      "outside target",
+    );
+  });
+
   it("persists fetched PR associations after every batch", () => {
     const integrations = Array.from({ length: 41 }, (_, index) => integration(index + 1));
     const persisted: number[] = [];

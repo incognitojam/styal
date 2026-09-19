@@ -243,11 +243,10 @@ export function associatePRs(
   return integrations.map((entry) => {
     const prs = associations[entry.sha];
     if (!prs) throw new Error(`Missing GitHub metadata for ${entry.sha}.`);
+    // A PR can merge into an intermediate branch before its commits reach main.
+    // The target's first-parent chain, not the PR's base branch name, establishes coverage.
     const merged = prs.filter(
-      (pr) =>
-        pr.mergedAt !== null &&
-        pr.baseRefName === "main" &&
-        pr.baseRepository.nameWithOwner === repository,
+      (pr) => pr.mergedAt !== null && pr.baseRepository.nameWithOwner === repository,
     );
     if (merged.some((pr) => !pr.mergeCommit || !chain.has(pr.mergeCommit.oid))) {
       throw new Error(
