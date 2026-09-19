@@ -747,7 +747,7 @@ features:
   - id: fork-runtime-storage-isolation
     title: Keep styal runtime storage separate from T3 Code
     status: maintained
-    prs: [287, 292]
+    prs: [287, 292, 385]
     invariants:
       - Desktop, mobile, web, SSH, and server persistence use styal-owned directories, native identifiers, storage keys, cookies, partitions, and databases so styal and T3 Code can run in parallel without reading or overwriting each other's state.
       - The server defaults to a styal home and accepts the legacy home variable only for an already-installed styal service, never as a general fallback into T3 Code state.
@@ -760,9 +760,11 @@ features:
       - apps/mobile/src/persistence/mobile-preferences.ts
       - apps/mobile/src/persistence/mobile-storage.ts
       - apps/server/src/cli/config.ts
+      - apps/server/src/cli/theme.ts
       - apps/server/src/serviceLauncher.ts
       - apps/web/src/clientPersistenceStorage.ts
       - apps/web/src/connection/storage.ts
+      - apps/web/src/hooks/useDefaultTheme.ts
       - apps/web/src/hostedStorageCleanup.ts
     upstream_paths:
       - apps/desktop/src/app/DesktopConfig.ts
@@ -772,9 +774,11 @@ features:
       - apps/mobile/src/persistence/mobile-preferences.ts
       - apps/mobile/src/persistence/mobile-storage.ts
       - apps/server/src/cli/config.ts
+      - apps/server/src/cli/theme.ts
       - apps/server/src/serviceLauncher.ts
       - apps/web/src/clientPersistenceStorage.ts
       - apps/web/src/connection/storage.ts
+      - apps/web/src/hooks/useDefaultTheme.ts
       - apps/web/src/hooks/useLocalStorage.ts
     tests:
       - apps/desktop/src/app/DesktopEarlyElectronStartup.test.ts
@@ -782,8 +786,10 @@ features:
       - apps/mobile/src/lib/storage.test.ts
       - apps/mobile/src/persistence/mobile-database.test.ts
       - apps/server/src/cli/config.test.ts
+      - apps/server/src/cli/theme.test.ts
       - apps/server/src/serviceLauncher.test.ts
       - apps/web/src/clientPersistenceStorage.test.ts
+      - apps/web/src/hooks/useEnvironmentThemeSync.test.ts
       - apps/web/src/hostedStorageCleanup.test.ts
     upstream:
       status: unassessed
