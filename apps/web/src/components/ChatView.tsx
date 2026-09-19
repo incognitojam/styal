@@ -153,6 +153,7 @@ import {
 } from "./chat/timelineScrollAnchoring";
 import {
   buildPendingUserInputAnswers,
+  carryDisplacedCustomAnswerIntoPrompt,
   derivePendingUserInputProgress,
   setPendingUserInputCustomAnswer,
   togglePendingUserInputOptionSelection,
@@ -9046,6 +9047,18 @@ export default function ChatView(props: ChatViewProps) {
       if (!activePendingUserInput) {
         return;
       }
+      // The option replaces the custom answer. Anything typed there is the
+      // user's text, so it goes back to the thread draft instead of vanishing.
+      const displacedAnswer =
+        usePendingUserInputDrafts.getState().answersByRequestKey[activePendingRequestKey]?.[
+          questionId
+        ]?.customAnswer;
+      const currentPrompt =
+        useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.prompt ?? "";
+      const nextPrompt = carryDisplacedCustomAnswerIntoPrompt(currentPrompt, displacedAnswer);
+      if (nextPrompt !== currentPrompt) {
+        setComposerDraftPrompt(composerDraftTarget, nextPrompt);
+      }
       const question =
         (activePendingProgress?.activeQuestion?.id === questionId
           ? activePendingProgress.activeQuestion
@@ -9062,7 +9075,9 @@ export default function ChatView(props: ChatViewProps) {
       activePendingProgress?.activeQuestion,
       activePendingUserInput,
       activePendingRequestKey,
+      composerDraftTarget,
       composerRef,
+      setComposerDraftPrompt,
     ],
   );
 
