@@ -32,6 +32,28 @@ export interface QueueEntry extends Integration {
 
 const fullSha = /^[0-9a-f]{40}$/u;
 
+/** Keep local caches and test fixtures ignored, including in fresh CI checkouts. */
+export function ensureScratchDirectory(root: string): string {
+  const ignored = NodeChildProcess.spawnSync("git", ["check-ignore", "-q", ".scratch/"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  if (ignored.status === 1) {
+    const exclude = NodeChildProcess.execFileSync(
+      "git",
+      ["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"],
+      { cwd: root, encoding: "utf8" },
+    ).trim();
+    NodeFS.mkdirSync(NodePath.dirname(exclude), { recursive: true });
+    NodeFS.appendFileSync(exclude, "\n/.scratch/\n");
+  } else if (ignored.status !== 0) {
+    throw ignored.error ?? new Error(ignored.stderr || "Could not check scratch ignore rules.");
+  }
+  const scratch = NodePath.resolve(root, ".scratch");
+  NodeFS.mkdirSync(scratch, { recursive: true });
+  return scratch;
+}
+
 export function decodeState(input: string): IntakeState {
   const state = JSON.parse(input) as IntakeState;
   if (
@@ -318,9 +340,7 @@ function main() {
     state.target = source;
   }
   const integrations = readIntegrations(state, run);
-  const scratch = NodePath.resolve(root, ".scratch");
-  run("git", ["check-ignore", "-q", ".scratch"]);
-  NodeFS.mkdirSync(scratch, { recursive: true });
+  const scratch = ensureScratchDirectory(root);
   const cachePath = NodePath.resolve(
     scratch,
     `upstream-queue-${state.upstreamRepository.replace("/", "-")}-${state.target}-prs.json`,

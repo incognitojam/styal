@@ -7,6 +7,7 @@ import {
   advanceBaseline,
   associatePRs,
   decodeState,
+  ensureScratchDirectory,
   nextBatch,
   readIntegrations,
   reconcile,
@@ -208,9 +209,7 @@ describe("chronological upstream queue", () => {
 
   it("walks real first-parent history despite backdated commits, includes merges and empties, and rejects side-branch baselines", () => {
     const root = NodePath.resolve(import.meta.dirname, "..");
-    NodeChildProcess.execFileSync("git", ["check-ignore", "-q", ".scratch"], { cwd: root });
-    const scratch = NodePath.resolve(root, ".scratch");
-    NodeFS.mkdirSync(scratch, { recursive: true });
+    const scratch = ensureScratchDirectory(root);
     const directory = NodeFS.mkdtempSync(NodePath.resolve(scratch, "upstream-queue-test-"));
     const run = (command: string, args: string[]) =>
       NodeChildProcess.execFileSync(
@@ -242,6 +241,19 @@ describe("chronological upstream queue", () => {
     const git = (...args: string[]) => run("git", args);
     try {
       git("init", "--initial-branch=main");
+      git("config", "core.excludesFile", "/dev/null");
+      assert.equal(
+        NodeChildProcess.spawnSync("git", ["check-ignore", "-q", ".scratch/"], { cwd: directory })
+          .status,
+        1,
+      );
+      ensureScratchDirectory(directory);
+      assert.equal(git("check-ignore", ".scratch"), ".scratch");
+      const exclude = NodePath.join(directory, ".git/info/exclude");
+      const ignoreRules = NodeFS.readFileSync(exclude, "utf8");
+      ensureScratchDirectory(directory);
+      assert.equal(NodeFS.readFileSync(exclude, "utf8"), ignoreRules);
+      assert.isFalse(NodeFS.existsSync(NodePath.join(directory, ".gitignore")));
       git("commit", "--allow-empty", "-m", "base");
       const baseline = git("rev-parse", "HEAD");
       git("checkout", "-b", "side");

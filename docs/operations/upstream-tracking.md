@@ -20,7 +20,7 @@ Run the commands from the worktree root. `status` reports both fetched tips, the
 
 Git's first-parent history is the ordering authority, including non-PR merges and direct commits. Commit dates and PR titles are not used to infer order or ownership. GitHub's merged PR associations label each commit. Incomplete or ambiguous associations, a target inside a PR, and boundaries outside the first-parent chain stop the command rather than silently omit work. Non-PR merges represent the diff against their first parent. Empty diffs are labelled for inspection: never assume an adjacent commit implements an empty PR merge.
 
-The first run reads PR associations in batches and caches them in ignored `.scratch/upstream-queue-*-prs.json` files, separately for each target. Later runs reuse them. Use `--refresh-metadata` to rebuild the cache when investigating changed GitHub metadata. `.scratch/` must be ignored; if necessary add it to `.git/info/exclude`, not the tracked `.gitignore`. `--state`, `--fork-ref`, and `--upstream-ref` support alternate local state files and refs. Normal use compares against `origin/main`, never unmerged work on the current branch.
+The first run reads PR associations in batches and caches them in ignored `.scratch/upstream-queue-*-prs.json` files, separately for each target. Later runs reuse them. Use `--refresh-metadata` to rebuild the cache when investigating changed GitHub metadata. If `.scratch/` is not already ignored, the command adds it to the local `.git/info/exclude`; it does not change the tracked `.gitignore`. `--state`, `--fork-ref`, and `--upstream-ref` support alternate local state files and refs. Normal use compares against `origin/main`, never unmerged work on the current branch.
 
 ## Reconcile the initial range
 
