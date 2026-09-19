@@ -1,9 +1,33 @@
+// @effect-diagnostics nodeBuiltinImport:off
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { parse } from "yaml";
 import { checkCliReleaseFreshness } from "./check-cli-release-freshness.ts";
+
+// Fresh CI checkouts do not inherit a developer's local Git excludes.
+function prepareScratch(root: string) {
+  const ignored = NodeChildProcess.spawnSync("git", ["check-ignore", "-q", ".scratch/"], {
+    cwd: root,
+  });
+  if (ignored.status === 1) {
+    const exclude = NodeChildProcess.execFileSync(
+      "git",
+      ["rev-parse", "--git-path", "info/exclude"],
+      {
+        cwd: root,
+        encoding: "utf8",
+      },
+    ).trim();
+    const excludePath = NodePath.resolve(root, exclude);
+    NodeFS.mkdirSync(NodePath.dirname(excludePath), { recursive: true });
+    NodeFS.appendFileSync(excludePath, "\n.scratch/\n");
+  } else if (ignored.status !== 0) {
+    throw new Error("Could not check Git scratch exclusion");
+  }
+  NodeFS.mkdirSync(NodePath.resolve(root, ".scratch"), { recursive: true });
+}
 
 describe("CLI release freshness", () => {
   it.each([
@@ -74,8 +98,7 @@ describe("CLI release freshness", () => {
 
 it("nightly promotion allows forward/equal pushes and rejects a stale release-only retry", () => {
   const root = NodePath.resolve(import.meta.dirname, "..");
-  NodeChildProcess.execFileSync("git", ["check-ignore", "-q", ".scratch"], { cwd: root });
-  NodeFS.mkdirSync(NodePath.resolve(root, ".scratch"), { recursive: true });
+  prepareScratch(root);
   const directory = NodeFS.mkdtempSync(NodePath.resolve(root, ".scratch/release-freshness-"));
   const git = (...args: string[]) =>
     NodeChildProcess.execFileSync("git", args, {
@@ -131,8 +154,7 @@ describe.each([
     "unpublished",
   ])("%s registry state", (scenario) => {
     const root = NodePath.resolve(import.meta.dirname, "..");
-    NodeChildProcess.execFileSync("git", ["check-ignore", "-q", ".scratch"], { cwd: root });
-    NodeFS.mkdirSync(NodePath.resolve(root, ".scratch"), { recursive: true });
+    prepareScratch(root);
     const directory = NodeFS.mkdtempSync(NodePath.resolve(root, ".scratch/release-retry-"));
     try {
       NodeFS.writeFileSync(NodePath.join(directory, "archive.tgz"), "synthetic release bytes");
