@@ -79,6 +79,11 @@ jobs:
       contents: read
       id-token: write
     steps:
+      # Use the workflow revision, not an older release candidate's scripts.
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: scripts/check-cli-release-freshness.ts
+          sparse-checkout-cone-mode: false
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
@@ -94,6 +99,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          node scripts/check-cli-release-freshness.ts
 
           publish_or_verify() {
             local package_name="$1"

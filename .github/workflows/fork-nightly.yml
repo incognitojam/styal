@@ -403,8 +403,8 @@ jobs:
         if: inputs.dry_run != true
         shell: bash
         run: |
-          git fetch origin '+refs/heads/nightly:refs/remotes/origin/nightly' || true
-          git push --force-with-lease origin HEAD:refs/heads/nightly
+          # A release-only retry must not overwrite a newer nightly source.
+          git push origin HEAD:refs/heads/nightly
 
   notify_failure:
     name: Notify Discord of failure
