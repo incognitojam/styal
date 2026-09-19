@@ -17,14 +17,14 @@ phone or another browser shows.
 The machine can also set the environment's theme:
 
 ```bash
-t3 theme set nightfall
+styal theme set nightfall
 ```
 
 Web and desktop clients switch to it — immediately when connected, on their next connect
 otherwise — and a fresh client opens with it. Each client applies a set once, so picking a
-different theme in Settings afterwards sticks until the next `t3 theme set`, and running the same
-set again is how you bring clients back. `t3 theme clear` removes the setting without changing
-what anyone currently has, and `t3 theme show` prints the current theme and everything the
+different theme in Settings afterwards sticks until the next `styal theme set`, and running the same
+set again is how you bring clients back. `styal theme clear` removes the setting without changing
+what anyone currently has, and `styal theme show` prints the current theme and everything the
 machine publishes. Only the environment you are anchored to publishes themes, so a remote client
 follows the machine it is connected to, not the device it runs on. T3 Code Mobile keeps its own
 appearance settings and does not follow environment themes.
@@ -40,7 +40,7 @@ Close the editor to show the latest selected theme.
 ## Publishing themes
 
 A machine publishes themes by writing files into the `themes` directory of the T3 Code state
-directory (`~/.t3/userdata/themes/` by default). The filename is the theme id — `nightfall.json`
+directory (`~/.styal/userdata/themes/` by default). The filename is the theme id — `nightfall.json`
 appears as `nightfall` — and stays stable while the machine rewrites the colors underneath, so
 selections and defaults keep pointing at it.
 

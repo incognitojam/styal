@@ -333,15 +333,35 @@ describe("t3 theme", () => {
     }),
   );
 
-  it.effect("honors T3CODE_HOME like the rest of the CLI", () =>
+  it.effect("honors STYAL_HOME like the rest of the CLI", () =>
     Effect.gen(function* () {
       const baseDir = makeBaseDir();
       yield* runCli(["theme", "set", "ocean"]).pipe(
         Effect.provide(
-          ConfigProvider.layer(ConfigProvider.fromEnv({ env: { T3CODE_HOME: baseDir } })),
+          ConfigProvider.layer(ConfigProvider.fromEnv({ env: { STYAL_HOME: baseDir } })),
         ),
       );
       assert.equal(readSettings(baseDir).defaultTheme, "ocean");
+    }),
+  );
+
+  it.effect("keeps an explicit base directory isolated from both home variables", () =>
+    Effect.gen(function* () {
+      const baseDir = makeBaseDir();
+      const styalHome = makeBaseDir();
+      const upstreamHome = makeBaseDir();
+      yield* runCli(["theme", "set", "ocean", "--base-dir", baseDir]).pipe(
+        Effect.provide(
+          ConfigProvider.layer(
+            ConfigProvider.fromEnv({
+              env: { STYAL_HOME: styalHome, T3CODE_HOME: upstreamHome },
+            }),
+          ),
+        ),
+      );
+      assert.equal(readSettings(baseDir).defaultTheme, "ocean");
+      assert.equal(NodeFS.existsSync(settingsPathFor(styalHome)), false);
+      assert.equal(NodeFS.existsSync(settingsPathFor(upstreamHome)), false);
     }),
   );
 
