@@ -55,6 +55,18 @@ interface HostedFirstRunDecisionInput {
   readonly environmentCount: number;
 }
 
+export type HostedConnectionSetupDecision<EnvironmentId extends string = string> =
+  | { readonly _tag: "Pending" }
+  | { readonly _tag: "Complete" }
+  | { readonly _tag: "Setup"; readonly environmentIds: ReadonlyArray<EnvironmentId> };
+
+interface HostedConnectionSetupInput<EnvironmentId extends string> {
+  readonly environmentIds: ReadonlyArray<EnvironmentId>;
+  readonly liveEnvironmentIds: ReadonlySet<EnvironmentId>;
+  readonly projectEnvironmentIds: ReadonlySet<EnvironmentId>;
+  readonly threadEnvironmentIds: ReadonlySet<EnvironmentId>;
+}
+
 export function isFirstRunWorkspaceProvenanceAuthoritative(input: {
   readonly welcomeReceived: boolean;
   readonly bootstrapStatus: "pending" | "complete" | null;
@@ -181,4 +193,24 @@ export function resolveHostedFirstRunDecision(input: HostedFirstRunDecisionInput
   return input.environmentCount === 0
     ? { decision: "wizard", persistCompletion: false }
     : { decision: "app", persistCompletion: true };
+}
+
+/** After hosted first-run connects computers, only genuinely empty ones need setup. */
+export function resolveHostedConnectionSetup<EnvironmentId extends string>(
+  input: HostedConnectionSetupInput<EnvironmentId>,
+): HostedConnectionSetupDecision<EnvironmentId> {
+  if (
+    input.environmentIds.length === 0 ||
+    input.environmentIds.some((environmentId) => !input.liveEnvironmentIds.has(environmentId))
+  ) {
+    return { _tag: "Pending" };
+  }
+
+  const environmentIds = input.environmentIds.filter(
+    (environmentId) =>
+      !input.projectEnvironmentIds.has(environmentId) &&
+      !input.threadEnvironmentIds.has(environmentId),
+  );
+
+  return environmentIds.length === 0 ? { _tag: "Complete" } : { _tag: "Setup", environmentIds };
 }

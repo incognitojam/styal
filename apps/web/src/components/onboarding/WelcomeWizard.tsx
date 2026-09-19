@@ -37,11 +37,13 @@ import {
   resolveOnboardingProviderLoginCommand,
   selectOnboardingProvidersByDriver,
 } from "../../onboarding/providerReadiness.logic";
+import { resolveHostedConnectionSetup } from "../../onboarding/firstRun.logic";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { randomUUID } from "../../lib/utils";
 import { legacyImportPendingCount } from "../../state/dataImport";
 import { OnboardingImportStep } from "./OnboardingImportStep";
 import { useEnvironments, usePrimaryEnvironment } from "../../state/environments";
+import { useEnvironmentShellStatuses, useProjects, useThreadShells } from "../../state/entities";
 import { isOnboardingRelayEnvironment } from "../../onboarding/targetEnvironment.logic";
 import { serverEnvironment } from "../../state/server";
 import { terminalEnvironment } from "../../state/terminal";
@@ -76,9 +78,12 @@ const AGENT_ONBOARDING_THREAD_ID = ThreadId.make("onboarding-agent-setup");
 const ONBOARDING_STAGES = ["Connect", "Agents", "Projects"] as const;
 
 export function WelcomeWizard({
+  automaticHostedFirstRun = false,
   localAvailable,
   onDone,
 }: {
+  /** Whether the hosted first-run gate opened this route automatically. */
+  readonly automaticHostedFirstRun?: boolean;
   /** Whether this client is authenticated to the server serving the app. */
   readonly localAvailable: boolean;
   readonly onDone: (projectRef?: ScopedProjectRef) => void;
@@ -136,6 +141,22 @@ export function WelcomeWizard({
   const primaryEnvironment = usePrimaryEnvironment();
   const selectedIds =
     selection ?? new Set(primaryEnvironment ? [primaryEnvironment.environmentId] : []);
+  const selectedEnvironmentIds = environments
+    .filter((environment) => selectedIds.has(environment.environmentId))
+    .map((environment) => environment.environmentId);
+  const projects = useProjects();
+  const threads = useThreadShells();
+  const shellStatuses = useEnvironmentShellStatuses();
+  const hostedConnectionSetup = resolveHostedConnectionSetup({
+    environmentIds: selectedEnvironmentIds,
+    liveEnvironmentIds: new Set(
+      [...shellStatuses]
+        .filter(([, status]) => status === "live")
+        .map(([environmentId]) => environmentId),
+    ),
+    projectEnvironmentIds: new Set(projects.map((project) => project.environmentId)),
+    threadEnvironmentIds: new Set(threads.map((thread) => thread.environmentId)),
+  });
   const startSetup = (ids: readonly EnvironmentId[]) => {
     if (ids.length === 0) return;
     setSetupIds(ids);
@@ -188,6 +209,18 @@ export function WelcomeWizard({
     },
     [completeOnboarding, onDone],
   );
+  const continueFromConnection = () => {
+    if (!automaticHostedFirstRun) {
+      startSetup(selectedEnvironmentIds);
+      return;
+    }
+    if (hostedConnectionSetup._tag === "Pending") return;
+    if (hostedConnectionSetup._tag === "Complete") {
+      void finish();
+      return;
+    }
+    startSetup(hostedConnectionSetup.environmentIds);
+  };
 
   return (
     <Dialog open disablePointerDismissal onOpenChange={(_, event) => event.cancel()}>
@@ -236,13 +269,12 @@ export function WelcomeWizard({
                     return next;
                   })
                 }
-                onContinue={() =>
-                  startSetup(
-                    environments
-                      .filter((environment) => selectedIds.has(environment.environmentId))
-                      .map((environment) => environment.environmentId),
-                  )
+                checkingWorkspace={
+                  automaticHostedFirstRun &&
+                  selectedIds.size > 0 &&
+                  hostedConnectionSetup._tag === "Pending"
                 }
+                onContinue={continueFromConnection}
                 onPaired={(environmentId) => {
                   setSelection(new Set([...selectedIds, environmentId]));
                 }}
@@ -280,6 +312,7 @@ export function WelcomeWizard({
 
 function ConnectionStep({
   expandPairingInitially,
+  checkingWorkspace,
   selectedIds,
   onSelectionChange,
   onToggleEnvironment,
@@ -287,6 +320,7 @@ function ConnectionStep({
   onPaired,
 }: {
   readonly expandPairingInitially: boolean;
+  readonly checkingWorkspace: boolean;
   readonly selectedIds: ReadonlySet<EnvironmentId>;
   readonly onSelectionChange: (ids: ReadonlySet<EnvironmentId>) => void;
   readonly onToggleEnvironment: (environmentId: EnvironmentId, checked: boolean) => void;
@@ -300,7 +334,7 @@ function ConnectionStep({
   );
   const [pairingOpen, setPairingOpen] = useState(expandPairingInitially);
   const [isPairing, setIsPairing] = useState(false);
-  const ready =
+  const connectionsReady =
     selectedIds.size > 0 &&
     [...selectedIds].every((id) =>
       environments.some(
@@ -308,6 +342,7 @@ function ConnectionStep({
           environment.environmentId === id && environment.connection.phase === "connected",
       ),
     );
+  const ready = connectionsReady && !checkingWorkspace;
   const continueRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (
@@ -413,7 +448,7 @@ function ConnectionStep({
           disabled={!ready || isPairing}
           onClick={onContinue}
         >
-          Continue
+          {connectionsReady && checkingWorkspace ? "Checking projects…" : "Continue"}
           <ArrowRightIcon className="size-3.5" />
         </Button>
       </div>

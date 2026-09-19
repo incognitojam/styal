@@ -1,7 +1,7 @@
 # Welcome wizard
 
-styal shows a setup flow when you open a new installation or connect to the
-hosted app for the first time. Existing workspaces skip this flow. Setup has
+styal shows a setup flow when you open a new installation or connect an empty
+computer to the hosted app for the first time. Existing workspaces skip this flow. Setup has
 **Connect**, **Agents**, and **Projects** steps, plus **Preferences** when a
 selected computer has T3 Code preferences that differ from styal.
 
@@ -25,8 +25,11 @@ You can add more computers before continuing:
 Select the saved or linked computers you want to set up. Signing in to styal Link
 shows your computers without adding connections; selecting a new computer connects it.
 Unchecking a computer removes it from setup without disconnecting it.
-Continue when your selected computers are connected. Setup checks
-agents across the selected computers, then offers two import sources.
+Continue when your selected computers are connected. Setup checks their live workspaces first.
+Computers that already have projects or threads open directly in the app; when a selection mixes
+existing and empty computers, setup continues only for the empty ones. Setup then checks agents
+across those computers and offers two import sources. Opening `/welcome` explicitly still runs the
+complete setup flow for every selected computer.
 
 If styal cannot confirm the workspace during startup, the setup flow shows
 **Still connecting** instead of opening the app. Select **Reload** to try again.

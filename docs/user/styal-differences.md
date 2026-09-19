@@ -70,6 +70,9 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Bringing your work from T3 Code
 
+- **Setup stays focused on new computers.** On the hosted app, first-time connection setup waits
+  for live workspace data and skips Agents and Import for computers that already contain projects
+  or threads. An explicit visit to `/welcome` still reopens the complete setup flow.[^setup-comparison]
 - **Import without replacing your existing setup.** Bring projects, threads, attachments, and
   supported preferences into styal while leaving the T3 Code installation intact. Existing styal
   project settings take precedence, and interrupted imports can resume without duplicating completed
@@ -93,3 +96,5 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   whose desktop lifecycle does not check host activity before quitting.
 
 [^import-comparison]: Setup compared with [T3 Code revision 1ab2dfb](https://github.com/pingdotgg/t3code/tree/1ab2dfb5a7bd2996f79407b5d02cae6132a7626c), checked September 17, 2026.
+
+[^setup-comparison]: Hosted setup compared with [T3 Code revision dfbb11b](https://github.com/pingdotgg/t3code/tree/dfbb11bdd7c3f1a5575cb55d3e3abb12be025727), checked September 19, 2026.
