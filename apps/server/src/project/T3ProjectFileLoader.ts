@@ -3,8 +3,9 @@
  * project file from a workspace root.
  *
  * Loading is best-effort: a missing file resolves to `Option.none`, and
- * unreadable or invalid files are logged and treated as absent so callers
- * can fall back to their defaults.
+ * unreadable, malformed, or non-object files are logged and treated as
+ * absent. Invalid fields and scripts are ignored independently so callers can
+ * still use the rest of the file.
  *
  * @module T3ProjectFileLoader
  */
@@ -17,9 +18,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
 import { T3_PROJECT_FILE_NAME, type T3ProjectFile } from "@t3tools/contracts";
-import { T3ProjectFileFromJson } from "@t3tools/shared/t3ProjectFile";
-
-const decodeT3ProjectFileJson = Schema.decodeEffect(T3ProjectFileFromJson);
+import { parseT3ProjectFileResult } from "@t3tools/shared/t3ProjectFile";
 
 export class T3ProjectFileLoadError extends Schema.TaggedErrorClass<T3ProjectFileLoadError>()(
   "T3ProjectFileLoadError",
@@ -42,8 +41,9 @@ export class T3ProjectFileLoader extends Context.Service<
     /**
      * Load and decode `t3.json` at the workspace root.
      *
-     * Never fails: missing, unreadable, or invalid files resolve to
-     * `Option.none` (invalid files are logged as warnings).
+     * Never fails: missing, unreadable, malformed, or non-object files resolve
+     * to `Option.none` (unreadable files are logged as warnings). Files with
+     * individual validation errors return the fields and scripts that remain.
      */
     readonly load: (workspaceRoot: string) => Effect.Effect<Option.Option<T3ProjectFile>>;
   }
@@ -85,20 +85,18 @@ export const make = Effect.gen(function* () {
       if (Option.isNone(raw)) {
         return Option.none<T3ProjectFile>();
       }
-      return yield* decodeT3ProjectFileJson(raw.value).pipe(
-        Effect.map(Option.some),
-        Effect.catchTags({
-          SchemaError: (error) =>
-            logT3ProjectFileLoadError(
-              new T3ProjectFileLoadError({
-                operation: "decode",
-                workspaceRoot,
-                filePath,
-                cause: error,
-              }),
-            ).pipe(Effect.as(Option.none<T3ProjectFile>())),
+      const parsed = parseT3ProjectFileResult(raw.value);
+      if (parsed.status !== "invalid") {
+        return Option.some(parsed.file);
+      }
+      return yield* logT3ProjectFileLoadError(
+        new T3ProjectFileLoadError({
+          operation: "decode",
+          workspaceRoot,
+          filePath,
+          cause: new Error("Malformed JSON or non-object project file."),
         }),
-      );
+      ).pipe(Effect.as(Option.none<T3ProjectFile>()));
     },
   );
 

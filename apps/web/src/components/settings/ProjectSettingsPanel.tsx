@@ -1303,7 +1303,14 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
           {t3File.status === "invalid" ? (
             <SettingsRow
               title="t3.json is invalid"
-              description="A t3.json exists in this checkout but fails to parse, so every action and icon it declares is ignored. Check the JSON syntax and icon values."
+              description="A t3.json exists in this checkout but its JSON is malformed or its root is not an object, so the file cannot be read."
+              className="text-warning"
+            />
+          ) : null}
+          {t3File.status === "partial" ? (
+            <SettingsRow
+              title="Some t3.json values were ignored"
+              description="Invalid or unrecognized fields and actions were skipped. Valid project settings and actions remain available."
               className="text-warning"
             />
           ) : null}

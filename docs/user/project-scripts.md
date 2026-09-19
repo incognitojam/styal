@@ -81,8 +81,11 @@ when you want to adopt a change.
 Review a checked-in command before importing it. Once saved, an action has the same access to the
 environment and files as a command entered in a T3 Code terminal.
 
-If `t3.json` is invalid, T3 Code ignores the entire file. **Settings** → **Projects** shows a
-warning so you can correct its syntax or field values.
+T3 Code keeps reading valid settings and scripts when another value fails validation. It ignores
+an invalid or unrecognized top-level field, ignores an invalid or unrecognized optional script
+field, and drops only a script that has an invalid or missing `name` or `command`. Malformed JSON
+and files whose root is not an object cannot be recovered and are ignored entirely. **Settings** →
+**Projects** shows a warning when any part of the file is ignored.
 
 ## Project environment variables
 
