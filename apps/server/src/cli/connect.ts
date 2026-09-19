@@ -193,9 +193,9 @@ function formatCloudStatus(status: CloudCliStatus, options?: { readonly json?: b
       ? "pending server startup"
       : "not provisioned";
   const nextStep = !status.authenticated
-    ? "Run `styal connect link` to authorize and enable styal Link."
+    ? "Run `styal link` to authorize and enable styal Link."
     : !status.desired
-      ? "Run `styal connect link` to enable styal Link."
+      ? "Run `styal link` to enable styal Link."
       : !status.linked
         ? "Start styal to provision the environment link and launch its managed tunnel."
         : undefined;
@@ -274,7 +274,7 @@ const withCloudCliSessionToken = <A, E, R>(
     environmentAuth.issueSession({
       scopes: [AuthRelayWriteScope],
       subject: "cloud-cli",
-      label: "styal connect cli",
+      label: "styal link cli",
     }),
     (issued) => run(issued.token),
     (issued) => environmentAuth.revokeSession(issued.sessionId).pipe(Effect.ignore({ log: true })),
@@ -383,7 +383,7 @@ export const reportCloudDisconnectResults = Effect.fn("cloud.cli.report_disconne
       yield* Console.warn(
         input.clearAuthorization
           ? "Could not revoke the relay-side environment record before signing out.\nThe stored CLI authorization was still removed locally."
-          : "Could not revoke the relay-side environment record yet.\nRun `styal connect unlink` again when the relay is reachable.",
+          : "Could not revoke the relay-side environment record yet.\nRun `styal link unlink` again when the relay is reachable.",
       );
     } else if (input.relayResult.value.status === "revoked") {
       yield* Console.log("Revoked the relay-side environment record.");
@@ -521,6 +521,7 @@ const connectLinkCommand = Command.make("link", {
   ),
 }).pipe(
   Command.withDescription("Authorize this environment for styal Link on next start."),
+  Command.withHidden,
   Command.withHandler((flags) =>
     runCloudCommand(
       flags,
@@ -631,11 +632,11 @@ const connectPublishCommand = Command.make("publish", {
         // out of band without styal Link.
         if (!(yield* tokens.hasCredential)) {
           yield* Console.log(
-            "Run `styal connect login` first so this environment can be authorized to publish.",
+            "Run `styal link login` first so this environment can be authorized to publish.",
           );
           return;
         }
-        // A link may already be desired (e.g. `styal connect link` before the
+        // A link may already be desired (e.g. `styal link` before the
         // server's first start). Never downgrade it: a desired managed link
         // also covers publishing, so only request a publish-only link when no
         // link is pending at all.
@@ -647,7 +648,7 @@ const connectPublishCommand = Command.make("publish", {
         }
         yield* CliState.setCliDesiredCloudLink(true, "publish_only");
         yield* Console.log(
-          "Restart T3 to finish authorizing this environment to publish (no managed tunnel is created).",
+          "Restart styal to finish authorizing this environment to publish (no managed tunnel is created).",
         );
       }),
     ),
@@ -672,50 +673,65 @@ const connectLogoutCommand = Command.make("logout", {
   ),
 );
 
-export const connectCommand = Command.make("connect", {
+const linkCommandFlags = {
   ...projectLocationFlags,
   headless: headlessFlag,
-}).pipe(
-  Command.withDescription("Set up styal Link for this machine."),
-  Command.withHandler((flags) =>
-    runCloudCommand(
-      flags,
-      Effect.gen(function* () {
-        yield* Console.log("styal Link\n");
-        const linked = yield* linkEnvironmentForConnect(flags);
-        if (!linked) {
-          return;
-        }
-        // Show which account was linked so an unexpected identity (an
-        // authorization code for a different account) is visible before the
-        // machine is brought online.
-        yield* Console.log(`✓ Connected${connectedAs(linked.identity)}`);
+} as const;
 
-        // Connect itself already succeeded; a boot-service failure must not
-        // fail the command, just tell the user what happened and move on.
-        const background = yield* recoverServiceOnboardingOffer(offerServiceDuringOnboarding);
-        if (background) {
-          const platform = yield* HostProcessPlatform;
-          yield* Console.log(
-            platform === "darwin"
-              ? "\n✓ Background service ready\n\nstyal will stay reachable while you are logged in to this Mac."
-              : "\n✓ Background service ready\n\nstyal will stay reachable after you log out.",
-          );
-          return;
-        }
-        const serveCommand = yield* resolveCliCommand("serve");
+const runLinkOnboarding = (flags: {
+  readonly baseDir: Option.Option<string>;
+  readonly headless: boolean;
+}) =>
+  runCloudCommand(
+    flags,
+    Effect.gen(function* () {
+      yield* Console.log("styal Link\n");
+      const linked = yield* linkEnvironmentForConnect(flags);
+      if (!linked) {
+        return;
+      }
+      // Show which account was linked so an unexpected identity (an
+      // authorization code for a different account) is visible before the
+      // machine is brought online.
+      yield* Console.log(`✓ Connected${connectedAs(linked.identity)}`);
+
+      // Linking itself already succeeded; a boot-service failure must not
+      // fail the command, just tell the user what happened and move on.
+      const background = yield* recoverServiceOnboardingOffer(offerServiceDuringOnboarding);
+      if (background) {
+        const platform = yield* HostProcessPlatform;
         yield* Console.log(
-          `\nNext\n  Start the server with \`${serveCommand}\` to make this machine reachable.`,
+          platform === "darwin"
+            ? "\n✓ Background service ready\n\nstyal will stay reachable while you are logged in to this Mac."
+            : "\n✓ Background service ready\n\nstyal will stay reachable after you log out.",
         );
-      }),
-    ),
-  ),
-  Command.withSubcommands([
-    connectLoginCommand,
-    connectLinkCommand,
-    connectPublishCommand,
-    connectStatusCommand,
-    connectUnlinkCommand,
-    connectLogoutCommand,
-  ]),
+        return;
+      }
+      const serveCommand = yield* resolveCliCommand("serve");
+      yield* Console.log(
+        `\nNext\n  Start the server with \`${serveCommand}\` to make this machine reachable.`,
+      );
+    }),
+  );
+
+const linkSubcommands = [
+  connectLoginCommand,
+  connectLinkCommand,
+  connectPublishCommand,
+  connectStatusCommand,
+  connectUnlinkCommand,
+  connectLogoutCommand,
+] as const;
+
+export const linkCommand = Command.make("link", linkCommandFlags).pipe(
+  Command.withDescription("Set up styal Link for this machine."),
+  Command.withHandler(runLinkOnboarding),
+  Command.withSubcommands(linkSubcommands),
+);
+
+export const connectCompatibilityCommand = Command.make("connect", linkCommandFlags).pipe(
+  Command.withDescription("Set up styal Link for this machine."),
+  Command.withHandler(runLinkOnboarding),
+  Command.withSubcommands(linkSubcommands),
+  Command.withHidden,
 );

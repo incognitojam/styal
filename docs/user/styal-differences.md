@@ -9,6 +9,14 @@ styal is in active development. The hosted web app at [app.styal.build](https://
 live, with rough edges and incomplete functionality. Importing T3 Code projects and preferences
 works. This overview focuses on desktop and web; the mobile app is a work in progress.
 
+## Command line
+
+- **Explicit startup and styal Link naming.** Running `styal` without a subcommand shows command
+  guidance; use `styal start` for the browser-opening server or `styal serve` for a headless host.
+  styal also exposes its managed remote-access setup as `styal link`, while accepting the upstream
+  `connect` spelling as a compatibility alias. [Install styal](./install.md) and
+  [Remote access](./remote-access.md).
+
 ## Workspaces and agent sessions
 
 - **Worktree defaults and workspace grouping.** Both apps support isolated Git worktrees. styal

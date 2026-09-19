@@ -217,7 +217,7 @@ describe("styal pair", () => {
     ).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("directs to styal serve or styal connect when no server is running", () =>
+  it.effect("directs to styal serve or styal link when no server is running", () =>
     Effect.gen(function* () {
       const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-pair-none-test-"));
 
@@ -230,7 +230,7 @@ describe("styal pair", () => {
       );
       assert.include(rendered, "No running styal server found.");
       assert.include(rendered, "npx @styal/cli serve");
-      assert.include(rendered, "npx @styal/cli connect");
+      assert.include(rendered, "npx @styal/cli link");
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 

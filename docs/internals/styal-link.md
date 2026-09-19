@@ -8,8 +8,9 @@ and documented in [t3-connect.md](./t3-connect.md). This page is the styal-speci
 the values our deployment uses and where each one has to be set. It describes the intended
 configuration; when reality drifts from it, fix reality.
 
-Product copy says **styal Link**. Internal identifiers stay upstream-named on purpose so the fork
-stays mergeable: `t3 connect` CLI commands, `T3CODE_*` environment variables, `T3Connect*`
+Product copy says **styal Link**. The fork exposes it as `styal link`; the old `connect` spelling is
+an unlisted compatibility alias. Protocol and code identifiers stay upstream-named on purpose so the fork
+stays mergeable: `T3CODE_*` environment variables, `T3Connect*`
 component names, the `t3-connect` Clerk profile page URL, `[t3-connect]` log tags, the `t3-relay`
 JWT template, and the `t3-code-relay` audience.
 
@@ -51,7 +52,7 @@ mutation first.
    ([t3-connect.md § Headless CLI OAuth Application](./t3-connect.md#headless-cli-oauth-application)):
    public client (PKCE), scopes `openid profile email`, and **both** redirect URIs from the table
    above. The hosted callback must equal `connectCallbackUrl(DEFAULT_HOSTED_APP_URL)` exactly or
-   `t3 connect --headless` and SSH authorization fail. Its client ID is `CLERK_CLI_OAUTH_CLIENT_ID`.
+   `styal link --headless` and SSH authorization fail. Its client ID is `CLERK_CLI_OAUTH_CLIENT_ID`.
    Check with `clerk api /oauth_applications`.
 4. **Native API** for desktop
    ([t3-connect.md § Desktop OAuth Redirect Allowlist](./t3-connect.md#desktop-oauth-redirect-allowlist)):
@@ -146,8 +147,8 @@ than replacing the symlink.
 
 ## Verifying a build
 
-- `t3 connect status` reports the expected exposure state instead of "missing public configuration".
-- `t3 connect login --headless` completes through `https://app.styal.build/connect` and returns to
+- `styal link status` reports the expected exposure state instead of "missing public configuration".
+- `styal link login --headless` completes through `https://app.styal.build/connect` and returns to
   the terminal.
 - The desktop sign-in returns to the app via `styal-dev://app` (dev build) or `styal://app`
   (packaged build).

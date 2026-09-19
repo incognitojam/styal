@@ -186,6 +186,30 @@ const withLiveProjectCliServer = <A, E, R>(baseDir: string, run: () => Effect.Ef
   });
 
 it.layer(NodeServices.layer)("bin cli parsing", (it) => {
+  it.effect("shows help instead of starting a server without a subcommand", () =>
+    Effect.gen(function* () {
+      const error = yield* runCliWithRuntime([]).pipe(Effect.flip);
+
+      if (!CliError.isCliError(error)) {
+        assert.fail(`Expected CliError, got ${String(error)}`);
+      }
+      if (error._tag !== "ShowHelp") {
+        assert.fail(`Expected ShowHelp, got ${error._tag}`);
+      }
+      assert.deepEqual(error.commandPath, ["styal"]);
+      assert.isEmpty(error.errors);
+    }),
+  );
+
+  it.effect("advertises link without listing its connect compatibility alias", () =>
+    Effect.gen(function* () {
+      const { output } = yield* captureStdout(runCli(["--help"], connectCli));
+
+      assert.match(output, /^  link\s+Set up styal Link for this machine\.$/m);
+      assert.notMatch(output, /^  connect\s+/m);
+    }),
+  );
+
   it.effect("accepts the built-in lowercase log-level flag values", () =>
     runCliWithRuntime(["--log-level", "debug", "--version"]),
   );
@@ -209,9 +233,9 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
     }),
   );
 
-  it.effect("rejects connect commands when public configuration is missing", () =>
+  it.effect("rejects link commands when public configuration is missing", () =>
     Effect.gen(function* () {
-      const error = yield* runCli(["connect", "status"], noConnectCli).pipe(Effect.flip);
+      const error = yield* runCli(["link", "status"], noConnectCli).pipe(Effect.flip);
 
       if (!CliError.isCliError(error)) {
         assert.fail(`Expected CliError, got ${String(error)}`);
@@ -219,7 +243,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
       if (error._tag !== "ShowHelp") {
         assert.fail(`Expected ShowHelp, got ${error._tag}`);
       }
-      assert.deepEqual(error.commandPath, ["styal", "connect"]);
+      assert.deepEqual(error.commandPath, ["styal", "link"]);
       assert.include(error.errors[0]?.message ?? "", "missing styal Link public configuration");
 
       const output = (yield* TestConsole.errorLines).join("\n");
@@ -240,13 +264,13 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
     }),
   );
 
-  it.effect("reports fresh headless connect state without requiring local configuration", () =>
+  it.effect("reports fresh headless link state without requiring local configuration", () =>
     Effect.gen(function* () {
       const baseDir = NodeFS.mkdtempSync(
         NodePath.join(NodeOS.tmpdir(), "t3-cli-cloud-status-test-"),
       );
       const { output } = yield* captureStdout(
-        runConnectCli(["connect", "status", "--base-dir", baseDir, "--json"]),
+        runConnectCli(["link", "status", "--base-dir", baseDir, "--json"]),
       );
       // @effect-diagnostics-next-line preferSchemaOverJson:off - CLI JSON output is decoded as a presentation DTO.
       const status = JSON.parse(output) as {
@@ -265,19 +289,34 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
     }).pipe(Effect.provide(DisconnectedLauncherChildLayer)),
   );
 
-  it.effect("reports actionable human-readable headless connect state", () =>
+  it.effect("accepts connect as an unlisted compatibility alias for link", () =>
+    Effect.gen(function* () {
+      const baseDir = NodeFS.mkdtempSync(
+        NodePath.join(NodeOS.tmpdir(), "t3-cli-cloud-connect-alias-test-"),
+      );
+      const { output } = yield* captureStdout(
+        runConnectCli(["connect", "status", "--base-dir", baseDir, "--json"]),
+      );
+      // @effect-diagnostics-next-line preferSchemaOverJson:off - CLI JSON output is decoded as a presentation DTO.
+      const status = JSON.parse(output) as { readonly desired: boolean };
+
+      assert.equal(status.desired, false);
+    }).pipe(Effect.provide(DisconnectedLauncherChildLayer)),
+  );
+
+  it.effect("reports actionable human-readable headless link state", () =>
     Effect.gen(function* () {
       const baseDir = NodeFS.mkdtempSync(
         NodePath.join(NodeOS.tmpdir(), "t3-cli-cloud-status-human-test-"),
       );
       const { output } = yield* captureStdout(
-        runConnectCli(["connect", "status", "--base-dir", baseDir]),
+        runConnectCli(["link", "status", "--base-dir", baseDir]),
       );
 
       assert.include(output, "styal Link\n  Exposure: disabled");
       assert.include(output, "  Authorization: missing");
       assert.include(output, "  Environment link: not provisioned");
-      assert.include(output, "Next: Run `styal connect link` to authorize and enable styal Link.");
+      assert.include(output, "Next: Run `styal link` to authorize and enable styal Link.");
     }),
   );
 
@@ -299,10 +338,10 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
       );
 
       const login = yield* captureStdout(
-        runConnectCli(["connect", "login", "--base-dir", baseDir, "--headless"]),
+        runConnectCli(["link", "login", "--base-dir", baseDir, "--headless"]),
       );
       const status = yield* captureStdout(
-        runConnectCli(["connect", "status", "--base-dir", baseDir, "--json"]),
+        runConnectCli(["link", "status", "--base-dir", baseDir, "--json"]),
       );
       // @effect-diagnostics-next-line preferSchemaOverJson:off - CLI JSON output is decoded as a presentation DTO.
       const decoded = JSON.parse(status.output) as {
@@ -316,20 +355,20 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
     }),
   );
 
-  it.effect("disables headless connect without a running server", () =>
+  it.effect("disables headless link without a running server", () =>
     Effect.gen(function* () {
       const baseDir = NodeFS.mkdtempSync(
         NodePath.join(NodeOS.tmpdir(), "t3-cli-cloud-unlink-test-"),
       );
       const { output } = yield* captureStdout(
-        runConnectCli(["connect", "unlink", "--base-dir", baseDir]),
+        runConnectCli(["link", "unlink", "--base-dir", baseDir]),
       );
 
       assert.equal(output, "styal Link is disabled locally.");
     }),
   );
 
-  it.effect("logs out of headless connect and removes the stored CLI authorization", () =>
+  it.effect("logs out of headless link and removes the stored CLI authorization", () =>
     Effect.gen(function* () {
       const baseDir = NodeFS.mkdtempSync(
         NodePath.join(NodeOS.tmpdir(), "t3-cli-cloud-logout-test-"),
@@ -340,7 +379,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
       NodeFS.writeFileSync(tokenPath, "invalid persisted token");
 
       const { output } = yield* captureStdout(
-        runConnectCli(["connect", "logout", "--base-dir", baseDir]),
+        runConnectCli(["link", "logout", "--base-dir", baseDir]),
       );
 
       assert.equal(

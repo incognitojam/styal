@@ -50,7 +50,7 @@ export function suggestedPackageSpec(version: string): string {
 
 /**
  * Render a `styal <subcommand>` suggestion that matches how this process was
- * launched, so copy/pasting it actually works: `npx @styal/cli connect` suggests
+ * launched, so copy/pasting it actually works: `npx @styal/cli link` suggests
  * `npx @styal/cli serve`, a global install suggests `styal serve`, and a nightly build
  * keeps the `@nightly` tag.
  */

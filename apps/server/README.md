@@ -7,7 +7,7 @@ macOS is unsupported. npm installs a launcher and the matching prebuilt executab
 it does not compile native dependencies. Standalone archives include the same runtime.
 
 ```sh
-npx @styal/cli@nightly
+npx @styal/cli@nightly start
 ```
 
 For a persistent installation:

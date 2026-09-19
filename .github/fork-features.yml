@@ -612,6 +612,7 @@ features:
       - Windows fork packages use styal-specific package and uninstall identities, never block on a running T3 Code process, and remain visibly distinguishable across Alpha and Nightly builds.
       - Standalone CLI archives carry the styal executable, release artwork, license, and native resource monitor, and run with isolated styal state without requiring a host Node installation.
       - npm, service updates, SSH, and WSL select styal release archives and isolated styal homes; protocol 4 prevents older npm launchers from switching into the executable layout remotely.
+      - CLI help and triage copy identify styal, and a bare CLI invocation shows command guidance while explicit `start` and `serve` commands own server startup.
       - Canonical brand asset paths and icon geometry stay shared across desktop, mobile configuration, web packaging, and export tooling so production and nightly artwork cannot silently diverge.
     implementation_paths:
       - .github/workflows/fork-cli-archives.yml
@@ -619,8 +620,12 @@ features:
       - apps/desktop/resources/installer.nsh
       - apps/desktop/src/app/DesktopAssets.ts
       - apps/desktop/src/app/DesktopEnvironment.ts
+      - apps/desktop/src/backend/DesktopBackendConfiguration.ts
       - apps/desktop/src/wsl/DesktopWslEnvironment.ts
       - apps/mobile/app.config.ts
+      - apps/server/package.json
+      - apps/server/src/bin.ts
+      - apps/server/src/cli/triage.ts
       - apps/server/src/cloud/pinnedRuntime.ts
       - apps/server/src/cloud/serviceProtocol.ts
       - apps/server/vite.config.ts
@@ -650,7 +655,9 @@ features:
     tests:
       - apps/desktop/src/app/DesktopAppIdentity.test.ts
       - apps/desktop/src/app/DesktopAssets.test.ts
+      - apps/desktop/src/backend/DesktopBackendConfiguration.test.ts
       - apps/desktop/src/wsl/DesktopWslEnvironment.test.ts
+      - apps/server/src/bin.test.ts
       - apps/server/src/cloud/bootService.test.ts
       - apps/web/src/branding.test.ts
       - packages/ssh/src/runnerProcess.test.ts
@@ -672,6 +679,7 @@ features:
     prs: [264, 265, 266, 269]
     invariants:
       - User-facing cloud connection surfaces target the styal-hosted app, relay, native schemes, and Clerk application while protocol-level T3 Connect identifiers remain compatible with upstream clients and servers.
+      - The user-facing CLI exposes styal Link as `styal link`; the upstream `connect` spelling remains an unlisted compatibility alias.
       - Hosted, release, preview, and mobile builds use one coherent production public configuration, while an incomplete or absent local configuration disables Link without breaking local connections.
       - The relay uses the fork's independently deployed database and permits installations without APNs, and managed tunnel hosts remain outside the product origin's registrable domain.
     implementation_paths:
@@ -681,8 +689,14 @@ features:
       - .github/workflows/fork-desktop-build.yml
       - .github/workflows/release.yml
       - apps/mobile/src/connection/platform.ts
+      - apps/server/src/bin.ts
+      - apps/server/src/cli/connect.ts
+      - apps/server/src/cli/pair.ts
+      - apps/server/src/cloud/http.ts
       - apps/server/src/cloud/publicConfig.ts
       - apps/web/src/cloud/linkEnvironment.ts
+      - apps/web/src/components/cloud/ConnectCliAuthSurface.tsx
+      - apps/web/src/components/onboarding/WelcomeWizard.tsx
       - infra/relay/src/Config.ts
       - infra/relay/src/db.ts
       - infra/relay/src/dbConfig.ts
@@ -703,6 +717,9 @@ features:
       - packages/shared/src/connectAuth.ts
     tests:
       - apps/mobile/src/features/cloud/publicConfig.test.ts
+      - apps/server/src/bin.test.ts
+      - apps/server/src/cli/pair.test.ts
+      - apps/server/src/cloud/http.test.ts
       - apps/server/src/cloud/publicConfig.test.ts
       - apps/web/src/cloud/linkEnvironment.test.ts
       - infra/relay/src/Config.test.ts

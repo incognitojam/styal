@@ -15,7 +15,7 @@ browser.
 You can add more computers before continuing:
 
 - **styal Link** connects computers that are signed in to your account. Run
-  `npx @styal/cli connect` on each computer you want to add, then start styal or run
+  `npx @styal/cli link` on each computer you want to add, then start styal or run
   `npx @styal/cli serve` so the computer stays available.
 - **Add a computer** connects directly to a server on your network or tailnet.
   Start the server with `npx @styal/cli serve`, then run `npx @styal/cli pair --tailscale` and
