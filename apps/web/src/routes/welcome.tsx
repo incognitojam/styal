@@ -7,6 +7,8 @@ import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 
 /** Onboarding overlays the workspace. Visiting /welcome reopens setup. */
 export const Route = createFileRoute("/welcome")({
+  validateSearch: (raw: Record<string, unknown>): { readonly automatic?: true } =>
+    raw.automatic === true || raw.automatic === "true" ? { automatic: true } : {},
   beforeLoad: ({ context }) => {
     const { authGateState } = context;
     if (authGateState.status !== "authenticated" && authGateState.status !== "hosted-static") {
@@ -18,6 +20,7 @@ export const Route = createFileRoute("/welcome")({
 
 function WelcomeRouteView() {
   const { authGateState } = Route.useRouteContext();
+  const { automatic = false } = Route.useSearch();
   const navigate = useNavigate();
   // The root shell can remount this pending outlet after the location changes.
   // Never reopen setup while the destination route is still loading.
@@ -34,6 +37,7 @@ function WelcomeRouteView() {
       <NoProjectsHero />
       {isWelcomeRoute && !dismissed ? (
         <WelcomeWizard
+          automaticHostedFirstRun={automatic && authGateState.status === "hosted-static"}
           localAvailable={localAvailable}
           onDone={(projectRef) => {
             setDismissed(true);

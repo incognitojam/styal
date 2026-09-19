@@ -182,7 +182,7 @@ export function FirstRunGate({
 
   useEffect(() => {
     if (decision === "wizard" && pathname !== "/welcome") {
-      void navigate({ to: "/welcome", replace: true });
+      void navigate({ to: "/welcome", search: { automatic: true }, replace: true });
     }
   }, [decision, navigate, pathname]);
 

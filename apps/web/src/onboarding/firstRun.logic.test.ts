@@ -4,6 +4,7 @@ import {
   isFirstRunWorkspaceProvenanceAuthoritative,
   isFreshFirstRunWorkspace,
   resolveFirstRunDecision,
+  resolveHostedConnectionSetup,
   resolveHostedFirstRunDecision,
   transitionFirstRunGateState,
 } from "./firstRun.logic";
@@ -342,6 +343,54 @@ describe("resolveHostedFirstRunDecision", () => {
       decision: "app",
       persistCompletion: false,
     });
+  });
+});
+
+describe("resolveHostedConnectionSetup", () => {
+  const environmentIds = ["existing", "fresh"];
+
+  it("waits for every selected environment to publish live workspace state", () => {
+    expect(
+      resolveHostedConnectionSetup({
+        environmentIds,
+        liveEnvironmentIds: new Set(["existing"]),
+        projectEnvironmentIds: new Set(["existing"]),
+        threadEnvironmentIds: new Set<string>(),
+      }),
+    ).toEqual({ _tag: "Pending" });
+  });
+
+  it("completes first-run when every selected environment already has workspace state", () => {
+    expect(
+      resolveHostedConnectionSetup({
+        environmentIds,
+        liveEnvironmentIds: new Set(environmentIds),
+        projectEnvironmentIds: new Set(["existing"]),
+        threadEnvironmentIds: new Set(["fresh"]),
+      }),
+    ).toEqual({ _tag: "Complete" });
+  });
+
+  it("continues setup only for selected environments without projects or threads", () => {
+    expect(
+      resolveHostedConnectionSetup({
+        environmentIds,
+        liveEnvironmentIds: new Set(environmentIds),
+        projectEnvironmentIds: new Set(["existing"]),
+        threadEnvironmentIds: new Set<string>(),
+      }),
+    ).toEqual({ _tag: "Setup", environmentIds: ["fresh"] });
+  });
+
+  it("keeps an explicitly empty environment in setup", () => {
+    expect(
+      resolveHostedConnectionSetup({
+        environmentIds: ["fresh"],
+        liveEnvironmentIds: new Set(["fresh"]),
+        projectEnvironmentIds: new Set<string>(),
+        threadEnvironmentIds: new Set<string>(),
+      }),
+    ).toEqual({ _tag: "Setup", environmentIds: ["fresh"] });
   });
 });
 
