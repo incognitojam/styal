@@ -612,10 +612,14 @@ features:
       - Windows fork packages use styal-specific package and uninstall identities, never block on a running T3 Code process, and remain visibly distinguishable across Alpha and Nightly builds.
       - Standalone CLI archives carry the styal executable, release artwork, license, and native resource monitor, and run with isolated styal state without requiring a host Node installation.
       - npm, service updates, SSH, and WSL select styal release archives and isolated styal homes; protocol 4 prevents older npm launchers from switching into the executable layout remotely.
+      - npm publication starts only after every release artifact has passed its build verification, and a retry accepts an existing package version only when its registry integrity matches the exact tarball being released.
       - CLI help and triage copy identify styal, and a bare CLI invocation shows command guidance while explicit `start` and `serve` commands own server startup.
       - Canonical brand asset paths and icon geometry stay shared across desktop, mobile configuration, web packaging, and export tooling so production and nightly artwork cannot silently diverge.
     implementation_paths:
       - .github/workflows/fork-cli-archives.yml
+      - .github/workflows/fork-cli-build.yml
+      - .github/workflows/fork-nightly.yml
+      - .github/workflows/fork-release.yml
       - apps/desktop/package.json
       - apps/desktop/resources/installer.nsh
       - apps/desktop/src/app/DesktopAssets.ts

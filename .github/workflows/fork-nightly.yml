@@ -176,9 +176,28 @@ jobs:
     secrets: inherit
 
   build_cli:
-    name: Build and publish CLI
+    name: Build and verify CLI
     needs: [prepare, build_cli_archives]
     if: needs.prepare.outputs.has_changes == 'true'
+    uses: ./.github/workflows/fork-cli-build.yml
+    with:
+      ref: ${{ needs.prepare.outputs.ref }}
+      version: ${{ needs.prepare.outputs.version }}
+      operation: build
+
+  publish_cli:
+    name: Publish CLI to npm
+    needs: [prepare, build_desktop, build_cli, build_cli_archives]
+    if: >-
+      ${{
+        !cancelled() &&
+        needs.prepare.outputs.has_changes == 'true' &&
+        needs.build_desktop.result == 'success' &&
+        needs.build_cli.result == 'success' &&
+        needs.build_cli_archives.result == 'success' &&
+        vars.STYAL_CLI_PUBLISH_ENABLED == 'true' &&
+        inputs.dry_run != true
+      }}
     permissions:
       contents: read
       id-token: write
@@ -186,19 +205,22 @@ jobs:
     with:
       ref: ${{ needs.prepare.outputs.ref }}
       version: ${{ needs.prepare.outputs.version }}
+      operation: publish
       dist_tag: nightly
-      publish: ${{ vars.STYAL_CLI_PUBLISH_ENABLED == 'true' && inputs.dry_run != true }}
 
   release:
     name: Publish GitHub prerelease
-    needs: [prepare, build_desktop, build_cli, build_cli_archives]
+    needs: [prepare, build_desktop, build_cli, build_cli_archives, publish_cli]
     permissions:
       contents: write
       pull-requests: read
     if: >-
+      !cancelled() &&
       needs.prepare.outputs.has_changes == 'true' &&
       needs.build_desktop.result == 'success' &&
-      needs.build_cli.result == 'success' && needs.build_cli_archives.result == 'success'
+      needs.build_cli.result == 'success' &&
+      needs.build_cli_archives.result == 'success' &&
+      (needs.publish_cli.result == 'success' || needs.publish_cli.result == 'skipped')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
