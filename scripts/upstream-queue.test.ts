@@ -8,6 +8,7 @@ import {
   associatePRs,
   decodeState,
   ensureScratchDirectory,
+  fetchAssociations,
   nextBatch,
   readIntegrations,
   reconcile,
@@ -220,6 +221,35 @@ describe("chronological upstream queue", () => {
     );
   });
 
+  it("persists fetched PR associations after every batch", () => {
+    const integrations = Array.from({ length: 41 }, (_, index) => integration(index + 1));
+    const persisted: number[] = [];
+    const associations = fetchAssociations(
+      integrations,
+      "example/upstream",
+      {},
+      (command, args) => {
+        assert.equal(command, "gh");
+        const query = args.at(-1)?.replace("query=", "") ?? "";
+        const aliases = Array.from(query.matchAll(/c(\d+): object/gu), (match) => match[1]!);
+        return JSON.stringify({
+          data: {
+            repository: Object.fromEntries(
+              aliases.map((alias) => [
+                `c${alias}`,
+                { associatedPullRequests: { nodes: [], pageInfo: { hasNextPage: false } } },
+              ]),
+            ),
+          },
+        });
+      },
+      (cache) => persisted.push(Object.keys(cache).length),
+    );
+
+    assert.deepEqual(persisted, [40, 41]);
+    assert.equal(Object.keys(associations).length, 41);
+  });
+
   it("walks real first-parent history despite backdated commits, includes merges and empties, and rejects side-branch baselines", () => {
     const root = NodePath.resolve(import.meta.dirname, "..");
     const scratch = ensureScratchDirectory(root);
@@ -269,6 +299,9 @@ describe("chronological upstream queue", () => {
       assert.isFalse(NodeFS.existsSync(NodePath.join(directory, ".gitignore")));
       git("commit", "--allow-empty", "-m", "base");
       const baseline = git("rev-parse", "HEAD");
+      const linkedWorktree = NodePath.join(directory, ".scratch/linked-worktree");
+      git("worktree", "add", "--detach", linkedWorktree);
+      assert.equal(ensureScratchDirectory(linkedWorktree), NodePath.join(directory, ".scratch"));
       git("checkout", "-b", "side");
       git("commit", "--allow-empty", "-m", "side change");
       const side = git("rev-parse", "HEAD");

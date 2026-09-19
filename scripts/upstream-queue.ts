@@ -42,24 +42,30 @@ export function shortenCommitSha(sha: string, run: Run): string {
   return shortSha;
 }
 
-/** Keep local caches and test fixtures ignored, including in fresh CI checkouts. */
+/** Keep caches shared by linked worktrees and ignored, including in fresh CI checkouts. */
 export function ensureScratchDirectory(root: string): string {
+  const commonGitDirectory = NodeChildProcess.execFileSync(
+    "git",
+    ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    { cwd: root, encoding: "utf8" },
+  ).trim();
+  const checkoutRoot = NodePath.dirname(commonGitDirectory);
   const ignored = NodeChildProcess.spawnSync("git", ["check-ignore", "-q", ".scratch/"], {
-    cwd: root,
+    cwd: checkoutRoot,
     encoding: "utf8",
   });
   if (ignored.status === 1) {
     const exclude = NodeChildProcess.execFileSync(
       "git",
       ["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"],
-      { cwd: root, encoding: "utf8" },
+      { cwd: checkoutRoot, encoding: "utf8" },
     ).trim();
     NodeFS.mkdirSync(NodePath.dirname(exclude), { recursive: true });
     NodeFS.appendFileSync(exclude, "\n/.scratch/\n");
   } else if (ignored.status !== 0) {
     throw ignored.error ?? new Error(ignored.stderr || "Could not check scratch ignore rules.");
   }
-  const scratch = NodePath.resolve(root, ".scratch");
+  const scratch = NodePath.resolve(checkoutRoot, ".scratch");
   NodeFS.mkdirSync(scratch, { recursive: true });
   return scratch;
 }
@@ -244,11 +250,12 @@ export function associatePRs(
   });
 }
 
-function fetchAssociations(
+export function fetchAssociations(
   integrations: Integration[],
   repository: string,
   cache: Associations,
   run: Run,
+  persist: (associations: Associations) => void = () => undefined,
 ): Associations {
   const missing = integrations.filter((entry) => cache[entry.sha] === undefined);
   const [owner, name] = repository.split("/");
@@ -275,8 +282,15 @@ function fetchAssociations(
         throw new Error(`Incomplete PR associations for ${entry.sha}.`);
       cache[entry.sha] = result.nodes;
     });
+    persist(cache);
   }
   return cache;
+}
+
+function writeAssociationsCache(path: string, associations: Associations): void {
+  const temporaryPath = `${path}.${process.pid}.tmp`;
+  NodeFS.writeFileSync(temporaryPath, `${JSON.stringify(associations)}\n`);
+  NodeFS.renameSync(temporaryPath, path);
 }
 
 function main() {
@@ -358,16 +372,24 @@ function main() {
   }
   const integrations = readIntegrations(state, run);
   const scratch = ensureScratchDirectory(root);
-  const cachePath = NodePath.resolve(
-    scratch,
-    `upstream-queue-${state.upstreamRepository.replace("/", "-")}-${state.target}-prs.json`,
-  );
+  const cacheName = `upstream-queue-${state.upstreamRepository.replace("/", "-")}-${state.target}-prs.json`;
+  const cachePath = NodePath.resolve(scratch, cacheName);
+  const worktreeCachePath = NodePath.resolve(root, ".scratch", cacheName);
+  const reusableCachePath = [cachePath, worktreeCachePath].find((path) => NodeFS.existsSync(path));
   const cache =
-    !values["refresh-metadata"] && NodeFS.existsSync(cachePath)
-      ? (JSON.parse(NodeFS.readFileSync(cachePath, "utf8")) as Associations)
+    !values["refresh-metadata"] && reusableCachePath
+      ? (JSON.parse(NodeFS.readFileSync(reusableCachePath, "utf8")) as Associations)
       : {};
-  const associations = fetchAssociations(integrations, state.upstreamRepository, cache, run);
-  NodeFS.writeFileSync(cachePath, `${JSON.stringify(associations)}\n`);
+  if (reusableCachePath === worktreeCachePath && worktreeCachePath !== cachePath)
+    writeAssociationsCache(cachePath, cache);
+  const associations = fetchAssociations(
+    integrations,
+    state.upstreamRepository,
+    cache,
+    run,
+    (next) => writeAssociationsCache(cachePath, next),
+  );
+  writeAssociationsCache(cachePath, associations);
   const targetChain = new Set(
     run("git", ["rev-list", "--first-parent", state.target]).trim().split("\n"),
   );
