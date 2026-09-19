@@ -112,6 +112,7 @@ export interface ThreadFeedActivity {
     | "flask"
     | "globe"
     | "hammer"
+    | "lock"
     | "message"
     | "play"
     | "warning"
@@ -1212,6 +1213,7 @@ function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
   if (entry.requestKind === "command") return "command";
   if (entry.requestKind === "file-read") return "eye";
   if (entry.requestKind === "file-change") return "edit";
+  if (entry.requestKind === "permission") return "lock";
 
   // The product-native browser family reads as a web surface, not a wrench.
   if (entry.toolName && isPreviewToolName(entry.toolName)) return "globe";
@@ -1782,7 +1784,8 @@ function extractWorkLogRequestKind(
   if (
     payload?.requestKind === "command" ||
     payload?.requestKind === "file-read" ||
-    payload?.requestKind === "file-change"
+    payload?.requestKind === "file-change" ||
+    payload?.requestKind === "permission"
   ) {
     return payload.requestKind;
   }
