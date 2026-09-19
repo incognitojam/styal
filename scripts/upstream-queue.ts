@@ -1,0 +1,495 @@
+#!/usr/bin/env node
+// @effect-diagnostics nodeBuiltinImport:off globalConsole:off - Local, synchronous maintainer CLI.
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
+import * as NodeUtil from "node:util";
+import { parseUpstreamProvenance } from "./upstream-provenance.ts";
+
+export interface IntakeState {
+  upstreamRepository: string;
+  baseline: string;
+  target: string;
+  exceptions: Record<
+    string,
+    { disposition: "already present" | "skip" | "pending"; reason: string }
+  >;
+}
+
+export interface Integration {
+  sha: string;
+  parents: string[];
+  title: string;
+  empty: boolean;
+  pr: number | null;
+}
+
+export interface QueueEntry extends Integration {
+  evidence: string[];
+  disposition: "pending" | "recorded" | "already present" | "skip";
+}
+
+type Run = (command: string, args: string[]) => string;
+
+const fullSha = /^[0-9a-f]{40}$/u;
+
+/** Let Git choose the shortest object name that remains unambiguous in this repository. */
+export function shortenCommitSha(sha: string, run: Run): string {
+  const shortSha = run("git", ["rev-parse", "--short", "--verify", `${sha}^{commit}`]).trim();
+  if (!/^[0-9a-f]{4,40}$/u.test(shortSha))
+    throw new Error(`Git returned an invalid abbreviated commit SHA for ${sha}.`);
+  return shortSha;
+}
+
+/** Keep caches shared by linked worktrees and ignored, including in fresh CI checkouts. */
+export function ensureScratchDirectory(root: string): string {
+  const commonGitDirectory = NodeChildProcess.execFileSync(
+    "git",
+    ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    { cwd: root, encoding: "utf8" },
+  ).trim();
+  const checkoutRoot = NodePath.dirname(commonGitDirectory);
+  const ignored = NodeChildProcess.spawnSync("git", ["check-ignore", "-q", ".scratch/"], {
+    cwd: checkoutRoot,
+    encoding: "utf8",
+  });
+  if (ignored.status === 1) {
+    const exclude = NodeChildProcess.execFileSync(
+      "git",
+      ["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"],
+      { cwd: checkoutRoot, encoding: "utf8" },
+    ).trim();
+    NodeFS.mkdirSync(NodePath.dirname(exclude), { recursive: true });
+    NodeFS.appendFileSync(exclude, "\n/.scratch/\n");
+  } else if (ignored.status !== 0) {
+    throw ignored.error ?? new Error(ignored.stderr || "Could not check scratch ignore rules.");
+  }
+  const scratch = NodePath.resolve(checkoutRoot, ".scratch");
+  NodeFS.mkdirSync(scratch, { recursive: true });
+  return scratch;
+}
+
+export function decodeState(input: string): IntakeState {
+  const state = JSON.parse(input) as IntakeState;
+  if (
+    !state ||
+    typeof state.upstreamRepository !== "string" ||
+    !/^[\w.-]+\/[\w.-]+$/u.test(state.upstreamRepository) ||
+    typeof state.baseline !== "string" ||
+    !fullSha.test(state.baseline) ||
+    typeof state.target !== "string" ||
+    !fullSha.test(state.target) ||
+    !state.exceptions ||
+    typeof state.exceptions !== "object" ||
+    Array.isArray(state.exceptions)
+  )
+    throw new Error(
+      "Invalid intake state: require repository, full baseline/target SHAs, and exceptions.",
+    );
+  for (const [sha, decision] of Object.entries(state.exceptions)) {
+    if (
+      !fullSha.test(sha) ||
+      !decision ||
+      !["already present", "skip", "pending"].includes(decision.disposition) ||
+      typeof decision.reason !== "string" ||
+      !decision.reason.trim()
+    ) {
+      throw new Error(`Invalid exception ${sha}: require a full SHA, disposition, and reason.`);
+    }
+  }
+  return state;
+}
+
+/** Reconcile against fork main only; a source trailer records an import, not patch equivalence. */
+export function reconcile(
+  integrations: Integration[],
+  forkCommits: { sha: string; message: string }[],
+  exceptions: IntakeState["exceptions"],
+): QueueEntry[] {
+  const commits = new Map<string, string[]>();
+  const prs = new Map<number, string[]>();
+  const add = <K>(map: Map<K, string[]>, key: K, evidence: string) =>
+    map.set(key, [...(map.get(key) ?? []), evidence]);
+  for (const commit of forkCommits) {
+    add(commits, commit.sha, `ancestor of fork main: ${commit.sha}`);
+    const provenance = parseUpstreamProvenance([commit.message]);
+    if (provenance.errors.length) throw new Error(`${commit.sha}: ${provenance.errors.join(" ")}`);
+    for (const sha of provenance.commitShas) add(commits, sha, `Upstream-Commit in ${commit.sha}`);
+    for (const pr of provenance.pullRequestNumbers) add(prs, pr, `PR provenance in ${commit.sha}`);
+    for (const match of commit.message.matchAll(/\(cherry picked from commit ([0-9a-f]{40})\)/gu)) {
+      add(commits, match[1]!, `cherry-pick -x in ${commit.sha}`);
+    }
+  }
+  return integrations.map((integration) => {
+    const exception = exceptions[integration.sha];
+    const evidence = [
+      ...(commits.get(integration.sha) ?? []),
+      ...(integration.pr === null ? [] : (prs.get(integration.pr) ?? [])),
+    ];
+    if (exception) evidence.push(`${exception.disposition}: ${exception.reason}`);
+    return {
+      ...integration,
+      evidence,
+      disposition: exception?.disposition ?? (evidence.length ? "recorded" : "pending"),
+    };
+  });
+}
+
+/** Include direct commits through the boundary before the next outstanding PR. */
+export function nextBatch(entries: QueueEntry[], count: number): QueueEntry[] {
+  if (!Number.isSafeInteger(count) || count < 1)
+    throw new Error("Count must be a positive integer.");
+  const prs = new Set<number>();
+  const batch: QueueEntry[] = [];
+  for (const entry of entries) {
+    if (entry.disposition !== "pending") continue;
+    if (entry.pr !== null && !prs.has(entry.pr)) {
+      if (prs.size === count) break;
+      prs.add(entry.pr);
+    }
+    batch.push(entry);
+  }
+  const selected = new Set(batch.map((entry) => entry.sha));
+  if (
+    entries.some(
+      (entry) =>
+        entry.disposition === "pending" &&
+        entry.pr !== null &&
+        prs.has(entry.pr) &&
+        !selected.has(entry.sha),
+    )
+  )
+    throw new Error(
+      "Batch boundary splits an interleaved PR. Increase --count to include its complete range.",
+    );
+  return batch;
+}
+
+/** Produce provenance trailers for a fork PR that incorporates the complete selected batch. */
+export function formatBatchFooter(entries: QueueEntry[]): string | null {
+  if (!entries.length) return null;
+  const prs = [...new Set(entries.flatMap((entry) => (entry.pr === null ? [] : [entry.pr])))];
+  const commits = entries.filter((entry) => entry.pr === null).map((entry) => entry.sha);
+  return [
+    "PR description footer (assumes you incorporate the whole listed batch):",
+    ...(prs.length ? [`Upstream-PR: ${prs.join(", ")}`] : []),
+    ...(commits.length ? [`Upstream-Commit: ${commits.join(", ")}`] : []),
+  ].join("\n");
+}
+
+export function reconciledThrough(baseline: string, entries: QueueEntry[]): string {
+  let through = baseline;
+  for (const entry of entries) {
+    if (entry.disposition === "pending") break;
+    through = entry.sha;
+  }
+  return through;
+}
+
+export function advanceBaseline(
+  state: IntakeState,
+  entries: QueueEntry[],
+  source: string,
+): IntakeState {
+  const index = entries.findIndex((entry) => entry.sha === source);
+  if (index < 0 || entries.slice(0, index + 1).some((entry) => entry.disposition === "pending"))
+    throw new Error("Cannot advance past an unresolved commit or outside the current range.");
+  const crossedPRs = new Set(
+    entries.slice(0, index + 1).flatMap((entry) => (entry.pr === null ? [] : [entry.pr])),
+  );
+  if (entries.slice(index + 1).some((entry) => entry.pr !== null && crossedPRs.has(entry.pr)))
+    throw new Error("Cannot advance into the middle of a PR.");
+  return { ...state, baseline: source };
+}
+
+/** Require both boundaries on the first-parent chain; ancestry alone admits side branches. */
+export function readIntegrations(state: IntakeState, run: Run): Integration[] {
+  const chain = run("git", ["rev-list", "--first-parent", state.target]).trim().split("\n");
+  if (!chain.includes(state.baseline))
+    throw new Error("Baseline is not on target's first-parent chain.");
+  let previousTree = run("git", ["rev-parse", `${state.baseline}^{tree}`]).trim();
+  const log = run("git", [
+    "log",
+    "--first-parent",
+    "--reverse",
+    "--format=%H%x09%T%x09%P%x09%s",
+    `${state.baseline}..${state.target}`,
+  ]).trim();
+  return (log ? log.split("\n") : []).map((line) => {
+    const [sha, tree, parents, ...title] = line.split("\t");
+    if (!sha || !tree || !parents) throw new Error("Could not parse upstream history.");
+    const empty = tree === previousTree;
+    previousTree = tree;
+    return { sha, parents: parents.split(" "), title: title.join("\t"), empty, pr: null };
+  });
+}
+
+interface AssociatedPR {
+  number: number;
+  mergedAt: string | null;
+  baseRefName: string;
+  baseRepository: { nameWithOwner: string };
+  mergeCommit: { oid: string } | null;
+}
+type Associations = Record<string, AssociatedPR[]>;
+
+export function associatePRs(
+  integrations: Integration[],
+  associations: Associations,
+  repository: string,
+  chain: Set<string>,
+): Integration[] {
+  return integrations.map((entry) => {
+    const prs = associations[entry.sha];
+    if (!prs) throw new Error(`Missing GitHub metadata for ${entry.sha}.`);
+    // A PR can merge into an intermediate branch before its commits reach main.
+    // The target's first-parent chain, not the PR's base branch name, establishes coverage.
+    const merged = prs.filter(
+      (pr) => pr.mergedAt !== null && pr.baseRepository.nameWithOwner === repository,
+    );
+    if (merged.some((pr) => !pr.mergeCommit || !chain.has(pr.mergeCommit.oid))) {
+      throw new Error(
+        `PR association for ${entry.sha} ends outside target history. Choose a target after the complete PR, or inspect its merge history.`,
+      );
+    }
+    if (merged.length > 1)
+      throw new Error(
+        `Ambiguous merged PR associations for ${entry.sha}; inspect upstream history.`,
+      );
+    return { ...entry, pr: merged[0]?.number ?? null };
+  });
+}
+
+export function fetchAssociations(
+  integrations: Integration[],
+  repository: string,
+  cache: Associations,
+  run: Run,
+  persist: (associations: Associations) => void = () => undefined,
+): Associations {
+  const missing = integrations.filter((entry) => cache[entry.sha] === undefined);
+  const [owner, name] = repository.split("/");
+  for (let start = 0; start < missing.length; start += 40) {
+    const batch = missing.slice(start, start + 40);
+    console.error(
+      `Reading upstream PR metadata: ${Math.min(start + 40, missing.length)}/${missing.length}`,
+    );
+    const query = `query { repository(owner:${JSON.stringify(owner)}, name:${JSON.stringify(name)}) { ${batch.map((entry, index) => `c${index}: object(oid:"${entry.sha}") { ... on Commit { associatedPullRequests(first:100) { nodes { number mergedAt baseRefName baseRepository { nameWithOwner } mergeCommit { oid } } pageInfo { hasNextPage } } } }`).join("\n")} } }`;
+    const response = JSON.parse(run("gh", ["api", "graphql", "-f", `query=${query}`])) as {
+      errors?: unknown;
+      data: {
+        repository: Record<
+          string,
+          { associatedPullRequests: { nodes: AssociatedPR[]; pageInfo: { hasNextPage: boolean } } }
+        >;
+      };
+    };
+    if (response.errors || !response.data?.repository)
+      throw new Error("Could not read complete GitHub PR metadata.");
+    batch.forEach((entry, index) => {
+      const result = response.data.repository[`c${index}`]?.associatedPullRequests;
+      if (!result || result.pageInfo.hasNextPage)
+        throw new Error(`Incomplete PR associations for ${entry.sha}.`);
+      cache[entry.sha] = result.nodes;
+    });
+    persist(cache);
+  }
+  return cache;
+}
+
+function writeAssociationsCache(path: string, associations: Associations): void {
+  const temporaryPath = `${path}.${process.pid}.tmp`;
+  NodeFS.writeFileSync(temporaryPath, `${JSON.stringify(associations)}\n`);
+  NodeFS.renameSync(temporaryPath, path);
+}
+
+function main() {
+  const { values, positionals } = NodeUtil.parseArgs({
+    allowPositionals: true,
+    options: {
+      count: { type: "string", default: "20" },
+      state: { type: "string", default: ".github/upstream-intake.json" },
+      "fork-ref": { type: "string", default: "origin/main" },
+      "upstream-ref": { type: "string", default: "upstream/main" },
+      json: { type: "boolean" },
+      "refresh-metadata": { type: "boolean" },
+      help: { type: "boolean" },
+    },
+  });
+  const [command = "status", source] = positionals;
+  if (values.help) {
+    console.log(
+      "Usage: node scripts/upstream-queue.ts status|next|explain <PR-or-SHA> [--count 20] [--json] [--refresh-metadata]\n       node scripts/upstream-queue.ts advance <SHA> | target <SHA>\nReads .github/upstream-intake.json and fetched origin/main, upstream/main. No fetch, checkout, cherry-pick, or GitHub writes. advance/target edit only the local state file.",
+    );
+    return;
+  }
+  if (
+    !["status", "next", "explain", "advance", "target"].includes(command) ||
+    positionals.length > 2
+  )
+    throw new Error("Unknown command or extra arguments. Use --help.");
+  if (["explain", "advance", "target"].includes(command) && !source)
+    throw new Error(`${command} requires a PR or commit.`);
+  if (["status", "next"].includes(command) && source)
+    throw new Error(`${command} does not accept a positional argument.`);
+  const count = Number(values.count);
+  if (!Number.isSafeInteger(count) || count < 1)
+    throw new Error("Count must be a positive integer.");
+  const root = NodePath.resolve(import.meta.dirname, "..");
+  const run: Run = (cmd, args) =>
+    NodeChildProcess.execFileSync(cmd, args, {
+      cwd: root,
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+    });
+  const shortShas = new Map<string, string>();
+  const shortSha = (sha: string) => {
+    const cached = shortShas.get(sha);
+    if (cached) return cached;
+    const abbreviated = shortenCommitSha(sha, run);
+    shortShas.set(sha, abbreviated);
+    return abbreviated;
+  };
+  const abbreviateShas = (text: string) => text.replace(/[0-9a-f]{40}/gu, shortSha);
+  const statePath = NodePath.resolve(root, values.state);
+  const state = decodeState(NodeFS.readFileSync(statePath, "utf8"));
+  const fork = run("git", [
+    "rev-parse",
+    "--verify",
+    "--end-of-options",
+    `${values["fork-ref"]}^{commit}`,
+  ]).trim();
+  const upstream = run("git", [
+    "rev-parse",
+    "--verify",
+    "--end-of-options",
+    `${values["upstream-ref"]}^{commit}`,
+  ]).trim();
+  const upstreamChain = run("git", ["rev-list", "--first-parent", upstream]).trim().split("\n");
+  if (!upstreamChain.includes(state.target))
+    throw new Error("Target is not on fetched upstream main's first-parent chain.");
+  if (command === "target") {
+    if (state.baseline !== state.target)
+      throw new Error("Finish and advance to the current target before choosing another.");
+    if (
+      !source ||
+      !fullSha.test(source) ||
+      !upstreamChain.includes(source) ||
+      upstreamChain.indexOf(source) > upstreamChain.indexOf(state.target)
+    )
+      throw new Error("New target must be a full SHA at or after the old target on upstream main.");
+    state.target = source;
+  }
+  const integrations = readIntegrations(state, run);
+  const scratch = ensureScratchDirectory(root);
+  const cacheName = `upstream-queue-${state.upstreamRepository.replace("/", "-")}-${state.target}-prs.json`;
+  const cachePath = NodePath.resolve(scratch, cacheName);
+  const worktreeCachePath = NodePath.resolve(root, ".scratch", cacheName);
+  const reusableCachePath = [cachePath, worktreeCachePath].find((path) => NodeFS.existsSync(path));
+  const cache =
+    !values["refresh-metadata"] && reusableCachePath
+      ? (JSON.parse(NodeFS.readFileSync(reusableCachePath, "utf8")) as Associations)
+      : {};
+  if (reusableCachePath === worktreeCachePath && worktreeCachePath !== cachePath)
+    writeAssociationsCache(cachePath, cache);
+  const associations = fetchAssociations(
+    integrations,
+    state.upstreamRepository,
+    cache,
+    run,
+    (next) => writeAssociationsCache(cachePath, next),
+  );
+  writeAssociationsCache(cachePath, associations);
+  const targetChain = new Set(
+    run("git", ["rev-list", "--first-parent", state.target]).trim().split("\n"),
+  );
+  const associated = associatePRs(
+    integrations,
+    associations,
+    state.upstreamRepository,
+    targetChain,
+  );
+  if (command === "target") {
+    NodeFS.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
+    console.log(`Target set to ${shortSha(state.target)}`);
+    return;
+  }
+  const forkLog = run("git", ["log", "--format=%H%x00%B%x00", fork]).split("\0");
+  const forkCommits: { sha: string; message: string }[] = [];
+  for (let index = 0; index + 1 < forkLog.length; index += 2)
+    forkCommits.push({ sha: forkLog[index]!.trim(), message: forkLog[index + 1]! });
+  const entries = reconcile(associated, forkCommits, state.exceptions);
+  const through = reconciledThrough(state.baseline, entries);
+  if (command === "advance") {
+    const advanced = advanceBaseline(state, entries, source!);
+    NodeFS.writeFileSync(statePath, `${JSON.stringify(advanced, null, 2)}\n`);
+    console.log(
+      `Baseline advanced to ${shortSha(advanced.baseline)}; commit the state change after reviewing the evidence.`,
+    );
+    return;
+  }
+  const pending = entries.filter((entry) => entry.disposition === "pending");
+  const summary = {
+    fork,
+    upstream,
+    baseline: state.baseline,
+    target: state.target,
+    reconciledThrough: through,
+    totalCommits: entries.length,
+    pendingCommits: pending.length,
+    pendingPRs: new Set(pending.flatMap((entry) => (entry.pr === null ? [] : [entry.pr]))).size,
+    pendingDirectCommits: pending.filter((entry) => entry.pr === null).length,
+    recordedCommits: entries.filter((entry) => entry.disposition === "recorded").length,
+    exceptions: entries.filter((entry) => Object.hasOwn(state.exceptions, entry.sha)).length,
+    beyondTarget: upstreamChain.indexOf(state.target),
+  };
+  let selected: QueueEntry[] = [];
+  if (command === "next") selected = nextBatch(entries, count);
+  if (command === "explain") {
+    const commitMatches = /^[0-9a-f]{7,40}$/u.test(source!)
+      ? entries.filter((entry) => entry.sha.startsWith(source!))
+      : [];
+    const pr =
+      commitMatches.length === 0 && /^#?[1-9]\d*$/u.test(source!)
+        ? Number(source!.replace("#", ""))
+        : null;
+    selected = entries.filter((entry) =>
+      pr !== null
+        ? entry.pr === pr
+        : /^[0-9a-f]{7,40}$/u.test(source!) && entry.sha.startsWith(source!),
+    );
+    if (!selected.length) throw new Error("Source is not in the baseline..target range.");
+    if (pr === null && selected.length > 1)
+      throw new Error("Ambiguous commit prefix; use the full SHA.");
+  }
+  if (values.json) console.log(JSON.stringify({ ...summary, entries: selected }, null, 2));
+  else {
+    console.log(
+      `Fork ${shortSha(fork)}\nUpstream ${shortSha(upstream)}\nBaseline ${shortSha(state.baseline)}\nTarget ${shortSha(state.target)}\nReconciled through ${shortSha(through)}\n${pending.length}/${entries.length} commits pending (${summary.pendingPRs} PRs, ${summary.pendingDirectCommits} direct/unassociated commits); ${summary.recordedCommits} recorded, ${summary.exceptions} exceptions.\n${summary.beyondTarget} upstream commits beyond target.\nRecorded provenance is import evidence, not proof of current patch equivalence.`,
+    );
+    for (const entry of selected) {
+      console.log(
+        `${shortSha(entry.sha)} ${entry.pr === null ? "commit" : `#${entry.pr}`} [${entry.disposition}] ${entry.title}${entry.empty ? " [empty first-parent diff: inspect source history]" : ""}`,
+      );
+      if (command === "explain")
+        for (const evidence of entry.evidence) console.log(`  ${abbreviateShas(evidence)}`);
+    }
+    if (command === "next") {
+      const footer = formatBatchFooter(selected);
+      if (footer) console.log(`\n${footer}`);
+    }
+  }
+}
+
+if (
+  process.argv[1] &&
+  import.meta.url === NodeURL.pathToFileURL(NodePath.resolve(process.argv[1])).href
+) {
+  try {
+    main();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
+}

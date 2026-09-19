@@ -14,7 +14,6 @@ const promotionWorkflowPath = NodePath.resolve(
   repoRoot,
   ".github/workflows/promote-upstream-intake.yml",
 );
-const trackingWorkflowPath = NodePath.resolve(repoRoot, ".github/workflows/upstream-tracking.yml");
 const ledger = {
   version: 1,
   fork_repository: "example/fork",
@@ -294,7 +293,7 @@ describe("upstream intake audit", () => {
 
     assert.equal(workflow.jobs.promote.needs, "validate");
     assert.equal(workflow.jobs.promote.environment, "upstream-intake-manual");
-    assert.equal(workflow.jobs.promote.permissions.actions, "write");
+    assert.equal(workflow.jobs.promote.permissions.actions, "read");
     const tokenStep = workflow.jobs.promote.steps.find(
       (step) => step.name === "Mint Styal Porter token",
     );
@@ -310,37 +309,5 @@ describe("upstream intake audit", () => {
     assert.include(promoteStep?.run ?? "", "git merge-base --is-ancestor");
     assert.include(promoteStep?.run ?? "", 'git push origin "${CANDIDATE_SHA}:refs/heads/main"');
     assert.notInclude(promoteStep?.run ?? "", "--force");
-
-    const refreshTracking = workflow.jobs.promote.steps.find(
-      (step) => step.name === "Refresh upstream tracking issue",
-    );
-    assert.include(refreshTracking?.run ?? "", "gh workflow run upstream-tracking.yml");
-  });
-
-  it("defaults to the catch-up window while allowing a steady-state repository setting", () => {
-    const workflow = parse(NodeFS.readFileSync(trackingWorkflowPath, "utf8")) as {
-      readonly on: {
-        readonly workflow_dispatch: {
-          readonly inputs: { readonly since_days: { readonly default?: string } };
-        };
-      };
-      readonly jobs: {
-        readonly track: {
-          readonly steps: ReadonlyArray<{
-            readonly name?: string;
-            readonly env?: Record<string, string>;
-            readonly run?: string;
-          }>;
-        };
-      };
-    };
-
-    assert.isUndefined(workflow.on.workflow_dispatch.inputs.since_days.default);
-    const reconcile = workflow.jobs.track.steps.find(
-      (step) => step.name === "Reconcile tracking issue",
-    );
-    assert.include(reconcile?.env?.SINCE_DAYS ?? "", "inputs.since_days");
-    assert.include(reconcile?.env?.SINCE_DAYS ?? "", "UPSTREAM_TRACKING_WINDOW_DAYS");
-    assert.include(reconcile?.run ?? "", '--since-days "$SINCE_DAYS"');
   });
 });
