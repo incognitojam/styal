@@ -60,7 +60,7 @@ version is fetched and verified, then **Restarting…** while the server restart
 status appears in the conversation and in Connections, so navigating between them does not lose the
 update. A failure remains visible with its error and an option to retry.
 
-**Copy update command** gives you `npx @styal/cli@<client-version>`, which relaunches the server directly
+**Copy update command** gives you `npx @styal/cli@<client-version> serve`, which relaunches the server directly
 at the matching version. Add whatever startup options you normally use.
 
 If the server instead runs as the styal background service, update the service on the host and
@@ -87,7 +87,7 @@ If a step fails:
 
 1. Retry the offered action once.
 2. Make sure you updated the machine named in the warning, not only the device you are using.
-3. For a command-line server, relaunch it with `npx @styal/cli@<client-version>`, replacing
+3. For a command-line server, relaunch it with `npx @styal/cli@<client-version> serve`, replacing
    `<client-version>` with the client version shown in the warning.
 
 ## The Mobile App

@@ -229,6 +229,12 @@ describe("DesktopBackendConfiguration", () => {
 
         assert.equal(first.executablePath, process.execPath);
         assert.equal(first.entryPath, environment.backendEntryPath);
+        assert.deepEqual(first.args, [
+          environment.backendEntryPath,
+          "start",
+          "--bootstrap-fd",
+          "3",
+        ]);
         assert.equal(first.cwd, environment.backendCwd);
         assert.equal(first.captureOutput, true);
         assert.equal(first.env.ELECTRON_RUN_AS_NODE, "1");
@@ -431,6 +437,7 @@ describe("DesktopBackendConfiguration", () => {
             "env",
             `PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${resolvedPath}`,
             `${linuxAppRoot}/styal`,
+            "start",
             "--bootstrap-fd",
             "0",
           ]);
@@ -682,6 +689,7 @@ describe("DesktopBackendConfiguration", () => {
           "PATH=/home/test user's/.nvm/versions/node/v22.0.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/test user/bin:/opt/test's tools/bin:/usr/bin:/bin",
           nodePath,
           linuxEntryPath,
+          "start",
           "--bootstrap-fd",
           "0",
           "--dev-url",

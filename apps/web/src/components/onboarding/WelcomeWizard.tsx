@@ -494,7 +494,7 @@ function ConnectAccountOption({
           <p className="text-sm text-muted-foreground">
             Run this on each computer you want to connect.
           </p>
-          <CommandBlock command="npx @styal/cli connect" className="mt-3" />
+          <CommandBlock command="npx @styal/cli link" className="mt-3" />
           <p className="mt-3 text-xs text-muted-foreground">
             Keep styal running. Select the computers you want to set up above.
           </p>

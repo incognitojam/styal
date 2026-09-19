@@ -36,11 +36,11 @@ service while keeping projects, threads, and settings.
 ## Run with npm
 
 ```bash
-npx @styal/cli@nightly
+npx @styal/cli@nightly start
 ```
 
-This starts the styal server on your machine and opens the local web app. Use
-`npx @styal/cli@nightly --help` for the full CLI reference.
+This starts the styal server on your machine and opens the local web app. Running the CLI without a
+subcommand shows its help instead. Use `npx @styal/cli@nightly --help` for the full CLI reference.
 
 For a persistent CLI installation:
 

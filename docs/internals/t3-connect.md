@@ -51,11 +51,12 @@ should set `T3CODE_CLERK_PUBLISHABLE_KEY`, `T3CODE_CLERK_JWT_TEMPLATE`,
 production builds only need the Clerk publishable key, JWT template name, and relay URL in their EAS
 environment.
 
-When any client-facing public value is absent, cloud UI is omitted. The `t3 connect` command group is
-always registered: when the CLI public values are absent, `makeCli` in `apps/server/src/bin.ts`
-registers a hidden fallback `connect` command that reports the missing configuration instead of
-silently vanishing from help. The bundled server still accepts runtime overrides for self-hosted or
-operator-managed deployments.
+When any client-facing public value is absent, cloud UI is omitted. The upstream `t3 connect`
+command group is always registered. styal exposes the group as `styal link`, with `connect` retained
+as an unlisted compatibility alias. When the CLI public values are absent, `makeCli` in
+`apps/server/src/bin.ts` registers a hidden fallback `link` command that reports the missing
+configuration instead of silently vanishing from help. The bundled server still accepts runtime
+overrides for self-hosted or operator-managed deployments.
 
 For a hosted relay deployment, copy `infra/relay/.env.example` to `infra/relay/.env`. The relay
 deployment reads `RELAY_DOMAIN`, `RELAY_API_ZONE_NAME`, `RELAY_TUNNEL_ZONE_NAME`,
@@ -102,7 +103,9 @@ publishable key and calls only the `/oauth/token` endpoint directly. The relay i
 the OAuth handshake; it only validates the issued Clerk bearer token when the CLI manages an
 environment link.
 
-The connect command group is:
+The upstream connect command group is shown below. In styal, use `styal link` for onboarding and
+`styal link <command>` for the other operations; the redundant `styal link link` spelling exists
+only for compatibility with the upstream command shape.
 
 ```sh
 t3 connect            # default: onboarding

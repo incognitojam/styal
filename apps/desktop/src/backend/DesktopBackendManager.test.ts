@@ -37,7 +37,7 @@ const encodeDesktopTelemetryControl = Schema.encodeSync(
 
 const baseConfig: DesktopBackendManager.DesktopBackendStartConfig = {
   executablePath: "/electron",
-  args: ["/server/bin.mjs", "--bootstrap-fd", "3"],
+  args: ["/server/bin.mjs", "start", "--bootstrap-fd", "3"],
   entryPath: "/server/bin.mjs",
   cwd: "/server",
   env: { ELECTRON_RUN_AS_NODE: "1" },
@@ -247,7 +247,7 @@ describe("DesktopBackendManager", () => {
         }
 
         assert.equal(spawnedCommand.command, "/electron");
-        assert.deepEqual(spawnedCommand.args, ["/server/bin.mjs", "--bootstrap-fd", "3"]);
+        assert.deepEqual(spawnedCommand.args, ["/server/bin.mjs", "start", "--bootstrap-fd", "3"]);
         assert.equal(spawnedCommand.options.cwd, "/server");
         assert.equal(spawnedCommand.options.extendEnv, true);
         assert.equal(spawnedCommand.options.stdout, "pipe");

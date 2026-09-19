@@ -8,13 +8,12 @@ import * as CliError from "effect/unstable/cli/CliError";
 import * as NetService from "@t3tools/shared/Net";
 import packageJson from "../package.json" with { type: "json" };
 import { authCommand } from "./cli/auth.ts";
-import { connectCommand } from "./cli/connect.ts";
+import { connectCompatibilityCommand, linkCommand } from "./cli/connect.ts";
 import { pairCommand } from "./cli/pair.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
-import { sharedServerCommandFlags } from "./cli/config.ts";
 import { isEntrypoint } from "./entrypoint.ts";
 import { projectCommand } from "./cli/project.ts";
-import { runServerCommand, serveCommand, startCommand } from "./cli/server.ts";
+import { serveCommand, startCommand } from "./cli/server.ts";
 import { updateCommand } from "./cli/update.ts";
 import { uninstallCommand } from "./cli/uninstall.ts";
 import { serviceLauncherCommand } from "./cli/serviceLauncher.ts";
@@ -34,15 +33,16 @@ class ConnectPublicConfigMissingError extends CliError.UserError {
   }
 }
 
-const connectUnavailableCommand = Command.make("connect", {
+const linkUnavailableCommand = Command.make("link", {
   command: Argument.string("command").pipe(Argument.variadic),
 }).pipe(
   Command.withDescription("styal Link is unavailable in builds without public configuration."),
+  Command.withAlias("connect"),
   Command.withHidden,
   Command.withHandler(() =>
     Effect.fail(
       new CliError.ShowHelp({
-        commandPath: ["styal", "connect"],
+        commandPath: ["styal", "link"],
         errors: [new ConnectPublicConfigMissingError({ cause: connectPublicConfigMissingMessage })],
       }),
     ),
@@ -50,9 +50,8 @@ const connectUnavailableCommand = Command.make("connect", {
 );
 
 export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
-  Command.make("styal", { ...sharedServerCommandFlags }).pipe(
-    Command.withDescription("Run the styal server."),
-    Command.withHandler((flags) => runServerCommand(flags)),
+  Command.make("styal").pipe(
+    Command.withDescription("Run and manage styal."),
     Command.withSubcommands([
       startCommand,
       serveCommand,
@@ -66,7 +65,8 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       sshHelperCommand,
       servicePreflightCommand,
       triageCommand,
-      cloudEnabled ? connectCommand : connectUnavailableCommand,
+      cloudEnabled ? linkCommand : linkUnavailableCommand,
+      ...(cloudEnabled ? [connectCompatibilityCommand] : []),
     ]),
   );
 

@@ -524,7 +524,7 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
 
     return {
       executablePath: process.execPath,
-      args: [environment.backendEntryPath, "--bootstrap-fd", "3"],
+      args: [environment.backendEntryPath, "start", "--bootstrap-fd", "3"],
       entryPath: environment.backendEntryPath,
       cwd: environment.backendCwd,
       env: {
@@ -758,6 +758,7 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
       "env",
       `PATH=${launchPath}`,
       ...command,
+      "start",
       "--bootstrap-fd",
       "0",
       ...devUrlArgs,
