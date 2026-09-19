@@ -90,6 +90,13 @@ describe("searchSettings", () => {
     expect(searchSettings("administrative access")[0]?.id).toBe("connections-environment");
   });
 
+  it("keeps the fork cloud service name while accepting the upstream alias", () => {
+    expect(searchableSetting("t3-connect").title).toBe("styal Link");
+    expect(SETTINGS_SEARCH_ITEMS.find((item) => item.id === "t3-connect")?.searchTerms).toContain(
+      "T3 Connect managed tunnel cloud other devices remote",
+    );
+  });
+
   it("lists thread confirmations in panel order", () => {
     expect(searchSettings("confirmation").map((item) => item.id)).toEqual([
       "unpin-confirmation",

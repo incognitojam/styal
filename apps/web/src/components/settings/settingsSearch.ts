@@ -431,10 +431,10 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "t3-connect",
-    title: "T3 Connect",
+    title: "styal Link",
     to: "/settings/connections",
     targetId: "connections-environment",
-    searchTerms: ["managed tunnel cloud other devices remote"],
+    searchTerms: ["T3 Connect managed tunnel cloud other devices remote"],
     desktopOnly: true,
     cloudOnly: true,
   },
