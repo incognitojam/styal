@@ -202,27 +202,6 @@ export function decodePersistedComposerState(value: unknown): {
   return {
     drafts: Object.fromEntries(
       Object.entries(parsed.drafts)
-        .map(
-          ([key, draft]) =>
-            [
-              key,
-              // Stale new-task drafts left on disk by builds before the
-              // model-precedence fix carry a bare modelSelection with no
-              // other selector settings. Strip it so the next compose pass
-              // re-resolves project → sticky → provider defaults. Drafts
-              // with runtime/interaction/workspace settings or actual text /
-              // attachments were deliberately configured and are left alone.
-              key.startsWith("new-task:") &&
-              draft.modelSelection &&
-              draft.text.length === 0 &&
-              draft.attachments.length === 0 &&
-              draft.runtimeMode === undefined &&
-              draft.interactionMode === undefined &&
-              draft.workspaceSelection === undefined
-                ? { ...draft, modelSelection: undefined }
-                : draft,
-            ] as const,
-        )
         // importedShareIds are share-import receipts: a contentless draft
         // carrying one is not empty, or the same native share would be
         // re-imported after restart.

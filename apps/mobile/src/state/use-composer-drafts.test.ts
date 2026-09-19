@@ -1061,19 +1061,19 @@ describe("mobile composer drafts", () => {
       attachments: [],
       importedShareIds: ["share-1"],
     };
-    // The stale-model strip must not touch receipt-bearing drafts, and the
-    // empty filter must keep them — or the same share would re-import after
-    // restart.
+    // Receipt-bearing drafts and explicit model-only drafts must survive
+    // account archive and restore.
+    const modelSelection = {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5.4",
+    };
     expect(
       decodePersistedComposerState({
         schemaVersion: 1,
         drafts: {
           "new-task:environment-1:project-1": {
             ...receiptDraft,
-            modelSelection: {
-              instanceId: "codex",
-              model: "gpt-5.4",
-            },
+            modelSelection,
           },
         },
       }).drafts,
@@ -1082,6 +1082,7 @@ describe("mobile composer drafts", () => {
         text: "",
         attachments: [],
         importedShareIds: ["share-1"],
+        modelSelection,
       },
     });
 
