@@ -604,7 +604,7 @@ features:
   - id: fork-distribution-identity
     title: Keep fork builds distinctly identifiable
     status: maintained
-    prs: [3, 27, 29, 49, 56, 235, 242, 243, 244, 245, 281, 287, 302, 335]
+    prs: [3, 27, 29, 49, 56, 235, 242, 243, 244, 245, 281, 287, 302, 335, 378]
     invariants:
       - Packaged builds ship as styal with their own application identifier, URL scheme, product name, and About-panel identity instead of presenting as upstream T3 Code.
       - Electron's application name is a stable identity slug rather than a display string, so OS credential storage keys stay in the same namespace as the user-data directory they protect.
