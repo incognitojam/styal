@@ -8,7 +8,9 @@ import { parse } from "yaml";
 import type { ForkFeatureLedger } from "./fork-feature-ledger.ts";
 import {
   auditUpstreamIntakeCandidate,
+  formatForkCiWatchCommand,
   formatUpstreamIntakePromotionCommand,
+  formatUpstreamIntakePushCommand,
 } from "./upstream-intake.ts";
 
 const repoRoot = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
@@ -170,9 +172,23 @@ describe("upstream intake audit", () => {
         "  --repo 'example/fork' \\",
         "  --ref main \\",
         "  -f candidate_branch='intake/catchup' \\",
-        `  -f candidate_sha='${"d".repeat(40)}' \\`,
-        "  -f prerequisites_reviewed=true",
+        `  -f candidate_sha='${"d".repeat(40)}'`,
       ].join("\n"),
+    );
+    assert.equal(
+      formatUpstreamIntakePushCommand({ candidateBranch: "intake/catchup" }),
+      "git push -u origin 'intake/catchup'",
+    );
+    assert.equal(
+      formatUpstreamIntakePushCommand({
+        candidateBranch: "intake/catchup",
+        remoteSha: "c".repeat(40),
+      }),
+      `git push --force-with-lease='refs/heads/intake/catchup:${"c".repeat(40)}' origin 'intake/catchup:refs/heads/intake/catchup'`,
+    );
+    assert.equal(
+      formatForkCiWatchCommand({ repository: "example/fork", runId: 123 }),
+      "gh run watch 123 --repo 'example/fork' --exit-status",
     );
   });
 
@@ -243,7 +259,6 @@ describe("upstream intake audit", () => {
     assert.isTrue(workflow.on.workflow_dispatch.inputs.candidate_sha?.required);
     assert.isUndefined(workflow.on.workflow_dispatch.inputs.source_prs);
     assert.isUndefined(workflow.on.workflow_dispatch.inputs.source_commits);
-    assert.isTrue(workflow.on.workflow_dispatch.inputs.prerequisites_reviewed?.required);
     assert.equal(workflow.permissions.actions, "read");
     assert.equal(workflow.permissions.contents, "read");
     assert.isFalse(workflow.concurrency["cancel-in-progress"]);
@@ -272,13 +287,8 @@ describe("upstream intake audit", () => {
     assert.include(auditCandidate?.run ?? "", "intake:check");
     assert.notInclude(auditCandidate?.run ?? "", "expected-source");
 
-    const prerequisiteReview = workflow.jobs.validate.steps.find(
-      (step) => step.name === "Verify prerequisite review",
-    );
-    assert.equal(prerequisiteReview?.if, "inputs.prerequisites_reviewed != true");
-    assert.include(
-      prerequisiteReview?.run ?? "",
-      "requires an explicit upstream prerequisite review",
+    assert.isUndefined(
+      workflow.jobs.validate.steps.find((step) => step.name === "Verify prerequisite review"),
     );
 
     const verifyCi = workflow.jobs.validate.steps.find(

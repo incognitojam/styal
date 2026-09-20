@@ -53,18 +53,17 @@ Review `origin/main...candidate` against the upstream sources and the fork featu
 ```bash
 node scripts/upstream-queue.ts status --fork-ref intake/<batch>
 vp run --filter @t3tools/scripts intake:check -- --base origin/main --head intake/<batch>
-git push -u origin intake/<batch>
 ```
 
-The successful local audit prints the candidate's promotion command. Pushing the branch runs Fork CI. Review the combined batch once, including source completeness, relevant exceptions, fork compatibility, and observed behavior. Do not repeat upstream's entire manual test plan for unchanged code.
+The successful local audit inspects the remote branch and reports the next action: push the candidate, watch Fork CI, address a failed run, or dispatch promotion. Rerun the audit after completing the reported step. Review the combined batch once, including source completeness, relevant exceptions, fork compatibility, and observed behavior. Do not repeat upstream's entire manual test plan for unchanged code.
 
 ## 4. Promote without a PR
 
 The existing `Promote upstream intake` workflow is the landing path. Its current safeguards remain in force:
 
 1. Finish the combined-batch review described above and require successful Fork CI for the exact candidate SHA.
-2. When authorized, run the promotion command printed by the final local audit. It dispatches the workflow **from main** with the candidate branch and exact SHA.
-3. Set `prerequisites_reviewed` after checking chronological coverage and exceptions. Approve the `upstream-intake-manual` environment when requested.
+2. After the remote branch and exact-SHA Fork CI are ready, run the promotion command printed by the final local audit. It dispatches the workflow **from main** with the candidate branch and exact SHA.
+3. Approve the `upstream-intake-manual` environment when requested.
 4. The workflow rechecks both tips, then fast-forwards `main` without force. Verify the resulting SHA and ensuing CI.
 
 If `main` or the candidate moves, rebase the standalone intake branch as needed, rerun affected validation and CI, and review the new SHA before dispatching again. Never rebase `main` onto upstream or force-push it.
