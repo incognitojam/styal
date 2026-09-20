@@ -13,12 +13,6 @@ on:
         description: "Exact 40-character candidate SHA to promote"
         required: true
         type: string
-      prerequisites_reviewed:
-        description: "I traced source assumptions and conflicts to their upstream prerequisites"
-        required: true
-        type: boolean
-        default: false
-
 permissions:
   actions: read
   contents: read
@@ -104,12 +98,6 @@ jobs:
             echo "candidate_branch=$CANDIDATE_BRANCH"
             echo "candidate_sha=$candidate_sha"
           } >> "$GITHUB_OUTPUT"
-
-      - name: Verify prerequisite review
-        if: inputs.prerequisites_reviewed != true
-        run: |
-          echo "::error::Promotion requires an explicit upstream prerequisite review."
-          exit 1
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1

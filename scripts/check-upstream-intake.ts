@@ -13,7 +13,9 @@ import {
 } from "./fork-feature-ledger.ts";
 import {
   auditUpstreamIntakeCandidate,
+  formatForkCiWatchCommand,
   formatUpstreamIntakePromotionCommand,
+  formatUpstreamIntakePushCommand,
 } from "./upstream-intake.ts";
 
 const repoRoot = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
@@ -67,6 +69,126 @@ function writeOutput(name: string, value: string | boolean): void {
   }
 }
 
+interface ForkCiRun {
+  readonly databaseId: number;
+  readonly status: string;
+  readonly conclusion: string;
+  readonly url: string;
+}
+
+function isForkCiRun(value: unknown): value is ForkCiRun {
+  if (typeof value !== "object" || value === null) return false;
+  return (
+    "databaseId" in value &&
+    typeof value.databaseId === "number" &&
+    "status" in value &&
+    typeof value.status === "string" &&
+    "conclusion" in value &&
+    typeof value.conclusion === "string" &&
+    "url" in value &&
+    typeof value.url === "string"
+  );
+}
+
+function remoteBranchSha(branch: string): string | undefined {
+  const result = NodeChildProcess.spawnSync(
+    "git",
+    ["ls-remote", "--exit-code", "origin", `refs/heads/${branch}`],
+    { cwd: repoRoot, encoding: "utf8" },
+  );
+  if (result.status === 2) return undefined;
+  if (result.status !== 0) {
+    throw new Error(result.stderr.trim() || "Could not inspect the remote intake branch.");
+  }
+  return result.stdout.trim().split(/\s+/u)[0];
+}
+
+function forkCiRuns(repository: string, branch: string, sha: string): ReadonlyArray<ForkCiRun> {
+  const result = NodeChildProcess.spawnSync(
+    "gh",
+    [
+      "run",
+      "list",
+      "--repo",
+      repository,
+      "--workflow",
+      "fork-ci.yml",
+      "--branch",
+      branch,
+      "--commit",
+      sha,
+      "--event",
+      "push",
+      "--limit",
+      "20",
+      "--json",
+      "databaseId,status,conclusion,url",
+    ],
+    { cwd: repoRoot, encoding: "utf8" },
+  );
+  if (result.status !== 0) {
+    throw new Error(result.stderr.trim() || "Could not inspect Fork CI.");
+  }
+  const parsed: unknown = JSON.parse(result.stdout);
+  if (!Array.isArray(parsed) || !parsed.every(isForkCiRun)) {
+    throw new Error("GitHub returned an unexpected Fork CI response.");
+  }
+  return parsed;
+}
+
+function printPromotionReadiness(input: {
+  readonly repository: string;
+  readonly candidateBranch: string;
+  readonly candidateSha: string;
+}): void {
+  const remoteSha = remoteBranchSha(input.candidateBranch);
+  if (remoteSha !== input.candidateSha) {
+    const state = remoteSha === undefined ? "is not pushed" : `points at ${remoteSha}`;
+    process.stdout.write(
+      `\nRemote branch ${state}. Push the audited candidate, then rerun this audit:\n\n${formatUpstreamIntakePushCommand(
+        {
+          candidateBranch: input.candidateBranch,
+          ...(remoteSha === undefined ? {} : { remoteSha }),
+        },
+      )}\n`,
+    );
+    return;
+  }
+
+  const runs = forkCiRuns(input.repository, input.candidateBranch, input.candidateSha);
+  const successful = runs.find((run) => run.status === "completed" && run.conclusion === "success");
+  if (successful !== undefined) {
+    process.stdout.write(
+      `\nFork CI passed: ${successful.url}\n\nPromotion command:\n\n${formatUpstreamIntakePromotionCommand(
+        input,
+      )}\n`,
+    );
+    return;
+  }
+
+  const active = runs.find((run) => run.status !== "completed");
+  if (active !== undefined) {
+    process.stdout.write(
+      `\nFork CI is ${active.status}: ${active.url}\n\nWait for it to finish, then rerun this audit:\n\n${formatForkCiWatchCommand(
+        { repository: input.repository, runId: active.databaseId },
+      )}\n`,
+    );
+    return;
+  }
+
+  const latest = runs[0];
+  if (latest !== undefined) {
+    process.stdout.write(
+      `\nFork CI did not pass (${latest.conclusion || latest.status}): ${latest.url}\nResolve or rerun Fork CI, then rerun this audit.\n`,
+    );
+    return;
+  }
+
+  process.stdout.write(
+    "\nThe remote candidate is current, but Fork CI has not appeared yet. Wait for it to start, then rerun this audit.\n",
+  );
+}
+
 try {
   const baseSha = git(["rev-parse", "--verify", `${flag("--base")}^{commit}`]);
   const headRef = flag("--head");
@@ -115,15 +237,15 @@ try {
       ? headRef.slice("origin/".length)
       : headRef;
   if (audit.valid && candidateBranch.startsWith("intake/")) {
-    process.stdout.write(
-      `\nPromotion command after review, push, and successful Fork CI:\n\n${formatUpstreamIntakePromotionCommand(
-        {
-          repository: ledger.fork_repository,
-          candidateBranch,
-          candidateSha: headSha,
-        },
-      )}\n`,
-    );
+    try {
+      printPromotionReadiness({
+        repository: ledger.fork_repository,
+        candidateBranch,
+        candidateSha: headSha,
+      });
+    } catch (error) {
+      process.stderr.write(`Could not inspect promotion readiness: ${String(error)}\n`);
+    }
   }
   if (!audit.valid) process.exitCode = 1;
 } catch (error) {

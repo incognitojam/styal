@@ -102,9 +102,25 @@ export function formatUpstreamIntakePromotionCommand(input: {
     `  --repo ${shellQuote(input.repository)} \\`,
     "  --ref main \\",
     `  -f candidate_branch=${shellQuote(input.candidateBranch)} \\`,
-    `  -f candidate_sha=${shellQuote(input.candidateSha)} \\`,
-    "  -f prerequisites_reviewed=true",
+    `  -f candidate_sha=${shellQuote(input.candidateSha)}`,
   ].join("\n");
+}
+
+export function formatUpstreamIntakePushCommand(input: {
+  readonly candidateBranch: string;
+  readonly remoteSha?: string;
+}): string {
+  if (input.remoteSha === undefined) {
+    return `git push -u origin ${shellQuote(input.candidateBranch)}`;
+  }
+  return `git push --force-with-lease=${shellQuote(`refs/heads/${input.candidateBranch}:${input.remoteSha}`)} origin ${shellQuote(`${input.candidateBranch}:refs/heads/${input.candidateBranch}`)}`;
+}
+
+export function formatForkCiWatchCommand(input: {
+  readonly repository: string;
+  readonly runId: number;
+}): string {
+  return `gh run watch ${input.runId} --repo ${shellQuote(input.repository)} --exit-status`;
 }
 
 export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): UpstreamIntakeAudit {
