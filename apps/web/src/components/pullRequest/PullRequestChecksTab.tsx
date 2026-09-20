@@ -11,6 +11,7 @@
  */
 import type {
   PullRequestCheck,
+  PullRequestChecksState,
   PullRequestMergeReadiness,
   PullRequestUpdateMethod,
 } from "@t3tools/contracts";
@@ -120,14 +121,40 @@ export function PullRequestChecksNavButton({
   checks,
   isDraft = false,
   mergeReadiness,
+  staleChecksState,
   onSelect,
 }: {
   checks: ReadonlyArray<PullRequestCheck>;
   isDraft?: boolean;
   /** The host's repository-policy-aware merge verdict, where it exposes one. */
   mergeReadiness?: PullRequestMergeReadiness | undefined;
+  /**
+   * A newer checks rollup that contradicts `checks`. It cannot say which runs changed, so the
+   * button shows its state without counts until the detail is refreshed.
+   */
+  staleChecksState?: PullRequestChecksState | null | undefined;
   onSelect: () => void;
 }) {
+  if (staleChecksState !== undefined) {
+    const stalePresentation =
+      staleChecksState === null ? null : pullRequestChecksStatePresentation(staleChecksState);
+    const StaleIcon = stalePresentation?.Icon ?? CircleDotIcon;
+    const label = stalePresentation?.label ?? "No checks reported";
+    return (
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-label={`Open checks: ${label}`}
+        className="ml-auto inline-flex min-w-0 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <StaleIcon
+          aria-hidden
+          className={cn("size-3.5 shrink-0", stalePresentation?.toneClassName)}
+        />
+        <span className="min-w-0 truncate">{label}</span>
+      </button>
+    );
+  }
   const verdict = pullRequestMergeVerdict({ checks, isDraft, mergeReadiness });
   const state = pullRequestChecksState(checks);
   const checksPresentation = state === null ? null : pullRequestChecksStatePresentation(state);
@@ -167,6 +194,8 @@ export function PullRequestChecksNavButton({
 
 export function PullRequestChecksTab({
   checks,
+  stale = false,
+  onRefresh,
   isDraft = false,
   mergeReadiness,
   requiredBranchUpdate,
@@ -177,6 +206,9 @@ export function PullRequestChecksTab({
   onFixFinding,
 }: {
   checks: ReadonlyArray<PullRequestCheck>;
+  /** Newer status contradicts `checks`; the runs are hidden until the detail is refreshed. */
+  stale?: boolean;
+  onRefresh?: () => void;
   isDraft?: boolean;
   /** The host's repository-policy-aware merge verdict, where it exposes one. */
   mergeReadiness?: PullRequestMergeReadiness | undefined;
@@ -233,6 +265,19 @@ export function PullRequestChecksTab({
   const openCheck = (url: string) => {
     void readLocalApi()?.shell.openExternal(url);
   };
+
+  if (stale) {
+    return (
+      <div className="flex items-center gap-2 px-4 py-3 text-xs text-muted-foreground">
+        <span>Check details are out of date.</span>
+        {onRefresh ? (
+          <Button size="xs" variant="ghost" onClick={onRefresh}>
+            Refresh
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div className="h-full overflow-y-auto">
