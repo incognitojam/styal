@@ -11,8 +11,10 @@ import {
   ledgerRelativePath,
   validateForkFeatureLedger,
 } from "./fork-feature-ledger.ts";
-import { auditUpstreamIntakeCandidate } from "./upstream-intake.ts";
-import { parseSourceCommitInput, parseSourcePullRequestInput } from "./upstream-provenance.ts";
+import {
+  auditUpstreamIntakeCandidate,
+  formatUpstreamIntakePromotionCommand,
+} from "./upstream-intake.ts";
 
 const repoRoot = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 
@@ -23,26 +25,6 @@ function flag(name: string): string {
     throw new Error(`${name} requires a value.`);
   }
   return value;
-}
-
-function optionalFlag(name: string): string | undefined {
-  const index = process.argv.indexOf(name);
-  if (index === -1) return undefined;
-  const value = process.argv[index + 1];
-  if (value === undefined || value.startsWith("--")) {
-    throw new Error(`${name} requires a value.`);
-  }
-  return value;
-}
-
-function expectedSourcePullRequests(): ReadonlyArray<number> | undefined {
-  const input = optionalFlag("--expected-source-prs");
-  if (input === undefined) return undefined;
-  const parsed = parseSourcePullRequestInput(input);
-  if (parsed === null) {
-    throw new Error("--expected-source-prs must contain comma-separated pull request numbers.");
-  }
-  return parsed;
 }
 
 function git(args: ReadonlyArray<string>): string {
@@ -87,7 +69,8 @@ function writeOutput(name: string, value: string | boolean): void {
 
 try {
   const baseSha = git(["rev-parse", "--verify", `${flag("--base")}^{commit}`]);
-  const headSha = git(["rev-parse", "--verify", `${flag("--head")}^{commit}`]);
+  const headRef = flag("--head");
+  const headSha = git(["rev-parse", "--verify", `${headRef}^{commit}`]);
   // Use main's ledger as the review policy. A candidate must not be able to
   // weaken the overlap gate by editing or removing its own watched paths.
   const ledger = decodeForkFeatureLedger(git(["show", `${baseSha}:${ledgerRelativePath}`]));
@@ -97,23 +80,11 @@ try {
   if (ledgerErrors.length > 0) throw new Error(ledgerErrors.join("\n"));
 
   const commits = lines(git(["rev-list", "--reverse", `${baseSha}..${headSha}`]));
-  const expectedSources = expectedSourcePullRequests();
-  const expectedCommitInput = optionalFlag("--expected-source-commits");
-  const expectedCommits =
-    expectedCommitInput === undefined ? undefined : parseSourceCommitInput(expectedCommitInput);
-  if (expectedCommits === null) {
-    throw new Error(
-      "--expected-source-commits must contain comma-separated full lowercase commit SHAs.",
-    );
-  }
-
   const audit = auditUpstreamIntakeCandidate({
     baseSha,
     headSha,
     commits,
     commitMessages: commits.map((commit) => git(["show", "-s", "--format=%B", commit])),
-    ...(expectedSources === undefined ? {} : { expectedSourcePullRequests: expectedSources }),
-    ...(expectedCommits === undefined ? {} : { expectedSourceCommits: expectedCommits }),
     mergeCommits: lines(
       git(["rev-list", "--min-parents=2", "--reverse", `${baseSha}..${headSha}`]),
     ),
@@ -137,6 +108,22 @@ try {
   }
   for (const reason of audit.manualReviewReasons) {
     process.stdout.write(`::notice title=Manual upstream intake review required::${reason}\n`);
+  }
+  const candidateBranch = headRef.startsWith("refs/heads/")
+    ? headRef.slice("refs/heads/".length)
+    : headRef.startsWith("origin/")
+      ? headRef.slice("origin/".length)
+      : headRef;
+  if (audit.valid && candidateBranch.startsWith("intake/")) {
+    process.stdout.write(
+      `\nPromotion command after review, push, and successful Fork CI:\n\n${formatUpstreamIntakePromotionCommand(
+        {
+          repository: ledger.fork_repository,
+          candidateBranch,
+          candidateSha: headSha,
+        },
+      )}\n`,
+    );
   }
   if (!audit.valid) process.exitCode = 1;
 } catch (error) {

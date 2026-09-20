@@ -40,7 +40,7 @@ Apply upstream merge commits against their first parent (`git cherry-pick -m 1 -
 
 Follow upstream behavior by default. General guidance inherited from upstream is not a separate fork requirement or a reason to redesign an upstream change during intake. Record deliberate styal-specific policies and maintained divergences in the fork feature ledger (with supporting documentation where needed); do not invent new differences while resolving conflicts.
 
-Every candidate commit needs an `Upstream-PR: 1234, 5678` and/or `Upstream-Commit: <full lowercase SHA>` trailer. Record exact SHAs for partial or multi-commit imports. A verified empty import may use a provenance-only commit; do not infer completeness merely because a cherry-pick is empty.
+Every candidate commit needs an `Upstream-PR: 1234, 5678` and/or `Upstream-Commit: <full lowercase SHA>` trailer. Record exact SHAs for partial or multi-commit imports, including alongside PR provenance when the commit identity matters. `Upstream-Commit` is therefore not limited to direct commits. A verified empty import may use a provenance-only commit; do not infer completeness merely because a cherry-pick is empty.
 
 Read the actual source diffs when reconciling reverts or already-present work. If an exact change/revert pair is accounted for together, verify its net effect and record both sources; do not silently skip either. Existing provenance proves an import was recorded, not that today's tree still has equivalent behavior.
 
@@ -56,14 +56,14 @@ vp run --filter @t3tools/scripts intake:check -- --base origin/main --head intak
 git push -u origin intake/<batch>
 ```
 
-Pushing the branch runs Fork CI. Review the combined batch once, including source completeness, relevant exceptions, fork compatibility, and observed behavior. Do not repeat upstream's entire manual test plan for unchanged code.
+The successful local audit prints the candidate's promotion command. Pushing the branch runs Fork CI. Review the combined batch once, including source completeness, relevant exceptions, fork compatibility, and observed behavior. Do not repeat upstream's entire manual test plan for unchanged code.
 
 ## 4. Promote without a PR
 
 The existing `Promote upstream intake` workflow is the landing path. Its current safeguards remain in force:
 
 1. Finish the combined-batch review described above and require successful Fork CI for the exact candidate SHA.
-2. When authorized, dispatch the workflow **from main** with `candidate_branch`, the full `candidate_sha`, and `source_prs` / `source_commits` exactly matching the candidate's provenance. Use the intake audit's source lists, not an earlier proposed batch.
+2. When authorized, run the promotion command printed by the final local audit. It dispatches the workflow **from main** with the candidate branch and exact SHA.
 3. Set `prerequisites_reviewed` after checking chronological coverage and exceptions. Approve the `upstream-intake-manual` environment when requested.
 4. The workflow rechecks both tips, then fast-forwards `main` without force. Verify the resulting SHA and ensuing CI.
 
@@ -98,7 +98,7 @@ Commit the target change too. Neither command promotes code.
 
 - `explain <PR-number-or-SHA-prefix>` shows sources and import evidence. SHA prefixes must be unambiguous and at least seven characters.
 - `--fork-ref intake/<batch>` inspects a candidate; `--state` and `--upstream-ref` select alternate local inputs.
-- `--json` provides structured output. `next` currently labels its provenance summary “PR description footer”; that is a source-list aid, **not an instruction to open a PR**. It assumes the entire listed batch was incorporated.
+- `--json` provides structured output for queue commands.
 - PR associations are cached in the primary checkout's ignored `.scratch/`, shared across worktrees and saved incrementally. Use `--refresh-metadata` to rebuild them.
 - Recorded evidence includes ancestry, provenance trailers, cherry-pick references, and historical `Source PRs:` sections. Incomplete or ambiguous associations stop the queue.
 - The old tracking issue is historical context only; its terminal markers are not completion evidence. The queue does not write to GitHub.

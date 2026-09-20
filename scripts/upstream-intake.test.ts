@@ -6,7 +6,10 @@ import { assert, describe, it } from "@effect/vitest";
 import { parse } from "yaml";
 
 import type { ForkFeatureLedger } from "./fork-feature-ledger.ts";
-import { auditUpstreamIntakeCandidate } from "./upstream-intake.ts";
+import {
+  auditUpstreamIntakeCandidate,
+  formatUpstreamIntakePromotionCommand,
+} from "./upstream-intake.ts";
 
 const repoRoot = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 const ciWorkflowPath = NodePath.resolve(repoRoot, ".github/workflows/fork-ci.yml");
@@ -67,17 +70,14 @@ describe("upstream intake audit", () => {
     assert.include(result.summary, "report-only");
   });
 
-  it("blocks missing, malformed, or mismatched upstream provenance", () => {
+  it("blocks missing or malformed upstream provenance", () => {
     const missing = audit({ commitMessages: ["fix(server): no source"] });
     const malformed = audit({ commitMessages: ["Upstream-PR: nope"] });
-    const mismatched = audit({ expectedSourcePullRequests: [1235] });
 
     assert.isFalse(missing.valid);
     assert.include(missing.errors.join("\n"), "no upstream source provenance");
     assert.isFalse(malformed.valid);
     assert.include(malformed.errors.join("\n"), "comma-separated pull request numbers");
-    assert.isFalse(mismatched.valid);
-    assert.include(mismatched.errors.join("\n"), "do not exactly match");
   });
 
   it("requires provenance on every candidate commit", () => {
@@ -136,12 +136,10 @@ describe("upstream intake audit", () => {
     assert.include(result.summary, "Blocked");
   });
 
-  it("accepts commit-only intake and requires exact source review without inventing a PR", () => {
+  it("accepts commit-only intake without inventing a PR", () => {
     const sha = "d".repeat(40);
     const result = audit({
       commitMessages: [`fix: port direct upstream fix\n\nUpstream-Commit: ${sha}`],
-      expectedSourcePullRequests: [],
-      expectedSourceCommits: [sha],
     });
     assert.isTrue(result.valid);
     assert.isFalse(result.automaticEligible);
@@ -150,25 +148,32 @@ describe("upstream intake audit", () => {
     assert.include(result.summary, sha);
   });
 
-  it("rejects omitted or mismatched source commits in mixed batches", () => {
+  it("reports PR and explicit commit provenance independently", () => {
     const commitMessages = [`fix: port\n\nUpstream-PR: 1234\nUpstream-Commit: ${"d".repeat(40)}`];
-    for (const expectedSourceCommits of [[], ["e".repeat(40)]]) {
-      const result = audit({
-        commitMessages,
-        expectedSourcePullRequests: [1234],
-        expectedSourceCommits,
-      });
-      assert.isFalse(result.valid);
-      assert.include(result.errors.join("\n"), "source commits do not exactly match");
-    }
-    assert.isTrue(
-      audit({
-        commitMessages,
-        expectedSourcePullRequests: [1234],
-        expectedSourceCommits: ["d".repeat(40)],
-      }).valid,
+    const result = audit({ commitMessages });
+
+    assert.isTrue(result.valid);
+    assert.deepEqual(result.sourcePullRequests, [1234]);
+    assert.deepEqual(result.sourceCommits, ["d".repeat(40)]);
+    assert.include(result.summary, "Explicit commit sources");
+  });
+
+  it("formats a copyable promotion command", () => {
+    assert.equal(
+      formatUpstreamIntakePromotionCommand({
+        repository: "example/fork",
+        candidateBranch: "intake/catchup",
+        candidateSha: "d".repeat(40),
+      }),
+      [
+        "gh workflow run promote-upstream-intake.yml \\",
+        "  --repo 'example/fork' \\",
+        "  --ref main \\",
+        "  -f candidate_branch='intake/catchup' \\",
+        `  -f candidate_sha='${"d".repeat(40)}' \\`,
+        "  -f prerequisites_reviewed=true",
+      ].join("\n"),
     );
-    assert.isFalse(audit({ expectedSourcePullRequests: [], expectedSourceCommits: [] }).valid);
   });
 
   it("runs Fork CI and the intake audit for intake branches", () => {
@@ -236,8 +241,8 @@ describe("upstream intake audit", () => {
 
     assert.isTrue(workflow.on.workflow_dispatch.inputs.candidate_branch?.required);
     assert.isTrue(workflow.on.workflow_dispatch.inputs.candidate_sha?.required);
-    assert.isFalse(workflow.on.workflow_dispatch.inputs.source_prs?.required);
-    assert.isFalse(workflow.on.workflow_dispatch.inputs.source_commits?.required);
+    assert.isUndefined(workflow.on.workflow_dispatch.inputs.source_prs);
+    assert.isUndefined(workflow.on.workflow_dispatch.inputs.source_commits);
     assert.isTrue(workflow.on.workflow_dispatch.inputs.prerequisites_reviewed?.required);
     assert.equal(workflow.permissions.actions, "read");
     assert.equal(workflow.permissions.contents, "read");
@@ -265,11 +270,7 @@ describe("upstream intake audit", () => {
       (step) => step.name === "Audit candidate with trusted main code",
     );
     assert.include(auditCandidate?.run ?? "", "intake:check");
-    assert.include(auditCandidate?.run ?? "", '"$EXPECTED_SOURCE_PRS"');
-    assert.include(
-      auditCandidate?.run ?? "",
-      '--expected-source-commits "$EXPECTED_SOURCE_COMMITS"',
-    );
+    assert.notInclude(auditCandidate?.run ?? "", "expected-source");
 
     const prerequisiteReview = workflow.jobs.validate.steps.find(
       (step) => step.name === "Verify prerequisite review",
