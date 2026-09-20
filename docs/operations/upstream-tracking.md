@@ -1,36 +1,109 @@
 # Upstream intake
 
-Bring upstream changes into the fork in their landing order. `.github/upstream-intake.json` records the last reconciled upstream commit (`baseline`), the fixed catch-up destination (`target`), and reasoned exceptions keyed by full upstream commit SHA. Nothing automatically syncs or writes to `main`.
+**Queue → apply in order → validate the batch → promote without a PR → advance the baseline.**
 
-## Inspect the gap
+Use an `intake/<batch>` branch based on fork `main`. Preserve upstream authorship, commit messages, and chronological order, adding provenance and the smallest necessary fork adaptations. Publish the branch for CI, then fast-forward `main` to its reviewed tip through **Promote upstream intake**. Do not open a PR for the batch or squash it: retaining upstream history is valuable, and attaching those commits to a PR creates unwanted upstream cross-references and participants.
 
-Use Git, an authenticated GitHub CLI (`gh`), and the repository's Node version. No additional dependency or service is needed. Refresh the local remote refs explicitly:
+Nothing automatically syncs upstream or authorizes a promotion. Dispatch only when the maintainer explicitly requests it.
+
+## 1. Choose the next batch
+
+From the worktree root:
 
 ```bash
 git fetch --no-tags origin main
 git fetch --no-tags https://github.com/pingdotgg/t3code.git main:refs/remotes/upstream/main
 node scripts/upstream-queue.ts status
 node scripts/upstream-queue.ts next --count 20
-node scripts/upstream-queue.ts explain 8321
 ```
 
-Run the commands from the worktree root. `status` reports both fetched tips, the pinned baseline and target, the contiguous reconciled prefix, outstanding PR and commit counts, recorded imports, exceptions, and the number of upstream integrations beyond the target. `next` lists outstanding commits in first-parent order, taking the next 20 distinct PRs plus direct/unassociated commits before the next PR. A multi-commit PR keeps all of its outstanding commits. With fewer than 20 outstanding PRs, the remainder of the range is returned. With only direct commits remaining, all are returned.
+The state in `.github/upstream-intake.json` has three parts:
 
-`explain` accepts a PR number (with or without `#`) or an unambiguous commit prefix of at least seven characters within the current baseline..target range. It shows every matching source commit and its import evidence or exception reason. After the ordered queue, `next` prints a copyable `PR description footer` with the selected PR numbers and full SHAs for direct/unassociated commits. The footer assumes the whole listed batch is incorporated. Add `--json` to any read command for structured output; `next --count 100000 --json` exports the full outstanding queue without the human-readable footer. The commands do not fetch, check out branches, apply changes, or write to GitHub.
+- **Baseline:** the upstream commit through which reconciliation has been completed. Initially the common ancestor; subsequently an explicitly reviewed boundary.
+- **Target:** the fixed upstream destination for this catch-up. It does not move when upstream receives new commits.
+- **Exceptions:** specific commits already present, intentionally skipped, or reopened as pending, with reasons.
 
-Git's first-parent history is the ordering authority, including non-PR merges and direct commits. Commit dates and PR titles are not used to infer order or ownership. GitHub's merged PR associations label each commit, including PRs merged into intermediate upstream branches whose merge commits subsequently reached the target's first-parent history. Incomplete or ambiguous associations, a target inside a PR, and boundaries outside the first-parent chain stop the command rather than silently omit work. Non-PR merges represent the diff against their first parent. Empty diffs are labelled for inspection: never assume an adjacent commit implements an empty PR merge.
+Normal commands compare against fetched `origin/main`, not the current branch. `next --count 20` selects the next 20 distinct outstanding PRs, plus intervening direct commits, in upstream first-parent order. Multi-commit PRs stay together. Twenty is a starting point, not a quota: inspect nearby reverts, corrections, and refactors before choosing a coherent boundary. Extend through a needed correction; stop before an independently substantial integration when appropriate.
 
-The first run reads PR associations in batches and caches them in ignored `.scratch/upstream-queue-*-prs.json` files under the primary checkout, separately for each target. Linked worktrees share that cache, and each batch is saved as it arrives so an interrupted run resumes where it stopped. Use `--refresh-metadata` to rebuild the cache when investigating changed GitHub metadata. If `.scratch/` is not already ignored, the command adds it to the local `.git/info/exclude`; it does not change the tracked `.gitignore`. `--state`, `--fork-ref`, and `--upstream-ref` support alternate local state files and refs. Normal use compares against `origin/main`, never unmerged work on the current branch.
+During initial catch-up, later upstream changes may already be present in the fork. Chronological intake removes prerequisite selection only when earlier changes are accounted for; it does not eliminate conflicts with those later imports or maintained fork differences.
 
-## Reconcile the initial range
+## 2. Apply in order
 
-The initial baseline is the common ancestor `4c51b4c9b6a85d96a22e0df41d5cfd2d8fc9901d` (August 28, 2026). The initial target is `8dd02470b1e7603b8d36a21ae27c510480351f18`. This pins the catch-up range while upstream continues moving.
+Create the candidate from current `origin/main`, then apply the selected commits:
 
-Recorded imports come from literal ancestry, `Upstream-PR:` and `Upstream-Commit:` trailers, escaped references beneath a `Source PRs:` heading, and exact `git cherry-pick -x` references in fork history. PR provenance covers that PR's associated commits; an explicit SHA or cherry-pick reference covers only that commit. These are evidence of an import, not proof of current patch equivalence. Review partial or adapted historical imports before advancing the baseline. A later revert does not erase provenance, so use the source and fork diffs when verifying such cases.
+```bash
+git switch -c intake/<batch> origin/main
+git cherry-pick -x <upstream-commit>
+```
 
-The old tracking issue, `incognitojam/styal#261`, remains available as historical evidence. The scheduled writer and rolling window have been removed. Read its visible reasons and notes during reconciliation. Its compacted terminal markers lost the distinction between imported and skipped sources, and sometimes their reasons; they are not imported as completion evidence. `UPSTREAM_TRACKING_ISSUE` and `UPSTREAM_TRACKING_WINDOW_DAYS` are no longer used. No issue edit or closure is needed to run the new tool.
+Apply upstream merge commits against their first parent (`git cherry-pick -m 1 -x`), rather than introducing merge commits into the candidate. Preserve each source commit where possible. Keep conflict adaptations small and explain the fork invariant they preserve. Do not replace upstream implementations, rename unchanged internals, or squash the batch for publication.
 
-If a source was incorporated without provenance, or must intentionally remain excluded, add an exception to the state file:
+Follow upstream behavior by default. General guidance inherited from upstream is not a separate fork requirement or a reason to redesign an upstream change during intake. Record deliberate styal-specific policies and maintained divergences in the fork feature ledger (with supporting documentation where needed); do not invent new differences while resolving conflicts.
+
+Every candidate commit needs an `Upstream-PR: 1234, 5678` and/or `Upstream-Commit: <full lowercase SHA>` trailer. Record exact SHAs for partial or multi-commit imports. A verified empty import may use a provenance-only commit; do not infer completeness merely because a cherry-pick is empty.
+
+Read the actual source diffs when reconciling reverts or already-present work. If an exact change/revert pair is accounted for together, verify its net effect and record both sources; do not silently skip either. Existing provenance proves an import was recorded, not that today's tree still has equivalent behavior.
+
+## 3. Validate the final batch
+
+Do not run the full validation loop after every cherry-pick. Test intermediate states only when needed to diagnose a problem or bisect.
+
+Review `origin/main...candidate` against the upstream sources and the fork feature ledger. Focus local tests and real-client checks on conflict resolutions, changed behavior, and fork integration boundaries. In particular, preserve styal's runtime homes, environment variables, browser storage, installed-app identity, and maintained capabilities. These are behavioral invariants, not a reason to mechanically replace every upstream name. Carry upstream migration files verbatim.
+
+```bash
+node scripts/upstream-queue.ts status --fork-ref intake/<batch>
+vp run --filter @t3tools/scripts intake:check -- --base origin/main --head intake/<batch>
+git push -u origin intake/<batch>
+```
+
+Pushing the branch runs Fork CI. Review the combined batch once, including source completeness, relevant exceptions, fork compatibility, and observed behavior. Do not repeat upstream's entire manual test plan for unchanged code.
+
+## 4. Promote without a PR
+
+The existing `Promote upstream intake` workflow is the landing path. Its current safeguards remain in force:
+
+1. Obtain an independent model review of the final candidate diff, audit, and upstream sources. Resolve findings and require successful Fork CI for the exact candidate SHA.
+2. When authorized, dispatch the workflow **from main** with `candidate_branch`, the full `reviewed_sha`, and `source_prs` / `source_commits` exactly matching the candidate's provenance. Use the intake audit's source lists, not an earlier proposed batch.
+3. Set `prerequisites_reviewed` after checking chronological coverage and exceptions. Approve the `upstream-intake-manual` environment when requested.
+4. The workflow rechecks both tips, then fast-forwards `main` without force. Verify the resulting SHA and ensuing CI.
+
+If `main` or the candidate moves, rebase the standalone intake branch as needed, rerun affected validation and CI, and review the new SHA before dispatching again. Never rebase `main` onto upstream or force-push it.
+
+**Current exception:** promotion rejects candidates changing `.github/workflows/fork-ci.yml`. Stop and arrange a separately authorized maintainer change; do not open a PR containing the upstream batch as a workaround.
+
+These instructions simplify the working flow, not the workflow's permissions. Independent review, exact-SHA CI, and environment approval still apply. Styal Porter receives its write credential only after approval.
+
+## 5. Record progress and repeat
+
+After promotion, fetch `origin/main`, verify the batch is accounted for, and advance to the reviewed upstream boundary:
+
+```bash
+git fetch --no-tags origin main
+node scripts/upstream-queue.ts status
+node scripts/upstream-queue.ts advance <full-upstream-boundary-SHA>
+```
+
+`advance` edits only the local state file and rejects unresolved preceding commits or a boundary inside a multi-commit PR. Commit that state change through the normal maintainer review path, separately from the preserved upstream batch. A state-only PR must not include the intake commit history.
+
+Once baseline equals target, choose a new destination from fetched upstream and repeat:
+
+```bash
+node scripts/upstream-queue.ts target <full-new-target-SHA>
+node scripts/upstream-queue.ts next --count 20
+```
+
+Commit the target change too. Neither command promotes code.
+
+## Queue reference and exceptions
+
+- `explain <PR-number-or-SHA-prefix>` shows sources and import evidence. SHA prefixes must be unambiguous and at least seven characters.
+- `--fork-ref intake/<batch>` inspects a candidate; `--state` and `--upstream-ref` select alternate local inputs.
+- `--json` provides structured output. `next` currently labels its provenance summary “PR description footer”; that is a source-list aid, **not an instruction to open a PR**. It assumes the entire listed batch was incorporated.
+- PR associations are cached in the primary checkout's ignored `.scratch/`, shared across worktrees and saved incrementally. Use `--refresh-metadata` to rebuild them.
+- Recorded evidence includes ancestry, provenance trailers, cherry-pick references, and historical `Source PRs:` sections. Incomplete or ambiguous associations stop the queue.
+- The old tracking issue is historical context only; its terminal markers are not completion evidence. The queue does not write to GitHub.
+
+Exceptions are keyed by full source SHA:
 
 ```json
 "exceptions": {
@@ -41,47 +114,4 @@ If a source was incorporated without provenance, or must intentionally remain ex
 }
 ```
 
-Use `skip` for intentional exclusions, or `pending` to reopen an incomplete or reverted historical import despite its recorded provenance. Record the concrete fork invariant or maintainer decision and its reason. Decisions apply to individual commits, not ambiguous PR titles. Exceptions remain in the tracked file when the baseline advances. A skip may require adaptation of later upstream changes; chronological order only removes prerequisite selection when preceding changes are accounted for. Correct or remove an exception to undo a decision before advancing. Remove a `pending` exception after the missing work lands so its new provenance can reconcile normally.
-
-## Prepare and land a batch
-
-Start an `intake/<batch>` branch from current fork `main`, using `next --count 20` as the source list. Apply the listed first-parent changes in order. Inspect the upstream diff for each source; apply non-PR and PR merge commits against their first parent. Preserve upstream commits, authors, and implementation choices wherever possible. Keep fork adaptations small and identify the incompatibility or maintained fork invariant in their commit messages. Do not rebrand internals, refactor unchanged upstream code, or introduce unrelated fixes during intake.
-
-For a complete chronological range, prerequisite selection comes from the range itself. Concentrate review on source completeness, fork conflicts, explicit exceptions, and the maintained fork feature ledger. If a prior source was skipped, inspect its effect on the dependent change. If a batch ends before a needed upstream correction, extend the chronological batch through that correction. Do not silently drop source behavior or write a substitute for an available upstream fix.
-
-Every intake commit records a comma-separated `Upstream-PR: 1234, 5678` trailer, an `Upstream-Commit: <full lowercase SHA>` trailer, or both. Prefer recording exact commit sources as well as PRs for partial or multi-commit imports. Fork PR bodies retain these trailers in the squash commit. An exact `Source PRs:` section with one escaped `pingdotgg/t3code#1234` reference per list item is supported too. Keep upstream issue/PR references in backticks in GitHub prose to avoid cross-reference notifications.
-
-Pushing an intake branch runs Fork CI on the full `main...candidate` diff. The existing intake audit checks provenance, fast-forward ancestry, absence of merge commits, and overlap with maintained fork features. Validate actual behavior where conflict resolution or adaptations change it, and at fork-specific integration boundaries such as migrations. Do not repeat upstream's full manual test plan for unchanged source code. Upstream migration files must be carried verbatim in a reviewed intake.
-
-Use an ordinary reviewed fork PR, or the existing manual promotion lane below. Rebase standalone candidates when fork `main` advances; use `gh stack` for any actual stack. Never merge upstream into fork `main`, rebase fork `main` onto upstream, or force-push it.
-
-After the batch lands, fetch `origin/main`, inspect `status` and `explain`, then advance to the reviewed batch boundary:
-
-```bash
-node scripts/upstream-queue.ts advance <full upstream commit SHA>
-```
-
-This edits only the local state file. It rejects unresolved preceding commits, out-of-range SHAs, and boundaries inside a multi-commit PR. Commit the state change through the normal review path. The baseline is an explicit record of reconciliation; it does not move merely because commits were discovered or a candidate branch exists. The command can verify recorded evidence, but human review must establish the completeness of historical adaptations and exceptions.
-
-Once baseline equals target, pin a new target from fetched upstream `main`:
-
-```bash
-node scripts/upstream-queue.ts target <full upstream commit SHA>
-node scripts/upstream-queue.ts next --count 20
-```
-
-`target` rejects backward movement, requires the previous target to be fully advanced, and verifies the new range's PR associations before writing. Commit the new target too. For a mistaken historical decision behind the baseline, deliberately move the baseline back in the reviewed state file and reconcile the reopened range; the routine `advance` command only moves forward.
-
-## Existing manual promotion lane
-
-The `Promote upstream intake` workflow remains available with its existing review and approval boundary. Give an independent model the candidate's complete diff, audit, and upstream source changes. Review source correspondence, omissions, fork compatibility, and adaptations. Resolve findings, rerun Fork CI if bytes change, and dispatch from `main` with the intake branch, exact independently reviewed `reviewed_sha`, and source PR/commit lists matching candidate provenance. Every candidate commit must name a source; explicit commit sources require source-diff review. Set `prerequisites_reviewed` after verifying chronological coverage and any exceptions affecting the batch.
-
-Trusted validation runs from current `main`, repeats the audit, and requires the expected successful Fork CI jobs for that exact branch and SHA. Candidates changing `.github/workflows/fork-ci.yml` must use a PR. The `upstream-intake-manual` environment requires maintainer approval before the Styal Porter credential becomes available. After approval, promotion rechecks that `main` and the candidate have not moved, then fast-forwards without force. Movement stops promotion; rebase, rerun checks and review, and dispatch again. After landing, use the local queue to reconcile and advance the baseline.
-
-Repository configuration for this lane remains:
-
-- The private Styal Porter app is installed only on this fork with read access to Actions, checks and statuses, and read/write access to contents.
-- The `upstream-intake-manual` environment is restricted to `main`, requires maintainer review, and holds `STYAL_INTAKE_APP_ID` and `STYAL_INTAKE_APP_PRIVATE_KEY`.
-- Porter may bypass the PR rule, but not required Fork CI checks. Force pushes remain blocked with no bypass actors.
-
-There is no automatic promotion lane.
+Use `skip` for an intentional exclusion or `pending` to reopen an incomplete or reverted import. Explain the specific reason, review effects on subsequent sources, and remove a `pending` exception after the missing work lands. Exceptions survive baseline advancement. Reopening a decision behind the baseline requires deliberately moving the baseline back in the reviewed state file.
