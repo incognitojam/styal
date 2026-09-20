@@ -7,8 +7,6 @@ export interface UpstreamIntakeAuditInput {
   readonly headSha: string;
   readonly commits: ReadonlyArray<string>;
   readonly commitMessages: ReadonlyArray<string>;
-  readonly expectedSourcePullRequests?: ReadonlyArray<number>;
-  readonly expectedSourceCommits?: ReadonlyArray<string>;
   readonly mergeCommits: ReadonlyArray<string>;
   readonly mainIsAncestor: boolean;
   readonly changedPaths: ReadonlyArray<string>;
@@ -90,6 +88,25 @@ function abbreviated(sha: string): string {
   return sha.slice(0, 12);
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+export function formatUpstreamIntakePromotionCommand(input: {
+  readonly repository: string;
+  readonly candidateBranch: string;
+  readonly candidateSha: string;
+}): string {
+  return [
+    "gh workflow run promote-upstream-intake.yml \\",
+    `  --repo ${shellQuote(input.repository)} \\`,
+    "  --ref main \\",
+    `  -f candidate_branch=${shellQuote(input.candidateBranch)} \\`,
+    `  -f candidate_sha=${shellQuote(input.candidateSha)} \\`,
+    "  -f prerequisites_reviewed=true",
+  ].join("\n");
+}
+
 export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): UpstreamIntakeAudit {
   const errors: Array<string> = [];
   if (!input.mainIsAncestor) errors.push("The candidate is not a fast-forward of main.");
@@ -112,24 +129,6 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
 
   const provenance = parseUpstreamProvenance(input.commitMessages);
   errors.push(...provenance.errors);
-  if (
-    input.expectedSourceCommits !== undefined &&
-    input.expectedSourceCommits.join(",") !== provenance.commitShas.join(",")
-  ) {
-    errors.push(
-      "The supplied source commits do not exactly match the candidate's commit provenance.",
-    );
-  }
-
-  if (
-    input.expectedSourcePullRequests !== undefined &&
-    input.expectedSourcePullRequests.join(",") !== provenance.pullRequestNumbers.join(",")
-  ) {
-    errors.push(
-      "The supplied source pull requests do not exactly match the candidate's commit provenance.",
-    );
-  }
-
   const overlaps = findForkFeatureOverlaps(input.ledger, input.changedPaths);
   const overlapFeatureIds = overlaps.map(({ feature }) => feature.id);
   const manualReviewReasons = manualReviewRules
@@ -184,7 +183,7 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
           )
           .join(", ")
   } |
-| Upstream commits | ${provenance.commitShas.map((sha) => `\`${sha}\``).join(", ") || "None"} |
+| Explicit commit sources | ${provenance.commitShas.map((sha) => `\`${sha}\``).join(", ") || "None"} |
 | Decision | ${promotion} |
 ${errorSection}${manualReviewSection}${overlapSection}
 > This audit is report-only. It does not update \`main\`.

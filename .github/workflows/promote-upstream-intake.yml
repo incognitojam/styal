@@ -13,14 +13,6 @@ on:
         description: "Exact 40-character candidate SHA to promote"
         required: true
         type: string
-      source_prs:
-        description: "Comma-separated upstream PR numbers matching candidate commit provenance"
-        required: false
-        type: string
-      source_commits:
-        description: "Comma-separated full upstream commit SHAs matching candidate provenance; supply PRs, commits, or both"
-        required: false
-        type: string
       prerequisites_reviewed:
         description: "I traced source assumptions and conflicts to their upstream prerequisites"
         required: true
@@ -130,15 +122,10 @@ jobs:
 
       - id: audit
         name: Audit candidate with trusted main code
-        env:
-          EXPECTED_SOURCE_PRS: ${{ inputs.source_prs }}
-          EXPECTED_SOURCE_COMMITS: ${{ inputs.source_commits }}
         run: |
           vp run --filter @t3tools/scripts intake:check -- \
             --base "${{ steps.candidate.outputs.base_sha }}" \
-            --head "${{ steps.candidate.outputs.candidate_sha }}" \
-            --expected-source-prs "$EXPECTED_SOURCE_PRS" \
-            --expected-source-commits "$EXPECTED_SOURCE_COMMITS"
+            --head "${{ steps.candidate.outputs.candidate_sha }}"
 
       - id: ci
         name: Verify Fork CI for the candidate SHA
