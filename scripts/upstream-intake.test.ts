@@ -235,7 +235,7 @@ describe("upstream intake audit", () => {
     };
 
     assert.isTrue(workflow.on.workflow_dispatch.inputs.candidate_branch?.required);
-    assert.isTrue(workflow.on.workflow_dispatch.inputs.reviewed_sha?.required);
+    assert.isTrue(workflow.on.workflow_dispatch.inputs.candidate_sha?.required);
     assert.isFalse(workflow.on.workflow_dispatch.inputs.source_prs?.required);
     assert.isFalse(workflow.on.workflow_dispatch.inputs.source_commits?.required);
     assert.isTrue(workflow.on.workflow_dispatch.inputs.prerequisites_reviewed?.required);
@@ -250,11 +250,11 @@ describe("upstream intake audit", () => {
     assert.equal(trustedCheckout?.with?.ref, "${{ github.sha }}");
 
     const resolveCandidate = workflow.jobs.validate.steps.find(
-      (step) => step.name === "Resolve the reviewed candidate",
+      (step) => step.name === "Resolve candidate",
     );
     assert.include(resolveCandidate?.run ?? "", '"$GITHUB_REF" != "refs/heads/main"');
     assert.include(resolveCandidate?.run ?? "", "git check-ref-format");
-    assert.include(resolveCandidate?.run ?? "", '"$candidate_sha" != "$REVIEWED_SHA"');
+    assert.include(resolveCandidate?.run ?? "", '"$candidate_sha" != "$EXPECTED_CANDIDATE_SHA"');
     assert.include(resolveCandidate?.run ?? "", '"$trusted_sha" != "$base_sha"');
     assert.include(
       resolveCandidate?.run ?? "",
@@ -281,7 +281,7 @@ describe("upstream intake audit", () => {
     );
 
     const verifyCi = workflow.jobs.validate.steps.find(
-      (step) => step.name === "Verify Fork CI for the reviewed SHA",
+      (step) => step.name === "Verify Fork CI for the candidate SHA",
     );
     assert.include(verifyCi?.run ?? "", '--commit "$CANDIDATE_SHA"');
     assert.include(verifyCi?.run ?? "", '"Fork Intake Audit"');
@@ -302,7 +302,7 @@ describe("upstream intake audit", () => {
     assert.equal(tokenStep?.with?.["app-id"], "${{ vars.STYAL_INTAKE_APP_ID }}");
 
     const promoteStep = workflow.jobs.promote.steps.find(
-      (step) => step.name === "Fast-forward main to the reviewed candidate",
+      (step) => step.name === "Fast-forward main to the candidate",
     );
     assert.include(promoteStep?.run ?? "", '"$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$');
     assert.include(promoteStep?.run ?? "", '"$current_main_sha" != "$EXPECTED_BASE_SHA"');

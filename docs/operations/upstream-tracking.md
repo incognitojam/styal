@@ -62,8 +62,8 @@ Pushing the branch runs Fork CI. Review the combined batch once, including sourc
 
 The existing `Promote upstream intake` workflow is the landing path. Its current safeguards remain in force:
 
-1. Obtain an independent model review of the final candidate diff, audit, and upstream sources. Resolve findings and require successful Fork CI for the exact candidate SHA.
-2. When authorized, dispatch the workflow **from main** with `candidate_branch`, the full `reviewed_sha`, and `source_prs` / `source_commits` exactly matching the candidate's provenance. Use the intake audit's source lists, not an earlier proposed batch.
+1. Finish the combined-batch review described above and require successful Fork CI for the exact candidate SHA.
+2. When authorized, dispatch the workflow **from main** with `candidate_branch`, the full `candidate_sha`, and `source_prs` / `source_commits` exactly matching the candidate's provenance. Use the intake audit's source lists, not an earlier proposed batch.
 3. Set `prerequisites_reviewed` after checking chronological coverage and exceptions. Approve the `upstream-intake-manual` environment when requested.
 4. The workflow rechecks both tips, then fast-forwards `main` without force. Verify the resulting SHA and ensuing CI.
 
@@ -71,7 +71,7 @@ If `main` or the candidate moves, rebase the standalone intake branch as needed,
 
 **Current exception:** promotion rejects candidates changing `.github/workflows/fork-ci.yml`. Stop and arrange a separately authorized maintainer change; do not open a PR containing the upstream batch as a workaround.
 
-These instructions simplify the working flow, not the workflow's permissions. Independent review, exact-SHA CI, and environment approval still apply. Styal Porter receives its write credential only after approval.
+These instructions simplify the working flow, not the workflow's permissions. Candidate review, exact-SHA CI, and environment approval still apply. Styal Porter receives its write credential only after approval.
 
 ## 5. Record progress and repeat
 

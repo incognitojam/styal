@@ -1,6 +1,6 @@
 name: Promote upstream intake
 
-run-name: Promote ${{ inputs.candidate_branch }} at ${{ inputs.reviewed_sha }}
+run-name: Promote ${{ inputs.candidate_branch }} at ${{ inputs.candidate_sha }}
 
 on:
   workflow_dispatch:
@@ -9,8 +9,8 @@ on:
         description: "Intake branch to promote, without refs/heads/"
         required: true
         type: string
-      reviewed_sha:
-        description: "Exact 40-character candidate SHA approved by an independent model review"
+      candidate_sha:
+        description: "Exact 40-character candidate SHA to promote"
         required: true
         type: string
       source_prs:
@@ -60,11 +60,11 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - id: candidate
-        name: Resolve the reviewed candidate
+        name: Resolve candidate
         shell: bash
         env:
           CANDIDATE_BRANCH: ${{ inputs.candidate_branch }}
-          REVIEWED_SHA: ${{ inputs.reviewed_sha }}
+          EXPECTED_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
         run: |
           set -euo pipefail
 
@@ -81,8 +81,8 @@ jobs:
           esac
           git check-ref-format --branch "$CANDIDATE_BRANCH" >/dev/null
 
-          if [[ ! "$REVIEWED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::error::Reviewed SHA must be a full lowercase commit SHA."
+          if [[ ! "$EXPECTED_CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Candidate SHA must be a full lowercase commit SHA."
             exit 1
           fi
 
@@ -98,8 +98,8 @@ jobs:
             echo "::error::main moved after this workflow was dispatched. Run it again from the latest main."
             exit 1
           fi
-          if [[ "$candidate_sha" != "$REVIEWED_SHA" ]]; then
-            echo "::error::The intake branch no longer points at the independently reviewed SHA."
+          if [[ "$candidate_sha" != "$EXPECTED_CANDIDATE_SHA" ]]; then
+            echo "::error::The intake branch no longer points at the supplied candidate SHA."
             exit 1
           fi
           if ! git diff --quiet "$base_sha" "$candidate_sha" -- .github/workflows/fork-ci.yml; then
@@ -141,7 +141,7 @@ jobs:
             --expected-source-commits "$EXPECTED_SOURCE_COMMITS"
 
       - id: ci
-        name: Verify Fork CI for the reviewed SHA
+        name: Verify Fork CI for the candidate SHA
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -164,7 +164,7 @@ jobs:
           run_id="$(jq -r '.[0].databaseId // empty' <<< "$run_json")"
 
           if [[ -z "$run_id" ]]; then
-            echo "::error::No successful Fork CI push run exists for the reviewed candidate SHA."
+            echo "::error::No successful Fork CI push run exists for the candidate SHA."
             exit 1
           fi
 
@@ -173,7 +173,7 @@ jobs:
             [[ "$(jq -r '.[0].event' <<< "$run_json")" != "push" ]] ||
             [[ "$(jq -r '.[0].conclusion' <<< "$run_json")" != "success" ]]
           then
-            echo "::error::The selected Fork CI run does not match the reviewed candidate."
+            echo "::error::The selected Fork CI run does not match the candidate."
             exit 1
           fi
 
@@ -216,7 +216,6 @@ jobs:
             echo "- Source PRs: \`$SOURCE_PRS\`"
             echo "- Source commits: \`$SOURCE_COMMITS\`"
             echo "- Fork CI: $ci_run_url"
-            echo "- Independent review: attested by the exact SHA supplied at dispatch"
             echo
             echo "Styal Porter will request approval before receiving its write token."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -254,7 +253,7 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
-      - name: Fast-forward main to the reviewed candidate
+      - name: Fast-forward main to the candidate
         shell: bash
         env:
           EXPECTED_BASE_SHA: ${{ needs.validate.outputs.base_sha }}
@@ -289,7 +288,7 @@ jobs:
             exit 1
           fi
           if ! git merge-base --is-ancestor "$current_main_sha" "$CANDIDATE_SHA"; then
-            echo "::error::The reviewed candidate is no longer a fast-forward of main."
+            echo "::error::The candidate is no longer a fast-forward of main."
             exit 1
           fi
 
@@ -297,7 +296,7 @@ jobs:
 
           promoted_sha="$(git ls-remote --exit-code origin refs/heads/main | cut -f1)"
           if [[ "$promoted_sha" != "$CANDIDATE_SHA" ]]; then
-            echo "::error::main does not point at the reviewed candidate after the push."
+            echo "::error::main does not point at the candidate after the push."
             exit 1
           fi
 
