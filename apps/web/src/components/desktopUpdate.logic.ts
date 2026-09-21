@@ -31,7 +31,7 @@ export function resolveDesktopUpdateButtonAction(
   ) {
     return "install";
   }
-  if (state.status === "available") {
+  if (state.status === "available" && state.errorContext === "download" && state.canRetry) {
     return "download";
   }
   if (state.status === "error") {
@@ -76,6 +76,37 @@ export function isDesktopUpdateButtonDisabled(state: DesktopUpdateState | null):
   return state?.status === "downloading";
 }
 
+/** Statuses driven entirely by the updater should not look like clickable actions. */
+export function getDesktopUpdateProgressLabel(state: DesktopUpdateState | null): string | null {
+  if (state?.status === "checking") {
+    return "Checking…";
+  }
+  if (state?.status === "available" && state.errorContext !== "download") {
+    return "Preparing download…";
+  }
+  if (state?.status === "downloading") {
+    const progress =
+      typeof state.downloadPercent === "number" ? ` ${Math.floor(state.downloadPercent)}%` : "";
+    return `Downloading…${progress}`;
+  }
+  return null;
+}
+
+export function getDesktopUpdateDescription(state: DesktopUpdateState | null): string {
+  if (state?.status === "downloading") {
+    return "Update is downloading automatically.";
+  }
+  if (state?.status === "available") {
+    return state.errorContext === "download"
+      ? "Automatic download failed."
+      : "Update will download automatically.";
+  }
+  if (state && resolveDesktopUpdateButtonAction(state) === "install") {
+    return "Update ready to install.";
+  }
+  return "Current version of the application.";
+}
+
 export function getArm64IntelBuildWarningDescription(state: DesktopUpdateState): string {
   if (!shouldShowArm64IntelBuildWarning(state)) {
     return "This install is using the correct architecture.";
@@ -88,11 +119,17 @@ export function getArm64IntelBuildWarningDescription(state: DesktopUpdateState):
   if (action === "install") {
     return "This Mac has Apple Silicon, but styal is still running the Intel build under Rosetta. Restart to install the downloaded Apple Silicon build.";
   }
+  if (state.status === "available" || state.status === "downloading") {
+    return "This Mac has Apple Silicon, but styal is still running the Intel build under Rosetta. The available update will replace it with the native Apple Silicon build automatically.";
+  }
   return "This Mac has Apple Silicon, but styal is still running the Intel build under Rosetta. The next app update will replace it with the native Apple Silicon build.";
 }
 
 export function getDesktopUpdateButtonTooltip(state: DesktopUpdateState): string {
   if (state.status === "available") {
+    if (state.errorContext === "download") {
+      return `Download failed for ${state.availableVersion ?? "the available update"}. Click to retry.`;
+    }
     return `Update ${state.availableVersion ?? "available"} ready to download`;
   }
   if (state.status === "downloading") {
