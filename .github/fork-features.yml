@@ -279,14 +279,14 @@ features:
   - id: desktop-background-updates
     title: Download desktop updates in the background and install on quit
     status: maintained
-    prs: [110, 128, 358]
+    prs: [110, 128, 358, 390]
     invariants:
       - Desktop activity authentication remains available for the host process lifetime, including the first quit after days of uptime and renewal after bearer expiry.
       - In-app shutdown dialogs appear only for active or unknown work and name the threads and terminal sessions that will be interrupted; inspection warnings appear only for activity that could not be checked.
       - Manual desktop quits and restarts check every owned backend; active or unknown host activity requires confirmation, and cancellation preserves windows and downloaded updates.
       - Shutdown confirmation is available on recovery screens; failed presentation alone arms a subsequent Quit override that preserves cleanup, cannot be consumed by restart actions, and clears when the renderer recovers or displays a dialog.
       - Available desktop updates download automatically while preserving accurate available, downloading, downloaded, install, and retry state across updater events and pre-install refreshes.
-      - Downloaded updates install on normal app quit; the sidebar only offers restart once an installer is ready, while Settings retains checks, progress, and retries.
+      - Downloaded updates install on normal app quit; the sidebar only offers restart once an installer is ready, while Settings presents automatic checks and downloads as status and reserves download actions for failure retries.
       - A late native window-close event cannot bypass cleanup and the selected-channel installer handoff after scoped lifecycle listeners are removed.
       - Changing update channels clears installation eligibility; only a ready download from the selected channel may install on quit, including on macOS where native staging waits until shutdown.
     implementation_paths:
