@@ -847,7 +847,7 @@ features:
 
   - id: github-pull-request-query-budget
     title: Bound GitHub pull request query cost
-    status: maintained
+    status: review-needed
     prs: [131]
     invariants:
       - Opening and refreshing a pull request cannot exhaust the GitHub GraphQL quota through unbounded nested review-thread connections.
@@ -867,6 +867,7 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/6466
+        - https://github.com/pingdotgg/t3code/pull/9176
       retire_when: Upstream bounds nested GitHub review-thread query fan-out while retaining equivalent pagination and provider-budget protection.
 
   - id: github-reference-links
@@ -1483,7 +1484,7 @@ features:
 
   - id: pull-request-live-refresh
     title: Keep open pull request details current
-    status: maintained
+    status: review-needed
     prs: [101]
     invariants:
       - An open pull request refreshes core host state without leaving the visible panel one stale response behind.
@@ -1504,6 +1505,7 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/6466
+        - https://github.com/pingdotgg/t3code/pull/9176
       retire_when: Upstream keeps the visible pull request current without stale responses, unnecessary activity reads, or invalidating cached diffs.
 
   - id: pull-request-open-entry-points

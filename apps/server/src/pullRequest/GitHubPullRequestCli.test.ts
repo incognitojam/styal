@@ -189,6 +189,7 @@ layer("GitHubPullRequestCli.layer", (it) => {
         Effect.succeed({
           number: 7,
           title: "Reuse the summary",
+          isDraft: false,
           url: "https://github.com/acme/web/pull/7",
           baseRefName: "main",
           headRefName: "feat/summary",

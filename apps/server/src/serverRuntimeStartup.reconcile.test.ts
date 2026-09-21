@@ -134,6 +134,7 @@ it.effect("marks active running sessions that have persisted resume state", () =
       getProvider: () => Effect.die("unused"),
       listThreadIds: () => Effect.die("unused"),
       listBindings: () => Effect.die("unused"),
+      recordImportedTranscript: () => Effect.die("unused"),
     }),
     Effect.tap((marked) =>
       Effect.sync(() => {
@@ -234,6 +235,7 @@ it.effect("continues marked sessions after activation with provider-specific inp
         getProvider: () => Effect.die("unused"),
         listThreadIds: () => Effect.die("unused"),
         listBindings: () => Effect.die("unused"),
+        recordImportedTranscript: () => Effect.die("unused"),
       },
       dispatch: (command) =>
         Effect.sync(() => dispatched.push(command)).pipe(
@@ -357,6 +359,7 @@ it.effect("does not continue archived or deleted marked sessions", () => {
       getProvider: () => Effect.die("unused"),
       listThreadIds: () => Effect.die("unused"),
       listBindings: () => Effect.die("unused"),
+      recordImportedTranscript: () => Effect.die("unused"),
     },
     dispatch: (command) =>
       Effect.sync(() => dispatched.push(command)).pipe(Effect.as({ sequence: dispatched.length })),
@@ -412,6 +415,7 @@ it.effect("retries continuation preparation before settling a persistent failure
       getProvider: () => Effect.die("unused"),
       listThreadIds: () => Effect.die("unused"),
       listBindings: () => Effect.die("unused"),
+      recordImportedTranscript: () => Effect.die("unused"),
     },
     dispatch: (command) => {
       if (command.type !== "thread.session.set") {
