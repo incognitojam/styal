@@ -54,6 +54,7 @@ import {
 } from "./ui/menu";
 import { Separator } from "./ui/separator";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+import { MiddleTruncate } from "./ui/middle-truncate";
 import { ComposerSurface } from "./chat/ComposerSurface";
 import { useComposerMenuProps } from "./chat/composerEventScope";
 import { measureRestingComposerControls } from "./chat/restingComposerControlsMeasurement";
@@ -286,9 +287,7 @@ const MobileRunContextSelector = memo(function MobileRunContextSelector({
                 ) : (
                   <FolderIcon className="size-3" />
                 )}
-                <span className="min-w-0 truncate">
-                  {resolveCurrentWorkspaceLabel(activeWorktreePath)}
-                </span>
+                <MiddleTruncate value={resolveCurrentWorkspaceLabel(activeWorktreePath)} />
               </span>
             </MenuRadioItem>
             <MenuRadioItem
@@ -310,7 +309,7 @@ const MobileRunContextSelector = memo(function MobileRunContextSelector({
               <MenuRadioItem disabled={envModeLocked} value="previous-worktree" closeOnClick>
                 <span className="flex min-w-0 items-center gap-1.5">
                   <HistoryIcon className="size-3" />
-                  <span className="min-w-0 truncate">{previousWorktreeLabel}</span>
+                  <MiddleTruncate value={previousWorktreeLabel} />
                 </span>
               </MenuRadioItem>
             ) : null}
