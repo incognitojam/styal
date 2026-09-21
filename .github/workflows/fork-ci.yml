@@ -240,7 +240,7 @@ jobs:
             --filter './oxlint-plugin-t3code' \
             --filter './scripts' \
             --filter '!./apps/server' \
-            test --exclude '**/imageCompression.test.ts'
+            test --exclude '**/imageCompression.test.ts' --pool threads
           vp run --filter @t3tools/web test src/lib/imageCompression.test.ts \
             --no-file-parallelism \
             --maxWorkers=1
