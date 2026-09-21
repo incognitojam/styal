@@ -55,7 +55,7 @@ export class DesktopAppUpdate extends Context.Service<
         returns only when installation fails or times out. */
     readonly commit: (requestId: string) => Effect.Effect<never, ServerSelfUpdateError>;
   }
->()("t3/desktopUpdate/DesktopAppUpdate") {}
+>()("@styal/cli/desktopUpdate/DesktopAppUpdate") {}
 
 export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* () {
   const config = yield* ServerConfig;

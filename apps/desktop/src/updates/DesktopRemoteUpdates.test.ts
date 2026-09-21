@@ -117,7 +117,7 @@ describe("DesktopRemoteUpdates", () => {
         const statuses = reports
           .filter((report) => report.requestId === "req-1")
           .map((report) => report.state.status);
-        assert.include(statuses, "available");
+        assert.include(statuses, "downloading");
         assert.include(statuses, "downloaded");
       }),
     );
@@ -335,11 +335,8 @@ describe("DesktopRemoteUpdates", () => {
     );
   });
 
-  it.effect("retries a download refused while the check still holds the reservation", () => {
-    // electron-updater emits update-available from inside checkForUpdates,
-    // before the check action releases its reservation. The download the
-    // remote flow forks in response is refused and must be retried once the
-    // reservation frees up, without burning a download attempt.
+  it.effect("hands the check reservation to automatic download without starting it twice", () => {
+    // The fork transfers the check reservation to its automatic download.
     const releaseCheck = Deferred.makeUnsafe<void>();
     const harness = makeHarness({ checkForUpdates: Deferred.await(releaseCheck) });
 
@@ -352,7 +349,7 @@ describe("DesktopRemoteUpdates", () => {
         // Fire "available" while the check reservation is still held.
         harness.emit("update-available", { version: "1.2.4" });
         yield* settle;
-        assert.equal(harness.downloadCount(), 0);
+        assert.equal(harness.downloadCount(), 1);
 
         yield* Deferred.succeed(releaseCheck, undefined);
         yield* settle;

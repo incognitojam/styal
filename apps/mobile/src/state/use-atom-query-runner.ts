@@ -17,8 +17,6 @@ export function useAtomQueryRunner<T, A, E>(
   const reportDefect = typeof options === "string" ? true : (options?.reportDefect ?? true);
   const refresh = typeof options === "string" ? false : (options?.refresh ?? false);
 
-  const refresh = typeof options === "string" ? false : (options?.refresh ?? false);
-
   return useCallback(
     (target: T) => {
       const atom = family(target);

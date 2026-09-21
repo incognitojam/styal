@@ -26,7 +26,7 @@ import {
 } from "../../session-logic";
 import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../../types";
 import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@t3tools/contracts";
-import { isPreviewToolName } from "@t3tools/shared/toolRowPresentation";
+import { deriveToolRowPresentation, isPreviewToolName } from "@t3tools/shared/toolRowPresentation";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 
 export const TIMELINE_MINIMAP_ITEM_SPACING = 8;
@@ -38,6 +38,36 @@ export const TIMELINE_MINIMAP_PERSISTENT_GUTTER = 48;
 export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string | undefined) {
   const toolPresentation = resolveWorkEntryToolPresentation(entry);
   if (toolPresentation) return toolPresentation.displayName;
+  if (
+    entry.toolName &&
+    !entry.sourceActivityKind?.startsWith("setup-script.") &&
+    !entry.agentSpawn
+  ) {
+    const presentation = deriveToolRowPresentation({
+      toolName: entry.toolName,
+      itemType: entry.itemType,
+      label: entry.toolTitle ?? entry.label,
+      detail: entry.detail,
+      input: entry.toolInput,
+      command: entry.command,
+      changedFiles: entry.changedFiles,
+      failed: workEntryDisplayIndicatesToolFailure(entry),
+    });
+    if (presentation) {
+      const argument = presentation.argument;
+      const value =
+        argument?.kind === "path"
+          ? formatWorkspaceRelativePath(argument.value, workspaceRoot, {
+              includeWorkspaceLabel: false,
+            })
+          : argument?.value;
+      return value &&
+        normalizeCompactToolLabel(value).toLowerCase() !==
+          normalizeCompactToolLabel(presentation.heading).toLowerCase()
+        ? `${presentation.heading} - ${value}${argument?.kind === "path" && argument.moreCount ? ` +${argument.moreCount} more` : ""}`
+        : presentation.heading;
+    }
+  }
   if (entry.command) return entry.command;
   if (entry.detail) return entry.detail;
   const [firstPath] = entry.changedFiles ?? [];

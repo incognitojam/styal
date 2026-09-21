@@ -9,7 +9,6 @@ import {
   useCallback,
   useEffect,
   useId,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -28,7 +27,7 @@ import {
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 
 import { AppText as Text } from "../../components/AppText";
-import { T3Wordmark } from "../../components/T3Wordmark";
+import { StyalWordmark } from "../../components/StyalWordmark";
 import { cn } from "../../lib/cn";
 import { THREAD_WORK_ROW_MIN_HEIGHT, type deriveThreadWorkLogSizing } from "../../lib/layout";
 import type { ThreadFeedActivity } from "../../lib/threadActivity";
@@ -76,7 +75,7 @@ function WorkLogIcon(props: {
 }) {
   if (props.icon === "t3-code") {
     return (
-      <T3Wordmark
+      <StyalWordmark
         height={10}
         {...(props.highlighted ? { colorClassName: "accent-foreground" } : { color: props.color })}
       />
@@ -306,18 +305,6 @@ function workRowSymbolName(icon: ThreadFeedActivity["icon"]): AppSymbolName {
       return { ios: "wrench", android: "build" };
     case "zap":
       return { ios: "bolt", android: "bolt" };
-  }
-}
-
-function workRowStatusSymbolName(status: NonNullable<ThreadFeedActivity["status"]>): AppSymbolName {
-  switch (status) {
-    case "failure":
-      return { ios: "xmark", android: "close" };
-    case "success":
-      return { ios: "checkmark", android: "check" };
-    case "neutral":
-    case "stopped":
-      return { ios: "minus", android: "remove" };
   }
 }
 
@@ -654,8 +641,17 @@ const ThreadWorkLogRow = memo(function ThreadWorkLogRow(
   const fullDetail = expanded ? row.getFullDetail() : null;
   const viewedImagePath = workEntryViewedImagePath(row.workEntry);
   const toolPresentation = resolveWorkEntryToolPresentation(row.workEntry);
-  const previewText =
-    toolPresentation?.displayName ?? compactActivityDetail(row.detail) ?? row.summary;
+  const fileChangeStat = row.fileChangeStat;
+  const statText =
+    fileChangeStat && (fileChangeStat.additions > 0 || fileChangeStat.deletions > 0)
+      ? `+${fileChangeStat.additions} -${fileChangeStat.deletions}`
+      : null;
+  const previewText = [
+    toolPresentation?.displayName ?? compactActivityDetail(row.detail) ?? row.summary,
+    statText,
+  ]
+    .filter(Boolean)
+    .join(" ");
   const displayText =
     !toolPresentation && expanded && row.workEntry.command?.trim() ? "Command" : previewText;
   const iconIsDestructive = row.icon === "alert" || row.icon === "warning";
@@ -735,9 +731,8 @@ const ThreadWorkLogRow = memo(function ThreadWorkLogRow(
             ) : null}
             <View className="h-4 w-4 items-center justify-center">
               {canExpand ? (
-                <ThreadDisclosureChevron
-                  expanded={expanded}
-                  collapsedDirection="down"
+                <SymbolView
+                  name={expanded ? "chevron.up" : "chevron.down"}
                   size={11}
                   tintColor={props.iconSubtleColor}
                 />

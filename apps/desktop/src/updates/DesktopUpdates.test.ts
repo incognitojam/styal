@@ -1,5 +1,4 @@
 import * as Stream from "effect/Stream";
-import * as DesktopShutdownGuard from "../app/DesktopShutdownGuard.ts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
@@ -13,11 +12,7 @@ import * as References from "effect/References";
 import * as Ref from "effect/Ref";
 import * as TestClock from "effect/testing/TestClock";
 
-import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
-import * as DesktopConfig from "../app/DesktopConfig.ts";
-import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
-import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopState from "../app/DesktopState.ts";
 import * as DesktopUpdates from "./DesktopUpdates.ts";
@@ -1032,7 +1027,7 @@ describe("DesktopUpdates", () => {
         yield* flushCallbacks;
 
         const observed = yield* Fiber.join(nextState);
-        assert.equal(Option.getOrThrow(observed).status, "available");
+        assert.equal(Option.getOrThrow(observed).status, "downloading");
         assert.equal(Option.getOrThrow(observed).availableVersion, "1.2.4");
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
@@ -1050,10 +1045,10 @@ describe("DesktopUpdates", () => {
         yield* flushCallbacks;
 
         const state = yield* updates.getState;
-        assert.equal(state.status, "available");
+        assert.equal(state.status, "downloading");
         assert.equal(state.availableVersion, "1.2.4");
         assert.isNotNull(state.checkedAt);
-        assert.equal(harness.sentStates.at(-1)?.status, "available");
+        assert.equal(harness.sentStates.at(-1)?.status, "downloading");
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });

@@ -115,8 +115,8 @@ function FileContent(props: {
   // Reopening a mutable host file must not reuse a poster from an earlier visit.
   const thumbnailInstanceId = useId();
   const isMarkdown = isMarkdownPreviewFile(props.relativePath);
-  const isBrowserFile = isWorkspaceBrowserPreviewPath(props.relativePath);
-  const isImageFile = isWorkspaceImagePreviewPath(props.relativePath);
+  const isBrowserFile = isBrowserPreviewFile(props.relativePath);
+  const isImageFile = isImagePreviewFile(props.relativePath);
 
   if (isVideoPreviewFile(props.relativePath)) {
     return (

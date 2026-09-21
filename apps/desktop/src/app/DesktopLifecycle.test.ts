@@ -115,6 +115,10 @@ const makeLifecycleLayer = (
         download: Effect.die("unexpected download"),
         install: Effect.die("unexpected install"),
         installOnQuit,
+        isActionActive: Effect.succeed(false),
+        isInstallActive: Effect.succeed(false),
+        subscribe: Effect.die("unexpected subscription"),
+        installPrepared: () => Effect.die("unexpected prepared install"),
       }),
     ),
     Layer.provideMerge(Layer.succeed(ElectronApp.ElectronApp, electronApp)),
@@ -310,6 +314,8 @@ describe("DesktopLifecycle", () => {
           makeLifecycleLayer(
             platform,
             electronApp,
+            Effect.void,
+            Effect.void,
             Effect.sync(() => {
               windowsDestroyed = true;
             }),

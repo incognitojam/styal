@@ -100,7 +100,7 @@ import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { readLocalApi } from "~/localApi";
 import { getSourceControlPresentation } from "~/sourceControlPresentation";
 import { useViewPullRequest } from "~/lib/viewPullRequest";
-import { openPullRequestLink, useOpenPrLink } from "~/lib/openPullRequestLink";
+import { useOpenPrLink } from "~/lib/openPullRequestLink";
 
 interface GitActionsControlProps {
   gitCwd: string | null;

@@ -2677,7 +2677,13 @@ function ChatMarkdown({
             inlineCodeFileLinkMetaByText.get(codeText.trim()) ??
             resolveInlineCodeFileLinkMeta(codeText, cwd, imageBaseDir ?? cwd);
           if (fileLinkMeta) {
-            return renderFileLink(fileLinkMeta, `\`${codeText}\``);
+            return renderFileLink(
+              fileLinkMeta,
+              `\`${codeText}\``,
+              undefined,
+              undefined,
+              inlineCodeFilePathCandidate(codeText) ?? codeText.trim(),
+            );
           }
         }
         return (

@@ -7,7 +7,6 @@ import {
   type ProviderInteractionMode,
   type RuntimeMode,
 } from "@t3tools/contracts";
-import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 
 import { toUploadChatImageAttachments, type DraftComposerAttachment } from "./composerImages";
 import type { UploadedMobileAttachment } from "./attachmentUpload";

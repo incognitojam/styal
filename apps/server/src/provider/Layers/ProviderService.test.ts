@@ -2208,7 +2208,10 @@ citations.layer("ProviderServiceLive assistant citations", (it) => {
           "<assistant_citations>",
           "</assistant_citations>",
         ]);
-        assert.include(turnText, '[Attached file "reference.txt" is saved at: ');
+        assert.include(
+          turnText,
+          '[Attached file "reference.txt" (text/plain, 42 bytes) is saved at: ',
+        );
         assert.deepStrictEqual(adapter.sendTurn.mock.calls[0]?.[0].attachments, [attachment]);
         const contextJson = turnText.match(
           /<assistant_citations>\n[^\n]*\n([\s\S]*)\n<\/assistant_citations>/,

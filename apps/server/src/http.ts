@@ -199,7 +199,8 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
     if (method === "GET" && rangeHeader && (!asset.file || ifRangeHeader === undefined)) {
       const fs = yield* FileSystem.FileSystem;
       const info = mediaInfo ?? (yield* fs.stat(asset.path));
-      if (ifRangeHeader !== undefined) {
+      if (ifRangeHeader !== undefined && !asset.file) {
+        const info = yield* fs.stat(asset.path);
         // NodeHttpPlatform uses this strong generator for its file response validators.
         const etag = yield* Etag.Generator.pipe(
           Effect.flatMap((generator) => generator.fromFileInfo(info)),

@@ -293,6 +293,7 @@ features:
       - Downloaded updates install on normal app quit; the sidebar only offers restart once an installer is ready, while Settings presents automatic checks and downloads as status and reserves download actions for failure retries.
       - A late native window-close event cannot bypass cleanup and the selected-channel installer handoff after scoped lifecycle listeners are removed.
       - Changing update channels clears installation eligibility; only a ready download from the selected channel may install on quit, including on macOS where native staging waits until shutdown.
+      - Remote desktop updates reuse the automatic-download reservation and recover failed installations without bypassing local manual-restart confirmation or install-on-quit behavior.
     implementation_paths:
       - apps/desktop/src/app/DesktopLifecycle.ts
       - apps/desktop/src/app/DesktopShutdownConfirmation.ts
@@ -328,6 +329,7 @@ features:
       - apps/desktop/src/backend/DesktopServerExposure.test.ts
       - apps/desktop/src/electron/ElectronUpdater.test.ts
       - apps/desktop/src/ipc/methods/wsl.test.ts
+      - apps/desktop/src/updates/DesktopRemoteUpdates.test.ts
       - apps/desktop/src/updates/DesktopUpdates.test.ts
       - apps/desktop/src/updates/releaseNotes.test.ts
       - apps/desktop/src/updates/updateMachine.test.ts
@@ -344,6 +346,7 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/6269
+        - https://github.com/pingdotgg/t3code/pull/6554
       retire_when: Upstream automatically downloads desktop updates, installs them on quit, and exposes equivalent queued-installer preservation, retry, and restart state through the client UI.
 
   - id: desktop-discord-rich-presence
@@ -970,6 +973,8 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/pull/7152
         - https://github.com/pingdotgg/t3code/pull/8395
+        - https://github.com/pingdotgg/t3code/pull/9120
+        - https://github.com/pingdotgg/t3code/pull/9106
       retire_when: Upstream uses equivalent cross-provider action names and concise arguments across clients and approvals, preserves inspectable full commands, retrieves completed output on demand without bloating activity payloads, and keeps collapsed groups visibly expandable with status detail intact.
 
   - id: integrated-browser-links

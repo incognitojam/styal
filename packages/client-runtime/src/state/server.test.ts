@@ -1,4 +1,3 @@
-import * as Deferred from "effect/Deferred";
 import {
   EnvironmentId,
   type ServerConfig,

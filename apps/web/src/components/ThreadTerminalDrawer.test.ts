@@ -3,9 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   shouldClearTerminalSelectionAction,
   shouldHandleTerminalExit,
-  shouldHandleTerminalSelectionMouseUp,
   shouldRetainExitedTerminal,
-  terminalSelectionActionDelayForClickCount,
   terminalSelectionLineRange,
   terminalContextMenuItems,
   terminalSelectionMenuItems,

@@ -1026,6 +1026,8 @@ function workEntryHeading(workEntry: DerivedWorkLogEntry): string {
   if (workEntry.sourceActivityKind?.startsWith("setup-script.")) {
     return capitalizePhrase(workEntry.label);
   }
+  const nativePresentation = resolveWorkEntryToolPresentation(workEntry);
+  if (nativePresentation) return nativePresentation.displayName;
   const presentation = toolRowPresentationFor(workEntry);
   if (presentation) {
     return presentation.heading;
@@ -1995,7 +1997,9 @@ export function buildThreadFeed(
         .map<RawThreadFeedEntry>((entry) => {
           const summary = workEntryHeading(entry);
           // As on web: a presentation owns its argument, including its absence.
-          const presentation = toolRowPresentationFor(entry);
+          const presentation = resolveWorkEntryToolPresentation(entry)
+            ? undefined
+            : toolRowPresentationFor(entry);
           const detail = presentation
             ? presentation.argument
               ? formatToolRowArgument(presentation.argument, workspaceRoot)
