@@ -62,6 +62,12 @@ We need to be on the same page with terminology. When communicating, use this la
 2. **Writing to the live install.** `~/.styal/userdata` is the developer's real styal database, in use while you work. Reading it and copying from it are fine, and a good way to get real test data (see Test data). Never start a server against it, never open it read-write, never clean it up.
 3. **Baking in origins.** Never set `VITE_HTTP_URL` or `VITE_WS_URL` for dev. Dev is single-origin and Vite proxies `/api`, `/ws`, `/oauth`, and `/.well-known`. Setting them bakes localhost into the bundle and silently breaks every remote browser.
 
+## Check upstream before implementing
+
+Before implementing a feature or bug fix, investigate whether upstream has already implemented it or has relevant work in progress. Check the current `pingdotgg/t3code` code, commits, and open or merged pull requests rather than relying on the fork's current upstream baseline.
+
+Use that investigation to choose the implementation path deliberately. When upstream already has a suitable change, either wait for the normal intake queue to reach it or incorporate the relevant upstream patch into the fork with its authorship and provenance preserved, following [the upstream intake runbook](docs/operations/upstream-tracking.md). Adapt the patch only where maintained fork differences require it. Do not independently reimplement the same change before deciding whether to wait for or import the upstream work.
+
 ## Hit every surface
 
 The most common defect in this repo is a change that works on the path you tested and is missing everywhere else. Before calling frontend work done, walk this list and say which entries applied:
