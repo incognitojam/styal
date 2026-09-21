@@ -463,7 +463,10 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
             environmentId,
             input: { patch: localPatch },
           });
-        } else {
+        } else if (
+          !environmentId &&
+          (Object.keys(localPatch).length > 0 || connectedEnvironmentIds.length === 0)
+        ) {
           // Dropping the write silently leaves the control looking saved.
           toastManager.add({
             type: "warning",

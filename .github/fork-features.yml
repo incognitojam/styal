@@ -284,6 +284,7 @@ features:
     status: maintained
     prs: [110, 128, 358, 390]
     invariants:
+      - Nightly release previews retain curated highlights and footer filtering while showing newest entries with counts and links to styal releases.
       - Desktop activity authentication remains available for the host process lifetime, including the first quit after days of uptime and renewal after bearer expiry.
       - In-app shutdown dialogs appear only for active or unknown work and name the threads and terminal sessions that will be interrupted; inspection warnings appear only for activity that could not be checked.
       - Manual desktop quits and restarts check every owned backend; active or unknown host activity requires confirmation, and cancellation preserves windows and downloaded updates.
@@ -301,6 +302,7 @@ features:
       - apps/desktop/src/ipc/methods/shutdownConfirmation.ts
       - apps/desktop/src/ipc/methods/wsl.ts
       - apps/desktop/src/updates/DesktopUpdates.ts
+      - apps/desktop/src/updates/releaseNotes.ts
       - apps/desktop/src/updates/updateMachine.ts
       - apps/server/src/auth/PairingGrantStore.ts
       - apps/server/src/environment/HostActivity.ts
@@ -309,6 +311,7 @@ features:
       - apps/web/src/components/desktopUpdate.logic.ts
       - apps/web/src/components/sidebar/DesktopUpdateStatusIcon.tsx
       - apps/web/src/components/sidebar/SidebarUpdatePill.tsx
+      - apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx
       - apps/web/src/confirmDialog.ts
       - packages/contracts/src/ipc.ts
     upstream_paths:
@@ -326,6 +329,7 @@ features:
       - apps/desktop/src/electron/ElectronUpdater.test.ts
       - apps/desktop/src/ipc/methods/wsl.test.ts
       - apps/desktop/src/updates/DesktopUpdates.test.ts
+      - apps/desktop/src/updates/releaseNotes.test.ts
       - apps/desktop/src/updates/updateMachine.test.ts
       - apps/desktop/src/window/DesktopWindow.test.ts
       - apps/server/src/auth/EnvironmentAuth.test.ts
@@ -333,6 +337,7 @@ features:
       - apps/server/src/environment/HostActivity.test.ts
       - apps/server/src/terminal/Manager.test.ts
       - apps/web/src/components/desktopUpdate.logic.test.ts
+      - apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.test.tsx
       - apps/web/src/confirmDialog.test.ts
       - apps/web/src/state/desktopUpdate.test.ts
     upstream:
@@ -762,6 +767,7 @@ features:
       - apps/mobile/src/persistence/mobile-database.ts
       - apps/mobile/src/persistence/mobile-preferences.ts
       - apps/mobile/src/persistence/mobile-storage.ts
+      - apps/server/src/cli/app.ts
       - apps/server/src/cli/config.ts
       - apps/server/src/cli/theme.ts
       - apps/server/src/serviceLauncher.ts
@@ -776,6 +782,7 @@ features:
       - apps/mobile/src/persistence/mobile-database.ts
       - apps/mobile/src/persistence/mobile-preferences.ts
       - apps/mobile/src/persistence/mobile-storage.ts
+      - apps/server/src/cli/app.ts
       - apps/server/src/cli/config.ts
       - apps/server/src/cli/theme.ts
       - apps/server/src/serviceLauncher.ts
@@ -788,6 +795,7 @@ features:
       - apps/mobile/src/appIdentity.test.ts
       - apps/mobile/src/lib/storage.test.ts
       - apps/mobile/src/persistence/mobile-database.test.ts
+      - apps/server/src/cli/app.test.ts
       - apps/server/src/cli/config.test.ts
       - apps/server/src/cli/theme.test.ts
       - apps/server/src/serviceLauncher.test.ts

@@ -169,15 +169,19 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
       ].join("\n"),
       "1.2.3",
     );
-    expect(notes).toEqual([
-      {
-        version: "1.2.3",
-        items: [
-          "Start threads from GitHub issues (#14)",
-          "Show setup script outcomes (t3code#12083)",
-        ],
-      },
-    ]);
+    expect(notes).toEqual({
+      releaseNotes: [
+        {
+          version: "1.2.3",
+          totalItems: 2,
+          items: [
+            "Show setup script outcomes (t3code#12083)",
+            "Start threads from GitHub issues (#14)",
+          ],
+        },
+      ],
+      omittedReleaseCount: 0,
+    });
   });
 
   it("does not throw on out-of-range numeric entities and keeps the literal", () => {
@@ -195,7 +199,7 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
       '<p><strong>Full Changelog</strong>: <a href="https://example.com/compare/abc...def">acme/widget@abc...def</a></p>',
       "1.0.0",
     );
-    expect(notes).toEqual([]);
+    expect(notes).toEqual({ releaseNotes: [], omittedReleaseCount: 0 });
   });
 
   it("drops the New Contributors footer", () => {
@@ -203,7 +207,10 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
       "- Real change\nNew Contributors: @someone made their first contribution",
       "1.0.0",
     );
-    expect(notes).toEqual([{ version: "1.0.0", items: ["Real change"] }]);
+    expect(notes).toEqual({
+      releaseNotes: [{ version: "1.0.0", items: ["Real change"], totalItems: 1 }],
+      omittedReleaseCount: 0,
+    });
   });
 
   it("keeps items that merely begin with footer wording", () => {
@@ -211,14 +218,18 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
       "- Full changelog links now use fork tags\n- New contributors can configure passkeys",
       "1.0.0",
     );
-    expect(notes).toEqual([
-      {
-        version: "1.0.0",
-        items: [
-          "Full changelog links now use fork tags",
-          "New contributors can configure passkeys",
-        ],
-      },
-    ]);
+    expect(notes).toEqual({
+      releaseNotes: [
+        {
+          version: "1.0.0",
+          totalItems: 2,
+          items: [
+            "New contributors can configure passkeys",
+            "Full changelog links now use fork tags",
+          ],
+        },
+      ],
+      omittedReleaseCount: 0,
+    });
   });
 });

@@ -606,6 +606,7 @@ it.effect("imports selected history and safe preferences independently", () => {
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
   const snapshots = ProjectionSnapshotQuery.of({
+    getEventReplayStats: () => Effect.die("unused"),
     getCommandReadModel: () => Effect.succeed(emptyReadModel),
     getSnapshot: () => Effect.succeed(emptyReadModel),
     getShellSnapshot: () => Effect.succeed(emptyShell),
@@ -925,6 +926,7 @@ it.effect("imports one thread at a time and resumes after an interrupted thread"
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
   const snapshots = ProjectionSnapshotQuery.of({
+    getEventReplayStats: () => Effect.die("unused"),
     getCommandReadModel: () => Effect.succeed(emptyReadModel),
     getSnapshot: () => Effect.succeed(emptyReadModel),
     getShellSnapshot: () => Effect.succeed(emptyShell),
@@ -1075,6 +1077,7 @@ it.effect("repairs provider context for threads imported by an earlier release",
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
   const snapshots = ProjectionSnapshotQuery.of({
+    getEventReplayStats: () => Effect.die("unused"),
     getCommandReadModel: () => Effect.succeed(emptyReadModel),
     getSnapshot: () => Effect.succeed(emptyReadModel),
     getShellSnapshot: () => Effect.succeed(emptyShell),
