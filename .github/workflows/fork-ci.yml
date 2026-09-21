@@ -240,10 +240,14 @@ jobs:
             --filter './oxlint-plugin-t3code' \
             --filter './scripts' \
             --filter '!./apps/server' \
-            test --exclude '**/imageCompression.test.ts' --pool threads
+            test --exclude '**/imageCompression.test.ts' \
+            --reporter=default \
+            --reporter="$GITHUB_WORKSPACE/scripts/vitest-ci-exit-reporter.ts"
           vp run --filter @t3tools/web test src/lib/imageCompression.test.ts \
             --no-file-parallelism \
-            --maxWorkers=1
+            --maxWorkers=1 \
+            --reporter=default \
+            --reporter="$GITHUB_WORKSPACE/scripts/vitest-ci-exit-reporter.ts"
 
       - name: Test resource monitor
         run: cargo test --locked --manifest-path native/resource-monitor/Cargo.toml
