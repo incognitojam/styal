@@ -50,6 +50,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
@@ -353,6 +354,8 @@ function PullRequestBaseFreshnessWarning({
   pending,
   onUpdate,
   iconClassName,
+  className,
+  children,
 }: {
   readonly baseBranch: string;
   readonly freshness: {
@@ -362,6 +365,9 @@ function PullRequestBaseFreshnessWarning({
   readonly pending: boolean;
   readonly onUpdate: (method: PullRequestUpdateMethod) => void;
   readonly iconClassName?: string;
+  readonly className?: string;
+  /** What the warning is about, drawn in the same amber before the mark: the base branch. */
+  readonly children?: ReactNode;
 }) {
   const behind =
     freshness.behindBy === null
@@ -380,11 +386,15 @@ function PullRequestBaseFreshnessWarning({
           <button
             type="button"
             aria-label={summary}
-            className="inline-flex shrink-0 cursor-help items-center rounded-sm text-amber-600 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className={cn(
+              "inline-flex min-w-0 shrink-0 cursor-help items-center gap-1 rounded-sm text-amber-600 outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-amber-400/90",
+              className,
+            )}
           />
         }
       >
-        <TriangleAlertIcon aria-hidden className={cn("size-3.5", iconClassName)} />
+        {children}
+        <TriangleAlertIcon aria-hidden className={cn("size-3.5 shrink-0", iconClassName)} />
       </PopoverTrigger>
       <PopoverPopup
         align="start"
@@ -2334,26 +2344,9 @@ function PullRequestDetailPanelBody({
                   </span>
                   <span aria-hidden className="h-3 w-px shrink-0 bg-border/70" />
                   <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-[11px] text-muted-foreground/65">
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <span className="inline-flex min-w-0 max-w-[40%] shrink-0 items-center gap-1">
-                            {isStackedPullRequest ? (
-                              <PullRequestGlyph.stack
-                                aria-label="Stacked pull request"
-                                className="size-3 shrink-0"
-                              />
-                            ) : null}
-                            <code className="min-w-0 truncate">{detail.baseBranch}</code>
-                          </span>
-                        }
-                      />
-                      <TooltipPopup side="top">
-                        {isStackedPullRequest
-                          ? `Stacked on ${detail.baseBranch}`
-                          : detail.baseBranch}
-                      </TooltipPopup>
-                    </Tooltip>
+                    {/* An out-of-date base wears the warning on the branch name itself, so the
+                        name is amber and pointing at either the name or the mark opens the way
+                        out. Up to date, the name keeps its plain tooltip. */}
                     {freshness ? (
                       <PullRequestBaseFreshnessWarning
                         baseBranch={detail.baseBranch}
@@ -2361,8 +2354,38 @@ function PullRequestDetailPanelBody({
                         pending={actionPending}
                         onUpdate={(method) => void perform("update-branch", undefined, method)}
                         iconClassName="size-3"
-                      />
-                    ) : null}
+                        className="max-w-[40%]"
+                      >
+                        {isStackedPullRequest ? (
+                          <PullRequestGlyph.stack
+                            aria-label="Stacked pull request"
+                            className="size-3 shrink-0"
+                          />
+                        ) : null}
+                        <code className="min-w-0 truncate">{detail.baseBranch}</code>
+                      </PullRequestBaseFreshnessWarning>
+                    ) : (
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <span className="inline-flex min-w-0 max-w-[40%] shrink-0 items-center gap-1">
+                              {isStackedPullRequest ? (
+                                <PullRequestGlyph.stack
+                                  aria-label="Stacked pull request"
+                                  className="size-3 shrink-0"
+                                />
+                              ) : null}
+                              <code className="min-w-0 truncate">{detail.baseBranch}</code>
+                            </span>
+                          }
+                        />
+                        <TooltipPopup side="top">
+                          {isStackedPullRequest
+                            ? `Stacked on ${detail.baseBranch}`
+                            : detail.baseBranch}
+                        </TooltipPopup>
+                      </Tooltip>
+                    )}
                     <ArrowLeftIcon
                       aria-label="receives changes from"
                       className="size-3 shrink-0 opacity-60"
@@ -2507,34 +2530,47 @@ function PullRequestDetailPanelBody({
 
                 <div className="mt-4 flex min-h-5 min-w-0 items-center gap-2 text-xs text-muted-foreground">
                   <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-xs text-muted-foreground/70">
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <span className="inline-flex min-w-0 max-w-[40%] shrink-0 items-center gap-1">
-                            {isStackedPullRequest ? (
-                              <PullRequestGlyph.stack
-                                aria-label="Stacked pull request"
-                                className="size-3 shrink-0"
-                              />
-                            ) : null}
-                            <code className="min-w-0 truncate">{detail.baseBranch}</code>
-                          </span>
-                        }
-                      />
-                      <TooltipPopup side="top">
-                        {isStackedPullRequest
-                          ? `Stacked on ${detail.baseBranch}`
-                          : detail.baseBranch}
-                      </TooltipPopup>
-                    </Tooltip>
+                    {/* An out-of-date base wears the warning on the branch name itself, so the
+                        name is amber and pointing at either the name or the mark opens the way
+                        out. Up to date, the name keeps its plain tooltip. */}
                     {freshness ? (
                       <PullRequestBaseFreshnessWarning
                         baseBranch={detail.baseBranch}
                         freshness={freshness}
                         pending={actionPending}
                         onUpdate={(method) => void perform("update-branch", undefined, method)}
-                      />
-                    ) : null}
+                        className="max-w-[40%]"
+                      >
+                        {isStackedPullRequest ? (
+                          <PullRequestGlyph.stack
+                            aria-label="Stacked pull request"
+                            className="size-3 shrink-0"
+                          />
+                        ) : null}
+                        <code className="min-w-0 truncate">{detail.baseBranch}</code>
+                      </PullRequestBaseFreshnessWarning>
+                    ) : (
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <span className="inline-flex min-w-0 max-w-[40%] shrink-0 items-center gap-1">
+                              {isStackedPullRequest ? (
+                                <PullRequestGlyph.stack
+                                  aria-label="Stacked pull request"
+                                  className="size-3 shrink-0"
+                                />
+                              ) : null}
+                              <code className="min-w-0 truncate">{detail.baseBranch}</code>
+                            </span>
+                          }
+                        />
+                        <TooltipPopup side="top">
+                          {isStackedPullRequest
+                            ? `Stacked on ${detail.baseBranch}`
+                            : detail.baseBranch}
+                        </TooltipPopup>
+                      </Tooltip>
+                    )}
                     <ArrowLeftIcon
                       aria-label="receives changes from"
                       className="size-3.5 shrink-0 opacity-60"
