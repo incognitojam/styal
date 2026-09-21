@@ -6,6 +6,7 @@ import { StageBackdropButtonArt, useSidebarStageBackdropVariant } from "../Sideb
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 interface PendingActionState {
   questionIndex: number;
@@ -269,15 +270,35 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       )}
     </button>
   );
+  const sendButtonWithDisabledReason = sendDisabledReason ? (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            className="inline-flex rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+            tabIndex={0}
+            aria-label={sendDisabledReason}
+          />
+        }
+      >
+        {sendButton}
+      </TooltipTrigger>
+      <TooltipPopup side="top" className="max-w-72 whitespace-normal leading-tight">
+        {sendDisabledReason}
+      </TooltipPopup>
+    </Tooltip>
+  ) : (
+    sendButton
+  );
 
   if (!isRunning) {
-    return sendButton;
+    return sendButtonWithDisabledReason;
   }
 
   return (
     <>
       {renderStopGenerationButton(false)}
-      {showSendWhileRunning && hasSendableContent ? sendButton : null}
+      {showSendWhileRunning && hasSendableContent ? sendButtonWithDisabledReason : null}
     </>
   );
 });

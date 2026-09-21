@@ -47,10 +47,11 @@ features:
   - id: arbitrary-file-attachments
     title: Attach arbitrary files to agent messages
     status: review-needed
-    prs: [228]
+    prs: [228, 391]
     invariants:
       - Web and mobile can attach generic files while supported images retain native provider handling, and every provider receives a safe persisted local path with MIME type and size.
       - Attachment count and aggregate-byte limits are enforced atomically, generic files render in message history, and legacy image attachments remain readable.
+      - Web keeps send unavailable while attachment uploads block submission and exposes the recovery reason from the disabled send action.
       - Mobile retains local attachment bytes through draft, outbox, preview, upload, and signed-out account ownership; failed storage hydration or persistence must not authorize cleanup.
     implementation_paths:
       - apps/mobile/plugins/withShareExtensionDisplayName.cjs
@@ -67,6 +68,7 @@ features:
       - apps/server/src/provider/Layers/ProviderService.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
+      - apps/web/src/components/chat/ComposerPrimaryActions.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/composerDraftStore.ts
       - packages/contracts/src/orchestration.ts
@@ -96,6 +98,7 @@ features:
       - apps/server/src/orchestration/Normalizer.test.ts
       - apps/server/src/provider/Layers/ProviderService.test.ts
       - apps/web/src/components/ChatView.logic.test.ts
+      - apps/web/src/components/chat/ComposerPrimaryActions.test.tsx
       - apps/web/src/composerDraftStore.test.ts
       - apps/web/src/lib/threadTranscript.test.ts
       - packages/contracts/src/orchestration.test.ts
