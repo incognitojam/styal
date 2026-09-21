@@ -51,7 +51,7 @@ import {
 import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
-  isDesktopUpdateButtonDisabled,
+  getDesktopUpdateProgressLabel,
   resolveDesktopUpdateButtonAction,
 } from "../../components/desktopUpdate.logic";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
@@ -363,20 +363,14 @@ function AboutVersionSection() {
   }, [isUpdateActionPending, updateState]);
 
   const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
+  const progressLabel = getDesktopUpdateProgressLabel(updateState);
   const buttonTooltip = updateState ? getDesktopUpdateButtonTooltip(updateState) : null;
-  const buttonDisabled =
-    action === "none"
-      ? !canCheckForUpdate(updateState)
-      : isDesktopUpdateButtonDisabled(updateState);
+  const buttonDisabled = action === "none" && !canCheckForUpdate(updateState);
 
-  const actionLabel: Record<string, string> = { download: "Download", install: "Install" };
-  const statusLabel: Record<string, string> = {
-    checking: "Checking…",
-    downloading: "Downloading…",
-    "up-to-date": "Up to Date",
-  };
+  const actionLabel: Record<string, string> = { download: "Retry Download", install: "Install" };
   const buttonLabel =
-    actionLabel[action] ?? statusLabel[updateState?.status ?? ""] ?? "Check for Updates";
+    actionLabel[action] ??
+    (updateState?.status === "up-to-date" ? "Up to Date" : "Check for Updates");
   const description =
     action === "download" || action === "install"
       ? "Update available."
@@ -389,21 +383,27 @@ function AboutVersionSection() {
         description={description}
         status={<AboutBuildProvenance />}
         control={
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  size="xs"
-                  variant={action === "install" ? "default" : "outline"}
-                  disabled={buttonDisabled || isUpdateActionPending}
-                  onClick={handleButtonClick}
-                >
-                  {buttonLabel}
-                </Button>
-              }
-            />
-            {buttonTooltip ? <TooltipPopup>{buttonTooltip}</TooltipPopup> : null}
-          </Tooltip>
+          progressLabel ? (
+            <span role="status" aria-live="polite" className="text-xs text-muted-foreground">
+              {progressLabel}
+            </span>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="xs"
+                    variant={action === "install" ? "default" : "outline"}
+                    disabled={buttonDisabled || isUpdateActionPending}
+                    onClick={handleButtonClick}
+                  >
+                    {buttonLabel}
+                  </Button>
+                }
+              />
+              {buttonTooltip ? <TooltipPopup>{buttonTooltip}</TooltipPopup> : null}
+            </Tooltip>
+          )
         }
       />
       {hasDesktopBridge ? (
