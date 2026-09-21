@@ -9,7 +9,7 @@ import {
 } from "react";
 
 import { cn } from "~/lib/utils";
-import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
+import { PULL_REQUEST_STATE_PRESENTATION } from "~/components/pullRequest/pullRequestIcons";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import {
   COMPOSER_INLINE_CHIP_ICON_CLASS_NAME,
@@ -124,6 +124,9 @@ export function PullRequestChip(props: {
   onContextMenu: (event: MouseEvent<HTMLElement>, url: string) => void;
 }) {
   const previewTarget = usePullRequestPreviewTarget(props.environmentId, props.metadata.url);
+  const displayState =
+    props.metadata.state === "open" && props.metadata.isDraft ? "draft" : props.metadata.state;
+  const StateIcon = PULL_REQUEST_STATE_PRESENTATION[displayState].Icon;
   const button = (
     <Button
       variant="chip"
@@ -138,9 +141,7 @@ export function PullRequestChip(props: {
       onClick={(event) => props.onOpen(event, props.metadata.url)}
       onContextMenu={(event) => props.onContextMenu(event, props.metadata.url)}
     >
-      <PullRequestGlyph.pullRequest
-        className={cn(COMPOSER_INLINE_CHIP_ICON_CLASS_NAME, "size-3.5")}
-      />
+      <StateIcon className={cn(COMPOSER_INLINE_CHIP_ICON_CLASS_NAME, "size-3.5")} />
       <span className={props.labelClassName}>{props.label}</span>
     </Button>
   );
