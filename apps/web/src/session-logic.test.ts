@@ -1068,7 +1068,7 @@ describe("deriveWorkLogEntries", () => {
     expect(entries.map((entry) => entry.id)).toEqual(["tool-complete"]);
   });
 
-  it("omits routine setup updates before work starts and after later turn activity", () => {
+  it("preserves setup progress before work starts and after later turn activity", () => {
     const setupActivities = [
       makeActivity({
         id: "setup-requested",
@@ -1086,7 +1086,10 @@ describe("deriveWorkLogEntries", () => {
       }),
     ];
 
-    expect(deriveWorkLogEntries(setupActivities)).toEqual([]);
+    expect(deriveWorkLogEntries(setupActivities).map((entry) => entry.id)).toEqual([
+      "setup-requested",
+      "setup-started",
+    ]);
     expect(
       deriveWorkLogEntries([
         ...setupActivities,
@@ -1105,7 +1108,7 @@ describe("deriveWorkLogEntries", () => {
           sequence: 4,
         }),
       ]).map((entry) => entry.id),
-    ).toEqual(["first-turn-tool", "later-turn-tool"]);
+    ).toEqual(["setup-requested", "setup-started", "first-turn-tool", "later-turn-tool"]);
   });
 
   it("preserves setup failures and unrelated info without a turn id", () => {
@@ -1135,6 +1138,7 @@ describe("deriveWorkLogEntries", () => {
     ]);
 
     expect(entries).toMatchObject([
+      { id: "setup-requested", tone: "info", turnId: null },
       {
         id: "setup-failed",
         label: "Setup script failed to start",

@@ -1,4 +1,3 @@
-import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useMemo, useState } from "react";
 import { deriveDiscordPresence } from "../../discordPresence";
 import { useClientSettings } from "../../hooks/useSettings";
@@ -8,7 +7,6 @@ import {
   useServerConfigs,
   useThreadShells,
 } from "../../state/entities";
-import { threadChangeRequestSnapshotsAtom } from "../ThreadStatusIndicators";
 
 export function DiscordPresenceSync() {
   const enabled = useClientSettings((settings) => settings.discordRichPresence);
@@ -19,9 +17,6 @@ function ActiveDiscordPresenceSync() {
   const threads = useThreadShells();
   const serverConfigs = useServerConfigs();
   const shellStatuses = useEnvironmentShellStatuses();
-  const changeRequests = useAtomValue(threadChangeRequestSnapshotsAtom);
-  const autoSettleAfterDays = useClientSettings((settings) => settings.sidebarAutoSettleAfterDays);
-  const autoSettleOnMerge = useClientSettings((settings) => settings.sidebarAutoSettleOnMerge);
   const nowMinute = useNowMinute();
   const [wakeTime, setWakeTime] = useState(Date.now);
   const now = new Date(Math.max(Date.parse(`${nowMinute}:00.000Z`), wakeTime)).toISOString();
@@ -31,20 +26,9 @@ function ActiveDiscordPresenceSync() {
         threads,
         serverConfigs,
         shellStatuses,
-        changeRequests,
         now,
-        autoSettleAfterDays,
-        autoSettleOnMerge,
       }),
-    [
-      threads,
-      serverConfigs,
-      shellStatuses,
-      changeRequests,
-      now,
-      autoSettleAfterDays,
-      autoSettleOnMerge,
-    ],
+    [threads, serverConfigs, shellStatuses, now],
   );
   const activeThreads = activity?.activeThreads ?? 0;
   const activeProjects = activity?.activeProjects ?? 0;

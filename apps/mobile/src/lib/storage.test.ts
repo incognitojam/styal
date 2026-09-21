@@ -123,7 +123,7 @@ describe("mobile connection storage", () => {
 
   it("preserves an explicit opt-out of unpin confirmation across preference writes", async () => {
     await savePreferencesPatch({ confirmThreadUnpin: false });
-    await savePreferencesPatch({ autoSettleOnMerge: true });
+    await savePreferencesPatch({ themeMode: "system" });
     await expect(loadPreferences()).resolves.toMatchObject({ confirmThreadUnpin: false });
     await savePreferencesPatch({ confirmThreadUnpin: true });
     await expect(loadPreferences()).resolves.toMatchObject({ confirmThreadUnpin: true });

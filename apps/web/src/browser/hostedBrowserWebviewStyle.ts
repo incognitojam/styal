@@ -75,9 +75,8 @@ export function resolveHostedBrowserWebviewWrapperStyle(input: {
       top: 0,
       width: hiddenSize.width,
       height: hiddenSize.height,
-      zIndex: captureActive ? 30 : -1,
+      zIndex: -1,
       pointerEvents: "none",
-      ...(captureActive ? { opacity: 0 } : {}),
       visibility: "visible",
     };
   }

@@ -348,7 +348,7 @@ features:
     invariants:
       - Desktop presence is off by default and publishes only aggregate unsettled thread and project counts from live environments.
       - Presence includes a View on GitHub button linking to the public styal repository.
-      - Archived, settled, and snoozed threads are excluded using sidebar lifecycle rules; projects are scoped by environment.
+      - Archived, server-settled, and snoozed threads are excluded using sidebar lifecycle rules; projects are scoped by environment. Pending approvals and input remain active.
       - Disabling, reaching zero active threads, closing the window, or losing the renderer clears presence; Discord restarts reconnect automatically.
       - The integration stays on the desktop client for local and remote environments; browser and mobile clients do not publish presence.
     implementation_paths:
@@ -1075,6 +1075,7 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/8839
+        - https://github.com/pingdotgg/t3code/pull/9001
       retire_when: Upstream reliably captures hidden preview tabs with bounded native work and no user-visible activation.
 
   - id: preview-surface-continuity
@@ -1676,8 +1677,9 @@ features:
       - apps/web/src/session-logic.test.ts
       - packages/shared/src/projectScripts.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/8936
       retire_when: Upstream exposes equivalent cross-client setup action lifecycle detail, retained output, worktree-only setup safety, and isolation from later interactive terminal actions.
 
   - id: sidebar-attention-prominence

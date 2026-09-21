@@ -234,7 +234,7 @@ function makeThread(
 }
 
 describe("buildThreadFeed", () => {
-  it("keeps setup failures visible without routine setup notices before or after a turn", () => {
+  it("keeps setup progress and failures visible before or after a turn", () => {
     const thread = makeThread({
       id: ThreadId.make("thread-worktree-setup"),
       projectId: ProjectId.make("project-1"),
@@ -276,12 +276,16 @@ describe("buildThreadFeed", () => {
       expect(feed).toMatchObject([
         {
           type: "activity-group",
-          activities: [{ id: "setup-failed", status: "failure" }],
+          activities: [
+            { id: "setup-requested" },
+            { id: "setup-started" },
+            { id: "setup-failed", status: "failure" },
+          ],
         },
       ]);
       const group = feed[0];
       if (group?.type !== "activity-group") throw new Error("Expected the setup failure group");
-      expect(group.activities[0]?.getCopyText()).toContain("Setup command was not found");
+      expect(group.activities[2]?.getCopyText()).toContain("Setup command was not found");
     }
   });
 

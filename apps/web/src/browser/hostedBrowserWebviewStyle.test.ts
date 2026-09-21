@@ -135,7 +135,7 @@ describe("resolveHostedBrowserWebviewWrapperStyle", () => {
     });
   });
 
-  it("leases an invisible in-window compositor surface for background capture", () => {
+  it("leases an in-window compositor surface behind the app for background capture", () => {
     expect(
       resolveHostedBrowserWebviewWrapperStyle({
         active: false,
@@ -149,9 +149,8 @@ describe("resolveHostedBrowserWebviewWrapperStyle", () => {
       top: 0,
       width: 1280,
       height: 800,
-      zIndex: 30,
+      zIndex: -1,
       pointerEvents: "none",
-      opacity: 0,
       visibility: "visible",
     });
   });

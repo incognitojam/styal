@@ -1,6 +1,5 @@
 import { EnvironmentId, ProjectId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { describe, expect, it } from "vite-plus/test";
 import { deriveDiscordPresence } from "./discordPresence";
 
@@ -9,8 +8,6 @@ const local = EnvironmentId.make("local");
 const remote = EnvironmentId.make("remote");
 const options = {
   now,
-  autoSettleAfterDays: 3,
-  autoSettleOnMerge: true,
   serverConfigs: new Map(
     [local, remote].map((id) => [
       id,
@@ -18,7 +15,6 @@ const options = {
     ]),
   ),
   shellStatuses: new Map([local, remote].map((id) => [id, "live" as const])),
-  changeRequests: new Map(),
 };
 
 function thread(
@@ -60,7 +56,7 @@ describe("Discord presence counts", () => {
     expect(Object.keys(result.activity!)).toEqual(["activeThreads", "activeProjects"]);
   });
 
-  it("excludes archived, explicitly settled, stale, snoozed, and disconnected threads", () => {
+  it("excludes archived, server-settled, snoozed, and disconnected threads", () => {
     const result = deriveDiscordPresence({
       ...options,
       shellStatuses: new Map([
@@ -70,7 +66,10 @@ describe("Discord presence counts", () => {
       threads: [
         thread("archived", { archivedAt: now }),
         thread("settled", { settledOverride: "settled", settledAt: now }),
-        thread("stale", { latestUserMessageAt: "2026-09-01T00:00:00.000Z" }),
+        thread("automatically-settled", {
+          settledOverride: "settled",
+          latestUserMessageAt: "2026-09-01T00:00:00.000Z",
+        }),
         thread("snoozed", { snoozedAt: now, snoozedUntil: "2026-09-18T13:00:00.000Z" }),
         thread("offline", { environmentId: remote }),
       ],
@@ -95,30 +94,13 @@ describe("Discord presence counts", () => {
     });
   });
 
-  it("applies merge settlement only for the current branch and honors the setting", () => {
-    const merged = thread("merged", { branch: "feature", worktreePath: "/synthetic/workspace" });
-    const key = scopedThreadKey(scopeThreadRef(local, merged.id));
-    const changeRequests = new Map([
-      [key, { branch: "feature", pr: { state: "merged" as const, updatedAt: now } }],
-    ]);
+  it("waits for server settlement instead of deriving it from message age", () => {
+    const idle = thread("idle", { latestUserMessageAt: "2026-09-01T00:00:00.000Z" });
+    expect(deriveDiscordPresence({ ...options, threads: [idle] }).activity?.activeThreads).toBe(1);
     expect(
-      deriveDiscordPresence({ ...options, threads: [merged], changeRequests }).activity,
+      deriveDiscordPresence({ ...options, threads: [{ ...idle, settledOverride: "settled" }] })
+        .activity,
     ).toBeNull();
-    expect(
-      deriveDiscordPresence({
-        ...options,
-        threads: [merged],
-        changeRequests,
-        autoSettleOnMerge: false,
-      }).activity?.activeThreads,
-    ).toBe(1);
-    expect(
-      deriveDiscordPresence({
-        ...options,
-        threads: [{ ...merged, branch: "other" }],
-        changeRequests,
-      }).activity?.activeThreads,
-    ).toBe(1);
   });
 
   it("keeps threads active on older servers without settlement support", () => {

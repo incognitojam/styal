@@ -2060,11 +2060,7 @@ describe("PreviewManager", () => {
           width: 60,
           height: 30,
         });
-        expect(yield* manager.startRecording("tab_devtools_viewport")).toEqual({
-          sourceId: "tab:42",
-          width: 1600,
-          height: 900,
-        });
+        expect(yield* manager.startRecording("tab_devtools_viewport")).toBeUndefined();
         expect(capturePage).toHaveBeenCalledTimes(3);
         expect(sendCommand).not.toHaveBeenCalledWith("Page.captureScreenshot", expect.anything());
         yield* manager.stopRecording("tab_devtools_viewport");

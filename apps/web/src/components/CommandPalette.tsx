@@ -697,7 +697,7 @@ function OpenCommandPaletteDialog(props: {
       : scopeProjectRef(activeThread.environmentId, activeThread.projectId),
   );
   const activeThreadCwd = activeThread?.worktreePath ?? activeThreadProject?.workspaceRoot ?? null;
-  const activeThreadGitStatus = useEnvironmentQuery(
+  const referenceGitStatus = useEnvironmentQuery(
     activeThread != null &&
       activeThread.linkedPullRequest == null &&
       activeThread.branch !== null &&
@@ -713,7 +713,7 @@ function OpenCommandPaletteDialog(props: {
       ? null
       : (ThreadPr.resolveDisplayedThreadPr({
           threadBranch: activeThread.branch,
-          gitStatus: activeThreadGitStatus ?? null,
+          gitStatus: referenceGitStatus ?? null,
           snapshot: changeRequestSnapshotByKey.get(
             scopedThreadKey(scopeThreadRef(activeThread.environmentId, activeThread.id)),
           ),

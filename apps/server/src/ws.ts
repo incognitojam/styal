@@ -1556,6 +1556,7 @@ const makeWsRpcLayer = (
 
               const projectThreadEventBatch = Effect.fn("ws.projectThreadEventBatch")(function* (
                 events: ReadonlyArray<OrchestrationEvent>,
+                alreadyProjected = false,
               ): Effect.fn.Return<
                 ReadonlyArray<OrchestrationThreadStreamItem>,
                 OrchestrationGetSnapshotError
@@ -1568,7 +1569,7 @@ const makeWsRpcLayer = (
                 }
                 return events.map((event) => ({
                   kind: "event" as const,
-                  event: projectActivityEvent(event),
+                  event: alreadyProjected ? event : projectActivityEvent(event),
                 }));
               });
 
@@ -1588,11 +1589,11 @@ const makeWsRpcLayer = (
                     pendingEvents.push(item.event);
                     continue;
                   }
-                  output.push(...(yield* projectThreadEventBatch(pendingEvents)));
+                  output.push(...(yield* projectThreadEventBatch(pendingEvents, true)));
                   pendingEvents = [];
                   output.push(item);
                 }
-                output.push(...(yield* projectThreadEventBatch(pendingEvents)));
+                output.push(...(yield* projectThreadEventBatch(pendingEvents, true)));
                 const first = output[0];
                 if (first === undefined) {
                   return yield* Effect.die(

@@ -642,7 +642,6 @@ describe("browser recording", () => {
     startScreencast.mockImplementationOnce(async () => {
       events.push("start-screencast");
       await new Promise<void>((resolve) => window.setTimeout(resolve, slowStartMs));
-      return { sourceId: "source:recording-tab", width: 1000, height: 620 };
     });
 
     const startPromise = startBrowserRecording("recording-tab");
