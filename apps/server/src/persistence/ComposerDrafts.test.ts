@@ -5,7 +5,7 @@ import * as Layer from "effect/Layer";
 
 import * as ComposerDrafts from "./ComposerDrafts.ts";
 import { runAllMigrations } from "./ForkMigrations.ts";
-import * as NodeSqliteClient from "./NodeSqliteClient.ts";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 const layer = it.layer(
   ComposerDrafts.layer.pipe(Layer.provideMerge(NodeSqliteClient.layerMemory())),

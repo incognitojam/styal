@@ -23,6 +23,7 @@ import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
+import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 
 it.effect("publishes pending before complete even without an activation gate", () =>
   Effect.scoped(
@@ -58,6 +59,7 @@ it.effect("publishes pending before complete even without an activation gate", (
             Layer.succeed(OrchestrationEngine.OrchestrationEngineService, {} as never),
             Layer.succeed(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
               getCommandReadModel: () => Effect.succeed({ threads: [] }),
+              getShellSnapshot: () => Effect.succeed({ projects: [] }),
               getCounts: () => Effect.succeed({ projectCount: 1, threadCount: 1 }),
               getActiveProjectByWorkspaceRoot: () =>
                 Effect.succeed(
@@ -78,6 +80,7 @@ it.effect("publishes pending before complete even without an activation gate", (
               prepareTrial: Effect.void,
             } as never),
             Layer.succeed(EnvironmentAuth.EnvironmentAuth, {} as never),
+            Layer.succeed(GitVcsDriver.GitVcsDriver, {} as never),
             Layer.succeed(AnalyticsService.AnalyticsService, {
               record: () => Effect.void,
             } as never),

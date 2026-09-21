@@ -5,7 +5,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { forkMigrationEntries, forkMigrationManifest, runAllMigrations } from "./ForkMigrations.ts";
 import { migrationManifest, runMigrations } from "./Migrations.ts";
-import * as NodeSqliteClient from "./NodeSqliteClient.ts";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 const upstreamLayer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
 
