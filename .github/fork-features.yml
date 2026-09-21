@@ -973,8 +973,8 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/pull/7152
         - https://github.com/pingdotgg/t3code/pull/8395
-        - https://github.com/pingdotgg/t3code/pull/9120
         - https://github.com/pingdotgg/t3code/pull/9106
+        - https://github.com/pingdotgg/t3code/pull/9120
       retire_when: Upstream uses equivalent cross-provider action names and concise arguments across clients and approvals, preserves inspectable full commands, retrieves completed output on demand without bloating activity payloads, and keeps collapsed groups visibly expandable with status detail intact.
 
   - id: integrated-browser-links
