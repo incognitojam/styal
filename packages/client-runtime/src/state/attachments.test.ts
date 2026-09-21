@@ -219,8 +219,8 @@ describe("attachmentBatchLimitError", () => {
     ).toBe("Attachments can total at most 50 MB per message.");
   });
   it("rejects an over-count restored draft even with tiny attachments", () => {
-    expect(attachmentBatchLimitError(Array.from({ length: 9 }, () => ({ sizeBytes: 1 })))).toBe(
-      "Messages can contain at most 8 attachments.",
+    expect(attachmentBatchLimitError(Array.from({ length: 101 }, () => ({ sizeBytes: 1 })))).toBe(
+      "Messages can contain at most 100 attachments.",
     );
   });
 });

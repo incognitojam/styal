@@ -14,9 +14,13 @@ to keep a large paste editable in the composer instead.
 
 ## Attach files
 
-Attach up to eight files and 50 MB in total per message. Images can be up to
-10 MB; other files can be up to 50 MB, subject to the environment's upload
-support and limit. The agent receives them on the environment's machine.
+Attach up to 100 files and 50 MB in total per message. Images can be up to
+10 MB each; other files, including videos, can be up to 50 MB, subject to the
+environment's upload support and limit. The agent receives them on the
+environment's machine. Provider and model limits still apply, including images
+already in the conversation. A video attachment gives the agent a file path; it
+does not enable native video input. Antigravity does not accept video
+attachments.
 
 Uploads begin when you add an attachment. All uploads must finish before the
 message can send; on mobile, you can queue the message and it sends once they
