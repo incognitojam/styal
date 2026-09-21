@@ -204,11 +204,13 @@ describe("formatPendingPrimaryActionLabel", () => {
 });
 
 describe("ComposerPrimaryActions", () => {
-  it("disables and labels the send button while feedback is uploading", () => {
+  it("explains why sending is disabled while feedback is uploading", () => {
     const markup = renderSendButton("Sending feedback");
 
     expect(markup).toContain("disabled");
     expect(markup).toContain('aria-label="Sending feedback"');
+    expect(markup).toContain('data-slot="tooltip-trigger"');
+    expect(markup).toContain('tabindex="0"');
   });
 
   it("offers Stop generation while a running turn is waiting for user input", () => {
