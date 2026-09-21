@@ -51,7 +51,6 @@ import {
 import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
-  getDesktopUpdateDescription,
   getDesktopUpdateProgressLabel,
   resolveDesktopUpdateButtonAction,
 } from "../../components/desktopUpdate.logic";
@@ -372,7 +371,10 @@ function AboutVersionSection() {
   const buttonLabel =
     actionLabel[action] ??
     (updateState?.status === "up-to-date" ? "Up to Date" : "Check for Updates");
-  const description = getDesktopUpdateDescription(updateState);
+  const description =
+    action === "download" || action === "install"
+      ? "Update available."
+      : "Current version of the application.";
 
   return (
     <>

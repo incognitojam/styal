@@ -6,7 +6,6 @@ import {
   getArm64IntelBuildWarningDescription,
   getDesktopUpdateActionError,
   getDesktopUpdateButtonTooltip,
-  getDesktopUpdateDescription,
   getDesktopUpdateProgressLabel,
   getDesktopUpdateReleaseUrl,
   isDesktopUpdateButtonDisabled,
@@ -217,27 +216,6 @@ describe("getDesktopUpdateProgressLabel", () => {
         downloadedVersion: "1.1.0",
       }),
     ).toBeNull();
-  });
-});
-
-describe("getDesktopUpdateDescription", () => {
-  it("explains automatic downloads and their retry state", () => {
-    expect(
-      getDesktopUpdateDescription({
-        ...baseState,
-        status: "downloading",
-        availableVersion: "1.1.0",
-      }),
-    ).toBe("Update is downloading automatically.");
-    expect(
-      getDesktopUpdateDescription({
-        ...baseState,
-        status: "available",
-        availableVersion: "1.1.0",
-        errorContext: "download",
-        canRetry: true,
-      }),
-    ).toBe("Automatic download failed.");
   });
 });
 

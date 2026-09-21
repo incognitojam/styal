@@ -92,21 +92,6 @@ export function getDesktopUpdateProgressLabel(state: DesktopUpdateState | null):
   return null;
 }
 
-export function getDesktopUpdateDescription(state: DesktopUpdateState | null): string {
-  if (state?.status === "downloading") {
-    return "Update is downloading automatically.";
-  }
-  if (state?.status === "available") {
-    return state.errorContext === "download"
-      ? "Automatic download failed."
-      : "Update will download automatically.";
-  }
-  if (state && resolveDesktopUpdateButtonAction(state) === "install") {
-    return "Update ready to install.";
-  }
-  return "Current version of the application.";
-}
-
 export function getArm64IntelBuildWarningDescription(state: DesktopUpdateState): string {
   if (!shouldShowArm64IntelBuildWarning(state)) {
     return "This install is using the correct architecture.";
