@@ -71,7 +71,7 @@ afterEach(() => {
 });
 
 describe("openTerminalLinkInPreview", () => {
-  it("opens in the system browser while that is the configured target", async () => {
+  it("opens loopback links on the environment even when the system browser is configured", async () => {
     linkTargetMocks.preference.mockReturnValue("system");
     const fallbackToBrowser = vi.fn();
     const openPreview = vi.fn(async () => AsyncResult.success(snapshot));
@@ -83,8 +83,8 @@ describe("openTerminalLinkInPreview", () => {
       fallbackToBrowser,
     });
 
-    expect(fallbackToBrowser).toHaveBeenCalledOnce();
-    expect(openPreview).not.toHaveBeenCalled();
+    expect(openPreview).toHaveBeenCalledOnce();
+    expect(fallbackToBrowser).not.toHaveBeenCalled();
   });
 
   it("opens public URLs in-app too, not only local servers", async () => {
@@ -159,7 +159,8 @@ describe("openTerminalLinkInPreview", () => {
     expect(fallbackToBrowser).not.toHaveBeenCalled();
   });
 
-  it("sends a link the integrated browser cannot reach to the system browser", async () => {
+  it("sends public links to the system browser when configured", async () => {
+    linkTargetMocks.preference.mockReturnValue("system");
     const fallbackToBrowser = vi.fn();
     const openPreview = vi.fn(async () => AsyncResult.success(snapshot));
 

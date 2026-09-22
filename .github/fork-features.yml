@@ -985,6 +985,7 @@ features:
     prs: [107, 145, 153, 156, 181]
     invariants:
       - Loopback links opened from chat or terminal activity resolve on the environment machine in the integrated browser.
+      - The browser link preference applies to other web links; choosing the system browser does not redirect loopback development links away from their environment.
       - Unsupported links retain an external-browser path and never strand the user behind an unavailable preview runtime.
     implementation_paths:
       - apps/desktop/src/preview/BrowserSession.ts

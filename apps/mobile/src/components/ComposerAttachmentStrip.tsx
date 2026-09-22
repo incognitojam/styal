@@ -6,12 +6,12 @@ import { Image, Pressable, ScrollView, View } from "react-native";
 import { AppText as Text } from "./AppText";
 import type { DraftComposerAttachment, DraftComposerFileAttachment } from "../lib/composerImages";
 import { VideoAttachmentTile } from "./VideoAttachmentTile";
+import type { MediaActionsSource } from "../lib/mediaActions";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   retryComposerAttachmentUpload,
   useComposerAttachmentUploadState,
 } from "../state/composer-attachment-uploads";
-import { loadLocalAttachmentPreview } from "../lib/localAttachmentPreview";
 import { PresentationSource } from "./NativePresentation";
 import type { FilePreviewSource } from "./FilePreviewModal";
 import { isPdfFile } from "../lib/filePreview";

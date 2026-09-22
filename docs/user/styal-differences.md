@@ -27,6 +27,11 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   terminals, and project scripts receive the same assignment across restarts, so parallel workspaces
   can run development servers without choosing the same ports.
   [Workspace ports](./project-settings.md#stable-workspace-ports).
+- **Development links open on their environment.** Loopback links in chat and terminal activity open
+  in the integrated browser on the environment that runs the server, even if other links are set to
+  open in your default browser. Compared with
+  [T3 Code revision 18062da](https://github.com/pingdotgg/t3code/tree/18062da9425909a0a92bce0b692c9de6fbba56ee),
+  which applies the browser setting to these links too.
 - **Project instructions across providers.** Set additional instructions once for a project and use
   them across its checkouts and agent sessions with Codex, Claude, Cursor, Grok, and OpenCode.
   [Project instructions](./project-settings.md#give-agents-project-instructions).

@@ -1,4 +1,4 @@
-import type { EnvironmentId, PullRequestDetailView } from "@t3tools/contracts";
+import type { EnvironmentId, PullRequestDetailView, ScopedThreadRef } from "@t3tools/contracts";
 import { useState } from "react";
 
 import { cn } from "~/lib/utils";
@@ -87,7 +87,12 @@ export function PullRequestMarkdownEditor({
           {empty ? (
             <p className="text-xs text-muted-foreground">Nothing to preview.</p>
           ) : (
-            <PullRequestMarkdown text={draft} detail={detail} environmentId={environmentId} threadRef={threadRef} />
+            <PullRequestMarkdown
+              text={draft}
+              detail={detail}
+              environmentId={environmentId}
+              threadRef={threadRef}
+            />
           )}
         </div>
       ) : (

@@ -1626,6 +1626,7 @@ function renderFeedEntry(
                   environmentId={props.environmentId}
                   attachmentId={attachment.uploadedAttachmentId}
                   name={attachment.name}
+                  mimeType={attachment.mimeType}
                   className="h-[140px] w-[180px] rounded-[14px]"
                   onPressPreview={props.onPressPreview}
                 />

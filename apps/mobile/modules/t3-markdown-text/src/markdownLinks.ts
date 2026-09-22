@@ -39,7 +39,7 @@ export function isMarkdownFileLinkLabel(
   file: Extract<MarkdownLinkPresentation, { kind: "file" }>,
 ): boolean {
   const trimmed = label.trim();
-  if (!trimmed || trimmed === fileLabel(file.path) || trimmed === file.label) return true;
+  if (!trimmed || trimmed === fileBasename(file.path) || trimmed === file.label) return true;
   const labelLink = resolveMarkdownLinkPresentation(trimmed);
   return labelLink.kind === "file" && labelLink.path === file.path;
 }

@@ -31,6 +31,7 @@ function NativeVideoPreview(props: {
   const environmentId =
     source.type === "media" && "environmentId" in source ? source.environmentId : null;
   const resource = source.type === "media" && "resource" in source ? source.resource : null;
+  const needsFreshUrl = resource !== null;
   const preparedConnection = usePreparedConnection(environmentId);
   const assetUrl = useAssetUrlState(environmentId, resource);
   const refreshAssetUrl = useEffectEvent(useRefreshAssetUrl(environmentId, resource));
@@ -72,13 +73,11 @@ function NativeVideoPreview(props: {
       if (localAttachment !== null && !file) return;
       try {
         if (controller.signal.aborted) return;
+        const uri = file?.uri ?? (needsFreshUrl ? await refreshAssetUrl() : playbackUrl);
+        if (controller.signal.aborted) return;
+        if (uri === null) throw new Error("Could not load this video.");
         ready = true;
-        await NativeControls.presentVideo(
-          file?.uri ?? playbackUrl!,
-          name,
-          source.sourceIdentifier ?? "",
-          identifier,
-        );
+        await NativeControls.presentVideo(uri, name, source.sourceIdentifier ?? "", identifier);
         if (!controller.signal.aborted) onRequestClose();
       } finally {
         // Native completion follows dismissal, so local playback keeps its file lease.
@@ -102,7 +101,7 @@ function NativeVideoPreview(props: {
       controller.abort();
       void NativeControls.dismissVideo(identifier).catch(() => undefined);
     };
-  }, [localAttachment, name, source.sourceIdentifier, playbackUrl, identifier]);
+  }, [localAttachment, name, source.sourceIdentifier, playbackUrl, identifier, needsFreshUrl]);
 
   return null;
 }

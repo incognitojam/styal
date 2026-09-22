@@ -646,7 +646,7 @@ export function PullRequestCodeTab({
     (path: string) => {
       const item = items.find((candidate) => resolveFileDiffPath(candidate.fileDiff) === path);
       if (item === undefined) return;
-      if (item.collapsed === true) toggleFile(item.id);
+      if (item.collapsed === true) toggleFile(item.id, true);
       setTreeReveal((current) => ({ fileKey: item.id, id: (current?.id ?? 0) + 1 }));
     },
     [items, toggleFile],
