@@ -12,6 +12,7 @@ import {
   resolveSettledThreadTimestamp,
   sortPinnedThreadsByOrderKey,
   sortThreadsByWorkspaceCluster,
+  threadWorkspaceKey,
   type WorkspaceClusterThread,
 } from "@t3tools/client-runtime/state/thread-sort";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
@@ -170,6 +171,9 @@ export interface ThreadListV2Item {
   readonly snoozed: boolean;
   /** Pinned-block row: renders the pin glyph and offers Unpin. */
   readonly pinned: boolean;
+  /** Follow-up in the visible active workspace group. */
+  readonly clusterChild: boolean;
+  readonly clusterContinuesBelow: boolean;
   readonly isLast: boolean;
 }
 
@@ -409,15 +413,21 @@ export function buildThreadListV2Items(input: {
       variant: "card",
       snoozed: false,
       pinned: true,
+      clusterChild: false,
+      clusterContinuesBelow: false,
       isLast: false,
     });
   }
-  for (const thread of orderedActive) {
+  const activeClusterKeys = orderedActive.map(threadWorkspaceKey);
+  for (const [index, thread] of orderedActive.entries()) {
+    const key = activeClusterKeys[index] ?? null;
     items.push({
       thread,
       variant: "card",
       snoozed: false,
       pinned: false,
+      clusterChild: key !== null && key === activeClusterKeys[index - 1],
+      clusterContinuesBelow: key !== null && key === activeClusterKeys[index + 1],
       isLast: false,
     });
   }
@@ -428,6 +438,8 @@ export function buildThreadListV2Items(input: {
       variant: "slim",
       snoozed: true,
       pinned: false,
+      clusterChild: false,
+      clusterContinuesBelow: false,
       isLast: false,
     });
   }
@@ -438,6 +450,8 @@ export function buildThreadListV2Items(input: {
       variant: "slim",
       snoozed: false,
       pinned: false,
+      clusterChild: false,
+      clusterContinuesBelow: false,
       isLast: false,
     });
   }

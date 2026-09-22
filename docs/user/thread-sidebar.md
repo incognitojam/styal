@@ -52,8 +52,8 @@ their pinned threads keep the default newest-first order below the ones you have
 
 Active threads are listed newest first, and threads that work in the same place stay together.
 Threads on the same worktree — or on the same branch you explicitly picked for the local checkout —
-form a group: the original thread first, with later threads beneath it. On web and desktop a
-connecting line marks the group. Starting another thread on a workspace, such as a code review or a
+form a group: the original thread first, with later threads beneath it. On web, desktop, and mobile,
+later threads are indented and a connecting line marks the group. Starting another thread on a workspace, such as a code review or a
 follow-up fix, moves the whole group up beside it, so related work never scatters through the list.
 
 ## Filtering by project
