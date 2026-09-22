@@ -125,6 +125,29 @@ describe("upstream intake audit", () => {
     assert.include(result.summary, "Manual approval required");
   });
 
+  it("groups overlapping fork features by the changed path", () => {
+    const result = audit({
+      changedPaths: ["apps/web/src/AppRoot.tsx"],
+      ledger: {
+        ...ledger,
+        features: [
+          ...ledger.features,
+          {
+            ...ledger.features[0]!,
+            id: "second-capability",
+            title: "Second synthetic capability",
+          },
+        ],
+      },
+    });
+
+    assert.include(result.manualReviewReasons.join("\n"), "1 path, 2 features");
+    assert.include(
+      result.summary,
+      "- `apps/web/src/AppRoot.tsx`: `watched-capability`, `second-capability`",
+    );
+  });
+
   it("blocks candidates that cannot be fast-forwarded or contain merges", () => {
     const result = audit({
       mainIsAncestor: false,
