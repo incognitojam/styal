@@ -662,7 +662,8 @@ it.effect("imports selected history and safe preferences independently", () => {
     assert.strictEqual(projectResult.skippedAttachmentCount, 1);
     assert.strictEqual(projectResult.projects[0]?.skippedAttachmentCount, 1);
     assert.isUndefined(projectResult.settings);
-    assert.strictEqual(settingsBeforePreferenceImport.defaultThreadEnvMode, "worktree");
+    // Unset means inherit; the built-in default still starts new threads in a worktree.
+    assert.strictEqual(settingsBeforePreferenceImport.defaultThreadEnvMode, null);
     assert.isTrue(settingsBeforePreferenceImport.newWorktreesStartFromOrigin);
     assert.strictEqual(importedBatches.length, 1);
     assert.deepStrictEqual(

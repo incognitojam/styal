@@ -191,8 +191,11 @@ export function buildPreferenceRows(
     {
       id: "new-threads",
       label: "New threads start in",
-      value: THREAD_ENV_MODE_LABELS[values.defaultThreadEnvMode],
-      comparisonValue: values.defaultThreadEnvMode,
+      value:
+        values.defaultThreadEnvMode === null
+          ? "Inherit"
+          : THREAD_ENV_MODE_LABELS[values.defaultThreadEnvMode],
+      comparisonValue: values.defaultThreadEnvMode ?? "inherit",
     },
     {
       id: "start-from-origin",
