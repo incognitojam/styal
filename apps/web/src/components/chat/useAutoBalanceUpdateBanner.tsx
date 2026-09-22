@@ -22,6 +22,7 @@ import {
   ServerUpdateProgress,
   ServerUpdatesAction,
 } from "../ServerUpdateAction";
+import { InlineButton } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 import { ComposerServerUpdateIcon } from "./ComposerServerUpdateStatus";
@@ -96,7 +97,8 @@ export function useAutoBalanceUpdateBanner(
     title: (
       <Popover>
         <PopoverTrigger
-          className="block max-w-full truncate rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          render={<InlineButton />}
+          className="block max-w-full truncate"
           aria-label={`${title}. View machines`}
         >
           {title}
