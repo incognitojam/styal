@@ -2112,11 +2112,11 @@ features:
       - An unsent pull request conversation comment survives switching to Diff, Files, another pull request, or another right-panel surface and is restored when its pull request is reopened.
       - Conversation drafts remain isolated by environment, project, repository, and pull request number, and only the exact draft accepted by the host is cleared after a successful post.
     implementation_paths:
-      - apps/web/src/components/pullRequest/PullRequestCommentComposer.tsx
+      - apps/web/src/components/pullRequest/PullRequestCommentForm.tsx
       - apps/web/src/components/pullRequest/pullRequestReviewStore.ts
     upstream_paths:
       - apps/web/src/components/ChatView.tsx
-      - apps/web/src/components/pullRequest/PullRequestCommentComposer.tsx
+      - apps/web/src/components/pullRequest/PullRequestCommentForm.tsx
       - apps/web/src/components/pullRequest/pullRequestReviewStore.ts
     tests:
       - apps/web/src/components/pullRequest/pullRequestReviewStore.test.ts
