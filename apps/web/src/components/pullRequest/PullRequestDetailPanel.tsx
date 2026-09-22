@@ -2095,7 +2095,6 @@ function PullRequestDetailPanelBody({
                             aria-label={
                               refreshing ? "Refreshing pull request" : "More pull request actions"
                             }
-                            className="size-6"
                             size="icon-xs"
                             variant="ghost-muted"
                           />
