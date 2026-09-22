@@ -137,7 +137,7 @@ export default function ProjectScriptsControl({
             <MenuItemLabel className="truncate">
               {fileScript.runOnWorktreeCreate ? `${fileScript.name} (setup)` : fileScript.name}
             </MenuItemLabel>
-            <MenuShortcut className="ms-auto">
+            <MenuShortcut>
               <DownloadIcon className="size-3.5" aria-label="Import" />
             </MenuShortcut>
           </MenuItem>
