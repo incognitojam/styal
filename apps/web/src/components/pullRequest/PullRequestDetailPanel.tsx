@@ -1355,7 +1355,11 @@ function PullRequestDetailPanelBody({
     : null;
   const checksMark =
     detail && checksState !== null ? (
-      <PullRequestChecksPopover checks={detail.checks} checksState={checksState} threadRef={threadRef} />
+      <PullRequestChecksPopover
+        checks={detail.checks}
+        checksState={checksState}
+        threadRef={threadRef}
+      />
     ) : null;
 
   // A reopen already has last time's title, author, and counts. Keep them on screen

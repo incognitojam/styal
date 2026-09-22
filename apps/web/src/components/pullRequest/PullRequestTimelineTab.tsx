@@ -78,7 +78,12 @@ function TimelineBody({
   return (
     <div className="mt-3">
       {markdown ? (
-        <PullRequestMarkdown text={body} detail={detail} environmentId={environmentId} threadRef={threadRef} />
+        <PullRequestMarkdown
+          text={body}
+          detail={detail}
+          environmentId={environmentId}
+          threadRef={threadRef}
+        />
       ) : (
         <p className="whitespace-pre-wrap text-xs text-muted-foreground">{body}</p>
       )}
