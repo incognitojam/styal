@@ -2354,7 +2354,7 @@ describe("computeStableMessagesTimelineRows", () => {
     expect(repeated.result[0]).toBe(initial.result[0]);
   });
 
-  it("refreshes a collapsed tool row when its single-entry presentation changes", () => {
+  it("refreshes a single tool row when its presentation changes", () => {
     const createRows = (command: string, exitCode?: number) =>
       deriveMessagesTimelineRows({
         timelineEntries: [
@@ -2389,10 +2389,10 @@ describe("computeStableMessagesTimelineRows", () => {
 
     expect(refreshed).not.toBe(initial);
     expect(row).not.toBe(initial.result[0]);
-    expect(row?.kind).toBe("work-toggle");
-    if (row?.kind !== "work-toggle") throw new Error("Expected a collapsed tool row");
-    expect(row.exitCode).toBe(0);
-    expect(row.summaryEntry?.command).toBe("printf new");
+    expect(row?.kind).toBe("work");
+    if (row?.kind !== "work") throw new Error("Expected a tool row");
+    expect(row.groupedEntries[0]?.exitCode).toBe(0);
+    expect(row.groupedEntries[0]?.command).toBe("printf new");
   });
 
   it("refreshes a multi-entry tool row when its aggregate diff stat changes", () => {

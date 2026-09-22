@@ -2,7 +2,7 @@ import { CheckpointRef, EnvironmentId, MessageId, TurnId } from "@t3tools/contra
 import { codexFeedbackMessage } from "@t3tools/client-runtime/state/threads";
 import { createRef, type ReactNode, type Ref } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeAll, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import type { LegendListRef, MaintainScrollAtEndOptions } from "@legendapp/list/react";
 
 import { MessagesTimeline } from "./MessagesTimeline";
@@ -1283,7 +1283,7 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("Changed 1 file");
+    expect(markup).toContain("Updated files - apps/web/src/session-logic.ts");
     expect(markup).not.toContain("t3code/apps/web/src/session-logic.ts");
     expect(markup).not.toContain("C:/Users/mike/dev-stuff/t3code/apps/web/src/session-logic.ts");
   });

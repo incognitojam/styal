@@ -317,7 +317,7 @@ describe("split/new/close terminal shortcuts", () => {
     );
   });
 
-  it("closes the active right-panel surface only when the panel owns focus", () => {
+  it("closes the active right-panel surface before the window", () => {
     const shortcut = event({ key: "w", metaKey: true });
 
     assert.strictEqual(
@@ -325,7 +325,7 @@ describe("split/new/close terminal shortcuts", () => {
         platform: "MacIntel",
         context: { rightPanelFocus: true, terminalFocus: false },
       }),
-      "rightPanel.closeActive",
+      "rightPanel.close",
     );
     assert.strictEqual(
       resolveShortcutCommand(shortcut, DEFAULT_BINDINGS, {
@@ -334,11 +334,12 @@ describe("split/new/close terminal shortcuts", () => {
       }),
       "terminal.close",
     );
-    assert.isNull(
+    assert.strictEqual(
       resolveShortcutCommand(shortcut, DEFAULT_BINDINGS, {
         platform: "MacIntel",
         context: { rightPanelFocus: false, terminalFocus: false },
       }),
+      "rightPanel.close",
     );
   });
 

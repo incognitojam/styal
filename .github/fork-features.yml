@@ -504,11 +504,11 @@ features:
       retire_when: Upstream makes first completion unread when navigation happens before thread creation settles without marking historical threads unread or leaving stale state after failed creation.
 
   - id: focused-panel-tab-close
-    title: Close the focused panel tab with Mod+W
+    title: Keep panel focus and tab order stable when closing tabs
     status: review-needed
     prs: [192, 233]
     invariants:
-      - Mod+W closes the focused terminal, browser, or diff panel tab without closing unrelated application content.
+      - Mod+W closes a focused terminal first, then closes the active browser or diff panel tab before the desktop window.
       - Opening a panel menu or launcher preserves panel focus ownership so the next close shortcut targets the panel predictably.
       - Closing a browser tab preserves the relative order of every remaining panel tab so repeated close actions cannot target a tab that moved unexpectedly.
     implementation_paths:
@@ -533,7 +533,7 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/9363
-      retire_when: Upstream closes focused panel tabs with the platform Mod+W shortcut, preserves focus ownership across panel menus and launchers, and keeps remaining tabs in place after a close.
+      retire_when: Upstream preserves focus ownership across panel menus and launchers and keeps remaining tabs in place after a close.
 
   - id: fork-agent-integration-identity
     title: Identify styal to agents and MCP clients

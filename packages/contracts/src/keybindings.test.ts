@@ -50,10 +50,10 @@ it.effect("parses keybinding rules", () =>
 
     const parsedRightPanelClose = yield* decode(KeybindingRule, {
       key: "mod+w",
-      command: "rightPanel.closeActive",
-      when: "rightPanelFocus && !terminalFocus",
+      command: "rightPanel.close",
+      when: "!terminalFocus",
     });
-    assert.strictEqual(parsedRightPanelClose.command, "rightPanel.closeActive");
+    assert.strictEqual(parsedRightPanelClose.command, "rightPanel.close");
 
     const parsedClose = yield* decode(KeybindingRule, {
       key: "mod+w",

@@ -5022,11 +5022,12 @@ function ChatViewContent(props: ChatViewProps) {
           linkedPullRequestStatus: persistedLinkedThreadPullRequestStatus,
         });
   const handlePullRequestTabStatusChange = useCallback(
-    (status: PullRequestTabStatus) => {
+    (status: Pick<PullRequestTabStatus, "repository" | "number" | "state">) => {
       if (
         status.state === "merged" &&
         activeThreadKey !== null &&
-        status.projectId === activeThread?.projectId
+        activeThreadPr?.number === status.number &&
+        threadRepository?.toLowerCase() === status.repository.toLowerCase()
       ) {
         const current = changeRequestSnapshotByKey.get(activeThreadKey);
         const seed =

@@ -97,6 +97,7 @@ const PROJECT_ICON_COLOR_BY_NAME: Record<ProjectIconName, ProjectIconColor> = {
 type ProjectFaviconInput = {
   readonly environmentId: EnvironmentId;
   readonly projectIcon?: ProjectIconOverride | null | undefined;
+  readonly projectName?: string | undefined;
   className?: string | undefined;
   fallbackIcon?: ComponentType<{ className?: string }>;
 } & (
@@ -137,9 +138,10 @@ export function ProjectFavicon(input: ProjectFaviconInput) {
       </span>
     );
   }
-  const automaticIconName = input.fallbackIcon
-    ? null
-    : selectProjectIcon(input.projectName, input.cwd);
+  const automaticIconName =
+    input.fallbackIcon || input.legacyProjectId !== undefined
+      ? null
+      : selectProjectIcon(input.projectName ?? "", input.cwd);
   const FallbackIcon =
     input.fallbackIcon ??
     (automaticIconName?.kind === "lucide" ? PROJECT_ICONS[automaticIconName.icon] : undefined);

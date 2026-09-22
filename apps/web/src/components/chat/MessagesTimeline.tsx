@@ -3611,15 +3611,15 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const heading = presentation?.heading ?? toolWorkEntryHeading(workEntry);
   // A presentation owns its argument, including deciding there isn't one.
   const fallbackPreview = presentation ? null : workEntryPreview(workEntry, workspaceRoot);
-  const previewText =
-    displayLabel ??
-    (presentation
-      ? toolRowDisplayText(presentation, workspaceRoot)
-      : fallbackPreview &&
-          normalizeCompactToolLabel(fallbackPreview).toLowerCase() !==
-            normalizeCompactToolLabel(heading).toLowerCase()
-        ? `${heading} - ${fallbackPreview}`
-        : heading);
+  const fallbackLabel =
+    fallbackPreview &&
+    normalizeCompactToolLabel(fallbackPreview).toLowerCase() !==
+      normalizeCompactToolLabel(heading).toLowerCase()
+      ? `${heading} - ${fallbackPreview}`
+      : heading;
+  const previewText = presentation
+    ? toolRowDisplayText(presentation, workspaceRoot)
+    : (displayLabel ?? fallbackLabel);
   const displayText =
     !toolPresentation && expanded && workEntry.command?.trim() ? "Command" : previewText;
   const fileChangeStat =
