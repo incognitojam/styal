@@ -21,7 +21,9 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 - **Worktree defaults and workspace grouping.** Both apps support isolated Git worktrees. styal
   defaults new threads to a worktree, while T3 Code defaults to the local checkout; either default can
-  be changed. styal also keeps threads sharing a workspace together in the sidebar.
+  be changed. styal also nests threads sharing a workspace in the web and desktop sidebar, mobile
+  Home list, and tablet sidebar, with the oldest active thread first. Workspace grouping compared with
+  [T3 Code on September 22, 2026](https://github.com/pingdotgg/t3code/tree/d7819c18813fa03b033cc1c9472c9acc0ffc0618).
   [Organizing threads](./thread-sidebar.md).
 - **Stable development ports.** Each workspace gets a persistent range of ten ports. Agents,
   terminals, and project scripts receive the same assignment across restarts, so parallel workspaces

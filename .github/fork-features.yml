@@ -1983,7 +1983,11 @@ features:
     invariants:
       - New threads default to isolated worktrees unless a user explicitly chooses another workspace mode.
       - Web and mobile keep threads from the same workspace adjacent while preserving lifecycle and recency ordering between workspace groups.
+      - Mobile Home and tablet sidebar indent active workspace siblings beneath the oldest visible active thread, with connecting lines that update after filtering and lifecycle changes.
     implementation_paths:
+      - apps/mobile/src/features/home/HomeScreen.tsx
+      - apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx
+      - apps/mobile/src/features/threads/thread-list-v2-items.tsx
       - apps/mobile/src/features/threads/threadListV2.ts
       - apps/web/src/components/Sidebar.logic.ts
       - packages/client-runtime/src/state/threadSort.ts
