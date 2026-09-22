@@ -93,8 +93,7 @@ export function DiffCommentAnnotation({
           <div className="-my-1 -mr-1 flex shrink-0 items-center opacity-0 transition-opacity group-hover/comment:opacity-100 focus-within:opacity-100 max-sm:opacity-100">
             {edit ? (
               <Button
-                className="text-muted-foreground"
-                variant="ghost"
+                variant="ghost-muted"
                 size="icon-xs"
                 aria-label="Edit comment"
                 onClick={edit.onStart}
@@ -104,8 +103,7 @@ export function DiffCommentAnnotation({
             ) : null}
             {onDelete ? (
               <Button
-                className="text-muted-foreground"
-                variant="ghost"
+                variant="ghost-muted"
                 size="icon-xs"
                 aria-label="Delete comment"
                 onClick={onDelete}
@@ -164,8 +162,7 @@ export function DiffCommentAnnotation({
           ⌘/Ctrl Enter to {isEditingComment ? "save" : "send"}
         </span>
         <Button
-          className="text-muted-foreground hover:text-foreground"
-          variant="ghost"
+          variant="ghost-muted"
           size="xs"
           onClick={() => {
             if (isEditingComment) {
