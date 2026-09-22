@@ -2948,11 +2948,14 @@ describe("ProviderCommandReactor", () => {
 
     await waitFor(() => harness.startSession.mock.calls.length === 1);
     expect(harness.pruneWorktrees).toHaveBeenCalledWith({ cwd: harness.workspaceRoot });
-    expect(harness.createWorktree).toHaveBeenCalledWith({
-      cwd: harness.workspaceRoot,
-      refName: "feature/restore",
-      path: worktreePath,
-    });
+    expect(harness.createWorktree).toHaveBeenCalledWith(
+      {
+        cwd: harness.workspaceRoot,
+        refName: "feature/restore",
+        path: worktreePath,
+      },
+      { submodules: null },
+    );
     expect(harness.createWorktree.mock.invocationCallOrder[0]).toBeLessThan(
       harness.startSession.mock.invocationCallOrder[0]!,
     );
