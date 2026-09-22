@@ -1578,19 +1578,18 @@ export function applyRequiredCheckPolicy(
     ...checks.map((check) =>
       requiredNames.has(check.name) ? { ...check, required: true as const } : check,
     ),
-    ...[...requiredNames].flatMap(
-      (name): ReadonlyArray<PullRequestCheck> =>
-        reportedNames.has(name)
-          ? []
-          : [
-              {
-                name,
-                status: "expected",
-                description: "Waiting for status to be reported",
-                url: null,
-                required: true,
-              },
-            ],
+    ...[...requiredNames].flatMap((name): ReadonlyArray<PullRequestCheck> =>
+      reportedNames.has(name)
+        ? []
+        : [
+            {
+              name,
+              status: "expected",
+              description: "Waiting for status to be reported",
+              url: null,
+              required: true,
+            },
+          ],
     ),
   ];
 }
