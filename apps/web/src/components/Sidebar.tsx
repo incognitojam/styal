@@ -5066,7 +5066,9 @@ export default function Sidebar() {
                             key={threadKey}
                             id={threadKey}
                             disabled={
-                              !draggableThreadKeys.has(threadKey) || optimisticDrop !== null
+                              renamingThreadKey === threadKey ||
+                              !draggableThreadKeys.has(threadKey) ||
+                              optimisticDrop !== null
                             }
                           >
                             {(bag) => renderThreadRowInner(thread, section, bag)}
