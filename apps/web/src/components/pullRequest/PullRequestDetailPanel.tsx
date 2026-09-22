@@ -2105,7 +2105,7 @@ function PullRequestDetailPanelBody({
                             the spinning glyph in place of the dots: the reader sees the panel
                             is fetching without a control appearing or the row shifting. */}
                         {refreshing ? (
-                          <RefreshIcon refreshing className="size-4" />
+                          <RefreshIcon refreshing size="md" />
                         ) : (
                           <MoreHorizontalIcon className="size-4" />
                         )}
@@ -2129,7 +2129,7 @@ function PullRequestDetailPanelBody({
                     onPickerOpenChange={setThreadPickerOpen}
                   />
                   <MenuItem disabled={refreshing} onClick={() => void refreshFromHost()}>
-                    <RefreshIcon className="size-3.5" refreshing={refreshing} />
+                    <RefreshIcon size="sm" refreshing={refreshing} />
                     Refresh
                   </MenuItem>
                   <MenuItem disabled={handoff !== null} onClick={askAboutPullRequest}>
