@@ -1,11 +1,11 @@
 ---
-name: test-t3-mobile
-description: Launch and test T3 Code Mobile on an iOS Simulator or Android Emulator against disposable local T3 environments, including Metro and dev-client reuse, native rebuild decisions, per-client pairing, seeded projects, semantic UI control, screenshots, and iOS serve-sim streaming. Use after mobile UI or native changes, when reproducing phone or tablet behavior, pairing an emulator to isolated state, or verifying mobile behavior on macOS, Linux, or Windows.
+name: test-styal-mobile
+description: Launch and test styal Mobile on an iOS Simulator or Android Emulator against disposable local styal environments, including Metro and dev-client reuse, native rebuild decisions, per-client pairing, seeded projects, semantic UI control, screenshots, and iOS serve-sim streaming. Use after mobile UI or native changes, when reproducing phone or tablet behavior, pairing an emulator to isolated state, or verifying mobile behavior on macOS, Linux, or Windows.
 ---
 
-# Test T3 Mobile
+# Test styal Mobile
 
-Run one focused, end-to-end mobile verification pass against disposable T3 state. Use the sibling [`test-t3-app`](../test-t3-app/SKILL.md) skill as the detailed reference for pairing-token semantics and SQLite fixtures.
+Run one focused, end-to-end mobile verification pass against disposable T3 state. Use the sibling [`test-styal-app`](../test-styal-app/SKILL.md) skill as the detailed reference for pairing-token semantics and SQLite fixtures.
 
 Command examples use POSIX shell syntax. On Windows, use PowerShell equivalents: set variables with `$env:NAME = "value"`, use an explicit temporary directory from `[System.IO.Path]::GetTempPath()`, and run multiline examples on one line or with PowerShell backticks. Use `$env:ANDROID_HOME\platform-tools\adb.exe` when `adb` is not already on `PATH`.
 
@@ -48,7 +48,7 @@ node apps/server/src/bin.ts project add <git-workspace> \
 
 Running `project add` before the backend starts gives it exclusive offline database access. If a backend is already running, wait until it is ready so the CLI dispatches through the live server; never run offline mutations concurrently with the server.
 
-Use direct SQLite mutation only for disposable projection fixtures. Follow `test-t3-app` and stop the backend before writing.
+Use direct SQLite mutation only for disposable projection fixtures. Follow `test-styal-app` and stop the backend before writing.
 
 Start a headless backend after seeding:
 
@@ -127,10 +127,10 @@ Do not start, stop, erase, or reconfigure an emulator owned by another task. Tra
 Use the bundled helper from the repository root. It issues a fresh credential against the running backend's exact base directory, opens the existing Add Environment route with the credential in an encoded query parameter, and asks that route to connect once:
 
 ```bash
-.agents/skills/test-t3-mobile/scripts/pair-client.sh \
+.agents/skills/test-styal-mobile/scripts/pair-client.sh \
   ios <simulator-udid> <server-port> <base-dir>
 
-.agents/skills/test-t3-mobile/scripts/pair-client.sh \
+.agents/skills/test-styal-mobile/scripts/pair-client.sh \
   android <emulator-serial> <server-port> <base-dir>
 ```
 

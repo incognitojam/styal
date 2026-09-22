@@ -121,7 +121,7 @@ An empty database is a bad test. Seed your worktree's `.styal` with a copy of re
 - **Do not run repo-wide checks.** No `vp check`, no `vp run -r test`, no `vp run -r typecheck` unless I ask. CI owns the full suite.
 - Backend behavior changes ship with focused tests for that behavior.
 - The server is event-sourced and its async flows emit typed receipts. Wait on receipts and worker drains, never on sleeps or polling. A test that needs a timeout to pass is wrong.
-- Verify user-visible frontend changes with one integrated pass in a real client: `test-t3-app` for web, `test-t3-mobile` for mobile. The primary agent does this once after integrating. Subagents do not launch their own dev servers.
+- Verify user-visible frontend changes with one integrated pass in a real client: `test-styal-app` for web, `test-styal-mobile` for mobile. The primary agent does this once after integrating. Subagents do not launch their own dev servers.
 
 ## Pull requests
 
