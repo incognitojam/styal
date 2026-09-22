@@ -134,7 +134,7 @@ export default function ProjectScriptsControl({
             onClick={() => importFileScript(fileScript)}
           >
             <ScriptIcon icon={fileScript.icon ?? "play"} className="size-4" />
-            <MenuItemLabel className="truncate">
+            <MenuItemLabel>
               {fileScript.runOnWorktreeCreate ? `${fileScript.name} (setup)` : fileScript.name}
             </MenuItemLabel>
             <MenuShortcut>
@@ -161,7 +161,7 @@ export default function ProjectScriptsControl({
             onClick={() => onRunScript(script)}
           >
             <ScriptIcon icon={script.icon} className="size-4" />
-            <MenuItemLabel className="truncate">
+            <MenuItemLabel>
               {script.runOnWorktreeCreate ? `${script.name} (setup)` : script.name}
             </MenuItemLabel>
             <span className="relative ms-auto flex h-6 min-w-6 items-center justify-end">
@@ -220,7 +220,7 @@ export default function ProjectScriptsControl({
               onClick={() => onRunScript(primaryScript)}
             >
               <ScriptIcon icon={primaryScript.icon} className="size-4" />
-              <MenuItemLabel className="truncate">Run {primaryScript.name}</MenuItemLabel>
+              <MenuItemLabel>Run {primaryScript.name}</MenuItemLabel>
               <MenuShortcut>
                 {shortcutLabelForCommand(keybindings, commandForProjectScript(primaryScript.id))}
               </MenuShortcut>
