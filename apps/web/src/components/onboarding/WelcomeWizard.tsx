@@ -698,10 +698,7 @@ function AgentsStep({
   const { environments } = useEnvironments();
   return (
     <StepShell title="Your agents" description="Agents available on your selected computers.">
-      <ScrollArea
-        scrollFade
-        className="mt-5 h-auto max-h-96 [&_[data-slot=scroll-area-scrollbar]]:opacity-100"
-      >
+      <ScrollArea scrollFade className="mt-5 h-auto max-h-96">
         <div className="space-y-5 pr-3">
           {environmentIds.map((environmentId) => (
             <ConnectedAgentsStep

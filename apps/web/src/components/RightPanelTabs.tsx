@@ -1157,10 +1157,11 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         data-right-panel-focus-boundary
       >
         <ScrollArea
+          radius="none"
           ref={tabListRef}
           hideScrollbars
           scrollFade
-          className="min-w-0 flex-1 rounded-none"
+          className="min-w-0 flex-1"
           data-right-panel-tab-list
         >
           <div className="flex h-full w-max min-w-full items-center gap-1">
