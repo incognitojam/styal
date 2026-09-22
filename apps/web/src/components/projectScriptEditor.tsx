@@ -2,6 +2,7 @@ import type {
   ProjectScript,
   ProjectScriptIcon,
   ResolvedKeybindingsConfig,
+  T3ProjectFileScript,
 } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
@@ -104,8 +105,21 @@ export const EMPTY_PROJECT_SCRIPT_INPUT: NewProjectScriptInput = {
 export interface ProjectScriptEditorRequest {
   scriptId: string | null;
   initial: NewProjectScriptInput;
-  /** Validation error to show immediately (e.g. a failed t3.json import). */
-  error?: string;
+}
+
+export function editorRequestForFileScript(
+  fileScript: T3ProjectFileScript,
+): ProjectScriptEditorRequest {
+  return {
+    scriptId: null,
+    initial: {
+      name: fileScript.name,
+      command: fileScript.command,
+      icon: fileScript.icon ?? "play",
+      runOnWorktreeCreate: fileScript.runOnWorktreeCreate ?? false,
+      keybinding: null,
+    },
+  };
 }
 
 export function editorRequestForScript(
@@ -155,20 +169,31 @@ export function ProjectScriptEditorDialog({
   const [keybinding, setKeybinding] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [lastRequest, setLastRequest] = useState<ProjectScriptEditorRequest | null>(null);
 
   const isOpen = request !== null;
-  const isEditing = request?.scriptId != null;
+  // Keep the outgoing copy stable while DialogPopup plays its close animation.
+  const displayedRequest = request ?? lastRequest;
+  const isEditing = displayedRequest?.scriptId != null;
+  const replacedSetupScript = runOnWorktreeCreate
+    ? scripts.find(
+        (script) => script.runOnWorktreeCreate && script.id !== displayedRequest?.scriptId,
+      )
+    : null;
+  const isEnablingSetup =
+    runOnWorktreeCreate && (!isEditing || !displayedRequest?.initial.runOnWorktreeCreate);
 
   // Hydrate the form whenever a new request opens the dialog.
   useEffect(() => {
     if (!request) return;
+    setLastRequest(request);
     setName(request.initial.name);
     setCommand(request.initial.command);
     setIcon(request.initial.icon);
     setIconPickerOpen(false);
     setRunOnWorktreeCreate(request.initial.runOnWorktreeCreate);
     setKeybinding(request.initial.keybinding ?? "");
-    setValidationError(request.error ?? null);
+    setValidationError(null);
   }, [request]);
 
   const captureKeybinding = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -331,7 +356,7 @@ export function ProjectScriptEditorDialog({
                 <span>
                   Run automatically on worktree creation
                   <span className="mt-0.5 block text-xs text-muted-foreground">
-                    Runs in new worktrees only, never in a local thread.
+                    This action runs only in worktrees, not in the project's local checkout.
                   </span>
                 </span>
                 <Switch
@@ -339,6 +364,13 @@ export function ProjectScriptEditorDialog({
                   onCheckedChange={(checked) => setRunOnWorktreeCreate(Boolean(checked))}
                 />
               </label>
+              {isEnablingSetup && (
+                <p className="text-sm text-muted-foreground">
+                  {replacedSetupScript
+                    ? `Saving will replace “${replacedSetupScript.name}” as the action that runs automatically in new worktrees.`
+                    : "Saving will run this action automatically in new worktrees."}
+                </p>
+              )}
               {validationError && <p className="text-sm text-destructive">{validationError}</p>}
             </form>
           </DialogPanel>
@@ -357,7 +389,13 @@ export function ProjectScriptEditorDialog({
               Cancel
             </Button>
             <Button form={formId} type="submit">
-              {isEditing ? "Save changes" : "Save action"}
+              {isEnablingSetup
+                ? replacedSetupScript
+                  ? "Save and replace setup action"
+                  : "Save and run in new worktrees"
+                : isEditing
+                  ? "Save changes"
+                  : "Save action"}
             </Button>
           </DialogFooter>
         </DialogPopup>

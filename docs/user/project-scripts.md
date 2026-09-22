@@ -73,8 +73,10 @@ Each script supports these fields:
   setup action. The default is `false`.
 
 Scripts in `t3.json` are templates and never run directly from the checked-in file. Import one
-from the thread actions menu or from **Settings** → **Projects** → **Actions**. Importing creates a
-saved copy for that checkout, so later changes to `t3.json` do not silently change or run an
+from the thread actions menu or from **Settings** → **Projects** → **Actions**. The **Add Action**
+form opens with the file's values filled in. Review the command and the option to run it when a
+worktree is created, then save or cancel. Importing creates a saved copy for that checkout, so
+later changes to `t3.json` do not silently change or run an
 already-imported action. Edit the saved action, or delete it and import the revised definition,
 when you want to adopt a change.
 

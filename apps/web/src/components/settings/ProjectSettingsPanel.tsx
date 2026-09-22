@@ -83,6 +83,7 @@ import { TraitsPicker } from "../chat/TraitsPicker";
 import { ProjectFavicon } from "../ProjectFavicon";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
+  editorRequestForFileScript,
   editorRequestForScript,
   ProjectScriptEditorDialog,
   ScriptIcon,
@@ -767,27 +768,9 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
     [persistScripts, scripts],
   );
 
-  const importFileScript = useCallback(
-    async (fileScript: T3ProjectFileScript) => {
-      const payload: NewProjectScriptInput = {
-        name: fileScript.name,
-        command: fileScript.command,
-        icon: fileScript.icon ?? "play",
-        runOnWorktreeCreate: fileScript.runOnWorktreeCreate ?? false,
-        keybinding: null,
-      };
-      const result = await submitScript(null, payload);
-      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
-        setEditorRequest({
-          scriptId: null,
-          initial: payload,
-          error: error instanceof Error ? error.message : "Failed to import action.",
-        });
-      }
-    },
-    [submitScript],
-  );
+  const importFileScript = useCallback((fileScript: T3ProjectFileScript) => {
+    setEditorRequest(editorRequestForFileScript(fileScript));
+  }, []);
 
   // ----- checkouts -----
   const updateGroupingPreference = useCallback(
@@ -1282,18 +1265,22 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                     <MenuGroup>
                       <MenuGroupLabel>Import from t3.json</MenuGroupLabel>
                       <p className="px-2 pb-2 text-pretty text-sm text-muted-foreground">
-                        Add actions declared by this checkout without editing them first.
+                        Review actions declared by this checkout before importing them.
                       </p>
                     </MenuGroup>
                     <MenuSeparator />
                     {importableScripts.map((fileScript) => (
                       <MenuItem
                         key={`${fileScript.name} ${fileScript.command}`}
-                        onClick={() => void importFileScript(fileScript)}
+                        onClick={() => importFileScript(fileScript)}
                       >
                         <ScriptIcon icon={fileScript.icon ?? "play"} className="size-4 shrink-0" />
                         <div className="min-w-0 flex-1">
-                          <div className="truncate font-medium">{fileScript.name}</div>
+                          <div className="truncate font-medium">
+                            {fileScript.runOnWorktreeCreate
+                              ? `${fileScript.name} (setup)`
+                              : fileScript.name}
+                          </div>
                           <div className="truncate font-mono text-muted-foreground">
                             {fileScript.command}
                           </div>
