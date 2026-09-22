@@ -405,7 +405,7 @@ function ImportProjectRowView({
             <span className="truncate font-mono text-[11px] text-muted-foreground/80">{path}</span>
           ) : null}
         </TooltipTrigger>
-        <TooltipPopup className="max-w-96 break-all font-mono">{path || title}</TooltipPopup>
+        <TooltipPopup variant="code">{path || title}</TooltipPopup>
       </Tooltip>
       <ImportRowMeta
         summary={plural(project.threads, "thread")}
