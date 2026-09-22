@@ -26,6 +26,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ClaudeStatusNotice } from "./ClaudeStatusNotice";
 import { OpenAIStatusNotice } from "./OpenAIStatusNotice";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
+import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { GitHubStatusNotice } from "./GitHubStatusNotice";
@@ -196,6 +197,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
 export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   return (
     <SidebarFooter className="px-[var(--sidebar-content-inset)] py-1">
+      <SidebarThreadUndoNotice />
       <GitHubStatusNotice />
       <ClaudeStatusNotice />
       <OpenAIStatusNotice />
