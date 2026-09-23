@@ -1408,26 +1408,21 @@ features:
     prs: [79, 125, 211]
     invariants:
       - Repository and pull request identity follow the branch tracking remote or selected GitHub repository without matching a same-named branch from another fork.
-      - Pull request association survives hosted branch pruning and refreshes after a turn creates a previously missing pull request.
+      - Pull request association survives hosted branch pruning.
     implementation_paths:
       - apps/server/src/git/GitManager.ts
-      - apps/server/src/orchestration/Layers/CheckpointReactor.ts
       - apps/server/src/project/RepositoryIdentityResolver.ts
-      - apps/server/src/vcs/VcsStatusBroadcaster.ts
     upstream_paths:
       - apps/server/src/git/GitManager.ts
-      - apps/server/src/orchestration/Layers/CheckpointReactor.ts
       - apps/server/src/project/RepositoryIdentityResolver.ts
-      - apps/server/src/vcs/VcsStatusBroadcaster.ts
     tests:
       - apps/server/src/git/GitManager.test.ts
-      - apps/server/src/orchestration/Layers/CheckpointReactor.test.ts
       - apps/server/src/project/RepositoryIdentityResolver.test.ts
-      - apps/server/src/vcs/VcsStatusBroadcaster.test.ts
     upstream:
-      status: unassessed
-      tracking: []
-      retire_when: Upstream keeps repository-scoped pull request association correct across multiple remotes, branch pruning, and pull requests created during a turn.
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/9125
+      retire_when: Upstream keeps repository-scoped pull request association correct across multiple remotes and branch pruning.
 
   - id: pull-request-comment-drafts
     title: Preserve pull request comment drafts across panel tabs
