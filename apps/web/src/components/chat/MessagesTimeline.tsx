@@ -3359,8 +3359,10 @@ function buildCommandOutputBody(result: OrchestrationGetCommandOutputResult): st
 
 const CommandOutputExpandedBody = memo(function CommandOutputExpandedBody(props: {
   workEntry: TimelineWorkEntry;
+  /** False when the expanded row label already shows the full command. */
+  showCommand: boolean;
 }) {
-  const { workEntry } = props;
+  const { workEntry, showCommand } = props;
   const { activeThreadEnvironmentId, threadRef } = use(TimelineRowCtx);
   const pending = workEntry.toolLifecycleStatus === "inProgress";
   const query = useCommandOutput({
@@ -3369,11 +3371,12 @@ const CommandOutputExpandedBody = memo(function CommandOutputExpandedBody(props:
     activityId: EventId.make(workEntry.id),
   });
   const command = (workEntryRawCommand(workEntry) ?? workEntry.command)?.trim();
-  const commandBlock = command ? (
-    <pre className="mb-2 max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words font-mono text-secondary-label text-[11px] leading-relaxed select-text">
-      {command}
-    </pre>
-  ) : null;
+  const commandBlock =
+    showCommand && command ? (
+      <pre className="mb-2 max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words font-mono text-secondary-label text-[11px] leading-relaxed select-text">
+        {command}
+      </pre>
+    ) : null;
 
   if (pending) {
     return (
@@ -3676,7 +3679,13 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           workspaceRoot,
         })
       : null;
-  const commandMatchesVisibleLabel = workEntry.command?.trim() === previewText.trim();
+  // Presented rows read "Ran command - <command>", so compare the command with
+  // the label's argument rather than the whole label.
+  const visibleCommand =
+    presentation?.argument?.kind === "command"
+      ? presentation.argument.value.trim()
+      : previewText.trim();
+  const commandMatchesVisibleLabel = workEntry.command?.trim() === visibleCommand;
   const canExpand =
     isCommandExecution ||
     (workEntry.itemType === "mcp_tool_call" && workEntry.toolData !== undefined) ||
@@ -3691,7 +3700,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     ? buildToolCallExpandedBody(
         workEntry,
         workspaceRoot,
-        previewText,
+        visibleCommand,
         viewedImage ? viewedImagePath : null,
       )
     : null;
@@ -3916,7 +3925,10 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           onPointerDown={stopRowToggle}
         >
           {isCommandExecution ? (
-            <CommandOutputExpandedBody workEntry={workEntry} />
+            <CommandOutputExpandedBody
+              workEntry={workEntry}
+              showCommand={!commandMatchesVisibleLabel}
+            />
           ) : expandedBody ? (
             <pre className={toolCallExpandedBodyClassName}>{expandedBody}</pre>
           ) : null}
