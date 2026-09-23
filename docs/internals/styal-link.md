@@ -32,6 +32,7 @@ Tunnel endpoints (`prod-<digest>.styal.link`) terminate at servers that styal us
 live on a registrable domain of their own, never under `styal.build`: the production Clerk instance
 sets cookies on the product root domain, and a shared eTLD+1 would send those session cookies to any
 tunnel host a browser touches. Keep it that way.
+The tunnel zone apex redirects visitors to the styal GitHub repository; managed tunnel hostnames do not redirect.
 
 ## Clerk
 
