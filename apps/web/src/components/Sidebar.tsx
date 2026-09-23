@@ -4796,7 +4796,6 @@ export default function Sidebar() {
                             key={item.value}
                             hideIndicator
                             value={item}
-                            className="font-medium"
                             onContextMenu={(event) => {
                               if (project) handleProjectSettings(event, project);
                             }}
