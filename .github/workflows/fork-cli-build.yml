@@ -74,7 +74,7 @@ jobs:
     if: inputs.operation == 'publish'
     # npm OIDC publishing requires a GitHub-hosted runner.
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 30
     permissions:
       contents: read
       id-token: write
@@ -144,8 +144,60 @@ jobs:
             npm publish "$archive" --access public --tag "$DIST_TAG" --provenance
           }
 
-          # Publish all five exact-version dependencies before their launcher.
+          wait_for_published_bytes() {
+            local package_name="$1"
+            local archive="$2"
+            local package_spec="${package_name}@${RELEASE_VERSION}"
+            local expected_integrity
+            local published_integrity
+            local published_tarball
+            local view_output
+            local view_status
+
+            expected_integrity="sha512-$(openssl dgst -sha512 -binary "$archive" | openssl base64 -A)"
+
+            while (( SECONDS < registry_deadline )); do
+              set +e
+              view_output=$(npm view "$package_spec" dist --json --prefer-online 2>&1)
+              view_status=$?
+              set -e
+
+              if (( view_status == 0 )); then
+                published_integrity=$(jq -er '.integrity | select(type == "string" and length > 0)' <<<"$view_output")
+                published_tarball=$(jq -er '.tarball | select(type == "string" and length > 0)' <<<"$view_output")
+                if [[ "$published_integrity" != "$expected_integrity" ]]; then
+                  echo "Published $package_spec does not match $archive." >&2
+                  echo "Published integrity: $published_integrity" >&2
+                  echo "Expected integrity:  $expected_integrity" >&2
+                  return 1
+                fi
+
+                if curl --fail --head --location --silent --show-error "$published_tarball" --output /dev/null; then
+                  echo "$package_spec metadata and tarball are available from the registry."
+                  return 0
+                fi
+              fi
+
+              echo "Waiting for npm to finish processing $package_spec..."
+              sleep 10
+            done
+
+            echo "Timed out waiting for npm to make $package_spec available." >&2
+            printf '%s\n' "$view_output" >&2
+            return 1
+          }
+
+          # npm accepts these large uploads before its registry makes them readable.
+          # Submit all five first, then keep the launcher private until every exact
+          # dependency resolves with the bytes we uploaded.
           for key in darwin-arm64 linux-x64 linux-arm64 win32-x64 win32-arm64; do
             publish_or_verify "@styal/cli-$key" "./cli-release/cli-$key.tgz"
           done
+
+          registry_deadline=$((SECONDS + 20 * 60))
+          for key in darwin-arm64 linux-x64 linux-arm64 win32-x64 win32-arm64; do
+            wait_for_published_bytes "@styal/cli-$key" "./cli-release/cli-$key.tgz"
+          done
+
           publish_or_verify "@styal/cli" ./cli-release/cli.tgz
+          wait_for_published_bytes "@styal/cli" ./cli-release/cli.tgz
