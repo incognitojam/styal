@@ -147,17 +147,23 @@ describe("upstream intake audit", () => {
     assert.isFalse(result.automaticEligible);
     assert.deepEqual(result.sourcePullRequests, []);
     assert.deepEqual(result.sourceCommits, [sha]);
-    assert.include(result.summary, sha);
+    assert.include(result.summary, `| Upstream commits without PR | \`${sha}\` |`);
   });
 
-  it("reports PR and explicit commit provenance independently", () => {
-    const commitMessages = [`fix: port\n\nUpstream-PR: 1234\nUpstream-Commit: ${"d".repeat(40)}`];
-    const result = audit({ commitMessages });
+  it("shows only commit-only sources separately while retaining every exact SHA for promotion", () => {
+    const prCommit = "d".repeat(40);
+    const standaloneCommit = "e".repeat(40);
+    const commitMessages = [
+      `fix: port PR\n\nUpstream-PR: 1234\nUpstream-Commit: ${prCommit}`,
+      `fix: port standalone commit\n\nUpstream-Commit: ${standaloneCommit}`,
+    ];
+    const result = audit({ commits: ["b".repeat(40), "c".repeat(40)], commitMessages });
 
     assert.isTrue(result.valid);
     assert.deepEqual(result.sourcePullRequests, [1234]);
-    assert.deepEqual(result.sourceCommits, ["d".repeat(40)]);
-    assert.include(result.summary, "Explicit commit sources");
+    assert.deepEqual(result.sourceCommits, [prCommit, standaloneCommit]);
+    assert.include(result.summary, `| Upstream commits without PR | \`${standaloneCommit}\` |`);
+    assert.notInclude(result.summary, prCommit);
   });
 
   it("formats a copyable promotion command", () => {
