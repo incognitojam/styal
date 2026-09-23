@@ -324,6 +324,7 @@ it.effect(
         } as never),
         Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
           getEventReplayStats: () => Effect.die("unused"),
+          getThreadRuntimeContext: () => Effect.die("unused"),
           getCommandReadModel: () => Effect.die("unused"),
           getSnapshot: () => Effect.die("unused"),
           getShellSnapshot: () => Effect.die("unused"),
@@ -346,6 +347,8 @@ it.effect(
         }),
         Effect.provideService(OrchestrationEngine.OrchestrationEngineService, {
           readEvents: () => Stream.empty,
+          readThreadEvents: () => Stream.empty,
+          getThreadReplayStats: () => Effect.die("unused thread replay stats"),
 
           dispatch: (command) =>
             Ref.update(dispatchCalls, (calls) => [...calls, command.type]).pipe(

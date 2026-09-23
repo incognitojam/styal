@@ -1,4 +1,3 @@
-import { makeSqlStatementCounter } from "../../../integration/SqlStatementCounter.integration.ts";
 import {
   type AgentSessionImportSource,
   CheckpointRef,

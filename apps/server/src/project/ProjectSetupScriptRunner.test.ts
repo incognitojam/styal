@@ -100,6 +100,8 @@ const testLayer = (
             return { sequence: commands.length };
           }),
         readEvents: () => Stream.empty,
+        readThreadEvents: () => Stream.empty,
+        getThreadReplayStats: () => Effect.die("unused thread replay stats"),
         streamDomainEvents: Stream.empty,
         subscribeDomainEvents: Effect.succeed(Stream.empty),
         latestSequence: Effect.succeed(0),

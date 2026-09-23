@@ -583,6 +583,8 @@ it.effect("imports selected history and safe preferences independently", () => {
   }> = [];
   const engine = OrchestrationEngineService.of({
     readEvents: () => Stream.empty,
+    readThreadEvents: () => Stream.empty,
+    getThreadReplayStats: () => Effect.die("unused thread replay stats"),
     dispatch: () => Effect.succeed({ sequence: 0 }),
     importHistoricalEvents: (events, options) =>
       Effect.sync(() => {
@@ -607,6 +609,7 @@ it.effect("imports selected history and safe preferences independently", () => {
   };
   const snapshots = ProjectionSnapshotQuery.of({
     getEventReplayStats: () => Effect.die("unused"),
+    getThreadRuntimeContext: () => Effect.die("unused"),
     getCommandReadModel: () => Effect.succeed(emptyReadModel),
     getSnapshot: () => Effect.succeed(emptyReadModel),
     getShellSnapshot: () => Effect.succeed(emptyShell),
@@ -879,6 +882,8 @@ it.effect("imports one thread at a time and resumes after an interrupted thread"
   let targetAttachmentsDir = "";
   const engine = OrchestrationEngineService.of({
     readEvents: () => Stream.empty,
+    readThreadEvents: () => Stream.empty,
+    getThreadReplayStats: () => Effect.die("unused thread replay stats"),
     dispatch: () => Effect.succeed({ sequence: 0 }),
     importHistoricalEvents: (events, options) =>
       Effect.suspend(() => {
@@ -928,6 +933,7 @@ it.effect("imports one thread at a time and resumes after an interrupted thread"
   };
   const snapshots = ProjectionSnapshotQuery.of({
     getEventReplayStats: () => Effect.die("unused"),
+    getThreadRuntimeContext: () => Effect.die("unused"),
     getCommandReadModel: () => Effect.succeed(emptyReadModel),
     getSnapshot: () => Effect.succeed(emptyReadModel),
     getShellSnapshot: () => Effect.succeed(emptyShell),
@@ -1047,6 +1053,8 @@ it.effect("repairs provider context for threads imported by an earlier release",
   const repairOperations: string[] = [];
   const engine = OrchestrationEngineService.of({
     readEvents: () => Stream.empty,
+    readThreadEvents: () => Stream.empty,
+    getThreadReplayStats: () => Effect.die("unused thread replay stats"),
     dispatch: () => Effect.succeed({ sequence: 0 }),
     importHistoricalEvents: (events, options) =>
       Effect.sync(() => {
@@ -1080,6 +1088,7 @@ it.effect("repairs provider context for threads imported by an earlier release",
   };
   const snapshots = ProjectionSnapshotQuery.of({
     getEventReplayStats: () => Effect.die("unused"),
+    getThreadRuntimeContext: () => Effect.die("unused"),
     getCommandReadModel: () => Effect.succeed(emptyReadModel),
     getSnapshot: () => Effect.succeed(emptyReadModel),
     getShellSnapshot: () => Effect.succeed(emptyShell),

@@ -300,6 +300,7 @@ describe("CheckpointDiffQuery.layer", () => {
         Layer.provideMerge(
           Layer.succeed(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
             getEventReplayStats: () => Effect.die("unused"),
+            getThreadRuntimeContext: () => Effect.die("unused"),
             getCommandReadModel: () =>
               Effect.die("CheckpointDiffQuery should not request the command read model"),
             getSnapshot: () =>
