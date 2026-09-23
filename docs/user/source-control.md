@@ -89,8 +89,9 @@ T3 Code works with the platforms your team already uses:
 - Show a file tree next to a review's **Code** tab, or a thread's **Diff** panel, to browse the
   changed files as folders and jump straight to any of them. The toolbar toggle remembers your
   choice.
-- Enable **Settings → General → Proactive panels** to open a newly linked review automatically and
-  switch to the completed turn's diff when agent work changes files. An open review stays in front
+- By default, **Proactive panels** opens a newly linked review automatically and switches to the
+  completed turn's diff when agent work changes files. An open review stays in front. Turn it off
+  in **Settings → General** if you prefer to open panels manually.
 - Open the review directly in your browser with one click
 - If T3 Code cannot load a GitHub pull request, including when GitHub rate limits requests, use
   **Open on GitHub** in the error view
