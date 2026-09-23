@@ -454,6 +454,34 @@ describe("pull request detail decoding", () => {
     expect(policy.requiresUpToDateBranch).toBe(false);
   });
 
+  it("keeps an incomplete required-check rule unknown unless another rule is conclusively strict", () => {
+    const incompleteRule = {
+      type: "required_status_checks",
+      parameters: { required_status_checks: [{ context: "build" }] },
+    };
+    const unknown = expectSuccess(decodeBranchRulesJson(JSON.stringify([[incompleteRule]])));
+    expect(unknown.requiredChecks).toEqual(["build"]);
+    expect(unknown.requiresUpToDateBranch).toBeUndefined();
+
+    const strict = expectSuccess(
+      decodeBranchRulesJson(
+        JSON.stringify([
+          [incompleteRule],
+          [
+            {
+              type: "required_status_checks",
+              parameters: {
+                strict_required_status_checks_policy: true,
+                required_status_checks: [{ context: "security" }],
+              },
+            },
+          ],
+        ]),
+      ),
+    );
+    expect(strict.requiresUpToDateBranch).toBe(true);
+  });
+
   it("narrows repository merge capabilities by the branch's rules", () => {
     const repository = { merge: true, squash: true, rebase: false };
 

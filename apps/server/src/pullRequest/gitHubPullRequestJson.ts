@@ -176,17 +176,20 @@ export function decodeBranchRulesJson(
   if (!Result.isSuccess(decoded)) return Result.fail(decoded.failure);
   const names = new Set<string>();
   let requiresUpToDateBranch = false;
+  let strictPolicyUnknown = false;
   let allowedMergeMethods: ReadonlyArray<PullRequestMergeMethod> | null = null;
   for (const page of decoded.success) {
     for (const rule of page) {
       if (rule.type === "required_status_checks") {
-        if (
-          rule.parameters?.strict_required_status_checks_policy === true &&
-          (rule.parameters.required_status_checks?.length ?? 0) > 0
-        ) {
+        const checks = rule.parameters?.required_status_checks;
+        const strict = rule.parameters?.strict_required_status_checks_policy;
+        if (strict === true && checks !== undefined && checks.length > 0) {
           requiresUpToDateBranch = true;
+        } else if (strict !== false && checks?.length !== 0) {
+          // A missing strict flag or check list cannot prove the rule is loose.
+          strictPolicyUnknown = true;
         }
-        for (const entry of rule.parameters?.required_status_checks ?? []) {
+        for (const entry of checks ?? []) {
           const name = trimmed(typeof entry === "string" ? entry : entry.context);
           if (name !== null) names.add(name);
         }
@@ -211,7 +214,11 @@ export function decodeBranchRulesJson(
   }
   return Result.succeed({
     requiredChecks: [...names],
-    requiresUpToDateBranch,
+    ...(requiresUpToDateBranch
+      ? { requiresUpToDateBranch: true }
+      : strictPolicyUnknown
+        ? {}
+        : { requiresUpToDateBranch: false }),
     allowedMergeMethods,
   });
 }

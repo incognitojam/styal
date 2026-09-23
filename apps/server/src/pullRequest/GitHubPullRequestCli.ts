@@ -1901,7 +1901,8 @@ export const make = Effect.gen(function* () {
           const requiresUpToDateBranch =
             rulesets.requiresUpToDateBranch === true || classic.requiresUpToDateBranch === true
               ? true
-              : rulesets.available && classic.requiresUpToDateBranch === false
+              : rulesets.requiresUpToDateBranch === false &&
+                  classic.requiresUpToDateBranch === false
                 ? false
                 : undefined;
           return Effect.succeed({

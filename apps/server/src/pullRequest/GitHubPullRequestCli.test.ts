@@ -2845,6 +2845,47 @@ layer("GitHubPullRequestCli.layer", (it) => {
     }),
   );
 
+  it.effect("does not call an incomplete ruleset loose when classic protection is loose", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockImplementation((input) =>
+        Effect.succeed(
+          output(
+            input.args.includes("repos/acme/web/rules/branches/main")
+              ? JSON.stringify([
+                  [
+                    {
+                      type: "required_status_checks",
+                      parameters: { required_status_checks: [{ context: "build" }] },
+                    },
+                  ],
+                ])
+              : JSON.stringify({
+                  data: {
+                    repository: {
+                      ref: {
+                        branchProtectionRule: {
+                          requiredStatusCheckContexts: ["classic"],
+                          requiresStrictStatusChecks: false,
+                        },
+                      },
+                    },
+                  },
+                }),
+          ),
+        ),
+      );
+      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+      const policy = yield* cli.getBranchPolicy({
+        cwd: "/w",
+        repository: "acme/web",
+        host: "github.example.test",
+        baseBranch: "main",
+      });
+      expect(policy.requiredChecks).toEqual(["build", "classic"]);
+      expect(policy.requiresUpToDateBranch).toBeUndefined();
+    }),
+  );
+
   it.effect("leaves required-check policy unknown when neither source is available", () =>
     Effect.gen(function* () {
       mockedExecute.mockReturnValue(Effect.fail(diffRefused));
