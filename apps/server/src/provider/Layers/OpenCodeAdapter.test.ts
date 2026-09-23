@@ -5916,6 +5916,11 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         NodeAssert.deepEqual(completed.payload.data, {
           toolName: "edit",
           toolCallId: "call-edit",
+          input: {
+            file_path: "/repo/src/app.ts",
+            old_string: "before",
+            new_string: "after",
+          },
           state: {
             status: "error",
             input: {

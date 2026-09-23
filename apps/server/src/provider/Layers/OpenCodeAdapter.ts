@@ -2336,9 +2336,7 @@ export function makeOpenCodeAdapter(
               ...(detail ? { detail } : {}),
               data: {
                 // Match the canonical tool identity consumed by payload
-                // projection. Keep OpenCode's state as the single source of
-                // input and output so large edit strings are not persisted
-                // twice; projection exposes its compact identifying fields.
+                // projection, which exposes compact identifying fields.
                 toolName,
                 toolCallId: part.callID,
                 state: part.state,
