@@ -1499,7 +1499,7 @@ const make = Effect.gen(function* () {
             return;
           }
 
-          const currentThread = yield* resolveThread(thread.id);
+          const currentThread = yield* resolveThreadShell(thread.id);
           if (
             currentThread?.session?.status !== "running" ||
             currentThread.session.activeTurnId !== activeTurnId
