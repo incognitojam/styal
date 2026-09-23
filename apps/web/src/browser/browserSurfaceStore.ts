@@ -209,6 +209,7 @@ export const useBrowserSurfaceStore = create<BrowserSurfaceStoreState>()((set) =
                 rect: null,
                 visible: false,
                 captureCount: 1,
+                zIndex: 30,
                 content: null,
                 fittedSourceContent: null,
                 fitSourceContent: false,

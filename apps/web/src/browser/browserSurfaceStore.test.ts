@@ -239,6 +239,7 @@ describe("browserSurfaceStore", () => {
     expect(useBrowserSurfaceStore.getState().byTabId[tabId]).toMatchObject({
       captureCount: 2,
       visible: false,
+      zIndex: 30,
     });
 
     first.release();
