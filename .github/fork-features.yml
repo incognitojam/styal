@@ -587,14 +587,13 @@ features:
       - Web file drafts persist environment-scoped upload references; legacy local file bytes remain until a replacement reference is durable. Mobile drafts and queued messages retain owned file copies until delivery or removal.
       - The web and mobile source implementations use the same server-backed draft contract and fork-owned migration history; desktop inherits the web implementation. Pre-split databases require an intermediate fixed release before an in-place upgrade.
       - Web sidebar and mobile thread list rows indicate unsent prompts, attachments, or context without treating model, provider, runtime, or interaction choices alone as a user draft.
-      - Mobile Home and tablet sidebar rows in both thread list layouts mark existing threads holding non-blank composer text or attachments with an amber pen and an unsent draft accessibility label; the currently open sidebar thread is not marked, and new-task drafts remain separate rows.
+      - Mobile Home and tablet sidebar rows mark existing threads holding non-blank composer text or attachments with an amber pen and an unsent draft accessibility label; the currently open sidebar thread is not marked, and new-task drafts remain separate rows.
       - Typing more text into an already marked mobile draft does not notify thread list subscribers unless the set of threads with unsent content changes; clearing the content removes the marker.
       - Discarding a closed thread's draft from the web sidebar also clears its synchronized copy, so the text does not return on the next visit or on another client.
       - A web new-thread draft reserves a fresh thread id only after the server rejects its bootstrap. When the connection drops before the reply, the draft keeps its id and prompt, follows the thread once its turn appears after reconnecting, and clears the restored prompt if it was not edited.
     implementation_paths:
       - apps/mobile/src/features/home/HomeScreen.tsx
       - apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx
-      - apps/mobile/src/features/threads/thread-list-items.tsx
       - apps/mobile/src/features/threads/thread-list-v2-items.tsx
       - apps/mobile/src/features/threads/threadListV2.ts
       - apps/mobile/src/features/threads/unsent-draft-icon.tsx
@@ -2796,7 +2795,6 @@ features:
       - apps/mobile/src/features/home/HomeScreen.tsx
       - apps/mobile/src/features/settings/SettingsThreadsRouteScreen.tsx
       - apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx
-      - apps/mobile/src/features/threads/thread-list-items.tsx
       - apps/mobile/src/features/threads/thread-list-v2-items.tsx
       - apps/mobile/src/features/threads/threadListV2.ts
       - apps/mobile/src/persistence/mobile-preferences.ts
@@ -2813,7 +2811,6 @@ features:
       - packages/contracts/src/orchestration.ts
       - packages/contracts/src/settings.ts
     upstream_paths:
-      - apps/mobile/src/features/threads/thread-list-items.tsx
       - apps/mobile/src/features/threads/thread-list-v2-items.tsx
       - apps/mobile/src/features/threads/threadListV2.ts
       - apps/server/src/orchestration/Layers/ProjectionPipeline.ts

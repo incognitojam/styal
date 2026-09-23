@@ -35,14 +35,6 @@ export interface Preferences {
   readonly projectGroupingMode?: SidebarProjectGroupingMode;
   readonly confirmThreadUnpin?: boolean;
   readonly threadTimestampMode?: "last_prompted" | "last_message";
-  /**
-   * Device-local mirror of the web `legacySidebarEnabled` setting. Mobile has
-   * no client-settings sync, so the legacy grouped thread list is opted into
-   * per device. Deliberately a fresh key (was `threadListV2Enabled`, an
-   * opt-out): sanitizing drops the old key, so every device resets to the
-   * default flat list — see `resolveThreadListV2Enabled`.
-   */
-  readonly legacyThreadListEnabled?: boolean;
   /** Device-local counterpart of desktop's `planModeEnabled` legacy flag. */
   readonly planModeEnabled?: boolean;
   /** Device-local counterpart of desktop's `turnUsageEnabled`; unset means on. */
@@ -115,7 +107,6 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     projectGroupingMode?: SidebarProjectGroupingMode;
     confirmThreadUnpin?: boolean;
     threadTimestampMode?: "last_prompted" | "last_message";
-    legacyThreadListEnabled?: boolean;
     planModeEnabled?: boolean;
     turnUsageEnabled?: boolean;
     modelFavorites?: Preferences["modelFavorites"];
@@ -194,9 +185,6 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     parsed.threadTimestampMode === "last_message"
   ) {
     preferences.threadTimestampMode = parsed.threadTimestampMode;
-  }
-  if (typeof parsed.legacyThreadListEnabled === "boolean") {
-    preferences.legacyThreadListEnabled = parsed.legacyThreadListEnabled;
   }
   if (typeof parsed.planModeEnabled === "boolean") {
     preferences.planModeEnabled = parsed.planModeEnabled;
