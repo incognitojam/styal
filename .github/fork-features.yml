@@ -774,11 +774,11 @@ features:
       - apps/web/src/cloud/linkEnvironment.ts
       - apps/web/src/components/cloud/ConnectCliAuthSurface.tsx
       - apps/web/src/components/onboarding/WelcomeWizard.tsx
+      - infra/relay/alchemy.run.ts
       - infra/relay/src/Config.ts
+      - infra/relay/src/apexRedirect.ts
       - infra/relay/src/db.ts
       - infra/relay/src/dbConfig.ts
-      - infra/relay/alchemy.run.ts
-      - infra/relay/src/apexRedirect.ts
       - infra/web/alchemy.run.ts
       - packages/client-runtime/src/relay/managedRelayState.ts
       - packages/shared/src/connectAuth.ts
