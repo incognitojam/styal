@@ -672,16 +672,21 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
 
   const snapshot = probeResult.success.value;
   const accountStatus = accountProbeStatus(snapshot.account);
+  // A signed-out account has no limits to show. Leaving them absent clears the
+  // published windows; a `probeFailed` result would keep the previous
+  // account's windows until the user signs back in.
   const usageLimits =
-    snapshot.account.account?.type === "apiKey"
-      ? makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" })
-      : snapshot.rateLimits === undefined || "failure" in snapshot.rateLimits
-        ? makeUnavailableUsageLimits({
-            checkedAt,
-            reason: "probeFailed",
-            ...(snapshot.rateLimits ? { message: snapshot.rateLimits.failure } : {}),
-          })
-        : codexRateLimitsToLimits({ snapshot: snapshot.rateLimits.snapshot, checkedAt });
+    accountStatus.auth.status === "unauthenticated"
+      ? undefined
+      : snapshot.account.account?.type === "apiKey"
+        ? makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" })
+        : snapshot.rateLimits === undefined || "failure" in snapshot.rateLimits
+          ? makeUnavailableUsageLimits({
+              checkedAt,
+              reason: "probeFailed",
+              ...(snapshot.rateLimits ? { message: snapshot.rateLimits.failure } : {}),
+            })
+          : codexRateLimitsToLimits({ snapshot: snapshot.rateLimits.snapshot, checkedAt });
 
   return buildServerProvider({
     presentation: CODEX_PRESENTATION,
@@ -702,7 +707,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
       status: accountStatus.status,
       auth: accountStatus.auth,
       ...(accountStatus.message ? { message: accountStatus.message } : {}),
-      usageLimits,
+      ...(usageLimits ? { usageLimits } : {}),
     },
   });
 });

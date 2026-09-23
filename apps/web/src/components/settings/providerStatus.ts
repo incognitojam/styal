@@ -103,7 +103,7 @@ export function getProviderVersionLabel(version: string | null | undefined) {
 
 /**
  * Derive one display line per subscription quota window a provider reported,
- * e.g. `Weekly limit · 7% used · Resets in 6 days`.
+ * e.g. `Weekly · 7% used · Resets in 6 days`.
  */
 export function getProviderRateLimitLines(
   usageLimits: ServerProvider["usageLimits"],
