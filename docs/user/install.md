@@ -66,7 +66,7 @@ Archives support Apple Silicon Macs, Linux x64 and arm64, and Windows x64 and ar
 Intel Macs are unsupported. The server needs neither a separate Node installation
 nor a compiler. Your provider CLIs may still require Node.
 
-If the web or desktop app shows "T3 Code could not load", check your connection and select
+If the web or desktop app shows "styal could not load", check your connection and select
 **Reload** to try again.
 
 ## Open a project in the desktop app

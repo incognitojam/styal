@@ -50,7 +50,7 @@ export class UsageLimitSources extends Context.Service<
     /** Re-read every source now. Never fails; failures land on the snapshot. */
     readonly refresh: Effect.Effect<void>;
   }
->()("t3/usage/UsageLimitSources") {}
+>()("@styal/cli/usage/UsageLimitSources") {}
 
 /**
  * A bounded, client-safe reason for a failed hub read. The exact failure

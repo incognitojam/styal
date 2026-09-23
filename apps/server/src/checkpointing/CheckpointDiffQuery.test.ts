@@ -317,6 +317,7 @@ describe("CheckpointDiffQuery.layer", () => {
             getFullThreadDiffContext: () => Effect.die("unused"),
             getThreadShellById: () => Effect.succeed(Option.none()),
             getThreadDetailById: () => Effect.succeed(Option.none()),
+            getUserInputActivity: () => Effect.die("unused"),
             getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
             searchThreads: () => Effect.succeed({ matches: [] }),
           }),
