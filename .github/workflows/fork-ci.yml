@@ -172,13 +172,17 @@ jobs:
           grep -n "__clerk_internal_electron_passkeys" apps/desktop/dist-electron/preload.cjs
 
   test_server:
-    name: Fork Test (Server)
+    name: Fork Test (Server ${{ matrix.shard }}/3)
     needs: changes
     if: needs.changes.outputs.run_ci == 'true'
-    # The server suite disables Vitest file parallelism for stability. Keep it on
-    # its own runner so its long serial tail overlaps the other workspace tests.
+    # The server suite disables Vitest file parallelism for stability. Shards
+    # keep files serial on each runner while dividing the suite across runners.
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -197,13 +201,24 @@ jobs:
           run-install: true
 
       - name: Test server
-        run: vp run --filter ./apps/server test
+        run: vp run --filter ./apps/server test --shard ${{ matrix.shard }}/${{ strategy.job-total }}
 
       - name: Fetch previous fork nightly
+        if: matrix.shard == 1
         run: git fetch --no-tags origin '+refs/heads/nightly:refs/remotes/origin/nightly'
 
       - name: Test previous nightly schema upgrade
+        if: matrix.shard == 1
         run: vp run --filter ./apps/server test:nightly-upgrade -- origin/nightly
+
+  test_server_required:
+    name: Fork Test (Server)
+    needs: [changes, test_server]
+    if: ${{ !cancelled() && needs.changes.outputs.run_ci == 'true' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every server shard to pass
+        run: test '${{ needs.test_server.result }}' = success
 
   test_workspace:
     name: Fork Test (Workspace)
