@@ -3,10 +3,6 @@ import type {
   ResolvedKeybindingsConfig,
   T3ProjectFileScript,
 } from "@t3tools/contracts";
-import {
-  isAtomCommandInterrupted,
-  squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
 import { ChevronDownIcon, DownloadIcon, PlusIcon, SettingsIcon } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
@@ -14,6 +10,7 @@ import { commandForProjectScript, primaryProjectScript } from "~/projectScripts"
 import { shortcutLabelForCommand } from "~/keybindings";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
+  editorRequestForFileScript,
   editorRequestForScript,
   ProjectScriptEditorDialog,
   ScriptIcon,
@@ -107,25 +104,8 @@ export default function ProjectScriptsControl({
     [onAddScript, onUpdateScript],
   );
 
-  const importFileScript = async (fileScript: T3ProjectFileScript) => {
-    const payload: NewProjectScriptInput = {
-      name: fileScript.name,
-      command: fileScript.command,
-      icon: fileScript.icon ?? "play",
-      runOnWorktreeCreate: fileScript.runOnWorktreeCreate ?? false,
-      keybinding: null,
-    };
-    const result = await onAddScript(payload);
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      // Surface the failure through the regular add dialog, prefilled so the
-      // user can adjust and retry.
-      const error = squashAtomCommandFailure(result);
-      setEditorRequest({
-        scriptId: null,
-        initial: payload,
-        error: error instanceof Error ? error.message : "Failed to import action.",
-      });
-    }
+  const importFileScript = (fileScript: T3ProjectFileScript) => {
+    setEditorRequest(editorRequestForFileScript(fileScript));
   };
 
   const importMenuItems = importableScripts.length > 0 && (
@@ -137,10 +117,12 @@ export default function ProjectScriptsControl({
           <MenuItem
             key={`${fileScript.name} ${fileScript.command}`}
             className={dropdownItemClassName}
-            onClick={() => void importFileScript(fileScript)}
+            onClick={() => importFileScript(fileScript)}
           >
             <ScriptIcon icon={fileScript.icon ?? "play"} className="size-4" />
-            <span className="truncate">{fileScript.name}</span>
+            <span className="truncate">
+              {fileScript.runOnWorktreeCreate ? `${fileScript.name} (setup)` : fileScript.name}
+            </span>
             <MenuShortcut className="ms-auto">
               <DownloadIcon className="size-3.5" aria-label="Import" />
             </MenuShortcut>

@@ -1159,6 +1159,31 @@ features:
       tracking: []
       retire_when: Upstream supports the same project-action roles and consistent icon presentation across web and mobile.
 
+  - id: project-action-import-review
+    title: Review project file actions before importing
+    status: maintained
+    prs: [399]
+    invariants:
+      - Selecting a t3.json action in the thread action menu or Project Settings opens a prefilled Add Action form without saving or running the command.
+      - The form shows the command and worktree-creation setting, leaves the keybinding empty, and allows editing or canceling before saving a checkout-local copy.
+      - Enabling worktree runs or replacing an existing setup action is stated before saving; later t3.json edits do not silently change saved actions.
+    implementation_paths:
+      - apps/web/src/components/ProjectScriptsControl.tsx
+      - apps/web/src/components/projectScriptEditor.tsx
+      - apps/web/src/components/settings/ProjectSettingsPanel.tsx
+    upstream_paths:
+      - apps/web/src/components/ProjectScriptsControl.tsx
+      - apps/web/src/components/projectScriptEditor.tsx
+      - apps/web/src/components/settings/ProjectSettingsPanel.tsx
+    tests:
+      - apps/web/src/projectScripts.test.ts
+      - packages/contracts/src/t3ProjectFile.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/d7819c18813fa03b033cc1c9472c9acc0ffc0618
+      retire_when: Upstream requires review of project file commands and worktree setup before importing from both web entry points, while keeping imported actions independent of later file changes.
+
   - id: project-agent-instructions
     title: Apply project instructions to every agent session
     status: maintained
