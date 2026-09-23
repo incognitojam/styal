@@ -85,6 +85,9 @@ it.each([
   ["latest", "older"],
   ["nightly", "missing"],
   ["latest", "wrong-bytes"],
+  ["latest", "wrong-registry-bytes"],
+  ["latest", "tarball-delay"],
+  ["latest", "registry-timeout"],
   ["nightly", "registry-error"],
   ["latest", "unpublished"],
 ])("publishes %s with %s registry state", (tag, scenario) => {
@@ -93,11 +96,13 @@ it.each([
   // tested above; fixed digests isolate the integrity and tag decisions here.
   const result = NodeChildProcess.spawnSync("bash", ["-s"], {
     encoding: "utf8",
+    timeout: 30_000,
     input: `
 node() { return 0; }
 openssl() {
   if [[ "$1" == base64 ]]; then cat; else printf fixture; fi
 }
+CURL_ATTEMPTS=0
 npm() {
   case "$1:$3" in
     publish:--access) echo published ;;
@@ -110,7 +115,28 @@ npm() {
     view:dist-tags)
       [[ "$SCENARIO" != registry-error ]] || return 1
       printf '%s\\n' "$TAGS_JSON" ;;
+    view:dist)
+      if [[ "$SCENARIO" == wrong-registry-bytes ]]; then
+        printf '%s\\n' '{"integrity":"sha512-wrong","tarball":"https://example.invalid/cli.tgz"}'
+      else
+        printf '%s\\n' '{"integrity":"sha512-fixture","tarball":"https://example.invalid/cli.tgz"}'
+      fi ;;
     *) return 1 ;;
+  esac
+}
+curl() {
+  if [[ "$SCENARIO" == registry-timeout ]]; then return 22; fi
+  if [[ "$SCENARIO" == tarball-delay && "$CURL_ATTEMPTS" == 0 ]]; then
+    CURL_ATTEMPTS=1
+    return 22
+  fi
+  return 0
+}
+sleep() {
+  case "$SCENARIO" in
+    tarball-delay) return 0 ;;
+    registry-timeout) SECONDS=$((SECONDS + 1200)) ;;
+    *) echo 'Unexpected registry wait' >&2; return 1 ;;
   esac
 }
 ${publishCommand}
@@ -125,13 +151,23 @@ ${publishCommand}
       ),
     },
   });
+  expect(result.error).toBeUndefined();
   expect(result.status, result.stderr).toBe(
-    scenario === "matching" || scenario === "unpublished" ? 0 : 1,
+    scenario === "matching" || scenario === "unpublished" || scenario === "tarball-delay" ? 0 : 1,
   );
   expect(result.stdout.split("\n").filter((line) => line === "published")).toHaveLength(
     scenario === "unpublished" ? 6 : 0,
   );
   if (scenario === "older" || scenario === "missing") {
     expect(result.stderr).toContain("Repair the channel tag before retrying");
+  }
+  if (scenario === "tarball-delay") {
+    expect(result.stdout).toContain("Waiting for npm to finish processing");
+  }
+  if (scenario === "registry-timeout") {
+    expect(result.stderr).toContain("Timed out waiting for npm to make");
+  }
+  if (scenario === "wrong-registry-bytes") {
+    expect(result.stderr).toContain("does not match");
   }
 });
