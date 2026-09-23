@@ -1101,7 +1101,7 @@ features:
     prs: [222]
     invariants:
       - Provider startup validates the resolved project or worktree path before launching a session and reports a controlled actionable error when the workspace is missing.
-      - Raw provider failure details remain in native logs while clients receive a bounded message instead of a provider-specific or replacement stream failure.
+      - A failed Claude turn reports Claude's user-facing result error, or an actionable message derived from the assistant error when Claude lists none, and a later stream failure does not replace it.
     implementation_paths:
       - apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
       - apps/server/src/provider/Layers/ClaudeAdapter.ts

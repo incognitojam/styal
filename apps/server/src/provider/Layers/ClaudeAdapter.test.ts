@@ -3446,7 +3446,7 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
-  it.effect("maps typed Claude failures to safe actionable messages", () => {
+  it.effect("maps typed Claude failures without a listed error to actionable messages", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
       const adapter = yield* ClaudeAdapter;
@@ -3469,8 +3469,7 @@ describe("ClaudeAdapterLive", () => {
         {
           subtype: "error_during_execution",
           terminalReason: "prompt_too_long",
-          expected:
-            "Claude could not continue because the conversation exceeds the context limit. Start a new thread or shorten the prompt.",
+          expected: "Claude stopped: the prompt exceeds the model's context window.",
         },
         {
           subtype: "error_during_execution",
@@ -3604,7 +3603,7 @@ describe("ClaudeAdapterLive", () => {
           },
           modelUsage: {},
           permission_denials: [],
-          errors: ["provider diagnostic that must not reach the client"],
+          errors: [],
           ...(testCase.terminalReason ? { terminal_reason: testCase.terminalReason } : {}),
           session_id: `sdk-session-safe-error-${index + 1}`,
           uuid: "00000000-0000-4000-8000-000000000002",
@@ -3623,7 +3622,7 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
-  it.effect("keeps a terminal result error in the native log without surfacing it", () => {
+  it.effect("surfaces a terminal result error and keeps it in the native log", () => {
     const nativeEvents: Array<{
       event?: {
         method?: string;
@@ -3681,7 +3680,7 @@ describe("ClaudeAdapterLive", () => {
       const runtimeErrors = runtimeEvents.filter((event) => event.type === "runtime.error");
       assert.deepEqual(
         runtimeErrors.map((event) => event.payload.message),
-        ["Claude turn failed."],
+        [terminalError],
       );
 
       const completed = runtimeEvents.find((event) => event.type === "turn.completed");
@@ -3689,7 +3688,7 @@ describe("ClaudeAdapterLive", () => {
       if (completed?.type === "turn.completed") {
         assert.equal(String(completed.turnId), String(turn.turnId));
         assert.equal(completed.payload.state, "failed");
-        assert.equal(completed.payload.errorMessage, "Claude turn failed.");
+        assert.equal(completed.payload.errorMessage, terminalError);
       }
       assert.equal(runtimeEvents.at(-1)?.type, "session.exited");
 
@@ -3764,7 +3763,7 @@ describe("ClaudeAdapterLive", () => {
         runtimeEvents
           .filter((event) => event.type === "runtime.error")
           .map((event) => event.payload.message),
-        ["Claude turn failed.", "Claude runtime stream failed."],
+        ["first turn failed", "Claude runtime stream failed."],
       );
       const completedTurns = runtimeEvents.filter((event) => event.type === "turn.completed");
       assert.deepEqual(
