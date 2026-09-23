@@ -42,7 +42,6 @@ export function resolvePullRequestPrimaryControl(input: {
   readonly mergeability: PullRequestMergeability;
   readonly checksState: PullRequestChecksState | null;
   readonly mergeReadiness?: PullRequestMergeReadiness | undefined;
-  readonly isBehind: boolean;
   readonly autoMergeEnabled: boolean | undefined;
   readonly hasMergeMethod: boolean;
   readonly canMerge: boolean;
@@ -58,7 +57,6 @@ export function resolvePullRequestPrimaryControl(input: {
     mergeability: input.mergeability,
     mergeReadiness: input.mergeReadiness,
     autoMergeArmed: false,
-    isBehind: input.isBehind,
     canReady: input.canMarkReady,
     canMerge: input.canMerge,
     canEnableAutoMerge: input.canEnableAutoMerge,
@@ -202,7 +200,6 @@ export function resolvePullRequestPrimaryAction(input: {
   readonly mergeability: PullRequestMergeability;
   readonly mergeReadiness?: PullRequestMergeReadiness | undefined;
   readonly autoMergeArmed: boolean;
-  readonly isBehind: boolean;
   readonly canReady: boolean;
   readonly canMerge: boolean;
   readonly canEnableAutoMerge: boolean;
@@ -215,7 +212,6 @@ export function resolvePullRequestPrimaryAction(input: {
   if (input.mergeability === "conflicting") return "resolve";
   if (!input.hasMergeMethod) return null;
   if (input.mergeReadiness === "blocked") {
-    if (input.isBehind) return null;
     return input.canEnableAutoMerge ? "enable-auto-merge" : null;
   }
   return "merge";
@@ -1021,6 +1017,19 @@ export function resolveBaseFreshness(detail: {
     behindBy: detail.behindBy ?? null,
     methods: offered.filter((method) => allowed.includes(method)),
   };
+}
+
+/** A required update is a repository rule, not merely a branch that happens to be behind. */
+export function resolveRequiredBranchUpdate(
+  detail: Parameters<typeof resolveBaseFreshness>[0] & {
+    readonly baseBranch: string;
+    readonly isDraft: boolean;
+    readonly requiresUpToDateBranch?: boolean | undefined;
+  },
+) {
+  if (detail.isDraft || detail.requiresUpToDateBranch !== true) return null;
+  const freshness = resolveBaseFreshness(detail);
+  return freshness === null ? null : { ...freshness, baseBranch: detail.baseBranch };
 }
 
 /**

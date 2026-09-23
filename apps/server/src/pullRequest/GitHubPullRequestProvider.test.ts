@@ -168,6 +168,7 @@ describe("gitHubViewerPermissions", () => {
         requestReviewers: false,
         labels: false,
       });
+      expect(detail.requiresUpToDateBranch).toBe(true);
       expect(detail.checks).toEqual([
         {
           name: "build",
@@ -246,7 +247,11 @@ describe("gitHubViewerPermissions", () => {
           getRequiredChecks: () =>
             Effect.succeed([{ name: "build", url: "https://example.test/checks/build" }]),
           getBranchPolicy: () =>
-            Effect.succeed({ requiredChecks: ["build", "security"], allowedMergeMethods: null }),
+            Effect.succeed({
+              requiredChecks: ["build", "security"],
+              requiresUpToDateBranch: true,
+              allowedMergeMethods: null,
+            }),
           getPullRequestStack: () => Effect.succeed(null),
         }),
       ),

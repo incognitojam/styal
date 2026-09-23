@@ -407,6 +407,9 @@ export const make = Effect.gen(function* () {
               repository.mergeCapabilities,
               detail.branchPolicy?.allowedMergeMethods ?? null,
             ),
+            ...(detail.branchPolicy?.requiresUpToDateBranch === undefined
+              ? {}
+              : { requiresUpToDateBranch: detail.branchPolicy.requiresUpToDateBranch }),
             viewerPermissions: gitHubViewerPermissions({
               ...viewerAccess,
               canUpdateBranch: detail.comparison?.viewerCanUpdate === true,

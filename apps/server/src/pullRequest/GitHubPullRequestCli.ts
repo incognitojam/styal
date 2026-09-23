@@ -1845,6 +1845,7 @@ export const make = Effect.gen(function* () {
           Effect.map((policy) => ({
             available: true as const,
             contexts: policy.requiredChecks,
+            requiresUpToDateBranch: policy.requiresUpToDateBranch,
             allowedMergeMethods: policy.allowedMergeMethods,
           })),
           // Rulesets do not exist on older GHES releases. That says nothing about classic
@@ -1852,6 +1853,7 @@ export const make = Effect.gen(function* () {
           Effect.orElseSucceed(() => ({
             available: false as const,
             contexts: [],
+            requiresUpToDateBranch: undefined,
             allowedMergeMethods: null,
           })),
         );
@@ -1867,10 +1869,18 @@ export const make = Effect.gen(function* () {
         query: BRANCH_PROTECTION_REQUIRED_CHECKS_GRAPHQL_QUERY,
         decode: decodeBranchProtectionRequiredChecksJson,
       }).pipe(
-        Effect.map((contexts) => ({ available: true as const, contexts })),
+        Effect.map((policy) => ({
+          available: true as const,
+          contexts: policy.requiredChecks,
+          requiresUpToDateBranch: policy.requiresUpToDateBranch,
+        })),
         // A schema without branchProtectionRule, or a policy this viewer cannot read, is unknown
         // for this source rather than evidence that no classic required checks exist.
-        Effect.orElseSucceed(() => ({ available: false as const, contexts: [] })),
+        Effect.orElseSucceed(() => ({
+          available: false as const,
+          contexts: [],
+          requiresUpToDateBranch: undefined,
+        })),
       );
       return Effect.all([rulesetPolicy, classicPolicy], { concurrency: 2 }).pipe(
         Effect.flatMap(([rulesets, classic]) => {
@@ -1886,8 +1896,18 @@ export const make = Effect.gen(function* () {
           }
           // Classic protection has no say over strategies — that half of the answer is the
           // rulesets' alone, and a host without them narrows nothing.
+          // A strict rule from either source is conclusive. A loose answer needs both sources:
+          // one unavailable read might have hidden the rule that requires an update.
+          const requiresUpToDateBranch =
+            rulesets.requiresUpToDateBranch === true || classic.requiresUpToDateBranch === true
+              ? true
+              : rulesets.requiresUpToDateBranch === false &&
+                  classic.requiresUpToDateBranch === false
+                ? false
+                : undefined;
           return Effect.succeed({
             requiredChecks: [...new Set([...rulesets.contexts, ...classic.contexts])],
+            ...(requiresUpToDateBranch === undefined ? {} : { requiresUpToDateBranch }),
             allowedMergeMethods: rulesets.allowedMergeMethods,
           });
         }),

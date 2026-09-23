@@ -53,7 +53,9 @@ T3 Code works with the platforms your team already uses:
 - Open several reviews from the **Pull requests** page as tabs in the right panel
 - On web and desktop, follow pull request links in a thread's PR descriptions or comments to open another tab beside the same thread, including other PRs in a stack. The linked repository must be available in that thread's environment. Cmd/Ctrl-click opens the link in your browser.
 - Use **Checks** to see which GitHub checks are required by repository policy, including checks
-  GitHub is still waiting to receive, and whether the pull request is ready to merge or blocked
+  GitHub is still waiting to receive, and whether the pull request is ready to merge or blocked. When
+  repository rules require an out-of-date branch to be updated, Checks explains why and offers the
+  available update methods. Enabling auto-merge waits for that update; it does not perform it.
 - When GitHub is waiting on repository requirements and auto-merge is available, **Auto-merge**
   replaces the primary **Merge** action and merges the pull request as soon as it becomes ready
 - Read ordinary files expanded by default in **Code changes**; lockfiles and oversized files stay

@@ -351,6 +351,7 @@ describe("pull request detail decoding", () => {
                 type: "required_status_checks",
                 parameters: {
                   required_status_checks: [{ context: "build", integration_id: 1 }, "legacy"],
+                  strict_required_status_checks_policy: true,
                 },
               },
             ],
@@ -365,7 +366,11 @@ describe("pull request detail decoding", () => {
           ]),
         ),
       ),
-    ).toEqual({ requiredChecks: ["build", "legacy"], allowedMergeMethods: null });
+    ).toEqual({
+      requiredChecks: ["build", "legacy"],
+      requiresUpToDateBranch: true,
+      allowedMergeMethods: null,
+    });
     expect(
       expectSuccess(
         decodeBranchProtectionRequiredChecksJson(
@@ -375,6 +380,7 @@ describe("pull request detail decoding", () => {
                 ref: {
                   branchProtectionRule: {
                     requiredStatusCheckContexts: ["classic", " classic ", ""],
+                    requiresStrictStatusChecks: true,
                   },
                 },
               },
@@ -382,7 +388,7 @@ describe("pull request detail decoding", () => {
           }),
         ),
       ),
-    ).toEqual(["classic"]);
+    ).toEqual({ requiredChecks: ["classic"], requiresUpToDateBranch: true });
   });
 
   it("reads the strategies a base branch's rulesets leave open", () => {
@@ -401,7 +407,11 @@ describe("pull request detail decoding", () => {
     );
 
     // Both rules apply, so only the strategy they agree on survives.
-    expect(decoded).toEqual({ requiredChecks: [], allowedMergeMethods: ["squash"] });
+    expect(decoded).toEqual({
+      requiredChecks: [],
+      requiresUpToDateBranch: false,
+      allowedMergeMethods: ["squash"],
+    });
   });
 
   it("treats a branch no rule speaks for as unnarrowed", () => {
@@ -416,6 +426,60 @@ describe("pull request detail decoding", () => {
         null,
       );
     }
+  });
+
+  it("requires an update only when an effective strict rule names required checks", () => {
+    const policy = expectSuccess(
+      decodeBranchRulesJson(
+        JSON.stringify([
+          [
+            {
+              type: "required_status_checks",
+              parameters: {
+                strict_required_status_checks_policy: true,
+                required_status_checks: [],
+              },
+            },
+            {
+              type: "required_status_checks",
+              parameters: {
+                strict_required_status_checks_policy: false,
+                required_status_checks: [{ context: "build" }],
+              },
+            },
+          ],
+        ]),
+      ),
+    );
+    expect(policy.requiresUpToDateBranch).toBe(false);
+  });
+
+  it("keeps an incomplete required-check rule unknown unless another rule is conclusively strict", () => {
+    const incompleteRule = {
+      type: "required_status_checks",
+      parameters: { required_status_checks: [{ context: "build" }] },
+    };
+    const unknown = expectSuccess(decodeBranchRulesJson(JSON.stringify([[incompleteRule]])));
+    expect(unknown.requiredChecks).toEqual(["build"]);
+    expect(unknown.requiresUpToDateBranch).toBeUndefined();
+
+    const strict = expectSuccess(
+      decodeBranchRulesJson(
+        JSON.stringify([
+          [incompleteRule],
+          [
+            {
+              type: "required_status_checks",
+              parameters: {
+                strict_required_status_checks_policy: true,
+                required_status_checks: [{ context: "security" }],
+              },
+            },
+          ],
+        ]),
+      ),
+    );
+    expect(strict.requiresUpToDateBranch).toBe(true);
   });
 
   it("narrows repository merge capabilities by the branch's rules", () => {

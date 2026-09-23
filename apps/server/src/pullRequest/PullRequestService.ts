@@ -1302,6 +1302,9 @@ export const make = Effect.gen(function* () {
             ...(changeRequest.mergeReadiness === undefined
               ? {}
               : { mergeReadiness: changeRequest.mergeReadiness }),
+            ...(changeRequest.requiresUpToDateBranch === undefined
+              ? {}
+              : { requiresUpToDateBranch: changeRequest.requiresUpToDateBranch }),
             additions: changeRequest.additions,
             deletions: changeRequest.deletions,
             changedFiles: changeRequest.changedFiles,

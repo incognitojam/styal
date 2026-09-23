@@ -9,7 +9,11 @@
  * Deliberately hook-free — it draws what the detail already holds, so the panel keeps it mounted
  * behind the other tabs for nothing.
  */
-import type { PullRequestCheck, PullRequestMergeReadiness } from "@t3tools/contracts";
+import type {
+  PullRequestCheck,
+  PullRequestMergeReadiness,
+  PullRequestUpdateMethod,
+} from "@t3tools/contracts";
 import {
   ArrowUpRightIcon,
   CircleCheckIcon,
@@ -165,6 +169,9 @@ export function PullRequestChecksTab({
   checks,
   isDraft = false,
   mergeReadiness,
+  requiredBranchUpdate,
+  actionPending = false,
+  onUpdateBranch,
   pendingFinding,
   fixCheckLabel = "Fix",
   onFixFinding,
@@ -173,6 +180,13 @@ export function PullRequestChecksTab({
   isDraft?: boolean;
   /** The host's repository-policy-aware merge verdict, where it exposes one. */
   mergeReadiness?: PullRequestMergeReadiness | undefined;
+  requiredBranchUpdate?: {
+    readonly baseBranch: string;
+    readonly behindBy: number | null;
+    readonly methods: ReadonlyArray<PullRequestUpdateMethod>;
+  } | null;
+  actionPending?: boolean;
+  onUpdateBranch?: (method: PullRequestUpdateMethod) => void;
   /** The hand-off currently preparing, if any, so only the check it belongs to says so. */
   pendingFinding?: string | null;
   fixCheckLabel?: string;
@@ -204,6 +218,13 @@ export function PullRequestChecksTab({
               toneClassName: "text-muted-foreground",
             };
   const requiredCount = checks.filter((check) => check.required === true).length;
+  const requiredBranchUpdateMessage = requiredBranchUpdate
+    ? `This branch is ${
+        requiredBranchUpdate.behindBy === null
+          ? "behind"
+          : `${requiredBranchUpdate.behindBy} ${requiredBranchUpdate.behindBy === 1 ? "commit" : "commits"} behind`
+      } ${requiredBranchUpdate.baseBranch}. Auto-merge will wait until it is updated.`
+    : null;
   const handoffPending = pendingFinding !== null && pendingFinding !== undefined;
   // A host can report the same named run more than once and checks carry no id. Keep the
   // occurrence beside the host-provided fields so repeated rows still receive distinct keys.
@@ -215,7 +236,7 @@ export function PullRequestChecksTab({
 
   return (
     <div className="h-full overflow-y-auto">
-      {mergePresentation || rollup ? (
+      {mergePresentation || rollup || requiredBranchUpdate ? (
         // The verdict rides the top of the scroll box the way the summary's section headings do,
         // so a long list of runs never scrolls its own answer out of sight.
         <div className="sticky top-0 z-10 space-y-1 bg-background px-4 py-2.5">
@@ -241,6 +262,27 @@ export function PullRequestChecksTab({
                 {requiredCount > 0 ? `${requiredCount} required · ` : null}
                 {summarizePullRequestChecks(checks)}
               </span>
+            </div>
+          ) : null}
+          {requiredBranchUpdate ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-xs">
+              <div className="min-w-0 flex-1 basis-56">
+                <p className="font-medium text-foreground">Update branch required</p>
+                <p className="mt-0.5 text-muted-foreground">{requiredBranchUpdateMessage}</p>
+              </div>
+              {onUpdateBranch
+                ? requiredBranchUpdate.methods.map((method) => (
+                    <Button
+                      key={method}
+                      size="xs"
+                      variant="outline"
+                      disabled={actionPending}
+                      onClick={() => onUpdateBranch(method)}
+                    >
+                      {method === "rebase" ? "Update with rebase" : "Update branch"}
+                    </Button>
+                  ))
+                : null}
             </div>
           ) : null}
         </div>

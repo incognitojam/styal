@@ -55,9 +55,11 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [Source control integrations](./source-control.md).
 - **A dedicated view of required checks.** T3 Code already displays checks and supports auto-merge.
   styal adds a separate Checks tab that identifies checks required by repository policy and shows
-  required checks that have not reported yet. Its merge action accounts for GitHub's policy blockers,
-  including pending reviews or an out-of-date branch.
-  [Code review](./source-control.md#manage-code-reviews-without-context-switching).
+  required checks that have not reported yet. When branch rules require current checks, it explains
+  why an out-of-date branch must be updated before auto-merge can finish and offers the permitted
+  update methods. [Code review](./source-control.md#manage-code-reviews-without-context-switching).
+  Compared with [T3 Code revision a493946](https://github.com/pingdotgg/t3code/tree/a493946bb42ab16e1d18285dac3e9e4603651330),
+  checked September 23, 2026.
 
 ## Staying oriented while agents work
 

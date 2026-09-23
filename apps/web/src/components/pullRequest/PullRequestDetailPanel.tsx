@@ -135,6 +135,7 @@ import {
   resolveDisplayedPullRequestDetail,
   resolvePullRequestPrimaryControl,
   resolveBaseFreshness,
+  resolveRequiredBranchUpdate,
   type PullRequestFinding,
   shouldRefreshPullRequestActivity,
   writePullRequestDetailSnapshot,
@@ -1261,6 +1262,7 @@ function PullRequestDetailPanelBody({
   // Out of date with the base, and still cleanly mergeable — the one pairing an update button
   // exists for. Null everywhere else, including hosts that cannot compare at all.
   const freshness = detail === null ? null : resolveBaseFreshness(detail);
+  const requiredBranchUpdate = detail === null ? null : resolveRequiredBranchUpdate(detail);
   // A host that cannot produce a patch has no Code tab to open. The tabs themselves stay hidden
   // until the detail arrives, so the loading ghost is the panel's only unfinished UI.
   const visibleTabs = TABS.filter(
@@ -1288,7 +1290,6 @@ function PullRequestDetailPanelBody({
         mergeability: detail.mergeability,
         checksState,
         mergeReadiness: detail.mergeReadiness,
-        isBehind: detail.baseComparison === "behind",
         autoMergeEnabled: detail.autoMergeEnabled,
         hasMergeMethod: allowedMergeMethods.length > 0,
         canMerge: can("merge"),
@@ -2405,6 +2406,9 @@ function PullRequestDetailPanelBody({
                   checks={detail.checks}
                   isDraft={detail.isDraft}
                   mergeReadiness={detail.mergeReadiness}
+                  requiredBranchUpdate={requiredBranchUpdate}
+                  actionPending={actionPending}
+                  onUpdateBranch={(method) => void perform("update-branch", undefined, method)}
                   pendingFinding={handoff}
                   fixCheckLabel={handoffLabels.fixCheck}
                   onFixFinding={startFixFinding}
@@ -2480,10 +2484,7 @@ function PullRequestDetailPanelBody({
               {confirmAction === "merge"
                 ? `This merges #${reference.number} using ${selectedMergeMethod}.`
                 : confirmAction === "enable-auto-merge"
-                  ? // The host merges this as soon as it considers the pull request ready, which
-                    // may be immediately — there is no telling from here whether anything is
-                    // still outstanding.
-                    `This merges #${reference.number} using ${selectedMergeMethod} as soon as the host considers it ready, which may be immediately.`
+                  ? `This merges #${reference.number} using ${selectedMergeMethod} as soon as the host considers it ready.${requiredBranchUpdate ? " This branch must be updated first; enabling auto-merge will not update it." : " This may be immediate."}`
                   : confirmAction === "revert"
                     ? `This opens a new pull request that reverses the changes merged by #${reference.number}.`
                     : confirmAction === "approve-workflows"
