@@ -71,4 +71,8 @@ describe("resolveUsageLimitsAfterProbe", () => {
     expect(resolveUsageLimitsAfterProbe({ published, probed: unsupported })).toBe(unsupported);
     expect(resolveUsageLimitsAfterProbe({ published: undefined, probed: failed })).toBe(failed);
   });
+
+  it("clears the windows when the probe reports no limits", () => {
+    expect(resolveUsageLimitsAfterProbe({ published, probed: undefined })).toBeUndefined();
+  });
 });

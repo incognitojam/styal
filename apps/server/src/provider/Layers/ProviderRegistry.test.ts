@@ -429,6 +429,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             status.message,
             "Codex CLI is not authenticated. Run `codex login` and try again.",
           );
+          // No limits at all, rather than a failed read, so the previous
+          // account's windows are cleared instead of kept.
+          assert.strictEqual(status.usageLimits, undefined);
         }),
       );
 

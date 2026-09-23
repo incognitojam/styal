@@ -1330,12 +1330,14 @@ features:
   - id: provider-subscription-limits
     title: Show provider subscription usage limits
     status: review-needed
-    prs: [225]
+    prs: [225, 409]
     invariants:
       - Upstream's provider `usageLimits` snapshot is the only server model for subscription windows; the fork adds no parallel limit schema or runtime event shape.
       - The composer context window popover and the settings provider card show the active instance's windows with their reset times, drop a window whose reset has passed, and show nothing for a provider without usage limits.
       - A restart keeps the last known windows from the provider status cache until a live probe replaces them.
+      - Signing out of Codex clears its windows instead of keeping the previous account's windows as a failed read.
     implementation_paths:
+      - apps/server/src/provider/Layers/CodexProvider.ts
       - apps/server/src/provider/providerStatusCache.ts
       - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/ContextWindowMeter.tsx
@@ -1343,6 +1345,7 @@ features:
       - apps/web/src/components/settings/providerStatus.ts
       - apps/web/src/lib/providerRateLimits.ts
     upstream_paths:
+      - apps/server/src/provider/Layers/CodexProvider.ts
       - apps/server/src/provider/providerStatusCache.ts
       - apps/server/src/provider/providerUsageLimits.ts
       - apps/web/src/components/chat/ChatComposer.tsx
@@ -1352,14 +1355,16 @@ features:
       - packages/contracts/src/providerUsageLimits.ts
       - packages/shared/src/usageLimits.ts
     tests:
+      - apps/server/src/provider/Layers/ProviderRegistry.test.ts
       - apps/server/src/provider/providerStatusCache.test.ts
+      - apps/server/src/provider/providerUsageLimits.test.ts
       - apps/web/src/components/settings/providerStatus.test.ts
       - apps/web/src/lib/providerRateLimits.test.ts
     upstream:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/9507
-      retire_when: Upstream shows subscription limits in the composer and on the provider settings card, hides expired windows, and restores cached limits after a restart.
+      retire_when: Upstream shows subscription limits in the composer and on the provider settings card, hides expired windows, and restores cached limits after a restart, and clears Codex limits on sign-out.
 
   - id: provider-task-identity-recovery
     title: Recover background task identity after provider restarts
