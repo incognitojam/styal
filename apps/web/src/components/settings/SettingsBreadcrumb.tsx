@@ -48,6 +48,7 @@ export interface SettingsScopeBreadcrumbProps {
   readonly groups: readonly SidebarProjectSnapshot[];
   readonly environments: readonly EnvironmentPresentation[];
   readonly onChange: (next: SettingsScopeSearch) => void;
+  readonly singleEnvironmentId?: string | undefined;
 }
 
 /**
@@ -130,11 +131,12 @@ function EnvironmentScopeMenu({
   groups,
   environments,
   onChange,
+  singleEnvironmentId,
 }: SettingsScopeBreadcrumbProps) {
   const resolved = resolveSettingsScope(value, groups, environments);
   const environmentValue = environmentAxisValue(
     value,
-    resolved.kind === "checkout" ? resolved.environmentId : null,
+    resolved.kind === "checkout" ? resolved.environmentId : singleEnvironmentId,
   );
   const selected = environments.find(
     (environment) => environment.environmentId === environmentValue,
@@ -166,14 +168,18 @@ function EnvironmentScopeMenu({
           if (typeof next === "string") onChange(selectEnvironmentAxis(value, next));
         }}
       >
-        <MenuRadioItem value={ALL_ENVIRONMENTS_VALUE}>
-          <span className="flex min-w-0 items-center gap-2">
-            <LayersIcon aria-hidden className="size-3.5" />
-            <span className="min-w-0 flex-1 truncate">All environments</span>
-            <MenuRadioItemIndicator />
-          </span>
-        </MenuRadioItem>
-        <MenuSeparator />
+        {singleEnvironmentId ? null : (
+          <>
+            <MenuRadioItem value={ALL_ENVIRONMENTS_VALUE}>
+              <span className="flex min-w-0 items-center gap-2">
+                <LayersIcon aria-hidden className="size-3.5" />
+                <span className="min-w-0 flex-1 truncate">All environments</span>
+                <MenuRadioItemIndicator />
+              </span>
+            </MenuRadioItem>
+            <MenuSeparator />
+          </>
+        )}
         {environments.map((environment) => (
           <MenuRadioItem key={environment.environmentId} value={environment.environmentId}>
             <span className="flex min-w-0 items-center gap-2">

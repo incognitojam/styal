@@ -122,7 +122,7 @@ function SettingsContentLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const canGoBack = useCanGoBack();
-  const { search, selectScope } = useSettingsScope();
+  const { search, selectScope, environment } = useSettingsScope();
   const groups = useSettingsProjectGroups();
   const { environments } = useEnvironments();
   const [restoreSignal, setRestoreSignal] = useState(0);
@@ -165,7 +165,16 @@ function SettingsContentLayout() {
               pathname={location.pathname}
               scope={
                 showScope
-                  ? { value: search, groups, environments, onChange: selectScope }
+                  ? {
+                      value: search,
+                      groups,
+                      environments,
+                      onChange: selectScope,
+                      singleEnvironmentId:
+                        location.pathname === "/settings/providers"
+                          ? environment?.environmentId
+                          : undefined,
+                    }
                   : undefined
               }
             />
