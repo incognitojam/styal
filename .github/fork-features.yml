@@ -142,12 +142,14 @@ features:
       - Claude's complete built-in catalog comes from a validated manifest bundled for offline startup and refreshed from the styal fork, with invalid fetches preserving the last valid cache or bundle and a newer bundle replacing an older cache.
       - Provider-owned schemas and installed Claude Code versions filter manifest data before clients receive model aliases, presentation metadata, effort mappings, and context-window capabilities.
       - The fork can publish model availability independently of an app release without treating Claude's initialization response as an account-entitlement list.
+      - New Claude Code threads prefer Opus 5.5 when the installed CLI supports it; older CLIs use an available model from the filtered catalog.
     implementation_paths:
       - apps/server/src/provider/ClaudeModelCatalog.ts
       - apps/server/src/provider/ClaudeModelManifest.ts
       - apps/server/src/provider/ModelManifest.ts
       - apps/server/src/provider/model-manifest.json
       - apps/web/src/providerModels.ts
+      - packages/contracts/src/model.ts
       - packages/shared/src/model.ts
     upstream_paths:
       - apps/server/src/provider/ClaudeModelCatalog.ts
@@ -155,6 +157,7 @@ features:
       - apps/server/src/provider/ModelManifest.ts
       - apps/server/src/provider/model-manifest.json
       - apps/web/src/providerModels.ts
+      - packages/contracts/src/model.ts
       - packages/shared/src/model.ts
     tests:
       - apps/server/src/provider/ClaudeModelCatalog.test.ts

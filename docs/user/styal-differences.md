@@ -19,6 +19,9 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Workspaces and agent sessions
 
+- **Claude Code starts with Opus 5.5.** New Claude Code threads select Opus 5.5 when the installed
+  CLI supports it; older installations use an available Claude model. T3 Code defaults to Fable 5.1
+  as of [revision f5ef0dd](https://github.com/pingdotgg/t3code/tree/f5ef0ddb90a8c36584e181b1913e7b8a5df30ffc0618).
 - **Worktree defaults and workspace grouping.** Both apps support isolated Git worktrees. styal
   defaults new threads to a worktree, while T3 Code defaults to the local checkout; either default can
   be changed. styal also nests threads sharing a workspace in the web and desktop sidebar, mobile
