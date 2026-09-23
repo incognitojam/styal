@@ -98,8 +98,6 @@ export default function ProjectScriptsControl({
       ),
     [fileScripts, scripts],
   );
-  const dropdownItemClassName =
-    "data-highlighted:bg-transparent data-highlighted:text-foreground hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground data-highlighted:hover:bg-accent data-highlighted:hover:text-accent-foreground data-highlighted:focus-visible:bg-accent data-highlighted:focus-visible:text-accent-foreground";
 
   const openAddDialog = () => {
     setEditorRequest({ scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT });
@@ -130,8 +128,7 @@ export default function ProjectScriptsControl({
           <MenuItem
             density={presentation === "menu" ? "touch" : "default"}
             key={`${fileScript.name} ${fileScript.command}`}
-            className={dropdownItemClassName}
-            onClick={() => importFileScript(fileScript)}
+            onClick={() => void importFileScript(fileScript)}
           >
             <ScriptIcon icon={fileScript.icon ?? "play"} className="size-4" />
             <MenuItemLabel>
@@ -157,7 +154,7 @@ export default function ProjectScriptsControl({
           <MenuItem
             density={presentation === "menu" ? "touch" : "default"}
             key={script.id}
-            className={`group ${dropdownItemClassName}`}
+            className="group"
             onClick={() => onRunScript(script)}
           >
             <ScriptIcon icon={script.icon} className="size-4" />
@@ -165,17 +162,15 @@ export default function ProjectScriptsControl({
               {script.runOnWorktreeCreate ? `${script.name} (setup)` : script.name}
             </MenuItemLabel>
             <span className="relative ms-auto flex h-6 min-w-6 items-center justify-end">
-              {shortcutLabel && (
-                <MenuShortcut
-                  className={
-                    presentation === "menu"
-                      ? "ms-0 mr-7"
-                      : "ms-0 transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0"
-                  }
-                >
-                  {shortcutLabel}
-                </MenuShortcut>
-              )}
+              {shortcutLabel &&
+                (presentation === "menu" ? (
+                  <MenuShortcut className="ms-0 mr-7">{shortcutLabel}</MenuShortcut>
+                ) : (
+                  // The shortcut yields its slot to the edit button on hover.
+                  <span className="transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0">
+                    <MenuShortcut className="ms-0">{shortcutLabel}</MenuShortcut>
+                  </span>
+                ))}
               <Button
                 type="button"
                 variant="ghost"
@@ -199,11 +194,7 @@ export default function ProjectScriptsControl({
         );
       })}
       {importMenuItems}
-      <MenuItem
-        density={presentation === "menu" ? "touch" : "default"}
-        className={dropdownItemClassName}
-        onClick={openAddDialog}
-      >
+      <MenuItem density={presentation === "menu" ? "touch" : "default"} onClick={openAddDialog}>
         <PlusIcon className="size-4" />
         <MenuItemLabel>Add action</MenuItemLabel>
       </MenuItem>
@@ -275,7 +266,6 @@ export default function ProjectScriptsControl({
           </Tooltip>
           <GroupSeparator className="hidden @3xl/header-actions:block" />
           <Menu
-            highlightItemOnHover={false}
             open={actionsMenuOpen.scripts}
             onOpenChange={(open) =>
               setActionsMenuOpen({ presentation, scripts: open, imports: false })
@@ -291,7 +281,6 @@ export default function ProjectScriptsControl({
         </Group>
       ) : importableScripts.length > 0 ? (
         <Menu
-          highlightItemOnHover={false}
           open={actionsMenuOpen.imports}
           onOpenChange={(open) =>
             setActionsMenuOpen({ presentation, scripts: false, imports: open })
@@ -306,7 +295,7 @@ export default function ProjectScriptsControl({
           </MenuTrigger>
           <MenuPopup align="end">
             {importMenuItems}
-            <MenuItem className={dropdownItemClassName} onClick={openAddDialog}>
+            <MenuItem onClick={openAddDialog}>
               <PlusIcon className="size-4" />
               Add action
             </MenuItem>
