@@ -29,7 +29,7 @@ there.
 For Grok, **Always allow this session** remembers the matching command or tool input. Other
 actions still ask for approval. It does not change the thread to **Full access**.
 
-Antigravity uses its own permission policy for each mode. T3 Code still shows any approval or
+Antigravity uses its own permission policy for each mode. styal still shows any approval or
 question the official agent sends in **Full access**. A remembered approval is available only
 when the agent offers it for that action. Fixed-choice questions require one of the offered
 answers and do not accept custom text.

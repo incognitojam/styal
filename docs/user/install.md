@@ -100,14 +100,14 @@ Node. A healthy new runtime replaces older caches while retaining the previous o
 styal uses provider runtimes but does not bundle them. Install and authenticate each
 provider's CLI, or use styal's managed setup for Antigravity.
 
-| Provider    | CLI                                                                                                        | Default binary     | Log in with                        |
-| ----------- | ---------------------------------------------------------------------------------------------------------- | ------------------ | ---------------------------------- |
-| Codex       | [Codex CLI](https://developers.openai.com/codex/cli)                                                       | `codex`            | `codex login`                      |
-| Claude      | [Claude Code](https://claude.com/product/claude-code)                                                      | `claude`           | `claude auth login`                |
-| Cursor      | [Cursor CLI](https://cursor.com/cli)                                                                       | `cursor-agent`     | `agent login`                      |
-| Grok Build  | [Grok Build CLI](https://x.ai/cli)                                                                         | `grok`             | `grok login`                       |
-| OpenCode    | [OpenCode](https://opencode.ai)                                                                            | `opencode`         | `opencode auth login`              |
-| Antigravity | [Official ACP agent](https://github.com/agentclientprotocol/registry/blob/main/antigravity-acp/agent.json) | Managed by T3 Code | **Sign in with Google** in T3 Code |
+| Provider    | CLI                                                                                                        | Default binary   | Log in with                      |
+| ----------- | ---------------------------------------------------------------------------------------------------------- | ---------------- | -------------------------------- |
+| Codex       | [Codex CLI](https://developers.openai.com/codex/cli)                                                       | `codex`          | `codex login`                    |
+| Claude      | [Claude Code](https://claude.com/product/claude-code)                                                      | `claude`         | `claude auth login`              |
+| Cursor      | [Cursor CLI](https://cursor.com/cli)                                                                       | `cursor-agent`   | `agent login`                    |
+| Grok Build  | [Grok Build CLI](https://x.ai/cli)                                                                         | `grok`           | `grok login`                     |
+| OpenCode    | [OpenCode](https://opencode.ai)                                                                            | `opencode`       | `opencode auth login`            |
+| Antigravity | [Official ACP agent](https://github.com/agentclientprotocol/registry/blob/main/antigravity-acp/agent.json) | Managed by styal | **Sign in with Google** in styal |
 
 Codex and Claude are on by default. Cursor, Grok Build, OpenCode, and Antigravity are off by
 default. Turn them on in **Settings** > **Providers** when you want to use them.

@@ -139,7 +139,7 @@ features:
     status: maintained
     prs: [285]
     invariants:
-      - Claude's complete built-in catalog comes from a validated manifest bundled for offline startup and refreshed from the styal fork, with invalid fetches preserving the last valid cache or bundle.
+      - Claude's complete built-in catalog comes from a validated manifest bundled for offline startup and refreshed from the styal fork, with invalid fetches preserving the last valid cache or bundle and a newer bundle replacing an older cache.
       - Provider-owned schemas and installed Claude Code versions filter manifest data before clients receive model aliases, presentation metadata, effort mappings, and context-window capabilities.
       - The fork can publish model availability independently of an app release without treating Claude's initialization response as an account-entitlement list.
     implementation_paths:
@@ -670,6 +670,8 @@ features:
       - apps/server/src/cli/triage.ts
       - apps/server/src/cloud/pinnedRuntime.ts
       - apps/server/src/cloud/serviceProtocol.ts
+      - apps/server/src/provider/AntigravityInstallation.ts
+      - apps/server/src/provider/Services/ProviderAuthService.ts
       - apps/server/vite.config.ts
       - apps/web/src/branding.logic.ts
       - apps/web/src/branding.ts
