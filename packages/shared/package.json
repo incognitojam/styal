@@ -289,10 +289,6 @@
       "types": "./src/cliPackage.ts",
       "import": "./src/cliPackage.ts"
     },
-    "./testing/symlinks": {
-      "types": "./src/testing/symlinks.ts",
-      "import": "./src/testing/symlinks.ts"
-    },
     "./dateTime": {
       "types": "./src/dateTime.ts",
       "import": "./src/dateTime.ts"
