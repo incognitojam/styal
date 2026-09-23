@@ -137,7 +137,7 @@ features:
   - id: claude-model-manifest-policy
     title: Source Claude models from the styal manifest
     status: maintained
-    prs: [285]
+    prs: [285, 405]
     invariants:
       - Claude's complete built-in catalog comes from a validated manifest bundled for offline startup and refreshed from the styal fork, with invalid fetches preserving the last valid cache or bundle and a newer bundle replacing an older cache.
       - Provider-owned schemas and installed Claude Code versions filter manifest data before clients receive model aliases, presentation metadata, effort mappings, and context-window capabilities.
