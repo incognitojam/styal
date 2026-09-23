@@ -114,6 +114,26 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9710
       retire_when: Upstream completes generic persisted file attachments across web and mobile clients with equivalent admission limits, rendering, draft persistence, and backward compatibility.
 
+  - id: assistant-selection-reply
+    title: Place Reply above selected assistant text
+    status: maintained
+    prs: [402]
+    invariants:
+      - Web and desktop show a Reply action with a trailing reply arrow centered above the full assistant text selection, including wrapped selections.
+      - The action moves below selections near the top of the message area and still inserts a citation chip into the composer.
+    implementation_paths:
+      - apps/web/src/components/chat/AssistantSelectionToolbar.tsx
+      - apps/web/src/components/chat/assistantSelectionToolbarPosition.ts
+    upstream_paths:
+      - apps/web/src/components/chat/AssistantSelectionToolbar.tsx
+    tests:
+      - apps/web/src/components/chat/assistantSelectionToolbarPosition.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/34096519121033ccf72cd43ea5350f9482df188a
+      retire_when: Upstream offers an equivalent Reply action above the full assistant text selection, with fallback placement near the top edge.
+
   - id: claude-model-manifest-policy
     title: Source Claude models from the styal manifest
     status: maintained
