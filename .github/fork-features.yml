@@ -256,8 +256,9 @@ features:
       - apps/web/src/composerDraftStore.test.ts
       - packages/client-runtime/src/state/composerDrafts.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/9658
       retire_when: Upstream synchronizes equivalent composer draft state across clients and safely migrates installations carrying the fork schema.
 
   - id: data-import-from-t3-code
