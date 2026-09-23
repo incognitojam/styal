@@ -1112,9 +1112,13 @@ features:
       - apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts
       - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
     upstream:
-      status: unassessed
-      tracking: []
-      retire_when: Upstream validates missing project and worktree paths before every provider starts and preserves equivalent actionable client errors and bounded provider failure details.
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/10296
+        - https://github.com/pingdotgg/t3code/pull/10321
+        - https://github.com/pingdotgg/t3code/pull/10549
+        - https://github.com/pingdotgg/t3code/pull/9135
+      retire_when: Upstream validates missing project and worktree paths before every provider starts. Retire the Claude fallback message mapping and assistant error tracking earlier, when intake takes upstream's shared result outcome and expired login and usage limit messages, keeping the stream failure guard only if upstream still lets a later stream failure replace a failed result's error.
 
   - id: preview-hidden-tab-capture
     title: Capture hidden preview tabs reliably
