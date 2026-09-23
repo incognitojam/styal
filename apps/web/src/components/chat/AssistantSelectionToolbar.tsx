@@ -4,19 +4,16 @@ import {
   type AssistantCitation,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
-import { QuoteIcon } from "lucide-react";
+import { ReplyIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   captureAssistantTextSelection,
   type AssistantCitationSourceAnchor,
 } from "~/lib/assistantTextSelection";
-import {
-  observeSelectionActions,
-  resolveSelectionActionPosition,
-  type SelectionActionPoint,
-} from "~/lib/selectionActions";
+import { observeSelectionActions } from "~/lib/selectionActions";
 import { Button } from "../ui/button";
+import { assistantSelectionToolbarPosition } from "./assistantSelectionToolbarPosition";
 
 export function AssistantSelectionToolbar({
   viewport,
@@ -29,7 +26,8 @@ export function AssistantSelectionToolbar({
 }) {
   const [selection, setSelection] = useState<{
     citation: AssistantCitation;
-    position: SelectionActionPoint;
+    selectionRect: { left: number; top: number; width: number; bottom: number };
+    viewportRect: { top: number; bottom: number };
     sourceAnchor: AssistantCitationSourceAnchor;
   } | null>(null);
   const toolbarRef = useRef<HTMLButtonElement>(null);
@@ -39,14 +37,20 @@ export function AssistantSelectionToolbar({
     const toolbar = toolbarRef.current;
     if (!toolbar || !selection) return;
     const rect = toolbar.getBoundingClientRect();
-    toolbar.style.left = `${Math.max(8, Math.min(selection.position.x, window.innerWidth - rect.width - 8))}px`;
-    toolbar.style.top = `${Math.max(8, Math.min(selection.position.y, window.innerHeight - rect.height - 8))}px`;
+    const { left, top } = assistantSelectionToolbarPosition({
+      selection: selection.selectionRect,
+      toolbar: rect,
+      viewport: selection.viewportRect,
+      windowSize: { width: window.innerWidth, height: window.innerHeight },
+    });
+    toolbar.style.left = `${left}px`;
+    toolbar.style.top = `${top}px`;
   }, [selection]);
 
   useEffect(() => {
     if (!viewport) return;
     const clear = () => setSelection(null);
-    const update = (pointer: SelectionActionPoint | null) => {
+    const update = () => {
       const nativeSelection = window.getSelection();
       const captured = captureAssistantTextSelection(viewport, nativeSelection);
       const messageId = captured?.source.dataset.assistantCitationSource;
@@ -60,7 +64,6 @@ export function AssistantSelectionToolbar({
         clear();
         return;
       }
-      const rects = captured.range.getClientRects();
       setSelection({
         sourceAnchor: { source: captured.source, range: captured.range, viewport },
         citation: {
@@ -69,12 +72,8 @@ export function AssistantSelectionToolbar({
           messageId: MessageId.make(messageId),
           ...captured.selector,
         },
-        position: resolveSelectionActionPosition({
-          bounds: viewportRect,
-          selectionRect: rects.item(rects.length - 1) ?? rect,
-          pointer,
-          viewport: { width: window.innerWidth, height: window.innerHeight },
-        }),
+        selectionRect: rect,
+        viewportRect,
       });
     };
     const actions = observeSelectionActions({
@@ -133,9 +132,9 @@ export function AssistantSelectionToolbar({
       size="xs"
       variant="glass"
       disabled={tooLong}
-      aria-label={tooLong ? "Selection is too long to cite" : "Cite selection in composer"}
+      aria-label={tooLong ? "Selection is too long to reply to" : "Reply to selection in composer"}
       className="fixed z-50 max-w-[calc(100vw-1rem)] rounded-full px-2.5"
-      style={{ left: selection.position.x, top: selection.position.y }}
+      style={{ left: selection.selectionRect.left, top: selection.selectionRect.bottom + 8 }}
       onPointerDown={(event) => event.preventDefault()}
       onClick={cite}
       onKeyDown={(event) => {
@@ -146,8 +145,8 @@ export function AssistantSelectionToolbar({
         }
       }}
     >
-      <QuoteIcon aria-hidden="true" className="size-3.5" />
-      {tooLong ? "Shorten selection" : "Cite"}
+      {tooLong ? "Shorten selection" : "Reply"}
+      <ReplyIcon aria-hidden="true" className="size-3.5" />
     </Button>,
     document.body,
   );
