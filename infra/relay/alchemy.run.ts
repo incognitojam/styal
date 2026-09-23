@@ -29,9 +29,6 @@ export default Alchemy.Stack(
     const managedEndpointZone = yield* ManagedEndpointZone.pipe(Effect.orDie);
     const relayApiZone = yield* RelayApiZone.pipe(Effect.orDie);
     const { stage, managedEndpointZoneName } = yield* RelayDeploymentConfig.pipe(Effect.orDie);
-    if (stage === "prod") {
-      yield* yield* managedEndpointZone.zoneId;
-    }
     const apexRedirect =
       stage === "prod"
         ? yield* Cloudflare.Worker("ManagedEndpointApexRedirect", {
