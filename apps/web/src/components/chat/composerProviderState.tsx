@@ -14,10 +14,9 @@ import {
   normalizeModelSlug,
   normalizeAntigravityModelSelection,
 } from "@t3tools/shared/model";
-import type { VariantProps } from "class-variance-authority";
 import type { ReactNode } from "react";
 
-import type { buttonVariants } from "../ui/button";
+import type { ButtonVariant } from "../ui/button";
 import type { DraftId } from "../../composerDraftStore";
 import { getProviderModelCapabilities } from "../../providerModels";
 import type { ComposerControlSize } from "./ComposerControl";
@@ -56,7 +55,7 @@ type TraitsRenderInput = {
   planModeEnabled: boolean;
   size?: ComposerControlSize;
   hidden?: boolean;
-  triggerVariant?: VariantProps<typeof buttonVariants>["variant"];
+  triggerVariant?: ButtonVariant;
   triggerClassName?: string;
   isComposerOwned?: boolean;
 };
