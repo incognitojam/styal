@@ -17,7 +17,7 @@ import { connectionAtomRuntime } from "../connection/runtime";
 import {
   composerDraftSyncCommon,
   hasLocalOnlyComposerDraftContent,
-} from "../lib/composerDraftSyncCommon";
+} from "./composer-draft-sync-common";
 import { scopedThreadKey } from "../lib/scopedEntities";
 import { uuidv4 } from "../lib/uuid";
 import { appAtomRegistry } from "./atom-registry";

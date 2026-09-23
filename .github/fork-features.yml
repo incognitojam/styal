@@ -597,7 +597,7 @@ features:
       - apps/mobile/src/features/threads/thread-list-items.tsx
       - apps/mobile/src/features/threads/thread-list-v2-items.tsx
       - apps/mobile/src/features/threads/unsent-draft-icon.tsx
-      - apps/mobile/src/lib/composerDraftSyncCommon.ts
+      - apps/mobile/src/state/composer-draft-sync-common.ts
       - apps/mobile/src/state/composer-draft-sync.ts
       - apps/mobile/src/state/edit-pending-thread-message.ts
       - apps/mobile/src/state/use-composer-drafts.ts
@@ -621,7 +621,7 @@ features:
       - packages/client-runtime/src/rpc/client.ts
       - packages/contracts/src/rpc.ts
     tests:
-      - apps/mobile/src/lib/composerDraftSyncCommon.test.ts
+      - apps/mobile/src/state/composer-draft-sync-common.test.ts
       - apps/mobile/src/state/edit-pending-thread-message.test.ts
       - apps/mobile/src/state/use-composer-drafts.test.ts
       - apps/server/src/persistence/ComposerDrafts.test.ts
@@ -3074,6 +3074,7 @@ features:
       - A client setting (device-local on mobile) hides the figures, and usage activities never render as work-log rows.
     implementation_paths:
       - apps/mobile/src/features/threads/TurnUsageText.tsx
+      - apps/mobile/src/state/use-turn-usage.ts
       - apps/web/src/components/chat/TurnUsageLabel.tsx
       - packages/shared/src/turnUsage.ts
     upstream_paths:

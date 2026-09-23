@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { ComposerContextId } from "@t3tools/contracts";
 import { formatComposerContextReference } from "@t3tools/shared/composerContextReferences";
 
-import { composerDraftSyncCommon } from "./composerDraftSyncCommon";
+import { composerDraftSyncCommon } from "./composer-draft-sync-common";
 
 const terminalRecord = {
   version: 1 as const,

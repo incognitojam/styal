@@ -1,7 +1,7 @@
 import { canonicalComposerDraftCommon } from "@t3tools/client-runtime/state/composer-drafts";
 import type { ComposerDraftCommon } from "@t3tools/contracts";
 
-import type { ComposerDraft } from "../state/use-composer-drafts";
+import type { ComposerDraft } from "./use-composer-drafts";
 
 type SyncedDraftFields = Pick<
   ComposerDraft,
