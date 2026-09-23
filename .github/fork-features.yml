@@ -172,6 +172,26 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9084
       retire_when: Upstream supports a downstream-owned manifest source and publication policy, or the fork adopts upstream's catalog unchanged.
 
+  - id: codex-default-model
+    title: Prefer GPT-6-Sol for new Codex threads
+    status: maintained
+    prs: [406]
+    invariants:
+      - New Codex threads select GPT-6-Sol when available, then GPT-6-Astra, then an older available model; an unavailable preferred model never blocks the live Codex catalog.
+    implementation_paths:
+      - apps/server/src/provider/Layers/CodexProvider.ts
+      - packages/contracts/src/model.ts
+    upstream_paths:
+      - apps/server/src/provider/Layers/CodexProvider.ts
+      - packages/contracts/src/model.ts
+    tests:
+      - apps/server/src/provider/Layers/CodexProvider.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/f5ef0ddb90a8c36584e181b1913e7b8a5df30ffc0618
+      retire_when: Upstream prefers GPT-6-Sol for new Codex threads and retains a fallback when it is unavailable.
+
   - id: completion-sounds
     title: Configurable agent completion sounds
     status: maintained
