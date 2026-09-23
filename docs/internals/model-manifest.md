@@ -17,11 +17,10 @@ uses an existing profile, add one object to `providers.claudeAgent.models`. Do n
 change application code. Add or change a profile in the same JSON file only when the model exposes
 a capability combination that does not already exist.
 
-`currentModels.claudeAgent` is the final compatibility snapshot for releases that predate catalog
-discovery. It includes Fable 5.1 because that model landed before the provider catalog became
-authoritative. Future Claude models belong only in `providers.claudeAgent.models`. Codex still
-discovers models from its app server and uses `currentModels.codex` only as a legacy-classification
-overlay.
+`currentModels.claudeAgent` classifies models for releases that predate catalog discovery; it does
+not add models to their catalogs. Catalog-aware releases use `providers.claudeAgent.models[].status`
+instead. Codex discovers models from its app server and uses `currentModels.codex` only as a
+legacy-classification overlay.
 
 Claude model entries support:
 
