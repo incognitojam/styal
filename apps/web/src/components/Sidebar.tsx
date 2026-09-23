@@ -94,6 +94,7 @@ import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../termina
 import { isMacPlatform } from "~/lib/utils";
 import { useOpenPrLink } from "../lib/openPullRequestLink";
 import { releaseComposerDraftUploads } from "../lib/composerDraftUploads";
+import { discardServerComposerDraft } from "../state/composerDrafts";
 import { readLocalApi } from "../localApi";
 import { getProjectOrderKey, selectProjectGroupingSettings } from "../logicalProject";
 import {
@@ -852,6 +853,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       event.stopPropagation();
       releaseComposerDraftUploads(threadRef);
       clearComposerContent(threadRef);
+      void discardServerComposerDraft(threadRef);
     },
     [clearComposerContent, threadRef],
   );

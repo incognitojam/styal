@@ -69,6 +69,37 @@ function mutationId(): string {
   return `web:${randomUUID()}`;
 }
 
+function isComposerDraftSyncEnabled(threadRef: ScopedThreadRef): boolean {
+  const serverConfig = appAtomRegistry.get(
+    serverEnvironment.configValueAtom(threadRef.environmentId),
+  );
+  return (
+    serverConfig !== null &&
+    "environment" in serverConfig &&
+    serverConfig.environment.capabilities.composerDraftSync === true
+  );
+}
+
+/**
+ * Writes a closed thread's cleared draft to the server after a sidebar discard. Sync runs only
+ * for the open composer, so without this the next visit restores the discarded text. A discard
+ * is explicit, so a conflicting remote edit is overwritten once at the server's revision.
+ */
+export async function discardServerComposerDraft(threadRef: ScopedThreadRef): Promise<void> {
+  if (!isComposerDraftSyncEnabled(threadRef)) return;
+  const draft = useComposerDraftStore.getState().getComposerDraft(threadRef);
+  const common = canonicalComposerDraftCommon(draft === null ? null : commonFromDraft(draft));
+  let baseRevision = readComposerDraftRevision(threadRef) ?? 0;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const result = await composerDraftEnvironment.update.run(appAtomRegistry, {
+      environmentId: threadRef.environmentId,
+      input: { threadId: threadRef.threadId, baseRevision, common, clientMutationId: mutationId() },
+    });
+    if (!AsyncResult.isSuccess(result) || result.value._tag === "accepted") return;
+    baseRevision = result.value.snapshot.revision;
+  }
+}
+
 export function useServerComposerDraftSync(threadRef: ScopedThreadRef | null): void {
   const serverConfig = useAtomValue(
     threadRef === null
