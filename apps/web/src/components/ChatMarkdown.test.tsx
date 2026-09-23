@@ -8,10 +8,20 @@ import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
 import { Button } from "./ui/button";
 import { setMarkdownTaskChecked } from "./files/filePreviewMode";
 
+const serverConfigAtom = vi.hoisted(() => ({}));
+// No server config is connected. Every other atom reads as a pending query.
 vi.mock("@effect/atom-react", () => ({
   useAtomRefresh: () => vi.fn(),
-  useAtomValue: () => ({ _tag: "Initial", waiting: false }),
+  useAtomValue: (atom: unknown) =>
+    atom === serverConfigAtom ? null : { _tag: "Initial", waiting: false },
 }));
+vi.mock("../state/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../state/server")>();
+  return {
+    ...actual,
+    serverEnvironment: { ...actual.serverEnvironment, configValueAtom: () => serverConfigAtom },
+  };
+});
 vi.mock("../hooks/useTheme", () => ({ useTheme: () => ({ resolvedTheme: "dark" }) }));
 vi.mock("../hooks/useSettings", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../hooks/useSettings")>();
