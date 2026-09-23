@@ -1698,6 +1698,10 @@ const makeWsRpcLayer = (
               });
               const liveStream = orchestrationEngine.streamDomainEvents.pipe(
                 Stream.filter(isThisThreadDetailEvent),
+                Stream.map((event) => ({
+                  kind: "event" as const,
+                  event,
+                })),
               );
 
               // Attach live delivery before reading either replay or snapshot state.
