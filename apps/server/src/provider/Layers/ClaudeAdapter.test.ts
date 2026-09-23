@@ -5413,6 +5413,7 @@ describe("ClaudeAdapterLive", () => {
           {
             signal: new AbortController().signal,
             toolUseID: `tool-${toolName.toLowerCase()}-1`,
+            requestId: `request-${toolName.toLowerCase()}`,
           },
         );
 
