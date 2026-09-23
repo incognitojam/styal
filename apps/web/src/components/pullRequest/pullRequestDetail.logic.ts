@@ -42,7 +42,6 @@ export function resolvePullRequestPrimaryControl(input: {
   readonly mergeability: PullRequestMergeability;
   readonly checksState: PullRequestChecksState | null;
   readonly mergeReadiness?: PullRequestMergeReadiness | undefined;
-  readonly isBehind: boolean;
   readonly autoMergeEnabled: boolean | undefined;
   readonly hasMergeMethod: boolean;
   readonly canMerge: boolean;
@@ -58,7 +57,6 @@ export function resolvePullRequestPrimaryControl(input: {
     mergeability: input.mergeability,
     mergeReadiness: input.mergeReadiness,
     autoMergeArmed: false,
-    isBehind: input.isBehind,
     canReady: input.canMarkReady,
     canMerge: input.canMerge,
     canEnableAutoMerge: input.canEnableAutoMerge,
@@ -202,7 +200,6 @@ export function resolvePullRequestPrimaryAction(input: {
   readonly mergeability: PullRequestMergeability;
   readonly mergeReadiness?: PullRequestMergeReadiness | undefined;
   readonly autoMergeArmed: boolean;
-  readonly isBehind: boolean;
   readonly canReady: boolean;
   readonly canMerge: boolean;
   readonly canEnableAutoMerge: boolean;
@@ -215,7 +212,6 @@ export function resolvePullRequestPrimaryAction(input: {
   if (input.mergeability === "conflicting") return "resolve";
   if (!input.hasMergeMethod) return null;
   if (input.mergeReadiness === "blocked") {
-    if (input.isBehind) return null;
     return input.canEnableAutoMerge ? "enable-auto-merge" : null;
   }
   return "merge";

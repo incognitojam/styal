@@ -159,7 +159,6 @@ describe("pull request primary control", () => {
     mergeability: "mergeable" as const,
     checksState: "passing" as const,
     mergeReadiness: "ready" as const,
-    isBehind: false,
     autoMergeEnabled: false,
     hasMergeMethod: true,
     canMerge: true,
@@ -172,9 +171,16 @@ describe("pull request primary control", () => {
       "enable-auto-merge",
     );
     expect(resolvePullRequestPrimaryControl({ ...open, checksState: "failing" })).toBe("merge");
-    expect(
-      resolvePullRequestPrimaryControl({ ...open, mergeReadiness: "blocked", isBehind: true }),
-    ).toBeNull();
+  });
+
+  it("shows auto-merge for pending requirements when GitHub permits it", () => {
+    const waiting = {
+      ...open,
+      checksState: "pending" as const,
+      mergeReadiness: "blocked" as const,
+    };
+    expect(resolvePullRequestPrimaryControl(waiting)).toBe("enable-auto-merge");
+    expect(resolvePullRequestPrimaryControl({ ...waiting, canEnableAutoMerge: false })).toBeNull();
   });
 
   it("does not offer auto-merge while the host state is unknown", () => {

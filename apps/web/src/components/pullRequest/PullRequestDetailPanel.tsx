@@ -1288,7 +1288,6 @@ function PullRequestDetailPanelBody({
         mergeability: detail.mergeability,
         checksState,
         mergeReadiness: detail.mergeReadiness,
-        isBehind: detail.baseComparison === "behind",
         autoMergeEnabled: detail.autoMergeEnabled,
         hasMergeMethod: allowedMergeMethods.length > 0,
         canMerge: can("merge"),
