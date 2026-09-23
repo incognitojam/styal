@@ -125,6 +125,7 @@ export function formatForkCiWatchCommand(input: {
 
 export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): UpstreamIntakeAudit {
   const errors: Array<string> = [];
+  const commitsWithoutPR = new Set<string>();
   if (!input.mainIsAncestor) errors.push("The candidate is not a fast-forward of main.");
   if (input.commits.length === 0) errors.push("The candidate contains no commits beyond main.");
   if (input.mergeCommits.length > 0) {
@@ -140,6 +141,9 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
     const source = parseUpstreamProvenance(message === undefined ? [] : [message]);
     if (source.pullRequestNumbers.length === 0 && source.commitShas.length === 0) {
       errors.push(`Candidate commit ${abbreviated(commit)} has no upstream source provenance.`);
+    }
+    if (source.pullRequestNumbers.length === 0) {
+      for (const sha of source.commitShas) commitsWithoutPR.add(sha);
     }
   }
 
@@ -199,7 +203,12 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
           )
           .join(", ")
   } |
-| Explicit commit sources | ${provenance.commitShas.map((sha) => `\`${sha}\``).join(", ") || "None"} |
+| Upstream commits without PR | ${
+    [...commitsWithoutPR]
+      .toSorted()
+      .map((sha) => `\`${sha}\``)
+      .join(", ") || "None"
+  } |
 | Decision | ${promotion} |
 ${errorSection}${manualReviewSection}${overlapSection}
 > This audit is report-only. It does not update \`main\`.
