@@ -43,7 +43,7 @@ export class CodexResetCreditCoordinator extends Context.Service<
       consume: (idempotencyKey: string) => Effect.Effect<ProviderConsumeResetCreditOutcome, E, R>,
     ) => Effect.Effect<ProviderConsumeResetCreditOutcome, E | PlatformError.PlatformError, R>;
   }
->()("t3/provider/Layers/codexResetCredit/CodexResetCreditCoordinator") {}
+>()("@styal/cli/provider/Layers/codexResetCredit/CodexResetCreditCoordinator") {}
 
 export const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
