@@ -5,9 +5,9 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
 // `shadcn/no-restyle` stays a warning while the existing className overrides on
-// components/ui exports are migrated to variants (see vite.config.ts). This gate keeps the
-// count from growing: CI fails when findings exceed the ceiling. Lower the ceiling when you
-// migrate a file, and delete this script when the rule becomes an error.
+// components/ui exports are now enforced by lint (see vite.config.ts). Keep this compatibility
+// entry point while protected Fork CI still invokes it; a separate maintainer workflow change
+// removes the invocation and this script together.
 export const RESTYLE_CEILING = 0;
 
 const RULE = "shadcn(no-restyle)";
