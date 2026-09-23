@@ -325,8 +325,7 @@ export type TurnFoldActivityKind =
   | "file-read"
   | "web"
   | "tool"
-  | "image"
-  | "context-compaction";
+  | "image";
 
 export interface TurnFoldActivitySummary {
   kind: TurnFoldActivityKind;
@@ -545,11 +544,9 @@ const TURN_FOLD_ACTIVITY_ORDER: ReadonlyArray<TurnFoldActivityKind> = [
   "web",
   "tool",
   "image",
-  "context-compaction",
 ];
 
 function turnFoldActivityKind(entry: WorkLogEntry): TurnFoldActivityKind | null {
-  if (entry.sourceActivityKind === "context-compaction") return "context-compaction";
   if (entry.requestKind === "command") return "terminal";
   if (entry.requestKind === "file-read") return "file-read";
   if (entry.requestKind === "file-change") return "file-change";

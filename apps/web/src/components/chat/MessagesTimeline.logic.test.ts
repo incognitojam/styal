@@ -1103,7 +1103,6 @@ describe("deriveMessagesTimelineRows", () => {
           itemType: "mcp_tool_call" as const,
           toolName: "mcp__styal__preview_navigate" as const,
         },
-        { id: "compaction-1", sourceActivityKind: "context-compaction" as const },
       ].map((entry, index) => ({
         id: `${entry.id}-entry`,
         kind: "work" as const,
@@ -1113,7 +1112,7 @@ describe("deriveMessagesTimelineRows", () => {
           createdAt: `2026-01-01T00:00:${String(index + 2).padStart(2, "0")}Z`,
           turnId: "turn-1" as never,
           label: entry.id,
-          tone: entry.id === "compaction-1" ? ("info" as const) : ("tool" as const),
+          tone: "tool" as const,
         },
       })),
       {
@@ -1148,7 +1147,6 @@ describe("deriveMessagesTimelineRows", () => {
         { kind: "web", count: 2 },
         { kind: "tool", count: 1 },
         { kind: "image", count: 1 },
-        { kind: "context-compaction", count: 1 },
       ],
     });
   });

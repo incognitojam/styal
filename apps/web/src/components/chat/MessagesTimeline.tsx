@@ -98,7 +98,6 @@ import {
   DownloadIcon,
   EyeIcon,
   FlaskConicalIcon,
-  FoldVerticalIcon,
   GlobeIcon,
   HammerIcon,
   ImageIcon,
@@ -1488,7 +1487,6 @@ const TURN_FOLD_ACTIVITY_LABELS: Record<TurnFoldActivityKind, { one: string; oth
   web: { one: "web lookup", other: "web lookups" },
   tool: { one: "tool call", other: "tool calls" },
   image: { one: "image viewed", other: "images viewed" },
-  "context-compaction": { one: "context compaction", other: "context compactions" },
 };
 
 function TurnFoldActivityIcon({
@@ -1511,8 +1509,6 @@ function TurnFoldActivityIcon({
       return <WrenchIcon className={className} aria-hidden />;
     case "image":
       return <ImageIcon className={className} aria-hidden />;
-    case "context-compaction":
-      return <FoldVerticalIcon className={className} aria-hidden />;
   }
 }
 
@@ -1521,21 +1517,13 @@ function TurnFoldActivityIcon({
  * count is duplicated as screen-reader text so the fold button's accessible
  * name reads "Worked for 42s, 3 terminal commands, 1 file edited".
  */
-function TurnFoldActivityStat({
-  stat,
-  className,
-}: {
-  stat: TurnFoldActivitySummary;
-  className?: string;
-}) {
+function TurnFoldActivityStat({ stat }: { stat: TurnFoldActivitySummary }) {
   const labels = TURN_FOLD_ACTIVITY_LABELS[stat.kind];
   const label = `${stat.count} ${stat.count === 1 ? labels.one : labels.other}`;
 
   return (
     <Tooltip>
-      <TooltipTrigger
-        render={<span className={cn("flex shrink-0 items-center gap-1", className)} />}
-      >
+      <TooltipTrigger render={<span className="flex shrink-0 items-center gap-1" />}>
         <TurnFoldActivityIcon kind={stat.kind} className="size-3" />
         <span aria-hidden>{stat.count}</span>
         <span className="sr-only">{`, ${label}`}</span>
@@ -1548,14 +1536,6 @@ function TurnFoldActivityStat({
 function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-fold" }> }) {
   const ctx = use(TimelineRowCtx);
   const Icon = row.expanded ? ChevronDownIcon : ChevronRightIcon;
-  // Compaction is the rarest and most notable event, so it is pinned beside the
-  // chevron and stays legible while the busier stats clip away in narrow panes.
-  // It earns emphasis from full-strength foreground rather than a hue: the
-  // theme's action color is a solid-control fill, and reading it as text on the
-  // canvas drops below 3:1 in every built-in theme.
-  const compactionStats = row.activitySummary.filter((stat) => stat.kind === "context-compaction");
-  const activityStats = row.activitySummary.filter((stat) => stat.kind !== "context-compaction");
-  const hasSummary = row.activitySummary.length > 0;
 
   return (
     <div className="border-b border-border/60 pb-2 pt-1">
@@ -1567,19 +1547,14 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
         className="group/turn-fold flex w-full cursor-pointer select-none items-center gap-1 rounded-md px-1 text-sm leading-relaxed text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70 motion-reduce:transition-none"
       >
         <span className="shrink-0">{row.label}</span>
-        {hasSummary ? (
+        {row.activitySummary.length > 0 ? (
           <>
             <span aria-hidden className="min-w-3 flex-1" />
-            {activityStats.length > 0 ? (
-              <span className="flex min-w-0 items-center gap-2 overflow-hidden">
-                {activityStats.map((stat) => (
-                  <TurnFoldActivityStat key={stat.kind} stat={stat} />
-                ))}
-              </span>
-            ) : null}
-            {compactionStats.map((stat) => (
-              <TurnFoldActivityStat key={stat.kind} stat={stat} className="ms-1 text-foreground" />
-            ))}
+            <span className="flex min-w-0 items-center gap-2 overflow-hidden">
+              {row.activitySummary.map((stat) => (
+                <TurnFoldActivityStat key={stat.kind} stat={stat} />
+              ))}
+            </span>
           </>
         ) : null}
         <Icon className="size-3.5 shrink-0" />

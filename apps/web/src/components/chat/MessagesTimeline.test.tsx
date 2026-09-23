@@ -1019,7 +1019,7 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("Compacted context 899K → 19K tokens");
   });
 
-  it("renders folded activity counts with an emphasized context compaction marker", () => {
+  it("renders folded activity counts as screen-reader text", () => {
     const turnId = TurnId.make("turn-summary");
     const markup = renderToStaticMarkup(
       <MessagesTimeline
@@ -1037,19 +1037,6 @@ describe("MessagesTimeline", () => {
               label: "Ran command",
               tone: "tool",
               itemType: "command_execution",
-            },
-          },
-          {
-            id: "compaction-entry",
-            kind: "work",
-            createdAt: "2026-03-17T19:12:30.000Z",
-            entry: {
-              id: "compaction-work",
-              createdAt: "2026-03-17T19:12:30.000Z",
-              turnId,
-              label: "Context compacted",
-              tone: "info",
-              sourceActivityKind: "context-compaction",
             },
           },
           {
@@ -1071,16 +1058,8 @@ describe("MessagesTimeline", () => {
     );
 
     expect(markup).not.toContain('title="1 terminal command"');
-    expect(markup).not.toContain('title="1 context compaction"');
     expect(markup).toContain(", 1 terminal command");
-    expect(markup).toContain(", 1 context compaction");
     expect(markup).toContain("data-base-ui-tooltip-trigger");
-    // The marker earns its emphasis from full-strength foreground. Solid-control
-    // fills such as the theme action color read below 3:1 as text on the canvas,
-    // which left the marker dimmer than the muted stats it is meant to outrank.
-    const compactionClasses = /<span class="([^"]*ms-1[^"]*)"/.exec(markup)?.[1];
-    expect(compactionClasses).toContain("text-foreground");
-    expect(compactionClasses).not.toContain("text-primary");
     expect(markup).toContain('aria-expanded="false"');
   });
 

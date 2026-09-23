@@ -966,7 +966,6 @@ features:
       - Meaningful running-command interactions are shown with fixed sanitized summaries while empty polls and raw terminal input remain hidden.
       - Claude, Codex, and OpenCode file edits retain structured paths, line statistics, lifecycle state, and provider-independent presentation without eagerly sending full diffs to clients.
       - Folded completed turns summarize the categories of tools used with recognizable icons.
-      - Context-compaction markers remain legible across themes.
     implementation_paths:
       - apps/mobile/src/features/threads/thread-work-log.tsx
       - apps/mobile/src/lib/threadActivity.ts
@@ -1023,6 +1022,7 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9106
         - https://github.com/pingdotgg/t3code/pull/9120
         - https://github.com/pingdotgg/t3code/pull/9267
+        - https://github.com/pingdotgg/t3code/pull/9293
       retire_when: Upstream uses equivalent cross-provider action names and concise arguments across clients and approvals, preserves inspectable full commands, retrieves completed output on demand without bloating activity payloads, and keeps collapsed groups visibly expandable with status detail intact.
 
   - id: integrated-browser-links
