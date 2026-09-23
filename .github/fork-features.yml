@@ -758,6 +758,7 @@ features:
       - The user-facing CLI exposes styal Link as `styal link`; the upstream `connect` spelling remains an unlisted compatibility alias.
       - Hosted, release, preview, and mobile builds use one coherent production public configuration, while an incomplete or absent local configuration disables Link without breaking local connections.
       - The relay uses the fork's independently deployed database and permits installations without APNs, and managed tunnel hosts remain outside the product origin's registrable domain.
+      - The managed tunnel zone apex redirects to the styal repository while environment-specific tunnel hosts remain available for remote connections.
     implementation_paths:
       - .github/workflows/deploy-relay.yml
       - .github/workflows/deploy-web.yml
@@ -776,6 +777,8 @@ features:
       - infra/relay/src/Config.ts
       - infra/relay/src/db.ts
       - infra/relay/src/dbConfig.ts
+      - infra/relay/alchemy.run.ts
+      - infra/relay/src/apexRedirect.ts
       - infra/web/alchemy.run.ts
       - packages/client-runtime/src/relay/managedRelayState.ts
       - packages/shared/src/connectAuth.ts
@@ -799,6 +802,7 @@ features:
       - apps/server/src/cloud/publicConfig.test.ts
       - apps/web/src/cloud/linkEnvironment.test.ts
       - infra/relay/src/Config.test.ts
+      - infra/relay/src/apexRedirect.test.ts
       - infra/relay/src/dbConfig.test.ts
       - packages/client-runtime/src/relay/managedRelayState.test.ts
       - packages/shared/src/connectAuth.test.ts

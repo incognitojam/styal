@@ -111,7 +111,8 @@ DNS-safe sanitization as Alchemy physical resource names, so `prod` uses
 `RELAY_TUNNEL_ZONE_NAME`, which may be a different Cloudflare zone. Production tunnel hostnames use
 `prod-<digest>.<RELAY_TUNNEL_ZONE_NAME>`; personal stages use
 `<stage>-<digest>.<RELAY_TUNNEL_ZONE_NAME>`. `RELAY_DOMAIN` remains available as an explicit API
-domain override.
+domain override. The production stack also serves the tunnel zone's apex with a redirect to the
+styal GitHub repository. This apex Worker is separate from the per-environment tunnel hosts.
 
 After a successful deploy, the wrapper updates the repository-root `.env` file with the derived relay
 URL. That makes subsequent source builds point at the relay that was just deployed without copying

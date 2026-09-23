@@ -9,7 +9,7 @@ import * as Neon from "alchemy/Neon";
 
 import * as RelayDb from "./src/db.ts";
 import { RelayObservability } from "./src/observability.ts";
-import { ManagedEndpointZone, RelayApiZone } from "./src/zone.ts";
+import { ManagedEndpointZone, RelayApiZone, RelayDeploymentConfig } from "./src/zone.ts";
 import ApiLive, { Api } from "./src/worker.ts";
 
 export default Alchemy.Stack(
@@ -28,6 +28,18 @@ export default Alchemy.Stack(
     const hyperdrive = yield* RelayDb.RelayHyperdrive;
     const managedEndpointZone = yield* ManagedEndpointZone.pipe(Effect.orDie);
     const relayApiZone = yield* RelayApiZone.pipe(Effect.orDie);
+    const { stage, managedEndpointZoneName } = yield* RelayDeploymentConfig.pipe(Effect.orDie);
+    if (stage === "prod") {
+      yield* yield* managedEndpointZone.zoneId;
+    }
+    const apexRedirect =
+      stage === "prod"
+        ? yield* Cloudflare.Worker("ManagedEndpointApexRedirect", {
+            main: "./src/apexRedirect.ts",
+            domain: managedEndpointZoneName,
+            url: false,
+          })
+        : null;
     const observability = yield* RelayObservability;
     const api = yield* Api;
 
@@ -39,6 +51,7 @@ export default Alchemy.Stack(
       url: api.url,
       relayApiZoneId: relayApiZone.zoneId,
       managedEndpointZoneId: managedEndpointZone.zoneId,
+      managedEndpointApexRedirectUrl: apexRedirect?.url,
       mobileTracingUrl: observability.traces.otelTracesEndpoint,
       mobileTracingDataset: observability.traces.name,
       mobileTracingToken: observability.mobileIngestToken.token,
