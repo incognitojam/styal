@@ -221,7 +221,7 @@ jobs:
         run: test '${{ needs.test_server.result }}' = success
 
   test_workspace:
-    name: Fork Test (Workspace ${{ matrix.shard }}/2)
+    name: Fork Test (Workspace ${{ matrix.suite }})
     needs: changes
     if: needs.changes.outputs.run_ci == 'true'
     runs-on: ubuntu-24.04
@@ -229,7 +229,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        include:
+          - suite: Web 1/2
+            shard: 1/2
+          - suite: Web 2/2
+            shard: 2/2
+          - suite: Other
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -248,16 +253,28 @@ jobs:
           run-install: true
 
       - name: Setup Rust
-        if: matrix.shard == 1
+        if: matrix.suite == 'Other'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Ensure Electron runtime is installed
+        if: matrix.suite == 'Other'
         run: vp run --filter @t3tools/desktop ensure:electron
 
       - name: Install browser secret helper build libraries
+        if: matrix.suite == 'Other'
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
 
-      - name: Test
+      - name: Test web shard
+        if: matrix.suite != 'Other'
+        run: |
+          vp run --filter @t3tools/web test \
+            --exclude '**/imageCompression.test.ts' \
+            --shard ${{ matrix.shard }} \
+            --reporter=default \
+            --reporter="$GITHUB_WORKSPACE/scripts/vitest-ci-exit-reporter.ts"
+
+      - name: Test other workspace packages
+        if: matrix.suite == 'Other'
         run: |
           vp run \
             --parallel --concurrency-limit 4 \
@@ -267,14 +284,13 @@ jobs:
             --filter './oxlint-plugin-t3code' \
             --filter './scripts' \
             --filter '!./apps/server' \
-            test --exclude '**/imageCompression.test.ts' \
-            --shard ${{ matrix.shard }}/${{ strategy.job-total }} \
-            --passWithNoTests \
+            --filter '!./apps/web' \
+            test \
             --reporter=default \
             --reporter="$GITHUB_WORKSPACE/scripts/vitest-ci-exit-reporter.ts"
 
       - name: Test image compression
-        if: matrix.shard == 1
+        if: matrix.suite == 'Other'
         run: |
           vp run --filter @t3tools/web test src/lib/imageCompression.test.ts \
             --no-file-parallelism \
@@ -283,7 +299,7 @@ jobs:
             --reporter="$GITHUB_WORKSPACE/scripts/vitest-ci-exit-reporter.ts"
 
       - name: Test resource monitor
-        if: matrix.shard == 1
+        if: matrix.suite == 'Other'
         run: cargo test --locked --manifest-path native/resource-monitor/Cargo.toml
 
   test_workspace_required:
