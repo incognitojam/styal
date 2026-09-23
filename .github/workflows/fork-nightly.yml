@@ -149,19 +149,40 @@ jobs:
             --current-tag "${{ steps.release_meta.outputs.tag }}" \
             --github-output
 
-  build_desktop:
-    name: Build desktop artifacts
-    needs: [prepare, build_cli_archives]
+  build_desktop_mac:
+    name: Build macOS desktop artifact
+    needs: prepare
     if: needs.prepare.outputs.has_changes == 'true'
     uses: ./.github/workflows/fork-desktop-build.yml
     with:
       ref: ${{ needs.prepare.outputs.ref }}
       version: ${{ needs.prepare.outputs.version }}
-      target: all
-      cli_archives_ready: true
+      target: macos-arm64
       sign_macos: true
       check_notarization: true
       force_notarization: ${{ inputs.force_notarization == true }}
+    secrets: inherit
+
+  build_desktop_linux:
+    name: Build Linux desktop artifact
+    needs: prepare
+    if: needs.prepare.outputs.has_changes == 'true'
+    uses: ./.github/workflows/fork-desktop-build.yml
+    with:
+      ref: ${{ needs.prepare.outputs.ref }}
+      version: ${{ needs.prepare.outputs.version }}
+      target: linux-x64
+    secrets: inherit
+
+  build_desktop_windows:
+    name: Build Windows desktop artifact
+    needs: prepare
+    if: needs.prepare.outputs.has_changes == 'true'
+    uses: ./.github/workflows/fork-desktop-build.yml
+    with:
+      ref: ${{ needs.prepare.outputs.ref }}
+      version: ${{ needs.prepare.outputs.version }}
+      target: windows-x64
     secrets: inherit
 
   build_cli_archives:
@@ -190,12 +211,22 @@ jobs:
 
   publish_cli:
     name: Publish CLI to npm
-    needs: [prepare, build_desktop, build_cli, build_cli_archives]
+    needs:
+      [
+        prepare,
+        build_desktop_mac,
+        build_desktop_linux,
+        build_desktop_windows,
+        build_cli,
+        build_cli_archives,
+      ]
     if: >-
       ${{
         !cancelled() &&
         needs.prepare.outputs.has_changes == 'true' &&
-        needs.build_desktop.result == 'success' &&
+        needs.build_desktop_mac.result == 'success' &&
+        needs.build_desktop_linux.result == 'success' &&
+        needs.build_desktop_windows.result == 'success' &&
         needs.build_cli.result == 'success' &&
         needs.build_cli_archives.result == 'success' &&
         vars.STYAL_CLI_PUBLISH_ENABLED == 'true' &&
@@ -213,14 +244,25 @@ jobs:
 
   release:
     name: Publish GitHub prerelease
-    needs: [prepare, build_desktop, build_cli, build_cli_archives, publish_cli]
+    needs:
+      [
+        prepare,
+        build_desktop_mac,
+        build_desktop_linux,
+        build_desktop_windows,
+        build_cli,
+        build_cli_archives,
+        publish_cli,
+      ]
     permissions:
       contents: write
       pull-requests: read
     if: >-
       !cancelled() &&
       needs.prepare.outputs.has_changes == 'true' &&
-      needs.build_desktop.result == 'success' &&
+      needs.build_desktop_mac.result == 'success' &&
+      needs.build_desktop_linux.result == 'success' &&
+      needs.build_desktop_windows.result == 'success' &&
       needs.build_cli.result == 'success' &&
       needs.build_cli_archives.result == 'success' &&
       (needs.publish_cli.result == 'success' || needs.publish_cli.result == 'skipped')
@@ -411,15 +453,19 @@ jobs:
 
   notify_failure:
     name: Notify Discord of failure
-    needs: [prepare, build_desktop, release]
+    needs: [prepare, build_desktop_mac, build_desktop_linux, build_desktop_windows, release]
     if: >-
       ${{
         always() &&
         (
           needs.prepare.result == 'failure' ||
           needs.prepare.result == 'cancelled' ||
-          needs.build_desktop.result == 'failure' ||
-          needs.build_desktop.result == 'cancelled' ||
+          needs.build_desktop_mac.result == 'failure' ||
+          needs.build_desktop_mac.result == 'cancelled' ||
+          needs.build_desktop_linux.result == 'failure' ||
+          needs.build_desktop_linux.result == 'cancelled' ||
+          needs.build_desktop_windows.result == 'failure' ||
+          needs.build_desktop_windows.result == 'cancelled' ||
           needs.release.result == 'failure' ||
           needs.release.result == 'cancelled'
         )
@@ -434,13 +480,15 @@ jobs:
           COMMIT_SHA: ${{ github.sha }}
           ACTOR: ${{ github.actor }}
           PREPARE_RESULT: ${{ needs.prepare.result }}
-          DESKTOP_RESULT: ${{ needs.build_desktop.result }}
+          DESKTOP_MAC_RESULT: ${{ needs.build_desktop_mac.result }}
+          DESKTOP_LINUX_RESULT: ${{ needs.build_desktop_linux.result }}
+          DESKTOP_WINDOWS_RESULT: ${{ needs.build_desktop_windows.result }}
           RELEASE_RESULT: ${{ needs.release.result }}
         shell: bash
         run: |
           # shellcheck disable=SC2016 # Markdown backticks must remain literal.
-          description=$(printf '`%s` · `%s`\n\nPrepare: `%s`\nDesktop builds: `%s`\nRelease: `%s`' \
-            "$COMMIT_SHA" "$ACTOR" "$PREPARE_RESULT" "$DESKTOP_RESULT" "$RELEASE_RESULT")
+          description=$(printf '`%s` · `%s`\n\nPrepare: `%s`\nDesktop macOS: `%s`\nDesktop Linux: `%s`\nDesktop Windows: `%s`\nRelease: `%s`' \
+            "$COMMIT_SHA" "$ACTOR" "$PREPARE_RESULT" "$DESKTOP_MAC_RESULT" "$DESKTOP_LINUX_RESULT" "$DESKTOP_WINDOWS_RESULT" "$RELEASE_RESULT")
           payload=$(jq -n \
             --arg title 'Fork Nightly failed' \
             --arg url "$RUN_URL" \

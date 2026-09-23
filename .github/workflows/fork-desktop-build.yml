@@ -161,6 +161,7 @@ jobs:
       ref: ${{ inputs.ref }}
       version: ${{ inputs.version }}
       target: linux-x64
+      artifact_namespace: wsl
 
   # node-pty publishes no Linux prebuilt and the WSL backend runs under the
   # distro's own (Linux) Node. Build it on Linux for the Windows package so WSL
@@ -309,7 +310,7 @@ jobs:
         if: matrix.platform == 'win'
         uses: actions/download-artifact@v8
         with:
-          name: cli-archive-linux-x64
+          name: ${{ inputs.cli_archives_ready && 'cli-archive-linux-x64' || 'wsl-archive-linux-x64' }}
           path: wsl-runtime
       - name: Download WSL node-pty prebuild
         if: matrix.platform == 'win'

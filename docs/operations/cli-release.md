@@ -65,7 +65,10 @@ The archive job runs independently of desktop packaging. It shares the web build
 across targets and builds and verifies each executable on its own architecture.
 Windows desktop packaging consumes the matching Linux archive for WSL. Standalone
 Windows builds create that Linux artifact first; other standalone desktop builds do
-not need it. Building an archive does not migrate an installed service.
+not need it. Fork Nightly starts each desktop target alongside the full CLI archive
+matrix. Its Windows target builds a separate WSL archive so it can start before the
+five-platform archive matrix finishes; distinct artifact names keep release assets
+from the full matrix. Building an archive does not migrate an installed service.
 
 To verify a local Linux x64 archive (with `.scratch/` ignored):
 
