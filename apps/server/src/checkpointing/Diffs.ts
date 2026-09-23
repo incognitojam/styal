@@ -1,3 +1,5 @@
+import { parsePatchFiles } from "@pierre/diffs/utils/parsePatchFiles";
+
 export interface TurnDiffFileSummary {
   readonly path: string;
   readonly additions: number;
@@ -28,6 +30,27 @@ export function parseTurnDiffFilesFromNumstat(numstat: string): ReadonlyArray<Tu
       deletions: counts[2] === "-" ? 0 : Number(counts[2]),
     });
   }
+
+  return files.toSorted((left, right) => left.path.localeCompare(right.path));
+}
+
+/** Reads file paths and line counts from a unified patch, such as a pull request's diff. */
+export function parseTurnDiffFilesFromUnifiedDiff(
+  diff: string,
+): ReadonlyArray<TurnDiffFileSummary> {
+  const normalized = diff.replace(/\r\n/g, "\n").trim();
+  if (normalized.length === 0) {
+    return [];
+  }
+
+  const parsedPatches = parsePatchFiles(normalized);
+  const files = parsedPatches.flatMap((patch) =>
+    patch.files.map((file) => ({
+      path: file.name,
+      additions: file.hunks.reduce((total, hunk) => total + hunk.additionLines, 0),
+      deletions: file.hunks.reduce((total, hunk) => total + hunk.deletionLines, 0),
+    })),
+  );
 
   return files.toSorted((left, right) => left.path.localeCompare(right.path));
 }
