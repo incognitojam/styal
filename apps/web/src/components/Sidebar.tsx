@@ -233,7 +233,7 @@ import {
 } from "../providerInstances";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { stackedThreadToast, toastManager } from "./ui/toast";
-import { Button } from "./ui/button";
+import { Button, InlineButton } from "./ui/button";
 import {
   Combobox,
   ComboboxEmpty,
@@ -1583,7 +1583,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const prBadge =
     prBadgeShape?.kind === "stack" || pr || currentLinkedPr ? (
       <ThreadPullRequestBadgeControl
-        variant="underline"
+        render={<InlineButton />}
+        tooltip={false}
         badge={prBadgeShape}
         number={pr?.number ?? currentLinkedPr?.number}
         url={pr?.url ?? currentLinkedPr?.url}

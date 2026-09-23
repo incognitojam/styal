@@ -13,6 +13,8 @@ vi.mock("./ui/tooltip", () => ({
   TooltipPopup: () => null,
 }));
 
+import { ComposerControl } from "./chat/ComposerControl";
+import { InlineButton } from "./ui/button";
 import {
   ThreadPullRequestBadgeControl,
   ThreadWorktreeIndicator,
@@ -26,7 +28,8 @@ describe("ThreadPullRequestBadgeControl", () => {
     act(() => {
       renderer = create(
         <ThreadPullRequestBadgeControl
-          variant="underline"
+          render={<InlineButton />}
+          tooltip={false}
           badge={{ kind: "pull-request", others: 1, state: "open" }}
           number={102}
           url="https://github.com/example/project/pull/102"
@@ -39,7 +42,7 @@ describe("ThreadPullRequestBadgeControl", () => {
     const mounted = renderer;
     if (!mounted) throw new Error("Badge did not render");
     const link = mounted.root.findByType("a");
-    expect(link.children).toContain("102+1");
+    expect(link.findByType("span").children).toContain("102+1");
     expect(link.props["aria-label"]).toBe(
       "PR #102, status pending, and 1 more linked; overall open",
     );
@@ -47,7 +50,8 @@ describe("ThreadPullRequestBadgeControl", () => {
     act(() => {
       mounted.update(
         <ThreadPullRequestBadgeControl
-          variant="underline"
+          render={<InlineButton />}
+          tooltip={false}
           badge={{ kind: "pull-request", others: 0 }}
           number={3}
           url="https://github.com/example/project/pull/3"
@@ -57,8 +61,9 @@ describe("ThreadPullRequestBadgeControl", () => {
         />,
       );
     });
-    expect(mounted.root.findByType("a").children).toContain("3");
-    expect(mounted.root.findByType("a").children).not.toContain("3+1");
+    const label = mounted.root.findByType("a").findByType("span");
+    expect(label.children).toContain("3");
+    expect(label.children).not.toContain("3+1");
     act(() => mounted.unmount());
   });
 
@@ -68,7 +73,7 @@ describe("ThreadPullRequestBadgeControl", () => {
     act(() => {
       renderer = create(
         <ThreadPullRequestBadgeControl
-          variant="ghost"
+          render={<ComposerControl size="xs" />}
           badge={{ kind: "pull-request", others: 1, state: "open" }}
           number={102}
           url="https://github.com/example/project/pull/102"
