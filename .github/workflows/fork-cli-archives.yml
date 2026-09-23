@@ -16,6 +16,10 @@ on:
       sign_macos:
         default: false
         type: boolean
+      artifact_namespace:
+        description: Keep artifacts distinct when this workflow is called twice in one run
+        default: cli
+        type: string
     secrets:
       CSC_LINK:
         required: false
@@ -61,7 +65,7 @@ jobs:
         run: vp run --filter ./apps/server build
       - uses: actions/upload-artifact@v7
         with:
-          name: cli-shared-bundle
+          name: ${{ inputs.artifact_namespace }}-shared-bundle
           path: apps/server/dist
           if-no-files-found: error
 
@@ -107,7 +111,7 @@ jobs:
         run: node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
       - uses: actions/download-artifact@v8
         with:
-          name: cli-shared-bundle
+          name: ${{ inputs.artifact_namespace }}-shared-bundle
           path: apps/server/dist
       - name: Build executable on its native architecture
         env:
@@ -171,7 +175,7 @@ jobs:
           rm -rf .scratch/cli-signing
       - uses: actions/upload-artifact@v7
         with:
-          name: cli-archive-${{ matrix.key }}
+          name: ${{ inputs.artifact_namespace }}-archive-${{ matrix.key }}
           path: .scratch/cli-archives/*
           if-no-files-found: error
 
@@ -183,7 +187,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
-          pattern: cli-archive-*
+          pattern: ${{ inputs.artifact_namespace }}-archive-*
           merge-multiple: true
           path: cli-archives
       - name: Write checksums
@@ -206,6 +210,6 @@ jobs:
           sha256sum "${files[@]}" > SHA256SUMS
       - uses: actions/upload-artifact@v7
         with:
-          name: cli-archive-checksums
+          name: ${{ inputs.artifact_namespace }}-archive-checksums
           path: cli-archives/SHA256SUMS
           if-no-files-found: error
