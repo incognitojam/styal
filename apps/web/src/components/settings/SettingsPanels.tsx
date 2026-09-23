@@ -438,7 +438,7 @@ function AboutVersionSection() {
       {hasDesktopBridge ? (
         <SettingsRow
           title="Update track"
-          description="Alpha follows full releases. Nightly follows nightly desktop releases."
+          description="Nightly gets new changes first. Alpha gets versions promoted after they've spent time on Nightly."
           control={
             <Select
               value={selectedUpdateChannel}
