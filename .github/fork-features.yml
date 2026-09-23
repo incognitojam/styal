@@ -166,6 +166,7 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/pull/9078
         - https://github.com/pingdotgg/t3code/pull/9084
+        - https://github.com/pingdotgg/t3code/pull/13094
       retire_when: Upstream supports a downstream-owned manifest source and publication policy, or the fork adopts upstream's catalog unchanged.
 
   - id: completion-sounds
