@@ -434,6 +434,53 @@ function resultErrorsText(result: SDKResultMessage): string {
     : "";
 }
 
+/**
+ * First user-facing error from a non-success result. "[ede_diagnostic] ..."
+ * entries are CLI-internal telemetry (the CLI hides them from its own UI too),
+ * so they must never become the error banner.
+ */
+function resultUserFacingError(result: SDKResultMessage): string | undefined {
+  const listed =
+    result.subtype === "success" || !Array.isArray(result.errors)
+      ? undefined
+      : result.errors.find((error) => !error.startsWith("[ede_diagnostic]"));
+  if (listed) {
+    return listed;
+  }
+  // Structured failure markers for results whose error list is empty or
+  // diagnostic-only: an overloaded API (529) and the terminal reasons the
+  // CLI stamps when it gives up on a turn.
+  if (isOverloadedResult(result)) {
+    return "Claude API is overloaded (529). Try again shortly.";
+  }
+  switch (result.terminal_reason) {
+    case "api_error":
+      return "Claude gave up after repeated API errors.";
+    case "malformed_tool_use_exhausted":
+      return "Claude gave up after repeated malformed tool calls.";
+    case "budget_exhausted":
+      return "Claude stopped: the turn's token budget was exhausted.";
+    case "structured_output_retry_exhausted":
+      return "Claude could not produce the requested structured output.";
+    case "tool_deferred_unavailable":
+      return "Claude could not resume a deferred tool call: the tool is no longer available.";
+    case "turn_setup_failed":
+      return "Claude could not start the turn.";
+    case "blocking_limit":
+      return "Claude stopped: a usage limit blocked the request.";
+    case "rapid_refill_breaker":
+      return "Claude stopped: the context refilled too quickly after compaction.";
+    case "prompt_too_long":
+      return "Claude stopped: the prompt exceeds the model's context window.";
+    case "image_error":
+      return "Claude stopped: an image in the conversation could not be processed.";
+    case "model_error":
+      return "Claude stopped: the model returned an error.";
+    default:
+      return undefined;
+  }
+}
+
 function isInterruptedResult(result: SDKResultMessage): boolean {
   // The CLI stamps user aborts explicitly: interrupting mid-tool-call yields
   // "aborted_tools" (with an internal "[ede_diagnostic] ..." error and
@@ -1389,7 +1436,7 @@ const buildUserMessageEffect = Effect.fn("buildUserMessageEffect")(function* (
  * terminal_reason values the CLI classifies as dead turns: the turn died
  * rather than finished, even when the result subtype is success and the
  * error list is empty. Kept in sync with the messages in
- * claudeResultFailureMessage.
+ * resultUserFacingError.
  */
 const FAILED_TERMINAL_REASONS: ReadonlySet<NonNullable<SDKResultMessage["terminal_reason"]>> =
   new Set([
@@ -1436,6 +1483,10 @@ function turnStatusFromResult(result: SDKResultMessage): ProviderRuntimeTurnStat
   return "failed";
 }
 
+/**
+ * Message for a failed turn whose result has no user-facing error: derived from the assistant
+ * message error or the result subtype.
+ */
 function claudeResultFailureMessage(
   result: SDKResultMessage,
   assistantError: SDKAssistantMessageError | undefined,
@@ -1463,10 +1514,6 @@ function claudeResultFailureMessage(
       break;
   }
 
-  if (isOverloadedResult(result)) {
-    return "Claude API is overloaded (529). Try again shortly.";
-  }
-
   if (result.subtype === "error_max_turns" || result.terminal_reason === "max_turns") {
     return "Claude reached the maximum turn limit.";
   }
@@ -1478,27 +1525,6 @@ function claudeResultFailureMessage(
   }
 
   switch (result.terminal_reason) {
-    case "api_error":
-      return "Claude gave up after repeated API errors.";
-    case "malformed_tool_use_exhausted":
-      return "Claude gave up after repeated malformed tool calls.";
-    case "budget_exhausted":
-      return "Claude stopped: the turn's token budget was exhausted.";
-    case "structured_output_retry_exhausted":
-      return "Claude could not produce the requested structured output.";
-    case "tool_deferred_unavailable":
-      return "Claude could not resume a deferred tool call: the tool is no longer available.";
-    case "turn_setup_failed":
-      return "Claude could not start the turn.";
-    case "prompt_too_long":
-      return "Claude could not continue because the conversation exceeds the context limit. Start a new thread or shorten the prompt.";
-    case "blocking_limit":
-    case "rapid_refill_breaker":
-      return "Claude usage limit reached. Try again later.";
-    case "image_error":
-      return "Claude could not process an attached image.";
-    case "model_error":
-      return "Claude service error. Try again.";
     case "stop_hook_prevented":
     case "hook_stopped":
       return "A Claude hook stopped the turn.";
@@ -3195,7 +3221,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     const assistantError = context.turnAssistantError;
     context.turnAssistantError = undefined;
     const terminalResultError =
-      status === "failed" ? claudeResultFailureMessage(message, assistantError) : undefined;
+      status === "failed"
+        ? (resultUserFacingError(message) ?? claudeResultFailureMessage(message, assistantError))
+        : undefined;
     context.suppressNextIdleStreamFailure = terminalResultError !== undefined;
 
     if (terminalResultError !== undefined) {
