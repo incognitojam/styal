@@ -1019,6 +1019,19 @@ export function resolveBaseFreshness(detail: {
   };
 }
 
+/** A required update is a repository rule, not merely a branch that happens to be behind. */
+export function resolveRequiredBranchUpdate(
+  detail: Parameters<typeof resolveBaseFreshness>[0] & {
+    readonly baseBranch: string;
+    readonly isDraft: boolean;
+    readonly requiresUpToDateBranch?: boolean | undefined;
+  },
+) {
+  if (detail.isDraft || detail.requiresUpToDateBranch !== true) return null;
+  const freshness = resolveBaseFreshness(detail);
+  return freshness === null ? null : { ...freshness, baseBranch: detail.baseBranch };
+}
+
 /**
  * Whether a completed action needs the uncached host read rather than the cheaper detail refresh.
  * Updating a branch moves the diff's head. Approving workflows changes data GitHub omits from the

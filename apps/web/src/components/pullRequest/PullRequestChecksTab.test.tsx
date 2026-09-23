@@ -73,6 +73,24 @@ describe("PullRequestChecksTab", () => {
     expect(text).not.toContain("Optional");
   });
 
+  it("explains why auto-merge is waiting for a required branch update", () => {
+    const text = render({
+      checks: [check({ required: true })],
+      mergeReadiness: "blocked",
+      requiredBranchUpdate: {
+        baseBranch: "main",
+        behindBy: 2,
+        methods: ["merge", "rebase"],
+      },
+      onUpdateBranch: () => {},
+    });
+    expect(text).toContain("Update branch required");
+    expect(text).toContain("2 commits behind main");
+    expect(text).toContain("Auto-merge will wait until it is updated");
+    expect(text).toContain("Update branch");
+    expect(text).toContain("Update with rebase");
+  });
+
   it("says when repository policy considers the pull request ready", () => {
     expect(render({ mergeReadiness: "ready", checks: [check({ required: true })] })).toContain(
       "Ready to merge",

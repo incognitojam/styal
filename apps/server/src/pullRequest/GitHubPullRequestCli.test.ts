@@ -2685,6 +2685,7 @@ layer("GitHubPullRequestCli.layer", (it) => {
                     {
                       type: "required_status_checks",
                       parameters: {
+                        strict_required_status_checks_policy: true,
                         required_status_checks: [
                           { context: "build", integration_id: 1 },
                           { context: "security", integration_id: 2 },
@@ -2699,6 +2700,7 @@ layer("GitHubPullRequestCli.layer", (it) => {
                       ref: {
                         branchProtectionRule: {
                           requiredStatusCheckContexts: ["legacy", "build"],
+                          requiresStrictStatusChecks: false,
                         },
                       },
                     },
@@ -2717,6 +2719,7 @@ layer("GitHubPullRequestCli.layer", (it) => {
       });
 
       expect(policy.requiredChecks).toEqual(["build", "security", "legacy"]);
+      expect(policy.requiresUpToDateBranch).toBe(true);
       const calls = mockedExecute.mock.calls.map(([input]) => input.args);
       expect(calls).toContainEqual([
         "api",
@@ -2730,7 +2733,9 @@ layer("GitHubPullRequestCli.layer", (it) => {
       expect(graphQlArgs).toEqual(
         expect.arrayContaining(["api", "graphql", "--hostname", "github.example.test"]),
       );
-      expect(graphQlArgs?.at(-1)).toContain("branchProtectionRule { requiredStatusCheckContexts }");
+      expect(graphQlArgs?.at(-1)).toContain(
+        "branchProtectionRule { requiredStatusCheckContexts requiresStrictStatusChecks }",
+      );
       expect(graphQlArgs?.at(-1)).toContain("rateLimit { cost limit remaining resetAt }");
     }),
   );
@@ -2746,7 +2751,10 @@ layer("GitHubPullRequestCli.layer", (it) => {
                   data: {
                     repository: {
                       ref: {
-                        branchProtectionRule: { requiredStatusCheckContexts: ["classic"] },
+                        branchProtectionRule: {
+                          requiredStatusCheckContexts: ["classic"],
+                          requiresStrictStatusChecks: true,
+                        },
                       },
                     },
                   },
@@ -2756,14 +2764,84 @@ layer("GitHubPullRequestCli.layer", (it) => {
       );
       const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
 
-      expect(
-        (yield* cli.getBranchPolicy({
-          cwd: "/w",
-          repository: "acme/web",
-          host: "github.example.test",
-          baseBranch: "main",
-        })).requiredChecks,
-      ).toEqual(["classic"]);
+      const policy = yield* cli.getBranchPolicy({
+        cwd: "/w",
+        repository: "acme/web",
+        host: "github.example.test",
+        baseBranch: "main",
+      });
+      expect(policy.requiredChecks).toEqual(["classic"]);
+      expect(policy.requiresUpToDateBranch).toBe(true);
+    }),
+  );
+
+  it.effect("does not claim an update is optional when a policy source is unavailable", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockImplementation((input) =>
+        input.args.includes("repos/acme/web/rules/branches/main")
+          ? Effect.fail(diffRefused)
+          : Effect.succeed(
+              output(
+                JSON.stringify({
+                  data: {
+                    repository: {
+                      ref: {
+                        branchProtectionRule: {
+                          requiredStatusCheckContexts: ["build"],
+                          requiresStrictStatusChecks: false,
+                        },
+                      },
+                    },
+                  },
+                }),
+              ),
+            ),
+      );
+      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+      const policy = yield* cli.getBranchPolicy({
+        cwd: "/w",
+        repository: "acme/web",
+        host: "github.example.test",
+        baseBranch: "main",
+      });
+      expect(policy.requiredChecks).toEqual(["build"]);
+      expect(policy.requiresUpToDateBranch).toBeUndefined();
+    }),
+  );
+
+  it.effect("reports a loose policy when both effective policy sources agree", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockImplementation((input) =>
+        Effect.succeed(
+          output(
+            input.args.includes("repos/acme/web/rules/branches/main")
+              ? JSON.stringify([
+                  [
+                    {
+                      type: "required_status_checks",
+                      parameters: {
+                        strict_required_status_checks_policy: false,
+                        required_status_checks: [{ context: "build" }],
+                      },
+                    },
+                  ],
+                ])
+              : JSON.stringify({
+                  data: {
+                    repository: { ref: { branchProtectionRule: null } },
+                  },
+                }),
+          ),
+        ),
+      );
+      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+      const policy = yield* cli.getBranchPolicy({
+        cwd: "/w",
+        repository: "acme/web",
+        host: "github.example.test",
+        baseBranch: "main",
+      });
+      expect(policy.requiresUpToDateBranch).toBe(false);
     }),
   );
 

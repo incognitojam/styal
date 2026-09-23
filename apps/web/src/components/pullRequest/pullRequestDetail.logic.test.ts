@@ -37,6 +37,7 @@ import {
   resolvePullRequestPrimaryControl,
   shouldRefreshPullRequestActivity,
   resolveBaseFreshness,
+  resolveRequiredBranchUpdate,
   resolvePullRequestPrimaryAction,
   buildPullRequestTimeline,
   describePullRequestState,
@@ -1210,13 +1211,16 @@ describe("how the branch stands against its base", () => {
   const detail = (overrides: Record<string, unknown> = {}) =>
     ({
       state: "open",
+      isDraft: false,
       mergeability: "mergeable",
+      baseBranch: "main",
       baseComparison: "behind",
+      requiresUpToDateBranch: true,
       behindBy: 12,
       capabilities: { updateMethods: ["merge", "rebase"] },
       viewerPermissions: { updateMethods: ["merge", "rebase"] },
       ...overrides,
-    }) as Parameters<typeof resolveBaseFreshness>[0];
+    }) as Parameters<typeof resolveRequiredBranchUpdate>[0];
 
   it("offers both ways where the host and the reader both allow them", () => {
     expect(resolveBaseFreshness(detail())).toEqual({ behindBy: 12, methods: ["merge", "rebase"] });
@@ -1261,6 +1265,18 @@ describe("how the branch stands against its base", () => {
 
   it("reports a count only where the host counted", () => {
     expect(resolveBaseFreshness(detail({ behindBy: undefined }))?.behindBy).toBeNull();
+  });
+
+  it("identifies an update requirement only when the rule applies to a behind, ready-for-review branch", () => {
+    expect(resolveRequiredBranchUpdate(detail())).toEqual({
+      baseBranch: "main",
+      behindBy: 12,
+      methods: ["merge", "rebase"],
+    });
+    expect(resolveRequiredBranchUpdate(detail({ requiresUpToDateBranch: false }))).toBeNull();
+    expect(resolveRequiredBranchUpdate(detail({ requiresUpToDateBranch: undefined }))).toBeNull();
+    expect(resolveRequiredBranchUpdate(detail({ baseComparison: "up-to-date" }))).toBeNull();
+    expect(resolveRequiredBranchUpdate(detail({ isDraft: true }))).toBeNull();
   });
 });
 

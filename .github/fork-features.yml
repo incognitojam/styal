@@ -1597,6 +1597,7 @@ features:
     invariants:
       - Pull request checks have a dedicated tab that distinguishes host-required checks from optional jobs and represents required checks that have not reported yet.
       - The summary and primary action lead with GitHub merge readiness, offering auto-merge when requirements block an otherwise mergeable pull request, including when its branch is behind the base, if GitHub permits it. Check health remains supporting context.
+      - When effective GitHub rules require a behind branch to be updated, the Checks tab explains that auto-merge will wait and offers the update methods the viewer may use; an unavailable policy read does not claim the update is optional.
     implementation_paths:
       - apps/server/src/pullRequest/GitHubPullRequestCli.ts
       - apps/server/src/pullRequest/GitHubPullRequestProvider.ts
@@ -1617,6 +1618,7 @@ features:
     tests:
       - apps/server/src/pullRequest/GitHubPullRequestCli.test.ts
       - apps/server/src/pullRequest/GitHubPullRequestProvider.test.ts
+      - apps/server/src/pullRequest/PullRequestService.test.ts
       - apps/server/src/pullRequest/gitHubPullRequestJson.test.ts
       - apps/web/src/components/pullRequest/PullRequestChecksTab.test.tsx
       - apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts

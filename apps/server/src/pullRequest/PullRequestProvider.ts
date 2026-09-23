@@ -177,6 +177,8 @@ export interface ProviderChangeRequestDetail extends ProviderChangeRequest {
   readonly viewerPermissions: PullRequestViewerPermissions;
   /** Absent from a host that cannot apply repository policy to its merge verdict. */
   readonly mergeReadiness?: PullRequestMergeReadiness;
+  /** Whether repository rules require the head branch to include the latest base commit. */
+  readonly requiresUpToDateBranch?: boolean;
   /** Absent from a host that cannot compare the branch with its base, which is most of them. */
   readonly baseComparison?: PullRequestBaseComparison;
   readonly behindBy?: number;

@@ -3624,7 +3624,11 @@ it.effect("carries the host's policy-aware merge readiness through to the detail
       providers: [
         fakeProvider("github", {
           getChangeRequest: () =>
-            Effect.succeed({ ...changeRequestDetail(1), mergeReadiness: "blocked" }),
+            Effect.succeed({
+              ...changeRequestDetail(1),
+              mergeReadiness: "blocked",
+              requiresUpToDateBranch: true,
+            }),
         }),
       ],
     });
@@ -3635,6 +3639,7 @@ it.effect("carries the host's policy-aware merge readiness through to the detail
       number: 1,
     });
     assert.strictEqual(detail.mergeReadiness, "blocked");
+    assert.strictEqual(detail.requiresUpToDateBranch, true);
   }),
 );
 

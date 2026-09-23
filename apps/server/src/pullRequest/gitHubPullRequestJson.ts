@@ -127,6 +127,7 @@ const RawBranchRuleSchema = Schema.Struct({
     Schema.NullOr(
       Schema.Struct({
         required_status_checks: Schema.optional(Schema.Array(RawRequiredCheckPolicyEntrySchema)),
+        strict_required_status_checks_policy: Schema.optional(Schema.Boolean),
         allowed_merge_methods: Schema.optional(Schema.NullOr(Schema.Array(Schema.String))),
       }),
     ),
@@ -139,6 +140,7 @@ const decodeBranchRules = decodeJsonResult(Schema.Array(Schema.Array(RawBranchRu
 /** What the rulesets in force on a base branch demand of a merge into it. */
 export interface GitHubBranchRulePolicy {
   readonly requiredChecks: ReadonlyArray<string>;
+  readonly requiresUpToDateBranch?: boolean;
   /**
    * Null where no ruleset narrows the strategy, which is not the same as narrowing it to none:
    * a branch nobody has ruled on leaves the repository's own settings as the only word.
@@ -173,10 +175,17 @@ export function decodeBranchRulesJson(
   const decoded = decodeBranchRules(raw);
   if (!Result.isSuccess(decoded)) return Result.fail(decoded.failure);
   const names = new Set<string>();
+  let requiresUpToDateBranch = false;
   let allowedMergeMethods: ReadonlyArray<PullRequestMergeMethod> | null = null;
   for (const page of decoded.success) {
     for (const rule of page) {
       if (rule.type === "required_status_checks") {
+        if (
+          rule.parameters?.strict_required_status_checks_policy === true &&
+          (rule.parameters.required_status_checks?.length ?? 0) > 0
+        ) {
+          requiresUpToDateBranch = true;
+        }
         for (const entry of rule.parameters?.required_status_checks ?? []) {
           const name = trimmed(typeof entry === "string" ? entry : entry.context);
           if (name !== null) names.add(name);
@@ -200,7 +209,11 @@ export function decodeBranchRulesJson(
           : allowedMergeMethods.filter((method) => allowed.includes(method));
     }
   }
-  return Result.succeed({ requiredChecks: [...names], allowedMergeMethods });
+  return Result.succeed({
+    requiredChecks: [...names],
+    requiresUpToDateBranch,
+    allowedMergeMethods,
+  });
 }
 
 /**
@@ -225,7 +238,7 @@ export function narrowMergeCapabilities(
 export const BRANCH_PROTECTION_REQUIRED_CHECKS_GRAPHQL_QUERY = `query($owner: String!, $name: String!, $qualifiedName: String!) {
   repository(owner: $owner, name: $name) {
     ref(qualifiedName: $qualifiedName) {
-      branchProtectionRule { requiredStatusCheckContexts }
+      branchProtectionRule { requiredStatusCheckContexts requiresStrictStatusChecks }
     }
   }
 }`;
@@ -241,6 +254,7 @@ const RawBranchProtectionRequiredChecksSchema = Schema.Struct({
                 requiredStatusCheckContexts: Schema.optional(
                   Schema.NullOr(Schema.Array(Schema.String)),
                 ),
+                requiresStrictStatusChecks: Schema.optional(Schema.Boolean),
               }),
             ),
           }),
@@ -256,17 +270,25 @@ const decodeBranchProtectionRequiredChecks = decodeJsonResult(
 
 export function decodeBranchProtectionRequiredChecksJson(
   raw: string,
-): Result.Result<ReadonlyArray<string>, DecodeFailure> {
+): Result.Result<
+  { readonly requiredChecks: ReadonlyArray<string>; readonly requiresUpToDateBranch?: boolean },
+  DecodeFailure
+> {
   const decoded = decodeBranchProtectionRequiredChecks(raw);
   if (!Result.isSuccess(decoded)) return Result.fail(decoded.failure);
-  const contexts =
-    decoded.success.data.repository?.ref?.branchProtectionRule?.requiredStatusCheckContexts ?? [];
+  const protection = decoded.success.data.repository?.ref?.branchProtectionRule;
+  const contexts = protection?.requiredStatusCheckContexts ?? [];
   const names = new Set<string>();
   for (const context of contexts) {
     const name = trimmed(context);
     if (name !== null) names.add(name);
   }
-  return Result.succeed([...names]);
+  const requiresUpToDateBranch =
+    protection === null ? false : protection?.requiresStrictStatusChecks;
+  return Result.succeed({
+    requiredChecks: [...names],
+    ...(requiresUpToDateBranch === undefined ? {} : { requiresUpToDateBranch }),
+  });
 }
 
 const RawListItemSchema = Schema.Struct({

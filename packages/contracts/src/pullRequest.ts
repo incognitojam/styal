@@ -768,6 +768,8 @@ export const PullRequestDetail = Schema.Struct({
    * merge can be created cleanly, not whether every repository requirement has been satisfied.
    */
   mergeReadiness: Schema.optional(PullRequestMergeReadiness),
+  /** Absent when the host could not determine the effective up-to-date branch requirement. */
+  requiresUpToDateBranch: Schema.optional(Schema.Boolean),
   additions: NonNegativeInt,
   deletions: NonNegativeInt,
   changedFiles: NonNegativeInt,
