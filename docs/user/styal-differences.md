@@ -69,6 +69,10 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Staying oriented while agents work
 
+- **Proactive panels by default.** Newly linked reviews open automatically, and completed agent work
+  switches to its diff. You can turn this off in Settings. Compared with
+  [T3 Code revision f223312](https://github.com/pingdotgg/t3code/tree/f22331240ed1a97fae560e314bffb75fe39db8ca),
+  checked September 23, 2026, where proactive panels are opt-in.
 - **Optional Discord activity.** The desktop app can share the number of active threads and
   their projects, without sharing names or conversation content. Settled, snoozed, and archived
   threads are excluded. [Discord Rich Presence](./discord-rich-presence.md). Compared with

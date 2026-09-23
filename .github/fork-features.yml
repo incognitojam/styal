@@ -1188,6 +1188,25 @@ features:
         - https://github.com/pingdotgg/t3code/pull/7445
       retire_when: Upstream preserves equivalent responsive device metrics, logical capture coordinates, DevTools fallback behavior, and surface ownership across panel visibility changes.
 
+  - id: proactive-panels-default
+    title: Open proactive panels by default
+    status: maintained
+    prs: [404]
+    invariants:
+      - Clients without a persisted preference automatically open newly linked pull requests and switch to the completed turn's diff when agent work finishes.
+      - An explicit opt-out remains persisted, and resetting General settings restores the enabled default.
+    implementation_paths:
+      - packages/contracts/src/settings.ts
+    upstream_paths:
+      - packages/contracts/src/settings.ts
+    tests:
+      - packages/contracts/src/settings.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/f22331240ed1a97fae560e314bffb75fe39db8ca
+      retire_when: Upstream enables proactive panels by default or the fork adopts upstream's opt-in default.
+
   - id: project-action-icons
     title: Give project actions role-specific icons
     status: maintained
