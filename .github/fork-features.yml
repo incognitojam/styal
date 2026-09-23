@@ -600,6 +600,7 @@ features:
       - apps/server/src/provider/Layers/GrokAdapter.ts
       - apps/server/src/provider/Layers/OpenCodeAdapter.ts
       - apps/server/src/provider/Layers/ProviderService.ts
+      - apps/server/src/provider/RuntimeInstructions.ts
       - packages/shared/src/toolRowPresentation.ts
     upstream_paths:
       - apps/mobile/src/lib/threadActivity.ts
@@ -613,12 +614,14 @@ features:
       - apps/server/src/provider/Layers/GrokAdapter.ts
       - apps/server/src/provider/Layers/OpenCodeAdapter.ts
       - apps/server/src/provider/Layers/ProviderService.ts
+      - apps/server/src/provider/RuntimeInstructions.ts
     tests:
       - apps/mobile/src/lib/threadActivity.test.ts
       - apps/server/src/mcp/McpProviderSession.test.ts
       - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
       - apps/server/src/provider/Layers/CodexSessionRuntime.test.ts
       - apps/server/src/provider/Layers/OpenCodeAdapter.test.ts
+      - apps/server/src/provider/RuntimeInstructions.test.ts
       - packages/shared/src/toolRowPresentation.test.ts
     upstream:
       status: unassessed
@@ -1499,7 +1502,7 @@ features:
 
   - id: pull-request-draft-status
     title: Show draft pull request status consistently
-    status: maintained
+    status: review-needed
     prs: [219]
     invariants:
       - Draft state propagates through GitHub, GitLab, Bitbucket, and Azure DevOps change-request status without making older servers or absent provider fields claim a pull request is ready.
@@ -1541,6 +1544,7 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/7148
+        - https://github.com/pingdotgg/t3code/pull/9537
       retire_when: Upstream propagates draft state through every supported source-control adapter and presents it consistently in both pull request details and thread status.
 
   - id: pull-request-live-refresh
@@ -1567,6 +1571,7 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/pull/6466
         - https://github.com/pingdotgg/t3code/pull/9176
+        - https://github.com/pingdotgg/t3code/pull/9496
       retire_when: Upstream keeps the visible pull request current without stale responses, unnecessary activity reads, or invalidating cached diffs.
 
   - id: pull-request-open-entry-points
