@@ -106,12 +106,11 @@ export function getProviderVersionLabel(version: string | null | undefined) {
  * e.g. `Weekly limit · 7% used · Resets in 6 days`.
  */
 export function getProviderRateLimitLines(
-  rateLimits: ServerProvider["rateLimits"],
+  usageLimits: ServerProvider["usageLimits"],
   now: number,
 ): ReadonlyArray<{ readonly id: string; readonly text: string }> {
-  return deriveProviderRateLimitRows(rateLimits, now).map((row) => {
-    const parts = [row.name];
-    if (row.usedPercent !== null) parts.push(`${Math.round(row.usedPercent)}% used`);
+  return deriveProviderRateLimitRows(usageLimits, now).map((row) => {
+    const parts = [row.name, `${Math.round(row.usedPercent)}% used`];
     if (row.resetText) parts.push(row.resetText);
     return { id: row.id, text: parts.join(" · ") };
   });

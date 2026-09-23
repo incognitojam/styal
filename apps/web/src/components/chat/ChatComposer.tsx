@@ -1027,7 +1027,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   compact: boolean;
   activeContextWindow: ContextWindowSnapshot | null;
   activeThreadModelDisplayName: string | null;
-  activeThreadRateLimits: ServerProvider["rateLimits"];
+  activeThreadUsageLimits: ServerProvider["usageLimits"];
   isPreparingWorktree: boolean;
   pendingAction: {
     questionIndex: number;
@@ -1063,7 +1063,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
           onCompact={props.onCompactContext}
           compactDisabled={props.compactDisabled}
           compactDisabledReason={props.compactDisabledReason}
-          rateLimits={props.activeThreadRateLimits}
+          usageLimits={props.activeThreadUsageLimits}
         />
       ) : null}
       <ComposerPrimaryActions
@@ -1765,10 +1765,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   // Quota is per provider account, so it follows the instance this thread
   // actually runs on rather than whatever the picker is showing.
-  const activeThreadRateLimits = useMemo(
+  const activeThreadUsageLimits = useMemo(
     () =>
       providerInstanceEntries.find((entry) => entry.instanceId === selectedInstanceId)?.snapshot
-        .rateLimits,
+        .usageLimits,
     [providerInstanceEntries, selectedInstanceId],
   );
 
@@ -5566,7 +5566,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       settings.contextWindowMeterEnabled ? activeContextWindow : null
                     }
                     activeThreadModelDisplayName={activeThreadModelDisplayName}
-                    activeThreadRateLimits={activeThreadRateLimits}
+                    activeThreadUsageLimits={activeThreadUsageLimits}
                     pendingAction={pendingPrimaryAction}
                     isRunning={phase === "running"}
                     showPlanFollowUpPrompt={

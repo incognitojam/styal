@@ -8,8 +8,6 @@
  * @module CodexAdapterLive
  */
 import {
-  type AccountRateLimitsUpdatedPayload,
-  type AccountRateLimitWindow,
   EventId,
   type CanonicalItemType,
   type CanonicalRequestType,
@@ -429,51 +427,6 @@ function normalizeCodexTokenUsage(
       ? { lastReasoningOutputTokens: reasoningOutputTokens }
       : {}),
     compactsAutomatically: true,
-  };
-}
-
-// Codex sends sparse rolling updates: null/absent fields mean "not included
-// here", never "cleared", so only what actually arrived is forwarded.
-function normalizeCodexRateLimits(
-  snapshot: EffectCodexSchema.V2AccountRateLimitsUpdatedNotification["rateLimits"],
-): AccountRateLimitsUpdatedPayload | undefined {
-  const windows: Array<AccountRateLimitWindow> = [];
-  for (const id of ["primary", "secondary"] as const) {
-    const window = snapshot[id];
-    if (!window) {
-      continue;
-    }
-    windows.push({
-      id,
-      usedPercent: window.usedPercent,
-      ...(window.resetsAt != null ? { resetsAt: window.resetsAt } : {}),
-      ...(window.windowDurationMins != null ? { windowMinutes: window.windowDurationMins } : {}),
-    });
-  }
-
-  const limitId = trimText(snapshot.limitId);
-  const limitName = trimText(snapshot.limitName);
-  const planType = trimText(snapshot.planType);
-  const credits = snapshot.credits
-    ? {
-        ...(trimText(snapshot.credits.balance)
-          ? { balance: trimText(snapshot.credits.balance) }
-          : {}),
-        hasCredits: snapshot.credits.hasCredits,
-        unlimited: snapshot.credits.unlimited,
-      }
-    : undefined;
-
-  if (windows.length === 0 && !planType && !credits) {
-    return undefined;
-  }
-
-  return {
-    windows,
-    ...(limitId ? { limitId } : {}),
-    ...(limitName ? { limitName } : {}),
-    ...(planType ? { planType } : {}),
-    ...(credits ? { credits } : {}),
   };
 }
 

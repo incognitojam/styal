@@ -25,47 +25,36 @@ describe("getProviderRateLimitLines", () => {
     expect(getProviderRateLimitLines(undefined, NOW)).toEqual([]);
   });
 
-  it("names windows from their duration and formats usage and reset", () => {
+  it("formats each window's usage and reset", () => {
     const lines = getProviderRateLimitLines(
       {
+        checkedAt: "2026-01-01T00:00:00.000Z",
         windows: [
           {
             id: "primary",
+            kind: "session",
+            label: "Session",
             usedPercent: 23,
-            resetsAt: (NOW + 3 * 60 * 60 * 1000) / 1000,
-            windowMinutes: 300,
+            resetsAt: new Date(NOW + 3 * 60 * 60 * 1000).toISOString(),
+            windowDurationMins: 300,
           },
           {
             id: "secondary",
+            kind: "weekly",
+            label: "Weekly",
             usedPercent: 6,
-            resetsAt: (NOW + 6 * 24 * 60 * 60 * 1000) / 1000,
-            windowMinutes: 10_080,
+            resetsAt: new Date(NOW + 6 * 24 * 60 * 60 * 1000).toISOString(),
+            windowDurationMins: 10_080,
           },
+          { id: "seven_day_fable", kind: "weekly", label: "Weekly · Fable", usedPercent: 40 },
         ],
-        updatedAt: "2026-01-01T00:00:00.000Z",
       },
       NOW,
     );
     expect(lines).toEqual([
-      { id: "primary", text: "5-hour limit · 23% used · Resets in 3 hr" },
-      { id: "secondary", text: "Weekly limit · 6% used · Resets in 6 days" },
-    ]);
-  });
-
-  it("prefers the provider-supplied label and tolerates missing fields", () => {
-    const lines = getProviderRateLimitLines(
-      {
-        windows: [
-          { id: "spark:primary", label: "Spark", usedPercent: 40, windowMinutes: 10_080 },
-          { id: "five_hour", resetsAt: (NOW + 30 * 60 * 1000) / 1000 },
-        ],
-        updatedAt: "2026-01-01T00:00:00.000Z",
-      },
-      NOW,
-    );
-    expect(lines).toEqual([
-      { id: "spark:primary", text: "Spark limit · 40% used" },
-      { id: "five_hour", text: "five_hour · Resets in 30 min" },
+      { id: "primary", text: "Session · 23% used · Resets in 3 hr" },
+      { id: "secondary", text: "Weekly · 6% used · Resets in 6 days" },
+      { id: "seven_day_fable", text: "Weekly · Fable · 40% used" },
     ]);
   });
 });

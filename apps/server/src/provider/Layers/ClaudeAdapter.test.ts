@@ -1648,7 +1648,7 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
-  it.effect("normalizes rate limit events into canonical windows", () => {
+  it.effect("normalizes rate limit events into usage limit updates", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
       const adapter = yield* ClaudeAdapter;
@@ -1680,7 +1680,7 @@ describe("ClaudeAdapterLive", () => {
         uuid: "rate-limit-warning",
       } as unknown as SDKMessage);
 
-      // Below the threshold the SDK omits utilization entirely.
+      // Below the threshold the SDK omits utilization, so there is no bar to move.
       harness.query.emit({
         type: "rate_limit_event",
         rate_limit_info: {
@@ -1693,7 +1693,7 @@ describe("ClaudeAdapterLive", () => {
         uuid: "rate-limit-allowed",
       } as unknown as SDKMessage);
 
-      // No rateLimitType means no window to key on; the event is dropped.
+      // No rateLimitType means no window to key on.
       harness.query.emit({
         type: "rate_limit_event",
         rate_limit_info: { status: "allowed" },
@@ -1707,16 +1707,22 @@ describe("ClaudeAdapterLive", () => {
       const rateLimitEvents = runtimeEvents.filter(
         (event) => event.type === "account.rate-limits.updated",
       );
-      assert.equal(rateLimitEvents.length, 2);
-      const [warning, allowed] = rateLimitEvents;
+      assert.equal(rateLimitEvents.length, 1);
+      const [warning] = rateLimitEvents;
       if (warning?.type === "account.rate-limits.updated") {
         assert.deepEqual(warning.payload, {
-          windows: [{ id: "seven_day", usedPercent: 80, resetsAt: 1_786_989_600 }],
-        });
-      }
-      if (allowed?.type === "account.rate-limits.updated") {
-        assert.deepEqual(allowed.payload, {
-          windows: [{ id: "five_hour", resetsAt: 1_786_995_000 }],
+          limits: {
+            windows: [
+              {
+                id: "seven_day",
+                kind: "weekly",
+                label: "Weekly",
+                usedPercent: 80,
+                windowDurationMins: 10_080,
+                resetsAt: "2026-08-17T18:00:00.000Z",
+              },
+            ],
+          },
         });
       }
     }).pipe(

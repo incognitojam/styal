@@ -14,10 +14,8 @@ import * as CodexSchema from "effect-codex-app-server/schema";
 import * as CodexErrors from "effect-codex-app-server/errors";
 
 import type {
-  AccountRateLimitWindow,
   CodexSettings,
   ServerProvider,
-  ServerProviderRateLimits,
   ServerProviderState,
   ModelCapabilities,
   ProviderOptionDescriptor,
@@ -62,7 +60,6 @@ export interface CodexAppServerProviderSnapshot {
   readonly version: string | undefined;
   readonly models: ReadonlyArray<ServerProviderModel>;
   readonly skills: ReadonlyArray<ServerProviderSkill>;
-  readonly rateLimits?: CodexSchema.V2GetAccountRateLimitsResponse | undefined;
 }
 
 const REASONING_EFFORT_LABELS: Readonly<Record<string, string>> = {
@@ -446,7 +443,6 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
       appendCustomCodexModels(models, input.customModels ?? []),
     ),
     skills: parseCodexSkillsListResponse(skillsResponse, input.cwd),
-    rateLimits: Option.getOrUndefined(rateLimits),
   } satisfies CodexAppServerProviderSnapshot;
 });
 
@@ -552,48 +548,6 @@ const makePendingCodexProvider = (
       },
     });
   });
-
-interface CodexRateLimitWindowShape {
-  readonly resetsAt?: number | null;
-  readonly usedPercent: number;
-  readonly windowDurationMins?: number | null;
-}
-
-/**
- * Flattens the account's own quota snapshot from `account/rateLimits/read`
- * into the canonical window list carried on `ServerProvider.rateLimits`.
- *
- * Deliberately ignores `rateLimitsByLimitId`: it also carries per-model quotas
- * (e.g. Codex Spark) whose key order the backend does not guarantee, and those
- * belong next to the model that spends them rather than on the account card.
- */
-export function codexServerRateLimits(
-  response: CodexSchema.V2GetAccountRateLimitsResponse | undefined,
-  updatedAt: string,
-): ServerProviderRateLimits | undefined {
-  if (!response) {
-    return undefined;
-  }
-  const snapshot = response.rateLimits;
-  const label = snapshot.limitName?.trim() || undefined;
-
-  const windows: Array<AccountRateLimitWindow> = [];
-  for (const kind of ["primary", "secondary"] as const) {
-    const window: CodexRateLimitWindowShape | null | undefined = snapshot[kind];
-    if (!window) {
-      continue;
-    }
-    windows.push({
-      id: kind,
-      ...(label ? { label } : {}),
-      usedPercent: window.usedPercent,
-      ...(window.resetsAt != null ? { resetsAt: window.resetsAt } : {}),
-      ...(window.windowDurationMins != null ? { windowMinutes: window.windowDurationMins } : {}),
-    });
-  }
-
-  return windows.length > 0 ? { windows, updatedAt } : undefined;
-}
 
 function accountProbeStatus(account: CodexAppServerProviderSnapshot["account"]): {
   readonly status: Exclude<ServerProviderState, "disabled">;

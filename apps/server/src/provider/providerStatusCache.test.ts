@@ -43,22 +43,26 @@ const makeProvider = (
 });
 
 it.layer(NodeServices.layer)("providerStatusCache", (it) => {
-  it("keeps cached rate limits when the fallback snapshot has none", () => {
-    const hydrated = hydrateCachedProvider({
-      cachedProvider: makeProvider(CODEX_DRIVER, {
-        rateLimits: {
-          windows: [{ id: "primary", usedPercent: 7, windowMinutes: 10_080 }],
-          updatedAt: "2026-04-11T00:00:00.000Z",
+  it("keeps cached usage limits when the fallback snapshot has none", () => {
+    const usageLimits = {
+      checkedAt: "2026-04-11T00:00:00.000Z",
+      windows: [
+        {
+          id: "secondary",
+          kind: "weekly" as const,
+          label: "Weekly",
+          usedPercent: 7,
+          windowDurationMins: 10_080,
         },
-      }),
+      ],
+    };
+    const hydrated = hydrateCachedProvider({
+      cachedProvider: makeProvider(CODEX_DRIVER, { usageLimits }),
       // A pending snapshot rebuilt at startup: nothing has probed quota yet.
       fallbackProvider: makeProvider(CODEX_DRIVER, { version: null, status: "warning" }),
     });
 
-    assert.deepStrictEqual(hydrated.rateLimits, {
-      windows: [{ id: "primary", usedPercent: 7, windowMinutes: 10_080 }],
-      updatedAt: "2026-04-11T00:00:00.000Z",
-    });
+    assert.deepStrictEqual(hydrated.usageLimits, usageLimits);
   });
 
   it.effect("logs structural diagnostics without retaining invalid cache contents", () => {

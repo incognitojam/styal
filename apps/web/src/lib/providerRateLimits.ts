@@ -1,24 +1,16 @@
 import type { ServerProvider } from "@t3tools/contracts";
+import { resetMillis } from "@t3tools/shared/usageLimits";
 
 /**
- * One subscription quota window prepared for display: a human name, when it
- * resets, and how much is spent. Providers report windows sparsely, so both
- * `resetText` and `usedPercent` can be absent for a window we still know of.
+ * One subscription quota window prepared for display: the provider's name for
+ * it, when it resets, and how much is spent. `resetText` is absent when the
+ * provider did not report a reset time.
  */
 export interface ProviderRateLimitRow {
   readonly id: string;
   readonly name: string;
   readonly resetText: string | null;
-  readonly usedPercent: number | null;
-}
-
-function windowName(window: NonNullable<ServerProvider["rateLimits"]>["windows"][number]): string {
-  if (window.label) return `${window.label} limit`;
-  if (window.windowMinutes === undefined) return window.id;
-  const hours = Math.round(window.windowMinutes / 60);
-  if (hours < 24) return `${hours}-hour limit`;
-  const days = Math.round(hours / 24);
-  return days === 7 ? "Weekly limit" : `${days}-day limit`;
+  readonly usedPercent: number;
 }
 
 /**
@@ -29,11 +21,11 @@ function windowName(window: NonNullable<ServerProvider["rateLimits"]>["windows"]
 const RESET_GRACE_MS = 60_000;
 
 function hasExpired(resetsAt: number, now: number): boolean {
-  return resetsAt * 1000 - now < -RESET_GRACE_MS;
+  return resetsAt - now < -RESET_GRACE_MS;
 }
 
 function resetText(resetsAt: number, now: number): string {
-  const remainingMs = resetsAt * 1000 - now;
+  const remainingMs = resetsAt - now;
   if (remainingMs < 60_000) return "Resets soon";
   const minutes = Math.round(remainingMs / 60_000);
   if (minutes < 60) return `Resets in ${minutes} min`;
@@ -58,16 +50,20 @@ function resetText(resetsAt: number, now: number): string {
  * exists. They return on the next successful refresh.
  */
 export function deriveProviderRateLimitRows(
-  rateLimits: ServerProvider["rateLimits"],
+  usageLimits: ServerProvider["usageLimits"],
   now: number,
 ): ReadonlyArray<ProviderRateLimitRow> {
-  if (!rateLimits) return [];
-  return rateLimits.windows
-    .filter((window) => window.resetsAt === undefined || !hasExpired(window.resetsAt, now))
-    .map((window) => ({
-      id: window.id,
-      name: windowName(window),
-      resetText: window.resetsAt !== undefined ? resetText(window.resetsAt, now) : null,
-      usedPercent: window.usedPercent ?? null,
-    }));
+  if (!usageLimits) return [];
+  return usageLimits.windows.flatMap((window) => {
+    const resetsAt = resetMillis(window);
+    if (resetsAt !== null && hasExpired(resetsAt, now)) return [];
+    return [
+      {
+        id: window.id,
+        name: window.label,
+        resetText: resetsAt === null ? null : resetText(resetsAt, now),
+        usedPercent: window.usedPercent,
+      },
+    ];
+  });
 }

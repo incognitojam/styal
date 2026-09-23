@@ -6,7 +6,6 @@ import type {
   ServerProviderSkill,
   ServerProviderSlashCommand,
   ServerProviderModel,
-  ServerProviderRateLimits,
   ServerProviderState,
   ServerProviderUsageLimits,
 } from "@t3tools/contracts";
@@ -254,7 +253,6 @@ export function buildServerProvider(input: {
     skills: [...(input.skills ?? [])],
     ...(input.probe.usageLimits ? { usageLimits: input.probe.usageLimits } : {}),
     ...(versionAdvisory ? { versionAdvisory } : {}),
-    ...(input.probe.rateLimits ? { rateLimits: input.probe.rateLimits } : {}),
   };
 }
 
