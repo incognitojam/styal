@@ -151,6 +151,14 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
   errors.push(...provenance.errors);
   const overlaps = findForkFeatureOverlaps(input.ledger, input.changedPaths);
   const overlapFeatureIds = overlaps.map(({ feature }) => feature.id);
+  const overlapPaths = new Map<string, Array<string>>();
+  for (const { feature, paths } of overlaps) {
+    for (const path of paths) {
+      const featureIds = overlapPaths.get(path) ?? [];
+      featureIds.push(feature.id);
+      overlapPaths.set(path, featureIds);
+    }
+  }
   const manualReviewReasons = manualReviewRules
     .filter((rule) => input.changedPaths.some(rule.matches))
     .map((rule) => rule.description);
@@ -158,7 +166,9 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
     manualReviewReasons.push("explicit upstream commits require source-diff review");
   }
   if (overlapFeatureIds.length > 0) {
-    manualReviewReasons.push(`tracked fork feature paths overlap: ${overlapFeatureIds.join(", ")}`);
+    manualReviewReasons.push(
+      `tracked fork feature paths overlap (${overlapPaths.size} ${overlapPaths.size === 1 ? "path" : "paths"}, ${overlapFeatureIds.length} features); see Fork feature overlap below`,
+    );
   }
 
   const valid = errors.length === 0;
@@ -179,10 +189,11 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
   const overlapSection =
     overlaps.length === 0
       ? "\n## Fork feature overlap\n\nNo tracked fork feature upstream paths changed.\n"
-      : `\n## Fork feature overlap\n\n${overlaps
+      : `\n## Fork feature overlap\n\n${[...overlapPaths]
+          .sort(([left], [right]) => left.localeCompare(right))
           .map(
-            ({ feature, paths }) =>
-              `- \`${feature.id}\`: ${feature.title} — ${paths.map((path) => `\`${path}\``).join(", ")}`,
+            ([path, featureIds]) =>
+              `- \`${path}\`: ${featureIds.map((id) => `\`${id}\``).join(", ")}`,
           )
           .join("\n")}\n`;
   const summary = `# Upstream intake audit
