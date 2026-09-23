@@ -5,6 +5,7 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeUtil from "node:util";
+import { assessEarlyCandidates, resolveEarlyDependencies } from "./upstream-early.ts";
 import { parseUpstreamProvenance, withoutFencedExamples } from "./upstream-provenance.ts";
 
 export interface IntakeState {
@@ -224,6 +225,25 @@ interface AssociatedPR {
 }
 type Associations = Record<string, AssociatedPR[]>;
 
+/** Reuse settled PR associations across targets; retry direct and unmerged commits. */
+export function reusableAssociations(
+  cache: Associations,
+  repository: string,
+  targetChain: ReadonlySet<string>,
+): Associations {
+  return Object.fromEntries(
+    Object.entries(cache).filter(([, prs]) =>
+      prs.some(
+        (pr) =>
+          pr.mergedAt !== null &&
+          pr.baseRepository.nameWithOwner === repository &&
+          pr.mergeCommit !== null &&
+          targetChain.has(pr.mergeCommit.oid),
+      ),
+    ),
+  );
+}
+
 export function associatePRs(
   integrations: Integration[],
   associations: Associations,
@@ -302,6 +322,7 @@ function main() {
       state: { type: "string", default: ".github/upstream-intake.json" },
       "fork-ref": { type: "string", default: "origin/main" },
       "upstream-ref": { type: "string", default: "upstream/main" },
+      through: { type: "string" },
       json: { type: "boolean" },
       "refresh-metadata": { type: "boolean" },
       help: { type: "boolean" },
@@ -310,19 +331,31 @@ function main() {
   const [command = "status", source] = positionals;
   if (values.help) {
     console.log(
-      "Usage: node scripts/upstream-queue.ts status|next|explain <PR-or-SHA> [--count 20] [--json] [--refresh-metadata]\n       node scripts/upstream-queue.ts advance <SHA> | target <SHA>\nReads .github/upstream-intake.json and fetched origin/main, upstream/main. No fetch, checkout, cherry-pick, or GitHub writes. advance/target edit only the local state file.",
+      "Usage: node scripts/upstream-queue.ts status|next|explain <PR-or-SHA> [--count 20] [--json] [--refresh-metadata]\n       node scripts/upstream-queue.ts early [PR ...] [--count 20] [--through upstream/main] [--json]\n       node scripts/upstream-queue.ts advance <SHA> | target <SHA>\nReads .github/upstream-intake.json and fetched origin/main, upstream/main. No fetch, checkout, cherry-pick, or GitHub writes. advance/target edit only the local state file.",
     );
     return;
   }
   if (
-    !["status", "next", "explain", "advance", "target"].includes(command) ||
-    positionals.length > 2
+    !["status", "next", "explain", "early", "advance", "target"].includes(command) ||
+    (positionals.length > 2 && command !== "early")
   )
     throw new Error("Unknown command or extra arguments. Use --help.");
   if (["explain", "advance", "target"].includes(command) && !source)
     throw new Error(`${command} requires a PR or commit.`);
   if (["status", "next"].includes(command) && source)
     throw new Error(`${command} does not accept a positional argument.`);
+  if (values.through && command !== "early")
+    throw new Error("--through is only available for early assessments.");
+  const requestedPRs =
+    command === "early"
+      ? positionals
+          .slice(1)
+          .flatMap((value) => value.split(","))
+          .map((value) => {
+            if (!/^#?[1-9]\d*$/u.test(value)) throw new Error("early accepts PR numbers.");
+            return Number(value.replace("#", ""));
+          })
+      : [];
   const count = Number(values.count);
   if (!Number.isSafeInteger(count) || count < 1)
     throw new Error("Count must be a positive integer.");
@@ -356,6 +389,14 @@ function main() {
     "--end-of-options",
     `${values["upstream-ref"]}^{commit}`,
   ]).trim();
+  if (values.through) {
+    state.target = run("git", [
+      "rev-parse",
+      "--verify",
+      "--end-of-options",
+      `${values.through}^{commit}`,
+    ]).trim();
+  }
   const upstreamChain = run("git", ["rev-list", "--first-parent", upstream]).trim().split("\n");
   if (!upstreamChain.includes(state.target))
     throw new Error("Target is not on fetched upstream main's first-parent chain.");
@@ -372,17 +413,35 @@ function main() {
     state.target = source;
   }
   const integrations = readIntegrations(state, run);
+  const targetChain = new Set(
+    run("git", ["rev-list", "--first-parent", state.target]).trim().split("\n"),
+  );
   const scratch = ensureScratchDirectory(root);
   const cacheName = `upstream-queue-${state.upstreamRepository.replace("/", "-")}-${state.target}-prs.json`;
   const cachePath = NodePath.resolve(scratch, cacheName);
   const worktreeCachePath = NodePath.resolve(root, ".scratch", cacheName);
-  const reusableCachePath = [cachePath, worktreeCachePath].find((path) => NodeFS.existsSync(path));
-  const cache =
-    !values["refresh-metadata"] && reusableCachePath
-      ? (JSON.parse(NodeFS.readFileSync(reusableCachePath, "utf8")) as Associations)
-      : {};
-  if (reusableCachePath === worktreeCachePath && worktreeCachePath !== cachePath)
-    writeAssociationsCache(cachePath, cache);
+  const otherCachePaths = [scratch, NodePath.resolve(root, ".scratch")].flatMap((directory) =>
+    NodeFS.existsSync(directory)
+      ? NodeFS.readdirSync(directory)
+          .filter(
+            (name) =>
+              name.startsWith(`upstream-queue-${state.upstreamRepository.replace("/", "-")}-`) &&
+              name.endsWith("-prs.json"),
+          )
+          .map((name) => NodePath.resolve(directory, name))
+      : [],
+  );
+  const readCache = (path: string) => JSON.parse(NodeFS.readFileSync(path, "utf8")) as Associations;
+  const currentCachePath = [cachePath, worktreeCachePath].find((path) => NodeFS.existsSync(path));
+  const cache = !values["refresh-metadata"] && currentCachePath ? readCache(currentCachePath) : {};
+  if (!values["refresh-metadata"]) {
+    for (const path of otherCachePaths) {
+      if (path === currentCachePath) continue;
+      const reusable = reusableAssociations(readCache(path), state.upstreamRepository, targetChain);
+      for (const [sha, prs] of Object.entries(reusable)) cache[sha] ??= prs;
+    }
+  }
+  writeAssociationsCache(cachePath, cache);
   const associations = fetchAssociations(
     integrations,
     state.upstreamRepository,
@@ -391,9 +450,6 @@ function main() {
     (next) => writeAssociationsCache(cachePath, next),
   );
   writeAssociationsCache(cachePath, associations);
-  const targetChain = new Set(
-    run("git", ["rev-list", "--first-parent", state.target]).trim().split("\n"),
-  );
   const associated = associatePRs(
     integrations,
     associations,
@@ -411,6 +467,209 @@ function main() {
     forkCommits.push({ sha: forkLog[index]!.trim(), message: forkLog[index + 1]! });
   const entries = reconcile(associated, forkCommits, state.exceptions);
   const through = reconciledThrough(state.baseline, entries);
+  if (command === "early") {
+    const localScratch = NodePath.resolve(root, ".scratch");
+    const ignored = NodeChildProcess.spawnSync("git", ["check-ignore", "-q", ".scratch/"], {
+      cwd: root,
+    });
+    if (ignored.status === 1) {
+      const exclude = run("git", [
+        "rev-parse",
+        "--path-format=absolute",
+        "--git-path",
+        "info/exclude",
+      ]).trim();
+      NodeFS.appendFileSync(exclude, "\n/.scratch/\n");
+    } else if (ignored.status !== 0) {
+      throw ignored.error ?? new Error("Could not check scratch ignore rules.");
+    }
+    NodeFS.mkdirSync(localScratch, { recursive: true });
+    const objectDirectory = NodeFS.mkdtempSync(
+      NodePath.resolve(localScratch, "upstream-early-objects-"),
+    );
+    const commonObjects = run("git", [
+      "rev-parse",
+      "--path-format=absolute",
+      "--git-path",
+      "objects",
+    ]).trim();
+    const simulationEnv = {
+      ...process.env,
+      GIT_OBJECT_DIRECTORY: objectDirectory,
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: [
+        commonObjects,
+        process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES,
+      ]
+        .filter(Boolean)
+        .join(NodePath.delimiter),
+    };
+    try {
+      const changedPaths = new Map<string, string[]>();
+      const pathsFor = (entry: QueueEntry) => {
+        const cached = changedPaths.get(entry.sha);
+        if (cached) return cached;
+        const paths = run("git", [
+          "diff",
+          "--name-only",
+          "--no-renames",
+          "-z",
+          entry.parents[0]!,
+          entry.sha,
+        ])
+          .split("\0")
+          .filter(Boolean);
+        changedPaths.set(entry.sha, paths);
+        return paths;
+      };
+      const appliesCleanly = (entry: QueueEntry) => {
+        const result = NodeChildProcess.spawnSync(
+          "git",
+          ["merge-tree", "--write-tree", `--merge-base=${entry.parents[0]}`, fork, entry.sha],
+          { cwd: root, encoding: "utf8", env: simulationEnv },
+        );
+        if (result.status === 0) return true;
+        if (result.status === 1) return false;
+        throw result.error ?? new Error(result.stderr || "Could not simulate cherry-pick.");
+      };
+      if (requestedPRs.length) {
+        const applyPatch = (current: string, entry: QueueEntry): string | null => {
+          const result = NodeChildProcess.spawnSync(
+            "git",
+            ["merge-tree", "--write-tree", `--merge-base=${entry.parents[0]}`, current, entry.sha],
+            { cwd: root, encoding: "utf8", env: simulationEnv },
+          );
+          if (result.status === 1) return null;
+          if (result.status !== 0)
+            throw result.error ?? new Error(result.stderr || "Could not simulate intake plan.");
+          const tree = result.stdout.split("\n")[0]!;
+          if (!fullSha.test(tree)) throw new Error("Git did not return a merge tree.");
+          return tree;
+        };
+        const syntheticCommit = (tree: string, parent: string) =>
+          NodeChildProcess.execFileSync(
+            "git",
+            ["commit-tree", tree, "-p", parent, "-m", "Synthetic intake assessment"],
+            {
+              cwd: root,
+              encoding: "utf8",
+              env: {
+                ...simulationEnv,
+                GIT_AUTHOR_NAME: "Intake check",
+                GIT_AUTHOR_EMAIL: "intake-check@example.invalid",
+                GIT_COMMITTER_NAME: "Intake check",
+                GIT_COMMITTER_EMAIL: "intake-check@example.invalid",
+              },
+            },
+          ).trim();
+        const treeOf = (ref: string) =>
+          NodeChildProcess.execFileSync("git", ["rev-parse", `${ref}^{tree}`], {
+            cwd: root,
+            encoding: "utf8",
+            env: simulationEnv,
+          }).trim();
+        const plan = resolveEarlyDependencies(entries, through, requestedPRs, (selection) => {
+          let overlay = through;
+          for (const entry of selection.selected) {
+            const tree = applyPatch(overlay, entry);
+            if (tree === null)
+              throw new Error(
+                `Selected #${entry.pr ?? entry.sha} cannot be applied at the upstream boundary.`,
+              );
+            overlay = syntheticCommit(tree, overlay);
+          }
+          const selected = new Set(selection.selected.map((entry) => entry.sha));
+          for (const entry of selection.intervening) {
+            if (selected.has(entry.sha)) {
+              overlay = syntheticCommit(treeOf(overlay), entry.sha);
+              continue;
+            }
+            const tree = applyPatch(overlay, entry);
+            if (tree === null) return entry;
+            overlay = syntheticCommit(tree, entry.sha);
+          }
+          const finalSource = selection.intervening.at(-1)!;
+          if (treeOf(overlay) !== treeOf(finalSource.sha))
+            throw new Error("Replay changed the upstream result without a textual conflict.");
+          return null;
+        });
+        let current = fork;
+        let forkConflict: QueueEntry | null = null;
+        for (const entry of plan.selected) {
+          const tree = applyPatch(current, entry);
+          if (tree === null) {
+            forkConflict = entry;
+            break;
+          }
+          current = syntheticCommit(tree, current);
+        }
+        const summary = {
+          fork,
+          through,
+          target: state.target,
+          requestedPRs: plan.requestedPRs,
+          dependencyPRs: plan.dependencyPRs,
+          dependencyCommits: plan.dependencyCommits,
+          selectedCommits: plan.selected.map((entry) => ({ sha: entry.sha, pr: entry.pr })),
+          replayedCommits: plan.replayedCommits,
+          attempts: plan.attempts,
+          forkAppliesCleanly: forkConflict === null,
+          forkConflictAt:
+            forkConflict === null ? null : { sha: forkConflict.sha, pr: forkConflict.pr },
+        };
+        if (values.json) console.log(JSON.stringify(summary, null, 2));
+        else {
+          console.log(`Fork ${shortSha(fork)}; reconciled through ${shortSha(through)}`);
+          console.log(`Requested: ${plan.requestedPRs.map((pr) => `#${pr}`).join(", ")}`);
+          console.log(
+            `Earlier conflicting PRs to include: ${plan.dependencyPRs.length ? plan.dependencyPRs.map((pr) => `#${pr}`).join(", ") : "none"}`,
+          );
+          console.log(
+            `Earlier direct commits to include: ${plan.dependencyCommits.length ? plan.dependencyCommits.map(shortSha).join(", ") : "none"}`,
+          );
+          console.log(
+            forkConflict === null
+              ? `${plan.selected.length} selected commits apply cleanly to fork main; ${plan.replayedCommits} upstream integrations replay without conflicts.`
+              : `Selected commits conflict on fork main at ${forkConflict.pr === null ? "direct commit" : `#${forkConflict.pr}`} ${shortSha(forkConflict.sha)}.`,
+          );
+          console.log("Review semantic dependencies and validate behavior before importing.");
+        }
+        return;
+      }
+      const candidates = assessEarlyCandidates(
+        entries,
+        through,
+        count,
+        null,
+        pathsFor,
+        appliesCleanly,
+      );
+      if (values.json)
+        console.log(JSON.stringify({ fork, through, target: state.target, candidates }, null, 2));
+      else {
+        console.log(
+          `Fork ${shortSha(fork)}; reconciled through ${shortSha(through)}; target ${shortSha(state.target)}`,
+        );
+        for (const candidate of candidates) {
+          const overlap = candidate.overlappingPaths.length
+            ? `overlap: ${candidate.overlappingPaths.join(", ")}`
+            : "no earlier pending file overlap";
+          const apply =
+            candidate.cleanApply === null
+              ? candidate.reason
+              : candidate.cleanApply
+                ? "applies cleanly now"
+                : "conflicts now";
+          console.log(
+            `${candidate.fileDisjointAndClean ? "[file-disjoint]" : "[review]"} #${candidate.pr}: ${candidate.precedingPRs} earlier pending PRs; ${overlap}; ${apply}`,
+          );
+        }
+        console.log("Use early <PR> to replay intermediate integrations for a selected PR.");
+      }
+      return;
+    } finally {
+      NodeFS.rmSync(objectDirectory, { recursive: true, force: true });
+    }
+  }
   if (command === "advance") {
     const advanced = advanceBaseline(state, entries, source!);
     NodeFS.writeFileSync(statePath, `${JSON.stringify(advanced, null, 2)}\n`);

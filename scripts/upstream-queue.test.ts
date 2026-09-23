@@ -13,6 +13,7 @@ import {
   readIntegrations,
   reconcile,
   reconciledThrough,
+  reusableAssociations,
   shortenCommitSha,
 } from "./upstream-queue.ts";
 import type { Integration } from "./upstream-queue.ts";
@@ -27,6 +28,26 @@ const integration = (n: number, pr: number | null = null): Integration => ({
 });
 
 describe("chronological upstream queue", () => {
+  it("reuses merged PR metadata across targets and rechecks unsettled associations", () => {
+    const pr = {
+      number: 10,
+      mergedAt: "2026-01-01",
+      baseRefName: "main",
+      baseRepository: { nameWithOwner: "example/upstream" },
+      mergeCommit: { oid: sha(2) },
+    };
+    const cache = {
+      [sha(1)]: [pr],
+      [sha(2)]: [],
+      [sha(3)]: [{ ...pr, mergedAt: null }],
+      [sha(4)]: [{ ...pr, baseRepository: { nameWithOwner: "other/repo" } }],
+    };
+    assert.deepEqual(reusableAssociations(cache, "example/upstream", new Set([sha(2)])), {
+      [sha(1)]: [pr],
+    });
+    assert.deepEqual(reusableAssociations(cache, "example/upstream", new Set()), {});
+  });
+
   it("asks Git for an unambiguous abbreviated commit SHA", () => {
     const commit = sha(42);
     const calls: [string, string[]][] = [];
