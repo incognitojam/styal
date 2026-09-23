@@ -121,7 +121,7 @@ import { markdownImageGallery, markdownImageItems } from "./chat/markdownImageGa
 import { MediaVideoPlayer } from "./media/MediaVideoPlayer";
 import { MediaActions, type MediaActionSource } from "./media/MediaActions";
 import { resolveProtocolRelativeMediaUrl } from "./media/mediaContent";
-import { CHAT_FILE_TAG_CHIP_CLASS_NAME, FileTagChipContent } from "./chat/FileTagChip";
+import { FileTagChipContent } from "./chat/FileTagChip";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import {
   revealInFileExplorerLabelForKind,
@@ -132,6 +132,7 @@ import { shouldOpenLinkInIntegratedBrowser } from "./chat/loopbackLinkPreview";
 import { hasSpecificPierreIconForFileName, syntheticFileNameForLanguageId } from "../pierre-icons";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { Button } from "./ui/button";
+import { ContextChip } from "./ContextChip";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "./ui/collapsible";
 import { ScrollArea } from "./ui/scroll-area";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "./ui/menu";
@@ -1214,11 +1215,9 @@ interface MarkdownFileLinkProps {
   /** Platform-specific menu label ("Reveal in Finder", ...); required for the
       reveal item to show. */
   revealLabel?: string | undefined;
-  className?: string | undefined;
 }
 
-const MARKDOWN_FILE_CHIP_CLASS_NAME = "chat-markdown-file-link";
-const MARKDOWN_FILE_LINK_CLASS_NAME = `${MARKDOWN_FILE_CHIP_CLASS_NAME} cursor-pointer transition-colors hover:bg-accent/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70`;
+const MARKDOWN_FILE_LINK_CLASS_NAME = "chat-markdown-file-link";
 
 const FENCED_CODE_SEGMENT_PATTERN = /(```[\s\S]*?(?:```|$))/;
 const INLINE_CODE_SPAN_PATTERN = /`([^`\n]+)`/g;
@@ -1903,7 +1902,6 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
   onOpenMedia,
   onReveal,
   revealLabel,
-  className,
 }: MarkdownFileLinkProps) {
   const handleOpenInEditor = useCallback(() => {
     if (!onOpen) {
@@ -2167,54 +2165,52 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
     canOpenInBrowser,
     canOpenInPanel,
   });
-  const linkClassName = cn(
-    children === undefined
-      ? [CHAT_FILE_TAG_CHIP_CLASS_NAME, MARKDOWN_FILE_LINK_CLASS_NAME]
-      : "chat-markdown-file-text",
-    className,
-  );
-  const content = children ?? (
-    <FileTagChipContent path={iconPath} label={label} theme={theme} selectable />
-  );
+  const linkClassName = children === undefined ? undefined : "chat-markdown-file-text";
+  const content = children ?? <FileTagChipContent path={iconPath} label={label} theme={theme} />;
 
+  const link = hasPrimaryAction ? (
+    <a
+      href={href}
+      className={linkClassName}
+      data-markdown-copy={copyMarkdown}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (onOpen && shouldOpenMarkdownFileLinkInEditor(event)) {
+          handleOpenInEditor();
+          return;
+        }
+        if (useBrowserPrimaryAction) {
+          handleOpenInBrowser();
+          return;
+        }
+        handleOpenInFilePreview();
+      }}
+      onContextMenu={handleContextMenu}
+    >
+      {content}
+    </a>
+  ) : (
+    <button
+      type="button"
+      aria-label={`File options for ${children === undefined ? label : `${nodeToPlainText(children)} (${label})`}`}
+      aria-haspopup="menu"
+      className={cn(linkClassName, "text-left select-text")}
+      data-markdown-copy={copyMarkdown}
+      onClick={handleContextMenu}
+      onContextMenu={handleContextMenu}
+    >
+      {content}
+    </button>
+  );
   return (
     <Tooltip>
       <TooltipTrigger
         render={
-          hasPrimaryAction ? (
-            <a
-              href={href}
-              className={linkClassName}
-              data-markdown-copy={copyMarkdown}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                if (onOpen && shouldOpenMarkdownFileLinkInEditor(event)) {
-                  handleOpenInEditor();
-                  return;
-                }
-                if (useBrowserPrimaryAction) {
-                  handleOpenInBrowser();
-                  return;
-                }
-                handleOpenInFilePreview();
-              }}
-              onContextMenu={handleContextMenu}
-            >
-              {content}
-            </a>
+          children === undefined ? (
+            <ContextChip kind="mention" render={link} className={MARKDOWN_FILE_LINK_CLASS_NAME} />
           ) : (
-            <button
-              type="button"
-              aria-label={`File options for ${children === undefined ? label : `${nodeToPlainText(children)} (${label})`}`}
-              aria-haspopup="menu"
-              className={cn(linkClassName, "text-left select-text")}
-              data-markdown-copy={copyMarkdown}
-              onClick={handleContextMenu}
-              onContextMenu={handleContextMenu}
-            >
-              {content}
-            </button>
+            link
           )
         }
       />
@@ -2250,8 +2246,7 @@ function areMarkdownFileLinkPropsEqual(
     previous.onOpenInBrowser === next.onOpenInBrowser &&
     previous.onOpenMedia === next.onOpenMedia &&
     previous.onReveal === next.onReveal &&
-    previous.revealLabel === next.revealLabel &&
-    previous.className === next.className
+    previous.revealLabel === next.revealLabel
   );
 }
 
@@ -2552,7 +2547,6 @@ function useChatMarkdownState({
     (
       fileLinkMeta: MarkdownFileLinkMeta,
       copyMarkdown: string,
-      className?: string,
       children?: ReactNode,
       mediaSource?: string,
     ) => {
@@ -2612,7 +2606,6 @@ function useChatMarkdownState({
               ? () => openMarkdownFileInPreview(fileLinkMeta.filePath)
               : undefined
           }
-          className={className}
         >
           {children}
         </MarkdownFileLink>
@@ -3081,7 +3074,6 @@ const CHAT_MARKDOWN_COMPONENTS = {
     return fileLinkChip(
       fileLinkMeta,
       `[${copyLabel || fileLinkMeta.basename}](${normalizedHref})`,
-      props.className,
       isPathLabel ? undefined : <MarkdownLinkContext value>{children}</MarkdownLinkContext>,
       normalizedHref,
     );
@@ -3099,7 +3091,6 @@ const CHAT_MARKDOWN_COMPONENTS = {
         return fileLinkChip(
           fileLinkMeta,
           `\`${codeText}\``,
-          undefined,
           undefined,
           inlineCodeFilePathCandidate(codeText) ?? codeText.trim(),
         );

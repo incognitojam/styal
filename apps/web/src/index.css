@@ -1771,7 +1771,12 @@ code {
   display: inline-block;
 }
 
-.chat-markdown a,
+.chat-markdown a {
+  text-decoration: none;
+}
+
+/* File chips own their colors; descriptive file links retain the prose link style. */
+.chat-markdown a:not(.chat-markdown-file-link),
 .chat-markdown .chat-markdown-file-text {
   color: var(--info-foreground);
   text-decoration: none;
@@ -1838,17 +1843,6 @@ code {
   padding: 0.1rem 0.35rem;
   color: var(--contrast-foreground);
   font-size: 0.75rem;
-}
-
-.chat-markdown .chat-markdown-file-link,
-.chat-markdown .chat-markdown-file-link:hover {
-  color: var(--contrast-foreground);
-  text-decoration: none;
-}
-
-.chat-markdown .chat-markdown-file-link:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 70%, transparent);
 }
 
 .chat-markdown pre {

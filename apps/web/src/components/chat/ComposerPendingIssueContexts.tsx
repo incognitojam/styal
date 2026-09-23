@@ -1,11 +1,6 @@
 import { CircleDot, X } from "lucide-react";
 
-import {
-  COMPOSER_INLINE_CHIP_CLASS_NAME,
-  COMPOSER_INLINE_CHIP_DISMISS_BUTTON_CLASS_NAME,
-  COMPOSER_INLINE_CHIP_ICON_CLASS_NAME,
-  COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME,
-} from "../composerInlineChip";
+import { ContextChip, ContextChipAction, ContextChipLabel } from "../ContextChip";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
 import { type IssueContextDraft, formatIssueContextLabel } from "~/lib/issueContext";
@@ -46,22 +41,20 @@ function ComposerPendingIssueContextChip({
     <Tooltip>
       <TooltipTrigger
         render={
-          <span className={cn(COMPOSER_INLINE_CHIP_CLASS_NAME, "pr-1")}>
-            <CircleDot className={cn(COMPOSER_INLINE_CHIP_ICON_CLASS_NAME, "size-3.5")} />
-            <span className={COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME}>{label}</span>
-            <button
-              type="button"
+          <ContextChip>
+            <CircleDot />
+            <ContextChipLabel>{label}</ContextChipLabel>
+            <ContextChipAction
               aria-label={`Remove ${label}`}
-              className={COMPOSER_INLINE_CHIP_DISMISS_BUTTON_CLASS_NAME}
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
                 onRemove(context.id);
               }}
             >
-              <X className="size-3" aria-hidden />
-            </button>
-          </span>
+              <X aria-hidden />
+            </ContextChipAction>
+          </ContextChip>
         }
       />
       <TooltipPopup side="top" className="max-w-96 whitespace-pre-wrap">
