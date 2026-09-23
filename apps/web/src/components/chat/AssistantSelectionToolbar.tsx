@@ -133,7 +133,7 @@ export function AssistantSelectionToolbar({
       variant="glass"
       disabled={tooLong}
       aria-label={tooLong ? "Selection is too long to reply to" : "Reply to selection in composer"}
-      className="fixed z-50 max-w-[calc(100vw-1rem)] rounded-full px-2.5"
+      className="fixed z-50 max-w-[calc(100vw-1rem)]"
       style={{ left: selection.selectionRect.left, top: selection.selectionRect.bottom + 8 }}
       onPointerDown={(event) => event.preventDefault()}
       onClick={cite}

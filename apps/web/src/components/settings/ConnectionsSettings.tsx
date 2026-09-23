@@ -3675,11 +3675,7 @@ export function ConnectionsSettings() {
         headerAction={
           <div className="flex items-center gap-1">
             {savedServerUpdateTargets.length > 0 ? (
-              <ServerUpdatesAction
-                targets={savedServerUpdateTargets}
-                variant="ghost"
-                className="font-normal text-muted-foreground/60 hover:text-muted-foreground"
-              />
+              <ServerUpdatesAction targets={savedServerUpdateTargets} variant="ghost-muted" />
             ) : null}
             <Dialog
               open={addBackendDialogOpen}
@@ -3695,12 +3691,7 @@ export function ConnectionsSettings() {
                   render={
                     <DialogTrigger
                       render={
-                        <Button
-                          size="xs"
-                          variant="ghost"
-                          className="font-normal text-muted-foreground/60 hover:text-muted-foreground"
-                          aria-label="Add environment"
-                        >
+                        <Button size="xs" variant="ghost-muted" aria-label="Add environment">
                           <PlusIcon className="size-3" />
                           <span>Add environment</span>
                         </Button>
