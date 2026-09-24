@@ -552,7 +552,12 @@ export async function startBrowserRecording(
     const frameRatePromise = ensureClientSettingsHydrated().then(
       () => getClientSettings().browserRecordingFrameRate,
     );
-    const [frameRate] = await Promise.all([frameRatePromise, waitForBrowserRecordingPaint()]);
+    const [frameRate] = await Promise.all([frameRatePromise, waitForBrowserRecordingPaint()]).catch(
+      (cause: unknown) => {
+        clearActiveRecording(recording);
+        throw cause;
+      },
+    );
     try {
       const presented = await waitForBrowserCaptureSurface(tabId);
       if (!presented) {
