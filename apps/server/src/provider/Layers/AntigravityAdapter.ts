@@ -49,7 +49,7 @@ import {
 import {
   ANTIGRAVITY_SIGN_IN_REQUIRED_MESSAGE,
   isAntigravitySignInRequiredError,
-  resolveAntigravityProfileDirectory,
+  resolveAntigravityInstanceDirectories,
 } from "../antigravityAuthSupport.ts";
 import {
   extractAntigravityTurnTokenUsage,
@@ -878,7 +878,22 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
               };
               const profileDirectory =
                 options.profileDirectory ??
-                resolveAntigravityProfileDirectory(serverConfig.stateDir, options.instanceId);
+                (yield* resolveAntigravityInstanceDirectories(
+                  serverConfig.stateDir,
+                  options.instanceId,
+                ).pipe(
+                  Effect.provideService(Crypto.Crypto, crypto),
+                  Effect.provideService(Path.Path, path),
+                  Effect.mapError(
+                    (cause) =>
+                      new ProviderAdapterRequestError({
+                        provider: PROVIDER,
+                        method: "startSession",
+                        detail: "Could not resolve the Antigravity profile directory.",
+                        cause,
+                      }),
+                  ),
+                )).profile;
               const dbPath = path.join(
                 profileDirectory,
                 "antigravity-acp",
