@@ -122,7 +122,7 @@ const McpElicitationFormField = Schema.Struct({
   type: Schema.optionalKey(NullableMcpElicitationString),
   title: Schema.optionalKey(NullableMcpElicitationString),
   description: Schema.optionalKey(NullableMcpElicitationString),
-  default: Schema.optionalKey(Schema.Unknown),
+  default: Schema.optionalKey(Schema.Json),
   enum: Schema.optionalKey(Schema.NullOr(Schema.Array(Schema.String))),
   enumNames: Schema.optionalKey(Schema.NullOr(Schema.Array(Schema.String))),
   oneOf: Schema.optionalKey(
@@ -459,7 +459,7 @@ export function toMcpElicitationResponse(
         ? "always"
         : undefined;
   const form = mcpElicitationFormFields(payload);
-  const content: Record<string, unknown> = {};
+  const content: Record<string, Schema.Json> = {};
 
   for (const [key, field] of Object.entries(form?.properties ?? {})) {
     const options = mcpElicitationFieldOptions(field);
