@@ -140,7 +140,14 @@ function serverEnvironment(): NodeJS.ProcessEnv {
   for (const key of Object.keys(env)) {
     if (/^(T3CODE_|T3_|STYAL_|VITE_)/.test(key) || key === "PORT") delete env[key];
   }
-  return env;
+  // Checkpoints commit to the workspaces; CI runners have no git identity.
+  return {
+    GIT_AUTHOR_NAME: "Fixture",
+    GIT_AUTHOR_EMAIL: "fixture@example.com",
+    GIT_COMMITTER_NAME: "Fixture",
+    GIT_COMMITTER_EMAIL: "fixture@example.com",
+    ...env,
+  };
 }
 
 function freePort(): Promise<number> {

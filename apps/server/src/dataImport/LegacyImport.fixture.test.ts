@@ -30,7 +30,9 @@ import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolv
 import { ServerSettingsService, layerTest as serverSettingsLayerTest } from "../serverSettings.ts";
 import { makeLegacyImportService } from "./LegacyImport.ts";
 
-const fixtureDir = NodePath.join(import.meta.dirname, "testFixtures/t3-code");
+// The nightly T3 Code import check points this at data generated from upstream `main`.
+const fixtureDir =
+  process.env.STYAL_T3_IMPORT_FIXTURE ?? NodePath.join(import.meta.dirname, "testFixtures/t3-code");
 
 interface Manifest {
   readonly serverRevision: string;

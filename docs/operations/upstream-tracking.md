@@ -103,6 +103,16 @@ node scripts/upstream-queue.ts next --count 20
 
 Commit the target change too. Neither command promotes code.
 
+## T3 Code import check
+
+The daily `T3 Code import check` workflow starts upstream `main`'s server with a fake Codex CLI, builds projects and threads through its HTTP API with `apps/server/scripts/generate-t3-import-fixture.ts`, and imports the result with styal's T3 Code import. A failure means data from current T3 Code does not import into styal, usually because upstream stores an event, field, or value that the fork has not taken in yet. A failed run uploads the generated data and the server log. Scheduled runs post to the CI Discord channel when the result changes: when the check starts failing, and when it passes again. Dispatch the workflow with `upstream_ref` to check another upstream branch, tag, or commit; dispatched runs do not post.
+
+Fork CI runs the same test against `apps/server/src/dataImport/testFixtures/t3-code`, generated from the intake boundary. After advancing the baseline, regenerate it from an upstream checkout of the new boundary with dependencies installed, review any new differences the test reports, and commit it through the normal maintainer review path:
+
+```bash
+node apps/server/scripts/generate-t3-import-fixture.ts --server <upstream-checkout> --out apps/server/src/dataImport/testFixtures/t3-code
+```
+
 ## Queue reference and exceptions
 
 - `explain <PR-number-or-SHA-prefix>` shows sources and import evidence. SHA prefixes must be unambiguous and at least seven characters.
