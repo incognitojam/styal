@@ -190,6 +190,11 @@ function CloudAuthBridge(props: { readonly children: ReactNode }) {
       })();
       accountTransitionRef.current = activation;
       void settlePromise(() => activation).then((result) => {
+        // A failed activation leaves no relay session, so connections must stop
+        // reporting that the sign-in is still loading.
+        if (result._tag !== "Success" && !cancelled) {
+          appAtomRegistry.set(cloudAuthCheckingAtom, false);
+        }
         reportAtomCommandResult(result, { label: "cloud account activation" });
       });
     };

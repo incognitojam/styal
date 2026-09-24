@@ -1159,7 +1159,7 @@ features:
     invariants:
       - A Clerk GET request on mobile that has no caller abort signal is aborted after 15 seconds, so a stalled startup load fails instead of keeping the account in the loading state.
       - A failed headless Clerk load is retried with backoff capped at 30 seconds, and a pending retry runs immediately when the app returns to the foreground, so the relay session activates without restarting the app.
-      - While the first Clerk load has not yet activated a relay session or found none, relay connections report that the sign-in is still loading rather than asking the user to sign in.
+      - Until the first Clerk load has activated a relay session, found none, or failed to activate one, relay connections report that the sign-in is still loading rather than asking the user to sign in.
     implementation_paths:
       - apps/mobile/src/features/cloud/clerkLoadRecovery.ts
       - apps/mobile/src/features/cloud/cloudAuthState.ts
