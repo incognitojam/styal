@@ -170,10 +170,9 @@ export function PullRequestDetailGhost({
                 <span className="min-w-0 truncate font-medium">{seed.repository}</span>
                 <InlineButton
                   onClick={() => void readLocalApi()?.shell.openExternal(seed.url)}
-                  className={statePresentation?.toneClassName}
                   aria-label={`Open pull request #${seed.number} on host`}
                 >
-                  #{seed.number}
+                  <span className={statePresentation?.toneClassName}>#{seed.number}</span>
                   <ExternalLinkIcon aria-hidden className="size-2.5" />
                 </InlineButton>
               </>
@@ -406,7 +405,7 @@ export function PullRequestDetailGhost({
 /** The checks tab's own shape: the rollup row, then a status dot, a name and a verdict to each. */
 export function PullRequestChecksGhost({ rows = 5 }: { rows?: number }) {
   return (
-    <div role="status" aria-label="Loading checks" className="animate-ghost-pulse">
+    <div role="status" aria-label="Loading checks">
       <div className="flex items-center gap-2 px-4 py-2.5">
         <GhostBar className="h-3.5 w-2/5" />
         <GhostBar className="ml-auto size-3.5 rounded-full" />
