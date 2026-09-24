@@ -403,6 +403,7 @@ features:
     invariants:
       - Desktop presence is off by default and publishes only aggregate unsettled thread and project counts from live environments.
       - Presence includes a View on GitHub button linking to the public styal repository.
+      - Presence reports the desktop launch time as its start, so count changes, clearing, and Discord reconnects do not reset the elapsed timer.
       - Archived, server-settled, and snoozed threads are excluded using sidebar lifecycle rules; projects are scoped by environment. Pending approvals and input remain active.
       - Disabling, reaching zero active threads, closing the window, or losing the renderer clears presence; Discord restarts reconnect automatically.
       - The integration stays on the desktop client for local and remote environments; browser and mobile clients do not publish presence.
