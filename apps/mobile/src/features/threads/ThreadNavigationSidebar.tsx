@@ -760,8 +760,6 @@ function ThreadNavigationSidebarPane(
           previous.item.variant === item.item.variant &&
           previous.item.snoozed === item.item.snoozed &&
           previous.item.pinned === item.item.pinned &&
-          previous.item.clusterChild === item.item.clusterChild &&
-          previous.item.clusterContinuesBelow === item.item.clusterContinuesBelow &&
           previous.snoozeWakeLabelText === item.snoozeWakeLabelText
         );
       }
@@ -853,8 +851,6 @@ function ThreadNavigationSidebarPane(
               variant={item.item.variant}
               snoozed={item.item.snoozed}
               pinned={item.item.pinned}
-              clusterChild={item.item.clusterChild}
-              clusterContinuesBelow={item.item.clusterContinuesBelow}
               snoozePresetMinute={nowMinute}
               snoozeWakeLabelText={item.snoozeWakeLabelText}
               project={projectByKey.get(scopeKey) ?? null}

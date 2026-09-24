@@ -318,8 +318,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly snoozed?: boolean;
   /** Pinned-block row: shows the pin glyph and offers Unpin. */
   readonly pinned?: boolean;
-  readonly clusterChild?: boolean;
-  readonly clusterContinuesBelow?: boolean;
   /** Preformatted against the parent minute tick so this memoized row's
       countdown keeps moving. */
   readonly snoozeWakeLabelText?: string;
@@ -929,15 +927,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     );
 
   return (
-    <View style={props.clusterChild ? { paddingLeft: 12 } : undefined}>
-      {props.clusterChild ? (
-        <View
-          accessible={false}
-          pointerEvents="none"
-          className="absolute w-px bg-border"
-          style={{ left: 5, top: 0, bottom: props.clusterContinuesBelow ? 0 : 4 }}
-        />
-      ) : null}
+    <>
       <ThreadSwipeable
         backgroundColor={sidebarPane ? drawerColor : screenColor}
         compactActions={variant === "slim"}
@@ -978,6 +968,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           </ControlPillMenu>
         )}
       </ThreadSwipeable>
-    </View>
+    </>
   );
 });

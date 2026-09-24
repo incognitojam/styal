@@ -33,13 +33,6 @@ Unpin confirmation**; the preference is saved separately on each device.
 
 Pinning does not prevent automatic settlement. Settling a thread removes its pin.
 
-## Threads that share a workspace
-
-Active threads are listed newest first, but threads that share a worktree, or the
-same explicitly chosen branch of the local checkout, are grouped together. The
-oldest thread leads the group and later threads are indented beneath it. Starting
-another thread in a workspace moves its whole group up.
-
 ## Filter by project
 
 Use the menu below the sidebar search to show a single project. While a project is

@@ -790,8 +790,6 @@ export function HomeScreen(props: HomeScreenProps) {
           variant={item.item.variant}
           snoozed={item.item.snoozed}
           pinned={item.item.pinned}
-          clusterChild={item.item.clusterChild}
-          clusterContinuesBelow={item.item.clusterContinuesBelow}
           snoozePresetMinute={nowMinute}
           snoozeWakeLabelText={item.snoozeWakeLabelText}
           showTrailingDivider={showTrailingDivider}
