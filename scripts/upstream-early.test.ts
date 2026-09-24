@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest";
 import {
   assessEarlyCandidates,
+  earlierSourcesTouching,
   resolveEarlyDependencies,
   selectEarlySources,
 } from "./upstream-early.ts";
@@ -168,6 +169,38 @@ describe("early upstream intake assessment", () => {
     assert.throws(
       () => selectEarlySources(entries, "base", "elsewhere", [11]),
       "outside the upstream target",
+    );
+  });
+
+  it("lists earlier pending sources that change a blocked source's conflicting files", () => {
+    const entries = [
+      entry(0, 1, "recorded"),
+      entry(1, 10),
+      entry(2, null),
+      entry(3, 11, "recorded"),
+      entry(4, 12),
+      entry(5, 13),
+      entry(6, 14),
+    ];
+    const paths: Record<string, string[]> = {
+      "1": ["apps/server/src/ws.ts"],
+      "2": ["apps/web/src/components/chat"],
+      "3": ["apps/server/src/ws.ts"],
+      "4": ["docs/user/usage.md"],
+      "6": ["apps/server/src/ws.ts"],
+    };
+    const earlier = earlierSourcesTouching(
+      entries,
+      "base",
+      "0",
+      entries[5]!,
+      ["apps/server/src/ws.ts", "apps/web/src/components/chat/MessagesTimeline.tsx"],
+      (source) => paths[source.sha] ?? [],
+    );
+    // Recorded sources are already in the fork, and later ones cannot be prerequisites.
+    assert.deepEqual(
+      earlier.map((source) => source.sha),
+      ["1", "2"],
     );
   });
 

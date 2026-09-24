@@ -5,7 +5,11 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeUtil from "node:util";
-import { assessEarlyCandidates, resolveEarlyDependencies } from "./upstream-early.ts";
+import {
+  assessEarlyCandidates,
+  earlierSourcesTouching,
+  resolveEarlyDependencies,
+} from "./upstream-early.ts";
 import { parseUpstreamProvenance, withoutFencedExamples } from "./upstream-provenance.ts";
 import {
   decodeTrackedPRs,
@@ -105,6 +109,83 @@ export function decodeState(input: string): IntakeState {
     }
   }
   return state;
+}
+
+/** A selected source whose patch does not apply at the reconciled upstream boundary. */
+class BoundaryConflictError extends Error {
+  readonly entry: QueueEntry;
+  readonly paths: string[];
+
+  constructor(entry: QueueEntry, paths: string[]) {
+    super(
+      `Selected ${entry.pr === null ? entry.sha : `#${entry.pr}`} cannot be applied at the upstream boundary.`,
+    );
+    this.entry = entry;
+    this.paths = paths;
+  }
+}
+
+const BOUNDARY_REPORT_LIMIT = 20;
+
+/** Explains which files block a selected source and which pending upstream work changes them. */
+function reportBoundaryConflict(input: {
+  fork: string;
+  through: string;
+  target: string;
+  blocked: QueueEntry;
+  paths: readonly string[];
+  earlier: readonly QueueEntry[];
+  json: boolean;
+  shortSha: (sha: string) => string;
+}): void {
+  const { shortSha } = input;
+  const label = (entry: QueueEntry) => (entry.pr === null ? shortSha(entry.sha) : `#${entry.pr}`);
+  if (input.json) {
+    console.log(
+      JSON.stringify(
+        {
+          fork: input.fork,
+          through: input.through,
+          target: input.target,
+          blockedAt: { sha: input.blocked.sha, pr: input.blocked.pr },
+          conflictedPaths: input.paths,
+          earlierSources: input.earlier.map((entry) => ({
+            sha: entry.sha,
+            pr: entry.pr,
+            title: entry.title,
+          })),
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+  const prs = new Set(input.earlier.flatMap((entry) => (entry.pr === null ? [] : [entry.pr])));
+  const direct = input.earlier.filter((entry) => entry.pr === null).length;
+  console.log(`Fork ${shortSha(input.fork)}; reconciled through ${shortSha(input.through)}`);
+  console.log(
+    `${label(input.blocked)} does not apply at the reconciled boundary. ${input.paths.length} of its files conflict there:`,
+  );
+  for (const path of input.paths) console.log(`  ${path}`);
+  if (input.earlier.length === 0) {
+    console.log("No earlier pending upstream change touches those files.");
+    return;
+  }
+  console.log(
+    `Earlier pending upstream changes to those files: ${prs.size} PRs${direct ? ` and ${direct} direct commits` : ""}. Take them in first, or add their PRs to this plan.`,
+  );
+  const shown = new Set<string>();
+  for (const entry of input.earlier) {
+    const key = entry.pr === null ? entry.sha : `#${entry.pr}`;
+    if (shown.has(key)) continue;
+    if (shown.size === BOUNDARY_REPORT_LIMIT) {
+      console.log(`  ... ${prs.size + direct - shown.size} more; --json lists every source.`);
+      break;
+    }
+    shown.add(key);
+    console.log(`  ${label(entry)} ${entry.title}`);
+  }
 }
 
 /** Reconcile against fork main only; a source trailer records an import, not patch equivalence. */
@@ -550,6 +631,23 @@ function main() {
           if (!fullSha.test(tree)) throw new Error("Git did not return a merge tree.");
           return tree;
         };
+        /** Paths `git merge-tree` reports as conflicting when applying `entry` onto `current`. */
+        const conflictedPaths = (current: string, entry: QueueEntry): string[] => {
+          const result = NodeChildProcess.spawnSync(
+            "git",
+            [
+              "merge-tree",
+              "--write-tree",
+              "--name-only",
+              "--no-messages",
+              `--merge-base=${entry.parents[0]}`,
+              current,
+              entry.sha,
+            ],
+            { cwd: root, encoding: "utf8", env: simulationEnv },
+          );
+          return [...new Set(result.stdout.split("\n").slice(1).filter(Boolean))];
+        };
         const syntheticCommit = (tree: string, parent: string) =>
           NodeChildProcess.execFileSync(
             "git",
@@ -572,37 +670,59 @@ function main() {
             encoding: "utf8",
             env: simulationEnv,
           }).trim();
-        const plan = resolveEarlyDependencies(
-          entries,
-          state.baseline,
-          through,
-          requestedPRs,
-          (selection) => {
-            let overlay = through;
-            for (const entry of selection.selected) {
-              const tree = applyPatch(overlay, entry);
-              if (tree === null)
-                throw new Error(
-                  `Selected #${entry.pr ?? entry.sha} cannot be applied at the upstream boundary.`,
-                );
-              overlay = syntheticCommit(tree, overlay);
-            }
-            const selected = new Set(selection.selected.map((entry) => entry.sha));
-            for (const entry of selection.intervening) {
-              if (selected.has(entry.sha)) {
-                overlay = syntheticCommit(treeOf(overlay), entry.sha);
-                continue;
+        let plan: ReturnType<typeof resolveEarlyDependencies>;
+        try {
+          plan = resolveEarlyDependencies(
+            entries,
+            state.baseline,
+            through,
+            requestedPRs,
+            (selection) => {
+              let overlay = through;
+              for (const entry of selection.selected) {
+                const tree = applyPatch(overlay, entry);
+                if (tree === null)
+                  throw new BoundaryConflictError(entry, conflictedPaths(overlay, entry));
+                overlay = syntheticCommit(tree, overlay);
               }
-              const tree = applyPatch(overlay, entry);
-              if (tree === null) return entry;
-              overlay = syntheticCommit(tree, entry.sha);
-            }
-            const finalSource = selection.intervening.at(-1)!;
-            if (treeOf(overlay) !== treeOf(finalSource.sha))
-              throw new Error("Replay changed the upstream result without a textual conflict.");
-            return null;
-          },
-        );
+              const selected = new Set(selection.selected.map((entry) => entry.sha));
+              for (const entry of selection.intervening) {
+                if (selected.has(entry.sha)) {
+                  overlay = syntheticCommit(treeOf(overlay), entry.sha);
+                  continue;
+                }
+                const tree = applyPatch(overlay, entry);
+                if (tree === null) return entry;
+                overlay = syntheticCommit(tree, entry.sha);
+              }
+              const finalSource = selection.intervening.at(-1)!;
+              if (treeOf(overlay) !== treeOf(finalSource.sha))
+                throw new Error("Replay changed the upstream result without a textual conflict.");
+              return null;
+            },
+          );
+        } catch (error) {
+          if (!(error instanceof BoundaryConflictError)) throw error;
+          reportBoundaryConflict({
+            fork,
+            through,
+            target: state.target,
+            blocked: error.entry,
+            paths: error.paths,
+            earlier: earlierSourcesTouching(
+              entries,
+              state.baseline,
+              through,
+              error.entry,
+              error.paths,
+              pathsFor,
+            ),
+            json: values.json === true,
+            shortSha,
+          });
+          process.exitCode = 1;
+          return;
+        }
         let current = fork;
         let forkConflict: QueueEntry | null = null;
         for (const entry of plan.selected) {
