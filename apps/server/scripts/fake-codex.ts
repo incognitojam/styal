@@ -151,6 +151,7 @@ function runAppServer(): void {
         id: threadId,
         sessionId: threadId,
         preview: "",
+        projectId: null,
         ephemeral: false,
         modelProvider: "openai",
         createdAt,
@@ -203,6 +204,7 @@ function runAppServer(): void {
       if (step.type === "question") {
         const response = await Promise.race([
           request("item/tool/requestUserInput", {
+            isBlocking: true,
             threadId,
             turnId,
             itemId: NodeCrypto.randomUUID(),
