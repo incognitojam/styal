@@ -21,6 +21,7 @@ import { OpenSpans, trackOpenSpans } from "../OpenSpans.ts";
 export const ObservabilityLive = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
+
     const traces = config.otlpTracesExport;
     const metrics = config.otlpMetricsExport;
     // The trace serializer stays in the returned context because the browser
@@ -89,6 +90,15 @@ export const ObservabilityLive = Layer.unwrap(
             resource,
           }).pipe(Layer.provide(otlpSerializationLayer(metrics.protocol)));
 
-    return Layer.mergeAll(ServerLoggerLive, traceReferencesLayer, tracerLayer, metricsLayer);
+    // Logged once the server's loggers are installed, so the warnings use them.
+    const otelWarningsLayer = Layer.effectDiscard(
+      Effect.forEach(config.otelEnvironment.warnings, (warning) => Effect.logWarning(warning)),
+    );
+
+    return otelWarningsLayer.pipe(
+      Layer.provideMerge(
+        Layer.mergeAll(ServerLoggerLive, traceReferencesLayer, tracerLayer, metricsLayer),
+      ),
+    );
   }),
 );
