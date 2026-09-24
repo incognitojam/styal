@@ -501,6 +501,32 @@ features:
       tracking: []
       retire_when: Upstream applies equivalent shared relevance ordering, repository generated-file attributes, tier presentation, and persisted ordering controls across every review surface.
 
+  - id: drive-cli
+    title: Drive environments and synthetic scenarios from the command line
+    status: maintained
+    prs: [425]
+    invariants:
+      - "`styal drive snapshot`, `dispatch`, and `send` use the running environment's authenticated HTTP API: a short-lived session that is then revoked for a local home, or a bearer token for a remote origin. They never fall back to reading the database offline."
+      - Live dispatch accepts only client orchestration commands and rejects synthetic-only commands before connecting.
+      - "`drive scenario` and `drive serve` refuse an existing home. `drive serve` loads the scenario with orchestration reactors, provider session recovery, automatic project pulls, and Tailscale Serve disabled."
+    implementation_paths:
+      - apps/server/src/bin.ts
+      - apps/server/src/cli/drive.ts
+      - apps/server/src/cli/driveScenario.ts
+      - apps/server/src/driveMode.ts
+      - apps/server/src/serverRuntimeStartup.ts
+    upstream_paths:
+      - apps/server/src/bin.ts
+      - apps/server/src/serverRuntimeStartup.ts
+      - packages/contracts/src/environmentHttp.ts
+    tests:
+      - apps/server/src/bin.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/10411
+      retire_when: Upstream merges drive commands with equivalent live control and isolated scenario serving; replace the fork copy with the upstream implementation.
+
   - id: editable-diff-comments
     title: Edit anchored diff comments in place
     status: maintained
