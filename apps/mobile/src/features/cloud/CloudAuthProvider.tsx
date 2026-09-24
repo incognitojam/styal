@@ -1,4 +1,4 @@
-import { ClerkProvider, useAuth } from "@clerk/expo";
+import { ClerkProvider, getClerkInstance, useAuth, useClerk } from "@clerk/expo";
 import { tokenCache } from "@clerk/expo/token-cache";
 import { ManagedRelay, setManagedRelaySession } from "@t3tools/client-runtime/relay";
 import {
@@ -9,6 +9,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import * as Effect from "effect/Effect";
 import { type ReactNode, useEffect, useRef } from "react";
+import { AppState } from "react-native";
 
 import { runtime } from "../../lib/runtime";
 import { appAtomRegistry } from "../../state/atom-registry";
@@ -22,7 +23,9 @@ import {
   setAgentAwarenessRelayTokenProvider,
   unregisterAgentAwarenessDeviceForCurrentUser,
 } from "../agent-awareness/remoteRegistration";
+import { limitClerkRequestDuration, retryFailedClerkLoads } from "./clerkLoadRecovery";
 import { clearConnectOnboardingRequest, requestConnectOnboarding } from "./connectOnboarding";
+import { cloudAuthCheckingAtom } from "./cloudAuthState";
 import { resolveCloudPublicConfig, resolveRelayClerkTokenOptions } from "./publicConfig";
 import { removeCloudEnvironments } from "./cloud-drafts";
 
@@ -63,6 +66,7 @@ export async function cleanUpCloudRelayAccount(
 export function deactivateCloudRelayAccount(): void {
   setAgentAwarenessRelayTokenProvider(null);
   setManagedRelaySession(appAtomRegistry, null);
+  appAtomRegistry.set(cloudAuthCheckingAtom, false);
 }
 
 export function activateCloudRelayAccount(
@@ -74,6 +78,22 @@ export function activateCloudRelayAccount(
     accountId,
     readClerkToken: tokenProvider,
   });
+  appAtomRegistry.set(cloudAuthCheckingAtom, false);
+}
+
+function ClerkLoadRecovery() {
+  const clerk = useClerk();
+  useEffect(
+    () =>
+      retryFailedClerkLoads(clerk, (listener) => {
+        const subscription = AppState.addEventListener("change", (state) => {
+          if (state === "active") listener();
+        });
+        return () => subscription.remove();
+      }),
+    [clerk],
+  );
+  return null;
 }
 
 function CloudAuthBridge(props: { readonly children: ReactNode }) {
@@ -222,8 +242,11 @@ export function CloudAuthProvider(props: { readonly children: ReactNode }) {
     return props.children;
   }
 
+  limitClerkRequestDuration(getClerkInstance({ publishableKey }));
+
   return (
     <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
+      <ClerkLoadRecovery />
       <CloudAuthBridge>{props.children}</CloudAuthBridge>
     </ClerkProvider>
   );

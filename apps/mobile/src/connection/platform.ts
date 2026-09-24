@@ -25,6 +25,7 @@ import Constants from "expo-constants";
 import * as Network from "expo-network";
 import { AppState } from "react-native";
 
+import { cloudAuthCheckingAtom } from "../features/cloud/cloudAuthState";
 import { authClientMetadata } from "../lib/authClientMetadata";
 import * as Runtime from "../lib/runtime";
 import * as MobileStorage from "../persistence/mobile-storage";
@@ -123,7 +124,9 @@ const capabilitiesLayer = Layer.effectContext(
           if (session === null) {
             return yield* new ConnectionBlockedError({
               reason: "authentication",
-              detail: "Sign in to styal Link to connect this environment.",
+              detail: appAtomRegistry.get(cloudAuthCheckingAtom)
+                ? "Waiting for the styal Link sign-in to load."
+                : "Sign in to styal Link to connect this environment.",
             });
           }
           const token = yield* session.readClerkToken().pipe(
