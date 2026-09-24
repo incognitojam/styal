@@ -19,6 +19,7 @@ const promotionWorkflowPath = NodePath.resolve(
   repoRoot,
   ".github/workflows/promote-upstream-intake.yml",
 );
+const lagWorkflowPath = NodePath.resolve(repoRoot, ".github/workflows/upstream-lag-report.yml");
 const ledger = {
   version: 1,
   fork_repository: "example/fork",
@@ -268,6 +269,8 @@ describe("upstream intake audit", () => {
             readonly uses?: string;
             readonly run?: string;
             readonly with?: Record<string, string>;
+            readonly env?: Record<string, string>;
+            readonly "continue-on-error"?: boolean;
           }>;
         };
         readonly promote: {
@@ -331,6 +334,23 @@ describe("upstream intake audit", () => {
       "$GITHUB_REPOSITORY/compare/main...${GITHUB_REPOSITORY/\\//:}:$CANDIDATE_BRANCH",
     );
 
+    const projectedReport = workflow.jobs.validate.steps.find(
+      (step) => step.name === "Report projected upstream lag",
+    );
+    assert.isTrue(projectedReport?.["continue-on-error"]);
+    assert.equal(
+      projectedReport?.env?.CANDIDATE_SHA,
+      "${{ steps.candidate.outputs.candidate_sha }}",
+    );
+    assert.include(
+      projectedReport?.run ?? "",
+      'upstream-lag-report.ts --fork-ref "$CANDIDATE_SHA"',
+    );
+    assert.include(
+      projectedReport?.run ?? "",
+      'upstream-tracked-prs-report.ts --fork-ref "$CANDIDATE_SHA"',
+    );
+
     assert.equal(workflow.jobs.promote.needs, "validate");
     assert.equal(workflow.jobs.promote.environment, "upstream-intake-manual");
     assert.equal(workflow.jobs.promote.permissions.actions, "read");
@@ -349,5 +369,22 @@ describe("upstream intake audit", () => {
     assert.include(promoteStep?.run ?? "", "git merge-base --is-ancestor");
     assert.include(promoteStep?.run ?? "", 'git push origin "${CANDIDATE_SHA}:refs/heads/main"');
     assert.notInclude(promoteStep?.run ?? "", "--force");
+  });
+
+  it("includes tracked PRs in the scheduled lag report", () => {
+    const workflow = parse(NodeFS.readFileSync(lagWorkflowPath, "utf8")) as {
+      readonly jobs: {
+        readonly report: {
+          readonly steps: ReadonlyArray<{
+            readonly name?: string;
+            readonly run?: string;
+            readonly env?: Record<string, string>;
+          }>;
+        };
+      };
+    };
+    const tracked = workflow.jobs.report.steps.find((step) => step.name === "Report tracked PRs");
+    assert.equal(tracked?.env?.GH_TOKEN, "${{ github.token }}");
+    assert.include(tracked?.run ?? "", 'upstream-tracked-prs-report.ts >> "$GITHUB_STEP_SUMMARY"');
   });
 });
