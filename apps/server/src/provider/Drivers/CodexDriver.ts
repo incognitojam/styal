@@ -38,10 +38,7 @@ import { expandHomePath } from "../../pathExpansion.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeCodexAdapter } from "../Layers/CodexAdapter.ts";
-import {
-  CODEX_RESET_CREDIT_TIMEOUT,
-  CodexResetCreditCoordinator,
-} from "../Layers/codexResetCredit.ts";
+import * as ResetCreditCoordinator from "../Layers/resetCreditCoordinator.ts";
 import {
   checkCodexProviderStatus,
   makePendingCodexProvider,
@@ -107,7 +104,7 @@ function makeCodexMaintenanceResolver(sharedHomePath: string) {
 export type CodexDriverEnv =
   | BackgroundPolicy.BackgroundPolicy
   | ChildProcessSpawner.ChildProcessSpawner
-  | CodexResetCreditCoordinator
+  | ResetCreditCoordinator.ResetCreditCoordinator
   | Crypto.Crypto
   | FileSystem.FileSystem
   | HttpClient.HttpClient
@@ -128,7 +125,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
   create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
     Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const resetCreditCoordinator = yield* CodexResetCreditCoordinator;
+      const resetCreditCoordinator = yield* ResetCreditCoordinator.ResetCreditCoordinator;
       const fileSystem = yield* FileSystem.FileSystem;
       const pathService = yield* Path.Path;
       const httpClient = yield* HttpClient.HttpClient;
@@ -312,7 +309,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
                 idempotencyKey,
               });
               return response.outcome;
-            }).pipe(Effect.scoped, Effect.timeout(CODEX_RESET_CREDIT_TIMEOUT)),
+            }).pipe(Effect.scoped, Effect.timeout("20 seconds")),
           )
           .pipe(
             Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
