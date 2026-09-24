@@ -1,0 +1,28 @@
+{
+  "defaultThreadEnvMode": "local",
+  "newWorktreesStartFromOrigin": false,
+  "enableLegacyTokenStreaming": true,
+  "enableProviderUpdateChecks": false,
+  "enableAgentBrowserAccess": false,
+  "addProjectBaseDirectory": "/tmp/t3-import-fixture/projects",
+  "providers": {
+    "codex": {
+      "binaryPath": "/tmp/t3-import-fixture/bin/codex"
+    },
+    "claudeAgent": {
+      "enabled": false
+    },
+    "cursor": {
+      "enabled": false
+    },
+    "grok": {
+      "enabled": false
+    },
+    "opencode": {
+      "enabled": false
+    },
+    "antigravity": {
+      "enabled": false
+    }
+  }
+}
