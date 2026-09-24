@@ -1,0 +1,102 @@
+name: T3 Code import check
+
+# Generates a data directory with upstream T3 Code's current server and imports
+# it with styal, so a T3 Code release that styal cannot import shows up before
+# users try it. See docs/operations/upstream-tracking.md.
+
+on:
+  schedule:
+    - cron: "43 5 * * *"
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: Upstream branch, tag, or commit to generate from
+        required: false
+        default: main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: t3-import-check
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: T3 Code import check
+    if: github.repository == 'incognitojam/styal'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      UPSTREAM_REF: ${{ inputs.upstream_ref || 'main' }}
+    steps:
+      - name: Set paths
+        run: |
+          {
+            echo "UPSTREAM_DIR=$RUNNER_TEMP/t3code"
+            echo "FIXTURE_DIR=$RUNNER_TEMP/t3-import-fixture"
+            echo "FIXTURE_ROOT=$RUNNER_TEMP/t3-import-root"
+          } >> "$GITHUB_ENV"
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Check out upstream T3 Code
+        run: |
+          git init --quiet "$UPSTREAM_DIR"
+          git -C "$UPSTREAM_DIR" fetch --quiet --depth 1 --no-tags https://github.com/pingdotgg/t3code.git "$UPSTREAM_REF"
+          git -C "$UPSTREAM_DIR" checkout --quiet --detach FETCH_HEAD
+          echo "UPSTREAM_SHA=$(git -C "$UPSTREAM_DIR" rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Install upstream dependencies
+        working-directory: ${{ env.UPSTREAM_DIR }}
+        run: vp install
+
+      - name: Generate T3 Code data
+        run: >-
+          node apps/server/scripts/generate-t3-import-fixture.ts
+          --server "$UPSTREAM_DIR"
+          --out "$FIXTURE_DIR"
+          --root "$FIXTURE_ROOT"
+
+      - name: Import into styal
+        working-directory: apps/server
+        env:
+          STYAL_T3_IMPORT_FIXTURE: ${{ env.FIXTURE_DIR }}
+        run: vp test run src/dataImport/LegacyImport.fixture.test.ts
+
+      - name: Summarize
+        if: always()
+        run: |
+          {
+            echo "## T3 Code import check"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Upstream ref | \`$UPSTREAM_REF\` |"
+            echo "| Upstream commit | \`${UPSTREAM_SHA:-not fetched}\` |"
+            echo "| Result | ${{ job.status }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload generated data
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: t3-import-check-${{ github.run_id }}
+          path: |
+            ${{ env.FIXTURE_DIR }}
+            ${{ env.FIXTURE_ROOT }}/server.log
+          if-no-files-found: ignore
+          retention-days: 14
