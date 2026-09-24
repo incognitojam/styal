@@ -39,8 +39,8 @@ builds are not submitted to Google Play.
    enabling the iOS push entitlement alone does not configure delivery.
 
 5. Once the distribution workflow and app ID are correct on `main`, add the
-   GitHub `EXPO_TOKEN` secret. Set `STYAL_MOBILE_RELEASE_ENABLED=true` to enable
-   production builds and over-the-air updates.
+   GitHub `EXPO_TOKEN` secret to enable production builds and over-the-air
+   updates.
 
 ### Signing and submission credentials
 
