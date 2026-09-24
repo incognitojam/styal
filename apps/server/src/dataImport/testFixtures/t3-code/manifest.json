@@ -1,0 +1,24 @@
+{
+  "serverRevision": "d28077e585d5123b9a562f4ebef257969c81aa31",
+  "generatedAt": "2026-09-24T14:46:12.652Z",
+  "root": "/tmp/t3-import-fixture",
+  "importedThreadIds": [
+    "thread-completed",
+    "thread-settled",
+    "thread-unsettled",
+    "thread-archived",
+    "thread-failed",
+    "thread-worktree",
+    "thread-empty",
+    "thread-beta"
+  ],
+  "deletedThreadIds": ["thread-deleted"],
+  "settings": {
+    "defaultThreadEnvMode": "local",
+    "newWorktreesStartFromOrigin": false,
+    "enableLegacyTokenStreaming": true,
+    "enableProviderUpdateChecks": false,
+    "enableAgentBrowserAccess": false,
+    "addProjectBaseDirectory": "/tmp/t3-import-fixture/projects"
+  }
+}
