@@ -37,6 +37,7 @@ describe("early upstream intake assessment", () => {
     ]);
     const result = assessEarlyCandidates(
       entries,
+      "base",
       "0",
       10,
       null,
@@ -81,6 +82,7 @@ describe("early upstream intake assessment", () => {
     const entries = [entry(0, 1, "recorded"), entry(1, 10), entry(2, 10)];
     const result = assessEarlyCandidates(
       entries,
+      "base",
       "0",
       1,
       10,
@@ -99,6 +101,7 @@ describe("early upstream intake assessment", () => {
       () =>
         assessEarlyCandidates(
           [entry(0, 1, "recorded")],
+          "base",
           "0",
           10,
           10,
@@ -112,6 +115,7 @@ describe("early upstream intake assessment", () => {
   it("flags a file and directory at the same path as overlapping", () => {
     const result = assessEarlyCandidates(
       [entry(0, 1, "recorded"), entry(1, 10), entry(2, 11)],
+      "base",
       "0",
       2,
       null,
@@ -131,7 +135,7 @@ describe("early upstream intake assessment", () => {
       entry(4, 12),
       entry(5, 13),
     ];
-    const selection = selectEarlySources(entries, "0", [12, 10]);
+    const selection = selectEarlySources(entries, "base", "0", [12, 10]);
     assert.deepEqual(
       selection.selected.map((source) => source.sha),
       ["1", "4"],
@@ -142,9 +146,34 @@ describe("early upstream intake assessment", () => {
     );
   });
 
+  it("starts at the baseline before any entry is reconciled", () => {
+    const entries = [entry(0, 10), entry(1, 11), entry(2, 12)];
+    const selection = selectEarlySources(entries, "base", "base", [11]);
+    assert.deepEqual(
+      selection.intervening.map((source) => source.sha),
+      ["0", "1"],
+    );
+    assert.deepEqual(
+      assessEarlyCandidates(
+        entries,
+        "base",
+        "base",
+        3,
+        null,
+        () => [],
+        () => true,
+      ).map((candidate) => candidate.pr),
+      [10, 11, 12],
+    );
+    assert.throws(
+      () => selectEarlySources(entries, "base", "elsewhere", [11]),
+      "outside the upstream target",
+    );
+  });
+
   it("adds only replay conflicts and retries their upstream-order selection", () => {
     const entries = [entry(0, 1, "recorded"), entry(1, 10), entry(2, 11), entry(3, 12)];
-    const plan = resolveEarlyDependencies(entries, "0", [12], (selection) => {
+    const plan = resolveEarlyDependencies(entries, "base", "0", [12], (selection) => {
       const selected = new Set(selection.selected.map((source) => source.pr));
       if (!selected.has(11)) return entries[2]!;
       if (!selected.has(10)) return entries[1]!;

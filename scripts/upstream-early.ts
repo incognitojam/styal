@@ -19,15 +19,27 @@ export interface EarlyImportSelection {
   intervening: QueueEntry[];
 }
 
+/**
+ * Position of the reconciled boundary in `entries`, which start after the
+ * baseline. Until the first entry is reconciled the boundary is the baseline
+ * itself, which sits before every entry.
+ */
+function boundaryIndex(entries: QueueEntry[], baseline: string, through: string): number {
+  if (through === baseline) return -1;
+  const index = entries.findIndex((entry) => entry.sha === through);
+  if (index < 0) throw new Error("Reconciled boundary is outside the upstream target.");
+  return index;
+}
+
 /** Select whole pending PRs and every upstream integration before the last source. */
 export function selectEarlySources(
   entries: QueueEntry[],
+  baseline: string,
   through: string,
   requestedPRs: readonly number[],
   directCommits: readonly string[] = [],
 ): EarlyImportSelection {
-  const start = entries.findIndex((entry) => entry.sha === through);
-  if (start < 0) throw new Error("Reconciled boundary is outside the upstream target.");
+  const start = boundaryIndex(entries, baseline, through);
   const outstanding = entries.slice(start + 1);
   const requested = [...new Set(requestedPRs)];
   for (const pr of requested) {
@@ -57,6 +69,7 @@ export function selectEarlySources(
 /** Add only sources that actually conflict in an upstream-order replay. */
 export function resolveEarlyDependencies(
   entries: QueueEntry[],
+  baseline: string,
   through: string,
   requestedPRs: readonly number[],
   firstConflict: (selection: EarlyImportSelection) => QueueEntry | null,
@@ -66,6 +79,7 @@ export function resolveEarlyDependencies(
   for (let attempt = 0; attempt <= entries.length; attempt++) {
     const selection = selectEarlySources(
       entries,
+      baseline,
       through,
       [...requestedPRs, ...dependencies],
       [...directCommits],
@@ -98,14 +112,14 @@ export function resolveEarlyDependencies(
 /** A conservative file-level screen for taking a PR ahead of pending intake. */
 export function assessEarlyCandidates(
   entries: QueueEntry[],
+  baseline: string,
   through: string,
   count: number,
   selectedPR: number | null,
   changedPaths: (entry: QueueEntry) => readonly string[],
   appliesCleanly: (entry: QueueEntry) => boolean,
 ): EarlyCandidate[] {
-  const start = entries.findIndex((entry) => entry.sha === through);
-  if (start < 0) throw new Error("Reconciled boundary is outside the upstream target.");
+  const start = boundaryIndex(entries, baseline, through);
   const outstanding = entries.slice(start + 1).filter((entry) => entry.disposition === "pending");
   const byPR = new Map<number, QueueEntry[]>();
   for (const entry of outstanding) {
