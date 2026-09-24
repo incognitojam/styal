@@ -572,31 +572,37 @@ function main() {
             encoding: "utf8",
             env: simulationEnv,
           }).trim();
-        const plan = resolveEarlyDependencies(entries, through, requestedPRs, (selection) => {
-          let overlay = through;
-          for (const entry of selection.selected) {
-            const tree = applyPatch(overlay, entry);
-            if (tree === null)
-              throw new Error(
-                `Selected #${entry.pr ?? entry.sha} cannot be applied at the upstream boundary.`,
-              );
-            overlay = syntheticCommit(tree, overlay);
-          }
-          const selected = new Set(selection.selected.map((entry) => entry.sha));
-          for (const entry of selection.intervening) {
-            if (selected.has(entry.sha)) {
-              overlay = syntheticCommit(treeOf(overlay), entry.sha);
-              continue;
+        const plan = resolveEarlyDependencies(
+          entries,
+          state.baseline,
+          through,
+          requestedPRs,
+          (selection) => {
+            let overlay = through;
+            for (const entry of selection.selected) {
+              const tree = applyPatch(overlay, entry);
+              if (tree === null)
+                throw new Error(
+                  `Selected #${entry.pr ?? entry.sha} cannot be applied at the upstream boundary.`,
+                );
+              overlay = syntheticCommit(tree, overlay);
             }
-            const tree = applyPatch(overlay, entry);
-            if (tree === null) return entry;
-            overlay = syntheticCommit(tree, entry.sha);
-          }
-          const finalSource = selection.intervening.at(-1)!;
-          if (treeOf(overlay) !== treeOf(finalSource.sha))
-            throw new Error("Replay changed the upstream result without a textual conflict.");
-          return null;
-        });
+            const selected = new Set(selection.selected.map((entry) => entry.sha));
+            for (const entry of selection.intervening) {
+              if (selected.has(entry.sha)) {
+                overlay = syntheticCommit(treeOf(overlay), entry.sha);
+                continue;
+              }
+              const tree = applyPatch(overlay, entry);
+              if (tree === null) return entry;
+              overlay = syntheticCommit(tree, entry.sha);
+            }
+            const finalSource = selection.intervening.at(-1)!;
+            if (treeOf(overlay) !== treeOf(finalSource.sha))
+              throw new Error("Replay changed the upstream result without a textual conflict.");
+            return null;
+          },
+        );
         let current = fork;
         let forkConflict: QueueEntry | null = null;
         for (const entry of plan.selected) {
@@ -642,6 +648,7 @@ function main() {
       }
       const candidates = assessEarlyCandidates(
         entries,
+        state.baseline,
         through,
         count,
         null,
