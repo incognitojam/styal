@@ -277,7 +277,7 @@ export function associatePRs(
 }
 
 export function fetchAssociations(
-  integrations: Integration[],
+  integrations: ReadonlyArray<Pick<Integration, "sha">>,
   repository: string,
   cache: Associations,
   run: Run,

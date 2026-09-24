@@ -11,6 +11,8 @@ export interface UpstreamIntakeAuditInput {
   readonly mainIsAncestor: boolean;
   readonly changedPaths: ReadonlyArray<string>;
   readonly ledger: ForkFeatureLedger;
+  /** Upstream PRs associated with each Upstream-Commit SHA that shares a commit with Upstream-PR. */
+  readonly commitPullRequests: ReadonlyMap<string, ReadonlyArray<number>>;
 }
 
 export interface UpstreamIntakeAudit {
@@ -144,6 +146,18 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
     }
     if (source.pullRequestNumbers.length === 0) {
       for (const sha of source.commitShas) commitsWithoutPR.add(sha);
+      continue;
+    }
+    // A listed PR already records its own commits; Upstream-Commit is for other sources.
+    for (const sha of source.commitShas) {
+      const repeated = (input.commitPullRequests.get(sha) ?? []).filter((number) =>
+        source.pullRequestNumbers.includes(number),
+      );
+      if (repeated.length > 0) {
+        errors.push(
+          `Candidate commit ${abbreviated(commit)} lists ${sha} in Upstream-Commit, but it belongs to Upstream-PR ${repeated.join(", ")}; remove it from Upstream-Commit.`,
+        );
+      }
     }
   }
 

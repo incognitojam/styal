@@ -54,6 +54,7 @@ function audit(overrides: Partial<Parameters<typeof auditUpstreamIntakeCandidate
     mainIsAncestor: true,
     changedPaths: ["apps/server/src/usage/usageReports.ts"],
     ledger,
+    commitPullRequests: new Map(),
     ...overrides,
   });
 }
@@ -174,20 +175,41 @@ describe("upstream intake audit", () => {
     assert.include(result.summary, `| Upstream commits without PR | \`${sha}\` |`);
   });
 
-  it("shows only commit-only sources separately while retaining every exact SHA for promotion", () => {
+  it("blocks an Upstream-Commit that belongs to a PR listed in the same commit", () => {
     const prCommit = "d".repeat(40);
+    const result = audit({
+      commitMessages: [`fix: port PR\n\nUpstream-PR: 1234, 5678\nUpstream-Commit: ${prCommit}`],
+      commitPullRequests: new Map([[prCommit, [5678]]]),
+    });
+
+    assert.isFalse(result.valid);
+    assert.deepEqual(result.errors, [
+      `Candidate commit bbbbbbbbbbbb lists ${prCommit} in Upstream-Commit, but it belongs to Upstream-PR 5678; remove it from Upstream-Commit.`,
+    ]);
+  });
+
+  it("allows other upstream sources beside a PR while showing only commit-only sources separately", () => {
+    const directCommit = "d".repeat(40);
+    const otherPrCommit = "f".repeat(40);
     const standaloneCommit = "e".repeat(40);
     const commitMessages = [
-      `fix: port PR\n\nUpstream-PR: 1234\nUpstream-Commit: ${prCommit}`,
+      `fix: port PR\n\nUpstream-PR: 1234\nUpstream-Commit: ${directCommit}, ${otherPrCommit}`,
       `fix: port standalone commit\n\nUpstream-Commit: ${standaloneCommit}`,
     ];
-    const result = audit({ commits: ["b".repeat(40), "c".repeat(40)], commitMessages });
+    const result = audit({
+      commits: ["b".repeat(40), "c".repeat(40)],
+      commitMessages,
+      commitPullRequests: new Map([
+        [directCommit, []],
+        [otherPrCommit, [6011]],
+      ]),
+    });
 
     assert.isTrue(result.valid);
     assert.deepEqual(result.sourcePullRequests, [1234]);
-    assert.deepEqual(result.sourceCommits, [prCommit, standaloneCommit]);
+    assert.deepEqual(result.sourceCommits, [directCommit, standaloneCommit, otherPrCommit]);
     assert.include(result.summary, `| Upstream commits without PR | \`${standaloneCommit}\` |`);
-    assert.notInclude(result.summary, prCommit);
+    assert.notInclude(result.summary, directCommit);
   });
 
   it("formats a copyable promotion command", () => {
