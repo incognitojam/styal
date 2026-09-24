@@ -82,7 +82,7 @@ function SourceNote({
   return (
     <div
       className={cn(
-        "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 px-3 py-2.5 text-[13px] leading-[1.45]",
+        "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 px-3 py-2.5 text-sm leading-normal",
         tone === "error" ? "text-destructive" : "text-muted-foreground",
       )}
       {...(tone === "error" ? { role: "alert" as const } : {})}
@@ -164,7 +164,7 @@ export function ImportSourceView({
           />
           <span
             className={cn(
-              "min-w-0 truncate text-[13px] font-medium",
+              "min-w-0 truncate text-sm font-medium",
               total === 0 ? "text-muted-foreground" : "text-foreground",
             )}
           >
@@ -304,7 +304,7 @@ function ImportProjectGroupView({
           <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-90 motion-reduce:transition-none" />
           <span
             className={cn(
-              "truncate text-[13px] font-medium",
+              "truncate text-sm font-medium",
               group.kind === "other" || selectedCount === 0
                 ? "text-muted-foreground"
                 : "text-foreground",
@@ -395,14 +395,14 @@ function ImportProjectRowView({
           <span
             className={cn(
               "truncate",
-              nested ? "font-mono text-xs" : "text-[13px] font-medium",
+              nested ? "font-mono text-xs" : "text-sm font-medium",
               project.selected ? "text-foreground" : "text-muted-foreground",
             )}
           >
             {title}
           </span>
           {showPath && path.length > 0 ? (
-            <span className="truncate font-mono text-[11px] text-muted-foreground/80">{path}</span>
+            <span className="truncate font-mono text-2xs text-muted-foreground/80">{path}</span>
           ) : null}
         </TooltipTrigger>
         <TooltipPopup variant="code">{path || title}</TooltipPopup>
@@ -499,7 +499,7 @@ export function ImportPreferencesView({
           <span
             id={titleId}
             className={cn(
-              "min-w-0 text-[13px] font-medium",
+              "min-w-0 text-sm font-medium",
               hasChanges ? "text-foreground" : "text-muted-foreground",
             )}
           >
@@ -519,7 +519,7 @@ export function ImportPreferencesView({
           <div
             aria-hidden
             className={cn(
-              "grid items-center gap-x-4 border-b border-border/60 px-3 py-2 text-[11px] font-medium tracking-[0.02em] text-muted-foreground/80 uppercase",
+              "grid items-center gap-x-4 border-b border-border/60 px-3 py-2 text-2xs font-medium tracking-wide text-muted-foreground/80 uppercase",
               PREFERENCE_GRID_COLUMNS,
             )}
           >
@@ -536,12 +536,12 @@ export function ImportPreferencesView({
                   PREFERENCE_GRID_COLUMNS,
                 )}
               >
-                <dt className="col-span-2 min-w-0 text-[13px] leading-[1.5] text-foreground @md/prefs:col-span-1">
+                <dt className="col-span-2 min-w-0 text-sm leading-normal text-foreground @md/prefs:col-span-1">
                   {row.label}
                 </dt>
                 <dd
                   className={cn(
-                    "min-w-0 text-[13px] leading-[1.5] text-muted-foreground",
+                    "min-w-0 text-sm leading-normal text-muted-foreground",
                     valueClassName(current?.monospace ?? row.monospace),
                   )}
                 >
@@ -550,7 +550,7 @@ export function ImportPreferencesView({
                 </dd>
                 <dd
                   className={cn(
-                    "min-w-0 text-[13px] leading-[1.5] font-medium text-foreground",
+                    "min-w-0 text-sm leading-normal font-medium text-foreground",
                     valueClassName(row.monospace),
                   )}
                 >
@@ -678,7 +678,7 @@ export function ImportDataView({
         ) : null}
         <h2
           className={cn(
-            "min-w-0 flex-1 font-semibold tracking-[-0.015em] text-foreground",
+            "min-w-0 flex-1 font-semibold tracking-tight text-foreground",
             setup ? "text-lg" : "text-base",
           )}
         >
@@ -703,10 +703,10 @@ export function ImportDataView({
             // the visual anchor only, so it must not repeat the announcement.
             <div className="space-y-1">
               <h3 className="text-base font-semibold text-foreground">Importing data</h3>
-              <p className="text-[13px] leading-[1.45] text-muted-foreground">{progress}</p>
+              <p className="text-sm leading-normal text-muted-foreground">{progress}</p>
             </div>
           ) : computers.length === 0 ? (
-            <p className="py-8 text-center text-[13px] text-muted-foreground">
+            <p className="py-8 text-center text-sm text-muted-foreground">
               No computers connected.
             </p>
           ) : computers.length === 1 ? (
@@ -719,7 +719,7 @@ export function ImportDataView({
               {/* The trigger carries the same name for assistive tech. */}
               <span
                 aria-hidden
-                className="shrink-0 text-[11px] font-medium tracking-[0.04em] text-muted-foreground/80 uppercase"
+                className="shrink-0 text-2xs font-medium tracking-wide text-muted-foreground/80 uppercase"
               >
                 Computer
               </span>
@@ -761,7 +761,7 @@ export function ImportDataView({
       <div className="flex shrink-0 flex-col gap-2.5 border-t border-border/60 pt-3 @md/import:flex-row @md/import:items-center @md/import:gap-4">
         <div className="min-w-0 flex-1 space-y-1">
           <p
-            className="flex min-w-0 items-center gap-1.5 text-xs leading-[1.45] tabular-nums text-muted-foreground"
+            className="flex min-w-0 items-center gap-1.5 text-xs leading-normal tabular-nums text-muted-foreground"
             aria-live="polite"
           >
             {busy && progress !== null ? (
@@ -776,14 +776,14 @@ export function ImportDataView({
           {error !== null ? (
             <p
               role="alert"
-              className="flex min-w-0 items-start gap-1.5 text-xs leading-[1.45] text-destructive"
+              className="flex min-w-0 items-start gap-1.5 text-xs leading-normal text-destructive"
             >
               <TriangleAlertIcon className="mt-px size-3.5 shrink-0" aria-hidden />
               <span className="min-w-0 break-words">{error}</span>
             </p>
           ) : null}
           {message !== null ? (
-            <p className="min-w-0 text-xs leading-[1.45] break-words text-muted-foreground/80">
+            <p className="min-w-0 text-xs leading-normal break-words text-muted-foreground/80">
               {message}
             </p>
           ) : null}

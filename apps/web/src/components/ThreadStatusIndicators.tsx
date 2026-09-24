@@ -382,7 +382,7 @@ function PullRequestMiniListRow({
       <span className="shrink-0 font-mono tabular-nums">#{number}</span>
       <span className="min-w-0 truncate text-foreground/75">{title}</span>
       {stack ? (
-        <span className="ml-auto shrink-0 pl-1 text-[10px]">
+        <span className="ml-auto shrink-0 pl-1 text-3xs">
           {stack.kind === "native" ? "stack" : "chain"} · {stack.size}
         </span>
       ) : null}
@@ -514,7 +514,7 @@ export function ThreadStatusLabel({
         render={
           <span
             aria-label={status.label}
-            className={`inline-flex items-center gap-1 text-[10px] ${status.colorClass}`}
+            className={`inline-flex items-center gap-1 text-3xs ${status.colorClass}`}
           />
         }
       >

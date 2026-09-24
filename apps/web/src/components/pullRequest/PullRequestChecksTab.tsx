@@ -310,7 +310,7 @@ export function PullRequestChecksTab({
             </div>
           ) : null}
           {requiredBranchUpdate ? (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-xs">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-warning/25 bg-warning/5 px-3 py-2 text-xs">
               <div className="min-w-0 flex-1 basis-56">
                 <p className="font-medium text-foreground">Update branch required</p>
                 <p className="mt-0.5 text-muted-foreground">{requiredBranchUpdateMessage}</p>

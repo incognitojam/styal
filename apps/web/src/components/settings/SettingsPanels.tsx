@@ -272,7 +272,7 @@ function AboutVersionTitle() {
   return (
     <span className="inline-flex items-baseline gap-2">
       <span>Version</span>
-      <code className="text-[11px] font-medium text-muted-foreground">{APP_VERSION}</code>
+      <code className="text-2xs font-medium text-muted-foreground">{APP_VERSION}</code>
     </span>
   );
 }
@@ -286,9 +286,9 @@ function AboutBuildProvenance() {
   const commitLabel = APP_COMMIT_HASH === "unknown" ? "unknown" : APP_COMMIT_HASH.slice(0, 10);
 
   return (
-    <span className="inline-flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 font-mono text-[11px]">
+    <span className="inline-flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 font-mono text-2xs">
       <span className="sr-only">Built from repository </span>
-      <span className="rounded-sm border border-teal-700/20 bg-teal-500/8 px-1 py-0.5 text-teal-700 dark:border-teal-300/20 dark:bg-teal-400/10 dark:text-teal-300">
+      <span className="rounded-sm border border-success/20 bg-success/8 px-1 py-0.5 text-success-foreground">
         {APP_REPOSITORY}
       </span>
       <span aria-hidden className="text-muted-foreground/50">
@@ -1409,8 +1409,8 @@ export function AppearanceSettingsPanel() {
                         : "flex shrink-0 gap-1"
                     }
                   >
-                    <span className="size-2 rounded-full bg-[var(--diff-deletion)]" />
-                    <span className="size-2 rounded-full bg-[var(--diff-addition)]" />
+                    <span className="size-2 rounded-full bg-diff-deletion" />
+                    <span className="size-2 rounded-full bg-diff-addition" />
                   </span>
                   <SelectValue>
                     {settings.diffColorScheme === "blue-orange" ? "Blue & orange" : "Red & green"}
@@ -2087,7 +2087,7 @@ function LegacyFeaturesSection() {
     <section id="legacy-features" ref={targetRef} tabIndex={-1} className="space-y-2.5">
       <Collapsible open={open} onOpenChange={setOpen}>
         <CollapsibleTrigger className="group flex min-h-8 w-full items-center gap-2 px-3 sm:px-4">
-          <h2 className="text-sm font-normal tracking-[-0.005em] text-foreground/70 transition-colors group-hover:text-foreground">
+          <h2 className="text-sm font-normal text-foreground/70 transition-colors group-hover:text-foreground">
             Legacy features
           </h2>
           <ChevronRightIcon className="size-4 text-muted-foreground transition-transform duration-200 group-data-panel-open:rotate-90" />

@@ -4,7 +4,7 @@ import type { DiffFileTier } from "~/lib/diffFileOrder";
 export function DiffFileTierChip({ tier }: { readonly tier: DiffFileTier }) {
   if (tier === "source") return null;
   return (
-    <span className="ms-1.5 shrink-0 rounded bg-muted px-1.5 py-0.5 font-sans text-[10px] font-medium leading-none text-muted-foreground">
+    <span className="ms-1.5 shrink-0 rounded bg-muted px-1.5 py-0.5 font-sans text-3xs font-medium leading-none text-muted-foreground">
       {tier === "test" ? "tests" : "generated"}
     </span>
   );

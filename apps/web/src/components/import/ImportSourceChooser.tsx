@@ -42,9 +42,7 @@ function SourceChoice({
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-medium text-foreground">{title}</span>
-        <span className="mt-0.5 block text-[13px] leading-[1.45] text-muted-foreground">
-          {detail}
-        </span>
+        <span className="mt-0.5 block text-sm leading-normal text-muted-foreground">{detail}</span>
       </span>
       <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground/70" aria-hidden />
     </button>
@@ -75,7 +73,7 @@ export function ImportSourceChooser({
 }) {
   return (
     <div className="flex min-w-0 flex-col" aria-busy={busy || undefined}>
-      <h2 className="text-xl font-semibold tracking-[-0.02em] text-foreground">
+      <h2 className="text-xl font-semibold tracking-tight text-foreground">
         Bring your projects into styal
       </h2>
 
@@ -105,7 +103,7 @@ export function ImportSourceChooser({
       {error !== null ? (
         <p
           role="alert"
-          className="mt-4 flex min-w-0 items-start gap-1.5 text-xs leading-[1.45] text-destructive"
+          className="mt-4 flex min-w-0 items-start gap-1.5 text-xs leading-normal text-destructive"
         >
           <TriangleAlertIcon className="mt-px size-3.5 shrink-0" aria-hidden />
           <span className="min-w-0 break-words">{error}</span>

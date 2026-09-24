@@ -37,7 +37,7 @@ export function MentionedTimeChip(props: {
     <Tooltip>
       <TooltipTrigger
         render={
-          <span className="cursor-default rounded-[4px] bg-foreground/[0.06] px-[3px] box-decoration-clone hover:bg-foreground/10" />
+          <span className="cursor-default rounded-sm bg-foreground/[0.06] px-0.75 box-decoration-clone hover:bg-foreground/10" />
         }
       >
         {props.children}

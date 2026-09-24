@@ -114,7 +114,7 @@ function StatusPageTooltip({
   const hasDetail = incidents.length > 0 || notice.affectedComponents.length > 0;
 
   return (
-    <div className="w-80 max-w-[calc(100vw-2rem)] overflow-hidden p-[var(--floating-content-inset)] text-left">
+    <div className="w-80 max-w-[calc(100vw-2rem)] overflow-hidden p-(--floating-content-inset) text-left">
       <div className="flex min-w-0 items-start gap-2 font-medium text-foreground">
         <StatusIcon aria-hidden className="mt-px size-3.5 shrink-0" />
         <span className="min-w-0 flex-1 break-words">

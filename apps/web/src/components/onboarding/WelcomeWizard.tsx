@@ -964,7 +964,7 @@ function AgentInstallTerminal({
       className="mt-4 overflow-hidden rounded-lg border border-border/70 bg-background text-foreground"
     >
       <div className="flex items-center justify-between border-b border-border/60 bg-background/60 px-3 py-1.5">
-        <span className="text-[11px] font-medium text-muted-foreground">
+        <span className="text-2xs font-medium text-muted-foreground">
           {setupState === "writeFailed" ? (
             <>
               Run <code className="rounded bg-muted px-1 font-mono">{command}</code> in this
