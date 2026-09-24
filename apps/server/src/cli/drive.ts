@@ -26,6 +26,7 @@ import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerConfig from "../config.ts";
 import { readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
 import { resolveCliAuthConfig } from "./config.ts";
+import { resolveCliCommand } from "./invocation.ts";
 import {
   DriveScenario,
   driveExampleCommand,
@@ -59,7 +60,7 @@ const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const makeClient = (origin: string) => HttpApiClient.make(EnvironmentHttpApi, { baseUrl: origin });
 type DriveClient = Effect.Success<ReturnType<typeof makeClient>>;
 
-// Local commands borrow a short-lived session, just like `t3 project`.
+// Local commands borrow a short-lived session, just like `styal project`.
 // A failed live connection never falls back to opening the database offline.
 const withConnection = Effect.fn("drive.withConnection")(function* <A, E, R>(
   flags: ConnectionFlags,
@@ -94,9 +95,9 @@ const withConnection = Effect.fn("drive.withConnection")(function* <A, E, R>(
   const config = yield* resolveCliAuthConfig(flags, yield* GlobalFlag.LogLevel);
   const runtime = yield* readPersistedServerRuntimeState(config.serverRuntimeStatePath);
   if (Option.isNone(runtime)) {
+    const serveCommand = yield* resolveCliCommand("serve");
     return yield* new DriveConnectionError({
-      message:
-        "No running server found. Start t3 serve for this --home-dir, or pass --url and T3_DRIVE_TOKEN.",
+      message: `No running server found. Start ${serveCommand} for this --home-dir, or pass --url and T3_DRIVE_TOKEN.`,
     });
   }
   const origin = runtime.value.origin;
@@ -107,7 +108,7 @@ const withConnection = Effect.fn("drive.withConnection")(function* <A, E, R>(
         scopes: operate
           ? [AuthOrchestrationReadScope, AuthOrchestrationOperateScope]
           : [AuthOrchestrationReadScope],
-        label: "t3 drive cli",
+        label: "styal drive cli",
       }),
       (issued) => call(origin, issued.token),
       (issued) => auth.revokeSession(issued.sessionId).pipe(Effect.ignore({ log: true })),
@@ -146,7 +147,7 @@ const snapshotCommand = Command.make("snapshot", {
 const dispatchCommand = Command.make("dispatch", {
   ...connectionFlags,
   file: Argument.string("file").pipe(
-    Argument.withDescription("JSON client command. See t3 drive schema."),
+    Argument.withDescription("JSON client command. See styal drive schema."),
   ),
 }).pipe(
   Command.withDescription(

@@ -16,6 +16,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   styal also exposes its managed remote-access setup as `styal link`, while accepting the upstream
   `connect` spelling as a compatibility alias. [Install styal](./install.md) and
   [Remote access](./remote-access.md).
+- **Agent control with `styal drive`.** Scripts and agents can read and change a running
+  environment as JSON, send real messages, and serve repeatable synthetic states such as streaming,
+  error, and archived threads. T3 Code has this only as an open pull request
+  ([#10411](https://github.com/pingdotgg/t3code/pull/10411)) as of
+  [September 24, 2026](https://github.com/pingdotgg/t3code/tree/b2b43bef73447c483ceae486890cb79f01c369cb).
+  [Drive styal from an agent](./drive.md).
 
 ## Workspaces and agent sessions
 
