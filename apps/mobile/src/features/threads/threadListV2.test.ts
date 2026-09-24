@@ -279,15 +279,6 @@ describe("sortThreadsForListV2", () => {
     ]);
     expect(sorted.map((thread) => thread.id)).toEqual(["old-unsettled", "newest", "middle"]);
   });
-
-  it("clusters same-worktree threads at the newest member's slot, original first — parity with web", () => {
-    const sorted = sortThreadsForListV2([
-      { id: "feature", createdAt: "2026-06-01T08:00:00.000Z", worktreePath: "/wt/feature" },
-      { id: "unrelated", createdAt: "2026-06-01T10:00:00.000Z" },
-      { id: "review", createdAt: "2026-06-01T12:00:00.000Z", worktreePath: "/wt/feature" },
-    ]);
-    expect(sorted.map((thread) => thread.id)).toEqual(["feature", "review", "unrelated"]);
-  });
 });
 
 describe("buildThreadListV2Items", () => {
@@ -943,100 +934,6 @@ describe("buildThreadListV2ListItems", () => {
       "v2-snoozed-shelf",
       "v2-settled-shelf",
       "v2-thread",
-    ]);
-  });
-});
-
-describe("visible workspace nesting", () => {
-  const original = makeThread({
-    id: ThreadId.make("original"),
-    title: "Original",
-    worktreePath: "/worktrees/feature",
-  });
-  const followup = makeThread({
-    id: ThreadId.make("followup"),
-    title: "Review",
-    worktreePath: original.worktreePath,
-    createdAt: "2026-06-01T01:00:00.000Z",
-  });
-  const last = makeThread({
-    id: ThreadId.make("last"),
-    title: "Fix",
-    worktreePath: original.worktreePath,
-    createdAt: "2026-06-01T02:00:00.000Z",
-  });
-  const layout = (threads: EnvironmentThreadShell[], searchQuery = "") =>
-    buildThreadListV2Items({
-      threads,
-      environmentId: null,
-      searchQuery,
-      now: NOW,
-      snoozedShelfExpanded: true,
-    });
-  const nesting = (threads: EnvironmentThreadShell[], query = "") =>
-    layout(threads, query).items.map(({ thread, clusterChild, clusterContinuesBelow }) => [
-      thread.id,
-      clusterChild,
-      clusterContinuesBelow,
-    ]);
-
-  it("nests follow-ups under the oldest active member with a terminating connector", () => {
-    expect(nesting([last, original, followup])).toEqual([
-      ["original", false, true],
-      ["followup", true, true],
-      ["last", true, false],
-    ]);
-  });
-
-  it.each([
-    { settledOverride: "settled" as const, settledAt: NOW },
-    { snoozedUntil: "2026-06-03T00:00:00.000Z" },
-    { pinnedAt: NOW },
-  ])("promotes the next active sibling when the oldest leaves the active block: %j", (patch) => {
-    const items = layout([{ ...original, ...patch }, last, followup]).items;
-    expect(
-      items
-        .filter((item) => !item.pinned && item.variant === "card")
-        .map((item) => [item.thread.id, item.clusterChild, item.clusterContinuesBelow]),
-    ).toEqual([
-      ["followup", false, true],
-      ["last", true, false],
-    ]);
-    expect(items.find((item) => item.thread.id === original.id)?.clusterChild).toBe(false);
-    expect(nesting([original, last, followup])[1]).toEqual(["followup", true, true]);
-  });
-
-  it("does not leave an orphan connector after filtering", () => {
-    expect(nesting([original, followup, last], "Review")).toEqual([["followup", false, false]]);
-  });
-
-  it("keeps identical worktree paths on different environments separate", () => {
-    expect(
-      nesting([original, { ...followup, environmentId: EnvironmentId.make("other") }]),
-    ).toEqual([
-      ["followup", false, false],
-      ["original", false, false],
-    ]);
-  });
-
-  it("nests explicit local branches but leaves plain local threads independent", () => {
-    expect(
-      nesting([
-        { ...original, worktreePath: null, branch: "feature" },
-        { ...followup, worktreePath: null, branch: "feature" },
-      ]),
-    ).toEqual([
-      ["original", false, true],
-      ["followup", true, false],
-    ]);
-    expect(
-      nesting([
-        { ...original, worktreePath: null },
-        { ...followup, worktreePath: null },
-      ]),
-    ).toEqual([
-      ["followup", false, false],
-      ["original", false, false],
     ]);
   });
 });

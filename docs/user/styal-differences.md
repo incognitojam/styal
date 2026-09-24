@@ -31,12 +31,10 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 - **Codex starts with GPT-6-Sol.** New Codex threads select GPT-6-Sol when available, then
   GPT-6-Astra or an older model offered by the installed CLI. T3 Code defaults to GPT-6-Astra
   as of [revision f5ef0dd](https://github.com/pingdotgg/t3code/tree/f5ef0ddb90a8c36584e181b1913e7b8a5df30ffc0618).
-- **Worktree defaults and workspace grouping.** Both apps support isolated Git worktrees. styal
-  defaults new threads to a worktree, while T3 Code defaults to the local checkout; either default can
-  be changed. styal also nests threads sharing a workspace in the web and desktop sidebar, mobile
-  Home list, and tablet sidebar, with the oldest active thread first. Workspace grouping compared with
-  [T3 Code on September 22, 2026](https://github.com/pingdotgg/t3code/tree/d7819c18813fa03b033cc1c9472c9acc0ffc0618).
-  [Organizing threads](./thread-sidebar.md).
+- **New threads start in a worktree.** Both apps support isolated Git worktrees. styal defaults new
+  threads to a worktree, while T3 Code defaults to the local checkout as of
+  [revision d5d4874](https://github.com/pingdotgg/t3code/tree/d5d48742c9ab00dff82fe8bcbc8da0ba68748959);
+  either default can be changed. [Working with threads](./thread-sidebar.md).
 - **Stable development ports.** Each workspace gets a persistent range of ten ports. Agents,
   terminals, and project scripts receive the same assignment across restarts, so parallel workspaces
   can run development servers without choosing the same ports.

@@ -9,11 +9,9 @@ import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled"
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import {
+  activeThreadAnchorTimestampMs,
   resolveSettledThreadTimestamp,
   sortPinnedThreadsByOrderKey,
-  sortThreadsByWorkspaceCluster,
-  threadWorkspaceKey,
-  type WorkspaceClusterThread,
 } from "@t3tools/client-runtime/state/thread-sort";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
@@ -153,15 +151,27 @@ function parseTimestampMs(isoDate: string): number {
 }
 
 /**
- * v2 sort: static lifecycle order, newest anchor on top, with same-workspace
- * threads (shared worktree, or an explicitly picked branch on the local
- * checkout) clustered together — original first, spawned follow-ups beneath.
- * Activity NEVER reorders the list — a row holds its position from open
- * until settled; creating or un-settling a sibling surfaces its family. The
- * comparator lives in client-runtime so web and mobile order identically.
+ * v2 sort: static order, newest anchor on top. Activity NEVER reorders the
+ * list — a row holds its position between lifecycle transitions. The anchor
+ * is creation time until an un-settle re-anchors it (see
+ * activeThreadAnchorTimestampMs), so an un-settled thread surfaces at the
+ * top instead of sinking back to its creation-order slot. Mirrors web's
+ * sortThreadsForSidebar.
  */
-export function sortThreadsForListV2<T extends WorkspaceClusterThread>(threads: readonly T[]): T[] {
-  return sortThreadsByWorkspaceCluster(threads);
+export function sortThreadsForListV2<
+  T extends {
+    readonly id: string;
+    readonly createdAt: string;
+    readonly unsettledAt?: string | null | undefined;
+  },
+>(threads: readonly T[]): T[] {
+  // .sort() on a copy, not .toSorted(): Hermes doesn't ship the ES2023
+  // change-by-copy array methods.
+  return [...threads].sort(
+    (left, right) =>
+      activeThreadAnchorTimestampMs(right) - activeThreadAnchorTimestampMs(left) ||
+      left.id.localeCompare(right.id),
+  );
 }
 
 export interface ThreadListV2Item {
@@ -171,9 +181,6 @@ export interface ThreadListV2Item {
   readonly snoozed: boolean;
   /** Pinned-block row: renders the pin glyph and offers Unpin. */
   readonly pinned: boolean;
-  /** Follow-up in the visible active workspace group. */
-  readonly clusterChild: boolean;
-  readonly clusterContinuesBelow: boolean;
   readonly isLast: boolean;
 }
 
@@ -413,21 +420,15 @@ export function buildThreadListV2Items(input: {
       variant: "card",
       snoozed: false,
       pinned: true,
-      clusterChild: false,
-      clusterContinuesBelow: false,
       isLast: false,
     });
   }
-  const activeClusterKeys = orderedActive.map(threadWorkspaceKey);
-  for (const [index, thread] of orderedActive.entries()) {
-    const key = activeClusterKeys[index] ?? null;
+  for (const thread of orderedActive) {
     items.push({
       thread,
       variant: "card",
       snoozed: false,
       pinned: false,
-      clusterChild: key !== null && key === activeClusterKeys[index - 1],
-      clusterContinuesBelow: key !== null && key === activeClusterKeys[index + 1],
       isLast: false,
     });
   }
@@ -438,8 +439,6 @@ export function buildThreadListV2Items(input: {
       variant: "slim",
       snoozed: true,
       pinned: false,
-      clusterChild: false,
-      clusterContinuesBelow: false,
       isLast: false,
     });
   }
@@ -450,8 +449,6 @@ export function buildThreadListV2Items(input: {
       variant: "slim",
       snoozed: false,
       pinned: false,
-      clusterChild: false,
-      clusterContinuesBelow: false,
       isLast: false,
     });
   }

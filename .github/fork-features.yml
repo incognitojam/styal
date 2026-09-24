@@ -2111,31 +2111,18 @@ features:
       retire_when: Upstream presents equivalent workspace-scoped paths across clients, preserves descriptive Markdown link labels without redundant chips while retaining chips for file-path labels, and preserves full file targets and authored-label copy actions.
 
   - id: workspace-thread-organization
-    title: Organize threads around isolated workspaces
+    title: Default new threads to isolated worktrees
     status: maintained
-    prs: [199, 202]
+    prs: [199]
     invariants:
       - New threads default to isolated worktrees unless a user explicitly chooses another workspace mode.
-      - Web and mobile keep threads from the same workspace adjacent while preserving lifecycle and recency ordering between workspace groups.
-      - Mobile Home and tablet sidebar indent active workspace siblings beneath the oldest visible active thread, with connecting lines that update after filtering and lifecycle changes.
     implementation_paths:
-      - apps/mobile/src/features/home/HomeScreen.tsx
-      - apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx
-      - apps/mobile/src/features/threads/thread-list-v2-items.tsx
-      - apps/mobile/src/features/threads/threadListV2.ts
-      - apps/web/src/components/Sidebar.logic.ts
-      - packages/client-runtime/src/state/threadSort.ts
       - packages/contracts/src/settings.ts
     upstream_paths:
-      - apps/mobile/src/features/threads/threadListV2.ts
-      - apps/web/src/components/Sidebar.tsx
       - packages/contracts/src/settings.ts
     tests:
-      - apps/mobile/src/features/threads/threadListV2.test.ts
-      - apps/web/src/components/Sidebar.logic.test.ts
-      - packages/client-runtime/src/state/threadSort.test.ts
       - packages/contracts/src/settings.test.ts
     upstream:
       status: unassessed
       tracking: []
-      retire_when: Upstream defaults new threads to isolated worktrees and groups same-workspace threads consistently across web and mobile.
+      retire_when: Upstream defaults new threads to isolated worktrees.
