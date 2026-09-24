@@ -1,5 +1,6 @@
 import * as DesktopShutdownGuard from "../app/DesktopShutdownGuard.ts";
 import {
+  DESKTOP_UPDATE_RESTART_MARKER_FILE,
   DesktopUpdateChannelSchema,
   type DesktopRuntimeInfo,
   type DesktopUpdateActionResult,
@@ -525,8 +526,35 @@ export const make = Effect.gen(function* () {
     );
   });
 
+  // Tells the primary backend that the coming stop is an update restart, so it
+  // keeps its managed tunnel for the backend the updated app starts. Best
+  // effort: without the marker the backend only re-provisions its tunnel.
+  const updateRestartMarkerDir = environment.path.join(environment.baseDir, "runtime");
+  const updateRestartMarkerPath = environment.path.join(
+    updateRestartMarkerDir,
+    DESKTOP_UPDATE_RESTART_MARKER_FILE,
+  );
+  const writeUpdateRestartMarker = fileSystem
+    .makeDirectory(updateRestartMarkerDir, { recursive: true })
+    .pipe(
+      Effect.andThen(fileSystem.writeFileString(updateRestartMarkerPath, "")),
+      Effect.catch((error) =>
+        logUpdaterWarning("Could not write the update restart marker.", { errorTag: error._tag }),
+      ),
+    );
+
+  // A failed or interrupted install brings no updated backend, so a later
+  // quit must release the tunnel.
+  const removeUpdateRestartMarker = fileSystem
+    .remove(updateRestartMarkerPath, { force: true })
+    .pipe(Effect.ignore);
+
   const resetInstallAction = Effect.all(
-    [finishUpdateAction("install"), Ref.set(desktopState.quitting, false)],
+    [
+      finishUpdateAction("install"),
+      Ref.set(desktopState.quitting, false),
+      removeUpdateRestartMarker,
+    ],
     { discard: true },
   );
 
@@ -541,6 +569,7 @@ export const make = Effect.gen(function* () {
     if (!ownsRecovery) return;
 
     yield* Ref.set(desktopState.quitting, false);
+    yield* removeUpdateRestartMarker;
     yield* Effect.gen(function* () {
       const instances = yield* pool.list;
       const restartExit = yield* Effect.forEach(instances, (instance) => instance.start, {
@@ -617,6 +646,7 @@ export const make = Effect.gen(function* () {
         yield* Ref.set(desktopState.quitting, true);
 
         return yield* Effect.gen(function* () {
+          yield* writeUpdateRestartMarker;
           // Stop every backend in the pool, not just the primary. With
           // parallel WSL + Windows backends, leaving the WSL instance up
           // means quitAndInstall's app.quit() exits before the pool's
