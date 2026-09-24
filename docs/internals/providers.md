@@ -37,20 +37,16 @@ and removal must respect those leases instead of replacing executables under a r
 
 Every driver builds its process environment with
 [`mergeProviderInstanceEnvironment`](../../apps/server/src/provider/ProviderInstanceEnvironment.ts)
-and uses the result for sessions, text generation, and status probes. The base is the server's
-environment with the server-owned variables removed: `T3CODE_*`, `STYAL_HOME`, the service launcher
-variables, Electron's runtime flags, and the dev web build's `VITE_*` and `PORT`. Agents can start
-other styal servers. A server that inherited these variables would bind the same port, open the
-same state directory, and replace the machine-wide Tailscale Serve mapping, then remove that
-mapping on exit.
+for sessions, text generation, and status probes. It starts from the server's environment minus the
+[server-owned variables](../../apps/server/src/serverOwnedEnvironment.ts), a rule shared with
+terminals. Agents can start other styal servers, and one that inherited `T3CODE_*`, `STYAL_HOME`, or
+the launcher variables would bind the same port, open the same state directory, and take over the
+machine-wide Tailscale Serve mapping.
 
-The [rule](../../apps/server/src/serverOwnedEnvironment.ts) is shared with terminals. It is a
-blocklist because an allowlist would also remove proxy settings, toolchain variables, and display
-settings that the user's tools need. Variables intended for the provider process are applied after
-filtering: a provider instance's configured environment, the per-session workspace variables, and
-the bearer token Codex uses for the styal MCP server. `T3CODE_CODEX_LAUNCH_ARGS` is the only
-inherited `T3CODE_*` variable that is kept. A new `T3CODE_*` variable that providers must inherit
-has to be added to the `keep` list in `inheritedProviderEnvironment`.
+The rule is a blocklist because an allowlist would also strip proxy, toolchain, and display settings
+that the user's tools need. Provider-specific variables are applied after filtering. A new
+`T3CODE_*` variable that providers must inherit has to be added to the `keep` list in
+`inheritedProviderEnvironment`.
 
 ## Setup must not happen as a health-check side effect
 

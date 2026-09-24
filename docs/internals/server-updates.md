@@ -60,82 +60,47 @@ stopped backends and replays the failure for the same token.
 
 ## Styal executable archives
 
-The launcher and installer select `runtime/styal-executable/versions/<version>/styal`
-(`styal.exe` on Windows). Archives come from `incognitojam/styal`. The directory is
-separate from both legacy `runtime/versions` and protocol 3's `runtime/styal-cli`
-installs, so a matching version cannot reuse or remove an old npm runtime.
+Runtimes live under `runtime/styal-executable/versions/<version>`, separate from the legacy
+`runtime/versions` and protocol 3's `runtime/styal-cli`, so a matching version cannot reuse or
+remove an old npm runtime. Launcher protocol 4 requires this layout. Protocol 3's integer was
+fork-local: upstream also used 3 for a different layout, so the numbers are not interchangeable.
 
-Launcher protocol 4 requires this executable layout. Protocol 3's integer was fork-local:
-upstream also used 3 for a different layout, so their numbers are not interchangeable.
-Older launchers fail preflight and need one local
-`npx @styal/cli@<version> service update`. The npm launcher retains `dist/bin.mjs`
-so old updaters can run that preflight and display its migration guidance. It must
-remain until the supported npm-based installations have migrated.
+Older launchers fail preflight and need one local `npx @styal/cli@<version> service update`. The
+npm launcher keeps `dist/bin.mjs` so old updaters can run that preflight and show its migration
+guidance; it must remain until npm-based installations have migrated. Migration cannot defer the
+restart while an older launcher is running.
 
-The local command prepares the archive before stopping the service. If activation
-fails, it restores the stopped service's state and unit definition, reloads the
-service manager configuration, and attempts recovery. Migration cannot defer the
-restart while an older launcher is running. Protocol 4 updates may defer restart;
-`.restart-pending` keeps status accurate until the new launcher starts. Data paths
-and the remote database rollback boundary are unchanged.
-
-Environment descriptors advertise `serverPackageName`. Clients offer the local
-service migration command for older boot services with an absent or different
-package identity, and the shared update command refuses to send a remote update
-to them. This prevents a new styal client from asking an old server to fetch
-`t3@<styal-version>` during the rollout.
+Environment descriptors advertise `serverPackageName`. The shared update command refuses to send a
+remote update to a server with an absent or different package identity, so a new styal client
+cannot ask an old server to fetch `t3@<styal-version>`.
 
 ## Desktop updates on quit
 
-Desktop downloads stay staged in electron-updater until installation is requested. Its
-`autoInstallOnAppQuit` flag intentionally stays off: switching update tracks resets styal's ready
-state but does not remove the library's queued installer. On macOS, enabling the flag also hands the
-download to Squirrel, after which changing the JavaScript flag cannot cancel native installation.
+electron-updater's `autoInstallOnAppQuit` stays off. Switching update tracks resets styal's ready
+state but not the library's queued installer, and on macOS the flag hands the download to Squirrel,
+after which it cannot be cancelled. Instead, after normal shutdown drains backend cleanup,
+[`DesktopUpdates`](../../apps/desktop/src/updates/DesktopUpdates.ts) installs only a ready download
+that still belongs to the selected track, silently and without relaunching. Any failure falls back
+to an ordinary quit.
 
-After normal shutdown closes the windows and drains backend cleanup, `DesktopLifecycle` asks
-`DesktopUpdates.installOnQuit` whether a ready download still belongs to the selected track. Only
-that download is handed to the installer, silently and without relaunching. A track change or failed
-replacement download leaves the old installer ineligible. Native staging errors or a 30-second
-handoff timeout fall back to ordinary quit. Explicit **Restart to update** retains its relaunch
-behavior. macOS reads `autoRunAppAfterInstall` rather than the `quitAndInstall` arguments, so the
-Electron adapter sets that property explicitly for both paths.
-
-Shutdown retains a one-shot `window-all-closed` listener while draining cleanup. Native delivery
-can follow removal of the scoped lifecycle listeners; without a remaining listener, Electron's
-default quit would bypass the update handoff.
+macOS reads `autoRunAppAfterInstall` rather than the `quitAndInstall` arguments, so the
+[Electron adapter](../../apps/desktop/src/electron/ElectronUpdater.ts) sets it for both paths.
+Shutdown keeps a one-shot `window-all-closed` listener while draining cleanup; without it,
+Electron's default quit would bypass the update handoff.
 
 ## Desktop shutdown activity checks
 
-`DesktopShutdownGuard` checks every backend registered in the desktop pool before manual Quit,
-relaunch, or explicit update installation. Deliberately stopped instances are skipped. Each running
-instance is queried through its authenticated `/api/environment/activity` endpoint with a three-second
-budget. Missing configuration, invalid responses, and unavailable instances require confirmation;
-they never count as idle. The desktop bootstrap credential remains valid for the owning server process
-lifetime, so a first check after days of uptime or a later bearer renewal still works. User pairing
-links and issued bearer sessions keep their normal expiry. The existing in-app confirmation dialog presents active or unknown work; idle checks
-proceed immediately. Duplicate requests are suppressed. The confirmation host is mounted outside authentication and recovery gates. The main process reopens
-the main window when needed and gives the renderer five seconds to acknowledge that the dialog is
-active, rather than merely queued. Once displayed, it waits for the user without a deadline.
+Before a manual Quit, relaunch, or explicit update install, desktop asks each running backend in its
+pool whether work is active. Unknown activity is never treated as idle: missing configuration,
+invalid responses, and unreachable servers all require confirmation. The desktop bootstrap
+credential stays valid for the server process's lifetime so a check after days of uptime still
+authenticates. Independent remote servers do not block shutdown because the app does not own their
+lifetime.
 
-Failed presentation expires the request and allows a subsequent explicit Quit to bypass confirmation
-while retaining normal shutdown and cleanup. Update installation and settings restarts cannot consume
-this override. Displaying a dialog or recovering the renderer clears it; late acknowledgments and
-responses to expired requests are ignored. Closing the window cancels the request without arming an
-override. Unknown activity is never treated as idle.
+The confirmation dialog is mounted outside the authentication and recovery gates, and the renderer
+must acknowledge that it is displayed, not merely queued. If presentation fails, the next explicit
+Quit may bypass confirmation; update installs and settings restarts cannot consume that override.
 
-The server combines lightweight thread projections with live provider sessions, including pending
-approvals/input, starting turns, and background work. Terminal checks reuse the fresh close preflight,
-including finite commands and conservative handling when process inspection fails. Failed terminal
-inspections are counted separately so the dialog distinguishes running work from unknown activity. Results cover all
-clients of that environment without loading message bodies or transmitting thread names. Connections
-to independent remote servers do not block desktop shutdown because this app does not own their lifetime.
-
-Idle manual requests proceed without a dialog. Windows and Linux window closes route through Quit
-before destroying the main window, so cancellation retains it. macOS window-close behavior and the
-hold-to-quit shortcut stay unchanged. OS/process termination signals and updater-controlled final quits
-bypass interactive checks. Cancellation leaves the downloaded installer eligible for a later attempt. Restart-triggering network
-and WSL settings changes restore their previous values when relaunch is declined.
-
-This is a point-in-time check, not a shutdown lease: new work can arrive after the response. Do not use
-it alone to authorize unattended restart; that needs an admission barrier spanning activity inspection
-and shutdown. Service updates are not changed by this desktop guard.
+This is a point-in-time check, not a shutdown lease: new work can arrive after the response. Do not
+use it alone to authorize unattended restarts, which need an admission barrier spanning inspection
+and shutdown.

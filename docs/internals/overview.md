@@ -55,14 +55,13 @@ must reject that operation before changing the filesystem.
 
 ## Historical data import
 
-Historical data import uses the engine's `importHistoricalEvents` seam instead of replaying user
-commands through the decider. It is serialized on the same engine queue, appends and projects each
-batch in one transaction, then reloads the command read model. Attachment cleanup, including
-provider continuation persistence, waits until the outer transaction commits. After commit it
-publishes only `project.created`, `thread.created`, and one final `thread.turn-prompt-linked` event
-per repaired thread. Shell subscribers refetch completed rows, thread-detail subscribers reload
-repaired history, historical operational events cannot wake provider or checkpoint reactors, and
-the prompt-link invalidation bypasses relay publication.
+[Historical import](../../apps/server/src/dataImport/LegacyImport.ts) appends already-decoded events
+through the engine's `importHistoricalEvents` seam instead of dispatching commands through the
+decider. It runs on the engine queue and commits each batch in one transaction; attachment cleanup
+waits for that commit. Afterwards it publishes only enough for subscribers to refetch
+(`project.created`, `thread.created`, and one `thread.turn-prompt-linked` per repaired thread).
+Historical events therefore cannot wake provider or checkpoint reactors, and the prompt-link
+invalidation is not relayed.
 
 ## Waiting for asynchronous work
 
