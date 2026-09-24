@@ -1101,7 +1101,7 @@ features:
 
   - id: missing-workspace-provider-guard
     title: Fail provider startup clearly for missing workspaces
-    status: maintained
+    status: review-needed
     prs: [222]
     invariants:
       - Provider startup validates the resolved project or worktree path before launching a session and reports a controlled actionable error when the workspace is missing.
@@ -1121,6 +1121,7 @@ features:
         - https://github.com/pingdotgg/t3code/pull/10296
         - https://github.com/pingdotgg/t3code/pull/10321
         - https://github.com/pingdotgg/t3code/pull/10549
+        - https://github.com/pingdotgg/t3code/pull/5040
         - https://github.com/pingdotgg/t3code/pull/9135
       retire_when: Upstream validates missing project and worktree paths before every provider starts. Retire the Claude fallback message mapping and assistant error tracking earlier, when intake takes upstream's shared result outcome and expired login and usage limit messages, keeping the stream failure guard only if upstream still lets a later stream failure replace a failed result's error.
 
