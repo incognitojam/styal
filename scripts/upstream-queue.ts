@@ -888,6 +888,7 @@ function main() {
         const target = pr.beyondTarget ? ", beyond target" : "";
         const merged = pr.mergedAt ? `, merged ${pr.mergedAt.slice(0, 10)}` : "";
         console.log(`#${pr.number} [${pr.status}${target}${merged}${gap}] ${pr.title}`);
+        console.log(`  ${pr.reason}`);
       }
     }
   }

@@ -3,6 +3,8 @@ import { parseUpstreamProvenance, withoutFencedExamples } from "./upstream-prove
 
 export interface TrackedPR {
   readonly number: number;
+  /** Why the fork is waiting on this change, so the entry can be dropped once that is resolved. */
+  readonly reason: string;
 }
 
 export interface TrackedPRMetadata {
@@ -53,10 +55,13 @@ export function decodeTrackedPRs(input: string): readonly TrackedPR[] {
     throw new Error("Invalid tracked PRs: expected a pullRequests array.");
   const seen = new Set<number>();
   return document.pullRequests.map((entry: unknown) => {
-    if (!Number.isSafeInteger(entry) || (entry as number) < 1 || seen.has(entry as number))
-      throw new Error(`Invalid or duplicate tracked PR: ${String(entry)}.`);
-    seen.add(entry as number);
-    return { number: entry as number };
+    const { pr, reason } = (entry ?? {}) as { pr?: unknown; reason?: unknown };
+    if (!Number.isSafeInteger(pr) || (pr as number) < 1 || seen.has(pr as number))
+      throw new Error(`Invalid or duplicate tracked PR: ${JSON.stringify(entry)}.`);
+    if (typeof reason !== "string" || !reason.trim())
+      throw new Error(`Tracked PR #${String(pr)} needs a reason.`);
+    seen.add(pr as number);
+    return { number: pr as number, reason: reason.trim() };
   });
 }
 
