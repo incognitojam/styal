@@ -2457,27 +2457,6 @@ features:
       tracking: []
       retire_when: Upstream renders ReportFindings results as a readable findings list that survives turn folding on web and mobile.
 
-  - id: run-shell-code-blocks
-    title: Run completed shell code blocks in a terminal
-    status: maintained
-    prs: [97]
-    invariants:
-      - Completed recognized shell fences expose a Run in terminal action with the exact displayed command.
-      - Incomplete or non-shell code blocks never expose the terminal action.
-    implementation_paths:
-      - apps/web/src/components/ChatMarkdown.tsx
-      - apps/web/src/components/chat/MessagesTimeline.tsx
-    upstream_paths:
-      - apps/web/src/components/ChatMarkdown.tsx
-      - apps/web/src/components/chat/MessagesTimeline.tsx
-    tests:
-      - apps/web/src/components/ChatMarkdown.test.tsx
-      - apps/web/src/components/chat/MessagesTimeline.test.tsx
-    upstream:
-      status: unassessed
-      tracking: []
-      retire_when: Upstream offers equivalent guarded terminal execution for completed shell code blocks.
-
   - id: same-turn-follow-up-lifecycle
     title: Keep follow-up turn lifecycle state truthful
     status: review-needed

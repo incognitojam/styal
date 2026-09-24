@@ -258,27 +258,6 @@ function buildAssistantTimelineEntry(text: string) {
   };
 }
 
-function renderAssistantMessage(text: string, streaming = false) {
-  const entry = buildUserTimelineEntry(text);
-  return renderToStaticMarkup(
-    <MessagesTimeline
-      {...buildProps()}
-      onRunCodeBlock={() => {}}
-      timelineEntries={[
-        {
-          ...entry,
-          message: {
-            ...entry.message,
-            role: "assistant" as const,
-            turnId: TurnId.make("turn-assistant"),
-            streaming,
-          },
-        },
-      ]}
-    />,
-  );
-}
-
 function buildSnapShotTimelineEntry(previewUrl?: string) {
   const entry = buildUserTimelineEntry("First prompt.");
   return {
@@ -532,19 +511,6 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain("Worked for 8.0s");
   });
-
-  it("only offers completed shell fences as terminal commands", () => {
-    const shellMarkup = renderAssistantMessage("```sh\nbun test\n```");
-
-    expect(shellMarkup).toContain('aria-label="Run in terminal"');
-    expect(shellMarkup).toContain("lucide-terminal");
-    expect(renderAssistantMessage("```ts\nconst answer = 42;\n```")).not.toContain(
-      'aria-label="Run in terminal"',
-    );
-    expect(renderAssistantMessage("```bash\nbun test\n```", true)).not.toContain(
-      'aria-label="Run in terminal"',
-    );
-  }, 20_000);
 
   it("keeps assistant changed-files headers sticky below the thread header", () => {
     const assistantMessageId = MessageId.make("message-assistant-with-files");

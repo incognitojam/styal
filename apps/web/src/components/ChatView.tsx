@@ -4330,23 +4330,22 @@ export default function ChatView(props: ChatViewProps) {
     ],
   );
 
-  const runCodeBlockInTerminal = useCallback(
-    (code: string) => {
-      const command = code.replace(/[\r\n]+$/, "");
-      if (!command.trim()) return;
-      void runProjectScript(
-        {
-          id: "code-block",
-          name: "command",
-          command,
-          icon: "play",
-          runOnWorktreeCreate: false,
-        },
-        { rememberAsLastInvoked: false },
-      );
-    },
-    [runProjectScript],
-  );
+  const runProjectScriptRef = useRef(runProjectScript);
+  useLayoutEffect(() => {
+    runProjectScriptRef.current = runProjectScript;
+  }, [runProjectScript]);
+  const runShellCommand = useCallback((command: string) => {
+    void runProjectScriptRef.current(
+      {
+        id: "chat-code-block",
+        name: "Chat code block",
+        command,
+        icon: "play",
+        runOnWorktreeCreate: false,
+      },
+      { rememberAsLastInvoked: false },
+    );
+  }, []);
 
   const supportsProjectSettingsOverrides =
     environmentById.get(environmentId)?.serverConfig?.environment.capabilities
@@ -10048,6 +10047,7 @@ export default function ChatView(props: ChatViewProps) {
                       agentPanelModel,
                       onOpenAgents: addAgentsSurface,
                       onUseArtifactTemplate: useArtifactTemplate,
+                      ...(activeProject ? { onRunShellCommand: runShellCommand } : {}),
                     }
                   : {})}
                 isWorking={!paintOnlyDisplayedTimeline && isWorking}
@@ -10076,9 +10076,6 @@ export default function ChatView(props: ChatViewProps) {
                 routeThreadKey={displayedTimelineKey}
                 displayThreadKey={displayedTimelineKey}
                 onOpenTurnDiff={paintOnlyDisplayedTimeline ? noopHeldTurnDiff : onOpenTurnDiff}
-                onRunCodeBlock={
-                  !paintOnlyDisplayedTimeline && activeProject ? runCodeBlockInTerminal : undefined
-                }
                 supportsConversationRollback={
                   !paintOnlyDisplayedTimeline && supportsConversationRollback
                 }

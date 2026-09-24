@@ -321,13 +321,13 @@ interface TimelineRowSharedState {
   activeThreadEnvironmentId: EnvironmentId;
   onRevertToTurnCount: (targetTurnCount: number, messageId: MessageId) => void;
   onUseArtifactTemplate: (template: CodexArtifactTemplate) => void;
+  onRunShellCommand: ((command: string) => void) | undefined;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onFileOpen: (attachment: ChatFileAttachment) => void;
   onFileDownload: (attachment: ChatFileAttachment) => void;
   openPullRequest: (event: MouseEvent<HTMLElement>, url: string) => void;
   onExternalLinkContextMenu: (event: MouseEvent<HTMLElement>, url: string) => void;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
-  onRunCodeBlock?: ((code: string) => void) | undefined;
   onToggleTurnFold: (turnId: TurnId) => void;
   /** `expanded` is the row's current state when membership does not mean "expanded". */
   onToggleWorkGroup: (groupId: string, anchorKey: string, expanded?: boolean) => void;
@@ -471,10 +471,10 @@ interface MessagesTimelineProps {
    */
   displayThreadKey?: string;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
-  onRunCodeBlock?: ((code: string) => void) | undefined;
   supportsConversationRollback: boolean;
   onRevertToTurnCount: (targetTurnCount: number, messageId: MessageId) => void;
   onUseArtifactTemplate?: (template: CodexArtifactTemplate) => void;
+  onRunShellCommand?: (command: string) => void;
   isRevertingCheckpoint: boolean;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onFileOpen?: (attachment: ChatFileAttachment) => void;
@@ -542,10 +542,10 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   routeThreadKey,
   displayThreadKey,
   onOpenTurnDiff,
-  onRunCodeBlock,
   supportsConversationRollback,
   onRevertToTurnCount,
   onUseArtifactTemplate = NOOP_USE_ARTIFACT_TEMPLATE,
+  onRunShellCommand,
   isRevertingCheckpoint,
   onImageExpand,
   onFileOpen = NOOP_OPEN_ATTACHMENT,
@@ -1197,13 +1197,13 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       activeThreadEnvironmentId,
       onRevertToTurnCount,
       onUseArtifactTemplate,
+      onRunShellCommand,
       onImageExpand,
       onFileOpen,
       onFileDownload,
       openPullRequest,
       onExternalLinkContextMenu,
       onOpenTurnDiff,
-      onRunCodeBlock,
       onToggleTurnFold,
       onToggleWorkGroup,
       onToggleWorkEntry: suspendEndScrollMaintenanceForDisclosure,
@@ -1235,13 +1235,13 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       activeThreadEnvironmentId,
       onRevertToTurnCount,
       onUseArtifactTemplate,
+      onRunShellCommand,
       onImageExpand,
       onFileOpen,
       onFileDownload,
       openPullRequest,
       onExternalLinkContextMenu,
       onOpenTurnDiff,
-      onRunCodeBlock,
       onToggleTurnFold,
       onToggleWorkGroup,
       suspendEndScrollMaintenanceForDisclosure,
@@ -2533,9 +2533,9 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             isStreaming={Boolean(row.message.streaming)}
             lineBreaks={shouldPreserveAssistantLineBreaks(messageText)}
             skills={ctx.skills}
-            onRunCodeBlock={ctx.onRunCodeBlock}
             headingLevelOffset={MESSAGE_HEADING_LEVEL}
             onUseArtifactTemplate={ctx.onUseArtifactTemplate}
+            onRunShellCommand={ctx.onRunShellCommand}
             onImageExpand={ctx.onImageExpand}
             writtenAt={row.message.createdAt}
           />
