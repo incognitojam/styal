@@ -29,6 +29,8 @@ During initial catch-up, later upstream changes may already be present in the fo
 
 To plan an early import, run `node scripts/upstream-queue.ts early <PR-number> --through upstream/main`. Pass several PR numbers to plan them together. The command applies the selected patches at the reconciled upstream boundary, replays intervening upstream integrations in order, and adds PRs or direct commits only when that replay encounters a textual conflict. It then checks whether the resulting selection applies to fetched fork `main`. `early --count 20 --through upstream/main` provides a quick file-overlap screen without replay. A clean replay establishes that moving the selected patches earlier does not change the upstream result under Git's merge rules; review semantic dependencies and validate behavior before importing. This check changes no refs or working-tree files; simulation objects live in an ignored directory that the command removes afterward. The normal intake and promotion order remains chronological unless maintainers deliberately change this policy.
 
+To see how far fork `main` trails upstream over time, run `node scripts/upstream-lag-report.ts`. It prints a Markdown report with Mermaid charts of upstream merges against the in-order tip reported by `status`, separates in-order imports from early ones, and estimates a catch-up date from the last three days of progress. The **Upstream lag report** workflow publishes the same report to its run summary daily and on manual dispatch.
+
 ## 2. Apply in order
 
 Create the candidate from current `origin/main`, then apply the selected commits:
