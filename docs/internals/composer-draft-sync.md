@@ -5,44 +5,33 @@ stores one JSON `common` section per thread with a monotonic revision and mutati
 `common` value is a durable tombstone, which prevents a stale revision-zero client from resurrecting
 a sent draft.
 
-Clients keep their existing local durable cache and subscribe to the server snapshot. Desktop uses
-the web implementation; mobile starts its subscription only after its persisted local drafts hydrate.
-Updates use revision compare-and-swap. A clean client applies newer server state; an actively edited
-client waits for the idle debounce and retries once against a conflicting revision. On first contact,
-an existing non-empty local cache is preserved rather than automatically overwriting an established
-server draft.
+Clients keep their local durable cache and subscribe to the server snapshot; mobile subscribes only
+after its persisted drafts hydrate. Updates use revision compare-and-swap. On first contact, an
+existing non-empty local cache is not automatically overwritten by an established server draft.
 
 The shared section contains text, model selection, runtime mode, and interaction mode. Attachment
 bytes and surface-specific context never cross this channel. A client projects a draft containing
 local-only context to a tombstone and refuses to apply remote state until that context is gone.
 
-A turn-start command may carry the composer revision captured at send time. Mobile persists that
-revision alongside an offline outbox message and forwards it when delivery eventually succeeds.
-After the turn command is durably accepted, the server conditionally writes a tombstone at that
-revision. This prevents a delayed send from erasing a newer edit from another client.
-The latest issued draft update's own subscription echo acknowledges its revision without replacing
-local content, so it cannot restore text cleared by a send. The controller retains that mutation ID
-after transport failure because the server may still have applied the write. Other devices' updates
-still apply to a clean composer while the response is pending. Delayed responses cannot roll back
-a newer revision already received through the subscription.
+A turn-start command may carry the composer revision captured at send time, including from mobile's
+offline outbox. After the turn command is durably accepted, the server tombstones the draft only at
+that revision, so a delayed send cannot erase a newer edit from another client. The subscription
+echo of a client's own latest update acknowledges the revision without replacing local content, so
+it cannot restore text cleared by a send. The controller keeps that mutation ID after a transport
+failure because the server may still have applied the write. A delayed response cannot roll back a
+newer revision already received through the subscription.
 
 ## Attachment ownership
 
-Web and desktop keep uploaded generic files as environment-scoped pending-upload references in
-local draft and stash storage. File bytes are uploaded directly to the environment. These references
-are not part of the synchronized `common` section. Pending uploads expire after 24 hours; missing
-uploads and files whose upload did not finish hydrate as **Attach again** rows. Existing image draft
-encoding remains unchanged.
+Web and desktop drafts hold environment-scoped references to uploaded files, outside the
+synchronized `common` section. Legacy drafts and stashes may still contain data URLs. Keep those
+bytes until the upload succeeds and the replacement reference is durably written; a failed upload or
+storage write must leave the old copy recoverable. Stash migration uses separate upload jobs so it
+cannot release a pending upload still owned by a composer draft.
 
-Legacy web file drafts and stashes may contain data URLs. Keep those bytes until upload succeeds
-and a replacement reference has been durably written. Failed uploads or browser-storage writes must
-leave the old copy recoverable. Stash migration uses separate upload jobs so it cannot release a
-pending upload still owned by a composer draft.
-
-Mobile copies picked or shared files into its owned Documents attachment directory. Drafts, incoming
-shares, and queued messages retain those copies until ownership transfers or the content is removed.
-Uploads happen during send; retries verify saved upload references and can upload the owned local
-copy again if the server upload expired. Cleanup waits for successful hydration and durable writes
-of every owner; a read or decode failure must never be treated as an empty owner set. Active video
-previews, thumbnail extraction, and share copies retain a temporary file reference until they finish,
-even when the originating attachment has been sent or removed.
+Mobile keeps its own copies of picked and shared files until ownership transfers or the content is
+removed. It uploads them at send time, and a retry can upload the local copy again if the server's
+upload expired. Cleanup waits until every owner has hydrated and written durably; a read or decode
+failure must never be treated as an empty owner set. Previews, thumbnail extraction, and share
+copies hold a temporary reference until they finish, even when the attachment has been sent or
+removed.

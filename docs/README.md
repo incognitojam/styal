@@ -48,7 +48,6 @@ source alone does not explain. Most code changes do not need an internal documen
 - [Product analytics](./internals/product-analytics.md)
 - [Environment auth](./internals/environment-auth.md)
 - [T3 Connect](./internals/t3-connect.md) (upstream mechanics)
-- [styal Link](./internals/styal-link.md) (fork deployment and Clerk setup)
 - [Assistant citations](./internals/assistant-citations.md)
 - [Mobile navigation](./internals/mobile-navigation.md)
 - [Mobile development lifecycle](./internals/mobile-development.md)
@@ -59,6 +58,7 @@ source alone does not explain. Most code changes do not need an internal documen
 
 - [Development and local builds](./operations/development.md)
 - [T3 Connect setup](./operations/connect-setup.md)
+- [styal Link setup](./operations/styal-link.md)
 - [Release](./operations/release.md)
 - [Fork nightly releases](./operations/fork-nightly.md)
 - [Observability](./operations/observability.md)

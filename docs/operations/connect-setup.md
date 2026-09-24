@@ -2,7 +2,7 @@
 
 Deployment and client configuration for T3 Connect. The [architecture note](../internals/t3-connect.md)
 explains the trust boundaries; the [relay README](../../infra/relay/README.md#deployment) owns relay
-provisioning instructions. [styal Link](../internals/styal-link.md) lists the values styal's
+provisioning instructions. [styal Link](./styal-link.md) lists the values styal's
 deployment uses.
 
 ## Public application configuration

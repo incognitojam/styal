@@ -31,7 +31,7 @@ builds are not submitted to Google Play.
    | `RELAY_URL`             | `T3CODE_RELAY_URL`             |
 
    Both distributed variants use production styal Link; local development uses
-   the development configuration described in [styal Link](../internals/styal-link.md).
+   the development configuration described in [styal Link](./styal-link.md).
    Register `build.styal.app` with the signing team in Clerk's production Native
    API settings. Verify that its Apple association file includes the app under
    `webcredentials.apps` before testing native passkeys.

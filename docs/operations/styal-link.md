@@ -4,7 +4,7 @@
 
 styal Link is the fork's deployment of upstream's T3 Connect. The mechanics — Clerk JWT
 template, CLI OAuth flow, desktop redirect allowlist, passkeys, sign-up restrictions — are unchanged
-and documented in [T3 Connect setup](../operations/connect-setup.md). This page is the styal-specific configuration:
+and documented in [T3 Connect setup](./connect-setup.md). This page is the styal-specific configuration:
 the values our deployment uses and where each one has to be set. It describes the intended
 configuration; when reality drifts from it, fix reality.
 
@@ -47,16 +47,16 @@ mutation first.
    providers, and Clerk renders an empty sign-up card unless `email_address` is also _required_
    (Dashboard: User & authentication → Email). Enabled-but-optional looks configured and is not.
 2. **JWT template** named `t3-relay` with claims `{ "aud": "t3-code-relay" }`
-   ([connect-setup.md § JWT template](../operations/connect-setup.md#jwt-template)). Check with
+   ([connect-setup.md § JWT template](./connect-setup.md#jwt-template)). Check with
    `clerk api /jwt_templates`.
 3. **CLI OAuth application** named `styal CLI`
-   ([connect-setup.md § CLI OAuth application](../operations/connect-setup.md#cli-oauth-application)):
+   ([connect-setup.md § CLI OAuth application](./connect-setup.md#cli-oauth-application)):
    public client (PKCE), scopes `openid profile email`, and **both** redirect URIs from the table
    above. The hosted callback must equal `connectCallbackUrl(DEFAULT_HOSTED_APP_URL)` exactly or
    `styal link --headless` and SSH authorization fail. Its client ID is `CLERK_CLI_OAUTH_CLIENT_ID`.
    Check with `clerk api /oauth_applications`.
 4. **Native API** for desktop
-   ([connect-setup.md § Desktop OAuth redirects](../operations/connect-setup.md#desktop-oauth-redirects)):
+   ([connect-setup.md § Desktop OAuth redirects](./connect-setup.md#desktop-oauth-redirects)):
    enabled, with `styal-dev://app/` allowlisted on dev and `styal://app/` on prod, and the instance's
    `allowed_origins` set to the same scheme:
 
@@ -66,7 +66,7 @@ mutation first.
    ```
 
 5. **Passkeys** (production only,
-   [connect-setup.md § Desktop passkeys](../operations/connect-setup.md#desktop-passkeys)): an iOS app entry in Clerk's
+   [connect-setup.md § Desktop passkeys](./connect-setup.md#desktop-passkeys)): an iOS app entry in Clerk's
    Native API with our Apple Team ID and `build.styal.app`, and the AASA served from the production
    Frontend API. The RP domain derives from the production publishable key, so the
    `CLERK_PASSKEY_RP_DOMAINS` repository variable is only set when Clerk reports a different RP ID.
@@ -121,7 +121,7 @@ Apple-signing and release plumbing. Three of them have non-obvious shape require
   deploy falls through to a (refused) create.
 - `AXIOM_TOKEN` must be an **advanced API token**, accompanied by `AXIOM_ORG_ID`. Its exact
   organization- and dataset-level permissions are documented in
-  [Relay Observability](../operations/relay-observability.md#deployment-token-permissions).
+  [Relay Observability](./relay-observability.md#deployment-token-permissions).
 
 Fork workflows run on GitHub-hosted runners. Blacksmith `runs-on` labels survive in inherited
 upstream workflows the fork does not run; Blacksmith is not installed for this account, so a job

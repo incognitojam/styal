@@ -16,12 +16,11 @@ upstream migrations with lower IDs to be skipped.
 Fork migrations live in `apps/server/src/persistence/ForkMigrations/`. They must be append-only and
 idempotent so upgrades remain safe across rebases and interrupted starts.
 
-Review enforces this rule: a fork PR must not touch `apps/server/src/persistence/Migrations.ts` or
-anything under `apps/server/src/persistence/Migrations/`. Only a PR that deliberately brings an
-upstream migration in may change those paths, and it should carry upstream's change verbatim.
-The server test job and Fork Nightly also build disposable databases with the migration source from
-the released `nightly` branch, then run the candidate's full migration pass. This checks the
-separate upstream/fork histories and confirms composer drafts survive the upgrade.
+A fork PR must not touch `apps/server/src/persistence/Migrations.ts` or anything under
+`apps/server/src/persistence/Migrations/`. Only a PR that deliberately brings an upstream migration
+in may change those paths, and it should carry upstream's change verbatim. The server test job and
+Fork Nightly upgrade disposable databases built from the released `nightly` branch to check that the
+two histories stay separate and composer drafts survive.
 
 ## Retired pre-split repair
 
@@ -38,7 +37,5 @@ and let it finish startup before returning to the current version. The repair ca
 migration 39 and records `1_ComposerDrafts` in the fork history. Do not merely rename the ledger entry:
 that leaves the required schema change unapplied.
 
-This retires the repair tracked in [issue #62](https://github.com/incognitojam/styal/issues/62).
 The `yngatech_sql_migrations` ledger and fork migration `1_ComposerDrafts` remain permanent.
-Read-only import from legacy T3 Code databases does not run startup migrations on the source and
-remains supported.
+Read-only import from legacy T3 Code databases does not run startup migrations on the source.
