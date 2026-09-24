@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { DiscordPresenceController, type DiscordRpcClient } from "./DesktopDiscordPresence.ts";
+import {
+  DiscordPresenceController,
+  type DiscordRpcClient,
+  type formatDiscordPresence,
+} from "./DesktopDiscordPresence.ts";
 
 function fakeClient() {
   let connected = false;
@@ -8,7 +12,10 @@ function fakeClient() {
     get isConnected() {
       return connected;
     },
-    user: { setActivity: vi.fn(async () => {}), clearActivity: vi.fn(async () => {}) },
+    user: {
+      setActivity: vi.fn(async (_activity: ReturnType<typeof formatDiscordPresence>) => {}),
+      clearActivity: vi.fn(async () => {}),
+    },
     login: vi.fn(async () => {
       connected = true;
     }),
@@ -35,18 +42,20 @@ describe("Discord presence lifecycle", () => {
   it("connects lazily, publishes counts and the public repository link, deduplicates updates, and clears on disable", async () => {
     const client = fakeClient();
     const create = vi.fn(() => client);
-    const controller = new DiscordPresenceController(create);
+    const controller = new DiscordPresenceController(create, 1_000);
     await controller.setActivity(null);
     expect(create).not.toHaveBeenCalled();
     await controller.setActivity({ activeThreads: 3, activeProjects: 2 });
     await controller.setActivity({ activeThreads: 3, activeProjects: 2 });
     expect(client.user.setActivity).toHaveBeenCalledExactlyOnceWith({
       details: "3 active threads across 2 projects",
+      startTimestamp: 1_000,
       buttons: [{ label: "View on GitHub", url: "https://github.com/incognitojam/styal" }],
     });
     await controller.setActivity({ activeThreads: 1, activeProjects: 1 });
     expect(client.user.setActivity).toHaveBeenLastCalledWith({
       details: "1 active thread across 1 project",
+      startTimestamp: 1_000,
       buttons: [{ label: "View on GitHub", url: "https://github.com/incognitojam/styal" }],
     });
     await controller.setActivity(null);
@@ -55,10 +64,28 @@ describe("Discord presence lifecycle", () => {
     await controller.dispose();
   });
 
+  it("keeps the launch start time across count changes, clearing, and reconnects", async () => {
+    vi.useFakeTimers();
+    const client = fakeClient();
+    const controller = new DiscordPresenceController(() => client, 1_000);
+    await controller.setActivity({ activeThreads: 1, activeProjects: 1 });
+    await vi.advanceTimersByTimeAsync(60_000);
+    await controller.setActivity({ activeThreads: 2, activeProjects: 1 });
+    await controller.setActivity(null);
+    await controller.setActivity({ activeThreads: 1, activeProjects: 1 });
+    client.disconnect();
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(client.login).toHaveBeenCalledTimes(3);
+    expect(client.user.setActivity.mock.calls.map(([activity]) => activity.startTimestamp)).toEqual(
+      [1_000, 1_000, 1_000, 1_000],
+    );
+    await controller.dispose();
+  });
+
   it("reconnects after Discord closes and republishes unchanged counts", async () => {
     vi.useFakeTimers();
     const client = fakeClient();
-    const controller = new DiscordPresenceController(() => client);
+    const controller = new DiscordPresenceController(() => client, 0);
     await controller.setActivity({ activeThreads: 2, activeProjects: 1 });
     client.disconnect();
     await vi.advanceTimersByTimeAsync(15_000);
@@ -73,7 +100,7 @@ describe("Discord presence lifecycle", () => {
     vi.useFakeTimers();
     const client = fakeClient();
     client.login.mockRejectedValueOnce(new Error("Discord is not running"));
-    const controller = new DiscordPresenceController(() => client);
+    const controller = new DiscordPresenceController(() => client, 0);
     await controller.setActivity({ activeThreads: 1, activeProjects: 1 });
     expect(client.user.setActivity).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(15_000);
@@ -93,7 +120,7 @@ describe("Discord presence lifecycle", () => {
       connecting.resolve();
       return login.promise;
     });
-    const controller = new DiscordPresenceController(() => client);
+    const controller = new DiscordPresenceController(() => client, 0);
     const update = controller.setActivity({ activeThreads: 3, activeProjects: 2 });
     await connecting.promise;
     const disable = controller.setActivity(null);
@@ -108,7 +135,7 @@ describe("Discord presence lifecycle", () => {
     vi.useFakeTimers();
     const client = fakeClient();
     client.user.setActivity.mockImplementationOnce(() => new Promise(() => {}));
-    const controller = new DiscordPresenceController(() => client);
+    const controller = new DiscordPresenceController(() => client, 0);
     const update = controller.setActivity({ activeThreads: 1, activeProjects: 1 });
     await vi.advanceTimersByTimeAsync(5_000);
     await update;

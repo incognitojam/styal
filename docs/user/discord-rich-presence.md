@@ -8,7 +8,8 @@ Your activity shows **styal**, with a summary such as
 **3 active threads across 2 projects**. Active means unsettled, including threads waiting for you;
 it does not mean an agent is currently generating a response. Archived and snoozed
 threads are excluded. Automatic settlement follows your sidebar preferences.
-A **View on GitHub** button links to the public styal repository.
+A **View on GitHub** button links to the public styal repository. The elapsed time counts
+from when you opened the desktop app.
 
 The counts cover connected environments, independent of sidebar filters. Multiple
 threads in one project count as one project; projects on separate environments count

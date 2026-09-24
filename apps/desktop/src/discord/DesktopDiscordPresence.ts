@@ -1,6 +1,7 @@
 // @effect-diagnostics globalTimers:off -- Bounds and reconnects an imperative Discord RPC client.
 import { Client } from "@xhayper/discord-rpc";
 import type { DesktopDiscordPresenceActivity } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -18,6 +19,7 @@ export interface DiscordRpcClient {
     | {
         setActivity: (activity: {
           details: string;
+          startTimestamp: number;
           buttons: { label: string; url: string }[];
         }) => Promise<unknown>;
         clearActivity: () => Promise<unknown>;
@@ -33,9 +35,14 @@ export class DesktopDiscordPresence extends Context.Service<
   { readonly setActivity: (activity: Activity) => Effect.Effect<void> }
 >()("@t3tools/desktop/discord/DesktopDiscordPresence") {}
 
-export function formatDiscordPresence(activity: DesktopDiscordPresenceActivity) {
+/** `startTimestamp` pins Discord's elapsed timer, which otherwise restarts on every update. */
+export function formatDiscordPresence(
+  activity: DesktopDiscordPresenceActivity,
+  startTimestamp: number,
+) {
   return {
     details: `${activity.activeThreads} active ${activity.activeThreads === 1 ? "thread" : "threads"} across ${activity.activeProjects} ${activity.activeProjects === 1 ? "project" : "projects"}`,
+    startTimestamp,
     buttons: [{ label: "View on GitHub", url: "https://github.com/incognitojam/styal" }],
   };
 }
@@ -50,9 +57,12 @@ export class DiscordPresenceController {
   private disposed = false;
 
   private readonly createClient: () => DiscordRpcClient;
+  private readonly startedAt: number;
 
-  constructor(createClient: () => DiscordRpcClient) {
+  /** `startedAt` is the desktop launch time, reported to Discord as the activity start. */
+  constructor(createClient: () => DiscordRpcClient, startedAt: number) {
     this.createClient = createClient;
+    this.startedAt = startedAt;
   }
 
   setActivity(activity: Activity): Promise<void> {
@@ -111,7 +121,7 @@ export class DiscordPresenceController {
     const user = this.client?.user;
     if (!user) throw new Error("Discord RPC has no user session.");
     const activity = this.desired;
-    await this.bounded(user.setActivity(formatDiscordPresence(activity)));
+    await this.bounded(user.setActivity(formatDiscordPresence(activity, this.startedAt)));
     this.applied = activity;
   }
 
@@ -161,7 +171,9 @@ export const make = (
   createClient: () => DiscordRpcClient = () => new Client({ clientId: DISCORD_APPLICATION_ID }),
 ) =>
   Effect.acquireRelease(
-    Effect.sync(() => new DiscordPresenceController(createClient)),
+    Clock.currentTimeMillis.pipe(
+      Effect.map((startedAt) => new DiscordPresenceController(createClient, startedAt)),
+    ),
     (controller) => Effect.promise(() => controller.dispose()),
   ).pipe(
     Effect.map((controller) =>
