@@ -27,6 +27,8 @@ Normal commands compare against fetched `origin/main`, not the current branch. `
 
 During initial catch-up, later upstream changes may already be present in the fork. Chronological intake removes prerequisite selection only when earlier changes are accounted for; it does not eliminate conflicts with those later imports or maintained fork differences.
 
+To plan an early import, run `node scripts/upstream-queue.ts early <PR-number> --through upstream/main`. Pass several PR numbers to plan them together. The command applies the selected patches at the reconciled upstream boundary, replays intervening upstream integrations in order, and adds PRs or direct commits only when that replay encounters a textual conflict. It then checks whether the resulting selection applies to fetched fork `main`. `early --count 20 --through upstream/main` provides a quick file-overlap screen without replay. A clean replay establishes that moving the selected patches earlier does not change the upstream result under Git's merge rules; review semantic dependencies and validate behavior before importing. This check changes no refs or working-tree files; simulation objects live in an ignored directory that the command removes afterward. The normal intake and promotion order remains chronological unless maintainers deliberately change this policy.
+
 ## 2. Apply in order
 
 Create the candidate from current `origin/main`, then apply the selected commits:
@@ -98,7 +100,7 @@ Commit the target change too. Neither command promotes code.
 - `explain <PR-number-or-SHA-prefix>` shows sources and import evidence. SHA prefixes must be unambiguous and at least seven characters.
 - `--fork-ref intake/<batch>` inspects a candidate; `--state` and `--upstream-ref` select alternate local inputs.
 - `--json` provides structured output for queue commands.
-- PR associations are cached in the primary checkout's ignored `.scratch/`, shared across worktrees and saved incrementally. Use `--refresh-metadata` to rebuild them.
+- PR associations are cached in the primary checkout's ignored `.scratch/`, shared across worktrees and saved incrementally. New targets reuse settled associations from a previous cache and recheck direct or unmerged commits. Use `--refresh-metadata` to rebuild them.
 - Recorded evidence includes ancestry, provenance trailers, cherry-pick references, and historical `Source PRs:` sections. Incomplete or ambiguous associations stop the queue.
 - The old tracking issue is historical context only; its terminal markers are not completion evidence. The queue does not write to GitHub.
 
