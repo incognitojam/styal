@@ -17,7 +17,7 @@ export interface TrackedPRStatus extends TrackedPR {
   readonly title: string;
   readonly mergedAt: string | null;
   readonly status: "open" | "closed" | "pending" | "recorded" | "skipped" | "fetch upstream";
-  readonly lagDays: number | null;
+  readonly daysAheadOfTip: number | null;
   readonly beyondTarget: boolean;
 }
 
@@ -71,7 +71,7 @@ export function trackedPRStatuses(input: {
   readonly exceptions: Readonly<
     Record<string, { readonly disposition: "already present" | "skip" | "pending" }>
   >;
-  readonly now: number;
+  readonly tipMergedAt: number;
 }): readonly TrackedPRStatus[] {
   const metadata = new Map(input.metadata.map((pr) => [pr.number, pr]));
   return input.tracked.map((tracked) => {
@@ -83,7 +83,7 @@ export function trackedPRStatuses(input: {
         title: pr.title,
         mergedAt: null,
         status: pr.state === "OPEN" ? "open" : "closed",
-        lagDays: null,
+        daysAheadOfTip: null,
         beyondTarget: false,
       };
     }
@@ -121,9 +121,9 @@ export function trackedPRStatuses(input: {
       title: pr.title,
       mergedAt: pr.mergedAt,
       status,
-      lagDays:
+      daysAheadOfTip:
         status === "pending"
-          ? Math.max(0, Math.floor((input.now - Date.parse(pr.mergedAt)) / 86_400_000))
+          ? Math.max(0, (Date.parse(pr.mergedAt) - input.tipMergedAt) / 86_400_000)
           : null,
       beyondTarget: inUpstream && !inTarget,
     };

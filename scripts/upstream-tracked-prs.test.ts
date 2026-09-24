@@ -34,7 +34,7 @@ describe("tracked upstream PR report", () => {
     assert.throws(() => decodeTrackedPRs('{"pullRequests":[12,12]}'));
   });
 
-  it("shows pending age across the target and respects recorded intake evidence", () => {
+  it("shows a pending PR's gap from the fork tip across the target and respects recorded intake evidence", () => {
     const tracked = [11, 12, 13, 14, 15].map((number) => ({ number }));
     const result = trackedPRStatuses({
       tracked,
@@ -51,15 +51,15 @@ describe("tracked upstream PR report", () => {
       targetFirstParent: new Set([sha(1), sha(2), sha(5)]),
       baselineFirstParent: new Set([sha(5)]),
       exceptions: {},
-      now: Date.parse("2026-09-24T00:00:00Z"),
+      tipMergedAt: Date.parse("2026-08-30T12:00:00Z"),
     });
     assert.deepEqual(
-      result.map((pr) => [pr.status, pr.lagDays, pr.beyondTarget]),
+      result.map((pr) => [pr.status, pr.daysAheadOfTip, pr.beyondTarget]),
       [
-        ["pending", 23, false],
+        ["pending", 1.5, false],
         ["recorded", null, false],
         ["recorded", null, true],
-        ["pending", 23, true],
+        ["pending", 1.5, true],
         ["recorded", null, false],
       ],
     );
@@ -78,7 +78,7 @@ describe("tracked upstream PR report", () => {
       targetFirstParent: new Set(),
       baselineFirstParent: new Set(),
       exceptions: {},
-      now: Date.parse("2026-09-24T00:00:00Z"),
+      tipMergedAt: Date.parse("2026-08-30T12:00:00Z"),
     });
     assert.deepEqual(
       result.map((pr) => pr.status),
