@@ -1,0 +1,42 @@
+name: Upstream lag report
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-lag-report
+  cancel-in-progress: true
+
+jobs:
+  report:
+    name: Upstream lag report
+    if: github.repository == 'incognitojam/styal'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          sparse-checkout: |
+            /scripts/
+            /.github/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Fetch fork and upstream main
+        run: |
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          git fetch --no-tags https://github.com/pingdotgg/t3code.git '+refs/heads/main:refs/remotes/upstream/main'
+
+      - name: Write report
+        run: node scripts/upstream-lag-report.ts >> "$GITHUB_STEP_SUMMARY"
