@@ -92,6 +92,8 @@ jobs:
 
       - name: Audit upstream intake candidate
         id: audit
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           vp run --filter @t3tools/scripts intake:check -- \
             --base refs/remotes/origin/main \

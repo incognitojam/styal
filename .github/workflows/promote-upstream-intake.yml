@@ -110,6 +110,8 @@ jobs:
 
       - id: audit
         name: Audit candidate with trusted main code
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           vp run --filter @t3tools/scripts intake:check -- \
             --base "${{ steps.candidate.outputs.base_sha }}" \

@@ -17,6 +17,8 @@ import {
   formatUpstreamIntakePromotionCommand,
   formatUpstreamIntakePushCommand,
 } from "./upstream-intake.ts";
+import { parseUpstreamProvenance } from "./upstream-provenance.ts";
+import { fetchAssociations } from "./upstream-queue.ts";
 
 const repoRoot = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 
@@ -67,6 +69,32 @@ function writeOutput(name: string, value: string | boolean): void {
   if (process.env.GITHUB_OUTPUT !== undefined) {
     NodeFS.appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${String(value)}\n`);
   }
+}
+
+/** Look up upstream PRs only for SHAs listed next to Upstream-PR; other trailers need no network. */
+function upstreamCommitPullRequests(
+  repository: string,
+  commitMessages: ReadonlyArray<string>,
+): ReadonlyMap<string, ReadonlyArray<number>> {
+  const shas = new Set(
+    commitMessages.flatMap((message) => {
+      const source = parseUpstreamProvenance([message]);
+      return source.pullRequestNumbers.length === 0 ? [] : source.commitShas;
+    }),
+  );
+  const associations = fetchAssociations(
+    [...shas].map((sha) => ({ sha })),
+    repository,
+    {},
+    (command, args) =>
+      NodeChildProcess.execFileSync(command, args, { cwd: repoRoot, encoding: "utf8" }),
+  );
+  return new Map(
+    Object.entries(associations).map(([sha, prs]) => [
+      sha,
+      prs.filter((pr) => pr.baseRepository.nameWithOwner === repository).map((pr) => pr.number),
+    ]),
+  );
 }
 
 interface ForkCiRun {
@@ -202,17 +230,19 @@ try {
   if (ledgerErrors.length > 0) throw new Error(ledgerErrors.join("\n"));
 
   const commits = lines(git(["rev-list", "--reverse", `${baseSha}..${headSha}`]));
+  const commitMessages = commits.map((commit) => git(["show", "-s", "--format=%B", commit]));
   const audit = auditUpstreamIntakeCandidate({
     baseSha,
     headSha,
     commits,
-    commitMessages: commits.map((commit) => git(["show", "-s", "--format=%B", commit])),
+    commitMessages,
     mergeCommits: lines(
       git(["rev-list", "--min-parents=2", "--reverse", `${baseSha}..${headSha}`]),
     ),
     mainIsAncestor: isAncestor(baseSha, headSha),
     changedPaths: lines(git(["diff", "--name-only", "--no-renames", `${baseSha}...${headSha}`])),
     ledger,
+    commitPullRequests: upstreamCommitPullRequests(ledger.upstream_repository, commitMessages),
   });
 
   process.stdout.write(audit.summary);
