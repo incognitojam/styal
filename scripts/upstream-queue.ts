@@ -718,7 +718,7 @@ function main() {
               run("git", ["rev-list", "--first-parent", state.baseline]).trim().split("\n"),
             ),
             exceptions: state.exceptions,
-            now: Date.now(),
+            tipMergedAt: Number(run("git", ["log", "-1", "--format=%ct", through]).trim()) * 1000,
           });
         })()
       : [];
@@ -756,10 +756,11 @@ function main() {
     if (command === "status" && tracked.length) {
       console.log("\nTracked upstream PRs:");
       for (const pr of tracked) {
-        const age = pr.lagDays === null ? "" : `, ${pr.lagDays}d since merge`;
+        const gap =
+          pr.daysAheadOfTip === null ? "" : `, ${pr.daysAheadOfTip.toFixed(1)}d ahead of tip`;
         const target = pr.beyondTarget ? ", beyond target" : "";
         const merged = pr.mergedAt ? `, merged ${pr.mergedAt.slice(0, 10)}` : "";
-        console.log(`#${pr.number} [${pr.status}${target}${merged}${age}] ${pr.title}`);
+        console.log(`#${pr.number} [${pr.status}${target}${merged}${gap}] ${pr.title}`);
       }
     }
   }

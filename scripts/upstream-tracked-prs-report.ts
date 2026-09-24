@@ -5,6 +5,7 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeUtil from "node:util";
+import { readLagHistory, replayIntake } from "./upstream-lag-report.ts";
 import { decodeState } from "./upstream-queue.ts";
 import {
   decodeTrackedPRs,
@@ -20,16 +21,16 @@ export function renderTrackedPRReport(
   const rows = statuses.map((pr) => {
     const title = pr.title.replaceAll("|", "\\|").replaceAll("\n", " ");
     const status = `${pr.status}${pr.beyondTarget ? " (beyond target)" : ""}`;
-    return `| [#${pr.number}](https://github.com/${repository}/pull/${pr.number}) | ${title} | ${status} | ${pr.mergedAt?.slice(0, 10) ?? "—"} | ${pr.lagDays === null ? "—" : `${pr.lagDays} ${pr.lagDays === 1 ? "day" : "days"}`} |`;
+    return `| [#${pr.number}](https://github.com/${repository}/pull/${pr.number}) | ${title} | ${status} | ${pr.mergedAt?.slice(0, 10) ?? "—"} | ${pr.daysAheadOfTip === null ? "—" : `${pr.daysAheadOfTip.toFixed(1)} days`} |`;
   });
   return [
     "## Tracked upstream PRs",
     "",
-    "| PR | Upstream change | Intake | Merged | Waiting |",
+    "| PR | Upstream change | Intake | Merged | Ahead of fork tip |",
     "| --- | --- | --- | --- | ---: |",
     ...rows,
     "",
-    "Recorded means import evidence or reviewed baseline coverage exists; it does not prove the current behavior still works. Waiting is measured from the upstream merge. This report does not change intake order.",
+    "Recorded means import evidence or reviewed baseline coverage exists; it does not prove the current behavior still works. Ahead of fork tip compares each pending PR's upstream merge time with the fork's last reconciled upstream integration. This report does not change intake order.",
     "",
   ].join("\n");
 }
@@ -58,6 +59,11 @@ function main() {
       maxBuffer: 64 * 1024 * 1024,
     });
   const state = decodeState(NodeFS.readFileSync(NodePath.resolve(root, values.state), "utf8"));
+  const history = readLagHistory(run, values["fork-ref"], values["upstream-ref"], values.state);
+  const tip = replayIntake(history).steps.at(-1)?.tip ?? 0;
+  const tipMergedAt = history.upstream
+    .slice(0, tip)
+    .reduce((time, integration) => Math.max(time, integration.time), history.base.time);
   const tracked = decodeTrackedPRs(
     NodeFS.readFileSync(NodePath.resolve(root, values.tracked), "utf8"),
   );
@@ -76,7 +82,7 @@ function main() {
     targetFirstParent: chain(state.target),
     baselineFirstParent: chain(state.baseline),
     exceptions: state.exceptions,
-    now: Date.now(),
+    tipMergedAt,
   });
   process.stdout.write(renderTrackedPRReport(state.upstreamRepository, statuses));
 }
