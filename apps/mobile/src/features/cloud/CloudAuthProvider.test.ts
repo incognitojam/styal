@@ -17,6 +17,10 @@ vi.mock("@clerk/expo", () => ({
   useAuth: vi.fn(),
 }));
 
+vi.mock("react-native", () => ({
+  AppState: { addEventListener: vi.fn() },
+}));
+
 vi.mock("@clerk/expo/token-cache", () => ({
   tokenCache: {},
 }));
