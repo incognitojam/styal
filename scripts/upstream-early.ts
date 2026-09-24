@@ -66,6 +66,32 @@ export function selectEarlySources(
   };
 }
 
+/**
+ * Pending sources between the reconciled boundary and `blocked` that change
+ * any of `paths`: the earlier upstream work a selected source needs when it
+ * does not apply at the boundary.
+ */
+export function earlierSourcesTouching(
+  entries: QueueEntry[],
+  baseline: string,
+  through: string,
+  blocked: QueueEntry,
+  paths: readonly string[],
+  changedPaths: (entry: QueueEntry) => readonly string[],
+): QueueEntry[] {
+  const start = boundaryIndex(entries, baseline, through);
+  const end = entries.findIndex((entry) => entry.sha === blocked.sha);
+  return entries
+    .slice(start + 1, end)
+    .filter(
+      (entry) =>
+        entry.disposition === "pending" &&
+        changedPaths(entry).some((path) =>
+          paths.some((blockedPath) => pathsCollide(path, blockedPath)),
+        ),
+    );
+}
+
 /** Add only sources that actually conflict in an upstream-order replay. */
 export function resolveEarlyDependencies(
   entries: QueueEntry[],
