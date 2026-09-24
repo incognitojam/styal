@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// @effect-diagnostics nodeBuiltinImport:off globalConsole:off - Local, synchronous maintainer CLI.
+// @effect-diagnostics nodeBuiltinImport:off globalConsole:off globalDate:off - Local, synchronous maintainer CLI.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
@@ -7,6 +7,11 @@ import * as NodeURL from "node:url";
 import * as NodeUtil from "node:util";
 import { assessEarlyCandidates, resolveEarlyDependencies } from "./upstream-early.ts";
 import { parseUpstreamProvenance, withoutFencedExamples } from "./upstream-provenance.ts";
+import {
+  decodeTrackedPRs,
+  fetchTrackedPRMetadata,
+  trackedPRStatuses,
+} from "./upstream-tracked-prs.ts";
 
 export interface IntakeState {
   upstreamRepository: string;
@@ -331,7 +336,7 @@ function main() {
   const [command = "status", source] = positionals;
   if (values.help) {
     console.log(
-      "Usage: node scripts/upstream-queue.ts status|next|explain <PR-or-SHA> [--count 20] [--json] [--refresh-metadata]\n       node scripts/upstream-queue.ts early [PR ...] [--count 20] [--through upstream/main] [--json]\n       node scripts/upstream-queue.ts advance <SHA> | target <SHA>\nReads .github/upstream-intake.json and fetched origin/main, upstream/main. No fetch, checkout, cherry-pick, or GitHub writes. advance/target edit only the local state file.",
+      "Usage: node scripts/upstream-queue.ts status|next|explain <PR-or-SHA> [--count 20] [--json] [--refresh-metadata]\n       node scripts/upstream-queue.ts early [PR ...] [--count 20] [--through upstream/main] [--json]\n       node scripts/upstream-queue.ts advance <SHA> | target <SHA>\nReads .github/upstream-intake.json and fetched origin/main, upstream/main. Status also reports .github/upstream-tracked-prs.json. No fetch, checkout, cherry-pick, or GitHub writes. advance/target edit only the local state file.",
     );
     return;
   }
@@ -693,6 +698,30 @@ function main() {
     exceptions: entries.filter((entry) => Object.hasOwn(state.exceptions, entry.sha)).length,
     beyondTarget: upstreamChain.indexOf(state.target),
   };
+  const tracked =
+    command === "status"
+      ? (() => {
+          const selected = decodeTrackedPRs(
+            NodeFS.readFileSync(
+              NodePath.resolve(root, ".github/upstream-tracked-prs.json"),
+              "utf8",
+            ),
+          );
+          return trackedPRStatuses({
+            tracked: selected,
+            metadata: fetchTrackedPRMetadata(state.upstreamRepository, selected, run),
+            entries,
+            forkCommits,
+            upstreamFirstParent: new Set(upstreamChain),
+            targetFirstParent: targetChain,
+            baselineFirstParent: new Set(
+              run("git", ["rev-list", "--first-parent", state.baseline]).trim().split("\n"),
+            ),
+            exceptions: state.exceptions,
+            now: Date.now(),
+          });
+        })()
+      : [];
   let selected: QueueEntry[] = [];
   if (command === "next") selected = nextBatch(entries, count);
   if (command === "explain") {
@@ -712,7 +741,7 @@ function main() {
     if (pr === null && selected.length > 1)
       throw new Error("Ambiguous commit prefix; use the full SHA.");
   }
-  if (values.json) console.log(JSON.stringify({ ...summary, entries: selected }, null, 2));
+  if (values.json) console.log(JSON.stringify({ ...summary, tracked, entries: selected }, null, 2));
   else {
     console.log(
       `Fork ${shortSha(fork)}\nUpstream ${shortSha(upstream)}\nBaseline ${shortSha(state.baseline)}\nTarget ${shortSha(state.target)}\nReconciled through ${shortSha(through)}\n${pending.length}/${entries.length} commits pending (${summary.pendingPRs} PRs, ${summary.pendingDirectCommits} direct/unassociated commits); ${summary.recordedCommits} recorded, ${summary.exceptions} exceptions.\n${summary.beyondTarget} upstream commits beyond target.\nRecorded provenance is import evidence, not proof of current patch equivalence.`,
@@ -723,6 +752,15 @@ function main() {
       );
       if (command === "explain")
         for (const evidence of entry.evidence) console.log(`  ${abbreviateShas(evidence)}`);
+    }
+    if (command === "status" && tracked.length) {
+      console.log("\nTracked upstream PRs:");
+      for (const pr of tracked) {
+        const age = pr.lagDays === null ? "" : `, ${pr.lagDays}d since merge`;
+        const target = pr.beyondTarget ? ", beyond target" : "";
+        const merged = pr.mergedAt ? `, merged ${pr.mergedAt.slice(0, 10)}` : "";
+        console.log(`#${pr.number} [${pr.status}${target}${merged}${age}] ${pr.title}`);
+      }
     }
   }
 }

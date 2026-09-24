@@ -40,3 +40,8 @@ jobs:
 
       - name: Write report
         run: node scripts/upstream-lag-report.ts >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report tracked PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/upstream-tracked-prs-report.ts >> "$GITHUB_STEP_SUMMARY"

@@ -195,6 +195,16 @@ jobs:
             echo "Styal Porter will request approval before receiving its write token."
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Report projected upstream lag
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.candidate_sha }}
+        run: |
+          git fetch --no-tags https://github.com/pingdotgg/t3code.git '+refs/heads/main:refs/remotes/upstream/main'
+          node scripts/upstream-lag-report.ts --fork-ref "$CANDIDATE_SHA" >> "$GITHUB_STEP_SUMMARY"
+          node scripts/upstream-tracked-prs-report.ts --fork-ref "$CANDIDATE_SHA" >> "$GITHUB_STEP_SUMMARY"
+
   promote:
     name: Approve and promote candidate
     needs: validate
