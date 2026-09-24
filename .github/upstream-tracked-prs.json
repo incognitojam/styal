@@ -1,3 +1,56 @@
 {
-  "pullRequests": [9511, 9753, 9773, 9807, 9921, 10113, 10300, 10334, 10845, 12231, 13109, 13115]
+  "pullRequests": [
+    {
+      "pr": 9921,
+      "reason": "Found while adding Claude Opus 5.5: the model picker misclassifies qualified Codex IDs such as openai.gpt-*."
+    },
+    {
+      "pr": 10113,
+      "reason": "incognitojam/styal#404 turned proactive panels on by default; this stops them replacing a panel the user chose during a turn."
+    },
+    {
+      "pr": 10300,
+      "reason": "Usage → Limits lists the same subscription once per connected host; this pools them on web."
+    },
+    {
+      "pr": 10334,
+      "reason": "Mobile half of pingdotgg/t3code#10300: pools subscription limits across connected hosts."
+    },
+    {
+      "pr": 10839,
+      "reason": "Base of the GitHub stack merge chain that ends in pingdotgg/t3code#10875; must land first."
+    },
+    {
+      "pr": 10845,
+      "reason": "Follow-up to pingdotgg/t3code#10300: keeps same-email Codex subscriptions on different plans apart when pooling."
+    },
+    {
+      "pr": 10870,
+      "reason": "Middle of the GitHub stack merge chain between pingdotgg/t3code#10839 and pingdotgg/t3code#10875."
+    },
+    {
+      "pr": 10875,
+      "reason": "Merge stack button; the fork's merge button uses GitHub's legacy merge endpoint, which cannot merge stacked PRs. Replaces the stack section from incognitojam/styal#194."
+    },
+    {
+      "pr": 11486,
+      "reason": "Fixes a mobile launch crash on threads with a PR stack, introduced by pingdotgg/t3code#10839."
+    },
+    {
+      "pr": 12231,
+      "reason": "Found while adding Claude Opus 5.5: brings model picker favorites to mobile."
+    },
+    {
+      "pr": 12645,
+      "reason": "Fix for pingdotgg/t3code#10875: GitHub Enterprise hosts without the stacks API lose the merge button."
+    },
+    {
+      "pr": 13109,
+      "reason": "Found while adding Claude Opus 5.5: Refresh bypasses cached model lists so new models appear immediately."
+    },
+    {
+      "pr": 13115,
+      "reason": "The fork still defaults text generation to gpt-5.6-luna; this switches it to GPT-6 Luna."
+    }
+  ]
 }

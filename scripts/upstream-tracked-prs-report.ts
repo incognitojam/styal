@@ -19,15 +19,15 @@ export function renderTrackedPRReport(
   statuses: readonly TrackedPRStatus[],
 ): string {
   const rows = statuses.map((pr) => {
-    const title = pr.title.replaceAll("|", "\\|").replaceAll("\n", " ");
+    const cell = (text: string) => text.replaceAll("|", "\\|").replaceAll("\n", " ");
     const status = `${pr.status}${pr.beyondTarget ? " (beyond target)" : ""}`;
-    return `| [#${pr.number}](https://github.com/${repository}/pull/${pr.number}) | ${title} | ${status} | ${pr.mergedAt?.slice(0, 10) ?? "—"} | ${pr.daysAheadOfTip === null ? "—" : `${pr.daysAheadOfTip.toFixed(1)} days`} |`;
+    return `| [#${pr.number}](https://github.com/${repository}/pull/${pr.number}) | ${cell(pr.title)} | ${cell(pr.reason)} | ${status} | ${pr.mergedAt?.slice(0, 10) ?? "—"} | ${pr.daysAheadOfTip === null ? "—" : `${pr.daysAheadOfTip.toFixed(1)} days`} |`;
   });
   return [
     "## Tracked upstream PRs",
     "",
-    "| PR | Upstream change | Intake | Merged | Ahead of fork tip |",
-    "| --- | --- | --- | --- | ---: |",
+    "| PR | Upstream change | Why tracked | Intake | Merged | Ahead of fork tip |",
+    "| --- | --- | --- | --- | --- | ---: |",
     ...rows,
     "",
     "Recorded means import evidence or reviewed baseline coverage exists; it does not prove the current behavior still works. Ahead of fork tip compares each pending PR's upstream merge time with the fork's last reconciled upstream integration. This report does not change intake order.",

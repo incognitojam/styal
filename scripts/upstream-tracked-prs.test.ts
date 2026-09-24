@@ -28,14 +28,28 @@ const entry = (
 });
 
 describe("tracked upstream PR report", () => {
-  it("rejects duplicate or invalid tracked entries", () => {
-    assert.deepEqual(decodeTrackedPRs('{"pullRequests":[12]}'), [{ number: 12 }]);
-    assert.throws(() => decodeTrackedPRs('{"pullRequests":["12"]}'));
-    assert.throws(() => decodeTrackedPRs('{"pullRequests":[12,12]}'));
+  it("requires each tracked entry to be a unique PR number with a reason", () => {
+    const decode = (entries: unknown[]) =>
+      decodeTrackedPRs(JSON.stringify({ pullRequests: entries }));
+    assert.deepEqual(decode([{ pr: 12, reason: " Blocks a fork change " }]), [
+      { number: 12, reason: "Blocks a fork change" },
+    ]);
+    assert.throws(() => decode([12]), "Invalid or duplicate tracked PR");
+    assert.throws(() => decode([{ pr: "12", reason: "Why" }]), "Invalid or duplicate tracked PR");
+    assert.throws(
+      () =>
+        decode([
+          { pr: 12, reason: "Why" },
+          { pr: 12, reason: "Why again" },
+        ]),
+      "Invalid or duplicate tracked PR",
+    );
+    assert.throws(() => decode([{ pr: 12 }]), "Tracked PR #12 needs a reason.");
+    assert.throws(() => decode([{ pr: 12, reason: "  " }]), "Tracked PR #12 needs a reason.");
   });
 
   it("shows a pending PR's gap from the fork tip across the target and respects recorded intake evidence", () => {
-    const tracked = [11, 12, 13, 14, 15].map((number) => ({ number }));
+    const tracked = [11, 12, 13, 14, 15].map((number) => ({ number, reason: `Reason ${number}` }));
     const result = trackedPRStatuses({
       tracked,
       metadata: [
@@ -67,7 +81,7 @@ describe("tracked upstream PR report", () => {
 
   it("does not treat missing upstream history or an open PR as pending intake", () => {
     const result = trackedPRStatuses({
-      tracked: [21, 22].map((number) => ({ number })),
+      tracked: [21, 22].map((number) => ({ number, reason: `Reason ${number}` })),
       metadata: [
         metadata(21, 1),
         { number: 22, title: "Open change", state: "OPEN", mergedAt: null, mergeCommit: null },
