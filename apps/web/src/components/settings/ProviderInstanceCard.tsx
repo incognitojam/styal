@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
-import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   isProviderDriverKind,
   resolveProviderInstanceEnabled,
@@ -48,7 +48,6 @@ import { ProviderAccentColorPicker } from "./ProviderAccentColorPicker";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 import {
-  getProviderRateLimitLines,
   getProviderVersionAdvisoryPresentation,
   PROVIDER_STATUS_STYLES,
   getProviderSummary,
@@ -560,19 +559,6 @@ export function ProviderInstanceCard({
   const versionCodeNode = versionLabel ? (
     <code className="text-xs text-muted-foreground">{versionLabel}</code>
   ) : null;
-  const rateLimitLines = getProviderRateLimitLines(liveProvider?.usageLimits, Date.now());
-  const rateLimitsNode =
-    rateLimitLines.length > 0 ? (
-      <span className="flex min-w-0 basis-full flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-        {rateLimitLines.map((line, index) => (
-          <Fragment key={line.id}>
-            {index > 0 ? <span className="text-muted-foreground/40">|</span> : null}
-            <span>{line.text}</span>
-          </Fragment>
-        ))}
-      </span>
-    ) : null;
-
   // Healthy and disabled rows read fine from their text; only trouble gets a dot.
   const statusDotNode =
     statusKey === "warning" || statusKey === "error" ? (
@@ -789,12 +775,7 @@ export function ProviderInstanceCard({
     <>
       <SettingsSection
         title={displayName}
-        description={
-          <>
-            {editorStatusNode}
-            {rateLimitsNode}
-          </>
-        }
+        description={editorStatusNode}
         icon={titleIconNode}
         headerAction={editorHeaderAction}
       >
