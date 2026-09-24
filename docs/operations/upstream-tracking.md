@@ -52,7 +52,7 @@ Follow upstream behavior by default. General guidance inherited from upstream is
 
 Every candidate commit needs an `Upstream-PR: 1234, 5678` and/or `Upstream-Commit: <full lowercase SHA>` trailer. `Upstream-PR` records a PR's own commits, including its squash or merge commit, so never repeat those SHAs in `Upstream-Commit`; the intake audit looks up each `Upstream-Commit` beside `Upstream-PR` on GitHub and blocks repeats. Use `Upstream-Commit` for direct upstream commits, commits from other PRs folded into the same change, and early imports of an unmerged PR, where an `Upstream-PR` trailer would make the queue skip upstream's eventual merge. A verified empty import may use a provenance-only commit; do not infer completeness merely because a cherry-pick is empty.
 
-Read the actual source diffs when reconciling reverts or already-present work. If an exact change/revert pair is accounted for together, verify its net effect and record both sources; do not silently skip either. Existing provenance proves an import was recorded, not that today's tree still has equivalent behavior.
+Read the actual source diffs when reconciling reverts or already-present work; never assume an adjacent commit implements a source. If an exact change/revert pair is accounted for together, verify its net effect and record both sources; do not silently skip either. Existing provenance proves an import was recorded, not that today's tree still has equivalent behavior.
 
 ## 3. Validate the final batch
 
