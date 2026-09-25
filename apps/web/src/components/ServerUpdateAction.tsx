@@ -142,7 +142,10 @@ function useServerUpdates() {
       );
       // No themed host mounted (undefined) means proceed: the click itself
       // was the request.
-      if (confirmation !== null && !((await requestConfirmDialog(confirmation)) ?? true)) {
+      if (
+        confirmation !== null &&
+        !((await requestConfirmDialog(confirmation, { confirmLabel: "Update" })) ?? true)
+      ) {
         return;
       }
       await Promise.all(

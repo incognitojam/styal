@@ -2,11 +2,14 @@ import type { HostActivity } from "@t3tools/contracts";
 
 export type HostActivityConcern = "running" | "waiting" | "unchecked";
 
-/** Title endings, e.g. `Quit ${hostActivityQuestion.running}`. */
+/**
+ * Title endings, e.g. `Quit${hostActivityQuestion.running}`. A failed check
+ * asks plainly; the description says what could not be checked.
+ */
 export const hostActivityQuestion: Record<HostActivityConcern, string> = {
-  running: "with running work?",
-  waiting: "with waiting threads?",
-  unchecked: "without checking activity?",
+  running: " with running work?",
+  waiting: " with waiting threads?",
+  unchecked: "?",
 };
 
 function plural(count: number, noun: string): string {
@@ -58,7 +61,7 @@ export function describeHostActivity(
   if (terminals) lines.push(`${plural(terminals, "terminal session")} will be interrupted.`);
   if (uncheckedTerminals)
     lines.push(
-      `Activity could not be checked for ${plural(uncheckedTerminals, "terminal session")}.`,
+      `Could not check ${plural(uncheckedTerminals, "terminal session")} for running commands.`,
     );
   if (uncheckedHosts) lines.push(options.uncheckedHostsLine);
   return {

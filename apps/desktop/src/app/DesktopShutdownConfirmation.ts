@@ -14,7 +14,7 @@ export const PRESENTATION_TIMEOUT = "5 seconds";
 export class DesktopShutdownConfirmation extends Context.Service<
   DesktopShutdownConfirmation,
   {
-    readonly request: (message: string) => Effect.Effect<boolean>;
+    readonly request: (message: string, confirmLabel?: string) => Effect.Effect<boolean>;
     readonly current: Effect.Effect<DesktopShutdownConfirmationRequest | null>;
     readonly acknowledge: (requestId: number) => Effect.Effect<void>;
     readonly rendererReady: Effect.Effect<void>;
@@ -56,13 +56,13 @@ export const make = Effect.gen(function* () {
           pending.resolve(confirmed);
         }
       }),
-    request: (message) =>
+    request: (message, confirmLabel) =>
       Effect.gen(function* () {
         if (pending) return false;
         const window = yield* desktopWindow.revealOrCreateMain.pipe(
           Effect.timeout(PRESENTATION_TIMEOUT),
         );
-        const request = { requestId: ++nextId, message };
+        const request = { requestId: ++nextId, message, ...(confirmLabel ? { confirmLabel } : {}) };
         let cleanup = () => {};
         let responded = false;
         const failPresentation = () => {

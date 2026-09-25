@@ -78,7 +78,8 @@ export function ConfirmDialogHost() {
       const controller = new AbortController();
       requests.set(request.requestId, controller);
       void (async () => {
-        const confirmed = await (requestConfirmDialog(request.message, undefined, {
+        const options = request.confirmLabel ? { confirmLabel: request.confirmLabel } : undefined;
+        const confirmed = await (requestConfirmDialog(request.message, options, {
           signal: controller.signal,
           onPresented: () => {
             void bridge.acknowledgeShutdownConfirmation(request.requestId).catch(() => {});
@@ -140,7 +141,7 @@ export function ConfirmDialogHost() {
         <AlertDialogFooter>
           <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
           <Button variant={confirmVariant} onClick={onConfirm}>
-            Confirm
+            {state.status === "idle" ? "Confirm" : state.confirmLabel}
           </Button>
         </AlertDialogFooter>
       </AlertDialogPopup>

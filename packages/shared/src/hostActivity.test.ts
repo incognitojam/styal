@@ -64,7 +64,7 @@ describe("describeHostActivity", () => {
       ),
     ).toEqual({
       concern: "unchecked",
-      lines: ["Activity could not be checked for 1 terminal session."],
+      lines: ["Could not check 1 terminal session for running commands."],
       incomplete: true,
     });
   });

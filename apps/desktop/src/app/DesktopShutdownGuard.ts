@@ -20,7 +20,7 @@ export function shutdownConfirmation(
   title?: string,
 ) {
   const { concern, lines, incomplete } = describeHostActivity(checks, {
-    uncheckedHostsLine: "Activity could not be checked for every local environment.",
+    uncheckedHostsLine: "Could not check every local environment for running work.",
   });
   if (concern === null) return null;
   const detail = incomplete
@@ -31,8 +31,9 @@ export function shutdownConfirmation(
       ]
     : lines;
   return {
-    message: title ?? `${action === "quit" ? "Quit" : "Restart"} ${hostActivityQuestion[concern]}`,
+    message: title ?? `${action === "quit" ? "Quit" : "Restart"}${hostActivityQuestion[concern]}`,
     detail: `${detail.join("\n")} Make sure you're ready before continuing.`,
+    confirmLabel: action === "quit" ? "Quit" : "Restart",
   };
 }
 
@@ -112,7 +113,10 @@ export const make = Effect.gen(function* () {
           );
           const confirmation = shutdownConfirmation(checks, action, title);
           if (confirmation === null) return true;
-          return yield* dialog.request(`${confirmation.message}\n\n${confirmation.detail}`);
+          return yield* dialog.request(
+            `${confirmation.message}\n\n${confirmation.detail}`,
+            confirmation.confirmLabel,
+          );
         }).pipe(
           Effect.ensuring(
             Effect.sync(() => {

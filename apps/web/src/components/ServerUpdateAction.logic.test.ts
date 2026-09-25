@@ -61,8 +61,12 @@ describe("serverUpdateConfirmation", () => {
   });
 
   it("asks when activity could not be checked", () => {
-    expect(confirmation({ activity: null })).toMatch(
-      /^Update the Lab server without checking activity\?\nActivity could not be checked on the Lab server\./,
+    expect(confirmation({ activity: null })).toBe(
+      [
+        "Update the Lab server?",
+        "Could not check the Lab server for running work.",
+        "The server restarts to finish the update, so running threads and terminals may be interrupted.",
+      ].join("\n"),
     );
   });
 
@@ -109,7 +113,7 @@ describe("serverUpdateConfirmation", () => {
       [
         "Update the styal desktop apps on Laptop, Office?",
         "They will close and relaunch on those machines.",
-        "Activity could not be checked on Office.",
+        "Could not check Office for running work.",
       ].join("\n"),
     );
   });
