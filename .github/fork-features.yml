@@ -2082,6 +2082,36 @@ features:
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream persists equivalent project instructions and applies them safely to fresh and recovered sessions for every supported provider without duplicating prompt content.
 
+  - id: project-file-partial-recovery
+    title: Preserve valid project file values when siblings are invalid
+    status: maintained
+    prs: [286]
+    rationale: A malformed optional value must not hide unrelated actions, defaults, or project icons; ignored values remain visible as a warning so configuration mistakes can be corrected.
+    invariants:
+      - Malformed JSON and non-object project files remain invalid; invalid individual fields are omitted while valid sibling fields and scripts remain available to clients and the server.
+      - Invalid optional action values fall back to defaults, while actions missing required fields are dropped.
+      - Unknown keys and invalid values produce a partial-file warning without discarding valid configuration.
+    implementation_paths:
+      - apps/server/src/project/T3ProjectFileLoader.ts
+      - apps/web/src/components/settings/ProjectSettingsPanel.tsx
+      - apps/web/src/hooks/useT3ProjectFileScripts.ts
+      - packages/contracts/src/t3ProjectFile.ts
+      - packages/shared/src/t3ProjectFile.ts
+    upstream_paths:
+      - apps/server/src/project/T3ProjectFileLoader.ts
+      - apps/web/src/components/settings/ProjectSettingsPanel.tsx
+      - apps/web/src/hooks/useT3ProjectFileScripts.ts
+      - packages/contracts/src/t3ProjectFile.ts
+      - packages/shared/src/t3ProjectFile.ts
+    tests:
+      - apps/server/src/project/T3ProjectFileLoader.test.ts
+      - packages/shared/src/t3ProjectFile.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/568c9bc4d0ef0dddf74d813619c9877bd35624d7
+      retire_when: Upstream preserves valid fields and scripts from partially invalid project files on the server and clients and warns about ignored values.
+
   - id: project-filter-continuity
     title: Preserve project filters while navigating and creating threads
     status: maintained

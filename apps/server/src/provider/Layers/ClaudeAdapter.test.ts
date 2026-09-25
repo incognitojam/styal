@@ -1,3 +1,4 @@
+// @effect-diagnostics abortControllerInEffect:off - Tests hand-built AbortSignals to the SDK query stub to exercise cancellation.
 // @effect-diagnostics nodeBuiltinImport:off
 import type * as NodeChildProcess from "node:child_process";
 import * as NodeEvents from "node:events";

@@ -68,7 +68,7 @@ export const make = Effect.gen(function* () {
     function* (workspaceRoot) {
       const filePath = path.join(workspaceRoot, T3_PROJECT_FILE_NAME);
       const raw = yield* fileSystem.readFileString(filePath).pipe(
-        Effect.map(Option.some),
+        Effect.asSome,
         Effect.catchTags({
           PlatformError: (error) =>
             error.reason._tag === "NotFound"
