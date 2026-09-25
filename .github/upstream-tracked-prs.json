@@ -17,6 +17,10 @@
       "reason": "Mobile half of #10300: pools subscription limits across connected hosts."
     },
     {
+      "pr": 10411,
+      "reason": "Imported early from its unmerged commits; when it merges, the queue takes it and must reconcile with that import and the styal naming from fork #425."
+    },
+    {
       "pr": 10839,
       "reason": "Base of the GitHub stack merge chain that ends in #10875; must land first."
     },
@@ -31,6 +35,10 @@
     {
       "pr": 10875,
       "reason": "Merge stack button; the fork's merge button uses GitHub's legacy merge endpoint, which cannot merge stacked PRs. Replaces the fork #194 stack section."
+    },
+    {
+      "pr": 11103,
+      "reason": "Replaces the fork's draft-preserving compact action from fork #363; drop the fork version when this lands."
     },
     {
       "pr": 11486,
