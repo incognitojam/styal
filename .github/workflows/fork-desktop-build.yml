@@ -182,7 +182,16 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
-      - name: Setup Vite+
+      - name: Setup cached dependencies
+        if: hashFiles('.github/actions/setup-deps/action.yml') != ''
+        uses: ./.github/actions/setup-deps
+        with:
+          filters: |
+            @styal/cli...
+
+      # Older release candidates predate the local cache action.
+      - name: Setup dependencies for older candidates
+        if: hashFiles('.github/actions/setup-deps/action.yml') == ''
         uses: voidzero-dev/setup-vp@v1
         with:
           node-version-file: package.json
@@ -279,7 +288,18 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
-      - name: Setup Vite+
+      - name: Setup cached dependencies
+        if: hashFiles('.github/actions/setup-deps/action.yml') != ''
+        uses: ./.github/actions/setup-deps
+        with:
+          filters: |
+            @t3tools/desktop...
+            @styal/cli...
+            @t3tools/scripts...
+
+      # Older release candidates predate the local cache action.
+      - name: Setup dependencies for older candidates
+        if: hashFiles('.github/actions/setup-deps/action.yml') == ''
         uses: voidzero-dev/setup-vp@v1
         with:
           node-version-file: package.json

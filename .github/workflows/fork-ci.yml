@@ -196,7 +196,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Setup test dependencies
-        uses: ./.github/actions/setup-test-deps
+        uses: ./.github/actions/setup-deps
 
       - name: Test server
         run: vp run --filter ./apps/server test --fileParallelism --maxWorkers=3 --shard ${{ matrix.shard }}/${{ strategy.job-total }}
@@ -261,7 +261,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Setup test dependencies
-        uses: ./.github/actions/setup-test-deps
+        uses: ./.github/actions/setup-deps
 
       - name: Setup Rust
         if: matrix.native

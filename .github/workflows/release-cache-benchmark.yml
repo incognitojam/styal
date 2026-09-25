@@ -1,0 +1,148 @@
+name: Release Dependency Cache Benchmark
+on:
+  push:
+    branches:
+      - styal/release-cache-benchmark-65371a37
+permissions:
+  contents: read
+concurrency:
+  group: release-cache-benchmark-65371a37
+  cancel-in-progress: false
+jobs:
+  dependencies:
+    name: ${{ matrix.profile }} (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        include:
+          - platform: linux-x64
+            runner: ubuntu-24.04
+            profile: cli
+            filters: |
+              @styal/cli...
+              @t3tools/scripts...
+          - platform: linux-x64
+            runner: ubuntu-24.04
+            profile: desktop
+            filters: |
+              @t3tools/desktop...
+              @styal/cli...
+              @t3tools/scripts...
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+            profile: cli
+            filters: |
+              @styal/cli...
+              @t3tools/scripts...
+          - platform: darwin-arm64
+            runner: macos-15
+            profile: cli
+            filters: |
+              @styal/cli...
+              @t3tools/scripts...
+          - platform: darwin-arm64
+            runner: macos-15
+            profile: desktop
+            filters: |
+              @t3tools/desktop...
+              @styal/cli...
+              @t3tools/scripts...
+          - platform: win32-x64
+            runner: windows-2025
+            profile: cli
+            filters: |
+              @styal/cli...
+              @t3tools/scripts...
+          - platform: win32-x64
+            runner: windows-2025
+            profile: desktop
+            filters: |
+              @t3tools/desktop...
+              @styal/cli...
+              @t3tools/scripts...
+          - platform: win32-arm64
+            runner: windows-11-arm
+            profile: cli
+            filters: |
+              @styal/cli...
+              @t3tools/scripts...
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - name: Setup cached dependencies
+        uses: ./.github/actions/setup-deps
+        with:
+          filters: ${{ matrix.filters }}
+      - name: Verify restored native modules
+        run: >-
+          node --input-type=module <<'JS'
+
+          import assert from 'node:assert/strict';
+
+          import { createRequire } from 'node:module';
+
+          import { resolve } from 'node:path';
+
+          const require = createRequire(resolve('apps/server/package.json'));
+
+          assert.equal(typeof require('node-pty').spawn, 'function');
+
+          assert.ok(require('msgpackr-extract'));
+
+          assert.ok(require('@ff-labs/fff-node'));
+
+          console.log('Native server modules loaded on', process.platform,
+          process.arch, process.versions.node);
+
+          JS
+      - name: Verify patched TypeScript executable
+        run: vp exec tsgo --version
+      - name: Build server and web client
+        run: vp run --filter ./apps/server build
+      - name: Build desktop bundles
+        if: matrix.profile == 'desktop'
+        run: |-
+          vp run --filter @t3tools/desktop ensure:electron
+          (cd apps/desktop && vp pack)
+          test -f apps/desktop/dist-electron/preload.cjs
+  older_candidate:
+    name: Older candidate fallback
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: e23b889d4843a0a0d6910bf0c5b72ec180d1701a
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - name: Setup cached dependencies
+        if: hashFiles('.github/actions/setup-deps/action.yml') != ''
+        uses: ./.github/actions/setup-deps
+        with:
+          filters: |
+            @styal/cli...
+            @t3tools/scripts...
+      - name: Setup dependencies for older candidates
+        if: hashFiles('.github/actions/setup-deps/action.yml') == ''
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@styal/cli...
+              - --filter=@t3tools/scripts...
+      - name: Build older candidate
+        run: vp run --filter ./apps/server build
