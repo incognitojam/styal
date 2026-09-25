@@ -9,6 +9,20 @@ import * as Schema from "effect/Schema";
 export const ApnsEnvironment = Schema.Literals(["sandbox", "production"]);
 export type ApnsEnvironment = typeof ApnsEnvironment.Type;
 
+export const ManagedEndpointCleanupMode = Schema.Literals(["off", "dry-run", "enabled"]);
+export type ManagedEndpointCleanupMode = typeof ManagedEndpointCleanupMode.Type;
+const decodeManagedEndpointCleanupMode = Schema.decodeUnknownEffect(ManagedEndpointCleanupMode);
+
+export const managedEndpointCleanupModeConfig = Config.String("RELAY_TUNNEL_CLEANUP_MODE").pipe(
+  Config.withDefault("off"),
+  Config.map((value) => value.trim() || "off"),
+  Config.mapEffect((value) =>
+    decodeManagedEndpointCleanupMode(value).pipe(
+      Effect.mapError((error) => new Config.ConfigError(error)),
+    ),
+  ),
+);
+
 export interface ApnsCredentials {
   readonly teamId: string;
   readonly keyId: string;
@@ -36,6 +50,7 @@ export class RelayConfiguration extends Context.Service<
     readonly cloudMintPublicKey: string;
     readonly managedEndpointBaseDomain: string | undefined;
     readonly managedEndpointNamespace: string | undefined;
+    readonly managedEndpointCleanupMode?: ManagedEndpointCleanupMode;
   }
 >()("t3code-relay/Config/RelayConfiguration") {}
 
