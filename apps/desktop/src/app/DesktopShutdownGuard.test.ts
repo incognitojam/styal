@@ -13,6 +13,7 @@ import * as Guard from "./DesktopShutdownGuard.ts";
 
 const idle: HostActivity = {
   activeSessions: 0,
+  continuableSessions: 0,
   waitingSessions: 0,
   terminalsRequiringConfirmation: 0,
   terminalsWithUnknownActivity: 0,

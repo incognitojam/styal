@@ -17,7 +17,7 @@ describe("host session activity", () => {
         [thread("idle")],
         [{ threadId: ThreadId.make("idle"), status: "ready" }],
       ),
-    ).toEqual({ activeSessions: 0, waitingSessions: 0 });
+    ).toEqual({ activeSessions: 0, continuableSessions: 0, waitingSessions: 0 });
   });
   it("includes every provider and deduplicates runtime and projected activity", () => {
     const id = ThreadId.make("remote-thread");
@@ -34,7 +34,7 @@ describe("host session activity", () => {
           },
         ],
       ),
-    ).toEqual({ activeSessions: 3, waitingSessions: 0 });
+    ).toEqual({ activeSessions: 3, continuableSessions: 0, waitingSessions: 0 });
   });
   it("counts approval/input waits once and preserves background monitoring", () => {
     expect(
@@ -46,7 +46,7 @@ describe("host session activity", () => {
         ],
         [{ threadId: ThreadId.make("approval"), status: "running" }],
       ),
-    ).toEqual({ activeSessions: 1, waitingSessions: 2 });
+    ).toEqual({ activeSessions: 1, continuableSessions: 0, waitingSessions: 2 });
   });
   it("protects a dispatched turn before the provider has started it", () => {
     expect(
@@ -66,6 +66,21 @@ describe("host session activity", () => {
         ],
         [],
       ),
-    ).toEqual({ activeSessions: 1, waitingSessions: 0 });
+    ).toEqual({ activeSessions: 1, continuableSessions: 0, waitingSessions: 0 });
+  });
+  it("counts continuable threads only among active threads", () => {
+    expect(
+      summarizeHostSessions(
+        [
+          { ...thread("monitor"), backgroundLiveness: "monitoring" },
+          { ...thread("approval"), hasPendingApprovals: true },
+        ],
+        [
+          { threadId: ThreadId.make("turn"), status: "running" },
+          { threadId: ThreadId.make("approval"), status: "running" },
+        ],
+        new Set(["turn", "approval", "idle"]),
+      ),
+    ).toEqual({ activeSessions: 2, continuableSessions: 1, waitingSessions: 1 });
   });
 });

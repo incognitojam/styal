@@ -13,6 +13,7 @@ import { useEnvironmentSettings } from "~/hooks/useSettings";
 import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { manualServerUpdateCommand, type ServerUpdateCapability } from "~/versionSkew";
+import { serverUpdateConfirmation } from "./ServerUpdateAction.logic";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -123,6 +124,9 @@ export function ServerUpdateAction({
   const updateServer = useAtomCommand(serverEnvironment.updateServer, {
     reportFailure: false,
   });
+  const readHostActivity = useAtomCommand(serverEnvironment.hostActivity, {
+    reportFailure: false,
+  });
   const { copyToClipboard } = useCopyToClipboard<{ description: string }>({
     target: "command",
     onCopy: ({ description }) => {
@@ -145,30 +149,28 @@ export function ServerUpdateAction({
     if (pendingUpdateEnvironmentIds.has(environmentId)) {
       return;
     }
-    if (isDesktopAppUpdate) {
-      // No themed host mounted (undefined) means proceed: the click itself
-      // was the request. This is the only confirmation in the flow; the
-      // remote machine installs without asking anyone there.
-      const confirmed =
-        (await requestConfirmDialog(
-          `Update the styal desktop app that runs the ${serverLabel}? It will close and relaunch on that machine.`,
-        )) ?? true;
-      if (!confirmed) {
-        return;
-      }
-    }
-    if (pendingUpdateEnvironmentIds.has(environmentId)) {
-      return;
-    }
     pendingUpdateEnvironmentIds.add(environmentId);
     try {
+      const continueRunningThreads = threadContinuation && continueThreadsAfterServerUpdate;
+      // This is the only confirmation in the flow; the remote machine restarts
+      // without asking anyone there, so work started from any client counts.
+      const activity = await readHostActivity({ environmentId, input: {} });
+      const confirmation = serverUpdateConfirmation({
+        serverLabel,
+        activity: activity._tag === "Success" ? activity.value : null,
+        desktopApp: isDesktopAppUpdate,
+        continueRunningThreads,
+      });
+      // No themed host mounted (undefined) means proceed: the click itself
+      // was the request.
+      if (confirmation !== null && !((await requestConfirmDialog(confirmation)) ?? true)) {
+        return;
+      }
       const result = await updateServer({
         environmentId,
         input: {
           targetVersion,
-          ...(threadContinuation && continueThreadsAfterServerUpdate
-            ? { continueRunningThreads: true }
-            : {}),
+          ...(continueRunningThreads ? { continueRunningThreads: true } : {}),
         },
       });
       if (result._tag === "Failure") {

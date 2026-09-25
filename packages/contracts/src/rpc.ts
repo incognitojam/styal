@@ -13,6 +13,7 @@ import {
 } from "./providerSetup.ts";
 
 import { ExternalLauncherError, LaunchEditorInput } from "./editor.ts";
+import { HostActivity } from "./environmentHttp.ts";
 import {
   AuthAccessStreamError,
   AuthAccessStreamEvent,
@@ -357,6 +358,7 @@ export const WS_METHODS = {
   serverGetTraceDiagnostics: "server.getTraceDiagnostics",
   serverGetProcessDiagnostics: "server.getProcessDiagnostics",
   serverGetHostResources: "server.getHostResources",
+  serverGetHostActivity: "server.getHostActivity",
   serverGetProcessResourceHistory: "server.getProcessResourceHistory",
   serverGetResourceTelemetryHistory: "server.getResourceTelemetryHistory",
   serverRetryResourceTelemetry: "server.retryResourceTelemetry",
@@ -597,6 +599,16 @@ const WsServerGetHostResourcesRpc = Rpc.make(WS_METHODS.serverGetHostResources, 
   payload: Schema.Struct({}),
   success: HostResourcesSnapshot,
   error: EnvironmentAuthorizationError,
+});
+
+const WsServerGetHostActivityRpc = Rpc.make(WS_METHODS.serverGetHostActivity, {
+  payload: Schema.Struct({}),
+  success: HostActivity,
+  error: Schema.Union([
+    TerminalError,
+    OrchestrationGetSnapshotError,
+    EnvironmentAuthorizationError,
+  ]),
 });
 
 const WsServerGetProcessResourceHistoryRpc = Rpc.make(WS_METHODS.serverGetProcessResourceHistory, {
@@ -1319,6 +1331,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetTraceDiagnosticsRpc,
   WsServerGetProcessDiagnosticsRpc,
   WsServerGetHostResourcesRpc,
+  WsServerGetHostActivityRpc,
   WsServerGetProcessResourceHistoryRpc,
   WsServerGetResourceTelemetryHistoryRpc,
   WsServerRetryResourceTelemetryRpc,

@@ -8,7 +8,10 @@ notice.
 ## Before you update
 
 Server updates restart the connection and can interrupt active agents and
-terminal commands. Saved threads, settings, and project files remain.
+terminal commands. Saved threads, settings, and project files remain. Before
+updating, styal checks the server for active agents, threads waiting for input,
+and running terminal commands, including work started from other devices. If
+work is running or the check fails, styal lists it and asks you to confirm.
 
 **Settings → General → Continue threads after restarts** is off by default.
 Enable it to resume supported active threads after an update, crash, or machine
