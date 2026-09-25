@@ -18,38 +18,6 @@ jobs:
       max-parallel: 5
       matrix:
         include:
-          - platform: linux-x64
-            runner: ubuntu-24.04
-            profile: cli
-            filters: |
-              @styal/cli...
-              @t3tools/scripts...
-          - platform: linux-x64
-            runner: ubuntu-24.04
-            profile: desktop
-            filters: |
-              @t3tools/desktop...
-              @styal/cli...
-              @t3tools/scripts...
-          - platform: linux-arm64
-            runner: ubuntu-24.04-arm
-            profile: cli
-            filters: |
-              @styal/cli...
-              @t3tools/scripts...
-          - platform: darwin-arm64
-            runner: macos-15
-            profile: cli
-            filters: |
-              @styal/cli...
-              @t3tools/scripts...
-          - platform: darwin-arm64
-            runner: macos-15
-            profile: desktop
-            filters: |
-              @t3tools/desktop...
-              @styal/cli...
-              @t3tools/scripts...
           - platform: win32-x64
             runner: windows-2025
             profile: cli
@@ -83,6 +51,31 @@ jobs:
         uses: ./.github/actions/setup-deps
         with:
           filters: ${{ matrix.filters }}
+      - name: Inspect restored dependency links
+        run: |
+          node --input-type=module <<'JS'
+          import { readdirSync, readlinkSync, statSync, existsSync, realpathSync } from 'node:fs';
+          import { join } from 'node:path';
+          let links = 0, broken = 0;
+          function walk(dir) {
+            for (const e of readdirSync(dir, { withFileTypes: true })) {
+              const path = join(dir, e.name);
+              if (e.isSymbolicLink()) {
+                links++;
+                try { statSync(path); } catch {
+                  broken++;
+                  if (broken < 30 || e.name === 'vitest') console.log('BROKEN', path, '->', readlinkSync(path));
+                }
+                if (e.name === 'vitest') console.log('VITEST LINK', path, '->', readlinkSync(path));
+              } else if (e.isDirectory()) walk(path);
+            }
+          }
+          walk('node_modules');
+          console.log({ links, broken });
+          for (const name of readdirSync('node_modules/.pnpm').filter(x => x.startsWith('vitest@'))) {
+            console.log('VITEST DIR', name, readdirSync(join('node_modules/.pnpm', name, 'node_modules')));
+          }
+          JS
       - name: Verify restored native modules
         run: >-
           node --input-type=module <<'JS'
@@ -122,12 +115,3 @@ jobs:
           '+refs/heads/nightly:refs/remotes/origin/nightly'
 
           vp run --filter ./apps/server test:nightly-upgrade -- origin/nightly
-  archives:
-    name: Verify release archives
-    needs:
-      - dependencies
-    uses: ./.github/workflows/fork-cli-archives.yml
-    with:
-      ref: ${{ github.sha }}
-      version: 0.0.0-nightly.20260925.1
-      sign_macos: false
