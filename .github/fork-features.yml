@@ -2037,6 +2037,7 @@ features:
     invariants:
       - Additional instructions are persisted per logical project, shared across grouped checkouts, visible and clearable in Project Settings, and retained through projection recovery.
       - Fresh and recovered Codex, Claude, Cursor, Grok, and OpenCode sessions receive the instructions through native channels where available, with Cursor receiving them once in its first prompt.
+      - Codex receives complete project instructions through additional context even when the model catalog replaces collaboration-mode text, and restores that context after root-thread compaction.
       - Projects without additional instructions preserve the ordinary upstream provider prompt and session behavior.
     implementation_paths:
       - apps/server/src/orchestration/Layers/ProviderCommandReactor.ts

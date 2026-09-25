@@ -227,6 +227,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
             }),
         ),
       );
+      const models = snapshot.getSnapshot.pipe(Effect.map((value) => value.models));
       // `makeCodexAdapter` and `makeCodexTextGeneration` have `never` error
       // channels at construction time — their failure modes are all on the
       // per-operation closures they return. No `mapError` wrapper is needed
@@ -236,6 +237,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
       const adapter = yield* makeCodexAdapter(effectiveConfig, {
         instanceId,
         environment: processEnv,
+        models,
         ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
         defaultReasoningEffort: (model) =>
           snapshot.getSnapshot.pipe(
@@ -251,11 +253,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
             }),
           ),
       });
-      const textGeneration = yield* makeCodexTextGeneration(
-        effectiveConfig,
-        processEnv,
-        snapshot.getSnapshot.pipe(Effect.map((value) => value.models)),
-      );
+      const textGeneration = yield* makeCodexTextGeneration(effectiveConfig, processEnv, models);
       const snapshotForCwd = (cwd: string) =>
         !effectiveConfig.enabled
           ? snapshot.getSnapshot
