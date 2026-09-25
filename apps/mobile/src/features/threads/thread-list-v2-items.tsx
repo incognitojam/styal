@@ -33,6 +33,7 @@ import {
   type ThreadListV2Status,
 } from "./threadListV2";
 import { QueuedMessageIcon } from "./queued-message-icon";
+import { UnsentDraftIcon } from "./unsent-draft-icon";
 import { ThreadSearchMatchExcerpt } from "./thread-search-match";
 
 /**
@@ -338,6 +339,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly variant: "card" | "slim";
   /** A message for this thread is waiting in the outbox. */
   readonly hasQueuedMessages?: boolean;
+  /** The thread's composer holds unsent text or attachments. */
+  readonly hasUnsentDraft?: boolean;
   /** Snoozed-shelf row: shows its wake time and offers Wake. */
   readonly snoozed?: boolean;
   /** Pinned-block row: shows the pin glyph and offers Unpin. */
@@ -703,6 +706,16 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       ? `Opens the thread. Swipe left to ${primaryAction.label.toLowerCase()}.`
       : `Opens the thread. Swipe left for ${primaryAction.label.toLowerCase()} and snooze actions.`;
 
+  // The open thread's own composer is on screen, so its draft needs no marker.
+  const showDraftIcon = props.hasUnsentDraft === true && !selected;
+  const threadAccessibilityLabel = [
+    thread.title,
+    showDraftIcon ? "unsent draft" : null,
+    props.hasQueuedMessages ? "messages queued to send" : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
   // The sidebar pane fills selected rows with the theme's message surface, so
   // every piece of row text must use that surface's paired foreground.
   const cardContent = (
@@ -726,6 +739,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         >
           {props.projectTitle ?? props.project?.title ?? ""}
         </Text>
+        {showDraftIcon ? <UnsentDraftIcon /> : null}
         {props.hasQueuedMessages ? <QueuedMessageIcon selected={selected} /> : null}
         {pinnedRow ? (
           <SymbolView
@@ -853,9 +867,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     variant === "card" ? (
       <Pressable
         accessibilityHint={swipeAccessibilityHint}
-        accessibilityLabel={
-          props.hasQueuedMessages ? `${thread.title}, messages queued to send` : thread.title
-        }
+        accessibilityLabel={threadAccessibilityLabel}
         accessibilityRole="button"
         accessibilityState={{ selected }}
         onPress={() => {
@@ -895,9 +907,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     ) : (
       <Pressable
         accessibilityHint={swipeAccessibilityHint}
-        accessibilityLabel={
-          props.hasQueuedMessages ? `${thread.title}, messages queued to send` : thread.title
-        }
+        accessibilityLabel={threadAccessibilityLabel}
         accessibilityRole="button"
         accessibilityState={{ selected }}
         className={sidebarPane ? undefined : "bg-screen"}
@@ -954,6 +964,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               />
             ) : null}
           </View>
+          {showDraftIcon ? <UnsentDraftIcon /> : null}
           {props.hasQueuedMessages ? <QueuedMessageIcon selected={selected} /> : null}
           <Text
             className={cn(

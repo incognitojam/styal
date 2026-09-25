@@ -260,9 +260,11 @@ features:
       - The latest issued draft autosave cannot restore sent text through its own subscription echo, including after transport failure, or block another device's changes to a clean composer; delayed responses cannot roll back newer revisions.
       - Web file drafts persist environment-scoped upload references; legacy local file bytes remain until a replacement reference is durable. Mobile drafts and queued messages retain owned file copies until delivery or removal.
       - The web and mobile source implementations use the same server-backed draft contract and fork-owned migration history; desktop inherits the web implementation. Pre-split databases require an intermediate fixed release before an in-place upgrade.
-      - Sidebar thread rows indicate unsent prompts, attachments, or context without treating model, provider, runtime, or interaction choices alone as a user draft.
+      - Web sidebar and mobile thread list rows indicate unsent prompts, attachments, or context without treating model, provider, runtime, or interaction choices alone as a user draft.
       - Discarding a closed thread's draft from the web sidebar also clears its synchronized copy, so the text does not return on the next visit or on another client.
     implementation_paths:
+      - apps/mobile/src/features/threads/thread-list-items.tsx
+      - apps/mobile/src/features/threads/thread-list-v2-items.tsx
       - apps/mobile/src/state/edit-pending-thread-message.ts
       - apps/mobile/src/state/use-composer-drafts.ts
       - apps/server/src/persistence/ComposerDrafts.ts

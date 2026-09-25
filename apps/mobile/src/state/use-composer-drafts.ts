@@ -1490,6 +1490,37 @@ export function useComposerDraft(draftKey: string | null): ComposerDraft {
   return draftKey ? normalizeDraft(drafts[draftKey]) : EMPTY_DRAFT;
 }
 
+function sameKeySet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  return a.size === b.size && [...a].every((key) => b.has(key));
+}
+
+/**
+ * Thread keys (`environmentId:threadId`) of existing threads whose composer
+ * holds unsent text or attachments. New-task drafts are excluded: they surface
+ * as their own rows. Set equality keeps thread lists from re-rendering on
+ * every keystroke in a draft that already counts.
+ */
+export const draftThreadKeysAtom = Atom.make((get): ReadonlySet<string> => {
+  const keys = new Set<string>();
+  for (const [draftKey, draft] of Object.entries(get(composerDraftsAtom))) {
+    if (
+      !isNewTaskDraftKey(draftKey) &&
+      (draft.text.trim().length > 0 || draft.attachments.length > 0)
+    ) {
+      keys.add(draftKey);
+    }
+  }
+  return keys;
+}).pipe(Atom.withEquality(sameKeySet), Atom.withLabel("mobile:composer-drafts:thread-keys"));
+
+export function useDraftThreadKeys(): ReadonlySet<string> {
+  const keys = useAtomValue(draftThreadKeysAtom);
+  useEffect(() => {
+    ensureComposerDraftsLoaded();
+  }, []);
+  return keys;
+}
+
 export function useStickyComposerModelSelection(): ModelSelection | null {
   const selection = useAtomValue(stickyComposerModelSelectionAtom);
   useEffect(() => {

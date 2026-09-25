@@ -163,6 +163,7 @@ import {
   composerCloudDraftsAtom,
   createNewTaskDraft,
   decodePersistedComposerState,
+  draftThreadKeysAtom,
   ensureComposerDraftsLoaded,
   type ComposerDraft,
   findNewTaskDraftKeys,
@@ -212,6 +213,30 @@ afterEach(() => {
 });
 
 describe("mobile composer drafts", () => {
+  it("lists existing threads with unsent content and ignores keystrokes that change nothing", () => {
+    const notifications: Array<ReadonlySet<string>> = [];
+    onTestFinished(
+      appAtomRegistry.subscribe(draftThreadKeysAtom, (keys) => notifications.push(keys)),
+    );
+    appAtomRegistry.set(composerDraftsAtom, {
+      "environment-1:typed": { text: "Rebase onto main", attachments: [] },
+      "environment-1:whitespace": { text: "  ", attachments: [] },
+      "environment-1:settings-only": { text: "", attachments: [], runtimeMode: "full-access" },
+      "new-task:draft-1": { text: "A new task", attachments: [] },
+    });
+    expect([...appAtomRegistry.get(draftThreadKeysAtom)]).toEqual(["environment-1:typed"]);
+    const notified = notifications.length;
+
+    appAtomRegistry.set(composerDraftsAtom, {
+      ...appAtomRegistry.get(composerDraftsAtom),
+      "environment-1:typed": { text: "Rebase onto main and open a PR", attachments: [] },
+    });
+    expect(notifications).toHaveLength(notified);
+
+    appAtomRegistry.set(composerDraftsAtom, {});
+    expect(appAtomRegistry.get(draftThreadKeysAtom).size).toBe(0);
+  });
+
   it("applies synchronized common state without replacing local attachments or workspace", () => {
     const draftKey = "environment-1:thread-1";
     const attachment = {

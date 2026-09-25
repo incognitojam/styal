@@ -33,6 +33,7 @@ import { useThreadListV2ShelfPreferences } from "./use-thread-list-v2-shelf-pref
 import { usePendingThreadOrder } from "../../state/thread-order";
 import { environmentServerConfigsAtom } from "../../state/server";
 import { usePendingNewTasks } from "../../state/use-pending-new-tasks";
+import { useDraftThreadKeys } from "../../state/use-composer-drafts";
 import { useQueuedThreadKeys } from "../../state/use-thread-outbox";
 import { useWorkspaceState } from "../../state/workspace";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
@@ -169,6 +170,7 @@ function ThreadNavigationSidebarPane(
   const threadListV2Enabled = useThreadListV2Enabled();
   const pendingTasks = usePendingNewTasks();
   const queuedThreadKeys = useQueuedThreadKeys();
+  const draftThreadKeys = useDraftThreadKeys();
   const { openPendingTask, confirmDeletePendingTask } = usePendingTaskListActions();
   const environments = useMemo(
     () =>
@@ -896,6 +898,7 @@ function ThreadNavigationSidebarPane(
               thread={thread}
               variant={item.item.variant}
               hasQueuedMessages={queuedThreadKeys.has(`${thread.environmentId}:${thread.id}`)}
+              hasUnsentDraft={draftThreadKeys.has(`${thread.environmentId}:${thread.id}`)}
               snoozed={item.item.snoozed}
               pinned={item.item.pinned}
               snoozePresetMinute={nowMinute}
@@ -1023,6 +1026,7 @@ function ThreadNavigationSidebarPane(
               variant="sidebar"
               thread={thread}
               hasQueuedMessages={queuedThreadKeys.has(`${thread.environmentId}:${thread.id}`)}
+              hasUnsentDraft={draftThreadKeys.has(`${thread.environmentId}:${thread.id}`)}
               environmentLabel={
                 savedConnectionsById[thread.environmentId]?.environmentLabel ?? null
               }
@@ -1068,6 +1072,7 @@ function ThreadNavigationSidebarPane(
       threadMovePlanners,
       pendingOrder,
       queuedThreadKeys,
+      draftThreadKeys,
       confirmDeletePendingTask,
       confirmDeleteThread,
       handleSelectThread,

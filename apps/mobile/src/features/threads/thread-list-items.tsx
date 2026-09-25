@@ -28,6 +28,7 @@ import type { HomeGroupDisplayAction } from "../home/homeListItems";
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
 import { buildThreadTitleRegenerationMenuItems } from "./thread-title-regeneration-menu";
 import { QueuedMessageIcon } from "./queued-message-icon";
+import { UnsentDraftIcon } from "./unsent-draft-icon";
 import { resolveThreadStatus } from "./threadPresentation";
 import { ThreadSearchMatchExcerpt } from "./thread-search-match";
 
@@ -443,6 +444,8 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
   readonly environmentMachine?: EnvironmentMachineKind;
   /** A message for this thread is waiting in the outbox. */
   readonly hasQueuedMessages?: boolean;
+  /** The thread's composer holds unsent text or attachments. */
+  readonly hasUnsentDraft?: boolean;
   readonly searchMatch?: EnvironmentThreadSearchMatch;
   readonly searchQuery?: string;
   readonly isLast: boolean;
@@ -490,9 +493,12 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
   const timestamp = relativeTime(
     thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,
   );
+  // The open thread's own composer is on screen, so its draft needs no marker.
+  const showDraftIcon = props.hasUnsentDraft === true && !selected;
   const threadAccessibilityLabel = [
     thread.title,
     pr?.accessibilityLabel,
+    showDraftIcon ? "unsent draft" : null,
     props.hasQueuedMessages ? "messages queued to send" : null,
   ]
     .filter(Boolean)
@@ -638,6 +644,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
                 {thread.title}
               </Text>
               <View className="flex-row items-center gap-2">
+                {showDraftIcon ? <UnsentDraftIcon /> : null}
                 {props.hasQueuedMessages ? <QueuedMessageIcon selected={selected} /> : null}
                 {statusPill}
                 <Text className="text-base tabular-nums text-foreground-tertiary">{timestamp}</Text>
@@ -698,6 +705,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
               {thread.title}
             </Text>
             <View className="flex-row items-center gap-2">
+              {showDraftIcon ? <UnsentDraftIcon /> : null}
               {props.hasQueuedMessages ? <QueuedMessageIcon selected={selected} /> : null}
               {statusPill}
               <Text
