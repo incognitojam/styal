@@ -1,6 +1,61 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
-import type { PullRequestDiffSide } from "@t3tools/contracts";
+import type { PullRequestDiffSide, PullRequestOmittedFileStat } from "@t3tools/contracts";
 import { diffFileTier } from "@t3tools/shared/diffFileOrder";
+
+export interface PullRequestDiffSlice {
+  readonly cursor: string | null;
+  readonly patch: string;
+  readonly truncated: boolean;
+  readonly nextCursor: string | null;
+  readonly omittedFileStats: ReadonlyArray<PullRequestOmittedFileStat>;
+  readonly generatedPaths: ReadonlyArray<string>;
+}
+
+export interface PullRequestDiffSliceState {
+  readonly key: string;
+  readonly cursor: string | null;
+  readonly slices: ReadonlyArray<PullRequestDiffSlice>;
+  readonly refreshing: boolean;
+}
+
+/** Reconcile one page without mixing continuation cursors from two diff snapshots. */
+export function applyPullRequestDiffPage(
+  previous: PullRequestDiffSliceState,
+  scopeKey: string,
+  cursor: string | null,
+  next: PullRequestDiffSlice,
+  waiting: boolean,
+): PullRequestDiffSliceState {
+  // Atom.swr may expose the old page while the replacement request is pending.
+  if (previous.key === scopeKey && previous.refreshing && waiting) return previous;
+  const slices = previous.key === scopeKey ? previous.slices : [];
+  const index = slices.findIndex((slice) => slice.cursor === cursor);
+  if (index === -1) {
+    return { key: scopeKey, cursor, slices: [...slices, next], refreshing: false };
+  }
+  const existing = slices[index];
+  if (
+    existing !== undefined &&
+    existing.patch === next.patch &&
+    existing.truncated === next.truncated &&
+    existing.nextCursor === next.nextCursor &&
+    existing.generatedPaths.length === next.generatedPaths.length &&
+    existing.generatedPaths.every((path, index) => next.generatedPaths[index] === path) &&
+    existing.omittedFileStats.length === next.omittedFileStats.length &&
+    existing.omittedFileStats.every((file, index) => {
+      const refreshed = next.omittedFileStats[index];
+      return (
+        refreshed !== undefined &&
+        refreshed.path === file.path &&
+        refreshed.additions === file.additions &&
+        refreshed.deletions === file.deletions
+      );
+    })
+  ) {
+    return previous.refreshing ? { ...previous, refreshing: false } : previous;
+  }
+  return { key: scopeKey, cursor, slices: [...slices.slice(0, index), next], refreshing: false };
+}
 
 /**
  * Whether a conversation's line is really in this file's hunks.

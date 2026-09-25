@@ -1650,22 +1650,28 @@ features:
     prs: [101]
     invariants:
       - An open pull request refreshes core host state without leaving the visible panel one stale response behind.
-      - Automatic refresh preserves cached diffs and fetches heavier activity only after the pull request revision changes, while manual refresh reloads all visible data.
+      - Finished turns recheck pull request details without resetting an unrelated diff; a changed pull request revision refreshes its diff.
+      - A diff refresh keeps the existing pages visible until the first replacement page arrives, then discards old continuation pages only when that page changes.
     implementation_paths:
       - apps/server/src/pullRequest/PullRequestService.ts
+      - apps/web/src/components/pullRequest/PullRequestCodeTab.tsx
       - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
+      - apps/web/src/components/pullRequest/pullRequestDiff.logic.ts
       - packages/contracts/src/pullRequest.ts
     upstream_paths:
       - apps/server/src/pullRequest/PullRequestService.ts
+      - apps/web/src/components/pullRequest/PullRequestCodeTab.tsx
       - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
       - packages/contracts/src/pullRequest.ts
     tests:
       - apps/server/src/pullRequest/PullRequestService.test.ts
+      - apps/web/src/components/pullRequest/pullRequestDiff.logic.test.ts
       - apps/web/src/hooks/useLiveRefresh.test.ts
       - packages/contracts/src/pullRequest.test.ts
     upstream:
       status: partial
       tracking:
+        - https://github.com/pingdotgg/t3code/pull/11888
         - https://github.com/pingdotgg/t3code/pull/6466
         - https://github.com/pingdotgg/t3code/pull/9176
         - https://github.com/pingdotgg/t3code/pull/9496
