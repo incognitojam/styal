@@ -198,6 +198,7 @@ describe("ServerUpdateAction", () => {
 
     expect(testState.confirm).toHaveBeenCalledWith(
       expect.stringContaining("1 thread will be interrupted."),
+      { confirmLabel: "Update" },
     );
     expect(testState.updateServer).not.toHaveBeenCalled();
   });
@@ -225,7 +226,8 @@ describe("ServerUpdateAction", () => {
     await flushPromises();
 
     expect(testState.confirm).toHaveBeenCalledWith(
-      expect.stringContaining("Activity could not be checked on the Test server."),
+      expect.stringContaining("Could not check the Test server for running work."),
+      { confirmLabel: "Update" },
     );
     expect(testState.updateServer).not.toHaveBeenCalled();
   });
@@ -405,7 +407,9 @@ describe("ServerUpdatesAction", () => {
     });
 
     expect(testState.confirm).toHaveBeenCalledTimes(1);
-    expect(testState.confirm).toHaveBeenCalledWith(expect.stringContaining("Laptop, Office"));
+    expect(testState.confirm).toHaveBeenCalledWith(expect.stringContaining("Laptop, Office"), {
+      confirmLabel: "Update",
+    });
     expect(testState.updateServer).not.toHaveBeenCalled();
     expect(button.props.disabled).toBe(false);
   });
@@ -425,6 +429,7 @@ describe("ServerUpdatesAction", () => {
     expect(testState.confirm).toHaveBeenCalledTimes(1);
     expect(testState.confirm).toHaveBeenCalledWith(
       expect.stringContaining("2 threads will be interrupted."),
+      { confirmLabel: "Update" },
     );
     expect(testState.updateServer).toHaveBeenCalledTimes(2);
   });

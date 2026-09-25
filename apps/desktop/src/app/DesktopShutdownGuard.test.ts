@@ -169,7 +169,7 @@ describe("DesktopShutdownGuard", () => {
       return Effect.gen(function* () {
         const guard = yield* Guard.DesktopShutdownGuard;
         assert.isFalse(yield* guard.confirm("quit"));
-        assert.include(h.messages[0]!, "could not be checked");
+        assert.include(h.messages[0]!, "Could not check every local environment");
       }).pipe(Effect.provide(h.layer));
     });
   }
@@ -219,6 +219,7 @@ describe("shutdown confirmation copy", () => {
         message: "Quit with running work?",
         detail:
           "1 thread will be interrupted.\n1 terminal session will be interrupted. Make sure you're ready before continuing.",
+        confirmLabel: "Quit",
       },
     );
   });
@@ -234,7 +235,8 @@ describe("shutdown confirmation copy", () => {
       {
         message: "Restart with running work?",
         detail:
-          "2 terminal sessions will be interrupted.\nActivity could not be checked for 1 terminal session.\n\nRestarting will stop any work hosted by this app. Make sure you're ready before continuing.",
+          "2 terminal sessions will be interrupted.\nCould not check 1 terminal session for running commands.\n\nRestarting will stop any work hosted by this app. Make sure you're ready before continuing.",
+        confirmLabel: "Restart",
       },
     );
   });
@@ -245,9 +247,10 @@ describe("shutdown confirmation copy", () => {
         "quit",
       ),
       {
-        message: "Quit without checking activity?",
+        message: "Quit?",
         detail:
-          "Activity could not be checked for 1 terminal session.\n\nQuitting will stop any work hosted by this app. Make sure you're ready before continuing.",
+          "Could not check 1 terminal session for running commands.\n\nQuitting will stop any work hosted by this app. Make sure you're ready before continuing.",
+        confirmLabel: "Quit",
       },
     );
   });
@@ -256,6 +259,7 @@ describe("shutdown confirmation copy", () => {
       message: "Restart with waiting threads?",
       detail:
         "1 thread waiting for input or approval will be interrupted. Make sure you're ready before continuing.",
+      confirmLabel: "Restart",
     });
   });
 });

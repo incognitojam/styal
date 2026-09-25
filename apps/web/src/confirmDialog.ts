@@ -6,16 +6,19 @@ export type ConfirmDialogState =
       readonly status: "confirming";
       readonly message: string;
       readonly variant: ConfirmDialogVariant;
+      readonly confirmLabel: string;
     }
   | {
       readonly status: "closing";
       readonly message: string;
       readonly variant: ConfirmDialogVariant;
+      readonly confirmLabel: string;
     };
 
 type PendingConfirmation = {
   readonly message: string;
   readonly variant: ConfirmDialogVariant;
+  readonly confirmLabel: string;
   readonly resolve: (confirmed: boolean) => void;
   readonly onPresented?: () => void;
   presented: boolean;
@@ -91,6 +94,7 @@ export function requestConfirmDialog(
     const pending = {
       message,
       variant: options?.variant ?? "default",
+      confirmLabel: options?.confirmLabel ?? "Confirm",
       resolve: (confirmed: boolean) => {
         lifecycle?.signal?.removeEventListener("abort", cancel);
         resolve(confirmed);
@@ -113,7 +117,12 @@ export function requestConfirmDialog(
     }
 
     activeConfirmation = pending;
-    publish({ status: "confirming", message, variant: pending.variant });
+    publish({
+      status: "confirming",
+      message,
+      variant: pending.variant,
+      confirmLabel: pending.confirmLabel,
+    });
   });
 
   return confirmation;
@@ -138,7 +147,12 @@ export function respondToConfirmDialog(confirmed: boolean): void {
   const confirmation = activeConfirmation;
   activeConfirmation = null;
   confirmation.resolve(confirmed);
-  publish({ status: "closing", message: state.message, variant: state.variant });
+  publish({
+    status: "closing",
+    message: state.message,
+    variant: state.variant,
+    confirmLabel: state.confirmLabel,
+  });
 }
 
 export function completeConfirmDialogClose(): void {
@@ -151,7 +165,12 @@ export function completeConfirmDialogClose(): void {
   }
 
   activeConfirmation = next;
-  publish({ status: "confirming", message: next.message, variant: next.variant });
+  publish({
+    status: "confirming",
+    message: next.message,
+    variant: next.variant,
+    confirmLabel: next.confirmLabel,
+  });
 }
 
 export function resetConfirmDialogForTests(): void {

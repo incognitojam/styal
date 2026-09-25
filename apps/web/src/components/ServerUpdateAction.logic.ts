@@ -21,7 +21,7 @@ function labels(hosts: ReadonlyArray<ServerUpdateHost>): string {
 export function serverUpdateConfirmation(hosts: ReadonlyArray<ServerUpdateHost>): string | null {
   const single = hosts.length === 1 ? hosts[0]! : null;
   const unchecked = hosts.filter((host) => host.activity === null);
-  const { concern, lines } = describeHostActivity(
+  const { concern, lines, incomplete } = describeHostActivity(
     // Continuation is chosen per host, so continuable threads only count on
     // hosts that asked for it.
     hosts.map(({ activity, continueRunningThreads }) =>
@@ -29,8 +29,8 @@ export function serverUpdateConfirmation(hosts: ReadonlyArray<ServerUpdateHost>)
     ),
     {
       uncheckedHostsLine: single
-        ? `Activity could not be checked on the ${single.serverLabel}.`
-        : `Activity could not be checked on ${labels(unchecked)}.`,
+        ? `Could not check the ${single.serverLabel} for running work.`
+        : `Could not check ${labels(unchecked)} for running work.`,
       continueRunningThreads: true,
     },
   );
@@ -47,11 +47,13 @@ export function serverUpdateConfirmation(hosts: ReadonlyArray<ServerUpdateHost>)
     ].join("\n");
   }
   if (concern === null) return null;
+  const target = single ? single.serverLabel : `servers on ${labels(hosts)}`;
+  const restart = single
+    ? "The server restarts to finish the update"
+    : "The servers restart to finish the update";
   return [
-    `Update the ${single ? single.serverLabel : `servers on ${labels(hosts)}`} ${hostActivityQuestion[concern]}`,
+    `Update the ${target}${hostActivityQuestion[concern]}`,
     ...lines,
-    single
-      ? "The server restarts to finish the update."
-      : "The servers restart to finish the update.",
+    incomplete ? `${restart}, so running threads and terminals may be interrupted.` : `${restart}.`,
   ].join("\n");
 }

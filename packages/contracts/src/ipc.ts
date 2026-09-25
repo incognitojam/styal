@@ -1227,6 +1227,7 @@ export type DesktopDiscordPresenceActivity = typeof DesktopDiscordPresenceActivi
 export const DesktopShutdownConfirmationRequestSchema = Schema.Struct({
   requestId: Schema.Int,
   message: Schema.String,
+  confirmLabel: Schema.optional(Schema.String),
 });
 export type DesktopShutdownConfirmationRequest =
   typeof DesktopShutdownConfirmationRequestSchema.Type;
@@ -1471,6 +1472,8 @@ export type ConfirmDialogVariant = "default" | "destructive";
 
 export interface ConfirmDialogOptions {
   readonly variant?: ConfirmDialogVariant;
+  /** Names the action on the confirm button. Defaults to "Confirm". */
+  readonly confirmLabel?: string;
 }
 
 /**
