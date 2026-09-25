@@ -296,7 +296,7 @@ features:
   - id: data-import-from-t3-code
     title: T3 Code migration in setup and Settings
     status: maintained
-    prs: [294, 297, 298, 300, 349, 379]
+    prs: [294, 297, 298, 300, 306, 349, 379]
     invariants:
       - A selected styal environment can preview and import projects, missing threads, attachments, provider continuations, and supported server preferences from a live T3 Code database, including older fork databases, without modifying the source.
       - Existing styal project configuration wins while each imported thread and its verified attachments commit atomically, so interrupted or repeated imports resume without duplication.
@@ -304,11 +304,13 @@ features:
       - Setup offers T3 Code migration or CLI history as separate choices; Settings exposes only T3 Code migration and never starts CLI history scans. T3 migration shares components and commands between both entry points.
       - Automatic hosted setup waits for live workspace state and does not offer agent or import steps for selected computers that already contain projects or threads; explicit /welcome visits retain the complete flow.
       - Projects and optional Preferences are top-level setup steps with stable dimensions; Preferences is discovered on selected computers during Agents and omitted when no values differ, independently of the project source. Settings keeps one import page; switching steps or computers preserves selections, setup stays scoped to selected computers, and differing preferences start selected with an opt-out per computer. In-progress imports show remaining work and confirmed completion per computer; CLI history shows queued, importing, completed, and failed projects, including while finishing from Preferences.
+      - Imported user prompts stay linked to their root provider turns through derived thread.turn-prompt-linked events, so live, coalesced, replayed, and windowed thread-detail reads keep showing them; already-imported projects without those events reappear as repairable.
       - Partial imports keep failed work selected for retry and clear completed selections; pending imports remain locked across Settings remounts, and leaving the page prevents subsequent requests in the batch.
     implementation_paths:
       - apps/server/src/dataImport/LegacyImport.ts
       - apps/server/src/dataImport/LegacyImportPreferences.ts
       - apps/server/src/dataImport/LegacyImportPreview.ts
+      - apps/server/src/dataImport/LegacyImportTurnPromptLinks.ts
       - apps/web/src/components/import/DataImportPanel.tsx
       - apps/web/src/components/import/ImportComputer.tsx
       - apps/web/src/components/import/ImportDataView.tsx
@@ -329,6 +331,9 @@ features:
     upstream_paths:
       - apps/server/src/assets/AssetAccess.ts
       - apps/server/src/orchestration/Layers/OrchestrationEngine.ts
+      - apps/server/src/orchestration/Layers/ProjectionPipeline.ts
+      - apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts
+      - apps/server/src/orchestration/ThreadLiveEventCoalescer.ts
       - apps/server/src/project/AgentSessionImporter.ts
       - apps/server/src/ws.ts
       - apps/web/src/components/onboarding/WelcomeWizard.tsx
@@ -342,6 +347,7 @@ features:
     tests:
       - apps/server/src/dataImport/LegacyImport.test.ts
       - apps/server/src/dataImport/LegacyImportPreview.test.ts
+      - apps/server/src/dataImport/LegacyImportTurnPromptLinks.test.ts
       - apps/web/src/components/import/useHistoryImport.test.ts
       - apps/web/src/components/import/useLegacyImport.test.ts
       - apps/web/src/components/settings/DataImportSettings.logic.test.ts
