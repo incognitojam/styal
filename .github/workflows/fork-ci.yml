@@ -230,10 +230,13 @@ jobs:
         include:
           - suite: Web 1/2
             shard: 1/2
+            # Use spare web-shard capacity instead of adding more runners.
+            filters: --filter './packages/client-runtime'
           - suite: Web 2/2
             shard: 2/2
+            native: true
           - suite: Clients
-            filters: --filter './apps/desktop' --filter './apps/mobile' --filter './packages/client-runtime'
+            filters: --filter './apps/desktop' --filter './apps/mobile'
           - suite: Other
             # Keep the remainder open-ended so new workspaces are tested too.
             filters: >-
@@ -261,7 +264,7 @@ jobs:
         uses: ./.github/actions/setup-test-deps
 
       - name: Setup Rust
-        if: matrix.suite == 'Other'
+        if: matrix.native
         uses: dtolnay/rust-toolchain@stable
 
       - name: Ensure Electron runtime is installed
@@ -290,12 +293,12 @@ jobs:
             --parallel --concurrency-limit 2 \
             ${{ matrix.filters }} \
             test \
-            --maxWorkers=2 \
+            --pool=threads --maxWorkers=2 \
             --reporter=default \
             --reporter="$GITHUB_WORKSPACE/scripts/vitest-ci-exit-reporter.ts"
 
       - name: Test image compression
-        if: matrix.suite == 'Other'
+        if: matrix.native
         run: |
           vp run --filter @t3tools/web test src/lib/imageCompression.test.ts \
             --no-file-parallelism \
@@ -304,7 +307,7 @@ jobs:
             --reporter="$GITHUB_WORKSPACE/scripts/vitest-ci-exit-reporter.ts"
 
       - name: Test resource monitor
-        if: matrix.suite == 'Other'
+        if: matrix.native
         run: cargo test --locked --manifest-path native/resource-monitor/Cargo.toml
 
   test_workspace_required:

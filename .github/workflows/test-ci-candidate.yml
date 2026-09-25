@@ -7,8 +7,14 @@ permissions:
   contents: read
 concurrency:
   group: test-ci-candidate-65371a37
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      run_ci: "true"
+    steps:
+      - run: "true"
   test_server:
     name: Fork Test (Server ${{ matrix.shard }}/${{ strategy.job-total }})
     needs: changes
@@ -34,23 +40,15 @@ jobs:
       - name: Setup test dependencies
         uses: ./.github/actions/setup-test-deps
       - name: Test server
-        run: vp run --filter ./apps/server test --fileParallelism --maxWorkers=3 --shard ${{ matrix.shard }}/${{ strategy.job-total }}
+        run: vp run --filter ./apps/server test --fileParallelism --maxWorkers=3 --shard
+          ${{ matrix.shard }}/${{ strategy.job-total }}
       - name: Fetch previous fork nightly
         if: matrix.shard == 1
-        run: git fetch --no-tags origin '+refs/heads/nightly:refs/remotes/origin/nightly'
+        run: git fetch --no-tags origin
+          '+refs/heads/nightly:refs/remotes/origin/nightly'
       - name: Test previous nightly schema upgrade
         if: matrix.shard == 1
         run: vp run --filter ./apps/server test:nightly-upgrade -- origin/nightly
-  test_server_required:
-    name: Fork Test (Server)
-    needs:
-      - changes
-      - test_server
-    if: ${{ !cancelled() && needs.changes.outputs.run_ci == 'true' }}
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Require every server shard to pass
-        run: test '${{ needs.test_server.result }}' = success
   test_workspace:
     name: Fork Test (Workspace ${{ matrix.suite }})
     needs: changes
@@ -63,12 +61,17 @@ jobs:
         include:
           - suite: Web 1/2
             shard: 1/2
+            filters: --filter './packages/client-runtime'
           - suite: Web 2/2
             shard: 2/2
+            native: true
           - suite: Clients
-            filters: --filter './apps/desktop' --filter './apps/mobile' --filter './packages/client-runtime'
+            filters: --filter './apps/desktop' --filter './apps/mobile'
           - suite: Other
-            filters: --filter './apps/*' --filter './infra/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' --filter '!./apps/server' --filter '!./apps/web' --filter '!./apps/desktop' --filter '!./apps/mobile' --filter '!./packages/client-runtime'
+            filters: --filter './apps/*' --filter './infra/*' --filter './packages/*'
+              --filter './oxlint-plugin-t3code' --filter './scripts' --filter
+              '!./apps/server' --filter '!./apps/web' --filter '!./apps/desktop'
+              --filter '!./apps/mobile' --filter '!./packages/client-runtime'
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -81,7 +84,7 @@ jobs:
       - name: Setup test dependencies
         uses: ./.github/actions/setup-test-deps
       - name: Setup Rust
-        if: matrix.suite == 'Other'
+        if: matrix.native
         uses: dtolnay/rust-toolchain@stable
       - name: Ensure Electron runtime is installed
         if: matrix.suite == 'Clients'
@@ -106,11 +109,11 @@ jobs:
             --parallel --concurrency-limit 2 \
             ${{ matrix.filters }} \
             test \
-            --maxWorkers=2 \
+            --pool=threads --maxWorkers=2 \
             --reporter=default \
             --reporter="$GITHUB_WORKSPACE/scripts/vitest-ci-exit-reporter.ts"
       - name: Test image compression
-        if: matrix.suite == 'Other'
+        if: matrix.native
         run: |
           vp run --filter @t3tools/web test src/lib/imageCompression.test.ts \
             --no-file-parallelism \
@@ -118,8 +121,18 @@ jobs:
             --reporter=default \
             --reporter="$GITHUB_WORKSPACE/scripts/vitest-ci-exit-reporter.ts"
       - name: Test resource monitor
-        if: matrix.suite == 'Other'
+        if: matrix.native
         run: cargo test --locked --manifest-path native/resource-monitor/Cargo.toml
+  test_server_required:
+    name: Fork Test (Server)
+    needs:
+      - changes
+      - test_server
+    if: ${{ !cancelled() && needs.changes.outputs.run_ci == 'true' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every server shard to pass
+        run: test '${{ needs.test_server.result }}' = success
   test_workspace_required:
     name: Fork Test (Workspace)
     needs:
@@ -130,9 +143,3 @@ jobs:
     steps:
       - name: Require every workspace shard to pass
         run: test '${{ needs.test_workspace.result }}' = success
-  changes:
-    runs-on: ubuntu-24.04
-    outputs:
-      run_ci: "true"
-    steps:
-      - run: "true"
