@@ -1,0 +1,35 @@
+name: Set up test dependencies
+description: Restore installed dependencies so test runners avoid repeating pnpm linking and lifecycle scripts.
+runs:
+  using: composite
+  steps:
+    - uses: voidzero-dev/setup-vp@v1
+      with:
+        node-version-file: package.json
+        cache: false
+        run-install: false
+
+    - name: Resolve Node version
+      id: node
+      shell: bash
+      run: echo "version=$(node -p 'process.versions.node')" >> "$GITHUB_OUTPUT"
+
+    - name: Restore installed dependencies
+      id: dependencies
+      uses: actions/cache@v6
+      with:
+        path: |
+          node_modules
+          apps/*/node_modules
+          packages/*/node_modules
+          infra/*/node_modules
+          scripts/node_modules
+          oxlint-plugin-t3code/node_modules
+        # Native dependencies and the patched tsgo binary must match this host
+        # and the complete dependency/patch graph. Only exact hits skip install.
+        key: test-deps-v1-${{ runner.os }}-${{ runner.arch }}-node-${{ steps.node.outputs.version }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', '**/package.json', 'patches/**', '.github/actions/setup-test-deps/action.yml') }}
+
+    - name: Install dependencies
+      if: steps.dependencies.outputs.cache-hit != 'true'
+      shell: bash
+      run: vp install --frozen-lockfile

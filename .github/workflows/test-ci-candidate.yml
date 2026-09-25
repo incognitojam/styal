@@ -1,0 +1,138 @@
+name: Test CI Candidate
+on:
+  push:
+    branches:
+      - styal/test-ci-candidate-65371a37
+permissions:
+  contents: read
+concurrency:
+  group: test-ci-candidate-65371a37
+  cancel-in-progress: true
+jobs:
+  test_server:
+    name: Fork Test (Server ${{ matrix.shard }}/${{ strategy.job-total }})
+    needs: changes
+    if: needs.changes.outputs.run_ci == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - 1
+          - 2
+          - 3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - name: Setup test dependencies
+        uses: ./.github/actions/setup-test-deps
+      - name: Test server
+        run: vp run --filter ./apps/server test --fileParallelism --maxWorkers=3 --shard ${{ matrix.shard }}/${{ strategy.job-total }}
+      - name: Fetch previous fork nightly
+        if: matrix.shard == 1
+        run: git fetch --no-tags origin '+refs/heads/nightly:refs/remotes/origin/nightly'
+      - name: Test previous nightly schema upgrade
+        if: matrix.shard == 1
+        run: vp run --filter ./apps/server test:nightly-upgrade -- origin/nightly
+  test_server_required:
+    name: Fork Test (Server)
+    needs:
+      - changes
+      - test_server
+    if: ${{ !cancelled() && needs.changes.outputs.run_ci == 'true' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every server shard to pass
+        run: test '${{ needs.test_server.result }}' = success
+  test_workspace:
+    name: Fork Test (Workspace ${{ matrix.suite }})
+    needs: changes
+    if: needs.changes.outputs.run_ci == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: Web 1/2
+            shard: 1/2
+          - suite: Web 2/2
+            shard: 2/2
+          - suite: Clients
+            filters: --filter './apps/desktop' --filter './apps/mobile' --filter './packages/client-runtime'
+          - suite: Other
+            filters: --filter './apps/*' --filter './infra/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' --filter '!./apps/server' --filter '!./apps/web' --filter '!./apps/desktop' --filter '!./apps/mobile' --filter '!./packages/client-runtime'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - name: Setup test dependencies
+        uses: ./.github/actions/setup-test-deps
+      - name: Setup Rust
+        if: matrix.suite == 'Other'
+        uses: dtolnay/rust-toolchain@stable
+      - name: Ensure Electron runtime is installed
+        if: matrix.suite == 'Clients'
+        run: vp run --filter @t3tools/desktop ensure:electron
+      - name: Install browser secret helper build libraries
+        if: matrix.suite == 'Clients'
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
+      - name: Test web shard
+        if: matrix.shard
+        run: |
+          vp run --filter @t3tools/web test \
+            --exclude '**/imageCompression.test.ts' \
+            --pool=threads --maxWorkers=3 \
+            --shard ${{ matrix.shard }} \
+            --reporter=default \
+            --reporter="$GITHUB_WORKSPACE/scripts/vitest-ci-exit-reporter.ts"
+      - name: Test workspace packages
+        if: matrix.filters
+        run: |
+          # At most two packages with two workers each on a four-core runner.
+          vp run \
+            --parallel --concurrency-limit 2 \
+            ${{ matrix.filters }} \
+            test \
+            --maxWorkers=2 \
+            --reporter=default \
+            --reporter="$GITHUB_WORKSPACE/scripts/vitest-ci-exit-reporter.ts"
+      - name: Test image compression
+        if: matrix.suite == 'Other'
+        run: |
+          vp run --filter @t3tools/web test src/lib/imageCompression.test.ts \
+            --no-file-parallelism \
+            --maxWorkers=1 \
+            --reporter=default \
+            --reporter="$GITHUB_WORKSPACE/scripts/vitest-ci-exit-reporter.ts"
+      - name: Test resource monitor
+        if: matrix.suite == 'Other'
+        run: cargo test --locked --manifest-path native/resource-monitor/Cargo.toml
+  test_workspace_required:
+    name: Fork Test (Workspace)
+    needs:
+      - changes
+      - test_workspace
+    if: ${{ !cancelled() && needs.changes.outputs.run_ci == 'true' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every workspace shard to pass
+        run: test '${{ needs.test_workspace.result }}' = success
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      run_ci: "true"
+    steps:
+      - run: "true"
