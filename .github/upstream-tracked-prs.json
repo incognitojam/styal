@@ -37,6 +37,10 @@
       "reason": "Replaces the fork's draft-preserving compact action from fork #363; drop the fork version when this lands."
     },
     {
+      "pr": 11107,
+      "reason": "Messages sent while a thread is compacting fail with \"Wait for context compaction to finish before sending another message.\" on web and mobile; this holds them on the server until compaction finishes."
+    },
+    {
       "pr": 11302,
       "reason": "Batches thread catch-up updates for desktop and mobile, reducing UI work while Syncing messages; relevant to the reported Android refocus stall."
     },
@@ -47,6 +51,10 @@
     {
       "pr": 11611,
       "reason": "Android draws assistant message timestamps and copy buttons over the message text, and link icons over list item text."
+    },
+    {
+      "pr": 11673,
+      "reason": "The web composer sends follow-ups immediately while the agent is working; this queues them client-side instead."
     },
     {
       "pr": 11813,
