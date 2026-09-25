@@ -418,7 +418,8 @@ export function usePrimarySettingsAvailable(): boolean {
  * persisted via RPC. Shared server keys (see `SHARED_SERVER_SETTING_KEYS`)
  * are written to every eligible sync target, not only the selected target, so
  * a user preference does not silently drift between machines. Client keys go
- * through client persistence.
+ * through client persistence. Resolves to whether every server write was
+ * accepted, so an input can drop an edit that did not save.
  */
 function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
   const persistServerSettings = useAtomCommand(
@@ -427,21 +428,26 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
   );
   const { environments } = useEnvironments();
   const updateSettings = useCallback(
-    (patch: UnifiedSettingsPatch) => {
+    (patch: UnifiedSettingsPatch): Promise<boolean> => {
       const { serverPatch, clientPatch } = splitPatch(patch);
+      const writes: Array<Promise<boolean>> = [];
+      const persist = (input: Parameters<typeof persistServerSettings>[0]) =>
+        writes.push(persistServerSettings(input).then((result) => result._tag === "Success"));
 
       if (Object.keys(serverPatch).length > 0) {
         const { sharedPatch, localPatch } = splitSharedServerPatch(serverPatch);
         // Dropping the write silently leaves the control looking saved.
-        const warnUnsaved = (description = PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE) =>
+        const warnUnsaved = (description = PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE) => {
+          writes.push(Promise.resolve(false));
           toastManager.add({
             type: "warning",
             title: "Setting not saved",
             description,
           });
+        };
         if (Object.keys(localPatch).length > 0) {
           if (environmentId) {
-            void persistServerSettings({
+            persist({
               environmentId,
               input: { patch: localPatch },
             });
@@ -465,7 +471,7 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
             );
             if (Object.keys(targetPatch).length === 0) continue;
             wroteToTarget = true;
-            void persistServerSettings({
+            persist({
               environmentId: targetId,
               input: { patch: targetPatch },
             });
@@ -482,6 +488,7 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
           ...clientPatch,
         });
       }
+      return Promise.all(writes).then((results) => results.every(Boolean));
     },
     [environmentId, environments, persistServerSettings],
   );

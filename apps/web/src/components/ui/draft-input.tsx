@@ -5,7 +5,7 @@ import { Input, type InputProps } from "./input";
 
 export type DraftInputProps = Omit<InputProps, "value" | "onChange" | "defaultValue"> & {
   readonly value: string;
-  readonly onCommit: (next: string) => void;
+  readonly onCommit: (next: string) => void | Promise<boolean>;
 };
 
 /**
