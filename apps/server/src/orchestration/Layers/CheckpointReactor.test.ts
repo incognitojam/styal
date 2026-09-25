@@ -326,6 +326,7 @@ describe("CheckpointReactor", () => {
     readonly pullRequestRefreshCalls?: Array<string>;
     readonly pullRequestRefresh?: Effect.Effect<void>;
   }) {
+    const debugCommands = new Set<string>();
     const cwd = createGitRepository();
     if (options?.initializeGit === false) {
       NodeFS.rmSync(NodePath.join(cwd, ".git"), { recursive: true });
@@ -399,7 +400,13 @@ describe("CheckpointReactor", () => {
         ),
       ),
       Layer.provideMerge(WorkspacePaths.layer),
-      Layer.provideMerge(VcsProcess.layer),
+      Layer.provideMerge(Layer.effect(VcsProcess.VcsProcess, Effect.map(VcsProcess.VcsProcess, (service) => ({
+        run: (input: VcsProcess.VcsProcessInput) => Effect.suspend(() => {
+          const key = JSON.stringify(input.args);
+          debugCommands.add(key);
+          return service.run(input).pipe(Effect.ensuring(Effect.sync(() => debugCommands.delete(key))));
+        }),
+      }))).pipe(Layer.provide(VcsProcess.layer))),
       Layer.provideMerge(ServerConfigLayer),
       Layer.provideMerge(NodeServices.layer),
     );
@@ -427,7 +434,9 @@ describe("CheckpointReactor", () => {
       }),
     );
     const drain = () =>
-      Effect.runPromise(provider.awaitDelivery.pipe(Effect.andThen(reactor.drain)));
+      Effect.runPromise(provider.awaitDelivery.pipe(Effect.andThen(reactor.drain))).then(() => {
+        if (debugCommands.size > 0) throw new Error(`Early drain: ${JSON.stringify([...debugCommands])}`);
+      });
 
     const createdAt = "2026-01-01T00:00:00.000Z";
     await Effect.runPromise(
@@ -1296,7 +1305,7 @@ describe("CheckpointReactor", () => {
     { timing: "between turns", commit: true },
     { timing: "during a turn", commit: false },
     { timing: "during a turn", commit: true },
-  ])("resumes checkpointing after git init $timing (commit: $commit)", ({ timing, commit }) =>
+  ].flatMap((scenario) => Array.from({ length: 20 }, () => scenario)))("resumes checkpointing after git init $timing (commit: $commit)", ({ timing, commit }) =>
     Effect.gen(function* () {
       const harness = yield* Effect.promise(() =>
         createHarness({ initializeGit: false, seedFilesystemCheckpoints: false }),
