@@ -6,7 +6,7 @@
     "intake:check": "node check-upstream-intake.ts",
     "ledger:check": "node check-fork-feature-ledger.ts",
     "typecheck": "tsgo --noEmit",
-    "test": "vp test run"
+    "test": "vp test run --config ../vite.config.ts"
   },
   "dependencies": {
     "@effect/platform-node": "catalog:",

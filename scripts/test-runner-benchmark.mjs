@@ -15,14 +15,7 @@ const args = {
 if (!args) throw new Error('Unknown benchmark suite');
 const cases = [
   ['forks', ['--pool=forks']],
-  ['threads', ['--pool=threads']],
   ['vmForks', ['--pool=vmForks', '--vmMemoryLimit=512MB']],
-  ['cache-cold', ['--pool=forks', '--experimental.fsModuleCache']],
-  ['cache-warm', ['--pool=forks', '--experimental.fsModuleCache']],
-  ...(suite === 'server' ? [
-    ['parallel-2', ['--pool=forks', '--fileParallelism']],
-    ['parallel-2-repeat', ['--pool=forks', '--fileParallelism']],
-  ] : []),
 ];
 const rows = [];
 for (const [name, options] of cases) {

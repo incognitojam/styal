@@ -5,7 +5,7 @@
   "scripts": {
     "deploy": "node -- scripts/deploy.ts",
     "destroy": "alchemy destroy",
-    "test": "vp test run",
+    "test": "vp test run --config ../../vite.config.ts",
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {

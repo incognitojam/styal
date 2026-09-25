@@ -1,11 +1,11 @@
-name: Test Runner Benchmark
+name: Test Runner V5 Benchmark
 on:
   push:
-    branches: [styal/test-runner-benchmark-65371a37]
+    branches: [styal/test-runner-v5-benchmark-65371a37]
 permissions:
   contents: read
 concurrency:
-  group: test-runner-benchmark-65371a37
+  group: test-runner-v5-benchmark-65371a37
   cancel-in-progress: true
 jobs:
   benchmark:
