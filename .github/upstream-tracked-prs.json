@@ -5,18 +5,6 @@
       "reason": "Found while adding Claude Opus 5.5: the model picker misclassifies qualified Codex IDs such as openai.gpt-*."
     },
     {
-      "pr": 10113,
-      "reason": "Fork #404 turned proactive panels on by default; this stops them replacing a panel the user chose during a turn."
-    },
-    {
-      "pr": 10300,
-      "reason": "Usage → Limits lists the same subscription once per connected host; this pools them on web."
-    },
-    {
-      "pr": 10334,
-      "reason": "Mobile half of #10300: pools subscription limits across connected hosts."
-    },
-    {
       "pr": 10411,
       "reason": "Imported early from its unmerged commits; when it merges, the queue takes it and must reconcile with that import and the styal naming from fork #425."
     },
