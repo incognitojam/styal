@@ -231,7 +231,7 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
 | Upstream commits without PR | ${
     [...commitsWithoutPR]
       .toSorted()
-      .map((sha) => `\`${sha}\``)
+      .map((sha) => `[\`${sha}\`](https://github.com/pingdotgg/t3code/commit/${sha})`)
       .join(", ") || "None"
   } |
 | Decision | ${promotion} |
