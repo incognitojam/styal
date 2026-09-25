@@ -1,0 +1,61 @@
+name: Test Setup Benchmark
+on:
+  push:
+    branches: [styal/test-setup-benchmark-65371a37]
+permissions:
+  contents: read
+jobs:
+  populate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+      - uses: actions/cache/save@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+            infra/*/node_modules
+            scripts/node_modules
+            oxlint-plugin-t3code/node_modules
+          key: test-installed-benchmark-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+  restore:
+    needs: populate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: false
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+            infra/*/node_modules
+            scripts/node_modules
+            oxlint-plugin-t3code/node_modules
+          key: test-installed-benchmark-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+          fail-on-cache-miss: true
+      - name: Verify restored dependencies
+        run: vp run --filter ./apps/server test --shard=2/3 --fileParallelism --maxWorkers=2
