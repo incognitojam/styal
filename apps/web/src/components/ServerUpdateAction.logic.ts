@@ -18,7 +18,7 @@ export function serverUpdateConfirmation(input: {
   });
   if (input.desktopApp) {
     return [
-      `Update the desktop app that runs the ${input.serverLabel}?`,
+      `Update the styal desktop app that runs the ${input.serverLabel}?`,
       "It will close and relaunch on that machine.",
       ...lines,
     ].join("\n");

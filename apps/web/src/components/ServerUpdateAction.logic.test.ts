@@ -66,7 +66,7 @@ describe("serverUpdateConfirmation", () => {
 
   it("always asks before relaunching a remote desktop app", () => {
     expect(confirmation({ desktopApp: true })).toBe(
-      "Update the desktop app that runs the Lab server?\nIt will close and relaunch on that machine.",
+      "Update the styal desktop app that runs the Lab server?\nIt will close and relaunch on that machine.",
     );
     expect(confirmation({ desktopApp: true, activity: { ...idle, activeSessions: 1 } })).toContain(
       "1 thread will be interrupted.",
