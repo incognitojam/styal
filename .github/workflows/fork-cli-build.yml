@@ -35,7 +35,18 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
-      - uses: voidzero-dev/setup-vp@v1
+      - name: Setup cached dependencies
+        if: hashFiles('.github/actions/setup-deps/action.yml') != ''
+        uses: ./.github/actions/setup-deps
+        with:
+          filters: |
+            @styal/cli...
+            @t3tools/scripts...
+
+      # Older release candidates predate the local cache action.
+      - name: Setup dependencies for older candidates
+        if: hashFiles('.github/actions/setup-deps/action.yml') == ''
+        uses: voidzero-dev/setup-vp@v1
         with:
           node-version-file: package.json
           cache: true

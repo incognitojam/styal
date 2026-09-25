@@ -111,8 +111,17 @@ jobs:
             echo "upstream_ref=$upstream_ref"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Setup Vite+
-        if: steps.candidate.outputs.has_changes == 'true'
+      - name: Setup cached dependencies
+        if: steps.candidate.outputs.has_changes == 'true' && hashFiles('.github/actions/setup-deps/action.yml') != ''
+        uses: ./.github/actions/setup-deps
+        with:
+          filters: |
+            @styal/cli...
+            @t3tools/scripts...
+
+      # Older release candidates predate the local cache action.
+      - name: Setup dependencies for older candidates
+        if: steps.candidate.outputs.has_changes == 'true' && hashFiles('.github/actions/setup-deps/action.yml') == ''
         uses: voidzero-dev/setup-vp@v1
         with:
           node-version-file: package.json
