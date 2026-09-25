@@ -31,6 +31,16 @@ The transition is intentionally gradual. Inherited package names, source paths, 
 > - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
 > - Antigravity: enable it in Settings, then use **Install Antigravity** and **Sign in with Google**. No CLI is required.
 
+## Desktop app
+
+Download a styal installer from [GitHub Releases](https://github.com/incognitojam/styal/releases). On Debian or Ubuntu, install the downloaded `.deb`:
+
+```sh
+sudo apt install ./styal-*.deb
+```
+
+See [installation guidance](./docs/user/install.md#desktop-app) for desktop setup and updates.
+
 ## Development
 
 Development currently requires Node.js 22.16+, 23.11+, or 24.10+ and [Vite+](https://viteplus.dev/guide/).

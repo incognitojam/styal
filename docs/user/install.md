@@ -67,6 +67,16 @@ with its accompanying folders; copying the executable alone does not work.
 Download a styal installer from
 [GitHub Releases](https://github.com/incognitojam/styal/releases).
 
+On Debian or Ubuntu, install the downloaded `.deb`:
+
+```sh
+sudo apt install ./styal-*.deb
+```
+
+The app can update the `.deb` installation itself. Installing an update may ask
+for your password. If no password prompt is available, download the new `.deb`
+and run the command above again.
+
 ### Windows Subsystem for Linux
 
 Choose a WSL distro in **Settings → Connections** to run agents and projects

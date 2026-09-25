@@ -482,6 +482,7 @@ jobs:
             "release/*.dmg" \
             "release/*.zip" \
             "release/*.AppImage" \
+            "release/*.deb" \
             "release/*.exe" \
             "release/*.blockmap" \
             "release/*.yml"; do

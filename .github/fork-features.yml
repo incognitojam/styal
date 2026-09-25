@@ -1158,6 +1158,7 @@ features:
       - Packaged builds ship as styal with their own application identifier, URL scheme, product name, and About-panel identity instead of presenting as upstream T3 Code.
       - Electron's application name is a stable identity slug rather than a display string, so OS credential storage keys stay in the same namespace as the user-data directory they protect.
       - styal owns its base directory, user-data directory, and URL scheme, so it installs and runs alongside upstream T3 Code without sharing state; SSH device hosts keep their helpers under ~/.styal/device.
+      - Linux desktop releases include AppImage and self-updating Debian packages with styal executable, protocol, and package metadata, collected by the fork desktop build workflow.
       - Windows fork packages use styal-specific package and uninstall identities, never block on a running T3 Code process, and remain visibly distinguishable across stable, nightly, and pull request preview builds.
       - Pull request preview builds install beside stable and nightly with their own app id, URL scheme, credential namespace, development artwork, and styal home, which the desktop passes to its local server, so testing a preview never opens or migrates the stable install's database.
       - A `preview:mac` label on a pull request from a branch in this repository builds an unsigned Apple Silicon preview on every push without signing credentials; only releases are signed, through the fork's own desktop build workflow.
