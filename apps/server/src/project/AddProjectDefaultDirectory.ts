@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeOS from "node:os";
 
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -10,11 +11,9 @@ import * as Path from "effect/Path";
  * empty. macOS reserves `~/Developer` for code (Finder gives it a hammer
  * icon), so start there when it exists; otherwise start at home.
  */
-export const resolveAddProjectDefaultDirectory = (
-  options: { readonly platform?: NodeJS.Platform; readonly homeDir?: string } = {},
-) =>
+export const resolveAddProjectDefaultDirectory = (options: { readonly homeDir?: string } = {}) =>
   Effect.gen(function* () {
-    if ((options.platform ?? process.platform) !== "darwin") {
+    if ((yield* HostProcessPlatform) !== "darwin") {
       return "~/";
     }
     const fileSystem = yield* FileSystem.FileSystem;
