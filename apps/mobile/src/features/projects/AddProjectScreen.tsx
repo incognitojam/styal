@@ -93,6 +93,7 @@ interface EnvironmentOption {
   readonly platform: string;
   readonly machine: EnvironmentMachineKind;
   readonly baseDirectory: string | null;
+  readonly defaultDirectory: string | null;
   readonly connectionState: EnvironmentConnectionPhase;
   readonly connectionError: string | null;
   readonly connectionErrorTraceId: string | null;
@@ -315,10 +316,11 @@ function ProjectPathInput(props: {
 function useBrowsePathInput(environment: EnvironmentOption | null, pinnedDirectoryName = "") {
   const environmentId = environment?.environmentId ?? null;
   const environmentBaseDirectory = environment?.baseDirectory ?? null;
+  const environmentDefaultDirectory = environment?.defaultDirectory ?? null;
   const clonePathCaseSensitive = !isWindowsPlatform(environment?.platform ?? "");
   const [pathInput, commitPathInput] = useState(() =>
     getCloneDestinationPath(
-      getAddProjectInitialQuery(environmentBaseDirectory),
+      getAddProjectInitialQuery(environmentBaseDirectory, environmentDefaultDirectory),
       pinnedDirectoryName,
     ),
   );
@@ -387,12 +389,18 @@ function useBrowsePathInput(environment: EnvironmentOption | null, pinnedDirecto
       previousEnvironmentIdRef.current = environmentId;
       setPathInput(
         getCloneDestinationPath(
-          getAddProjectInitialQuery(environmentBaseDirectory),
+          getAddProjectInitialQuery(environmentBaseDirectory, environmentDefaultDirectory),
           pinnedDirectoryName,
         ),
       );
     }
-  }, [environmentBaseDirectory, environmentId, pinnedDirectoryName, setPathInput]);
+  }, [
+    environmentBaseDirectory,
+    environmentDefaultDirectory,
+    environmentId,
+    pinnedDirectoryName,
+    setPathInput,
+  ]);
 
   useEffect(
     () => () => {
@@ -422,6 +430,7 @@ function useEnvironmentOptions(): ReadonlyArray<EnvironmentOption> {
         platform: platformFromOs(config?.environment.platform.os ?? null),
         machine: resolveEnvironmentMachineKind(config ?? null),
         baseDirectory: config?.settings.addProjectBaseDirectory ?? null,
+        defaultDirectory: config?.addProjectDefaultDirectory ?? null,
         connectionState: runtime?.connectionState ?? "available",
         connectionError: runtime?.connectionError ?? null,
         connectionErrorTraceId: runtime?.connectionErrorTraceId ?? null,

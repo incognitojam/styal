@@ -134,6 +134,7 @@ import * as ReviewService from "./review/ReviewService.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import { importRecentAgentThreads } from "./project/AgentSessionImporter.ts";
+import { resolveAddProjectDefaultDirectory } from "./project/AddProjectDefaultDirectory.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
@@ -1258,6 +1259,7 @@ const makeWsRpcLayer = (
               otlpMetricsEnabled: config.otlpMetricsUrl !== undefined,
             },
             settings,
+            addProjectDefaultDirectory: yield* resolveAddProjectDefaultDirectory(),
             shellResumeCompletionMarker: true,
             ...(fileManagerRevealKind === undefined
               ? {}

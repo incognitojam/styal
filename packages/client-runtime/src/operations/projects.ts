@@ -218,9 +218,18 @@ export function buildAddProjectRemoteSourceReadiness(
   return readiness;
 }
 
-export function getAddProjectInitialQuery(baseDirectory: string | null | undefined): string {
+/**
+ * Where the Add Project browser opens: the environment's configured base
+ * directory, else the default its server advertises, else home.
+ */
+export function getAddProjectInitialQuery(
+  baseDirectory: string | null | undefined,
+  defaultDirectory?: string | null,
+): string {
   const trimmed = baseDirectory?.trim() ?? "";
-  return trimmed.length === 0 ? "~/" : ensureBrowseDirectoryPath(trimmed);
+  if (trimmed.length > 0) return ensureBrowseDirectoryPath(trimmed);
+  const fallback = defaultDirectory?.trim() ?? "";
+  return fallback.length > 0 ? ensureBrowseDirectoryPath(fallback) : "~/";
 }
 
 /**

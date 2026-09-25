@@ -44,6 +44,36 @@ features:
         - https://github.com/pingdotgg/t3code/pull/7592
       retire_when: Upstream uses server-reported terminal liveness to limit close confirmation to active foreground or setup work across every terminal close path.
 
+  - id: add-project-developer-default
+    title: Start the Add Project browser in ~/Developer on macOS
+    status: maintained
+    prs: [453]
+    invariants:
+      - When "Add project starts in" is empty, a macOS server whose home contains a ~/Developer directory advertises ~/Developer/ as the Add Project default; other servers advertise ~/.
+      - Web, desktop and mobile open the Add Project browser at a saved base directory first, then the server-advertised default, then ~/; the saved setting is never written by the default.
+    implementation_paths:
+      - apps/mobile/src/features/projects/AddProjectScreen.tsx
+      - apps/server/src/project/AddProjectDefaultDirectory.ts
+      - apps/server/src/ws.ts
+      - apps/web/src/components/CommandPalette.tsx
+      - apps/web/src/components/settings/SettingsPanels.tsx
+      - packages/client-runtime/src/operations/projects.ts
+      - packages/contracts/src/server.ts
+    upstream_paths:
+      - apps/mobile/src/features/projects/AddProjectScreen.tsx
+      - apps/server/src/ws.ts
+      - apps/web/src/components/CommandPalette.tsx
+      - apps/web/src/components/settings/SettingsPanels.tsx
+      - packages/client-runtime/src/operations/projects.ts
+      - packages/contracts/src/server.ts
+    tests:
+      - apps/server/src/project/AddProjectDefaultDirectory.test.ts
+      - packages/client-runtime/src/operations/projects.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream opens the Add Project browser in ~/Developer on macOS when that folder exists and no base directory is configured.
+
   - id: arbitrary-file-attachments
     title: Attach arbitrary files to agent messages
     status: review-needed
