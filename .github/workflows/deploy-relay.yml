@@ -4,7 +4,15 @@ on:
   push:
     branches:
       - main
+  # Alchemy does not redeploy the Worker when only a Config value read in its
+  # Init changes (alchemy-run/alchemy#1831), so a changed repository variable
+  # needs a forced deploy to reach production.
   workflow_dispatch:
+    inputs:
+      force:
+        description: Redeploy every resource, including ones with no detected changes
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -93,7 +101,7 @@ jobs:
               - --filter=t3code-relay...
 
       - name: Deploy production relay stage
-        run: vp run --filter t3code-relay deploy --stage prod --yes --no-input
+        run: vp run --filter t3code-relay deploy --stage prod --yes --no-input ${{ inputs.force && '--force' || '' }}
         env:
           # The PublishClientConfig action writes the client env here instead
           # of the repo-root .env; nothing on the runner reads it.
@@ -160,7 +168,7 @@ jobs:
               - --filter=t3code-relay...
 
       - name: Deploy development relay stage
-        run: vp run --filter t3code-relay deploy --stage dev --yes --no-input
+        run: vp run --filter t3code-relay deploy --stage dev --yes --no-input ${{ inputs.force && '--force' || '' }}
         env:
           # The PublishClientConfig action writes the client env here instead
           # of the repo-root .env; nothing on the runner reads it.
