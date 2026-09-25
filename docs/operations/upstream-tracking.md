@@ -76,6 +76,8 @@ The existing `Promote upstream intake` workflow is the landing path. Its current
 3. Approve the `upstream-intake-manual` environment when requested.
 4. The workflow rechecks both tips, then fast-forwards `main` without force. Verify the resulting SHA and ensuing CI.
 
+Production mobile builds use a fingerprint runtime version, so an OTA from **Mobile EAS Production** reaches installed builds only when the Expo fingerprint is unchanged. Dependency changes can move it without any native code change. Before relying on an OTA for a batch, compare `npx fingerprint fingerprint:generate --platform <ios|android>` in `apps/mobile` before and after the batch; if it moved, the JavaScript changes reach users only through new production builds, from upstream's next mobile version bump or a `mode=build` dispatch.
+
 If `main` or the candidate moves, rebase the standalone intake branch as needed, rerun affected validation and CI, and review the new SHA before dispatching again. Never rebase `main` onto upstream or force-push it.
 
 **Current exception:** promotion rejects candidates changing `.github/workflows/fork-ci.yml`. Stop and arrange a separately authorized maintainer change; do not open a PR containing the upstream batch as a workaround.
