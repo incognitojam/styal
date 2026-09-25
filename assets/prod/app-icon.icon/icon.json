@@ -1,26 +1,66 @@
 {
   "fill": {
-    "solid": "display-p3:0.02400,0.13700,0.16900,1.00000"
+    "automatic-gradient": "display-p3:0.94902,0.93333,0.90196,1.00000"
   },
   "groups": [
     {
       "layers": [
         {
-          "image-name": "text.svg",
-          "name": "Text",
+          "glass": true,
+          "image-name": "reel-top.svg",
+          "name": "Reel Top",
           "position": {
-            "scale": 8.5,
+            "scale": 8,
             "translation-in-points": [0, 0]
           }
         }
       ],
       "shadow": {
-        "kind": "neutral",
+        "kind": "layer-color",
         "opacity": 0.5
       },
       "translucency": {
         "enabled": true,
-        "value": 0.5
+        "value": 0.15
+      }
+    },
+    {
+      "layers": [
+        {
+          "glass": false,
+          "image-name": "thread.svg",
+          "name": "Thread",
+          "position": {
+            "scale": 8,
+            "translation-in-points": [0, 0]
+          }
+        },
+        {
+          "glass": true,
+          "image-name": "reel-body.svg",
+          "name": "Reel Body",
+          "position": {
+            "scale": 8,
+            "translation-in-points": [0, 0]
+          }
+        },
+        {
+          "glass": true,
+          "image-name": "reel-base.svg",
+          "name": "Reel Base",
+          "position": {
+            "scale": 8,
+            "translation-in-points": [0, 0]
+          }
+        }
+      ],
+      "shadow": {
+        "kind": "layer-color",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.15
       }
     }
   ],
