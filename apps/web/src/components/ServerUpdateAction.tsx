@@ -151,7 +151,6 @@ export function ServerUpdateAction({
     }
     pendingUpdateEnvironmentIds.add(environmentId);
     try {
-      const continueRunningThreads = threadContinuation && continueThreadsAfterServerUpdate;
       // This is the only confirmation in the flow; the remote machine restarts
       // without asking anyone there, so work started from any client counts.
       const activity = await readHostActivity({ environmentId, input: {} });
@@ -159,7 +158,6 @@ export function ServerUpdateAction({
         serverLabel,
         activity: activity._tag === "Success" ? activity.value : null,
         desktopApp: isDesktopAppUpdate,
-        continueRunningThreads,
       });
       // No themed host mounted (undefined) means proceed: the click itself
       // was the request.
@@ -170,7 +168,9 @@ export function ServerUpdateAction({
         environmentId,
         input: {
           targetVersion,
-          ...(continueRunningThreads ? { continueRunningThreads: true } : {}),
+          ...(threadContinuation && continueThreadsAfterServerUpdate
+            ? { continueRunningThreads: true }
+            : {}),
         },
       });
       if (result._tag === "Failure") {

@@ -16,7 +16,6 @@ function confirmation(
     serverLabel: "Lab server",
     activity: idle,
     desktopApp: false,
-    continueRunningThreads: false,
     ...overrides,
   });
 }

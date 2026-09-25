@@ -45,15 +45,6 @@ describe("describeHostActivity", () => {
     );
   });
 
-  it("says active threads continue when continuation is enabled", () => {
-    expect(
-      describeHostActivity([{ ...idle, activeSessions: 1 }], {
-        ...options,
-        continueRunningThreads: true,
-      }).lines,
-    ).toEqual(["1 thread will restart and continue afterwards."]);
-  });
-
   it("does not count uninspected terminals as running work", () => {
     expect(
       describeHostActivity(

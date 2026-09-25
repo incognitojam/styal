@@ -21,11 +21,7 @@ function plural(count: number, noun: string): string {
  */
 export function describeHostActivity(
   checks: ReadonlyArray<HostActivity | null>,
-  options: {
-    readonly uncheckedHostsLine: string;
-    /** Active threads resume after the restart instead of being lost. */
-    readonly continueRunningThreads?: boolean;
-  },
+  options: { readonly uncheckedHostsLine: string },
 ): {
   readonly concern: HostActivityConcern | null;
   readonly lines: ReadonlyArray<string>;
@@ -48,12 +44,7 @@ export function describeHostActivity(
     uncheckedTerminals += check.terminalsWithUnknownActivity;
   }
   const lines: string[] = [];
-  if (active)
-    lines.push(
-      options.continueRunningThreads
-        ? `${plural(active, "thread")} will restart and continue afterwards.`
-        : `${plural(active, "thread")} will be interrupted.`,
-    );
+  if (active) lines.push(`${plural(active, "thread")} will be interrupted.`);
   if (waiting)
     lines.push(`${plural(waiting, "thread")} waiting for input or approval will be interrupted.`);
   if (terminals) lines.push(`${plural(terminals, "terminal session")} will be interrupted.`);
