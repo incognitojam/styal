@@ -1647,7 +1647,7 @@ features:
   - id: pull-request-live-refresh
     title: Keep open pull request details current
     status: review-needed
-    prs: [101]
+    prs: [101, 457]
     invariants:
       - An open pull request refreshes core host state without leaving the visible panel one stale response behind.
       - Finished turns recheck pull request details without resetting an unrelated diff; a changed pull request revision refreshes its diff.
