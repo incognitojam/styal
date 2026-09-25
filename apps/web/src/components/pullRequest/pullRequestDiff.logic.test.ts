@@ -2,11 +2,55 @@ import type { FileDiffMetadata } from "@pierre/diffs";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  applyPullRequestDiffPage,
   isFileDiffCollapsed,
   isLineInFileDiff,
   PULL_REQUEST_DIFF_AUTO_FOLD_LINE_THRESHOLD,
   shouldAutoFoldFileDiff,
+  type PullRequestDiffSlice,
 } from "./pullRequestDiff.logic";
+
+describe("diff page refresh", () => {
+  const first: PullRequestDiffSlice = {
+    cursor: null,
+    patch: "first file",
+    truncated: false,
+    nextCursor: "page-2",
+    omittedFileStats: [],
+    generatedPaths: [],
+  };
+  const second: PullRequestDiffSlice = {
+    ...first,
+    cursor: "page-2",
+    patch: "second file",
+    nextCursor: null,
+  };
+  const refreshing = {
+    key: "project:pr-1",
+    cursor: null,
+    slices: [first, second],
+    refreshing: true,
+  };
+
+  it("keeps the complete old diff visible while the first page is pending", () => {
+    expect(applyPullRequestDiffPage(refreshing, refreshing.key, null, first, true)).toBe(
+      refreshing,
+    );
+  });
+
+  it("keeps later pages when the refreshed first page is unchanged", () => {
+    const result = applyPullRequestDiffPage(refreshing, refreshing.key, null, first, false);
+    expect(result.slices).toBe(refreshing.slices);
+    expect(result.refreshing).toBe(false);
+  });
+
+  it("drops old continuation pages when the refreshed first page changes", () => {
+    const changed = { ...first, patch: "new first file", nextCursor: "new-page-2" };
+    const result = applyPullRequestDiffPage(refreshing, refreshing.key, null, changed, false);
+    expect(result.slices).toEqual([changed]);
+    expect(result.refreshing).toBe(false);
+  });
+});
 
 /** Only the hunk ranges matter here; the viewer fills the rest in when it renders. */
 function fileWithHunks(

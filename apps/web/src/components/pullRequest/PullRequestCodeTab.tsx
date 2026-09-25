@@ -4,7 +4,6 @@ import type {
   EnvironmentId,
   PullRequestDetailView,
   PullRequestDiffSide,
-  PullRequestOmittedFileStat,
   PullRequestRef,
   PullRequestReviewPosition,
   PullRequestReviewThread,
@@ -80,10 +79,13 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { PendingReviewCommentCard, ReviewThreadCard } from "./PullRequestReviewAnnotation";
 import { PullRequestReviewBar } from "./PullRequestReviewBar";
 import {
+  applyPullRequestDiffPage,
   isFileDiffCollapsed,
   isLineInFileDiff,
   shouldAutoFoldFileDiff,
   type DiffFoldOverride,
+  type PullRequestDiffSlice,
+  type PullRequestDiffSliceState,
 } from "./pullRequestDiff.logic";
 import { PullRequestDiffStat, PullRequestMetaLine } from "./pullRequestPresentation";
 import {
@@ -108,18 +110,6 @@ const COMMIT_PAGE_SIZE = 10;
 
 const PULL_REQUEST_FILE_TREE_STORAGE_KEY = "t3code.pullRequestFileTreeOpen";
 
-/** One answer from the host: a whole number of files, and where the next one carries on. */
-interface DiffSlice {
-  /** What was asked for, null being the first slice. Identifies the slice among the loaded ones. */
-  readonly cursor: string | null;
-  readonly patch: string;
-  readonly truncated: boolean;
-  readonly nextCursor: string | null;
-  readonly omittedFileStats: ReadonlyArray<PullRequestOmittedFileStat>;
-  /** Paths the project's checkout attributes as `linguist-generated`. */
-  readonly generatedPaths: ReadonlyArray<string>;
-}
-
 /**
  * The viewer's own per-file counts are hidden and drawn from this side of its shadow root
  * instead: its counts are hunk sums, and a file whose hunks the host withheld would read as
@@ -132,7 +122,7 @@ const REPLACE_FILE_COUNTS_CSS = `
 }`;
 
 /** Nothing loaded yet, as one identity, so the memos below do not see a new array every render. */
-const NO_SLICES: ReadonlyArray<DiffSlice> = [];
+const NO_SLICES: ReadonlyArray<PullRequestDiffSlice> = [];
 
 /** A group while it is still gathering what belongs on its line. */
 interface MutableAnnotationGroup {
@@ -254,11 +244,12 @@ function PullRequestCodeTab({
   const [reviewOpen, setReviewOpen] = useState(false);
   // Which pull request the slices belong to travels with them, so a render taken before the
   // reset below cannot read the previous one's slices — or send its cursor to the host.
-  const [sliceState, setSliceState] = useState<{
-    readonly key: string;
-    readonly cursor: string | null;
-    readonly slices: ReadonlyArray<DiffSlice>;
-  }>({ key: "", cursor: null, slices: NO_SLICES });
+  const [sliceState, setSliceState] = useState<PullRequestDiffSliceState>({
+    key: "",
+    cursor: null,
+    slices: NO_SLICES,
+    refreshing: false,
+  });
   const parseCache = useRef(new Map<string, RenderablePatch>());
   const [viewer, setViewer] = useState<CodeViewHandle<ReviewAnnotationGroup> | null>(null);
 
@@ -276,12 +267,13 @@ function PullRequestCodeTab({
     setFoldOverride(null);
     setVisibleCommitCount(COMMIT_PAGE_SIZE);
     setOrphansOpen(false);
-    setSliceState({ key: scopeKey, cursor: null, slices: NO_SLICES });
+    setSliceState({ key: scopeKey, cursor: null, slices: NO_SLICES, refreshing: false });
     parseCache.current.clear();
   }, [scopeKey]);
 
   const loadedSlices = sliceState.key === scopeKey ? sliceState.slices : NO_SLICES;
   const cursor = sliceState.key === scopeKey ? sliceState.cursor : null;
+  const isRefreshingDiff = sliceState.key === scopeKey && sliceState.refreshing;
   const diffQuery = useEnvironmentQuery(
     pullRequestEnvironment.diff({
       environmentId,
@@ -297,46 +289,31 @@ function PullRequestCodeTab({
   useEffect(() => {
     const data = diffQuery.data;
     if (data === null) return;
-    setSliceState((previous) => {
-      const slices = previous.key === scopeKey ? previous.slices : NO_SLICES;
-      const next = {
+    setSliceState((previous) =>
+      applyPullRequestDiffPage(
+        previous,
+        scopeKey,
         cursor,
-        patch: data.patch,
-        truncated: data.truncated,
-        nextCursor: data.nextCursor,
-        omittedFileStats: data.omittedFileStats ?? [],
-        generatedPaths: data.generatedPaths ?? [],
-      };
-      const index = slices.findIndex((slice) => slice.cursor === cursor);
-      if (index === -1) {
-        return { key: scopeKey, cursor, slices: [...slices, next] };
-      }
-      const existing = slices[index];
-      if (
-        existing !== undefined &&
-        existing.patch === next.patch &&
-        existing.truncated === next.truncated &&
-        existing.nextCursor === next.nextCursor &&
-        existing.generatedPaths.length === next.generatedPaths.length &&
-        existing.generatedPaths.every((path, index) => next.generatedPaths[index] === path) &&
-        existing.omittedFileStats.length === next.omittedFileStats.length &&
-        existing.omittedFileStats.every((file, index) => {
-          const refreshed = next.omittedFileStats[index];
-          return (
-            refreshed !== undefined &&
-            refreshed.path === file.path &&
-            refreshed.additions === file.additions &&
-            refreshed.deletions === file.deletions
-          );
-        })
-      ) {
-        return previous;
-      }
-      // A page that came back different means the diff moved under the review. The slices
-      // after it go with the replacement: their cursors were positions in the old diff.
-      return { key: scopeKey, cursor, slices: [...slices.slice(0, index), next] };
-    });
-  }, [cursor, diffQuery.data, scopeKey]);
+        {
+          cursor,
+          patch: data.patch,
+          truncated: data.truncated,
+          nextCursor: data.nextCursor,
+          omittedFileStats: data.omittedFileStats ?? [],
+          generatedPaths: data.generatedPaths ?? [],
+        },
+        diffQuery.isPending,
+      ),
+    );
+  }, [cursor, diffQuery.data, diffQuery.isPending, scopeKey]);
+  useEffect(() => {
+    if (diffQuery.error === null) return;
+    setSliceState((previous) =>
+      previous.key === scopeKey && previous.refreshing
+        ? { ...previous, refreshing: false }
+        : previous,
+    );
+  }, [diffQuery.error, scopeKey]);
   // The refresh button rereads from the first page rather than the page the reader is on:
   // pages are positions in one snapshot of the diff, and a fresh snapshot starts over.
   const refreshFirstDiffPage = useAtomRefresh(
@@ -345,13 +322,23 @@ function PullRequestCodeTab({
       input: { ...reference, ...(commit === null ? {} : { commit }) },
     }),
   );
+  const refreshDiffFromFirstPage = useCallback(() => {
+    // Keep the old pages on screen until the new first page tells us whether its cursors still
+    // describe the same diff. A changed first page drops every later page in the effect above.
+    setSliceState((previous) => ({
+      key: scopeKey,
+      cursor: null,
+      slices: previous.key === scopeKey ? previous.slices : NO_SLICES,
+      refreshing: true,
+    }));
+    refreshFirstDiffPage();
+  }, [refreshFirstDiffPage, scopeKey]);
   const appliedRefreshToken = useRef(refreshToken);
   useEffect(() => {
     if (appliedRefreshToken.current === refreshToken) return;
     appliedRefreshToken.current = refreshToken;
-    setSliceState({ key: scopeKey, cursor: null, slices: NO_SLICES });
-    refreshFirstDiffPage();
-  }, [refreshToken, scopeKey, refreshFirstDiffPage]);
+    refreshDiffFromFirstPage();
+  }, [refreshToken, refreshDiffFromFirstPage]);
   const reviewKey = referenceKey;
   const pendingComments = usePendingReviewComments(reference);
   const addComment = usePullRequestReviewStore((store) => store.addComment);
@@ -395,7 +382,7 @@ function PullRequestCodeTab({
   }, [detail.capabilities.review, detail.viewerPermissions]);
   // A comment is posted against the pull request's head diff, so a line number taken from one
   // commit's own diff would land somewhere else entirely. Commenting waits for the whole change.
-  const canCommentOnLines = review.inlineComment && commit === null;
+  const canCommentOnLines = review.inlineComment && commit === null && !isRefreshingDiff;
   // Every slice is parsed on its own and the result held, so a slice arriving costs one parse
   // rather than one per slice already on screen. Its cache key carries the theme, which is what
   // the tokenizer caches against, so a theme change is still a fresh parse.
@@ -595,14 +582,15 @@ function PullRequestCodeTab({
   // A failed slice must not be asked for again on its own. The files already loaded keep the
   // sentinel on screen, so re-arming it after a failure would request the same slice forever.
   const canLoadNextSlice =
+    !isRefreshingDiff &&
     nextCursor !== null &&
     nextCursor !== cursor &&
     !diffQuery.isPending &&
     diffQuery.error === null;
   const loadNextSlice = useCallback(() => {
-    if (nextCursor === null) return;
+    if (nextCursor === null || isRefreshingDiff) return;
     setSliceState((previous) => ({ ...previous, cursor: nextCursor }));
-  }, [nextCursor]);
+  }, [isRefreshingDiff, nextCursor]);
 
   // The sentinel is held as state rather than a ref because the viewer mounts its own footer:
   // an effect reading a ref could run before that node exists and would never arm the observer.
@@ -1149,6 +1137,19 @@ function PullRequestCodeTab({
             </Tooltip>
           ) : null}
         </PullRequestMetaLine>
+        {isRefreshingDiff && loadedSlices.length > 0 ? (
+          <span className="sr-only" role="status">
+            Refreshing diff…
+          </span>
+        ) : null}
+        {!isRefreshingDiff &&
+        diffQuery.error !== null &&
+        loadedSlices.length > 0 &&
+        cursor === null ? (
+          <Button size="xs" variant="outline" onClick={refreshDiffFromFirstPage}>
+            Retry diff refresh
+          </Button>
+        ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-1">
         <PullRequestDiffStat
@@ -1485,7 +1486,7 @@ function PullRequestCodeTab({
                       size="xs"
                       variant="outline"
                       className="w-full"
-                      disabled={diffQuery.isPending}
+                      disabled={diffQuery.isPending || isRefreshingDiff}
                       onClick={diffQuery.error !== null ? () => diffQuery.refresh() : loadNextSlice}
                     >
                       {diffQuery.error !== null
