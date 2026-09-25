@@ -8,11 +8,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - "apps/web/**"
-      - "packages/**"
-      - "infra/web/**"
-      - ".github/workflows/deploy-web.yml"
   workflow_dispatch:
 
 permissions:
@@ -23,9 +18,40 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  changes:
+    name: Check for web changes
+    if: github.repository == 'incognitojam/t3code' || github.repository == 'incognitojam/styal'
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      deploy: ${{ github.event_name == 'workflow_dispatch' || steps.changed.outputs.changed == 'true' }}
+    steps:
+      - name: Checkout
+        if: github.event_name == 'push'
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - id: changed
+        if: github.event_name == 'push'
+        uses: ./.github/actions/changed-since-last-deploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          workflow: deploy-web.yml
+          paths: |
+            apps/web
+            packages
+            infra/web
+            .github/workflows/deploy-web.yml
+            .github/actions/changed-since-last-deploy
+
   deploy_web:
     name: Deploy hosted web app
-    if: github.repository == 'incognitojam/t3code' || github.repository == 'incognitojam/styal'
+    needs: changes
+    if: needs.changes.outputs.deploy == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     environment:

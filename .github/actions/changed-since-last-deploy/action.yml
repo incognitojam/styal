@@ -1,0 +1,43 @@
+name: Check for changes since the last deploy
+description: >-
+  Report whether any of the given paths changed between the head commit of the
+  workflow's last successful push run on main and the current commit. Unlike
+  push path filters, which see only a push's first 300 changed files, this
+  checks every file, and the changes of a failed run or of a queued run that a
+  newer push replaced carry over to the next run. Needs a full-history checkout
+  and a GH_TOKEN with actions:read.
+inputs:
+  workflow:
+    description: Workflow file name whose successful push runs mark deployed commits.
+    required: true
+  paths:
+    description: Newline-separated git pathspecs that affect the deploy.
+    required: true
+outputs:
+  changed:
+    description: "'true' when the deploy should run."
+    value: ${{ steps.check.outputs.changed }}
+runs:
+  using: composite
+  steps:
+    - id: check
+      shell: bash
+      env:
+        WORKFLOW: ${{ inputs.workflow }}
+        PATHS: ${{ inputs.paths }}
+      run: |
+        base="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$WORKFLOW" --branch main \
+          --event push --status success --limit 1 --json headSha --jq '.[0].headSha // ""')"
+        mapfile -t pathspecs < <(printf '%s\n' "$PATHS" | sed '/^[[:space:]]*$/d')
+        if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+          echo "No usable last deployed commit ('$base'); deploying."
+          changed=true
+        elif git diff --quiet "$base" "$GITHUB_SHA" -- "${pathspecs[@]}"; then
+          echo "Nothing under the deploy paths changed since $base."
+          changed=false
+        else
+          echo "Deploy paths changed since $base:"
+          git diff --name-only "$base" "$GITHUB_SHA" -- "${pathspecs[@]}" | head -50 || true
+          changed=true
+        fi
+        echo "changed=$changed" >> "$GITHUB_OUTPUT"

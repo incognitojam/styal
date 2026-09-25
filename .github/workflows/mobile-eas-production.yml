@@ -54,18 +54,6 @@ on:
         type: string
   push:
     branches: [main]
-    paths:
-      - apps/mobile/**
-      - packages/client-runtime/**
-      - packages/contracts/**
-      - packages/shared/**
-      - assets/**
-      - scripts/**
-      - patches/**
-      - pnpm-lock.yaml
-      - pnpm-workspace.yaml
-      - .easignore
-      - .github/workflows/mobile-eas-production.yml
 
 # Serialize runs so OTAs publish in merge order. GitHub keeps at most one
 # queued run per group, so a burst of merges collapses into one run of the
@@ -75,8 +63,46 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  production:
+  changes:
+    name: Check for mobile changes
     if: github.repository == 'incognitojam/styal'
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      run: ${{ github.event_name == 'workflow_dispatch' || steps.changed.outputs.changed == 'true' }}
+    steps:
+      - name: Checkout
+        if: github.event_name == 'push'
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - id: changed
+        if: github.event_name == 'push'
+        uses: ./.github/actions/changed-since-last-deploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          workflow: mobile-eas-production.yml
+          paths: |
+            apps/mobile
+            packages/client-runtime
+            packages/contracts
+            packages/shared
+            assets
+            scripts
+            patches
+            pnpm-lock.yaml
+            pnpm-workspace.yaml
+            .easignore
+            .github/workflows/mobile-eas-production.yml
+            .github/actions/changed-since-last-deploy
+
+  production:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     name: EAS Production ${{ github.event_name == 'push' && 'auto' || inputs.mode }}
     runs-on: ubuntu-24.04
     permissions:
