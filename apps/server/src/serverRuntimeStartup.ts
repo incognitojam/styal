@@ -36,6 +36,7 @@ import * as Scope from "effect/Scope";
 
 import * as ServerConfig from "./config.ts";
 import { DriveMode } from "./driveMode.ts";
+import { flushCompileCache } from "./compileCache.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
@@ -1276,6 +1277,7 @@ export const make = (options?: StartupOptions) =>
         }),
       );
       yield* Effect.logDebug("startup phase: complete");
+      yield* flushCompileCache;
     }).pipe(
       Effect.annotateSpans({
         "server.mode": serverConfig.mode,

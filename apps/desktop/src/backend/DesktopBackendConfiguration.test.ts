@@ -236,8 +236,15 @@ describe("DesktopBackendConfiguration", () => {
         const second = yield* configuration.resolvePrimary;
 
         assert.equal(first.executablePath, process.execPath);
+        assert.deepEqual(first.args.slice(0, 3), [
+          "--require",
+          environment.compileCachePath,
+          environment.backendEntryPath,
+        ]);
         assert.equal(first.entryPath, environment.backendEntryPath);
         assert.deepEqual(first.args, [
+          "--require",
+          environment.compileCachePath,
           environment.backendEntryPath,
           "start",
           "--bootstrap-fd",
@@ -971,6 +978,8 @@ describe("DesktopBackendConfiguration", () => {
         const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
         const config = yield* configuration.resolvePrimary;
         assert.equal(config.captureOutput, true);
+        // Dev never shares the prod compile cache.
+        assert.notInclude(config.args, "--require");
       }).pipe(
         Effect.provide(
           DesktopBackendConfiguration.layer.pipe(

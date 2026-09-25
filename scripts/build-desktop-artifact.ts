@@ -3819,7 +3819,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     // Required by the .deb control file.
     homepage: "https://styal.build",
     author: "styal",
-    main: "apps/desktop/dist-electron/main.cjs",
+    main: "apps/desktop/dist-electron/boot.cjs",
     build: yield* createBuildConfig(
       options.platform,
       options.target,
