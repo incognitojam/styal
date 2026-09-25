@@ -17,7 +17,7 @@ runs:
       id: key
       shell: bash
       env:
-        DEPENDENCY_HASH: ${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', 'package.json', 'apps/*/package.json', 'packages/*/package.json', 'infra/*/package.json', 'scripts/package.json', 'oxlint-plugin-t3code/package.json', 'patches/**', 'scripts/clean-tsgo-backups.mjs', '.github/actions/setup-deps/action.yml') }}
+        DEPENDENCY_HASH: ${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', 'package.json', 'apps/*/package.json', 'packages/*/package.json', 'infra/*/package.json', 'scripts/package.json', 'oxlint-plugin-t3code/package.json', 'patches/**', 'scripts/clean-tsgo-backups.mjs', '.github/actions/setup-deps/**') }}
         INSTALL_FILTERS: ${{ inputs.filters }}
       # Compute once before restore. Re-evaluating a recursive manifest glob in
       # the cache post-step traverses node_modules and costs tens of seconds.
@@ -45,6 +45,11 @@ runs:
         # Native dependencies and the patched tsgo binary must match this host
         # and the dependency/patch graph and install filters. Only exact hits skip install.
         key: ${{ steps.key.outputs.value }}
+
+    - name: Repair restored Windows junctions
+      if: runner.os == 'Windows' && steps.dependencies.outputs.cache-hit == 'true'
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/repair-windows-links.mjs"
 
     - name: Install dependencies
       if: steps.dependencies.outputs.cache-hit != 'true'

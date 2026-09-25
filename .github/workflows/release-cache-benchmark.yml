@@ -1,8 +1,4 @@
 name: Release Dependency Cache Benchmark
-on:
-  push:
-    branches:
-      - styal/release-cache-benchmark-65371a37
 permissions:
   contents: read
 concurrency:
@@ -18,104 +14,231 @@ jobs:
       max-parallel: 5
       matrix:
         include:
-          - platform: win32-x64
-            runner: windows-2025
-            profile: cli
-            filters: |
-              @styal/cli...
-              @t3tools/scripts...
-          - platform: win32-x64
-            runner: windows-2025
-            profile: desktop
-            filters: |
-              @t3tools/desktop...
-              @styal/cli...
-              @t3tools/scripts...
-          - platform: win32-arm64
-            runner: windows-11-arm
-            profile: cli
-            filters: |
-              @styal/cli...
-              @t3tools/scripts...
+        - platform: linux-x64
+          runner: ubuntu-24.04
+          profile: cli
+          filters: '@styal/cli...
+
+            @t3tools/scripts...
+
+            '
+        - platform: linux-x64
+          runner: ubuntu-24.04
+          profile: desktop
+          filters: '@t3tools/desktop...
+
+            @styal/cli...
+
+            @t3tools/scripts...
+
+            '
+        - platform: linux-arm64
+          runner: ubuntu-24.04-arm
+          profile: cli
+          filters: '@styal/cli...
+
+            @t3tools/scripts...
+
+            '
+        - platform: darwin-arm64
+          runner: macos-15
+          profile: cli
+          filters: '@styal/cli...
+
+            @t3tools/scripts...
+
+            '
+        - platform: darwin-arm64
+          runner: macos-15
+          profile: desktop
+          filters: '@t3tools/desktop...
+
+            @styal/cli...
+
+            @t3tools/scripts...
+
+            '
+        - platform: win32-x64
+          runner: windows-2025
+          profile: cli
+          filters: '@styal/cli...
+
+            @t3tools/scripts...
+
+            '
+        - platform: win32-x64
+          runner: windows-2025
+          profile: desktop
+          filters: '@t3tools/desktop...
+
+            @styal/cli...
+
+            @t3tools/scripts...
+
+            '
+        - platform: win32-arm64
+          runner: windows-11-arm
+          profile: cli
+          filters: '@styal/cli...
+
+            @t3tools/scripts...
+
+            '
     defaults:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v6
-        with:
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
-      - name: Setup cached dependencies
-        uses: ./.github/actions/setup-deps
-        with:
-          filters: ${{ matrix.filters }}
-      - name: Inspect restored dependency links
-        run: |
-          node --input-type=module <<'JS'
-          import { readdirSync, readlinkSync, statSync, existsSync, unlinkSync, symlinkSync } from 'node:fs';
-          import { join, resolve, dirname } from 'node:path';
-          let links = 0, broken = 0;
-          function walk(dir) {
-            for (const e of readdirSync(dir, { withFileTypes: true })) {
-              const path = join(dir, e.name);
-              if (e.isSymbolicLink()) {
-                links++;
-                try { statSync(path); } catch {
-                  broken++;
-                  const target = resolve(dirname(path), readlinkSync(path));
-                  if (!statSync(target).isDirectory()) throw new Error('Unexpected target: '+target);
-                  unlinkSync(path);
-                  symlinkSync(target, path, 'junction');
-                  statSync(path);
-                }
-                if (e.name === 'vitest') console.log('VITEST LINK', path, '->', readlinkSync(path));
-              } else if (e.isDirectory()) walk(path);
-            }
-          }
-          walk('node_modules');
-          console.log({ links, broken });
-          for (const name of readdirSync('node_modules/.pnpm').filter(x => x.startsWith('vitest@'))) {
-            console.log('VITEST DIR', name, readdirSync(join('node_modules/.pnpm', name, 'node_modules')));
-          }
-          JS
-      - name: Verify restored native modules
-        run: >-
-          node --input-type=module <<'JS'
+    - uses: actions/checkout@v6
+      with:
+        sparse-checkout: '/*
 
-          import assert from 'node:assert/strict';
+          !/.repos/
 
-          import { createRequire } from 'node:module';
+          '
+        sparse-checkout-cone-mode: false
+    - name: Setup cached dependencies
+      uses: ./.github/actions/setup-deps
+      with:
+        filters: ${{ matrix.filters }}
+    - name: Verify restored native modules
+      run: 'node --input-type=module <<''JS''
 
-          import { resolve } from 'node:path';
+        import assert from ''node:assert/strict'';
 
-          const require = createRequire(resolve('apps/server/package.json'));
+        import { createRequire } from ''node:module'';
 
-          assert.equal(typeof require('node-pty').spawn, 'function');
+        import { resolve } from ''node:path'';
 
-          assert.ok(require('msgpackr-extract'));
+        const require = createRequire(resolve(''apps/server/package.json''));
 
-          assert.ok(require('@ff-labs/fff-node'));
+        assert.equal(typeof require(''node-pty'').spawn, ''function'');
 
-          console.log('Native server modules loaded on', process.platform,
-          process.arch, process.versions.node);
+        assert.ok(require(''msgpackr-extract''));
 
-          JS
-      - name: Verify patched TypeScript executable
-        run: vp exec tsgo --version
-      - name: Build server and web client
-        run: vp run --filter ./apps/server build
-      - name: Build desktop bundles
-        if: matrix.profile == 'desktop'
-        run: |-
-          vp run --filter @t3tools/desktop ensure:electron
-          (cd apps/desktop && vp pack)
-          test -f apps/desktop/dist-electron/preload.cjs
-      - name: Verify nightly schema upgrade with filtered dependencies
-        if: matrix.profile == 'cli' && matrix.platform == 'linux-x64'
-        run: >-
-          git fetch --no-tags origin
-          '+refs/heads/nightly:refs/remotes/origin/nightly'
+        assert.ok(require(''@ff-labs/fff-node''));
 
-          vp run --filter ./apps/server test:nightly-upgrade -- origin/nightly
+        console.log(''Native server modules loaded on'', process.platform, process.arch, process.versions.node);
+
+        JS'
+    - name: Verify patched TypeScript executable
+      run: vp exec tsgo --version
+    - name: Build server and web client
+      run: vp run --filter ./apps/server build
+    - name: Build desktop bundles
+      if: matrix.profile == 'desktop'
+      run: 'vp run --filter @t3tools/desktop ensure:electron
+
+        (cd apps/desktop && vp pack)
+
+        test -f apps/desktop/dist-electron/preload.cjs'
+    - name: Verify nightly schema upgrade with filtered dependencies
+      if: matrix.profile == 'cli' && matrix.platform == 'linux-x64'
+      run: 'git fetch --no-tags origin ''+refs/heads/nightly:refs/remotes/origin/nightly''
+
+        vp run --filter ./apps/server test:nightly-upgrade -- origin/nightly'
+  archives:
+    name: Verify release archives
+    needs:
+    - dependencies
+    uses: ./.github/workflows/fork-cli-archives.yml
+    with:
+      ref: ${{ github.sha }}
+      version: 0.0.0-nightly.20260925.1
+      sign_macos: false
+  desktop-warm:
+    name: Warm desktop (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        include:
+        - platform: linux-x64
+          runner: ubuntu-24.04
+          profile: desktop
+          filters: '@t3tools/desktop...
+
+            @styal/cli...
+
+            @t3tools/scripts...
+
+            '
+        - platform: darwin-arm64
+          runner: macos-15
+          profile: desktop
+          filters: '@t3tools/desktop...
+
+            @styal/cli...
+
+            @t3tools/scripts...
+
+            '
+        - platform: win32-x64
+          runner: windows-2025
+          profile: desktop
+          filters: '@t3tools/desktop...
+
+            @styal/cli...
+
+            @t3tools/scripts...
+
+            '
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        sparse-checkout: '/*
+
+          !/.repos/
+
+          '
+        sparse-checkout-cone-mode: false
+    - name: Setup cached dependencies
+      uses: ./.github/actions/setup-deps
+      with:
+        filters: ${{ matrix.filters }}
+    - name: Verify restored native modules
+      run: 'node --input-type=module <<''JS''
+
+        import assert from ''node:assert/strict'';
+
+        import { createRequire } from ''node:module'';
+
+        import { resolve } from ''node:path'';
+
+        const require = createRequire(resolve(''apps/server/package.json''));
+
+        assert.equal(typeof require(''node-pty'').spawn, ''function'');
+
+        assert.ok(require(''msgpackr-extract''));
+
+        assert.ok(require(''@ff-labs/fff-node''));
+
+        console.log(''Native server modules loaded on'', process.platform, process.arch, process.versions.node);
+
+        JS'
+    - name: Verify patched TypeScript executable
+      run: vp exec tsgo --version
+    - name: Build server and web client
+      run: vp run --filter ./apps/server build
+    - name: Build desktop bundles
+      if: matrix.profile == 'desktop'
+      run: 'vp run --filter @t3tools/desktop ensure:electron
+
+        (cd apps/desktop && vp pack)
+
+        test -f apps/desktop/dist-electron/preload.cjs'
+    - name: Verify nightly schema upgrade with filtered dependencies
+      if: matrix.profile == 'cli' && matrix.platform == 'linux-x64'
+      run: 'git fetch --no-tags origin ''+refs/heads/nightly:refs/remotes/origin/nightly''
+
+        vp run --filter ./apps/server test:nightly-upgrade -- origin/nightly'
+    needs:
+    - dependencies
+'on':
+  push:
+    branches:
+    - styal/release-cache-benchmark-65371a37
