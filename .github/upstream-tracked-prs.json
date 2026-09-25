@@ -1,6 +1,10 @@
 {
   "pullRequests": [
     {
+      "pr": 8309,
+      "reason": "Follow-up to #11302: preserves cached turns and older-page loading during batched thread sync; upstream cites it in closing the large-backlog replay freeze report #4596."
+    },
+    {
       "pr": 9921,
       "reason": "Found while adding Claude Opus 5.5: the model picker misclassifies qualified Codex IDs such as openai.gpt-*."
     },
@@ -33,6 +37,10 @@
       "reason": "Replaces the fork's draft-preserving compact action from fork #363; drop the fork version when this lands."
     },
     {
+      "pr": 11302,
+      "reason": "Batches thread catch-up updates for desktop and mobile, reducing UI work while Syncing messages; relevant to the reported Android refocus stall."
+    },
+    {
       "pr": 11486,
       "reason": "Fixes a mobile launch crash on threads with a PR stack, introduced by #10839."
     },
@@ -51,6 +59,10 @@
     {
       "pr": 12645,
       "reason": "Fix for #10875: GitHub Enterprise hosts without the stacks API lose the merge button."
+    },
+    {
+      "pr": 12759,
+      "reason": "Reuses unchanged tool rows during large mobile chat sync to reduce CPU work; the reported black-screen symptom remains unverified."
     },
     {
       "pr": 12874,
