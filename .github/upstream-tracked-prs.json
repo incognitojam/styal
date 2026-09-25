@@ -25,12 +25,24 @@
       "reason": "Merge stack button; the fork's merge button uses GitHub's legacy merge endpoint, which cannot merge stacked PRs. Replaces the fork #194 stack section."
     },
     {
+      "pr": 10983,
+      "reason": "Android chat rows overlap: Worked rows, the copy and timestamp footer, and user bubbles are drawn over neighbouring messages until the thread is reopened."
+    },
+    {
       "pr": 11103,
       "reason": "Replaces the fork's draft-preserving compact action from fork #363; drop the fork version when this lands."
     },
     {
       "pr": 11486,
       "reason": "Fixes a mobile launch crash on threads with a PR stack, introduced by #10839."
+    },
+    {
+      "pr": 11611,
+      "reason": "Android draws assistant message timestamps and copy buttons over the message text, and link icons over list item text."
+    },
+    {
+      "pr": 11813,
+      "reason": "iOS half of #10983: chat rows keep stale positions after their measured height changes and overlap neighbouring messages."
     },
     {
       "pr": 12231,
