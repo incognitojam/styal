@@ -90,7 +90,13 @@ function createProviderServiceHarness(
   providerName: ProviderSession["provider"] = ProviderDriverKind.make("codex"),
 ) {
   const now = "2026-01-01T00:00:00.000Z";
-  const runtimeEventPubSub = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
+  const runtimeEventPubSub = Effect.runSync(
+    PubSub.unbounded<{
+      readonly event: ProviderRuntimeEvent;
+      readonly delivered: Deferred.Deferred<void>;
+    }>(),
+  );
+  let pendingDelivery = Effect.void;
   const rollbackConversation = vi.fn(
     (_input: { readonly threadId: ThreadId; readonly numTurns: number }) => Effect.void,
   );
@@ -139,12 +145,27 @@ function createProviderServiceHarness(
     rollbackConversation,
     uploadFeedback: () => unsupported(),
     get streamEvents() {
-      return Stream.fromPubSub(runtimeEventPubSub);
+      // Yield before delivery to expose ordering bugs. Acknowledge only when the
+      // consumer pulls again, after it has enqueued the event in the reactor.
+      return Stream.fromPubSub(runtimeEventPubSub).pipe(
+        Stream.flatMap(({ event, delivered }) =>
+          Stream.fromEffect(Effect.yieldNow.pipe(Effect.as(event))).pipe(
+            Stream.concat(Stream.fromEffectDrain(Deferred.succeed(delivered, undefined))),
+          ),
+        ),
+      );
     },
   };
 
   const emit = (event: LegacyProviderRuntimeEvent): void => {
-    Effect.runSync(PubSub.publish(runtimeEventPubSub, event as unknown as ProviderRuntimeEvent));
+    const delivered = Deferred.makeUnsafe<void>();
+    pendingDelivery = Deferred.await(delivered);
+    Effect.runSync(
+      PubSub.publish(runtimeEventPubSub, {
+        event: event as unknown as ProviderRuntimeEvent,
+        delivered,
+      }),
+    );
   };
 
   return {
@@ -152,6 +173,7 @@ function createProviderServiceHarness(
     assertConversationRollbackSupported,
     rollbackConversation,
     emit,
+    awaitDelivery: Effect.suspend(() => pendingDelivery),
   };
 }
 
@@ -404,7 +426,8 @@ describe("CheckpointReactor", () => {
         return receipts;
       }),
     );
-    const drain = () => Effect.runPromise(reactor.drain);
+    const drain = () =>
+      Effect.runPromise(provider.awaitDelivery.pipe(Effect.andThen(reactor.drain)));
 
     const createdAt = "2026-01-01T00:00:00.000Z";
     await Effect.runPromise(

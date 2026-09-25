@@ -1,0 +1,63 @@
+name: Checkpoint Race Verification
+'on':
+  push:
+    branches:
+    - styal/checkpoint-flake-benchmark-65371a37
+permissions:
+  contents: read
+concurrency:
+  group: checkpoint-flake-benchmark-65371a37
+  cancel-in-progress: false
+jobs:
+  server:
+    name: Server ${{ matrix.shard }}/3
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+        - 1
+        - 2
+        - 3
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        sparse-checkout: '/*
+
+          !/.repos/
+
+          '
+        sparse-checkout-cone-mode: false
+    - name: Setup test dependencies
+      uses: ./.github/actions/setup-test-deps
+    - name: Reproduce old ordering and stress the fix
+      if: matrix.shard == 1
+      shell: bash
+      run: "python3 - <<'PY'\nfrom pathlib import Path\nimport subprocess\n\npath = Path('apps/server/src/orchestration/Layers/CheckpointReactor.test.ts')\n\
+        fixed = path.read_text()\nPath('.scratch').mkdir(exist_ok=True)\ncommand = ['vp', 'test', 'run', 'src/orchestration/Layers/CheckpointReactor.test.ts',\
+        \ '-t', 'resumes checkpointing', '--testTimeout=10000']\nacknowledged = 'Effect.runPromise(provider.awaitDelivery.pipe(Effect.andThen(reactor.drain)))'\n\
+        assert fixed.count(acknowledged) == 1\ntry:\n    path.write_text(fixed.replace(acknowledged, 'Effect.runPromise(reactor.drain)'))\n\
+        \    result = subprocess.run(command, cwd='apps/server', text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)\n\
+        \    Path('.scratch/checkpoint-negative-control.log').write_text(result.stdout)\n    print(result.stdout[-7000:])\n\
+        \    assert result.returncode != 0 and 'AssertionError' in result.stdout, 'Old drain must reproduce an assertion\
+        \ failure'\nfinally:\n    path.write_text(fixed)\n\ncases = \"\"\"[\n    { timing: \"between turns\", commit:\
+        \ false },\n    { timing: \"between turns\", commit: true },\n    { timing: \"during a turn\", commit: false\
+        \ },\n    { timing: \"during a turn\", commit: true },\n  ]\"\"\"\nassert fixed.count('effectIt.effect.each('\
+        \ + cases + ')') == 1\nstress = fixed.replace('effectIt.effect.each(' + cases + ')', 'effectIt.effect.each(Array.from({\
+        \ length: 20 }, (_, iteration) => ' + cases + '.map((testCase) => ({ ...testCase, iteration }))).flat())')\n\
+        stress = stress.replace('resumes checkpointing after git init $timing (commit: $commit)', 'resumes checkpointing\
+        \ after git init $timing (commit: $commit, iteration: $iteration)')\ntry:\n    path.write_text(stress)\n\
+        \    result = subprocess.run(command, cwd='apps/server', text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)\n\
+        \    Path('.scratch/checkpoint-stress.log').write_text(result.stdout)\n    print(result.stdout[-7000:])\n\
+        \    assert result.returncode == 0, 'Fixed ordering stress cases must pass'\nfinally:\n    path.write_text(fixed)\n\
+        subprocess.run(['git', 'diff', '--exit-code', '--', str(path)], check=True)\nPY\n"
+    - name: Test server with production parallelism
+      run: vp run --filter ./apps/server test --fileParallelism --maxWorkers=3 --shard ${{ matrix.shard }}/3
+    - name: Retain ordering regression evidence
+      if: always() && matrix.shard == 1
+      uses: actions/upload-artifact@v7
+      with:
+        name: checkpoint-ordering-evidence
+        path: .scratch/checkpoint-*.log
+        if-no-files-found: error
