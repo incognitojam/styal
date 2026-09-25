@@ -243,14 +243,16 @@ function runGit(cwd: string, args: ReadonlyArray<string>) {
   });
 }
 
-function createGitRepository() {
+function createWorkspace(initializeGit: boolean) {
   const cwd = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-checkpoint-handler-"));
-  runGit(cwd, ["init", "--initial-branch=main"]);
-  runGit(cwd, ["config", "user.email", "test@example.com"]);
-  runGit(cwd, ["config", "user.name", "Test User"]);
   NodeFS.writeFileSync(NodePath.join(cwd, "README.md"), "v1\n", "utf8");
-  runGit(cwd, ["add", "."]);
-  runGit(cwd, ["commit", "-m", "Initial"]);
+  if (initializeGit) {
+    runGit(cwd, ["init", "--initial-branch=main"]);
+    runGit(cwd, ["config", "user.email", "test@example.com"]);
+    runGit(cwd, ["config", "user.name", "Test User"]);
+    runGit(cwd, ["add", "."]);
+    runGit(cwd, ["commit", "-m", "Initial"]);
+  }
   return cwd;
 }
 
@@ -326,12 +328,7 @@ describe("CheckpointReactor", () => {
     readonly pullRequestRefreshCalls?: Array<string>;
     readonly pullRequestRefresh?: Effect.Effect<void>;
   }) {
-    const debugCommands = new Set<string>();
-    const debugTrace: unknown[] = [];
-    const cwd = createGitRepository();
-    if (options?.initializeGit === false) {
-      NodeFS.rmSync(NodePath.join(cwd, ".git"), { recursive: true });
-    }
+    const cwd = createWorkspace(options?.initializeGit ?? true);
     tempDirs.push(cwd);
     const provider = createProviderServiceHarness(
       cwd,
@@ -401,18 +398,7 @@ describe("CheckpointReactor", () => {
         ),
       ),
       Layer.provideMerge(WorkspacePaths.layer),
-      Layer.provideMerge(Layer.effect(VcsProcess.VcsProcess, Effect.map(VcsProcess.VcsProcess, (service) => ({
-        run: (input: VcsProcess.VcsProcessInput) => Effect.suspend(() => {
-          const key = JSON.stringify(input.args);
-          debugCommands.add(key);
-          debugTrace.push({ args: input.args, gitExists: NodeFS.existsSync(NodePath.join(cwd, ".git")) });
-          return service.run(input).pipe(
-            Effect.tap((result) => Effect.sync(() => debugTrace.push({ args: input.args, result }))),
-            Effect.tapError((error) => Effect.sync(() => debugTrace.push({ args: input.args, error }))),
-            Effect.ensuring(Effect.sync(() => debugCommands.delete(key))),
-          );
-        }),
-      }))).pipe(Layer.provide(VcsProcess.layer))),
+      Layer.provideMerge(VcsProcess.layer),
       Layer.provideMerge(ServerConfigLayer),
       Layer.provideMerge(NodeServices.layer),
     );
@@ -440,9 +426,7 @@ describe("CheckpointReactor", () => {
       }),
     );
     const drain = () =>
-      Effect.runPromise(provider.awaitDelivery.pipe(Effect.andThen(reactor.drain))).then(() => {
-        if (debugCommands.size > 0) throw new Error(`Early drain: ${JSON.stringify([...debugCommands])}`);
-      });
+      Effect.runPromise(provider.awaitDelivery.pipe(Effect.andThen(reactor.drain)));
 
     const createdAt = "2026-01-01T00:00:00.000Z";
     await Effect.runPromise(
@@ -531,7 +515,6 @@ describe("CheckpointReactor", () => {
       cwd,
       drain,
       nextReceipt: Queue.take(receipts),
-      debugTrace,
       pullRequestRefreshes,
     };
   }
@@ -637,7 +620,7 @@ describe("CheckpointReactor", () => {
 
   effectIt.effect("captures and reverts checkpoints from a nested Git workspace", () =>
     Effect.gen(function* () {
-      const repositoryRoot = createGitRepository();
+      const repositoryRoot = createWorkspace(true);
       tempDirs.push(repositoryRoot);
       const workspaceRoot = NodePath.join(repositoryRoot, "apps", "server");
       NodeFS.mkdirSync(workspaceRoot, { recursive: true });
@@ -1307,16 +1290,17 @@ describe("CheckpointReactor", () => {
     }),
   );
 
-  effectIt.effect.each([
-    { timing: "between turns", commit: false },
-    { timing: "between turns", commit: true },
-    { timing: "during a turn", commit: false },
-    { timing: "during a turn", commit: true },
-  ].flatMap((scenario) => Array.from({ length: 20 }, () => scenario)))("resumes checkpointing after git init $timing (commit: $commit)", ({ timing, commit }) =>
+  effectIt.effect.each(Array.from({ length: 20 }, (_, repeat) => [
+    { timing: "between turns", commit: false, repeat },
+    { timing: "between turns", commit: true, repeat },
+    { timing: "during a turn", commit: false, repeat },
+    { timing: "during a turn", commit: true, repeat },
+  ]).flat())("resumes checkpointing after git init $timing (commit: $commit, repeat: $repeat)", ({ timing, commit }) =>
     Effect.gen(function* () {
       const harness = yield* Effect.promise(() =>
         createHarness({ initializeGit: false, seedFilesystemCheckpoints: false }),
       );
+      expect(NodeFS.existsSync(NodePath.join(harness.cwd, ".git"))).toBe(false);
       const threadId = ThreadId.make("thread-1");
       const createdAt = "2026-01-01T00:00:00.000Z";
       const emit = (type: "turn.started" | "turn.completed", turn: number) =>
@@ -1336,9 +1320,6 @@ describe("CheckpointReactor", () => {
       yield* Effect.promise(harness.drain);
       expect((yield* Effect.promise(harness.readModel)).threads[0]?.checkpoints).toEqual([]);
 
-      if (harness.debugTrace.some((entry) => JSON.stringify(entry).includes("styal-checkpoint-index")) || NodeFS.existsSync(NodePath.join(harness.cwd, ".git"))) {
-        throw new Error(`Unexpected Git before init: ${JSON.stringify(harness.debugTrace)}`);
-      }
       if (timing === "during a turn") {
         emit("turn.started", 2);
         yield* Effect.promise(harness.drain);
