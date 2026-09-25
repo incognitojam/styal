@@ -243,14 +243,16 @@ function runGit(cwd: string, args: ReadonlyArray<string>) {
   });
 }
 
-function createGitRepository() {
+function createWorkspace(initializeGit: boolean) {
   const cwd = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-checkpoint-handler-"));
-  runGit(cwd, ["init", "--initial-branch=main"]);
-  runGit(cwd, ["config", "user.email", "test@example.com"]);
-  runGit(cwd, ["config", "user.name", "Test User"]);
   NodeFS.writeFileSync(NodePath.join(cwd, "README.md"), "v1\n", "utf8");
-  runGit(cwd, ["add", "."]);
-  runGit(cwd, ["commit", "-m", "Initial"]);
+  if (initializeGit) {
+    runGit(cwd, ["init", "--initial-branch=main"]);
+    runGit(cwd, ["config", "user.email", "test@example.com"]);
+    runGit(cwd, ["config", "user.name", "Test User"]);
+    runGit(cwd, ["add", "."]);
+    runGit(cwd, ["commit", "-m", "Initial"]);
+  }
   return cwd;
 }
 
@@ -326,10 +328,7 @@ describe("CheckpointReactor", () => {
     readonly pullRequestRefreshCalls?: Array<string>;
     readonly pullRequestRefresh?: Effect.Effect<void>;
   }) {
-    const cwd = createGitRepository();
-    if (options?.initializeGit === false) {
-      NodeFS.rmSync(NodePath.join(cwd, ".git"), { recursive: true });
-    }
+    const cwd = createWorkspace(options?.initializeGit ?? true);
     tempDirs.push(cwd);
     const provider = createProviderServiceHarness(
       cwd,
@@ -621,7 +620,7 @@ describe("CheckpointReactor", () => {
 
   effectIt.effect("captures and reverts checkpoints from a nested Git workspace", () =>
     Effect.gen(function* () {
-      const repositoryRoot = createGitRepository();
+      const repositoryRoot = createWorkspace(true);
       tempDirs.push(repositoryRoot);
       const workspaceRoot = NodePath.join(repositoryRoot, "apps", "server");
       NodeFS.mkdirSync(workspaceRoot, { recursive: true });
@@ -1301,6 +1300,7 @@ describe("CheckpointReactor", () => {
       const harness = yield* Effect.promise(() =>
         createHarness({ initializeGit: false, seedFilesystemCheckpoints: false }),
       );
+      expect(NodeFS.existsSync(NodePath.join(harness.cwd, ".git"))).toBe(false);
       const threadId = ThreadId.make("thread-1");
       const createdAt = "2026-01-01T00:00:00.000Z";
       const emit = (type: "turn.started" | "turn.completed", turn: number) =>
