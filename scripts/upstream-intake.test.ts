@@ -172,7 +172,10 @@ describe("upstream intake audit", () => {
     assert.isFalse(result.automaticEligible);
     assert.deepEqual(result.sourcePullRequests, []);
     assert.deepEqual(result.sourceCommits, [sha]);
-    assert.include(result.summary, `| Upstream commits without PR | \`${sha}\` |`);
+    assert.include(
+      result.summary,
+      `| Upstream commits without PR | [\`${sha}\`](https://github.com/pingdotgg/t3code/commit/${sha}) |`,
+    );
   });
 
   it("blocks an Upstream-Commit that belongs to a PR listed in the same commit", () => {
@@ -208,7 +211,10 @@ describe("upstream intake audit", () => {
     assert.isTrue(result.valid);
     assert.deepEqual(result.sourcePullRequests, [1234]);
     assert.deepEqual(result.sourceCommits, [directCommit, standaloneCommit, otherPrCommit]);
-    assert.include(result.summary, `| Upstream commits without PR | \`${standaloneCommit}\` |`);
+    assert.include(
+      result.summary,
+      `| Upstream commits without PR | [\`${standaloneCommit}\`](https://github.com/pingdotgg/t3code/commit/${standaloneCommit}) |`,
+    );
     assert.notInclude(result.summary, directCommit);
   });
 
