@@ -45,6 +45,10 @@
       "reason": "Fix for #10875: GitHub Enterprise hosts without the stacks API lose the merge button."
     },
     {
+      "pr": 12874,
+      "reason": "Provider forms wait for settings saves to be confirmed. Once it lands, provider name, accent colour and environment variable inputs can report their save result, so they stop briefly reverting to the old value while saving."
+    },
+    {
       "pr": 13109,
       "reason": "Found while adding Claude Opus 5.5: Refresh bypasses cached model lists so new models appear immediately."
     },
