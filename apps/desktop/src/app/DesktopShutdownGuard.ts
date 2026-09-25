@@ -1,5 +1,6 @@
 import { HostActivity } from "@t3tools/contracts";
 import { bootstrapRemoteBearerSession } from "@t3tools/client-runtime/authorization";
+import { describeHostActivity, hostActivityQuestion } from "@t3tools/shared/hostActivity";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -18,50 +19,20 @@ export function shutdownConfirmation(
   action: ShutdownAction,
   title?: string,
 ) {
-  let active = 0;
-  let waiting = 0;
-  let terminals = 0;
-  let uncheckedTerminals = 0;
-  let unknown = checks.length === 0;
-  for (const check of checks) {
-    if (check === null) {
-      unknown = true;
-      continue;
-    }
-    active += check.activeSessions;
-    waiting += check.waitingSessions;
-    terminals += check.terminalsRequiringConfirmation - check.terminalsWithUnknownActivity;
-    uncheckedTerminals += check.terminalsWithUnknownActivity;
-  }
-  const lines: string[] = [];
-  if (active) lines.push(`${active} thread${active === 1 ? "" : "s"} will be interrupted.`);
-  if (waiting)
-    lines.push(
-      `${waiting} thread${waiting === 1 ? "" : "s"} waiting for input or approval will be interrupted.`,
-    );
-  if (terminals)
-    lines.push(`${terminals} terminal session${terminals === 1 ? "" : "s"} will be interrupted.`);
-  if (uncheckedTerminals)
-    lines.push(
-      `Activity could not be checked for ${uncheckedTerminals} terminal session${uncheckedTerminals === 1 ? "" : "s"}.`,
-    );
-  if (unknown) lines.push("Activity could not be checked for every local environment.");
-  if (!lines.length) return null;
-  const verb = action === "quit" ? "Quit" : "Restart";
-  if (unknown || uncheckedTerminals)
-    lines.push(
-      "",
-      `${action === "quit" ? "Quitting" : "Restarting"} will stop any work hosted by this app.`,
-    );
+  const { concern, lines, incomplete } = describeHostActivity(checks, {
+    uncheckedHostsLine: "Activity could not be checked for every local environment.",
+  });
+  if (concern === null) return null;
+  const detail = incomplete
+    ? [
+        ...lines,
+        "",
+        `${action === "quit" ? "Quitting" : "Restarting"} will stop any work hosted by this app.`,
+      ]
+    : lines;
   return {
-    message:
-      title ??
-      (active || terminals
-        ? `${verb} with running work?`
-        : waiting
-          ? `${verb} with waiting threads?`
-          : `${verb} without checking activity?`),
-    detail: `${lines.join("\n")} Make sure you're ready before continuing.`,
+    message: title ?? `${action === "quit" ? "Quit" : "Restart"} ${hostActivityQuestion[concern]}`,
+    detail: `${detail.join("\n")} Make sure you're ready before continuing.`,
   };
 }
 

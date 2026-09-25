@@ -6298,6 +6298,44 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest), TestClock.withLive),
   );
 
+  it.effect("reports host activity over websocket before a server update", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest({
+        layers: {
+          providerService: {
+            listSessions: () =>
+              Effect.succeed([
+                {
+                  provider: ProviderDriverKind.make("claudeAgent"),
+                  status: "running",
+                  runtimeMode: "full-access",
+                  threadId: defaultThreadId,
+                  createdAt: "2026-01-01T00:00:00.000Z",
+                  updatedAt: "2026-01-01T00:00:00.000Z",
+                },
+              ]),
+          },
+          terminalManager: {
+            shutdownPreflight: Effect.succeed({
+              terminalsRequiringConfirmation: 2,
+              terminalsWithUnknownActivity: 1,
+            }),
+          },
+        },
+      });
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const activity = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) => client[WS_METHODS.serverGetHostActivity]({})),
+      );
+      assert.deepEqual(activity, {
+        activeSessions: 1,
+        waitingSessions: 0,
+        terminalsRequiringConfirmation: 2,
+        terminalsWithUnknownActivity: 1,
+      });
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("counts macOS reclaimable memory once and shares concurrent samples", () =>
     Effect.gen(function* () {
       const commandCalls = yield* Ref.make(0);

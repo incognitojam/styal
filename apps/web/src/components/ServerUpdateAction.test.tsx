@@ -7,6 +7,8 @@ import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const testState = vi.hoisted(() => ({
   updateServer: vi.fn(),
+  hostActivity: vi.fn(),
+  confirm: vi.fn(),
   toast: vi.fn(),
   copy: vi.fn(),
   continueThreadsAfterServerUpdate: false,
@@ -22,10 +24,14 @@ vi.mock("~/hooks/useSettings", () => ({
   ) => selector({ continueThreadsAfterServerUpdate: testState.continueThreadsAfterServerUpdate }),
 }));
 vi.mock("~/state/server", () => ({
-  serverEnvironment: { updateServer: Symbol("updateServer") },
+  serverEnvironment: { updateServer: "updateServer", hostActivity: "hostActivity" },
 }));
 vi.mock("~/state/use-atom-command", () => ({
-  useAtomCommand: () => testState.updateServer,
+  useAtomCommand: (command: string) =>
+    command === "hostActivity" ? testState.hostActivity : testState.updateServer,
+}));
+vi.mock("~/confirmDialog", () => ({
+  requestConfirmDialog: testState.confirm,
 }));
 vi.mock("./ui/toast", () => ({
   toastManager: { add: testState.toast },
@@ -47,13 +53,24 @@ function renderAction(): ActionElement {
 }
 
 async function flushPromises(): Promise<void> {
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let index = 0; index < 5; index += 1) await Promise.resolve();
 }
+
+const idleActivity = {
+  activeSessions: 0,
+  waitingSessions: 0,
+  terminalsRequiringConfirmation: 0,
+  terminalsWithUnknownActivity: 0,
+};
 
 describe("ServerUpdateAction", () => {
   beforeEach(() => {
     testState.updateServer.mockReset();
+    testState.hostActivity.mockReset();
+    testState.hostActivity.mockResolvedValue(AsyncResult.success(idleActivity));
+    // No confirm-dialog host is mounted, which the component treats as consent.
+    testState.confirm.mockReset();
+    testState.confirm.mockReturnValue(undefined);
     testState.toast.mockReset();
     testState.copy.mockReset();
     testState.continueThreadsAfterServerUpdate = false;
@@ -93,6 +110,7 @@ describe("ServerUpdateAction", () => {
     const action = renderAction();
     action.props.onClick?.();
     action.props.onClick?.();
+    await flushPromises();
 
     expect(testState.updateServer).toHaveBeenCalledTimes(1);
     finishUpdate?.();
@@ -136,8 +154,6 @@ describe("ServerUpdateAction", () => {
       targetVersion: "0.0.31",
     }) as ActionElement;
 
-    // No confirm-dialog host is mounted in this test, which the component
-    // treats as consent: the click itself was the request.
     action.props.onClick?.();
     await flushPromises();
 
@@ -150,6 +166,61 @@ describe("ServerUpdateAction", () => {
       title: "Test server updated",
       description: "Desktop app relaunched on 0.0.34.",
     });
+  });
+
+  it("updates an idle server without asking", async () => {
+    testState.updateServer.mockResolvedValue(
+      AsyncResult.success({ targetVersion: "0.0.31", method: "boot-service" as const }),
+    );
+
+    renderAction().props.onClick?.();
+    await flushPromises();
+
+    expect(testState.confirm).not.toHaveBeenCalled();
+    expect(testState.updateServer).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps running work when the user cancels the confirmation", async () => {
+    testState.hostActivity.mockResolvedValue(
+      AsyncResult.success({ ...idleActivity, activeSessions: 1 }),
+    );
+    testState.confirm.mockResolvedValue(false);
+
+    renderAction().props.onClick?.();
+    await flushPromises();
+
+    expect(testState.confirm).toHaveBeenCalledWith(
+      expect.stringContaining("1 thread will be interrupted."),
+    );
+    expect(testState.updateServer).not.toHaveBeenCalled();
+  });
+
+  it("updates after the user confirms interrupting running work", async () => {
+    testState.hostActivity.mockResolvedValue(
+      AsyncResult.success({ ...idleActivity, terminalsRequiringConfirmation: 2 }),
+    );
+    testState.confirm.mockResolvedValue(true);
+    testState.updateServer.mockResolvedValue(
+      AsyncResult.success({ targetVersion: "0.0.31", method: "boot-service" as const }),
+    );
+
+    renderAction().props.onClick?.();
+    await flushPromises();
+
+    expect(testState.updateServer).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks before updating when activity cannot be checked", async () => {
+    testState.hostActivity.mockResolvedValue(AsyncResult.failure(Cause.fail("unavailable")));
+    testState.confirm.mockResolvedValue(false);
+
+    renderAction().props.onClick?.();
+    await flushPromises();
+
+    expect(testState.confirm).toHaveBeenCalledWith(
+      expect.stringContaining("Activity could not be checked on the Test server."),
+    );
+    expect(testState.updateServer).not.toHaveBeenCalled();
   });
 
   it("leaves thread continuation off by default", async () => {

@@ -64,6 +64,10 @@
       "types": "./src/shell.ts",
       "import": "./src/shell.ts"
     },
+    "./hostActivity": {
+      "types": "./src/hostActivity.ts",
+      "import": "./src/hostActivity.ts"
+    },
     "./semver": {
       "types": "./src/semver.ts",
       "import": "./src/semver.ts"
