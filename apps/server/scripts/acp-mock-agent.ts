@@ -754,24 +754,17 @@ const program = Effect.gen(function* () {
       }
 
       if (emitActiveToolThenHang) {
-        const toolCallId = "tool-call-long-running-1";
+        // A single notification, so a test that advances the clock after the
+        // first tool event does not race a later update resetting liveness.
         yield* agent.client.sessionUpdate({
           sessionId: requestedSessionId,
           update: {
             sessionUpdate: "tool_call",
-            toolCallId,
+            toolCallId: "tool-call-long-running-1",
             title: "Long-running tool",
             kind: "execute",
-            status: "pending",
-            rawInput: { command: ["long-running-tool"] },
-          },
-        });
-        yield* agent.client.sessionUpdate({
-          sessionId: requestedSessionId,
-          update: {
-            sessionUpdate: "tool_call_update",
-            toolCallId,
             status: "in_progress",
+            rawInput: { command: ["long-running-tool"] },
           },
         });
         return yield* Effect.never;
