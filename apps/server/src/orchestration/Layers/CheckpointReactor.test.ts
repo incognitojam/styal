@@ -327,6 +327,7 @@ describe("CheckpointReactor", () => {
     readonly pullRequestRefresh?: Effect.Effect<void>;
   }) {
     const debugCommands = new Set<string>();
+    const debugTrace: unknown[] = [];
     const cwd = createGitRepository();
     if (options?.initializeGit === false) {
       NodeFS.rmSync(NodePath.join(cwd, ".git"), { recursive: true });
@@ -404,7 +405,12 @@ describe("CheckpointReactor", () => {
         run: (input: VcsProcess.VcsProcessInput) => Effect.suspend(() => {
           const key = JSON.stringify(input.args);
           debugCommands.add(key);
-          return service.run(input).pipe(Effect.ensuring(Effect.sync(() => debugCommands.delete(key))));
+          debugTrace.push({ args: input.args, gitExists: NodeFS.existsSync(NodePath.join(cwd, ".git")) });
+          return service.run(input).pipe(
+            Effect.tap((result) => Effect.sync(() => debugTrace.push({ args: input.args, result }))),
+            Effect.tapError((error) => Effect.sync(() => debugTrace.push({ args: input.args, error }))),
+            Effect.ensuring(Effect.sync(() => debugCommands.delete(key))),
+          );
         }),
       }))).pipe(Layer.provide(VcsProcess.layer))),
       Layer.provideMerge(ServerConfigLayer),
@@ -525,6 +531,7 @@ describe("CheckpointReactor", () => {
       cwd,
       drain,
       nextReceipt: Queue.take(receipts),
+      debugTrace,
       pullRequestRefreshes,
     };
   }
@@ -1329,6 +1336,9 @@ describe("CheckpointReactor", () => {
       yield* Effect.promise(harness.drain);
       expect((yield* Effect.promise(harness.readModel)).threads[0]?.checkpoints).toEqual([]);
 
+      if (harness.debugTrace.some((entry) => JSON.stringify(entry).includes("styal-checkpoint-index")) || NodeFS.existsSync(NodePath.join(harness.cwd, ".git"))) {
+        throw new Error(`Unexpected Git before init: ${JSON.stringify(harness.debugTrace)}`);
+      }
       if (timing === "during a turn") {
         emit("turn.started", 2);
         yield* Effect.promise(harness.drain);

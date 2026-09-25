@@ -6,48 +6,28 @@ name: Remaining CI benchmark
 permissions:
   contents: read
 jobs:
-  check:
-    name: Cached Fork Check
+  server:
+    name: Server shard ${{ matrix.shard }}/3
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+        - 1
     steps:
     - name: Checkout
       uses: actions/checkout@v6
       with:
-        ref: 6a54faaaf65408b35a169ce4e8a89eaf78177e8a
-        fetch-depth: 0
+        ref: ${{ github.sha }}
         sparse-checkout: '/*
 
           !/.repos/
 
           '
         sparse-checkout-cone-mode: false
-    - name: Setup cached dependencies
+    - name: Setup test dependencies
       uses: ./.github/actions/setup-deps
-    - name: Setup Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: rustfmt
-    - name: Ensure Electron runtime is installed
-      run: vp run --filter @t3tools/desktop ensure:electron
-    - name: Install browser secret helper build libraries
-      run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
-    - name: Check
-      run: vp check
-    - name: Check fork feature ledger
-      run: vp run --filter @t3tools/scripts ledger:check
-    - name: Typecheck
-      run: vpr typecheck
-    - name: Check resource monitor formatting
-      run: cargo fmt --manifest-path native/resource-monitor/Cargo.toml -- --check
-    - name: Build desktop pipeline
-      run: vp run build:desktop
-    - name: Verify preload bundle output
-      run: 'test -f apps/desktop/dist-electron/preload.cjs
-
-        grep -nE "desktopBridge|getLocalEnvironmentBootstrap|PICK_FOLDER_CHANNEL|wsUrl"
-        apps/desktop/dist-electron/preload.cjs
-
-        grep -n "__clerk_internal_electron_passkeys" apps/desktop/dist-electron/preload.cjs
-
-        '
+    - name: Test server
+      run: vp run --filter ./apps/server test --fileParallelism --maxWorkers=3 --shard
+        ${{ matrix.shard }}/3
