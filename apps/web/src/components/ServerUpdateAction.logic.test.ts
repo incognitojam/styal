@@ -4,6 +4,7 @@ import { serverUpdateConfirmation } from "./ServerUpdateAction.logic";
 
 const idle = {
   activeSessions: 0,
+  continuableSessions: 0,
   waitingSessions: 0,
   terminalsRequiringConfirmation: 0,
   terminalsWithUnknownActivity: 0,
@@ -16,6 +17,7 @@ function confirmation(
     serverLabel: "Lab server",
     activity: idle,
     desktopApp: false,
+    continueRunningThreads: false,
     ...overrides,
   });
 }
@@ -35,6 +37,22 @@ describe("serverUpdateConfirmation", () => {
         "Update the Lab server with running work?",
         "2 threads will be interrupted.",
         "1 terminal session will be interrupted.",
+        "The server restarts to finish the update.",
+      ].join("\n"),
+    );
+  });
+
+  it("says which threads continue when continuation is requested", () => {
+    expect(
+      confirmation({
+        activity: { ...idle, activeSessions: 2, continuableSessions: 1 },
+        continueRunningThreads: true,
+      }),
+    ).toBe(
+      [
+        "Update the Lab server with running work?",
+        "1 thread will be interrupted.",
+        "1 thread will continue after the restart.",
         "The server restarts to finish the update.",
       ].join("\n"),
     );

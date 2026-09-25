@@ -14,14 +14,18 @@ function plural(count: number, noun: string): string {
 }
 
 /**
- * Describes the work a restart of one or more hosts would interrupt. A null
+ * Describes the work a restart of one or more hosts would stop. A null
  * check (or an empty list) is a host whose activity could not be read, and is
  * reported with `uncheckedHostsLine`. `concern` is null when every host was
  * checked and nothing needs confirmation.
  */
 export function describeHostActivity(
   checks: ReadonlyArray<HostActivity | null>,
-  options: { readonly uncheckedHostsLine: string },
+  options: {
+    readonly uncheckedHostsLine: string;
+    /** Thread continuation is requested, so continuable threads resume after the restart. */
+    readonly continueRunningThreads?: boolean;
+  },
 ): {
   readonly concern: HostActivityConcern | null;
   readonly lines: ReadonlyArray<string>;
@@ -29,6 +33,7 @@ export function describeHostActivity(
   readonly incomplete: boolean;
 } {
   let active = 0;
+  let continuing = 0;
   let waiting = 0;
   let terminals = 0;
   let uncheckedTerminals = 0;
@@ -39,12 +44,15 @@ export function describeHostActivity(
       continue;
     }
     active += check.activeSessions;
+    if (options.continueRunningThreads) continuing += check.continuableSessions;
     waiting += check.waitingSessions;
     terminals += check.terminalsRequiringConfirmation - check.terminalsWithUnknownActivity;
     uncheckedTerminals += check.terminalsWithUnknownActivity;
   }
   const lines: string[] = [];
-  if (active) lines.push(`${plural(active, "thread")} will be interrupted.`);
+  if (active - continuing)
+    lines.push(`${plural(active - continuing, "thread")} will be interrupted.`);
+  if (continuing) lines.push(`${plural(continuing, "thread")} will continue after the restart.`);
   if (waiting)
     lines.push(`${plural(waiting, "thread")} waiting for input or approval will be interrupted.`);
   if (terminals) lines.push(`${plural(terminals, "terminal session")} will be interrupted.`);

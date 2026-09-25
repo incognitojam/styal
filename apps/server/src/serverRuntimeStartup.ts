@@ -397,41 +397,56 @@ const toServerUpdateThreadContinuationError = (cause: unknown) =>
     ? cause
     : new ServerUpdateThreadContinuationError({ cause });
 
-export const markRunningProviderSessionsForContinuation = Effect.gen(function* () {
+/**
+ * Threads that thread continuation resumes after a server restart: a turn in
+ * progress with saved provider resume state. The update confirmation counts
+ * these, so widening this selection also updates what the dialog promises.
+ */
+export const listContinuableThreads = Effect.gen(function* () {
   const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
   const query = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const { threads } = yield* query.getCommandReadModel();
-  const running = threads.filter(
-    (thread) =>
-      thread.archivedAt === null &&
-      thread.deletedAt === null &&
-      thread.session?.status === "running" &&
-      thread.session.activeTurnId !== null,
-  );
+  const continuable: Array<{
+    readonly threadId: ThreadId;
+    readonly activeTurnId: TurnId;
+    readonly binding: ProviderSessionDirectory.ProviderRuntimeBinding;
+  }> = [];
+  for (const thread of threads) {
+    const activeTurnId = thread.session?.activeTurnId;
+    if (
+      thread.archivedAt !== null ||
+      thread.deletedAt !== null ||
+      thread.session?.status !== "running" ||
+      activeTurnId === null ||
+      activeTurnId === undefined
+    ) {
+      continue;
+    }
+    const binding = yield* directory.getBinding(thread.id);
+    if (Option.isNone(binding) || binding.value.resumeCursor == null) {
+      continue;
+    }
+    continuable.push({ threadId: thread.id, activeTurnId, binding: binding.value });
+  }
+  return continuable;
+});
+
+export const markRunningProviderSessionsForContinuation = Effect.gen(function* () {
+  const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+  const continuable = yield* listContinuableThreads;
 
   const marked: ThreadId[] = [];
   return yield* Effect.gen(function* () {
-    for (const thread of running) {
-      const activeTurnId = thread.session?.activeTurnId;
-      if (activeTurnId === null || activeTurnId === undefined) {
-        continue;
-      }
-      const binding = yield* directory.getBinding(thread.id);
-      if (Option.isNone(binding)) {
-        continue;
-      }
-      if (binding.value.resumeCursor === null || binding.value.resumeCursor === undefined) {
-        continue;
-      }
+    for (const { threadId, activeTurnId, binding } of continuable) {
       yield* directory.upsert({
-        ...binding.value,
+        ...binding,
         runtimePayload: {
-          ...readRuntimePayload(binding.value.runtimePayload),
+          ...readRuntimePayload(binding.runtimePayload),
           [SERVER_UPDATE_CONTINUATION_KEY]: activeTurnId,
           continueAfterServerUpdatePrepared: null,
         },
       });
-      marked.push(thread.id);
+      marked.push(threadId);
     }
     return marked;
   }).pipe(

@@ -618,6 +618,8 @@ class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
 /** Fresh host activity; counts cover all clients connected to this environment. */
 export const HostActivity = Schema.Struct({
   activeSessions: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  /** Active threads that thread continuation resumes after a restart, when enabled. */
+  continuableSessions: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   waitingSessions: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   terminalsRequiringConfirmation: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   terminalsWithUnknownActivity: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),

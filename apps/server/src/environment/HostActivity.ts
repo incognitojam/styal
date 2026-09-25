@@ -10,6 +10,7 @@ import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 import { requireEnvironmentScope, failEnvironmentInternal } from "../auth/http.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProviderService } from "../provider/Services/ProviderService.ts";
+import { listContinuableThreads } from "../serverRuntimeStartup.ts";
 import { TerminalManager } from "../terminal/Manager.ts";
 
 export function summarizeHostSessions(
@@ -25,7 +26,8 @@ export function summarizeHostSessions(
     >
   >,
   sessions: ReadonlyArray<Pick<ProviderSession, "threadId" | "status" | "activeTurnId">>,
-): Pick<HostActivity, "activeSessions" | "waitingSessions"> {
+  continuableThreadIds: ReadonlySet<string> = new Set(),
+): Pick<HostActivity, "activeSessions" | "continuableSessions" | "waitingSessions"> {
   const active = new Set<string>();
   const waiting = new Set<string>();
   for (const session of sessions) {
@@ -46,7 +48,13 @@ export function summarizeHostSessions(
     }
   }
   for (const id of waiting) active.delete(id);
-  return { activeSessions: active.size, waitingSessions: waiting.size };
+  let continuable = 0;
+  for (const id of active) if (continuableThreadIds.has(id)) continuable++;
+  return {
+    activeSessions: active.size,
+    continuableSessions: continuable,
+    waitingSessions: waiting.size,
+  };
 }
 
 export const inspectHostActivity = Effect.gen(function* () {
@@ -56,7 +64,20 @@ export const inspectHostActivity = Effect.gen(function* () {
   const terminalActivity = yield* terminals.shutdownPreflight;
   const snapshot = yield* projection.getShellSnapshot();
   const sessions = yield* providers.listSessions();
-  return { ...summarizeHostSessions(snapshot.threads, sessions), ...terminalActivity };
+  // Unknown continuation eligibility reads as interrupted, the cautious claim.
+  const continuable = yield* listContinuableThreads.pipe(
+    Effect.catchCause((cause) =>
+      Effect.logWarning("could not read continuable threads", { cause }).pipe(Effect.as([])),
+    ),
+  );
+  return {
+    ...summarizeHostSessions(
+      snapshot.threads,
+      sessions,
+      new Set(continuable.map((thread) => thread.threadId)),
+    ),
+    ...terminalActivity,
+  };
 });
 
 export const hostActivityHttpApiLayer = HttpApiBuilder.group(

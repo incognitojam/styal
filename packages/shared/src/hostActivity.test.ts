@@ -4,6 +4,7 @@ import { describeHostActivity } from "./hostActivity.ts";
 
 const idle = {
   activeSessions: 0,
+  continuableSessions: 0,
   waitingSessions: 0,
   terminalsRequiringConfirmation: 0,
   terminalsWithUnknownActivity: 0,
@@ -43,6 +44,16 @@ describe("describeHostActivity", () => {
     expect(describeHostActivity([{ ...idle, waitingSessions: 2 }], options).concern).toBe(
       "waiting",
     );
+  });
+
+  it("separates threads that continue from threads that are interrupted", () => {
+    const checks = [{ ...idle, activeSessions: 3, continuableSessions: 2 }];
+    expect(describeHostActivity(checks, { ...options, continueRunningThreads: true })).toEqual({
+      concern: "running",
+      lines: ["1 thread will be interrupted.", "2 threads will continue after the restart."],
+      incomplete: false,
+    });
+    expect(describeHostActivity(checks, options).lines).toEqual(["3 threads will be interrupted."]);
   });
 
   it("does not count uninspected terminals as running work", () => {

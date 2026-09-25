@@ -65,6 +65,7 @@ export const make = Effect.gen(function* () {
                 if (!snapshot.desiredRunning && Option.isNone(snapshot.activePid)) {
                   return {
                     activeSessions: 0,
+                    continuableSessions: 0,
                     waitingSessions: 0,
                     terminalsRequiringConfirmation: 0,
                     terminalsWithUnknownActivity: 0,

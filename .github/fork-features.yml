@@ -1804,8 +1804,10 @@ features:
       - Manual update instructions reserve service update for detected legacy services; absent update capability is treated as an unknown installation, with serve qualified for terminal launches and service or container users directed to their existing deployment method.
       - Foreground start commands are labeled as starts and preserve guidance to reuse the existing data directory and startup options rather than implying that launching another process updates a running server.
       - In-app server updates check the server's host activity first; idle servers update without a dialog, while active or waiting threads, running terminal commands, or a failed check require confirmation, and cancelling leaves the server running.
+      - When thread continuation is requested, the confirmation says a thread will continue only if the same selection the continuation step uses includes it; every other active thread is described as interrupted.
     implementation_paths:
       - apps/server/src/environment/HostActivity.ts
+      - apps/server/src/serverRuntimeStartup.ts
       - apps/web/src/components/ServerUpdateAction.logic.ts
       - apps/web/src/components/ServerUpdateAction.tsx
       - apps/web/src/versionSkew.ts
@@ -1818,6 +1820,7 @@ features:
       - apps/web/src/components/settings/ConnectionsSettings.tsx
       - apps/web/src/versionSkew.ts
     tests:
+      - apps/server/src/environment/HostActivity.test.ts
       - apps/server/src/server.test.ts
       - apps/web/src/components/ServerUpdateAction.logic.test.ts
       - apps/web/src/components/ServerUpdateAction.test.tsx

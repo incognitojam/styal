@@ -10,9 +10,11 @@ export function serverUpdateConfirmation(input: {
   readonly serverLabel: string;
   readonly activity: HostActivity | null;
   readonly desktopApp: boolean;
+  readonly continueRunningThreads: boolean;
 }): string | null {
   const { concern, lines } = describeHostActivity([input.activity], {
     uncheckedHostsLine: `Activity could not be checked on the ${input.serverLabel}.`,
+    continueRunningThreads: input.continueRunningThreads,
   });
   if (input.desktopApp) {
     return [

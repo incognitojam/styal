@@ -6329,6 +6329,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       );
       assert.deepEqual(activity, {
         activeSessions: 1,
+        continuableSessions: 0,
         waitingSessions: 0,
         terminalsRequiringConfirmation: 2,
         terminalsWithUnknownActivity: 1,
