@@ -1,0 +1,42 @@
+name: Test Runner Benchmark
+on:
+  push:
+    branches: [styal/test-runner-benchmark-65371a37]
+permissions:
+  contents: read
+concurrency:
+  group: test-runner-benchmark-65371a37
+  cancel-in-progress: true
+jobs:
+  benchmark:
+    name: Benchmark ${{ matrix.suite }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [server, web, workspace]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+      - name: Install native desktop prerequisites
+        if: matrix.suite == 'workspace'
+        run: |
+          sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
+          vp run --filter @t3tools/desktop ensure:electron
+      - name: Benchmark runner settings
+        run: node scripts/test-runner-benchmark.mjs ${{ matrix.suite }}
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: benchmark-${{ matrix.suite }}
+          path: benchmark-results/
