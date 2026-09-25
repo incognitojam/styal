@@ -196,7 +196,7 @@ export function buildPreferenceRows(
     {
       id: "add-project-starts-in",
       label: "Add project starts in",
-      value: addProjectBaseDirectory === "" ? "~/ (default)" : addProjectBaseDirectory,
+      value: addProjectBaseDirectory === "" ? "Default" : addProjectBaseDirectory,
       comparisonValue: addProjectBaseDirectory,
       monospace: addProjectBaseDirectory !== "",
     },

@@ -2039,8 +2039,10 @@ export function GeneralSettingsPanel() {
   );
   const observability = useAtomValue(primaryServerObservabilityAtom);
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
+  const primaryServerConfig = useAtomValue(primaryServerConfigAtom);
   const supportsAutoSettlement =
-    useAtomValue(primaryServerConfigAtom)?.environment.capabilities.threadAutoSettlement === true;
+    primaryServerConfig?.environment.capabilities.threadAutoSettlement === true;
+  const addProjectDefaultDirectory = primaryServerConfig?.addProjectDefaultDirectory ?? "~/";
   const diagnosticsDescription = formatDiagnosticsDescription({
     localTracingEnabled: observability?.localTracingEnabled ?? false,
     otlpTracesEnabled: observability?.otlpTracesEnabled ?? false,
@@ -2665,7 +2667,7 @@ export function GeneralSettingsPanel() {
         <SettingsRow
           serverScoped
           {...searchableSetting("add-project-starts-in")}
-          description='Leave empty to use "~/" when the Add Project browser opens.'
+          description={`Leave empty to use "${addProjectDefaultDirectory}" when the Add Project browser opens.`}
           resetAction={
             settings.addProjectBaseDirectory !==
             DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory ? (
@@ -2685,7 +2687,7 @@ export function GeneralSettingsPanel() {
               className="w-full sm:w-72"
               value={settings.addProjectBaseDirectory}
               onCommit={(next) => updateSettings({ addProjectBaseDirectory: next })}
-              placeholder="~/"
+              placeholder={addProjectDefaultDirectory}
               spellCheck={false}
               aria-label="Add project base directory"
             />

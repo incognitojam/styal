@@ -6,6 +6,7 @@ import {
   getCloneDestinationBrowsePath,
   getCloneDestinationPath,
   getCloneDirectoryName,
+  getAddProjectInitialQuery,
   getDefaultCloneUrl,
   normalizePastedCloneUrl,
   repositoryOwnerAvatarUrl,
@@ -96,7 +97,6 @@ import { useThreadSearch } from "../state/queries";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
 import {
   appendBrowsePathSegment,
-  ensureBrowseDirectoryPath,
   findProjectByPath,
   getBrowseDirectoryPath,
   hasTrailingPathSeparator,
@@ -1028,12 +1028,11 @@ function OpenCommandPaletteDialog(props: {
       const environment = environments.find(
         (candidate) => candidate.environmentId === environmentId,
       );
-      const environmentSettings = environment?.serverConfig?.settings ?? null;
-      const baseDirectory = environmentSettings?.addProjectBaseDirectory?.trim() ?? "";
-      if (baseDirectory.length === 0) {
-        return "~/";
-      }
-      return ensureBrowseDirectoryPath(baseDirectory);
+      const serverConfig = environment?.serverConfig ?? null;
+      return getAddProjectInitialQuery(
+        serverConfig?.settings.addProjectBaseDirectory,
+        serverConfig?.addProjectDefaultDirectory,
+      );
     },
     [environments],
   );
