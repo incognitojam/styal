@@ -120,12 +120,8 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: true
+      - name: Setup cached dependencies
+        uses: ./.github/actions/setup-deps
 
       - name: Review pull request overlap with fork features
         if: github.event_name == 'pull_request'
