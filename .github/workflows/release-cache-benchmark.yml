@@ -115,34 +115,19 @@ jobs:
           vp run --filter @t3tools/desktop ensure:electron
           (cd apps/desktop && vp pack)
           test -f apps/desktop/dist-electron/preload.cjs
-  older_candidate:
-    name: Older candidate fallback
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: e23b889d4843a0a0d6910bf0c5b72ec180d1701a
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
-      - name: Setup cached dependencies
-        if: hashFiles('.github/actions/setup-deps/action.yml') != ''
-        uses: ./.github/actions/setup-deps
-        with:
-          filters: |
-            @styal/cli...
-            @t3tools/scripts...
-      - name: Setup dependencies for older candidates
-        if: hashFiles('.github/actions/setup-deps/action.yml') == ''
-        uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: |
-            args:
-              - --filter=@styal/cli...
-              - --filter=@t3tools/scripts...
-      - name: Build older candidate
-        run: vp run --filter ./apps/server build
+      - name: Verify nightly schema upgrade with filtered dependencies
+        if: matrix.profile == 'cli' && matrix.platform == 'linux-x64'
+        run: >-
+          git fetch --no-tags origin
+          '+refs/heads/nightly:refs/remotes/origin/nightly'
+
+          vp run --filter ./apps/server test:nightly-upgrade -- origin/nightly
+  archives:
+    name: Verify release archives
+    needs:
+      - dependencies
+    uses: ./.github/workflows/fork-cli-archives.yml
+    with:
+      ref: ${{ github.sha }}
+      version: 0.0.0-nightly.20260925.1
+      sign_macos: false
