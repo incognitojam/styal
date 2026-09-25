@@ -84,6 +84,7 @@ const makeTerminalManagerLayer = (
     }),
     closePreflight: () => Effect.die(new Error("unused")),
     close: () => Effect.void,
+    closeIdle: () => Effect.void,
     subscribe: overrides.subscribe ?? (() => Effect.succeed(() => undefined)),
     subscribeMetadata: () => Effect.succeed(() => undefined),
   });
