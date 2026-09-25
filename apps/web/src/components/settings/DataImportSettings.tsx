@@ -6,7 +6,9 @@ export function DataImportSettingsPanel() {
   return (
     <SettingsPageContainer>
       <SettingsSection id={searchableSetting("import-data").id} title="Import data">
-        <DataImportPanel source="legacy" />
+        <div className="p-3 sm:p-4">
+          <DataImportPanel source="legacy" />
+        </div>
       </SettingsSection>
     </SettingsPageContainer>
   );
