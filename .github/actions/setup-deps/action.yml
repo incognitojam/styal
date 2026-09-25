@@ -1,0 +1,81 @@
+name: Set up dependencies
+description: Restore installed dependencies without repeating pnpm linking and lifecycle scripts.
+inputs:
+  filters:
+    description: Optional pnpm workspace selectors, one per line. Empty installs every workspace.
+    default: ""
+runs:
+  using: composite
+  steps:
+    - uses: voidzero-dev/setup-vp@v1
+      with:
+        node-version-file: package.json
+        cache: false
+        run-install: false
+
+    - name: Resolve dependency cache key
+      id: key
+      shell: bash
+      env:
+        DEPENDENCY_HASH: ${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', 'package.json', 'apps/*/package.json', 'packages/*/package.json', 'infra/*/package.json', 'scripts/package.json', 'oxlint-plugin-t3code/package.json', 'patches/**', 'scripts/clean-tsgo-backups.mjs', '.github/actions/setup-deps/**') }}
+        INSTALL_FILTERS: ${{ inputs.filters }}
+      # Compute once before restore. Re-evaluating a recursive manifest glob in
+      # the cache post-step traverses node_modules and costs tens of seconds.
+      run: |
+        node --input-type=module <<'JS'
+        import { createHash } from 'node:crypto';
+        import { appendFileSync } from 'node:fs';
+        const filters = createHash('sha256').update(process.env.INSTALL_FILTERS).digest('hex');
+        const key = ['installed-deps-v1', process.env.RUNNER_OS, process.env.RUNNER_ARCH,
+          process.env.ImageOS, process.arch, process.versions.node, process.env.DEPENDENCY_HASH, filters].join('-');
+        appendFileSync(process.env.GITHUB_OUTPUT, `value=${key}\n`);
+        JS
+
+    - name: Restore installed dependencies
+      id: dependencies
+      uses: actions/cache/restore@v6
+      with:
+        path: |
+          node_modules
+          apps/*/node_modules
+          packages/*/node_modules
+          infra/*/node_modules
+          scripts/node_modules
+          oxlint-plugin-t3code/node_modules
+        # Native dependencies and the patched tsgo binary must match this host
+        # and the dependency/patch graph and install filters. Only exact hits skip install.
+        key: ${{ steps.key.outputs.value }}
+
+    - name: Repair restored Windows junctions
+      if: runner.os == 'Windows' && steps.dependencies.outputs.cache-hit == 'true'
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/repair-windows-links.mjs"
+
+    - name: Install dependencies
+      if: steps.dependencies.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        INSTALL_FILTERS: ${{ inputs.filters }}
+      run: |
+        args=()
+        while IFS= read -r filter; do
+          if [[ -n "$filter" ]]; then
+            args+=("--filter=$filter")
+          fi
+        done <<< "$INSTALL_FILTERS"
+        vp install --frozen-lockfile "${args[@]}"
+
+    # Save before release version alignment or native builds can mutate the
+    # dependency tree. A later job must restore the original Node installation.
+    - name: Save installed dependencies
+      if: steps.dependencies.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        key: ${{ steps.key.outputs.value }}
+        path: |
+          node_modules
+          apps/*/node_modules
+          packages/*/node_modules
+          infra/*/node_modules
+          scripts/node_modules
+          oxlint-plugin-t3code/node_modules
