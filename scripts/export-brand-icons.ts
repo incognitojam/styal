@@ -19,6 +19,11 @@ import {
   DEVELOPMENT_PUBLIC_ICON_OVERRIDES,
 } from "./lib/brand-assets.ts";
 import { encodePngIco, readPngDimensions, WINDOWS_ICON_SIZES } from "./lib/icon-export.ts";
+import {
+  addMacOsIconMargin,
+  MACOS_ICON_BODY_SIZE,
+  MACOS_ICON_CANVAS_SIZE,
+} from "./lib/macos-icon-safe-area.ts";
 
 const DESIGN_GENERATION = 26;
 const ICON_COMPOSER_EXECUTABLE_PARTS = [
@@ -195,6 +200,18 @@ export class IconExportEncodingError extends Schema.TaggedError<IconExportEncodi
   }
 }
 
+export class IconExportMacOsIconError extends Schema.TaggedError<IconExportMacOsIconError>()(
+  "IconExportMacOsIconError",
+  {
+    path: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    return `Could not finish the macOS icon at ${this.path}: expected an ${MACOS_ICON_BODY_SIZE}x${MACOS_ICON_BODY_SIZE} Icon Composer export or a finished ${MACOS_ICON_CANVAS_SIZE}x${MACOS_ICON_CANVAS_SIZE} icon.`;
+  }
+}
+
 export class IconExportAssetsStaleError extends Schema.TaggedError<IconExportAssetsStaleError>()(
   "IconExportAssetsStaleError",
   {
@@ -251,12 +268,16 @@ const ICON_VARIANTS = [
   },
 ] as const satisfies ReadonlyArray<IconVariant>;
 
+const MACOS_EXPORT_STEPS = [
+  "In Icon Composer's toolbar, select the ⊘ rendering (no Liquid Glass), then export each source with Platform: macOS pre-Tahoe, Appearance: Default, Size: Customize… 824pt, Scale: 1×, saving over the tracked PNG:",
+  ...ICON_VARIANTS.map((variant) => `- ${variant.source} -> ${variant.outputs.macos}`),
+  "Then run `vp run icons:export` again to add the macOS margin and shadow.",
+];
+
 const MACOS_EXPORT_CODEX_PROMPT = [
   "Use [@Computer](plugin://computer-use@openai-bundled) and the Icon Composer app to export the three macOS app icons in this repository.",
-  "For each project below, use Platform: macOS pre-Tahoe, Appearance: Default, Size: 1024pt, and Scale: 1×, then save the PNG to the exact destination:",
-  ...ICON_VARIANTS.map((variant) => `- ${variant.source} -> ${variant.outputs.macos}`),
-  "Do not resize, composite, or otherwise post-process the exported PNGs.",
-  "Verify every result is 1024×1024 and has the classic macOS safe area: an 824×824 opaque body inset 100px on every side, with only Icon Composer's native shadow extending beyond it.",
+  ...MACOS_EXPORT_STEPS,
+  `Verify every result is ${MACOS_ICON_CANVAS_SIZE}×${MACOS_ICON_CANVAS_SIZE} and has the classic macOS safe area: an ${MACOS_ICON_BODY_SIZE}×${MACOS_ICON_BODY_SIZE} opaque body inset 100px on every side, with only the drop shadow extending beyond it.`,
 ];
 
 const RepositoryRoot = Effect.service(Path.Path).pipe(
@@ -615,9 +636,8 @@ const logManualMacOsExportInstructions = Effect.fn("iconExport.logManualMacOsExp
   function* () {
     yield* Console.warn(
       [
-        "macOS icons require Icon Composer's GUI-only pre-Tahoe preset and were not changed.",
-        "Export each source with Platform: macOS pre-Tahoe, Appearance: Default, Size: 1024pt, Scale: 1×:",
-        ...ICON_VARIANTS.map((variant) => `- ${variant.source} -> ${variant.outputs.macos}`),
+        "macOS icon bodies need Icon Composer's GUI and are not rendered by this script.",
+        ...MACOS_EXPORT_STEPS,
         "See assets/README.md for the complete workflow.",
         "",
         "Copy/paste this prompt into Codex to perform the native exports:",
@@ -628,6 +648,28 @@ const logManualMacOsExportInstructions = Effect.fn("iconExport.logManualMacOsExp
     );
   },
 );
+
+/**
+ * Finishes a macOS icon that is still a raw 824pt Icon Composer export by adding the
+ * classic margin and shadow. Returns nothing for an icon that is already finished.
+ */
+const finishMacOsIcon = Effect.fn("iconExport.finishMacOsIcon")(function* (
+  repositoryRoot: string,
+  relativePath: string,
+) {
+  const contents = yield* readAuthoredIcon(repositoryRoot, relativePath);
+  const dimensions = yield* Effect.try({
+    try: () => readPngDimensions(contents),
+    catch: (cause) => new IconExportMacOsIconError({ path: relativePath, cause }),
+  });
+  if (dimensions.width === MACOS_ICON_CANVAS_SIZE && dimensions.height === MACOS_ICON_CANVAS_SIZE) {
+    return Option.none<Buffer>();
+  }
+  return yield* Effect.try({
+    try: () => Option.some(addMacOsIconMargin(contents)),
+    catch: (cause) => new IconExportMacOsIconError({ path: relativePath, cause }),
+  });
+});
 
 const writeAtomically = Effect.fn("iconExport.writeAtomically")(function* (
   repositoryRoot: string,
@@ -771,6 +813,14 @@ export const exportBrandIcons = Effect.fn("exportBrandIcons")(function* (checkOn
     );
     for (const [relativePath, contents] of variantAssets) {
       generated.set(relativePath, contents);
+    }
+  }
+
+  for (const variant of ICON_VARIANTS) {
+    const finished = yield* finishMacOsIcon(repositoryRoot, variant.outputs.macos);
+    if (Option.isSome(finished)) {
+      yield* Console.log(`Adding the macOS margin and shadow to ${variant.outputs.macos}.`);
+      generated.set(variant.outputs.macos, finished.value);
     }
   }
 
