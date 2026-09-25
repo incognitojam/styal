@@ -54,8 +54,8 @@ jobs:
       - name: Inspect restored dependency links
         run: |
           node --input-type=module <<'JS'
-          import { readdirSync, readlinkSync, statSync, existsSync, realpathSync } from 'node:fs';
-          import { join } from 'node:path';
+          import { readdirSync, readlinkSync, statSync, existsSync, unlinkSync, symlinkSync } from 'node:fs';
+          import { join, resolve, dirname } from 'node:path';
           let links = 0, broken = 0;
           function walk(dir) {
             for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -64,7 +64,11 @@ jobs:
                 links++;
                 try { statSync(path); } catch {
                   broken++;
-                  if (broken < 30 || e.name === 'vitest') console.log('BROKEN', path, '->', readlinkSync(path));
+                  const target = resolve(dirname(path), readlinkSync(path));
+                  if (!statSync(target).isDirectory()) throw new Error('Unexpected target: '+target);
+                  unlinkSync(path);
+                  symlinkSync(target, path, 'junction');
+                  statSync(path);
                 }
                 if (e.name === 'vitest') console.log('VITEST LINK', path, '->', readlinkSync(path));
               } else if (e.isDirectory()) walk(path);
