@@ -1230,7 +1230,10 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
   const stopSession: Adapter["stopSession"] = (threadId) =>
     withThreadLock(threadId, Effect.flatMap(requireSession(threadId), stopContext));
   const stopAll: Adapter["stopAll"] = () =>
-    Effect.forEach([...sessions.values()], stopContext, { discard: true });
+    Effect.forEach([...sessions.values()], stopContext, {
+      concurrency: "unbounded",
+      discard: true,
+    });
   yield* Effect.addFinalizer(() =>
     stopAll().pipe(
       Effect.catchCause((cause) =>

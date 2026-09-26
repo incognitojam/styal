@@ -2286,7 +2286,17 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         }),
       ),
     ).pipe(Effect.asVoid);
-    yield* Effect.forEach(currentAdapters, ([, adapter]) => adapter.stopAll()).pipe(Effect.asVoid);
+    // Stopping a session can wait for its process to exit. Stop everything at
+    // once so a restart does not run out its grace period and kill the server
+    // with provider processes still running.
+    const stopResults = yield* Effect.forEach(
+      currentAdapters,
+      ([, adapter]) => adapter.stopAll().pipe(Effect.result),
+      { concurrency: "unbounded" },
+    );
+    for (const result of stopResults) {
+      if (result._tag === "Failure") return yield* Effect.fail(result.failure);
+    }
     yield* McpSessionRegistry.revokeAllActiveMcpCredentials();
     McpProviderSession.clearAllMcpProviderSessions();
     const bindings = yield* directory.listBindings().pipe(Effect.orElseSucceed(() => []));

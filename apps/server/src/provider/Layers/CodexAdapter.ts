@@ -2730,7 +2730,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
 
   const stopAll: CodexAdapterShape["stopAll"] = () =>
     Effect.forEach(Array.from(sessions.values()), stopSessionInternal, {
-      concurrency: 1,
+      concurrency: "unbounded",
       discard: true,
     }).pipe(Effect.asVoid);
 

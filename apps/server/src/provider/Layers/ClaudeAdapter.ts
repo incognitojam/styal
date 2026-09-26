@@ -5170,8 +5170,12 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     contexts: ReadonlyArray<ClaudeSessionContext>,
     emitExitEvent: boolean,
   ) {
-    const results = yield* Effect.forEach(contexts, (context) =>
-      stopSessionInternal(context, { emitExitEvent }).pipe(Effect.result),
+    // Each stop can wait about two seconds for its CLI to exit. Stopping them
+    // together keeps shutdown within the service launcher's grace period.
+    const results = yield* Effect.forEach(
+      contexts,
+      (context) => stopSessionInternal(context, { emitExitEvent }).pipe(Effect.result),
+      { concurrency: "unbounded" },
     );
 
     for (const result of results) {
