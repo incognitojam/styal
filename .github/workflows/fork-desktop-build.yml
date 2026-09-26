@@ -365,6 +365,17 @@ jobs:
             convert -version
           fi
 
+      # Restored node_modules leave pnpm's store empty, so the staged
+      # production install would download every package. It gets its own
+      # store and metadata cache, in the home directory so that the store
+      # sits on the same drive as the staging directory and pnpm can link
+      # packages from it instead of copying them.
+      - name: Cache staged install packages
+        uses: actions/cache@v6
+        with:
+          path: ~/.styal-stage-pnpm
+          key: desktop-stage-packages-v1-${{ matrix.id }}-${{ hashFiles('pnpm-lock.yaml') }}
+
       - name: Build desktop artifact
         timeout-minutes: 90
         shell: bash
@@ -388,6 +399,10 @@ jobs:
           T3CODE_RELAY_URL: ${{ vars.RELAY_URL }}
         run: |
           set -euo pipefail
+
+          stage_pnpm_dir="$(node -p 'require("node:path").join(require("node:os").homedir(), ".styal-stage-pnpm")')"
+          export pnpm_config_store_dir="$stage_pnpm_dir/store"
+          export pnpm_config_cache_dir="$stage_pnpm_dir/cache"
 
           args=(
             --platform "${{ matrix.platform }}"
