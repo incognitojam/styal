@@ -2075,13 +2075,6 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
 
     const applyAttachmentSideEffects = Effect.fn("applyAttachmentSideEffects")(
       function* (event: OrchestrationEvent, sideEffects: AttachmentSideEffects) {
-        if (
-          sideEffects.deletedThreadIds.size === 0 &&
-          sideEffects.prunedThreadRelativePaths.size === 0
-        ) {
-          return;
-        }
-
         const deletedThreadIds = new Set<string>();
         for (const threadId of sideEffects.deletedThreadIds) {
           const recreatedLater = yield* eventStore.hasEventAfter({
@@ -2182,9 +2175,15 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         }),
       );
 
+      const hasCleanup =
+        attachmentSideEffects.deletedThreadIds.size > 0 ||
+        attachmentSideEffects.prunedThreadRelativePaths.size > 0;
       // Run this effect only after the caller's outer transaction commits.
+      // Most events have no cleanup, so they skip the call and write no cleanup span.
       // @effect-diagnostics-next-line returnEffectInGen:off
-      return applyAttachmentSideEffects(lastEvent, attachmentSideEffects).pipe(Effect.asVoid);
+      return hasCleanup
+        ? applyAttachmentSideEffects(lastEvent, attachmentSideEffects).pipe(Effect.asVoid)
+        : Effect.void;
     });
 
     const bootstrapProjector = (projector: ProjectorDefinition) =>
