@@ -130,7 +130,10 @@ An empty database is a bad test. Seed your worktree's `.styal` with a copy of re
 - Conventional commit titles, plain language: `fix(web): new threads no longer spike CPU`.
 - Body: the problem in a sentence or two, then how you fixed it. End with the model and harness that did the work.
 - **Upstream intake follows [the upstream intake runbook](docs/operations/upstream-tracking.md).** Upstream is never auto-synced. Intake batches land on `intake/**` branches through the promotion workflow, never through a pull request. Never rebase `main` onto upstream or force-push it.
-- In GitHub issue or PR prose, put upstream source references inside backticks and avoid account mentions. Actions summaries are not subject to that restriction.
+- How to mention an upstream PR or issue. A bare `#1234` always means the fork's #1234, so name the upstream repository:
+  - In your messages to us in this conversation, the agent session you are running in rather than anything posted to GitHub, write `pingdotgg/t3code#1234` or the full URL without backticks, so it links to the upstream PR or issue.
+  - In commit titles and messages you write, put upstream references inside backticks, such as `` `pingdotgg/t3code#1234` ``. Do not link to upstream or `@` mention upstream maintainers, because GitHub adds a cross-reference to the upstream PR or issue. Provenance trailers and upstream commit messages preserved during intake are exempt.
+  - In fork issue and PR text, put upstream references inside backticks and do not `@` mention upstream accounts, unless we intend to notify upstream. Actions summaries are not subject to that restriction.
 - When the pull request body is long, begin it with a `> [!NOTE]` callout containing a TL;DR.
 - **Rebase standalone branches onto latest main before opening.** Stale branches conflict and burn a review round.
 - When explicitly asked to open a pull request and meaningful final verification or evidence gathering remains, consider opening it as a draft after the implementation and focused checks are complete. This lets CI run in parallel with screenshots, recordings, or other final verification. Update the pull request body and evidence afterward, then mark it ready for review. If no further verification or evidence is needed, open it ready for review instead.
