@@ -5,6 +5,7 @@ import { DataImportPanel } from "../import/DataImportPanel";
 
 /** Keep selections mounted across the top-level Projects and Preferences steps. */
 export function OnboardingImportStep({
+  active,
   environmentIds,
   stage,
   setIsImporting,
@@ -13,6 +14,7 @@ export function OnboardingImportStep({
   onBack,
   onPreferencesAvailable,
 }: {
+  readonly active: boolean;
   readonly environmentIds: readonly EnvironmentId[];
   readonly stage: LegacyImportStage;
   readonly setIsImporting: (value: boolean) => void;
@@ -24,6 +26,7 @@ export function OnboardingImportStep({
   const [source, setSource] = useState<ImportSource | null>(null);
   return (
     <DataImportPanel
+      active={active}
       source={source}
       onSourceChange={setSource}
       stage={stage}

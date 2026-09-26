@@ -68,6 +68,7 @@ import { cn } from "../../lib/utils";
  * fresh install (no completed-onboarding flag, empty workspace). Flow per the
  * onboarding overhaul spec: connection choice → sign-in/pair (remote paths) →
  * agent setup with inline install terminal → projects → optional preferences → main screen.
+ * Projects and Preferences each import when the user moves past them.
  * Every step past the connection gate is skippable; the whole wizard is
  * re-runnable by clearing the flag.
  */
@@ -291,6 +292,7 @@ export function WelcomeWizard({
               <div hidden={!importStep} className="min-h-0">
                 <OnboardingImportStep
                   key={JSON.stringify(setupIds)}
+                  active={importStep}
                   environmentIds={setupIds}
                   stage={step === "preferences" ? "preferences" : "projects"}
                   setIsImporting={setIsImporting}

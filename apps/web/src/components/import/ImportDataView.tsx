@@ -9,7 +9,7 @@ import {
   RefreshCwIcon,
   TriangleAlertIcon,
 } from "lucide-react";
-import { type ReactNode, useId, useMemo } from "react";
+import { type ReactNode, type Ref, useId, useMemo } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 
 import { cn } from "../../lib/utils";
@@ -37,7 +37,7 @@ function formatCount(value: number): string {
   return value.toLocaleString();
 }
 
-function plural(value: number, singular: string, many = `${singular}s`): string {
+export function plural(value: number, singular: string, many = `${singular}s`): string {
   return `${formatCount(value)} ${value === 1 ? singular : many}`;
 }
 
@@ -597,7 +597,8 @@ function summaryText(summary: ComputerImportSummary): string {
  * source while projects are picked, Preferences on its own step; one scroller for
  * the chosen computer; one footer that always states the whole selection and
  * commits it. Setup and Settings render the shared content; setup reaches this
- * view once per top-level step, Settings shows every section on one page.
+ * view once per top-level step and commits each step as it is left, Settings shows
+ * every section on one page.
  */
 export function ImportDataView({
   computers,
@@ -608,12 +609,15 @@ export function ImportDataView({
   setup,
   source,
   stage,
-  onContinue,
+  nextStep,
   checkingPreferences,
+  finishing,
   onBack,
   progress,
   onImport,
   onSkip,
+  primaryRef,
+  skipRef,
   message,
   error,
   children,
@@ -626,12 +630,17 @@ export function ImportDataView({
   setup: boolean;
   source: ImportSource | null;
   stage: LegacyImportStage;
-  onContinue?: (() => void) | undefined;
+  /** Setup continues to Preferences after this step instead of finishing. */
+  nextStep: boolean;
   checkingPreferences: boolean;
+  /** Setup is completing after its last step, with nothing left to import. */
+  finishing: boolean;
   onBack?: (() => void) | undefined;
   progress: string | null;
   onImport: () => void;
   onSkip: () => void;
+  primaryRef?: Ref<HTMLButtonElement>;
+  skipRef?: Ref<HTMLButtonElement>;
   message: string | null;
   error: string | null;
   children: ReactNode;
@@ -778,37 +787,40 @@ export function ImportDataView({
           ) : null}
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-          {setup && stage === "projects" ? (
-            <Button variant="ghost" onClick={onSkip} disabled={busy || checkingPreferences}>
-              {onContinue ? "Skip projects" : "Skip for now"}
+          {setup ? (
+            <Button
+              ref={skipRef}
+              variant="ghost"
+              onClick={onSkip}
+              disabled={busy || checkingPreferences}
+            >
+              {stage === "preferences"
+                ? "Skip preferences"
+                : nextStep
+                  ? "Skip projects"
+                  : "Skip for now"}
             </Button>
           ) : null}
-          {onContinue ? (
-            <Button onClick={onContinue} disabled={busy || checkingPreferences}>
-              {checkingPreferences ? (
-                <LoaderCircleIcon className="animate-spin" aria-hidden />
-              ) : null}
-              {checkingPreferences ? "Checking preferences…" : "Continue"}
-            </Button>
-          ) : (
-            <Button
-              onClick={onImport}
-              disabled={busy || checkingPreferences || (!setup && !canImport)}
-            >
-              {busy || checkingPreferences ? (
-                <LoaderCircleIcon className="animate-spin" aria-hidden />
-              ) : null}
-              {busy
+          <Button
+            ref={primaryRef}
+            onClick={onImport}
+            disabled={busy || checkingPreferences || !canImport}
+          >
+            {busy || checkingPreferences ? (
+              <LoaderCircleIcon className="animate-spin" aria-hidden />
+            ) : null}
+            {finishing
+              ? "Finishing…"
+              : busy
                 ? "Importing…"
                 : checkingPreferences
                   ? "Checking preferences…"
-                  : setup
-                    ? canImport
-                      ? "Import & finish"
-                      : "Finish"
-                    : "Import"}
-            </Button>
-          )}
+                  : !setup
+                    ? "Import"
+                    : nextStep
+                      ? "Import & continue"
+                      : "Import & finish"}
+          </Button>
         </div>
       </div>
     </div>

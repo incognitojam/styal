@@ -1,5 +1,5 @@
 import { ChevronRightIcon, FolderIcon, LoaderCircleIcon, TriangleAlertIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 import { cn } from "../../lib/utils";
 import { ClaudeAI, OpenAI } from "../Icons";
@@ -11,12 +11,14 @@ import type { ImportSource } from "./types";
  * project rows use once the flow is entered, so the choice stays recognisable.
  */
 function SourceChoice({
+  ref,
   icon,
   title,
   detail,
   disabled,
   onClick,
 }: {
+  readonly ref?: Ref<HTMLButtonElement> | undefined;
   readonly icon: ReactNode;
   readonly title: string;
   readonly detail: string;
@@ -25,6 +27,7 @@ function SourceChoice({
 }) {
   return (
     <button
+      ref={ref}
       type="button"
       disabled={disabled}
       onClick={onClick}
@@ -54,6 +57,7 @@ function SourceChoice({
  * Settings never renders the chooser: only T3 Code migration is offered there.
  */
 export function ImportSourceChooser({
+  firstSourceRef,
   onSelect,
   onSkip,
   busy,
@@ -61,6 +65,7 @@ export function ImportSourceChooser({
   skipLabel = "Skip for now",
   skipDisabled = false,
 }: {
+  firstSourceRef?: Ref<HTMLButtonElement>;
   onSelect: (source: ImportSource) => void;
   onSkip: () => void;
   busy: boolean;
@@ -76,6 +81,7 @@ export function ImportSourceChooser({
 
       <div className="mt-5 flex min-w-0 flex-col gap-2">
         <SourceChoice
+          ref={firstSourceRef}
           icon={<FolderIcon className="size-4.5" aria-hidden />}
           title="T3 Code"
           detail="Projects and conversations"
