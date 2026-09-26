@@ -9,6 +9,10 @@
       "reason": "Found while adding Claude Opus 5.5: the model picker misclassifies qualified Codex IDs such as openai.gpt-*."
     },
     {
+      "pr": 10027,
+      "reason": "The styal Link authorization complete page still has the blue and indigo banner from before the cotton reel artwork (fork #477); this replaces it with a plain card. Swap in the styal wordmark on intake."
+    },
+    {
       "pr": 10411,
       "reason": "Imported early from its unmerged commits; when it merges, the queue takes it and must reconcile with that import and the styal naming from fork #425."
     },
