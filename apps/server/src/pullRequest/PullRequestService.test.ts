@@ -1245,6 +1245,7 @@ it.effect("hands the host the strategy an armed merge was asked for", () =>
             };
             return Effect.void;
           },
+          getChangeRequestSummary: () => Effect.succeed(changeRequest(1, "2026-07-02T00:00:00Z")),
         }),
       ],
     });
@@ -1256,6 +1257,73 @@ it.effect("hands the host the strategy an armed merge was asked for", () =>
     yield* service.runAction({ ...reference, action: "disable-auto-merge" });
     assert.deepStrictEqual(ranWith, { action: "disable-auto-merge" });
   }),
+);
+
+it.effect(
+  "lets a viewer who may merge ask for auto-merge on a pull request that is already ready",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const mergedAt = "2026-09-03T02:00:00.000Z";
+        let ranWith: { readonly action: string; readonly mergeMethod?: string } | null = null;
+        const service = yield* makeService({
+          projects: [
+            project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" }),
+          ],
+          providers: [
+            fakeProvider("github", {
+              capabilities: {
+                diff: true,
+                comment: true,
+                actions: ["merge", "enable-auto-merge", "disable-auto-merge"],
+                mergeMethods: ["merge", "squash"],
+                search: true,
+                reactions: true,
+                review: FULL_REVIEW,
+                reviewers: FULL_REVIEWERS,
+              },
+              // GitHub withholds auto-merge from a pull request with nothing left to wait on.
+              getViewerPermissions: () =>
+                Effect.succeed({
+                  actions: ["merge"],
+                  comment: true,
+                  resolve: true,
+                  verdicts: ["comment", "approve", "request-changes"],
+                  requestReviewers: true,
+                }),
+              runAction: (input) => {
+                ranWith = {
+                  action: input.action,
+                  ...(input.mergeMethod === undefined ? {} : { mergeMethod: input.mergeMethod }),
+                };
+                return Effect.void;
+              },
+              // `gh pr merge --auto` merged it on the spot.
+              getChangeRequestSummary: () =>
+                Effect.succeed({ ...changeRequest(1, mergedAt), state: "merged" as const }),
+            }),
+          ],
+        });
+        const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+        const merges = yield* service.subscribeMerges;
+        const observedMerge = yield* Stream.runHead(merges).pipe(
+          Effect.forkChild({ startImmediately: true }),
+        );
+        yield* TestClock.setTime(Date.parse(mergedAt));
+
+        yield* service.runAction({
+          ...reference,
+          action: "enable-auto-merge",
+          mergeMethod: "squash",
+        });
+
+        assert.deepStrictEqual(ranWith, { action: "enable-auto-merge", mergeMethod: "squash" });
+        assert.deepStrictEqual(Option.getOrThrow(yield* Fiber.join(observedMerge)), {
+          ...reference,
+          mergedAt,
+        });
+      }),
+    ),
 );
 
 it.effect("refuses an auto-merge the host never claimed, without asking it", () =>

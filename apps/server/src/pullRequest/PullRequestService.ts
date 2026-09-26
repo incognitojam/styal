@@ -1533,7 +1533,15 @@ export const make = Effect.gen(function* () {
         // above do not.
         return viewerPermissionsOf(project, input, "runAction").pipe(
           Effect.flatMap((viewer): Effect.Effect<string, PullRequestError> => {
-            if (!viewer.actions.includes(input.action)) {
+            // `merge` says whether this viewer's role may merge. GitHub's `enable-auto-merge` also
+            // depends on the pull request's state, and is false once nothing is left to wait on.
+            // That false is about the state, not about access, and `gh pr merge --auto` merges such
+            // a pull request immediately. A panel that went stale after the last check passed
+            // still offers auto-merge, so a viewer who may merge is let through.
+            const allowed =
+              viewer.actions.includes(input.action) ||
+              (input.action === "enable-auto-merge" && viewer.actions.includes("merge"));
+            if (!allowed) {
               return Effect.fail(
                 new PullRequestOperationError({
                   operation: "runAction",
@@ -2566,8 +2574,9 @@ export const make = Effect.gen(function* () {
     const repository = yield* runAction(input);
     bumpRefEpoch({ ...input, repository });
     listingsEpoch = ++epochCounter;
-    if (input.action === "merge") {
-      // A successful merge action can merely enqueue the PR or enable auto-merge.
+    if (input.action === "merge" || input.action === "enable-auto-merge") {
+      // A merge can merely enqueue the PR or arm auto-merge, and arming it merges a PR that was
+      // already mergeable, so either may or may not have merged.
       const confirmed = yield* summaryUncached({ ...input, repository }).pipe(
         Effect.catch((error) =>
           Effect.logWarning("failed to confirm pull request merge", { error }).pipe(
