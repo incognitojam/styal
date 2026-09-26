@@ -135,7 +135,7 @@ An empty database is a bad test. Seed your worktree's `.styal` with a copy of re
 - **Rebase standalone branches onto latest main before opening.** Stale branches conflict and burn a review round.
 - When explicitly asked to open a pull request and meaningful final verification or evidence gathering remains, consider opening it as a draft after the implementation and focused checks are complete. This lets CI run in parallel with screenshots, recordings, or other final verification. Update the pull request body and evidence afterward, then mark it ready for review. If no further verification or evidence is needed, open it ready for review instead.
 - UI changes need before/after images. Motion or timing needs a short video.
-- Label a PR `preview:web` for a hosted web preview or `preview:mac` for an unsigned Apple Silicon DMG, rebuilt on every push. See [PR previews](docs/operations/development.md#pr-previews).
+- Label a PR `preview:web` for a hosted web preview or `preview:mac` for an unsigned Apple Silicon DMG, rebuilt on every push. See [PR previews](docs/operations/development.md#pr-previews) for setup and for handing a build over.
 - Upload PR evidence to GitHub. Never commit PR-only screenshots or assets such as `.github/pr-assets/`.
 - One concern per PR. If the description says "also", split it.
 - When babysitting: poll checks and comments newer than the last push, verify each bot finding against the source, fix real ones, dismiss false positives with a written reason. Stay quiet when nothing is new. Stop when the bots are green on the latest commit.
