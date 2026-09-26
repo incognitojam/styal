@@ -3436,6 +3436,79 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("stopAll closes every session before any process has exited", () => {
+    const queries: FakeClaudeQuery[] = [];
+    const cleanupStarted: Array<Promise<void>> = [];
+    let releaseCleanup: () => void = () => undefined;
+    const cleanupReleased = new Promise<void>((resolve) => {
+      releaseCleanup = resolve;
+    });
+    const layer = Layer.effect(
+      ClaudeAdapter,
+      Effect.gen(function* () {
+        const claudeConfig = decodeClaudeSettings({});
+        return yield* makeClaudeAdapter(claudeConfig, {
+          createQuery: () => {
+            const query = new FakeClaudeQuery();
+            const iterator = query[Symbol.asyncIterator]();
+            // The SDK's iterator cleanup waits for the CLI process to exit.
+            let signalCleanupStarted: () => void = () => undefined;
+            cleanupStarted.push(
+              new Promise<void>((resolve) => {
+                signalCleanupStarted = resolve;
+              }),
+            );
+            Object.assign(query, {
+              [Symbol.asyncIterator]: () => ({
+                ...iterator,
+                return: async () => {
+                  signalCleanupStarted();
+                  await cleanupReleased;
+                  return { done: true as const, value: undefined };
+                },
+              }),
+            });
+            queries.push(query);
+            return query;
+          },
+        });
+      }),
+    ).pipe(
+      Layer.provideMerge(ServerConfig.layerTest("/tmp/claude-adapter-test", "/tmp")),
+      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(NodeServices.layer),
+    );
+
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      for (const threadId of [THREAD_ID, RESUME_THREAD_ID]) {
+        yield* adapter.startSession({
+          threadId,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        yield* adapter.sendTurn({ threadId, input: "hello", attachments: [] });
+      }
+
+      const stopFiber = yield* adapter.stopAll().pipe(Effect.forkChild);
+      // Sequential stops would never start the second cleanup while the first
+      // is waiting for its process.
+      yield* Effect.promise(() => Promise.all(cleanupStarted));
+      assert.deepEqual(
+        queries.map((query) => query.closeCalls),
+        [1, 1],
+      );
+      releaseCleanup();
+      yield* Fiber.join(stopFiber);
+
+      assert.equal(yield* adapter.hasSession(THREAD_ID), false);
+      assert.equal(yield* adapter.hasSession(RESUME_THREAD_ID), false);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(layer),
+    );
+  });
+
   it.effect("keeps a resumed replacement session during slow stop cleanup", () => {
     const queries: FakeClaudeQuery[] = [];
     let signalCleanupStarted: () => void = () => undefined;

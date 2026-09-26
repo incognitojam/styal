@@ -1232,10 +1232,13 @@ export function makeCursorAdapter(
       });
 
     const stopAll: CursorAdapterShape["stopAll"] = () =>
-      Effect.forEach(sessions.values(), stopSessionInternal, { discard: true });
+      Effect.forEach(Array.from(sessions.values()), stopSessionInternal, {
+        concurrency: "unbounded",
+        discard: true,
+      });
 
     yield* Effect.addFinalizer(() =>
-      Effect.forEach(sessions.values(), stopSessionInternal, { discard: true }).pipe(
+      stopAll().pipe(
         Effect.catch((cause) =>
           Effect.logError("Failed to emit Cursor session shutdown event.", { cause }),
         ),
