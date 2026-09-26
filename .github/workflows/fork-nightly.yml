@@ -296,6 +296,14 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
+      # Release scripts come from this workflow's commit, not the released
+      # source, which can predate them.
+      - name: Checkout release scripts
+        uses: actions/checkout@v7
+        with:
+          path: release-tools
+          sparse-checkout: .github/scripts
+
       - name: Download release assets
         uses: actions/download-artifact@v8
         with:
@@ -330,7 +338,7 @@ jobs:
           git fetch --no-tags origin "$FORK_SOURCE_REF"
           git rev-parse --verify "${FORK_SOURCE_REF}^{commit}" >/dev/null
           git rev-parse --verify "${UPSTREAM_REF}^{commit}" >/dev/null
-          source .github/scripts/release-changelog.sh
+          source release-tools/.github/scripts/release-changelog.sh
           render_release_notes "$GITHUB_REPOSITORY" "$PREVIOUS_TAG" "$NEW_TAG" \
             "$FORK_SOURCE_REF" "$UPSTREAM_REF" > release-notes.md
 

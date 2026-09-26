@@ -221,6 +221,14 @@ jobs:
           ref: ${{ needs.prepare.outputs.ref }}
           fetch-depth: 0
 
+      # Release scripts come from this workflow's commit, not the released
+      # source, which can predate them.
+      - name: Checkout release scripts
+        uses: actions/checkout@v7
+        with:
+          path: release-tools
+          sparse-checkout: .github/scripts
+
       - name: Download release assets
         uses: actions/download-artifact@v8
         with:
@@ -254,7 +262,7 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
-          source .github/scripts/release-changelog.sh
+          source release-tools/.github/scripts/release-changelog.sh
           previous_stable=$(latest_stable_tag "$NEW_TAG")
           if [[ -n "$previous_stable" ]]; then
             git fetch --no-tags https://github.com/pingdotgg/t3code.git main
