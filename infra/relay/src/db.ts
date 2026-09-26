@@ -59,10 +59,14 @@ export const NeonDatabase = Effect.gen(function* () {
       : yield* Neon.Project.ref("RelayNeonProject", { stage: "prod" });
   // Personal stages fork a copy-on-write branch off the project's default
   // branch, so dev data stays isolated while new migrations apply branch-only.
+  // Their compute is capped at 1 CU instead of the project's 8 CU default.
   const branch =
     mode === "stage-branch"
       ? yield* Neon.Branch("RelayNeonBranch", {
           project,
+          endpoints: [
+            { type: "read_write", autoscalingLimitMinCu: 0.25, autoscalingLimitMaxCu: 1 },
+          ],
           migrations: { dir: schema.out, table: "relay_migrations" },
         })
       : undefined;

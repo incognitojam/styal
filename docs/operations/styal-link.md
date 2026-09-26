@@ -24,6 +24,7 @@ JWT template, and the `t3-code-relay` audience.
 | macOS bundle ID         | `build.styal.app`, `build.styal.app.preview` (PR previews)                                                                               | `DESKTOP_APP_ID`, `scripts/build-desktop-artifact.ts`          |
 | Clerk application       | `styal` (`app_3IPih12l7JcyeHP2MlqFOESKdGN`)                                                                                              | Clerk Dashboard                                                |
 | Relay                   | `https://relay.styal.build`, deployed by `deploy-relay.yml` on push to main                                                              | `infra/relay/README.md`                                        |
+| Development relay       | `https://relay-dev.styal.build` (stage `dev`, development Clerk), deployed after the production relay                                    | `deploy-relay.yml`                                             |
 | Relay database          | Neon project `styal-relay` (`divine-frog-52827132`, `aws-eu-west-2`): prod adopts its `production` branch, dev stages fork Neon branches | `infra/relay/src/db.ts`                                        |
 | Relay API zone          | `styal.build` (`RELAY_API_ZONE_NAME`), so the relay serves `relay.styal.build`                                                           | `production` environment variable                              |
 | Managed tunnel zone     | `styal.link` (`RELAY_TUNNEL_ZONE_NAME`)                                                                                                  | `production` environment variable                              |
@@ -93,10 +94,13 @@ values live on the `production` environment, which can also shadow the Clerk var
 ever need to diverge. The preview job treats the three Clerk values as all-or-nothing (a partial
 set fails the build) and builds Link-disabled with a notice while `RELAY_URL` is unset.
 
-The development instance never appears in CI. It exists for local development: the repository-root
-`.env` carries its identifiers, paired with a personal relay stage
-(`vp run --filter t3code-relay deploy` with any stage name other than `prod`) so dev-Clerk tokens
-are verified by a dev-Clerk relay.
+No client build in CI uses the development instance. It exists for local development: the
+repository-root `.env` carries its identifiers (`.env.development.example`), paired with the shared
+`dev` relay stage so dev-Clerk tokens are verified by a dev-Clerk relay. `deploy-relay.yml` deploys
+that stage after production on every push to `main`, reusing the production environment's
+deployment credentials with the development instance's `CLERK_DEV_SECRET_KEY`. To try relay changes
+before they merge, deploy a personal stage (`vp run --filter t3code-relay deploy` with any stage
+name other than `prod` or `dev`). Personal stages, including `dev`, cap their Neon compute at 1 CU.
 
 Relay deployment (`deploy-relay.yml`) has its own set of variables and secrets — Cloudflare, Neon,
 Axiom, optional APNs, `CLERK_SECRET_KEY`, `CLERK_JWT_AUDIENCE=t3-code-relay` — listed in
@@ -106,10 +110,11 @@ app (`deploy-web.yml`) needs `CLOUDFLARE_ACCOUNT_ID`, `STYAL_WEB_DOMAIN`, and th
 
 ## Deployment credentials
 
-The four sensitive secrets — `CLOUDFLARE_API_TOKEN`, `CLERK_SECRET_KEY`, `NEON_API_KEY`,
-`AXIOM_TOKEN` — live **only** in the `production` GitHub environment, which is restricted to
-deployments from `main`. No PR or fork workflow can read them; repository-level secrets hold only
-Apple-signing and release plumbing. Three of them have non-obvious shape requirements:
+The sensitive secrets — `CLOUDFLARE_API_TOKEN`, `CLERK_SECRET_KEY`, `CLERK_DEV_SECRET_KEY`,
+`NEON_API_KEY`, `AXIOM_TOKEN` — live **only** in the `production` GitHub environment, which is
+restricted to deployments from `main`. No PR or fork workflow can read them; repository-level
+secrets hold only Apple-signing and release plumbing. Three of them have non-obvious shape
+requirements:
 
 - `CLOUDFLARE_API_TOKEN` must be the superuser token minted by
   `./infra/relay/node_modules/.bin/alchemy cloudflare create-token --all-permissions`. The relay
@@ -134,15 +139,11 @@ that still carries one queues forever.
 
 ## Local source builds
 
-Connect is disabled in a fresh clone. Put the development identifiers in the ignored
-repository-root `.env` (or `.env.local`):
-
-```dotenv
-T3CODE_CLERK_PUBLISHABLE_KEY=<styal dev publishable key>
-T3CODE_CLERK_JWT_TEMPLATE=t3-relay
-T3CODE_CLERK_CLI_OAUTH_CLIENT_ID=<dev CLI OAuth client ID>
-T3CODE_RELAY_URL=<relay URL, written automatically by a relay deploy>
-```
+Connect is disabled in a fresh clone. Copy `.env.development.example` to the ignored repository-root
+`.env` (or `.env.local`). It carries the development instance's identifiers and the shared
+development relay; a personal relay stage deploy overwrites the relay URL. `.env.production.example`
+holds the values CI builds with, for local builds of release artifacts only: production Clerk
+rejects sign-ins from `localhost`.
 
 Do not `cp .env.example .env`: the tracked example is upstream's and points a styal-branded build at
 T3's production Clerk instance and relay. It is left untouched so upstream picks stay clean.

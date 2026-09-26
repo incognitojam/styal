@@ -40,5 +40,7 @@ node_modules/
 *.log
 .env*
 !.env.example
+!.env.development.example
+!.env.production.example
 
 /apps/server/dist-exe/
