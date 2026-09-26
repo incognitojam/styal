@@ -1302,7 +1302,7 @@ features:
   - id: fork-managed-link
     title: Operate styal Link independently
     status: maintained
-    prs: [264, 265, 266, 269, 352, 475]
+    prs: [264, 265, 266, 269, 317, 352, 475]
     invariants:
       - User-facing cloud connection surfaces target the styal-hosted app, relay, native schemes, and Clerk application while protocol-level T3 Connect identifiers remain compatible with upstream clients and servers.
       - The user-facing CLI exposes styal Link as `styal link`; the upstream `connect` spelling remains an unlisted compatibility alias.
@@ -1311,6 +1311,7 @@ features:
       - The relay uses the fork's independently deployed database and permits installations without APNs, and managed tunnel hosts remain outside the product origin's registrable domain.
       - The managed tunnel zone apex redirects to the styal repository while environment-specific tunnel hosts remain available for remote connections.
       - With managed tunnel cleanup off, relay maintenance runs hourly so idle database compute can suspend; dry-run and enabled cleanup use the upstream five-minute recovery cadence.
+      - The fork-operated relay Worker reports its traces as service `styal-relay-worker`.
     implementation_paths:
       - .github/workflows/deploy-relay.yml
       - .github/workflows/deploy-web.yml
@@ -1331,6 +1332,7 @@ features:
       - infra/relay/src/apexRedirect.ts
       - infra/relay/src/db.ts
       - infra/relay/src/dbConfig.ts
+      - infra/relay/src/observability.ts
       - infra/relay/src/worker.ts
       - infra/web/alchemy.run.ts
       - packages/client-runtime/src/relay/managedRelayState.ts
@@ -1345,6 +1347,7 @@ features:
       - infra/relay/src/Config.ts
       - infra/relay/src/db.ts
       - infra/relay/src/dbConfig.ts
+      - infra/relay/src/observability.ts
       - infra/relay/src/worker.ts
       - packages/client-runtime/src/relay/managedRelayState.ts
       - packages/shared/src/connectAuth.ts
@@ -1360,6 +1363,7 @@ features:
       - infra/relay/src/apexRedirect.test.ts
       - infra/relay/src/auth/DpopProofs.test.ts
       - infra/relay/src/dbConfig.test.ts
+      - infra/relay/src/observability.test.ts
       - packages/client-runtime/src/relay/managedRelayState.test.ts
       - packages/shared/src/connectAuth.test.ts
     upstream:

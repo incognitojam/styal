@@ -63,10 +63,9 @@ it.effect("exports the relay resource and schema error attributes", () =>
     const request = yield* Deferred.await(exportedRequest).pipe(Effect.timeout("1 second"));
     const payload = (yield* decodeJson(request.body)) as OtlpTracer.TraceData;
     const resourceAttributes = Object.fromEntries(
-      (payload.resourceSpans[0]?.resource?.attributes ?? []).map((attribute) => [
-        attribute.key,
-        otlpAttributeValue(attribute.value),
-      ]),
+      payload.resourceSpans
+        .flatMap((resourceSpan) => resourceSpan.resource.attributes)
+        .map((attribute) => [attribute.key, otlpAttributeValue(attribute.value)]),
     );
     const span = payload.resourceSpans
       .flatMap((resourceSpan) => resourceSpan.scopeSpans)
@@ -83,6 +82,7 @@ it.effect("exports the relay resource and schema error attributes", () =>
     expect(request.dataset).toBe("relay-test-traces");
     expect(resourceAttributes).toMatchObject({
       "service.name": "styal-relay-worker",
+      "service.namespace": "t3code",
       "service.runtime": "cloudflare-worker",
       "service.component": "relay",
     });
