@@ -960,7 +960,10 @@ describe("ProviderCommandReactor", () => {
     await waitFor(async () => {
       const readModel = await harness.readModel();
       const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
-      return thread?.session?.status === "error";
+      return (
+        thread?.session?.status === "error" &&
+        thread.activities.some((activity) => activity.kind === "provider.turn.start.failed")
+      );
     });
 
     const expectedError = `Project folder not found: ${harness.workspaceRoot}. It may have been moved or deleted.`;
