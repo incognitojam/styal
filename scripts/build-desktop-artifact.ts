@@ -56,6 +56,37 @@ const DESKTOP_APP_ID = "build.styal.app";
 // out of upstream T3 Code's install folder.
 const DESKTOP_PACKAGE_NAME = "styal";
 const WINDOWS_INSTALLER_GUID = "0903b661-4e4a-53c0-8d0a-a5ba319f6601";
+
+interface DesktopPackageIdentity {
+  readonly appId: string;
+  readonly packageName: string;
+  readonly windowsInstallerGuid: string;
+  readonly protocolSchemes: ReadonlyArray<string>;
+  readonly linuxWmClass: string;
+}
+
+// Pull request previews install beside stable and nightly with their own app
+// id, install directory, and URL scheme. Keep these in step with the preview
+// entry in apps/desktop/src/app/DesktopInstallVariant.ts.
+const PREVIEW_PACKAGE_IDENTITY: DesktopPackageIdentity = {
+  appId: "build.styal.app.preview",
+  packageName: "styal-preview",
+  windowsInstallerGuid: "3388c33a-8bc0-4e28-90c9-b06db7e034bd",
+  protocolSchemes: ["styal-preview"],
+  linuxWmClass: "styal-preview",
+};
+
+const PRODUCTION_PACKAGE_IDENTITY: DesktopPackageIdentity = {
+  appId: DESKTOP_APP_ID,
+  packageName: DESKTOP_PACKAGE_NAME,
+  windowsInstallerGuid: WINDOWS_INSTALLER_GUID,
+  protocolSchemes: ["styal", "styal-dev"],
+  linuxWmClass: "styal",
+};
+
+export function resolveDesktopPackageIdentity(version: string): DesktopPackageIdentity {
+  return isDesktopPreviewVersion(version) ? PREVIEW_PACKAGE_IDENTITY : PRODUCTION_PACKAGE_IDENTITY;
+}
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
@@ -2582,11 +2613,21 @@ function isDesktopPreviewVersion(version: string): boolean {
   return /-pr\./.test(version);
 }
 
+// Previews carry the development artwork so they are not mistaken for a release.
 export function resolveDesktopWebAssetBrand(version: string): WebAssetBrand {
+  if (isDesktopPreviewVersion(version)) return "development";
   return resolveWebAssetBrandForChannel(resolveDesktopUpdateChannel(version));
 }
 
 export function resolveDesktopBuildIconAssets(version: string): DesktopBuildIconAssets {
+  if (isDesktopPreviewVersion(version)) {
+    return {
+      macIconPng: BRAND_ASSET_PATHS.developmentDesktopIconPng,
+      linuxIconPng: BRAND_ASSET_PATHS.developmentUniversalIconPng,
+      windowsIconIco: BRAND_ASSET_PATHS.developmentWindowsIconIco,
+    };
+  }
+
   if (resolveDesktopUpdateChannel(version) === "nightly") {
     return {
       macIconPng: BRAND_ASSET_PATHS.nightlyMacIconPng,
@@ -2645,8 +2686,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   wslRuntimeBundled = false,
   arch?: typeof BuildArch.Type,
 ) {
+  const packageIdentity = resolveDesktopPackageIdentity(version);
   const buildConfig: Record<string, unknown> = {
-    appId: DESKTOP_APP_ID,
+    appId: packageIdentity.appId,
     productName: resolveDesktopProductName(version),
     artifactName: "styal-${version}-${arch}.${ext}",
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
@@ -2700,7 +2742,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       protocols: [
         {
           name: "styal",
-          schemes: ["styal", "styal-dev"],
+          schemes: [...packageIdentity.protocolSchemes],
         },
       ],
       ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
@@ -2748,12 +2790,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       protocols: [
         {
           name: "styal",
-          schemes: ["styal", "styal-dev"],
+          schemes: [...packageIdentity.protocolSchemes],
         },
       ],
       desktop: {
         entry: {
-          StartupWMClass: "styal",
+          StartupWMClass: packageIdentity.linuxWmClass,
         },
       },
     };
@@ -2767,7 +2809,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       // upstream process for the fork when both once shared an install path.
       // customInstall removes the superseded registration after this fresh
       // install succeeds; later styal upgrades use the safe uninstaller.
-      guid: WINDOWS_INSTALLER_GUID,
+      guid: packageIdentity.windowsInstallerGuid,
       include: "installer.nsh",
       // Keep blockmap-based differential downloads enabled while changing the
       // installed file topology. The optimization is in the payload shape, not
@@ -3741,7 +3783,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       ? path.join(stageAppDir, WINDOWS_SERVER_RESOURCE_SOURCE_DIR, WINDOWS_SERVER_ASAR_RESOURCE)
       : undefined;
   const stagePackageJson: StagePackageJson = {
-    name: DESKTOP_PACKAGE_NAME,
+    name: resolveDesktopPackageIdentity(appVersion).packageName,
     version: appVersion,
     buildVersion: appVersion,
     t3codeCommitHash: commitHash,

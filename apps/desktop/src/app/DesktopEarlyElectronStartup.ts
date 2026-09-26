@@ -10,6 +10,11 @@ import {
   type LinuxPasswordStorePreference,
 } from "../linuxSecretStorage.ts";
 import {
+  DESKTOP_INSTALL_IDENTITIES,
+  resolveDesktopInstallVariant,
+  type DesktopInstallVariant,
+} from "./DesktopInstallVariant.ts";
+import {
   resolveDesktopBaseDir,
   resolveDesktopStateDir,
   type JoinPath,
@@ -17,6 +22,7 @@ import {
 
 interface EarlyDesktopSettingsInput {
   readonly env: NodeJS.ProcessEnv;
+  readonly appVersion: string;
   readonly homeDirectory: string;
   readonly joinPath: JoinPath;
   readonly readFileString: (path: string) => string;
@@ -25,14 +31,11 @@ interface EarlyDesktopSettingsInput {
 type EarlyLinuxElectronOptionsInput = EarlyDesktopSettingsInput;
 
 export interface EarlyLinuxElectronOptions {
-  readonly isDevelopment: boolean;
+  readonly variant: DesktopInstallVariant;
   readonly linuxWmClass: string;
   readonly linuxDesktopEntryName: string;
   readonly passwordStore: LinuxPasswordStoreSwitch | null;
 }
-
-export const resolveLinuxDesktopEntryName = (isDevelopment: boolean): string =>
-  isDevelopment ? "build.styal.Styal.Development.desktop" : "build.styal.Styal.desktop";
 
 const trimNonEmpty = (value: string | undefined): string | null => {
   const trimmed = value?.trim();
@@ -46,11 +49,18 @@ const EarlyDesktopSettingsJson = fromLenientJson(
 );
 const decodeEarlyDesktopSettingsJson = Schema.decodeSync(EarlyDesktopSettingsJson);
 
-const isDevelopmentEnvironment = (env: NodeJS.ProcessEnv): boolean =>
-  trimNonEmpty(env.VITE_DEV_SERVER_URL) !== null;
+const resolveEarlyInstallVariant = (input: {
+  readonly env: NodeJS.ProcessEnv;
+  readonly appVersion: string;
+}): DesktopInstallVariant =>
+  resolveDesktopInstallVariant({
+    isDevelopment: trimNonEmpty(input.env.VITE_DEV_SERVER_URL) !== null,
+    appVersion: input.appVersion,
+  });
 
 function resolveEarlyDesktopSettingsPath(input: {
   readonly env: NodeJS.ProcessEnv;
+  readonly appVersion: string;
   readonly homeDirectory: string;
   readonly joinPath: JoinPath;
 }): string {
@@ -62,7 +72,7 @@ function resolveEarlyDesktopSettingsPath(input: {
   });
   const stateDir = resolveDesktopStateDir({
     baseDir,
-    isDevelopment: isDevelopmentEnvironment(input.env),
+    variant: resolveEarlyInstallVariant(input),
     joinPath: input.joinPath,
     t3Home,
   });
@@ -85,11 +95,12 @@ export function resolveEarlyLinuxElectronOptions(
   input: EarlyLinuxElectronOptionsInput,
 ): EarlyLinuxElectronOptions {
   const preference = resolveEarlyLinuxPasswordStorePreference(input);
-  const isDevelopment = isDevelopmentEnvironment(input.env);
+  const variant = resolveEarlyInstallVariant(input);
+  const identity = DESKTOP_INSTALL_IDENTITIES[variant];
   return {
-    isDevelopment,
-    linuxWmClass: isDevelopment ? "styal-dev" : "styal",
-    linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment),
+    variant,
+    linuxWmClass: identity.slug,
+    linuxDesktopEntryName: identity.linuxDesktopEntryName,
     passwordStore: resolveLinuxPasswordStoreSwitch({
       preference,
       env: input.env,

@@ -1,5 +1,7 @@
 import * as Option from "effect/Option";
 
+import { DESKTOP_INSTALL_IDENTITIES, type DesktopInstallVariant } from "./DesktopInstallVariant.ts";
+
 export type JoinPath = (first: string, ...segments: string[]) => string;
 
 function normalizeConfiguredBaseDir(t3Home: Option.Option<string>): Option.Option<string> {
@@ -22,11 +24,15 @@ export function resolveDesktopBaseDir(input: {
 
 export function resolveDesktopStateDir(input: {
   readonly baseDir: string;
-  readonly isDevelopment: boolean;
+  readonly variant: DesktopInstallVariant;
   readonly joinPath: JoinPath;
   readonly t3Home: Option.Option<string>;
 }): string {
-  const useDevSubdir =
-    input.isDevelopment && Option.isNone(normalizeConfiguredBaseDir(input.t3Home));
-  return input.joinPath(input.baseDir, useDevSubdir ? "dev" : "userdata");
+  // An explicit home already isolates a development build, so its state uses
+  // that home's usual userdata directory.
+  const variant =
+    input.variant === "development" && Option.isSome(normalizeConfiguredBaseDir(input.t3Home))
+      ? "production"
+      : input.variant;
+  return input.joinPath(input.baseDir, DESKTOP_INSTALL_IDENTITIES[variant].stateDirName);
 }

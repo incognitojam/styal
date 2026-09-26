@@ -66,11 +66,13 @@ Enable Clerk's Native API and add the desktop redirects to its SSO redirect allo
 
 ```text
 styal-dev://app/
+styal-preview://app/
 styal://app/
 ```
 
 Add the corresponding origin to the Clerk instance's Backend API `allowed_origins` array.
-Development uses `styal-dev://app`; production uses `styal://app`. Update the array with
+Development uses `styal-dev://app`; production uses `styal://app` and, for pull request preview
+builds, `styal-preview://app`. Update the array with
 `PATCH https://api.clerk.com/v1/instance` using the Clerk secret key, preserving existing entries.
 The Clerk Electron integration handles token
 persistence and system-browser callback delivery.

@@ -51,6 +51,7 @@ import {
   resolveFffNativeDependencies,
   resolveBuildOptions,
   resolveDesktopBuildIconAssets,
+  resolveDesktopPackageIdentity,
   resolveDesktopProductName,
   resolveDesktopUpdateChannel,
   resolveDesktopWebAssetBrand,
@@ -241,11 +242,18 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       linuxIconPng: BRAND_ASSET_PATHS.nightlyLinuxIconPng,
       windowsIconIco: BRAND_ASSET_PATHS.nightlyWindowsIconIco,
     });
+
+    assert.deepStrictEqual(resolveDesktopBuildIconAssets("0.0.17-pr.456.437"), {
+      macIconPng: BRAND_ASSET_PATHS.developmentDesktopIconPng,
+      linuxIconPng: BRAND_ASSET_PATHS.developmentUniversalIconPng,
+      windowsIconIco: BRAND_ASSET_PATHS.developmentWindowsIconIco,
+    });
   });
 
   it("switches the bundled splash and favicon branding for nightly versions", () => {
     assert.equal(resolveDesktopWebAssetBrand("0.0.17"), "production");
     assert.equal(resolveDesktopWebAssetBrand("0.0.17-nightly.20260413.42"), "nightly");
+    assert.equal(resolveDesktopWebAssetBrand("0.0.17-pr.456.437"), "development");
   });
 
   it.effect("resolves GitHub desktop publish config from Effect config", () =>
@@ -286,6 +294,67 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         releaseType: "prerelease",
         channel: "nightly",
       });
+    }),
+  );
+
+  it.effect("packages pull request previews as a separate app", () =>
+    Effect.gen(function* () {
+      const mac = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "0.0.33-pr.8182.1",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+      const linux = yield* createBuildConfig(
+        "linux",
+        "AppImage",
+        "0.0.33-pr.8182.1",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+      const win = yield* createBuildConfig(
+        "win",
+        "nsis",
+        "0.0.33-pr.8182.1",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+      const release = yield* createBuildConfig(
+        "win",
+        "nsis",
+        "0.0.33",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+
+      assert.equal(mac.appId, "build.styal.app.preview");
+      assert.deepStrictEqual((mac.mac as { protocols: unknown }).protocols, [
+        { name: "styal", schemes: ["styal-preview"] },
+      ]);
+      assert.deepStrictEqual((linux.linux as { protocols: unknown }).protocols, [
+        { name: "styal", schemes: ["styal-preview"] },
+      ]);
+      assert.equal(
+        (linux.linux as { desktop: { entry: { StartupWMClass: string } } }).desktop.entry
+          .StartupWMClass,
+        "styal-preview",
+      );
+      assert.notEqual((win.nsis as { guid: string }).guid, (release.nsis as { guid: string }).guid);
+      assert.equal(resolveDesktopPackageIdentity("0.0.33-pr.8182.1").packageName, "styal-preview");
+      assert.equal(resolveDesktopPackageIdentity("0.0.33").packageName, "styal");
+      assert.equal(
+        resolveDesktopPackageIdentity("0.0.33-nightly.20260413.42").appId,
+        "build.styal.app",
+      );
     }),
   );
 
