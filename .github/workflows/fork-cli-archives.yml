@@ -46,7 +46,7 @@ jobs:
       T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ vars.CLERK_CLI_OAUTH_CLIENT_ID }}
       T3CODE_RELAY_URL: ${{ vars.RELAY_URL }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
       - name: Setup cached dependencies
@@ -94,7 +94,7 @@ jobs:
       T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ vars.CLERK_CLI_OAUTH_CLIENT_ID }}
       T3CODE_RELAY_URL: ${{ vars.RELAY_URL }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
       - name: Setup cached dependencies

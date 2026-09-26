@@ -46,7 +46,7 @@ jobs:
       previous_tag: ${{ steps.previous_tag.outputs.previous_tag }}
     steps:
       - name: Checkout main
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 0
@@ -279,7 +279,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout released source
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare.outputs.ref }}
           fetch-depth: 0

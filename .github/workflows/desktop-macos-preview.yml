@@ -41,7 +41,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           sparse-checkout: |
@@ -253,7 +253,7 @@ jobs:
 
       - name: Comment download link
         if: steps.upload.outputs.download_url != ''
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           DOWNLOAD_URL: ${{ steps.upload.outputs.download_url }}
           DMG_NAME: ${{ needs.build.outputs.dmg_name }}
@@ -369,7 +369,7 @@ jobs:
 
       - name: Mark the preview comment as removed
         if: steps.delete.outputs.removed == 'true'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const marker = "<!-- desktop-macos-preview -->";

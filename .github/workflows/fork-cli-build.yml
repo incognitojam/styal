@@ -32,7 +32,7 @@ jobs:
       T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ vars.CLERK_CLI_OAUTH_CLIENT_ID }}
       T3CODE_RELAY_URL: ${{ vars.RELAY_URL }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
       - name: Setup cached dependencies
@@ -91,11 +91,11 @@ jobs:
       id-token: write
     steps:
       # Use the workflow revision, not an older release candidate's scripts.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           sparse-checkout: scripts/check-cli-release-freshness.ts
           sparse-checkout-cone-mode: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
           registry-url: https://registry.npmjs.org
