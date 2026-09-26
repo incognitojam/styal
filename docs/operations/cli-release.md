@@ -61,14 +61,13 @@ the executable, web client, license, native dependencies, and resource monitor.
 Node and native build tools are needed on the build runner, not the destination.
 Provider CLIs may still need their own Node installation.
 
-The archive job runs independently of desktop packaging. It shares the web build
-across targets and builds and verifies each executable on its own architecture.
-Windows desktop packaging consumes the matching Linux archive for WSL. Standalone
-Windows builds create that Linux artifact first; other standalone desktop builds do
-not need it. Fork Nightly starts each desktop target alongside the full CLI archive
-matrix. Its Windows target builds a separate WSL archive so it can start before the
-five-platform archive matrix finishes; distinct artifact names keep release assets
-from the full matrix. Building an archive does not migrate an installed service.
+Fork Nightly and Fork Release build the server bundle, web client, and Electron
+main once, then start each desktop target and the CLI archive matrix from that
+bundle. Each executable is built and verified on its own architecture. Windows
+desktop packaging embeds a Linux x64 archive for WSL. The Windows target builds its
+own copy so it does not wait for the five-platform archive matrix; distinct artifact
+names keep release assets from the full matrix. Building an archive does not migrate
+an installed service.
 
 To verify a local Linux x64 archive (with `.scratch/` ignored):
 

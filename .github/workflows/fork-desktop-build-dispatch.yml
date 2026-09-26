@@ -24,8 +24,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  bundle:
+    name: Build JS bundle
+    uses: ./.github/workflows/fork-js-bundle.yml
+    with:
+      ref: ${{ github.sha }}
+      version: 0.0.0-build.${{ github.run_number }}
+
   build:
     name: Build ${{ inputs.target }}
+    needs: bundle
     uses: ./.github/workflows/fork-desktop-build.yml
     with:
       ref: ${{ github.sha }}
