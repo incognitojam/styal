@@ -1700,10 +1700,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             ? `[Pasted text ${encodePromptJson(attachment.name)} is saved at: ${attachmentPath}. Inspect it as needed.]`
             : `[Attached ${attachment.type} ${encodePromptJson(attachment.name)} (${attachment.mimeType}, ${attachment.sizeBytes} bytes) is saved at: ${attachmentPath}]`,
       );
-      if (isPastedText && !appended) {
+      // Most adapters see generic files only through this path line, so a file
+      // without one would be silently dropped. Images still go natively.
+      if (!appended && attachment.type === "file") {
         return yield* toValidationError(
           "ProviderService.sendTurn",
-          `Input plus pasted-text attachment context exceeds the ${PROVIDER_SEND_TURN_MAX_INPUT_CHARS} character limit`,
+          `Input plus attachment context exceeds the ${PROVIDER_SEND_TURN_MAX_INPUT_CHARS} character limit`,
         );
       }
     }
