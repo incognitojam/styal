@@ -17,3 +17,23 @@ android {
 dependencies {
   implementation project(':expo-modules-core')
 }
+
+// Keeps every Gradle project on the fbjni version React Native pins. react-native-shiki-engine
+// requests "com.facebook.fbjni:fbjni:+", which now resolves to fbjni 0.8.x. Its libfbjni.so is
+// built with NDK 28 and needs a newer libc++_shared than React Native packages, so Android
+// release builds crash at launch. This lives in a module whose android/ directory only the
+// Android fingerprint hashes; an app-level config plugin would also change the iOS fingerprint.
+// Remove it once react-native-shiki-engine stops requesting a dynamic fbjni version.
+def reactNativePackageJson = new File(
+  providers.exec {
+    workingDir(rootDir)
+    commandLine("node", "--print", "require.resolve('react-native/package.json')")
+  }.standardOutput.asText.get().trim()
+)
+def reactNativeVersionCatalog = new File(reactNativePackageJson.parentFile, "gradle/libs.versions.toml")
+def reactNativeFbjniVersion = (reactNativeVersionCatalog.text =~ /(?m)^fbjni\s*=\s*"([^"]+)"/)[0][1]
+rootProject.allprojects {
+  configurations.configureEach {
+    resolutionStrategy.force "com.facebook.fbjni:fbjni:${reactNativeFbjniVersion}"
+  }
+}
