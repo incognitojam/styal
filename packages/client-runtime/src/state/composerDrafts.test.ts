@@ -179,6 +179,37 @@ describe("composer draft sync controller", () => {
     expect(scheduler.hasTask()).toBe(false);
   });
 
+  it("clears a sent draft received after reopening the thread", async () => {
+    let local: ComposerDraftCommon | null = null;
+    const writes: Array<{ baseRevision: number; common: ComposerDraftCommon | null }> = [];
+    const scheduler = makeScheduler();
+    const controller = createComposerDraftSyncController({
+      threadId: THREAD_ID,
+      readLocal: () => local,
+      canApplyRemote: () => true,
+      shouldIgnoreRemote: (value) => value.common?.text === LOCAL.text,
+      applyRemote: (value) => {
+        local = value;
+      },
+      update: async (input) => {
+        writes.push({ baseRevision: input.baseRevision, common: input.common });
+        return { _tag: "accepted", snapshot: snapshot(3, input.common, input.clientMutationId) };
+      },
+      createMutationId: () => "clear-after-reopen",
+      scheduleTask: scheduler.scheduleTask,
+    });
+
+    // A pending autosave landed after Send, and the thread was closed before its clear synced.
+    controller.observeSnapshot(snapshot(2, LOCAL));
+    expect(local).toBeNull();
+    await scheduler.run();
+    expect(writes).toEqual([{ baseRevision: 2, common: null }]);
+
+    // Later edits from another device still reach an otherwise clean composer.
+    controller.observeSnapshot(snapshot(4, REMOTE));
+    expect(local).toEqual(REMOTE);
+  });
+
   it("does not overwrite a non-empty local cache on first contact", async () => {
     let local: ComposerDraftCommon | null = LOCAL;
     const writes: Array<{ baseRevision: number; common: ComposerDraftCommon | null }> = [];

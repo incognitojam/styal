@@ -30,7 +30,10 @@ export const composerDraftEnvironment = createComposerDraftEnvironmentAtoms(conn
 
 const EMPTY_SYNC_ATOM = Atom.make<null>(null).pipe(Atom.withLabel("composer-draft-sync:disabled"));
 const revisions = new Map<string, number>();
-const suppressedPostSendCommon = new Map<string, ComposerDraftCommon | null>();
+const suppressedPostSendCommon = new Map<
+  string,
+  { baseline: ComposerDraftCommon | null; sentText: string; revision: number }
+>();
 
 export function readComposerDraftRevision(threadRef: ScopedThreadRef): number | undefined {
   return revisions.get(scopedThreadKey(threadRef));
@@ -59,10 +62,14 @@ function commonFromDraft(draft: ComposerThreadDraftState): ComposerDraftCommon |
 }
 
 /** Prevents retained model/mode preferences from resurrecting a sent draft. */
-export function markComposerDraftSent(threadRef: ScopedThreadRef): void {
+export function markComposerDraftSent(threadRef: ScopedThreadRef, sentText: string): void {
   const key = scopedThreadKey(threadRef);
   const draft = useComposerDraftStore.getState().getComposerDraft(threadRef);
-  suppressedPostSendCommon.set(key, draft === null ? null : commonFromDraft(draft));
+  suppressedPostSendCommon.set(key, {
+    baseline: draft === null ? null : commonFromDraft(draft),
+    sentText,
+    revision: revisions.get(key) ?? 0,
+  });
 }
 
 function mutationId(): string {
@@ -136,9 +143,8 @@ export function useServerComposerDraftSync(threadRef: ScopedThreadRef | null): v
     const readLocal = (): ComposerDraftCommon | null => {
       const common = commonFromDraft(draftRef.current);
       if (!suppressedPostSendCommon.has(key)) return common;
-      const baseline = suppressedPostSendCommon.get(key) ?? null;
+      const baseline = suppressedPostSendCommon.get(key)?.baseline ?? null;
       if (composerDraftCommonEquals(common, baseline)) return null;
-      suppressedPostSendCommon.delete(key);
       return common;
     };
     const controller = createComposerDraftSyncController({
@@ -156,6 +162,10 @@ export function useServerComposerDraftSync(threadRef: ScopedThreadRef | null): v
           current.reviewComments.length === 0
         );
       },
+      shouldIgnoreRemote: (snapshot) => {
+        const sent = suppressedPostSendCommon.get(key);
+        return sent !== undefined && snapshot.common?.text === sent.sentText;
+      },
       applyRemote: (common) =>
         useComposerDraftStore.getState().applySyncedCommon(threadRef, common),
       update: async (input) => {
@@ -172,6 +182,10 @@ export function useServerComposerDraftSync(threadRef: ScopedThreadRef | null): v
       },
       onRevisionChange: (snapshot: ComposerDraftSnapshot) => {
         revisions.set(key, snapshot.revision);
+        const sent = suppressedPostSendCommon.get(key);
+        if (sent && snapshot.common === null && snapshot.revision > sent.revision) {
+          suppressedPostSendCommon.delete(key);
+        }
       },
     });
     controllerRef.current = controller;
@@ -179,7 +193,6 @@ export function useServerComposerDraftSync(threadRef: ScopedThreadRef | null): v
       controller.dispose();
       if (controllerRef.current === controller) controllerRef.current = null;
       revisions.delete(key);
-      suppressedPostSendCommon.delete(key);
     };
   }, [enabled, threadRef?.environmentId, threadRef?.threadId]);
 

@@ -7097,7 +7097,7 @@ export default function ChatView(props: ChatViewProps) {
     }
     promptRef.current = "";
     clearComposerDraftContent(composerDraftTarget);
-    if (isServerThread) markComposerDraftSent(routeThreadRef);
+    if (isServerThread) markComposerDraftSent(routeThreadRef, promptForSend);
     composerRef.current?.resetCursorState();
 
     const firstComposerImageName = composerImagesSnapshot[0]?.name;

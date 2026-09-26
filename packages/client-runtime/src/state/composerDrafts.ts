@@ -78,6 +78,7 @@ export function createComposerDraftSyncController(options: {
   readonly threadId: ThreadId;
   readonly readLocal: () => ComposerDraftCommon | null;
   readonly canApplyRemote: () => boolean;
+  readonly shouldIgnoreRemote?: (snapshot: ComposerDraftSnapshot) => boolean;
   readonly applyRemote: (common: ComposerDraftCommon | null) => void;
   readonly update: (input: {
     readonly threadId: ThreadId;
@@ -181,9 +182,9 @@ export function createComposerDraftSyncController(options: {
         if (!composerDraftCommonEquals(local, remote)) schedule();
         return;
       }
-      if (!options.canApplyRemote()) {
-        // Hide a transferable draft as soon as this web/desktop client has
-        // richer local context; another client must not send an incomplete copy.
+      if (!options.canApplyRemote() || options.shouldIgnoreRemote?.(snapshot)) {
+        // Keep richer local context or a just-sent draft out of the composer,
+        // then clear the stale server copy against its latest revision.
         if (remote !== null) schedule();
         return;
       }
@@ -206,7 +207,7 @@ export function createComposerDraftSyncController(options: {
       (lastIssuedMutationId === null || snapshot.clientMutationId !== lastIssuedMutationId) &&
       composerDraftCommonEquals(local, lastSynced);
     acceptSnapshotMetadata(snapshot);
-    if (wasClean && options.canApplyRemote()) {
+    if (wasClean && options.canApplyRemote() && !options.shouldIgnoreRemote?.(snapshot)) {
       options.applyRemote(remote);
       return;
     }
