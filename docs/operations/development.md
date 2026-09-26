@@ -177,7 +177,8 @@ PRs from forks are skipped because they do not receive the credentials.
   [styal Link](./styal-link.md#github-actions-configuration).
 - `preview:web` deploys the hosted web app to its own Cloudflare Worker at
   `https://styal-web-pr-<number>.<subdomain>.workers.dev`, without styal Link, so pair a server
-  manually. One-time setup:
+  manually. Use an installed server or `styal serve`: a `vp run dev` server only accepts
+  cross-origin requests from its own dev origins. One-time setup:
   - A Cloudflare API token limited to **Account > Workers Scripts: Edit**, stored as
     `CLOUDFLARE_API_TOKEN` on a `web-preview` environment with no branch restriction. It must
     not be the production token; see
