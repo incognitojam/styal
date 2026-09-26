@@ -272,3 +272,62 @@ append_release_changes example/fork "$2" "$3"`,
     NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
   }
 });
+
+function latestStableTag(cwd: string, before = ""): string {
+  const result = NodeChildProcess.spawnSync(
+    "bash",
+    [
+      "-c",
+      'source "$1" || exit 2; latest_stable_tag "$2"',
+      "release-changelog-test",
+      helperPath,
+      before,
+    ],
+    { cwd, encoding: "utf8" },
+  );
+
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`Resolving the latest stable tag failed: ${result.stderr}`);
+  }
+  return result.stdout.trim();
+}
+
+it("resolves the latest stable tag by version, ignoring prerelease tags", () => {
+  const fixtureRoot = createFixture();
+
+  try {
+    commitFile(fixtureRoot, "base.txt", "base\n", "feat: base");
+    for (const tag of [
+      "v0.1.0-nightly.20260901.1",
+      "v0.9.0",
+      "v0.10.0",
+      "v0.10.1",
+      "v0.11.0-nightly.20260926.4",
+      "v0.11.0-rc.1",
+    ]) {
+      runGit(fixtureRoot, "tag", tag);
+    }
+
+    assert.equal(latestStableTag(fixtureRoot), "v0.10.1");
+    assert.equal(latestStableTag(fixtureRoot, "v0.10.1"), "v0.10.0");
+    assert.equal(latestStableTag(fixtureRoot, "v0.11.0"), "v0.10.1");
+    assert.equal(latestStableTag(fixtureRoot, "v0.9.0"), "");
+  } finally {
+    NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+it("resolves no latest stable tag before the first stable release", () => {
+  const fixtureRoot = createFixture();
+
+  try {
+    commitFile(fixtureRoot, "base.txt", "base\n", "feat: base");
+    runGit(fixtureRoot, "tag", "v0.1.0-nightly.20260926.420");
+
+    assert.equal(latestStableTag(fixtureRoot), "");
+    assert.equal(latestStableTag(fixtureRoot, "v0.1.0"), "");
+  } finally {
+    NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});

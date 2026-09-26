@@ -142,11 +142,19 @@ jobs:
           CANDIDATE_REF: ${{ steps.candidate.outputs.ref }}
           NIGHTLY_RUN_NUMBER: ${{ github.run_number }}
         run: |
+          set -euo pipefail
+          source .github/scripts/release-changelog.sh
+          # Older candidates predate latest_stable_tag and any stable release.
+          latest_stable=""
+          if declare -F latest_stable_tag >/dev/null; then
+            latest_stable=$(latest_stable_tag)
+          fi
           nightly_date=$(date -u +%Y%m%d)
           node scripts/resolve-nightly-release.ts \
             --date "$nightly_date" \
             --run-number "$NIGHTLY_RUN_NUMBER" \
             --sha "$CANDIDATE_REF" \
+            ${latest_stable:+--latest-stable "$latest_stable"} \
             --github-output
 
       - id: previous_tag
@@ -288,6 +296,14 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
+      # Release scripts come from this workflow's commit, not the released
+      # source, which can predate them.
+      - name: Checkout release scripts
+        uses: actions/checkout@v7
+        with:
+          path: release-tools
+          sparse-checkout: .github/scripts
+
       - name: Download release assets
         uses: actions/download-artifact@v8
         with:
@@ -322,46 +338,9 @@ jobs:
           git fetch --no-tags origin "$FORK_SOURCE_REF"
           git rev-parse --verify "${FORK_SOURCE_REF}^{commit}" >/dev/null
           git rev-parse --verify "${UPSTREAM_REF}^{commit}" >/dev/null
-          source .github/scripts/release-changelog.sh
-
-          if [[ -n "$PREVIOUS_TAG" ]]; then
-            git rev-parse --verify "${PREVIOUS_TAG}^{commit}" >/dev/null
-            previous_upstream_ref=$(git merge-base "$PREVIOUS_TAG" "$UPSTREAM_REF")
-          else
-            previous_upstream_ref=$(git merge-base "$FORK_SOURCE_REF" "$UPSTREAM_REF")
-          fi
-
-          upstream_changes=()
-          while IFS= read -r sha; do
-            upstream_changes+=("$sha")
-          done < <(git rev-list --reverse "${previous_upstream_ref}..${UPSTREAM_REF}")
-
-          fork_changes=()
-          while IFS= read -r sha; do
-            fork_changes+=("$sha")
-          done < <(
-            list_fork_release_commits "$PREVIOUS_TAG" "$FORK_SOURCE_REF" "$UPSTREAM_REF"
-          )
-
-          {
-            printf "## What's Changed\n\n"
-            if (( ${#fork_changes[@]} > 0 )); then
-              append_release_changes "$GITHUB_REPOSITORY" "${fork_changes[@]}"
-            fi
-            if (( ${#upstream_changes[@]} > 0 )); then
-              append_release_changes pingdotgg/t3code "${upstream_changes[@]}"
-            fi
-            if (( ${#fork_changes[@]} + ${#upstream_changes[@]} == 0 )); then
-              printf 'No user-facing changes.\n'
-            fi
-            # Compare the fork's own release tags. Comparing upstream refs named
-            # the wrong repository, and collapsed to an empty range whenever the
-            # nightly carried no upstream changes.
-            if [[ -n "$PREVIOUS_TAG" ]]; then
-              printf '\n**Full Changelog**: https://github.com/%s/compare/%s...%s\n' \
-                "$GITHUB_REPOSITORY" "$PREVIOUS_TAG" "$NEW_TAG"
-            fi
-          } > release-notes.md
+          source release-tools/.github/scripts/release-changelog.sh
+          render_release_notes "$GITHUB_REPOSITORY" "$PREVIOUS_TAG" "$NEW_TAG" \
+            "$FORK_SOURCE_REF" "$UPSTREAM_REF" > release-notes.md
 
       # GITHUB_TOKEN cannot create a release tag at a commit whose workflow
       # files differ from main's, so the tag is pushed before the release.
