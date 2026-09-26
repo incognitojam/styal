@@ -165,3 +165,22 @@ see the [release runbook](./release.md#windows-payload-topology-and-update-valid
 Add `--signed` after configuring the platform credentials in the
 [release runbook](./release.md). macOS passkeys need a signed, provisioned app; follow the
 [Connect setup](./connect-setup.md#desktop-passkeys) for local signing and renderer HMR.
+
+## PR previews
+
+Label a pull request from a branch in this repository to build a preview on every push. The
+workflow comments the link on the PR, and closing the PR or removing the label deletes the preview.
+PRs from forks are skipped because they do not receive the credentials.
+
+- `preview:mac` builds an unsigned Apple Silicon DMG and attaches it to the rolling
+  `desktop-preview` prerelease. It needs no setup beyond the repository variables in
+  [styal Link](./styal-link.md#github-actions-configuration).
+- `preview:web` deploys the hosted web app to its own Cloudflare Worker at
+  `https://styal-web-pr-<number>.<subdomain>.workers.dev`, without styal Link, so pair a server
+  manually. One-time setup:
+  - A Cloudflare API token limited to **Account > Workers Scripts: Edit**, stored as
+    `CLOUDFLARE_API_TOKEN` on a `web-preview` environment with no branch restriction. It must
+    not be the production token; see
+    [Deployment credentials](./styal-link.md#deployment-credentials).
+  - The repository variable `CLOUDFLARE_WORKERS_SUBDOMAIN`, set to the account's `workers.dev`
+    subdomain.
