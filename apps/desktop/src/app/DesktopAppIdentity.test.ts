@@ -166,7 +166,7 @@ describe("DesktopAppIdentity", () => {
         // app.name keys OS credential storage, so it is a stable slug rather
         // than the branded name shown in the About panel below.
         assert.deepEqual(calls.setName, ["styal"]);
-        assert.equal(calls.setAboutPanelOptions[0]?.applicationName, "styal (Alpha)");
+        assert.equal(calls.setAboutPanelOptions[0]?.applicationName, "styal");
         assert.equal(calls.setAboutPanelOptions[0]?.applicationVersion, "1.2.3");
         assert.equal(calls.setAboutPanelOptions[0]?.version, "0123456789ab");
         // Packaged: the bundle's own icon stands, so a custom one the user

@@ -22,7 +22,7 @@ const makeEnvironment = (overrides: Record<string, unknown> = {}) =>
     platform: "linux",
     isPackaged: true,
     isDevelopment: false,
-    displayName: "styal (Alpha)",
+    displayName: "styal",
     linuxDesktopEntryName: "build.styal.Styal.desktop",
     linuxWmClass: "styal",
     linuxApplicationsDir: "/home/alice/.local/share/applications",
@@ -199,7 +199,7 @@ describe("DesktopLinuxUrlHandler", () => {
     return Effect.gen(function* () {
       yield* runRegister(recorded, {
         existingEntry: DesktopLinuxUrlHandler.renderUrlHandlerDesktopEntry({
-          displayName: "styal (Alpha)",
+          displayName: "styal",
           execTarget: "/home/alice/Applications/T3-Code.AppImage",
           scheme: "styal",
         }),

@@ -15,8 +15,7 @@ const repoRoot = NodePath.resolve(desktopDir, "..", "..");
 const devBundleIdSuffix = NodePath.basename(repoRoot)
   .toLowerCase()
   .replaceAll(/[^a-z0-9]+/g, "");
-const appStageLabel = isDevelopment ? "Dev" : "Alpha";
-const APP_DISPLAY_NAME = `styal (${appStageLabel})`;
+const APP_DISPLAY_NAME = isDevelopment ? "styal (Dev)" : "styal";
 const APP_BUNDLE_ID = isDevelopment
   ? `build.styal.app.dev.${devBundleIdSuffix || "local"}`
   : "build.styal.app";

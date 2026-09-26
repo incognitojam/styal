@@ -151,24 +151,28 @@ describe("DesktopEnvironment", () => {
 
   it.effect("keeps the credential storage name stable across release stages", () =>
     Effect.gen(function* () {
-      const alpha = yield* makeEnvironment({ appVersion: "0.0.22" });
+      const stable = yield* makeEnvironment({ appVersion: "0.0.22" });
       const nightly = yield* makeEnvironment({ appVersion: "0.0.22-nightly.20260823.1" });
+      const preview = yield* makeEnvironment({ appVersion: "0.0.22-pr.456.437" });
       const development = yield* makeEnvironment(
         {},
         { VITE_DEV_SERVER_URL: "http://localhost:5173" },
       );
 
-      // Alpha and Nightly share a bundle id and a user-data directory, so they
+      // Stable, Nightly, and Preview share a bundle id and a user-data directory, so they
       // have to share the credential namespace guarding that state. Development
       // keeps its own, matching its separate state directory.
-      assert.equal(alpha.safeStorageName, "styal");
+      assert.equal(stable.safeStorageName, "styal");
       assert.equal(nightly.safeStorageName, "styal");
-      assert.equal(alpha.userDataDirName, nightly.userDataDirName);
+      assert.equal(preview.safeStorageName, "styal");
+      assert.equal(stable.userDataDirName, nightly.userDataDirName);
+      assert.equal(stable.userDataDirName, preview.userDataDirName);
       assert.equal(development.safeStorageName, "styal-dev");
 
       // Branding still tracks the stage.
-      assert.equal(alpha.displayName, "styal (Alpha)");
+      assert.equal(stable.displayName, "styal");
       assert.equal(nightly.displayName, "styal (Nightly)");
+      assert.equal(preview.displayName, "styal (Preview)");
     }),
   );
 

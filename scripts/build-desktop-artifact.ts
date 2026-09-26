@@ -2620,9 +2620,9 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
 }
 
 export function resolveDesktopProductName(version: string): string {
-  return resolveDesktopUpdateChannel(version) === "nightly"
-    ? "styal (Nightly)"
-    : (desktopPackageJson.productName ?? "styal");
+  if (resolveDesktopUpdateChannel(version) === "nightly") return "styal (Nightly)";
+  if (isDesktopPreviewVersion(version)) return "styal (Preview)";
+  return desktopPackageJson.productName ?? "styal";
 }
 
 export function resolveDesktopBuildDescription(version: string): string {
