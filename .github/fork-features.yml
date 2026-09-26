@@ -821,7 +821,7 @@ features:
   - id: fork-managed-link
     title: Operate styal Link independently
     status: maintained
-    prs: [264, 265, 266, 269]
+    prs: [264, 265, 266, 269, 475]
     invariants:
       - User-facing cloud connection surfaces target the styal-hosted app, relay, native schemes, and Clerk application while protocol-level T3 Connect identifiers remain compatible with upstream clients and servers.
       - The user-facing CLI exposes styal Link as `styal link`; the upstream `connect` spelling remains an unlisted compatibility alias.
