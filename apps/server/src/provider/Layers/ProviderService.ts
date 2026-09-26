@@ -1728,6 +1728,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           // Admission and marker consumption must survive the same restart.
           continueAfterServerUpdate: null,
           continueAfterServerUpdatePrepared: null,
+          continueAfterServerUpdateBackground: null,
           lastRuntimeEvent: "provider.sendTurn",
           lastRuntimeEventAt: yield* nowIso,
         },
@@ -2036,6 +2037,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             activeTurnId: null,
             continueAfterServerUpdate: null,
             continueAfterServerUpdatePrepared: null,
+            continueAfterServerUpdateBackground: null,
           },
         });
         yield* analytics.record("provider.session.stopped", {

@@ -18,6 +18,7 @@ import * as Stream from "effect/Stream";
 import { OrchestrationCommandInvariantError } from "./orchestration/Errors.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ThreadBackgroundLiveness from "./orchestration/ThreadBackgroundLiveness.ts";
 import {
   ProviderSessionDirectoryPersistenceError,
   ProviderSessionNotFoundError,
@@ -115,60 +116,92 @@ const runReconciliation = (input: {
     ),
   );
 
-it.effect("marks active running sessions that have persisted resume state", () => {
-  const active = makeThread("thread-mark-active", "running", TurnId.make("turn-mark-active"));
-  const archived = makeThread(
-    "thread-mark-archived",
-    "running",
-    TurnId.make("turn-mark-archived"),
-    updatedAt,
-  );
-  const ready = makeThread("thread-mark-ready", "ready");
-  const missingResumeState = makeThread(
-    "thread-mark-missing-resume-state",
-    "running",
-    TurnId.make("turn-mark-missing-resume-state"),
-  );
-  const bindingReads: ThreadId[] = [];
-  const upserts: ProviderSessionDirectory.ProviderRuntimeBinding[] = [];
+it.effect(
+  "marks running turns and settled background work that have persisted resume state",
+  () => {
+    const active = makeThread("thread-mark-active", "running", TurnId.make("turn-mark-active"));
+    const monitoring = {
+      ...makeThread("thread-mark-monitoring", "ready"),
+      latestTurn: { turnId: TurnId.make("turn-mark-monitoring") },
+    };
+    const liveness = ThreadBackgroundLiveness.make();
+    liveness.recordTaskLiveness({
+      threadId: monitoring.id,
+      taskId: "monitor-pr",
+      taskType: "monitor",
+      status: "running",
+      kind: "started",
+    });
+    const archived = makeThread(
+      "thread-mark-archived",
+      "running",
+      TurnId.make("turn-mark-archived"),
+      updatedAt,
+    );
+    const ready = makeThread("thread-mark-ready", "ready");
+    const missingResumeState = makeThread(
+      "thread-mark-missing-resume-state",
+      "running",
+      TurnId.make("turn-mark-missing-resume-state"),
+    );
+    const bindingReads: ThreadId[] = [];
+    const upserts: ProviderSessionDirectory.ProviderRuntimeBinding[] = [];
 
-  return ServerRuntimeStartup.markRunningProviderSessionsForContinuation.pipe(
-    Effect.provideService(
-      ProjectionSnapshotQuery.ProjectionSnapshotQuery,
-      queryWithThreads([active, archived, ready, missingResumeState]),
-    ),
-    Effect.provideService(ProviderSessionDirectory.ProviderSessionDirectory, {
-      getBinding: (threadId) =>
-        Effect.sync(() => bindingReads.push(threadId)).pipe(
-          Effect.as(
-            Option.some({
-              threadId,
-              provider: ProviderDriverKind.make("codex"),
-              providerInstanceId,
-              ...(threadId === active.id ? { resumeCursor: { threadId } } : {}),
-              runtimePayload: { activeTurnId: "turn-mark-active" },
-            }),
+    return ServerRuntimeStartup.markRunningProviderSessionsForContinuation.pipe(
+      Effect.provideService(
+        ProjectionSnapshotQuery.ProjectionSnapshotQuery,
+        queryWithThreads([active, archived, ready, monitoring, missingResumeState]),
+      ),
+      Effect.provideService(ThreadBackgroundLiveness.ThreadBackgroundLivenessService, liveness),
+      Effect.provideService(ProviderSessionDirectory.ProviderSessionDirectory, {
+        getBinding: (threadId) =>
+          Effect.sync(() => bindingReads.push(threadId)).pipe(
+            Effect.as(
+              Option.some({
+                threadId,
+                provider: ProviderDriverKind.make("codex"),
+                providerInstanceId,
+                ...(threadId === active.id || threadId === monitoring.id
+                  ? { resumeCursor: { threadId } }
+                  : {}),
+                runtimePayload: {
+                  activeTurnId: threadId === active.id ? "turn-mark-active" : null,
+                },
+              }),
+            ),
           ),
-        ),
-      upsert: (binding) => Effect.sync(() => upserts.push(binding)),
-      getProvider: () => Effect.die("unused"),
-      listThreadIds: () => Effect.die("unused"),
-      listBindings: () => Effect.succeed([]),
-      recordImportedTranscript: () => Effect.die("unused"),
-    }),
-    Effect.tap((marked) =>
-      Effect.sync(() => {
-        assert.deepStrictEqual(bindingReads, [active.id, missingResumeState.id]);
-        assert.deepStrictEqual(marked, [active.id]);
-        assert.deepStrictEqual(upserts[0]?.runtimePayload, {
-          activeTurnId: "turn-mark-active",
-          continueAfterServerUpdate: active.session.activeTurnId,
-          continueAfterServerUpdatePrepared: null,
-        });
+        upsert: (binding) => Effect.sync(() => upserts.push(binding)),
+        getProvider: () => Effect.die("unused"),
+        listThreadIds: () => Effect.die("unused"),
+        listBindings: () => Effect.succeed([]),
+        recordImportedTranscript: () => Effect.die("unused"),
       }),
-    ),
-  );
-});
+      Effect.tap((marked) =>
+        Effect.sync(() => {
+          assert.deepStrictEqual(bindingReads, [active.id, monitoring.id, missingResumeState.id]);
+          assert.deepStrictEqual(marked, [active.id, monitoring.id]);
+          assert.deepStrictEqual(
+            upserts.map((binding) => binding.runtimePayload),
+            [
+              {
+                activeTurnId: "turn-mark-active",
+                continueAfterServerUpdate: active.session.activeTurnId,
+                continueAfterServerUpdatePrepared: null,
+                continueAfterServerUpdateBackground: null,
+              },
+              {
+                activeTurnId: null,
+                continueAfterServerUpdate: monitoring.latestTurn.turnId,
+                continueAfterServerUpdatePrepared: null,
+                continueAfterServerUpdateBackground: true,
+              },
+            ],
+          );
+        }),
+      ),
+    );
+  },
+);
 
 it.effect.each(
   (["marked update", "opt-in restart"] as const).flatMap((recovery) =>
@@ -579,6 +612,7 @@ it.effect("reconciles multiple active and archived orphans but skips live sessio
                   unrelated: binding.threadId,
                   continueAfterServerUpdate: null,
                   continueAfterServerUpdatePrepared: null,
+                  continueAfterServerUpdateBackground: null,
                 }
               : { activeTurnId: null, unrelated: binding.threadId },
           );
@@ -912,6 +946,7 @@ for (const preparedStatus of [
         activeTurnId: null,
         continueAfterServerUpdate: null,
         continueAfterServerUpdatePrepared: null,
+        continueAfterServerUpdateBackground: null,
       });
     }),
   );
@@ -996,6 +1031,65 @@ it.effect("settles failed opt-in recovery without retrying the provider turn", (
       activeTurnId: null,
       continueAfterServerUpdate: null,
       continueAfterServerUpdatePrepared: null,
+      continueAfterServerUpdateBackground: null,
+    });
+  }),
+);
+
+it.effect("asks a settled thread to restart background work the update stopped", () =>
+  Effect.gen(function* () {
+    const thread = makeThread("thread-background", "ready");
+    const cleared = yield* Deferred.make<void>();
+    const sends: ProviderSendTurnInput[] = [];
+    let binding: ProviderSessionDirectory.ProviderRuntimeBinding = {
+      threadId: thread.id,
+      provider: ProviderDriverKind.make("codex"),
+      providerInstanceId,
+      status: "stopped",
+      resumeCursor: { threadId: thread.id },
+      runtimePayload: {
+        activeTurnId: null,
+        continueAfterServerUpdate: "turn-background",
+        continueAfterServerUpdatePrepared: null,
+        continueAfterServerUpdateBackground: true,
+      },
+    };
+    yield* runReconciliation({
+      threads: [thread],
+      providerService: {
+        ...makeProviderService(),
+        // A promptless continuation would resume nothing; the turn had settled.
+        getCapabilities: () =>
+          Effect.succeed({ sessionModelSwitch: "in-session", promptlessTurnContinuation: true }),
+        sendTurn: (input) =>
+          Effect.sync(() => {
+            sends.push(input);
+            return { threadId: input.threadId, turnId: TurnId.make("turn-restarted") };
+          }),
+      },
+      directory: {
+        getBinding: () => Effect.sync(() => Option.some(binding)),
+        upsert: (next) =>
+          Effect.gen(function* () {
+            binding = next;
+            if (sends.length > 0) yield* Deferred.succeed(cleared, undefined);
+          }),
+        getProvider: () => Effect.die("unused"),
+        listThreadIds: () => Effect.die("unused"),
+        listBindings: () => Effect.sync(() => [{ ...binding, lastSeenAt: updatedAt }]),
+        recordImportedTranscript: () => Effect.die("unused"),
+      },
+      dispatch: () => Effect.succeed({ sequence: 1 }),
+    });
+    yield* Deferred.await(cleared);
+    assert.equal(sends.length, 1);
+    assert.equal(sends[0]?.continuation, undefined);
+    assert.match(String(sends[0]?.input), /stopped your background work/);
+    assert.deepStrictEqual(binding.runtimePayload, {
+      activeTurnId: null,
+      continueAfterServerUpdate: null,
+      continueAfterServerUpdatePrepared: null,
+      continueAfterServerUpdateBackground: null,
     });
   }),
 );
