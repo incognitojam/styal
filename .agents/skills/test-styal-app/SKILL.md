@@ -58,6 +58,29 @@ Run `node apps/server/src/bin.ts pair` from the repository root. It discovers th
 
 Tokens from `pair` carry standard client scopes. The startup pairing URL carries admin scopes; if the user needs Settings → Connections management (`access:write`), restart the server and hand over the new startup URL instead.
 
+## Sign in to styal Link
+
+Link sign-in only appears when the dev server has the development Clerk identifiers and relay URL. If the root `.env` lacks them, export `.env.development.example` for the dev server: `set -a; . ./.env.development.example; set +a` before `vp run dev`. Never use the production values locally; production Clerk rejects sign-ins from `localhost`.
+
+Use the shared agent account, `agent+clerk_test@styal.build`. Do not create other accounts.
+
+- **Local dev (development instance):** open Settings and choose **Sign in to styal Link**. A fresh database shows the welcome wizard first; click through it. Enter the email and the verification code `424242`. Clerk test mode sends no email. `.env.development.example` points at the matching development relay, `relay-dev.styal.build`.
+- **`app.styal.build` or builds using production Clerk:** test mode is off, so the code is not accepted. Mint a one-time token with the maintainer's Clerk CLI login:
+
+  ```sh
+  clerk api /sign_in_tokens --app app_3IPih12l7JcyeHP2MlqFOESKdGN --instance prod \
+    -d '{"user_id":"user_3Js3kNcKhTiIAGCvFcG70AqB4ZY","expires_in_seconds":300}'
+  ```
+
+  Pass its `token` to the loaded app page, not its `url`:
+
+  ```js
+  const signIn = await Clerk.client.signIn.create({ strategy: "ticket", ticket: TOKEN });
+  await Clerk.setActive({ session: signIn.createdSessionId });
+  ```
+
+  The token is a credential; keep it out of screenshots and logs. When done, list the active production sessions with `clerk api "/sessions?user_id=<user>&status=active"` and revoke each with `clerk api /sessions/<id>/revoke -X POST`, passing the same `--app` and `--instance prod` flags.
+
 ## Inspect or seed SQLite state
 
 Read [references/sqlite-fixtures.md](references/sqlite-fixtures.md) before changing the database.
