@@ -1,50 +1,68 @@
 name: Web Preview
 
-# Label a PR `preview:web` to get a hosted-web preview deployment on Vercel for
-# that push and every subsequent push. The deployment is a plain (non-prod,
-# non-aliased) deploy into the existing hosted-web Vercel project, so the
-# latest/nightly channel aliases are never touched.
+# Label a PR `preview:web` to deploy the hosted web app for that push and every
+# later push. Each PR gets its own assets-only Cloudflare Worker,
+# `styal-web-pr-<number>`, served at
+# https://styal-web-pr-<number>.<CLOUDFLARE_WORKERS_SUBDOMAIN>.workers.dev.
+# Closing the PR or removing the label deletes the Worker.
 #
-# The build intentionally omits the styal Link cloud config (Clerk keys, relay
-# URL): previews boot as the hosted-static app with manual pairing only. Pair a
-# server into a preview with `t3 pair --tailscale` (or any reachable HTTPS
-# backend) and open the pairing URL against the preview origin.
+# The preview does not use the infra/web Alchemy stack. Alchemy keeps every
+# stack's state, production relay included, in one account-wide state store,
+# so any credential that can deploy a stage can also reach production state.
+# The preview deploys with wrangler and a separate token that only needs
+# Account > Workers Scripts: Edit, stored as CLOUDFLARE_API_TOKEN on the
+# `web-preview` environment.
 #
-# The preview must be opened at the exact deployment URL from the PR comment.
-# Vite bakes that URL in as the hosted origin (via VERCEL_URL), and
-# `isHostedStaticApp` matches on origin, so branch-alias URLs will not
-# self-identify as the hosted app.
+# The build omits the styal Link configuration (Clerk keys, relay URL), so
+# previews boot as the hosted app with manual pairing only. Pair a server with
+# `styal pair --tailscale` (or any reachable HTTPS backend) and open the
+# pairing URL against the preview origin. Vite bakes the preview URL in as the
+# hosted origin, so the preview must be opened at that exact URL.
 
 on:
   pull_request:
-    types: [labeled, synchronize, reopened]
+    types: [labeled, unlabeled, synchronize, reopened, closed]
 
 permissions:
   contents: read
-  pull-requests: write
 
+# Build events and cleanup events use separate groups: a push must cancel a
+# stale in-flight build, but must never cancel a cleanup run mid-delete. The
+# deploy job re-checks PR state after deploying to cover the reverse race.
 concurrency:
-  group: web-preview-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: web-preview-${{ github.event.pull_request.number }}-${{ contains(fromJSON('["closed", "unlabeled"]'), github.event.action) && 'cleanup' || 'build' }}
+  # Events that skip the build job, such as adding an unrelated label, must
+  # not cancel an in-flight build, and cleanup runs must complete.
+  cancel-in-progress: ${{ !contains(fromJSON('["closed", "unlabeled"]'), github.event.action) && (github.event.action != 'labeled' || github.event.label.name == 'preview:web') }}
 
 jobs:
-  deploy:
-    name: Deploy web preview
-    # Same-repo PRs only: fork PRs do not receive the Vercel secrets, and this
-    # workflow should skip rather than fail for them. On `labeled` events, only
-    # the preview label itself triggers a deploy.
+  # Builds run PR code, so this job has no Cloudflare credentials. The deploy
+  # job below holds the token and never checks out PR code.
+  build:
+    name: Build web preview
+    # Same-repo PRs only: fork PRs do not receive the deploy token. On
+    # `labeled` events, only the preview label itself triggers a build.
     if: >-
+      github.event.action != 'closed' &&
+      github.event.action != 'unlabeled' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       contains(github.event.pull_request.labels.*.name, 'preview:web') &&
       (github.event.action != 'labeled' || github.event.label.name == 'preview:web')
-    runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 10
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     env:
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-      VERCEL_TEAM_SLUG: ${{ vars.VERCEL_TEAM_SLUG }}
+      WORKERS_SUBDOMAIN: ${{ vars.CLOUDFLARE_WORKERS_SUBDOMAIN }}
+      VITE_HOSTED_APP_URL: https://styal-web-pr-${{ github.event.pull_request.number }}.${{ vars.CLOUDFLARE_WORKERS_SUBDOMAIN }}.workers.dev
+      T3CODE_COMMIT_HASH: ${{ github.event.pull_request.head.sha }}
     steps:
+      - name: Check configuration
+        shell: bash
+        run: |
+          if [[ -z "${WORKERS_SUBDOMAIN:-}" ]]; then
+            echo "Set the CLOUDFLARE_WORKERS_SUBDOMAIN repository variable to the account's workers.dev subdomain." >&2
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v6
         with:
@@ -59,55 +77,136 @@ jobs:
         with:
           node-version-file: package.json
           cache: true
-          run-install: |
-            args:
-              - --filter=@t3tools/scripts...
-              - --filter=@t3tools/web...
+          run-install: false
+
+      - name: Install web dependencies
+        run: vp install --ignore-scripts --filter '@t3tools/web...'
+
+      - name: Build web app
+        run: vp run --filter @t3tools/web build
+
+      - name: Upload web build
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-preview-dist
+          path: apps/web/dist
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 1
+
+  deploy:
+    name: Deploy web preview
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    environment:
+      name: web-preview
+      url: ${{ steps.deploy.outputs.preview_url }}
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      WORKER_NAME: styal-web-pr-${{ github.event.pull_request.number }}
+      PREVIEW_URL: https://styal-web-pr-${{ github.event.pull_request.number }}.${{ vars.CLOUDFLARE_WORKERS_SUBDOMAIN }}.workers.dev
+    steps:
+      - name: Download web build
+        uses: actions/download-artifact@v8
+        with:
+          name: web-preview-dist
+          path: dist
 
       - id: deploy
-        name: Deploy preview
+        name: Deploy preview Worker
         shell: bash
         run: |
           set -euo pipefail
 
-          if [[ -z "${VERCEL_TOKEN:-}" || -z "${VERCEL_ORG_ID:-}" || -z "${VERCEL_PROJECT_ID:-}" ]]; then
-            echo "Missing one or more required Vercel secrets: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID." >&2
+          if [[ -z "${CLOUDFLARE_API_TOKEN:-}" || -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
+            echo "Missing CLOUDFLARE_API_TOKEN (web-preview environment secret) or CLOUDFLARE_ACCOUNT_ID (repository variable)." >&2
             exit 1
           fi
 
-          vercel_scope="${VERCEL_TEAM_SLUG:-$VERCEL_ORG_ID}"
+          # True while the PR is open and still carries the preview label.
+          preview_eligible() {
+            [[ "$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --json state,labels \
+              --jq '.state + " " + (.labels | map(.name) | contains(["preview:web"]) | tostring)')" == "OPEN true" ]]
+          }
 
-          deployment_url="$(
-            vp dlx vercel@53.1.1 deploy \
-              --archive=tgz \
-              --yes \
-              --token "$VERCEL_TOKEN" \
-              --scope "$vercel_scope"
-          )"
+          # If the PR closed or lost the label while building, cleanup already
+          # ran in its own concurrency group; deploying now would leave an
+          # orphaned Worker.
+          if ! preview_eligible; then
+            echo "PR closed or preview label removed while building. Skipping deploy."
+            exit 0
+          fi
 
-          echo "Deployed $deployment_url"
-          echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
+          # Assets-only Worker: Cloudflare serves the files directly and falls
+          # back to index.html for client-side routes. No PR code runs here.
+          cat > wrangler.json <<EOF
+          {
+            "name": "${WORKER_NAME}",
+            "compatibility_date": "2026-09-01",
+            "workers_dev": true,
+            "preview_urls": false,
+            "assets": {
+              "directory": "./dist",
+              "not_found_handling": "single-page-application"
+            }
+          }
+          EOF
 
-      - name: Comment deployment URL
+          npx --yes wrangler@4.141.0 deploy --config wrangler.json
+
+          # A cleanup run that started during the deploy may have found no
+          # Worker to delete. Whichever writer acts last sees the final PR
+          # state; if the preview became ineligible, delete what we deployed.
+          if ! preview_eligible; then
+            npx --yes wrangler@4.141.0 delete --config wrangler.json --force
+            echo "PR closed or preview label removed during deploy. Removed the Worker."
+            exit 0
+          fi
+
+          echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Comment preview URL
+        if: steps.deploy.outputs.preview_url != ''
         uses: actions/github-script@v8
         env:
-          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment_url }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         with:
           script: |
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+            });
+            if (
+              pullRequest.head.sha !== process.env.HEAD_SHA ||
+              pullRequest.state !== "open" ||
+              !pullRequest.labels.some((label) => label.name === "preview:web")
+            ) {
+              core.info("Skipping the outdated web preview comment.");
+              return;
+            }
+
             const marker = "<!-- web-preview-deploy -->";
             const body = [
               marker,
               "### Web preview",
               "",
-              `${process.env.DEPLOYMENT_URL} (for ${process.env.HEAD_SHA.slice(0, 7)})`,
+              `${process.env.PREVIEW_URL} (for ${process.env.HEAD_SHA.slice(0, 7)})`,
               "",
-              "Open this exact URL — the hosted-app origin is baked in at build time.",
-              "Pair a server into it with `t3 pair --tailscale`, or paste a host + pairing",
-              "code under Settings → Connections.",
+              "Open this exact URL; the hosted-app origin is baked in at build time. Pair a server into it with `styal pair --tailscale`, or paste a host and pairing code under Settings → Connections.",
+              "",
+              "The preview is deleted when this PR closes or the preview label is removed.",
             ].join("\n");
 
-            const { data: comments } = await github.rest.issues.listComments({
+            const comments = await github.paginate(github.rest.issues.listComments, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.payload.pull_request.number,
@@ -130,3 +229,86 @@ jobs:
                 body,
               });
             }
+
+  # The way out: closing the PR or removing the label deletes its Worker and
+  # updates the PR comment to say so.
+  cleanup:
+    name: Remove web preview
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      ((github.event.action == 'closed' && contains(github.event.pull_request.labels.*.name, 'preview:web')) ||
+      (github.event.action == 'unlabeled' && github.event.label.name == 'preview:web'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    environment:
+      name: web-preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      WORKER_NAME: styal-web-pr-${{ github.event.pull_request.number }}
+    steps:
+      - id: delete
+        name: Delete this PR's preview Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # A stale cleanup must not delete a preview that became valid again.
+          # If the PR is open and labeled once more, the next deploy owns it.
+          if [[ "$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --json state,labels \
+            --jq '.state + " " + (.labels | map(.name) | contains(["preview:web"]) | tostring)')" == "OPEN true" ]]; then
+            echo "PR is open and labeled again. Skipping cleanup."
+            echo "removed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "removed=true" >> "$GITHUB_OUTPUT"
+
+          status="$(curl -sS -o response.json -w '%{http_code}' -X DELETE \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME?force=true")"
+
+          case "$status" in
+            200) echo "Deleted $WORKER_NAME." ;;
+            404) echo "$WORKER_NAME does not exist. Nothing to clean up." ;;
+            *)
+              echo "Deleting $WORKER_NAME failed with HTTP $status:" >&2
+              cat response.json >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Mark the preview comment as removed
+        if: steps.delete.outputs.removed == 'true'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const marker = "<!-- web-preview-deploy -->";
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              per_page: 100,
+            });
+            const existing = comments.find((comment) => comment.body?.includes(marker));
+            if (!existing) {
+              return;
+            }
+
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: existing.id,
+              body: [
+                marker,
+                "### Web preview",
+                "",
+                "The preview was removed because this PR closed or the preview label was removed.",
+              ].join("\n"),
+            });

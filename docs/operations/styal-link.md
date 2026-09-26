@@ -123,6 +123,11 @@ Apple-signing and release plumbing. Three of them have non-obvious shape require
   organization- and dataset-level permissions are documented in
   [Relay Observability](./relay-observability.md#deployment-token-permissions).
 
+PR web previews (`web-preview.yml`) cannot use that token: they deploy from PR branches, and any
+Alchemy stage shares the account-wide state store with production. They deploy with wrangler and a
+separate Workers-only token that only the upload job can read; setup is in
+[PR previews](./development.md#pr-previews).
+
 Fork workflows run on GitHub-hosted runners. Blacksmith `runs-on` labels survive in inherited
 upstream workflows the fork does not run; Blacksmith is not installed for this account, so a job
 that still carries one queues forever.
