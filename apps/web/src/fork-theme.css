@@ -18,6 +18,13 @@
     --stage-night-secondary: #1a5764;
     --stage-night-tertiary: #5fe0bf;
     --stage-night-line: #c4f2ea;
+    --stage-art-celeste-highlight: #dffffa;
+    --stage-art-celeste-secondary: #5fe3d6;
+    --stage-art-violet-highlight: #c8f5e8;
+    --stage-art-grid-line: #ddfbf5;
+    --stage-night-glow-highlight: #38b9c6;
+    --stage-night-glow-secondary: #1a5764;
+    --stage-night-sparkle: #ecfffa;
   }
 
   html.dark:not([data-theme-id]) {

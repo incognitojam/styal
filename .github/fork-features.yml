@@ -747,6 +747,7 @@ features:
       - Stale release retries are rejected before npm publication or integrity acceptance when any package channel tag is newer; nightly source promotion cannot move the branch backward.
       - CLI help and triage copy identify styal, and a bare CLI invocation shows command guidance while explicit `start` and `serve` commands own server startup.
       - Canonical brand asset paths and icon geometry stay shared across desktop, mobile configuration, web packaging, and export tooling so production and nightly artwork cannot silently diverge.
+      - The macOS installer backgrounds and the Dev and Nightly sidebar and send-button artwork use styal's channel grounds and sewing motifs (pinked linen, cutting mat, starry horizon) rather than upstream's T3 Code installer and stage artwork.
       - Linux desktop entries, SnapShot D-Bus names, the GNOME Shell extension, and the KDE and Hyprland capture helpers use styal identities (`build.styal.Styal`, `snap-shot@styal.build`, `styal-*-snap-shot`) so they cannot collide with an upstream T3 Code install.
     implementation_paths:
       - .github/workflows/fork-cli-archives.yml
@@ -756,6 +757,8 @@ features:
       - apps/desktop/gnome-extension/bundle.json
       - apps/desktop/gnome-extension/captureService.js
       - apps/desktop/package.json
+      - apps/desktop/resources/dmg/dmg-background-latest.svg
+      - apps/desktop/resources/dmg/dmg-background-nightly.svg
       - apps/desktop/resources/installer.nsh
       - apps/desktop/src/app/DesktopAssets.ts
       - apps/desktop/src/app/DesktopEarlyElectronStartup.ts
@@ -778,7 +781,9 @@ features:
       - apps/server/vite.config.ts
       - apps/web/src/branding.logic.ts
       - apps/web/src/branding.ts
+      - apps/web/src/components/SidebarStageBackdrop.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
+      - apps/web/src/fork-theme.css
       - packages/shared/src/brandAssets.ts
       - packages/shared/src/cliRelease.ts
       - packages/ssh/src/tunnel.ts
@@ -791,11 +796,14 @@ features:
       - scripts/lib/macos-icon-safe-area.ts
     upstream_paths:
       - apps/desktop/package.json
+      - apps/desktop/resources/dmg/dmg-background-latest.svg
+      - apps/desktop/resources/dmg/dmg-background-nightly.svg
       - apps/desktop/src/app/DesktopAssets.ts
       - apps/desktop/src/app/DesktopEnvironment.ts
       - apps/mobile/app.config.ts
       - apps/web/src/branding.logic.ts
       - apps/web/src/branding.ts
+      - apps/web/src/components/SidebarStageBackdrop.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
       - scripts/build-desktop-artifact.ts
       - scripts/export-brand-icons.ts
@@ -810,6 +818,7 @@ features:
       - apps/server/src/bin.test.ts
       - apps/server/src/cloud/bootService.test.ts
       - apps/web/src/branding.test.ts
+      - apps/web/src/components/SidebarStageBackdrop.test.tsx
       - packages/ssh/src/runnerProcess.test.ts
       - scripts/build-desktop-artifact.test.ts
       - scripts/check-cli-release-freshness.test.ts

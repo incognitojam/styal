@@ -52,7 +52,13 @@ The reel is the same in every channel; the ground behind it tells the channels a
 - **Development:** `#1D5A55` with a cutting-mat grid, the sewing-table take on a blueprint.
 
 Icon Composer turns each ground into an automatic gradient; Android's adaptive icons and the
-favicons use the flat colour. The reel's thread is teal (`#4EDCE2`, shading down to `#135A63`) and
+favicons use the flat colour.
+
+The same grounds carry the rest of the channel artwork. The Dev and Nightly sidebar header and
+send button show the cutting mat, with a loose end of thread on it, and the starry sky over the
+icon's horizon; other built-in themes recolour that art. The macOS installer lays a strip of
+pinked linen across the production or nightly ground, with the drag arrow drawn as a curled
+length of thread. The reel's thread is teal (`#4EDCE2`, shading down to `#135A63`) and
 its flanges are warm wood (`#E7A96E`).
 
 ## Assets
