@@ -165,9 +165,16 @@ const make = Effect.fn("desktop.environment.make")(function* (
       : input.platform === "darwin"
         ? path.join(homeDirectory, "Library", "Application Support")
         : Option.getOrElse(config.xdgConfigHome, () => path.join(homeDirectory, ".config"));
+  const installVariant = resolveDesktopInstallVariant({
+    isDevelopment,
+    appVersion: input.appVersion,
+  });
+  // The local server receives this as its home, so a preview's server state
+  // lands in its own home rather than the shared database.
   const baseDir = resolveDesktopBaseDir({
     homeDirectory,
     joinPath: path.join,
+    variant: installVariant,
     t3Home: config.t3Home,
   });
   const rootDir = path.resolve(input.dirname, "../../..");
@@ -181,10 +188,6 @@ const make = Effect.fn("desktop.environment.make")(function* (
     appVersion: input.appVersion,
   });
   const displayName = branding.displayName;
-  const installVariant = resolveDesktopInstallVariant({
-    isDevelopment,
-    appVersion: input.appVersion,
-  });
   const identity = DESKTOP_INSTALL_IDENTITIES[installVariant];
   // Electron keys OS credential storage on app.name: the macOS Keychain
   // service, and the libsecret/kwallet collection on Linux. There is no API to

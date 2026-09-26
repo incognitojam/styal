@@ -16,10 +16,13 @@ export function resolveDesktopBaseDir(input: {
   readonly homeDirectory: string;
   readonly joinPath: JoinPath;
   readonly t3Home: Option.Option<string>;
+  readonly variant: DesktopInstallVariant;
 }): string {
-  return Option.getOrElse(normalizeConfiguredBaseDir(input.t3Home), () =>
+  const styalHome = Option.getOrElse(normalizeConfiguredBaseDir(input.t3Home), () =>
     input.joinPath(input.homeDirectory, ".styal"),
   );
+  const { homeDirName } = DESKTOP_INSTALL_IDENTITIES[input.variant];
+  return homeDirName === null ? styalHome : input.joinPath(styalHome, homeDirName);
 }
 
 export function resolveDesktopStateDir(input: {

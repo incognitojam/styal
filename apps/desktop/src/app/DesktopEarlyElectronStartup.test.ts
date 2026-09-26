@@ -100,7 +100,7 @@ describe("DesktopEarlyElectronStartup", () => {
       homeDirectory: "/home/user",
       joinPath,
       readFileString: (path) => {
-        assert.equal(path, "/home/user/.styal-test/preview/desktop-settings.json");
+        assert.equal(path, "/home/user/.styal-test/preview/userdata/desktop-settings.json");
         return JSON.stringify({ linuxPasswordStore: "kwallet6" });
       },
     });

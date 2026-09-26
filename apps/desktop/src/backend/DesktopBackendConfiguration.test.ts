@@ -105,6 +105,7 @@ const withHarness = <A, E, R>(
     | FileSystem.FileSystem
     | DesktopBackendConfiguration.DesktopBackendConfiguration
   >,
+  environmentOptions?: Parameters<typeof makeEnvironmentLayer>[1],
 ) =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
@@ -119,7 +120,7 @@ const withHarness = <A, E, R>(
           Layer.provideMerge(DesktopAppSettings.layerTest()),
           Layer.provideMerge(DesktopWslEnvironment.layerTest()),
           Layer.provideMerge(DesktopWslServerTree.layerTest()),
-          Layer.provideMerge(makeEnvironmentLayer(baseDir)),
+          Layer.provideMerge(makeEnvironmentLayer(baseDir, environmentOptions)),
         ),
       ),
     );
@@ -251,6 +252,41 @@ describe("DesktopBackendConfiguration", () => {
         assert.equal(first.bootstrap.tailscaleServePort, 8443);
         assert.match(first.bootstrap.desktopBootstrapToken, /^[0-9a-f]{48}$/i);
         assert.equal(second.bootstrap.desktopBootstrapToken, first.bootstrap.desktopBootstrapToken);
+      }),
+    ),
+  );
+
+  it.effect("resolvePrimary gives a pull request preview server its own home", () =>
+    withHarness(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+
+        const primary = yield* configuration.resolvePrimary;
+
+        // The server keeps its state in <home>/userdata outside development,
+        // so this home must lead to the desktop's own preview state.
+        assert.equal(environment.installVariant, "preview");
+        assert.match(primary.bootstrap.t3Home ?? "", /\/preview$/);
+        assert.equal(environment.stateDir, `${primary.bootstrap.t3Home}/userdata`);
+        // STYAL_HOME would override the bootstrap home in the server.
+        assert.property(primary.env, "STYAL_HOME");
+        assert.isUndefined(primary.env.STYAL_HOME);
+      }),
+      { appVersion: "1.2.3-pr.456.437" },
+    ),
+  );
+
+  it.effect("resolvePrimary leaves STYAL_HOME to stable and nightly servers", () =>
+    withHarness(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+
+        const primary = yield* configuration.resolvePrimary;
+
+        assert.equal(environment.stateDir, `${primary.bootstrap.t3Home}/userdata`);
+        assert.notProperty(primary.env, "STYAL_HOME");
       }),
     ),
   );

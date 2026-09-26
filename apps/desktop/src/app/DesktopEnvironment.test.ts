@@ -176,7 +176,8 @@ describe("DesktopEnvironment", () => {
   it.effect("installs pull request previews beside stable with their own state", () =>
     Effect.gen(function* () {
       const preview = yield* makeEnvironment({ appVersion: "0.0.22-pr.456.437" });
-      // An explicit home does not fold a preview back into that home's userdata.
+      // A preview is its own home inside the styal home, so the local server it
+      // starts keeps its database there too. An explicit home does not change that.
       const previewWithHome = yield* makeEnvironment(
         { appVersion: "0.0.22-pr.456.437" },
         { STYAL_HOME: "/tmp/styal" },
@@ -184,8 +185,10 @@ describe("DesktopEnvironment", () => {
 
       assert.equal(preview.installVariant, "preview");
       assert.equal(preview.displayName, "styal (Preview)");
-      assert.equal(preview.stateDir, "/Users/alice/.styal/preview");
-      assert.equal(previewWithHome.stateDir, "/tmp/styal/preview");
+      assert.equal(preview.baseDir, "/Users/alice/.styal/preview");
+      assert.equal(preview.stateDir, "/Users/alice/.styal/preview/userdata");
+      assert.equal(previewWithHome.baseDir, "/tmp/styal/preview");
+      assert.equal(previewWithHome.stateDir, "/tmp/styal/preview/userdata");
       assert.equal(preview.userDataDirName, "styal-preview");
       assert.equal(preview.safeStorageName, "styal-preview");
       assert.equal(preview.appUserModelId, "build.styal.app.preview");

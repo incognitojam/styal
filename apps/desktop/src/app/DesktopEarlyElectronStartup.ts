@@ -65,14 +65,16 @@ function resolveEarlyDesktopSettingsPath(input: {
   readonly joinPath: JoinPath;
 }): string {
   const t3Home = Option.fromUndefinedOr(input.env.STYAL_HOME);
+  const variant = resolveEarlyInstallVariant(input);
   const baseDir = resolveDesktopBaseDir({
     homeDirectory: input.homeDirectory,
     joinPath: input.joinPath,
     t3Home,
+    variant,
   });
   const stateDir = resolveDesktopStateDir({
     baseDir,
-    variant: resolveEarlyInstallVariant(input),
+    variant,
     joinPath: input.joinPath,
     t3Home,
   });
