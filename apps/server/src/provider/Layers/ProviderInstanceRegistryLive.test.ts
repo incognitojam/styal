@@ -200,7 +200,6 @@ const makeTildeProviderFixtures = Effect.fn(
       "    },",
       '  }) + "\\n");',
       "});",
-      "setInterval(() => {}, 1_000);",
       "",
     ].join("\n"),
   );
