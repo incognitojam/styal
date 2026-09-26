@@ -10,7 +10,7 @@ T3 Code can stay open while you import. styal reads its database without modifyi
 
 ## Import projects and threads
 
-The T3 Code list shows thread counts and identifies projects already in styal, along with scripts or repairs when applicable. A project can also appear when an earlier import needs its history or provider context repaired. In Settings, select projects and review optional preferences on the same page, then choose **Import**. During setup, choose **Continue** when a Preferences step is available, then **Import & finish** after the final review. If there are no differing preferences, import directly from Projects. Completed projects are deselected; failed projects remain selected for retry.
+The T3 Code list shows thread counts and identifies projects already in styal, along with scripts or repairs when applicable. A project can also appear when an earlier import needs its history or provider context repaired. In Settings, select projects and review optional preferences on the same page, then choose **Import**. During setup, each step imports when you leave it: choose **Import & continue** to import the selected projects before the Preferences step, or **Import & finish** when there are no differing preferences. Completed projects are deselected; failed projects remain selected for retry.
 
 The list refreshes while the page is open, so projects added to or removed from the old installation appear automatically. During import, a progress view shows the selected projects and preferences for each computer. Remaining thread and repair counts refresh automatically; completed requests are marked complete.
 
@@ -24,7 +24,7 @@ If the old database refers to an attachment file that is no longer present, stya
 
 ## Import preferences
 
-Differing preferences are selected by default. In the preferences section (the **Preferences** step during setup), compare the current values with the values after import. Clear **Bring over T3 Code preferences** on any computer where you want to keep the current values. The comparison shows only differences. You can return to **Projects** without losing your selections. Preferences apply to that computer when you choose **Import**, independently of project selection. They include:
+Differing preferences are selected by default. In the preferences section (the **Preferences** step during setup), compare the current values with the values after import. Clear **Bring over T3 Code preferences** on any computer where you want to keep the current values. The comparison shows only differences. You can return to **Projects** without losing your selections. Preferences apply to that computer when you choose **Import** (**Import & finish** during setup, where **Skip preferences** keeps the current values), independently of project selection. They include:
 
 - background activity policy and refresh intervals;
 - host and client idle or power-saving behavior;

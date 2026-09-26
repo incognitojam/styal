@@ -78,12 +78,16 @@ export function useLegacyImport(environmentId: EnvironmentId, busy: boolean) {
     if (!busy) setProgress(null);
   }, [busy]);
 
-  const run = async ({ includeProjects = true } = {}): Promise<ImportOutcome> => {
+  const run = async ({
+    includeProjects = true,
+    includePreferences = true,
+  } = {}): Promise<ImportOutcome> => {
     const selectedProjects = includeProjects ? selected : [];
+    const importPreferences = includePreferences && selectedPreferences;
     setProgress({
       projects: selectedProjects,
       phase: selectedProjects.length > 0 ? "projects" : "preferences",
-      preferences: selectedPreferences ? "queued" : null,
+      preferences: importPreferences ? "queued" : null,
     });
     setError(null);
     setPreferencesError(null);
@@ -129,7 +133,7 @@ export function useLegacyImport(environmentId: EnvironmentId, busy: boolean) {
       }
     }
     if (!mounted.current) return { success: false };
-    if (selectedPreferences) {
+    if (importPreferences) {
       setProgress(
         (current) => current && { ...current, phase: "preferences", preferences: "importing" },
       );

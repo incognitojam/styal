@@ -60,11 +60,14 @@ Choose **T3 Code** to migrate an existing installation, or **Claude Code / Codex
 to import CLI conversation history. Setup imports projects from one source at a
 time. Each source only checks the computers selected earlier in setup.
 
-When there are preferences to review, **Continue** opens the top-level
-**Preferences** step. **Skip projects** also opens Preferences, without selecting
-any projects. Otherwise, **Import & finish** imports the project selection and
-completes setup; **Skip for now** on the source chooser finishes without importing.
-Nothing is imported until the final review. Navigation is disabled while an import runs. T3 Code migration
+Each step imports when you leave it. When there are preferences to review,
+**Import & continue** imports the selected projects and opens the top-level
+**Preferences** step, and **Skip projects** opens it without importing projects.
+Otherwise, **Import & finish** imports the selection and completes setup, and
+**Skip for now** finishes without importing. On Preferences, **Import & finish**
+applies the selected preferences and **Skip preferences** keeps your current
+values; projects imported in the previous step stay imported. Navigation is
+disabled while an import runs. T3 Code migration
 remains available in **Settings → Import data**; CLI history import is available
 only during first setup.
 

@@ -47,14 +47,17 @@ export function LegacyImportComputer({
   includeProjects,
 }: ImportComputerProps & { stage: LegacyImportStage; includeProjects: boolean }) {
   const legacy = useLegacyImport(environmentId, busy);
+  // Setup commits each step on its own; Settings reviews and imports everything together.
+  const includePreferences = !setup || stage === "preferences";
   const selectedLegacyIds = new Set(legacy.selected.map((project) => project.projectId));
   const projects = includeProjects ? legacy.selected.length : 0;
   const threads = includeProjects
     ? legacy.selected.reduce((total, project) => total + project.threadCount, 0)
     : 0;
-  const preferences = legacy.selectedPreferences ? 1 : 0;
+  const preferences = includePreferences && legacy.selectedPreferences ? 1 : 0;
   const preferenceChanges = legacy.changes.length;
-  const previewPending = legacy.preview === null && legacy.query.error === null;
+  // A disconnected computer cannot answer; waiting on it would lock every way out of setup.
+  const previewPending = connected && legacy.preview === null && legacy.query.error === null;
   useEffect(
     () =>
       onSummary(environmentId, {
@@ -70,7 +73,7 @@ export function LegacyImportComputer({
     run: async () => {
       if (!connected && (projects > 0 || preferences > 0))
         throw new Error(`${label} is not connected.`);
-      return legacy.run({ includeProjects });
+      return legacy.run({ includeProjects, includePreferences });
     },
   }));
   if (!active && !importing) return null;
@@ -84,7 +87,7 @@ export function LegacyImportComputer({
           progress={legacy.progress}
           preview={legacy.query.data}
           selected={includeProjects ? legacy.selected : []}
-          preferences={legacy.selectedPreferences}
+          preferences={preferences > 0}
           pending={legacy.query.isPending}
           error={legacy.query.error}
         />

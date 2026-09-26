@@ -6,7 +6,7 @@ import { useProjects } from "../../state/entities";
 import { dataImportBatchPendingCount, legacyImportPendingCount } from "../../state/dataImport";
 import { LegacyImportComputer, HistoryImportComputer } from "./ImportComputer";
 import { ImportSourceChooser } from "./ImportSourceChooser";
-import { ImportDataView } from "./ImportDataView";
+import { ImportDataView, plural } from "./ImportDataView";
 import { importErrorMessage } from "./useLegacyImport";
 import type {
   ComputerImporter,
@@ -15,8 +15,12 @@ import type {
   LegacyImportStage,
 } from "./types";
 
-/** Runs the chosen project source and optional T3 preferences across selected computers. */
+/**
+ * Runs the chosen project source and optional T3 preferences across selected computers.
+ * Setup commits each step when it is left; Settings imports the whole page at once.
+ */
 export function DataImportPanel({
+  active = true,
   environmentIds,
   source,
   onBack,
@@ -27,6 +31,8 @@ export function DataImportPanel({
   onContinue,
   onPreferencesAvailable,
 }: {
+  /** Whether setup is showing this panel; focus only moves into a visible step. */
+  active?: boolean;
   environmentIds?: readonly EnvironmentId[];
   source: ImportSource | null;
   stage?: LegacyImportStage;
@@ -66,14 +72,16 @@ export function DataImportPanel({
   const preferencesPending = environments.some(
     (environment) => summaries.get(environment.environmentId)?.previewPending !== false,
   );
+  // Setup only leads on to Preferences once discovery found values that differ.
+  const nextStep = !!onDone && stage === "projects" && preferencesAvailable;
   useEffect(() => {
     onPreferencesAvailable?.(preferencesAvailable);
   }, [onPreferencesAvailable, preferencesAvailable]);
+  const historyStep = source === "history" && stage === "projects";
   const summary = environments.reduce(
     (total, environment) => {
       const next = summaries.get(environment.environmentId);
-      const history =
-        source === "history" ? historySummaries.get(environment.environmentId) : undefined;
+      const history = historyStep ? historySummaries.get(environment.environmentId) : undefined;
       return {
         projects: total.projects + (next?.projects ?? 0) + (history?.projects ?? 0),
         threads: total.threads + (next?.threads ?? 0) + (history?.threads ?? 0),
@@ -99,8 +107,12 @@ export function DataImportPanel({
   const [error, setError] = useState<string | null>(null);
   const [landing, setLanding] = useState<ScopedProjectRef>();
   const [awaitingCompletion, setAwaitingCompletion] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  // Only an import shows per-computer progress; a skip leaves the step as it was.
+  const [skipped, setSkipped] = useState(false);
+  const importing = progress !== null || (awaitingCompletion && !skipped);
   const projects = useProjects();
-  const busy = running || pending > 0 || awaitingCompletion;
+  const busy = running || pending > 0 || awaitingCompletion || finishing;
   useEffect(() => {
     onBusyChange?.(busy);
   }, [busy, onBusyChange]);
@@ -117,14 +129,15 @@ export function DataImportPanel({
     )
       return;
     setAwaitingCompletion(false);
-    setRunning(true);
+    setFinishing(true);
     void onDone(landing)
       .catch((failure) => setError(importErrorMessage(failure)))
-      .finally(() => setRunning(false));
+      .finally(() => setFinishing(false));
   }, [awaitingCompletion, landing, onDone, projects]);
   const run = async () => {
     if (busy || runningRef.current) return;
     runningRef.current = true;
+    setSkipped(false);
     registry.update(dataImportBatchPendingCount, (count) => count + 1);
     setRunning(true);
     setError(null);
@@ -134,7 +147,7 @@ export function DataImportPanel({
     const failures: string[] = [];
     try {
       const batch = environments.flatMap((environment) => [
-        ...(source === "history"
+        ...(historyStep
           ? [{ environment, importer: historyImporters.current.get(environment.environmentId) }]
           : []),
         { environment, importer: importers.current.get(environment.environmentId) },
@@ -163,8 +176,11 @@ export function DataImportPanel({
         setError(
           `Some data could not be imported${failures.length ? ` on ${failures.join(", ")}` : ""}. Retry the remaining selection.`,
         );
-      else if (onDone) setAwaitingCompletion(true);
-      else setMessage("Import complete.");
+      else if (!onDone) setMessage("Import complete.");
+      else if (nextStep) {
+        setMessage(`Imported ${plural(summary.projects, "project")}.`);
+        onContinue?.();
+      } else setAwaitingCompletion(true);
     } finally {
       registry.update(dataImportBatchPendingCount, (count) => Math.max(0, count - 1));
       runningRef.current = false;
@@ -172,18 +188,66 @@ export function DataImportPanel({
       setProgress(null);
     }
   };
-  const skip = async () => {
+  /** Leaves the current step without importing it; earlier steps stay imported. */
+  const skip = () => {
     if (!onDone || busy || runningRef.current) return;
-    onSourceChange?.(null);
-    if (preferencesAvailable && onContinue) onContinue();
+    setSkipped(true);
+    setError(null);
+    if (stage === "projects") onSourceChange?.(null);
+    if (nextStep) onContinue?.();
     else setAwaitingCompletion(true);
   };
+
+  // Changing views removes or hides the control that was pressed, so hand focus to
+  // the matching action in the next view once it can take it, without pulling focus
+  // off a control the user has already reached. After a skip, Enter skips again.
+  // Selection counts arrive a render late, so a fallback focus is provisional.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const firstSourceRef = useRef<HTMLButtonElement>(null);
+  const primaryRef = useRef<HTMLButtonElement>(null);
+  const skipRef = useRef<HTMLButtonElement>(null);
+  const view = source === null && stage === "projects" ? "sources" : stage;
+  const focusedView = useRef<string | null>(null);
+  const provisionalFocus = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!active || !onDone) {
+      focusedView.current = null;
+      return;
+    }
+    if (focusedView.current === view) return;
+    const current = document.activeElement;
+    if (
+      current instanceof HTMLElement &&
+      current !== provisionalFocus.current &&
+      current.matches("button, input") &&
+      rootRef.current?.contains(current) &&
+      current.checkVisibility()
+    ) {
+      focusedView.current = view;
+      return;
+    }
+    const [preferred, fallback] =
+      view === "sources"
+        ? [firstSourceRef.current, null]
+        : skipped
+          ? [skipRef.current, primaryRef.current]
+          : [primaryRef.current, skipRef.current];
+    if (preferred && !preferred.disabled) {
+      preferred.focus();
+      focusedView.current = view;
+      provisionalFocus.current = null;
+    } else if (fallback && !fallback.disabled) {
+      fallback.focus();
+      provisionalFocus.current = fallback;
+    }
+  });
   return (
-    <>
-      {source === null && stage === "projects" ? (
+    <div ref={rootRef} className="contents">
+      {view === "sources" ? (
         <ImportSourceChooser
+          firstSourceRef={firstSourceRef}
           onSelect={(next) => onSourceChange?.(next)}
-          onSkip={() => void skip()}
+          onSkip={skip}
           busy={busy}
           skipDisabled={preferencesPending}
           skipLabel={
@@ -196,7 +260,7 @@ export function DataImportPanel({
           error={error}
         />
       ) : null}
-      <div hidden={source === null && stage === "projects"}>
+      <div hidden={view === "sources"}>
         <ImportDataView
           computers={environments.map((environment) => ({
             id: environment.environmentId,
@@ -209,12 +273,15 @@ export function DataImportPanel({
           setup={!!onDone}
           source={source}
           stage={stage}
-          onContinue={stage === "projects" && preferencesAvailable ? onContinue : undefined}
-          checkingPreferences={!!onDone && preferencesPending}
+          nextStep={nextStep}
+          checkingPreferences={!!onDone && stage === "projects" && preferencesPending}
+          finishing={awaitingCompletion || finishing}
           onBack={onBack}
-          progress={progress ?? (awaitingCompletion ? "Finishing setup…" : null)}
+          progress={progress ?? (importing ? "Finishing setup…" : null)}
           onImport={() => void run()}
-          onSkip={() => void skip()}
+          onSkip={skip}
+          primaryRef={primaryRef}
+          skipRef={skipRef}
           message={message}
           error={error}
         >
@@ -228,7 +295,7 @@ export function DataImportPanel({
                   connected={environment.connection.phase === "connected"}
                   busy={busy}
                   setup={!!onDone}
-                  importing={progress !== null || awaitingCompletion}
+                  importing={historyStep && importing}
                   onSummary={onHistorySummary}
                   ref={(importer) => {
                     if (importer) historyImporters.current.set(environment.environmentId, importer);
@@ -250,7 +317,7 @@ export function DataImportPanel({
               connected={environment.connection.phase === "connected"}
               busy={busy}
               setup={!!onDone}
-              importing={progress !== null || awaitingCompletion}
+              importing={importing}
               stage={stage}
               onSummary={onSummary}
               ref={(importer) => {
@@ -261,6 +328,6 @@ export function DataImportPanel({
           ))}
         </ImportDataView>
       </div>
-    </>
+    </div>
   );
 }

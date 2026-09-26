@@ -253,6 +253,16 @@ describe("shared T3 importer", () => {
     expect(render().selectedPreferences).toBe(false);
     expect(render(true).progress?.projects).toHaveLength(0);
   });
+  it("imports projects without the selected preferences when preferences are left for later", async () => {
+    const outcome = await render().run({ includePreferences: false });
+    expect(outcome.success).toBe(true);
+    expect(mocks.command).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: { projectIds: ["one", "two"], includeSettings: false },
+    });
+    expect(render().selectedPreferences).toBe(true);
+    expect(render(true).progress?.preferences).toBeNull();
+  });
   it("does not import anything when projects are skipped and preferences are not selected", async () => {
     render().setIncludeSettings(false);
     expect(await render().run({ includeProjects: false })).toEqual({
