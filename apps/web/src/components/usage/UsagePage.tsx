@@ -14,7 +14,10 @@ import {
   SlidersHorizontalIcon,
 } from "lucide-react";
 import { useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react";
-import { refreshUsageLimits } from "@t3tools/client-runtime/state/usage";
+import {
+  cursorKeychainAccessEnvironments,
+  refreshUsageLimits,
+} from "@t3tools/client-runtime/state/usage";
 
 import {
   isCompatibleUsageContractVersion,
@@ -141,9 +144,7 @@ export function UsagePage() {
     selectedEnvironmentIds,
   );
   const presentations = useAtomValue(environmentPresentations.presentationsAtom);
-  const cursorAccessEnvironments = selectedEnvironments.filter(
-    (environment) => environment.needsCursorKeychainAccess,
-  );
+  const cursorAccessEnvironments = cursorKeychainAccessEnvironments(selectedEnvironments);
   const sourceMessages = [
     ...new Set(
       selectedEnvironments.flatMap(
