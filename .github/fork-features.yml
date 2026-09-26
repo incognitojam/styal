@@ -298,7 +298,7 @@ features:
   - id: data-import-from-t3-code
     title: T3 Code migration in setup and Settings
     status: maintained
-    prs: [294, 297, 298, 300, 306, 349, 379]
+    prs: [294, 297, 298, 300, 306, 349, 379, 478]
     invariants:
       - A selected styal environment can preview and import projects, missing threads, attachments, provider continuations, and supported server preferences from a live T3 Code database, including older fork databases, without modifying the source.
       - Existing styal project configuration wins while each imported thread and its verified attachments commit atomically, so interrupted or repeated imports resume without duplication.
