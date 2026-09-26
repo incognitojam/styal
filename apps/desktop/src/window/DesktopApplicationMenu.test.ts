@@ -182,7 +182,7 @@ describe("DesktopApplicationMenu", () => {
       const template = yield* Deferred.await(applicationMenuTemplate);
       // app.name is a stable slug that keys credential storage, so the menu
       // reads branding instead of whatever Electron was named.
-      assert.equal(template[0]?.label, "styal (Alpha)");
+      assert.equal(template[0]?.label, "styal");
     }),
   );
 

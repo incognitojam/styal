@@ -433,7 +433,7 @@ function AboutVersionSection() {
       {hasDesktopBridge ? (
         <SettingsRow
           title="Update track"
-          description="Nightly gets new changes first. Alpha gets versions promoted after they've spent time on Nightly."
+          description="Nightly gets new changes first. Stable gets versions promoted after they've spent time on Nightly."
           control={
             <Select
               value={selectedUpdateChannel}
@@ -448,12 +448,12 @@ function AboutVersionSection() {
                 disabled={isChangingUpdateChannel}
               >
                 <SelectValue>
-                  {selectedUpdateChannel === "nightly" ? "Nightly" : "Alpha"}
+                  {selectedUpdateChannel === "nightly" ? "Nightly" : "Stable"}
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
                 <SelectItem hideIndicator value="latest">
-                  Alpha
+                  Stable
                 </SelectItem>
                 <SelectItem hideIndicator value="nightly">
                   Nightly
@@ -481,7 +481,7 @@ function AboutVersionSection() {
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
                 <SelectItem hideIndicator value="latest">
-                  Latest
+                  Stable
                 </SelectItem>
                 <SelectItem hideIndicator value="nightly">
                   Nightly

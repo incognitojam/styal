@@ -127,20 +127,20 @@ describe("ElectronUpdater", () => {
         throw cause;
       });
       const updater = yield* ElectronUpdater.ElectronUpdater;
-      autoUpdaterMock.channel = "alpha";
+      autoUpdaterMock.channel = "latest";
 
       const error = yield* updater
         .quitAndInstall({ isSilent: true, isForceRunAfter: false })
         .pipe(Effect.flip);
 
       assert.instanceOf(error, ElectronUpdater.ElectronUpdaterQuitAndInstallError);
-      assert.equal(error.channel, "alpha");
+      assert.equal(error.channel, "latest");
       assert.equal(error.isSilent, true);
       assert.equal(error.isForceRunAfter, false);
       assert.strictEqual(error.cause, cause);
       assert.equal(
         error.message,
-        "Electron updater failed to quit and install the update on channel alpha (silent: true, force run after: false).",
+        "Electron updater failed to quit and install the update on channel latest (silent: true, force run after: false).",
       );
       assert.notInclude(error.message, cause.message);
       assert.deepEqual(autoUpdaterMock.quitAndInstall.mock.calls, [[true, false]]);

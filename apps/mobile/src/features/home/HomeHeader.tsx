@@ -216,11 +216,13 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
               brand={
                 <View className="flex-row items-center gap-2">
                   <StyalWordmark colorClassName="accent-icon" height={24} />
-                  <View className="rounded-full bg-subtle px-2 py-0.75">
-                    <RNText className="text-[11px] font-t3-bold tracking-[1.1px] text-foreground-muted uppercase">
-                      {stageLabel}
-                    </RNText>
-                  </View>
+                  {stageLabel ? (
+                    <View className="rounded-full bg-subtle px-2 py-0.75">
+                      <RNText className="text-[11px] font-t3-bold tracking-[1.1px] text-foreground-muted uppercase">
+                        {stageLabel}
+                      </RNText>
+                    </View>
+                  ) : null}
                 </View>
               }
             />
