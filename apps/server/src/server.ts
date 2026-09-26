@@ -123,6 +123,7 @@ import * as SourceControlRepositoryService from "./sourceControl/SourceControlRe
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import { ObservabilityLive } from "./observability/Layers/Observability.ts";
+import * as HeapSnapshot from "./observability/HeapSnapshot.ts";
 import { reportStalledShutdown, traceShutdown } from "./observability/OpenSpans.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
@@ -1014,6 +1015,7 @@ const makeServerLayer = Layer.unwrap(
       runtimeStateLayer,
       tailscaleServeLayer,
       cloudDesiredLinkReconcileLayer,
+      HeapSnapshot.layer,
     );
     // Its finalizer runs before every other shutdown step except the stalled
     // shutdown report, which only starts a timer. Any later finalizer can stall,
