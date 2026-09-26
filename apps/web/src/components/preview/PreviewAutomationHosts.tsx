@@ -90,6 +90,7 @@ import {
   resolvePreviewAutomationTarget,
 } from "./previewAutomationTarget";
 import { resolveHostWaitBudgetMs, waitForHostReadiness } from "./previewAutomationHostBudget";
+import { keepHostFocusDuringGuestInput } from "./previewHostFocus";
 import { isPreviewViewportReady } from "./previewViewportReadiness";
 import { shouldRollbackPreviewViewport } from "./previewViewportRollback";
 
@@ -153,6 +154,9 @@ const waitForPreviewCaptureSurface = async (
     timeoutMs,
   });
 };
+
+const activeHtmlElement = (): HTMLElement | null =>
+  document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
 const isPreviewWebviewRendering = (runtimeTabId: string): boolean => {
   const wrapper = findBrowserWebview(runtimeTabId)?.closest<HTMLElement>("[data-preview-viewport]");
@@ -685,9 +689,11 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           }
           case "click": {
             const ready = await requireReadyTab();
-            return await ready.bridge.automation.click(
-              ready.runtimeTabId,
-              request.input as Parameters<typeof ready.bridge.automation.click>[1],
+            return await keepHostFocusDuringGuestInput(ready.runtimeTabId, activeHtmlElement, () =>
+              ready.bridge.automation.click(
+                ready.runtimeTabId,
+                request.input as Parameters<typeof ready.bridge.automation.click>[1],
+              ),
             );
           }
           case "type": {
