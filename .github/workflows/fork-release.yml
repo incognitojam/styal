@@ -126,21 +126,50 @@ jobs:
             exit 1
           fi
 
-  build_desktop:
-    name: Build desktop artifacts
-    needs: [prepare, build_cli_archives]
+  build_bundle:
+    name: Build JS bundle
+    needs: prepare
+    uses: ./.github/workflows/fork-js-bundle.yml
+    with:
+      ref: ${{ needs.prepare.outputs.ref }}
+      version: ${{ needs.prepare.outputs.version }}
+
+  # One call per target, so macOS and Linux never wait for the Windows WSL
+  # archive and no target waits for the full CLI archive matrix.
+  build_desktop_mac:
+    name: Build macOS desktop artifact
+    needs: [prepare, build_bundle]
     uses: ./.github/workflows/fork-desktop-build.yml
     with:
       ref: ${{ needs.prepare.outputs.ref }}
       version: ${{ needs.prepare.outputs.version }}
-      target: all
-      cli_archives_ready: true
+      target: macos-arm64
       sign_macos: true
+    secrets: inherit
+
+  build_desktop_linux:
+    name: Build Linux desktop artifact
+    needs: [prepare, build_bundle]
+    uses: ./.github/workflows/fork-desktop-build.yml
+    with:
+      ref: ${{ needs.prepare.outputs.ref }}
+      version: ${{ needs.prepare.outputs.version }}
+      target: linux-x64
+    secrets: inherit
+
+  build_desktop_windows:
+    name: Build Windows desktop artifact
+    needs: [prepare, build_bundle]
+    uses: ./.github/workflows/fork-desktop-build.yml
+    with:
+      ref: ${{ needs.prepare.outputs.ref }}
+      version: ${{ needs.prepare.outputs.version }}
+      target: windows-x64
     secrets: inherit
 
   build_cli_archives:
     name: Build standalone CLI archives
-    needs: prepare
+    needs: [prepare, build_bundle]
     uses: ./.github/workflows/fork-cli-archives.yml
     with:
       ref: ${{ needs.prepare.outputs.ref }}
@@ -162,11 +191,21 @@ jobs:
 
   publish_cli:
     name: Publish CLI to npm
-    needs: [prepare, build_desktop, build_cli, build_cli_archives]
+    needs:
+      [
+        prepare,
+        build_desktop_mac,
+        build_desktop_linux,
+        build_desktop_windows,
+        build_cli,
+        build_cli_archives,
+      ]
     if: >-
       ${{
         !cancelled() &&
-        needs.build_desktop.result == 'success' &&
+        needs.build_desktop_mac.result == 'success' &&
+        needs.build_desktop_linux.result == 'success' &&
+        needs.build_desktop_windows.result == 'success' &&
         needs.build_cli.result == 'success' &&
         needs.build_cli_archives.result == 'success' &&
         vars.STYAL_CLI_PUBLISH_ENABLED == 'true' &&
@@ -184,10 +223,21 @@ jobs:
 
   publish:
     name: Publish stable release
-    needs: [prepare, build_desktop, build_cli, build_cli_archives, publish_cli]
+    needs:
+      [
+        prepare,
+        build_desktop_mac,
+        build_desktop_linux,
+        build_desktop_windows,
+        build_cli,
+        build_cli_archives,
+        publish_cli,
+      ]
     if: >-
       !cancelled() &&
-      needs.build_desktop.result == 'success' &&
+      needs.build_desktop_mac.result == 'success' &&
+      needs.build_desktop_linux.result == 'success' &&
+      needs.build_desktop_windows.result == 'success' &&
       needs.build_cli.result == 'success' &&
       needs.build_cli_archives.result == 'success' &&
       (needs.publish_cli.result == 'success' || needs.publish_cli.result == 'skipped')

@@ -752,6 +752,7 @@ features:
     implementation_paths:
       - .github/workflows/fork-cli-archives.yml
       - .github/workflows/fork-cli-build.yml
+      - .github/workflows/fork-js-bundle.yml
       - .github/workflows/fork-nightly.yml
       - .github/workflows/fork-release.yml
       - apps/desktop/gnome-extension/bundle.json
