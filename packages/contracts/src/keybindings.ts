@@ -94,6 +94,13 @@ export const STATIC_KEYBINDING_COMMANDS = [
   "editor.openFavorite",
   "sourceControl.viewPullRequest",
   "sourceControl.focusPullRequestTab",
+  "usage.cost",
+  "usage.tokens",
+  "usage.limits",
+  "usage.period.day",
+  "usage.period.week",
+  "usage.period.month",
+  "usage.period.quarter",
   ...MODEL_PICKER_KEYBINDING_COMMANDS,
   ...THREAD_KEYBINDING_COMMANDS,
 ] as const;
