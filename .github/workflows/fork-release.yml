@@ -50,7 +50,7 @@ jobs:
       release_name: ${{ steps.candidate.outputs.release_name }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -197,13 +197,13 @@ jobs:
       contents: write
     steps:
       - name: Checkout promoted commit
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare.outputs.ref }}
           fetch-depth: 0
 
       - name: Download release assets
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           pattern: desktop-*
           merge-multiple: true

@@ -64,7 +64,7 @@ jobs:
           fi
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           sparse-checkout: |
@@ -175,7 +175,7 @@ jobs:
 
       - name: Comment preview URL
         if: steps.deploy.outputs.preview_url != ''
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         with:
@@ -286,7 +286,7 @@ jobs:
 
       - name: Mark the preview comment as removed
         if: steps.delete.outputs.removed == 'true'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const marker = "<!-- web-preview-deploy -->";
