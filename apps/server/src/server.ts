@@ -129,6 +129,7 @@ import { reportStalledShutdown, traceShutdown } from "./observability/OpenSpans.
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import { authHttpApiLayer, environmentAuthenticatedAuthLayer } from "./auth/http.ts";
+import * as ReplayMarkers from "./auth/replayMarkers.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import {
@@ -535,6 +536,7 @@ const AntigravityInstallationRefreshLive = Layer.effectDiscard(
 const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   traceShutdown("reactors"),
   Layer.provideMerge(AntigravityInstallationRefreshLive.pipe(traceShutdown("antigravity-refresh"))),
+  Layer.provideMerge(ReplayMarkers.layer.pipe(traceShutdown("replay-markers"))),
   Layer.provideMerge(ProviderAuthServiceLive.pipe(traceShutdown("provider-auth"))),
   // Core Services
   Layer.provideMerge(ServerSettingsLayerLive.pipe(traceShutdown("server-settings"))),
