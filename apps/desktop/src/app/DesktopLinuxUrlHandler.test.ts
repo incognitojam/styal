@@ -22,6 +22,7 @@ const makeEnvironment = (overrides: Record<string, unknown> = {}) =>
     platform: "linux",
     isPackaged: true,
     isDevelopment: false,
+    installVariant: "production",
     displayName: "styal",
     linuxDesktopEntryName: "build.styal.Styal.desktop",
     linuxWmClass: "styal",

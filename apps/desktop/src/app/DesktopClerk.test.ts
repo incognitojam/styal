@@ -33,6 +33,7 @@ const makeDesktopClerkLayer = (isDevelopment = true, events: string[] = []) => {
   const environment = DesktopEnvironment.DesktopEnvironment.of({
     stateDir: "/tmp/t3-state",
     isDevelopment,
+    installVariant: isDevelopment ? "development" : "production",
     appDataDirectory: "/tmp/app-data",
     userDataDirName: isDevelopment ? "styal-dev" : "styal",
     path: { join: (...parts: ReadonlyArray<string>) => parts.join("/") },

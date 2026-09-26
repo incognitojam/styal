@@ -13,6 +13,7 @@ describe("DesktopEarlyElectronStartup", () => {
   it("reads the persisted linux password-store preference before Electron is ready", () => {
     const preference = resolveEarlyLinuxPasswordStorePreference({
       env: { STYAL_HOME: "/home/user/.styal-test" },
+      appVersion: "1.2.3",
       homeDirectory: "/home/user",
       joinPath,
       readFileString: (path) => {
@@ -27,6 +28,7 @@ describe("DesktopEarlyElectronStartup", () => {
   it("accepts JSONC in the early desktop settings file", () => {
     const preference = resolveEarlyLinuxPasswordStorePreference({
       env: { STYAL_HOME: "/home/user/.styal-test" },
+      appVersion: "1.2.3",
       homeDirectory: "/home/user",
       joinPath,
       readFileString: () => `{
@@ -41,6 +43,7 @@ describe("DesktopEarlyElectronStartup", () => {
   it("falls back to auto when the early settings document is missing or invalid", () => {
     const preference = resolveEarlyLinuxPasswordStorePreference({
       env: {},
+      appVersion: "1.2.3",
       homeDirectory: "/home/user",
       joinPath,
       readFileString: () => {
@@ -54,6 +57,7 @@ describe("DesktopEarlyElectronStartup", () => {
   it("preserves absolute root paths when resolving early settings", () => {
     const preference = resolveEarlyLinuxPasswordStorePreference({
       env: { STYAL_HOME: "/" },
+      appVersion: "1.2.3",
       homeDirectory: "/home/user",
       joinPath,
       readFileString: (path) => {
@@ -72,6 +76,7 @@ describe("DesktopEarlyElectronStartup", () => {
         XDG_CURRENT_DESKTOP: "niri",
         VITE_DEV_SERVER_URL: "http://127.0.0.1:5173",
       },
+      appVersion: "1.2.3",
       homeDirectory: "/home/user",
       joinPath,
       readFileString: (path) => {
@@ -81,10 +86,30 @@ describe("DesktopEarlyElectronStartup", () => {
     });
 
     assert.deepEqual(options, {
-      isDevelopment: true,
+      variant: "development",
       linuxWmClass: "styal-dev",
       linuxDesktopEntryName: "build.styal.Styal.Development.desktop",
       passwordStore: "gnome-libsecret",
+    });
+  });
+
+  it("keeps pull request preview state and identity apart from stable", () => {
+    const options = resolveEarlyLinuxElectronOptions({
+      env: { STYAL_HOME: "/home/user/.styal-test" },
+      appVersion: "1.2.3-pr.456.437",
+      homeDirectory: "/home/user",
+      joinPath,
+      readFileString: (path) => {
+        assert.equal(path, "/home/user/.styal-test/preview/userdata/desktop-settings.json");
+        return JSON.stringify({ linuxPasswordStore: "kwallet6" });
+      },
+    });
+
+    assert.deepEqual(options, {
+      variant: "preview",
+      linuxWmClass: "styal-preview",
+      linuxDesktopEntryName: "build.styal.Styal.Preview.desktop",
+      passwordStore: "kwallet6",
     });
   });
 
@@ -93,6 +118,7 @@ describe("DesktopEarlyElectronStartup", () => {
       env: {
         VITE_DEV_SERVER_URL: "http://127.0.0.1:5173",
       },
+      appVersion: "1.2.3",
       homeDirectory: "/home/user",
       joinPath,
       readFileString: (path) => {
@@ -110,6 +136,7 @@ describe("DesktopEarlyElectronStartup", () => {
         STYAL_HOME: "   ",
         VITE_DEV_SERVER_URL: "http://127.0.0.1:5173",
       },
+      appVersion: "1.2.3",
       homeDirectory: "/home/user",
       joinPath,
       readFileString: (path) => {

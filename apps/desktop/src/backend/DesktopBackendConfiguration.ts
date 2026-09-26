@@ -529,6 +529,9 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       cwd: environment.backendCwd,
       env: {
         ...backendChildEnvPatch(),
+        // The server prefers STYAL_HOME over the bootstrap home, which would
+        // put a preview's server back on the shared userdata database.
+        ...(environment.installVariant === "preview" ? { STYAL_HOME: undefined } : {}),
         ELECTRON_RUN_AS_NODE: "1",
       },
       // Primary wants process.env (PATH, dev-runner's STYAL_HOME, etc.).

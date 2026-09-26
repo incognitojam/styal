@@ -8,20 +8,19 @@ import * as Scope from "effect/Scope";
 
 import * as Electron from "electron";
 
+import {
+  DESKTOP_INSTALL_IDENTITIES,
+  type DesktopInstallVariant,
+} from "../app/DesktopInstallVariant.ts";
+
 export const DESKTOP_HOST = "app";
-const DESKTOP_PRODUCTION_SCHEME = "styal";
-const DESKTOP_DEVELOPMENT_SCHEME = "styal-dev";
 
-export function getDesktopScheme(isDevelopment: boolean): string {
-  return isDevelopment ? DESKTOP_DEVELOPMENT_SCHEME : DESKTOP_PRODUCTION_SCHEME;
+export function getDesktopScheme(variant: DesktopInstallVariant): string {
+  return DESKTOP_INSTALL_IDENTITIES[variant].scheme;
 }
 
-function getDesktopOrigin(isDevelopment: boolean): string {
-  return `${getDesktopScheme(isDevelopment)}://${DESKTOP_HOST}`;
-}
-
-export function getDesktopUrl(isDevelopment: boolean): string {
-  return `${getDesktopOrigin(isDevelopment)}/`;
+export function getDesktopUrl(variant: DesktopInstallVariant): string {
+  return `${getDesktopScheme(variant)}://${DESKTOP_HOST}/`;
 }
 
 export class ElectronProtocolRegistrationError extends Schema.TaggedError<ElectronProtocolRegistrationError>()(
@@ -110,9 +109,9 @@ function withContentSecurityPolicy(response: Response, policy: string): Response
  * Must run synchronously during process bootstrap, before Electron emits `ready`.
  */
 function registerDesktopSchemePrivilegesSync(): void {
-  Electron.protocol.registerSchemesAsPrivileged([
-    {
-      scheme: DESKTOP_PRODUCTION_SCHEME,
+  Electron.protocol.registerSchemesAsPrivileged(
+    Object.values(DESKTOP_INSTALL_IDENTITIES).map(({ scheme }) => ({
+      scheme,
       privileges: {
         standard: true,
         secure: true,
@@ -120,18 +119,8 @@ function registerDesktopSchemePrivilegesSync(): void {
         corsEnabled: true,
         stream: true,
       },
-    },
-    {
-      scheme: DESKTOP_DEVELOPMENT_SCHEME,
-      privileges: {
-        standard: true,
-        secure: true,
-        supportFetchAPI: true,
-        corsEnabled: true,
-        stream: true,
-      },
-    },
-  ]);
+    })),
+  );
 }
 
 const registerDesktopSchemePrivileges = Effect.sync(registerDesktopSchemePrivilegesSync).pipe(

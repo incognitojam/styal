@@ -13,7 +13,11 @@ import * as Path from "effect/Path";
 
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopConfig from "./DesktopConfig.ts";
-import { resolveLinuxDesktopEntryName } from "./DesktopEarlyElectronStartup.ts";
+import {
+  DESKTOP_INSTALL_IDENTITIES,
+  resolveDesktopInstallVariant,
+  type DesktopInstallVariant,
+} from "./DesktopInstallVariant.ts";
 import { resolveDesktopBaseDir, resolveDesktopStateDir } from "./DesktopStatePaths.ts";
 import { isNightlyDesktopVersion, isPreviewDesktopVersion } from "../updates/updateChannels.ts";
 
@@ -38,6 +42,7 @@ export class DesktopEnvironment extends Context.Service<
     readonly processArch: string;
     readonly isPackaged: boolean;
     readonly isDevelopment: boolean;
+    readonly installVariant: DesktopInstallVariant;
     readonly appVersion: string;
     readonly appPath: string;
     readonly resourcesPath: string;
@@ -160,9 +165,16 @@ const make = Effect.fn("desktop.environment.make")(function* (
       : input.platform === "darwin"
         ? path.join(homeDirectory, "Library", "Application Support")
         : Option.getOrElse(config.xdgConfigHome, () => path.join(homeDirectory, ".config"));
+  const installVariant = resolveDesktopInstallVariant({
+    isDevelopment,
+    appVersion: input.appVersion,
+  });
+  // The local server receives this as its home, so a preview's server state
+  // lands in its own home rather than the shared database.
   const baseDir = resolveDesktopBaseDir({
     homeDirectory,
     joinPath: path.join,
+    variant: installVariant,
     t3Home: config.t3Home,
   });
   const rootDir = path.resolve(input.dirname, "../../..");
@@ -176,20 +188,21 @@ const make = Effect.fn("desktop.environment.make")(function* (
     appVersion: input.appVersion,
   });
   const displayName = branding.displayName;
+  const identity = DESKTOP_INSTALL_IDENTITIES[installVariant];
   // Electron keys OS credential storage on app.name: the macOS Keychain
   // service, and the libsecret/kwallet collection on Linux. There is no API to
   // name those entries directly, so app.name is an identity slug rather than a
   // display string. It matches userDataDirName below, keeping secrets in the
   // same namespace as the state they protect. Anything user-visible reads
   // displayName instead.
-  const safeStorageName = isDevelopment ? "styal-dev" : "styal";
+  const safeStorageName = identity.slug;
   const stateDir = resolveDesktopStateDir({
     baseDir,
-    isDevelopment,
+    variant: installVariant,
     joinPath: path.join,
     t3Home: config.t3Home,
   });
-  const userDataDirName = isDevelopment ? "styal-dev" : "styal";
+  const userDataDirName = identity.slug;
   const linuxApplicationsDir = path.join(
     Option.getOrElse(config.xdgDataHome, () => path.join(homeDirectory, ".local", "share")),
     "applications",
@@ -203,6 +216,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     processArch: input.processArch,
     isPackaged: input.isPackaged,
     isDevelopment,
+    installVariant,
     appVersion: input.appVersion,
     appPath: input.appPath,
     resourcesPath,
@@ -234,11 +248,9 @@ const make = Effect.fn("desktop.environment.make")(function* (
     branding,
     displayName,
     safeStorageName,
-    appUserModelId: Option.getOrElse(config.appUserModelIdOverride, () =>
-      isDevelopment ? "build.styal.app.dev" : "build.styal.app",
-    ),
-    linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment),
-    linuxWmClass: isDevelopment ? "styal-dev" : "styal",
+    appUserModelId: Option.getOrElse(config.appUserModelIdOverride, () => identity.appUserModelId),
+    linuxDesktopEntryName: identity.linuxDesktopEntryName,
+    linuxWmClass: identity.slug,
     linuxApplicationsDir,
     appImagePath: config.appImagePath,
     userDataDirName,

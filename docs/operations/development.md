@@ -176,7 +176,9 @@ comment: the DMG is unsigned and macOS will not open it until the quarantine att
 
 - `preview:mac` builds an unsigned Apple Silicon DMG and attaches it to the rolling
   `desktop-preview` prerelease. It needs no setup beyond the repository variables in
-  [styal Link](./styal-link.md#github-actions-configuration).
+  [styal Link](./styal-link.md#github-actions-configuration). The preview installs as a separate
+  app, `styal (Preview)`, with its own empty state in `~/.styal/preview`, so it never reads or
+  migrates a stable or nightly install's data.
 - `preview:web` deploys the hosted web app to its own Cloudflare Worker at
   `https://styal-web-pr-<number>.<subdomain>.workers.dev`, without styal Link, so pair a server
   manually. Use an installed server or `styal serve`: a `vp run dev` server only accepts
