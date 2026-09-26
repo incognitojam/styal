@@ -48,12 +48,9 @@ export function serverUpdateConfirmation(hosts: ReadonlyArray<ServerUpdateHost>)
   }
   if (concern === null) return null;
   const target = single ? single.serverLabel : `servers on ${labels(hosts)}`;
-  const restart = single
-    ? "The server restarts to finish the update"
-    : "The servers restart to finish the update";
   return [
     `Update the ${target}${hostActivityQuestion[concern]}`,
     ...lines,
-    incomplete ? `${restart}, so running threads and terminals may be interrupted.` : `${restart}.`,
+    ...(incomplete ? ["Running threads and terminals may be interrupted."] : []),
   ].join("\n");
 }

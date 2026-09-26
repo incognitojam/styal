@@ -39,7 +39,6 @@ describe("serverUpdateConfirmation", () => {
         "Update the Lab server with running work?",
         "2 threads will be interrupted.",
         "1 terminal session will be interrupted.",
-        "The server restarts to finish the update.",
       ].join("\n"),
     );
   });
@@ -55,7 +54,6 @@ describe("serverUpdateConfirmation", () => {
         "Update the Lab server with running work?",
         "1 thread will be interrupted.",
         "1 thread will continue after the restart.",
-        "The server restarts to finish the update.",
       ].join("\n"),
     );
   });
@@ -65,7 +63,7 @@ describe("serverUpdateConfirmation", () => {
       [
         "Update the Lab server?",
         "Could not check the Lab server for running work.",
-        "The server restarts to finish the update, so running threads and terminals may be interrupted.",
+        "Running threads and terminals may be interrupted.",
       ].join("\n"),
     );
   });
@@ -98,7 +96,6 @@ describe("serverUpdateConfirmation", () => {
         "Update the servers on Laptop, Office, Idle with running work?",
         "1 thread will be interrupted.",
         "1 thread will continue after the restart.",
-        "The servers restart to finish the update.",
       ].join("\n"),
     );
   });
