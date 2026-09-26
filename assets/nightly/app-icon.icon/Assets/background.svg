@@ -14,18 +14,15 @@
       <stop stop-color="#2FA08F" stop-opacity="0.34"/>
       <stop offset="1" stop-color="#14524B" stop-opacity="0"/>
     </radialGradient>
-    <clipPath id="frame">
-      <rect width="128" height="128" rx="10"/>
-    </clipPath>
   </defs>
 
-  <g clip-path="url(#frame)">
-    <rect width="128" height="128" fill="url(#night)"/>
-    <rect width="128" height="128" fill="url(#skyGlow)"/>
-    <rect width="128" height="128" fill="url(#horizonGlow)"/>
+  <g>
+    <rect x="-8" y="-8" width="144" height="144" fill="url(#night)"/>
+    <rect x="-8" y="-8" width="144" height="144" fill="url(#skyGlow)"/>
+    <rect x="-8" y="-8" width="144" height="144" fill="url(#horizonGlow)"/>
 
 
-    <!-- A few tiny stars kept to the perimeter so the wordmark stays clear. -->
+    <!-- A few tiny stars kept to the perimeter, clear of the reel. -->
     <g fill="#E0FBF7">
       <circle cx="17" cy="18" r="0.55" fill-opacity="0.82"/>
       <circle cx="54" cy="14" r="0.4" fill-opacity="0.65"/>
@@ -36,7 +33,7 @@
     <path d="M31 22V24.8M29.6 23.4H32.4" stroke="#ECFFFA" stroke-width="0.5" stroke-linecap="round" opacity="0.72"/>
     <path d="M111 58V60M110 59H112" stroke="#C4F2EA" stroke-width="0.45" stroke-linecap="round" opacity="0.58"/>
 
-    <!-- Broad horizon remains below the T3 baseline (y=94). -->
+    <!-- Broad horizon along the bottom edge. -->
     <path d="M-12 119C14 99 39 99 63 110C87 121 110 116 140 96V140H-12V119Z" fill="#0C3B41" fill-opacity="0.42"/>
     <path d="M-12 129C15 111 42 112 66 122C91 132 114 124 140 107V140H-12V129Z" fill="#2FA79B" fill-opacity="0.22"/>
   </g>
