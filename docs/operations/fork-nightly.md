@@ -11,7 +11,16 @@ repeat is the previous-nightly schema upgrade test, because the `nightly` branch
 have moved since the pull request ran.
 
 `Fork Release` promotes a nightly tag and refuses any commit without a successful Fork CI run, which
-every commit the nightly tagged already has.
+every commit the nightly tagged already has. Without a `source_tag` it promotes the newest published
+nightly. The stable version is the one in the nightly's tag, so `v0.1.1-nightly.*` ships as `0.1.1`.
+Its release notes list the changes since the previous stable release; the first stable release has
+none to compare against, so write its notes by hand after it is published.
+
+## Versions
+
+`styal-version.json` names the next version to ship until a stable release reaches it. After that,
+nightlies preview the next patch after the newest stable tag, so they always sort above the installed
+stable release and no bump is needed between releases. Edit the file only for a minor or major bump.
 
 ## How upstream work reaches `main`
 

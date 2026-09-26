@@ -14,8 +14,8 @@ on:
   workflow_dispatch:
     inputs:
       source_tag:
-        description: "Nightly tag to promote, for example v0.1.0-nightly.20260825.241"
-        required: true
+        description: "Nightly tag to promote, for example v0.1.0-nightly.20260825.241. Defaults to the newest published nightly."
+        required: false
         type: string
       codename:
         description: "Release codename, for example jenny"
@@ -45,6 +45,7 @@ jobs:
       contents: read
     outputs:
       ref: ${{ steps.candidate.outputs.ref }}
+      source_tag: ${{ steps.candidate.outputs.source_tag }}
       version: ${{ steps.candidate.outputs.version }}
       tag: ${{ steps.candidate.outputs.tag }}
       release_name: ${{ steps.candidate.outputs.release_name }}
@@ -58,10 +59,25 @@ jobs:
         name: Resolve candidate commit and stable version
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           SOURCE_TAG: ${{ inputs.source_tag }}
           CODENAME: ${{ inputs.codename }}
         run: |
           set -euo pipefail
+
+          # Without an explicit tag, promote the newest published nightly: the
+          # build nightly users are running now.
+          if [[ -z "$SOURCE_TAG" ]]; then
+            SOURCE_TAG=$(
+              gh release list --exclude-drafts --limit 100 --json tagName,publishedAt \
+                --jq '[.[] | select(.tagName | test("-nightly\\.[0-9]{8}\\.[0-9]+$"))]
+                  | sort_by(.publishedAt) | last | .tagName // empty'
+            )
+            if [[ -z "$SOURCE_TAG" ]]; then
+              echo "::error::No published nightly found to promote."
+              exit 1
+            fi
+          fi
 
           if ! git rev-parse -q --verify "refs/tags/$SOURCE_TAG" >/dev/null; then
             echo "::error::Source tag $SOURCE_TAG does not exist."
@@ -77,21 +93,23 @@ jobs:
 
           ref="$(git rev-list -n 1 "refs/tags/$SOURCE_TAG")"
 
-          # The stable version is the nightly's base, which is styal-version.json
-          # as of that commit. Reading it from the tag rather than from main keeps
-          # promotion reproducible when main has already moved on.
-          version="$(git show "$ref:styal-version.json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).version))')"
+          # A nightly previews the stable version in its tag, so v0.1.1-nightly.*
+          # ships as 0.1.1.
+          version="${SOURCE_TAG#v}"
+          version="${version%%-nightly.*}"
 
           if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::styal-version.json at $SOURCE_TAG holds an invalid version: $version"
+            echo "::error::$SOURCE_TAG does not carry a stable version: $version"
             exit 1
           fi
 
           tag="v$version"
           if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-            echo "::error::$tag already exists. Bump styal-version.json before promoting again."
+            echo "::error::$tag already exists. Promote a nightly built after it was released."
             exit 1
           fi
+
+          echo "::notice::Promoting $SOURCE_TAG ($ref) to $tag."
 
           release_name="styal $version"
           if [[ -n "$CODENAME" ]]; then
@@ -100,6 +118,7 @@ jobs:
 
           {
             echo "ref=$ref"
+            echo "source_tag=$SOURCE_TAG"
             echo "version=$version"
             echo "tag=$tag"
             echo "release_name=$release_name"
@@ -112,7 +131,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_REF: ${{ steps.candidate.outputs.ref }}
-          SOURCE_TAG: ${{ inputs.source_tag }}
+          SOURCE_TAG: ${{ steps.candidate.outputs.source_tag }}
         run: |
           set -euo pipefail
 
@@ -222,18 +241,37 @@ jobs:
           name: cli-package
           path: release-assets
 
+      # Lists the changes since the previous stable release. The first stable
+      # release has none to compare against; write its notes by hand after it
+      # is published.
       - name: Render release notes
         shell: bash
         env:
-          SOURCE_TAG: ${{ inputs.source_tag }}
+          GH_TOKEN: ${{ github.token }}
+          NEW_TAG: ${{ needs.prepare.outputs.tag }}
+          SOURCE_REF: ${{ needs.prepare.outputs.ref }}
+          SOURCE_TAG: ${{ needs.prepare.outputs.source_tag }}
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
+          source .github/scripts/release-changelog.sh
+          previous_stable=$(latest_stable_tag "$NEW_TAG")
+          if [[ -n "$previous_stable" ]]; then
+            git fetch --no-tags https://github.com/pingdotgg/t3code.git main
+            upstream_ref=$(git merge-base "$SOURCE_REF" FETCH_HEAD)
+          fi
+
           {
             printf 'styal %s, promoted from [%s](../../releases/tag/%s).\n\n' \
               "$VERSION" "$SOURCE_TAG" "$SOURCE_TAG"
-            printf 'These artifacts are a rebuild of the same commit with a stable version, so they carry the stable update channel.\n'
+            if [[ -n "$previous_stable" ]]; then
+              render_release_notes "$GITHUB_REPOSITORY" "$previous_stable" "$NEW_TAG" \
+                "$SOURCE_REF" "$upstream_ref"
+            else
+              printf 'These artifacts are a rebuild of the same commit with a stable version, so they carry the stable update channel.\n'
+            fi
           } > release-notes.md
+          cat release-notes.md
 
       # The promoted commit is behind main, and GITHUB_TOKEN cannot create a
       # release tag at a commit whose workflow files differ from main's.

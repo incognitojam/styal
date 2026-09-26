@@ -92,6 +92,32 @@ export const validateStyalBaseVersion = (version: string) => {
     : Effect.fail(new InvalidStyalVersionError({ version }));
 };
 
+/**
+ * The version the next stable release will carry. styal-version.json names it
+ * until a stable release reaches it; after that, nightlies preview the next
+ * patch after the newest stable tag, so they always sort above that release
+ * and promoting one never collides with an existing tag.
+ */
+export const resolveUnreleasedBaseVersion = (
+  declaredVersion: string,
+  latestStableTag: string | undefined,
+) => {
+  if (latestStableTag === undefined) return Effect.succeed(declaredVersion);
+  const latest = /^v(\d+)\.(\d+)\.(\d+)$/.exec(latestStableTag);
+  const declared = /^(\d+)\.(\d+)\.(\d+)$/.exec(declaredVersion);
+  if (!latest) return Effect.fail(new InvalidStyalVersionError({ version: latestStableTag }));
+  if (!declared) return Effect.fail(new InvalidStyalVersionError({ version: declaredVersion }));
+
+  const latestParts = latest.slice(1).map(Number);
+  const declaredParts = declared.slice(1).map(Number);
+  const comparison =
+    declaredParts.map((part, index) => part - latestParts[index]!).find((diff) => diff !== 0) ?? 0;
+  if (comparison > 0) return Effect.succeed(declaredVersion);
+
+  const [major, minor, patch] = latestParts;
+  return Effect.succeed(`${major}.${minor}.${patch! + 1}`);
+};
+
 export const resolveNightlyReleaseMetadata = (
   baseVersion: string,
   date: string,
@@ -202,9 +228,16 @@ const command = Command.make(
       Flag.withDescription("Workspace root used to resolve styal-version.json."),
       Flag.optional,
     ),
+    latestStable: Flag.string("latest-stable").pipe(
+      Flag.withDescription("Newest published stable tag, for example v0.1.0."),
+      Flag.optional,
+    ),
   },
-  ({ date, runNumber, sha, githubOutput, root }) =>
+  ({ date, runNumber, sha, githubOutput, root, latestStable }) =>
     readStyalBaseVersion(Option.getOrUndefined(root)).pipe(
+      Effect.flatMap((declaredVersion) =>
+        resolveUnreleasedBaseVersion(declaredVersion, Option.getOrUndefined(latestStable)),
+      ),
       Effect.map((baseVersion) => resolveNightlyReleaseMetadata(baseVersion, date, runNumber, sha)),
       Effect.flatMap((metadata) => writeNightlyReleaseOutput(metadata, githubOutput)),
     ),

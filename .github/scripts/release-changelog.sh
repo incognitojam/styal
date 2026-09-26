@@ -55,3 +55,69 @@ list_fork_release_commits() {
   fork_base=$(git merge-base "$fork_source_ref" "$upstream_ref")
   git rev-list --reverse "${fork_base}..${fork_source_ref}" --not "$upstream_ref"
 }
+
+# Prints the newest plain vX.Y.Z tag, or the newest one older than $1 when it
+# is given. Prints nothing when there is none.
+latest_stable_tag() {
+  local before="${1:-}"
+  local tags
+  tags=$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)
+
+  if [[ -z "$before" ]]; then
+    printf '%s\n' "$tags" | sed '/^$/d' | sort -V | tail -n 1
+    return
+  fi
+
+  { printf '%s\n' "$tags"; printf '%s\n' "$before"; } \
+    | sed '/^$/d' \
+    | sort -uV \
+    | grep -B1 -xF -- "$before" \
+    | grep -vxF -- "$before" \
+    || true
+}
+
+# Prints the "What's Changed" release notes for the commits between
+# previous_tag and fork_source_ref: fork changes first, then the upstream
+# changes brought in over the same range. previous_tag may be empty.
+render_release_notes() {
+  local repository="$1"
+  local previous_tag="$2"
+  local new_tag="$3"
+  local fork_source_ref="$4"
+  local upstream_ref="$5"
+
+  local previous_upstream_ref
+  if [[ -n "$previous_tag" ]]; then
+    git rev-parse --verify "${previous_tag}^{commit}" >/dev/null
+    previous_upstream_ref=$(git merge-base "$previous_tag" "$upstream_ref")
+  else
+    previous_upstream_ref=$(git merge-base "$fork_source_ref" "$upstream_ref")
+  fi
+
+  local upstream_changes=() fork_changes=() sha
+  while IFS= read -r sha; do
+    upstream_changes+=("$sha")
+  done < <(git rev-list --reverse "${previous_upstream_ref}..${upstream_ref}")
+
+  while IFS= read -r sha; do
+    fork_changes+=("$sha")
+  done < <(list_fork_release_commits "$previous_tag" "$fork_source_ref" "$upstream_ref")
+
+  printf "## What's Changed\n\n"
+  if (( ${#fork_changes[@]} > 0 )); then
+    append_release_changes "$repository" "${fork_changes[@]}"
+  fi
+  if (( ${#upstream_changes[@]} > 0 )); then
+    append_release_changes pingdotgg/t3code "${upstream_changes[@]}"
+  fi
+  if (( ${#fork_changes[@]} + ${#upstream_changes[@]} == 0 )); then
+    printf 'No user-facing changes.\n'
+  fi
+  # Compare the fork's own release tags. Comparing upstream refs named the
+  # wrong repository, and collapsed to an empty range whenever the release
+  # carried no upstream changes.
+  if [[ -n "$previous_tag" ]]; then
+    printf '\n**Full Changelog**: https://github.com/%s/compare/%s...%s\n' \
+      "$repository" "$previous_tag" "$new_tag"
+  fi
+}
