@@ -33,6 +33,7 @@ import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ThreadBackgroundLiveness from "./orchestration/ThreadBackgroundLiveness.ts";
 import * as OrchestrationReactor from "./orchestration/Services/OrchestrationReactor.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerSettings from "./serverSettings.ts";
@@ -340,6 +341,11 @@ const ORPHANED_PROVIDER_SESSION_ERROR =
   "Provider session did not survive a server restart. Send a new message to continue.";
 const SERVER_UPDATE_CONTINUATION_KEY = "continueAfterServerUpdate";
 const SERVER_UPDATE_CONTINUATION_PROMPT = "Continue where you left off.";
+// Set alongside the continuation marker when the turn had already settled and
+// only background work (monitors, background shells, subagents) was live.
+const SERVER_UPDATE_BACKGROUND_CONTINUATION_KEY = "continueAfterServerUpdateBackground";
+const SERVER_UPDATE_BACKGROUND_CONTINUATION_PROMPT =
+  "The server restarted, which stopped your background work such as monitors, background shells, and subagents. Restart any of it you still need. If none is needed, reply briefly.";
 
 class ProviderSessionContinuationError extends Schema.TaggedError<ProviderSessionContinuationError>()(
   "ProviderSessionContinuationError",
@@ -382,6 +388,20 @@ function readRuntimePayload(runtimePayload: unknown): Record<string, unknown> {
     : {};
 }
 
+/**
+ * A continuation that can be sent while the session reads as ready: one
+ * prepared before a second restart, or background work stopped by the update.
+ */
+function isReadyContinuation(runtimePayload: unknown): boolean {
+  const payload = readRuntimePayload(runtimePayload);
+  return (
+    readServerUpdateContinuationTurnId(runtimePayload) !== null &&
+    payload.activeTurnId === null &&
+    (payload.continueAfterServerUpdatePrepared === true ||
+      payload[SERVER_UPDATE_BACKGROUND_CONTINUATION_KEY] === true)
+  );
+}
+
 const isServerUpdateThreadContinuationError = Schema.is(ServerUpdateThreadContinuationError);
 
 function readServerUpdateContinuationTurnId(runtimePayload: unknown): TurnId | null {
@@ -398,35 +418,43 @@ const toServerUpdateThreadContinuationError = (cause: unknown) =>
     : new ServerUpdateThreadContinuationError({ cause });
 
 /**
- * Threads that thread continuation resumes after a server restart: a turn in
- * progress with saved provider resume state. The update confirmation counts
- * these, so widening this selection also updates what the dialog promises.
+ * Threads that thread continuation resumes after a server restart, with saved
+ * provider resume state: a turn in progress, or a settled turn whose
+ * background work (monitors, subagents) the restart would stop. The update
+ * confirmation counts these, so widening this selection also updates what the
+ * dialog promises.
  */
 export const listContinuableThreads = Effect.gen(function* () {
   const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
   const query = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+  const backgroundLiveness = yield* ThreadBackgroundLiveness.ThreadBackgroundLivenessService;
   const { threads } = yield* query.getCommandReadModel();
   const continuable: Array<{
     readonly threadId: ThreadId;
-    readonly activeTurnId: TurnId;
+    readonly turnId: TurnId;
+    readonly background: boolean;
     readonly binding: ProviderSessionDirectory.ProviderRuntimeBinding;
   }> = [];
   for (const thread of threads) {
-    const activeTurnId = thread.session?.activeTurnId;
-    if (
-      thread.archivedAt !== null ||
-      thread.deletedAt !== null ||
-      thread.session?.status !== "running" ||
-      activeTurnId === null ||
-      activeTurnId === undefined
-    ) {
+    if (thread.archivedAt !== null || thread.deletedAt !== null || thread.session == null) {
+      continue;
+    }
+    const activeTurnId = thread.session.activeTurnId;
+    const running = thread.session.status === "running" && activeTurnId !== null;
+    const background =
+      !running &&
+      thread.session.status === "ready" &&
+      activeTurnId === null &&
+      backgroundLiveness.getThreadBackgroundLiveness(thread.id) !== null;
+    const turnId = running ? activeTurnId : background ? thread.latestTurn?.turnId : undefined;
+    if (turnId == null) {
       continue;
     }
     const binding = yield* directory.getBinding(thread.id);
     if (Option.isNone(binding) || binding.value.resumeCursor == null) {
       continue;
     }
-    continuable.push({ threadId: thread.id, activeTurnId, binding: binding.value });
+    continuable.push({ threadId: thread.id, turnId, background, binding: binding.value });
   }
   return continuable;
 });
@@ -437,13 +465,14 @@ export const markRunningProviderSessionsForContinuation = Effect.gen(function* (
 
   const marked: ThreadId[] = [];
   return yield* Effect.gen(function* () {
-    for (const { threadId, activeTurnId, binding } of continuable) {
+    for (const { threadId, turnId, background, binding } of continuable) {
       yield* directory.upsert({
         ...binding,
         runtimePayload: {
           ...readRuntimePayload(binding.runtimePayload),
-          [SERVER_UPDATE_CONTINUATION_KEY]: activeTurnId,
+          [SERVER_UPDATE_CONTINUATION_KEY]: turnId,
           continueAfterServerUpdatePrepared: null,
+          [SERVER_UPDATE_BACKGROUND_CONTINUATION_KEY]: background || null,
         },
       });
       marked.push(threadId);
@@ -474,6 +503,7 @@ const clearContinuationMarkers = (
                   ...readRuntimePayload(binding.runtimePayload),
                   [SERVER_UPDATE_CONTINUATION_KEY]: null,
                   continueAfterServerUpdatePrepared: null,
+                  [SERVER_UPDATE_BACKGROUND_CONTINUATION_KEY]: null,
                 },
               }),
           }),
@@ -529,12 +559,7 @@ export const reconcileProviderSessions = Effect.gen(function* () {
         ),
       ),
     ))
-      .filter(
-        (binding) =>
-          readServerUpdateContinuationTurnId(binding.runtimePayload) !== null &&
-          readRuntimePayload(binding.runtimePayload).activeTurnId === null &&
-          readRuntimePayload(binding.runtimePayload).continueAfterServerUpdatePrepared === true,
-      )
+      .filter((binding) => isReadyContinuation(binding.runtimePayload))
       .map((binding) => binding.threadId),
   );
   const orphanedThreads = threads.filter(
@@ -579,8 +604,12 @@ export const reconcileProviderSessions = Effect.gen(function* () {
       session.activeTurnId === null &&
       continuationMarked &&
       Option.isSome(binding) &&
-      readRuntimePayload(binding.value.runtimePayload).activeTurnId === null &&
-      readRuntimePayload(binding.value.runtimePayload).continueAfterServerUpdatePrepared === true;
+      isReadyContinuation(binding.value.runtimePayload);
+    const backgroundContinuation =
+      Option.isSome(binding) &&
+      readRuntimePayload(binding.value.runtimePayload)[
+        SERVER_UPDATE_BACKGROUND_CONTINUATION_KEY
+      ] === true;
     // Runtime events advance the projection's turn, but not the directory's
     // last admitted turn. Use the projection to identify interrupted work.
     const interruptedByRestart =
@@ -604,6 +633,7 @@ export const reconcileProviderSessions = Effect.gen(function* () {
                   ? {
                       [SERVER_UPDATE_CONTINUATION_KEY]: null,
                       continueAfterServerUpdatePrepared: null,
+                      [SERVER_UPDATE_BACKGROUND_CONTINUATION_KEY]: null,
                     }
                   : {}),
               },
@@ -707,9 +737,11 @@ export const reconcileProviderSessions = Effect.gen(function* () {
             const capabilities = yield* providerService.getCapabilities(providerInstanceId);
             yield* providerService.sendTurn({
               threadId: thread.id,
-              ...(capabilities.promptlessTurnContinuation === true
-                ? { continuation: true }
-                : { input: SERVER_UPDATE_CONTINUATION_PROMPT }),
+              ...(backgroundContinuation
+                ? { input: SERVER_UPDATE_BACKGROUND_CONTINUATION_PROMPT }
+                : capabilities.promptlessTurnContinuation === true
+                  ? { continuation: true }
+                  : { input: SERVER_UPDATE_CONTINUATION_PROMPT }),
               interactionMode: thread.interactionMode,
             });
           });
@@ -834,6 +866,8 @@ export const make = (options?: StartupOptions) =>
     const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
     const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
     const providerSessionDirectory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+    const threadBackgroundLiveness =
+      yield* ThreadBackgroundLiveness.ThreadBackgroundLivenessService;
     const crypto = yield* Crypto.Crypto;
     const launcher = yield* ServiceLauncherClient.ServiceLauncherClient;
 
@@ -1050,6 +1084,10 @@ export const make = (options?: StartupOptions) =>
       awaitCommandReady: commandGate.awaitCommandReady,
       markHttpListening: Deferred.succeed(httpListening, undefined),
       markRunningProviderSessionsForContinuation: markRunningProviderSessionsForContinuation.pipe(
+        Effect.provideService(
+          ThreadBackgroundLiveness.ThreadBackgroundLivenessService,
+          threadBackgroundLiveness,
+        ),
         Effect.provideService(
           ProjectionSnapshotQuery.ProjectionSnapshotQuery,
           projectionSnapshotQuery,

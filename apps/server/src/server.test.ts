@@ -118,6 +118,7 @@ import {
   OrchestrationThreadSettleBlockedError,
 } from "./orchestration/Errors.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ThreadBackgroundLiveness from "./orchestration/ThreadBackgroundLiveness.ts";
 import * as ComposerDrafts from "./persistence/ComposerDrafts.ts";
 import { ThreadDeletionReactor } from "./orchestration/Services/ThreadDeletionReactor.ts";
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
@@ -1009,7 +1010,7 @@ const buildAppUnderTest = (options?: {
           getImportedAgentSessionSources: () => Effect.succeed([]),
           getThreadCheckpointContext: () => Effect.succeed(Option.none()),
           ...options?.layers?.projectionSnapshotQuery,
-        }),
+        }).pipe(Layer.merge(ThreadBackgroundLiveness.layer)),
       ),
       Layer.provide(
         Layer.mock(CheckpointDiffQuery.CheckpointDiffQuery)({

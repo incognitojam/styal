@@ -16,6 +16,7 @@ import * as Keybindings from "./keybindings.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as OrchestrationReactor from "./orchestration/Services/OrchestrationReactor.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ThreadBackgroundLiveness from "./orchestration/ThreadBackgroundLiveness.ts";
 import * as ProviderService from "./provider/Services/ProviderService.ts";
 import * as ProviderSessionDirectory from "./provider/Services/ProviderSessionDirectory.ts";
 import * as ProviderSessionReaper from "./provider/Services/ProviderSessionReaper.ts";
@@ -60,6 +61,7 @@ it.effect("publishes pending before complete even without an activation gate", (
             } as never),
             Layer.succeed(ProviderSessionDirectory.ProviderSessionDirectory, {} as never),
             Layer.succeed(OrchestrationEngine.OrchestrationEngineService, {} as never),
+            ThreadBackgroundLiveness.layer,
             Layer.succeed(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
               getCommandReadModel: () => Effect.succeed({ threads: [] }),
               getShellSnapshot: () => Effect.succeed({ projects: [] }),
