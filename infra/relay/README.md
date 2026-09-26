@@ -122,10 +122,11 @@ the URL manually.
 ### Deployment CI
 
 The relay is versioned separately from client releases. `.github/workflows/deploy-relay.yml` deploys
-the shared Alchemy `prod` stage on every push to `main`. Stable and nightly release builds both
+the shared Alchemy `prod` stage on every push to `main`, followed by the shared `dev` stage, which
+verifies development Clerk tokens for local source builds. Stable and nightly release builds both
 resolve their static public config from the same
 `production` GitHub environment. Pull requests do not deploy relay stages. Developers can
-deploy personal non-production stages locally with any stage name other than `prod`.
+deploy personal non-production stages locally with any stage name other than `prod` or `dev`.
 
 The repository must define these Actions variables shared by relay deployments:
 
@@ -149,6 +150,7 @@ The `production` GitHub environment must define these Actions secrets:
 - `NEON_API_KEY`
 - `AXIOM_TOKEN`
 - `CLERK_SECRET_KEY`
+- `CLERK_DEV_SECRET_KEY`, the development Clerk instance's secret key for the `dev` stage
 - `APNS_PRIVATE_KEY` only when enabling mobile push, alongside the `APNS_*` variables above
 - `FCM_SERVICE_ACCOUNT` when Android push is enabled
 
