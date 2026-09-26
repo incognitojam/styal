@@ -825,7 +825,8 @@ features:
     invariants:
       - User-facing cloud connection surfaces target the styal-hosted app, relay, native schemes, and Clerk application while protocol-level T3 Connect identifiers remain compatible with upstream clients and servers.
       - The user-facing CLI exposes styal Link as `styal link`; the upstream `connect` spelling remains an unlisted compatibility alias.
-      - Hosted, release, preview, and mobile builds use one coherent production public configuration, while an incomplete or absent local configuration disables Link without breaking local connections.
+      - Hosted, release, desktop preview, and mobile builds use one coherent production public configuration, while an incomplete or absent local configuration disables Link without breaking local connections.
+      - Web previews deploy to per-PR Cloudflare Workers with a Workers-only token, never through the Alchemy state store that holds production state, and build without Link configuration.
       - The relay uses the fork's independently deployed database and permits installations without APNs, and managed tunnel hosts remain outside the product origin's registrable domain.
       - The managed tunnel zone apex redirects to the styal repository while environment-specific tunnel hosts remain available for remote connections.
     implementation_paths:
@@ -834,6 +835,7 @@ features:
       - .github/workflows/desktop-macos-preview.yml
       - .github/workflows/fork-desktop-build.yml
       - .github/workflows/release.yml
+      - .github/workflows/web-preview.yml
       - apps/mobile/src/connection/platform.ts
       - apps/server/src/bin.ts
       - apps/server/src/cli/connect.ts
@@ -855,6 +857,7 @@ features:
       - .github/workflows/deploy-relay.yml
       - .github/workflows/desktop-macos-preview.yml
       - .github/workflows/release.yml
+      - .github/workflows/web-preview.yml
       - apps/mobile/src/connection/platform.ts
       - apps/server/src/cloud/publicConfig.ts
       - apps/web/src/cloud/linkEnvironment.ts

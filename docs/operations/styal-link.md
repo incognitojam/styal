@@ -123,6 +123,13 @@ Apple-signing and release plumbing. Three of them have non-obvious shape require
   organization- and dataset-level permissions are documented in
   [Relay Observability](./relay-observability.md#deployment-token-permissions).
 
+PR web previews (`web-preview.yml`, the `preview:web` label) cannot use that token: they deploy
+from PR branches, and any Alchemy stage shares the account-wide state store with production. They
+deploy with wrangler instead, using a separate `CLOUDFLARE_API_TOKEN` on the `web-preview`
+environment limited to **Account > Workers Scripts: Edit**, plus the
+`CLOUDFLARE_WORKERS_SUBDOMAIN` repository variable (the account's `workers.dev` subdomain). The
+build job never sees the token; only the job that uploads the built assets does.
+
 Fork workflows run on GitHub-hosted runners. Blacksmith `runs-on` labels survive in inherited
 upstream workflows the fork does not run; Blacksmith is not installed for this account, so a job
 that still carries one queues forever.
