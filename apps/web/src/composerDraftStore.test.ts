@@ -69,6 +69,7 @@ import {
   composerDraftHasUserContent,
   finalizePromotedDraftThreadByRef,
   markPromotedDraftThreadByRef,
+  rememberUnconfirmedDraftSend,
   type ComposerFileAttachment,
   type ComposerImageAttachment,
   composerFileNeedsReattach,
@@ -1643,6 +1644,38 @@ describe("composerDraftStore project draft thread mapping", () => {
         .getDraftThreadByRef(scopeThreadRef(TEST_ENVIRONMENT_ID, retryThreadId)),
     ).not.toBeNull();
     expect(draftByKey(draftId)?.prompt).toBe("retry this prompt");
+  });
+
+  it("clears a restored prompt when its unconfirmed send turns out to have created the thread", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    store.setPrompt(draftId, "sent before the socket dropped");
+    rememberUnconfirmedDraftSend(draftId);
+    // Unrelated settings writes replace the draft object without changing its content.
+    store.setRuntimeMode(draftId, "approval-required");
+
+    // The thread existing is not enough: an interrupted bootstrap can leave it without the turn.
+    markPromotedDraftThreadByRef(scopeThreadRef(TEST_ENVIRONMENT_ID, threadId));
+    expect(draftByKey(draftId)?.prompt).toBe("sent before the socket dropped");
+
+    finalizePromotedDraftThreadByRef(scopeThreadRef(TEST_ENVIRONMENT_ID, threadId));
+
+    expect(useComposerDraftStore.getState().getDraftThread(draftId)).toBeNull();
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt ?? "").toBe("");
+  });
+
+  it("keeps a restored prompt the user edited before the unconfirmed send was confirmed", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    store.setPrompt(draftId, "sent before the socket dropped");
+    rememberUnconfirmedDraftSend(draftId);
+    store.setPrompt(draftId, "a follow-up typed while reconnecting");
+
+    finalizePromotedDraftThreadByRef(scopeThreadRef(TEST_ENVIRONMENT_ID, threadId));
+
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe(
+      "a follow-up typed while reconnecting",
+    );
   });
 
   it("reads local draft composer state through a scoped thread ref", () => {

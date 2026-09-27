@@ -4692,6 +4692,44 @@ export function useEffectiveComposerModelState(input: {
   );
 }
 
+// Composer content put back after a first send whose outcome is unknown, such
+// as a socket that dropped before the server replied. Finalizing promotion
+// needs a started turn, which proves the send arrived, so the content is
+// cleared then if the user has not edited it. Content is compared by value
+// because unrelated store writes replace the draft object.
+const unconfirmedDraftSends = new Map<DraftId, string>();
+
+function composerContentSignature(draft: ComposerThreadDraftState): string {
+  return JSON.stringify([
+    draft.prompt,
+    draft.images,
+    draft.files,
+    draft.terminalContexts,
+    draft.elementContexts,
+    draft.issueContexts,
+    draft.previewAnnotations,
+    draft.reviewComments,
+  ]);
+}
+
+export function rememberUnconfirmedDraftSend(draftId: DraftId): void {
+  const draft = useComposerDraftStore.getState().getComposerDraft(draftId);
+  if (draft) {
+    unconfirmedDraftSends.set(draftId, composerContentSignature(draft));
+  }
+}
+
+function clearConfirmedDraftSend(draftId: DraftId): void {
+  const restored = unconfirmedDraftSends.get(draftId);
+  if (restored === undefined) return;
+  unconfirmedDraftSends.delete(draftId);
+  const draftStore = useComposerDraftStore.getState();
+  const current = draftStore.getComposerDraft(draftId);
+  if (current && composerContentSignature(current) === restored) {
+    draftStore.clearComposerContent(draftId);
+  }
+}
+
 export function markPromotedDraftThreadByRef(threadRef: ScopedThreadRef): void {
   const draftStore = useComposerDraftStore.getState();
   for (const [draftId, draftThread] of Object.entries(draftStore.draftThreadsByThreadKey)) {
@@ -4715,6 +4753,7 @@ export function finalizePromotedDraftThreadByRef(threadRef: ScopedThreadRef): vo
         draftThread.threadId === threadRef.threadId;
     if (matches) {
       const target = DraftId.make(draftId);
+      clearConfirmedDraftSend(target);
       draftStore.markDraftThreadPromoting(target, threadRef);
       draftStore.finalizePromotedDraftThread(target);
     }

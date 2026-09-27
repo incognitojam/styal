@@ -1,7 +1,8 @@
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
-const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchCommandError);
+/** The server received the command and decided it failed. */
+export const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchCommandError);
 
 export function wasBootstrapThreadDeleted(error: unknown): boolean {
   return (

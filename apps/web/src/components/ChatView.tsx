@@ -45,7 +45,10 @@ import {
   TerminalOpenInput,
 } from "@t3tools/contracts";
 import { type EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
-import { wasBootstrapThreadDeleted } from "@t3tools/client-runtime/errors";
+import {
+  isOrchestrationDispatchCommandError,
+  wasBootstrapThreadDeleted,
+} from "@t3tools/client-runtime/errors";
 import { type CodexArtifactTemplate } from "@t3tools/client-runtime/codex-artifact-templates";
 import { effectiveSnoozed, threadWokeAt } from "@t3tools/client-runtime/state/thread-settled";
 import {
@@ -277,6 +280,7 @@ import {
   type DraftThreadEnvMode,
   finalizePromotedDraftThreadByRef,
   markPromotedDraftThreadByRef,
+  rememberUnconfirmedDraftSend,
   useComposerDraftStore,
   DraftId,
 } from "../composerDraftStore";
@@ -7230,7 +7234,13 @@ export default function ChatView(props: ChatViewProps) {
           clearBackgroundDraftSubmissionByRef(backgroundThreadRef);
         }
         failure = startResult;
-        if (isLocalDraftThread && !isAtomCommandInterrupted(startResult)) {
+        // Only a server-decided failure may have created and rolled back a
+        // thread under this id. After a dropped connection the thread may
+        // exist, and keeping the id lets the draft follow it once it syncs.
+        if (
+          isLocalDraftThread &&
+          isOrchestrationDispatchCommandError(squashAtomCommandFailure(startResult))
+        ) {
           resetDraftThreadAfterFailedPromotion(
             composerDraftTarget,
             newThreadId(),
@@ -7339,6 +7349,13 @@ export default function ChatView(props: ChatViewProps) {
           prompt: promptForSend,
           detectTrigger: true,
         });
+        if (
+          isLocalDraftThread &&
+          draftId &&
+          !isOrchestrationDispatchCommandError(squashAtomCommandFailure(failure))
+        ) {
+          rememberUnconfirmedDraftSend(draftId);
+        }
       }
       if (!isAtomCommandInterrupted(failure)) {
         const error = squashAtomCommandFailure(failure);
