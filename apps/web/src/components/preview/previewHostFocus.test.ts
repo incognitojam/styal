@@ -112,7 +112,7 @@ describe("keepHostFocusDuringGuestInput", () => {
     expect(otherWebview.blur).not.toHaveBeenCalled();
   });
 
-  it("restores focus when the click fails and rethrows the failure", async () => {
+  it("keeps focus in the page when a human click interrupts the agent's click", async () => {
     const composer = element("TEXTAREA");
     const webview = element("WEBVIEW", TAB);
     const focus = focusTracker(composer.node);
@@ -120,10 +120,11 @@ describe("keepHostFocusDuringGuestInput", () => {
     await expect(
       keepHostFocusDuringGuestInput(TAB, focus.read, async () => {
         focus.move(webview.node);
-        throw new Error("click failed");
+        throw new Error("PreviewAutomationControlInterruptedError");
       }),
-    ).rejects.toThrow("click failed");
+    ).rejects.toThrow("PreviewAutomationControlInterruptedError");
 
-    expect(composer.focus).toHaveBeenCalledWith({ preventScroll: true });
+    expect(composer.focus).not.toHaveBeenCalled();
+    expect(webview.blur).not.toHaveBeenCalled();
   });
 });
