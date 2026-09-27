@@ -1239,6 +1239,19 @@ export function deriveMessagesTimelineRows(input: {
                 ? summarizeToolGroup(visibleGroupedEntries)
                 : singleToolCallLabel(singleEntry),
           });
+        } else if (
+          visibleGroupedEntries.length === 1 &&
+          visibleGroupedEntries[0]!.sourceActivityKind?.startsWith("setup-script.")
+        ) {
+          // A lone setup action row already names the action and its outcome;
+          // a group toggle around it would only repeat the same row.
+          nextRows.push({
+            kind: "work",
+            id: timelineEntry.id,
+            createdAt: timelineEntry.createdAt,
+            groupedEntries: visibleGroupedEntries,
+            isExpandedToolGroup: false,
+          });
         } else {
           const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
           const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;

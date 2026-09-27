@@ -2200,6 +2200,39 @@ describe("deriveMessagesTimelineRows", () => {
     expect(rows.some((row) => row.kind === "work-toggle")).toBe(false);
   });
 
+  it("renders a lone completed setup action without a group toggle", () => {
+    const turnId = TurnId.make("turn-1");
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "setup-completed-entry",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:05Z",
+          entry: {
+            id: "setup-completed",
+            createdAt: "2026-01-01T00:00:05Z",
+            turnId,
+            label: "Setup Worktree completed",
+            tone: "info" as const,
+            sourceActivityKind: "setup-script.completed",
+            setupScriptState: "completed" as const,
+          },
+        },
+      ],
+      expandedTurnIds: new Set([turnId]),
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+
+    expect(rows.find((row) => row.kind === "work")).toMatchObject({
+      groupedEntries: [{ id: "setup-completed" }],
+      isExpandedToolGroup: false,
+    });
+    expect(rows.some((row) => row.kind === "work-toggle")).toBe(false);
+  });
+
   it("keeps separated in-progress tool runs visible", () => {
     const rows = deriveMessagesTimelineRows({
       timelineEntries: [
