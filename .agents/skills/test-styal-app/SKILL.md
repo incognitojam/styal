@@ -64,7 +64,7 @@ Link sign-in only appears when the dev server has the development Clerk identifi
 
 Use the shared agent account, `agent+clerk_test@styal.build`. Do not create other accounts.
 
-- **Local dev (development instance):** open Settings and choose **Sign in to styal Link**. A fresh database shows the welcome wizard first; click through it. Enter the email and the verification code `424242`. Clerk test mode sends no email. `.env.development.example` points at the matching development relay, `relay-dev.styal.build`.
+- **Local dev (development instance):** open Settings and choose **Sign in to styal Link**. A fresh database shows the welcome wizard first; click through it. Enter the email and the verification code `424242`. Clerk test mode sends no email. Typing the code as soon as the code field appears can fail with "You need to send a verification code before attempting to verify"; wait a few seconds after the field appears, or choose **Resend** and enter the code again. `.env.development.example` points at the matching development relay, `relay-dev.styal.build`.
 - **`app.styal.build` or builds using production Clerk:** test mode is off, so the code is not accepted. Mint a one-time token with the maintainer's Clerk CLI login:
 
   ```sh
