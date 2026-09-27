@@ -41,7 +41,7 @@ Grant the deployment token these organization-level permissions:
 - Datasets: Create, Read, Update, and Delete
 - Views: Create, Read, Update, and Delete
 
-Grant it these permissions on the existing `t3-code-relay-traces-prod` dataset:
+Grant it these permissions on all datasets:
 
 - Ingest: Create
 - Query: Read
