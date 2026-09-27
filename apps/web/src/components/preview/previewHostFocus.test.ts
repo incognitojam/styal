@@ -120,11 +120,28 @@ describe("keepHostFocusDuringGuestInput", () => {
     await expect(
       keepHostFocusDuringGuestInput(TAB, focus.read, async () => {
         focus.move(webview.node);
-        throw new Error("PreviewAutomationControlInterruptedError");
+        throw Object.assign(new Error("PreviewAutomationControlInterruptedError"), {
+          _tag: "PreviewAutomationControlInterruptedError",
+        });
       }),
-    ).rejects.toThrow("PreviewAutomationControlInterruptedError");
+    ).rejects.toMatchObject({ _tag: "PreviewAutomationControlInterruptedError" });
 
     expect(composer.focus).not.toHaveBeenCalled();
     expect(webview.blur).not.toHaveBeenCalled();
+  });
+
+  it("restores focus when the click fails after moving focus for another reason", async () => {
+    const composer = element("TEXTAREA");
+    const webview = element("WEBVIEW", TAB);
+    const focus = focusTracker(composer.node);
+
+    await expect(
+      keepHostFocusDuringGuestInput(TAB, focus.read, async () => {
+        focus.move(webview.node);
+        throw Object.assign(new Error("PreviewOperationError"), { _tag: "PreviewOperationError" });
+      }),
+    ).rejects.toMatchObject({ _tag: "PreviewOperationError" });
+
+    expect(composer.focus).toHaveBeenCalledWith({ preventScroll: true });
   });
 });
