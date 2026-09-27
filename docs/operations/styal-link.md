@@ -98,7 +98,9 @@ No client build in CI uses the development instance. It exists for local develop
 repository-root `.env` carries its identifiers (`.env.development.example`), paired with the shared
 `dev` relay stage so dev-Clerk tokens are verified by a dev-Clerk relay. `deploy-relay.yml` deploys
 that stage after production on every push to `main`, reusing the production environment's
-deployment credentials with the development instance's `CLERK_DEV_SECRET_KEY`. To try relay changes
+deployment and push credentials with the development instance's `CLERK_DEV_SECRET_KEY`. One APNs
+key and one Firebase service account serve both relays, because each device registers its own
+bundle ID and APNs environment. To try relay changes
 before they merge, deploy a personal stage (`vp run --filter t3code-relay deploy` with any stage
 name other than `prod` or `dev`). Personal stages, including `dev`, cap their Neon compute at 1 CU.
 
