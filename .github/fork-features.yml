@@ -1337,7 +1337,6 @@ features:
       - infra/relay/src/agentActivity/AgentActivityRows.test.ts
       - infra/relay/src/apexRedirect.test.ts
       - infra/relay/src/auth/DpopProofs.test.ts
-      - infra/relay/src/dbConfig.test.ts
       - infra/relay/src/observability.test.ts
       - packages/client-runtime/src/relay/managedRelayState.test.ts
       - packages/shared/src/connectAuth.test.ts
