@@ -499,13 +499,31 @@ export function UsagePage() {
                           : formatTokens(merged.totalTokens)}
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        {metric !== "cost"
-                          ? `${formatCount(merged.sessions)} sessions`
-                          : merged.costQuality.unpricedShare > 0
-                            ? `${formatCount(merged.sessions)} sessions · API estimate excludes ${formatPercent(
-                                merged.costQuality.unpricedShare,
-                              )} unpriced records`
-                            : `${formatCount(merged.sessions)} sessions · API estimate`}
+                        {formatCount(merged.sessions)} sessions
+                        {metric === "cost" && (
+                          <>
+                            {" · API estimate"}
+                            {merged.costQuality.unpricedShare > 0 && (
+                              <>
+                                {" "}
+                                <Popover>
+                                  <PopoverTrigger
+                                    openOnHover
+                                    render={<InlineButton tone="muted" />}
+                                    aria-label="Unpriced usage details"
+                                  >
+                                    <InfoIcon className="size-3" aria-hidden />
+                                  </PopoverTrigger>
+                                  <PopoverPopup side="top" tooltipStyle>
+                                    API estimate excludes{" "}
+                                    {formatPercent(merged.costQuality.unpricedShare)} unpriced
+                                    records.
+                                  </PopoverPopup>
+                                </Popover>
+                              </>
+                            )}
+                          </>
+                        )}
                       </span>
                     </div>
 
