@@ -2374,20 +2374,9 @@ function WorkGroupToggleTimelineRow({
   const fileChangeStat =
     row.fileChangeStat && hasNonZeroStat(row.fileChangeStat) ? row.fileChangeStat : null;
   const exitCodeLabel = row.exitCode === undefined ? null : `Exit code ${row.exitCode.toString()}`;
-  const setupSummaryEntry = row.summaryEntry?.sourceActivityKind?.startsWith("setup-script.")
-    ? row.summaryEntry
-    : null;
-  const setupStatusLabel =
-    setupSummaryEntry?.setupScriptState === "completed"
-      ? "Setup action completed"
-      : setupSummaryEntry?.setupScriptState === "failed"
-        ? "Setup action failed"
-        : setupSummaryEntry?.setupScriptState === "stopped"
-          ? "Setup action stopped"
-          : null;
   const accessibleSummary = [
     displaySummary,
-    setupStatusLabel ?? (row.hasFailure ? "tool call failed" : null),
+    row.hasFailure ? "tool call failed" : null,
     exitCodeLabel,
   ]
     .filter((part): part is string => part !== null)
@@ -2401,9 +2390,7 @@ function WorkGroupToggleTimelineRow({
       <ToolActivityIconView
         icon={row.toolIcon}
         fallbackName={
-          setupSummaryEntry
-            ? workEntryIconName(setupSummaryEntry)
-            : (row.summaryToolIcon ?? row.toolSurface ?? toolGroupSummaryIconName(row.summaryKind))
+          row.summaryToolIcon ?? row.toolSurface ?? toolGroupSummaryIconName(row.summaryKind)
         }
         className="size-4 shrink-0 stroke-[1.8]"
         muted
@@ -2442,40 +2429,6 @@ function WorkGroupToggleTimelineRow({
           className={cn("size-3 shrink-0 text-icon-muted opacity-70", row.expanded && "rotate-180")}
         />
       </span>
-      {setupStatusLabel ? (
-        <span className="flex size-4 shrink-0 items-center justify-center">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <span
-                  className="flex size-4 items-center justify-center"
-                  aria-label={setupStatusLabel}
-                />
-              }
-            >
-              {setupSummaryEntry?.setupScriptState === "failed" ? (
-                <XIcon className="block size-3 shrink-0 text-destructive" aria-hidden />
-              ) : setupSummaryEntry?.setupScriptState === "completed" ? (
-                <CheckIcon
-                  className="block size-3 shrink-0 stroke-current"
-                  stroke="currentColor"
-                  aria-hidden
-                />
-              ) : (
-                <MinusIcon className="block size-3 shrink-0 opacity-70" aria-hidden />
-              )}
-            </TooltipTrigger>
-            <TooltipPopup>
-              {exitCodeLabel ??
-                (setupSummaryEntry?.setupScriptState === "completed"
-                  ? "Completed"
-                  : setupSummaryEntry?.setupScriptState === "failed"
-                    ? "Failed"
-                    : "Stopped")}
-            </TooltipPopup>
-          </Tooltip>
-        </span>
-      ) : null}
     </button>
   );
 }
