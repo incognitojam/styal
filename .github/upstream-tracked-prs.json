@@ -49,6 +49,10 @@
       "reason": "Batches thread catch-up updates for desktop and mobile, reducing UI work while Syncing messages; relevant to the reported Android refocus stall."
     },
     {
+      "pr": 11372,
+      "reason": "Keeps a new thread's bootstrap running after the requesting client disconnects; the fork server abandons it partway, which can leave a thread with no turn when a dropped connection loses the first send."
+    },
+    {
       "pr": 11486,
       "reason": "Fixes a mobile launch crash on threads with a PR stack, introduced by #10839."
     },
