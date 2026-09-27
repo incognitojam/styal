@@ -88,7 +88,7 @@ export function WelcomeWizard({
   readonly automaticHostedFirstRun?: boolean;
   /** Whether this client is authenticated to the server serving the app. */
   readonly localAvailable: boolean;
-  readonly onDone: (projectRef?: ScopedProjectRef) => void;
+  readonly onDone: (projectRef?: ScopedProjectRef) => void | Promise<void>;
 }) {
   const completeOnboarding = useCompleteOnboarding();
   const [step, setStep] = useState<WizardStep>("connection");
@@ -172,7 +172,7 @@ export function WelcomeWizard({
       ? [...ONBOARDING_STAGES, "Preferences"]
       : ONBOARDING_STAGES;
   const finish = useCallback(
-    (projectRef?: ScopedProjectRef) => {
+    (projectRef?: ScopedProjectRef, importWarning?: string, importedThreadCount = 0) => {
       if (finishingPromiseRef.current !== null) return finishingPromiseRef.current;
       if (completionErrorToastIdRef.current !== null) {
         toastManager.close(completionErrorToastIdRef.current);
@@ -180,12 +180,25 @@ export function WelcomeWizard({
       }
 
       const completion = completeOnboarding()
-        .then(() => {
+        .then(async () => {
           if (completionErrorToastIdRef.current !== null) {
             toastManager.close(completionErrorToastIdRef.current);
             completionErrorToastIdRef.current = null;
           }
-          onDone(projectRef);
+          await onDone(projectRef);
+          if (importWarning) {
+            toastManager.add({
+              type: "warning",
+              title: "Some history was not imported",
+              description: importWarning,
+              timeout: 0,
+            });
+          } else if (importedThreadCount > 0) {
+            toastManager.add({
+              type: "success",
+              title: `Imported ${importedThreadCount} ${importedThreadCount === 1 ? "thread" : "threads"}`,
+            });
+          }
           return true;
         })
         .catch(() => {

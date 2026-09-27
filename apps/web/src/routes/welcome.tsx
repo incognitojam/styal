@@ -39,15 +39,15 @@ function WelcomeRouteView() {
         <WelcomeWizard
           automaticHostedFirstRun={automatic && authGateState.status === "hosted-static"}
           localAvailable={localAvailable}
-          onDone={(projectRef) => {
+          onDone={async (projectRef) => {
             setDismissed(true);
             if (projectRef !== undefined) {
-              void openNewThread(projectRef, { replace: true }).catch(() => {
-                void navigate({ to: "/", replace: true });
-              });
+              await openNewThread(projectRef, { replace: true }).catch(() =>
+                navigate({ to: "/", replace: true }),
+              );
               return;
             }
-            void navigate({ to: "/", replace: true });
+            await navigate({ to: "/", replace: true });
           }}
         />
       ) : null}
