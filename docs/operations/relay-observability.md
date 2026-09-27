@@ -41,10 +41,14 @@ Grant the deployment token these organization-level permissions:
 - Datasets: Create, Read, Update, and Delete
 - Views: Create, Read, Update, and Delete
 
-Grant it these permissions on the existing `t3-code-relay-traces-prod` dataset:
+Grant it these dataset-level permissions on all datasets, not only `t3-code-relay-traces-prod`:
 
 - Ingest: Create
 - Query: Read
+
+CI deploys the shared `dev` stage with the same token, and that deploy creates and manages
+`t3-code-relay-traces-dev`. A token scoped to the production dataset fails the `dev` deploy with
+`Forbidden` when Alchemy reads that dataset.
 
 These permissions let Alchemy adopt and update the dataset and view, mint the three producer ingest
 tokens, and validate the managed query. They are deployment permissions only; the Worker, mobile
