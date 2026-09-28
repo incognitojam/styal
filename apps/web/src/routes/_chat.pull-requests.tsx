@@ -271,7 +271,12 @@ export const Route = createFileRoute("/_chat/pull-requests")({
     ...(typeof raw.selectedEnvironmentId === "string" && raw.selectedEnvironmentId
       ? { selectedEnvironmentId: raw.selectedEnvironmentId as EnvironmentId }
       : {}),
-    ...(typeof raw.q === "string" && raw.q ? { q: raw.q.slice(0, 200) } : {}),
+    // The URL parser reads `?q=13565` as a number and `?q=true` as a boolean. Keep them as the
+    // text that was typed: the root route passes the raw value through when this one omits it.
+    ...((typeof raw.q === "string" || typeof raw.q === "number" || typeof raw.q === "boolean") &&
+    String(raw.q)
+      ? { q: String(raw.q).slice(0, 200) }
+      : {}),
     ...(raw.draft === "only" || raw.draft === "hide" ? { draft: raw.draft } : {}),
     ...(raw.review === "approved" ||
     raw.review === "changes-requested" ||
