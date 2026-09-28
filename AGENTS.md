@@ -130,8 +130,7 @@ An empty database is a bad test. Seed your worktree's `.styal` with a copy of re
 - Conventional commit titles, plain language: `fix(web): new threads no longer spike CPU`.
 - Body: the problem in a sentence or two, then how you fixed it. End with the model and harness that did the work.
 - **Upstream intake follows [the upstream intake runbook](docs/operations/upstream-tracking.md).** Upstream is never auto-synced. Intake batches land on `intake/**` branches through the promotion workflow, never through a pull request. Never rebase `main` onto upstream or force-push it.
-- In your messages to us in this conversation, the agent session you are running in rather than anything posted to GitHub, refer to every PR, issue, or commit, fork or upstream, by its full URL without backticks, such as https://github.com/incognitojam/styal/pull/504 or https://github.com/pingdotgg/t3code/pull/1234. Do not write `#504` or `incognitojam/styal#504` there.
-- How to mention an upstream PR or issue on GitHub. A bare `#1234` always means the fork's #1234, so name the upstream repository:
+- How to mention an upstream PR or issue in commits and on GitHub. There, a bare `#1234` always means the fork's #1234, so name the upstream repository:
   - In commit titles and messages you write, put upstream references inside backticks, such as `` `pingdotgg/t3code#1234` ``. Do not link to upstream or `@` mention upstream maintainers, because GitHub adds a cross-reference to the upstream PR or issue. Provenance trailers and upstream commit messages preserved during intake are exempt.
   - In fork issue and PR text, put upstream references inside backticks and do not `@` mention upstream accounts, unless we intend to notify upstream. Actions summaries are not subject to that restriction.
 - When the pull request body is long, begin it with a `> [!NOTE]` callout containing a TL;DR.
