@@ -10,7 +10,6 @@ import type {
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
-import { SERVER_RESTART_CONTINUED_ACTIVITY_KIND } from "@t3tools/contracts";
 import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -1515,9 +1514,7 @@ function renderFeedEntry(
     const label = entry.activities[0]!.summary;
     // A restart continues the same conversation, so it reads as a note in the
     // turn's work; compaction breaks the context and gets a divider.
-    if (
-      entry.activities[0]!.workEntry.sourceActivityKind === SERVER_RESTART_CONTINUED_ACTIVITY_KIND
-    ) {
+    if (entry.activities[0]!.workEntry.sourceActivityKind !== "context-compaction") {
       return (
         <View
           accessible

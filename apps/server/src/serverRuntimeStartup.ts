@@ -8,6 +8,7 @@ import {
   type OrchestrationProjectShell,
   ProjectId,
   ProviderInstanceId,
+  SERVER_RESTART_BACKGROUND_ACTIVITY_KIND,
   SERVER_RESTART_CONTINUED_ACTIVITY_KIND,
   ThreadId,
   TurnId,
@@ -538,11 +539,16 @@ const recordRestartContinued = (input: {
       activity: {
         id: EventId.make(yield* crypto.randomUUIDv4),
         tone: "info",
-        kind: SERVER_RESTART_CONTINUED_ACTIVITY_KIND,
-        summary: input.background
-          ? "Asked to restart background work after server restart"
-          : "Continued after server restart",
-        payload: { background: input.background },
+        ...(input.background
+          ? {
+              kind: SERVER_RESTART_BACKGROUND_ACTIVITY_KIND,
+              summary: "Asked to restart background work after server restart",
+            }
+          : {
+              kind: SERVER_RESTART_CONTINUED_ACTIVITY_KIND,
+              summary: "Continued after server restart",
+            }),
+        payload: {},
         turnId: input.turnId,
         createdAt: input.createdAt,
       },

@@ -1139,7 +1139,7 @@ it.effect("asks a settled thread to restart background work the update stopped",
       ),
       [
         {
-          kind: "server-restart.continued",
+          kind: "server-restart.background-continued",
           summary: "Asked to restart background work after server restart",
           turnId: TurnId.make("turn-restarted"),
         },

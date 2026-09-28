@@ -1197,6 +1197,93 @@ describe("deriveMessagesTimelineRows", () => {
     expect(findingsRow(derive("turn-2", toggled))).toMatchObject({ expanded: true });
   });
 
+  describe("a turn continued after a server restart", () => {
+    const message = (
+      id: string,
+      role: "user" | "assistant",
+      turnId: string | null,
+      at: string,
+    ) => ({
+      id: `${id}-entry`,
+      kind: "message" as const,
+      createdAt: at,
+      message: {
+        id: id as never,
+        role,
+        text: id,
+        turnId: turnId as never,
+        createdAt: at,
+        updatedAt: at,
+        streaming: false,
+      },
+    });
+    const work = (id: string, turnId: string, at: string, sourceActivityKind?: string) => ({
+      id: `${id}-entry`,
+      kind: "work" as const,
+      createdAt: at,
+      entry: {
+        id,
+        createdAt: at,
+        turnId: turnId as never,
+        label: id,
+        tone: "tool" as const,
+        ...(sourceActivityKind ? { sourceActivityKind } : {}),
+      },
+    });
+    const timelineEntries = (restartKind: string) => [
+      message("request", "user", null, "2026-01-01T00:00:00Z"),
+      message("plan", "assistant", "turn-1", "2026-01-01T00:00:05Z"),
+      work("edit", "turn-1", "2026-01-01T00:00:10Z"),
+      message("progress", "assistant", "turn-1", "2026-01-01T00:00:20Z"),
+      work("restart-note", "turn-2", "2026-01-01T00:00:40Z", restartKind),
+      message("resumed", "assistant", "turn-2", "2026-01-01T00:00:45Z"),
+      work("typecheck", "turn-2", "2026-01-01T00:00:50Z"),
+      message("answer", "assistant", "turn-2", "2026-01-01T00:01:30Z"),
+    ];
+    const rowsFor = (restartKind: string, expandedTurnIds?: ReadonlySet<TurnId>) =>
+      deriveMessagesTimelineRows({
+        timelineEntries: timelineEntries(restartKind),
+        ...(expandedTurnIds ? { expandedTurnIds } : {}),
+        isWorking: false,
+        activeTurnStartedAt: null,
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+      });
+
+    it("folds with the turn it continued into one response", () => {
+      const collapsedRows = rowsFor("server-restart.continued");
+      expect(collapsedRows.map((row) => row.id)).toEqual([
+        "request-entry",
+        "turn-fold:turn-1",
+        "answer-entry",
+      ]);
+      const foldRow = collapsedRows.find((row) => row.kind === "turn-fold");
+      // User message (00:00:00) → final answer (00:01:30), across the restart.
+      expect(foldRow?.kind === "turn-fold" && foldRow.label).toBe("Worked for 1m 30s");
+
+      expect(
+        rowsFor("server-restart.continued", new Set([TurnId.make("turn-1")])).map((row) => row.id),
+      ).toEqual([
+        "request-entry",
+        "turn-fold:turn-1",
+        "plan-entry",
+        "edit-entry",
+        "progress-entry",
+        "restart-note-entry",
+        "resumed-entry",
+        "typecheck-entry",
+        "answer-entry",
+      ]);
+    });
+
+    it("keeps a background-work continuation as its own response", () => {
+      const rowIds = rowsFor("server-restart.background-continued").map((row) => row.id);
+      expect(rowIds).toContain("turn-fold:turn-1");
+      expect(rowIds).toContain("progress-entry");
+      expect(rowIds).toContain("turn-fold:turn-2");
+    });
+  });
+
   it("only enables assistant copy for the terminal assistant message in a turn", () => {
     const rows = deriveMessagesTimelineRows({
       timelineEntries: [

@@ -7,7 +7,6 @@ import {
   type OrchestrationGetCommandOutputResult,
   type ProjectScriptIcon,
   type ScopedThreadRef,
-  SERVER_RESTART_CONTINUED_ACTIVITY_KIND,
   type ServerProviderSkill,
   type ToolActivityIcon,
   type TurnId,
@@ -1371,7 +1370,7 @@ function StandaloneActivityTimelineRow({
 }: {
   row: Extract<TimelineRow, { kind: "standalone-activity" }>;
 }) {
-  if (row.activityKind === SERVER_RESTART_CONTINUED_ACTIVITY_KIND) {
+  if (row.activityKind !== "context-compaction") {
     return (
       <div className="mx-auto flex w-full max-w-3xl items-center gap-1.5 px-0.5 py-0.5">
         <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">

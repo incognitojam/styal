@@ -1,5 +1,6 @@
 import {
   isToolLifecycleItemType,
+  SERVER_RESTART_BACKGROUND_ACTIVITY_KIND,
   SERVER_RESTART_CONTINUED_ACTIVITY_KIND,
   type AssetResource,
   type RuntimeItemStatus,
@@ -24,7 +25,11 @@ import { memoryFileToolKind, memoryFileToolPath } from "@t3tools/shared/toolRowP
  * to hide.
  */
 export function isStandaloneTimelineActivityKind(kind: string | undefined): kind is string {
-  return kind === "context-compaction" || kind === SERVER_RESTART_CONTINUED_ACTIVITY_KIND;
+  return (
+    kind === "context-compaction" ||
+    kind === SERVER_RESTART_CONTINUED_ACTIVITY_KIND ||
+    kind === SERVER_RESTART_BACKGROUND_ACTIVITY_KIND
+  );
 }
 
 export function isWorktreeSetupActivity(kind: string): boolean {

@@ -30,7 +30,12 @@ import {
   type WorkLogEntry,
 } from "../../session-logic";
 import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../../types";
-import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@t3tools/contracts";
+import {
+  SERVER_RESTART_CONTINUED_ACTIVITY_KIND,
+  type MessageId,
+  type OrchestrationLatestTurn,
+  type TurnId,
+} from "@t3tools/contracts";
 import {
   deriveToolRowPresentation,
   isPreviewToolName,
@@ -538,7 +543,10 @@ export function resolveAssistantMessageCopyState({
   };
 }
 
-function deriveTerminalAssistantMessageIds(timelineEntries: ReadonlyArray<TimelineEntry>) {
+function deriveTerminalAssistantMessageIds(
+  timelineEntries: ReadonlyArray<TimelineEntry>,
+  continuedTurnRoots: ReadonlyMap<TurnId, TurnId>,
+) {
   const lastAssistantMessageIdByResponseKey = new Map<string, string>();
   let nullTurnResponseIndex = 0;
 
@@ -556,7 +564,7 @@ function deriveTerminalAssistantMessageIds(timelineEntries: ReadonlyArray<Timeli
     }
 
     const responseKey = message.turnId
-      ? `turn:${message.turnId}`
+      ? `turn:${continuedTurnRoots.get(message.turnId) ?? message.turnId}`
       : `unkeyed:${nullTurnResponseIndex}`;
     lastAssistantMessageIdByResponseKey.set(responseKey, message.id);
   }
@@ -694,6 +702,41 @@ function timelineEntryTurnId(entry: TimelineEntry): TurnId | null {
 }
 
 /**
+ * A prompted continuation after a server restart runs in a new provider turn
+ * with no user message before it. Maps each such turn, recognised by the
+ * restart note that opens it, to the turn it continued so both read as one
+ * response. Every other turn maps to itself.
+ */
+function deriveContinuedTurnRoots(
+  timelineEntries: ReadonlyArray<TimelineEntry>,
+): ReadonlyMap<TurnId, TurnId> {
+  const roots = new Map<TurnId, TurnId>();
+  let previousRoot: TurnId | null = null;
+  for (const entry of timelineEntries) {
+    if (entry.kind === "message" && entry.message.role === "user") {
+      previousRoot = null;
+      continue;
+    }
+    const turnId = timelineEntryTurnId(entry);
+    if (turnId === null) {
+      continue;
+    }
+    let root = roots.get(turnId);
+    if (root === undefined) {
+      root =
+        previousRoot !== null &&
+        entry.kind === "work" &&
+        entry.entry.sourceActivityKind === SERVER_RESTART_CONTINUED_ACTIVITY_KIND
+          ? previousRoot
+          : turnId;
+      roots.set(turnId, root);
+    }
+    previousRoot = root;
+  }
+  return roots;
+}
+
+/**
  * A promptless provider restart replaces the native turn without adding a
  * user message. Keep every provider turn since the latest user message in one
  * visual response until the replacement turn settles. A steer has its own
@@ -739,11 +782,14 @@ function workEntryIsActiveTurnActivity(entry: WorkLogEntry): boolean {
  */
 function deriveTurnFolds(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
+  continuedTurnRoots: ReadonlyMap<TurnId, TurnId>;
   terminalAssistantMessageIds: ReadonlySet<string>;
   latestTurn: TimelineLatestTurn | null;
   unfoldedTurnIds: ReadonlySet<TurnId>;
 }): ReadonlyMap<string, TurnFold> {
   interface TurnGroup {
+    /** The turn and any turns that continued it after a server restart. */
+    turnIds: Set<TurnId>;
     entries: Array<TimelineEntry>;
     terminalEntry: Extract<TimelineEntry, { kind: "message" }> | null;
     hasStreamingMessage: boolean;
@@ -772,9 +818,11 @@ function deriveTurnFolds(input: {
     if (!turnId) {
       continue;
     }
-    let group = groupsByTurnId.get(turnId);
+    const rootTurnId = input.continuedTurnRoots.get(turnId) ?? turnId;
+    let group = groupsByTurnId.get(rootTurnId);
     if (!group) {
       group = {
+        turnIds: new Set(),
         entries: [],
         terminalEntry: null,
         hasStreamingMessage: false,
@@ -784,8 +832,9 @@ function deriveTurnFolds(input: {
         startBoundary: pendingUserBoundary,
       };
       pendingUserBoundary = null;
-      groupsByTurnId.set(turnId, group);
+      groupsByTurnId.set(rootTurnId, group);
     }
+    group.turnIds.add(turnId);
     group.entries.push(entry);
     if (entry.kind === "message") {
       if (input.terminalAssistantMessageIds.has(entry.message.id)) {
@@ -799,7 +848,7 @@ function deriveTurnFolds(input: {
 
   const foldsByAnchorEntryId = new Map<string, TurnFold>();
   for (const [turnId, group] of groupsByTurnId) {
-    if (input.unfoldedTurnIds.has(turnId)) {
+    if ([...group.turnIds].some((memberTurnId) => input.unfoldedTurnIds.has(memberTurnId))) {
       continue;
     }
     if (group.hasStreamingMessage) {
@@ -859,12 +908,15 @@ function deriveTurnFolds(input: {
     }
 
     const isLatestInterruptedTurn =
-      input.latestTurn?.turnId === turnId && input.latestTurn.state === "interrupted";
+      input.latestTurn !== null &&
+      group.turnIds.has(input.latestTurn.turnId) &&
+      input.latestTurn.state === "interrupted";
     // A turn cut short by a steer leaves trailing work entries behind its
     // terminal message — take whichever ended last.
     const lastEntryEnd =
       lastEntry.kind === "message" ? lastEntry.message.updatedAt : lastEntry.createdAt;
     const elapsedMs =
+      group.turnIds.size === 1 &&
       input.latestTurn?.turnId === turnId &&
       input.latestTurn.startedAt &&
       input.latestTurn.completedAt
@@ -1048,7 +1100,11 @@ export function deriveMessagesTimelineRows(input: {
   const durationStartByMessageId = computeMessageDurationStart(
     input.timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
   );
-  const terminalAssistantMessageIds = deriveTerminalAssistantMessageIds(input.timelineEntries);
+  const continuedTurnRoots = deriveContinuedTurnRoots(input.timelineEntries);
+  const terminalAssistantMessageIds = deriveTerminalAssistantMessageIds(
+    input.timelineEntries,
+    continuedTurnRoots,
+  );
   const unsettledTurnId = deriveUnsettledTurnId(
     input.latestTurn ?? null,
     input.runningTurnId ?? null,
@@ -1060,6 +1116,7 @@ export function deriveMessagesTimelineRows(input: {
   });
   const foldsByAnchorEntryId = deriveTurnFolds({
     timelineEntries: input.timelineEntries,
+    continuedTurnRoots,
     terminalAssistantMessageIds,
     latestTurn: input.latestTurn ?? null,
     unfoldedTurnIds: activeVisualResponseTurnIds,

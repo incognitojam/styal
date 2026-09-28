@@ -6,6 +6,7 @@ import {
 import {
   isToolLifecycleItemType,
   ProjectScriptIcon,
+  SERVER_RESTART_CONTINUED_ACTIVITY_KIND,
   UserInputAttachmentAnswerPayload,
 } from "@t3tools/contracts";
 import {
@@ -1855,22 +1856,68 @@ interface ThreadFeedTurnFold {
   readonly label: string;
 }
 
+function threadFeedEntryTurnId(entry: ThreadFeedEntry): TurnId | null {
+  if (entry.type === "message") {
+    return entry.message.role === "assistant" ? (entry.message.turnId ?? null) : null;
+  }
+  return entry.type === "activity-group" ? entry.turnId : null;
+}
+
+/**
+ * A prompted continuation after a server restart runs in a new provider turn
+ * with no user message before it. Maps each such turn, recognised by the
+ * restart note that opens it, to the turn it continued so both read as one
+ * response. Every other turn maps to itself.
+ */
+function deriveContinuedTurnRoots(
+  feed: ReadonlyArray<ThreadFeedEntry>,
+): ReadonlyMap<TurnId, TurnId> {
+  const roots = new Map<TurnId, TurnId>();
+  let previousRoot: TurnId | null = null;
+  for (const entry of feed) {
+    if (entry.type === "message" && entry.message.role === "user") {
+      previousRoot = null;
+      continue;
+    }
+    const turnId = threadFeedEntryTurnId(entry);
+    if (turnId === null) {
+      continue;
+    }
+    let root = roots.get(turnId);
+    if (root === undefined) {
+      root =
+        previousRoot !== null &&
+        entry.type === "activity-group" &&
+        entry.activities[0]?.workEntry.sourceActivityKind === SERVER_RESTART_CONTINUED_ACTIVITY_KIND
+          ? previousRoot
+          : turnId;
+      roots.set(turnId, root);
+    }
+    previousRoot = root;
+  }
+  return roots;
+}
+
 function deriveThreadFeedTurnFolds(
   feed: ReadonlyArray<ThreadFeedEntry>,
   latestTurn: ThreadFeedLatestTurn | null,
 ): ReadonlyMap<string, ThreadFeedTurnFold> {
+  const continuedTurnRoots = deriveContinuedTurnRoots(feed);
   const firstAssistantMessageIdByTurn = new Map<TurnId, string>();
   const terminalAssistantMessageIdByTurn = new Map<TurnId, string>();
   for (const entry of feed) {
     if (entry.type === "message" && entry.message.role === "assistant" && entry.message.turnId) {
-      if (!firstAssistantMessageIdByTurn.has(entry.message.turnId)) {
-        firstAssistantMessageIdByTurn.set(entry.message.turnId, entry.id);
+      const rootTurnId = continuedTurnRoots.get(entry.message.turnId) ?? entry.message.turnId;
+      if (!firstAssistantMessageIdByTurn.has(rootTurnId)) {
+        firstAssistantMessageIdByTurn.set(rootTurnId, entry.id);
       }
-      terminalAssistantMessageIdByTurn.set(entry.message.turnId, entry.id);
+      terminalAssistantMessageIdByTurn.set(rootTurnId, entry.id);
     }
   }
 
   interface TurnGroup {
+    /** The turn and any turns that continued it after a server restart. */
+    readonly turnIds: Set<TurnId>;
     readonly entries: ThreadFeedEntry[];
     readonly startBoundary: string | null;
   }
@@ -1881,24 +1928,22 @@ function deriveThreadFeedTurnFolds(
       pendingUserBoundary = entry.message.createdAt;
       continue;
     }
-    const turnId =
-      entry.type === "message" && entry.message.role === "assistant"
-        ? entry.message.turnId
-        : entry.type === "activity-group"
-          ? entry.turnId
-          : null;
+    const turnId = threadFeedEntryTurnId(entry);
     if (!turnId) {
       continue;
     }
-    let group = groupsByTurnId.get(turnId);
+    const rootTurnId = continuedTurnRoots.get(turnId) ?? turnId;
+    let group = groupsByTurnId.get(rootTurnId);
     if (!group) {
       group = {
+        turnIds: new Set(),
         entries: [],
         startBoundary: pendingUserBoundary,
       };
       pendingUserBoundary = null;
-      groupsByTurnId.set(turnId, group);
+      groupsByTurnId.set(rootTurnId, group);
     }
+    group.turnIds.add(turnId);
     group.entries.push(entry);
   }
 
@@ -1906,7 +1951,7 @@ function deriveThreadFeedTurnFolds(
   const foldsByAnchorId = new Map<string, ThreadFeedTurnFold>();
   for (const [turnId, group] of groupsByTurnId) {
     const { entries } = group;
-    if (turnId === unsettledTurnId) {
+    if (unsettledTurnId !== null && group.turnIds.has(unsettledTurnId)) {
       continue;
     }
     if (entries.some((entry) => entry.type === "message" && entry.message.streaming)) {
@@ -1949,11 +1994,14 @@ function deriveThreadFeedTurnFolds(
     const terminalEntry = terminalAssistantMessageId
       ? entries.find((entry) => entry.id === terminalAssistantMessageId)
       : null;
-    const latestTurnMatches = latestTurn?.turnId === turnId;
+    const latestTurnMatches = latestTurn !== null && group.turnIds.has(latestTurn.turnId);
     const lastEntryEnd =
       lastEntry.type === "message" ? lastEntry.message.updatedAt : lastEntry.createdAt;
     const elapsedMs =
-      latestTurnMatches && latestTurn.startedAt && latestTurn.completedAt
+      latestTurnMatches &&
+      group.turnIds.size === 1 &&
+      latestTurn.startedAt &&
+      latestTurn.completedAt
         ? computeElapsedMs(latestTurn.startedAt, latestTurn.completedAt)
         : computeElapsedMs(
             group.startBoundary ?? firstEntry.createdAt,
