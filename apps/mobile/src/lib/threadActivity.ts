@@ -1955,6 +1955,7 @@ export function deriveThreadFeedPresentation(
   expandedTurnIds: ReadonlySet<TurnId>,
   expandedWorkGroupIds: ReadonlySet<string> = new Set(),
   activeWorkStartedAt: string | null = null,
+  isCompacting = false,
 ): ThreadFeedEntry[] {
   const sourceFeed = feed.filter(
     (entry) =>
@@ -2028,6 +2029,7 @@ export function deriveThreadFeedPresentation(
   // of a row being inserted below the group every time a call fails.
   if (
     activeWorkStartedAt !== null &&
+    !isCompacting &&
     !result.some(
       (row) =>
         (row.type === "work-toggle" && row.shimmer) ||

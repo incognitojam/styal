@@ -265,17 +265,13 @@ export function useThreadComposerState() {
         message.attachments.length === 0,
     );
     const latestCompactMessage = selectedThreadDetail?.messages.findLast(
-      (message) =>
-        message.role === "user" &&
-        message.text.trim().toLowerCase() === "/compact" &&
-        !message.attachments?.length,
+      (message) => message.role === "user",
     );
+    // A provider restart can lose the request's turn linkage and change its timestamp.
     const compactRequestIsActive =
       latestCompactMessage !== undefined &&
-      (latestCompactMessage.createdAt >
-        (selectedThread?.latestTurn?.requestedAt ?? latestCompactMessage.createdAt) ||
-        (selectedThread?.latestTurn?.state === "running" &&
-          latestCompactMessage.createdAt === selectedThread.latestTurn.requestedAt));
+      latestCompactMessage.text.trim().toLowerCase() === "/compact" &&
+      !latestCompactMessage.attachments?.length;
     const compactionSettled = selectedThreadDetail?.activities.some((activity) => {
       if (!["context-compaction", "provider.turn.start.failed"].includes(activity.kind))
         return false;

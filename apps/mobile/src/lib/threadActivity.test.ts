@@ -2975,6 +2975,15 @@ describe("buildThreadFeed", () => {
     expect(rows.some((entry) => entry.type === "work-toggle" && entry.shimmer)).toBe(shimmer);
   });
 
+  it("hides Thinking during compaction and restores it for ordinary work", () => {
+    const startedAt = "2026-04-01T00:00:01.000Z";
+    const present = (isCompacting: boolean) =>
+      deriveThreadFeedPresentation([], null, new Set(), new Set(), startedAt, isCompacting);
+    expect(present(false)).toMatchObject([{ type: "thinking" }]);
+    expect(present(true)).toEqual([]);
+    expect(present(false)).toMatchObject([{ type: "thinking" }]);
+  });
+
   it("does not revive cached in-progress tools after work stops", () => {
     const turnId = TurnId.make("turn-stale-tool");
     const feed: ThreadFeedEntry[] = [

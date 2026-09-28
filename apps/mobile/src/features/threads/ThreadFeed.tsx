@@ -246,6 +246,7 @@ export interface ThreadFeedProps {
   readonly agentLabel: string;
   readonly latestTurn: ThreadFeedLatestTurn | null;
   readonly activeWorkStartedAt: string | null;
+  readonly isCompacting?: boolean;
   readonly listRef: RefObject<LegendListRef | null>;
   readonly freeze: SharedValue<boolean>;
   readonly anchorMessageId: MessageId | null;
@@ -2450,6 +2451,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
           expandedTurnIds,
           expandedWorkGroupIds,
           props.activeWorkStartedAt,
+          props.isCompacting,
         ),
         props.feed,
         props.queuedMessages,
@@ -2459,6 +2461,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       expandedTurnIds,
       expandedWorkGroupIds,
       props.activeWorkStartedAt,
+      props.isCompacting,
       props.feed,
       props.latestTurn,
     ],
