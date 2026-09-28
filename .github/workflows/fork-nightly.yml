@@ -166,9 +166,18 @@ jobs:
             --current-tag "${{ steps.release_meta.outputs.tag }}" \
             --github-output
 
+  build_bundle:
+    name: Build JS bundle
+    needs: prepare
+    if: needs.prepare.outputs.has_changes == 'true'
+    uses: ./.github/workflows/fork-js-bundle.yml
+    with:
+      ref: ${{ needs.prepare.outputs.ref }}
+      version: ${{ needs.prepare.outputs.version }}
+
   build_desktop_mac:
     name: Build macOS desktop artifact
-    needs: prepare
+    needs: [prepare, build_bundle]
     if: needs.prepare.outputs.has_changes == 'true'
     uses: ./.github/workflows/fork-desktop-build.yml
     with:
@@ -182,7 +191,7 @@ jobs:
 
   build_desktop_linux:
     name: Build Linux desktop artifact
-    needs: prepare
+    needs: [prepare, build_bundle]
     if: needs.prepare.outputs.has_changes == 'true'
     uses: ./.github/workflows/fork-desktop-build.yml
     with:
@@ -193,7 +202,7 @@ jobs:
 
   build_desktop_windows:
     name: Build Windows desktop artifact
-    needs: prepare
+    needs: [prepare, build_bundle]
     if: needs.prepare.outputs.has_changes == 'true'
     uses: ./.github/workflows/fork-desktop-build.yml
     with:
@@ -204,7 +213,7 @@ jobs:
 
   build_cli_archives:
     name: Build standalone CLI archives
-    needs: prepare
+    needs: [prepare, build_bundle]
     if: needs.prepare.outputs.has_changes == 'true'
     uses: ./.github/workflows/fork-cli-archives.yml
     with:

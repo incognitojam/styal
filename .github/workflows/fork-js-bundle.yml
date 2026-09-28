@@ -1,0 +1,90 @@
+name: Fork JS Bundle
+
+# Builds the server bundle, web client, and Electron main once per release run
+# and uploads them as the `js-bundle` artifact. Desktop packaging and CLI
+# archives download it instead of rebuilding, so callers must finish this job
+# before starting fork-desktop-build.yml or fork-cli-archives.yml.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    name: Build JS bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      T3CODE_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+      T3CODE_CLERK_JWT_TEMPLATE: ${{ vars.CLERK_JWT_TEMPLATE }}
+      T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ vars.CLERK_CLI_OAUTH_CLIENT_ID }}
+      T3CODE_RELAY_URL: ${{ vars.RELAY_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      # Same filters as the Linux desktop build, so both restore one cache entry.
+      - name: Setup cached dependencies
+        if: hashFiles('.github/actions/setup-deps/action.yml') != ''
+        uses: ./.github/actions/setup-deps
+        with:
+          filters: |
+            @t3tools/desktop...
+            @styal/cli...
+            @t3tools/scripts...
+
+      # Older release candidates predate the local cache action.
+      - name: Setup dependencies for older candidates
+        if: hashFiles('.github/actions/setup-deps/action.yml') == ''
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/desktop...
+              - --filter=@styal/cli...
+              - --filter=@t3tools/scripts...
+
+      # The desktop build compiles the Linux browser secret helper on this host.
+      - name: Install browser secret helper build libraries
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
+
+      - name: Align release versions
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
+
+      # Without T3CODE_COMMIT_HASH the web build falls back to GITHUB_SHA, which
+      # is the dispatching branch head rather than the release candidate.
+      - name: Build server, web client, and Electron main
+        shell: bash
+        run: |
+          set -euo pipefail
+          T3CODE_COMMIT_HASH="$(git rev-parse HEAD)" vp run build:desktop
+
+      # Both paths share the apps/ root; consumers download into `apps`.
+      - name: Upload JS bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: js-bundle
+          path: |
+            apps/server/dist
+            apps/desktop/dist-electron
+          if-no-files-found: error
+          retention-days: 1

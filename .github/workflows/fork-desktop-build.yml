@@ -1,5 +1,9 @@
 name: Fork Desktop Build
 
+# Packages the `js-bundle` artifact from fork-js-bundle.yml, which the caller
+# must build first. The Windows target also builds its own Linux CLI archive
+# for WSL, so no desktop target waits for the full CLI archive matrix.
+
 on:
   workflow_call:
     inputs:
@@ -16,10 +20,6 @@ on:
         required: false
         default: all
         type: string
-      cli_archives_ready:
-        description: Reuse CLI archives built by the parent release workflow
-        default: false
-        type: boolean
       sign_macos:
         description: Sign and notarize the macOS artifact
         required: false
@@ -155,7 +155,7 @@ jobs:
   build_wsl_runtime:
     name: Build Linux CLI for WSL
     needs: configure
-    if: ${{ !inputs.cli_archives_ready && (inputs.target == 'all' || inputs.target == 'windows-x64') }}
+    if: inputs.target == 'all' || inputs.target == 'windows-x64'
     uses: ./.github/workflows/fork-cli-archives.yml
     with:
       ref: ${{ inputs.ref }}
@@ -336,11 +336,19 @@ jobs:
       - name: Align package versions
         run: node scripts/update-release-package-versions.ts "${{ inputs.version }}"
 
+      # The artifact root is apps/, so this restores apps/server/dist and
+      # apps/desktop/dist-electron where the packaging script expects them.
+      - name: Download JS bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: js-bundle
+          path: apps
+
       - name: Download Linux CLI runtime for WSL
         if: matrix.platform == 'win'
         uses: actions/download-artifact@v8
         with:
-          name: ${{ inputs.cli_archives_ready && 'cli-archive-linux-x64' || 'wsl-archive-linux-x64' }}
+          name: wsl-archive-linux-x64
           path: wsl-runtime
       - name: Download WSL node-pty prebuild
         if: matrix.platform == 'win'
@@ -394,6 +402,7 @@ jobs:
             --target "${{ matrix.target }}"
             --arch "${{ matrix.arch }}"
             --build-version "${{ inputs.version }}"
+            --skip-build
             --verbose
           )
 
