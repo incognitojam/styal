@@ -7,6 +7,7 @@ import {
   type ThreadId,
   type ToolActivitySource,
   type ToolLifecycleItemType,
+  type TurnId,
 } from "@t3tools/contracts";
 import { classifyMarkdownImageSource } from "@t3tools/client-runtime/markdown-images";
 import { resolveMediaSource } from "@t3tools/client-runtime/media-source";
@@ -30,6 +31,49 @@ export function isStandaloneTimelineActivityKind(kind: string | undefined): kind
     kind === SERVER_RESTART_CONTINUED_ACTIVITY_KIND ||
     kind === SERVER_RESTART_BACKGROUND_ACTIVITY_KIND
   );
+}
+
+/** What deriveContinuedTurnRoots reads from one timeline entry. */
+export interface ContinuedTurnEntry {
+  /** The provider turn the entry belongs to, or null when it has none. */
+  readonly turnId: TurnId | null;
+  readonly isUserMessage: boolean;
+  readonly activityKind: string | undefined;
+}
+
+/**
+ * A prompted continuation after a server restart runs in a new provider turn
+ * with no user message before it. Maps each such turn, recognised by the
+ * restart note that opens it, to the turn it continued so clients fold both as
+ * one response. Every other turn maps to itself. Entries must be in timeline
+ * order.
+ */
+export function deriveContinuedTurnRoots<Entry>(
+  entries: Iterable<Entry>,
+  describe: (entry: Entry) => ContinuedTurnEntry,
+): ReadonlyMap<TurnId, TurnId> {
+  const roots = new Map<TurnId, TurnId>();
+  let previousRoot: TurnId | null = null;
+  for (const entry of entries) {
+    const { turnId, isUserMessage, activityKind } = describe(entry);
+    if (isUserMessage) {
+      previousRoot = null;
+      continue;
+    }
+    if (turnId === null) {
+      continue;
+    }
+    let root = roots.get(turnId);
+    if (root === undefined) {
+      root =
+        previousRoot !== null && activityKind === SERVER_RESTART_CONTINUED_ACTIVITY_KIND
+          ? previousRoot
+          : turnId;
+      roots.set(turnId, root);
+    }
+    previousRoot = root;
+  }
+  return roots;
 }
 
 export function isWorktreeSetupActivity(kind: string): boolean {

@@ -3,6 +3,7 @@ import { shallow } from "zustand/vanilla/shallow";
 import { renderCodexDirectivesForCopy } from "@t3tools/client-runtime/codex-markdown-directives";
 import { commandProgramName } from "@t3tools/client-runtime/work-log/command-label";
 import {
+  deriveContinuedTurnRoots,
   isStandaloneTimelineActivityKind,
   liveActivityToolStatus,
   normalizeCompactToolLabel,
@@ -30,12 +31,7 @@ import {
   type WorkLogEntry,
 } from "../../session-logic";
 import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../../types";
-import {
-  SERVER_RESTART_CONTINUED_ACTIVITY_KIND,
-  type MessageId,
-  type OrchestrationLatestTurn,
-  type TurnId,
-} from "@t3tools/contracts";
+import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@t3tools/contracts";
 import {
   deriveToolRowPresentation,
   isPreviewToolName,
@@ -702,41 +698,6 @@ function timelineEntryTurnId(entry: TimelineEntry): TurnId | null {
 }
 
 /**
- * A prompted continuation after a server restart runs in a new provider turn
- * with no user message before it. Maps each such turn, recognised by the
- * restart note that opens it, to the turn it continued so both read as one
- * response. Every other turn maps to itself.
- */
-function deriveContinuedTurnRoots(
-  timelineEntries: ReadonlyArray<TimelineEntry>,
-): ReadonlyMap<TurnId, TurnId> {
-  const roots = new Map<TurnId, TurnId>();
-  let previousRoot: TurnId | null = null;
-  for (const entry of timelineEntries) {
-    if (entry.kind === "message" && entry.message.role === "user") {
-      previousRoot = null;
-      continue;
-    }
-    const turnId = timelineEntryTurnId(entry);
-    if (turnId === null) {
-      continue;
-    }
-    let root = roots.get(turnId);
-    if (root === undefined) {
-      root =
-        previousRoot !== null &&
-        entry.kind === "work" &&
-        entry.entry.sourceActivityKind === SERVER_RESTART_CONTINUED_ACTIVITY_KIND
-          ? previousRoot
-          : turnId;
-      roots.set(turnId, root);
-    }
-    previousRoot = root;
-  }
-  return roots;
-}
-
-/**
  * A promptless provider restart replaces the native turn without adding a
  * user message. Keep every provider turn since the latest user message in one
  * visual response until the replacement turn settles. A steer has its own
@@ -1100,7 +1061,11 @@ export function deriveMessagesTimelineRows(input: {
   const durationStartByMessageId = computeMessageDurationStart(
     input.timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
   );
-  const continuedTurnRoots = deriveContinuedTurnRoots(input.timelineEntries);
+  const continuedTurnRoots = deriveContinuedTurnRoots(input.timelineEntries, (entry) => ({
+    turnId: timelineEntryTurnId(entry),
+    isUserMessage: entry.kind === "message" && entry.message.role === "user",
+    activityKind: entry.kind === "work" ? entry.entry.sourceActivityKind : undefined,
+  }));
   const terminalAssistantMessageIds = deriveTerminalAssistantMessageIds(
     input.timelineEntries,
     continuedTurnRoots,

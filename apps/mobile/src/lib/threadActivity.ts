@@ -6,7 +6,6 @@ import {
 import {
   isToolLifecycleItemType,
   ProjectScriptIcon,
-  SERVER_RESTART_CONTINUED_ACTIVITY_KIND,
   UserInputAttachmentAnswerPayload,
 } from "@t3tools/contracts";
 import {
@@ -39,6 +38,7 @@ import {
 import {
   commandDetailRepeatsCommand,
   extractCommandOutputText,
+  deriveContinuedTurnRoots,
   extractWorkLogToolLifecycleStatus,
   isStandaloneTimelineActivityKind,
   isWorktreeSetupActivity,
@@ -1863,46 +1863,18 @@ function threadFeedEntryTurnId(entry: ThreadFeedEntry): TurnId | null {
   return entry.type === "activity-group" ? entry.turnId : null;
 }
 
-/**
- * A prompted continuation after a server restart runs in a new provider turn
- * with no user message before it. Maps each such turn, recognised by the
- * restart note that opens it, to the turn it continued so both read as one
- * response. Every other turn maps to itself.
- */
-function deriveContinuedTurnRoots(
-  feed: ReadonlyArray<ThreadFeedEntry>,
-): ReadonlyMap<TurnId, TurnId> {
-  const roots = new Map<TurnId, TurnId>();
-  let previousRoot: TurnId | null = null;
-  for (const entry of feed) {
-    if (entry.type === "message" && entry.message.role === "user") {
-      previousRoot = null;
-      continue;
-    }
-    const turnId = threadFeedEntryTurnId(entry);
-    if (turnId === null) {
-      continue;
-    }
-    let root = roots.get(turnId);
-    if (root === undefined) {
-      root =
-        previousRoot !== null &&
-        entry.type === "activity-group" &&
-        entry.activities[0]?.workEntry.sourceActivityKind === SERVER_RESTART_CONTINUED_ACTIVITY_KIND
-          ? previousRoot
-          : turnId;
-      roots.set(turnId, root);
-    }
-    previousRoot = root;
-  }
-  return roots;
-}
-
 function deriveThreadFeedTurnFolds(
   feed: ReadonlyArray<ThreadFeedEntry>,
   latestTurn: ThreadFeedLatestTurn | null,
 ): ReadonlyMap<string, ThreadFeedTurnFold> {
-  const continuedTurnRoots = deriveContinuedTurnRoots(feed);
+  const continuedTurnRoots = deriveContinuedTurnRoots(feed, (entry) => ({
+    turnId: threadFeedEntryTurnId(entry),
+    isUserMessage: entry.type === "message" && entry.message.role === "user",
+    activityKind:
+      entry.type === "activity-group"
+        ? entry.activities[0]?.workEntry.sourceActivityKind
+        : undefined,
+  }));
   const firstAssistantMessageIdByTurn = new Map<TurnId, string>();
   const terminalAssistantMessageIdByTurn = new Map<TurnId, string>();
   for (const entry of feed) {
