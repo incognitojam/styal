@@ -29,7 +29,12 @@ import {
   type WorkLogEntry,
 } from "../../session-logic";
 import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../../types";
-import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@t3tools/contracts";
+import {
+  isStandaloneTimelineActivityKind,
+  type MessageId,
+  type OrchestrationLatestTurn,
+  type TurnId,
+} from "@t3tools/contracts";
 import {
   deriveToolRowPresentation,
   isPreviewToolName,
@@ -404,10 +409,11 @@ export type MessagesTimelineRow =
       expanded: boolean;
     }
   | {
-      kind: "context-compaction";
+      kind: "standalone-activity";
       id: string;
       createdAt: string;
       label: string;
+      activityKind: string;
     }
   | {
       kind: "message";
@@ -811,13 +817,13 @@ function deriveTurnFolds(input: {
       if (entry.id === group.terminalEntry?.id) {
         continue;
       }
-      const isCompaction =
-        entry.kind === "work" && entry.entry.sourceActivityKind === "context-compaction";
+      const isStandalone =
+        entry.kind === "work" && isStandaloneTimelineActivityKind(entry.entry.sourceActivityKind);
       const isSingleTrailingActivity =
         group.entries.length === terminalEntryIndex + 2 &&
         entry.kind === "work" &&
         !workEntryDisplayIndicatesToolFailure(entry.entry);
-      if (!isCompaction && index > terminalEntryIndex && !isSingleTrailingActivity) {
+      if (!isStandalone && index > terminalEntryIndex && !isSingleTrailingActivity) {
         continue;
       }
       // Agent-spawn CTA rows never fold: workflows outlive their launching
@@ -836,14 +842,16 @@ function deriveTurnFolds(input: {
     if (hiddenEntryIds.size === 0) {
       continue;
     }
-    // A lone compaction row stays visible on its own; it only folds away as
-    // part of a turn that already folds other work.
-    const hidesNonCompactionWork = group.entries.some(
+    // A lone standalone row stays visible on its own; it only folds away as part
+    // of a turn that already folds other work.
+    const hidesNonStandaloneWork = group.entries.some(
       (entry) =>
         hiddenEntryIds.has(entry.id) &&
-        !(entry.kind === "work" && entry.entry.sourceActivityKind === "context-compaction"),
+        !(
+          entry.kind === "work" && isStandaloneTimelineActivityKind(entry.entry.sourceActivityKind)
+        ),
     );
-    if (!hidesNonCompactionWork) {
+    if (!hidesNonStandaloneWork) {
       continue;
     }
 
@@ -1090,7 +1098,7 @@ export function deriveMessagesTimelineRows(input: {
       !entryBelongsToActiveTurn(entry, index) ||
       entry.kind !== "work" ||
       entry.entry.agentSpawn !== undefined ||
-      entry.entry.sourceActivityKind === "context-compaction" ||
+      isStandaloneTimelineActivityKind(entry.entry.sourceActivityKind) ||
       entry.entry.tone === "error" ||
       workEntryReviewFindings(entry.entry) !== undefined
     ) {
@@ -1204,13 +1212,14 @@ export function deriveMessagesTimelineRows(input: {
 
     if (
       timelineEntry.kind === "work" &&
-      timelineEntry.entry.sourceActivityKind === "context-compaction"
+      isStandaloneTimelineActivityKind(timelineEntry.entry.sourceActivityKind)
     ) {
       nextRows.push({
-        kind: "context-compaction",
+        kind: "standalone-activity",
         id: timelineEntry.id,
         createdAt: timelineEntry.createdAt,
         label: timelineEntry.entry.label,
+        activityKind: timelineEntry.entry.sourceActivityKind,
       });
       continue;
     }
@@ -1251,7 +1260,7 @@ export function deriveMessagesTimelineRows(input: {
           !nextEntry ||
           nextEntry.kind !== "work" ||
           nextEntry.entry.agentSpawn !== undefined ||
-          nextEntry.entry.sourceActivityKind === "context-compaction" ||
+          isStandaloneTimelineActivityKind(nextEntry.entry.sourceActivityKind) ||
           nextEntry.entry.tone === "error" ||
           workEntryReviewFindings(nextEntry.entry) !== undefined ||
           activeWorkEntryIds.has(nextEntry.id) ||
@@ -1567,9 +1576,11 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       return a.createdAt === bf.createdAt && a.label === bf.label && a.expanded === bf.expanded;
     }
 
-    case "context-compaction": {
+    case "standalone-activity": {
       const bc = b as typeof a;
-      return a.createdAt === bc.createdAt && a.label === bc.label;
+      return (
+        a.createdAt === bc.createdAt && a.label === bc.label && a.activityKind === bc.activityKind
+      );
     }
 
     case "proposed-plan":

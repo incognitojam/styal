@@ -4,6 +4,7 @@ import {
   type PendingApproval,
 } from "@t3tools/client-runtime/pending-requests";
 import {
+  isStandaloneTimelineActivityKind,
   isToolLifecycleItemType,
   ProjectScriptIcon,
   UserInputAttachmentAnswerPayload,
@@ -336,12 +337,12 @@ const turnFoldRowsCache = new WeakMap<
 >();
 let cachedThinkingRow: Extract<ThreadFeedEntry, { readonly type: "thinking" }> | null = null;
 
-export function isContextCompactionActivityGroup(
+export function isStandaloneActivityGroup(
   entry: Extract<ThreadFeedEntry, { readonly type: "activity-group" }>,
 ): boolean {
   return (
     entry.activities.length === 1 &&
-    entry.activities[0]?.workEntry.sourceActivityKind === "context-compaction"
+    isStandaloneTimelineActivityKind(entry.activities[0]?.workEntry.sourceActivityKind)
   );
 }
 
@@ -1802,10 +1803,10 @@ function groupAdjacentActivities(entries: ReadonlyArray<RawThreadFeedEntry>): Th
       continue;
     }
 
-    // Compaction and findings rows render on their own, so they get their
-    // own group.
+    // Standalone activities and findings rows render on their own, so they
+    // get their own group.
     const standsAlone =
-      entry.activity.workEntry.sourceActivityKind === "context-compaction" ||
+      isStandaloneTimelineActivityKind(entry.activity.workEntry.sourceActivityKind) ||
       workEntryReviewFindings(entry.activity.workEntry) !== undefined;
     if (standsAlone || firstActivityEntry?.turnId !== entry.turnId) {
       flushGroup();
@@ -1928,14 +1929,14 @@ function deriveThreadFeedTurnFolds(
     if (hiddenEntryIds.size === 0) {
       continue;
     }
-    // A lone compaction row stays visible on its own; it only folds away as
-    // part of a turn that already folds other work.
-    const hidesNonCompactionWork = entries.some(
+    // A lone standalone row stays visible on its own; it only folds away as part
+    // of a turn that already folds other work.
+    const hidesNonStandaloneWork = entries.some(
       (entry) =>
         hiddenEntryIds.has(entry.id) &&
-        !(entry.type === "activity-group" && isContextCompactionActivityGroup(entry)),
+        !(entry.type === "activity-group" && isStandaloneActivityGroup(entry)),
     );
-    if (!hidesNonCompactionWork) {
+    if (!hidesNonStandaloneWork) {
       continue;
     }
 
@@ -2103,7 +2104,7 @@ function appendPresentedFeedEntry(
     result.push(entry);
     return;
   }
-  if (isContextCompactionActivityGroup(entry)) {
+  if (isStandaloneActivityGroup(entry)) {
     result.push(entry);
     return;
   }

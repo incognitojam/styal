@@ -1089,19 +1089,22 @@ describe("resolveAssistantMessageCopyState", () => {
 });
 
 describe("deriveMessagesTimelineRows", () => {
-  it("keeps context compaction visible outside folded work", () => {
+  it.each([
+    ["context-compaction", "Compacted context 899K → 19K tokens"],
+    ["server-restart.continued", "Continued after server restart"],
+  ])("keeps a lone %s row visible outside folded work", (activityKind, label) => {
     const rows = deriveMessagesTimelineRows({
       timelineEntries: [
         {
-          id: "compaction-entry",
+          id: "standalone-entry",
           kind: "work",
           createdAt: "2026-01-01T00:00:00Z",
           entry: {
-            id: "compaction",
+            id: "standalone",
             createdAt: "2026-01-01T00:00:00Z",
-            label: "Compacted context 899K → 19K tokens",
+            label,
             tone: "info",
-            sourceActivityKind: "context-compaction",
+            sourceActivityKind: activityKind,
           },
         },
       ],
@@ -1113,10 +1116,11 @@ describe("deriveMessagesTimelineRows", () => {
 
     expect(rows).toEqual([
       {
-        kind: "context-compaction",
-        id: "compaction-entry",
+        kind: "standalone-activity",
+        id: "standalone-entry",
         createdAt: "2026-01-01T00:00:00Z",
-        label: "Compacted context 899K → 19K tokens",
+        label,
+        activityKind,
       },
     ]);
   });

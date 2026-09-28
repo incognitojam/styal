@@ -307,10 +307,10 @@ it.effect.each(
                   payload.continueAfterServerUpdate === null
                 );
               }).length;
-              return clearedCount === 1;
+              return clearedCount === 2;
             }).pipe(
-              Effect.flatMap((firstMarkerCleared) =>
-                firstMarkerCleared ? Deferred.succeed(continuationCleared, undefined) : Effect.void,
+              Effect.flatMap((bothMarkersCleared) =>
+                bothMarkersCleared ? Deferred.succeed(continuationCleared, undefined) : Effect.void,
               ),
             ),
           getProvider: () => Effect.die("unused"),
@@ -346,14 +346,16 @@ it.effect.each(
         ],
       );
       assert.deepStrictEqual(
-        dispatched.map((command) =>
+        dispatched.flatMap((command) =>
           command.type === "thread.session.set"
-            ? {
-                threadId: command.threadId,
-                status: command.session.status,
-                activeTurnId: command.session.activeTurnId,
-              }
-            : null,
+            ? [
+                {
+                  threadId: command.threadId,
+                  status: command.session.status,
+                  activeTurnId: command.session.activeTurnId,
+                },
+              ]
+            : [],
         ),
         [
           {
@@ -365,6 +367,38 @@ it.effect.each(
             threadId: fallback.id,
             status: "starting",
             activeTurnId: null,
+          },
+        ],
+      );
+      // The thread shows where the server picked its work back up, on the
+      // turn it continued.
+      assert.deepStrictEqual(
+        dispatched
+          .flatMap((command) =>
+            command.type === "thread.activity.append"
+              ? [
+                  {
+                    threadId: command.threadId,
+                    kind: command.activity.kind,
+                    summary: command.activity.summary,
+                    turnId: command.activity.turnId,
+                  },
+                ]
+              : [],
+          )
+          .toSorted((left, right) => String(left.threadId).localeCompare(String(right.threadId))),
+        [
+          {
+            threadId: codex.id,
+            kind: "server-restart.continued",
+            summary: "Continued after server restart",
+            turnId: codex.session.activeTurnId,
+          },
+          {
+            threadId: fallback.id,
+            kind: "server-restart.continued",
+            summary: "Continued after server restart",
+            turnId: fallbackContinuationTurnId,
           },
         ],
       );

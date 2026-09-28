@@ -1903,6 +1903,36 @@ features:
       tracking: []
       retire_when: Upstream distinguishes replacement-turn handoffs from same-turn follow-ups and settles both without false ready or Working states.
 
+  - id: server-restart-continuation-note
+    title: Show where a thread continued after a server restart
+    status: maintained
+    prs: [515]
+    invariants:
+      - When restart recovery sends a continuation, the thread records one server-restart.continued activity, timestamped before the send and attached to the continued turn; background-work continuations are labeled separately and attached to no turn.
+      - A failed continuation records no restart activity; the thread settles with the existing continuation error instead.
+      - Web and mobile show the restart as a standalone note in the turn's work that is never merged into grouped work rows and stays visible when a folded turn has nothing else to hide, while context compaction keeps its divider.
+    implementation_paths:
+      - apps/mobile/src/features/threads/ThreadFeed.tsx
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/server/src/serverRuntimeStartup.ts
+      - apps/web/src/components/chat/MessagesTimeline.logic.ts
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - packages/contracts/src/orchestration.ts
+    upstream_paths:
+      - apps/mobile/src/features/threads/ThreadFeed.tsx
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/server/src/serverRuntimeStartup.ts
+      - apps/web/src/components/chat/MessagesTimeline.logic.ts
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - packages/contracts/src/orchestration.ts
+    tests:
+      - apps/server/src/serverRuntimeStartup.reconcile.test.ts
+      - apps/web/src/components/chat/MessagesTimeline.logic.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream records in the conversation where restart recovery continued a thread and shows it on web and mobile without folding it into grouped work.
+
   - id: server-update-guidance
     title: Match server update instructions to the advertised capability
     status: maintained

@@ -23,6 +23,8 @@ the setting does not enable automatic startup. Terminal commands may still be
 interrupted, and threads without saved provider resume state need a new message.
 After an update, threads whose agent was only running background work, such as
 a monitor or subagent, are asked to restart the work they still need.
+A thread whose turn continues shows **Continued after server restart** where
+the agent picked up again.
 If you previously enabled continuation for updates, enable this setting once
 to allow recovery without a connected client.
 

@@ -3,10 +3,12 @@ import {
   DEFAULT_MODEL,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_SERVER_SETTINGS,
+  EventId,
   type ModelSelection,
   type OrchestrationProjectShell,
   ProjectId,
   ProviderInstanceId,
+  SERVER_RESTART_CONTINUED_ACTIVITY_KIND,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -518,6 +520,36 @@ const clearProviderSessionContinuationMarkers = (threadIds: ReadonlyArray<Thread
     yield* clearContinuationMarkers(directory, threadIds);
   }).pipe(Effect.mapError(toServerUpdateThreadContinuationError));
 
+/** Shows in the thread that the server resumed its work after restarting. */
+const recordRestartContinued = (input: {
+  readonly threadId: ThreadId;
+  readonly turnId: TurnId | null;
+  readonly background: boolean;
+  readonly createdAt: string;
+}) =>
+  Effect.gen(function* () {
+    const crypto = yield* Crypto.Crypto;
+    const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
+    const recordedAt = DateTime.formatIso(yield* DateTime.now);
+    yield* orchestrationEngine.dispatch({
+      type: "thread.activity.append",
+      commandId: CommandId.make(yield* crypto.randomUUIDv4),
+      threadId: input.threadId,
+      activity: {
+        id: EventId.make(yield* crypto.randomUUIDv4),
+        tone: "info",
+        kind: SERVER_RESTART_CONTINUED_ACTIVITY_KIND,
+        summary: input.background
+          ? "Server restarted and stopped background work"
+          : "Continued after server restart",
+        payload: { background: input.background },
+        turnId: input.turnId,
+        createdAt: input.createdAt,
+      },
+      createdAt: recordedAt,
+    });
+  });
+
 export const reconcileProviderSessions = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
@@ -735,6 +767,9 @@ export const reconcileProviderSessions = Effect.gen(function* () {
               });
             }
             const capabilities = yield* providerService.getCapabilities(providerInstanceId);
+            // Stamp the row before sending so it sorts ahead of the
+            // provider's first output, but record it only once the send lands.
+            const continuedAt = DateTime.formatIso(yield* DateTime.now);
             yield* providerService.sendTurn({
               threadId: thread.id,
               ...(backgroundContinuation
@@ -744,10 +779,30 @@ export const reconcileProviderSessions = Effect.gen(function* () {
                   : { input: SERVER_UPDATE_CONTINUATION_PROMPT }),
               interactionMode: thread.interactionMode,
             });
+            return continuedAt;
           });
           const continuationExit = yield* Effect.exit(continuation);
           if (Exit.isSuccess(continuationExit) || Cause.hasInterrupts(continuationExit.cause)) {
             if (Exit.isSuccess(continuationExit)) {
+              yield* recordRestartContinued({
+                threadId: thread.id,
+                // A background continuation starts a new turn the provider
+                // has not reported yet, so its row belongs to no turn.
+                turnId: backgroundContinuation
+                  ? null
+                  : (session.activeTurnId ?? continuationTurnId),
+                background: backgroundContinuation,
+                createdAt: continuationExit.value,
+              }).pipe(
+                Effect.catchCause((cause) =>
+                  Cause.hasInterrupts(cause)
+                    ? Effect.failCause(cause)
+                    : Effect.logWarning("failed to record provider session continuation", {
+                        threadId: thread.id,
+                        cause,
+                      }),
+                ),
+              );
               yield* clearContinuationMarkers(directory, [thread.id]).pipe(
                 Effect.uninterruptible,
                 Effect.catchCause((cause) =>
