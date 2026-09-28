@@ -70,7 +70,10 @@ export async function resolveForwardedBrowserTarget(
   } catch (error) {
     // Servers without the forwarding route refuse the socket.
     if (directFallback) return direct();
-    throw error;
+    throw new Error(
+      "Could not open a preview connection to this environment. Its server may need an update to preview remote ports.",
+      { cause: error },
+    );
   }
   const requestedOrigin = requested.origin;
   if (requested.hostname !== "localhost") requested.hostname = "127.0.0.1";

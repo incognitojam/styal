@@ -110,6 +110,24 @@ describe("browser target resolver", () => {
     ).toBe("http://192.168.1.25:5173/");
   });
 
+  it("explains a refused forward on an environment without a private-network address", async () => {
+    const { previewBridge } = await import("~/components/preview/previewBridge");
+    const { resolveForwardedBrowserTarget } = await import("./browserPortForward");
+    vi.mocked(previewBridge!.ensurePortForward!).mockRejectedValueOnce(
+      new Error("Error invoking remote method 'desktop:preview-port-forward'"),
+    );
+    readPreparedConnection.mockReturnValue({
+      httpBaseUrl: "https://environment.example.test",
+      target: { _tag: "RelayConnectionTarget", connectionId: "relay" },
+    });
+    await expect(
+      resolveForwardedBrowserTarget(EnvironmentId.make("older-linked-environment"), {
+        kind: "url",
+        url: "http://localhost:5173/",
+      }),
+    ).rejects.toThrow("Its server may need an update to preview remote ports.");
+  });
+
   it("restores forwarded URLs with credentials and their original hostname", async () => {
     const { rememberForwardedOrigin, restoreForwardedBrowserUrl } =
       await import("./browserTargetResolver");
