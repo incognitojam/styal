@@ -104,6 +104,15 @@ function memorySlug(path: string | undefined): string | undefined {
   return path ? MEMORY_PATH_PATTERN.exec(path)?.groups?.slug : undefined;
 }
 
+export function memoryFileToolKind(
+  toolName: string | undefined,
+  input: Record<string, unknown> | undefined,
+): "memory" | "index" | undefined {
+  if (toolName !== "Write" && toolName !== "Edit") return undefined;
+  const slug = memorySlug(asTrimmedString(input?.file_path) ?? asTrimmedString(input?.path));
+  return slug === "MEMORY" ? "index" : slug ? "memory" : undefined;
+}
+
 /** `mcp__styal__preview_snapshot` → `styal · preview_snapshot`. */
 function mcpHeading(toolName: string): string | undefined {
   const match = /^mcp__(?<server>[^_]+(?:_[^_]+)*?)__(?<tool>.+)$/u.exec(toolName);

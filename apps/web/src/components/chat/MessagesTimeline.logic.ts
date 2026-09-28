@@ -29,7 +29,11 @@ import {
 } from "../../session-logic";
 import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../../types";
 import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@t3tools/contracts";
-import { deriveToolRowPresentation, isPreviewToolName } from "@t3tools/shared/toolRowPresentation";
+import {
+  deriveToolRowPresentation,
+  isPreviewToolName,
+  memoryFileToolKind,
+} from "@t3tools/shared/toolRowPresentation";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 
 const TIMELINE_MINIMAP_ITEM_SPACING = 8;
@@ -338,6 +342,7 @@ export type TimelineLatestTurn = Pick<
 export type TurnFoldActivityKind =
   | "terminal"
   | "file-change"
+  | "memory"
   | "file-read"
   | "web"
   | "tool"
@@ -556,6 +561,7 @@ interface TurnFold {
 const TURN_FOLD_ACTIVITY_ORDER: ReadonlyArray<TurnFoldActivityKind> = [
   "terminal",
   "file-change",
+  "memory",
   "file-read",
   "web",
   "tool",
@@ -563,6 +569,7 @@ const TURN_FOLD_ACTIVITY_ORDER: ReadonlyArray<TurnFoldActivityKind> = [
 ];
 
 function turnFoldActivityKind(entry: WorkLogEntry): TurnFoldActivityKind | null {
+  if (memoryFileToolKind(entry.toolName, entry.toolInput)) return "memory";
   if (entry.requestKind === "command") return "terminal";
   if (entry.requestKind === "file-read") return "file-read";
   if (entry.requestKind === "file-change") return "file-change";

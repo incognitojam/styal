@@ -31,6 +31,7 @@ import {
   deriveToolRowPresentation,
   formatAskUserQuestionBody,
   isPreviewToolName,
+  memoryFileToolKind,
   normalizeKnownToolName,
   type ToolRowArgument,
 } from "@t3tools/shared/toolRowPresentation";
@@ -83,6 +84,7 @@ export interface ThreadFeedActivity {
     | "alert"
     | "bug"
     | "browser"
+    | "brain"
     | "check"
     | "checklist"
     | "command"
@@ -1066,6 +1068,7 @@ function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
     return "command";
   }
   if (entry.sourceActivityKind === "runtime.warning") return "warning";
+  if (memoryFileToolKind(entry.toolName, entry.toolInput)) return "brain";
   if (entry.toolSurface) return entry.toolSurface;
   if (entry.requestKind === "command") return "command";
   if (entry.requestKind === "file-read") return "eye";

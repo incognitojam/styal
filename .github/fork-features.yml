@@ -1084,6 +1084,7 @@ features:
       - Meaningful running-command interactions are shown with fixed sanitized summaries while empty polls and raw terminal input remain hidden.
       - Claude, Codex, and OpenCode file edits retain structured paths, line statistics, lifecycle state, and provider-independent presentation without eagerly sending full diffs to clients.
       - Folded completed turns summarize the categories of tools used with recognizable icons.
+      - Memory file writes and index updates form a distinct work-log category on web and mobile, so they do not inflate ordinary file-edit summaries.
     implementation_paths:
       - apps/mobile/src/features/threads/thread-work-log.tsx
       - apps/mobile/src/lib/threadActivity.ts
@@ -1099,6 +1100,7 @@ features:
       - apps/web/src/session-logic.ts
       - apps/web/src/state/queries.ts
       - packages/client-runtime/src/state/orchestration.ts
+      - packages/client-runtime/src/work-log/presentation.ts
       - packages/contracts/src/orchestration.ts
       - packages/contracts/src/rpc.ts
       - packages/shared/src/toolActivity.ts
@@ -1130,6 +1132,7 @@ features:
       - apps/web/src/components/chat/MessagesTimeline.test.tsx
       - apps/web/src/session-logic.command-output.test.ts
       - apps/web/src/session-logic.test.ts
+      - packages/client-runtime/src/work-log/presentation.test.ts
       - packages/shared/src/toolActivity.test.ts
       - packages/shared/src/toolRowPresentation.test.ts
     upstream:

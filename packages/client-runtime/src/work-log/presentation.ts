@@ -9,6 +9,7 @@ import {
 import { classifyMarkdownImageSource } from "@t3tools/client-runtime/markdown-images";
 import { resolveMediaSource } from "@t3tools/client-runtime/media-source";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
+import { memoryFileToolKind } from "@t3tools/shared/toolRowPresentation";
 
 export function isWorktreeSetupActivity(kind: string): boolean {
   return kind === "setup-script.requested" || kind === "setup-script.started";
@@ -20,6 +21,7 @@ export interface WorkLogPresentationEntry {
   readonly label: string;
   readonly toolTitle?: string;
   readonly toolName?: string;
+  readonly toolInput?: Record<string, unknown>;
   readonly toolData?: unknown;
   readonly tone: "thinking" | "tool" | "info" | "error";
   readonly command?: string;
@@ -40,6 +42,7 @@ export interface WorkLogPresentationEntry {
 export type ToolGroupAction =
   | "read"
   | "edit"
+  | "memory"
   | "command"
   | "browser"
   | "code-search"
@@ -414,6 +417,7 @@ export function toolGroupAction(entry: WorkLogPresentationEntry): ToolGroupActio
   ) {
     return "update";
   }
+  if (memoryFileToolKind(entry.toolName, entry.toolInput)) return "memory";
   switch (entry.toolName) {
     case "Read":
       return "read";
@@ -509,6 +513,15 @@ function toolGroupActionCount(
   action: ToolGroupAction,
   entries: ReadonlyArray<WorkLogPresentationEntry>,
 ): number {
+  if (action === "memory") {
+    const memoryPaths = new Set<string>();
+    for (const entry of entries) {
+      if (memoryFileToolKind(entry.toolName, entry.toolInput) !== "memory") continue;
+      const path = entry.toolInput?.file_path ?? entry.toolInput?.path;
+      if (typeof path === "string") memoryPaths.add(path);
+    }
+    return memoryPaths.size;
+  }
   if (action !== "edit") return entries.length;
 
   const changedFiles = new Set<string>();
@@ -529,6 +542,10 @@ function toolGroupActionLabel(action: ToolGroupAction, count: number): string {
       return `Read ${count} ${count === 1 ? "file" : "files"}`;
     case "edit":
       return `Changed ${count} ${count === 1 ? "file" : "files"}`;
+    case "memory":
+      return count === 0
+        ? "Updated memory index"
+        : `Updated ${count} ${count === 1 ? "memory" : "memories"}`;
     case "command":
       return `Ran ${count} ${count === 1 ? "command" : "commands"}`;
     case "browser":
