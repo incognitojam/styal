@@ -1123,7 +1123,11 @@ describe("deriveMessagesTimelineRows", () => {
 
   it("keeps reported review findings visible when their turn folds", () => {
     const turnId = "turn-1" as never;
-    const work = (id: string, createdAt: string, extra: object) => ({
+    const work = (
+      id: string,
+      createdAt: string,
+      extra: Omit<WorkLogEntry, "id" | "createdAt" | "turnId" | "tone">,
+    ) => ({
       id: `${id}-entry`,
       kind: "work" as const,
       createdAt,
