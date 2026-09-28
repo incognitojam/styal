@@ -6,7 +6,7 @@
     },
     {
       "pr": 9817,
-      "reason": "Its preview forwarding commits were imported early; when it merges, the queue takes it and must reconcile with that import, the Connect dev sharing left out of it, and fork #PR_NUMBER, which forwards for every remote environment rather than only non-private addresses."
+      "reason": "Its preview forwarding commits were imported early; when it merges, the queue takes it and must reconcile with that import, the Connect dev sharing left out of it, and fork #518, which forwards for every remote environment rather than only non-private addresses."
     },
     {
       "pr": 9921,
