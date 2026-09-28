@@ -79,6 +79,24 @@ describe("resolveHostedBrowserWebviewWrapperStyle", () => {
     });
   });
 
+  it("keeps the floating webview visible without accepting pointer input", () => {
+    expect(
+      resolveHostedBrowserWebviewWrapperStyle({
+        active: true,
+        renderingActive: true,
+        interactive: false,
+        zIndex: 48,
+        rect: { x: 12, y: 34, width: 360, height: 203 },
+        hiddenSize: { width: 1280, height: 800 },
+      }),
+    ).toMatchObject({
+      left: 12,
+      top: 34,
+      zIndex: 48,
+      pointerEvents: "none",
+    });
+  });
+
   it("suspends painting for an inactive webview", () => {
     const style = resolveHostedBrowserWebviewWrapperStyle({
       active: false,

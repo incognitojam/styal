@@ -1294,12 +1294,14 @@ features:
     invariants:
       - Fitted previews apply logical viewport dimensions through device metrics while preserving sharp presentation scaling and a working DevTools fallback.
       - Hiding, reopening, or moving a preview preserves its owning surface and viewport state, and screenshots and annotation crops use logical page coordinates.
+      - The floating browser preview remains visible but does not send pointer or keyboard input to its page; its frame controls remain usable.
     implementation_paths:
       - apps/desktop/src/preview/Manager.ts
       - apps/web/src/browser/BrowserSurfaceSlot.tsx
       - apps/web/src/browser/HostedBrowserWebview.tsx
       - apps/web/src/browser/browserSurfaceStore.ts
       - apps/web/src/browser/hostedBrowserWebviewStyle.ts
+      - apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx
       - apps/web/src/components/preview/usePreviewBridge.ts
       - apps/web/src/previewStateStore.ts
     upstream_paths:
@@ -1307,6 +1309,7 @@ features:
       - apps/web/src/browser/ElectronBrowserHost.tsx
       - apps/web/src/browser/HostedBrowserWebview.tsx
       - apps/web/src/components/RightPanelTabs.tsx
+      - apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx
       - apps/web/src/components/preview/usePreviewBridge.ts
     tests:
       - apps/desktop/src/preview/Manager.test.ts
