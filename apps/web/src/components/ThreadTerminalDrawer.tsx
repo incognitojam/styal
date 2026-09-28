@@ -738,9 +738,12 @@ export function TerminalViewport({
         }
       };
 
+      // Sends input for terminal key shortcuts. Like typing, it returns a
+      // scrolled-back viewport to the live screen.
       const sendTerminalInput = async (data: string, fallbackError: string) => {
         const activeTerminal = terminalRef.current;
         if (!activeTerminal) return;
+        if (!activeTerminal.isAtBottom()) activeTerminal.scrollToBottom();
         const result = await writeTerminal(data);
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);

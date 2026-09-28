@@ -96,6 +96,7 @@ describe("GhosttyTerminalSurface visibility", () => {
     }
 
     const canvas = new TerminalTestElement();
+    const input = new TerminalTestElement();
     const mount = new TerminalTestElement();
     const context = {
       canvas,
@@ -116,7 +117,8 @@ describe("GhosttyTerminalSurface visibility", () => {
       }),
     };
     vi.stubGlobal("document", {
-      createElement: (tag: string) => (tag === "canvas" ? canvas : new TerminalTestElement()),
+      createElement: (tag: string) =>
+        tag === "canvas" ? canvas : tag === "textarea" ? input : new TerminalTestElement(),
       fonts: Object.assign(new EventTarget(), { load: async () => [], add() {} }),
     });
     vi.stubGlobal(
@@ -149,6 +151,7 @@ describe("GhosttyTerminalSurface visibility", () => {
 
     return {
       mount,
+      input,
       frames,
       paint,
       requestFrame,
@@ -178,6 +181,18 @@ describe("GhosttyTerminalSurface visibility", () => {
             shiftKey,
           }),
         );
+      },
+      wheel(deltaLines: number) {
+        canvas.dispatchEvent(
+          Object.assign(new Event("wheel", { cancelable: true }), {
+            deltaY: deltaLines,
+            deltaMode: 1,
+          }),
+        );
+      },
+      type(text: string) {
+        input.value = text;
+        input.dispatchEvent(Object.assign(new Event("input"), { data: text, isComposing: false }));
       },
       async create(options: Partial<GhosttyTerminalSurfaceOptions> = {}) {
         const surface = await GhosttyTerminalSurface.create(mount as unknown as HTMLElement, {
@@ -381,6 +396,25 @@ describe("GhosttyTerminalSurface visibility", () => {
     expect(harness.snapshot).toHaveBeenCalledTimes(1);
     expect(harness.renderedSnapshot.rowData[0]?.text).toContain("visible!xxxxxxxx");
     expect(harness.paint).toHaveBeenCalled();
+  });
+
+  it("returns to the live screen when the user types, but not for VT replies or scrolling", async () => {
+    const harness = createHarness();
+    const surface = await harness.create();
+    surface.focus();
+    surface.write(Array.from({ length: 30 }, (_, index) => `line ${index}`).join("\r\n"));
+    harness.flushFrame();
+    harness.wheel(-5);
+    expect(surface.isAtBottom()).toBe(false);
+
+    surface.write("\x1b[5n");
+    harness.wheel(2);
+    expect(harness.onData.mock.calls).toEqual([["\x1b[0n"]]);
+    expect(surface.isAtBottom()).toBe(false);
+
+    harness.type("x");
+    expect(harness.onData).toHaveBeenLastCalledWith("x");
+    expect(surface.isAtBottom()).toBe(true);
   });
 
   it.each([false, true])(
