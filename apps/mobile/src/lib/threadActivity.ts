@@ -280,8 +280,8 @@ export type ThreadFeedEntry =
       readonly turnId: TurnId | null;
       readonly report: ReviewFindingsReport;
       /**
-       * Open by default while the report belongs to the latest turn; toggling
-       * flips its id's membership in the work-group expansion set.
+       * Collapsed to titles and locations until toggled open; a phone has
+       * no room for every finding's detail by default.
        */
       readonly expanded: boolean;
     };
@@ -2050,7 +2050,6 @@ export function deriveThreadFeedPresentation(
         unsettledTurnId,
         isWorking,
         isActiveTailGroup,
-        latestTurn?.turnId ?? null,
       );
     }
   }
@@ -2097,7 +2096,6 @@ function appendPresentedFeedEntry(
   unsettledTurnId: TurnId | null,
   isWorking: boolean,
   activeTail: boolean,
-  latestTurnId: TurnId | null,
 ): void {
   if (entry.type !== "activity-group") {
     result.push(entry);
@@ -2115,7 +2113,7 @@ function appendPresentedFeedEntry(
       createdAt: entry.createdAt,
       turnId: entry.turnId,
       report,
-      expanded: (entry.turnId === latestTurnId) !== expandedWorkGroupIds.has(entry.id),
+      expanded: expandedWorkGroupIds.has(entry.id),
     });
     return;
   }
