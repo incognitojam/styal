@@ -1448,6 +1448,12 @@ const make = Effect.gen(function* () {
         );
       }).pipe(
         Effect.andThen(restoreCompaction(event.payload.threadId, true)),
+        Effect.onInterrupt(() =>
+          appendTurnStartFailure(
+            "Context compaction cancelled",
+            "Context compaction was cancelled before it completed.",
+          ),
+        ),
         Effect.catchCause(recoverCompactionFailure),
         Effect.ensuring(Effect.sync(() => void compactingThreadIds.delete(event.payload.threadId))),
         Effect.forkScoped,

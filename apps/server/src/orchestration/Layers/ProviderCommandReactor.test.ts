@@ -1,3 +1,4 @@
+import * as Fiber from "effect/Fiber";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -1188,6 +1189,78 @@ describe("ProviderCommandReactor", () => {
       });
       yield* Effect.promise(() => harness.drain());
       expect(harness.compactThread).not.toHaveBeenCalled();
+    }),
+  );
+
+  effectIt.effect("records cancelled compaction before a later session starts", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<Fiber.Fiber<unknown, unknown>>();
+      const sent = yield* Deferred.make<void>();
+      const harness = yield* Effect.promise(() =>
+        createHarness({
+          compactThreadEffect: () =>
+            Effect.fiber.pipe(
+              Effect.flatMap((fiber) => Deferred.succeed(started, fiber)),
+              Effect.andThen(Effect.never),
+            ),
+        }),
+      );
+      const threadId = ThreadId.make("thread-1");
+      harness.sendTurn.mockReturnValue(
+        Deferred.succeed(sent, undefined).pipe(Effect.as({ threadId, turnId: asTurnId("turn-1") })),
+      );
+      const dispatch = (id: string, text: string) =>
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make(`cmd-${id}`),
+          threadId,
+          message: { messageId: asMessageId(id), role: "user", text, attachments: [] },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt: "2026-01-01T00:00:01.000Z",
+        });
+      yield* dispatch("previous-message", "Review the change");
+      yield* Deferred.await(sent);
+      const session = {
+        threadId,
+        status: "ready" as const,
+        providerName: ProviderDriverKind.make("codex"),
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        runtimeMode: "approval-required" as const,
+        activeTurnId: null,
+        lastError: null,
+        updatedAt: "2026-01-01T00:00:02.000Z",
+      };
+      yield* harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("cmd-ready-before-compact"),
+        threadId,
+        session,
+        createdAt: session.updatedAt,
+      });
+      yield* dispatch("cancelled-compact", "/compact");
+      yield* Fiber.interrupt(yield* Deferred.await(started));
+
+      yield* harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("cmd-resume-after-cancelled-compact"),
+        threadId,
+        session: { ...session, status: "running", activeTurnId: asTurnId("resumed-turn") },
+        createdAt: "2026-01-01T00:00:03.000Z",
+      });
+      const thread = (yield* Effect.promise(() => harness.readModel())).threads.find(
+        (entry) => entry.id === threadId,
+      );
+      expect(thread?.session?.status).toBe("running");
+      expect(thread?.activities).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: "provider.turn.start.failed",
+            payload: expect.objectContaining({ requestId: "cancelled-compact" }),
+          }),
+        ]),
+      );
+      expect(yield* Effect.promise(() => harness.readPendingTurnStarts())).toEqual([]);
     }),
   );
 
