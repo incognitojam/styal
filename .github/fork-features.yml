@@ -1099,8 +1099,8 @@ features:
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/session-logic.ts
       - apps/web/src/state/queries.ts
-      - packages/client-runtime/src/work-log/presentation.ts
       - packages/client-runtime/src/state/orchestration.ts
+      - packages/client-runtime/src/work-log/presentation.ts
       - packages/contracts/src/orchestration.ts
       - packages/contracts/src/rpc.ts
       - packages/shared/src/toolActivity.ts
