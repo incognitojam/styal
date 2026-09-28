@@ -162,6 +162,34 @@ describe("workEntryIndicatesToolFailure", () => {
 });
 
 describe("summarizeToolGroup", () => {
+  it("groups memory writes separately from file edits and excludes the index from the count", () => {
+    const memory = (name: string): WorkLogPresentationEntry => ({
+      label: "Changed files",
+      tone: "tool",
+      toolName: "Write",
+      itemType: "file_change",
+      toolInput: { file_path: `/synthetic/memory/${name}.md` },
+    });
+    const entries = [memory("first"), memory("second"), memory("second"), memory("MEMORY")];
+
+    expect(summarizeToolGroup(entries)).toBe("Updated 2 memories");
+    expect(toolGroupSummaryKind(entries)).toBe("memory");
+    expect(summarizeToolGroup([memory("MEMORY")])).toBe("Updated memory index");
+    expect(
+      summarizeToolGroup([
+        memory("first"),
+        {
+          label: "Changed files",
+          tone: "tool",
+          toolName: "Edit",
+          itemType: "file_change",
+          toolInput: { file_path: "/synthetic/src/app.ts" },
+          changedFiles: ["/synthetic/src/app.ts"],
+        },
+      ]),
+    ).toBe("Updated 1 memory and changed 1 file");
+  });
+
   it.each(["command", "file-read", "file-change"])(
     "keeps %s approvals out of tool execution counts",
     (requestKind) => {

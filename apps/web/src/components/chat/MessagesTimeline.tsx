@@ -1676,6 +1676,7 @@ function RevertUserMessageButton({ turnCount }: { turnCount: number }) {
 const TURN_FOLD_ACTIVITY_LABELS: Record<TurnFoldActivityKind, { one: string; other: string }> = {
   terminal: { one: "terminal command", other: "terminal commands" },
   "file-change": { one: "file edited", other: "files edited" },
+  memory: { one: "memory update", other: "memory updates" },
   "file-read": { one: "file read", other: "files read" },
   web: { one: "web lookup", other: "web lookups" },
   tool: { one: "tool call", other: "tool calls" },
@@ -1694,6 +1695,8 @@ function TurnFoldActivityIcon({
       return <TerminalIcon className={className} aria-hidden />;
     case "file-change":
       return <SquarePenIcon className={className} aria-hidden />;
+    case "memory":
+      return <BrainIcon className={className} aria-hidden />;
     case "file-read":
       return <EyeIcon className={className} aria-hidden />;
     case "web":
@@ -2336,6 +2339,8 @@ function toolGroupSummaryIconName(
       return "eye";
     case "edit":
       return "square-pen";
+    case "memory":
+      return "brain";
     case "command":
       return "terminal";
     case "browser":

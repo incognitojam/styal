@@ -298,6 +298,8 @@ function workRowSymbolName(icon: ThreadFeedActivity["icon"]): AppSymbolName {
       return { ios: "ladybug", android: "bug_report" };
     case "browser":
       return { ios: "safari", android: "public" };
+    case "brain":
+      return "brain";
     case "check":
       return { ios: "checkmark", android: "check" };
     case "checklist":
@@ -1220,6 +1222,8 @@ function toolGroupSummarySymbolName(kind: ToolGroupSummaryKind): AppSymbolName {
       return { ios: "eye", android: "visibility" };
     case "edit":
       return { ios: "square.and.pencil", android: "edit" };
+    case "memory":
+      return "brain";
     case "command":
       return { ios: "terminal", android: "terminal" };
     case "browser":
