@@ -2093,6 +2093,26 @@ features:
       tracking: []
       retire_when: Upstream coordinates startup and cached-draft navigation so late bootstrap resolution never moves users away from an editable composer.
 
+  - id: terminal-scroll-on-input
+    title: Return the terminal to the live screen when the user types
+    status: maintained
+    prs: [509]
+    invariants:
+      - Key presses that send input, pastes, committed IME text, and terminal key shortcuts return a scrolled-back viewport to the live screen before the input is sent.
+      - Output, VT replies, mouse reports, wheel input, and key-release reports never move the viewport.
+    implementation_paths:
+      - apps/web/src/components/ThreadTerminalDrawer.tsx
+      - apps/web/src/terminal/ghostty/surface.ts
+    upstream_paths:
+      - apps/web/src/components/ThreadTerminalDrawer.tsx
+      - apps/web/src/terminal/ghostty/surface.ts
+    tests:
+      - apps/web/src/terminal/ghostty/surface.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream's terminal returns a scrolled-back viewport to the live screen on typed input without moving it for output or mouse input.
+
   - id: thread-lifecycle-analytics
     title: Record thread lifecycle analytics
     status: maintained

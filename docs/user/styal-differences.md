@@ -92,6 +92,11 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 - **Fewer terminal-close prompts.** T3 Code already asks for confirmation when closing a terminal.
   styal checks whether a foreground process or setup command is still active, so idle terminals close
   immediately while active work retains the confirmation.
+- **Typing returns the terminal to the prompt.** When you have scrolled back through terminal output,
+  typing or pasting jumps to the bottom, like Ghostty and most desktop terminals. New output and
+  scrolling still leave your position alone. Compared with
+  [T3 Code revision d15210c](https://github.com/pingdotgg/t3code/tree/d15210cd3da79f9a1a495a6309d912d76362a046),
+  checked September 28, 2026.
 - **Complete conversation export.** Copy a thread's user and assistant messages as Markdown,
   including history that is not currently loaded in the view.
   [Transcripts](./thread-sidebar.md#copying-a-transcript).
