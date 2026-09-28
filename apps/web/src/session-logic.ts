@@ -22,6 +22,7 @@ import {
   extractCommandOutputText,
   extractWorkLogToolLifecycleStatus,
   isWorktreeSetupActivity,
+  omitRetriedFindingsReports,
   workEntryIndicatesToolFailure,
   workEntryIndicatesToolSuccess,
   workLogEntryIsToolLike,
@@ -56,6 +57,7 @@ export type { PendingApproval, PendingUserInput } from "@t3tools/client-runtime/
 export { formatDuration } from "@t3tools/shared/orchestrationTiming";
 
 export {
+  workEntryReviewFindings,
   workEntryDisplayIndicatesToolFailure,
   workEntryIndicatesToolSuccess,
   workLogEntryIsToolLike,
@@ -495,7 +497,7 @@ export function deriveWorkLogEntries(
     if (isAgentInternalActivity(activity)) continue;
     entries.push(toDerivedWorkLogEntry(activity));
   }
-  return collapseDerivedWorkLogEntries(entries).map((entry) => {
+  return omitRetriedFindingsReports(collapseDerivedWorkLogEntries(entries)).map((entry) => {
     if (entry.setupRunId === undefined) return entry;
     const { setupRunId: _setupRunId, ...rest } = entry;
     return rest;

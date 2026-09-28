@@ -42,12 +42,14 @@ import {
   isWorktreeSetupActivity,
   liveActivityToolStatus,
   normalizeCompactToolLabel,
+  omitRetriedFindingsReports,
   omitSupersededLifecycleMarkers,
   resolveWorkEntryToolPresentation,
   summarizeToolGroup,
   toolGroupAction,
   toolGroupSummaryKind,
   workEntryIndicatesToolFailure,
+  workEntryReviewFindings,
   workEntryIndicatesToolSuccess,
   workLogEntryIsToolLike,
   type ToolGroupSummaryKind,
@@ -55,6 +57,7 @@ import {
 } from "@t3tools/client-runtime/work-log/presentation";
 import { extractToolActivityPresentation } from "@t3tools/client-runtime/work-log/tool-presentation";
 import { commandProgramName } from "@t3tools/client-runtime/work-log/command-label";
+import type { ReviewFindingsReport } from "@t3tools/shared/reviewFindings";
 
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
@@ -265,6 +268,17 @@ export type ThreadFeedEntry =
       readonly activity: ThreadFeedActivity;
       readonly expanded: boolean;
       readonly summary: AgentSpawnSummary;
+    }
+  | {
+      /**
+       * An accepted code-review report. It is the review's deliverable, so it
+       * renders as a card and stays out of the turn fold.
+       */
+      readonly type: "review-findings";
+      readonly id: string;
+      readonly createdAt: string;
+      readonly turnId: TurnId | null;
+      readonly report: ReviewFindingsReport;
     };
 
 export interface AgentSpawnSummary {
@@ -324,6 +338,12 @@ export function isContextCompactionActivityGroup(
     entry.activities.length === 1 &&
     entry.activities[0]?.workEntry.sourceActivityKind === "context-compaction"
   );
+}
+
+function reviewFindingsOfActivityGroup(entry: ThreadFeedEntry): ReviewFindingsReport | undefined {
+  return entry.type === "activity-group" && entry.activities.length === 1
+    ? workEntryReviewFindings(entry.activities[0]!.workEntry)
+    : undefined;
 }
 
 function normalizeDraftAnswer(value: string | undefined): string | null {
@@ -484,7 +504,7 @@ function deriveWorkLogEntries(
     if (isAgentInternalActivity(activity)) continue;
     entries.push(toDerivedWorkLogEntry(activity));
   }
-  return collapseDerivedWorkLogEntries(entries);
+  return omitRetriedFindingsReports(collapseDerivedWorkLogEntries(entries));
 }
 
 /** Adapters forward unknown wire-only SDK messages (background_tasks_changed,
@@ -1777,13 +1797,17 @@ function groupAdjacentActivities(entries: ReadonlyArray<RawThreadFeedEntry>): Th
       continue;
     }
 
-    const isCompaction = entry.activity.workEntry.sourceActivityKind === "context-compaction";
-    if (isCompaction || firstActivityEntry?.turnId !== entry.turnId) {
+    // Compaction and findings rows render on their own, so they get their
+    // own group.
+    const standsAlone =
+      entry.activity.workEntry.sourceActivityKind === "context-compaction" ||
+      workEntryReviewFindings(entry.activity.workEntry) !== undefined;
+    if (standsAlone || firstActivityEntry?.turnId !== entry.turnId) {
       flushGroup();
     }
     firstActivityEntry ??= entry;
     openGroupActivities.push(entry.activity);
-    if (isCompaction) {
+    if (standsAlone) {
       flushGroup();
     }
   }
@@ -1889,7 +1913,10 @@ function deriveThreadFeedTurnFolds(
       entries
         .filter(
           (entry) =>
-            entry.id !== firstAssistantMessageId && entry.id !== terminalAssistantMessageId,
+            entry.id !== firstAssistantMessageId &&
+            entry.id !== terminalAssistantMessageId &&
+            // The closing message only points back at the findings.
+            reviewFindingsOfActivityGroup(entry) === undefined,
         )
         .map((entry) => entry.id),
     );
@@ -2071,6 +2098,17 @@ function appendPresentedFeedEntry(
   }
   if (isContextCompactionActivityGroup(entry)) {
     result.push(entry);
+    return;
+  }
+  const report = reviewFindingsOfActivityGroup(entry);
+  if (report) {
+    result.push({
+      type: "review-findings",
+      id: entry.id,
+      createdAt: entry.createdAt,
+      turnId: entry.turnId,
+      report,
+    });
     return;
   }
 

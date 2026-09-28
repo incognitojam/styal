@@ -259,6 +259,56 @@ function projectAskedQuestions(value: unknown): ReadonlyArray<unknown> | undefin
   return questions.length > 0 ? questions : undefined;
 }
 
+/**
+ * A review's findings. The report is the review's deliverable and the clients
+ * render it as a card, so unlike other tool input it crosses the wire in full.
+ * Bounded like the asked questions: the tool itself caps the list at 32, and
+ * each prose field is capped here so a verbose report cannot grow a payload
+ * without limit. Only `ReportFindings` rows carry it.
+ */
+const REPORT_FINDINGS_TOOL_NAME = "reportfindings";
+const REPORTED_FINDING_MAX = 32;
+const REPORTED_FINDING_FIELD_MAX_LENGTHS = {
+  file: 400,
+  summary: 1_000,
+  short_summary: 120,
+  failure_scenario: 2_000,
+  category: 60,
+  verdict: 20,
+  outcome: 20,
+} as const;
+
+function capString(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  return value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}…`;
+}
+
+function projectReportedFindings(value: unknown): ReadonlyArray<unknown> | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return value.slice(0, REPORTED_FINDING_MAX).flatMap((entry) => {
+    const record = asRecord(entry);
+    if (!record) {
+      return [];
+    }
+    const finding: Record<string, unknown> = {};
+    for (const [key, maxLength] of Object.entries(REPORTED_FINDING_FIELD_MAX_LENGTHS)) {
+      const capped = capString(record[key], maxLength);
+      if (capped !== undefined) {
+        finding[key] = capped;
+      }
+    }
+    const line = asInteger(record.line);
+    if (line !== null) {
+      finding.line = line;
+    }
+    return [finding];
+  });
+}
+
 export function projectToolInput(
   value: unknown,
   toolName: string | null | undefined,
@@ -281,6 +331,12 @@ export function projectToolInput(
     const questions = projectAskedQuestions(input.questions);
     if (questions) {
       projected.questions = questions;
+    }
+  }
+  if (toolName?.trim().toLowerCase() === REPORT_FINDINGS_TOOL_NAME) {
+    const findings = projectReportedFindings(input.findings);
+    if (findings) {
+      projected.findings = findings;
     }
   }
   return Object.keys(projected).length > 0 ? projected : undefined;

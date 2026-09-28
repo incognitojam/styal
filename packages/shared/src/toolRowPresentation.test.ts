@@ -459,6 +459,15 @@ describe("deriveToolRowPresentation", () => {
     });
   });
 
+  it("names a findings report by its count, and a rejected one as rejected", () => {
+    const input = { findings: [{ file: "src/a.ts", summary: "Off by one" }] };
+    const row = { toolName: "ReportFindings", itemType: "dynamic_tool_call", input } as const;
+    expect(deriveToolRowPresentation(row)).toEqual({ heading: "Code review found 1 issue" });
+    expect(deriveToolRowPresentation({ ...row, failed: true })).toEqual({
+      heading: "Findings report rejected",
+    });
+  });
+
   it("falls back to headers when several questions were asked at once", () => {
     expect(
       deriveToolRowPresentation({

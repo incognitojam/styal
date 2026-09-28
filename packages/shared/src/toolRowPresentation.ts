@@ -1,5 +1,11 @@
 import type { ToolLifecycleItemType } from "@t3tools/contracts";
 
+import {
+  isReportFindingsToolName,
+  readReviewFindingsReport,
+  reviewFindingsHeading,
+} from "./reviewFindings.ts";
+
 /**
  * Display vocabulary for tool rows in the chat timeline, shared by web, mobile
  * and the agent panel so every provider reads the same way.
@@ -746,6 +752,16 @@ function deriveBaseToolRowPresentation(
     return askUserQuestionPresentation(toolInput, input.failed === true);
   }
 
+  if (isReportFindingsToolName(toolName)) {
+    // A rejected report is retried by the agent; the accepted one renders as
+    // a findings card, so these headings only show on the rows themselves.
+    if (input.failed) {
+      return { heading: "Findings report rejected" };
+    }
+    const report = readReviewFindingsReport(toolInput);
+    return { heading: report ? reviewFindingsHeading(report) : "Reported findings" };
+  }
+
   // MCP names itself best: the server is the useful half, and Codex already
   // renders `server · tool` this way.
   if (toolName) {
@@ -814,8 +830,11 @@ export function deriveToolRowPresentation(
     return presentation;
   }
   const normalizedToolName = toolName ? normalizeKnownToolName(toolName) : undefined;
-  if (normalizedToolName === ASK_USER_QUESTION_TOOL_NAME) {
-    // Already phrased for the cancelled case.
+  if (
+    normalizedToolName === ASK_USER_QUESTION_TOOL_NAME ||
+    isReportFindingsToolName(normalizedToolName)
+  ) {
+    // Already phrased for the failed case.
     return presentation;
   }
   const heading =

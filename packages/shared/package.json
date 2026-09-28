@@ -96,6 +96,10 @@
       "types": "./src/toolActivity.ts",
       "import": "./src/toolActivity.ts"
     },
+    "./reviewFindings": {
+      "types": "./src/reviewFindings.ts",
+      "import": "./src/reviewFindings.ts"
+    },
     "./toolRowPresentation": {
       "types": "./src/toolRowPresentation.ts",
       "import": "./src/toolRowPresentation.ts"

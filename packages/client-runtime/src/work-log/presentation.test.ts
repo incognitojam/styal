@@ -5,6 +5,7 @@ import { ThreadId } from "@t3tools/contracts";
 import {
   commandDetailRepeatsCommand,
   extractCommandOutputText,
+  omitRetriedFindingsReports,
   resolveViewedImageAsset,
   resolveWorkEntryToolPresentation,
   summarizeToolGroup,
@@ -730,5 +731,33 @@ describe("pull request tool presentation", () => {
     expect(
       resolveWorkEntryToolPresentation({ label: "mcp__another-server__link_pull_request" }),
     ).toBeNull();
+  });
+});
+
+describe("omitRetriedFindingsReports", () => {
+  const report = (id: string, turnId: string, status: "failed" | "completed") => ({
+    id,
+    label: "ReportFindings",
+    tone: "tool" as const,
+    toolName: "ReportFindings",
+    toolInput: { findings: [{ file: "src/a.ts", summary: "Bug" }] },
+    turnId,
+    toolLifecycleStatus: status,
+  });
+
+  it("drops a rejected report only when the same turn later has an accepted one", () => {
+    const entries = [
+      report("rejected-then-retried", "turn-1", "failed"),
+      report("accepted", "turn-1", "completed"),
+      report("rejected-alone", "turn-2", "failed"),
+      report("accepted-before", "turn-3", "completed"),
+      report("rejected-after", "turn-3", "failed"),
+    ];
+    expect(omitRetriedFindingsReports(entries).map((entry) => entry.id)).toEqual([
+      "accepted",
+      "rejected-alone",
+      "accepted-before",
+      "rejected-after",
+    ]);
   });
 });

@@ -10,6 +10,11 @@ import { classifyMarkdownImageSource } from "@t3tools/client-runtime/markdown-im
 import { resolveMediaSource } from "@t3tools/client-runtime/media-source";
 import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
+import {
+  isReportFindingsToolName,
+  readReviewFindingsReport,
+  type ReviewFindingsReport,
+} from "@t3tools/shared/reviewFindings";
 import { memoryFileToolKind, memoryFileToolPath } from "@t3tools/shared/toolRowPresentation";
 
 export function isWorktreeSetupActivity(kind: string): boolean {
@@ -711,4 +716,43 @@ export function toolGroupSummaryKind(
     }),
   );
   return fallbackKinds.size === 1 ? fallbackKinds.values().next().value! : "mixed";
+}
+
+/**
+ * The findings an accepted `ReportFindings` call carries. Clients render these
+ * as a findings card in place of the tool row.
+ */
+export function workEntryReviewFindings(
+  entry: WorkLogPresentationEntry,
+): ReviewFindingsReport | undefined {
+  if (!isReportFindingsToolName(entry.toolName) || entry.toolLifecycleStatus !== "completed") {
+    return undefined;
+  }
+  return readReviewFindingsReport(entry.toolInput);
+}
+
+/**
+ * Drops `ReportFindings` calls the tool rejected (usually a label over its
+ * length limit) when the agent resubmitted an accepted report later in the
+ * same turn. Only the accepted report is worth showing; a rejection with no
+ * retry stays visible.
+ */
+export function omitRetriedFindingsReports<T extends WorkLogPresentationEntry>(
+  entries: ReadonlyArray<T>,
+): T[] {
+  const acceptedTurnIds = new Set<string | null>();
+  const kept: T[] = [];
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index]!;
+    if (isReportFindingsToolName(entry.toolName)) {
+      const turnId = entry.turnId ?? null;
+      if (workEntryReviewFindings(entry)) {
+        acceptedTurnIds.add(turnId);
+      } else if (entry.toolLifecycleStatus === "failed" && acceptedTurnIds.has(turnId)) {
+        continue;
+      }
+    }
+    kept.push(entry);
+  }
+  return kept.toReversed();
 }

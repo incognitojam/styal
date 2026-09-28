@@ -10,6 +10,7 @@ import {
   summarizeToolGroup,
   toolGroupAction,
   toolGroupSummaryKind,
+  workEntryReviewFindings,
   type ToolGroupSummaryKind,
 } from "@t3tools/client-runtime/work-log/presentation";
 export {
@@ -36,6 +37,7 @@ import {
   memoryFileToolPath,
 } from "@t3tools/shared/toolRowPresentation";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
+import type { ReviewFindingsReport } from "@t3tools/shared/reviewFindings";
 
 const TIMELINE_MINIMAP_ITEM_SPACING = 8;
 export const TIMELINE_MINIMAP_MIN_ITEMS = 2;
@@ -434,6 +436,12 @@ export type MessagesTimelineRow =
       proposedPlan: ProposedPlan;
     }
   | {
+      kind: "review-findings";
+      id: string;
+      createdAt: string;
+      report: ReviewFindingsReport;
+    }
+  | {
       kind: "working";
       id: string;
       createdAt: string | null;
@@ -814,6 +822,11 @@ function deriveTurnFolds(input: {
       if (entry.kind === "work" && entry.entry.agentSpawn !== undefined) {
         continue;
       }
+      // A findings report is the review's deliverable; the closing message
+      // only points back at it.
+      if (entry.kind === "work" && workEntryReviewFindings(entry.entry) !== undefined) {
+        continue;
+      }
       hiddenEntryIds.add(entry.id);
     }
     if (hiddenEntryIds.size === 0) {
@@ -1074,7 +1087,8 @@ export function deriveMessagesTimelineRows(input: {
       entry.kind !== "work" ||
       entry.entry.agentSpawn !== undefined ||
       entry.entry.sourceActivityKind === "context-compaction" ||
-      entry.entry.tone === "error"
+      entry.entry.tone === "error" ||
+      workEntryReviewFindings(entry.entry) !== undefined
     ) {
       break;
     }
@@ -1197,6 +1211,18 @@ export function deriveMessagesTimelineRows(input: {
       continue;
     }
 
+    const reviewFindings =
+      timelineEntry.kind === "work" ? workEntryReviewFindings(timelineEntry.entry) : undefined;
+    if (reviewFindings) {
+      nextRows.push({
+        kind: "review-findings",
+        id: timelineEntry.id,
+        createdAt: timelineEntry.createdAt,
+        report: reviewFindings,
+      });
+      continue;
+    }
+
     if (timelineEntry.kind === "work") {
       if (timelineEntry.entry.agentSpawn !== undefined || timelineEntry.entry.tone === "error") {
         nextRows.push({
@@ -1218,6 +1244,7 @@ export function deriveMessagesTimelineRows(input: {
           nextEntry.entry.agentSpawn !== undefined ||
           nextEntry.entry.sourceActivityKind === "context-compaction" ||
           nextEntry.entry.tone === "error" ||
+          workEntryReviewFindings(nextEntry.entry) !== undefined ||
           activeWorkEntryIds.has(nextEntry.id) ||
           collapsedEntryIds.has(nextEntry.id) ||
           foldsByAnchorEntryId.has(nextEntry.id)
@@ -1538,6 +1565,9 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
 
     case "proposed-plan":
       return a.proposedPlan === (b as typeof a).proposedPlan;
+
+    case "review-findings":
+      return Equal.equals(a.report, (b as typeof a).report);
 
     case "work": {
       const bw = b as typeof a;

@@ -1121,6 +1121,62 @@ describe("deriveMessagesTimelineRows", () => {
     ]);
   });
 
+  it("keeps reported review findings visible when their turn folds", () => {
+    const turnId = "turn-1" as never;
+    const work = (id: string, createdAt: string, extra: object) => ({
+      id: `${id}-entry`,
+      kind: "work" as const,
+      createdAt,
+      entry: { id, createdAt, turnId, tone: "tool" as const, ...extra },
+    });
+    const findings = [{ file: "src/a.ts", line: 3, summary: "Off by one" }];
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        work("read", "2026-01-01T00:00:01Z", {
+          label: "Read",
+          toolName: "Read",
+          toolLifecycleStatus: "completed",
+        }),
+        work("report", "2026-01-01T00:00:02Z", {
+          label: "Tool call",
+          toolName: "ReportFindings",
+          toolInput: { findings },
+          toolLifecycleStatus: "completed",
+        }),
+        {
+          id: "final-entry",
+          kind: "message",
+          createdAt: "2026-01-01T00:00:03Z",
+          message: {
+            id: "final" as never,
+            role: "assistant",
+            text: "The findings above are the review.",
+            turnId,
+            createdAt: "2026-01-01T00:00:03Z",
+            updatedAt: "2026-01-01T00:00:03Z",
+            streaming: false,
+          },
+        },
+      ],
+      latestTurn: {
+        turnId,
+        state: "completed",
+        startedAt: "2026-01-01T00:00:00Z",
+        completedAt: "2026-01-01T00:00:03Z",
+      } as never,
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+
+    expect(rows.map((row) => row.kind)).toEqual(["turn-fold", "review-findings", "message"]);
+    expect(rows.find((row) => row.kind === "review-findings")).toMatchObject({
+      id: "report-entry",
+      report: { findings: [{ file: "src/a.ts", line: 3, summary: "Off by one" }] },
+    });
+  });
+
   it("only enables assistant copy for the terminal assistant message in a turn", () => {
     const rows = deriveMessagesTimelineRows({
       timelineEntries: [

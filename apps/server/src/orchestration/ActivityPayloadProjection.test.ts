@@ -424,6 +424,57 @@ describe("projectActivityPayload tool identity", () => {
     expect(data.input).toEqual({ query: "onboarding" });
   });
 
+  it("carries reported review findings, bounded in count and length", () => {
+    const finding = {
+      file: "src/gateway.ts",
+      line: 25,
+      summary: "The log row is written after the call returns.",
+      short_summary: "Log row written too late",
+      failure_scenario: "f".repeat(5_000),
+      category: "correctness",
+      verdict: "CONFIRMED",
+      notes: "not part of the report",
+    };
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        title: "Tool call",
+        data: {
+          toolName: "ReportFindings",
+          input: { level: "high", findings: Array.from({ length: 40 }, () => finding) },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    const input = data.input as Record<string, unknown>;
+    const findings = input.findings as ReadonlyArray<Record<string, unknown>>;
+    expect(findings.length).toBe(32);
+    expect(findings[0]).toEqual({
+      file: "src/gateway.ts",
+      line: 25,
+      summary: "The log row is written after the call returns.",
+      short_summary: "Log row written too late",
+      failure_scenario: `${"f".repeat(1_999)}…`,
+      category: "correctness",
+      verdict: "CONFIRMED",
+    });
+  });
+
+  it("keeps findings off the wire for every other tool", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        title: "Tool call",
+        data: {
+          toolName: "Survey",
+          input: { query: "onboarding", findings: [{ file: "a.ts", summary: "s" }] },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    expect(data.input).toEqual({ query: "onboarding" });
+  });
+
   it("names Codex MCP calls from the item, which carries no toolName", () => {
     // Codex and the ACP adapters put identity on the item, and the clients
     // only read data.toolName, so without this they render an anonymous row.
