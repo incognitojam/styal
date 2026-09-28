@@ -209,6 +209,11 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
             borderRadius: PREVIEW_MINI_PLAYER_CORNER_RADIUS,
           }}
         >
+          {/* Keep the live webview visible without sending input to the page. */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-auto absolute inset-0 z-[49] rounded-[inherit]"
+          />
           <div className="group pointer-events-auto absolute right-2 top-2 z-[49] size-3">
             <div
               aria-hidden="true"

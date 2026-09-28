@@ -305,6 +305,7 @@ export function HostedBrowserWebview(props: {
     // Inactive macOS guests intentionally remain paintable offscreen; other platforms still
     // suspend them, and automation continues to see the macOS guests as inactive.
     keepPaintableWhenInactive: isMacPlatform(navigator.platform),
+    interactive: !presentation.fitSourceContent,
     cornerRadius: presentation.cornerRadius,
     zIndex: presentation.zIndex,
     rect: lastRect,
@@ -325,6 +326,7 @@ export function HostedBrowserWebview(props: {
       ref={wrapperRef}
       className="fixed overflow-hidden bg-muted/35"
       style={{ ...wrapperStyle, overscrollBehavior: "contain" }}
+      inert={presentation.fitSourceContent}
       onScroll={syncContentPresentation}
       data-preview-rendering={renderingActive ? "active" : "suspended"}
       data-preview-viewport={runtimeTabId}
