@@ -1084,7 +1084,7 @@ features:
       - Meaningful running-command interactions are shown with fixed sanitized summaries while empty polls and raw terminal input remain hidden.
       - Claude, Codex, and OpenCode file edits retain structured paths, line statistics, lifecycle state, and provider-independent presentation without eagerly sending full diffs to clients.
       - Folded completed turns summarize the categories of tools used with recognizable icons.
-      - Memory file writes and index updates form a distinct work-log category on web and mobile, so they do not inflate ordinary file-edit summaries.
+      - Claude project memory writes and index updates form a distinct work-log category on web and mobile; similarly named repository files remain ordinary edits.
     implementation_paths:
       - apps/mobile/src/features/threads/thread-work-log.tsx
       - apps/mobile/src/lib/threadActivity.ts

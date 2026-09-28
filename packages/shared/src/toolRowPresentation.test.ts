@@ -128,6 +128,22 @@ describe("deriveToolRowPresentation", () => {
       })?.heading,
     ).toBe("Wrote file");
 
+    expect(
+      deriveToolRowPresentation({
+        toolName: "Write",
+        itemType: "file_change",
+        input: { file_path: "/repo/docs/memory/design.md" },
+      })?.heading,
+    ).toBe("Wrote file");
+
+    expect(
+      deriveToolRowPresentation({
+        toolName: "write",
+        itemType: "file_change",
+        changedFiles: ["/synthetic/.claude/projects/-demo/memory/chart-hover.md"],
+      }),
+    ).toEqual({ heading: "Saved memory", argument: { kind: "text", value: "chart-hover" } });
+
     // The index every memory is listed in, not a memory.
     expect(
       deriveToolRowPresentation({
