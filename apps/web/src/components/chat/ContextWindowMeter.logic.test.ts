@@ -142,12 +142,12 @@ describe("formatContextWindowCompactionMessage", () => {
 describe("shouldOfferResumeCompaction", () => {
   const now = "2026-08-24T12:00:00.000Z";
 
-  it("matches Claude's old-session age and context thresholds", () => {
+  it("offers compaction once the one-hour prompt cache has expired", () => {
     expect(
       shouldOfferResumeCompaction({
         provider: "claudeAgent",
         usedTokens: 100_000,
-        updatedAt: "2026-08-24T10:50:00.000Z",
+        updatedAt: "2026-08-24T11:00:00.000Z",
         now,
       }),
     ).toBe(true);
@@ -166,7 +166,7 @@ describe("shouldOfferResumeCompaction", () => {
       shouldOfferResumeCompaction({
         provider: "claudeAgent",
         usedTokens: 200_000,
-        updatedAt: "2026-08-24T10:51:00.000Z",
+        updatedAt: "2026-08-24T11:01:00.000Z",
         now,
       }),
     ).toBe(false);

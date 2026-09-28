@@ -9,7 +9,10 @@ import {
 } from "../../providerInstances";
 import { getTriggerDisplayModelName, type ModelEsque } from "./providerIconUtils";
 
-const CLAUDE_RESUME_COMPACTION_MINUTES = 70;
+// Claude Code writes its prompt cache with a one-hour TTL, so a resume after an
+// hour resends the whole history uncached. Claude Code's own prompt waits 70
+// minutes; the banner offers compaction as soon as the cache has expired.
+const CLAUDE_RESUME_COMPACTION_MINUTES = 60;
 const CLAUDE_RESUME_COMPACTION_TOKENS = 100_000;
 
 export function providerSupportsManualCompaction(

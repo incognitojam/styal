@@ -202,6 +202,24 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9084
       retire_when: Upstream supports a downstream-owned manifest source and publication policy, or the fork adopts upstream's catalog unchanged.
 
+  - id: claude-resume-compaction-cache-expiry
+    title: Offer Claude resume compaction when the prompt cache expires
+    status: maintained
+    prs: [507]
+    invariants:
+      - The web composer offers to compact a Claude thread of at least 100,000 tokens once 60 minutes have passed since its last context update, matching Claude Code's one-hour prompt cache TTL rather than Claude Code's 70-minute resume prompt.
+    implementation_paths:
+      - apps/web/src/components/chat/ContextWindowMeter.logic.ts
+    upstream_paths:
+      - apps/web/src/components/chat/ContextWindowMeter.logic.ts
+    tests:
+      - apps/web/src/components/chat/ContextWindowMeter.logic.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/8144
+      retire_when: Upstream offers resume compaction no later than the prompt cache expiry, or Claude Code changes its cache TTL.
+
   - id: codex-default-model
     title: Prefer GPT-6-Sol for new Codex threads
     status: maintained
