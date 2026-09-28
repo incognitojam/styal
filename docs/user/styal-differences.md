@@ -44,6 +44,15 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   open in your default browser. Compared with
   [T3 Code revision 18062da](https://github.com/pingdotgg/t3code/tree/18062da9425909a0a92bce0b692c9de6fbba56ee),
   which applies the browser setting to these links too.
+- **Remote development servers preview in the desktop browser.** When a thread runs on another
+  machine, localhost pages open through the connection the app already uses, whether that is
+  styal Link, SSH, or a LAN or Tailscale address, and the server can listen on localhost only.
+  T3 Code as of
+  [September 27, 2026](https://github.com/pingdotgg/t3code/tree/d15210cd3da79f9a1a495a6309d912d76362a046)
+  opens detected servers at the environment's private address, which needs a server listening on
+  all interfaces, and opens typed localhost URLs on the desktop itself; its open pull request
+  ([#9817](https://github.com/pingdotgg/t3code/pull/9817)) forwards them over T3 Connect only.
+  [Preview development servers on another machine](./remote-access.md#preview-development-servers-on-another-machine).
 - **Project instructions across providers.** Set additional instructions once for a project and use
   them across its checkouts and agent sessions with Codex, Claude, Cursor, Grok, and OpenCode.
   [Project instructions](./project-settings.md#give-agents-project-instructions).
