@@ -6,7 +6,7 @@ import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import compression from "compression";
 import { defineProject, type TestProjectInlineConfiguration } from "vite-plus/test/config";
 import "vite-plus/test/config";
-import { defineConfig, type Connect, type Plugin } from "vite-plus";
+import { defaultAllowedOrigins, defineConfig, type Connect, type Plugin } from "vite-plus";
 import pkg from "./package.json" with { type: "json" };
 
 import { DEV_PROXIED_PATH_PREFIXES } from "@t3tools/shared/devProxy";
@@ -229,6 +229,10 @@ export default defineConfig(() => {
       bundledDev,
     },
     server: {
+      // Vite answers CORS preflights before its proxy runs. Passing them on lets proxied
+      // environment routes apply the server's CORS rules, which admit desktop app origins;
+      // Vite's own files keep its default local origins.
+      cors: { origin: defaultAllowedOrigins, preflightContinue: true },
       host,
       port,
       strictPort: true,
