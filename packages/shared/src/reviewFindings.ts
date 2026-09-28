@@ -115,16 +115,7 @@ function escapeLinkLabel(value: string): string {
   return value.replace(/[[\]\\]/gu, (character) => `\\${character}`);
 }
 
-function indentContinuation(text: string, indent: string): string {
-  return text
-    .split("\n")
-    .map((line) => (line.trim().length > 0 ? `${indent}${line}` : ""))
-    .join("\n");
-}
-
 function formatFinding(finding: ReviewFinding, index: number): string {
-  const marker = `${(index + 1).toString()}. `;
-  const indent = " ".repeat(marker.length);
   const location =
     finding.line === undefined ? finding.file : `${finding.file}:${finding.line.toString()}`;
   const href =
@@ -139,20 +130,22 @@ function formatFinding(finding: ReviewFinding, index: number): string {
     .join(" · ");
 
   const title = finding.shortSummary ?? finding.summary;
-  const blocks = [`${marker}**${title.replace(/\s+/gu, " ")}**`, `${indent}${meta}`];
+  const blocks = [`**${(index + 1).toString()}. ${title.replace(/\s+/gu, " ")}**`, meta];
   if (finding.shortSummary) {
-    blocks.push(indentContinuation(finding.summary, indent));
+    blocks.push(finding.summary);
   }
   if (finding.failureScenario) {
-    blocks.push(indentContinuation(`*Failure scenario:* ${finding.failureScenario}`, indent));
+    blocks.push(`*Failure scenario:* ${finding.failureScenario}`);
   }
   return blocks.join("\n\n");
 }
 
 /**
- * The findings as a numbered markdown list, most severe first as reported.
- * Locations are relative links with `#L` anchors, which both clients' markdown
- * renderers resolve against the thread's workspace.
+ * The findings in reported order (most severe first), each as top-level
+ * paragraphs under a bold numbered title. A list item holding several
+ * paragraphs would be simpler, but mobile's native markdown text runs them
+ * together. Locations are relative links with `#L` anchors, which both
+ * clients' markdown renderers resolve against the thread's workspace.
  */
 export function formatReviewFindingsMarkdown(report: ReviewFindingsReport): string {
   return report.findings.map(formatFinding).join("\n\n");

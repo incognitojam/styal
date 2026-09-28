@@ -47,7 +47,7 @@ describe("readReviewFindingsReport", () => {
 });
 
 describe("formatReviewFindingsMarkdown", () => {
-  it("numbers findings with a linked location and indents their prose under the item", () => {
+  it("numbers findings and gives each a linked location", () => {
     const report = readReviewFindingsReport({
       findings: [
         {
@@ -64,18 +64,18 @@ describe("formatReviewFindingsMarkdown", () => {
     })!;
     expect(formatReviewFindingsMarkdown(report)).toBe(
       [
-        "1. **Log row written too late**",
+        "**1. Log row written too late**",
         "",
-        "   [app/Services/Logging Gateway.php:25](<app/Services/Logging Gateway.php#L25>) · correctness · confirmed",
+        "[app/Services/Logging Gateway.php:25](<app/Services/Logging Gateway.php#L25>) · correctness · confirmed",
         "",
-        "   The log row is written after the call returns.",
+        "The log row is written after the call returns.",
         "",
-        "   *Failure scenario:* A container is redeployed mid-call.",
-        "   The log misses the send.",
+        "*Failure scenario:* A container is redeployed mid-call.",
+        "The log misses the send.",
         "",
-        "2. **Stale `setup` step.**",
+        "**2. Stale `setup` step.**",
         "",
-        "   [README.md](<README.md>)",
+        "[README.md](<README.md>)",
       ].join("\n"),
     );
   });
