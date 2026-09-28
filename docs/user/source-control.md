@@ -107,8 +107,6 @@ For GitHub pull requests:
   checks that have not reported yet. When rules require an out-of-date branch to be updated before
   merging, it explains why and offers the update methods you can use. Auto-merge waits for that
   update; it does not perform it.
-- A stacked pull request lists every layer of its stack on the Summary tab. Select a layer to open
-  it, or Cmd/Ctrl-click to open it on GitHub.
 - Images stored in the repository display in pull request descriptions, including for private
   repositories.
 - On web and desktop, pull request links in descriptions and comments open another tab beside the

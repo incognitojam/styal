@@ -2034,47 +2034,6 @@ features:
       tracking: []
       retire_when: Upstream assigns equivalent persistent workspace port ranges across every process surface and safely preserves existing installations carrying the fork allocation schema.
 
-  - id: stacked-pull-request-navigation
-    title: Show GitHub pull request stack relationships
-    status: review-needed
-    prs: [194, 329]
-    invariants:
-      - Following successive stack links from a PR tab keeps navigation beside the hosting thread when the linked repository is available in that environment.
-      - Pull request details show the current GitHub pull request within its contiguous base and head stack when relationships are available.
-      - Stack discovery is bounded and degrades without blocking ordinary pull request details when related pull requests cannot be resolved.
-    implementation_paths:
-      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
-      - apps/server/src/pullRequest/GitHubPullRequestProvider.ts
-      - apps/server/src/pullRequest/PullRequestProvider.ts
-      - apps/server/src/pullRequest/PullRequestService.ts
-      - apps/server/src/pullRequest/gitHubPullRequestJson.ts
-      - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
-      - apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx
-      - apps/web/src/lib/openPullRequestLink.ts
-      - packages/contracts/src/pullRequest.ts
-    upstream_paths:
-      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
-      - apps/server/src/pullRequest/GitHubPullRequestProvider.ts
-      - apps/server/src/pullRequest/PullRequestProvider.ts
-      - apps/server/src/pullRequest/PullRequestService.ts
-      - apps/server/src/pullRequest/gitHubPullRequestJson.ts
-      - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
-      - apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx
-      - apps/web/src/lib/openPullRequestLink.ts
-      - packages/contracts/src/pullRequest.ts
-    tests:
-      - apps/server/src/pullRequest/GitHubPullRequestProvider.test.ts
-      - apps/server/src/pullRequest/gitHubPullRequestJson.test.ts
-      - apps/web/src/components/ChatMarkdown.test.tsx
-      - apps/web/src/lib/openPullRequestLink.test.ts
-    upstream:
-      status: partial
-      tracking:
-        - https://github.com/pingdotgg/t3code/pull/10623
-        - https://github.com/pingdotgg/t3code/pull/10839
-        - https://github.com/pingdotgg/t3code/pull/10875
-      retire_when: Upstream shows equivalent bounded GitHub pull request stack relationships and preserves navigation beside the hosting thread, with the fork invariants verified after integration.
-
   - id: startup-navigation-continuity
     title: Prevent late startup project switches
     status: maintained
