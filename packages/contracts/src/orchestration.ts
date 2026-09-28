@@ -584,15 +584,6 @@ export type OrchestrationThreadActivity = typeof OrchestrationThreadActivity.Typ
 /** Recorded when the server continues a thread's work after it restarts. */
 export const SERVER_RESTART_CONTINUED_ACTIVITY_KIND = "server-restart.continued";
 
-/**
- * Activity kinds clients show as a row of their own: never merged into a
- * group of work rows, and still visible when a folded turn has nothing else
- * to hide.
- */
-export function isStandaloneTimelineActivityKind(kind: string | undefined): kind is string {
-  return kind === "context-compaction" || kind === SERVER_RESTART_CONTINUED_ACTIVITY_KIND;
-}
-
 const OrchestrationLatestTurnState = Schema.Literals([
   "running",
   "interrupted",

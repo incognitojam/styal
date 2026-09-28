@@ -4,7 +4,6 @@ import {
   type PendingApproval,
 } from "@t3tools/client-runtime/pending-requests";
 import {
-  isStandaloneTimelineActivityKind,
   isToolLifecycleItemType,
   ProjectScriptIcon,
   UserInputAttachmentAnswerPayload,
@@ -40,6 +39,7 @@ import {
   commandDetailRepeatsCommand,
   extractCommandOutputText,
   extractWorkLogToolLifecycleStatus,
+  isStandaloneTimelineActivityKind,
   isWorktreeSetupActivity,
   liveActivityToolStatus,
   normalizeCompactToolLabel,

@@ -3,6 +3,7 @@ import { shallow } from "zustand/vanilla/shallow";
 import { renderCodexDirectivesForCopy } from "@t3tools/client-runtime/codex-markdown-directives";
 import { commandProgramName } from "@t3tools/client-runtime/work-log/command-label";
 import {
+  isStandaloneTimelineActivityKind,
   liveActivityToolStatus,
   normalizeCompactToolLabel,
   omitSupersededLifecycleMarkers,
@@ -29,12 +30,7 @@ import {
   type WorkLogEntry,
 } from "../../session-logic";
 import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../../types";
-import {
-  isStandaloneTimelineActivityKind,
-  type MessageId,
-  type OrchestrationLatestTurn,
-  type TurnId,
-} from "@t3tools/contracts";
+import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@t3tools/contracts";
 import {
   deriveToolRowPresentation,
   isPreviewToolName,

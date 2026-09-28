@@ -523,7 +523,7 @@ const clearProviderSessionContinuationMarkers = (threadIds: ReadonlyArray<Thread
 /** Shows in the thread that the server resumed its work after restarting. */
 const recordRestartContinued = (input: {
   readonly threadId: ThreadId;
-  readonly turnId: TurnId | null;
+  readonly turnId: TurnId;
   readonly background: boolean;
   readonly createdAt: string;
 }) =>
@@ -540,7 +540,7 @@ const recordRestartContinued = (input: {
         tone: "info",
         kind: SERVER_RESTART_CONTINUED_ACTIVITY_KIND,
         summary: input.background
-          ? "Server restarted and stopped background work"
+          ? "Asked to restart background work after server restart"
           : "Continued after server restart",
         payload: { background: input.background },
         turnId: input.turnId,
@@ -770,7 +770,7 @@ export const reconcileProviderSessions = Effect.gen(function* () {
             // Stamp the row before sending so it sorts ahead of the
             // provider's first output, but record it only once the send lands.
             const continuedAt = DateTime.formatIso(yield* DateTime.now);
-            yield* providerService.sendTurn({
+            const turn = yield* providerService.sendTurn({
               threadId: thread.id,
               ...(backgroundContinuation
                 ? { input: SERVER_UPDATE_BACKGROUND_CONTINUATION_PROMPT }
@@ -779,20 +779,17 @@ export const reconcileProviderSessions = Effect.gen(function* () {
                   : { input: SERVER_UPDATE_CONTINUATION_PROMPT }),
               interactionMode: thread.interactionMode,
             });
-            return continuedAt;
+            return { continuedAt, turnId: turn.turnId };
           });
           const continuationExit = yield* Effect.exit(continuation);
           if (Exit.isSuccess(continuationExit) || Cause.hasInterrupts(continuationExit.cause)) {
             if (Exit.isSuccess(continuationExit)) {
               yield* recordRestartContinued({
                 threadId: thread.id,
-                // A background continuation starts a new turn the provider
-                // has not reported yet, so its row belongs to no turn.
-                turnId: backgroundContinuation
-                  ? null
-                  : (session.activeTurnId ?? continuationTurnId),
+                // The row belongs to the turn that carries the continued work.
+                turnId: continuationExit.value.turnId,
                 background: backgroundContinuation,
-                createdAt: continuationExit.value,
+                createdAt: continuationExit.value.continuedAt,
               }).pipe(
                 Effect.catchCause((cause) =>
                   Cause.hasInterrupts(cause)

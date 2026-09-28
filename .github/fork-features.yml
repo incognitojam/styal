@@ -1908,7 +1908,7 @@ features:
     status: maintained
     prs: [515]
     invariants:
-      - When restart recovery sends a continuation, the thread records one server-restart.continued activity, timestamped before the send and attached to the continued turn; background-work continuations are labeled separately and attached to no turn.
+      - When restart recovery sends a continuation, the thread records one server-restart.continued activity, timestamped before the send and attached to the turn the provider started for the continued work; background-work continuations are labeled separately.
       - A failed continuation records no restart activity; the thread settles with the existing continuation error instead.
       - Web and mobile show the restart as a standalone note in the turn's work that is never merged into grouped work rows and stays visible when a folded turn has nothing else to hide, while context compaction keeps its divider.
     implementation_paths:
@@ -1917,6 +1917,7 @@ features:
       - apps/server/src/serverRuntimeStartup.ts
       - apps/web/src/components/chat/MessagesTimeline.logic.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - packages/client-runtime/src/work-log/presentation.ts
       - packages/contracts/src/orchestration.ts
     upstream_paths:
       - apps/mobile/src/features/threads/ThreadFeed.tsx
@@ -1924,6 +1925,7 @@ features:
       - apps/server/src/serverRuntimeStartup.ts
       - apps/web/src/components/chat/MessagesTimeline.logic.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - packages/client-runtime/src/work-log/presentation.ts
       - packages/contracts/src/orchestration.ts
     tests:
       - apps/server/src/serverRuntimeStartup.reconcile.test.ts
