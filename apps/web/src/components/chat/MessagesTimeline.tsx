@@ -91,6 +91,10 @@ import {
 } from "../../lib/diffRendering";
 import { PREFERRED_HIGHLIGHTER } from "../../lib/syntaxHighlighting";
 import ChatMarkdown, { ChatMarkdownAssetImage } from "../ChatMarkdown";
+import {
+  formatReviewFindingsMarkdown,
+  reviewFindingsHeading,
+} from "@t3tools/shared/reviewFindings";
 import { T3Wordmark } from "../T3Wordmark";
 import {
   BotIcon,
@@ -118,6 +122,7 @@ import {
   MinusIcon,
   PlayIcon,
   RocketIcon,
+  SearchCheckIcon,
   SearchIcon,
   SquarePenIcon,
   TerminalIcon,
@@ -245,7 +250,8 @@ interface TimelineRowSharedState {
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   onRunCodeBlock?: ((code: string) => void) | undefined;
   onToggleTurnFold: (turnId: TurnId) => void;
-  onToggleWorkGroup: (groupId: string, anchorKey: string) => void;
+  /** `expanded` is the row's current state when membership does not mean "expanded". */
+  onToggleWorkGroup: (groupId: string, anchorKey: string, expanded?: boolean) => void;
   onToggleWorkEntry: (anchorKey: string, collapsed: boolean) => void;
   workGroupViewState: WorkGroupViewState;
   agentPanelModel: AgentPanelModel;
@@ -520,8 +526,11 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     [suspendEndScrollMaintenanceForDisclosure],
   );
   const onToggleWorkGroup = useCallback(
-    (groupId: string, anchorKey: string) => {
-      suspendEndScrollMaintenanceForDisclosure(anchorKey, expandedWorkGroupIds.has(groupId));
+    (groupId: string, anchorKey: string, expanded?: boolean) => {
+      suspendEndScrollMaintenanceForDisclosure(
+        anchorKey,
+        expanded ?? expandedWorkGroupIds.has(groupId),
+      );
       setExpandedWorkGroupIds((existing) => {
         const next = new Set(existing);
         if (next.has(groupId)) {
@@ -1346,6 +1355,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       ) : null}
       {row.kind === "assistant-meta" ? <AssistantMetaTimelineRow row={row} /> : null}
       {row.kind === "proposed-plan" ? <ProposedPlanTimelineRow row={row} /> : null}
+      {row.kind === "review-findings" ? <ReviewFindingsTimelineRow row={row} /> : null}
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
       {row.kind === "thinking" ? <ThinkingTimelineRow /> : null}
     </div>
@@ -1905,6 +1915,51 @@ function ProposedPlanTimelineRow({
         cwd={ctx.markdownCwd}
         workspaceRoot={ctx.workspaceRoot}
       />
+    </div>
+  );
+}
+
+function ReviewFindingsTimelineRow({
+  row,
+}: {
+  row: Extract<TimelineRow, { kind: "review-findings" }>;
+}) {
+  const ctx = use(TimelineRowCtx);
+  const markdown = useMemo(
+    () => formatReviewFindingsMarkdown(row.report, { details: row.expanded }),
+    [row.report, row.expanded],
+  );
+
+  return (
+    <div className="min-w-0 px-1 py-0.5">
+      <div className="rounded-xl border border-border/80 bg-card/70 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="flex min-w-0 items-center gap-2 text-sm font-medium text-foreground">
+            <SearchCheckIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+            {reviewFindingsHeading(row.report)}
+          </p>
+          {markdown ? (
+            <Button
+              size="xs"
+              variant="ghost"
+              data-scroll-anchor-ignore
+              aria-expanded={row.expanded}
+              onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id, row.expanded)}
+            >
+              {row.expanded ? "Hide details" : "Show details"}
+            </Button>
+          ) : null}
+        </div>
+        {markdown ? (
+          <ChatMarkdown
+            className="mt-3"
+            text={markdown}
+            cwd={ctx.markdownCwd}
+            threadRef={ctx.threadRef ?? undefined}
+            isStreaming={false}
+          />
+        ) : null}
+      </div>
     </div>
   );
 }

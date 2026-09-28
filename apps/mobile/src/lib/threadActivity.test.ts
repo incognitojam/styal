@@ -2322,6 +2322,88 @@ describe("buildThreadFeed", () => {
     ]);
   });
 
+  it("shows an accepted findings report as a card outside the turn fold", () => {
+    const turnId = TurnId.make("turn-1");
+    const report = (id: string, status: "failed" | "completed", createdAt: string) =>
+      makeActivity({
+        id: EventId.make(id),
+        kind: "tool.completed",
+        tone: "tool",
+        summary: "Tool call",
+        createdAt,
+        turnId,
+        payload: {
+          itemType: "dynamic_tool_call",
+          status,
+          data: {
+            toolName: "ReportFindings",
+            input: { findings: [{ file: "src/a.ts", line: 3, summary: "Off by one" }] },
+          },
+        },
+      });
+    const thread = makeThread({
+      id: ThreadId.make("thread-review"),
+      projectId: ProjectId.make("project-1"),
+      title: "Review",
+      latestTurn: {
+        turnId,
+        state: "completed",
+        requestedAt: "2026-04-01T00:00:00.000Z",
+        startedAt: "2026-04-01T00:00:01.000Z",
+        completedAt: "2026-04-01T00:00:06.000Z",
+        assistantMessageId: MessageId.make("assistant-final"),
+      },
+      activities: [
+        makeActivity({
+          id: EventId.make("read"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "Read",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          turnId,
+          payload: {
+            itemType: "dynamic_tool_call",
+            status: "completed",
+            data: { toolName: "Read" },
+          },
+        }),
+        report("rejected", "failed", "2026-04-01T00:00:03.000Z"),
+        report("accepted", "completed", "2026-04-01T00:00:04.000Z"),
+      ],
+      messages: [
+        {
+          id: MessageId.make("assistant-final"),
+          role: "assistant",
+          text: "The findings above are the review.",
+          turnId,
+          streaming: false,
+          createdAt: "2026-04-01T00:00:05.000Z",
+          updatedAt: "2026-04-01T00:00:06.000Z",
+        },
+      ],
+    });
+
+    const feed = buildThreadFeed(thread);
+    const rows = deriveThreadFeedPresentation(feed, thread.latestTurn, new Set());
+    expect(rows.map((entry) => entry.type)).toEqual(["turn-fold", "review-findings", "message"]);
+    expect(rows[1]).toMatchObject({
+      id: "accepted",
+      report: { findings: [{ file: "src/a.ts", line: 3, summary: "Off by one" }] },
+      expanded: false,
+    });
+    // Collapsed until toggled open, whichever turn the report is in.
+    const findingsOf = (entries: ReadonlyArray<ThreadFeedEntry>) =>
+      entries.find((entry) => entry.type === "review-findings");
+    expect(
+      findingsOf(
+        deriveThreadFeedPresentation(feed, thread.latestTurn, new Set(), new Set(["accepted"])),
+      ),
+    ).toMatchObject({ expanded: true });
+    // The rejected attempt was retried, so it is gone even from the unfolded turn.
+    const unfolded = deriveThreadFeedPresentation(feed, thread.latestTurn, new Set([turnId]));
+    expect(JSON.stringify(unfolded)).not.toContain("rejected");
+  });
+
   it("measures a steer-superseded turn from its user boundary through trailing work", () => {
     const firstTurnId = TurnId.make("turn-1");
     const secondTurnId = TurnId.make("turn-2");

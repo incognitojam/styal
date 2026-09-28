@@ -1821,6 +1821,46 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9188
       retire_when: Upstream provides a dedicated checks view with repository-policy-aware required checks and equivalent merge or auto-merge guidance in pull request details.
 
+  - id: review-findings-card
+    title: Show code-review findings as a card
+    status: maintained
+    prs: [516]
+    invariants:
+      - An accepted Claude Code ReportFindings call renders on web and mobile as a findings card listing each finding with a linked file location, instead of a collapsed tool row.
+      - The findings card stays visible when its turn folds, since the closing message only refers back to it.
+      - The findings card lists each finding's title and location when collapsed and adds the summary and failure scenario when expanded; on web it starts expanded while its report belongs to the thread's latest turn, on mobile it starts collapsed, and toggling flips that default.
+      - A rejected ReportFindings call is hidden once the agent submits an accepted report in the same turn; a rejection with no accepted retry stays visible.
+      - The activity projection carries ReportFindings findings with a bounded count and bounded field lengths, and keeps them off the wire for every other tool.
+    implementation_paths:
+      - apps/mobile/src/features/threads/ThreadFeed.tsx
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/server/src/orchestration/ActivityPayloadProjection.ts
+      - apps/web/src/components/chat/MessagesTimeline.logic.ts
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/session-logic.ts
+      - packages/client-runtime/src/work-log/presentation.ts
+      - packages/shared/src/reviewFindings.ts
+      - packages/shared/src/toolRowPresentation.ts
+    upstream_paths:
+      - apps/mobile/src/features/threads/ThreadFeed.tsx
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/server/src/orchestration/ActivityPayloadProjection.ts
+      - apps/web/src/components/chat/MessagesTimeline.logic.ts
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/session-logic.ts
+      - packages/client-runtime/src/work-log/presentation.ts
+    tests:
+      - apps/mobile/src/lib/threadActivity.test.ts
+      - apps/server/src/orchestration/ActivityPayloadProjection.test.ts
+      - apps/web/src/components/chat/MessagesTimeline.logic.test.ts
+      - packages/client-runtime/src/work-log/presentation.test.ts
+      - packages/shared/src/reviewFindings.test.ts
+      - packages/shared/src/toolRowPresentation.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream renders ReportFindings results as a readable findings list that survives turn folding on web and mobile.
+
   - id: run-shell-code-blocks
     title: Run completed shell code blocks in a terminal
     status: maintained

@@ -1121,6 +1121,78 @@ describe("deriveMessagesTimelineRows", () => {
     ]);
   });
 
+  it("keeps reported review findings visible when their turn folds", () => {
+    const turnId = "turn-1" as never;
+    const work = (
+      id: string,
+      createdAt: string,
+      extra: Omit<WorkLogEntry, "id" | "createdAt" | "turnId" | "tone">,
+    ) => ({
+      id: `${id}-entry`,
+      kind: "work" as const,
+      createdAt,
+      entry: { id, createdAt, turnId, tone: "tool" as const, ...extra },
+    });
+    const findings = [{ file: "src/a.ts", line: 3, summary: "Off by one" }];
+    const derive = (latestTurnId: string, expandedWorkGroupIds?: ReadonlySet<string>) =>
+      deriveMessagesTimelineRows({
+        timelineEntries: [
+          work("read", "2026-01-01T00:00:01Z", {
+            label: "Read",
+            toolName: "Read",
+            toolLifecycleStatus: "completed",
+          }),
+          work("report", "2026-01-01T00:00:02Z", {
+            label: "Tool call",
+            toolName: "ReportFindings",
+            toolInput: { findings },
+            toolLifecycleStatus: "completed",
+          }),
+          {
+            id: "final-entry",
+            kind: "message",
+            createdAt: "2026-01-01T00:00:03Z",
+            message: {
+              id: "final" as never,
+              role: "assistant",
+              text: "The findings above are the review.",
+              turnId,
+              createdAt: "2026-01-01T00:00:03Z",
+              updatedAt: "2026-01-01T00:00:03Z",
+              streaming: false,
+            },
+          },
+        ],
+        latestTurn: {
+          turnId: latestTurnId,
+          state: "completed",
+          startedAt: "2026-01-01T00:00:00Z",
+          completedAt: "2026-01-01T00:00:03Z",
+        } as never,
+        isWorking: false,
+        activeTurnStartedAt: null,
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+        ...(expandedWorkGroupIds ? { expandedWorkGroupIds } : {}),
+      });
+    const findingsRow = (rows: ReturnType<typeof derive>) =>
+      rows.find((row) => row.kind === "review-findings");
+
+    const rows = derive("turn-1");
+    expect(rows.map((row) => row.kind)).toEqual(["turn-fold", "review-findings", "message"]);
+    expect(findingsRow(rows)).toMatchObject({
+      id: "report-entry",
+      report: { findings: [{ file: "src/a.ts", line: 3, summary: "Off by one" }] },
+      expanded: true,
+    });
+    // Toggling collapses the latest report; a report from an earlier turn
+    // starts collapsed and toggling opens it.
+    const toggled = new Set(["review-findings:report-entry"]);
+    expect(findingsRow(derive("turn-1", toggled))).toMatchObject({ expanded: false });
+    expect(findingsRow(derive("turn-2"))).toMatchObject({ expanded: false });
+    expect(findingsRow(derive("turn-2", toggled))).toMatchObject({ expanded: true });
+  });
+
   it("only enables assistant copy for the terminal assistant message in a turn", () => {
     const rows = deriveMessagesTimelineRows({
       timelineEntries: [

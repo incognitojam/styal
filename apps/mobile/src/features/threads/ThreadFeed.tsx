@@ -29,6 +29,11 @@ import {
 } from "@t3tools/client-runtime/codex-markdown-directives";
 import { CHAT_LIST_ANCHOR_OFFSET, resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import { videoMimeType } from "@t3tools/shared/video";
+import {
+  formatReviewFindingsMarkdown,
+  reviewFindingsHeading,
+  type ReviewFindingsReport,
+} from "@t3tools/shared/reviewFindings";
 import { SymbolView, type AppSymbolName } from "../../components/AppSymbol";
 import { HeaderHeightContext } from "@react-navigation/elements";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
@@ -797,6 +802,58 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
   });
 });
 
+const ReviewFindingsCard = memo(function ReviewFindingsCard(props: {
+  readonly report: ReviewFindingsReport;
+  readonly expanded: boolean;
+  readonly onToggle: () => void;
+  readonly markdownStyles: MarkdownStyleSet;
+  readonly linkHandlers: MarkdownLinkHandlers;
+  readonly renderImage: MarkdownImageRenderer;
+  readonly iconSubtleColor: string | import("react-native").ColorValue;
+}) {
+  const markdown = useMemo(
+    () => formatReviewFindingsMarkdown(props.report, { details: props.expanded }),
+    [props.report, props.expanded],
+  );
+  return (
+    <View className="mb-3 px-1">
+      <View className="gap-2 rounded-xl border border-adaptive-neutral-200-a80-white-a8 bg-card px-3 py-2.5">
+        <View className="flex-row items-center gap-2">
+          <SymbolView
+            name="magnifyingglass"
+            size={14}
+            tintColor={props.iconSubtleColor}
+            type="monochrome"
+          />
+          <Text className="flex-1 font-t3-medium text-sm text-foreground">
+            {reviewFindingsHeading(props.report)}
+          </Text>
+          {markdown ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: props.expanded }}
+              hitSlop={8}
+              onPress={props.onToggle}
+            >
+              <Text className="font-t3-medium text-xs text-foreground-muted">
+                {props.expanded ? "Hide details" : "Show details"}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+        {markdown ? (
+          <AssistantMarkdownContent
+            markdown={markdown}
+            markdownStyles={props.markdownStyles}
+            linkHandlers={props.linkHandlers}
+            renderImage={props.renderImage}
+          />
+        ) : null}
+      </View>
+    </View>
+  );
+});
+
 function MarkdownCodeBlock(props: {
   readonly backgroundColor: string;
   readonly borderColor: string;
@@ -1414,6 +1471,20 @@ function renderFeedEntry(
         rowSizing={props.workRowSizing}
         onToggle={() => props.onToggleWorkGroup(entry.id, entry.id)}
         onCopy={() => props.onCopyWorkRow(entry.activity.id, entry.activity.getCopyText())}
+      />
+    );
+  }
+
+  if (entry.type === "review-findings") {
+    return (
+      <ReviewFindingsCard
+        report={entry.report}
+        expanded={entry.expanded}
+        onToggle={() => props.onToggleWorkGroup(entry.id, entry.id)}
+        markdownStyles={markdownStyles.assistant}
+        linkHandlers={props.markdownLinkHandlers}
+        renderImage={props.renderMarkdownImage}
+        iconSubtleColor={iconSubtleColor}
       />
     );
   }

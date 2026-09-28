@@ -71,6 +71,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   Compared with [T3 Code revision a493946](https://github.com/pingdotgg/t3code/tree/a493946bb42ab16e1d18285dac3e9e4603651330),
   checked September 23, 2026.
 
+- **Code review findings in the conversation.** When Claude Code's `/code-review` reports its
+  findings, they appear as a list with links to each file and line, and stay visible after the turn
+  collapses. Compared with
+  [T3 Code revision d15210c](https://github.com/pingdotgg/t3code/tree/d15210cd3da79f9a1a495a6309d912d76362a046),
+  checked September 28, 2026, where the report is only visible as a collapsed tool call.
+
 ## Staying oriented while agents work
 
 - **Proactive panels by default.** Newly linked reviews open automatically, and completed agent work
