@@ -37,6 +37,10 @@
       "reason": "Android chat rows overlap: Worked rows, the copy and timestamp footer, and user bubbles are drawn over neighbouring messages until the thread is reopened."
     },
     {
+      "pr": 11002,
+      "reason": "Mobile composer model names are cut to \"Claude Opus …\" by a fixed 152px chip width while the rest of the row is empty; this lets the chip use the available space."
+    },
+    {
       "pr": 11103,
       "reason": "Replaces the fork's draft-preserving compact action from fork #363; drop the fork version when this lands."
     },
