@@ -10,7 +10,7 @@ import { classifyMarkdownImageSource } from "@t3tools/client-runtime/markdown-im
 import { resolveMediaSource } from "@t3tools/client-runtime/media-source";
 import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
-import { memoryFileToolKind } from "@t3tools/shared/toolRowPresentation";
+import { memoryFileToolKind, memoryFileToolPath } from "@t3tools/shared/toolRowPresentation";
 
 export function isWorktreeSetupActivity(kind: string): boolean {
   return kind === "setup-script.requested" || kind === "setup-script.started";
@@ -455,7 +455,7 @@ export function toolGroupAction(entry: WorkLogPresentationEntry): ToolGroupActio
   ) {
     return "update";
   }
-  if (memoryFileToolKind(entry.toolName, entry.toolInput)) return "memory";
+  if (memoryFileToolKind(entry.toolName, entry.toolInput, entry.changedFiles)) return "memory";
   switch (entry.toolName) {
     case "Read":
       return "read";
@@ -556,9 +556,11 @@ function toolGroupActionCount(
   if (action === "memory") {
     const memoryPaths = new Set<string>();
     for (const entry of entries) {
-      if (memoryFileToolKind(entry.toolName, entry.toolInput) !== "memory") continue;
-      const path = entry.toolInput?.file_path ?? entry.toolInput?.path;
-      if (typeof path === "string") memoryPaths.add(path);
+      if (memoryFileToolKind(entry.toolName, entry.toolInput, entry.changedFiles) !== "memory") {
+        continue;
+      }
+      const path = memoryFileToolPath(entry.toolName, entry.toolInput, entry.changedFiles);
+      if (path) memoryPaths.add(path);
     }
     return memoryPaths.size;
   }

@@ -168,13 +168,32 @@ describe("summarizeToolGroup", () => {
       tone: "tool",
       toolName: "Write",
       itemType: "file_change",
-      toolInput: { file_path: `/synthetic/memory/${name}.md` },
+      toolInput: { file_path: `/synthetic/.claude/projects/-demo/memory/${name}.md` },
     });
     const entries = [memory("first"), memory("second"), memory("second"), memory("MEMORY")];
 
     expect(summarizeToolGroup(entries)).toBe("Updated 2 memories");
     expect(toolGroupSummaryKind(entries)).toBe("memory");
     expect(summarizeToolGroup([memory("MEMORY")])).toBe("Updated memory index");
+    expect(
+      summarizeToolGroup([
+        {
+          ...memory("first"),
+          toolInput: { file_path: " /synthetic/.claude/projects/-demo/memory/first.md " },
+        },
+        memory("first"),
+      ]),
+    ).toBe("Updated 1 memory");
+    expect(
+      summarizeToolGroup([
+        {
+          ...memory("first"),
+          toolName: "write",
+          toolInput: {},
+          changedFiles: ["/synthetic/.claude/projects/-demo/memory/first.md"],
+        },
+      ]),
+    ).toBe("Updated 1 memory");
     expect(
       summarizeToolGroup([
         memory("first"),
@@ -185,6 +204,19 @@ describe("summarizeToolGroup", () => {
           itemType: "file_change",
           toolInput: { file_path: "/synthetic/src/app.ts" },
           changedFiles: ["/synthetic/src/app.ts"],
+        },
+      ]),
+    ).toBe("Updated 1 memory and changed 1 file");
+    expect(
+      summarizeToolGroup([
+        memory("first"),
+        {
+          label: "Changed files",
+          tone: "tool",
+          toolName: "Write",
+          itemType: "file_change",
+          toolInput: { file_path: "/synthetic/docs/memory/design.md" },
+          changedFiles: ["/synthetic/docs/memory/design.md"],
         },
       ]),
     ).toBe("Updated 1 memory and changed 1 file");

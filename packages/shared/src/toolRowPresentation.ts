@@ -92,11 +92,10 @@ export function normalizeKnownToolName(value: string): string {
 }
 
 /**
- * Memory files are ordinary writes, so only an exact `<root>/memory/<slug>.md`
- * shape counts. Matching any path containing "memory" would repeat the
- * substring guessing that mislabels rows in the first place.
+ * Claude memories live under a project's own `.claude/projects` directory.
+ * Repo files such as `docs/memory/design.md` remain ordinary file edits.
  */
-const MEMORY_PATH_PATTERN = /(?:^|\/)memory\/(?<slug>[^/]+)\.md$/u;
+const MEMORY_PATH_PATTERN = /(?:^|\/)\.claude\/projects\/[^/]+\/memory\/(?<slug>[^/]+)\.md$/u;
 
 const MEMORY_INDEX_HEADING = "Updated memory index";
 
@@ -104,12 +103,35 @@ function memorySlug(path: string | undefined): string | undefined {
   return path ? MEMORY_PATH_PATTERN.exec(path)?.groups?.slug : undefined;
 }
 
+function toolFilePath(
+  input: Record<string, unknown> | undefined,
+  changedFiles: ReadonlyArray<string> | null | undefined,
+): string | undefined {
+  return (
+    asTrimmedString(input?.file_path) ??
+    asTrimmedString(input?.notebook_path) ??
+    asTrimmedString(input?.path) ??
+    asTrimmedString(changedFiles?.[0])
+  );
+}
+
+export function memoryFileToolPath(
+  toolName: string | undefined,
+  input: Record<string, unknown> | undefined,
+  changedFiles?: ReadonlyArray<string> | null,
+): string | undefined {
+  const normalizedToolName = toolName ? normalizeKnownToolName(toolName) : undefined;
+  if (normalizedToolName !== "Write" && normalizedToolName !== "Edit") return undefined;
+  const path = toolFilePath(input, changedFiles);
+  return memorySlug(path) ? path : undefined;
+}
+
 export function memoryFileToolKind(
   toolName: string | undefined,
   input: Record<string, unknown> | undefined,
+  changedFiles?: ReadonlyArray<string> | null,
 ): "memory" | "index" | undefined {
-  if (toolName !== "Write" && toolName !== "Edit") return undefined;
-  const slug = memorySlug(asTrimmedString(input?.file_path) ?? asTrimmedString(input?.path));
+  const slug = memorySlug(memoryFileToolPath(toolName, input, changedFiles));
   return slug === "MEMORY" ? "index" : slug ? "memory" : undefined;
 }
 
@@ -540,10 +562,7 @@ function argumentForToolName(
   },
 ): ToolRowArgument | undefined {
   const { input } = context;
-  const filePath =
-    asTrimmedString(input?.file_path) ??
-    asTrimmedString(input?.notebook_path) ??
-    asTrimmedString(input?.path);
+  const filePath = toolFilePath(input, context.changedFiles);
 
   switch (toolName) {
     case "Bash":
@@ -697,11 +716,7 @@ function deriveBaseToolRowPresentation(
   const command = asTrimmedString(input.command);
   const detail = asTrimmedString(input.detail);
   const changedFiles = input.changedFiles ?? undefined;
-  const filePath =
-    asTrimmedString(toolInput?.file_path) ??
-    asTrimmedString(toolInput?.notebook_path) ??
-    asTrimmedString(toolInput?.path) ??
-    changedFiles?.[0];
+  const filePath = toolFilePath(toolInput, changedFiles);
 
   const argument =
     (toolName

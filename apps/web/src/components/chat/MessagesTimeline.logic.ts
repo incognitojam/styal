@@ -33,6 +33,7 @@ import {
   deriveToolRowPresentation,
   isPreviewToolName,
   memoryFileToolKind,
+  memoryFileToolPath,
 } from "@t3tools/shared/toolRowPresentation";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 
@@ -569,7 +570,7 @@ const TURN_FOLD_ACTIVITY_ORDER: ReadonlyArray<TurnFoldActivityKind> = [
 ];
 
 function turnFoldActivityKind(entry: WorkLogEntry): TurnFoldActivityKind | null {
-  if (memoryFileToolKind(entry.toolName, entry.toolInput)) return "memory";
+  if (memoryFileToolKind(entry.toolName, entry.toolInput, entry.changedFiles)) return "memory";
   if (entry.requestKind === "command") return "terminal";
   if (entry.requestKind === "file-read") return "file-read";
   if (entry.requestKind === "file-change") return "file-change";
@@ -605,10 +606,34 @@ function turnFoldActivityKind(entry: WorkLogEntry): TurnFoldActivityKind | null 
 
 function summarizeTurnFoldActivity(entries: ReadonlyArray<TimelineEntry>) {
   const counts = new Map<TurnFoldActivityKind, number>();
+  const memoryPaths = new Set<string>();
+  let hasMemoryIndex = false;
   for (const entry of entries) {
     if (entry.kind !== "work") continue;
     const kind = turnFoldActivityKind(entry.entry);
-    if (kind) counts.set(kind, (counts.get(kind) ?? 0) + 1);
+    if (kind === "memory") {
+      const path = memoryFileToolPath(
+        entry.entry.toolName,
+        entry.entry.toolInput,
+        entry.entry.changedFiles,
+      );
+      if (
+        memoryFileToolKind(
+          entry.entry.toolName,
+          entry.entry.toolInput,
+          entry.entry.changedFiles,
+        ) === "index"
+      ) {
+        hasMemoryIndex = true;
+      } else if (path) {
+        memoryPaths.add(path);
+      }
+    } else if (kind) {
+      counts.set(kind, (counts.get(kind) ?? 0) + 1);
+    }
+  }
+  if (memoryPaths.size > 0 || hasMemoryIndex) {
+    counts.set("memory", memoryPaths.size || 1);
   }
   return TURN_FOLD_ACTIVITY_ORDER.flatMap((kind) => {
     const count = counts.get(kind);

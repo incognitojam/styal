@@ -1635,6 +1635,78 @@ describe("deriveMessagesTimelineRows", () => {
     });
   });
 
+  it("counts distinct agent memories separately from repo file edits in the turn fold", () => {
+    const turnId = "turn-memory" as never;
+    const memoryPath = "/synthetic/.claude/projects/-demo/memory/first.md";
+    const timelineEntries = [
+      {
+        id: "user-entry",
+        kind: "message" as const,
+        createdAt: "2026-01-01T00:00:00Z",
+        message: {
+          id: "user-memory" as never,
+          role: "user" as const,
+          text: "Remember this",
+          turnId: null,
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+          streaming: false,
+        },
+      },
+      ...[
+        memoryPath,
+        memoryPath,
+        "/synthetic/.claude/projects/-demo/memory/second.md",
+        "/synthetic/.claude/projects/-demo/memory/MEMORY.md",
+        "/synthetic/docs/memory/design.md",
+      ].map((path, index) => ({
+        id: `work-entry-${index}`,
+        kind: "work" as const,
+        createdAt: `2026-01-01T00:00:0${index + 1}Z`,
+        entry: {
+          id: `work-${index}`,
+          createdAt: `2026-01-01T00:00:0${index + 1}Z`,
+          turnId,
+          label: "Changed files",
+          tone: "tool" as const,
+          toolName: "Write",
+          itemType: "file_change" as const,
+          toolInput: { file_path: path },
+          changedFiles: [path],
+        },
+      })),
+      {
+        id: "assistant-final-entry",
+        kind: "message" as const,
+        createdAt: "2026-01-01T00:00:06Z",
+        message: {
+          id: "assistant-memory" as never,
+          role: "assistant" as const,
+          text: "Remembered",
+          turnId,
+          createdAt: "2026-01-01T00:00:06Z",
+          updatedAt: "2026-01-01T00:00:06Z",
+          streaming: false,
+        },
+      },
+    ];
+
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries,
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+
+    expect(rows.find((row) => row.kind === "turn-fold")).toMatchObject({
+      activitySummary: [
+        { kind: "file-change", count: 1 },
+        { kind: "memory", count: 2 },
+      ],
+    });
+  });
+
   it("derives a sane duration for a steer-superseded turn with one instant commentary message", () => {
     // A steer ends the previous turn early: its only message completes the
     // instant it is created, and trailing work entries land after it. The
