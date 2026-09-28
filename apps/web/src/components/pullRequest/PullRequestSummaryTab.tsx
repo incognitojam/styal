@@ -4,7 +4,6 @@ import type {
   PullRequestComment,
   PullRequestDetailView,
   PullRequestRef,
-  PullRequestStackLadder,
   ScopedThreadRef,
 } from "@t3tools/contracts";
 import {
@@ -20,7 +19,7 @@ import {
   TagIcon,
   UsersIcon,
 } from "lucide-react";
-import { useContext, useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 
 import { useAtomCommand } from "~/state/use-atom-command";
 import { pullRequestEnvironment } from "~/state/pullRequests";
@@ -40,10 +39,7 @@ import {
   pullRequestReviewOutcomeLabel,
   pullRequestReviewOutcomeRingClassName,
   pullRequestReviewOutcomeStaleLabel,
-  resolvePullRequestState,
 } from "./pullRequestPresentation";
-import { GithubReferenceThreadContext } from "../chat/githubReferenceLinks";
-import { useOpenPrLink } from "~/lib/openPullRequestLink";
 import { PullRequestLabelPicker } from "./PullRequestLabelPicker";
 import { PullRequestReviewerPicker } from "./PullRequestReviewerPicker";
 import { PullRequestActivityUnavailableState } from "./PullRequestActivityUnavailableState";
@@ -73,114 +69,6 @@ import {
 /** One reviewer, however a host happens to have cased their login this time. */
 function reviewerKey(login: string): string {
   return login.toLowerCase();
-}
-
-/**
- * Where the open layer stands in its ladder, e.g. "2 of 3", counted against the whole stack
- * rather than the rungs on screen — a layer this viewer cannot see is still a layer under them.
- * The bare size where this pull request is not among the visible layers, which says how tall the
- * ladder is without claiming to know where the reader stands on it.
- */
-function stackPositionLabel(stack: PullRequestStackLadder, currentNumber: number): string | number {
-  const current = stack.entries.find((entry) => entry.number === currentNumber);
-  return current === undefined ? stack.size : `${current.position} of ${stack.size}`;
-}
-
-/**
- * The ladder a stacked pull request is one rung of, drawn top of the stack first the way the
- * host draws its own: each layer targets the one below it, and the whole thing lands on the
- * base branch at the foot. The layer being read is highlighted rather than linked; every other
- * layer opens the way any pull request link here does — in the app where the workspace has the
- * repository, in the browser with a modifier.
- */
-function StackLadder({
-  stack,
-  currentNumber,
-}: {
-  stack: PullRequestStackLadder;
-  currentNumber: number;
-}) {
-  const threadRef = useContext(GithubReferenceThreadContext);
-  const openPrLink = useOpenPrLink(threadRef);
-  const layers = stack.entries.toSorted((left, right) => right.position - left.position);
-  const hidden = Math.max(0, stack.size - stack.entries.length);
-  return (
-    <ol className="text-xs">
-      {layers.map((entry) => {
-        const current = entry.number === currentNumber;
-        const presentation = resolvePullRequestState({
-          state: entry.state,
-          isDraft: entry.isDraft,
-        });
-        const row = (
-          <>
-            <presentation.Icon
-              aria-hidden
-              className={cn("mt-0.5 size-4 shrink-0", presentation.toneClassName)}
-            />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-medium text-foreground">{entry.title}</span>
-              <span className="block truncate text-muted-foreground">
-                #{entry.number} · {entry.headBranch}
-              </span>
-            </span>
-            <span className={cn("shrink-0 pt-0.5", presentation.toneClassName)}>
-              {presentation.label}
-            </span>
-          </>
-        );
-        return (
-          <li key={entry.number} className="relative">
-            {/* The tick GitHub draws under each layer's glyph, in that layer's own ink, so the
-                rows read as one ladder rather than a list that happens to be sorted. */}
-            <span
-              aria-hidden
-              className={cn(
-                "absolute bottom-0 left-[15px] top-7 w-0.5 rounded-full bg-current opacity-60",
-                presentation.toneClassName,
-              )}
-            />
-            {current ? (
-              <span
-                aria-current="true"
-                className="flex items-start gap-2 rounded-md bg-muted/60 px-2 py-1.5"
-              >
-                {row}
-              </span>
-            ) : (
-              <a
-                href={entry.url}
-                rel="noreferrer noopener"
-                target="_blank"
-                onClick={(event) => openPrLink(event, entry.url)}
-                className="flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-muted/40"
-              >
-                {row}
-              </a>
-            )}
-          </li>
-        );
-      })}
-      {/* Said out loud rather than left to a count that does not add up: the host counts layers
-          it will not name to this viewer, and a ladder taller than one read keeps its far end. */}
-      {hidden > 0 ? (
-        <li className="px-2 py-1.5 text-muted-foreground">
-          {hidden === 1
-            ? "1 more layer is not shown here."
-            : `${hidden} more layers are not shown here.`}
-        </li>
-      ) : null}
-      <li className="flex items-center gap-2 px-2 py-1.5">
-        <span
-          aria-hidden
-          className="ml-1 size-2 shrink-0 rounded-full border-[1.5px] border-muted-foreground/70"
-        />
-        <code className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-muted-foreground">
-          {stack.baseBranch}
-        </code>
-      </li>
-    </ol>
-  );
 }
 
 /** The avatar carries the attribution alone; who it is arrives on hover, like the reviewer row. */
@@ -852,12 +740,6 @@ export function PullRequestSummaryTab({
           </MetaRow>
         </div>
       </section>
-
-      {detail.stackLadder === undefined ? null : (
-        <Section title="Stack" count={stackPositionLabel(detail.stackLadder, detail.number)}>
-          <StackLadder stack={detail.stackLadder} currentNumber={detail.number} />
-        </Section>
-      )}
 
       <Section title="Description">
         <div className="group">

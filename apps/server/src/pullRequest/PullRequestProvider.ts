@@ -29,7 +29,6 @@ import type {
   PullRequestReviewVerdict,
   PullRequestReviewerCandidateList,
   PullRequestReviewerKind,
-  PullRequestStackLadder,
   PullRequestLabelCandidateList,
   PullRequestState,
   PullRequestUpdateMethod,
@@ -224,8 +223,6 @@ export interface ProviderChangeRequestDetail extends ProviderChangeRequest {
   readonly behindBy?: number;
   /** Absent from a host that does not report whether it is armed to merge this on its own. */
   readonly autoMergeEnabled?: boolean;
-  /** Absent from a host with no stacked change requests, or where this one stands alone. */
-  readonly stackLadder?: PullRequestStackLadder;
   /** The strategy stored with an armed auto-merge, where the host reports it. */
   readonly autoMergeMethod?: PullRequestMergeMethod;
   /** Workflow runs on this head commit that still need a maintainer's approval. */

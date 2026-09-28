@@ -342,11 +342,6 @@ export const make = Effect.gen(function* () {
                       baseBranch: pullRequest.baseBranch,
                     })
                     .pipe(Effect.orElseSucceed(() => null)),
-                  // The stack field is in public preview, so a host that has never heard of it
-                  // refuses the query — the same nothing as a pull request that stands alone.
-                  stack: cli
-                    .getPullRequestStackLadder(input)
-                    .pipe(Effect.orElseSucceed(() => null)),
                   // A fork workflow awaiting approval is absent from the normal checks rollup.
                   workflowApprovals:
                     pullRequest.state !== "open" || pullRequest.isCrossRepository !== true
@@ -381,7 +376,7 @@ export const make = Effect.gen(function* () {
                               }),
                             ),
                 },
-                { concurrency: 4 },
+                { concurrency: 3 },
               ).pipe(Effect.map((metadata) => ({ pullRequest, ...metadata }))),
             ),
           ),
@@ -441,7 +436,6 @@ export const make = Effect.gen(function* () {
             ...(detail.comparison?.behindBy == null
               ? {}
               : { behindBy: detail.comparison.behindBy }),
-            ...(detail.stack === null ? {} : { stackLadder: detail.stack }),
           }),
         ),
       ),

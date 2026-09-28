@@ -314,7 +314,6 @@ describe("gitHubViewerPermissions", () => {
               requiresUpToDateBranch: true,
               allowedMergeMethods: null,
             }),
-          getPullRequestStackLadder: () => Effect.succeed(null),
         }),
       ),
     ),
@@ -356,7 +355,6 @@ describe("gitHubViewerPermissions", () => {
         Layer.mock(GitHubPullRequestCli.GitHubPullRequestCli)({
           getRequiredChecks: () => Effect.succeed([]),
           getBranchPolicy: () => Effect.succeed({ requiredChecks: [], allowedMergeMethods: null }),
-          getPullRequestStackLadder: () => Effect.succeed(null),
           getPullRequestDetail: () =>
             Effect.succeed({
               authorId: null,
@@ -469,7 +467,6 @@ it.effect("does not classify same-repository gates as fork workflow approvals", 
       Layer.mock(GitHubPullRequestCli.GitHubPullRequestCli)({
         getRequiredChecks: () => Effect.succeed([]),
         getBranchPolicy: () => Effect.succeed({ requiredChecks: [], allowedMergeMethods: null }),
-        getPullRequestStackLadder: () => Effect.succeed(null),
         getPullRequestDetail: () => Effect.succeed({ ...openDetail, isCrossRepository: false }),
         getPullRequestBaseComparison: () => Effect.succeed({ behindBy: 0, viewerCanUpdate: true }),
         listWorkflowRunsRequiringApproval: () =>
@@ -510,7 +507,6 @@ it.effect("keeps an unsafe workflow approval scope visible as unknown", () =>
       Layer.mock(GitHubPullRequestCli.GitHubPullRequestCli)({
         getRequiredChecks: () => Effect.succeed([]),
         getBranchPolicy: () => Effect.succeed({ requiredChecks: [], allowedMergeMethods: null }),
-        getPullRequestStackLadder: () => Effect.succeed(null),
         getPullRequestDetail: () => Effect.succeed(openDetail),
         getPullRequestBaseComparison: () => Effect.succeed({ behindBy: 0, viewerCanUpdate: true }),
         listWorkflowRunsRequiringApproval: () =>
@@ -555,7 +551,6 @@ it.effect("propagates workflow discovery rate limits", () =>
       Layer.mock(GitHubPullRequestCli.GitHubPullRequestCli)({
         getRequiredChecks: () => Effect.succeed([]),
         getBranchPolicy: () => Effect.succeed({ requiredChecks: [], allowedMergeMethods: null }),
-        getPullRequestStackLadder: () => Effect.succeed(null),
         getPullRequestDetail: () => Effect.succeed(openDetail),
         getPullRequestBaseComparison: () => Effect.succeed({ behindBy: 0, viewerCanUpdate: true }),
         listWorkflowRunsRequiringApproval: () =>
@@ -672,125 +667,6 @@ describe("getViewerPermissions", () => {
           getViewerAccess: () =>
             Effect.succeed({ canWrite: true, canTriage: true, canUpdate: true, didAuthor: false }),
         }),
-      ),
-    ),
-  );
-});
-
-describe("getChangeRequest stacks", () => {
-  const detail = {
-    authorId: null,
-    number: 58,
-    title: "Mark a cake day on the board",
-    url: "https://github.com/acme/web/pull/58",
-    author: null,
-    headRepositoryOwner: null,
-    headBranch: "t3code/mark-cake-day-on-board",
-    baseBranch: "main",
-    state: "open" as const,
-    isDraft: false,
-    mergeability: "mergeable" as const,
-    reviewDecision: null,
-    additions: 1,
-    deletions: 1,
-    createdAt: "2026-07-01T00:00:00Z",
-    updatedAt: "2026-07-02T00:00:00Z",
-    reviewRequestLogins: [],
-    hasTeamReviewRequest: false,
-    checksState: null,
-    labels: [],
-    body: "",
-    changedFiles: 1,
-    mergedAt: null,
-    closedAt: null,
-    checks: [],
-    comments: [],
-    commits: [],
-  };
-
-  const stack = {
-    baseBranch: "main",
-    size: 2,
-    entries: [
-      {
-        number: 57,
-        title: "Show when each account joined GitHub",
-        url: "https://github.com/acme/web/pull/57",
-        headBranch: "t3code/show-account-join-date",
-        state: "merged" as const,
-        isDraft: false,
-        position: 1,
-      },
-      {
-        number: 58,
-        title: "Mark a cake day on the board",
-        url: "https://github.com/acme/web/pull/58",
-        headBranch: "t3code/mark-cake-day-on-board",
-        state: "open" as const,
-        isDraft: false,
-        position: 2,
-      },
-    ],
-  };
-
-  const layerWithStack = (
-    read: Effect.Effect<typeof stack | null, GitHubPullRequestCli.GitHubPullRequestCliError>,
-  ) =>
-    Layer.mock(GitHubPullRequestCli.GitHubPullRequestCli)({
-      getPullRequestDetail: () => Effect.succeed(detail),
-      getRepositoryAccess: () =>
-        Effect.succeed({
-          canWrite: true,
-          mergeCapabilities: { merge: true, squash: true, rebase: true },
-        }),
-      getViewerAccess: () =>
-        Effect.succeed({ canWrite: true, canTriage: true, canUpdate: true, didAuthor: false }),
-      getRequiredChecks: () => Effect.succeed([]),
-      getBranchPolicy: () => Effect.succeed({ requiredChecks: [], allowedMergeMethods: null }),
-      getPullRequestStackLadder: () => read,
-    });
-
-  const readChangeRequest = Effect.gen(function* () {
-    const provider = yield* make;
-    return yield* provider.getChangeRequest({
-      cwd: "/w",
-      repository: "acme/web",
-      host: "github.com",
-      number: 58,
-    });
-  });
-
-  it.effect("carries the whole ladder through the detail", () =>
-    readChangeRequest.pipe(
-      Effect.map((changeRequest) => expect(changeRequest.stackLadder).toEqual(stack)),
-      Effect.provide(layerWithStack(Effect.succeed(stack))),
-    ),
-  );
-
-  it.effect("says nothing about a pull request that stands alone", () =>
-    readChangeRequest.pipe(
-      Effect.map((changeRequest) => expect(changeRequest.stackLadder).toBeUndefined()),
-      Effect.provide(layerWithStack(Effect.succeed(null))),
-    ),
-  );
-
-  it.effect("survives a host whose schema has never heard of stacks", () =>
-    readChangeRequest.pipe(
-      Effect.map((changeRequest) => {
-        expect(changeRequest.stackLadder).toBeUndefined();
-        expect(changeRequest.number).toBe(58);
-      }),
-      Effect.provide(
-        layerWithStack(
-          Effect.fail(
-            new GitHubPullRequestCli.GitHubPullRequestReadError({
-              command: "gh",
-              cwd: "/w",
-              operation: "getPullRequestStackLadder",
-              cause: new Error("Field 'stack' doesn't exist on type 'PullRequest'"),
-            }),
-          ),
-        ),
       ),
     ),
   );

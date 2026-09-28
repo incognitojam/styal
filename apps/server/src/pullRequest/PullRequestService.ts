@@ -1440,9 +1440,6 @@ export const make = Effect.gen(function* () {
             ...(changeRequest.autoMergeEnabled === undefined
               ? {}
               : { autoMergeEnabled: changeRequest.autoMergeEnabled }),
-            ...(changeRequest.stackLadder === undefined
-              ? {}
-              : { stackLadder: changeRequest.stackLadder }),
             ...(changeRequest.autoMergeMethod === undefined
               ? {}
               : { autoMergeMethod: changeRequest.autoMergeMethod }),
