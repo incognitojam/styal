@@ -69,8 +69,10 @@ runs:
 
     # Save before release version alignment or native builds can mutate the
     # dependency tree. A later job must restore the original Node installation.
+    # Only main saves: other branches and pull requests can restore main's
+    # entries, but an entry they save is only readable by that same ref.
     - name: Save installed dependencies
-      if: steps.dependencies.outputs.cache-hit != 'true'
+      if: steps.dependencies.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
       uses: actions/cache/save@v6
       with:
         key: ${{ steps.key.outputs.value }}
