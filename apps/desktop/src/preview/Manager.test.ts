@@ -992,6 +992,38 @@ describe("PreviewManager", () => {
     ),
   );
 
+  effectIt.effect("treats a load superseded by another navigation as a completed navigate", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const preview = makeFaviconWebContents();
+        fromId.mockReturnValue(preview.webContents);
+        yield* manager.createTab("tab_superseded_load");
+        yield* manager.registerWebview("tab_superseded_load", 42);
+        preview.loadURL.mockRejectedValueOnce(
+          Object.assign(new Error("ERR_ABORTED (-3) loading 'http://localhost:5173/'"), {
+            code: "ERR_ABORTED",
+            errno: -3,
+          }),
+        );
+        yield* manager.navigate("tab_superseded_load", "http://localhost:5173/");
+
+        preview.loadURL.mockRejectedValueOnce(
+          Object.assign(
+            new Error("ERR_CONNECTION_REFUSED (-102) loading 'http://localhost:5174/'"),
+            {
+              code: "ERR_CONNECTION_REFUSED",
+              errno: -102,
+            },
+          ),
+        );
+        const refused = yield* Effect.exit(
+          manager.navigate("tab_superseded_load", "http://localhost:5174/"),
+        );
+        expect(refused._tag).toBe("Failure");
+      }),
+    ),
+  );
+
   effectIt.effect("detaches a destroyed webview instead of navigating it", () =>
     withManager((manager) =>
       Effect.gen(function* () {

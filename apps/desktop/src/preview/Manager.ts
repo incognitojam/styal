@@ -149,6 +149,11 @@ const PICTURE_IN_PICTURE_INITIAL_HEIGHT = 320;
 const PICTURE_IN_PICTURE_MIN_WIDTH = 240;
 const PICTURE_IN_PICTURE_MIN_HEIGHT = 160;
 const PICTURE_IN_PICTURE_ASPECT_RATIO_EPSILON = 0.002;
+
+/** Electron's rejection when a load is superseded by another navigation. */
+const isAbortedNavigationError = (error: unknown): boolean =>
+  typeof error === "object" && error !== null && "code" in error && error.code === "ERR_ABORTED";
+
 const DIAGNOSTIC_BUFFER_LIMIT = 200;
 
 class PreviewCaptureTimeoutError extends Error {}
@@ -2644,8 +2649,13 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       );
       return;
     }
+    // loadURL rejects with ERR_ABORTED when the page navigates again before it finishes
+    // loading, such as a dev server reload. The newer navigation reports its own result.
     yield* attemptPromise({ operation: "navigate.loadURL", tabId, webContentsId: wc.id }, () =>
-      wc.loadURL(url),
+      wc.loadURL(url).catch((error: unknown) => {
+        if (isAbortedNavigationError(error)) return;
+        throw error;
+      }),
     );
   });
 
