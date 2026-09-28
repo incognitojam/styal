@@ -115,13 +115,26 @@ function escapeLinkLabel(value: string): string {
   return value.replace(/[[\]\\]/gu, (character) => `\\${character}`);
 }
 
-function formatFinding(finding: ReviewFinding, index: number): string {
+function findingLocationLink(finding: ReviewFinding): string {
   const location =
     finding.line === undefined ? finding.file : `${finding.file}:${finding.line.toString()}`;
   const href =
     finding.line === undefined ? finding.file : `${finding.file}#L${finding.line.toString()}`;
+  return `[${escapeLinkLabel(location)}](<${href}>)`;
+}
+
+function findingTitle(finding: ReviewFinding, index: number): string {
+  const title = finding.shortSummary ?? finding.summary;
+  return `**${(index + 1).toString()}. ${title.replace(/\s+/gu, " ")}**`;
+}
+
+function formatFindingSummary(finding: ReviewFinding, index: number): string {
+  return `${findingTitle(finding, index)} · ${findingLocationLink(finding)}`;
+}
+
+function formatFindingDetails(finding: ReviewFinding, index: number): string {
   const meta = [
-    `[${escapeLinkLabel(location)}](<${href}>)`,
+    findingLocationLink(finding),
     finding.category,
     finding.verdict,
     finding.outcome ? OUTCOME_LABELS[finding.outcome] : undefined,
@@ -129,8 +142,7 @@ function formatFinding(finding: ReviewFinding, index: number): string {
     .filter((value): value is string => value !== undefined)
     .join(" · ");
 
-  const title = finding.shortSummary ?? finding.summary;
-  const blocks = [`**${(index + 1).toString()}. ${title.replace(/\s+/gu, " ")}**`, meta];
+  const blocks = [findingTitle(finding, index), meta];
   if (finding.shortSummary) {
     blocks.push(finding.summary);
   }
@@ -141,12 +153,17 @@ function formatFinding(finding: ReviewFinding, index: number): string {
 }
 
 /**
- * The findings in reported order (most severe first), each as top-level
- * paragraphs under a bold numbered title. A list item holding several
+ * The findings in reported order (most severe first). Collapsed, each is one
+ * paragraph: a bold numbered title and its location. With details, each is a
+ * title followed by top-level paragraphs; a list item holding several
  * paragraphs would be simpler, but mobile's native markdown text runs them
  * together. Locations are relative links with `#L` anchors, which both
  * clients' markdown renderers resolve against the thread's workspace.
  */
-export function formatReviewFindingsMarkdown(report: ReviewFindingsReport): string {
-  return report.findings.map(formatFinding).join("\n\n");
+export function formatReviewFindingsMarkdown(
+  report: ReviewFindingsReport,
+  options: { readonly details: boolean },
+): string {
+  const format = options.details ? formatFindingDetails : formatFindingSummary;
+  return report.findings.map(format).join("\n\n");
 }

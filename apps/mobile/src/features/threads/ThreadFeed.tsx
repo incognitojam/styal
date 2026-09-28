@@ -803,12 +803,17 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
 
 const ReviewFindingsCard = memo(function ReviewFindingsCard(props: {
   readonly report: ReviewFindingsReport;
+  readonly expanded: boolean;
+  readonly onToggle: () => void;
   readonly markdownStyles: MarkdownStyleSet;
   readonly linkHandlers: MarkdownLinkHandlers;
   readonly renderImage: MarkdownImageRenderer;
   readonly iconSubtleColor: string | import("react-native").ColorValue;
 }) {
-  const markdown = useMemo(() => formatReviewFindingsMarkdown(props.report), [props.report]);
+  const markdown = useMemo(
+    () => formatReviewFindingsMarkdown(props.report, { details: props.expanded }),
+    [props.report, props.expanded],
+  );
   return (
     <View className="mb-3 px-1">
       <View className="gap-2 rounded-xl border border-adaptive-neutral-200-a80-white-a8 bg-card px-3 py-2.5">
@@ -819,9 +824,21 @@ const ReviewFindingsCard = memo(function ReviewFindingsCard(props: {
             tintColor={props.iconSubtleColor}
             type="monochrome"
           />
-          <Text className="font-t3-medium text-sm text-foreground">
+          <Text className="flex-1 font-t3-medium text-sm text-foreground">
             {reviewFindingsHeading(props.report)}
           </Text>
+          {markdown ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: props.expanded }}
+              hitSlop={8}
+              onPress={props.onToggle}
+            >
+              <Text className="font-t3-medium text-xs text-foreground-muted">
+                {props.expanded ? "Hide details" : "Show details"}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
         {markdown ? (
           <AssistantMarkdownContent
@@ -1461,6 +1478,8 @@ function renderFeedEntry(
     return (
       <ReviewFindingsCard
         report={entry.report}
+        expanded={entry.expanded}
+        onToggle={() => props.onToggleWorkGroup(entry.id, entry.id)}
         markdownStyles={markdownStyles.assistant}
         linkHandlers={props.markdownLinkHandlers}
         renderImage={props.renderMarkdownImage}

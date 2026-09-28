@@ -62,7 +62,7 @@ describe("formatReviewFindingsMarkdown", () => {
         { file: "README.md", summary: "Stale `setup` step." },
       ],
     })!;
-    expect(formatReviewFindingsMarkdown(report)).toBe(
+    expect(formatReviewFindingsMarkdown(report, { details: true })).toBe(
       [
         "**1. Log row written too late**",
         "",
@@ -77,6 +77,18 @@ describe("formatReviewFindingsMarkdown", () => {
         "",
         "[README.md](<README.md>)",
       ].join("\n"),
+    );
+  });
+
+  it("lists one title and location per finding when collapsed", () => {
+    const report = readReviewFindingsReport({
+      findings: [
+        { file: "src/a.ts", line: 3, summary: "Off by one", failure_scenario: "Loop skips" },
+        { file: "README.md", summary: "Stale step", short_summary: "Stale" },
+      ],
+    })!;
+    expect(formatReviewFindingsMarkdown(report, { details: false })).toBe(
+      "**1. Off by one** · [src/a.ts:3](<src/a.ts#L3>)\n\n**2. Stale** · [README.md](<README.md>)",
     );
   });
 });

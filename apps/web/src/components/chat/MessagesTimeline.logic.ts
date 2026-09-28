@@ -440,6 +440,10 @@ export type MessagesTimelineRow =
       id: string;
       createdAt: string;
       report: ReviewFindingsReport;
+      /** Toggling flips membership in the work-group expansion set. */
+      groupId: string;
+      /** Open by default while the report belongs to the latest turn. */
+      expanded: boolean;
     }
   | {
       kind: "working";
@@ -1213,12 +1217,17 @@ export function deriveMessagesTimelineRows(input: {
 
     const reviewFindings =
       timelineEntry.kind === "work" ? workEntryReviewFindings(timelineEntry.entry) : undefined;
-    if (reviewFindings) {
+    if (reviewFindings && timelineEntry.kind === "work") {
+      const groupId = `review-findings:${timelineEntry.id}`;
+      const inLatestTurn =
+        input.latestTurn != null && timelineEntry.entry.turnId === input.latestTurn.turnId;
       nextRows.push({
         kind: "review-findings",
         id: timelineEntry.id,
         createdAt: timelineEntry.createdAt,
         report: reviewFindings,
+        groupId,
+        expanded: inLatestTurn !== (input.expandedWorkGroupIds?.has(groupId) ?? false),
       });
       continue;
     }
@@ -1566,8 +1575,10 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
     case "proposed-plan":
       return a.proposedPlan === (b as typeof a).proposedPlan;
 
-    case "review-findings":
-      return Equal.equals(a.report, (b as typeof a).report);
+    case "review-findings": {
+      const br = b as typeof a;
+      return a.expanded === br.expanded && Equal.equals(a.report, br.report);
+    }
 
     case "work": {
       const bw = b as typeof a;

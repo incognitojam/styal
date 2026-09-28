@@ -279,6 +279,11 @@ export type ThreadFeedEntry =
       readonly createdAt: string;
       readonly turnId: TurnId | null;
       readonly report: ReviewFindingsReport;
+      /**
+       * Open by default while the report belongs to the latest turn; toggling
+       * flips its id's membership in the work-group expansion set.
+       */
+      readonly expanded: boolean;
     };
 
 export interface AgentSpawnSummary {
@@ -2045,6 +2050,7 @@ export function deriveThreadFeedPresentation(
         unsettledTurnId,
         isWorking,
         isActiveTailGroup,
+        latestTurn?.turnId ?? null,
       );
     }
   }
@@ -2091,6 +2097,7 @@ function appendPresentedFeedEntry(
   unsettledTurnId: TurnId | null,
   isWorking: boolean,
   activeTail: boolean,
+  latestTurnId: TurnId | null,
 ): void {
   if (entry.type !== "activity-group") {
     result.push(entry);
@@ -2108,6 +2115,7 @@ function appendPresentedFeedEntry(
       createdAt: entry.createdAt,
       turnId: entry.turnId,
       report,
+      expanded: (entry.turnId === latestTurnId) !== expandedWorkGroupIds.has(entry.id),
     });
     return;
   }

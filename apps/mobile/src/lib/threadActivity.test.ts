@@ -2389,7 +2389,23 @@ describe("buildThreadFeed", () => {
     expect(rows[1]).toMatchObject({
       id: "accepted",
       report: { findings: [{ file: "src/a.ts", line: 3, summary: "Off by one" }] },
+      expanded: true,
     });
+    // Toggling collapses the latest report; once a newer turn exists it
+    // starts collapsed and toggling opens it.
+    const toggled = new Set(["accepted"]);
+    const findingsOf = (entries: ReadonlyArray<ThreadFeedEntry>) =>
+      entries.find((entry) => entry.type === "review-findings");
+    expect(
+      findingsOf(deriveThreadFeedPresentation(feed, thread.latestTurn, new Set(), toggled)),
+    ).toMatchObject({ expanded: false });
+    const laterTurn = { ...thread.latestTurn!, turnId: TurnId.make("turn-2") };
+    expect(findingsOf(deriveThreadFeedPresentation(feed, laterTurn, new Set()))).toMatchObject({
+      expanded: false,
+    });
+    expect(
+      findingsOf(deriveThreadFeedPresentation(feed, laterTurn, new Set(), toggled)),
+    ).toMatchObject({ expanded: true });
     // The rejected attempt was retried, so it is gone even from the unfolded turn.
     const unfolded = deriveThreadFeedPresentation(feed, thread.latestTurn, new Set([turnId]));
     expect(JSON.stringify(unfolded)).not.toContain("rejected");
