@@ -2934,19 +2934,13 @@ export default function ChatView(props: ChatViewProps) {
     activePendingUserInput: activePendingUserInput?.requestId ?? null,
     threadError,
   });
-  const optimisticCompactionMessage = optimisticUserMessages.at(-1);
   const pendingCompactionMessage =
-    isSendBusy &&
-    optimisticCompactionMessage !== undefined &&
-    isCompactCommandMessage(optimisticCompactionMessage)
-      ? optimisticCompactionMessage
-      : activeThread?.messages.findLast(isCompactCommandMessage);
+    isSendBusy && optimisticUserMessages.length > 0
+      ? optimisticUserMessages.at(-1)
+      : activeThread?.messages.findLast((message) => message.role === "user");
+  // A provider restart can lose the request's turn linkage and change its timestamp.
   const compactRequestIsActive =
-    pendingCompactionMessage !== undefined &&
-    (pendingCompactionMessage.createdAt >
-      (activeLatestTurn?.requestedAt ?? pendingCompactionMessage.createdAt) ||
-      (activeLatestTurn?.state === "running" &&
-        pendingCompactionMessage.createdAt === activeLatestTurn.requestedAt));
+    pendingCompactionMessage !== undefined && isCompactCommandMessage(pendingCompactionMessage);
   const compactionSettled =
     pendingCompactionMessage !== undefined &&
     (latestTurnStartFailureId(activeThread, pendingCompactionMessage.id) !== null ||

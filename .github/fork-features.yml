@@ -1549,12 +1549,18 @@ features:
     invariants:
       - A cleared Claude transient status keeps an active turn running but returns an idle session to ready after manual context compaction completes.
       - Requesting and compacting states retain their existing presentation, and a delayed provider status cannot leave a completed thread falsely Working.
+      - Web and mobile recognize an unsettled manual compaction across provider restarts without requiring matching message and turn timestamps; a newer user prompt or matching result clears the compaction label.
     implementation_paths:
       - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/web/src/components/ChatView.tsx
+      - apps/mobile/src/state/use-thread-composer-state.ts
+      - apps/mobile/src/features/threads/ThreadFeed.tsx
+      - apps/mobile/src/lib/threadActivity.ts
     upstream_paths:
       - apps/server/src/provider/Layers/ClaudeAdapter.ts
     tests:
       - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
+      - apps/mobile/src/lib/threadActivity.test.ts
     upstream:
       status: unassessed
       tracking: []
