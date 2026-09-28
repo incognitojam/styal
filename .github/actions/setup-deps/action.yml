@@ -63,7 +63,9 @@ runs:
             args+=("--filter=$filter")
           fi
         done <<< "$INSTALL_FILTERS"
-        vp install --frozen-lockfile "${args[@]}"
+        # pnpm-workspace.yaml also installs Linux and x64 native packages so a
+        # Windows checkout can run the WSL backend. CI installs only the host's.
+        vp install --frozen-lockfile "${args[@]}" -- --os=current --cpu=current --libc=current
 
     # Save before release version alignment or native builds can mutate the
     # dependency tree. A later job must restore the original Node installation.
