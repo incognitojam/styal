@@ -70,6 +70,7 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Equal from "effect/Equal";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
@@ -368,6 +369,9 @@ interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
   readonly setModel: (model?: string) => Promise<void>;
   readonly setPermissionMode: (mode: PermissionMode) => Promise<void>;
   readonly setMaxThinkingTokens: (maxThinkingTokens: number | null) => Promise<void>;
+  readonly applyFlagSettings: (settings: {
+    readonly effortLevel: ClaudeSdkEffort;
+  }) => Promise<void>;
   readonly close: () => void;
 }
 
@@ -437,6 +441,39 @@ function getEffectiveClaudeAgentEffort(
 ): ClaudeSdkEffort | null {
   const normalized = normalizeClaudeCatalogEffort(catalog, effort, model);
   return normalized ? (normalized as ClaudeSdkEffort) : null;
+}
+
+/**
+ * Whether a running session can move from `previous` to `next` by applying a
+ * new API effort level live. Ultracode is a session setting and some models
+ * send no API effort, so those, and any other option or model change, restart.
+ */
+function canApplyClaudeModelSelectionInSession(
+  catalog: ClaudeModelCatalog,
+  previous: ModelSelection,
+  next: ModelSelection,
+): boolean {
+  const withoutEffort = (selection: ModelSelection) =>
+    selection.options?.filter((option) => option.id !== "effort") ?? [];
+  if (
+    previous.instanceId !== next.instanceId ||
+    previous.model !== next.model ||
+    !Equal.equals(withoutEffort(previous), withoutEffort(next))
+  ) {
+    return false;
+  }
+  const isLiveEffort = (selection: ModelSelection) => {
+    const effort = resolveClaudeCatalogEffort(
+      catalog,
+      selection.model,
+      getModelSelectionStringOptionValue(selection, "effort"),
+    );
+    return (
+      !isClaudeCatalogUltracodeEffort(effort) &&
+      getEffectiveClaudeAgentEffort(catalog, effort ?? null, selection.model) !== null
+    );
+  };
+  return isLiveEffort(previous) && isLiveEffort(next);
 }
 
 function isClaudeInterruptedMessage(message: string): boolean {
@@ -5051,9 +5088,23 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         modelSelection.model,
         getModelSelectionStringOptionValue(modelSelection, "effort"),
       );
-      context.currentEffort =
+      const effectiveEffort =
         getEffectiveClaudeAgentEffort(modelCatalog, turnEffort ?? null, modelSelection.model) ??
         undefined;
+      // Changes that cannot apply live restart the session before this turn
+      // (canApplyClaudeModelSelectionInSession), so a differing effort here
+      // switches the running session without discarding its prompt cache.
+      if (
+        effectiveEffort !== undefined &&
+        context.currentEffort !== undefined &&
+        effectiveEffort !== context.currentEffort
+      ) {
+        yield* Effect.tryPromise({
+          try: () => context.query.applyFlagSettings({ effortLevel: effectiveEffort }),
+          catch: (cause) => toRequestError(input.threadId, "turn/applyFlagSettings", cause),
+        });
+      }
+      context.currentEffort = effectiveEffort;
     }
 
     // Apply interaction mode by switching the SDK's permission mode.
@@ -5267,6 +5318,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     provider: PROVIDER,
     capabilities: {
       sessionModelSwitch: "in-session",
+      canApplyModelSelectionInSession: (previous, next) =>
+        modelCatalogEffect.pipe(
+          Effect.map((catalog) => canApplyClaudeModelSelectionInSession(catalog, previous, next)),
+        ),
     },
     compaction: { type: "slash-command", command: "/compact" },
     startSession,

@@ -72,6 +72,7 @@ class FakeClaudeQuery implements AsyncIterable<SDKMessage> {
   public readonly setModelCalls: Array<string | undefined> = [];
   public readonly setPermissionModeCalls: Array<string> = [];
   public readonly setMaxThinkingTokensCalls: Array<number | null> = [];
+  public readonly applyFlagSettingsCalls: Array<Record<string, unknown>> = [];
   public closeCalls = 0;
   public closeError: unknown | undefined;
 
@@ -119,6 +120,10 @@ class FakeClaudeQuery implements AsyncIterable<SDKMessage> {
 
   readonly setMaxThinkingTokens = async (maxThinkingTokens: number | null): Promise<void> => {
     this.setMaxThinkingTokensCalls.push(maxThinkingTokens);
+  };
+
+  readonly applyFlagSettings = async (settings: Record<string, unknown>): Promise<void> => {
+    this.applyFlagSettingsCalls.push(settings);
   };
 
   readonly close = (): void => {
@@ -7247,6 +7252,95 @@ describe("ClaudeAdapterLive", () => {
         `${SYNTHETIC_CLAUDE_CAPABLE_MODEL}[expanded]`,
         SYNTHETIC_CLAUDE_CAPABLE_MODEL,
       ]);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("applies a changed effort to the running session without a new query", () => {
+    const harness = makeHarness();
+    const selection = (effort: string) =>
+      createModelSelection(ProviderInstanceId.make("claudeAgent"), SYNTHETIC_CLAUDE_CAPABLE_MODEL, [
+        { id: "effort", value: effort },
+      ]);
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        modelSelection: selection("low"),
+        runtimeMode: "full-access",
+      });
+      const startQuery = harness.getLastCreateQueryInput();
+      assert.equal(startQuery?.options.effort, "low");
+
+      for (const [input, effort] of [
+        ["same effort", "low"],
+        ["raise effort", "max"],
+        ["keep raised effort", "max"],
+      ] as const) {
+        yield* adapter.sendTurn({
+          threadId: session.threadId,
+          input,
+          modelSelection: selection(effort),
+          attachments: [],
+        });
+      }
+
+      assert.deepEqual(harness.query.applyFlagSettingsCalls, [{ effortLevel: "max" }]);
+      assert.equal(harness.getLastCreateQueryInput(), startQuery);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("only lets effort changes apply to a running session", () => {
+    const harness = makeHarness();
+    const instanceId = ProviderInstanceId.make("claudeAgent");
+    const selection = (
+      model: string,
+      options: ReadonlyArray<{ readonly id: string; readonly value: string | boolean }>,
+    ) => createModelSelection(instanceId, model, options);
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const canApply = adapter.capabilities.canApplyModelSelectionInSession;
+      assert.isDefined(canApply);
+      const low = selection(SYNTHETIC_CLAUDE_CAPABLE_MODEL, [{ id: "effort", value: "low" }]);
+
+      // Plain effort changes, including falling back to the model's default level.
+      assert.isTrue(
+        yield* canApply(
+          low,
+          selection(SYNTHETIC_CLAUDE_CAPABLE_MODEL, [{ id: "effort", value: "max" }]),
+        ),
+      );
+      assert.isTrue(yield* canApply(low, selection(SYNTHETIC_CLAUDE_CAPABLE_MODEL, [])));
+      // Prompt-injected levels run at the default API effort and add their keyword per turn.
+      assert.isTrue(
+        yield* canApply(
+          low,
+          selection(SYNTHETIC_CLAUDE_CAPABLE_MODEL, [{ id: "effort", value: "ultrathink" }]),
+        ),
+      );
+      // Other option and model changes still restart.
+      assert.isFalse(
+        yield* canApply(
+          low,
+          selection(SYNTHETIC_CLAUDE_CAPABLE_MODEL, [
+            { id: "effort", value: "max" },
+            { id: "fastMode", value: true },
+          ]),
+        ),
+      );
+      assert.isFalse(
+        yield* canApply(
+          low,
+          selection(SYNTHETIC_CLAUDE_STANDARD_MODEL, [{ id: "effort", value: "low" }]),
+        ),
+      );
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

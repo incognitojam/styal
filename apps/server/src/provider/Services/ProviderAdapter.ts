@@ -9,6 +9,7 @@
  */
 import type {
   ApprovalRequestId,
+  ModelSelection,
   ProviderApprovalDecision,
   ProviderDriverKind,
   ProviderUserInputAnswers,
@@ -57,6 +58,12 @@ export interface ProviderAdapterCapabilities {
   readonly promptlessTurnContinuation?: boolean;
   /** False when native conversation history cannot be rewound. */
   readonly supportsConversationRollback?: boolean;
+  /** True when a live session can switch from `previous` to `next` on its next
+      turn without restarting. Omitted means a changed selection restarts. */
+  readonly canApplyModelSelectionInSession?: (
+    previous: ModelSelection,
+    next: ModelSelection,
+  ) => Effect.Effect<boolean>;
 }
 
 export interface ProviderThreadTurnSnapshot {

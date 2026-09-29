@@ -193,6 +193,29 @@ features:
         - https://github.com/pingdotgg/t3code/pull/13789
       retire_when: Upstream keeps a background task's ending with the tool call or run that started it on web and mobile, so late endings no longer land in a later turn.
 
+  - id: claude-live-effort-change
+    title: Apply Claude effort changes without restarting the session
+    status: maintained
+    prs: []
+    invariants:
+      - Changing only the effort level between turns on a live Claude thread applies the new level to the running Claude Code session, so its background tasks keep running and the next turn uses the new effort.
+      - Ultracode, levels that resolve to no API effort, and any other model or option change still restart the session.
+    implementation_paths:
+      - apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
+      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/server/src/provider/Services/ProviderAdapter.ts
+    upstream_paths:
+      - apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
+      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/server/src/provider/Services/ProviderAdapter.ts
+    tests:
+      - apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts
+      - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream applies Claude effort changes to a live session instead of restarting it.
+
   - id: claude-model-manifest-policy
     title: Source Claude models from the styal manifest
     status: maintained
