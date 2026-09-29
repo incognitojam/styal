@@ -3,6 +3,7 @@ import { closestCenter, type CollisionDetection } from "@dnd-kit/core";
 import { verticalListSortingStrategy, type SortingStrategy } from "@dnd-kit/sortable";
 import {
   createSidebarCollisionDetection,
+  createSidebarProjectCollisionDetection,
   createSidebarSortingStrategy,
   restrictBelowSidebarLabel,
 } from "./Sidebar.drag";
@@ -38,9 +39,11 @@ function layout(
     const height =
       item.kind === "thread"
         ? (item.section === "pinned" || item.section === "active" ? cardHeight : 36) * scale
-        : item.marker === "pinned-header" || item.marker === "pinned-divider"
-          ? 0
-          : (item.marker.endsWith("placeholder") ? 0 : 32) * scale;
+        : item.kind === "project-header"
+          ? 24 * scale
+          : item.marker === "pinned-header" || item.marker === "pinned-divider"
+            ? 0
+            : (item.marker.endsWith("placeholder") ? 0 : 32) * scale;
     const rect = { top, height, bottom: top + height, left: 0, right: 260, width: 260 };
     top += height + 1;
     return rect;
@@ -249,6 +252,113 @@ describe("sidebar collision detection", () => {
       })[0]?.id,
     ).toBe(sidebarMarkerId("settled-placeholder"));
     expect(isValid.mock.calls).toEqual([["blocked"], [sidebarMarkerId("settled-placeholder")]]);
+  });
+});
+
+describe("sidebar collision detection with drag labels", () => {
+  // At rest the labels take no space; while dragging, each opens 24px and
+  // pushes every row below it down.
+  const items = [
+    pinnedHeader,
+    divider,
+    thread("a1", "active"),
+    thread("a2", "active"),
+    thread("a3", "active"),
+    settledHeader,
+  ];
+  function args(visualTop: number) {
+    const { rects, activeIndex } = layout(items, "a3", "a1", 1, 60);
+    const labelNode = (top: number) => ({
+      querySelector: () => ({ getBoundingClientRect: () => ({ top, bottom: top + 16 }) }),
+    });
+    const collisionRect = { ...rects[activeIndex]!, top: visualTop, bottom: visualTop + 60 };
+    return {
+      active: {
+        id: "a3",
+        data: { current: {} },
+        rect: { current: { initial: rects[activeIndex]!, translated: collisionRect } },
+      },
+      collisionRect,
+      droppableRects: new Map(items.map((item, index) => [sidebarListItemId(item), rects[index]!])),
+      droppableContainers: items.map((item, index) => ({
+        id: sidebarListItemId(item),
+        key: sidebarListItemId(item),
+        disabled: false,
+        data: { current: {} },
+        node: {
+          current:
+            item.kind === "marker" && item.marker === "pinned-header"
+              ? labelNode(104)
+              : item.kind === "marker" && item.marker === "pinned-divider"
+                ? labelNode(128)
+                : null,
+        },
+        rect: { current: rects[index]! },
+      })),
+      pointerCoordinates: null,
+    } as unknown as Parameters<CollisionDetection>[0];
+  }
+
+  it("targets the row drawn under the lifted card, not the one at that rest position", () => {
+    const rest = layout(items, "a3", "a1", 1, 60).rects;
+    // a1 is drawn 48px below its rest position while both labels are open.
+    const a1Visual = rest[2]!.top + 48;
+    const withLabels = createSidebarCollisionDetection(() => true, { labelHeight: 24 });
+    expect(withLabels(args(a1Visual))[0]?.id).toBe("a1");
+    const withoutCorrection = createSidebarCollisionDetection(() => true);
+    expect(withoutCorrection(args(a1Visual))[0]?.id).toBe("a2");
+  });
+});
+
+describe("project header collision detection", () => {
+  const row = (key: string, group: string): SidebarListItem => ({
+    kind: "thread",
+    key,
+    section: "active",
+    group,
+  });
+  const header = (group: string): SidebarListItem => ({ kind: "project-header", group });
+  const items = [
+    pinnedHeader,
+    divider,
+    header("A"),
+    row("a1", "A"),
+    row("a2", "A"),
+    header("B"),
+    row("b1", "B"),
+    header("C"),
+    row("c1", "C"),
+    settledHeader,
+  ];
+  // Rows are 60px, headers 24px, with a 1px gap; markers take no space.
+  const { rects } = layout(items, "a1", "a1", 1, 60);
+  const rectOf = (id: string) => rects[items.findIndex((item) => sidebarListItemId(item) === id)]!;
+  const target = (group: string, centerY: number) => {
+    const header = rectOf(sidebarListItemId({ kind: "project-header", group }));
+    const collisionRect = { ...header, top: centerY - 12, bottom: centerY + 12 };
+    const detector = createSidebarProjectCollisionDetection(items, group);
+    return detector({
+      active: { id: sidebarListItemId({ kind: "project-header", group }) },
+      collisionRect,
+      droppableRects: new Map(items.map((item, index) => [sidebarListItemId(item), rects[index]!])),
+      droppableContainers: [],
+      pointerCoordinates: null,
+    } as unknown as Parameters<CollisionDetection>[0])[0]?.id;
+  };
+  const id = (group: string) => sidebarListItemId({ kind: "project-header", group });
+
+  it("places a project dragged down past a collapsed project's drawn midpoint", () => {
+    // With A's rows collapsed, B is drawn where A's block was.
+    const aTop = rectOf(id("A")).top;
+    const bHeight = rectOf("b1").bottom - rectOf(id("B")).top;
+    expect(target("A", aTop + bHeight / 2 - 5)).toBe(id("A"));
+    expect(target("A", aTop + bHeight / 2 + 5)).toBe(id("B"));
+  });
+
+  it("places a project dragged up above another project's midpoint", () => {
+    const aMid = (rectOf(id("A")).top + rectOf("a2").bottom) / 2;
+    expect(target("C", aMid - 5)).toBe(id("A"));
+    expect(target("C", aMid + 5)).toBe(id("B"));
   });
 });
 
@@ -758,6 +868,110 @@ describe("sidebar drag projection", () => {
     );
     expect(result.get(sidebarMarkerId("snoozed-header"))).toEqual({ ...stationary, y: 83 });
     expect(result.get(sidebarMarkerId("settled-header"))?.y).toBe(46);
+  });
+});
+
+describe("project-grouped drag projection", () => {
+  const row = (key: string, group: string): SidebarListItem => ({
+    kind: "thread",
+    key,
+    section: "active",
+    group,
+  });
+  const header = (group: string): SidebarListItem => ({ kind: "project-header", group });
+  const items = [
+    pinnedHeader,
+    divider,
+    header("A"),
+    row("a1", "A"),
+    row("a2", "A"),
+    header("B"),
+    row("b1", "B"),
+    row("b2", "B"),
+    settledHeader,
+    marker("settled-placeholder"),
+  ];
+  const projectedTops = (active: string, over: string) => {
+    const strategy = createSidebarSortingStrategy({
+      items,
+      settledOrder: [],
+      settledExpanded: true,
+    });
+    const args = layout(items, active, over);
+    // The lifted row follows the pointer, so only its peers are placed.
+    return items
+      .map((item, index) => ({
+        id: sidebarListItemId(item),
+        top: args.rects[index]!.top,
+        transform: strategy({ ...args, index }),
+      }))
+      .filter(({ transform }) => transform?.scaleY !== 0)
+      .map(({ id, top, transform }) => ({ id, top: top + (transform?.y ?? 0) }))
+      .filter(({ id }) => ["a1", "a2", "b1", "b2"].includes(id) || id.includes("project-"))
+      .filter(({ id }) => id !== active)
+      .toSorted((left, right) => left.top - right.top)
+      .map(({ id }) => id);
+  };
+
+  it("reserves a two-line slot for a grouped card when pinned cards are taller", () => {
+    const withPin = [pinnedHeader, thread("p", "pinned"), divider, ...items.slice(2)];
+    const args = layout(withPin, "a2", "a1");
+    // Pinned cards are three lines; grouped active cards are two.
+    let top = 100;
+    const rects = withPin.map((item) => {
+      const height =
+        item.kind === "thread"
+          ? item.section === "pinned"
+            ? 82
+            : item.section === "active"
+              ? 60
+              : 36
+          : item.kind === "project-header"
+            ? 24
+            : item.kind === "marker" && item.marker === "settled-header"
+              ? 32
+              : 0;
+      const rect = { top, height, bottom: top + height, left: 0, right: 260, width: 260 };
+      top += height + 1;
+      return rect;
+    });
+    const strategy = createSidebarSortingStrategy({
+      items: withPin,
+      settledOrder: [],
+      settledExpanded: true,
+    });
+    const a1 = withPin.findIndex((item) => sidebarListItemId(item) === "a1");
+    // a1 moves down by exactly the lifted grouped card's slot.
+    expect(strategy({ ...args, rects, index: a1 })?.y).toBe(61);
+  });
+
+  it("keeps project order when a row is dropped above another project", () => {
+    const headerA = sidebarListItemId(header("A"));
+    const headerB = sidebarListItemId(header("B"));
+    expect(projectedTops("b2", headerA)).toEqual([headerA, "a1", "a2", headerB, "b1"]);
+  });
+
+  it("collapses a lifted project's rows and opens its slot between projects", () => {
+    const headerA = sidebarListItemId(header("A"));
+    const headerB = sidebarListItemId(header("B"));
+    // The lifted header follows the pointer; its rows stay hidden.
+    expect(projectedTops(headerA, "b2")).toEqual([headerB, "b1", "b2"]);
+    const tops = new Map(
+      items.map((item, index) => [
+        sidebarListItemId(item),
+        layout(items, headerA, "b2").rects[index]!,
+      ]),
+    );
+    const result = preview({ items, settledOrder: [], settledExpanded: true }, headerA, "b2");
+    expect(result.get("a1")?.scaleY).toBe(0);
+    // Header B moves up into A's old place.
+    expect(tops.get(headerB)!.top + result.get(headerB)!.y).toBe(tops.get(headerA)!.top);
+  });
+
+  it("keeps a row hovered over another project in its own project", () => {
+    const headerA = sidebarListItemId(header("A"));
+    const headerB = sidebarListItemId(header("B"));
+    expect(projectedTops("b2", "a2")).toEqual([headerA, "a1", "a2", headerB, "b1"]);
   });
 });
 

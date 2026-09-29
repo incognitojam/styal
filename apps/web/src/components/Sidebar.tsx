@@ -174,6 +174,8 @@ import {
   shouldClearProjectScope,
   shouldCreateNewThreadInCurrentProject,
   resolveWorkingStartedAt,
+  clusterSidebarItemsByGroup,
+  resolveSidebarProjectDrop,
   sidebarListItemId,
   sidebarMarkerId,
   sortLogicalProjectsForSidebar,
@@ -190,6 +192,7 @@ import {
 import { resolveLocalCheckoutBranchMismatch } from "./BranchToolbar.logic";
 import {
   createSidebarCollisionDetection,
+  createSidebarProjectCollisionDetection,
   createSidebarSortingStrategy,
   restrictBelowSidebarLabel,
 } from "./Sidebar.drag";
@@ -690,6 +693,50 @@ function SidebarSectionHeader(props: {
   );
 }
 
+// Heads a run of active threads from one project when the sidebar groups by
+// project. The rows below it drop their own project label. Dragging the
+// header reorders projects; its rows collapse until the drop.
+function SidebarProjectGroupHeader(props: {
+  group: string;
+  project: ProjectFaviconProject | null;
+  label: string;
+  draggable: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: sidebarListItemId({ kind: "project-header", group: props.group }),
+    disabled: { draggable: !props.draggable },
+    animateLayoutChanges: animateSidebarLayoutChanges,
+  });
+  return (
+    <li
+      ref={setNodeRef}
+      data-thread-selection-safe
+      data-testid="sidebar-project-group-header"
+      className={cn("mx-0.5 list-none pt-2", isDragging && "relative z-20")}
+      style={{
+        transform: CSS.Translate.toString(transform),
+        transition,
+        visibility: transform?.scaleY === 0 ? "hidden" : undefined,
+      }}
+    >
+      <div
+        {...attributes}
+        {...listeners}
+        className={cn(
+          "flex h-6 min-w-0 items-center gap-2 rounded-md px-[var(--sidebar-row-content-inset)] text-secondary-label text-xs font-medium outline-none",
+          props.draggable && "cursor-grab",
+          isDragging && "cursor-grabbing bg-sidebar-row-hover",
+        )}
+      >
+        {props.project ? (
+          <ProjectFavicon project={props.project} className="size-4 shrink-0" />
+        ) : null}
+        <span className="min-w-0 truncate">{props.label}</span>
+      </div>
+    </li>
+  );
+}
+
 // One unsent draft session the user has invested content in. Two lines,
 // nothing else: project name, then the typed prompt. All the draft's
 // settings (model, env mode, branch, worktree) still travel with it —
@@ -956,6 +1003,9 @@ const dropVerbBadge: Record<SidebarDropVerb, ReactNode> = {
 const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   thread: SidebarThreadSummary;
   variant: "card" | "slim";
+  // Cards under a project header: the header names the project, so the
+  // title moves up to the status line.
+  grouped: boolean;
   // Slim rows are either settled (action: un-settle) or merely quiet
   // (seen Ready threads — action: settle).
   variantAction: "settle" | "unsettle" | "unsnooze";
@@ -1729,6 +1779,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   }
 
   const diff = latestTurnDiff(thread);
+  const regeneratingTitleStatus = isRegeneratingTitle ? (
+    <span role="status" className="sr-only">
+      Regenerating title
+    </span>
+  ) : null;
 
   return (
     <li
@@ -1736,8 +1791,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       {...sortableRootProps}
       {...(fileDropHandlers ?? {})}
       className={cn(
-        // Matches the h-[4.875rem] content box; the py-0.5 padding is added on top.
-        "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_78px]",
+        // Matches the content box height; the py-0.5 padding is added on top.
+        "list-none py-0.5 [content-visibility:auto]",
+        props.grouped ? "[contain-intrinsic-size:auto_56px]" : "[contain-intrinsic-size:auto_78px]",
         sortable?.isDragging && "relative z-20",
       )}
     >
@@ -1758,13 +1814,23 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             />
           }
         >
-          <div className="relative z-10 h-[4.875rem] px-[var(--sidebar-row-content-inset)] py-[var(--sidebar-content-inset)]">
+          <div
+            className={cn(
+              "relative z-10 px-[var(--sidebar-row-content-inset)] py-[var(--sidebar-content-inset)]",
+              props.grouped ? "h-[3.5rem]" : "h-[4.875rem]",
+            )}
+          >
             <div className="flex h-5 min-w-0 items-center gap-1.5">
               {draftIndicator}
-              {props.project ? (
+              {props.grouped ? null : props.project ? (
                 <ProjectFavicon project={props.project} className="size-4 shrink-0" />
               ) : null}
-              {props.projectDisplayName ? (
+              {props.grouped ? (
+                <>
+                  {title}
+                  {regeneratingTitleStatus}
+                </>
+              ) : props.projectDisplayName ? (
                 <span
                   className={cn(
                     "min-w-0 flex-1 truncate text-secondary-label text-xs",
@@ -1905,15 +1971,18 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 </span>
               )}
             </div>
-            <div className="mt-1 flex min-w-0">
-              {title}
-              {isRegeneratingTitle ? (
-                <span role="status" className="sr-only">
-                  Regenerating title
-                </span>
-              ) : null}
-            </div>
-            <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
+            {props.grouped ? null : (
+              <div className="mt-1 flex min-w-0">
+                {title}
+                {regeneratingTitleStatus}
+              </div>
+            )}
+            <div
+              className={cn(
+                "flex min-w-0 items-center gap-1.5 text-secondary-label text-xs",
+                props.grouped ? "mt-1" : "mt-0.5",
+              )}
+            >
               {/* Always the branch. The plan step used to take this slot while
                   working, but it truncated to a half-sentence and dropped the
                   branch, so the row lost its most stable identifier. */}
@@ -2140,6 +2209,7 @@ export default function Sidebar() {
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
+  const groupThreadsByProject = useClientSettings((s) => s.sidebarThreadGrouping === "project");
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const {
@@ -2327,6 +2397,45 @@ export default function Sidebar() {
   const projectByKey = useMemo(
     () => new Map(projects.map((project) => [`${project.environmentId}:${project.id}`, project])),
     [projects],
+  );
+  // Logical project (the same grouping the project scope uses) for each
+  // physical project, when active threads are grouped under project headers.
+  const projectGroupByKey = useMemo(
+    () =>
+      new Map<string, SidebarProjectSnapshot>(
+        unsortedProjectGroups.flatMap((group) =>
+          group.memberProjects.map(
+            (project) => [`${project.environmentId}:${project.id}`, group] as const,
+          ),
+        ),
+      ),
+    [unsortedProjectGroups],
+  );
+  const projectGroupByLogicalKey = useMemo(
+    () => new Map(unsortedProjectGroups.map((group) => [group.projectKey, group])),
+    [unsortedProjectGroups],
+  );
+  // Saved project order (shared with the legacy sidebar), as logical groups.
+  // A group ranks by its earliest member.
+  const orderedProjectGroupKeys = useMemo(() => {
+    const rankByPhysicalKey = new Map(projectOrder.map((key, index) => [key, index]));
+    return unsortedProjectGroups
+      .flatMap((group) => {
+        const ranks = group.memberProjects.flatMap((member) => {
+          const rank = rankByPhysicalKey.get(member.physicalProjectKey);
+          return rank === undefined ? [] : [rank];
+        });
+        return ranks.length === 0 ? [] : [{ key: group.projectKey, rank: Math.min(...ranks) }];
+      })
+      .toSorted((left, right) => left.rank - right.rank)
+      .map(({ key }) => key);
+  }, [projectOrder, unsortedProjectGroups]);
+  const threadProjectGroup = useCallback(
+    (thread: EnvironmentThreadShell) => {
+      const physicalKey = `${thread.environmentId}:${thread.projectId}`;
+      return projectGroupByKey.get(physicalKey)?.projectKey ?? physicalKey;
+    },
+    [projectGroupByKey],
   );
   const projectDisplayNameByKey = useMemo(
     () =>
@@ -2585,6 +2694,14 @@ export default function Sidebar() {
     // web and mobile from the same data.
     const sortedPinned = sortPinnedThreadsForSidebar(pinned);
     const sortedActive = sortThreadsForSidebar(active);
+    const optimisticActive =
+      optimisticDrop?.section !== "active" || optimisticDrop.order === null
+        ? sortedActive
+        : orderItemsByPreferredIds({
+            items: sortedActive,
+            preferredIds: optimisticDrop.order,
+            getId: (thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+          });
     return {
       pinnedThreads:
         optimisticDrop?.section !== "pinned" || optimisticDrop.order === null
@@ -2596,14 +2713,11 @@ export default function Sidebar() {
             }),
       draggableThreadKeys: draggable,
       activeReorderableThreadKeys: activeReorderable,
-      activeThreads:
-        optimisticDrop?.section !== "active" || optimisticDrop.order === null
-          ? sortedActive
-          : orderItemsByPreferredIds({
-              items: sortedActive,
-              preferredIds: optimisticDrop.order,
-              getId: (thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-            }),
+      // Grouping clusters rows without changing their order within a
+      // project, so jump shortcuts and range select follow what renders.
+      activeThreads: groupThreadsByProject
+        ? clusterSidebarItemsByGroup(optimisticActive, threadProjectGroup, orderedProjectGroupKeys)
+        : optimisticActive,
       // Soonest wake first: "what comes back next" is the shelf's question.
       snoozedThreads: snoozed.toSorted(
         (left, right) =>
@@ -2613,7 +2727,17 @@ export default function Sidebar() {
       settledThreads: sortSettledThreadsForSidebar(settled),
       snoozeNow: preciseNow,
     };
-  }, [nowMinute, optimisticDrop, scopedProjectKeys, serverConfigs, snoozeWakeTick, threads]);
+  }, [
+    groupThreadsByProject,
+    nowMinute,
+    optimisticDrop,
+    orderedProjectGroupKeys,
+    scopedProjectKeys,
+    serverConfigs,
+    snoozeWakeTick,
+    threadProjectGroup,
+    threads,
+  ]);
 
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
   const [threadSearchQuery, setThreadSearchQuery] = useState("");
@@ -3122,15 +3246,21 @@ export default function Sidebar() {
     readonly activeSection: SidebarSection;
     readonly occurredAt: string;
     readonly activationY: number | null;
+    /** Space each drag label opens, in screen pixels (the list can be scaled). */
+    readonly labelHeight: number;
     readonly targetSection: SidebarSection | null;
   } | null>(null);
   const dragTargetSection = dragState?.targetSection ?? null;
+  // The project group whose header is lifted. Header drags only reorder
+  // projects, so they skip the thread drag state and its section labels.
+  const [draggedProjectGroup, setDraggedProjectGroup] = useState<string | null>(null);
   const dragSensorRef = useRef<SidebarPointerSensor | null>(null);
   const finishThreadDrag = useCallback((started: boolean) => {
     dragSensorRef.current = null;
     if (started) {
       listMotionRef.current?.release();
       setDragState(null);
+      setDraggedProjectGroup(null);
     }
   }, []);
   const attachDragSensor = useCallback((sensor: SidebarPointerSensor) => {
@@ -3283,34 +3413,6 @@ export default function Sidebar() {
     [confirmAndUnpinThread],
   );
 
-  const handleThreadDragStart = useCallback(
-    (event: DragStartEvent) => {
-      const activeKey = String(event.active.id);
-      const activeSection = sectionByThreadKey.get(activeKey);
-      if (activeSection === undefined) return;
-      // Stop normal section motion before dnd-kit measures the picked-up row.
-      listMotionRef.current?.suspend();
-      const list = threadListRef.current;
-      const header = list?.querySelector<HTMLElement>('[data-testid="sidebar-pinned-header"]');
-      if (list && header) {
-        const listRect = list.getBoundingClientRect();
-        const scale = list.offsetWidth > 0 ? listRect.width / list.offsetWidth : 1;
-        dragLabelOffsetRef.current =
-          header.getBoundingClientRect().top - listRect.top + SIDEBAR_DRAG_LABEL_HEIGHT * scale;
-      } else {
-        dragLabelOffsetRef.current = 0;
-      }
-      setDragState({
-        activeKey,
-        activeSection,
-        targetSection: activeSection,
-        occurredAt: new Date().toISOString(),
-        activationY:
-          event.activatorEvent instanceof PointerEvent ? event.activatorEvent.clientY : null,
-      });
-    },
-    [sectionByThreadKey],
-  );
   // Include every visible row in the measured order. Older servers disable
   // pickup on their rows without changing where those rows render.
   const sidebarListItems = useMemo((): readonly SidebarListItem[] => {
@@ -3320,7 +3422,11 @@ export default function Sidebar() {
     ): SidebarListItem[] =>
       list.map((thread) => {
         const key = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
-        return { kind: "thread", key, section };
+        // Rows in every section carry their group, so a row dragged into the
+        // active section lands in its project's group.
+        return groupThreadsByProject
+          ? { kind: "thread", key, section, group: threadProjectGroup(thread) }
+          : { kind: "thread", key, section };
       });
     if (
       pinnedThreads.length +
@@ -3337,7 +3443,14 @@ export default function Sidebar() {
     items.push({ kind: "marker", marker: "pinned-divider" });
     const activeRows = rowsOf(activeThreads, "active");
     items.push({ kind: "marker", marker: "active-placeholder" });
-    items.push(...activeRows);
+    let activeGroup: string | undefined;
+    for (const row of activeRows) {
+      if (row.kind === "thread" && row.group !== undefined && row.group !== activeGroup) {
+        activeGroup = row.group;
+        items.push({ kind: "project-header", group: row.group });
+      }
+      items.push(row);
+    }
     if (snoozedThreads.length > 0) {
       items.push({ kind: "marker", marker: "snoozed-header" });
       items.push(...rowsOf(visibleSnoozedThreads, "snoozed"));
@@ -3349,12 +3462,54 @@ export default function Sidebar() {
     return items;
   }, [
     activeThreads,
+    groupThreadsByProject,
     pinnedThreads,
     renderedSettledThreads,
     settledThreads.length,
     snoozedThreads.length,
+    threadProjectGroup,
     visibleSnoozedThreads,
   ]);
+  const handleThreadDragStart = useCallback(
+    (event: DragStartEvent) => {
+      const activeKey = String(event.active.id);
+      const projectHeader = sidebarListItems.find(
+        (item) => item.kind === "project-header" && sidebarListItemId(item) === activeKey,
+      );
+      if (projectHeader?.kind === "project-header") {
+        listMotionRef.current?.suspend();
+        dragLabelOffsetRef.current = 0;
+        setDraggedProjectGroup(projectHeader.group);
+        return;
+      }
+      const activeSection = sectionByThreadKey.get(activeKey);
+      if (activeSection === undefined) return;
+      // Stop normal section motion before dnd-kit measures the picked-up row.
+      listMotionRef.current?.suspend();
+      const list = threadListRef.current;
+      const header = list?.querySelector<HTMLElement>('[data-testid="sidebar-pinned-header"]');
+      let labelHeight = SIDEBAR_DRAG_LABEL_HEIGHT;
+      if (list && header) {
+        const listRect = list.getBoundingClientRect();
+        const scale = list.offsetWidth > 0 ? listRect.width / list.offsetWidth : 1;
+        labelHeight = SIDEBAR_DRAG_LABEL_HEIGHT * scale;
+        dragLabelOffsetRef.current =
+          header.getBoundingClientRect().top - listRect.top + labelHeight;
+      } else {
+        dragLabelOffsetRef.current = 0;
+      }
+      setDragState({
+        activeKey,
+        activeSection,
+        targetSection: activeSection,
+        occurredAt: new Date().toISOString(),
+        activationY:
+          event.activatorEvent instanceof PointerEvent ? event.activatorEvent.clientY : null,
+        labelHeight,
+      });
+    },
+    [sectionByThreadKey, sidebarListItems],
+  );
   useEffect(() => {
     if (
       dragState !== null &&
@@ -3363,7 +3518,7 @@ export default function Sidebar() {
       cancelThreadDrag();
     }
   }, [cancelThreadDrag, dragState, sidebarListItems]);
-  const listMotionPaused = dragState !== null;
+  const listMotionPaused = dragState !== null || draggedProjectGroup !== null;
   // Every shell event rebuilds sidebarListItems, but rows only move when the
   // rendered order or a row's section changes. Keying the motion pass on that
   // keeps ordinary updates from forcing a layout read and animating rows
@@ -3371,7 +3526,13 @@ export default function Sidebar() {
   const sidebarListOrderKey = useMemo(
     () =>
       sidebarListItems
-        .map((item) => (item.kind === "thread" ? `${item.key}:${item.section}` : item.marker))
+        .map((item) =>
+          item.kind === "thread"
+            ? `${item.key}:${item.section}`
+            : item.kind === "marker"
+              ? item.marker
+              : sidebarListItemId(item),
+        )
         .join("\0"),
     [sidebarListItems],
   );
@@ -3456,7 +3617,11 @@ export default function Sidebar() {
   const draggedThreadKey = dragState?.activeKey;
   const draggedFromSection = dragState?.activeSection;
   const dragActivationY = dragState?.activationY;
+  const dragLabelHeight = dragState?.labelHeight;
   const dndCollisionDetection = useMemo(() => {
+    if (draggedProjectGroup !== null) {
+      return createSidebarProjectCollisionDetection(sidebarListItems, draggedProjectGroup);
+    }
     if (draggedThreadKey === undefined || draggedFromSection === undefined)
       return createSidebarCollisionDetection(() => true);
     const source = threadByKey.get(draggedThreadKey);
@@ -3487,6 +3652,7 @@ export default function Sidebar() {
       {
         items: sidebarListItems,
         activationY: dragActivationY ?? null,
+        labelHeight: dragLabelHeight ?? SIDEBAR_DRAG_LABEL_HEIGHT,
       },
     );
   }, [
@@ -3495,17 +3661,44 @@ export default function Sidebar() {
     serverConfigs,
     activeKeys,
     activeReorderableThreadKeys,
+    draggedProjectGroup,
     draggedThreadKey,
     draggedFromSection,
     dragActivationY,
+    dragLabelHeight,
     draggableThreadKeys,
     pinnedKeys,
     sidebarListItems,
     threadByKey,
   ]);
+  // Save the new project order: every rendered project in its dropped
+  // position, then the rest in their saved order.
+  const handleProjectHeaderDragEnd = useCallback(
+    (group: string, overId: string) => {
+      const order = resolveSidebarProjectDrop(sidebarListItems, group, overId);
+      if (order === null) return;
+      const nextOrder = new Set([
+        ...order.flatMap(
+          (key) =>
+            projectGroupByLogicalKey
+              .get(key)
+              ?.memberProjects.map((member) => member.physicalProjectKey) ?? [],
+        ),
+        ...orderedProjects.map(getProjectOrderKey),
+      ]);
+      useUiStateStore.setState({ projectOrder: [...nextOrder] });
+    },
+    [orderedProjects, projectGroupByLogicalKey, sidebarListItems],
+  );
   const handleThreadDragEnd = useCallback(
     (event: DragEndEvent) => {
       const activeKey = String(event.active.id);
+      if (draggedProjectGroup !== null) {
+        if (event.over !== null) {
+          handleProjectHeaderDragEnd(draggedProjectGroup, String(event.over.id));
+        }
+        return;
+      }
       const activeSection = sectionByThreadKey.get(activeKey);
       const target =
         event.over === null
@@ -3640,6 +3833,8 @@ export default function Sidebar() {
       activeKeys,
       activeReorderableThreadKeys,
       draggableThreadKeys,
+      draggedProjectGroup,
+      handleProjectHeaderDragEnd,
       pinThread,
       pinnedKeys,
       planForwardNavigation,
@@ -4703,6 +4898,7 @@ export default function Sidebar() {
                         // not from the sidebar second-guessing what still matters.
                         const isCard = section === "active" || section === "pinned";
                         const rowVariant = isCard ? "card" : "slim";
+                        const grouped = groupThreadsByProject && section === "active";
                         return (
                           <SidebarThreadRow
                             // Fade between card and compact rows while the outer
@@ -4710,6 +4906,7 @@ export default function Sidebar() {
                             key={`${threadKey}:${rowVariant}`}
                             thread={thread}
                             variant={rowVariant}
+                            grouped={grouped}
                             // Snoozed rows wake, settled rows un-settle, and cards settle.
                             variantAction={
                               section === "snoozed"
@@ -4830,6 +5027,23 @@ export default function Sidebar() {
                       for (const item of sidebarListItems) {
                         if (item.kind === "thread") {
                           items.push(renderThreadRow(threadByKey.get(item.key)!, item.section));
+                          continue;
+                        }
+                        if (item.kind === "project-header") {
+                          // Threads whose project record has not loaded yet
+                          // group under their physical key.
+                          const group =
+                            projectGroupByLogicalKey.get(item.group) ??
+                            projectGroupByKey.get(item.group);
+                          items.push(
+                            <SidebarProjectGroupHeader
+                              key={sidebarListItemId(item)}
+                              group={item.group}
+                              project={group ?? null}
+                              label={group?.displayName ?? "Unknown project"}
+                              draggable={optimisticDrop === null}
+                            />,
+                          );
                           continue;
                         }
                         switch (item.marker) {

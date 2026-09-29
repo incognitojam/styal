@@ -35,6 +35,7 @@ import {
   sortLogicalProjectsForSidebar,
   sortSettledThreadsForSidebar,
   resolveSidebarDropTarget,
+  resolveSidebarProjectDrop,
   pinOrderKeyBetween,
   planPinnedReorder,
   planSidebarThreadDrop,
@@ -1265,7 +1266,19 @@ describe("resolveSidebarDropTarget", () => {
 
   it("never lands in the snoozed shelf", () => {
     expect(resolve("a1", "z1")).toBeNull();
-    expect(resolve("a1", sidebarMarkerId("snoozed-header"))).toBeNull();
+  });
+
+  it("takes the last active slot when moved down onto the snoozed header", () => {
+    expect(resolve("a1", sidebarMarkerId("snoozed-header"))).toEqual({
+      section: "active",
+      pinnedOrder: ["p1", "p2"],
+      activeOrder: ["a2", "a1"],
+    });
+    expect(resolve("p1", sidebarMarkerId("snoozed-header"))).toEqual({
+      section: "active",
+      pinnedOrder: ["p2"],
+      activeOrder: ["a1", "a2", "p1"],
+    });
   });
 
   it("lands on a placeholder when the section is otherwise empty", () => {
@@ -2605,5 +2618,106 @@ describe("resolveSidebarDropVerb", () => {
     expect(resolveSidebarDropVerb("pinned", "pinned")).toBeNull();
     expect(resolveSidebarDropVerb("active", null)).toBeNull();
     expect(resolveSidebarDropVerb("active", "snoozed")).toBeNull();
+  });
+});
+
+describe("drops into project-grouped active threads", () => {
+  const row = (key: string, section: SidebarSection, group: string): SidebarListItem => ({
+    kind: "thread",
+    key,
+    section,
+    group,
+  });
+  const header = (group: string): SidebarListItem => ({ kind: "project-header", group });
+  // Pinned p1 (B) | Active: A a1 a2, B b1 b2
+  const items: readonly SidebarListItem[] = [
+    { kind: "marker", marker: "pinned-header" },
+    row("p1", "pinned", "B"),
+    { kind: "marker", marker: "pinned-divider" },
+    { kind: "marker", marker: "active-placeholder" },
+    header("A"),
+    row("a1", "active", "A"),
+    row("a2", "active", "A"),
+    header("B"),
+    row("b1", "active", "B"),
+    row("b2", "active", "B"),
+    { kind: "marker", marker: "settled-header" },
+    { kind: "marker", marker: "settled-placeholder" },
+  ];
+  const activeOrder = (activeKey: string, overId: string) =>
+    resolveSidebarDropTarget(items, activeKey, overId)?.activeOrder;
+
+  it("reorders within a project", () => {
+    expect(activeOrder("a2", "a1")).toEqual(["a2", "a1", "b1", "b2"]);
+  });
+
+  it("keeps a row dropped among another project's rows in its own project", () => {
+    expect(activeOrder("b2", "a2")).toEqual(["a1", "a2", "b2", "b1"]);
+    expect(activeOrder("p1", "a2")).toEqual(["a1", "a2", "p1", "b1", "b2"]);
+  });
+
+  it("never moves a project when a row is dropped above it", () => {
+    expect(activeOrder("b2", sidebarListItemId(header("A")))).toEqual(["a1", "a2", "b2", "b1"]);
+  });
+
+  it("plans order keys within the moved row's project", () => {
+    // Stored keys interleave the projects; the header order clusters them.
+    const activeKeysById = new Map<string, string | null>([
+      ["a1", "c"],
+      ["b1", "f"],
+      ["a2", "m"],
+      ["b2", "t"],
+    ]);
+    const target = resolveSidebarDropTarget(items, "a2", "a1")!;
+    expect(target.activeGroupOrder).toEqual(["a2", "a1"]);
+    const result = planSidebarThreadDrop({
+      activeKey: "a2",
+      activeSection: "active",
+      target,
+      pinnedOrder: ["p1"],
+      pinnedKeysById: new Map([["p1", "f"]]),
+      activeOrder: ["a1", "a2", "b1", "b2"],
+      activeKeysById,
+    });
+    if (result.kind !== "move-active") throw new Error(`unexpected ${result.kind}`);
+    expect(result.assignments).toHaveLength(1);
+    expect(result.assignments[0]!.id).toBe("a2");
+    expect(result.assignments[0]!.orderKey < "c").toBe(true);
+  });
+});
+
+describe("resolveSidebarProjectDrop", () => {
+  const row = (key: string, section: SidebarSection, group?: string): SidebarListItem =>
+    group === undefined
+      ? { kind: "thread", key, section }
+      : { kind: "thread", key, section, group };
+  const header = (group: string): SidebarListItem => ({ kind: "project-header", group });
+  const items: readonly SidebarListItem[] = [
+    { kind: "marker", marker: "pinned-header" },
+    row("p1", "pinned", "B"),
+    { kind: "marker", marker: "pinned-divider" },
+    { kind: "marker", marker: "active-placeholder" },
+    header("A"),
+    row("a1", "active", "A"),
+    header("B"),
+    row("b1", "active", "B"),
+    header("C"),
+    row("c1", "active", "C"),
+    { kind: "marker", marker: "settled-header" },
+    row("s1", "settled", "A"),
+  ];
+  const drop = (group: string, overId: string) => resolveSidebarProjectDrop(items, group, overId);
+
+  it("moves a project to the slot of the project under the pointer", () => {
+    expect(drop("A", "c1")).toEqual(["B", "C", "A"]);
+    expect(drop("C", sidebarListItemId(header("A")))).toEqual(["C", "A", "B"]);
+    expect(drop("C", "b1")).toEqual(["A", "C", "B"]);
+    expect(drop("B", sidebarMarkerId("pinned-divider"))).toEqual(["B", "A", "C"]);
+  });
+
+  it("rejects drops outside the grouped active rows", () => {
+    expect(drop("A", "p1")).toBeNull();
+    expect(drop("A", "s1")).toBeNull();
+    expect(drop("A", sidebarMarkerId("settled-header"))).toBeNull();
   });
 });

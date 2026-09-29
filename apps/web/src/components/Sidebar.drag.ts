@@ -2,6 +2,7 @@ import { closestCenter, type CollisionDetection, type Modifier } from "@dnd-kit/
 import { verticalListSortingStrategy, type SortingStrategy } from "@dnd-kit/sortable";
 import {
   resolveSidebarDropTarget,
+  resolveSidebarProjectDrop,
   sidebarListItemId,
   sidebarMarkerId,
   type SidebarListItem,
@@ -25,6 +26,43 @@ export function restrictBelowSidebarLabel(
   return transform.y < minimumY ? { ...transform, y: minimumY } : transform;
 }
 
+/** Place a lifted project header among the other projects. Its rows
+ * collapse while it is lifted, so rest rects no longer match what is drawn:
+ * compare the header's center with the other projects' midpoints as drawn
+ * without the lifted project, and name the header whose slot it takes. */
+export function createSidebarProjectCollisionDetection(
+  items: readonly SidebarListItem[],
+  activeGroup: string,
+): CollisionDetection {
+  return (args) => {
+    const blocks: { group: string; top: number; bottom: number }[] = [];
+    for (const item of items) {
+      const rect = args.droppableRects.get(sidebarListItemId(item));
+      if (!rect) continue;
+      if (item.kind === "project-header") {
+        blocks.push({ group: item.group, top: rect.top, bottom: rect.bottom });
+      } else if (item.kind === "thread" && item.section === "active") {
+        const block = blocks.at(-1);
+        if (block && item.group === block.group) block.bottom = rect.bottom;
+      }
+    }
+    const lifted = blocks.find((block) => block.group === activeGroup);
+    if (!lifted) return [];
+    // The list has a 1px gap between items.
+    const liftedHeight = lifted.bottom - lifted.top + 1;
+    const center = args.collisionRect.top + args.collisionRect.height / 2;
+    let slot = 0;
+    for (const block of blocks) {
+      if (block === lifted) continue;
+      const shift = block.top > lifted.top ? liftedHeight : 0;
+      if (center > (block.top + block.bottom) / 2 - shift) slot += 1;
+    }
+    // resolveSidebarProjectDrop moves the lifted project into the slot of
+    // the header it is dropped on.
+    return [{ id: sidebarListItemId({ kind: "project-header", group: blocks[slot]!.group }) }];
+  };
+}
+
 /** Reject the nearest unsupported target without selecting another section.
  * Recreate this detector when drop eligibility changes. */
 export function createSidebarCollisionDetection(
@@ -32,6 +70,8 @@ export function createSidebarCollisionDetection(
   options: {
     items?: readonly SidebarListItem[];
     activationY?: number | null;
+    /** Space each visible drag label opens (see the sorting strategy). */
+    labelHeight?: number;
   } = {},
 ): CollisionDetection {
   const validity = new Map<string, boolean>();
@@ -39,7 +79,32 @@ export function createSidebarCollisionDetection(
   let previousPointerY = options.activationY;
   let boundarySection: "pinned" | "active" | undefined;
   return (args) => {
-    let collisions = closestCenter(args);
+    // Droppable rects are measured at rest, but the Pinned and Active labels
+    // push every row below them down while dragging. The lifted card follows
+    // the pointer, so compare it against rest rects shifted back by the
+    // labels above it; otherwise the drop lands a slot below the gap.
+    const rect = args.collisionRect;
+    const center = rect.top + rect.height / 2;
+    let labelShift = 0;
+    for (const marker of ["pinned-header", "pinned-divider"] as const) {
+      const label = args.droppableContainers
+        .find((container) => container.id === sidebarMarkerId(marker))
+        ?.node.current?.querySelector(".sidebar-drag-boundary-label")
+        ?.getBoundingClientRect();
+      if (label && center >= label.top) labelShift += options.labelHeight ?? 0;
+    }
+    let collisions = closestCenter(
+      labelShift === 0
+        ? args
+        : {
+            ...args,
+            collisionRect: {
+              ...rect,
+              top: rect.top - labelShift,
+              bottom: rect.bottom - labelShift,
+            },
+          },
+    );
     const pointer = args.pointerCoordinates;
     const items = options.items;
     const source = items?.find((item) => item.kind === "thread" && item.key === args.active.id);
@@ -92,6 +157,10 @@ export function createSidebarCollisionDetection(
   };
 }
 
+function isGroupedCard(item: SidebarListItem): boolean {
+  return item.kind === "thread" && item.section === "active" && item.group !== undefined;
+}
+
 /** Preview the committed section layout without moving or mounting DOM nodes.
  * A zero scaleY marks rows/markers to hide while retaining their measured nodes. */
 export function createSidebarSortingStrategy(input: {
@@ -112,8 +181,50 @@ export function createSidebarSortingStrategy(input: {
   let previous: Pick<Layout, "rects" | "activeIndex" | "overIndex"> | undefined;
   let transforms: ReturnType<SortingStrategy>[] | null = [];
 
-  function project({ rects, activeIndex, overIndex }: Layout) {
+  // A lifted project header leaves its rows behind, collapsed, and opens its
+  // slot between the other projects. Everything outside the active rows
+  // keeps its place.
+  function projectHeaderDrag(
+    { rects, activeIndex, overIndex }: Layout,
+    active: Extract<SidebarListItem, { kind: "project-header" }>,
+  ) {
+    const over = items[overIndex] ?? active;
+    const order = resolveSidebarProjectDrop(items, active.group, sidebarListItemId(over));
+    if (!order || !rects[0]) return [];
+    const rowsByGroup = new Map<string, SidebarListItem[]>();
+    const before: SidebarListItem[] = [];
+    const after: SidebarListItem[] = [];
+    for (const item of items) {
+      if (item.kind === "project-header") rowsByGroup.set(item.group, []);
+      else if (item.kind === "thread" && item.section === "active" && item.group !== undefined)
+        rowsByGroup.get(item.group)?.push(item);
+      else (rowsByGroup.size === 0 ? before : after).push(item);
+    }
+    const projected = [
+      ...before,
+      ...order.flatMap((group): SidebarListItem[] => [
+        { kind: "project-header", group },
+        ...(group === active.group ? [] : (rowsByGroup.get(group) ?? [])),
+      ]),
+      ...after,
+    ];
+    const result = items.map(() => hidden);
+    let top = rects[0].top;
+    for (const item of projected) {
+      const index = indices.get(sidebarListItemId(item));
+      const rect = index === undefined ? undefined : rects[index];
+      if (index === undefined || !rect) continue;
+      result[index] = { ...stationary, y: top - rect.top };
+      top += rect.height + 1;
+    }
+    result[activeIndex] = stationary;
+    return result;
+  }
+
+  function project(layout: Layout) {
+    const { rects, activeIndex, overIndex } = layout;
     const active = items[activeIndex];
+    if (active?.kind === "project-header") return projectHeaderDrag(layout, active);
     const over = items[overIndex] ?? active;
     if (active?.kind !== "thread" || !over || !rects[0]) return [];
     const target = resolveSidebarDropTarget(items, active.key, sidebarListItemId(over));
@@ -125,9 +236,12 @@ export function createSidebarSortingStrategy(input: {
       settled: [],
     };
     let cardHeight = input.cardHeight;
+    // Active cards under a project header are two lines instead of three.
+    let groupedCardHeight: number | undefined;
     let slimHeight = input.slimHeight;
     let headerScale: number | undefined;
     for (const [index, item] of items.entries()) {
+      if (item.kind === "project-header") continue;
       if (item.kind === "marker") {
         if (item.marker === "settled-header" || item.marker === "snoozed-header") {
           const height = rects[index]?.height;
@@ -135,7 +249,8 @@ export function createSidebarSortingStrategy(input: {
         }
         continue;
       }
-      if (item.section === "pinned" || item.section === "active")
+      if (isGroupedCard(item)) groupedCardHeight ??= rects[index]?.height;
+      else if (item.section === "pinned" || item.section === "active")
         cardHeight ??= rects[index]?.height;
       else slimHeight ??= rects[index]?.height;
       if (item.key !== active.key) groups[item.section].push(item);
@@ -144,6 +259,7 @@ export function createSidebarSortingStrategy(input: {
     const scale =
       slimHeight !== undefined ? slimHeight / 36 : (headerScale ?? (cardHeight ?? 82) / 82);
     cardHeight ??= 82 * scale;
+    groupedCardHeight ??= 60 * scale;
     slimHeight ??= 36 * scale;
     const labelHeight = (input.boundaryLabelHeight ?? 0) * scale;
     const group = groups[target.section];
@@ -172,9 +288,29 @@ export function createSidebarSortingStrategy(input: {
     groups.settled = visible.map((key) => ({ kind: "thread", key, section: "settled" }));
     const projected: SidebarListItem[] = [];
     const marker = (name: SidebarListMarker) => projected.push({ kind: "marker", marker: name });
+    // Grouped active rows follow the clustered drop order. Headers only exist
+    // for groups that had rows at pickup: a row moving into a new group gets
+    // its header once the drop lands.
+    const withProjectHeaders = (rows: readonly ThreadItem[]) => {
+      const activeRanks = new Map(target.activeOrder.map((key, index) => [key, index]));
+      const rank = (row: ThreadItem) => activeRanks.get(row.key) ?? Number.POSITIVE_INFINITY;
+      const result: SidebarListItem[] = [];
+      let group: string | undefined;
+      for (const row of rows.toSorted((left, right) => rank(left) - rank(right))) {
+        if (row.group !== undefined && row.group !== group) {
+          const header: SidebarListItem = { kind: "project-header", group: row.group };
+          if (indices.has(sidebarListItemId(header))) result.push(header);
+        }
+        group = row.group;
+        result.push(row);
+      }
+      return result;
+    };
     const section = (name: "active" | "settled") => {
-      if (groups[name].length > 0) projected.push(...groups[name]);
-      else marker(`${name}-placeholder`);
+      if (groups[name].length === 0) marker(`${name}-placeholder`);
+      else if (name === "active" && target.activeGroupOrder !== undefined)
+        projected.push(...withProjectHeaders(groups.active));
+      else projected.push(...groups[name]);
     };
     marker("pinned-header");
     projected.push(...groups.pinned);
@@ -196,8 +332,9 @@ export function createSidebarSortingStrategy(input: {
       const index = indices.get(sidebarListItemId(item));
       const rect = index === undefined ? undefined : rects[index];
       if (index !== undefined && rect) result[index] = { ...stationary, y: top - rect.top };
-      const fallback =
-        item.kind === "thread" && (item.section === "pinned" || item.section === "active")
+      const fallback = isGroupedCard(item)
+        ? groupedCardHeight
+        : item.kind === "thread" && (item.section === "pinned" || item.section === "active")
           ? cardHeight
           : slimHeight;
       const moved = item.kind === "thread" && item.key === active.key;

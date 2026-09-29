@@ -115,11 +115,49 @@ export function sidebarMarkerId(marker: SidebarListMarker): string {
 }
 
 export type SidebarListItem =
-  | { readonly kind: "thread"; readonly key: string; readonly section: SidebarSection }
-  | { readonly kind: "marker"; readonly marker: SidebarListMarker };
+  | {
+      readonly kind: "thread";
+      readonly key: string;
+      readonly section: SidebarSection;
+      /** Project group key when the sidebar groups active threads by project. */
+      readonly group?: string;
+    }
+  | { readonly kind: "marker"; readonly marker: SidebarListMarker }
+  /** Heads a run of active threads from one project. */
+  | { readonly kind: "project-header"; readonly group: string };
 
 export function sidebarListItemId(item: SidebarListItem): string {
-  return item.kind === "thread" ? item.key : sidebarMarkerId(item.marker);
+  if (item.kind === "thread") return item.key;
+  if (item.kind === "marker") return sidebarMarkerId(item.marker);
+  // Group keys contain colons; encoding keeps marker ids colon-free.
+  return `${SIDEBAR_MARKER_PREFIX}project-${encodeURIComponent(item.group)}`;
+}
+
+/** Stable-cluster `items` by group, keeping their relative order within a
+    group. Groups missing from `groupOrder` lead, in order of their first
+    item; the rest follow `groupOrder`. */
+export function clusterSidebarItemsByGroup<T>(
+  items: readonly T[],
+  groupOf: (item: T) => string,
+  groupOrder: readonly string[] = [],
+): T[] {
+  const clusters = new Map<string, T[]>();
+  for (const item of items) {
+    const group = groupOf(item);
+    const cluster = clusters.get(group);
+    if (cluster) cluster.push(item);
+    else clusters.set(group, [item]);
+  }
+  const ordered = new Set(groupOrder);
+  return [
+    ...[...clusters].flatMap(([group, cluster]) => (ordered.has(group) ? [] : cluster)),
+    ...groupOrder.flatMap((group) => clusters.get(group) ?? []),
+  ];
+}
+
+/** Project groups in the order their headers render. */
+function sidebarProjectGroupOrder(items: readonly SidebarListItem[]): string[] {
+  return items.flatMap((item) => (item.kind === "project-header" ? [item.group] : []));
 }
 
 /** The section a slot belongs to, read off the markers around it: from
@@ -144,6 +182,9 @@ export type SidebarDropTarget = {
   readonly section: "pinned" | "active" | "settled";
   readonly pinnedOrder: readonly string[];
   readonly activeOrder: readonly string[];
+  /** With project grouping, the moved row's project group in its new order.
+      Rows never leave their project, so order keys are planned within it. */
+  readonly activeGroupOrder?: readonly string[];
 };
 
 export function resolveSidebarDropTarget(
@@ -155,20 +196,70 @@ export function resolveSidebarDropTarget(
   const overIndex = items.findIndex((item) => sidebarListItemId(item) === overId);
   if (activeIndex === -1 || overIndex === -1 || items[activeIndex]?.kind !== "thread") return null;
   const moved = items.filter((_, index) => index !== activeIndex);
-  moved.splice(overIndex, 0, items[activeIndex]!);
-  const section = sectionAtSidebarSlot(moved, overIndex);
+  // Rows can't drop into the snoozed shelf, so a row moved down onto its
+  // header takes the last slot above it instead of the first slot inside.
+  const over = items[overIndex];
+  const insertAt =
+    activeIndex < overIndex && over?.kind === "marker" && over.marker === "snoozed-header"
+      ? overIndex - 1
+      : overIndex;
+  moved.splice(insertAt, 0, items[activeIndex]!);
+  const section = sectionAtSidebarSlot(moved, insertAt);
   if (section === "snoozed") return null;
   const pinnedOrder: string[] = [];
-  const activeOrder: string[] = [];
+  const activeRows: Extract<SidebarListItem, { kind: "thread" }>[] = [];
   let currentSection: SidebarSection = "pinned";
   for (const item of moved) {
+    if (item.kind === "project-header") continue;
     if (item.kind === "marker") {
       if (item.marker === "pinned-divider") currentSection = "active";
       else if (item.marker === "snoozed-header" || item.marker === "settled-header") break;
     } else if (currentSection === "pinned") pinnedOrder.push(item.key);
-    else activeOrder.push(item.key);
+    else activeRows.push(item);
   }
-  return { section, pinnedOrder, activeOrder };
+  const groupOrder = sidebarProjectGroupOrder(items);
+  if (groupOrder.length === 0) {
+    return { section, pinnedOrder, activeOrder: activeRows.map((row) => row.key) };
+  }
+  // Projects keep their order: a row dropped among another project's rows
+  // joins its own project at the matching position.
+  const clustered = clusterSidebarItemsByGroup(activeRows, (row) => row.group ?? "", groupOrder);
+  const movedGroup = activeRows.find((row) => row.key === activeKey)?.group;
+  return {
+    section,
+    pinnedOrder,
+    activeOrder: clustered.map((row) => row.key),
+    activeGroupOrder: clustered.flatMap((row) => (row.group === movedGroup ? [row.key] : [])),
+  };
+}
+
+/** The project order after dropping the header of `activeGroup` on `overId`,
+    or null when the drop is outside the grouped active rows. Headers move
+    whole projects; the pointer's slot picks the neighbor, like arrayMove. */
+export function resolveSidebarProjectDrop(
+  items: readonly SidebarListItem[],
+  activeGroup: string,
+  overId: string,
+): readonly string[] | null {
+  const groupOrder = sidebarProjectGroupOrder(items);
+  const from = groupOrder.indexOf(activeGroup);
+  const overIndex = items.findIndex((item) => sidebarListItemId(item) === overId);
+  const over = items[overIndex];
+  if (from === -1 || over === undefined) return null;
+  let to: number;
+  if (over.kind === "project-header") to = groupOrder.indexOf(over.group);
+  else if (over.kind === "thread" && over.section === "active" && over.group !== undefined)
+    to = groupOrder.indexOf(over.group);
+  else if (
+    over.kind === "marker" &&
+    (over.marker === "pinned-divider" || over.marker === "active-placeholder")
+  )
+    to = 0;
+  else return null;
+  if (to === -1) return null;
+  const next = groupOrder.filter((group) => group !== activeGroup);
+  next.splice(to, 0, activeGroup);
+  return next;
 }
 
 export type SidebarThreadDropPlan =
@@ -257,8 +348,10 @@ export function planSidebarThreadDrop(input: {
       ) {
         return { kind: "none" };
       }
+      // Grouped rows only order against their own project: keys of other
+      // projects' rows stay reserved but never constrain the move.
       const assignments = planPinnedReorder({
-        orderedIds: order,
+        orderedIds: target.activeGroupOrder ?? order,
         keysById: activeKeysById,
         movedId: activeKey,
       });
