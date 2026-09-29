@@ -138,11 +138,23 @@ function codexAccountEmail(account: CodexSchema.V2GetAccountResponse["account"])
   return account.email;
 }
 
+/**
+ * Effort a turn runs at when its selection names none. The turn's collaboration
+ * mode sends it, overriding the effort Codex's catalog marks as default.
+ */
+export const CODEX_FALLBACK_REASONING_EFFORT = "medium";
+
 export function mapCodexModelCapabilities(
   model: CodexSchema.V2ModelListResponse__Model,
 ): ModelCapabilities {
+  // Mark the effort an unselected turn really runs at, when the model offers it.
+  const defaultReasoningEffort = model.supportedReasoningEfforts.some(
+    ({ reasoningEffort }) => reasoningEffort === CODEX_FALLBACK_REASONING_EFFORT,
+  )
+    ? CODEX_FALLBACK_REASONING_EFFORT
+    : model.defaultReasoningEffort;
   const reasoningOptions = model.supportedReasoningEfforts.map(({ reasoningEffort }) =>
-    reasoningEffort === model.defaultReasoningEffort
+    reasoningEffort === defaultReasoningEffort
       ? {
           id: reasoningEffort,
           label: reasoningEffortLabel(reasoningEffort),
