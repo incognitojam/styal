@@ -129,6 +129,15 @@ export interface ProviderServiceShape {
   ) => Effect.Effect<ProviderUploadFeedbackResult, ProviderServiceError>;
 
   /**
+   * Stop every provider session because the server is shutting down.
+   *
+   * Runtime events are no longer published afterwards, so orchestration keeps
+   * interrupted turns as running and restart continuation can resume them.
+   * Only the first call stops sessions.
+   */
+  readonly beginShutdown: Effect.Effect<void>;
+
+  /**
    * Canonical provider runtime event stream.
    *
    * Fan-out is owned by ProviderService (not by a standalone event-bus service).

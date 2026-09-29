@@ -48,6 +48,7 @@ import { ProviderServiceLive } from "./provider/Layers/ProviderService.ts";
 import { ProviderAuthServiceLive } from "./provider/Layers/ProviderAuthService.ts";
 import { AntigravityInstallation } from "./provider/AntigravityInstallation.ts";
 import { ProviderInstanceRegistry } from "./provider/Services/ProviderInstanceRegistry.ts";
+import { ProviderService } from "./provider/Services/ProviderService.ts";
 import { ProviderRegistry } from "./provider/Services/ProviderRegistry.ts";
 import { ProviderSessionReaperLive } from "./provider/Layers/ProviderSessionReaper.ts";
 import { ProviderUsageLimitsIngestionLive } from "./provider/Layers/ProviderUsageLimitsIngestion.ts";
@@ -759,8 +760,19 @@ const makeServerLayer = Layer.unwrap(
       tailscaleServeLayer,
       cloudDesiredLinkReconcileLayer,
     );
+    // Built last, so its finalizer runs first. Any later finalizer can stall,
+    // and the service launcher kills the server five seconds after asking it
+    // to stop. That kill skips the provider SDKs' exit handlers, so a provider
+    // CLI still running then keeps working on its own.
+    const providerShutdownLayer = Layer.effectDiscard(
+      Effect.gen(function* () {
+        const providerService = yield* ProviderService;
+        yield* Effect.addFinalizer(() => providerService.beginShutdown);
+      }),
+    );
 
-    return serverApplicationLayer.pipe(
+    return providerShutdownLayer.pipe(
+      Layer.provideMerge(serverApplicationLayer),
       Layer.provideMerge(runtimeServicesLive),
       Layer.provide(activationLayer),
       Layer.provideMerge(serverRelayBrokerTracingLayer),

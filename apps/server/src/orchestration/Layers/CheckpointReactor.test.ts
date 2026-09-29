@@ -144,6 +144,7 @@ function createProviderServiceHarness(
       }),
     rollbackConversation,
     uploadFeedback: () => unsupported(),
+    beginShutdown: Effect.void,
     get streamEvents() {
       // Yield before delivery to expose ordering bugs. Acknowledge only when the
       // consumer pulls again, after it has enqueued the event in the reactor.

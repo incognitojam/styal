@@ -654,6 +654,85 @@ it.effect("ProviderServiceLive catches stopAll failures during shutdown", () =>
   }),
 );
 
+it.effect("ProviderServiceLive beginShutdown stops sessions without settling their turns", () =>
+  Effect.gen(function* () {
+    const codex = makeFakeCodexAdapter();
+    const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
+      Layer.provide(SqlitePersistenceMemory),
+    );
+    const directoryLayer = ProviderSessionDirectoryLive.pipe(Layer.provide(runtimeRepositoryLayer));
+    const providerLayer = makeProviderServiceLive().pipe(
+      Layer.provide(NodeServices.layer),
+      Layer.provide(
+        Layer.succeed(
+          ProviderAdapterRegistry.ProviderAdapterRegistry,
+          makeStaticInstanceRegistry([[codexInstanceId, codex.adapter]]),
+        ),
+      ),
+      Layer.provide(directoryLayer),
+      Layer.provide(defaultServerSettingsLayer),
+      Layer.provide(serverConfigTestLayer),
+      Layer.provide(AnalyticsService.layerTest),
+      Layer.provide(
+        Layer.succeed(
+          ProviderEventLoggers.ProviderEventLoggers,
+          ProviderEventLoggers.NoOpProviderEventLoggers,
+        ),
+      ),
+    );
+    const scope = yield* Scope.make();
+    const services = yield* Layer.build(providerLayer).pipe(Scope.provide(scope));
+    const provider = yield* ProviderService.ProviderService.pipe(Effect.provide(services));
+    const threadId = asThreadId("thread-begin-shutdown");
+    const turnId = asTurnId("turn-begin-shutdown");
+    yield* provider.startSession(threadId, {
+      provider: CODEX_DRIVER,
+      providerInstanceId: codexInstanceId,
+      threadId,
+      runtimeMode: "full-access",
+    });
+    const turnCompleted = (
+      eventId: string,
+      state: "completed" | "interrupted",
+    ): LegacyProviderRuntimeEvent => ({
+      type: "turn.completed",
+      eventId: asEventId(eventId),
+      provider: CODEX_DRIVER,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      threadId,
+      turnId,
+      payload: { state },
+    });
+
+    const eventsRef = yield* Ref.make<Array<ProviderRuntimeEvent>>([]);
+    const consumer = yield* Stream.runForEach(provider.streamEvents, (event) =>
+      Ref.update(eventsRef, (current) => [...current, event]),
+    ).pipe(Effect.forkChild);
+    yield* advanceTestClock(50);
+    codex.emit(turnCompleted("evt-before-shutdown", "completed"));
+    yield* advanceTestClock(50);
+
+    // A real adapter interrupts the running turn while it stops the session.
+    codex.stopAll.mockImplementation(() =>
+      Effect.sync(() => codex.emit(turnCompleted("evt-stop-interrupt", "interrupted"))),
+    );
+    yield* provider.beginShutdown;
+    yield* provider.beginShutdown;
+    yield* advanceTestClock(50);
+
+    const events = yield* Ref.get(eventsRef);
+    yield* Fiber.interrupt(consumer);
+    assert.deepStrictEqual(
+      events.map((event) => event.eventId),
+      [asEventId("evt-before-shutdown")],
+    );
+    assert.equal(codex.stopAll.mock.calls.length, 1);
+
+    yield* Scope.close(scope, Exit.void);
+    assert.equal(codex.stopAll.mock.calls.length, 1);
+  }),
+);
+
 it.effect("ProviderServiceLive flushes deferred completions during shutdown", () =>
   Effect.gen(function* () {
     const recordedAnalytics = makeRecordingAnalytics();
