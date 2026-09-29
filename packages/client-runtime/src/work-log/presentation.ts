@@ -549,6 +549,14 @@ export function workEntryDisplayIndicatesToolFailure(entry: WorkLogPresentationE
   return workEntryIndicatesToolFailureFromOutput(entry, false);
 }
 
+/**
+ * A tool call that ended without finishing, such as a command a server restart
+ * killed. Clients show it as stopped rather than hiding it as still running.
+ */
+export function workEntryIsStoppedToolCall(entry: WorkLogPresentationEntry): boolean {
+  return entry.sourceActivityKind === "tool.completed" && entry.toolLifecycleStatus === "stopped";
+}
+
 /** Decides whether the row can show a success marker. */
 export function workEntryIndicatesToolSuccess(entry: WorkLogPresentationEntry): boolean {
   return (

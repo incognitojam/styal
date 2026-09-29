@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
+  EventId,
   type OrchestrationCommand,
   type OrchestrationSessionStatus,
   ProviderDriverKind,
@@ -19,6 +20,7 @@ import { OrchestrationCommandInvariantError } from "./orchestration/Errors.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ThreadBackgroundLiveness from "./orchestration/ThreadBackgroundLiveness.ts";
+import * as ProjectionThreadActivities from "./persistence/Services/ProjectionThreadActivities.ts";
 import {
   ProviderSessionDirectoryPersistenceError,
   ProviderSessionNotFoundError,
@@ -80,6 +82,16 @@ const queryWithThreads = (threads: ReadonlyArray<ReturnType<typeof makeThread>>)
     getCommandReadModel: () => Effect.succeed({ threads } as never),
   }) as unknown as ProjectionSnapshotQuery.ProjectionSnapshotQuery["Service"];
 
+const activitiesWithUnfinishedToolCalls = (
+  rows: ReadonlyArray<ProjectionThreadActivities.ProjectionThreadActivity> = [],
+) =>
+  ({
+    listUnfinishedToolCalls: ({ threadId, turnId }) =>
+      Effect.succeed(rows.filter((row) => row.threadId === threadId && row.turnId === turnId)),
+  }) as Partial<
+    ProjectionThreadActivities.ProjectionThreadActivityRepository["Service"]
+  > as ProjectionThreadActivities.ProjectionThreadActivityRepository["Service"];
+
 const runReconciliation = (input: {
   readonly threads: ReadonlyArray<ReturnType<typeof makeThread>>;
   readonly continueAfterRestart?: boolean;
@@ -87,8 +99,13 @@ const runReconciliation = (input: {
   readonly providerService?: ProviderService.ProviderService["Service"];
   readonly directory: ProviderSessionDirectory.ProviderSessionDirectory["Service"];
   readonly dispatch: OrchestrationEngine.OrchestrationEngineService["Service"]["dispatch"];
+  readonly unfinishedToolCalls?: ReadonlyArray<ProjectionThreadActivities.ProjectionThreadActivity>;
 }) =>
   ServerRuntimeStartup.reconcileProviderSessions.pipe(
+    Effect.provideService(
+      ProjectionThreadActivities.ProjectionThreadActivityRepository,
+      activitiesWithUnfinishedToolCalls(input.unfinishedToolCalls),
+    ),
     Effect.provideService(
       ProjectionSnapshotQuery.ProjectionSnapshotQuery,
       queryWithThreads(input.threads),
@@ -763,6 +780,10 @@ it.effect("retries failed projections and continues after a persistent failure",
 it.effect("does not fail startup when the live provider session inventory cannot be read", () => {
   let queried = false;
   return ServerRuntimeStartup.reconcileProviderSessions.pipe(
+    Effect.provideService(
+      ProjectionThreadActivities.ProjectionThreadActivityRepository,
+      activitiesWithUnfinishedToolCalls(),
+    ),
     Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
       getUserInputActivity: () => Effect.die("unused"),
       getCommandReadModel: () =>
@@ -1154,3 +1175,109 @@ it.effect("asks a settled thread to restart background work the update stopped",
     });
   }),
 );
+
+it.effect("records tool calls the restart killed as stopped, skipping live sessions", () => {
+  const turnId = TurnId.make("turn-killed-command");
+  const orphan = makeThread("thread-killed-command", "running", turnId);
+  const live = makeThread("thread-live-command", "running", TurnId.make("turn-live-command"));
+  const toolRow = (
+    id: string,
+    threadId: ThreadId,
+    rowTurnId: TurnId,
+    kind: string,
+    payload: Record<string, unknown>,
+    createdAt: string,
+  ): ProjectionThreadActivities.ProjectionThreadActivity => ({
+    activityId: EventId.make(id),
+    threadId,
+    turnId: rowTurnId,
+    tone: "tool",
+    kind,
+    summary: "Command run",
+    payload: { itemType: "command_execution", ...payload },
+    createdAt,
+  });
+  const appended: Array<Extract<OrchestrationCommand, { type: "thread.activity.append" }>> = [];
+
+  return runReconciliation({
+    threads: [orphan, live],
+    liveThreadIds: [live.id],
+    unfinishedToolCalls: [
+      toolRow(
+        "killed-started",
+        orphan.id,
+        turnId,
+        "tool.started",
+        { toolCallId: "call-killed", status: "inProgress" },
+        "2026-08-20T11:59:00.000Z",
+      ),
+      toolRow(
+        "killed-updated",
+        orphan.id,
+        turnId,
+        "tool.updated",
+        { toolCallId: "call-killed", status: "inProgress", detail: "Bash: npm test" },
+        "2026-08-20T11:59:01.000Z",
+      ),
+      toolRow(
+        "failed-updated",
+        orphan.id,
+        turnId,
+        "tool.updated",
+        { toolCallId: "call-failed", status: "failed" },
+        "2026-08-20T11:59:02.000Z",
+      ),
+      toolRow(
+        "live-started",
+        live.id,
+        live.session.activeTurnId!,
+        "tool.started",
+        { toolCallId: "call-live", status: "inProgress" },
+        "2026-08-20T11:59:03.000Z",
+      ),
+    ],
+    directory: {
+      getBinding: () => Effect.succeed(Option.none()),
+      upsert: () => Effect.void,
+      getProvider: () => Effect.die("unused"),
+      listThreadIds: () => Effect.die("unused"),
+      listBindings: () => Effect.succeed([]),
+      recordImportedTranscript: () => Effect.die("unused"),
+    },
+    dispatch: (command) =>
+      Effect.sync(() => {
+        if (command.type === "thread.activity.append") {
+          appended.push(command);
+        }
+        return { sequence: 1 };
+      }),
+  }).pipe(
+    Effect.tap(() =>
+      Effect.sync(() =>
+        assert.deepStrictEqual(
+          appended.map((command) => ({
+            threadId: command.threadId,
+            kind: command.activity.kind,
+            turnId: command.activity.turnId,
+            payload: command.activity.payload,
+            createdAt: command.activity.createdAt,
+          })),
+          [
+            {
+              threadId: orphan.id,
+              kind: "tool.completed",
+              turnId,
+              payload: {
+                itemType: "command_execution",
+                toolCallId: "call-killed",
+                status: "stopped",
+                detail: "Bash: npm test",
+              },
+              createdAt: "2026-08-20T11:59:01.000Z",
+            },
+          ],
+        ),
+      ),
+    ),
+  );
+});

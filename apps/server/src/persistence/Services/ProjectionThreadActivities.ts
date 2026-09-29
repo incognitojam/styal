@@ -49,6 +49,13 @@ export const ListProjectionThreadTaskActivitiesInput = Schema.Struct({
 export type ListProjectionThreadTaskActivitiesInput =
   typeof ListProjectionThreadTaskActivitiesInput.Type;
 
+export const ListProjectionThreadTurnActivitiesInput = Schema.Struct({
+  threadId: ThreadId,
+  turnId: TurnId,
+});
+export type ListProjectionThreadTurnActivitiesInput =
+  typeof ListProjectionThreadTurnActivitiesInput.Type;
+
 export const GetLatestProjectionThreadTaskActivityInput = Schema.Struct({
   threadId: ThreadId,
   taskId: Schema.String,
@@ -88,6 +95,14 @@ export interface ProjectionThreadActivityRepositoryShape {
   /** List every persisted lifecycle row for one provider task. */
   readonly listTaskLifecycleByTaskId: (
     input: ListProjectionThreadTaskActivitiesInput,
+  ) => Effect.Effect<ReadonlyArray<ProjectionThreadActivity>, ProjectionRepositoryError>;
+
+  /**
+   * List start and update rows for a turn's tool calls that have no
+   * `tool.completed` row, in timeline order.
+   */
+  readonly listUnfinishedToolCalls: (
+    input: ListProjectionThreadTurnActivitiesInput,
   ) => Effect.Effect<ReadonlyArray<ProjectionThreadActivity>, ProjectionRepositoryError>;
 
   /** List setup starts that have no persisted terminal outcome. */

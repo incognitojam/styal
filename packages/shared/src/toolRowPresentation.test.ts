@@ -73,6 +73,21 @@ describe("deriveToolRowPresentation", () => {
     });
   });
 
+  it("describes a command that never finished as stopped", () => {
+    expect(
+      deriveToolRowPresentation({
+        toolName: "Bash",
+        itemType: "command_execution",
+        label: "Command run",
+        command: "npm test",
+        stopped: true,
+      }),
+    ).toEqual({
+      heading: "Command stopped",
+      argument: { kind: "command", value: "npm test" },
+    });
+  });
+
   it("names unknown tools after themselves instead of 'Tool call'", () => {
     expect(
       deriveToolRowPresentation({

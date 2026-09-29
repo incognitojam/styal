@@ -69,6 +69,8 @@ export interface ToolRowPresentationInput {
   readonly command?: string | null | undefined;
   readonly changedFiles?: ReadonlyArray<string> | null | undefined;
   readonly failed?: boolean | undefined;
+  /** The call never finished, such as a command a server restart killed. */
+  readonly stopped?: boolean | undefined;
 }
 
 const KNOWN_TOOL_NAMES: Readonly<Record<string, string>> = {
@@ -821,29 +823,31 @@ export function deriveToolRowPresentation(
   input: ToolRowPresentationInput,
 ): ToolRowPresentation | undefined {
   const presentation = deriveBaseToolRowPresentation(input);
-  if (!presentation || !input.failed) {
+  const outcome = input.failed ? "failed" : input.stopped ? "stopped" : undefined;
+  if (!presentation || outcome === undefined) {
     return presentation;
   }
   const toolName = asTrimmedString(input.toolName);
-  if (toolName && isPreviewToolName(toolName)) {
+  if (outcome === "failed" && toolName && isPreviewToolName(toolName)) {
     // Preview failures carry their own heading ("Failed to click").
     return presentation;
   }
   const normalizedToolName = toolName ? normalizeKnownToolName(toolName) : undefined;
   if (
-    normalizedToolName === ASK_USER_QUESTION_TOOL_NAME ||
-    isReportFindingsToolName(normalizedToolName)
+    outcome === "failed" &&
+    (normalizedToolName === ASK_USER_QUESTION_TOOL_NAME ||
+      isReportFindingsToolName(normalizedToolName))
   ) {
     // Already phrased for the failed case.
     return presentation;
   }
   const heading =
     input.itemType === "command_execution"
-      ? "Command failed"
+      ? `Command ${outcome}`
       : input.itemType === "file_change"
         ? normalizedToolName === "Write"
-          ? "Write failed"
-          : "Edit failed"
-        : `${presentation.heading} failed`;
+          ? `Write ${outcome}`
+          : `Edit ${outcome}`
+        : `${presentation.heading} ${outcome}`;
   return { ...presentation, heading };
 }

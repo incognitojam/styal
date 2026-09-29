@@ -434,6 +434,35 @@ describe("workEntryIndicatesToolNeutralStatus", () => {
     ).toBe(false);
   });
 
+  it("shows a tool call recorded as stopped instead of hiding it as running", () => {
+    const payload = {
+      itemType: "command_execution",
+      toolCallId: "call-killed",
+      title: "Command run",
+      detail: "Bash: npm test",
+      data: { command: "npm test", toolName: "Bash" },
+    };
+    const entries = deriveWorkLogEntries([
+      makeActivity({
+        id: "started",
+        kind: "tool.started",
+        tone: "tool",
+        summary: "Command run started",
+        payload: { ...payload, status: "inProgress" },
+      }),
+      makeActivity({
+        id: "stopped",
+        kind: "tool.completed",
+        tone: "tool",
+        summary: "Command run",
+        payload: { ...payload, status: "stopped" },
+      }),
+    ]);
+    const stopped = entries.find((entry) => entry.toolLifecycleStatus === "stopped");
+    expect(stopped).toBeDefined();
+    expect(workEntryIndicatesToolNeutralStatus(stopped!)).toBe(false);
+  });
+
   it.each(["waiting", "cancelled", "interrupted"])(
     "keeps the status of a %s background task",
     (status) => {

@@ -2578,6 +2578,58 @@ describe("buildThreadFeed", () => {
     });
   });
 
+  it("shows a tool call recorded as stopped once its turn has ended", () => {
+    const turnId = TurnId.make("turn-restarted");
+    const payload = {
+      itemType: "command_execution",
+      toolCallId: "call-killed",
+      title: "Command run",
+      detail: "Bash: npm test",
+      data: { command: "npm test", toolName: "Bash" },
+    };
+    const thread = makeThread({
+      id: ThreadId.make("thread-stopped-command"),
+      projectId: ProjectId.make("project-1"),
+      title: "Stopped command",
+      latestTurn: {
+        turnId,
+        state: "completed",
+        requestedAt: "2026-04-01T00:00:00.000Z",
+        startedAt: "2026-04-01T00:00:00.000Z",
+        completedAt: "2026-04-01T00:00:10.000Z",
+        assistantMessageId: null,
+      },
+      activities: [
+        makeActivity({
+          id: EventId.make("command-started"),
+          kind: "tool.started",
+          tone: "tool",
+          summary: "Command run started",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          turnId,
+          payload: { ...payload, status: "inProgress" },
+        }),
+        makeActivity({
+          id: EventId.make("command-stopped"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "Command run",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          turnId,
+          payload: { ...payload, status: "stopped" },
+        }),
+      ],
+    });
+
+    const presented = deriveThreadFeedPresentation(
+      buildThreadFeed(thread),
+      thread.latestTurn,
+      new Set([turnId]),
+      new Set([`work-group:tool:${turnId}:call-killed`]),
+    ).flatMap((entry) => (entry.type === "activity-group" ? entry.activities : []));
+    expect(presented).toMatchObject([{ status: "stopped", summary: "Command stopped" }]);
+  });
+
   it("keeps an active turn expanded and classifies error-shaped tool output", () => {
     const turnId = TurnId.make("turn-running");
     const thread = makeThread({
