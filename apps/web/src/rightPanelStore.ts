@@ -16,6 +16,7 @@ import {
 } from "@t3tools/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 
 import { resolveStorage } from "./lib/storage";
 
@@ -256,13 +257,47 @@ const upsertSurface = (
   current: ThreadRightPanelState,
   surface: RightPanelSurface,
   activate = true,
-): ThreadRightPanelState => ({
-  isOpen: true,
-  surfaces: current.surfaces.some((entry) => entry.id === surface.id)
-    ? current.surfaces
-    : [...current.surfaces, surface],
-  activeSurfaceId: activate ? surface.id : current.activeSurfaceId,
-});
+): ThreadRightPanelState => {
+  if (surface.kind === "pull-request") {
+    const hostOf = (entry: PullRequestSurface) =>
+      entry.host?.toLowerCase() ?? (entry.url ? parseChangeRequestUrl(entry.url)?.host : undefined);
+    // Linked PRs carry a URL but no host, while sidebar links carry both. Keep the
+    // existing tab ID so opening either entry point preserves the tab's identity.
+    const matches = (entry: RightPanelSurface): entry is PullRequestSurface =>
+      entry.kind === "pull-request" &&
+      (entry.id === surface.id ||
+        (entry.environmentId === surface.environmentId &&
+          entry.projectId === surface.projectId &&
+          entry.repository.toLowerCase() === surface.repository.toLowerCase() &&
+          entry.number === surface.number &&
+          hostOf(entry) === hostOf(surface)));
+    const existing = current.surfaces.find(matches);
+    if (existing) {
+      return {
+        isOpen: true,
+        surfaces: current.surfaces.flatMap<RightPanelSurface>((entry) =>
+          entry === existing
+            ? [{ ...existing, ...surface, id: existing.id }]
+            : matches(entry)
+              ? []
+              : [entry],
+        ),
+        activeSurfaceId:
+          activate ||
+          current.surfaces.some((entry) => entry.id === current.activeSurfaceId && matches(entry))
+            ? existing.id
+            : current.activeSurfaceId,
+      };
+    }
+  }
+  return {
+    isOpen: true,
+    surfaces: current.surfaces.some((entry) => entry.id === surface.id)
+      ? current.surfaces
+      : [...current.surfaces, surface],
+    activeSurfaceId: activate ? surface.id : current.activeSurfaceId,
+  };
+};
 
 const updateThread = (
   byThreadKey: Record<string, ThreadRightPanelState>,
@@ -476,15 +511,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) => {
             const surface = pullRequestSurface(target);
-            const next = upsertSurface(current, surface);
-            return target.url
-              ? {
-                  ...next,
-                  surfaces: next.surfaces.map((entry) =>
-                    entry.id === surface.id ? surface : entry,
-                  ),
-                }
-              : next;
+            return upsertSurface(current, surface);
           }),
         ),
       openFile: (ref, relativePath, line) =>

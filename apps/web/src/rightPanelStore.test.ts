@@ -617,6 +617,69 @@ describe("rightPanelStore", () => {
     );
   });
 
+  it.each(["proactive-first", "sidebar-first"])(
+    "reuses the linked PR tab across proactive and sidebar opens (%s)",
+    (order) => {
+      const linked = {
+        projectId: "project-a",
+        repository: "acme/api",
+        number: 5,
+        url: "https://github.com/acme/api/pull/5",
+      };
+      const sidebar = { ...linked, host: "github.com" };
+      const store = useRightPanelStore.getState();
+      if (order === "proactive-first") {
+        store.openProactive(refA, pullRequestSurface(linked), store.getUserActionRevision(refA));
+      } else {
+        store.openPullRequest(refA, sidebar);
+      }
+      const original = selectActiveRightPanelSurface(
+        useRightPanelStore.getState().byThreadKey,
+        refA,
+      );
+      store.open(refA, "diff");
+      if (order === "proactive-first") {
+        store.openPullRequest(refA, sidebar);
+      } else {
+        store.openProactive(refA, pullRequestSurface(linked), store.getUserActionRevision(refA));
+      }
+      store.openPullRequest(refA, sidebar);
+      const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+      expect(state.surfaces.filter((surface) => surface.kind === "pull-request")).toHaveLength(1);
+      expect(state.activeSurfaceId).toBe(original?.id);
+      expect(
+        selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA),
+      ).toMatchObject(sidebar);
+      store.closeSurface(refA, state.activeSurfaceId!);
+      expect(
+        selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces,
+      ).toEqual([completedDiff]);
+    },
+  );
+
+  it("consolidates previously duplicated PR tabs when reopened", () => {
+    const linked = pullRequestSurface({
+      projectId: "project-a",
+      repository: "acme/api",
+      number: 5,
+      url: "https://github.com/acme/api/pull/5",
+    });
+    const sidebar = pullRequestSurface({ ...linked, host: "github.com" });
+    useRightPanelStore.setState({
+      byThreadKey: {
+        "env-1:thread-A": {
+          isOpen: true,
+          activeSurfaceId: sidebar.id,
+          surfaces: [completedDiff, linked, sidebar],
+        },
+      },
+    });
+    useRightPanelStore.getState().openPullRequest(refA, sidebar);
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state.surfaces).toEqual([completedDiff, { ...sidebar, id: linked.id }]);
+    expect(state.activeSurfaceId).toBe(linked.id);
+  });
+
   it("keeps one pull request read from two servers as two tabs", () => {
     const local = {
       environmentId: "local",
