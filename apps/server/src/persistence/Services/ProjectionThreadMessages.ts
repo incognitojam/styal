@@ -110,6 +110,11 @@ export interface ProjectionThreadMessageRepositoryShape {
     input: ListProjectionThreadMessagesInput,
   ) => Effect.Effect<ProjectionThreadMessage["createdAt"] | null, ProjectionRepositoryError>;
 
+  /** Read the latest message timestamp without loading message bodies. */
+  readonly getLatestMessageAt: (
+    input: ListProjectionThreadMessagesInput,
+  ) => Effect.Effect<ProjectionThreadMessage["updatedAt"] | null, ProjectionRepositoryError>;
+
   /**
    * Delete projected thread messages by thread.
    */

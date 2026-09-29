@@ -3985,10 +3985,12 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       const threadRows = yield* sql<{
         readonly latestTurnId: string | null;
         readonly latestUserMessageAt: string | null;
+        readonly latestMessageAt: string | null;
       }>`
         SELECT
           latest_turn_id AS "latestTurnId",
-          latest_user_message_at AS "latestUserMessageAt"
+          latest_user_message_at AS "latestUserMessageAt",
+          latest_message_at AS "latestMessageAt"
         FROM projection_threads
         WHERE thread_id = 'thread-revert'
       `;
@@ -3996,6 +3998,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         {
           latestTurnId: "turn-1",
           latestUserMessageAt: null,
+          latestMessageAt: "2026-02-26T12:00:02.100Z",
         },
       ]);
     }),

@@ -1144,9 +1144,13 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             }
           }
 
+          const latestMessageAt = yield* projectionThreadMessageRepository.getLatestMessageAt({
+            threadId: event.payload.threadId,
+          });
           yield* projectionThreadRepository.upsert({
             ...existingRow.value,
             latestTurnId,
+            latestMessageAt,
             updatedAt: event.occurredAt,
           });
           yield* refreshOrDeferThreadShellSummary(event.payload.threadId, attachmentSideEffects);

@@ -926,6 +926,7 @@ export function HomeScreen(props: HomeScreenProps) {
       snoozeEnvironmentIds,
       threadListV2Items,
       threadSearchMatchByKey,
+      timestampMode,
       titleRegenerationEnvironmentIds,
       toggleSettledShelf,
       toggleSnoozedShelf,
@@ -946,12 +947,14 @@ export function HomeScreen(props: HomeScreenProps) {
       serverConfigs,
       savedConnectionsById: props.savedConnectionsById,
       searchQuery: props.searchQuery,
+      timestampMode,
       snoozePresetMinute: nowMinute,
       threadSearchMatchByKey,
     }),
     [
       projectByKey,
       props.searchQuery,
+      timestampMode,
       props.savedConnectionsById,
       serverConfigs,
       nowMinute,
@@ -964,9 +967,10 @@ export function HomeScreen(props: HomeScreenProps) {
     () => ({
       savedConnectionsById: props.savedConnectionsById,
       searchQuery: props.searchQuery,
+      timestampMode,
       threadSearchMatchByKey,
     }),
-    [props.savedConnectionsById, props.searchQuery, threadSearchMatchByKey],
+    [props.savedConnectionsById, props.searchQuery, threadSearchMatchByKey, timestampMode],
   );
 
   const renderItem = useCallback(
@@ -1066,6 +1070,7 @@ export function HomeScreen(props: HomeScreenProps) {
       props.searchQuery,
       props.savedConnectionsById,
       threadSearchMatchByKey,
+      timestampMode,
       titleRegenerationEnvironmentIds,
       updateGroupDisplay,
     ],
