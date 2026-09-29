@@ -3,34 +3,25 @@ import { describe, expect, it } from "@effect/vitest";
 import { worktreeNeedsFirstCommit } from "./vcs.ts";
 
 describe("worktreeNeedsFirstCommit", () => {
-  const unborn = { isRepo: true, hasHeadCommit: false, hasPrimaryRemote: false };
+  it.each([false, true])(
+    "gates an unborn repository with hasPrimaryRemote=%s",
+    (hasPrimaryRemote) => {
+      const status = { isRepo: true, hasHeadCommit: false, hasPrimaryRemote };
+      expect(worktreeNeedsFirstCommit(status)).toBe(true);
+    },
+  );
 
-  it("gates a repository with no commits", () => {
-    expect(worktreeNeedsFirstCommit(unborn, false)).toBe(true);
+  it("allows worktrees after the first commit", () => {
+    expect(worktreeNeedsFirstCommit({ isRepo: true, hasHeadCommit: true })).toBe(false);
   });
 
-  it("defers to the server when starting from a populated origin", () => {
-    expect(worktreeNeedsFirstCommit({ ...unborn, hasPrimaryRemote: true }, true)).toBe(false);
-  });
-
-  it("still gates start-from-origin without a primary remote", () => {
-    expect(worktreeNeedsFirstCommit(unborn, true)).toBe(true);
-  });
-
-  it("gates nothing for old servers that omit the field", () => {
-    expect(
-      worktreeNeedsFirstCommit({ isRepo: true, hasPrimaryRemote: false } as never, false),
-    ).toBe(false);
+  it("allows old servers that omit the field", () => {
+    expect(worktreeNeedsFirstCommit({ isRepo: true })).toBe(false);
   });
 
   it("gates nothing outside a repository or before status arrives", () => {
-    expect(
-      worktreeNeedsFirstCommit(
-        { isRepo: false, hasHeadCommit: false, hasPrimaryRemote: false },
-        false,
-      ),
-    ).toBe(false);
-    expect(worktreeNeedsFirstCommit(null, false)).toBe(false);
-    expect(worktreeNeedsFirstCommit(undefined, false)).toBe(false);
+    expect(worktreeNeedsFirstCommit({ isRepo: false, hasHeadCommit: false })).toBe(false);
+    expect(worktreeNeedsFirstCommit(null)).toBe(false);
+    expect(worktreeNeedsFirstCommit(undefined)).toBe(false);
   });
 });

@@ -5528,10 +5528,7 @@ export default function ChatView(props: ChatViewProps) {
       ? (pendingServerThreadStartFromOriginByThreadId[activeThread?.id ?? ""] ??
         activeProjectSettings.settings.newWorktreesStartFromOrigin)
       : false;
-  const firstCommitNeededForWorktree = worktreeNeedsFirstCommit(
-    gitStatusQuery.data,
-    startFromOrigin,
-  );
+  const firstCommitNeededForWorktree = worktreeNeedsFirstCommit(gitStatusQuery.data);
   const worktreeUnavailableReason = firstCommitNeededForWorktree ? "Needs a first commit" : null;
   const sendEnvMode = resolveSendEnvMode({
     requestedEnvMode: envMode,

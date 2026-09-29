@@ -5,6 +5,9 @@ their own branch and working directory. To work in the project's checkout instea
 change the thread's workspace mode before sending, or change the default in
 **Settings → General → New threads**.
 
+A repository with no commits runs its first threads in **Current checkout**, even if the default is
+**New worktree**. After the first commit, the worktree default takes effect again.
+
 ## Start a thread
 
 On web and desktop, a new thread keeps the current project and carries your model

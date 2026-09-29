@@ -33,13 +33,9 @@ const OFFLINE_BRANCH_LIST_LIMIT = 100;
 
 /** Whether a worktree needs an initial commit in the current checkout. */
 export function worktreeNeedsFirstCommit(
-  status: Pick<VcsStatusResult, "isRepo" | "hasHeadCommit" | "hasPrimaryRemote"> | null | undefined,
-  startFromOrigin: boolean,
+  status: Pick<VcsStatusResult, "isRepo" | "hasHeadCommit"> | null | undefined,
 ): boolean {
-  if (status?.isRepo !== true || status.hasHeadCommit !== false) {
-    return false;
-  }
-  return !(startFromOrigin && status.hasPrimaryRemote);
+  return status?.isRepo === true && status.hasHeadCommit === false;
 }
 
 const VCS_REFS_IDLE_TTL_MS = 30_000;

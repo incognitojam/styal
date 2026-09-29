@@ -664,7 +664,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       : null,
   );
   const currentCheckoutBranchName = projectGitStatus.data?.refName ?? null;
-  const worktreeUnavailable = worktreeNeedsFirstCommit(projectGitStatus.data, startFromOrigin);
+  const worktreeUnavailable = worktreeNeedsFirstCommit(projectGitStatus.data);
   // A repository with no commits has nothing a worktree could branch from, so
   // the draft runs in the checkout — where the agent can make that first
   // commit itself. The stored selection is untouched; the moment a commit
