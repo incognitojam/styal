@@ -93,6 +93,10 @@ export function createSidebarCollisionDetection(
   };
 }
 
+function isGroupedCard(item: SidebarListItem): boolean {
+  return item.kind === "thread" && item.section === "active" && item.group !== undefined;
+}
+
 /** Preview the committed section layout without moving or mounting DOM nodes.
  * A zero scaleY marks rows/markers to hide while retaining their measured nodes. */
 export function createSidebarSortingStrategy(input: {
@@ -168,6 +172,8 @@ export function createSidebarSortingStrategy(input: {
       settled: [],
     };
     let cardHeight = input.cardHeight;
+    // Active cards under a project header are two lines instead of three.
+    let groupedCardHeight: number | undefined;
     let slimHeight = input.slimHeight;
     let headerScale: number | undefined;
     for (const [index, item] of items.entries()) {
@@ -179,7 +185,8 @@ export function createSidebarSortingStrategy(input: {
         }
         continue;
       }
-      if (item.section === "pinned" || item.section === "active")
+      if (isGroupedCard(item)) groupedCardHeight ??= rects[index]?.height;
+      else if (item.section === "pinned" || item.section === "active")
         cardHeight ??= rects[index]?.height;
       else slimHeight ??= rects[index]?.height;
       if (item.key !== active.key) groups[item.section].push(item);
@@ -188,6 +195,7 @@ export function createSidebarSortingStrategy(input: {
     const scale =
       slimHeight !== undefined ? slimHeight / 36 : (headerScale ?? (cardHeight ?? 82) / 82);
     cardHeight ??= 82 * scale;
+    groupedCardHeight ??= 60 * scale;
     slimHeight ??= 36 * scale;
     const labelHeight = (input.boundaryLabelHeight ?? 0) * scale;
     const group = groups[target.section];
@@ -260,8 +268,9 @@ export function createSidebarSortingStrategy(input: {
       const index = indices.get(sidebarListItemId(item));
       const rect = index === undefined ? undefined : rects[index];
       if (index !== undefined && rect) result[index] = { ...stationary, y: top - rect.top };
-      const fallback =
-        item.kind === "thread" && (item.section === "pinned" || item.section === "active")
+      const fallback = isGroupedCard(item)
+        ? groupedCardHeight
+        : item.kind === "thread" && (item.section === "pinned" || item.section === "active")
           ? cardHeight
           : slimHeight;
       const moved = item.kind === "thread" && item.key === active.key;

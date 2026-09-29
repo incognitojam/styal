@@ -805,6 +805,38 @@ describe("project-grouped drag projection", () => {
       .map(({ id }) => id);
   };
 
+  it("reserves a two-line slot for a grouped card when pinned cards are taller", () => {
+    const withPin = [pinnedHeader, thread("p", "pinned"), divider, ...items.slice(2)];
+    const args = layout(withPin, "a2", "a1");
+    // Pinned cards are three lines; grouped active cards are two.
+    let top = 100;
+    const rects = withPin.map((item) => {
+      const height =
+        item.kind === "thread"
+          ? item.section === "pinned"
+            ? 82
+            : item.section === "active"
+              ? 60
+              : 36
+          : item.kind === "project-header"
+            ? 24
+            : item.kind === "marker" && item.marker === "settled-header"
+              ? 32
+              : 0;
+      const rect = { top, height, bottom: top + height, left: 0, right: 260, width: 260 };
+      top += height + 1;
+      return rect;
+    });
+    const strategy = createSidebarSortingStrategy({
+      items: withPin,
+      settledOrder: [],
+      settledExpanded: true,
+    });
+    const a1 = withPin.findIndex((item) => sidebarListItemId(item) === "a1");
+    // a1 moves down by exactly the lifted grouped card's slot.
+    expect(strategy({ ...args, rects, index: a1 })?.y).toBe(61);
+  });
+
   it("keeps project order when a row is dropped above another project", () => {
     const headerA = sidebarListItemId(header("A"));
     const headerB = sidebarListItemId(header("B"));
