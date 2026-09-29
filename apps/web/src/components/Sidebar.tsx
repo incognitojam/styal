@@ -3245,6 +3245,8 @@ export default function Sidebar() {
     readonly activeSection: SidebarSection;
     readonly occurredAt: string;
     readonly activationY: number | null;
+    /** Space each drag label opens, in screen pixels (the list can be scaled). */
+    readonly labelHeight: number;
     readonly targetSection: SidebarSection | null;
   } | null>(null);
   const dragTargetSection = dragState?.targetSection ?? null;
@@ -3485,11 +3487,13 @@ export default function Sidebar() {
       listMotionRef.current?.suspend();
       const list = threadListRef.current;
       const header = list?.querySelector<HTMLElement>('[data-testid="sidebar-pinned-header"]');
+      let labelHeight = SIDEBAR_DRAG_LABEL_HEIGHT;
       if (list && header) {
         const listRect = list.getBoundingClientRect();
         const scale = list.offsetWidth > 0 ? listRect.width / list.offsetWidth : 1;
+        labelHeight = SIDEBAR_DRAG_LABEL_HEIGHT * scale;
         dragLabelOffsetRef.current =
-          header.getBoundingClientRect().top - listRect.top + SIDEBAR_DRAG_LABEL_HEIGHT * scale;
+          header.getBoundingClientRect().top - listRect.top + labelHeight;
       } else {
         dragLabelOffsetRef.current = 0;
       }
@@ -3500,6 +3504,7 @@ export default function Sidebar() {
         occurredAt: new Date().toISOString(),
         activationY:
           event.activatorEvent instanceof PointerEvent ? event.activatorEvent.clientY : null,
+        labelHeight,
       });
     },
     [sectionByThreadKey, sidebarListItems],
@@ -3611,6 +3616,7 @@ export default function Sidebar() {
   const draggedThreadKey = dragState?.activeKey;
   const draggedFromSection = dragState?.activeSection;
   const dragActivationY = dragState?.activationY;
+  const dragLabelHeight = dragState?.labelHeight;
   const dndCollisionDetection = useMemo(() => {
     if (draggedProjectGroup !== null) {
       return createSidebarCollisionDetection(
@@ -3647,6 +3653,7 @@ export default function Sidebar() {
       {
         items: sidebarListItems,
         activationY: dragActivationY ?? null,
+        labelHeight: dragLabelHeight ?? SIDEBAR_DRAG_LABEL_HEIGHT,
       },
     );
   }, [
@@ -3659,6 +3666,7 @@ export default function Sidebar() {
     draggedThreadKey,
     draggedFromSection,
     dragActivationY,
+    dragLabelHeight,
     draggableThreadKeys,
     pinnedKeys,
     sidebarListItems,

@@ -254,6 +254,61 @@ describe("sidebar collision detection", () => {
   });
 });
 
+describe("sidebar collision detection with drag labels", () => {
+  // At rest the labels take no space; while dragging, each opens 24px and
+  // pushes every row below it down.
+  const items = [
+    pinnedHeader,
+    divider,
+    thread("a1", "active"),
+    thread("a2", "active"),
+    thread("a3", "active"),
+    settledHeader,
+  ];
+  function args(visualTop: number) {
+    const { rects, activeIndex } = layout(items, "a3", "a1", 1, 60);
+    const labelNode = (top: number) => ({
+      querySelector: () => ({ getBoundingClientRect: () => ({ top, bottom: top + 16 }) }),
+    });
+    const collisionRect = { ...rects[activeIndex]!, top: visualTop, bottom: visualTop + 60 };
+    return {
+      active: {
+        id: "a3",
+        data: { current: {} },
+        rect: { current: { initial: rects[activeIndex]!, translated: collisionRect } },
+      },
+      collisionRect,
+      droppableRects: new Map(items.map((item, index) => [sidebarListItemId(item), rects[index]!])),
+      droppableContainers: items.map((item, index) => ({
+        id: sidebarListItemId(item),
+        key: sidebarListItemId(item),
+        disabled: false,
+        data: { current: {} },
+        node: {
+          current:
+            item.kind === "marker" && item.marker === "pinned-header"
+              ? labelNode(104)
+              : item.kind === "marker" && item.marker === "pinned-divider"
+                ? labelNode(128)
+                : null,
+        },
+        rect: { current: rects[index]! },
+      })),
+      pointerCoordinates: null,
+    } as unknown as Parameters<CollisionDetection>[0];
+  }
+
+  it("targets the row drawn under the lifted card, not the one at that rest position", () => {
+    const rest = layout(items, "a3", "a1", 1, 60).rects;
+    // a1 is drawn 48px below its rest position while both labels are open.
+    const a1Visual = rest[2]!.top + 48;
+    const withLabels = createSidebarCollisionDetection(() => true, { labelHeight: 24 });
+    expect(withLabels(args(a1Visual))[0]?.id).toBe("a1");
+    const withoutCorrection = createSidebarCollisionDetection(() => true);
+    expect(withoutCorrection(args(a1Visual))[0]?.id).toBe("a2");
+  });
+});
+
 describe("sidebar drag projection", () => {
   const pinned = [
     pinnedHeader,

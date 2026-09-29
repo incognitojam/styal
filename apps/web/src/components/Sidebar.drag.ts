@@ -33,6 +33,8 @@ export function createSidebarCollisionDetection(
   options: {
     items?: readonly SidebarListItem[];
     activationY?: number | null;
+    /** Space each visible drag label opens (see the sorting strategy). */
+    labelHeight?: number;
   } = {},
 ): CollisionDetection {
   const validity = new Map<string, boolean>();
@@ -40,7 +42,32 @@ export function createSidebarCollisionDetection(
   let previousPointerY = options.activationY;
   let boundarySection: "pinned" | "active" | undefined;
   return (args) => {
-    let collisions = closestCenter(args);
+    // Droppable rects are measured at rest, but the Pinned and Active labels
+    // push every row below them down while dragging. The lifted card follows
+    // the pointer, so compare it against rest rects shifted back by the
+    // labels above it; otherwise the drop lands a slot below the gap.
+    const rect = args.collisionRect;
+    const center = rect.top + rect.height / 2;
+    let labelShift = 0;
+    for (const marker of ["pinned-header", "pinned-divider"] as const) {
+      const label = args.droppableContainers
+        .find((container) => container.id === sidebarMarkerId(marker))
+        ?.node.current?.querySelector(".sidebar-drag-boundary-label")
+        ?.getBoundingClientRect();
+      if (label && center >= label.top) labelShift += options.labelHeight ?? 0;
+    }
+    let collisions = closestCenter(
+      labelShift === 0
+        ? args
+        : {
+            ...args,
+            collisionRect: {
+              ...rect,
+              top: rect.top - labelShift,
+              bottom: rect.bottom - labelShift,
+            },
+          },
+    );
     const pointer = args.pointerCoordinates;
     const items = options.items;
     const source = items?.find((item) => item.kind === "thread" && item.key === args.active.id);
