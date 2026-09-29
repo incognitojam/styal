@@ -308,10 +308,10 @@ it.effect.each(
                   payload.continueAfterServerUpdate === null
                 );
               }).length;
-              return clearedCount === 1;
+              return clearedCount === 2;
             }).pipe(
-              Effect.flatMap((firstMarkerCleared) =>
-                firstMarkerCleared ? Deferred.succeed(continuationCleared, undefined) : Effect.void,
+              Effect.flatMap((bothMarkersCleared) =>
+                bothMarkersCleared ? Deferred.succeed(continuationCleared, undefined) : Effect.void,
               ),
             ),
           getProvider: () => Effect.die("unused"),
@@ -347,14 +347,16 @@ it.effect.each(
         ],
       );
       assert.deepStrictEqual(
-        dispatched.map((command) =>
+        dispatched.flatMap((command) =>
           command.type === "thread.session.set"
-            ? {
-                threadId: command.threadId,
-                status: command.session.status,
-                activeTurnId: command.session.activeTurnId,
-              }
-            : null,
+            ? [
+                {
+                  threadId: command.threadId,
+                  status: command.session.status,
+                  activeTurnId: command.session.activeTurnId,
+                },
+              ]
+            : [],
         ),
         [
           {
@@ -366,6 +368,38 @@ it.effect.each(
             threadId: fallback.id,
             status: "starting",
             activeTurnId: null,
+          },
+        ],
+      );
+      // The thread shows where the server picked its work back up, on the
+      // turn the provider started for the continued work.
+      assert.deepStrictEqual(
+        dispatched
+          .flatMap((command) =>
+            command.type === "thread.activity.append"
+              ? [
+                  {
+                    threadId: command.threadId,
+                    kind: command.activity.kind,
+                    summary: command.activity.summary,
+                    turnId: command.activity.turnId,
+                  },
+                ]
+              : [],
+          )
+          .toSorted((left, right) => String(left.threadId).localeCompare(String(right.threadId))),
+        [
+          {
+            threadId: codex.id,
+            kind: "server-restart.continued",
+            summary: "Continued after server restart",
+            turnId: TurnId.make(`continued-${String(codex.id)}`),
+          },
+          {
+            threadId: fallback.id,
+            kind: "server-restart.continued",
+            summary: "Continued after server restart",
+            turnId: TurnId.make(`continued-${String(fallback.id)}`),
           },
         ],
       );
@@ -1042,6 +1076,7 @@ it.effect("asks a settled thread to restart background work the update stopped",
     const thread = makeThread("thread-background", "ready");
     const cleared = yield* Deferred.make<void>();
     const sends: ProviderSendTurnInput[] = [];
+    const dispatched: OrchestrationCommand[] = [];
     let binding: ProviderSessionDirectory.ProviderRuntimeBinding = {
       threadId: thread.id,
       provider: ProviderDriverKind.make("codex"),
@@ -1080,12 +1115,37 @@ it.effect("asks a settled thread to restart background work the update stopped",
         listBindings: () => Effect.sync(() => [{ ...binding, lastSeenAt: updatedAt }]),
         recordImportedTranscript: () => Effect.die("unused"),
       },
-      dispatch: () => Effect.succeed({ sequence: 1 }),
+      dispatch: (command) =>
+        Effect.sync(() => {
+          dispatched.push(command);
+          return { sequence: dispatched.length };
+        }),
     });
     yield* Deferred.await(cleared);
     assert.equal(sends.length, 1);
     assert.equal(sends[0]?.continuation, undefined);
     assert.match(String(sends[0]?.input), /stopped your background work/);
+    // The row sits on the turn the prompt started, where the agent answers.
+    assert.deepStrictEqual(
+      dispatched.flatMap((command) =>
+        command.type === "thread.activity.append"
+          ? [
+              {
+                kind: command.activity.kind,
+                summary: command.activity.summary,
+                turnId: command.activity.turnId,
+              },
+            ]
+          : [],
+      ),
+      [
+        {
+          kind: "server-restart.background-continued",
+          summary: "Asked to restart background work after server restart",
+          turnId: TurnId.make("turn-restarted"),
+        },
+      ],
+    );
     assert.deepStrictEqual(binding.runtimePayload, {
       activeTurnId: null,
       continueAfterServerUpdate: null,

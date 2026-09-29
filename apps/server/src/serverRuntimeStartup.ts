@@ -3,10 +3,13 @@ import {
   DEFAULT_MODEL,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_SERVER_SETTINGS,
+  EventId,
   type ModelSelection,
   type OrchestrationProjectShell,
   ProjectId,
   ProviderInstanceId,
+  SERVER_RESTART_BACKGROUND_ACTIVITY_KIND,
+  SERVER_RESTART_CONTINUED_ACTIVITY_KIND,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -518,6 +521,41 @@ const clearProviderSessionContinuationMarkers = (threadIds: ReadonlyArray<Thread
     yield* clearContinuationMarkers(directory, threadIds);
   }).pipe(Effect.mapError(toServerUpdateThreadContinuationError));
 
+/** Shows in the thread that the server resumed its work after restarting. */
+const recordRestartContinued = (input: {
+  readonly threadId: ThreadId;
+  readonly turnId: TurnId;
+  readonly background: boolean;
+  readonly createdAt: string;
+}) =>
+  Effect.gen(function* () {
+    const crypto = yield* Crypto.Crypto;
+    const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
+    const recordedAt = DateTime.formatIso(yield* DateTime.now);
+    yield* orchestrationEngine.dispatch({
+      type: "thread.activity.append",
+      commandId: CommandId.make(yield* crypto.randomUUIDv4),
+      threadId: input.threadId,
+      activity: {
+        id: EventId.make(yield* crypto.randomUUIDv4),
+        tone: "info",
+        ...(input.background
+          ? {
+              kind: SERVER_RESTART_BACKGROUND_ACTIVITY_KIND,
+              summary: "Asked to restart background work after server restart",
+            }
+          : {
+              kind: SERVER_RESTART_CONTINUED_ACTIVITY_KIND,
+              summary: "Continued after server restart",
+            }),
+        payload: {},
+        turnId: input.turnId,
+        createdAt: input.createdAt,
+      },
+      createdAt: recordedAt,
+    });
+  });
+
 export const reconcileProviderSessions = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
@@ -735,7 +773,10 @@ export const reconcileProviderSessions = Effect.gen(function* () {
               });
             }
             const capabilities = yield* providerService.getCapabilities(providerInstanceId);
-            yield* providerService.sendTurn({
+            // Stamp the row before sending so it sorts ahead of the
+            // provider's first output, but record it only once the send lands.
+            const continuedAt = DateTime.formatIso(yield* DateTime.now);
+            const turn = yield* providerService.sendTurn({
               threadId: thread.id,
               ...(backgroundContinuation
                 ? { input: SERVER_UPDATE_BACKGROUND_CONTINUATION_PROMPT }
@@ -744,10 +785,27 @@ export const reconcileProviderSessions = Effect.gen(function* () {
                   : { input: SERVER_UPDATE_CONTINUATION_PROMPT }),
               interactionMode: thread.interactionMode,
             });
+            return { continuedAt, turnId: turn.turnId };
           });
           const continuationExit = yield* Effect.exit(continuation);
           if (Exit.isSuccess(continuationExit) || Cause.hasInterrupts(continuationExit.cause)) {
             if (Exit.isSuccess(continuationExit)) {
+              yield* recordRestartContinued({
+                threadId: thread.id,
+                // The row belongs to the turn that carries the continued work.
+                turnId: continuationExit.value.turnId,
+                background: backgroundContinuation,
+                createdAt: continuationExit.value.continuedAt,
+              }).pipe(
+                Effect.catchCause((cause) =>
+                  Cause.hasInterrupts(cause)
+                    ? Effect.failCause(cause)
+                    : Effect.logWarning("failed to record provider session continuation", {
+                        threadId: thread.id,
+                        cause,
+                      }),
+                ),
+              );
               yield* clearContinuationMarkers(directory, [thread.id]).pipe(
                 Effect.uninterruptible,
                 Effect.catchCause((cause) =>

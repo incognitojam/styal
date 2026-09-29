@@ -2170,6 +2170,102 @@ describe("buildThreadFeed", () => {
     expect(serializedToolOutputs).toBe(1);
   });
 
+  describe("a turn continued after a server restart", () => {
+    const firstTurnId = TurnId.make("turn-1");
+    const continuedTurnId = TurnId.make("turn-2");
+    const message = (
+      id: string,
+      role: "user" | "assistant",
+      turnId: TurnId | null,
+      at: string,
+    ) => ({
+      id: MessageId.make(id),
+      role,
+      text: id,
+      turnId,
+      streaming: false,
+      createdAt: at,
+      updatedAt: at,
+    });
+    const tool = (id: string, turnId: TurnId, at: string) =>
+      makeActivity({
+        id: EventId.make(id),
+        kind: "tool.completed",
+        tone: "tool",
+        summary: "Read files",
+        createdAt: at,
+        turnId,
+        payload: { title: "Read files", itemType: "file_read", status: "completed" },
+      });
+    const presentationFor = (restartKind: string, expandedTurnIds: ReadonlySet<TurnId>) => {
+      const thread = makeThread({
+        id: ThreadId.make("thread-restart"),
+        projectId: ProjectId.make("project-1"),
+        title: "Continued work",
+        latestTurn: {
+          turnId: continuedTurnId,
+          state: "completed",
+          requestedAt: "2026-04-01T00:00:40.000Z",
+          startedAt: "2026-04-01T00:00:40.000Z",
+          completedAt: "2026-04-01T00:01:30.000Z",
+          assistantMessageId: MessageId.make("answer"),
+        },
+        messages: [
+          message("request", "user", null, "2026-04-01T00:00:00.000Z"),
+          message("plan", "assistant", firstTurnId, "2026-04-01T00:00:05.000Z"),
+          message("progress", "assistant", firstTurnId, "2026-04-01T00:00:20.000Z"),
+          message("resumed", "assistant", continuedTurnId, "2026-04-01T00:00:45.000Z"),
+          message("answer", "assistant", continuedTurnId, "2026-04-01T00:01:30.000Z"),
+        ],
+        activities: [
+          tool("edit", firstTurnId, "2026-04-01T00:00:10.000Z"),
+          makeActivity({
+            id: EventId.make("restart-note"),
+            kind: restartKind,
+            tone: "info",
+            summary: "Continued after server restart",
+            createdAt: "2026-04-01T00:00:40.000Z",
+            turnId: continuedTurnId,
+            payload: {},
+          }),
+          tool("typecheck", continuedTurnId, "2026-04-01T00:00:50.000Z"),
+        ],
+      });
+      return deriveThreadFeedPresentation(
+        buildThreadFeed(thread),
+        thread.latestTurn,
+        expandedTurnIds,
+      );
+    };
+
+    it("folds with the turn it continued into one response", () => {
+      const collapsed = presentationFor("server-restart.continued", new Set());
+      expect(collapsed.map((entry) => entry.id)).toEqual([
+        "request",
+        "plan",
+        "turn-fold:turn-1",
+        "answer",
+      ]);
+      // User message (00:00:00) → final answer (00:01:30), less the 20s between
+      // the interrupted turn's last message and the restart note.
+      expect(collapsed[2]).toMatchObject({ type: "turn-fold", label: "Worked for 1m 10s" });
+
+      const expanded = presentationFor("server-restart.continued", new Set([firstTurnId]));
+      expect(expanded.map((entry) => entry.id)).toEqual(
+        expect.arrayContaining(["progress", "restart-note", "resumed"]),
+      );
+    });
+
+    it("keeps a background-work continuation as its own response", () => {
+      const ids = presentationFor("server-restart.background-continued", new Set()).map(
+        (entry) => entry.id,
+      );
+      expect(ids).toEqual(
+        expect.arrayContaining(["turn-fold:turn-1", "progress", "turn-fold:turn-2"]),
+      );
+    });
+  });
+
   it("keeps the first and terminal assistant messages visible around settled work", () => {
     const turnId = TurnId.make("turn-1");
     const thread = makeThread({

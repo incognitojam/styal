@@ -38,13 +38,16 @@ import {
 import {
   commandDetailRepeatsCommand,
   extractCommandOutputText,
+  deriveContinuedTurnRoots,
   extractWorkLogToolLifecycleStatus,
+  isStandaloneTimelineActivityKind,
   isWorktreeSetupActivity,
   liveActivityToolStatus,
   normalizeCompactToolLabel,
   omitRetriedFindingsReports,
   omitSupersededLifecycleMarkers,
   resolveWorkEntryToolPresentation,
+  restartDowntimeMs,
   summarizeToolGroup,
   toolGroupAction,
   toolGroupSummaryKind,
@@ -336,12 +339,12 @@ const turnFoldRowsCache = new WeakMap<
 >();
 let cachedThinkingRow: Extract<ThreadFeedEntry, { readonly type: "thinking" }> | null = null;
 
-export function isContextCompactionActivityGroup(
+export function isStandaloneActivityGroup(
   entry: Extract<ThreadFeedEntry, { readonly type: "activity-group" }>,
 ): boolean {
   return (
     entry.activities.length === 1 &&
-    entry.activities[0]?.workEntry.sourceActivityKind === "context-compaction"
+    isStandaloneTimelineActivityKind(entry.activities[0]?.workEntry.sourceActivityKind)
   );
 }
 
@@ -1802,10 +1805,10 @@ function groupAdjacentActivities(entries: ReadonlyArray<RawThreadFeedEntry>): Th
       continue;
     }
 
-    // Compaction and findings rows render on their own, so they get their
-    // own group.
+    // Standalone activities and findings rows render on their own, so they
+    // get their own group.
     const standsAlone =
-      entry.activity.workEntry.sourceActivityKind === "context-compaction" ||
+      isStandaloneTimelineActivityKind(entry.activity.workEntry.sourceActivityKind) ||
       workEntryReviewFindings(entry.activity.workEntry) !== undefined;
     if (standsAlone || firstActivityEntry?.turnId !== entry.turnId) {
       flushGroup();
@@ -1854,22 +1857,40 @@ interface ThreadFeedTurnFold {
   readonly label: string;
 }
 
+function threadFeedEntryTurnId(entry: ThreadFeedEntry): TurnId | null {
+  if (entry.type === "message") {
+    return entry.message.role === "assistant" ? (entry.message.turnId ?? null) : null;
+  }
+  return entry.type === "activity-group" ? entry.turnId : null;
+}
+
 function deriveThreadFeedTurnFolds(
   feed: ReadonlyArray<ThreadFeedEntry>,
   latestTurn: ThreadFeedLatestTurn | null,
 ): ReadonlyMap<string, ThreadFeedTurnFold> {
+  const continuedTurnRoots = deriveContinuedTurnRoots(feed, (entry) => ({
+    turnId: threadFeedEntryTurnId(entry),
+    isUserMessage: entry.type === "message" && entry.message.role === "user",
+    activityKind:
+      entry.type === "activity-group"
+        ? entry.activities[0]?.workEntry.sourceActivityKind
+        : undefined,
+  }));
   const firstAssistantMessageIdByTurn = new Map<TurnId, string>();
   const terminalAssistantMessageIdByTurn = new Map<TurnId, string>();
   for (const entry of feed) {
     if (entry.type === "message" && entry.message.role === "assistant" && entry.message.turnId) {
-      if (!firstAssistantMessageIdByTurn.has(entry.message.turnId)) {
-        firstAssistantMessageIdByTurn.set(entry.message.turnId, entry.id);
+      const rootTurnId = continuedTurnRoots.get(entry.message.turnId) ?? entry.message.turnId;
+      if (!firstAssistantMessageIdByTurn.has(rootTurnId)) {
+        firstAssistantMessageIdByTurn.set(rootTurnId, entry.id);
       }
-      terminalAssistantMessageIdByTurn.set(entry.message.turnId, entry.id);
+      terminalAssistantMessageIdByTurn.set(rootTurnId, entry.id);
     }
   }
 
   interface TurnGroup {
+    /** The turn and any turns that continued it after a server restart. */
+    readonly turnIds: Set<TurnId>;
     readonly entries: ThreadFeedEntry[];
     readonly startBoundary: string | null;
   }
@@ -1880,24 +1901,22 @@ function deriveThreadFeedTurnFolds(
       pendingUserBoundary = entry.message.createdAt;
       continue;
     }
-    const turnId =
-      entry.type === "message" && entry.message.role === "assistant"
-        ? entry.message.turnId
-        : entry.type === "activity-group"
-          ? entry.turnId
-          : null;
+    const turnId = threadFeedEntryTurnId(entry);
     if (!turnId) {
       continue;
     }
-    let group = groupsByTurnId.get(turnId);
+    const rootTurnId = continuedTurnRoots.get(turnId) ?? turnId;
+    let group = groupsByTurnId.get(rootTurnId);
     if (!group) {
       group = {
+        turnIds: new Set(),
         entries: [],
         startBoundary: pendingUserBoundary,
       };
       pendingUserBoundary = null;
-      groupsByTurnId.set(turnId, group);
+      groupsByTurnId.set(rootTurnId, group);
     }
+    group.turnIds.add(turnId);
     group.entries.push(entry);
   }
 
@@ -1905,7 +1924,7 @@ function deriveThreadFeedTurnFolds(
   const foldsByAnchorId = new Map<string, ThreadFeedTurnFold>();
   for (const [turnId, group] of groupsByTurnId) {
     const { entries } = group;
-    if (turnId === unsettledTurnId) {
+    if (unsettledTurnId !== null && group.turnIds.has(unsettledTurnId)) {
       continue;
     }
     if (entries.some((entry) => entry.type === "message" && entry.message.streaming)) {
@@ -1928,14 +1947,14 @@ function deriveThreadFeedTurnFolds(
     if (hiddenEntryIds.size === 0) {
       continue;
     }
-    // A lone compaction row stays visible on its own; it only folds away as
-    // part of a turn that already folds other work.
-    const hidesNonCompactionWork = entries.some(
+    // A lone standalone row stays visible on its own; it only folds away as part
+    // of a turn that already folds other work.
+    const hidesNonStandaloneWork = entries.some(
       (entry) =>
         hiddenEntryIds.has(entry.id) &&
-        !(entry.type === "activity-group" && isContextCompactionActivityGroup(entry)),
+        !(entry.type === "activity-group" && isStandaloneActivityGroup(entry)),
     );
-    if (!hidesNonCompactionWork) {
+    if (!hidesNonStandaloneWork) {
       continue;
     }
 
@@ -1948,11 +1967,14 @@ function deriveThreadFeedTurnFolds(
     const terminalEntry = terminalAssistantMessageId
       ? entries.find((entry) => entry.id === terminalAssistantMessageId)
       : null;
-    const latestTurnMatches = latestTurn?.turnId === turnId;
+    const latestTurnMatches = latestTurn !== null && group.turnIds.has(latestTurn.turnId);
     const lastEntryEnd =
       lastEntry.type === "message" ? lastEntry.message.updatedAt : lastEntry.createdAt;
     const elapsedMs =
-      latestTurnMatches && latestTurn.startedAt && latestTurn.completedAt
+      latestTurnMatches &&
+      group.turnIds.size === 1 &&
+      latestTurn.startedAt &&
+      latestTurn.completedAt
         ? computeElapsedMs(latestTurn.startedAt, latestTurn.completedAt)
         : computeElapsedMs(
             group.startBoundary ?? firstEntry.createdAt,
@@ -1961,7 +1983,24 @@ function deriveThreadFeedTurnFolds(
               lastEntryEnd,
             ) ?? lastEntryEnd,
           );
-    const duration = elapsedMs === null ? null : formatDuration(elapsedMs);
+    const workedMs =
+      elapsedMs !== null && group.turnIds.size > 1
+        ? Math.max(
+            0,
+            elapsedMs -
+              restartDowntimeMs(entries, (entry) => ({
+                turnId: threadFeedEntryTurnId(entry) ?? turnId,
+                startedAt: entry.createdAt,
+                endedAt:
+                  entry.type === "message"
+                    ? entry.message.updatedAt
+                    : entry.type === "activity-group"
+                      ? (entry.activities.at(-1)?.createdAt ?? entry.createdAt)
+                      : entry.createdAt,
+              })),
+          )
+        : elapsedMs;
+    const duration = workedMs === null ? null : formatDuration(workedMs);
     const interrupted = latestTurnMatches && latestTurn.state === "interrupted";
     const label = interrupted
       ? duration
@@ -2103,7 +2142,7 @@ function appendPresentedFeedEntry(
     result.push(entry);
     return;
   }
-  if (isContextCompactionActivityGroup(entry)) {
+  if (isStandaloneActivityGroup(entry)) {
     result.push(entry);
     return;
   }

@@ -3,14 +3,19 @@ import { shallow } from "zustand/vanilla/shallow";
 import { renderCodexDirectivesForCopy } from "@t3tools/client-runtime/codex-markdown-directives";
 import { commandProgramName } from "@t3tools/client-runtime/work-log/command-label";
 import {
+  deriveContinuedTurnRoots,
+  isStandaloneTimelineActivityKind,
   liveActivityToolStatus,
   normalizeCompactToolLabel,
   omitSupersededLifecycleMarkers,
   resolveWorkEntryToolPresentation,
+  restartDowntimeMs,
+  standaloneTimelineActivityStyle,
   summarizeToolGroup,
   toolGroupAction,
   toolGroupSummaryKind,
   workEntryReviewFindings,
+  type StandaloneTimelineActivityStyle,
   type ToolGroupSummaryKind,
 } from "@t3tools/client-runtime/work-log/presentation";
 export {
@@ -404,10 +409,11 @@ export type MessagesTimelineRow =
       expanded: boolean;
     }
   | {
-      kind: "context-compaction";
+      kind: "standalone-activity";
       id: string;
       createdAt: string;
       label: string;
+      style: StandaloneTimelineActivityStyle;
     }
   | {
       kind: "message";
@@ -536,7 +542,10 @@ export function resolveAssistantMessageCopyState({
   };
 }
 
-function deriveTerminalAssistantMessageIds(timelineEntries: ReadonlyArray<TimelineEntry>) {
+function deriveTerminalAssistantMessageIds(
+  timelineEntries: ReadonlyArray<TimelineEntry>,
+  continuedTurnRoots: ReadonlyMap<TurnId, TurnId>,
+) {
   const lastAssistantMessageIdByResponseKey = new Map<string, string>();
   let nullTurnResponseIndex = 0;
 
@@ -554,7 +563,7 @@ function deriveTerminalAssistantMessageIds(timelineEntries: ReadonlyArray<Timeli
     }
 
     const responseKey = message.turnId
-      ? `turn:${message.turnId}`
+      ? `turn:${continuedTurnRoots.get(message.turnId) ?? message.turnId}`
       : `unkeyed:${nullTurnResponseIndex}`;
     lastAssistantMessageIdByResponseKey.set(responseKey, message.id);
   }
@@ -737,11 +746,14 @@ function workEntryIsActiveTurnActivity(entry: WorkLogEntry): boolean {
  */
 function deriveTurnFolds(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
+  continuedTurnRoots: ReadonlyMap<TurnId, TurnId>;
   terminalAssistantMessageIds: ReadonlySet<string>;
   latestTurn: TimelineLatestTurn | null;
   unfoldedTurnIds: ReadonlySet<TurnId>;
 }): ReadonlyMap<string, TurnFold> {
   interface TurnGroup {
+    /** The turn and any turns that continued it after a server restart. */
+    turnIds: Set<TurnId>;
     entries: Array<TimelineEntry>;
     terminalEntry: Extract<TimelineEntry, { kind: "message" }> | null;
     hasStreamingMessage: boolean;
@@ -770,9 +782,11 @@ function deriveTurnFolds(input: {
     if (!turnId) {
       continue;
     }
-    let group = groupsByTurnId.get(turnId);
+    const rootTurnId = input.continuedTurnRoots.get(turnId) ?? turnId;
+    let group = groupsByTurnId.get(rootTurnId);
     if (!group) {
       group = {
+        turnIds: new Set(),
         entries: [],
         terminalEntry: null,
         hasStreamingMessage: false,
@@ -782,8 +796,9 @@ function deriveTurnFolds(input: {
         startBoundary: pendingUserBoundary,
       };
       pendingUserBoundary = null;
-      groupsByTurnId.set(turnId, group);
+      groupsByTurnId.set(rootTurnId, group);
     }
+    group.turnIds.add(turnId);
     group.entries.push(entry);
     if (entry.kind === "message") {
       if (input.terminalAssistantMessageIds.has(entry.message.id)) {
@@ -797,7 +812,7 @@ function deriveTurnFolds(input: {
 
   const foldsByAnchorEntryId = new Map<string, TurnFold>();
   for (const [turnId, group] of groupsByTurnId) {
-    if (input.unfoldedTurnIds.has(turnId)) {
+    if ([...group.turnIds].some((memberTurnId) => input.unfoldedTurnIds.has(memberTurnId))) {
       continue;
     }
     if (group.hasStreamingMessage) {
@@ -811,13 +826,13 @@ function deriveTurnFolds(input: {
       if (entry.id === group.terminalEntry?.id) {
         continue;
       }
-      const isCompaction =
-        entry.kind === "work" && entry.entry.sourceActivityKind === "context-compaction";
+      const isStandalone =
+        entry.kind === "work" && isStandaloneTimelineActivityKind(entry.entry.sourceActivityKind);
       const isSingleTrailingActivity =
         group.entries.length === terminalEntryIndex + 2 &&
         entry.kind === "work" &&
         !workEntryDisplayIndicatesToolFailure(entry.entry);
-      if (!isCompaction && index > terminalEntryIndex && !isSingleTrailingActivity) {
+      if (!isStandalone && index > terminalEntryIndex && !isSingleTrailingActivity) {
         continue;
       }
       // Agent-spawn CTA rows never fold: workflows outlive their launching
@@ -836,14 +851,16 @@ function deriveTurnFolds(input: {
     if (hiddenEntryIds.size === 0) {
       continue;
     }
-    // A lone compaction row stays visible on its own; it only folds away as
-    // part of a turn that already folds other work.
-    const hidesNonCompactionWork = group.entries.some(
+    // A lone standalone row stays visible on its own; it only folds away as part
+    // of a turn that already folds other work.
+    const hidesNonStandaloneWork = group.entries.some(
       (entry) =>
         hiddenEntryIds.has(entry.id) &&
-        !(entry.kind === "work" && entry.entry.sourceActivityKind === "context-compaction"),
+        !(
+          entry.kind === "work" && isStandaloneTimelineActivityKind(entry.entry.sourceActivityKind)
+        ),
     );
-    if (!hidesNonCompactionWork) {
+    if (!hidesNonStandaloneWork) {
       continue;
     }
 
@@ -855,12 +872,15 @@ function deriveTurnFolds(input: {
     }
 
     const isLatestInterruptedTurn =
-      input.latestTurn?.turnId === turnId && input.latestTurn.state === "interrupted";
+      input.latestTurn !== null &&
+      group.turnIds.has(input.latestTurn.turnId) &&
+      input.latestTurn.state === "interrupted";
     // A turn cut short by a steer leaves trailing work entries behind its
     // terminal message — take whichever ended last.
     const lastEntryEnd =
       lastEntry.kind === "message" ? lastEntry.message.updatedAt : lastEntry.createdAt;
     const elapsedMs =
+      group.turnIds.size === 1 &&
       input.latestTurn?.turnId === turnId &&
       input.latestTurn.startedAt &&
       input.latestTurn.completedAt
@@ -870,7 +890,19 @@ function deriveTurnFolds(input: {
             maxIsoTimestamp(group.terminalEntry?.message.updatedAt ?? null, lastEntryEnd) ??
               lastEntryEnd,
           );
-    const duration = elapsedMs !== null ? formatDuration(elapsedMs) : null;
+    const workedMs =
+      elapsedMs !== null && group.turnIds.size > 1
+        ? Math.max(
+            0,
+            elapsedMs -
+              restartDowntimeMs(group.entries, (entry) => ({
+                turnId: timelineEntryTurnId(entry) ?? turnId,
+                startedAt: entry.createdAt,
+                endedAt: entry.kind === "message" ? entry.message.updatedAt : entry.createdAt,
+              })),
+          )
+        : elapsedMs;
+    const duration = workedMs !== null ? formatDuration(workedMs) : null;
     const label = isLatestInterruptedTurn
       ? duration
         ? `You stopped after ${duration}`
@@ -1044,7 +1076,15 @@ export function deriveMessagesTimelineRows(input: {
   const durationStartByMessageId = computeMessageDurationStart(
     input.timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
   );
-  const terminalAssistantMessageIds = deriveTerminalAssistantMessageIds(input.timelineEntries);
+  const continuedTurnRoots = deriveContinuedTurnRoots(input.timelineEntries, (entry) => ({
+    turnId: timelineEntryTurnId(entry),
+    isUserMessage: entry.kind === "message" && entry.message.role === "user",
+    activityKind: entry.kind === "work" ? entry.entry.sourceActivityKind : undefined,
+  }));
+  const terminalAssistantMessageIds = deriveTerminalAssistantMessageIds(
+    input.timelineEntries,
+    continuedTurnRoots,
+  );
   const unsettledTurnId = deriveUnsettledTurnId(
     input.latestTurn ?? null,
     input.runningTurnId ?? null,
@@ -1056,6 +1096,7 @@ export function deriveMessagesTimelineRows(input: {
   });
   const foldsByAnchorEntryId = deriveTurnFolds({
     timelineEntries: input.timelineEntries,
+    continuedTurnRoots,
     terminalAssistantMessageIds,
     latestTurn: input.latestTurn ?? null,
     unfoldedTurnIds: activeVisualResponseTurnIds,
@@ -1090,7 +1131,7 @@ export function deriveMessagesTimelineRows(input: {
       !entryBelongsToActiveTurn(entry, index) ||
       entry.kind !== "work" ||
       entry.entry.agentSpawn !== undefined ||
-      entry.entry.sourceActivityKind === "context-compaction" ||
+      isStandaloneTimelineActivityKind(entry.entry.sourceActivityKind) ||
       entry.entry.tone === "error" ||
       workEntryReviewFindings(entry.entry) !== undefined
     ) {
@@ -1202,15 +1243,17 @@ export function deriveMessagesTimelineRows(input: {
       continue;
     }
 
-    if (
-      timelineEntry.kind === "work" &&
-      timelineEntry.entry.sourceActivityKind === "context-compaction"
-    ) {
+    const standaloneStyle =
+      timelineEntry.kind === "work"
+        ? standaloneTimelineActivityStyle(timelineEntry.entry.sourceActivityKind)
+        : undefined;
+    if (timelineEntry.kind === "work" && standaloneStyle !== undefined) {
       nextRows.push({
-        kind: "context-compaction",
+        kind: "standalone-activity",
         id: timelineEntry.id,
         createdAt: timelineEntry.createdAt,
         label: timelineEntry.entry.label,
+        style: standaloneStyle,
       });
       continue;
     }
@@ -1251,7 +1294,7 @@ export function deriveMessagesTimelineRows(input: {
           !nextEntry ||
           nextEntry.kind !== "work" ||
           nextEntry.entry.agentSpawn !== undefined ||
-          nextEntry.entry.sourceActivityKind === "context-compaction" ||
+          isStandaloneTimelineActivityKind(nextEntry.entry.sourceActivityKind) ||
           nextEntry.entry.tone === "error" ||
           workEntryReviewFindings(nextEntry.entry) !== undefined ||
           activeWorkEntryIds.has(nextEntry.id) ||
@@ -1567,9 +1610,9 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       return a.createdAt === bf.createdAt && a.label === bf.label && a.expanded === bf.expanded;
     }
 
-    case "context-compaction": {
+    case "standalone-activity": {
       const bc = b as typeof a;
-      return a.createdAt === bc.createdAt && a.label === bc.label;
+      return a.createdAt === bc.createdAt && a.label === bc.label && a.style === bc.style;
     }
 
     case "proposed-plan":

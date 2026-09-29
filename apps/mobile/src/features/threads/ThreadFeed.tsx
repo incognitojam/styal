@@ -22,7 +22,10 @@ import {
   classifyMarkdownImageSource,
   markdownImageSourceFragment,
 } from "@t3tools/client-runtime/markdown-images";
-import { resolveViewedImageAsset } from "@t3tools/client-runtime/work-log/presentation";
+import {
+  resolveViewedImageAsset,
+  standaloneTimelineActivityStyle,
+} from "@t3tools/client-runtime/work-log/presentation";
 import {
   renderCodexFileCitationsAsMarkdown,
   splitCodexArtifactTemplateMarkdown,
@@ -151,7 +154,7 @@ import {
 } from "@t3tools/mobile-markdown-text/links";
 import {
   deriveThreadFeedPresentation,
-  isContextCompactionActivityGroup,
+  isStandaloneActivityGroup,
   type ThreadFeedEntry,
   type ThreadFeedLatestTurn,
 } from "../../lib/threadActivity";
@@ -1510,8 +1513,33 @@ function renderFeedEntry(
     );
   }
 
-  if (entry.type === "activity-group" && isContextCompactionActivityGroup(entry)) {
+  if (entry.type === "activity-group" && isStandaloneActivityGroup(entry)) {
     const label = entry.activities[0]!.summary;
+    if (
+      standaloneTimelineActivityStyle(entry.activities[0]!.workEntry.sourceActivityKind) ===
+      "restart-note"
+    ) {
+      return (
+        <View
+          accessible
+          accessibilityLabel={label}
+          className="mb-3 flex-row items-center gap-1.5 px-1"
+        >
+          <View className="h-6 w-6 shrink-0 items-center justify-center">
+            <SymbolView
+              name="arrow.clockwise"
+              size={14}
+              weight="medium"
+              tintColor={iconSubtleColor}
+              type="monochrome"
+            />
+          </View>
+          <Text className="min-w-0 flex-1 text-sm text-foreground-muted" numberOfLines={1}>
+            {label}
+          </Text>
+        </View>
+      );
+    }
     return (
       <View
         accessible
@@ -2787,7 +2815,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         case "thinking":
           return WORK_GROUP_TOGGLE_HEIGHT;
         case "activity-group":
-          if (isContextCompactionActivityGroup(entry)) {
+          if (isStandaloneActivityGroup(entry)) {
             return undefined;
           }
           // Expanded rows append a variable detail block — fall back to

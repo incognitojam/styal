@@ -1,10 +1,13 @@
 import {
   isToolLifecycleItemType,
+  SERVER_RESTART_BACKGROUND_ACTIVITY_KIND,
+  SERVER_RESTART_CONTINUED_ACTIVITY_KIND,
   type AssetResource,
   type RuntimeItemStatus,
   type ThreadId,
   type ToolActivitySource,
   type ToolLifecycleItemType,
+  type TurnId,
 } from "@t3tools/contracts";
 import { classifyMarkdownImageSource } from "@t3tools/client-runtime/markdown-images";
 import { resolveMediaSource } from "@t3tools/client-runtime/media-source";
@@ -16,6 +19,118 @@ import {
   type ReviewFindingsReport,
 } from "@t3tools/shared/reviewFindings";
 import { memoryFileToolKind, memoryFileToolPath } from "@t3tools/shared/toolRowPresentation";
+
+/**
+ * Activity kinds clients show as a row of their own: never merged into a
+ * group of work rows, and still visible when a folded turn has nothing else
+ * to hide. Compaction breaks the agent's context, so it is drawn as a divider;
+ * a restart continues the same conversation, so it is drawn as a note in the
+ * turn's work.
+ */
+const STANDALONE_TIMELINE_ACTIVITY_STYLES = {
+  "context-compaction": "divider",
+  [SERVER_RESTART_CONTINUED_ACTIVITY_KIND]: "restart-note",
+  [SERVER_RESTART_BACKGROUND_ACTIVITY_KIND]: "restart-note",
+} as const;
+
+export type StandaloneTimelineActivityStyle =
+  (typeof STANDALONE_TIMELINE_ACTIVITY_STYLES)[keyof typeof STANDALONE_TIMELINE_ACTIVITY_STYLES];
+
+/** How clients draw a standalone activity, or undefined when the kind is not one. */
+export function standaloneTimelineActivityStyle(
+  kind: string | undefined,
+): StandaloneTimelineActivityStyle | undefined {
+  return kind !== undefined && Object.hasOwn(STANDALONE_TIMELINE_ACTIVITY_STYLES, kind)
+    ? STANDALONE_TIMELINE_ACTIVITY_STYLES[kind as keyof typeof STANDALONE_TIMELINE_ACTIVITY_STYLES]
+    : undefined;
+}
+
+export function isStandaloneTimelineActivityKind(kind: string | undefined): kind is string {
+  return standaloneTimelineActivityStyle(kind) !== undefined;
+}
+
+/** What deriveContinuedTurnRoots reads from one timeline entry. */
+export interface ContinuedTurnEntry {
+  /** The provider turn the entry belongs to, or null when it has none. */
+  readonly turnId: TurnId | null;
+  readonly isUserMessage: boolean;
+  readonly activityKind: string | undefined;
+}
+
+/**
+ * A prompted continuation after a server restart runs in a new provider turn
+ * with no user message before it. Maps each such turn, recognised by the
+ * restart note that opens it, to the turn it continued so clients fold both as
+ * one response. Every other turn maps to itself. Entries must be in timeline
+ * order.
+ */
+export function deriveContinuedTurnRoots<Entry>(
+  entries: Iterable<Entry>,
+  describe: (entry: Entry) => ContinuedTurnEntry,
+): ReadonlyMap<TurnId, TurnId> {
+  const roots = new Map<TurnId, TurnId>();
+  let previousRoot: TurnId | null = null;
+  for (const entry of entries) {
+    const { turnId, isUserMessage, activityKind } = describe(entry);
+    if (isUserMessage) {
+      previousRoot = null;
+      continue;
+    }
+    if (turnId === null) {
+      continue;
+    }
+    let root = roots.get(turnId);
+    if (root === undefined) {
+      root =
+        previousRoot !== null && activityKind === SERVER_RESTART_CONTINUED_ACTIVITY_KIND
+          ? previousRoot
+          : turnId;
+      roots.set(turnId, root);
+    }
+    previousRoot = root;
+  }
+  return roots;
+}
+
+/** What restartDowntimeMs reads from one entry of a response. */
+export interface RestartDowntimeEntry {
+  readonly turnId: TurnId;
+  readonly startedAt: string;
+  readonly endedAt: string;
+}
+
+/**
+ * Time a response spent waiting for the server to restart: for each turn that
+ * continued another, the gap between the last entry before it and its first
+ * entry. Subtract it from the response's duration so a long outage does not
+ * count as work. Entries must be one response's entries in timeline order.
+ */
+export function restartDowntimeMs<Entry>(
+  entries: Iterable<Entry>,
+  describe: (entry: Entry) => RestartDowntimeEntry,
+): number {
+  let downtimeMs = 0;
+  let previousTurnId: TurnId | null = null;
+  let previousEndMs: number | null = null;
+  for (const entry of entries) {
+    const { turnId, startedAt, endedAt } = describe(entry);
+    const startMs = Date.parse(startedAt);
+    if (
+      previousTurnId !== null &&
+      turnId !== previousTurnId &&
+      previousEndMs !== null &&
+      Number.isFinite(startMs)
+    ) {
+      downtimeMs += Math.max(0, startMs - previousEndMs);
+    }
+    previousTurnId = turnId;
+    const endMs = Date.parse(endedAt);
+    if (Number.isFinite(endMs)) {
+      previousEndMs = previousEndMs === null ? endMs : Math.max(previousEndMs, endMs);
+    }
+  }
+  return downtimeMs;
+}
 
 export function isWorktreeSetupActivity(kind: string): boolean {
   return kind === "setup-script.requested" || kind === "setup-script.started";

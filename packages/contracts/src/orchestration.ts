@@ -581,6 +581,14 @@ export const OrchestrationThreadActivity = Schema.Struct({
 });
 export type OrchestrationThreadActivity = typeof OrchestrationThreadActivity.Type;
 
+/** Recorded when the server continues a thread's running turn after it restarts. */
+export const SERVER_RESTART_CONTINUED_ACTIVITY_KIND = "server-restart.continued";
+/**
+ * Recorded when the server asks a settled thread to restart the background work
+ * a restart stopped.
+ */
+export const SERVER_RESTART_BACKGROUND_ACTIVITY_KIND = "server-restart.background-continued";
+
 const OrchestrationLatestTurnState = Schema.Literals([
   "running",
   "interrupted",

@@ -122,6 +122,7 @@ import {
   MinusIcon,
   PlayIcon,
   RocketIcon,
+  RotateCwIcon,
   SearchCheckIcon,
   SearchIcon,
   SquarePenIcon,
@@ -1348,7 +1349,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "work-live" ? <LiveWorkEntryTimelineRow row={row} /> : null}
       {row.kind === "work-toggle" ? <WorkGroupToggleTimelineRow row={row} /> : null}
       {row.kind === "turn-fold" ? <TurnFoldTimelineRow row={row} /> : null}
-      {row.kind === "context-compaction" ? <ContextCompactionTimelineRow row={row} /> : null}
+      {row.kind === "standalone-activity" ? <StandaloneActivityTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "user" ? <UserTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "assistant" ? (
         <AssistantTimelineRow row={row} />
@@ -1362,11 +1363,21 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
   );
 });
 
-function ContextCompactionTimelineRow({
+function StandaloneActivityTimelineRow({
   row,
 }: {
-  row: Extract<TimelineRow, { kind: "context-compaction" }>;
+  row: Extract<TimelineRow, { kind: "standalone-activity" }>;
 }) {
+  if (row.style === "restart-note") {
+    return (
+      <div className="mx-auto flex w-full max-w-3xl items-center gap-1.5 px-0.5 py-0.5">
+        <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">
+          <RotateCwIcon aria-hidden="true" className="block size-4 stroke-[1.8] opacity-70" />
+        </span>
+        <p className="text-secondary-label text-sm leading-relaxed">{row.label}</p>
+      </div>
+    );
+  }
   return (
     <div
       role="separator"
