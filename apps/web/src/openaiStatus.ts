@@ -9,26 +9,43 @@ export const OPENAI_STATUS_SUMMARY_URL = `${OPENAI_STATUS_PAGE_URL}/api/v2/summa
 export const OPENAI_STATUS_COMPONENTS_URL = `${OPENAI_STATUS_PAGE_URL}/api/v2/components.json`;
 
 /**
- * Consumer and enterprise surfaces a Codex turn never calls. The list stops
- * short of the shared API services and the Codex clients, which the alert is
- * meant to cover even when the disruption is not ours; anything unnamed, new
- * or renamed, still shows.
+ * Surfaces a local Codex turn never calls: consumer and enterprise ChatGPT
+ * features, API products other than Responses, and the other Codex clients.
+ * What a turn does depend on stays visible: Responses, Codex API, CLI, and
+ * Login. A shared outage still shows through those, and anything unnamed,
+ * new or renamed, still shows.
  */
 const OPENAI_IGNORED_COMPONENTS = [
   "Ads API",
   "Ads Manager",
   "Agent",
+  "Agents",
   "Audio",
+  "Batch",
+  "Chat Completions",
   "ChatGPT Atlas",
   "ChatGPT Work",
+  "Codex in ChatGPT Desktop",
+  "Codex Web",
   "Compliance API",
+  "Connectors/Apps",
+  "Conversations",
   "Deep Research",
+  "Embeddings",
   "FedRAMP",
+  "File uploads",
+  "Files",
   "Fine-tuning",
   "GPTs",
+  "Image Generation",
+  "Images",
+  "Moderations",
+  "Realtime",
+  "Search",
   "Sites",
   "Sora",
   "Voice mode",
+  "VS Code extension",
 ];
 
 /**
@@ -38,6 +55,7 @@ const OPENAI_IGNORED_COMPONENTS = [
  */
 const OPENAI_IGNORED_INCIDENT_PATTERNS = [
   /^Delayed support responses\.?$/i,
+  /^Support available via email\.?$/i,
   /^Elevated errors in ChatGPT Work\.?$/i,
   /^Overbilling for OpenAI-hosted containers in the Agent API\.?$/i,
   /^SSO sign-in and SCIM provisioning issues\.?$/i,
