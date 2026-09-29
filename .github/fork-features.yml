@@ -196,7 +196,7 @@ features:
   - id: claude-live-effort-change
     title: Apply Claude effort changes without restarting the session
     status: maintained
-    prs: []
+    prs: [541]
     invariants:
       - Changing only the effort level between turns on a live Claude thread applies the new level to the running Claude Code session, so its background tasks keep running and the next turn uses the new effort.
       - Ultracode, levels that resolve to no API effort, and any other model or option change still restart the session.
