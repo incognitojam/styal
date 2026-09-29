@@ -42,7 +42,7 @@ describe("ThreadPullRequestBadgeControl", () => {
     const mounted = renderer;
     if (!mounted) throw new Error("Badge did not render");
     const link = mounted.root.findByType("a");
-    expect(link.findByType("span").children).toContain("102+1");
+    expect(link.findAllByType("span").flatMap((span) => span.children)).toContain("102+1");
     expect(link.props["aria-label"]).toBe(
       "PR #102, status pending, and 1 more linked; overall open",
     );
@@ -61,9 +61,12 @@ describe("ThreadPullRequestBadgeControl", () => {
         />,
       );
     });
-    const label = mounted.root.findByType("a").findByType("span");
-    expect(label.children).toContain("3");
-    expect(label.children).not.toContain("3+1");
+    const texts = mounted.root
+      .findByType("a")
+      .findAllByType("span")
+      .flatMap((span) => span.children);
+    expect(texts).toContain("3");
+    expect(texts).not.toContain("3+1");
     act(() => mounted.unmount());
   });
 

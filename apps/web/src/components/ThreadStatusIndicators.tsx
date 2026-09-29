@@ -264,7 +264,9 @@ function PullRequestBadge({
   const content = (
     <span className={cn("contents font-normal text-xs tabular-nums", presentation.toneClassName)}>
       <presentation.Icon aria-hidden className="size-3 shrink-0" />
-      {presentation.text}
+      {/* An element, not bare text: bare text takes its line box from the control, which
+          inherits the row's size, so beside a text-sm title it sat below the other meta. */}
+      <span>{presentation.text}</span>
     </span>
   );
   // The sidebar's PR link relies on the thread hover card for the linked PR list, so it renders
