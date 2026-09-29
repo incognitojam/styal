@@ -38,9 +38,11 @@ function layout(
     const height =
       item.kind === "thread"
         ? (item.section === "pinned" || item.section === "active" ? cardHeight : 36) * scale
-        : item.marker === "pinned-header" || item.marker === "pinned-divider"
-          ? 0
-          : (item.marker.endsWith("placeholder") ? 0 : 32) * scale;
+        : item.kind === "project-header"
+          ? 24 * scale
+          : item.marker === "pinned-header" || item.marker === "pinned-divider"
+            ? 0
+            : (item.marker.endsWith("placeholder") ? 0 : 32) * scale;
     const rect = { top, height, bottom: top + height, left: 0, right: 260, width: 260 };
     top += height + 1;
     return rect;
@@ -758,6 +760,78 @@ describe("sidebar drag projection", () => {
     );
     expect(result.get(sidebarMarkerId("snoozed-header"))).toEqual({ ...stationary, y: 83 });
     expect(result.get(sidebarMarkerId("settled-header"))?.y).toBe(46);
+  });
+});
+
+describe("project-grouped drag projection", () => {
+  const row = (key: string, group: string): SidebarListItem => ({
+    kind: "thread",
+    key,
+    section: "active",
+    group,
+  });
+  const header = (group: string): SidebarListItem => ({ kind: "project-header", group });
+  const items = [
+    pinnedHeader,
+    divider,
+    header("A"),
+    row("a1", "A"),
+    row("a2", "A"),
+    header("B"),
+    row("b1", "B"),
+    row("b2", "B"),
+    settledHeader,
+    marker("settled-placeholder"),
+  ];
+  const projectedTops = (active: string, over: string) => {
+    const strategy = createSidebarSortingStrategy({
+      items,
+      settledOrder: [],
+      settledExpanded: true,
+    });
+    const args = layout(items, active, over);
+    // The lifted row follows the pointer, so only its peers are placed.
+    return items
+      .map((item, index) => ({
+        id: sidebarListItemId(item),
+        top: args.rects[index]!.top,
+        transform: strategy({ ...args, index }),
+      }))
+      .filter(({ transform }) => transform?.scaleY !== 0)
+      .map(({ id, top, transform }) => ({ id, top: top + (transform?.y ?? 0) }))
+      .filter(({ id }) => ["a1", "a2", "b1", "b2"].includes(id) || id.includes("project-"))
+      .filter(({ id }) => id !== active)
+      .toSorted((left, right) => left.top - right.top)
+      .map(({ id }) => id);
+  };
+
+  it("keeps project order when a row is dropped above another project", () => {
+    const headerA = sidebarListItemId(header("A"));
+    const headerB = sidebarListItemId(header("B"));
+    expect(projectedTops("b2", headerA)).toEqual([headerA, "a1", "a2", headerB, "b1"]);
+  });
+
+  it("collapses a lifted project's rows and opens its slot between projects", () => {
+    const headerA = sidebarListItemId(header("A"));
+    const headerB = sidebarListItemId(header("B"));
+    // The lifted header follows the pointer; its rows stay hidden.
+    expect(projectedTops(headerA, "b2")).toEqual([headerB, "b1", "b2"]);
+    const tops = new Map(
+      items.map((item, index) => [
+        sidebarListItemId(item),
+        layout(items, headerA, "b2").rects[index]!,
+      ]),
+    );
+    const result = preview({ items, settledOrder: [], settledExpanded: true }, headerA, "b2");
+    expect(result.get("a1")?.scaleY).toBe(0);
+    // Header B moves up into A's old place.
+    expect(tops.get(headerB)!.top + result.get(headerB)!.y).toBe(tops.get(headerA)!.top);
+  });
+
+  it("keeps a row hovered over another project in its own project", () => {
+    const headerA = sidebarListItemId(header("A"));
+    const headerB = sidebarListItemId(header("B"));
+    expect(projectedTops("b2", "a2")).toEqual([headerA, "a1", "a2", headerB, "b1"]);
   });
 });
 

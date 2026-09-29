@@ -2,6 +2,7 @@ import { closestCenter, type CollisionDetection, type Modifier } from "@dnd-kit/
 import { verticalListSortingStrategy, type SortingStrategy } from "@dnd-kit/sortable";
 import {
   resolveSidebarDropTarget,
+  resolveSidebarProjectDrop,
   sidebarListItemId,
   sidebarMarkerId,
   type SidebarListItem,
@@ -112,8 +113,50 @@ export function createSidebarSortingStrategy(input: {
   let previous: Pick<Layout, "rects" | "activeIndex" | "overIndex"> | undefined;
   let transforms: ReturnType<SortingStrategy>[] | null = [];
 
-  function project({ rects, activeIndex, overIndex }: Layout) {
+  // A lifted project header leaves its rows behind, collapsed, and opens its
+  // slot between the other projects. Everything outside the active rows
+  // keeps its place.
+  function projectHeaderDrag(
+    { rects, activeIndex, overIndex }: Layout,
+    active: Extract<SidebarListItem, { kind: "project-header" }>,
+  ) {
+    const over = items[overIndex] ?? active;
+    const order = resolveSidebarProjectDrop(items, active.group, sidebarListItemId(over));
+    if (!order || !rects[0]) return [];
+    const rowsByGroup = new Map<string, SidebarListItem[]>();
+    const before: SidebarListItem[] = [];
+    const after: SidebarListItem[] = [];
+    for (const item of items) {
+      if (item.kind === "project-header") rowsByGroup.set(item.group, []);
+      else if (item.kind === "thread" && item.section === "active" && item.group !== undefined)
+        rowsByGroup.get(item.group)?.push(item);
+      else (rowsByGroup.size === 0 ? before : after).push(item);
+    }
+    const projected = [
+      ...before,
+      ...order.flatMap((group): SidebarListItem[] => [
+        { kind: "project-header", group },
+        ...(group === active.group ? [] : (rowsByGroup.get(group) ?? [])),
+      ]),
+      ...after,
+    ];
+    const result = items.map(() => hidden);
+    let top = rects[0].top;
+    for (const item of projected) {
+      const index = indices.get(sidebarListItemId(item));
+      const rect = index === undefined ? undefined : rects[index];
+      if (index === undefined || !rect) continue;
+      result[index] = { ...stationary, y: top - rect.top };
+      top += rect.height + 1;
+    }
+    result[activeIndex] = stationary;
+    return result;
+  }
+
+  function project(layout: Layout) {
+    const { rects, activeIndex, overIndex } = layout;
     const active = items[activeIndex];
+    if (active?.kind === "project-header") return projectHeaderDrag(layout, active);
     const over = items[overIndex] ?? active;
     if (active?.kind !== "thread" || !over || !rects[0]) return [];
     const target = resolveSidebarDropTarget(items, active.key, sidebarListItemId(over));
@@ -128,6 +171,7 @@ export function createSidebarSortingStrategy(input: {
     let slimHeight = input.slimHeight;
     let headerScale: number | undefined;
     for (const [index, item] of items.entries()) {
+      if (item.kind === "project-header") continue;
       if (item.kind === "marker") {
         if (item.marker === "settled-header" || item.marker === "snoozed-header") {
           const height = rects[index]?.height;
@@ -172,9 +216,29 @@ export function createSidebarSortingStrategy(input: {
     groups.settled = visible.map((key) => ({ kind: "thread", key, section: "settled" }));
     const projected: SidebarListItem[] = [];
     const marker = (name: SidebarListMarker) => projected.push({ kind: "marker", marker: name });
+    // Grouped active rows follow the clustered drop order. Headers only exist
+    // for groups that had rows at pickup: a row moving into a new group gets
+    // its header once the drop lands.
+    const withProjectHeaders = (rows: readonly ThreadItem[]) => {
+      const activeRanks = new Map(target.activeOrder.map((key, index) => [key, index]));
+      const rank = (row: ThreadItem) => activeRanks.get(row.key) ?? Number.POSITIVE_INFINITY;
+      const result: SidebarListItem[] = [];
+      let group: string | undefined;
+      for (const row of rows.toSorted((left, right) => rank(left) - rank(right))) {
+        if (row.group !== undefined && row.group !== group) {
+          const header: SidebarListItem = { kind: "project-header", group: row.group };
+          if (indices.has(sidebarListItemId(header))) result.push(header);
+        }
+        group = row.group;
+        result.push(row);
+      }
+      return result;
+    };
     const section = (name: "active" | "settled") => {
-      if (groups[name].length > 0) projected.push(...groups[name]);
-      else marker(`${name}-placeholder`);
+      if (groups[name].length === 0) marker(`${name}-placeholder`);
+      else if (name === "active" && target.activeGroupOrder !== undefined)
+        projected.push(...withProjectHeaders(groups.active));
+      else projected.push(...groups[name]);
     };
     marker("pinned-header");
     projected.push(...groups.pinned);
