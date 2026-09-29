@@ -36,7 +36,7 @@ import * as CodexErrors from "effect-codex-app-server/errors";
 import * as CodexRpc from "effect-codex-app-server/rpc";
 import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
-import { buildCodexInitializeParams } from "./CodexProvider.ts";
+import { buildCodexInitializeParams, CODEX_DEFAULT_REASONING_EFFORT } from "./CodexProvider.ts";
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import type { McpServerName } from "../../mcp/McpProviderSession.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
@@ -608,7 +608,7 @@ function buildCodexCollaborationMode(input: {
     return undefined;
   }
   const model = normalizeCodexModelSlug(input.model) ?? DEFAULT_MODEL;
-  const reasoningEffort = input.effort ?? "medium";
+  const reasoningEffort = input.effort ?? CODEX_DEFAULT_REASONING_EFFORT;
   return {
     mode: input.interactionMode,
     settings: {

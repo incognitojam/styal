@@ -206,15 +206,21 @@ export const encodeManifestCache = Schema.encodeEffect(
   ),
 );
 
+function findCatalogModel(
+  manifest: ModelManifestData,
+  driverKind: ProviderDriverKind,
+  slug: string,
+) {
+  return manifest.providers?.[driverKind]?.models.find((model) => model.slug === slug);
+}
+
 /** True when the manifest classifies `slug` as legacy for `driverKind`. */
 function isLegacyModel(
   manifest: ModelManifestData,
   driverKind: ProviderDriverKind,
   slug: string,
 ): boolean {
-  const catalogModel = manifest.providers?.[driverKind]?.models.find(
-    (model) => model.slug === slug,
-  );
+  const catalogModel = findCatalogModel(manifest, driverKind, slug);
   if (catalogModel) return catalogModel.status === "legacy";
   const currentModels = manifest.currentModels[driverKind];
   if (!currentModels) return false;
@@ -284,8 +290,11 @@ export function classifyModels(
   manifest: ModelManifestData,
   driverKind: ProviderDriverKind,
 ): ReadonlyArray<ServerProviderModel> {
-  return models.map((model) => {
-    if (model.isCustom) return model;
+  return models.map((discovered) => {
+    if (discovered.isCustom) return discovered;
+    // Codex lists its own models, so a catalog entry for one can only badge it.
+    const badge = findCatalogModel(manifest, driverKind, discovered.slug)?.badge;
+    const model = badge && !discovered.badge ? { ...discovered, badge } : discovered;
     if (isLegacyModel(manifest, driverKind, model.slug)) {
       return model.isLegacy ? model : { ...model, isLegacy: true };
     }

@@ -61,6 +61,27 @@ describe("classifyModels", () => {
       ],
     );
   });
+
+  it("badges discovered models from their catalog entries", () => {
+    const manifest: ModelManifestData = {
+      version: 1,
+      currentModels: { codex: ["launched", "other"] },
+      providers: {
+        codex: {
+          profiles: {},
+          models: [{ slug: "launched", name: "Launched", status: "current", badge: "new" }],
+        },
+      },
+    };
+    const models = [model({ slug: "launched" }), model({ slug: "other" })];
+    assert.deepStrictEqual(
+      classifyModels(models, manifest, CODEX).map((entry) => [entry.slug, entry.badge]),
+      [
+        ["launched", "new"],
+        ["other", undefined],
+      ],
+    );
+  });
 });
 
 describe("applyManifestDefault", () => {

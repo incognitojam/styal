@@ -28,9 +28,10 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 - **Claude Code starts with Opus 5.5.** New Claude Code threads select Opus 5.5 when the installed
   CLI supports it; older installations use an available Claude model. T3 Code defaults to Fable 5.1
   as of [revision f5ef0dd](https://github.com/pingdotgg/t3code/tree/f5ef0ddb90a8c36584e181b1913e7b8a5df30ffc0618).
-- **Codex starts with GPT-6-Sol.** New Codex threads select GPT-6-Sol when available, then
-  GPT-6-Astra or an older model offered by the installed CLI. T3 Code defaults to GPT-6-Astra
-  as of [revision f5ef0dd](https://github.com/pingdotgg/t3code/tree/f5ef0ddb90a8c36584e181b1913e7b8a5df30ffc0618).
+- **Codex starts with GPT-6.1-Sol at medium effort.** New Codex threads select GPT-6.1-Sol when
+  available, then GPT-6-Sol, GPT-6-Astra or an older model offered by the installed CLI. T3 Code
+  defaults to GPT-6-Astra as of
+  [revision 2cbc24f](https://github.com/pingdotgg/t3code/tree/2cbc24fcae2b5649d7b60b68da72053a37fa82d5).
 - **New threads start in a worktree.** Both apps support isolated Git worktrees. styal defaults new
   threads to a worktree, while T3 Code defaults to the local checkout as of
   [revision d5d4874](https://github.com/pingdotgg/t3code/tree/d5d48742c9ab00dff82fe8bcbc8da0ba68748959);

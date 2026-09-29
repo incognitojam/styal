@@ -19,7 +19,8 @@ gets its model list from its app server.
 `currentModels.claudeAgent` classifies models for releases that predate catalog discovery; it does
 not add models to their catalogs. Catalog-aware releases use `providers.claudeAgent.models[].status`
 instead. Codex discovers models from its app server and uses `currentModels.codex` only as a
-legacy-classification overlay.
+legacy-classification overlay. A `providers.codex.models` entry can override that classification or
+add a `new` badge, but never adds a model the app server does not list.
 
 Model data is schema-validated configuration. Tests should cover resolver, cache,
 and adapter semantics with synthetic model names, so adding a model never requires

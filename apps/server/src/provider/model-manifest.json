@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "updatedAt": "2026-09-28T12:00:00Z",
+  "updatedAt": "2026-09-29T20:30:00Z",
   "currentModels": {
     "codex": [
+      "gpt-6.1-sol",
       "gpt-6-astra",
       "gpt-6-luna",
-      "gpt-6-sol",
       "gpt-daybreak-blue-latest",
       "gpt-daybreak-red-latest"
     ],
@@ -13,6 +13,12 @@
     "antigravity": ["gemini-3.8-flash-high", "gemini-3.8-flash-medium", "gemini-3.8-flash-low"]
   },
   "providers": {
+    "codex": {
+      "profiles": {},
+      "models": [
+        { "slug": "gpt-6.1-sol", "name": "GPT-6.1-Sol", "status": "current", "badge": "new" }
+      ]
+    },
     "claudeAgent": {
       "defaults": {
         "chat": "claude-opus-5-5"

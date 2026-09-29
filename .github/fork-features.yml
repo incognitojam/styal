@@ -313,11 +313,12 @@ features:
       retire_when: Upstream sends Codex the effort its clients show as default when a turn names none.
 
   - id: codex-default-model
-    title: Prefer GPT-6-Sol for new Codex threads
+    title: Prefer GPT-6.1-Sol for new Codex threads
     status: maintained
     prs: [406]
     invariants:
-      - New Codex threads select GPT-6-Sol when available, then GPT-6-Astra, then an older available model; an unavailable preferred model never blocks the live Codex catalog.
+      - New Codex threads select GPT-6.1-Sol when available, then GPT-6-Sol, then GPT-6-Astra, then an older available model; an unavailable preferred model never blocks the live Codex catalog.
+      - A Codex model's default reasoning effort is the one a turn without an explicit effort actually runs at, medium when the model supports it.
     implementation_paths:
       - apps/server/src/provider/Layers/CodexProvider.ts
       - packages/contracts/src/model.ts
@@ -329,8 +330,8 @@ features:
     upstream:
       status: tracking
       tracking:
-        - https://github.com/pingdotgg/t3code/commit/f5ef0ddb90a8c36584e181b1913e7b8a5df30ffc0618
-      retire_when: Upstream prefers GPT-6-Sol for new Codex threads and retains a fallback when it is unavailable.
+        - https://github.com/pingdotgg/t3code/commit/2cbc24fcae2b5649d7b60b68da72053a37fa82d5
+      retire_when: Upstream prefers GPT-6.1-Sol for new Codex threads, retains a fallback when it is unavailable, and shows the effort unselected turns run at.
 
   - id: completion-sounds
     title: Configurable agent completion sounds
