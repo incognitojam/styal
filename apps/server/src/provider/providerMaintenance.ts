@@ -66,6 +66,12 @@ export interface ProviderMaintenanceCapabilities {
    * installer was asked and did not know.
    */
   readonly latestVersion?: string | null;
+  /**
+   * The executable T3 Code runs, symlinks followed, when no update command is
+   * proven for it. The version advisory names it so the user knows which
+   * install to update.
+   */
+  readonly installPath?: string;
 }
 
 export interface ProviderMaintenanceCommandAction {
@@ -217,14 +223,18 @@ export function makeTargetedProviderUpdateAction(
 export function makeManualOnlyProviderMaintenanceCapabilities(input: {
   readonly provider: ProviderDriverKind;
   readonly packageName: string | null;
+  readonly installPath?: string;
 }): ProviderMaintenanceCapabilities {
-  return makeProviderMaintenanceCapabilities({
-    provider: input.provider,
-    packageName: input.packageName,
-    updateExecutable: null,
-    updateArgs: [],
-    updateLockKey: null,
-  });
+  return {
+    ...makeProviderMaintenanceCapabilities({
+      provider: input.provider,
+      packageName: input.packageName,
+      updateExecutable: null,
+      updateArgs: [],
+      updateLockKey: null,
+    }),
+    ...(input.installPath ? { installPath: input.installPath } : {}),
+  };
 }
 
 export function normalizeCommandPath(commandPath: string): string {
@@ -382,13 +392,17 @@ export const resolvePackageManagedProviderMaintenance = Effect.fn(
   definition: PackageManagedProviderMaintenanceDefinition,
   context: ProviderMaintenanceResolutionContext | null,
 ) {
+  if (!context) {
+    return makeManualOnlyProviderMaintenanceCapabilities({
+      provider: definition.provider,
+      packageName: definition.npmPackageName,
+    });
+  }
   const manual = makeManualOnlyProviderMaintenanceCapabilities({
     provider: definition.provider,
     packageName: definition.npmPackageName,
+    installPath: context.realCommandPath,
   });
-  if (!context) {
-    return manual;
-  }
   const commandPaths = [context.resolvedCommandPath, context.realCommandPath];
   const packageName = definition.npmPackageName;
 
@@ -618,9 +632,20 @@ export const makeCachedProviderMaintenanceResolution = Effect.fn(
     options?.fresh ? Cache.invalidate(cache, undefined).pipe(Effect.andThen(cached)) : cached;
 });
 
+/**
+ * An install T3 Code cannot update gets no Update button or command, so its
+ * message names the version and the executable instead.
+ */
+function manualUpdateMessage(latestVersion: string, installPath: string | undefined): string {
+  return installPath
+    ? `Version ${latestVersion} is out. T3 Code runs ${installPath}; update it with the app or tool that installed it.`
+    : `Version ${latestVersion} is out. Update it with the app or tool that installed it.`;
+}
+
 function deriveVersionAdvisory(input: {
   readonly currentVersion: string | null;
   readonly latestVersion: string | null;
+  readonly capabilities: ProviderMaintenanceCapabilities;
 }): Pick<ServerProviderVersionAdvisory, "status" | "message"> {
   if (!input.currentVersion) {
     return { status: "unknown", message: null };
@@ -631,7 +656,10 @@ function deriveVersionAdvisory(input: {
   if (compareSemverVersions(input.currentVersion, input.latestVersion) < 0) {
     return {
       status: "behind_latest",
-      message: PROVIDER_UPDATE_ACTION_TOAST_MESSAGE,
+      message:
+        input.capabilities.update === null
+          ? manualUpdateMessage(input.latestVersion, input.capabilities.installPath)
+          : PROVIDER_UPDATE_ACTION_TOAST_MESSAGE,
     };
   }
   return { status: "current", message: null };
@@ -650,6 +678,7 @@ export function createProviderVersionAdvisory(input: {
   const advisory = deriveVersionAdvisory({
     currentVersion: input.currentVersion,
     latestVersion,
+    capabilities,
   });
 
   return {
