@@ -223,7 +223,7 @@ features:
   - id: claude-settings-change-cache-warning
     title: Warn when a Claude model or option change skips the prompt cache
     status: maintained
-    prs: []
+    prs: [534]
     invariants:
       - While a Claude thread of at least 100,000 tokens has a prompt cache less than 60 minutes old, the web composer warns before a pending model, provider instance, or fast mode change would resend the history uncached, and offers to undo it.
       - An effort change warns only on models for which Claude Code sends effort as a request parameter; Opus 5.5 and Fable 5.1 send it per turn and keep the cache.
