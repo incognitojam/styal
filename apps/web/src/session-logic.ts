@@ -19,6 +19,7 @@ import {
 } from "@t3tools/shared/toolActivity";
 import {
   commandDetailRepeatsCommand,
+  extractBackgroundTaskOutcome,
   extractCommandOutputText,
   extractWorkLogToolLifecycleStatus,
   isWorktreeSetupActivity,
@@ -27,6 +28,7 @@ import {
   workEntryIndicatesToolSuccess,
   workEntryIsStoppedToolCall,
   workLogEntryIsToolLike,
+  type WorkLogBackgroundOutcome,
   type WorkLogToolLifecycleStatus,
 } from "@t3tools/client-runtime/work-log/presentation";
 import { extractToolActivityPresentation } from "@t3tools/client-runtime/work-log/tool-presentation";
@@ -99,6 +101,8 @@ export interface WorkLogEntry {
   requestKind?: PendingApproval["requestKind"];
   /** From runtime item / task payload `status` when present (e.g. tool.updated). */
   toolLifecycleStatus?: WorkLogToolLifecycleStatus;
+  /** How the background task this tool call launched ended, once it has. */
+  backgroundOutcome?: WorkLogBackgroundOutcome;
   /** Originating orchestration activity kind (e.g. `user-input.requested`) for row chrome. */
   sourceActivityKind?: OrchestrationThreadActivity["kind"];
   /** Setup action icon captured when the run began, so historical rows stay stable. */
@@ -132,6 +136,10 @@ interface DerivedWorkLogEntry extends WorkLogEntry {
   isWorkflowCoordinator?: boolean;
   /** Shell/monitor/plan tasks: ordinary work-log rows, never spawn CTAs. */
   isBackgroundTask?: boolean;
+  /** Task rows: the tool call that launched the task, when the provider reports one. */
+  launchToolCallId?: string;
+  /** Background task terminal rows: the outcome to show on the launching tool row. */
+  taskOutcome?: WorkLogBackgroundOutcome;
 }
 
 const derivedWorkLogEntryByActivity = new WeakMap<
@@ -686,6 +694,13 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (isTaskActivity && payload && isBackgroundTaskActivity(payload)) {
     entry.isBackgroundTask = true;
+    if (activity.kind === "task.completed") {
+      const taskOutcome = extractBackgroundTaskOutcome(payload);
+      if (taskOutcome) entry.taskOutcome = taskOutcome;
+    }
+  }
+  if (isTaskActivity && typeof payload?.toolUseId === "string" && payload.toolUseId.length > 0) {
+    entry.launchToolCallId = payload.toolUseId;
   }
   const collapseKey = deriveToolLifecycleCollapseKey(entry);
   if (collapseKey) {
@@ -752,6 +767,9 @@ function collapseDerivedWorkLogEntries(
   // rows (live-test finding, thread 7ac7ef05).
   const groupKeyByTaskId = new Map<string, string>();
   const toolLifecycleRowIndex = new Map<string, number>();
+  // The row that shows each tool call, so a background task can report its
+  // end on the call that launched it, whichever turn it ends in.
+  const toolRowIndexByCallId = new Map<string, number>();
   for (const entry of entries) {
     if (entry.setupRunId !== undefined) {
       const existingIndex = setupRowIndex.get(entry.setupRunId);
@@ -769,6 +787,22 @@ function collapseDerivedWorkLogEntries(
       setupRowIndex.set(entry.setupRunId, collapsed.length);
       collapsed.push(entry);
       continue;
+    }
+    if (
+      entry.isBackgroundTask &&
+      entry.sourceActivityKind === "task.completed" &&
+      entry.launchToolCallId !== undefined
+    ) {
+      const toolRowIndex = toolRowIndexByCallId.get(entry.launchToolCallId);
+      if (toolRowIndex !== undefined) {
+        const toolRow = collapsed[toolRowIndex]!;
+        // A task that ends while its call is still running is a long
+        // foreground command; the call's own result reports how it went.
+        if (entry.taskOutcome && toolRow.sourceActivityKind === "tool.completed") {
+          collapsed[toolRowIndex] = withBackgroundOutcome(toolRow, entry.taskOutcome);
+        }
+        continue;
+      }
     }
     const isTaskRow =
       entry.taskId !== undefined &&
@@ -842,9 +876,25 @@ function collapseDerivedWorkLogEntries(
     collapsed.push(entry);
     if (lifecycleKey !== undefined) {
       toolLifecycleRowIndex.set(lifecycleKey, collapsed.length - 1);
+      if (entry.toolCallId !== undefined) {
+        toolRowIndexByCallId.set(entry.toolCallId, collapsed.length - 1);
+      }
     }
   }
   return collapsed;
+}
+
+function withBackgroundOutcome(
+  toolRow: DerivedWorkLogEntry,
+  outcome: WorkLogBackgroundOutcome,
+): DerivedWorkLogEntry {
+  // Only a failure changes the call's own status: a stopped call reads as
+  // neutral, and groups hide neutral rows.
+  return {
+    ...toolRow,
+    backgroundOutcome: outcome,
+    ...(outcome.status === "failed" ? { toolLifecycleStatus: "failed" } : {}),
+  };
 }
 
 function shouldCollapseToolLifecycleEntries(

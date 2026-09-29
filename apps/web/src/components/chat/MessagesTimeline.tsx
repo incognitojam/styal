@@ -14,6 +14,7 @@ import {
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { CodexArtifactTemplate } from "@t3tools/client-runtime/codex-artifact-templates";
 import {
+  backgroundOutcomeLabel,
   resolveWorkEntryToolPresentation,
   resolveViewedImageAsset,
   workEntryViewedImagePath,
@@ -3974,17 +3975,31 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     showWarningIndicator ||
     showFailedIndicator ||
     exitCodeLabel !== null;
-  const setupStatusLabel =
-    workEntry.setupScriptState === "completed"
-      ? "Setup action completed"
-      : workEntry.setupScriptState === "failed"
-        ? "Setup action failed"
-        : workEntry.setupScriptState === "stopped"
-          ? "Setup action stopped"
-          : null;
+  // Setup actions and background tasks say how they ended with a trailing mark.
+  const setupState = workEntry.setupScriptState;
+  const statusMark =
+    setupState === "completed" || setupState === "failed" || setupState === "stopped"
+      ? {
+          state: setupState,
+          label: `Setup action ${setupState}`,
+          tooltip:
+            exitCodeLabel ??
+            (setupState === "completed"
+              ? "Completed"
+              : setupState === "failed"
+                ? "Failed"
+                : "Stopped"),
+        }
+      : workEntry.backgroundOutcome
+        ? {
+            state: workEntry.backgroundOutcome.status,
+            label: backgroundOutcomeLabel(workEntry.backgroundOutcome),
+            tooltip: backgroundOutcomeLabel(workEntry.backgroundOutcome),
+          }
+        : null;
   const accessibleDisplayText = [
     previewText,
-    setupStatusLabel ?? (showFailedIndicator ? "tool call failed" : null),
+    statusMark?.label ?? (showFailedIndicator ? "tool call failed" : null),
     exitCodeLabel,
   ]
     .filter((part): part is string => part !== null)
@@ -4078,6 +4093,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           </div>
           {showFailedIndicator &&
           !showDestructiveRowStyle &&
+          !statusMark &&
           !toolIconAcceptsTint(entryIconName, entryToolIcon) ? (
             <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />
           ) : null}
@@ -4096,20 +4112,20 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
                 )}
               />
             </span>
-            {setupStatusLabel ? (
+            {statusMark ? (
               <span className="flex size-4 shrink-0 items-center justify-center">
                 <Tooltip>
                   <TooltipTrigger
                     render={
                       <span
                         className="flex size-4 items-center justify-center"
-                        aria-label={setupStatusLabel}
+                        aria-label={statusMark.label}
                       />
                     }
                   >
-                    {workEntry.setupScriptState === "failed" ? (
+                    {statusMark.state === "failed" ? (
                       <XIcon className="block size-3 shrink-0 text-destructive" aria-hidden />
-                    ) : workEntry.setupScriptState === "completed" ? (
+                    ) : statusMark.state === "completed" ? (
                       <CheckIcon
                         className="block size-3 shrink-0 stroke-current"
                         stroke="currentColor"
@@ -4119,14 +4135,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
                       <MinusIcon className="block size-3 shrink-0 opacity-70" aria-hidden />
                     )}
                   </TooltipTrigger>
-                  <TooltipPopup>
-                    {exitCodeLabel ??
-                      (workEntry.setupScriptState === "completed"
-                        ? "Completed"
-                        : workEntry.setupScriptState === "failed"
-                          ? "Failed"
-                          : "Stopped")}
-                  </TooltipPopup>
+                  <TooltipPopup>{statusMark.tooltip}</TooltipPopup>
                 </Tooltip>
               </span>
             ) : null}
