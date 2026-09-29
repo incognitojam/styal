@@ -3,6 +3,7 @@ import { closestCenter, type CollisionDetection } from "@dnd-kit/core";
 import { verticalListSortingStrategy, type SortingStrategy } from "@dnd-kit/sortable";
 import {
   createSidebarCollisionDetection,
+  createSidebarProjectCollisionDetection,
   createSidebarSortingStrategy,
   restrictBelowSidebarLabel,
 } from "./Sidebar.drag";
@@ -306,6 +307,58 @@ describe("sidebar collision detection with drag labels", () => {
     expect(withLabels(args(a1Visual))[0]?.id).toBe("a1");
     const withoutCorrection = createSidebarCollisionDetection(() => true);
     expect(withoutCorrection(args(a1Visual))[0]?.id).toBe("a2");
+  });
+});
+
+describe("project header collision detection", () => {
+  const row = (key: string, group: string): SidebarListItem => ({
+    kind: "thread",
+    key,
+    section: "active",
+    group,
+  });
+  const header = (group: string): SidebarListItem => ({ kind: "project-header", group });
+  const items = [
+    pinnedHeader,
+    divider,
+    header("A"),
+    row("a1", "A"),
+    row("a2", "A"),
+    header("B"),
+    row("b1", "B"),
+    header("C"),
+    row("c1", "C"),
+    settledHeader,
+  ];
+  // Rows are 60px, headers 24px, with a 1px gap; markers take no space.
+  const { rects } = layout(items, "a1", "a1", 1, 60);
+  const rectOf = (id: string) => rects[items.findIndex((item) => sidebarListItemId(item) === id)]!;
+  const target = (group: string, centerY: number) => {
+    const header = rectOf(sidebarListItemId({ kind: "project-header", group }));
+    const collisionRect = { ...header, top: centerY - 12, bottom: centerY + 12 };
+    const detector = createSidebarProjectCollisionDetection(items, group);
+    return detector({
+      active: { id: sidebarListItemId({ kind: "project-header", group }) },
+      collisionRect,
+      droppableRects: new Map(items.map((item, index) => [sidebarListItemId(item), rects[index]!])),
+      droppableContainers: [],
+      pointerCoordinates: null,
+    } as unknown as Parameters<CollisionDetection>[0])[0]?.id;
+  };
+  const id = (group: string) => sidebarListItemId({ kind: "project-header", group });
+
+  it("places a project dragged down past a collapsed project's drawn midpoint", () => {
+    // With A's rows collapsed, B is drawn where A's block was.
+    const aTop = rectOf(id("A")).top;
+    const bHeight = rectOf("b1").bottom - rectOf(id("B")).top;
+    expect(target("A", aTop + bHeight / 2 - 5)).toBe(id("A"));
+    expect(target("A", aTop + bHeight / 2 + 5)).toBe(id("B"));
+  });
+
+  it("places a project dragged up above another project's midpoint", () => {
+    const aMid = (rectOf(id("A")).top + rectOf("a2").bottom) / 2;
+    expect(target("C", aMid - 5)).toBe(id("A"));
+    expect(target("C", aMid + 5)).toBe(id("B"));
   });
 });
 

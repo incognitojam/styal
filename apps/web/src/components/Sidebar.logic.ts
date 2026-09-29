@@ -196,8 +196,15 @@ export function resolveSidebarDropTarget(
   const overIndex = items.findIndex((item) => sidebarListItemId(item) === overId);
   if (activeIndex === -1 || overIndex === -1 || items[activeIndex]?.kind !== "thread") return null;
   const moved = items.filter((_, index) => index !== activeIndex);
-  moved.splice(overIndex, 0, items[activeIndex]!);
-  const section = sectionAtSidebarSlot(moved, overIndex);
+  // Rows can't drop into the snoozed shelf, so a row moved down onto its
+  // header takes the last slot above it instead of the first slot inside.
+  const over = items[overIndex];
+  const insertAt =
+    activeIndex < overIndex && over?.kind === "marker" && over.marker === "snoozed-header"
+      ? overIndex - 1
+      : overIndex;
+  moved.splice(insertAt, 0, items[activeIndex]!);
+  const section = sectionAtSidebarSlot(moved, insertAt);
   if (section === "snoozed") return null;
   const pinnedOrder: string[] = [];
   const activeRows: Extract<SidebarListItem, { kind: "thread" }>[] = [];

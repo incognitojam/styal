@@ -1266,7 +1266,19 @@ describe("resolveSidebarDropTarget", () => {
 
   it("never lands in the snoozed shelf", () => {
     expect(resolve("a1", "z1")).toBeNull();
-    expect(resolve("a1", sidebarMarkerId("snoozed-header"))).toBeNull();
+  });
+
+  it("takes the last active slot when moved down onto the snoozed header", () => {
+    expect(resolve("a1", sidebarMarkerId("snoozed-header"))).toEqual({
+      section: "active",
+      pinnedOrder: ["p1", "p2"],
+      activeOrder: ["a2", "a1"],
+    });
+    expect(resolve("p1", sidebarMarkerId("snoozed-header"))).toEqual({
+      section: "active",
+      pinnedOrder: ["p2"],
+      activeOrder: ["a1", "a2", "p1"],
+    });
   });
 
   it("lands on a placeholder when the section is otherwise empty", () => {

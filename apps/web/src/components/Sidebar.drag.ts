@@ -26,6 +26,43 @@ export function restrictBelowSidebarLabel(
   return transform.y < minimumY ? { ...transform, y: minimumY } : transform;
 }
 
+/** Place a lifted project header among the other projects. Its rows
+ * collapse while it is lifted, so rest rects no longer match what is drawn:
+ * compare the header's center with the other projects' midpoints as drawn
+ * without the lifted project, and name the header whose slot it takes. */
+export function createSidebarProjectCollisionDetection(
+  items: readonly SidebarListItem[],
+  activeGroup: string,
+): CollisionDetection {
+  return (args) => {
+    const blocks: { group: string; top: number; bottom: number }[] = [];
+    for (const item of items) {
+      const rect = args.droppableRects.get(sidebarListItemId(item));
+      if (!rect) continue;
+      if (item.kind === "project-header") {
+        blocks.push({ group: item.group, top: rect.top, bottom: rect.bottom });
+      } else if (item.kind === "thread" && item.section === "active") {
+        const block = blocks.at(-1);
+        if (block && item.group === block.group) block.bottom = rect.bottom;
+      }
+    }
+    const lifted = blocks.find((block) => block.group === activeGroup);
+    if (!lifted) return [];
+    // The list has a 1px gap between items.
+    const liftedHeight = lifted.bottom - lifted.top + 1;
+    const center = args.collisionRect.top + args.collisionRect.height / 2;
+    let slot = 0;
+    for (const block of blocks) {
+      if (block === lifted) continue;
+      const shift = block.top > lifted.top ? liftedHeight : 0;
+      if (center > (block.top + block.bottom) / 2 - shift) slot += 1;
+    }
+    // resolveSidebarProjectDrop moves the lifted project into the slot of
+    // the header it is dropped on.
+    return [{ id: sidebarListItemId({ kind: "project-header", group: blocks[slot]!.group }) }];
+  };
+}
+
 /** Reject the nearest unsupported target without selecting another section.
  * Recreate this detector when drop eligibility changes. */
 export function createSidebarCollisionDetection(

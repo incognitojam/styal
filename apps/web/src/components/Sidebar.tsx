@@ -192,6 +192,7 @@ import {
 import { resolveLocalCheckoutBranchMismatch } from "./BranchToolbar.logic";
 import {
   createSidebarCollisionDetection,
+  createSidebarProjectCollisionDetection,
   createSidebarSortingStrategy,
   restrictBelowSidebarLabel,
 } from "./Sidebar.drag";
@@ -3619,9 +3620,7 @@ export default function Sidebar() {
   const dragLabelHeight = dragState?.labelHeight;
   const dndCollisionDetection = useMemo(() => {
     if (draggedProjectGroup !== null) {
-      return createSidebarCollisionDetection(
-        (id) => resolveSidebarProjectDrop(sidebarListItems, draggedProjectGroup, id) !== null,
-      );
+      return createSidebarProjectCollisionDetection(sidebarListItems, draggedProjectGroup);
     }
     if (draggedThreadKey === undefined || draggedFromSection === undefined)
       return createSidebarCollisionDetection(() => true);
