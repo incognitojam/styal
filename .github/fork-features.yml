@@ -2147,6 +2147,7 @@ features:
     prs: [538]
     invariants:
       - Active thread rows on web and mobile, and web command palette thread actions, default to time since the last user prompt; a local preference can instead show the latest message including agent replies. The preference does not change thread ordering.
+      - When an older server omits the latest message timestamp, Last message uses the latest thread activity time as an approximation rather than reverting to the last user prompt.
       - Existing threads receive the latest message timestamp during migration; new user and assistant messages advance it without reading message bodies into sidebar summaries.
     implementation_paths:
       - apps/mobile/src/features/settings/SettingsRouteScreen.tsx
@@ -2178,6 +2179,7 @@ features:
       - apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts
       - apps/server/src/persistence/Migrations/051_ProjectionThreadLatestMessageAt.test.ts
       - apps/web/src/components/CommandPalette.logic.test.ts
+      - packages/client-runtime/src/state/thread-timestamp.test.ts
       - packages/contracts/src/settings.test.ts
     upstream:
       status: partial

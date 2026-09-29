@@ -9,10 +9,12 @@ export function resolveThreadDisplayTimestamp(
   },
   mode: SidebarThreadTimestampMode,
 ): string {
-  return (
-    (mode === "last_message" ? thread.latestMessageAt : thread.latestUserMessageAt) ??
-    thread.latestUserMessageAt ??
-    thread.updatedAt ??
-    thread.createdAt
-  );
+  if (mode === "last_message") {
+    // Older servers do not send latestMessageAt; updatedAt is their closest
+    // available signal for a reply, though it can include other activity.
+    return (
+      thread.latestMessageAt ?? thread.updatedAt ?? thread.latestUserMessageAt ?? thread.createdAt
+    );
+  }
+  return thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt;
 }

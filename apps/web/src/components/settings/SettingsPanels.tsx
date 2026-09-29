@@ -2373,7 +2373,7 @@ export function GeneralSettingsPanel() {
         />
         <SettingsRow
           {...searchableSetting("thread-timestamp")}
-          description="Choose whether thread times reflect your last prompt or the latest message, including agent replies."
+          description="Choose the last prompt or latest message, including agent replies. Older servers use the latest thread activity as an estimate of the last message."
           resetAction={
             settings.sidebarThreadTimestampMode !==
             DEFAULT_UNIFIED_SETTINGS.sidebarThreadTimestampMode ? (

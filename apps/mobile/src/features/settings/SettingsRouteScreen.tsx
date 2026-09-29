@@ -584,7 +584,7 @@ function GeneralSettingsSection() {
       <SettingsSwitchRow
         icon="clock"
         label="Show last message time"
-        subtitle="Include agent replies in thread timestamps. Off shows when you last prompted the agent."
+        subtitle="On includes agent replies; off shows your last prompt. Older servers use latest activity as an estimate."
         value={
           AsyncResult.isSuccess(preferencesResult) &&
           preferencesResult.value.threadTimestampMode === "last_message"
