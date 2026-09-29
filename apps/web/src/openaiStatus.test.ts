@@ -44,7 +44,7 @@ describe("OpenAI status notice", () => {
           description: "Partial System Outage",
           components: [
             { name: "Responses", status: "operational" },
-            { name: "Codex Web", status: "major_outage" },
+            { name: "Codex API", status: "major_outage" },
             { name: "ChatGPT", status: "degraded_performance" },
           ],
         }),
@@ -52,7 +52,7 @@ describe("OpenAI status notice", () => {
     ).toEqual({
       activeIncidents: [],
       affectedComponents: [
-        { name: "Codex Web", status: "major_outage", statusLabel: "Major outage" },
+        { name: "Codex API", status: "major_outage", statusLabel: "Major outage" },
         {
           name: "ChatGPT",
           status: "degraded_performance",
@@ -60,8 +60,8 @@ describe("OpenAI status notice", () => {
         },
       ],
       description: "Partial System Outage",
-      accessibleLabel: "OpenAI Outage: Codex Web, ChatGPT",
-      label: "Outage: Codex Web, ChatGPT",
+      accessibleLabel: "OpenAI Outage: Codex API, ChatGPT",
+      label: "Outage: Codex API, ChatGPT",
       tone: "error",
     });
   });
@@ -72,7 +72,7 @@ describe("OpenAI status notice", () => {
         statusSummary({
           incidents: [
             {
-              components: [{ name: "Codex Web" }],
+              components: [{ name: "Codex API" }],
               impact: "minor",
               name: "Elevated errors in Codex",
               status: "monitoring",
@@ -83,7 +83,7 @@ describe("OpenAI status notice", () => {
     ).toEqual({
       activeIncidents: [
         {
-          affectedComponents: ["Codex Web"],
+          affectedComponents: ["Codex API"],
           impact: "minor",
           name: "Elevated errors in Codex",
           status: "monitoring",
@@ -92,8 +92,8 @@ describe("OpenAI status notice", () => {
       ],
       affectedComponents: [],
       description: "1 active incident",
-      accessibleLabel: "OpenAI Incident: Codex Web",
-      label: "Incident: Codex Web",
+      accessibleLabel: "OpenAI Incident: Codex API",
+      label: "Incident: Codex API",
       tone: "warning",
     });
   });
@@ -161,6 +161,37 @@ describe("OpenAI status notice", () => {
     ).toBe("Outage: Responses");
   });
 
+  it("narrows a broad outage to the services a Codex turn uses", () => {
+    const degraded = [
+      "Realtime",
+      "Search",
+      "Connectors/Apps",
+      "File uploads",
+      "CLI",
+      "Conversations",
+      "Image Generation",
+      "Batch",
+      "Images",
+      "Chat Completions",
+      "Embeddings",
+      "Responses",
+      "Moderations",
+      "Files",
+      "Login",
+      "Agents",
+      "Codex Web",
+      "Codex API",
+      "VS Code extension",
+      "Codex in ChatGPT Desktop",
+    ].map((name) => ({ name, status: "degraded_performance" }));
+    expect(
+      resolveOpenAIStatusNotice(
+        statusSummary({ indicator: "minor", description: "Partial System Degradation" }),
+        { components: degraded },
+      )?.affectedComponents.map((component) => component.name),
+    ).toEqual(["CLI", "Responses", "Login", "Codex API"]);
+  });
+
   it.each([undefined, []])("ignores the componentless ChatGPT Work incident (%j)", (components) => {
     expect(
       resolveOpenAIStatusNotice(
@@ -183,6 +214,7 @@ describe("OpenAI status notice", () => {
     "SSO sign-in and SCIM provisioning issues",
     "Overbilling for OpenAI-hosted containers in the Agent API",
     "Delayed support responses",
+    "Support available via email",
   ])("ignores the unrelated componentless incident %j", (name) => {
     expect(
       resolveOpenAIStatusNotice(

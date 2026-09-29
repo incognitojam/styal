@@ -84,5 +84,6 @@ with OpenAI support.
 When OpenAI's status page reports an incident affecting Codex or the OpenAI API
 services it uses, the web and desktop sidebar shows the affected services. Select
 the notice to open OpenAI's status page. Incidents limited to consumer features
-such as Sora or voice mode do not appear. Turn alerts off in
+such as Sora or voice mode, API products Codex does not call, or other Codex
+clients such as Codex Web do not appear. Turn alerts off in
 **Settings > General > OpenAI outage alerts**.
