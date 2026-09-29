@@ -79,6 +79,11 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Staying oriented while agents work
 
+- **Choose what thread times mean.** The sidebar defaults to when you last prompted the agent;
+  Settings can instead show the latest message, including agent replies. This changes the time
+  shown without rearranging threads. Compared with
+  [T3 Code revision d2c9281](https://github.com/pingdotgg/t3code/tree/d2c9281b8112dc3b2991642c4bdb985e4b08b9bb),
+  which shows the last user message without this choice. [Working with threads](./thread-sidebar.md).
 - **Proactive panels by default.** Newly linked reviews open automatically, and completed agent work
   switches to its diff. You can turn this off in Settings. Compared with
   [T3 Code revision f223312](https://github.com/pingdotgg/t3code/tree/f22331240ed1a97fae560e314bffb75fe39db8ca),

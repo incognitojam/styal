@@ -64,6 +64,7 @@ import {
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
+import { resolveThreadDisplayTimestamp } from "@t3tools/client-runtime/state/thread-timestamp";
 import {
   isAtomCommandInterrupted,
   settlePromise,
@@ -357,6 +358,7 @@ interface SidebarThreadRowProps {
 }
 
 const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowProps) {
+  const timestampMode = useClientSettings((settings) => settings.sidebarThreadTimestampMode);
   const {
     orderedProjectThreadKeys,
     isActive,
@@ -935,9 +937,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       isHighlighted ? "text-foreground" : "text-secondary-label"
                     }`}
                   >
-                    {formatRelativeTimeLabel(
-                      thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,
-                    )}
+                    {formatRelativeTimeLabel(resolveThreadDisplayTimestamp(thread, timestampMode))}
                   </span>
                 )}
               </span>

@@ -71,6 +71,10 @@ position, so using **Un-settle** returns it to the top. Pinning and snoozing pre
 position until you move it again. Thread activity does not change the order. The settled shelf
 continues to use settlement time.
 
+Thread times show when you last prompted the agent by default. To include agent replies, choose
+**Last message** in **Settings → General → Thread timestamp** on web or desktop, or enable
+**Show last message time** in mobile Settings. This changes the displayed time, not the order.
+
 If dragging is unavailable for one environment, update the T3 Code server running in that
 environment. Pinned and active reordering require server support. Threads from older servers keep
 their default order until the server is updated.

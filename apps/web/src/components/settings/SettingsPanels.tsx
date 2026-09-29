@@ -536,6 +536,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat
         ? ["Time format"]
         : []),
+      ...(settings.sidebarThreadTimestampMode !==
+      DEFAULT_UNIFIED_SETTINGS.sidebarThreadTimestampMode
+        ? ["Thread timestamp"]
+        : []),
       ...(settings.completionSound !== DEFAULT_UNIFIED_SETTINGS.completionSound
         ? ["Completion sound"]
         : []),
@@ -656,6 +660,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.sidebarAutoSettleOnMerge,
       settings.sidebarProjectGroupingMode,
       settings.sidebarThreadGrouping,
+      settings.sidebarThreadTimestampMode,
       settings.sidebarThreadPreviewCount,
       settings.showSkillsInSlashMenu,
       settings.timestampFormat,
@@ -732,6 +737,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       appearanceContrast: DEFAULT_UNIFIED_SETTINGS.appearanceContrast,
       diffColorScheme: DEFAULT_UNIFIED_SETTINGS.diffColorScheme,
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
+      sidebarThreadTimestampMode: DEFAULT_UNIFIED_SETTINGS.sidebarThreadTimestampMode,
       completionSound: DEFAULT_UNIFIED_SETTINGS.completionSound,
       wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
       diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
@@ -2360,6 +2366,49 @@ export function GeneralSettingsPanel() {
                 </SelectItem>
                 <SelectItem hideIndicator value="24-hour">
                   {TIMESTAMP_FORMAT_LABELS["24-hour"]}
+                </SelectItem>
+              </SelectPopup>
+            </Select>
+          }
+        />
+        <SettingsRow
+          {...searchableSetting("thread-timestamp")}
+          description="Choose whether thread times reflect your last prompt or the latest message, including agent replies."
+          resetAction={
+            settings.sidebarThreadTimestampMode !==
+            DEFAULT_UNIFIED_SETTINGS.sidebarThreadTimestampMode ? (
+              <SettingResetButton
+                label="thread timestamp"
+                onClick={() =>
+                  updateSettings({
+                    sidebarThreadTimestampMode: DEFAULT_UNIFIED_SETTINGS.sidebarThreadTimestampMode,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.sidebarThreadTimestampMode}
+              onValueChange={(value) => {
+                if (value === "last_prompted" || value === "last_message") {
+                  updateSettings({ sidebarThreadTimestampMode: value });
+                }
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Thread timestamp">
+                <SelectValue>
+                  {settings.sidebarThreadTimestampMode === "last_message"
+                    ? "Last message"
+                    : "Last prompted"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="last_prompted">
+                  Last prompted
+                </SelectItem>
+                <SelectItem hideIndicator value="last_message">
+                  Last message
                 </SelectItem>
               </SelectPopup>
             </Select>

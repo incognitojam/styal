@@ -33,6 +33,7 @@ export interface Preferences {
   readonly projectGroupingEnabled?: boolean;
   readonly projectGroupingMode?: SidebarProjectGroupingMode;
   readonly confirmThreadUnpin?: boolean;
+  readonly threadTimestampMode?: "last_prompted" | "last_message";
   /**
    * Device-local mirror of the web `legacySidebarEnabled` setting. Mobile has
    * no client-settings sync, so the legacy grouped thread list is opted into
@@ -103,6 +104,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     projectGroupingEnabled?: boolean;
     projectGroupingMode?: SidebarProjectGroupingMode;
     confirmThreadUnpin?: boolean;
+    threadTimestampMode?: "last_prompted" | "last_message";
     legacyThreadListEnabled?: boolean;
     planModeEnabled?: boolean;
     threadListSettledShelfExpanded?: boolean;
@@ -173,6 +175,12 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.confirmThreadUnpin === "boolean") {
     preferences.confirmThreadUnpin = parsed.confirmThreadUnpin;
+  }
+  if (
+    parsed.threadTimestampMode === "last_prompted" ||
+    parsed.threadTimestampMode === "last_message"
+  ) {
+    preferences.threadTimestampMode = parsed.threadTimestampMode;
   }
   if (typeof parsed.legacyThreadListEnabled === "boolean") {
     preferences.legacyThreadListEnabled = parsed.legacyThreadListEnabled;

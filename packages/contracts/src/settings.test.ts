@@ -20,6 +20,19 @@ const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
+describe("Thread timestamp setting", () => {
+  it("defaults to the last prompt and persists the last message choice", () => {
+    expect(decodeClientSettings({}).sidebarThreadTimestampMode).toBe("last_prompted");
+    const settings = decodeClientSettings({ sidebarThreadTimestampMode: "last_message" });
+    expect(decodeClientSettings(encodeClientSettings(settings)).sidebarThreadTimestampMode).toBe(
+      "last_message",
+    );
+    expect(decodeClientSettingsPatch({ sidebarThreadTimestampMode: "last_prompted" })).toEqual({
+      sidebarThreadTimestampMode: "last_prompted",
+    });
+  });
+});
+
 describe("Discord Rich Presence settings", () => {
   it("defaults existing installs to off and persists an explicit opt-in", () => {
     expect(decodeClientSettings({}).discordRichPresence).toBe(false);

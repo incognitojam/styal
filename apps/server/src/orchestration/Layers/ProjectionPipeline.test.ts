@@ -3254,11 +3254,13 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
 
       const readSummary = sql<{
         readonly latestUserMessageAt: string | null;
+        readonly latestMessageAt: string | null;
         readonly pendingUserInputCount: number;
         readonly updatedAt: string;
       }>`
         SELECT
           latest_user_message_at AS "latestUserMessageAt",
+          latest_message_at AS "latestMessageAt",
           pending_user_input_count AS "pendingUserInputCount",
           updated_at AS "updatedAt"
         FROM projection_threads
@@ -3290,6 +3292,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       assert.deepEqual(yield* readSummary, [
         {
           latestUserMessageAt: "2026-03-01T08:00:02.000Z",
+          latestMessageAt: "2026-03-01T08:00:02.000Z",
           pendingUserInputCount: 0,
           updatedAt: "2026-03-01T08:00:02.000Z",
         },
@@ -3322,6 +3325,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       assert.deepEqual(yield* readSummary, [
         {
           latestUserMessageAt: "2026-03-01T08:00:02.000Z",
+          latestMessageAt: "2026-03-01T08:00:03.000Z",
           pendingUserInputCount: 0,
           updatedAt: "2026-03-01T08:00:03.000Z",
         },
@@ -3356,6 +3360,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       assert.deepEqual(yield* readSummary, [
         {
           latestUserMessageAt: "2026-03-01T08:00:02.000Z",
+          latestMessageAt: "2026-03-01T08:00:03.000Z",
           pendingUserInputCount: 0,
           updatedAt: "2026-03-01T08:00:04.000Z",
         },
@@ -3398,6 +3403,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       assert.deepEqual(yield* readSummary, [
         {
           latestUserMessageAt: "2026-03-01T08:00:02.000Z",
+          latestMessageAt: "2026-03-01T08:00:03.000Z",
           pendingUserInputCount: 1,
           updatedAt: "2026-03-01T08:00:05.000Z",
         },

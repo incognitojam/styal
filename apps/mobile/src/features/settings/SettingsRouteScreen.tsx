@@ -581,6 +581,18 @@ function GeneralSettingsSection() {
   return (
     <SettingsSection title="General">
       <SettingsRow icon="folder" label="Project Grouping" target="SettingsProjectGrouping" />
+      <SettingsSwitchRow
+        icon="clock"
+        label="Show last message time"
+        subtitle="Include agent replies in thread timestamps. Off shows when you last prompted the agent."
+        value={
+          AsyncResult.isSuccess(preferencesResult) &&
+          preferencesResult.value.threadTimestampMode === "last_message"
+        }
+        onValueChange={(value) =>
+          savePreferences({ threadTimestampMode: value ? "last_message" : "last_prompted" })
+        }
+      />
       <AutoSettleSettingsRows />
       <SettingsSwitchRow
         icon="pin"

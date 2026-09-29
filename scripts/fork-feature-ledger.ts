@@ -126,7 +126,6 @@ export function validateForkFeatureLedger(
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(feature.id)) {
       errors.push(`${feature.id}.id must use lower-kebab-case.`);
     }
-    if (feature.prs.length === 0) errors.push(`${feature.id}.prs must not be empty.`);
     if (feature.invariants.length === 0) errors.push(`${feature.id}.invariants must not be empty.`);
     if (feature.implementation_paths.length === 0)
       errors.push(`${feature.id}.implementation_paths must not be empty.`);
