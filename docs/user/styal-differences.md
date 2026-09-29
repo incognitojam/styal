@@ -34,8 +34,10 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [revision 2cbc24f](https://github.com/pingdotgg/t3code/tree/2cbc24fcae2b5649d7b60b68da72053a37fa82d5).
 - **New threads start in a worktree.** Both apps support isolated Git worktrees. styal defaults new
   threads to a worktree, while T3 Code defaults to the local checkout as of
-  [revision d5d4874](https://github.com/pingdotgg/t3code/tree/d5d48742c9ab00dff82fe8bcbc8da0ba68748959);
-  either default can be changed. [Working with threads](./thread-sidebar.md).
+  [revision 451afcb](https://github.com/pingdotgg/t3code/tree/451afcb22d93f06cb24f9bc16703404564952553);
+  either default can be changed. A newly initialized repository runs its first threads in the
+  current checkout until it has a commit, then uses the worktree default again. T3 Code still
+  attempts to create the worktree in that state. [Working with threads](./thread-sidebar.md).
 - **Stable development ports.** Each workspace gets a persistent range of ten ports. Agents,
   terminals, and project scripts receive the same assignment across restarts, so parallel workspaces
   can run development servers without choosing the same ports.

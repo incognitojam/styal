@@ -963,6 +963,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
 
       expect(status).toEqual({
         isRepo: false,
+        hasHeadCommit: false,
         hasPrimaryRemote: false,
         isDefaultRef: false,
         refName: null,
@@ -993,6 +994,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
 
       expect(status).toEqual({
         isRepo: false,
+        hasHeadCommit: false,
         hasPrimaryRemote: false,
         isDefaultRef: false,
         refName: null,

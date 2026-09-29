@@ -52,6 +52,7 @@ import {
 } from "@t3tools/client-runtime/errors";
 import { type CodexArtifactTemplate } from "@t3tools/client-runtime/codex-artifact-templates";
 import { effectiveSnoozed, threadWokeAt } from "@t3tools/client-runtime/state/thread-settled";
+import { worktreeNeedsFirstCommit } from "@t3tools/client-runtime/state/vcs";
 import {
   parseCodexFeedbackCommand,
   submitCodexFeedback,
@@ -5527,9 +5528,12 @@ export default function ChatView(props: ChatViewProps) {
       ? (pendingServerThreadStartFromOriginByThreadId[activeThread?.id ?? ""] ??
         activeProjectSettings.settings.newWorktreesStartFromOrigin)
       : false;
+  const firstCommitNeededForWorktree = worktreeNeedsFirstCommit(gitStatusQuery.data);
+  const worktreeUnavailableReason = firstCommitNeededForWorktree ? "Needs a first commit" : null;
   const sendEnvMode = resolveSendEnvMode({
     requestedEnvMode: envMode,
     isGitRepo,
+    worktreeNeedsFirstCommit: firstCommitNeededForWorktree,
   });
   const localCheckoutBranchMismatch = useMemo(
     () =>
@@ -8987,8 +8991,8 @@ export default function ChatView(props: ChatViewProps) {
                                 onEnvModeChange={onEnvModeChange}
                                 startFromOrigin={startFromOrigin}
                                 onStartFromOriginChange={onStartFromOriginChange}
-                                {...(canOverrideServerThreadEnvMode
-                                  ? { effectiveEnvModeOverride: envMode }
+                                {...(isLocalDraftThread || canOverrideServerThreadEnvMode
+                                  ? { effectiveEnvModeOverride: sendEnvMode }
                                   : {})}
                                 {...(canOverrideServerThreadEnvMode
                                   ? {
@@ -8998,6 +9002,7 @@ export default function ChatView(props: ChatViewProps) {
                                     }
                                   : {})}
                                 envLocked={envLocked}
+                                worktreeUnavailableReason={worktreeUnavailableReason}
                                 onComposerFocusRequest={scheduleComposerFocus}
                                 {...(canCheckoutPullRequestIntoThread
                                   ? { onCheckoutPullRequestRequest: openPullRequestDialog }

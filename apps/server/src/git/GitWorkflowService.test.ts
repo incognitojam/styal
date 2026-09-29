@@ -31,6 +31,7 @@ describe("GitWorkflowService", () => {
 
       assert.deepStrictEqual(status, {
         isRepo: false,
+        hasHeadCommit: false,
         hasPrimaryRemote: false,
         isDefaultRef: false,
         refName: null,
@@ -57,6 +58,7 @@ describe("GitWorkflowService", () => {
 
       assert.deepStrictEqual(status, {
         isRepo: false,
+        hasHeadCommit: false,
         hasPrimaryRemote: false,
         isDefaultRef: false,
         refName: null,

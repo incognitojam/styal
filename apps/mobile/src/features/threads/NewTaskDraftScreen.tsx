@@ -94,7 +94,10 @@ import { resolveProviderInteractionMode } from "./legacy-plan-mode";
 import { deriveThreadTitleFromPrompt } from "../../lib/projectThreadStartTurn";
 import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/remoteRegistration";
 import { enqueueThreadOutboxMessage } from "../../state/thread-outbox";
-import { useRemoteConnectionStatus } from "../../state/use-remote-environment-registry";
+import {
+  setPendingConnectionError,
+  useRemoteConnectionStatus,
+} from "../../state/use-remote-environment-registry";
 import { useNewTaskFlow } from "./new-task-flow-provider";
 import { resolveProjectThreadCreationBranch } from "./projectThreadCreationValidation";
 import { resolveDraftProjectSelection } from "./new-task-project-selection";
@@ -959,7 +962,7 @@ export function NewTaskDraftScreen(props: {
         selectedEnvironmentServerConfig,
         draft.modelSelection ?? null,
       ) ?? flow.selectedModel;
-    const workspaceMode = draft.workspaceSelection?.mode ?? flow.workspaceMode;
+    const workspaceMode = flow.workspaceMode;
     const selectedBranchName = draft.workspaceSelection?.branch ?? flow.selectedBranchName;
     const selectedWorktreePath =
       draft.workspaceSelection?.worktreePath ?? flow.selectedWorktreePath;
@@ -1252,9 +1255,15 @@ export function NewTaskDraftScreen(props: {
             }
             label={workspaceLabel}
             maxWidth={flow.workspaceMode === "local" ? 220 : 148}
-            onPress={() =>
-              flow.setWorkspaceMode(flow.workspaceMode === "local" ? "worktree" : "local")
-            }
+            onPress={() => {
+              if (flow.workspaceMode === "local" && flow.worktreeUnavailable) {
+                setPendingConnectionError(
+                  "This repository has no commits yet. Make a first commit, or use Current checkout.",
+                );
+                return;
+              }
+              flow.setWorkspaceMode(flow.workspaceMode === "local" ? "worktree" : "local");
+            }}
             showChevron={false}
           />
 

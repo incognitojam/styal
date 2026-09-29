@@ -27,6 +27,8 @@ interface BranchToolbarEnvModeSelectorProps {
   onEnvModeChange: (mode: EnvMode) => void;
   previousWorktreeLabel?: string | null;
   onUsePreviousWorktree?: () => void;
+  /** Set when a worktree cannot be cut yet, e.g. a repository with no commits. */
+  worktreeUnavailableReason?: string | null;
 }
 
 export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSelector({
@@ -36,6 +38,7 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
   onEnvModeChange,
   previousWorktreeLabel,
   onUsePreviousWorktree,
+  worktreeUnavailableReason = null,
 }: BranchToolbarEnvModeSelectorProps) {
   const showPreviousWorktree = Boolean(previousWorktreeLabel && onUsePreviousWorktree);
   const envModeItems = useMemo(
@@ -127,10 +130,13 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
               {resolveCurrentWorkspaceLabel(activeWorktreePath)}
             </span>
           </SelectItem>
-          <SelectItem value="worktree">
+          <SelectItem value="worktree" disabled={worktreeUnavailableReason !== null}>
             <span className="inline-flex items-center gap-1.5">
               <FolderGit2Icon className="size-3" />
               {resolveEnvModeLabel("worktree")}
+              {worktreeUnavailableReason ? (
+                <span className="text-muted-foreground">{worktreeUnavailableReason}</span>
+              ) : null}
             </span>
           </SelectItem>
           {showPreviousWorktree && previousWorktreeLabel ? (
