@@ -4,7 +4,7 @@ import {
   type T3ProjectFile,
   type T3ProjectFileScript,
 } from "@t3tools/contracts";
-import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
+import { parseT3ProjectFileResult } from "@t3tools/shared/t3ProjectFile";
 import { useMemo } from "react";
 
 import { useProjectFileQuery } from "~/components/files/projectFilesQueryState";
@@ -14,20 +14,20 @@ const NO_SCRIPTS: ReadonlyArray<T3ProjectFileScript> = [];
 export interface T3ProjectFileState {
   /**
    * - `valid`: t3.json exists and decoded.
-   * - `invalid`: t3.json exists but fails to decode (the server then ignores
-   *   the whole file, including `iconPath` and every script).
+   * - `partial`: t3.json decoded after invalid fields or scripts were ignored.
+   * - `invalid`: t3.json is malformed or its root is not an object.
    * - `missing`: no readable t3.json at the workspace root.
    * - `loading`: the file query has not settled yet.
    */
-  status: "loading" | "missing" | "invalid" | "valid";
-  /** The decoded file when status is `valid`, null otherwise. */
+  status: "loading" | "missing" | "invalid" | "partial" | "valid";
+  /** The decoded file when status is `valid` or `partial`, null otherwise. */
   file: T3ProjectFile | null;
   scripts: ReadonlyArray<T3ProjectFileScript>;
 }
 
 /**
  * Decoded state of the project's checked-in `t3.json`, including whether the
- * file exists but is broken — which the runtime otherwise swallows silently.
+ * file was partially recovered or could not be parsed.
  */
 export function useT3ProjectFileState(
   environmentId: EnvironmentId,
@@ -44,18 +44,22 @@ export function useT3ProjectFileState(
         scripts: NO_SCRIPTS,
       } as const;
     }
-    const file = parseT3ProjectFile(contents);
-    if (file === null) {
+    const parsed = parseT3ProjectFileResult(contents);
+    if (parsed.status === "invalid") {
       return { status: "invalid", file: null, scripts: NO_SCRIPTS } as const;
     }
-    return { status: "valid", file, scripts: file.scripts ?? NO_SCRIPTS } as const;
+    return {
+      status: parsed.status,
+      file: parsed.file,
+      scripts: parsed.file.scripts ?? NO_SCRIPTS,
+    } as const;
   }, [contents, isPending]);
 }
 
 /**
  * Scripts declared in the project's checked-in `t3.json`, offered in the
  * scripts menu for import. Missing, truncated, or invalid files resolve to
- * an empty list.
+ * an empty list. Invalid entries are omitted without hiding valid siblings.
  */
 export function useT3ProjectFileScripts(
   environmentId: EnvironmentId,
