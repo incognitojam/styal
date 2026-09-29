@@ -1,12 +1,11 @@
 {
   "version": 1,
-  "updatedAt": "2026-09-29T18:30:00Z",
+  "updatedAt": "2026-09-29T19:00:00Z",
   "currentModels": {
     "codex": [
       "gpt-6.1-sol",
       "gpt-6-astra",
       "gpt-6-luna",
-      "gpt-6-sol",
       "gpt-daybreak-blue-latest",
       "gpt-daybreak-red-latest"
     ],
