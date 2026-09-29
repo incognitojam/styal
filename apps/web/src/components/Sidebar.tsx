@@ -1005,6 +1005,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // Cards under a project header: the header names the project, so the
   // title moves up to the status line.
   grouped: boolean;
+  // Grouped cards whose project has no branched threads (typically a folder
+  // without git): the branch line would be empty, so the row is one line.
+  compact: boolean;
   // Slim rows are either settled (action: un-settle) or merely quiet
   // (seen Ready threads — action: settle).
   variantAction: "settle" | "unsettle" | "unsnooze";
@@ -1771,6 +1774,42 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   }
 
   const diff = latestTurnDiff(thread);
+  // Machine and provider glyphs close the row: on the branch line for cards,
+  // after the status for compact rows.
+  const rowIdentityIcons = (
+    <span
+      aria-hidden
+      className={cn(
+        "pointer-events-none inline-flex shrink-0 items-center gap-1",
+        !props.compact && "ml-auto",
+      )}
+    >
+      {isRemote ? (
+        <span className="inline-flex shrink-0 items-center text-sidebar-muted-foreground/70">
+          <EnvironmentMachineIcon
+            aria-hidden
+            kind={props.environmentMachine}
+            className="size-3.5"
+          />
+        </span>
+      ) : null}
+      {driverKind ? (
+        <span className="inline-flex shrink-0 items-center">
+          <ProviderInstanceIcon
+            driverKind={driverKind}
+            displayName={
+              providerEntry?.displayName ?? thread.session?.providerName ?? modelInstanceId
+            }
+            accentColor={providerEntry?.accentColor}
+            showBadge={showInstanceBadge}
+            // Glyph dims, badge stays saturated; offset matches the composer trigger.
+            iconClassName="size-3.5 opacity-60"
+            badgeClassName="right-[-0.1875rem] bottom-[-0.1875rem] h-3 min-w-3 px-0.5 text-[7px]"
+          />
+        </span>
+      ) : null}
+    </span>
+  );
   const regeneratingTitleStatus = isRegeneratingTitle ? (
     <span role="status" className="sr-only">
       Regenerating title
@@ -1785,7 +1824,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       className={cn(
         // Matches the content box height; the py-0.5 padding is added on top.
         "list-none py-0.5 [content-visibility:auto]",
-        props.grouped ? "[contain-intrinsic-size:auto_56px]" : "[contain-intrinsic-size:auto_78px]",
+        props.compact
+          ? "[contain-intrinsic-size:auto_36px]"
+          : props.grouped
+            ? "[contain-intrinsic-size:auto_56px]"
+            : "[contain-intrinsic-size:auto_78px]",
         sortable?.isDragging && "relative z-20",
       )}
     >
@@ -1809,7 +1852,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
           <div
             className={cn(
               "relative z-10 px-[var(--sidebar-row-content-inset)] py-[var(--sidebar-content-inset)]",
-              props.grouped ? "h-[3.5rem]" : "h-[4.875rem]",
+              props.compact ? "h-9" : props.grouped ? "h-[3.5rem]" : "h-[4.875rem]",
             )}
           >
             <div className="flex h-5 min-w-0 items-center gap-1.5">
@@ -1835,6 +1878,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 <span className="flex-1" />
               )}
               {pinIndicator}
+              {props.compact ? (
+                <>
+                  {terminalStatusIcon}
+                  {prBadge}
+                </>
+              ) : null}
               {/* The visible state owns this slot's width: status at rest,
                   actions on hover/keyboard focus or while the popover is open. Keeping
                   the hidden state out of flow lets the project label reclaim
@@ -1962,6 +2011,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   ) : null}
                 </span>
               )}
+              {props.compact ? rowIdentityIcons : null}
             </div>
             {props.grouped ? null : (
               <div className="mt-1 flex min-w-0">
@@ -1969,65 +2019,37 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 {regeneratingTitleStatus}
               </div>
             )}
-            <div
-              className={cn(
-                "flex min-w-0 items-center gap-1.5 text-secondary-label text-xs",
-                props.grouped ? "mt-1" : "mt-0.5",
-              )}
-            >
-              {/* Always the branch. The plan step used to take this slot while
+            {props.compact ? null : (
+              <div
+                className={cn(
+                  "flex min-w-0 items-center gap-1.5 text-secondary-label text-xs",
+                  props.grouped ? "mt-1" : "mt-0.5",
+                )}
+              >
+                {/* Always the branch. The plan step used to take this slot while
                   working, but it truncated to a half-sentence and dropped the
                   branch, so the row lost its most stable identifier. */}
-              {thread.branch ? (
-                <>
-                  <ThreadWorktreeIndicator thread={thread} />
-                  <span className="min-w-0 flex-1 truncate whitespace-nowrap text-muted-foreground/40">
-                    {thread.branch}
-                  </span>
-                </>
-              ) : (
-                <span className="flex-1" />
-              )}
-              {terminalStatusIcon}
-              {prBadge}
-              {diff ? (
-                <span className="shrink-0 font-mono">
-                  <span className="text-diff-addition-foreground">+{diff.insertions}</span>{" "}
-                  <span className="text-diff-deletion-foreground">−{diff.deletions}</span>
-                </span>
-              ) : null}
-              <span
-                aria-hidden
-                className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1"
-              >
-                {isRemote ? (
-                  <span className="inline-flex shrink-0 items-center text-sidebar-muted-foreground/70">
-                    <EnvironmentMachineIcon
-                      aria-hidden
-                      kind={props.environmentMachine}
-                      className="size-3.5"
-                    />
+                {thread.branch ? (
+                  <>
+                    <ThreadWorktreeIndicator thread={thread} />
+                    <span className="min-w-0 flex-1 truncate whitespace-nowrap text-muted-foreground/40">
+                      {thread.branch}
+                    </span>
+                  </>
+                ) : (
+                  <span className="flex-1" />
+                )}
+                {terminalStatusIcon}
+                {prBadge}
+                {diff ? (
+                  <span className="shrink-0 font-mono">
+                    <span className="text-diff-addition-foreground">+{diff.insertions}</span>{" "}
+                    <span className="text-diff-deletion-foreground">−{diff.deletions}</span>
                   </span>
                 ) : null}
-                {driverKind ? (
-                  <span className="inline-flex shrink-0 items-center">
-                    <ProviderInstanceIcon
-                      driverKind={driverKind}
-                      displayName={
-                        providerEntry?.displayName ??
-                        thread.session?.providerName ??
-                        modelInstanceId
-                      }
-                      accentColor={providerEntry?.accentColor}
-                      showBadge={showInstanceBadge}
-                      // Glyph dims, badge stays saturated; offset matches the composer trigger.
-                      iconClassName="size-3.5 opacity-60"
-                      badgeClassName="right-[-0.1875rem] bottom-[-0.1875rem] h-3 min-w-3 px-0.5 text-[7px]"
-                    />
-                  </span>
-                ) : null}
-              </span>
-            </div>
+                {rowIdentityIcons}
+              </div>
+            )}
           </div>
           {props.jumpLabel ? <JumpHintBadge label={props.jumpLabel} /> : null}
         </TooltipTrigger>
@@ -3406,6 +3428,21 @@ export default function Sidebar() {
     },
     [confirmAndUnpinThread],
   );
+
+  // Project groups where no active thread carries a branch render one-line
+  // rows, so a group never mixes row heights.
+  const branchlessActiveGroups = useMemo(() => {
+    const branchless = new Set<string>();
+    if (!groupThreadsByProject) return branchless;
+    const branched = new Set<string>();
+    for (const thread of activeThreads) {
+      const group = threadProjectGroup(thread);
+      if (thread.branch) branched.add(group);
+      else branchless.add(group);
+    }
+    for (const group of branched) branchless.delete(group);
+    return branchless;
+  }, [activeThreads, groupThreadsByProject, threadProjectGroup]);
 
   // Include every visible row in the measured order. Older servers disable
   // pickup on their rows without changing where those rows render.
@@ -4908,6 +4945,8 @@ export default function Sidebar() {
                         const isCard = section === "active" || section === "pinned";
                         const rowVariant = isCard ? "card" : "slim";
                         const grouped = groupThreadsByProject && section === "active";
+                        const compact =
+                          grouped && branchlessActiveGroups.has(threadProjectGroup(thread));
                         return (
                           <SidebarThreadRow
                             // Fade between card and compact rows while the outer
@@ -4916,6 +4955,7 @@ export default function Sidebar() {
                             thread={thread}
                             variant={rowVariant}
                             grouped={grouped}
+                            compact={compact}
                             // Snoozed rows wake, settled rows un-settle, and cards settle.
                             variantAction={
                               section === "snoozed"
