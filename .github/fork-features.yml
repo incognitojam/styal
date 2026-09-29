@@ -1752,6 +1752,7 @@ features:
     status: maintained
     prs: [46, 166]
     invariants:
+      - Sidebar links and proactive panels reuse the same pull request tab when the linked reference supplies its host through the URL; reopening consolidates existing duplicates without merging different hosts or environments.
       - The command palette and keybinding expose provider-appropriate pull request navigation only when the current thread has an associated change request, then open it in the in-app panel.
       - Pull request result toasts include the created pull request number and open the corresponding in-app panel when available, retaining the external URL as a fallback.
     implementation_paths:
@@ -1759,6 +1760,7 @@ features:
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/GitActionsControl.tsx
       - apps/web/src/lib/viewPullRequest.ts
+      - apps/web/src/rightPanelStore.ts
       - apps/web/src/routes/_chat.tsx
       - packages/contracts/src/git.ts
       - packages/contracts/src/keybindings.ts
@@ -1767,6 +1769,7 @@ features:
       - apps/server/src/git/GitManager.ts
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/GitActionsControl.tsx
+      - apps/web/src/rightPanelStore.ts
       - apps/web/src/routes/_chat.tsx
       - packages/contracts/src/git.ts
       - packages/contracts/src/keybindings.ts
@@ -1776,6 +1779,7 @@ features:
       - apps/web/src/components/CommandPalette.logic.test.ts
       - apps/web/src/components/GitActionsControl.logic.test.ts
       - apps/web/src/keybindings.test.ts
+      - apps/web/src/rightPanelStore.test.ts
       - packages/contracts/src/keybindings.test.ts
     upstream:
       status: unassessed
