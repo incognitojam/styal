@@ -22,7 +22,10 @@ import {
   classifyMarkdownImageSource,
   markdownImageSourceFragment,
 } from "@t3tools/client-runtime/markdown-images";
-import { resolveViewedImageAsset } from "@t3tools/client-runtime/work-log/presentation";
+import {
+  resolveViewedImageAsset,
+  standaloneTimelineActivityStyle,
+} from "@t3tools/client-runtime/work-log/presentation";
 import {
   renderCodexFileCitationsAsMarkdown,
   splitCodexArtifactTemplateMarkdown,
@@ -1512,9 +1515,10 @@ function renderFeedEntry(
 
   if (entry.type === "activity-group" && isStandaloneActivityGroup(entry)) {
     const label = entry.activities[0]!.summary;
-    // A restart continues the same conversation, so it reads as a note in the
-    // turn's work; compaction breaks the context and gets a divider.
-    if (entry.activities[0]!.workEntry.sourceActivityKind !== "context-compaction") {
+    if (
+      standaloneTimelineActivityStyle(entry.activities[0]!.workEntry.sourceActivityKind) ===
+      "restart-note"
+    ) {
       return (
         <View
           accessible

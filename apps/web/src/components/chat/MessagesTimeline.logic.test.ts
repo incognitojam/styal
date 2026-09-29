@@ -1090,9 +1090,14 @@ describe("resolveAssistantMessageCopyState", () => {
 
 describe("deriveMessagesTimelineRows", () => {
   it.each([
-    ["context-compaction", "Compacted context 899K → 19K tokens"],
-    ["server-restart.continued", "Continued after server restart"],
-  ])("keeps a lone %s row visible outside folded work", (activityKind, label) => {
+    ["context-compaction", "Compacted context 899K → 19K tokens", "divider"],
+    ["server-restart.continued", "Continued after server restart", "restart-note"],
+    [
+      "server-restart.background-continued",
+      "Asked to restart background work after server restart",
+      "restart-note",
+    ],
+  ])("keeps a lone %s row visible outside folded work", (activityKind, label, style) => {
     const rows = deriveMessagesTimelineRows({
       timelineEntries: [
         {
@@ -1120,7 +1125,7 @@ describe("deriveMessagesTimelineRows", () => {
         id: "standalone-entry",
         createdAt: "2026-01-01T00:00:00Z",
         label,
-        activityKind,
+        style,
       },
     ]);
   });
@@ -1258,8 +1263,9 @@ describe("deriveMessagesTimelineRows", () => {
         "answer-entry",
       ]);
       const foldRow = collapsedRows.find((row) => row.kind === "turn-fold");
-      // User message (00:00:00) → final answer (00:01:30), across the restart.
-      expect(foldRow?.kind === "turn-fold" && foldRow.label).toBe("Worked for 1m 30s");
+      // User message (00:00:00) → final answer (00:01:30), less the 20s between
+      // the interrupted turn's last message and the restart note.
+      expect(foldRow?.kind === "turn-fold" && foldRow.label).toBe("Worked for 1m 10s");
 
       expect(
         rowsFor("server-restart.continued", new Set([TurnId.make("turn-1")])).map((row) => row.id),

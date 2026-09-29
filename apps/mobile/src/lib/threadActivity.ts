@@ -47,6 +47,7 @@ import {
   omitRetriedFindingsReports,
   omitSupersededLifecycleMarkers,
   resolveWorkEntryToolPresentation,
+  restartDowntimeMs,
   summarizeToolGroup,
   toolGroupAction,
   toolGroupSummaryKind,
@@ -1982,7 +1983,24 @@ function deriveThreadFeedTurnFolds(
               lastEntryEnd,
             ) ?? lastEntryEnd,
           );
-    const duration = elapsedMs === null ? null : formatDuration(elapsedMs);
+    const workedMs =
+      elapsedMs !== null && group.turnIds.size > 1
+        ? Math.max(
+            0,
+            elapsedMs -
+              restartDowntimeMs(entries, (entry) => ({
+                turnId: threadFeedEntryTurnId(entry) ?? turnId,
+                startedAt: entry.createdAt,
+                endedAt:
+                  entry.type === "message"
+                    ? entry.message.updatedAt
+                    : entry.type === "activity-group"
+                      ? (entry.activities.at(-1)?.createdAt ?? entry.createdAt)
+                      : entry.createdAt,
+              })),
+          )
+        : elapsedMs;
+    const duration = workedMs === null ? null : formatDuration(workedMs);
     const interrupted = latestTurnMatches && latestTurn.state === "interrupted";
     const label = interrupted
       ? duration

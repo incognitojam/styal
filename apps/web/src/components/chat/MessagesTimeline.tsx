@@ -1363,14 +1363,12 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
   );
 });
 
-// Compaction is a break in the agent's context, so it gets a divider. A restart
-// continues the same conversation, so it reads as a note in the turn's work.
 function StandaloneActivityTimelineRow({
   row,
 }: {
   row: Extract<TimelineRow, { kind: "standalone-activity" }>;
 }) {
-  if (row.activityKind !== "context-compaction") {
+  if (row.style === "restart-note") {
     return (
       <div className="mx-auto flex w-full max-w-3xl items-center gap-1.5 px-0.5 py-0.5">
         <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">

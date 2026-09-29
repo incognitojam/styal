@@ -2246,8 +2246,9 @@ describe("buildThreadFeed", () => {
         "turn-fold:turn-1",
         "answer",
       ]);
-      // User message (00:00:00) → final answer (00:01:30), across the restart.
-      expect(collapsed[2]).toMatchObject({ type: "turn-fold", label: "Worked for 1m 30s" });
+      // User message (00:00:00) → final answer (00:01:30), less the 20s between
+      // the interrupted turn's last message and the restart note.
+      expect(collapsed[2]).toMatchObject({ type: "turn-fold", label: "Worked for 1m 10s" });
 
       const expanded = presentationFor("server-restart.continued", new Set([firstTurnId]));
       expect(expanded.map((entry) => entry.id)).toEqual(

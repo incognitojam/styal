@@ -9,10 +9,13 @@ import {
   normalizeCompactToolLabel,
   omitSupersededLifecycleMarkers,
   resolveWorkEntryToolPresentation,
+  restartDowntimeMs,
+  standaloneTimelineActivityStyle,
   summarizeToolGroup,
   toolGroupAction,
   toolGroupSummaryKind,
   workEntryReviewFindings,
+  type StandaloneTimelineActivityStyle,
   type ToolGroupSummaryKind,
 } from "@t3tools/client-runtime/work-log/presentation";
 export {
@@ -410,7 +413,7 @@ export type MessagesTimelineRow =
       id: string;
       createdAt: string;
       label: string;
-      activityKind: string;
+      style: StandaloneTimelineActivityStyle;
     }
   | {
       kind: "message";
@@ -887,7 +890,19 @@ function deriveTurnFolds(input: {
             maxIsoTimestamp(group.terminalEntry?.message.updatedAt ?? null, lastEntryEnd) ??
               lastEntryEnd,
           );
-    const duration = elapsedMs !== null ? formatDuration(elapsedMs) : null;
+    const workedMs =
+      elapsedMs !== null && group.turnIds.size > 1
+        ? Math.max(
+            0,
+            elapsedMs -
+              restartDowntimeMs(group.entries, (entry) => ({
+                turnId: timelineEntryTurnId(entry) ?? turnId,
+                startedAt: entry.createdAt,
+                endedAt: entry.kind === "message" ? entry.message.updatedAt : entry.createdAt,
+              })),
+          )
+        : elapsedMs;
+    const duration = workedMs !== null ? formatDuration(workedMs) : null;
     const label = isLatestInterruptedTurn
       ? duration
         ? `You stopped after ${duration}`
@@ -1228,16 +1243,17 @@ export function deriveMessagesTimelineRows(input: {
       continue;
     }
 
-    if (
-      timelineEntry.kind === "work" &&
-      isStandaloneTimelineActivityKind(timelineEntry.entry.sourceActivityKind)
-    ) {
+    const standaloneStyle =
+      timelineEntry.kind === "work"
+        ? standaloneTimelineActivityStyle(timelineEntry.entry.sourceActivityKind)
+        : undefined;
+    if (timelineEntry.kind === "work" && standaloneStyle !== undefined) {
       nextRows.push({
         kind: "standalone-activity",
         id: timelineEntry.id,
         createdAt: timelineEntry.createdAt,
         label: timelineEntry.entry.label,
-        activityKind: timelineEntry.entry.sourceActivityKind,
+        style: standaloneStyle,
       });
       continue;
     }
@@ -1596,9 +1612,7 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
 
     case "standalone-activity": {
       const bc = b as typeof a;
-      return (
-        a.createdAt === bc.createdAt && a.label === bc.label && a.activityKind === bc.activityKind
-      );
+      return a.createdAt === bc.createdAt && a.label === bc.label && a.style === bc.style;
     }
 
     case "proposed-plan":

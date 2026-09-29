@@ -23,14 +23,30 @@ import { memoryFileToolKind, memoryFileToolPath } from "@t3tools/shared/toolRowP
 /**
  * Activity kinds clients show as a row of their own: never merged into a
  * group of work rows, and still visible when a folded turn has nothing else
- * to hide.
+ * to hide. Compaction breaks the agent's context, so it is drawn as a divider;
+ * a restart continues the same conversation, so it is drawn as a note in the
+ * turn's work.
  */
+const STANDALONE_TIMELINE_ACTIVITY_STYLES = {
+  "context-compaction": "divider",
+  [SERVER_RESTART_CONTINUED_ACTIVITY_KIND]: "restart-note",
+  [SERVER_RESTART_BACKGROUND_ACTIVITY_KIND]: "restart-note",
+} as const;
+
+export type StandaloneTimelineActivityStyle =
+  (typeof STANDALONE_TIMELINE_ACTIVITY_STYLES)[keyof typeof STANDALONE_TIMELINE_ACTIVITY_STYLES];
+
+/** How clients draw a standalone activity, or undefined when the kind is not one. */
+export function standaloneTimelineActivityStyle(
+  kind: string | undefined,
+): StandaloneTimelineActivityStyle | undefined {
+  return kind !== undefined && Object.hasOwn(STANDALONE_TIMELINE_ACTIVITY_STYLES, kind)
+    ? STANDALONE_TIMELINE_ACTIVITY_STYLES[kind as keyof typeof STANDALONE_TIMELINE_ACTIVITY_STYLES]
+    : undefined;
+}
+
 export function isStandaloneTimelineActivityKind(kind: string | undefined): kind is string {
-  return (
-    kind === "context-compaction" ||
-    kind === SERVER_RESTART_CONTINUED_ACTIVITY_KIND ||
-    kind === SERVER_RESTART_BACKGROUND_ACTIVITY_KIND
-  );
+  return standaloneTimelineActivityStyle(kind) !== undefined;
 }
 
 /** What deriveContinuedTurnRoots reads from one timeline entry. */
@@ -74,6 +90,46 @@ export function deriveContinuedTurnRoots<Entry>(
     previousRoot = root;
   }
   return roots;
+}
+
+/** What restartDowntimeMs reads from one entry of a response. */
+export interface RestartDowntimeEntry {
+  readonly turnId: TurnId;
+  readonly startedAt: string;
+  readonly endedAt: string;
+}
+
+/**
+ * Time a response spent waiting for the server to restart: for each turn that
+ * continued another, the gap between the last entry before it and its first
+ * entry. Subtract it from the response's duration so a long outage does not
+ * count as work. Entries must be one response's entries in timeline order.
+ */
+export function restartDowntimeMs<Entry>(
+  entries: Iterable<Entry>,
+  describe: (entry: Entry) => RestartDowntimeEntry,
+): number {
+  let downtimeMs = 0;
+  let previousTurnId: TurnId | null = null;
+  let previousEndMs: number | null = null;
+  for (const entry of entries) {
+    const { turnId, startedAt, endedAt } = describe(entry);
+    const startMs = Date.parse(startedAt);
+    if (
+      previousTurnId !== null &&
+      turnId !== previousTurnId &&
+      previousEndMs !== null &&
+      Number.isFinite(startMs)
+    ) {
+      downtimeMs += Math.max(0, startMs - previousEndMs);
+    }
+    previousTurnId = turnId;
+    const endMs = Date.parse(endedAt);
+    if (Number.isFinite(endMs)) {
+      previousEndMs = previousEndMs === null ? endMs : Math.max(previousEndMs, endMs);
+    }
+  }
+  return downtimeMs;
 }
 
 export function isWorktreeSetupActivity(kind: string): boolean {
