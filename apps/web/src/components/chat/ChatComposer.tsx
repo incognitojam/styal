@@ -209,6 +209,7 @@ import {
 } from "./composerProviderState";
 import { ContextWindowMeter, ContextWindowMeterPlaceholder } from "./ContextWindowMeter";
 import {
+  claudeSelectionCacheLoss,
   providerSupportsManualCompaction,
   resolveContextWindowModelDisplayName,
   shouldReserveContextWindowMeter,
@@ -856,6 +857,7 @@ import { toastManager } from "../ui/toast";
 import {
   BotIcon,
   CircleAlertIcon,
+  HistoryIcon,
   PaperclipIcon,
   PencilRulerIcon,
   PlayIcon,
@@ -891,7 +893,7 @@ import {
 } from "./composerPromptHistory";
 import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import type { PendingApproval, PendingUserInput } from "../../session-logic";
-import type { ContextWindowSnapshot } from "../../lib/contextWindow";
+import { type ContextWindowSnapshot, formatContextWindowTokens } from "../../lib/contextWindow";
 import {
   formatProviderSkillDisplayName,
   getProviderSlashCommandsForSlashMenu,
@@ -901,6 +903,7 @@ import {
 } from "@t3tools/client-runtime/providerSkills";
 import { searchProviderSkills } from "../../providerSkillSearch";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
+import { useNowMinute } from "../../hooks/useNowMinute";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { serverEnvironment } from "../../state/server";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
@@ -1620,6 +1623,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     (store) => store.syncPersistedAttachments,
   );
   const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
+  const setComposerDraftModelSelection = useComposerDraftStore((store) => store.setModelSelection);
 
   useEffect(() => {
     if (!attachmentUploadsCapabilityKnown) {
@@ -1930,6 +1934,78 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const activeThreadModelDisplayName = useMemo(
     () => resolveContextWindowModelDisplayName(activeThreadModelSelection, modelOptionsByInstance),
     [activeThreadModelSelection, modelOptionsByInstance],
+  );
+  // Warn before a model or option change makes the next Claude turn resend the
+  // thread's history without its prompt cache. Dismissals last for the
+  // session, one key per (thread, pending selection, context snapshot).
+  const nowMinute = useNowMinute();
+  const [dismissedCacheLossKeys, setDismissedCacheLossKeys] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const cacheLossBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
+    if (!activeContextWindow) return null;
+    const change = claudeSelectionCacheLoss({
+      provider: selectedProvider,
+      current: activeThreadModelSelection,
+      next: selectedModelSelection,
+      capabilities: selectedProviderModels.find(
+        (model) => model.slug === selectedModelSelection.model,
+      )?.capabilities,
+      usedTokens: activeContextWindow.usedTokens,
+      updatedAt: activeContextWindow.updatedAt,
+      now: `${nowMinute}:00.000Z`,
+    });
+    if (!change || !activeThreadModelSelection) return null;
+    const key = [
+      composerTargetKey(composerDraftTarget),
+      JSON.stringify(selectedModelSelection),
+      activeContextWindow.updatedAt,
+    ].join(":");
+    if (dismissedCacheLossKeys.has(key)) return null;
+    const title =
+      change === "model"
+        ? "Switching model skips the cache"
+        : change === "effort"
+          ? "Changing effort skips the cache"
+          : "Toggling fast mode skips the cache";
+    return {
+      id: `cache-loss:${key}`,
+      variant: "info",
+      icon: <HistoryIcon />,
+      title,
+      description: `Resends ${formatContextWindowTokens(activeContextWindow.usedTokens)} tokens`,
+      actions: (
+        <Button
+          size="xs"
+          variant="ghost"
+          onClick={() =>
+            setComposerDraftModelSelection(composerDraftTarget, activeThreadModelSelection, {
+              explicit: true,
+              replaceOptions: true,
+            })
+          }
+        >
+          Undo
+        </Button>
+      ),
+      dismissLabel: "Keep change",
+      onDismiss: () => setDismissedCacheLossKeys((keys) => new Set(keys).add(key)),
+    };
+  }, [
+    activeContextWindow,
+    activeThreadModelSelection,
+    composerDraftTarget,
+    dismissedCacheLossKeys,
+    nowMinute,
+    selectedModelSelection,
+    selectedProvider,
+    selectedProviderModels,
+    setComposerDraftModelSelection,
+  ]);
+  // First among notices: it answers the change the user just made.
+  const bannerItems = useMemo(
+    () => (cacheLossBannerItem ? [cacheLossBannerItem, ...props.bannerItems] : props.bannerItems),
+    [cacheLossBannerItem, props.bannerItems],
   );
   const reserveContextWindowMeter = shouldReserveContextWindowMeter({
     meterEnabled: settings.contextWindowMeterEnabled,
@@ -3936,7 +4012,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const toggleTasksDrawer = useCallback(() => {
     setIsTasksDrawerOpen((open) => !open);
   }, []);
-  const hasBannerItems = props.bannerItems.length > 0;
+  const hasBannerItems = bannerItems.length > 0;
   const hasBlockingComposerTopDrawer =
     activePendingApproval !== null || pendingUserInputs.length > 0;
   const showInlineTasksBadge =
@@ -4380,9 +4456,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         content: activityStackContent,
       }
     : null;
-  const bannerStackItems = activityStackItem
-    ? [activityStackItem, ...props.bannerItems]
-    : props.bannerItems;
+  const bannerStackItems = activityStackItem ? [activityStackItem, ...bannerItems] : bannerItems;
   useEffect(() => {
     if (activeTasksProgress === null || activeTaskSteps === null) {
       setIsTasksDrawerOpen(false);

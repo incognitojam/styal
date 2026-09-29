@@ -220,6 +220,27 @@ features:
         - https://github.com/pingdotgg/t3code/pull/8144
       retire_when: Upstream offers resume compaction no later than the prompt cache expiry, or Claude Code changes its cache TTL.
 
+  - id: claude-settings-change-cache-warning
+    title: Warn when a Claude model or option change skips the prompt cache
+    status: maintained
+    prs: [534]
+    invariants:
+      - While a Claude thread of at least 100,000 tokens has a prompt cache less than 60 minutes old, the web composer warns before a pending model, provider instance, or fast mode change would resend the history uncached, and offers to undo it.
+      - An effort change warns only on models for which Claude Code sends effort as a request parameter; Opus 5.5 and Fable 5.1 send it per turn and keep the cache.
+      - Writing an option's default value out explicitly is not treated as a change.
+    implementation_paths:
+      - apps/web/src/components/chat/ChatComposer.tsx
+      - apps/web/src/components/chat/ContextWindowMeter.logic.ts
+    upstream_paths:
+      - apps/web/src/components/chat/ChatComposer.tsx
+      - apps/web/src/components/chat/ContextWindowMeter.logic.ts
+    tests:
+      - apps/web/src/components/chat/ContextWindowMeter.logic.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream warns about Claude prompt cache loss on model and option changes, or Claude Code keeps the cache across them.
+
   - id: codex-default-model
     title: Prefer GPT-6-Sol for new Codex threads
     status: maintained

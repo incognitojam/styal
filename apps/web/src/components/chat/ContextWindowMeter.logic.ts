@@ -1,8 +1,14 @@
-import type { ModelSelection, ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
+import type {
+  ModelCapabilities,
+  ModelSelection,
+  ProviderDriverKind,
+  ProviderInstanceId,
+} from "@t3tools/contracts";
 import {
   CLAUDE_RESUME_COMPACTION_NEVER_ANSWER,
   isClaudeResumeCompactionQuestion,
 } from "@t3tools/shared/claudeCompaction";
+import { getProviderOptionCurrentValue, getProviderOptionDescriptors } from "@t3tools/shared/model";
 import {
   resolveSelectableProviderInstanceEntry,
   type ProviderInstanceEntry,
@@ -12,8 +18,18 @@ import { getTriggerDisplayModelName, type ModelEsque } from "./providerIconUtils
 // Claude Code writes its prompt cache with a one-hour TTL, so a resume after an
 // hour resends the whole history uncached. Claude Code's own prompt waits 70
 // minutes; the banner offers compaction as soon as the cache has expired.
-const CLAUDE_RESUME_COMPACTION_MINUTES = 60;
-const CLAUDE_RESUME_COMPACTION_TOKENS = 100_000;
+const CLAUDE_PROMPT_CACHE_MINUTES = 60;
+// Below this, resending the history uncached costs too little to interrupt.
+const CLAUDE_LARGE_CONTEXT_TOKENS = 100_000;
+// Claude Code sends effort inside the conversation for these models, so an
+// effort change keeps the cached history. On other models it sends effort as
+// a request parameter and an effort change resends the history uncached.
+// Claude Code enables this per model: add a model once its transcripts record
+// `perTurnEffort` on assistant entries.
+const CLAUDE_PER_TURN_EFFORT_MODELS: ReadonlySet<string> = new Set([
+  "claude-fable-5-1",
+  "claude-opus-5-5",
+]);
 
 export function providerSupportsManualCompaction(
   provider: ProviderInstanceEntry | null | undefined,
@@ -69,10 +85,7 @@ export function shouldOfferResumeCompaction(input: {
   readonly updatedAt: string | null | undefined;
   readonly now: string;
 }): boolean {
-  if (
-    input.provider !== "claudeAgent" ||
-    (input.usedTokens ?? 0) < CLAUDE_RESUME_COMPACTION_TOKENS
-  ) {
+  if (input.provider !== "claudeAgent" || (input.usedTokens ?? 0) < CLAUDE_LARGE_CONTEXT_TOKENS) {
     return false;
   }
 
@@ -81,8 +94,71 @@ export function shouldOfferResumeCompaction(input: {
   return (
     Number.isFinite(updatedAt) &&
     Number.isFinite(now) &&
-    now - updatedAt >= CLAUDE_RESUME_COMPACTION_MINUTES * 60_000
+    now - updatedAt >= CLAUDE_PROMPT_CACHE_MINUTES * 60_000
   );
+}
+
+export type ClaudeCacheLossChange = "model" | "effort" | "fastMode";
+
+/**
+ * Which pending composer change would make the next Claude turn resend the
+ * thread's history uncached, or `null` when the cache survives it or has
+ * already expired. `current` is the selection the last turn was sent with;
+ * `capabilities` belong to the pending model and resolve unset options to
+ * their defaults, so writing a default out explicitly is not a change.
+ */
+export function claudeSelectionCacheLoss(input: {
+  readonly provider: string | null | undefined;
+  readonly current: ModelSelection | null | undefined;
+  readonly next: ModelSelection;
+  readonly capabilities: ModelCapabilities | null | undefined;
+  readonly usedTokens: number | null | undefined;
+  readonly updatedAt: string | null | undefined;
+  readonly now: string;
+}): ClaudeCacheLossChange | null {
+  const { current, next } = input;
+  if (
+    input.provider !== "claudeAgent" ||
+    !current ||
+    (input.usedTokens ?? 0) < CLAUDE_LARGE_CONTEXT_TOKENS
+  ) {
+    return null;
+  }
+  const updatedAt = Date.parse(input.updatedAt ?? "");
+  const now = Date.parse(input.now);
+  if (
+    !Number.isFinite(updatedAt) ||
+    !Number.isFinite(now) ||
+    now - updatedAt >= CLAUDE_PROMPT_CACHE_MINUTES * 60_000
+  ) {
+    return null;
+  }
+
+  // Prompt caches belong to one model and one account.
+  if (current.instanceId !== next.instanceId || current.model !== next.model) {
+    return "model";
+  }
+  const caps = input.capabilities;
+  if (!caps) {
+    return null;
+  }
+  const optionValue = (selection: ModelSelection, id: string) =>
+    getProviderOptionCurrentValue(
+      getProviderOptionDescriptors({ caps, selections: selection.options }).find(
+        (descriptor) => descriptor.id === id,
+      ),
+    );
+  // Fast mode changes the request's speed, which the API caches separately.
+  if ((optionValue(current, "fastMode") ?? false) !== (optionValue(next, "fastMode") ?? false)) {
+    return "fastMode";
+  }
+  if (
+    !CLAUDE_PER_TURN_EFFORT_MODELS.has(next.model) &&
+    optionValue(current, "effort") !== optionValue(next, "effort")
+  ) {
+    return "effort";
+  }
+  return null;
 }
 
 export function resolveContextWindowModelDisplayName(
