@@ -3155,6 +3155,7 @@ function OpenCommandPaletteDialog(props: {
       ) : null}
       <CommandPaletteResults
         groups={displayedGroups}
+        highlightFirstItem={currentView?.groups[0]?.value === "projects"}
         highlightedItemValue={highlightedItemValue}
         isActionsOnly={isActionsOnly}
         keybindings={keybindings}
