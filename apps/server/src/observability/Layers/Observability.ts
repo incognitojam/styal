@@ -13,6 +13,7 @@ import * as ServerConfig from "../../config.ts";
 import * as ResourceAttribution from "../../resourceTelemetry/ResourceAttribution.ts";
 import { ServerLoggerLive } from "../../serverLogger.ts";
 import * as BrowserTraceCollector from "../BrowserTraceCollector.ts";
+import { OpenSpans, trackOpenSpans } from "../OpenSpans.ts";
 
 const otlpSerializationLayer = OtlpSerialization.layerJson;
 
@@ -67,8 +68,10 @@ export const ObservabilityLive = Layer.unwrap(
           ...(delegate ? { delegate } : {}),
         });
 
+        const tracked = trackOpenSpans(tracer);
         return Layer.mergeAll(
-          Layer.succeed(Tracer.Tracer, tracer),
+          Layer.succeed(Tracer.Tracer, tracked.tracer),
+          Layer.succeed(OpenSpans, tracked.openSpans),
           BrowserTraceCollector.layer(sink),
         );
       }),

@@ -108,6 +108,7 @@ import * as SourceControlRateLimit from "./sourceControl/SourceControlRateLimit.
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import { ObservabilityLive } from "./observability/Layers/Observability.ts";
+import { reportStalledShutdown } from "./observability/OpenSpans.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import { authHttpApiLayer, environmentAuthenticatedAuthLayer } from "./auth/http.ts";
@@ -760,7 +761,8 @@ const makeServerLayer = Layer.unwrap(
       tailscaleServeLayer,
       cloudDesiredLinkReconcileLayer,
     );
-    // Built last, so its finalizer runs first. Any later finalizer can stall,
+    // Its finalizer runs before every other shutdown step except the stalled
+    // shutdown report, which only starts a timer. Any later finalizer can stall,
     // and the service launcher kills the server five seconds after asking it
     // to stop. That kill skips the provider SDKs' exit handlers, so a provider
     // CLI still running then keeps working on its own.
@@ -771,7 +773,8 @@ const makeServerLayer = Layer.unwrap(
       }),
     );
 
-    return providerShutdownLayer.pipe(
+    return reportStalledShutdown.pipe(
+      Layer.provideMerge(providerShutdownLayer),
       Layer.provideMerge(serverApplicationLayer),
       Layer.provideMerge(runtimeServicesLive),
       Layer.provide(activationLayer),
