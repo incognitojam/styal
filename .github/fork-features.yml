@@ -1738,8 +1738,8 @@ features:
       - apps/server/src/assets/AssetAccess.test.ts
       - apps/server/src/pullRequest/GitHubPullRequestCli.test.ts
       - apps/server/src/pullRequest/PullRequestService.test.ts
-      - apps/web/src/components/pullRequest/pullRequestMarkdown.logic.test.ts
       - apps/web/src/components/pullRequest/PullRequestMarkdown.test.tsx
+      - apps/web/src/components/pullRequest/pullRequestMarkdown.logic.test.ts
     upstream:
       status: unassessed
       tracking: []
