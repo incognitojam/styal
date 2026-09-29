@@ -63,9 +63,16 @@ export function presentThreadLinkedPullRequests(
   const badge = resolveThreadPullRequestBadge(links);
   if (link === null || badge === null) return null;
   const snapshot = link.snapshot;
-  const state = badge.kind === "stack" ? badge.state : (snapshot?.state ?? null);
-  const isDraft = snapshot?.isDraft === true && state === "open";
   const additionalCount = badge.kind === "pull-request" && badge.others > 0 ? badge.others : null;
+  const isMultiple = badge.kind === "stack" || additionalCount !== null;
+  const state = isMultiple
+    ? badge.state === "draft"
+      ? "open"
+      : badge.state
+    : (snapshot?.state ?? null);
+  const isDraft = isMultiple
+    ? badge.state === "draft"
+    : snapshot?.isDraft === true && state === "open";
   const label =
     badge.kind === "stack"
       ? String(badge.layers)
@@ -83,12 +90,16 @@ export function presentThreadLinkedPullRequests(
     label,
     accessibilityLabel:
       badge.kind === "stack"
-        ? `${badge.layers} pull requests in stack, ${state ?? "status pending"}`
-        : `#${link.number} pull request ${state === null ? "status pending" : isDraft ? "draft" : state}${badge.others > 0 ? `, ${badge.others} more linked` : ""}`,
+        ? `${badge.layers} pull requests in stack, ${isDraft ? "draft" : (state ?? "status pending")}`
+        : additionalCount !== null
+          ? `#${link.number} pull request ${!snapshot ? "status pending" : snapshot.state === "open" && snapshot.isDraft ? "draft" : snapshot.state}, ${additionalCount} more linked; overall ${badge.state}`
+          : `#${link.number} pull request ${state === null ? "status pending" : isDraft ? "draft" : state}`,
     textClassName:
-      additionalCount !== null || state === null || isDraft
+      state === null || isDraft
         ? "text-foreground-muted"
-        : PR_STATE_TEXT_CLASS[state],
+        : isMultiple && state === "closed"
+          ? "text-adaptive-rose-600-400"
+          : PR_STATE_TEXT_CLASS[state],
   };
 }
 

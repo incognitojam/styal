@@ -27,7 +27,7 @@ describe("ThreadPullRequestBadgeControl", () => {
       renderer = create(
         <ThreadPullRequestBadgeControl
           variant="underline"
-          badge={{ kind: "pull-request", others: 1 }}
+          badge={{ kind: "pull-request", others: 1, state: "open" }}
           number={102}
           url="https://github.com/example/project/pull/102"
           status={null}
@@ -40,7 +40,9 @@ describe("ThreadPullRequestBadgeControl", () => {
     if (!mounted) throw new Error("Badge did not render");
     const link = mounted.root.findByType("a");
     expect(link.children).toContain("102+1");
-    expect(link.props["aria-label"]).toBe("PR #102, status pending, and 1 more linked");
+    expect(link.props["aria-label"]).toBe(
+      "PR #102, status pending, and 1 more linked; overall open",
+    );
     expect(mounted.root.findAllByProps({ "data-testid": "pr-tooltip" })).toHaveLength(0);
     act(() => {
       mounted.update(
@@ -67,7 +69,7 @@ describe("ThreadPullRequestBadgeControl", () => {
       renderer = create(
         <ThreadPullRequestBadgeControl
           variant="ghost"
-          badge={{ kind: "pull-request", others: 1 }}
+          badge={{ kind: "pull-request", others: 1, state: "open" }}
           number={102}
           url="https://github.com/example/project/pull/102"
           status={null}
