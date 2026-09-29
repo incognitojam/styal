@@ -5,10 +5,6 @@
       "reason": "Follow-up to #11302: preserves cached turns and older-page loading during batched thread sync; upstream cites it in closing the large-backlog replay freeze report #4596."
     },
     {
-      "pr": 9921,
-      "reason": "Found while adding Claude Opus 5.5: the model picker misclassifies qualified Codex IDs such as openai.gpt-*."
-    },
-    {
       "pr": 10027,
       "reason": "The styal Link authorization complete page still has the blue and indigo banner from before the cotton reel artwork (fork #477); this replaces it with a plain card. Swap in the styal wordmark on intake."
     },
@@ -21,20 +17,8 @@
       "reason": "Follow-up to #10300: keeps same-email Codex subscriptions on different plans apart when pooling."
     },
     {
-      "pr": 11103,
-      "reason": "Replaces the fork's draft-preserving compact action from fork #363; drop the fork version when this lands."
-    },
-    {
-      "pr": 11107,
-      "reason": "Messages sent while a thread is compacting fail with \"Wait for context compaction to finish before sending another message.\" on web and mobile; this holds them on the server until compaction finishes."
-    },
-    {
       "pr": 11144,
       "reason": "The sidebar and composer pull request badge shows the same icon for every state and only changes colour; this gives draft, closed and merged pull requests their own icons."
-    },
-    {
-      "pr": 11302,
-      "reason": "Batches thread catch-up updates for desktop and mobile, reducing UI work while Syncing messages; relevant to the reported Android refocus stall."
     },
     {
       "pr": 11372,
