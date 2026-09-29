@@ -74,12 +74,7 @@ export function PullRequestLinkPreview({
     detail === null
       ? null
       : resolvePullRequestState({ state: detail.state, isDraft: detail.isDraft });
-  const authorLabel =
-    detail?.author === null
-      ? "ghost"
-      : detail?.author.name && detail.author.name !== detail.author.login
-        ? `${detail.author.name} (@${detail.author.login})`
-        : (detail?.author.login ?? null);
+  const authorLabel = detail?.author === null ? "ghost" : (detail?.author.login ?? null);
 
   return (
     <PreviewCard open={open} onOpenChange={setOpen}>
