@@ -181,6 +181,8 @@ interface DerivedWorkLogEntry extends WorkLogEntry {
   taskId?: string;
   /** The tool call that launched this task, when the provider reports one. */
   launchToolCallId?: string;
+  /** Task rows launched from inside another agent: that agent's taskId. */
+  owningAgentTaskId?: string;
   isWorkflowCoordinator?: boolean;
   /** Shell/monitor/plan tasks: ordinary work-log rows, never spawn batches. */
   isBackgroundTask?: boolean;
@@ -622,6 +624,10 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
     if (launchToolCallId) {
       entry.launchToolCallId = launchToolCallId;
     }
+    const owningAgentTaskId = asTrimmedString(payload.agentId);
+    if (owningAgentTaskId) {
+      entry.owningAgentTaskId = owningAgentTaskId;
+    }
     if (
       payload.taskType === "local_workflow" ||
       (typeof payload.workflowName === "string" && payload.workflowName.length > 0)
@@ -834,6 +840,7 @@ function collapseDerivedWorkLogEntries(
   // mirrors web's session-logic). Background tasks keep one row per taskId;
   // agent spawns fold into one row per spawn group, decided at the FIRST row
   // seen for a taskId because later rows can arrive under synthetic turns.
+  // A nested agent joins its owner's group rather than opening its own.
   const taskRowIndex = new Map<string, number>();
   const spawnRowIndex = new Map<string, number>();
   const spawnGroupByTaskId = new Map<string, string>();
@@ -910,7 +917,12 @@ function collapseDerivedWorkLogEntries(
         collapsed.push(entry);
         continue;
       }
-      const groupKey = spawnGroupByTaskId.get(entry.taskId) ?? agentSpawnGroupKey(entry);
+      const groupKey =
+        spawnGroupByTaskId.get(entry.taskId) ??
+        (entry.owningAgentTaskId !== undefined
+          ? spawnGroupByTaskId.get(entry.owningAgentTaskId)
+          : undefined) ??
+        agentSpawnGroupKey(entry);
       spawnGroupByTaskId.set(entry.taskId, groupKey);
       const existingIndex = spawnRowIndex.get(groupKey);
       if (existingIndex !== undefined) {

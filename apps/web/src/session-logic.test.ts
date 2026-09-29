@@ -2613,6 +2613,50 @@ describe("deriveWorkLogEntries quiet-timeline guarantee", () => {
     expect(entries).toHaveLength(0);
   });
 
+  it("folds a subagent's own agents and shells into its spawn card", () => {
+    // Rows from inside a background subagent arrive between turns, with no turn id.
+    const entries = deriveWorkLogEntries([
+      makeActivity({
+        kind: "task.started",
+        summary: "Task started",
+        payload: { taskId: "owner", taskType: "local_agent", toolUseId: "tool-agent" },
+        turnId: "turn-spawn",
+        sequence: 1,
+      }),
+      makeActivity({
+        kind: "task.started",
+        summary: "Task started",
+        payload: { taskId: "nested", taskType: "local_agent", agentId: "owner" },
+        sequence: 2,
+      }),
+      makeActivity({
+        kind: "task.completed",
+        summary: "Task completed",
+        payload: {
+          taskId: "shell",
+          taskType: "local_bash",
+          agentId: "owner",
+          toolUseId: "tool-shell",
+          status: "completed",
+        },
+        sequence: 3,
+      }),
+      makeActivity({
+        kind: "task.completed",
+        summary: "Task completed",
+        payload: {
+          taskId: "nested",
+          taskType: "local_agent",
+          agentId: "owner",
+          status: "completed",
+        },
+        sequence: 4,
+      }),
+    ]);
+    expect(entries.map((entry) => entry.agentSpawn?.agentTaskIds)).toEqual([["owner", "nested"]]);
+    expect(entries[0]!.turnId).toBe("turn-spawn");
+  });
+
   it("drops task.updated and tool.progress from the work log (fold input only)", () => {
     const entries = deriveWorkLogEntries([
       makeActivity({

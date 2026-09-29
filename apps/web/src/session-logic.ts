@@ -139,6 +139,8 @@ interface DerivedWorkLogEntry extends WorkLogEntry {
   isBackgroundTask?: boolean;
   /** Task rows: the tool call that launched the task, when the provider reports one. */
   launchToolCallId?: string;
+  /** Task rows launched from inside another agent: that agent's taskId. */
+  owningAgentTaskId?: string;
   /** Background task terminal rows: the outcome to show on the launching tool row. */
   taskOutcome?: WorkLogBackgroundOutcome;
 }
@@ -703,6 +705,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (isTaskActivity && typeof payload?.toolUseId === "string" && payload.toolUseId.length > 0) {
     entry.launchToolCallId = payload.toolUseId;
   }
+  if (isTaskActivity && typeof payload?.agentId === "string" && payload.agentId.length > 0) {
+    entry.owningAgentTaskId = payload.agentId;
+  }
   const collapseKey = deriveToolLifecycleCollapseKey(entry);
   if (collapseKey) {
     entry[workLogCollapseKey] = collapseKey;
@@ -765,7 +770,9 @@ function collapseDerivedWorkLogEntries(
   // Claude background subagents settle between turns, so their completion
   // rows carry fresh synthetic turn ids (or none) — keying each row by its
   // own turn splintered one batch into a stream of "Kicked off N subagents"
-  // rows (live-test finding, thread 7ac7ef05).
+  // rows (live-test finding, thread 7ac7ef05). A nested agent joins its
+  // owner's group: it runs outside any turn, so on its own it would open a
+  // card per agent wherever it happened to start.
   const groupKeyByTaskId = new Map<string, string>();
   const toolLifecycleRowIndex = new Map<string, number>();
   // The row that shows each tool call, so a background task can report its
@@ -813,7 +820,11 @@ function collapseDerivedWorkLogEntries(
         entry.sourceActivityKind === "task.completed");
     if (isTaskRow && entry.taskId !== undefined) {
       const rememberedKey = groupKeyByTaskId.get(entry.taskId);
-      const groupKey = rememberedKey ?? agentSpawnGroupKey(entry);
+      const ownerKey =
+        entry.owningAgentTaskId !== undefined
+          ? groupKeyByTaskId.get(entry.owningAgentTaskId)
+          : undefined;
+      const groupKey = rememberedKey ?? ownerKey ?? agentSpawnGroupKey(entry);
       if (rememberedKey === undefined) {
         groupKeyByTaskId.set(entry.taskId, groupKey);
       }

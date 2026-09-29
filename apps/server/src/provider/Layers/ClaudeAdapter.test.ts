@@ -3381,6 +3381,89 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("attributes tasks a subagent launches to that subagent", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const taskEventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.type === "task.started" || event.type === "task.completed"),
+        Stream.take(6),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      const emitTaskStarted = (taskId: string, taskType: string, toolUseId: string) =>
+        harness.query.emit({
+          type: "system",
+          subtype: "task_started",
+          task_id: taskId,
+          description: taskId,
+          task_type: taskType,
+          tool_use_id: toolUseId,
+          uuid: `${taskId}-${toolUseId}-uuid`,
+          session_id: "sdk-session",
+        } as unknown as SDKMessage);
+      // Subagent tool calls arrive only as whole assistant snapshots.
+      const emitSubagentToolCall = (parentToolUseId: string, toolUseId: string, name: string) =>
+        harness.query.emit({
+          type: "assistant",
+          session_id: "sdk-session",
+          uuid: `snapshot-${toolUseId}`,
+          parent_tool_use_id: parentToolUseId,
+          message: {
+            id: `message-${toolUseId}`,
+            model: "claude-opus-5-5",
+            content: [{ type: "tool_use", id: toolUseId, name, input: {} }],
+          },
+        } as unknown as SDKMessage);
+
+      emitTaskStarted("agent-owner", "local_agent", "tool-agent");
+      emitSubagentToolCall("tool-agent", "tool-shell", "Bash");
+      emitTaskStarted("shell-1", "local_bash", "tool-shell");
+      emitSubagentToolCall("tool-agent", "tool-nested", "Agent");
+      emitTaskStarted("agent-nested", "local_agent", "tool-nested");
+      harness.query.emit({
+        type: "system",
+        subtype: "task_notification",
+        task_id: "shell-1",
+        tool_use_id: "tool-shell",
+        status: "completed",
+        output_file: "/tmp/shell-1.log",
+        summary: "done",
+        uuid: "shell-1-done-uuid",
+        session_id: "sdk-session",
+      } as unknown as SDKMessage);
+      // Resuming re-registers the agent under the parent's SendMessage call,
+      // while its own messages keep the original Agent call as their parent.
+      emitTaskStarted("agent-owner", "local_agent", "tool-send-message");
+      emitSubagentToolCall("tool-agent", "tool-shell-after-resume", "Bash");
+      emitTaskStarted("shell-2", "local_bash", "tool-shell-after-resume");
+
+      const owners = Array.from(yield* Fiber.join(taskEventsFiber)).map((event) =>
+        event.type === "task.started" || event.type === "task.completed"
+          ? [event.type, String(event.payload.taskId), event.payload.agentId ?? null]
+          : null,
+      );
+      assert.deepStrictEqual(owners, [
+        ["task.started", "agent-owner", null],
+        ["task.started", "shell-1", "agent-owner"],
+        ["task.started", "agent-nested", "agent-owner"],
+        ["task.completed", "shell-1", "agent-owner"],
+        ["task.started", "agent-owner", null],
+        ["task.started", "shell-2", "agent-owner"],
+      ]);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("keeps the session available when process close fails", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
