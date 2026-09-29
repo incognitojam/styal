@@ -510,6 +510,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     options?.issueMcpCredential ?? McpSessionRegistry.issueActiveMcpCredential;
   const fileSystem = yield* FileSystem.FileSystem;
   const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
+  // Set by `beginShutdown`. From then on runtime events are logged but not
+  // published, so stopping the sessions does not settle their turns.
+  let shuttingDown = false;
   const pendingCompactions = new Map<ThreadId, PendingCompaction>();
   const timedOutNativeCompactions = new Set<ThreadId>();
   const settleCompaction = (threadId: ThreadId, pending: PendingCompaction, terminal: string) =>
@@ -941,7 +944,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           ? canonicalEventLogger.write(canonicalEvent, canonicalEvent.threadId)
           : Effect.void,
       ),
-      Effect.flatMap((canonicalEvent) => PubSub.publish(runtimeEventPubSub, canonicalEvent)),
+      Effect.flatMap((canonicalEvent) =>
+        shuttingDown ? Effect.void : PubSub.publish(runtimeEventPubSub, canonicalEvent),
+      ),
       Effect.asVoid,
     );
 
@@ -2315,15 +2320,21 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     yield* analytics.flush;
   });
 
-  yield* Effect.addFinalizer(() =>
-    runStopAll().pipe(
+  const beginShutdown: ProviderServiceMethod<"beginShutdown"> = Effect.suspend(() => {
+    if (shuttingDown) return Effect.void;
+    shuttingDown = true;
+    return runStopAll().pipe(
       Effect.catchCause((cause) =>
         Effect.logWarning("failed to stop provider service", {
           errorTag: causeErrorTag(cause),
         }),
       ),
-    ),
-  );
+    );
+  });
+
+  // The server calls `beginShutdown` before its other finalizers. This covers
+  // hosts that build the service without that ordering, such as tests.
+  yield* Effect.addFinalizer(() => beginShutdown);
 
   return {
     startSession,
@@ -2339,6 +2350,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     assertConversationRollbackSupported,
     rollbackConversation,
     uploadFeedback,
+    beginShutdown,
     // Each access creates a fresh PubSub subscription so that multiple
     // consumers (ProviderRuntimeIngestion, CheckpointReactor, etc.) each
     // independently receive all runtime events.
