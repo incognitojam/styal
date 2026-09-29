@@ -22,7 +22,7 @@ export interface ThreadPrPresentation {
   /** Provider-side last activity, bounding when a terminal state landed. */
   readonly updatedAt: string | null;
   readonly url: string;
-  /** Compact pull request number or linked count, e.g. "3774" or "+2". */
+  /** Pull request number, with an additional link count when more are linked. */
   readonly label: string;
   /** Full, provider-aware label for assistive technologies. */
   readonly accessibilityLabel: string;
@@ -65,12 +65,12 @@ export function presentThreadLinkedPullRequests(
   const snapshot = link.snapshot;
   const state = badge.kind === "stack" ? badge.state : (snapshot?.state ?? null);
   const isDraft = snapshot?.isDraft === true && state === "open";
-  const linkedCount = badge.kind === "pull-request" && badge.others > 0 ? badge.others + 1 : null;
+  const additionalCount = badge.kind === "pull-request" && badge.others > 0 ? badge.others : null;
   const label =
     badge.kind === "stack"
       ? String(badge.layers)
-      : linkedCount !== null
-        ? `+${linkedCount}`
+      : additionalCount !== null
+        ? `${link.number}+${additionalCount}`
         : String(link.number);
   return {
     kind: badge.kind,
@@ -86,7 +86,7 @@ export function presentThreadLinkedPullRequests(
         ? `${badge.layers} pull requests in stack, ${state ?? "status pending"}`
         : `#${link.number} pull request ${state === null ? "status pending" : isDraft ? "draft" : state}${badge.others > 0 ? `, ${badge.others} more linked` : ""}`,
     textClassName:
-      linkedCount !== null || state === null || isDraft
+      additionalCount !== null || state === null || isDraft
         ? "text-foreground-muted"
         : PR_STATE_TEXT_CLASS[state],
   };

@@ -15,7 +15,7 @@ import {
   type ThreadPullRequestBadge,
 } from "@t3tools/shared/threadPullRequests";
 import { FolderGit2Icon, GitPullRequestArrowIcon, LayersIcon, TerminalIcon } from "lucide-react";
-import { useMemo, type MouseEvent } from "react";
+import { useMemo, type MouseEvent, type PointerEvent } from "react";
 import { buttonVariants, InlineButton } from "./ui/button";
 import { cn } from "../lib/utils";
 import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";
@@ -154,7 +154,7 @@ export function ThreadPullRequestBadgeControl({
   onOpenPullRequest: (event: MouseEvent<HTMLAnchorElement>) => void;
 }) {
   const isStack = badge?.kind === "stack";
-  const linkedCount = badge?.kind === "pull-request" && badge.others > 0 ? badge.others + 1 : null;
+  const additionalCount = badge?.kind === "pull-request" && badge.others > 0 ? badge.others : null;
   if (!isStack && (number === undefined || url === undefined)) return null;
   const label = isStack
     ? `Stack of ${badge.layers} pull requests, ${badge.state}`
@@ -170,7 +170,7 @@ export function ThreadPullRequestBadgeControl({
     "text-xs tabular-nums",
     variant === "ghost" &&
       "font-normal text-xs! active:scale-100 [--control-icon-color:currentColor]",
-    linkedCount !== null
+    additionalCount !== null
       ? "text-secondary-label"
       : isStack
         ? PR_STATE_COLOR_CLASS[badge.state]
@@ -179,9 +179,19 @@ export function ThreadPullRequestBadgeControl({
   const content = (
     <>
       <ThreadPullRequestBadgeIcon icon={badge?.kind ?? "pull-request"} />
-      {isStack ? badge.layers : linkedCount !== null ? `+${linkedCount}` : number}
+      {isStack ? badge.layers : additionalCount !== null ? `${number}+${additionalCount}` : number}
     </>
   );
+  const prLinkProps = {
+    href: url,
+    target: "_blank",
+    rel: "noopener noreferrer",
+    className,
+    "aria-label": label,
+    onPointerDown: (event: PointerEvent<HTMLAnchorElement>) => event.stopPropagation(),
+    onClick: onOpenPullRequest,
+  };
+  if (!isStack && variant === "underline") return <a {...prLinkProps}>{content}</a>;
   return (
     <Tooltip>
       <TooltipTrigger
@@ -198,15 +208,7 @@ export function ThreadPullRequestBadgeControl({
               }}
             />
           ) : (
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={className}
-              aria-label={label}
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={onOpenPullRequest}
-            />
+            <a {...prLinkProps} />
           )
         }
       >
