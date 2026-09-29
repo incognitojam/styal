@@ -521,6 +521,79 @@ describe("buildThreadFeed", () => {
     ]);
   });
 
+  it("reports a background command's ending on the call that launched it", () => {
+    const bashPayload = (status: string) => ({
+      itemType: "command_execution",
+      toolCallId: "toolu-bash",
+      status,
+      title: "Command run",
+      detail: "Bash: vp run dev",
+      data: { toolName: "Bash", command: "vp run dev" },
+    });
+    const taskPayload = {
+      taskId: "bg-1",
+      taskType: "local_bash",
+      agentKind: "background",
+      toolUseId: "toolu-bash",
+      title: "Start the dev server",
+    };
+    const launchTurn = TurnId.make("turn-launch");
+    const thread = makeThread({
+      id: ThreadId.make("thread-background-command"),
+      projectId: ProjectId.make("project-1"),
+      title: "Background command",
+      activities: [
+        makeActivity({
+          id: EventId.make("bash-updated"),
+          kind: "tool.updated",
+          tone: "tool",
+          summary: "Command run",
+          createdAt: "2026-09-01T00:00:01.000Z",
+          turnId: launchTurn,
+          payload: bashPayload("inProgress"),
+        }),
+        makeActivity({
+          id: EventId.make("task-started"),
+          kind: "task.started",
+          summary: "local_bash task started",
+          createdAt: "2026-09-01T00:00:02.000Z",
+          turnId: launchTurn,
+          payload: taskPayload,
+        }),
+        makeActivity({
+          id: EventId.make("bash-completed"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "Command run",
+          createdAt: "2026-09-01T00:00:02.000Z",
+          turnId: launchTurn,
+          payload: bashPayload("completed"),
+        }),
+        makeActivity({
+          id: EventId.make("task-stopped"),
+          kind: "task.completed",
+          summary: "Task stopped",
+          createdAt: "2026-09-02T00:00:00.000Z",
+          turnId: TurnId.make("turn-later"),
+          payload: {
+            ...taskPayload,
+            status: "stopped",
+            summary: "Background shell command didn't finish before the previous session ended",
+          },
+        }),
+      ],
+    });
+
+    const rows = buildThreadFeed(thread).flatMap((entry) =>
+      entry.type === "activity-group" ? entry.activities : [],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ turnId: launchTurn, lifecycleStatus: "completed" });
+    expect(rows[0]?.getFullDetail()).toContain(
+      "Background shell command didn't finish before the previous session ended",
+    );
+  });
+
   it("keeps long Claude commands expandable without repeating them in full detail", () => {
     const command = `printf 'first line\nsecond line'\n&& printf done`;
     const thread = makeThread({

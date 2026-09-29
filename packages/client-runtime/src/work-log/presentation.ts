@@ -498,6 +498,42 @@ export function extractWorkLogToolLifecycleStatus(
   }
 }
 
+/**
+ * How a background task (a backgrounded shell command or a monitor) ended
+ * after the tool call that launched it had already returned. Clients show it
+ * on the launching tool row instead of as a separate row wherever the task
+ * happened to end.
+ */
+export interface WorkLogBackgroundOutcome {
+  readonly status: "completed" | "failed" | "stopped";
+  /** The provider's account of the ending, when it says more than the task title. */
+  readonly summary?: string;
+}
+
+/** Reads the outcome from a background task's terminal activity payload. */
+export function extractBackgroundTaskOutcome(
+  payloadValue: unknown,
+): WorkLogBackgroundOutcome | undefined {
+  const payload = asRecord(payloadValue);
+  const status = extractWorkLogToolLifecycleStatus(payload);
+  if (status !== "completed" && status !== "failed" && status !== "stopped") return undefined;
+  const summary = nonEmptyString(payload?.summary);
+  const informativeSummary = summary !== null && summary !== payload?.title ? summary : undefined;
+  // A foreground command that ran long enough to become a task completes
+  // with only its title; the tool call's own result already says the rest.
+  if (status === "completed" && informativeSummary === undefined) return undefined;
+  return { status, ...(informativeSummary ? { summary: informativeSummary } : {}) };
+}
+
+export function backgroundOutcomeLabel(outcome: WorkLogBackgroundOutcome): string {
+  if (outcome.summary) return outcome.summary;
+  return outcome.status === "completed"
+    ? "Completed in the background"
+    : outcome.status === "failed"
+      ? "Failed in the background"
+      : "Stopped in the background";
+}
+
 // Some providers report completion even when the output describes a failure.
 function toolDetailTextLooksLikeFailure(text: string): boolean {
   const normalized = text.toLowerCase();

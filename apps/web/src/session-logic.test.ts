@@ -482,6 +482,130 @@ describe("workEntryIndicatesToolNeutralStatus", () => {
 });
 
 describe("deriveWorkLogEntries", () => {
+  describe("background task endings", () => {
+    const bashCall = (kind: "tool.updated" | "tool.completed", createdAt: string) =>
+      makeActivity({
+        id: `bash-${kind}`,
+        createdAt,
+        kind,
+        summary: "Command run",
+        tone: "tool",
+        turnId: "turn-launch",
+        payload: {
+          itemType: "command_execution",
+          toolCallId: "toolu-bash",
+          status: kind === "tool.completed" ? "completed" : "inProgress",
+          title: "Command run",
+          detail: "Bash: vp run dev",
+          data: { toolName: "Bash", input: { command: "vp run dev" } },
+        },
+      });
+    const taskEnd = (overrides: {
+      createdAt: string;
+      turnId: string;
+      status: string;
+      summary: string;
+    }) =>
+      makeActivity({
+        id: "task-end",
+        kind: "task.completed",
+        summary: "Task stopped",
+        tone: "info",
+        createdAt: overrides.createdAt,
+        turnId: overrides.turnId,
+        payload: {
+          taskId: "bg-1",
+          taskType: "local_bash",
+          toolUseId: "toolu-bash",
+          status: overrides.status,
+          title: "Start the dev server",
+          summary: overrides.summary,
+        },
+      });
+
+    it("reports a task that outlived its call on the launching row, not in a later turn", () => {
+      const entries = deriveWorkLogEntries([
+        bashCall("tool.updated", "2026-02-23T00:00:01.000Z"),
+        bashCall("tool.completed", "2026-02-23T00:00:02.000Z"),
+        taskEnd({
+          createdAt: "2026-02-24T00:00:00.000Z",
+          turnId: "turn-later",
+          status: "stopped",
+          summary: "Background shell command didn't finish before the previous session ended",
+        }),
+      ]);
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({
+        turnId: "turn-launch",
+        toolCallId: "toolu-bash",
+        backgroundOutcome: {
+          status: "stopped",
+          summary: "Background shell command didn't finish before the previous session ended",
+        },
+      });
+      // Groups hide neutral rows; the launching call must stay visible.
+      expect(workEntryIndicatesToolNeutralStatus(entries[0]!)).toBe(false);
+    });
+
+    it("marks the launching call failed when its background task fails", () => {
+      const entries = deriveWorkLogEntries([
+        bashCall("tool.completed", "2026-02-23T00:00:02.000Z"),
+        taskEnd({
+          createdAt: "2026-02-23T00:05:00.000Z",
+          turnId: "turn-launch",
+          status: "failed",
+          summary: 'Background command "vp run dev" failed with exit code 137',
+        }),
+      ]);
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({
+        toolLifecycleStatus: "failed",
+        backgroundOutcome: { status: "failed" },
+      });
+    });
+
+    it("leaves a long foreground command to its own result", () => {
+      const entries = deriveWorkLogEntries([
+        bashCall("tool.updated", "2026-02-23T00:00:01.000Z"),
+        taskEnd({
+          createdAt: "2026-02-23T00:00:05.000Z",
+          turnId: "turn-launch",
+          status: "completed",
+          summary: "Start the dev server",
+        }),
+        bashCall("tool.completed", "2026-02-23T00:00:06.000Z"),
+      ]);
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({
+        toolCallId: "toolu-bash",
+        toolLifecycleStatus: "completed",
+      });
+      expect(entries[0]).not.toHaveProperty("backgroundOutcome");
+    });
+
+    it("keeps the ending as its own row when the launching call is not loaded", () => {
+      const entries = deriveWorkLogEntries([
+        taskEnd({
+          createdAt: "2026-02-24T00:00:00.000Z",
+          turnId: "turn-later",
+          status: "failed",
+          summary: 'Background command "vp run dev" failed with exit code 137',
+        }),
+      ]);
+
+      expect(entries).toMatchObject([
+        {
+          id: "task-end",
+          turnId: "turn-later",
+          label: 'Background command "vp run dev" failed with exit code 137',
+        },
+      ]);
+    });
+  });
+
   it("keeps command interactions as standalone non-command rows", () => {
     const entries = deriveWorkLogEntries([
       makeActivity({

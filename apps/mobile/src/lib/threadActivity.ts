@@ -36,7 +36,9 @@ import {
   type ToolRowArgument,
 } from "@t3tools/shared/toolRowPresentation";
 import {
+  backgroundOutcomeLabel,
   commandDetailRepeatsCommand,
+  extractBackgroundTaskOutcome,
   extractCommandOutputText,
   deriveContinuedTurnRoots,
   extractWorkLogToolLifecycleStatus,
@@ -57,6 +59,7 @@ import {
   workEntryIsStoppedToolCall,
   workLogEntryIsToolLike,
   type ToolGroupSummaryKind,
+  type WorkLogBackgroundOutcome,
   type WorkLogToolLifecycleStatus,
 } from "@t3tools/client-runtime/work-log/presentation";
 import { extractToolActivityPresentation } from "@t3tools/client-runtime/work-log/tool-presentation";
@@ -142,6 +145,8 @@ export interface WorkLogEntry {
   itemType?: ToolLifecycleItemType;
   requestKind?: PendingApproval["requestKind"];
   toolLifecycleStatus?: WorkLogToolLifecycleStatus;
+  /** How the background task this tool call launched ended, once it has. */
+  backgroundOutcome?: WorkLogBackgroundOutcome;
   sourceActivityKind?: OrchestrationThreadActivity["kind"];
   toolCallId?: string;
   /**
@@ -173,11 +178,13 @@ interface DerivedWorkLogEntry extends WorkLogEntry {
   setupRunId?: string;
   /** Grouping key for subagent lifecycle rows (one row per agent). */
   taskId?: string;
-  /** The tool call that launched this agent, when the provider reports one. */
-  agentSpawnToolCallId?: string;
+  /** The tool call that launched this task, when the provider reports one. */
+  launchToolCallId?: string;
   isWorkflowCoordinator?: boolean;
   /** Shell/monitor/plan tasks: ordinary work-log rows, never spawn batches. */
   isBackgroundTask?: boolean;
+  /** Background task terminal rows: the outcome to show on the launching tool row. */
+  taskOutcome?: WorkLogBackgroundOutcome;
 }
 
 const isProjectScriptIcon = Schema.is(ProjectScriptIcon);
@@ -605,10 +612,14 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (isTaskActivity && payload) {
     if (payload.agentKind !== "agent") {
       entry.isBackgroundTask = true;
+      if (activity.kind === "task.completed" || isTerminalTaskUpdate(activity)) {
+        const taskOutcome = extractBackgroundTaskOutcome(payload);
+        if (taskOutcome) entry.taskOutcome = taskOutcome;
+      }
     }
-    const spawnToolCallId = asTrimmedString(payload.toolUseId);
-    if (spawnToolCallId) {
-      entry.agentSpawnToolCallId = spawnToolCallId;
+    const launchToolCallId = asTrimmedString(payload.toolUseId);
+    if (launchToolCallId) {
+      entry.launchToolCallId = launchToolCallId;
     }
     if (
       payload.taskType === "local_workflow" ||
@@ -826,12 +837,17 @@ function collapseDerivedWorkLogEntries(
   const spawnRowIndex = new Map<string, number>();
   const spawnGroupByTaskId = new Map<string, string>();
   const toolLifecycleRowIndex = new Map<string, number>();
+  // The row that shows each tool call, so a background task can report its
+  // end on the call that launched it, whichever turn it ends in.
+  const toolRowIndexByCallId = new Map<string, number>();
   // Tool calls that launched an agent (Claude's Agent tool, ACP subagent
   // calls). The batch card is the whole story of that call, so its own
   // lifecycle row is dropped.
   const spawnToolCallIds = new Set(
     entries.flatMap((entry) =>
-      entry.agentSpawnToolCallId !== undefined ? [entry.agentSpawnToolCallId] : [],
+      entry.launchToolCallId !== undefined && !entry.isBackgroundTask
+        ? [entry.launchToolCallId]
+        : [],
     ),
   );
   for (const entry of entries) {
@@ -858,6 +874,23 @@ function collapseDerivedWorkLogEntries(
       spawnToolCallIds.has(entry.toolCallId)
     ) {
       continue;
+    }
+    if (
+      entry.isBackgroundTask &&
+      (entry.sourceActivityKind === "task.completed" ||
+        entry.sourceActivityKind === "task.updated") &&
+      entry.launchToolCallId !== undefined
+    ) {
+      const toolRowIndex = toolRowIndexByCallId.get(entry.launchToolCallId);
+      if (toolRowIndex !== undefined) {
+        const toolRow = collapsed[toolRowIndex]!;
+        // A task that ends while its call is still running is a long
+        // foreground command; the call's own result reports how it went.
+        if (entry.taskOutcome && toolRow.sourceActivityKind === "tool.completed") {
+          collapsed[toolRowIndex] = withBackgroundOutcome(toolRow, entry.taskOutcome);
+        }
+        continue;
+      }
     }
     const isTaskRow =
       entry.taskId !== undefined &&
@@ -922,9 +955,25 @@ function collapseDerivedWorkLogEntries(
     collapsed.push(entry);
     if (lifecycleKey !== undefined) {
       toolLifecycleRowIndex.set(lifecycleKey, collapsed.length - 1);
+      if (entry.toolCallId !== undefined) {
+        toolRowIndexByCallId.set(entry.toolCallId, collapsed.length - 1);
+      }
     }
   }
   return collapsed;
+}
+
+function withBackgroundOutcome(
+  toolRow: DerivedWorkLogEntry,
+  outcome: WorkLogBackgroundOutcome,
+): DerivedWorkLogEntry {
+  // Only a failure changes the call's own status: a stopped call reads as
+  // neutral, and groups hide neutral rows.
+  return {
+    ...toolRow,
+    backgroundOutcome: outcome,
+    ...(outcome.status === "failed" ? { toolLifecycleStatus: "failed" } : {}),
+  };
 }
 
 function toolLifecycleCollapseMapKey(entry: DerivedWorkLogEntry): string | undefined {
@@ -1173,6 +1222,9 @@ function buildWorkEntryExpandedBody(
     appendBlock(
       entry.changedFiles!.map((path) => formatToolFilePath(path, workspaceRoot)).join("\n"),
     );
+  }
+  if (entry.backgroundOutcome) {
+    appendBlock(backgroundOutcomeLabel(entry.backgroundOutcome));
   }
 
   return blocks.length > 0 ? blocks.join("\n\n") : null;
