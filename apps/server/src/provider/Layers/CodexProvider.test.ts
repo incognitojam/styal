@@ -64,7 +64,7 @@ it("maps current Codex model capability fields", () => {
   ]);
 });
 
-it("defaults reasoning to the effort unselected turns run at", () => {
+it("defaults reasoning to medium when the model offers it", () => {
   const capabilities = mapCodexModelCapabilities({
     additionalSpeedTiers: [],
     defaultReasoningEffort: "low",

@@ -139,19 +139,19 @@ function codexAccountEmail(account: CodexSchema.V2GetAccountResponse["account"])
 }
 
 /**
- * Effort a turn runs at when its selection names none. The turn's collaboration
- * mode sends it, overriding the effort Codex's catalog marks as default.
+ * styal's default Codex effort for models that offer it. Also the collaboration
+ * mode's fallback for a turn that names no effort.
  */
-export const CODEX_FALLBACK_REASONING_EFFORT = "medium";
+export const CODEX_DEFAULT_REASONING_EFFORT = "medium";
 
 export function mapCodexModelCapabilities(
   model: CodexSchema.V2ModelListResponse__Model,
 ): ModelCapabilities {
-  // Mark the effort an unselected turn really runs at, when the model offers it.
+  // Start at styal's default rather than the catalog's when the model offers it.
   const defaultReasoningEffort = model.supportedReasoningEfforts.some(
-    ({ reasoningEffort }) => reasoningEffort === CODEX_FALLBACK_REASONING_EFFORT,
+    ({ reasoningEffort }) => reasoningEffort === CODEX_DEFAULT_REASONING_EFFORT,
   )
-    ? CODEX_FALLBACK_REASONING_EFFORT
+    ? CODEX_DEFAULT_REASONING_EFFORT
     : model.defaultReasoningEffort;
   const reasoningOptions = model.supportedReasoningEfforts.map(({ reasoningEffort }) =>
     reasoningEffort === defaultReasoningEffort
