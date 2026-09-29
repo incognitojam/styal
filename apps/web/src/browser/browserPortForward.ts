@@ -4,6 +4,7 @@ import { isLoopbackHost, normalizePreviewUrl } from "@t3tools/shared/preview";
 import { previewEnvironmentPost } from "./browserEnvironmentHttp";
 import { readPreparedConnection } from "~/state/session";
 import { previewBridge } from "~/components/preview/previewBridge";
+import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import {
   isLocalLoopbackHost,
   isPrivateNetworkHost,
@@ -31,10 +32,18 @@ export async function resolveForwardedBrowserTarget(
     isLoopbackHost(requested.hostname) ||
     isLocalLoopbackHost(requested.hostname) ||
     (requested.hostname === environmentUrl.hostname && requested.port !== environmentUrl.port);
-  if (!environmentPort || isPrivateNetworkHost(environmentUrl.hostname)) {
-    return resolveBrowserNavigationTarget(environmentId, target).resolvedUrl;
-  }
+  // Ports on this desktop's own backends are already reachable. Every other environment,
+  // including SSH, Tailscale and LAN connections, forwards so loopback-only dev servers work.
+  const localEnvironment =
+    connection.target._tag === "PrimaryConnectionTarget" ||
+    isDesktopLocalConnectionTarget(connection.target);
+  const direct = () => resolveBrowserNavigationTarget(environmentId, target).resolvedUrl;
+  if (!environmentPort || localEnvironment) return direct();
+  // Without forwarding, a private-network environment can still serve dev servers that
+  // listen on all interfaces at its own address.
+  const directFallback = isPrivateNetworkHost(environmentUrl.hostname);
   if (!previewBridge?.ensurePortForward) {
+    if (directFallback) return direct();
     throw new Error("Update the desktop app to preview remote ports through T3 Connect.");
   }
   const port = Number(requested.port || (requested.protocol === "https:" ? 443 : 80));
@@ -52,10 +61,20 @@ export async function resolveForwardedBrowserTarget(
   socketUrl.protocol = socketUrl.protocol === "https:" ? "wss:" : "ws:";
   socketUrl.searchParams.set("port", String(port));
   socketUrl.searchParams.set("wsTicket", ticket.ticket);
-  const localPort = await previewBridge.ensurePortForward(
-    `${environmentId}:${environmentUrl.origin}:${requested.origin}:${port}`,
-    socketUrl.toString(),
-  );
+  let localPort: number;
+  try {
+    localPort = await previewBridge.ensurePortForward(
+      `${environmentId}:${environmentUrl.origin}:${requested.origin}:${port}`,
+      socketUrl.toString(),
+    );
+  } catch (error) {
+    // Servers without the forwarding route refuse the socket.
+    if (directFallback) return direct();
+    throw new Error(
+      "Could not open a preview connection to this environment. Its server may need an update to preview remote ports.",
+      { cause: error },
+    );
+  }
   const requestedOrigin = requested.origin;
   if (requested.hostname !== "localhost") requested.hostname = "127.0.0.1";
   requested.port = String(localPort);

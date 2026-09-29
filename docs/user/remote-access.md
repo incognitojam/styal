@@ -29,15 +29,6 @@ connection. Pull request diffs and provider settings keep working after the
 previous credential expires. A failed renewal affects that request; it does not
 disconnect an otherwise healthy conversation.
 
-In the desktop app's Browser panel, select a local server from the connected
-environment or enter its localhost URL. Preview tabs reuse that environment's
-connection and do not consume additional T3 Connect tunnel slots. Both the
-desktop app and the environment server must support remote previews.
-
-Browser recordings are saved on the desktop and copied to the connected
-environment so its agent can read them. Remote recording transfers support files
-up to 64 MiB.
-
 ## Pair over a LAN or private network
 
 Use direct pairing when the other device can reach the host's network address.
@@ -145,6 +136,21 @@ running is left alone.
 
 For Antigravity's Google callback on a remote host, see
 [remote sign-in](./providers-antigravity.md#sign-in-from-a-remote-device).
+
+## Preview development servers on another machine
+
+In the desktop app's Browser panel, select a server the agent started or enter
+its localhost URL, such as `localhost:5173`. The page loads from the machine that
+runs the thread, over the connection the app already uses for that environment:
+styal Link, SSH, or a LAN or Tailscale address. The development server can keep
+listening on localhost only, and previews do not use additional styal Link
+tunnels. Both the desktop app and the environment's server must support remote
+previews; with an older server on a private network, the preview uses the
+server's address instead, so the development server must listen on all
+interfaces.
+
+Browser recordings are saved on the desktop and copied to the environment so its
+agent can read them. Remote recording transfers support files up to 64 MiB.
 
 ## Manage or revoke access
 

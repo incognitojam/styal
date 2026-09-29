@@ -15,7 +15,10 @@ describe("browser target resolver", () => {
   beforeEach(() => readPreparedConnection.mockReset());
 
   it("preserves localhost TLS names, credentials, and environment-relative paths when forwarding", async () => {
-    readPreparedConnection.mockReturnValue({ httpBaseUrl: "https://environment.example.test" });
+    readPreparedConnection.mockReturnValue({
+      httpBaseUrl: "https://environment.example.test",
+      target: { _tag: "RelayConnectionTarget", connectionId: "relay" },
+    });
     const { resolveForwardedBrowserTarget } = await import("./browserPortForward");
     const environmentId = EnvironmentId.make("forwarded-targets");
     expect(
@@ -31,6 +34,98 @@ describe("browser target resolver", () => {
         path: "//example.test/x",
       }),
     ).toBe("http://localhost:41003//example.test/x");
+  });
+
+  it("forwards loopback URLs for SSH and private-network environments", async () => {
+    const { previewBridge } = await import("~/components/preview/previewBridge");
+    const { resolveForwardedBrowserTarget } = await import("./browserPortForward");
+    const ensurePortForward = vi.mocked(previewBridge!.ensurePortForward!);
+    ensurePortForward.mockClear();
+    // An SSH environment is reached through a loopback tunnel on this machine.
+    readPreparedConnection.mockReturnValue({
+      httpBaseUrl: "http://127.0.0.1:41234",
+      target: { _tag: "SshConnectionTarget", connectionId: "ssh-devbox" },
+    });
+    expect(
+      await resolveForwardedBrowserTarget(EnvironmentId.make("ssh-environment"), {
+        kind: "url",
+        url: "http://localhost:5173/app",
+      }),
+    ).toBe("http://localhost:41003/app");
+    readPreparedConnection.mockReturnValue({
+      httpBaseUrl: "http://100.65.180.100:3773",
+      target: { _tag: "BearerConnectionTarget", connectionId: "saved-tailnet-host" },
+    });
+    expect(
+      await resolveForwardedBrowserTarget(EnvironmentId.make("tailnet-environment"), {
+        kind: "url",
+        url: "localhost:3000/app",
+      }),
+    ).toBe("http://localhost:41003/app");
+    expect(ensurePortForward).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps loopback URLs direct for this desktop's own backends", async () => {
+    const { previewBridge } = await import("~/components/preview/previewBridge");
+    const { resolveForwardedBrowserTarget } = await import("./browserPortForward");
+    const ensurePortForward = vi.mocked(previewBridge!.ensurePortForward!);
+    ensurePortForward.mockClear();
+    readPreparedConnection.mockReturnValue({
+      httpBaseUrl: "http://127.0.0.1:3773",
+      target: { _tag: "PrimaryConnectionTarget", environmentId: "primary" },
+    });
+    expect(
+      await resolveForwardedBrowserTarget(EnvironmentId.make("primary-environment"), {
+        kind: "url",
+        url: "http://localhost:5173/app",
+      }),
+    ).toBe("http://localhost:5173/app");
+    readPreparedConnection.mockReturnValue({
+      httpBaseUrl: "http://172.25.85.75:3773",
+      target: { _tag: "BearerConnectionTarget", connectionId: "local:wsl" },
+    });
+    expect(
+      await resolveForwardedBrowserTarget(EnvironmentId.make("wsl-environment"), {
+        kind: "environment-port",
+        port: 5173,
+      }),
+    ).toBe("http://172.25.85.75:5173/");
+    expect(ensurePortForward).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the private-network address when the server refuses forwarding", async () => {
+    const { previewBridge } = await import("~/components/preview/previewBridge");
+    const { resolveForwardedBrowserTarget } = await import("./browserPortForward");
+    const ensurePortForward = vi.mocked(previewBridge!.ensurePortForward!);
+    ensurePortForward.mockRejectedValueOnce(new Error("Preview forwarding connection closed."));
+    readPreparedConnection.mockReturnValue({
+      httpBaseUrl: "http://192.168.1.25:3773",
+      target: { _tag: "BearerConnectionTarget", connectionId: "saved-lan-host" },
+    });
+    expect(
+      await resolveForwardedBrowserTarget(EnvironmentId.make("older-lan-environment"), {
+        kind: "environment-port",
+        port: 5173,
+      }),
+    ).toBe("http://192.168.1.25:5173/");
+  });
+
+  it("explains a refused forward on an environment without a private-network address", async () => {
+    const { previewBridge } = await import("~/components/preview/previewBridge");
+    const { resolveForwardedBrowserTarget } = await import("./browserPortForward");
+    vi.mocked(previewBridge!.ensurePortForward!).mockRejectedValueOnce(
+      new Error("Error invoking remote method 'desktop:preview-port-forward'"),
+    );
+    readPreparedConnection.mockReturnValue({
+      httpBaseUrl: "https://environment.example.test",
+      target: { _tag: "RelayConnectionTarget", connectionId: "relay" },
+    });
+    await expect(
+      resolveForwardedBrowserTarget(EnvironmentId.make("older-linked-environment"), {
+        kind: "url",
+        url: "http://localhost:5173/",
+      }),
+    ).rejects.toThrow("Its server may need an update to preview remote ports.");
   });
 
   it("restores forwarded URLs with credentials and their original hostname", async () => {

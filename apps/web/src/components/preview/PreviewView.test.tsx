@@ -15,7 +15,10 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(async (_tabId: string, _url: string): Promise<void> => undefined),
   ensurePortForward: vi.fn<() => Promise<number>>(),
   rememberPreviewUrl: vi.fn(),
-  readPreparedConnection: vi.fn(() => ({ httpBaseUrl: "http://172.25.85.75:3773" })),
+  readPreparedConnection: vi.fn(() => ({
+    httpBaseUrl: "http://172.25.85.75:3773",
+    target: { _tag: "BearerConnectionTarget", connectionId: "local:wsl" },
+  })),
   submittedUrl: null as ((url: string) => void) | null,
   emptyStateUrl: null as ((url: string) => void) | null,
   togglePictureInPicture: null as (() => void) | null,
@@ -453,7 +456,10 @@ describe("PreviewView navigation", () => {
     const second = new Promise<number>((resolve) => {
       resolveSecond = resolve;
     });
-    mocks.readPreparedConnection.mockReturnValue({ httpBaseUrl: "https://test.t3coderelay.com" });
+    mocks.readPreparedConnection.mockReturnValue({
+      httpBaseUrl: "https://test.t3coderelay.com",
+      target: { _tag: "RelayConnectionTarget", connectionId: "relay" },
+    });
     mocks.ensurePortForward.mockReset();
     mocks.ensurePortForward.mockReturnValueOnce(first).mockReturnValueOnce(second);
     vi.stubGlobal(
@@ -483,7 +489,10 @@ describe("PreviewView navigation", () => {
       ]);
     } finally {
       await act(() => root.unmount());
-      mocks.readPreparedConnection.mockReturnValue({ httpBaseUrl: "http://172.25.85.75:3773" });
+      mocks.readPreparedConnection.mockReturnValue({
+        httpBaseUrl: "http://172.25.85.75:3773",
+        target: { _tag: "BearerConnectionTarget", connectionId: "local:wsl" },
+      });
       vi.unstubAllGlobals();
     }
   });

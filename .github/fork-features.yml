@@ -1825,6 +1825,29 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9188
       retire_when: Upstream provides a dedicated checks view with repository-policy-aware required checks and equivalent merge or auto-merge guidance in pull request details.
 
+  - id: remote-preview-forwarding
+    title: Preview development servers on remote environments
+    status: maintained
+    prs: [518]
+    invariants:
+      - In the desktop Browser panel, loopback URLs and detected ports for any environment other than this desktop's primary or desktop-local backend load through that environment's own server over its existing connection, including styal Link, SSH, Tailscale and LAN connections, so development servers that listen on localhost only are reachable.
+      - Loopback URLs for the primary and desktop-local backends stay direct and never open a forwarding socket.
+      - When the desktop cannot forward or the environment's server refuses the forwarding socket, a private-network environment falls back to its own address; other environments report the error instead of opening the desktop's own localhost.
+    implementation_paths:
+      - apps/web/src/browser/browserPortForward.ts
+    upstream_paths:
+      - apps/desktop/src/preview/PortForward.ts
+      - apps/server/src/preview/forward.ts
+      - apps/web/src/browser/browserPortForward.ts
+      - apps/web/src/browser/browserTargetResolver.ts
+    tests:
+      - apps/web/src/browser/browserTargetResolver.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/9817
+      retire_when: Upstream forwards previews for every remote environment, including SSH and private-network connections, rather than only environments without a private-network address.
+
   - id: restart-stopped-tool-calls
     title: Show tool calls a server restart killed as stopped
     status: maintained
