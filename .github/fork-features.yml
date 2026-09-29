@@ -293,6 +293,25 @@ features:
       tracking: []
       retire_when: Upstream warns about Claude prompt cache loss on model and option changes, or Claude Code keeps the cache across them.
 
+  - id: codex-default-effort
+    title: Run Codex turns at the effort shown as default
+    status: maintained
+    prs: [544]
+    invariants:
+      - A Codex turn whose selection names no reasoning effort is sent the effort the provider snapshot marks as that model's default, which is the effort clients show.
+    implementation_paths:
+      - apps/server/src/provider/Drivers/CodexDriver.ts
+      - apps/server/src/provider/Layers/CodexAdapter.ts
+    upstream_paths:
+      - apps/server/src/provider/Drivers/CodexDriver.ts
+      - apps/server/src/provider/Layers/CodexAdapter.ts
+    tests:
+      - apps/server/src/provider/Layers/CodexAdapter.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream sends Codex the effort its clients show as default when a turn names none.
+
   - id: codex-default-model
     title: Prefer GPT-6-Sol for new Codex threads
     status: maintained

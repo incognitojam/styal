@@ -99,6 +99,8 @@ export interface CodexAdapterLiveOptions {
   >;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
+  /** The effort clients show as `model`'s default, sent when a turn names none. */
+  readonly defaultReasoningEffort?: (model: string) => Effect.Effect<string | undefined>;
 }
 
 interface CodexAdapterSessionContext {
@@ -2233,6 +2235,8 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
   options?: CodexAdapterLiveOptions,
 ) {
   const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make("codex");
+  const defaultReasoningEffort =
+    options?.defaultReasoningEffort ?? (() => Effect.succeed(undefined));
   const fileSystem = yield* FileSystem.FileSystem;
   const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const crypto = yield* Crypto.Crypto;
@@ -2555,10 +2559,12 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     );
 
     const session = yield* requireSession(input.threadId);
-    const reasoningEffort =
-      input.modelSelection?.instanceId === boundInstanceId
-        ? getModelSelectionStringOptionValue(input.modelSelection, "reasoningEffort")
-        : undefined;
+    const modelSelection =
+      input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
+    const reasoningEffort = modelSelection
+      ? (getModelSelectionStringOptionValue(modelSelection, "reasoningEffort") ??
+        (yield* defaultReasoningEffort(modelSelection.model)))
+      : undefined;
     const serviceTier =
       input.modelSelection?.instanceId === boundInstanceId
         ? getCodexServiceTierOptionValue(input.modelSelection)

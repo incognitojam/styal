@@ -468,6 +468,50 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
     }),
   );
 
+  it.effect("sends the default effort when a turn names none", () => {
+    const runtimeFactory = makeRuntimeFactory();
+    const layer = Layer.effect(
+      CodexAdapter,
+      makeCodexAdapter(decodeCodexSettings({}), {
+        makeRuntime: runtimeFactory.factory,
+        defaultReasoningEffort: (model) =>
+          Effect.succeed(model === "gpt-test" ? "medium" : undefined),
+      }),
+    ).pipe(
+      Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(providerSessionDirectoryTestLayer),
+      Layer.provideMerge(NodeServices.layer),
+    );
+
+    return Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      const threadId = asThreadId("sess-default-effort");
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const runtime = runtimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      const codex = ProviderInstanceId.make("codex");
+      for (const modelSelection of [
+        createModelSelection(codex, "gpt-test"),
+        createModelSelection(codex, "gpt-test", [{ id: "reasoningEffort", value: "high" }]),
+        createModelSelection(codex, "gpt-custom"),
+      ]) {
+        yield* Effect.ignore(
+          adapter.sendTurn({ threadId, input: "hello", modelSelection, attachments: [] }),
+        );
+      }
+
+      NodeAssert.deepStrictEqual(
+        runtime.sendTurnImpl.mock.calls.map(([turn]) => turn.effort),
+        ["medium", "high", undefined],
+      );
+    }).pipe(Effect.provide(layer));
+  });
+
   it.effect("passes configured launch args into the session runtime", () => {
     const runtimeFactory = makeRuntimeFactory();
     const layer = Layer.effect(
