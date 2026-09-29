@@ -2144,7 +2144,7 @@ features:
   - id: sidebar-last-message-time
     title: Choose the timestamp shown for thread activity
     status: maintained
-    prs: []
+    prs: [538]
     invariants:
       - Active thread rows on web and mobile, and web command palette thread actions, default to time since the last user prompt; a local preference can instead show the latest message including agent replies. The preference does not change thread ordering.
       - Existing threads receive the latest message timestamp during migration; new user and assistant messages advance it without reading message bodies into sidebar summaries.
