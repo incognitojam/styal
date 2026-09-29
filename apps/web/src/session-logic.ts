@@ -25,6 +25,7 @@ import {
   omitRetriedFindingsReports,
   workEntryIndicatesToolFailure,
   workEntryIndicatesToolSuccess,
+  workEntryIsStoppedToolCall,
   workLogEntryIsToolLike,
   type WorkLogToolLifecycleStatus,
 } from "@t3tools/client-runtime/work-log/presentation";
@@ -215,7 +216,7 @@ export function workEntryIndicatesToolNeutralStatus(entry: WorkLogEntry): boolea
   if (workEntryIndicatesToolSuccess(entry)) {
     return false;
   }
-  return true;
+  return !workEntryIsStoppedToolCall(entry);
 }
 
 type LatestTurnTiming = Pick<OrchestrationLatestTurn, "turnId" | "startedAt" | "completedAt">;

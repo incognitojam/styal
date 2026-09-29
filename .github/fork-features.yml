@@ -1825,6 +1825,42 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9188
       retire_when: Upstream provides a dedicated checks view with repository-policy-aware required checks and equivalent merge or auto-merge guidance in pull request details.
 
+  - id: restart-stopped-tool-calls
+    title: Show tool calls a server restart killed as stopped
+    status: maintained
+    prs: [532]
+    invariants:
+      - When startup reconciliation finds a thread whose turn was running before the restart, every tool call in that turn with no completion gets a tool.completed activity with status stopped, whether or not the thread is continued afterwards; threads whose provider session is still live are left alone.
+      - The stopped row keeps the call's last payload and last update time, so it sorts with the work it ended rather than at the restart.
+      - Web and mobile show a tool call whose completion is stopped instead of hiding it as still running, and label it as stopped (for example "Command stopped"); background task progress that reports cancelled or interrupted stays hidden.
+    implementation_paths:
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/server/src/persistence/Layers/ProjectionThreadActivities.ts
+      - apps/server/src/persistence/Services/ProjectionThreadActivities.ts
+      - apps/server/src/serverRuntimeStartup.ts
+      - apps/web/src/components/chat/MessagesTimeline.logic.ts
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/session-logic.ts
+      - packages/client-runtime/src/work-log/presentation.ts
+      - packages/shared/src/toolRowPresentation.ts
+    upstream_paths:
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/server/src/persistence/Layers/ProjectionThreadActivities.ts
+      - apps/server/src/serverRuntimeStartup.ts
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/session-logic.ts
+      - packages/client-runtime/src/work-log/presentation.ts
+    tests:
+      - apps/mobile/src/lib/threadActivity.test.ts
+      - apps/server/src/persistence/Layers/ProjectionThreadActivities.test.ts
+      - apps/server/src/serverRuntimeStartup.reconcile.test.ts
+      - apps/web/src/session-logic.test.ts
+      - packages/shared/src/toolRowPresentation.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream records tool calls that a restart or crash left unfinished as stopped and shows them in both clients.
+
   - id: review-findings-card
     title: Show code-review findings as a card
     status: maintained

@@ -13,6 +13,7 @@ import {
   DeleteProjectionThreadActivitiesInput,
   ListProjectionThreadActivitiesInput,
   ListProjectionThreadTaskActivitiesInput,
+  ListProjectionThreadTurnActivitiesInput,
   GetLatestProjectionThreadTaskActivityInput,
   ProjectionThreadActivity,
   ProjectionThreadActivityRepository,
@@ -150,6 +151,42 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
           sequence ASC,
           created_at ASC,
           activity_id ASC
+      `,
+  });
+
+  const listUnfinishedToolCallRows = SqlSchema.findAll({
+    Request: ListProjectionThreadTurnActivitiesInput,
+    Result: ProjectionThreadActivityDbRowSchema,
+    execute: ({ threadId, turnId }) =>
+      sql`
+        SELECT
+          lifecycle.activity_id AS "activityId",
+          lifecycle.thread_id AS "threadId",
+          lifecycle.turn_id AS "turnId",
+          lifecycle.tone,
+          lifecycle.kind,
+          lifecycle.summary,
+          lifecycle.payload_json AS "payload",
+          lifecycle.sequence,
+          lifecycle.created_at AS "createdAt"
+        FROM projection_thread_activities AS lifecycle
+        WHERE lifecycle.thread_id = ${threadId}
+          AND lifecycle.turn_id = ${turnId}
+          AND lifecycle.kind IN ('tool.started', 'tool.updated')
+          AND json_extract(lifecycle.payload_json, '$.toolCallId') IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM projection_thread_activities AS finished
+            WHERE finished.thread_id = lifecycle.thread_id
+              AND finished.kind = 'tool.completed'
+              AND json_extract(finished.payload_json, '$.toolCallId') =
+                json_extract(lifecycle.payload_json, '$.toolCallId')
+          )
+        ORDER BY
+          CASE WHEN lifecycle.sequence IS NULL THEN 0 ELSE 1 END ASC,
+          lifecycle.sequence ASC,
+          lifecycle.created_at ASC,
+          lifecycle.activity_id ASC
       `,
   });
 
@@ -339,6 +376,18 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
       ),
     );
 
+  const listUnfinishedToolCalls: ProjectionThreadActivityRepositoryShape["listUnfinishedToolCalls"] =
+    (input) =>
+      listUnfinishedToolCallRows(input).pipe(
+        Effect.mapError(
+          toPersistenceSqlOrDecodeError(
+            "ProjectionThreadActivityRepository.listUnfinishedToolCalls:query",
+            "ProjectionThreadActivityRepository.listUnfinishedToolCalls:decodeRows",
+          ),
+        ),
+        Effect.map((rows) => rows.map(toProjectionThreadActivity)),
+      );
+
   const listUnfinishedSetupRuns: ProjectionThreadActivityRepositoryShape["listUnfinishedSetupRuns"] =
     () =>
       listUnfinishedSetupRunRows().pipe(
@@ -368,6 +417,7 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
     listByThreadId,
     listUserInputLifecycleByThreadId,
     listTaskLifecycleByTaskId,
+    listUnfinishedToolCalls,
     listUnfinishedSetupRuns,
     getLatestTaskActivity,
     deleteByThreadId,

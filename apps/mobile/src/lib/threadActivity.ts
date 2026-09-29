@@ -54,6 +54,7 @@ import {
   workEntryIndicatesToolFailure,
   workEntryReviewFindings,
   workEntryIndicatesToolSuccess,
+  workEntryIsStoppedToolCall,
   workLogEntryIsToolLike,
   type ToolGroupSummaryKind,
   type WorkLogToolLifecycleStatus,
@@ -1075,7 +1076,7 @@ function workEntryStatus(entry: DerivedWorkLogEntry): ThreadFeedActivity["status
   if (workEntryIndicatesToolSuccess(entry)) {
     return "success";
   }
-  return "neutral";
+  return workEntryIsStoppedToolCall(entry) ? "stopped" : "neutral";
 }
 
 function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
@@ -1250,6 +1251,7 @@ function toolRowPresentationFor(workEntry: DerivedWorkLogEntry) {
     command: workEntry.command,
     changedFiles: workEntry.changedFiles,
     failed: workEntryIndicatesToolFailure(workEntry),
+    stopped: workEntryIsStoppedToolCall(workEntry),
   });
 }
 

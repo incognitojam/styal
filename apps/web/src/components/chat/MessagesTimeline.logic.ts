@@ -16,6 +16,7 @@ import {
   toolGroupSummaryKind,
   workEntryReviewFindings,
   type StandaloneTimelineActivityStyle,
+  workEntryIsStoppedToolCall,
   type ToolGroupSummaryKind,
 } from "@t3tools/client-runtime/work-log/presentation";
 export {
@@ -76,6 +77,7 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string
       command: entry.command,
       changedFiles: entry.changedFiles,
       failed: workEntryDisplayIndicatesToolFailure(entry),
+      stopped: workEntryIsStoppedToolCall(entry),
     });
     if (presentation) {
       const argument = presentation.argument;

@@ -36,6 +36,7 @@ import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ProjectionThreadActivities from "./persistence/Services/ProjectionThreadActivities.ts";
 import * as ThreadBackgroundLiveness from "./orchestration/ThreadBackgroundLiveness.ts";
 import * as OrchestrationReactor from "./orchestration/Services/OrchestrationReactor.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
@@ -556,6 +557,52 @@ const recordRestartContinued = (input: {
     });
   });
 
+/**
+ * Records tool calls that a restart killed mid-run as stopped. Their provider
+ * process is gone, so no completion will ever arrive, and clients hide a tool
+ * row that is still in progress once its turn has ended.
+ */
+const stopUnfinishedToolCalls = (input: { readonly threadId: ThreadId; readonly turnId: TurnId }) =>
+  Effect.gen(function* () {
+    const crypto = yield* Crypto.Crypto;
+    const activities = yield* ProjectionThreadActivities.ProjectionThreadActivityRepository;
+    const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
+    const latestByToolCallId = new Map<
+      string,
+      ProjectionThreadActivities.ProjectionThreadActivity
+    >();
+    for (const activity of yield* activities.listUnfinishedToolCalls(input)) {
+      const toolCallId = readRuntimePayload(activity.payload).toolCallId;
+      if (typeof toolCallId === "string") {
+        latestByToolCallId.set(toolCallId, activity);
+      }
+    }
+    const recordedAt = DateTime.formatIso(yield* DateTime.now);
+    for (const activity of latestByToolCallId.values()) {
+      const payload = readRuntimePayload(activity.payload);
+      if (payload.status !== undefined && payload.status !== "inProgress") {
+        continue;
+      }
+      yield* orchestrationEngine.dispatch({
+        type: "thread.activity.append",
+        commandId: CommandId.make(yield* crypto.randomUUIDv4),
+        threadId: input.threadId,
+        activity: {
+          id: EventId.make(yield* crypto.randomUUIDv4),
+          tone: "tool",
+          kind: "tool.completed",
+          summary: activity.summary,
+          payload: { ...payload, status: "stopped" },
+          turnId: input.turnId,
+          // When the call actually stopped is unknown; its last update is the
+          // latest time it is known to have been running.
+          createdAt: activity.createdAt,
+        },
+        createdAt: recordedAt,
+      });
+    }
+  });
+
 export const reconcileProviderSessions = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
@@ -614,6 +661,18 @@ export const reconcileProviderSessions = Effect.gen(function* () {
     const session = thread.session;
     if (session === null) {
       continue;
+    }
+    if (session.activeTurnId !== null) {
+      yield* stopUnfinishedToolCalls({ threadId: thread.id, turnId: session.activeTurnId }).pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterrupts(cause)
+            ? Effect.failCause(cause)
+            : Effect.logWarning("failed to stop tool calls interrupted by the restart", {
+                threadId: thread.id,
+                cause,
+              }),
+        ),
+      );
     }
     const binding = yield* directory.getBinding(thread.id).pipe(
       Effect.catchCause((cause) =>

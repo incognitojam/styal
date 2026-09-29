@@ -18,6 +18,7 @@ import {
   resolveViewedImageAsset,
   workEntryViewedImagePath,
   workEntryIndicatesToolFailure,
+  workEntryIsStoppedToolCall,
 } from "@t3tools/client-runtime/work-log/presentation";
 import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
 import type { AgentPanelModel } from "@t3tools/client-runtime/state/subagentRuntime";
@@ -3380,6 +3381,7 @@ function toolRowPresentationFor(workEntry: TimelineWorkEntry) {
     command: workEntry.command,
     changedFiles: workEntry.changedFiles,
     failed: workEntryIndicatesToolFailure(workEntry),
+    stopped: workEntryIsStoppedToolCall(workEntry),
   });
 }
 

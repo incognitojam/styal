@@ -1,5 +1,5 @@
 import { assert, it } from "@effect/vitest";
-import { EventId, RuntimeTaskId, ThreadId } from "@t3tools/contracts";
+import { EventId, RuntimeTaskId, ThreadId, TurnId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -84,6 +84,47 @@ layer("ProjectionThreadActivityRepository", (it) => {
           EventId.make("unfinished-requested-before-start"),
           EventId.make("unfinished-started"),
         ],
+      );
+    }),
+  );
+
+  it.effect("lists a turn's tool call rows that have no completion", () =>
+    Effect.gen(function* () {
+      const repository = yield* ProjectionThreadActivityRepository;
+      const threadId = ThreadId.make("thread-unfinished-tools");
+      const turnId = TurnId.make("turn-interrupted");
+      let second = 0;
+      const append = (
+        id: string,
+        kind: string,
+        toolCallId: string | undefined,
+        rowTurnId: TurnId = turnId,
+      ) =>
+        repository.upsert({
+          activityId: EventId.make(id),
+          threadId,
+          turnId: rowTurnId,
+          tone: "tool",
+          kind,
+          summary: "Command run",
+          payload: {
+            itemType: "command_execution",
+            ...(toolCallId === undefined ? {} : { toolCallId }),
+          },
+          createdAt: `2026-01-01T00:00:${String(++second).padStart(2, "0")}.000Z`,
+        });
+
+      yield* append("finished-started", "tool.started", "call-finished");
+      yield* append("finished-completed", "tool.completed", "call-finished");
+      yield* append("open-started", "tool.started", "call-open");
+      yield* append("open-updated", "tool.updated", "call-open");
+      yield* append("no-call-id", "tool.started", undefined);
+      yield* append("other-turn", "tool.started", "call-other-turn", TurnId.make("turn-other"));
+
+      const rows = yield* repository.listUnfinishedToolCalls({ threadId, turnId });
+      assert.deepEqual(
+        rows.map((row) => row.activityId),
+        [EventId.make("open-started"), EventId.make("open-updated")],
       );
     }),
   );
