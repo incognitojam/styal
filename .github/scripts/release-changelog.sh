@@ -1,5 +1,20 @@
 #!/usr/bin/env bash
 
+# Succeeds when the commit changes a file that ships in the server, web,
+# desktop, or mobile builds, including dependency patches. Docs, CI, repository
+# tooling, the separately deployed relay, tests, and their fixtures do not
+# count, whatever the commit subject says.
+changes_shipped_code() {
+  local sha="$1" shipped
+  shipped=$(
+    git diff-tree --no-commit-id --name-only -r --root "$sha" \
+      | grep -E '^(apps/(web|desktop|mobile|server)|packages/[^/]+|patches)/' \
+      | grep -vE '\.md$|\.(test|spec)\.[cm]?[jt]sx?$|/(__tests__|tests?|testing|testUtils|testFixtures|fixtures|integration|scripts)/' \
+      || true
+  )
+  [[ -n "$shipped" ]]
+}
+
 append_release_changes() {
   local repository="$1"
   shift
@@ -78,7 +93,8 @@ latest_stable_tag() {
 
 # Prints the "What's Changed" release notes for the commits between
 # previous_tag and fork_source_ref: fork changes first, then the upstream
-# changes brought in over the same range. previous_tag may be empty.
+# changes brought in over the same range. Commits that change no shipped code
+# are counted but not listed. previous_tag may be empty.
 render_release_notes() {
   local repository="$1"
   local previous_tag="$2"
@@ -94,14 +110,22 @@ render_release_notes() {
     previous_upstream_ref=$(git merge-base "$fork_source_ref" "$upstream_ref")
   fi
 
-  local upstream_changes=() fork_changes=() sha
+  local upstream_changes=() fork_changes=() commit_count=0 sha
   while IFS= read -r sha; do
-    upstream_changes+=("$sha")
+    commit_count=$((commit_count + 1))
+    if changes_shipped_code "$sha"; then
+      upstream_changes+=("$sha")
+    fi
   done < <(git rev-list --reverse "${previous_upstream_ref}..${upstream_ref}")
 
   while IFS= read -r sha; do
-    fork_changes+=("$sha")
+    commit_count=$((commit_count + 1))
+    if changes_shipped_code "$sha"; then
+      fork_changes+=("$sha")
+    fi
   done < <(list_fork_release_commits "$previous_tag" "$fork_source_ref" "$upstream_ref")
+
+  local omitted_count=$((commit_count - ${#fork_changes[@]} - ${#upstream_changes[@]}))
 
   printf "## What's Changed\n\n"
   if (( ${#fork_changes[@]} > 0 )); then
@@ -115,9 +139,17 @@ render_release_notes() {
   fi
   # Compare the fork's own release tags. Comparing upstream refs named the
   # wrong repository, and collapsed to an empty range whenever the release
-  # carried no upstream changes.
+  # carried no upstream changes. The omitted count goes on this line because
+  # the desktop updater skips it when listing changes.
   if [[ -n "$previous_tag" ]]; then
-    printf '\n**Full Changelog**: https://github.com/%s/compare/%s...%s\n' \
+    printf '\n**Full Changelog**: https://github.com/%s/compare/%s...%s' \
       "$repository" "$previous_tag" "$new_tag"
+    if (( omitted_count == 1 )); then
+      printf ' (includes 1 docs, CI, test, or tooling change not listed above)'
+    elif (( omitted_count > 1 )); then
+      printf ' (includes %s docs, CI, test, and tooling changes not listed above)' \
+        "$omitted_count"
+    fi
+    printf '\n'
   fi
 }

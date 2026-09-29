@@ -40,6 +40,12 @@ GitHub lookups succeed. Commits without a resolvable PR use commit links. The li
 upstream changes across all clients, followed by a comparison link between the fork's release tags.
 The desktop updater uses these same notes.
 
+Only commits that change shipped code are listed: files under `apps/web`, `apps/desktop`,
+`apps/mobile`, `apps/server`, `packages/`, or `patches/`, other than tests, fixtures, scripts, and
+Markdown. The decision uses changed paths rather than the commit subject, so a `ci(release)` commit
+that changes desktop code is still listed. Other commits, including relay changes, which deploy
+separately, are counted on the comparison link line instead.
+
 Release notes do not use AI generation or require an OpenAI API key. The nightly workflow no longer
 updates the rolling `styal features and improvements` issue. The maintained
 [styal differences overview](../user/styal-differences.md) describes the fork's ongoing capabilities.

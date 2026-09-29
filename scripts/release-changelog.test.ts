@@ -34,6 +34,17 @@ function commitFile(cwd: string, fileName: string, contents: string, subject: st
   return runGit(cwd, "rev-parse", "HEAD");
 }
 
+function commitPaths(cwd: string, paths: ReadonlyArray<string>, subject: string): string {
+  for (const path of paths) {
+    const filePath = NodePath.join(cwd, path);
+    NodeFS.mkdirSync(NodePath.dirname(filePath), { recursive: true });
+    NodeFS.writeFileSync(filePath, `${subject}\n`);
+    runGit(cwd, "add", path);
+  }
+  runGit(cwd, "commit", "-m", subject);
+  return runGit(cwd, "rev-parse", "HEAD");
+}
+
 function listForkReleaseCommits(
   cwd: string,
   previousReleaseRef: string,
@@ -267,6 +278,135 @@ append_release_changes example/fork "$2" "$3"`,
       result.stdout,
       "- fix: upstream change ([pingdotgg/t3code#42](https://github.com/pingdotgg/t3code/pull/42)) by @release-author\n" +
         "- fix: fork change ([example/fork#43](https://github.com/example/fork/pull/43)) by @release-author\n",
+    );
+  } finally {
+    NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+it.each([
+  { paths: ["apps/web/src/components/Sidebar.tsx"], shipped: true },
+  { paths: ["apps/server/src/provider/Layers/CodexAdapter.ts"], shipped: true },
+  { paths: ["apps/mobile/app.config.ts"], shipped: true },
+  { paths: ["apps/desktop/package.json"], shipped: true },
+  { paths: ["packages/contracts/src/settings.ts"], shipped: true },
+  { paths: ["patches/effect@4.0.0-rc.112.patch", "pnpm-lock.yaml"], shipped: true },
+  { paths: ["docs/operations/fork-nightly.md", "apps/web/src/main.tsx"], shipped: true },
+  { paths: ["docs/operations/fork-nightly.md"], shipped: false },
+  { paths: [".github/workflows/fork-nightly.yml"], shipped: false },
+  { paths: ["AGENTS.md", "scripts/release-smoke.ts"], shipped: false },
+  { paths: ["apps/marketing/src/pages/index.astro"], shipped: false },
+  { paths: ["infra/relay/src/agentActivity/ApnsDeliveries.ts"], shipped: false },
+  { paths: ["apps/server/README.md"], shipped: false },
+  { paths: ["apps/web/src/components/Sidebar.test.tsx"], shipped: false },
+  { paths: ["apps/desktop/scripts/electron-launcher.test.mjs"], shipped: false },
+  { paths: ["apps/server/src/testUtils/fakeCli.ts"], shipped: false },
+  { paths: ["apps/server/src/dataImport/testFixtures/t3-code/state.sql"], shipped: false },
+  { paths: ["apps/server/integration/TransferBudgetReport.integration.ts"], shipped: false },
+  { paths: ["apps/server/scripts/fake-codex.ts"], shipped: false },
+  { paths: ["packages/shared/src/testing/longTempDir.ts"], shipped: false },
+])("treats a commit changing $paths as shipped: $shipped", ({ paths, shipped }) => {
+  const fixtureRoot = createFixture();
+  try {
+    const sha = commitPaths(fixtureRoot, paths, "fix: synthetic change");
+    const result = NodeChildProcess.spawnSync(
+      "bash",
+      [
+        "-c",
+        'set -euo pipefail; source "$1"; changes_shipped_code "$2"',
+        "release-changelog-test",
+        helperPath,
+        sha,
+      ],
+      { cwd: fixtureRoot, encoding: "utf8" },
+    );
+    if (result.error) throw result.error;
+    assert.equal(result.stderr, "");
+    assert.equal(result.status, shipped ? 0 : 1);
+  } finally {
+    NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+function renderReleaseNotes(
+  cwd: string,
+  previousTag: string,
+  newTag: string,
+  forkSourceRef: string,
+  upstreamRef: string,
+): string {
+  const result = NodeChildProcess.spawnSync(
+    "bash",
+    [
+      "-c",
+      `set -euo pipefail
+source "$1"
+gh() { printf 'release-author\\n'; }
+render_release_notes example/fork "$2" "$3" "$4" "$5"`,
+      "release-changelog-test",
+      helperPath,
+      previousTag,
+      newTag,
+      forkSourceRef,
+      upstreamRef,
+    ],
+    { cwd, encoding: "utf8" },
+  );
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`Rendering release notes failed: ${result.stderr}`);
+  }
+  return result.stdout;
+}
+
+it("lists only fork and upstream changes to shipped code and counts the rest", () => {
+  const fixtureRoot = createFixture();
+  try {
+    commitPaths(fixtureRoot, ["apps/web/src/main.tsx"], "feat: base");
+    runGit(fixtureRoot, "tag", "previous-release");
+
+    runGit(fixtureRoot, "switch", "-c", "upstream");
+    commitPaths(fixtureRoot, ["apps/server/src/server.ts"], "fix(server): upstream fix (#5001)");
+    commitPaths(fixtureRoot, [".github/workflows/ci.yml"], "ci: upstream workflow (#5002)");
+
+    runGit(fixtureRoot, "switch", "-c", "fork-source");
+    commitPaths(fixtureRoot, ["docs/operations/release.md"], "docs(release): fork docs (#11)");
+    commitPaths(fixtureRoot, ["apps/web/src/Sidebar.tsx"], "fix(web): fork fix (#12)");
+    commitPaths(
+      fixtureRoot,
+      [".github/workflows/fork-nightly.yml", "apps/desktop/src/main.ts"],
+      "ci(release): fork packaging change (#13)",
+    );
+    commitPaths(fixtureRoot, ["apps/web/src/Sidebar.test.tsx"], "test(web): fork test (#14)");
+
+    assert.equal(
+      renderReleaseNotes(fixtureRoot, "previous-release", "new-release", "fork-source", "upstream"),
+      "## What's Changed\n\n" +
+        "- fix(web): fork fix ([example/fork#12](https://github.com/example/fork/pull/12)) by @release-author\n" +
+        "- ci(release): fork packaging change ([example/fork#13](https://github.com/example/fork/pull/13)) by @release-author\n" +
+        "- fix(server): upstream fix ([pingdotgg/t3code#5001](https://github.com/pingdotgg/t3code/pull/5001)) by @release-author\n" +
+        "\n**Full Changelog**: https://github.com/example/fork/compare/previous-release...new-release" +
+        " (includes 3 docs, CI, test, and tooling changes not listed above)\n",
+    );
+  } finally {
+    NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+it("says there are no user-facing changes when every commit is internal", () => {
+  const fixtureRoot = createFixture();
+  try {
+    commitPaths(fixtureRoot, ["apps/web/src/main.tsx"], "feat: base");
+    runGit(fixtureRoot, "tag", "previous-release");
+    runGit(fixtureRoot, "branch", "upstream");
+    commitPaths(fixtureRoot, ["AGENTS.md"], "docs(agents): fork guidance (#11)");
+
+    assert.equal(
+      renderReleaseNotes(fixtureRoot, "previous-release", "new-release", "HEAD", "upstream"),
+      "## What's Changed\n\n" +
+        "No user-facing changes.\n" +
+        "\n**Full Changelog**: https://github.com/example/fork/compare/previous-release...new-release" +
+        " (includes 1 docs, CI, test, or tooling change not listed above)\n",
     );
   } finally {
     NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
