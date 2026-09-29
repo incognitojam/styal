@@ -3506,6 +3506,46 @@ describe("quiet timeline: nested agents", () => {
     },
   );
 
+  it("folds a subagent's own agents and shells into its spawn batch", () => {
+    // Rows from inside a background subagent arrive between turns, with no turn id.
+    const task = (
+      index: number,
+      kind: "task.started" | "task.completed",
+      payload: Record<string, unknown>,
+      turnId: TurnId | null = null,
+    ) =>
+      makeActivity({
+        id: EventId.make(`nested-${index}`),
+        kind,
+        summary: kind === "task.started" ? "Task started" : "Task completed",
+        createdAt: `2026-04-01T00:00:0${index}.000Z`,
+        turnId,
+        payload,
+      });
+    const thread = makeThread({
+      id: ThreadId.make("nested-agents"),
+      projectId: ProjectId.make("project-1"),
+      title: "Nested agents",
+      activities: [
+        task(1, "task.started", { taskId: "owner", agentKind: "agent" }, TurnId.make("turn-spawn")),
+        task(2, "task.started", { taskId: "nested", agentKind: "agent", agentId: "owner" }),
+        task(3, "task.completed", {
+          taskId: "shell",
+          agentKind: "background",
+          taskType: "local_bash",
+          agentId: "owner",
+          status: "completed",
+        }),
+      ],
+    });
+    const rows = buildThreadFeed(thread).flatMap((entry) =>
+      entry.type === "activity-group" ? entry.activities : [],
+    );
+    expect(rows.map((row) => row.workEntry?.agentSpawn?.agentTaskIds)).toEqual([
+      ["owner", "nested"],
+    ]);
+  });
+
   it("folds a turn's direct spawns into one batch row that tracks their states", () => {
     const turnId = TurnId.make("turn-spawn");
     const agent = (

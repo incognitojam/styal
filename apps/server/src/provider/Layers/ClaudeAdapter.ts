@@ -279,11 +279,22 @@ function rememberPendingTaskModel(
   parentToolUseId: string,
   model: string,
 ): void {
-  pending.set(parentToolUseId, model);
-  if (pending.size > PENDING_TASK_MODEL_CAP) {
-    const oldest = pending.keys().next();
+  rememberBounded(pending, parentToolUseId, model, PENDING_TASK_MODEL_CAP);
+}
+
+/**
+ * How many subagent tool calls to remember per session. Almost none launch a
+ * task, and a launching call's task_started follows its snapshot closely, so
+ * evicting the oldest entries only forgets calls that will never be looked up.
+ */
+const SUBAGENT_TOOL_OWNER_CAP = 512;
+
+function rememberBounded(map: Map<string, string>, key: string, value: string, cap: number): void {
+  map.set(key, value);
+  if (map.size > cap) {
+    const oldest = map.keys().next();
     if (!oldest.done) {
-      pending.delete(oldest.value);
+      map.delete(oldest.value);
     }
   }
 }
@@ -315,6 +326,19 @@ interface ClaudeSessionContext {
    * Written through `rememberPendingTaskModel`, consumed by task_started.
    */
   readonly pendingTaskModels: Map<string, string>;
+  /**
+   * Owning agent taskId for each tool call seen in a subagent's assistant
+   * snapshot, keyed by tool_use id. The SDK streams deltas only for the
+   * parent, so this is how task_started learns that a subagent launched a
+   * background shell or a nested agent. Written through `rememberBounded`.
+   */
+  readonly subagentToolOwners: Map<string, string>;
+  /**
+   * taskId for every tool_use id that registered a task. A resumed subagent
+   * registers again under its SendMessage call, but its messages keep the
+   * original Agent call as parent_tool_use_id.
+   */
+  readonly agentTaskIdByToolUseId: Map<string, string>;
   /**
    * Last emitted workflow-member fingerprint per member slot. A coordinator
    * task_progress repeats the FULL member array every tick; without a
@@ -1211,13 +1235,17 @@ const CLAUDE_TASK_PATCH_STATUS: Record<string, RuntimeTaskStatus> = {
  * for parent-conversation traffic.
  */
 function agentIdForParentToolUse(
-  agents: Map<string, ClaudeTaskAgentState>,
+  context: Pick<ClaudeSessionContext, "taskAgents" | "agentTaskIdByToolUseId">,
   parentToolUseId: string | null | undefined,
 ): string | undefined {
   if (parentToolUseId === null || parentToolUseId === undefined) {
     return undefined;
   }
-  for (const agent of agents.values()) {
+  const registered = context.agentTaskIdByToolUseId.get(parentToolUseId);
+  if (registered !== undefined) {
+    return registered;
+  }
+  for (const agent of context.taskAgents.values()) {
     if (agent.toolUseId === parentToolUseId) {
       return agent.taskId;
     }
@@ -2909,7 +2937,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       // spawning Task tool's id as parent_tool_use_id.
       const parentToolUseId =
         (message as { parent_tool_use_id?: string | null }).parent_tool_use_id ?? undefined;
-      const owningAgentId = agentIdForParentToolUse(context.taskAgents, parentToolUseId);
+      const owningAgentId = agentIdForParentToolUse(context, parentToolUseId);
 
       const tool: ToolInFlight = {
         itemId,
@@ -3156,7 +3184,20 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     if (assistantParentToolUseId !== null && assistantParentToolUseId !== undefined) {
       // The snapshot's message.model is the authoritative API model the
       // subagent actually ran on — refine the seeded launch-time value.
-      const owningTaskId = agentIdForParentToolUse(context.taskAgents, assistantParentToolUseId);
+      const owningTaskId = agentIdForParentToolUse(context, assistantParentToolUseId);
+      const snapshotContent = message.message?.content;
+      if (owningTaskId && Array.isArray(snapshotContent)) {
+        for (const block of snapshotContent) {
+          if (block?.type === "tool_use" && typeof block.id === "string") {
+            rememberBounded(
+              context.subagentToolOwners,
+              block.id,
+              owningTaskId,
+              SUBAGENT_TOOL_OWNER_CAP,
+            );
+          }
+        }
+      }
       const snapshotModel = trimmedString(message.message.model);
       const owningAgent = owningTaskId ? context.taskAgents.get(owningTaskId) : undefined;
       if (snapshotModel) {
@@ -3525,15 +3566,24 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         });
         return;
       case "task_started": {
-        // A task launched by a tool that itself ran inside a subagent (the
-        // in-flight tool carries agentId from parent_tool_use_id) is
-        // agent-internal: a subagent's background shell, not parent work.
+        // A task launched by a tool that itself ran inside a subagent is
+        // agent-internal: a subagent's background shell, or a nested agent
+        // that belongs with its owner. Subagent tool calls reach us only as
+        // assistant snapshots, so the snapshot's owner is the usual source.
         const launchingTool = message.tool_use_id
           ? Array.from(context.inFlightTools.values()).find(
               (tool) => tool.itemId === message.tool_use_id,
             )
           : undefined;
-        const owningAgentId = launchingTool?.agentId;
+        // A resumed agent keeps the owner it was first launched under.
+        const owningAgentId =
+          launchingTool?.agentId ??
+          (message.tool_use_id ? context.subagentToolOwners.get(message.tool_use_id) : undefined) ??
+          context.taskAgents.get(message.task_id)?.owningAgentId;
+        if (message.tool_use_id) {
+          context.subagentToolOwners.delete(message.tool_use_id);
+          context.agentTaskIdByToolUseId.set(message.tool_use_id, message.task_id);
+        }
         if (
           context.turnState &&
           classifyTaskAgentKind({
@@ -4270,6 +4320,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const claudeTasks = new Map<string, ClaudeTaskState>();
       const taskAgents = new Map<string, ClaudeTaskAgentState>();
       const pendingTaskModels = new Map<string, string>();
+      const subagentToolOwners = new Map<string, string>();
+      const agentTaskIdByToolUseId = new Map<string, string>();
       const workflowMemberFingerprints = new Map<string, string>();
       const liveTaskIds = new Set<string>();
 
@@ -4856,6 +4908,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         claudeTasks,
         taskAgents,
         pendingTaskModels,
+        subagentToolOwners,
+        agentTaskIdByToolUseId,
         workflowMemberFingerprints,
         liveTaskIds,
         turnState: undefined,
