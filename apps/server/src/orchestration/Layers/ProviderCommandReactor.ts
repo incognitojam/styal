@@ -886,8 +886,8 @@ const make = Effect.gen(function* () {
     if (existingSessionThreadId) {
       const runtimeModeChanged = thread.runtimeMode !== thread.session?.runtimeMode;
       const cwdChanged = effectiveCwd !== activeSession?.cwd;
-      const sessionModelSwitch = (yield* providerService.getCapabilities(desiredInstanceId))
-        .sessionModelSwitch;
+      const capabilities = yield* providerService.getCapabilities(desiredInstanceId);
+      const sessionModelSwitch = capabilities.sessionModelSwitch;
       const modelChanged =
         requestedModelSelection !== undefined &&
         requestedModelSelection.model !== activeSession?.model;
@@ -899,7 +899,15 @@ const make = Effect.gen(function* () {
       const shouldRestartForModelSelectionChange =
         preferredProvider === "claudeAgent" &&
         requestedModelSelection !== undefined &&
-        !Equal.equals(previousModelSelection, requestedModelSelection);
+        !Equal.equals(previousModelSelection, requestedModelSelection) &&
+        !(
+          previousModelSelection !== undefined &&
+          capabilities.canApplyModelSelectionInSession !== undefined &&
+          (yield* capabilities.canApplyModelSelectionInSession(
+            previousModelSelection,
+            requestedModelSelection,
+          ))
+        );
 
       if (
         !runtimeModeChanged &&
