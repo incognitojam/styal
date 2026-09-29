@@ -296,7 +296,7 @@ features:
   - id: codex-default-effort
     title: Run Codex turns at the effort shown as default
     status: maintained
-    prs: []
+    prs: [544]
     invariants:
       - A Codex turn whose selection names no reasoning effort is sent the effort the provider snapshot marks as that model's default, which is the effort clients show.
     implementation_paths:
