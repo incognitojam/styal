@@ -82,6 +82,7 @@ function ThreadContentMatch(props: {
 interface CommandPaletteResultsProps {
   emptyStateMessage?: string;
   groups: ReadonlyArray<CommandPaletteGroup>;
+  highlightFirstItem?: boolean;
   highlightedItemValue?: string | null;
   isActionsOnly: boolean;
   keybindings: ResolvedKeybindingsConfig;
@@ -89,6 +90,14 @@ interface CommandPaletteResultsProps {
 }
 
 export function CommandPaletteResults(props: CommandPaletteResultsProps) {
+  const highlightedItemValue =
+    props.highlightFirstItem &&
+    !props.groups.some((group) =>
+      group.items.some((item) => !item.disabled && item.value === props.highlightedItemValue),
+    )
+      ? props.groups.map((group) => group.items.find((item) => !item.disabled)?.value).find(Boolean)
+      : props.highlightedItemValue;
+
   if (props.groups.length === 0) {
     return (
       <div className="py-10 text-center text-sm text-muted-foreground">
@@ -114,7 +123,7 @@ export function CommandPaletteResults(props: CommandPaletteResultsProps) {
                   item={item}
                   key={item.value}
                   keybindings={props.keybindings}
-                  isActive={props.highlightedItemValue === item.value}
+                  isActive={highlightedItemValue === item.value}
                   onExecuteItem={props.onExecuteItem}
                 />
               )
