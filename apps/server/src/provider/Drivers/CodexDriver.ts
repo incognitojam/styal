@@ -22,6 +22,7 @@
  * @module provider/Drivers/CodexDriver
  */
 import { CodexSettings, ProviderDriverKind } from "@t3tools/contracts";
+import { getProviderOptionCurrentValue } from "@t3tools/shared/model";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -181,11 +182,6 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
       // here; the registry only has to worry about snapshot-build and
       // spawner-availability failures surfaced from `checkCodexProviderStatus`
       // below.
-      const adapter = yield* makeCodexAdapter(effectiveConfig, {
-        instanceId,
-        environment: processEnv,
-        ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
-      });
       const textGeneration = yield* makeCodexTextGeneration(effectiveConfig, processEnv);
 
       // Build a managed snapshot whose settings never change — mutations come
@@ -242,6 +238,24 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
             }),
         ),
       );
+      const adapter = yield* makeCodexAdapter(effectiveConfig, {
+        instanceId,
+        environment: processEnv,
+        ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
+        defaultReasoningEffort: (model) =>
+          snapshot.getSnapshot.pipe(
+            Effect.map((current) => {
+              const effort = getProviderOptionCurrentValue(
+                current.models
+                  .find((candidate) => candidate.slug === model)
+                  ?.capabilities?.optionDescriptors?.find(
+                    (descriptor) => descriptor.id === "reasoningEffort",
+                  ),
+              );
+              return typeof effort === "string" ? effort : undefined;
+            }),
+          ),
+      });
       const snapshotForCwd = (cwd: string) =>
         !effectiveConfig.enabled
           ? snapshot.getSnapshot
