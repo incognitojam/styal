@@ -1719,6 +1719,7 @@ features:
     invariants:
       - Repository-relative image references resolve against the pull request head, while qualified GitHub blob and raw references can resolve against their named revision or asset branch through a bounded short-lived same-origin asset URL.
       - Private repository and raw HTML images use the environment's authorized GitHub CLI, while external, public, ambiguous, and unsupported image URLs retain their ordinary browser fallback.
+      - Rendered pull request images, including repository-backed images, open in the shared image gallery while linked images keep their link action.
     implementation_paths:
       - apps/server/src/assets/AssetAccess.ts
       - apps/server/src/pullRequest/GitHubPullRequestCli.ts
@@ -1738,6 +1739,7 @@ features:
       - apps/server/src/pullRequest/GitHubPullRequestCli.test.ts
       - apps/server/src/pullRequest/PullRequestService.test.ts
       - apps/web/src/components/pullRequest/pullRequestMarkdown.logic.test.ts
+      - apps/web/src/components/pullRequest/PullRequestMarkdown.test.tsx
     upstream:
       status: unassessed
       tracking: []

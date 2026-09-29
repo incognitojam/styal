@@ -7,6 +7,8 @@ import {
   useState,
   createContext,
   useContext,
+  type KeyboardEvent,
+  type MouseEvent,
 } from "react";
 import type { ExtraProps, Options as ReactMarkdownOptions } from "react-markdown";
 
@@ -15,6 +17,9 @@ import { cn } from "~/lib/utils";
 import { PULL_REQUESTS_PANEL_REF } from "~/rightPanelStore";
 
 import ChatMarkdown from "../ChatMarkdown";
+import { ExpandedImageDialog } from "../chat/ExpandedImageDialog";
+import type { ExpandedImagePreview } from "../chat/ExpandedImagePreview";
+import { markdownImageGallery, markdownImageItems } from "../chat/markdownImageGallery";
 import type { GithubReferenceSurface } from "../chat/githubReferenceLinks";
 import { MediaVideoPlayer } from "../media/MediaVideoPlayer";
 import {
@@ -22,6 +27,52 @@ import {
   resolvePullRequestRepositoryImage,
   splitPullRequestBody,
 } from "./pullRequestMarkdown.logic";
+
+const PullRequestImagePreviewContext = createContext<(preview: ExpandedImagePreview) => void>(
+  () => {},
+);
+
+function PullRequestPreviewImage({
+  src,
+  alt,
+  originalUrl,
+  ...props
+}: ComponentPropsWithoutRef<"img"> & { src: string; originalUrl?: string }) {
+  const showPreview = useContext(PullRequestImagePreviewContext);
+  const name = alt?.trim() || "image";
+  const expand = (event: MouseEvent<HTMLImageElement> | KeyboardEvent<HTMLImageElement>) => {
+    if (event.currentTarget.closest("a")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const item = markdownImageItems.get(event.currentTarget);
+    if (item) showPreview(markdownImageGallery(event.currentTarget, item));
+  };
+  return (
+    <img
+      {...props}
+      ref={(element) => {
+        if (element) {
+          markdownImageItems.set(element, {
+            src,
+            name,
+            ...(originalUrl ? { originalUrl } : {}),
+            actionsSource: { kind: "image", name, src },
+          });
+        }
+      }}
+      src={src}
+      alt={alt}
+      role="button"
+      tabIndex={0}
+      aria-label={`Preview ${name}`}
+      className={cn("cursor-zoom-in", props.className)}
+      onClick={expand}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") expand(event);
+      }}
+    />
+  );
+}
 
 function PullRequestRepositoryImage({
   detail,
@@ -63,10 +114,11 @@ function PullRequestRepositoryImage({
   if (assetUrl._tag === "Failure" || failedUrl === assetUrl.url) {
     if (browserFallback !== undefined && failedBrowserFallback !== browserFallback) {
       return (
-        <img
+        <PullRequestPreviewImage
           {...props}
           src={browserFallback}
           alt={alt}
+          originalUrl={browserFallback}
           onError={() => setFailedBrowserFallback(browserFallback)}
         />
       );
@@ -77,7 +129,14 @@ function PullRequestRepositoryImage({
       </span>
     );
   }
-  return <img {...props} src={assetUrl.url} alt={alt} onError={() => setFailedUrl(assetUrl.url)} />;
+  return (
+    <PullRequestPreviewImage
+      {...props}
+      src={assetUrl.url}
+      alt={alt}
+      onError={() => setFailedUrl(assetUrl.url)}
+    />
+  );
 }
 
 export const PullRequestMarkdownContext = createContext<{
@@ -100,6 +159,15 @@ export function PullRequestMarkdown({
   threadRef?: ScopedThreadRef | null;
   className?: string;
 }) {
+  const [expandedImage, setExpandedImage] = useState<{
+    text: string;
+    detailUrl: string;
+    preview: ExpandedImagePreview;
+  } | null>(null);
+  const showPreview = useCallback(
+    (preview: ExpandedImagePreview) => setExpandedImage({ text, detailUrl: detail.url, preview }),
+    [detail.url, text],
+  );
   const imageRenderer = useCallback(
     ({ node: _node, src, ...props }: ComponentPropsWithoutRef<"img"> & ExtraProps) => {
       const image = src
@@ -111,7 +179,11 @@ export function PullRequestMarkdown({
           })
         : null;
       return image === null ? (
-        <img {...props} src={src} />
+        src ? (
+          <PullRequestPreviewImage {...props} src={src} originalUrl={src} />
+        ) : (
+          <img {...props} />
+        )
       ) : (
         <PullRequestRepositoryImage
           {...props}
@@ -154,58 +226,66 @@ export function PullRequestMarkdown({
     [repositoryUrl],
   );
   return (
-    <div
-      className={cn(
-        "space-y-3 [&_[data-markdown-details]]:border-0 [&_[data-markdown-details-summary]]:text-foreground/80 [&_[data-markdown-details-summary]>svg]:text-muted-foreground/60",
-        className,
-      )}
-      data-image-gallery
-    >
-      {segments.map((segment) => {
-        if (segment.kind === "markdown") {
+    <PullRequestImagePreviewContext value={showPreview}>
+      <div
+        className={cn(
+          "space-y-3 [&_[data-markdown-details]]:border-0 [&_[data-markdown-details-summary]]:text-foreground/80 [&_[data-markdown-details-summary]>svg]:text-muted-foreground/60",
+          className,
+        )}
+        data-image-gallery
+      >
+        {segments.map((segment) => {
+          if (segment.kind === "markdown") {
+            return (
+              <ChatMarkdown
+                key={segment.id}
+                text={segment.text}
+                cwd={detail.workspaceRoot}
+                threadRef={resolvedThreadRef}
+                pullRequestPanelRef={resolvedThreadRef ?? PULL_REQUESTS_PANEL_REF}
+                environmentId={environmentId}
+                imageRenderer={imageRenderer}
+                referenceContext={referenceContext}
+                extraRemarkPlugins={extraRemarkPlugins}
+              />
+            );
+          }
+          if (segment.media === "video") {
+            return (
+              <MediaVideoPlayer
+                key={`${segment.id}:${segment.url}`}
+                src={segment.url}
+                originalUrl={segment.url}
+                label="Pull request video"
+                className="w-full"
+                videoClassName="rounded-lg border border-border/60"
+              />
+            );
+          }
           return (
-            <ChatMarkdown
+            // A plain anchor rather than the page's openExternal button: the desktop window
+            // turns a blocked _blank into openExternal itself, and in a browser tab — where
+            // there is no shell to call — this is the only one of the two that goes anywhere.
+            <a
               key={segment.id}
-              text={segment.text}
-              cwd={detail.workspaceRoot}
-              threadRef={resolvedThreadRef}
-              pullRequestPanelRef={resolvedThreadRef ?? PULL_REQUESTS_PANEL_REF}
-              environmentId={environmentId}
-              imageRenderer={imageRenderer}
-              referenceContext={referenceContext}
-              extraRemarkPlugins={extraRemarkPlugins}
-            />
+              href={segment.url}
+              rel="noreferrer noopener"
+              target="_blank"
+              className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm hover:bg-muted/60"
+            >
+              <PaperclipIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate">Open attachment on GitHub</span>
+              <ExternalLinkIcon aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+            </a>
           );
-        }
-        if (segment.media === "video") {
-          return (
-            <MediaVideoPlayer
-              key={`${segment.id}:${segment.url}`}
-              src={segment.url}
-              originalUrl={segment.url}
-              label="Pull request video"
-              className="w-full"
-              videoClassName="rounded-lg border border-border/60"
-            />
-          );
-        }
-        return (
-          // A plain anchor rather than the page's openExternal button: the desktop window
-          // turns a blocked _blank into openExternal itself, and in a browser tab — where
-          // there is no shell to call — this is the only one of the two that goes anywhere.
-          <a
-            key={segment.id}
-            href={segment.url}
-            rel="noreferrer noopener"
-            target="_blank"
-            className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm hover:bg-muted/60"
-          >
-            <PaperclipIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate">Open attachment on GitHub</span>
-            <ExternalLinkIcon aria-hidden className="size-3 shrink-0 text-muted-foreground" />
-          </a>
-        );
-      })}
-    </div>
+        })}
+      </div>
+      {expandedImage?.text === text && expandedImage.detailUrl === detail.url ? (
+        <ExpandedImageDialog
+          preview={expandedImage.preview}
+          onClose={() => setExpandedImage(null)}
+        />
+      ) : null}
+    </PullRequestImagePreviewContext>
   );
 }
