@@ -61,6 +61,26 @@ describe("classifyModels", () => {
       ],
     );
   });
+  it("applies catalog badges to discovered models", () => {
+    const manifest: ModelManifestData = {
+      version: 1,
+      currentModels: { codex: ["gpt-test"] },
+      providers: {
+        codex: {
+          profiles: {},
+          models: [{ slug: "gpt-test", name: "GPT Test", status: "current", badge: "new" }],
+        },
+      },
+    };
+    const models = [model({ slug: "gpt-test" }), model({ slug: "gpt-other" })];
+    assert.deepStrictEqual(
+      classifyModels(models, manifest, CODEX).map((entry) => [entry.slug, entry.badge]),
+      [
+        ["gpt-test", "new"],
+        ["gpt-other", undefined],
+      ],
+    );
+  });
 });
 
 describe("applyManifestDefault", () => {
