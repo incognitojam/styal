@@ -118,10 +118,20 @@ it("marks the most preferred available model as default", () => {
   );
 });
 
-it("prefers GPT-6-Sol over other available Codex models", () => {
+it("prefers GPT-6.1-Sol over other available Codex models", () => {
   const models = applyPreferredCodexDefaultModel([
     { slug: "gpt-5.6-terra", name: "GPT-5.6-Terra", isCustom: false, capabilities: null },
     { slug: "gpt-5.6-sol", name: "GPT-5.6-Sol", isCustom: false, capabilities: null },
+    { slug: "gpt-6-astra", name: "GPT-6-Astra", isCustom: false, capabilities: null },
+    { slug: "gpt-6-sol", name: "GPT-6-Sol", isCustom: false, capabilities: null },
+    { slug: "gpt-6.1-sol", name: "GPT-6.1-Sol", isCustom: false, capabilities: null },
+  ]);
+
+  assert.deepStrictEqual(models.find((model) => model.isDefault)?.slug, "gpt-6.1-sol");
+});
+
+it("falls back to GPT-6-Sol when GPT-6.1-Sol is unavailable", () => {
+  const models = applyPreferredCodexDefaultModel([
     { slug: "gpt-6-astra", name: "GPT-6-Astra", isCustom: false, capabilities: null },
     { slug: "gpt-6-sol", name: "GPT-6-Sol", isCustom: false, capabilities: null },
   ]);
@@ -129,7 +139,7 @@ it("prefers GPT-6-Sol over other available Codex models", () => {
   assert.deepStrictEqual(models.find((model) => model.isDefault)?.slug, "gpt-6-sol");
 });
 
-it("falls back to GPT-6-Astra when GPT-6-Sol is unavailable", () => {
+it("falls back to GPT-6-Astra when both Sol models are unavailable", () => {
   const models = applyPreferredCodexDefaultModel([
     { slug: "gpt-5.6-sol", name: "GPT-5.6-Sol", isCustom: false, capabilities: null },
     { slug: "gpt-6-astra", name: "GPT-6-Astra", isCustom: false, capabilities: null },
