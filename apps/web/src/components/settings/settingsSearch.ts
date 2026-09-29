@@ -215,6 +215,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["timestamp clock locale system browser os 12 hour 24 hour"],
   },
   {
+    id: "thread-timestamp",
+    title: "Thread timestamp",
+    to: "/settings/general",
+    searchTerms: ["last prompted last message sidebar time agent reply"],
+  },
+  {
     id: "hide-whitespace-changes",
     title: "Hide whitespace changes",
     to: "/settings/general",

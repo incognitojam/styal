@@ -5,6 +5,8 @@ import type {
 } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentThreadSearchMatch } from "@t3tools/client-runtime/state/thread-search";
 import type { EnvironmentMachineKind } from "@t3tools/contracts";
+import type { SidebarThreadTimestampMode } from "@t3tools/contracts/settings";
+import { resolveThreadDisplayTimestamp } from "@t3tools/client-runtime/state/thread-timestamp";
 import type { MenuAction } from "@react-native-menu/menu";
 import { SymbolView } from "../../components/AppSymbol";
 import { memo, useCallback, useMemo, type ComponentProps } from "react";
@@ -445,6 +447,7 @@ const THREAD_ROW_MENU_ACTIONS: MenuAction[] = [
 export const ThreadListRow = memo(function ThreadListRow(props: {
   readonly variant: ThreadListVariant;
   readonly thread: EnvironmentThreadShell;
+  readonly timestampMode: SidebarThreadTimestampMode;
   readonly environmentLabel: string | null;
   readonly environmentMachine?: EnvironmentMachineKind;
   /** A message for this thread is waiting in the outbox. */
@@ -498,9 +501,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
   } = props;
   const status = resolveThreadStatus(thread);
   const pr = useThreadPr(thread);
-  const timestamp = relativeTime(
-    thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,
-  );
+  const timestamp = relativeTime(resolveThreadDisplayTimestamp(thread, props.timestampMode));
   // The open thread's own composer is on screen, so its draft needs no marker.
   const showDraftIcon = props.hasUnsentDraft === true && !selected;
   const threadAccessibilityLabel = [

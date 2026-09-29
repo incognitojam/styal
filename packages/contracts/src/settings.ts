@@ -65,6 +65,8 @@ export const DEFAULT_SIDEBAR_PROJECT_SORT_ORDER: SidebarProjectSortOrder = "upda
 export const SidebarThreadSortOrder = Schema.Literals(["updated_at", "created_at"]);
 export type SidebarThreadSortOrder = typeof SidebarThreadSortOrder.Type;
 export const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
+export const SidebarThreadTimestampMode = Schema.Literals(["last_prompted", "last_message"]);
+export type SidebarThreadTimestampMode = typeof SidebarThreadTimestampMode.Type;
 
 export const SidebarProjectGroupingMode = Schema.Literals([
   "repository",
@@ -455,6 +457,9 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   sidebarThreadSortOrder: SidebarThreadSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_SORT_ORDER)),
+  ),
+  sidebarThreadTimestampMode: SidebarThreadTimestampMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed("last_prompted")),
   ),
   sidebarThreadPreviewCount: SidebarThreadPreviewCount.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_PREVIEW_COUNT)),
@@ -1420,6 +1425,7 @@ export const ClientSettingsPatch = Schema.Struct({
   ),
   sidebarProjectSortOrder: Schema.optionalKey(SidebarProjectSortOrder),
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
+  sidebarThreadTimestampMode: Schema.optionalKey(SidebarThreadTimestampMode),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
   sidebarThreadGrouping: Schema.optionalKey(SidebarThreadGrouping),
   timestampFormat: Schema.optionalKey(TimestampFormat),

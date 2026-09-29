@@ -79,6 +79,19 @@ features: []
     assert.include(errors, `${evidence.id}.prs must be sorted.`);
   });
 
+  it("allows a new capability to be tracked before it has a pull request", () => {
+    const ledger = loadForkFeatureLedger(repoRoot);
+    const feature = ledger.features[0]!;
+    const pending = {
+      ...ledger,
+      features: ledger.features.map((candidate) =>
+        candidate.id === feature.id ? { ...candidate, prs: [] } : candidate,
+      ),
+    } satisfies ForkFeatureLedger;
+
+    assert.deepEqual(validateForkFeatureLedger(pending, repoRoot), []);
+  });
+
   it("rejects missing evidence files and unsupported upstream assessments", () => {
     const ledger = loadForkFeatureLedger(repoRoot);
     const featureIndex = ledger.features.findIndex(

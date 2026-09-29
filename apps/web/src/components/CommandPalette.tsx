@@ -1364,6 +1364,7 @@ function OpenCommandPaletteDialog(props: {
         ...(activeThreadId ? { activeThreadId } : {}),
         projectTitleById,
         sortOrder: clientSettings.sidebarThreadSortOrder,
+        timestampMode: clientSettings.sidebarThreadTimestampMode,
         icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
         renderLeadingContent: (thread) => <ThreadRowLeadingStatus thread={thread} />,
         renderTrailingContent: (thread) => <ThreadRowTrailingStatus thread={thread} />,
@@ -1416,6 +1417,7 @@ function OpenCommandPaletteDialog(props: {
     [
       activeThreadId,
       clientSettings.sidebarThreadSortOrder,
+      clientSettings.sidebarThreadTimestampMode,
       navigate,
       projectByKey,
       projectEnvironmentLocationById,

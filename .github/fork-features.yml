@@ -2163,6 +2163,54 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9759
       retire_when: Upstream distinguishes attention-required Approval and Input rows from dimmable Working and Monitoring background activity with equivalent precedence behavior.
 
+  - id: sidebar-last-message-time
+    title: Choose the timestamp shown for thread activity
+    status: maintained
+    prs: [538]
+    invariants:
+      - Active thread rows on web and mobile, and web command palette thread actions, default to time since the last user prompt; a local preference can instead show the latest message including agent replies. The preference does not change thread ordering.
+      - When an older server omits the latest message timestamp, Last message uses the latest thread activity time as an approximation rather than reverting to the last user prompt.
+      - Existing threads receive the latest message timestamp during migration; new messages advance it and reverting a turn recalculates it from retained messages without reading message bodies into sidebar summaries.
+    implementation_paths:
+      - apps/mobile/src/features/home/HomeScreen.tsx
+      - apps/mobile/src/features/settings/SettingsRouteScreen.tsx
+      - apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx
+      - apps/mobile/src/features/threads/thread-list-items.tsx
+      - apps/mobile/src/features/threads/thread-list-v2-items.tsx
+      - apps/mobile/src/persistence/mobile-preferences.ts
+      - apps/server/src/orchestration/Layers/ProjectionPipeline.ts
+      - apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts
+      - apps/server/src/persistence/Layers/ProjectionThreads.ts
+      - apps/server/src/persistence/Migrations/051_ProjectionThreadLatestMessageAt.ts
+      - apps/web/src/components/CommandPalette.logic.ts
+      - apps/web/src/components/LegacySidebar.tsx
+      - apps/web/src/components/Sidebar.tsx
+      - apps/web/src/components/settings/SettingsPanels.tsx
+      - packages/client-runtime/src/state/thread-timestamp.ts
+      - packages/contracts/src/orchestration.ts
+      - packages/contracts/src/settings.ts
+    upstream_paths:
+      - apps/mobile/src/features/threads/thread-list-items.tsx
+      - apps/mobile/src/features/threads/thread-list-v2-items.tsx
+      - apps/server/src/orchestration/Layers/ProjectionPipeline.ts
+      - apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts
+      - apps/server/src/persistence/Layers/ProjectionThreads.ts
+      - apps/web/src/components/CommandPalette.logic.ts
+      - apps/web/src/components/LegacySidebar.tsx
+      - apps/web/src/components/Sidebar.tsx
+      - packages/contracts/src/orchestration.ts
+    tests:
+      - apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts
+      - apps/server/src/persistence/Migrations/051_ProjectionThreadLatestMessageAt.test.ts
+      - apps/web/src/components/CommandPalette.logic.test.ts
+      - packages/client-runtime/src/state/thread-timestamp.test.ts
+      - packages/contracts/src/settings.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/1996
+      retire_when: Upstream labels thread rows and command palette actions using the latest chat message timestamp across web and mobile without letting non-message updates reset the clock.
+
   - id: source-control-fork-remotes
     title: Configure fork remotes and default repositories
     status: maintained

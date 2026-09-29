@@ -11,6 +11,7 @@ import {
 import { LegendList } from "@legendapp/list/react-native";
 import type { MenuAction } from "@react-native-menu/menu";
 import { useAtomValue } from "@effect/atom-react";
+import { AsyncResult } from "effect/unstable/reactivity";
 import { type EnvironmentId, resolveEnvironmentMachineKind } from "@t3tools/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LayoutChangeEvent } from "react-native";
@@ -30,6 +31,7 @@ import { scopedProjectKey, scopedThreadKey } from "../../lib/scopedEntities";
 import { useProjects, useThreadShells } from "../../state/entities";
 import { useThreadSearch } from "../../state/queries";
 import { useThreadListV2Enabled } from "./use-thread-list-v2-enabled";
+import { mobilePreferencesAtom } from "../../state/preferences";
 import { useThreadListV2ShelfPreferences } from "./use-thread-list-v2-shelf-preferences";
 import { usePendingThreadOrder } from "../../state/thread-order";
 import { environmentServerConfigsAtom } from "../../state/server";
@@ -174,6 +176,10 @@ function ThreadNavigationSidebarPane(
     regenerateThreadTitle,
   } = useThreadListActions();
   const threadListV2Enabled = useThreadListV2Enabled();
+  const preferencesResult = useAtomValue(mobilePreferencesAtom);
+  const timestampMode = AsyncResult.isSuccess(preferencesResult)
+    ? (preferencesResult.value.threadTimestampMode ?? "last_prompted")
+    : "last_prompted";
   const pendingTasks = usePendingNewTasks();
   const queuedThreadKeys = useQueuedThreadKeys();
   const draftThreadKeys = useDraftThreadKeys();
@@ -790,6 +796,7 @@ function ThreadNavigationSidebarPane(
       projectTitleByProjectKey,
       savedConnectionsById,
       serverConfigs,
+      timestampMode,
       snoozePresetMinute: nowMinute,
       threadSearchMatchByKey,
     }),
@@ -799,6 +806,7 @@ function ThreadNavigationSidebarPane(
       projectTitleByProjectKey,
       savedConnectionsById,
       serverConfigs,
+      timestampMode,
       nowMinute,
       threadSearchMatchByKey,
     ],
@@ -902,6 +910,7 @@ function ThreadNavigationSidebarPane(
             <ThreadListV2Row
               onNewThreadOnBranch={props.onNewThreadOnBranch}
               thread={thread}
+              timestampMode={timestampMode}
               variant={item.item.variant}
               hasQueuedMessages={queuedThreadKeys.has(`${thread.environmentId}:${thread.id}`)}
               hasUnsentDraft={draftThreadKeys.has(`${thread.environmentId}:${thread.id}`)}
@@ -1031,6 +1040,7 @@ function ThreadNavigationSidebarPane(
               onNewThreadOnBranch={props.onNewThreadOnBranch}
               variant="sidebar"
               thread={thread}
+              timestampMode={timestampMode}
               hasQueuedMessages={queuedThreadKeys.has(`${thread.environmentId}:${thread.id}`)}
               hasUnsentDraft={draftThreadKeys.has(`${thread.environmentId}:${thread.id}`)}
               environmentLabel={
@@ -1103,6 +1113,7 @@ function ThreadNavigationSidebarPane(
       serverConfigs,
       shelfPreferencesLoaded,
       threadSearchMatchByKey,
+      timestampMode,
       titleRegenerationEnvironmentIds,
       settleThread,
       settlementEnvironmentIds,

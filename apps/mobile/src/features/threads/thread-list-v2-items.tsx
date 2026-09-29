@@ -8,6 +8,8 @@ import type {
 } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentThreadSearchMatch } from "@t3tools/client-runtime/state/thread-search";
 import type { EnvironmentMachineKind } from "@t3tools/contracts";
+import type { SidebarThreadTimestampMode } from "@t3tools/contracts/settings";
+import { resolveThreadDisplayTimestamp } from "@t3tools/client-runtime/state/thread-timestamp";
 import { canSnooze, resolveSnoozePresets } from "@t3tools/client-runtime/state/thread-settled";
 import { resolveSettledThreadTimestamp } from "@t3tools/client-runtime/state/thread-sort";
 import type { MenuAction } from "@react-native-menu/menu";
@@ -65,8 +67,8 @@ const STATUS_LABEL_BY_STATUS: Partial<
   failed: { label: "Failed", className: "text-danger-foreground" },
 };
 
-function threadTimeLabel(thread: EnvironmentThreadShell): string {
-  return relativeTime(thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt);
+function threadTimeLabel(thread: EnvironmentThreadShell, mode: SidebarThreadTimestampMode): string {
+  return relativeTime(resolveThreadDisplayTimestamp(thread, mode));
 }
 
 // Menus keep lifecycle and title regeneration together. Archive keeps its
@@ -340,6 +342,7 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
 
 export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly thread: EnvironmentThreadShell;
+  readonly timestampMode: SidebarThreadTimestampMode;
   readonly variant: "card" | "slim";
   /** A message for this thread is waiting in the outbox. */
   readonly hasQueuedMessages?: boolean;
@@ -466,7 +469,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const settledTimestamp =
     variant === "slim" && !snoozedRow ? resolveSettledThreadTimestamp(thread) : null;
   const timeLabel =
-    settledTimestamp !== null ? relativeTime(settledTimestamp) : threadTimeLabel(thread);
+    settledTimestamp !== null
+      ? relativeTime(settledTimestamp)
+      : threadTimeLabel(thread, props.timestampMode);
 
   const handleDelete = useCallback(() => onDeleteThread(thread), [onDeleteThread, thread]);
   const handleRegenerateTitle = useCallback(

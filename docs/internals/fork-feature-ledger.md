@@ -18,7 +18,7 @@ CI validates the file with `vp run --filter @t3tools/scripts ledger:check`.
 - `id`: stable lower-kebab-case capability ID. Do not rename it when implementation details move.
 - `title`: short maintainer-facing capability name.
 - `status`: `maintained`, `review-needed`, or `retiring`.
-- `prs`: fork pull requests that introduced or materially repaired the capability.
+- `prs`: fork pull requests that introduced or materially repaired the capability. Leave empty until the first pull request exists.
 - `invariants`: observable behavior that must remain true after upstream integration.
 - `implementation_paths`: fork implementation files whose removal or rename must update the ledger.
 - `upstream_paths`: files shared with upstream whose upstream changes should prompt semantic review.

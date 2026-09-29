@@ -581,6 +581,18 @@ function GeneralSettingsSection() {
   return (
     <SettingsSection title="General">
       <SettingsRow icon="folder" label="Project Grouping" target="SettingsProjectGrouping" />
+      <SettingsSwitchRow
+        icon="clock"
+        label="Show last message time"
+        subtitle="On includes agent replies; off shows your last prompt. Older servers use latest activity as an estimate."
+        value={
+          AsyncResult.isSuccess(preferencesResult) &&
+          preferencesResult.value.threadTimestampMode === "last_message"
+        }
+        onValueChange={(value) =>
+          savePreferences({ threadTimestampMode: value ? "last_message" : "last_prompted" })
+        }
+      />
       <AutoSettleSettingsRows />
       <SettingsSwitchRow
         icon="pin"

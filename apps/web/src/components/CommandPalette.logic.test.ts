@@ -366,18 +366,22 @@ describe("buildProjectActionItems", () => {
 });
 
 describe("buildThreadActionItems", () => {
-  it("orders threads by most recent activity and formats timestamps from updatedAt", () => {
+  it("keeps thread order while the timestamp preference changes the displayed time", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-25T12:00:00.000Z"));
 
     try {
-      const items = buildThreadActionItems({
+      const input = {
         threads: [
-          makeThread({
-            id: ThreadId.make("thread-older"),
-            title: "Older thread",
-            updatedAt: "2026-03-24T12:00:00.000Z",
-          }),
+          {
+            ...makeThread({
+              id: ThreadId.make("thread-older"),
+              title: "Older thread",
+              updatedAt: "2026-03-24T12:00:00.000Z",
+            }),
+            latestUserMessageAt: "2026-03-20T12:00:00.000Z",
+            latestMessageAt: "2026-03-23T12:00:00.000Z",
+          },
           makeThread({
             id: ThreadId.make("thread-newer"),
             title: "Newer thread",
@@ -388,15 +392,22 @@ describe("buildThreadActionItems", () => {
         projectTitleById: new Map([[PROJECT_ID, "Project"]]),
         sortOrder: "updated_at",
         icon: null,
-        runThread: async (_thread) => undefined,
+        runThread: async () => undefined,
+      } as const;
+      const items = buildThreadActionItems(input);
+      const latestMessageItems = buildThreadActionItems({
+        ...input,
+        timestampMode: "last_message",
       });
 
       expect(items.map((item) => item.value)).toEqual([
         "thread:thread-older",
         "thread:thread-newer",
       ]);
-      expect(items[0]?.timestamp).toBe("1d ago");
+      expect(items[0]?.timestamp).toBe("5d ago");
       expect(items[1]?.timestamp).toBe("5d ago");
+      expect(latestMessageItems.map((item) => item.value)).toEqual(items.map((item) => item.value));
+      expect(latestMessageItems[0]?.timestamp).toBe("2d ago");
     } finally {
       vi.useRealTimers();
     }

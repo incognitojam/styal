@@ -219,6 +219,10 @@
       "types": "./src/state/threadSort.ts",
       "default": "./src/state/threadSort.ts"
     },
+    "./state/thread-timestamp": {
+      "types": "./src/state/thread-timestamp.ts",
+      "default": "./src/state/thread-timestamp.ts"
+    },
     "./state/thread-settled": {
       "types": "./src/state/threadSettled.ts",
       "default": "./src/state/threadSettled.ts"

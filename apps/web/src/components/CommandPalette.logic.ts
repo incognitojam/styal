@@ -7,7 +7,11 @@ import {
   THREAD_JUMP_KEYBINDING_COMMANDS,
 } from "@t3tools/contracts";
 import { filterFilesystemBrowseEntries } from "@t3tools/client-runtime/state/filesystem";
-import type { SidebarThreadSortOrder } from "@t3tools/contracts/settings";
+import { resolveThreadDisplayTimestamp } from "@t3tools/client-runtime/state/thread-timestamp";
+import type {
+  SidebarThreadSortOrder,
+  SidebarThreadTimestampMode,
+} from "@t3tools/contracts/settings";
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
 import { type ReactNode } from "react";
@@ -246,6 +250,7 @@ export type BuildThreadActionItemsThread = Pick<
   pullRequests?: SidebarThreadSummary["pullRequests"];
   updatedAt: string;
   latestUserMessageAt?: string | null;
+  latestMessageAt?: string | null | undefined;
 };
 
 export function buildThreadActionItems<TThread extends BuildThreadActionItemsThread>(input: {
@@ -253,6 +258,7 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
   activeThreadId?: Thread["id"];
   projectTitleById: ReadonlyMap<Project["id"], string>;
   sortOrder: SidebarThreadSortOrder;
+  timestampMode?: SidebarThreadTimestampMode;
   icon: ReactNode;
   /** Optional content rendered inline before the title text per-thread. */
   renderLeadingContent?: (thread: TThread) => ReactNode;
@@ -306,7 +312,7 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
         title: thread.title,
         description,
         timestamp: formatRelativeTimeLabel(
-          thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,
+          resolveThreadDisplayTimestamp(thread, input.timestampMode ?? "last_prompted"),
         ),
         icon: input.icon,
       },

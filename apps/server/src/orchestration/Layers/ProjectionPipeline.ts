@@ -678,6 +678,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             titleRegenerationRequestId: null,
             titleRegenerationStartedAt: null,
             latestUserMessageAt: null,
+            latestMessageAt: null,
             pendingApprovalCount: 0,
             pendingUserInputCount: 0,
             hasActionableProposedPlan: 0,
@@ -1031,9 +1032,8 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           return;
         }
 
-        // A message cannot change any summary field except latestUserMessageAt,
-        // which is a monotonic maximum that folds in directly. The full refresh
-        // would re-read every message body in the thread per user message.
+        // Message timestamps are monotonic maxima that fold in directly. The
+        // full refresh would re-read every message body in the thread.
         case "thread.message-sent": {
           const existingRow = yield* projectionThreadRepository.getById({
             threadId: event.payload.threadId,
@@ -1042,9 +1042,16 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             return;
           }
           const previousLatest = existingRow.value.latestUserMessageAt;
+          const previousLatestMessage = existingRow.value.latestMessageAt;
           yield* projectionThreadRepository.upsert({
             ...existingRow.value,
             updatedAt: event.occurredAt,
+            latestMessageAt:
+              previousLatestMessage === null ||
+              previousLatestMessage === undefined ||
+              event.payload.updatedAt > previousLatestMessage
+                ? event.payload.updatedAt
+                : previousLatestMessage,
             latestUserMessageAt:
               event.payload.role === "user" &&
               !isImportedAgentSessionMessageId(event.payload.messageId) &&
@@ -1137,9 +1144,13 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             }
           }
 
+          const latestMessageAt = yield* projectionThreadMessageRepository.getLatestMessageAt({
+            threadId: event.payload.threadId,
+          });
           yield* projectionThreadRepository.upsert({
             ...existingRow.value,
             latestTurnId,
+            latestMessageAt,
             updatedAt: event.occurredAt,
           });
           yield* refreshOrDeferThreadShellSummary(event.payload.threadId, attachmentSideEffects);

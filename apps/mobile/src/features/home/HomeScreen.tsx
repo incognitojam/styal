@@ -219,6 +219,9 @@ export function HomeScreen(props: HomeScreenProps) {
     ReadonlyMap<string, HomeGroupDisplayState>
   >(() => new Map());
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
+  const timestampMode = AsyncResult.isSuccess(preferencesResult)
+    ? (preferencesResult.value.threadTimestampMode ?? "last_prompted")
+    : "last_prompted";
   const threadListV2Enabled = useThreadListV2Enabled();
   const queuedThreadKeys = useQueuedThreadKeys();
   const draftThreadKeys = useDraftThreadKeys();
@@ -834,6 +837,7 @@ export function HomeScreen(props: HomeScreenProps) {
         <ThreadListV2Row
           onNewThreadOnBranch={props.onNewThreadOnBranch}
           thread={thread}
+          timestampMode={timestampMode}
           variant={item.item.variant}
           hasQueuedMessages={queuedThreadKeys.has(movedId)}
           hasUnsentDraft={draftThreadKeys.has(movedId)}
@@ -922,6 +926,7 @@ export function HomeScreen(props: HomeScreenProps) {
       snoozeEnvironmentIds,
       threadListV2Items,
       threadSearchMatchByKey,
+      timestampMode,
       titleRegenerationEnvironmentIds,
       toggleSettledShelf,
       toggleSnoozedShelf,
@@ -942,12 +947,14 @@ export function HomeScreen(props: HomeScreenProps) {
       serverConfigs,
       savedConnectionsById: props.savedConnectionsById,
       searchQuery: props.searchQuery,
+      timestampMode,
       snoozePresetMinute: nowMinute,
       threadSearchMatchByKey,
     }),
     [
       projectByKey,
       props.searchQuery,
+      timestampMode,
       props.savedConnectionsById,
       serverConfigs,
       nowMinute,
@@ -960,9 +967,10 @@ export function HomeScreen(props: HomeScreenProps) {
     () => ({
       savedConnectionsById: props.savedConnectionsById,
       searchQuery: props.searchQuery,
+      timestampMode,
       threadSearchMatchByKey,
     }),
-    [props.savedConnectionsById, props.searchQuery, threadSearchMatchByKey],
+    [props.savedConnectionsById, props.searchQuery, threadSearchMatchByKey, timestampMode],
   );
 
   const renderItem = useCallback(
@@ -1008,6 +1016,7 @@ export function HomeScreen(props: HomeScreenProps) {
               onNewThreadOnBranch={props.onNewThreadOnBranch}
               variant="compact"
               thread={thread}
+              timestampMode={timestampMode}
               hasQueuedMessages={queuedThreadKeys.has(`${thread.environmentId}:${thread.id}`)}
               hasUnsentDraft={draftThreadKeys.has(`${thread.environmentId}:${thread.id}`)}
               environmentLabel={
@@ -1061,6 +1070,7 @@ export function HomeScreen(props: HomeScreenProps) {
       props.searchQuery,
       props.savedConnectionsById,
       threadSearchMatchByKey,
+      timestampMode,
       titleRegenerationEnvironmentIds,
       updateGroupDisplay,
     ],
