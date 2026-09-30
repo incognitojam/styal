@@ -222,7 +222,7 @@ jobs:
         name: Mint Styal Porter token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ vars.STYAL_INTAKE_APP_ID }}
+          client-id: ${{ vars.STYAL_INTAKE_APP_ID }}
           private-key: ${{ secrets.STYAL_INTAKE_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: ${{ github.event.repository.name }}
