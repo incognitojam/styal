@@ -1,97 +1,12 @@
 import { ThreadId, type ThreadPullRequestLink } from "@t3tools/contracts";
-import { act, cloneElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { create, type ReactTestRenderer } from "react-test-renderer";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 
-vi.mock("./ui/tooltip", () => ({
-  Tooltip: ({ children }: { children: ReactNode }) => (
-    <span data-testid="pr-tooltip">{children}</span>
-  ),
-  TooltipTrigger: ({ render, children }: { render: ReactElement; children: ReactNode }) =>
-    cloneElement(render, {}, children),
-  TooltipPopup: () => null,
-}));
-
-import { ComposerControl } from "./chat/ComposerControl";
-import { InlineButton } from "./ui/button";
 import {
-  ThreadPullRequestBadgeControl,
+  ThreadPullRequestsMiniList,
   ThreadWorktreeIndicator,
   linkedPullRequestSnapshotStatus,
 } from "./ThreadStatusIndicators";
-
-describe("ThreadPullRequestBadgeControl", () => {
-  it("shows the current PR number followed by additional linked PRs", () => {
-    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    let renderer: ReactTestRenderer | undefined;
-    act(() => {
-      renderer = create(
-        <ThreadPullRequestBadgeControl
-          render={<InlineButton />}
-          tooltip={false}
-          badge={{ kind: "pull-request", others: 1, state: "open" }}
-          number={102}
-          url="https://github.com/example/project/pull/102"
-          status={null}
-          onOpenStack={() => {}}
-          onOpenPullRequest={() => {}}
-        />,
-      );
-    });
-    const mounted = renderer;
-    if (!mounted) throw new Error("Badge did not render");
-    const link = mounted.root.findByType("a");
-    expect(link.findAllByType("span").flatMap((span) => span.children)).toContain("102+1");
-    expect(link.props["aria-label"]).toBe(
-      "PR #102, status pending, and 1 more linked; overall open",
-    );
-    expect(mounted.root.findAllByProps({ "data-testid": "pr-tooltip" })).toHaveLength(0);
-    act(() => {
-      mounted.update(
-        <ThreadPullRequestBadgeControl
-          render={<InlineButton />}
-          tooltip={false}
-          badge={{ kind: "pull-request", others: 0 }}
-          number={3}
-          url="https://github.com/example/project/pull/3"
-          status={null}
-          onOpenStack={() => {}}
-          onOpenPullRequest={() => {}}
-        />,
-      );
-    });
-    const texts = mounted.root
-      .findByType("a")
-      .findAllByType("span")
-      .flatMap((span) => span.children);
-    expect(texts).toContain("3");
-    expect(texts).not.toContain("3+1");
-    act(() => mounted.unmount());
-  });
-
-  it("keeps the composer PR tooltip", () => {
-    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    let renderer: ReactTestRenderer | undefined;
-    act(() => {
-      renderer = create(
-        <ThreadPullRequestBadgeControl
-          render={<ComposerControl size="xs" />}
-          badge={{ kind: "pull-request", others: 1, state: "open" }}
-          number={102}
-          url="https://github.com/example/project/pull/102"
-          status={null}
-          onOpenStack={() => {}}
-          onOpenPullRequest={() => {}}
-        />,
-      );
-    });
-    const mounted = renderer;
-    if (!mounted) throw new Error("Badge did not render");
-    expect(mounted.root.findAllByProps({ "data-testid": "pr-tooltip" })).toHaveLength(1);
-    act(() => mounted.unmount());
-  });
-});
 
 describe("ThreadWorktreeIndicator", () => {
   it("renders the worktree folder and branch in an accessible label", () => {
@@ -167,5 +82,50 @@ describe("linked pull request snapshots", () => {
       },
       sourceControlProvider: { kind: "gitlab", name: "gitlab", baseUrl: "" },
     });
+  });
+});
+
+describe("ThreadPullRequestsMiniList", () => {
+  const branchPullRequest = {
+    number: 579,
+    title: "Fix the branch pull request",
+    url: "https://github.com/acme/web/pull/579",
+    baseRef: "main",
+    headRef: "fix-branch",
+    state: "open" as const,
+  };
+
+  it("lists the branch pull request when the thread has no linked pull requests", () => {
+    const markup = renderToStaticMarkup(
+      <ThreadPullRequestsMiniList pullRequests={[]} fallback={branchPullRequest} />,
+    );
+    expect(markup).toContain("#579");
+    expect(markup).toContain("Fix the branch pull request");
+  });
+
+  it("lists linked pull requests instead of the branch pull request", () => {
+    const markup = renderToStaticMarkup(
+      <ThreadPullRequestsMiniList
+        pullRequests={[
+          {
+            host: "github.com",
+            repository: "acme/web",
+            number: 42,
+            url: "https://github.com/acme/web/pull/42",
+            source: "manual",
+            linkedAt: "2026-01-01T00:00:00Z",
+            stack: null,
+            snapshot: null,
+          },
+        ]}
+        fallback={branchPullRequest}
+      />,
+    );
+    expect(markup).toContain("#42");
+    expect(markup).not.toContain("#579");
+  });
+
+  it("renders nothing without linked or branch pull requests", () => {
+    expect(renderToStaticMarkup(<ThreadPullRequestsMiniList pullRequests={[]} />)).toBe("");
   });
 });

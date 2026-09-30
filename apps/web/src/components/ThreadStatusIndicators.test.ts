@@ -250,7 +250,7 @@ describe("resolveThreadPullRequestBadgePresentation", () => {
         Icon: expectedIcon,
         toneClassName: expectedToneClassName,
         label: `PR #42 - Closed: PR branch, and 2 more linked; overall ${state}`,
-        text: "42+2",
+        text: "+3",
       });
     },
   );

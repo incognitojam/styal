@@ -180,7 +180,7 @@ export function resolveThreadPullRequestBadgePresentation({
       Icon: aggregate.Icon,
       toneClassName: aggregate.toneClassName,
       label: `${tooltip}, and ${badge.others} more linked; overall ${aggregate.label.toLowerCase()}`,
-      text: `${number}+${badge.others}`,
+      text: `+${badge.others + 1}`,
     };
   }
   return {
@@ -195,26 +195,24 @@ export function resolveThreadPullRequestBadgePresentation({
  * The linked-PR badge shared by the sidebar and composer footer. The badge owns what it shows:
  * the state glyph and number at the meta size, in the state's color. The caller owns the control
  * it sits in through `render` (an inline link in a sidebar row, a toolbar control in the
- * composer), and the badge fills in the link or stack button behavior.
+ * composer), and the badge fills in the behavior: a single PR is a link to it, while a stack or
+ * several linked PRs is a button that opens the thread's pull requests tab.
  */
 export function ThreadPullRequestBadgeControl({
   render,
-  tooltip = true,
   badge,
   number,
   url,
   status,
-  onOpenStack,
+  onOpenList,
   onOpenPullRequest,
 }: {
   render: ReactElement<{ render?: useRender.RenderProp }>;
-  /** False when a hover card already lists the linked pull requests; stacks keep theirs. */
-  tooltip?: boolean;
   badge: ThreadPullRequestBadge | null;
   number?: number | undefined;
   url?: string | undefined;
   status: PrStatusIndicator | null;
-  onOpenStack: () => void;
+  onOpenList: () => void;
   onOpenPullRequest: (event: MouseEvent<HTMLElement>) => void;
 }) {
   const presentation = resolveThreadPullRequestBadgePresentation({ badge, number, url, status });
@@ -222,11 +220,10 @@ export function ThreadPullRequestBadgeControl({
   return (
     <PullRequestBadge
       render={render}
-      tooltip={tooltip}
       presentation={presentation}
-      isStack={badge?.kind === "stack"}
+      opensList={badge !== null && (badge.kind === "stack" || badge.others > 0)}
       url={url}
-      onOpenStack={onOpenStack}
+      onOpenList={onOpenList}
       onOpenPullRequest={onOpenPullRequest}
     />
   );
@@ -234,44 +231,31 @@ export function ThreadPullRequestBadgeControl({
 
 function PullRequestBadge({
   render,
-  tooltip,
   presentation,
-  isStack,
+  opensList,
   url,
-  onOpenStack,
+  onOpenList,
   onOpenPullRequest,
 }: {
   render: ReactElement<{ render?: useRender.RenderProp }>;
-  tooltip: boolean;
   presentation: NonNullable<ReturnType<typeof resolveThreadPullRequestBadgePresentation>>;
-  isStack: boolean;
+  opensList: boolean;
   url: string | undefined;
-  onOpenStack: () => void;
+  onOpenList: () => void;
   onOpenPullRequest: (event: MouseEvent<HTMLElement>) => void;
 }) {
-  const onClick = isStack
+  const onClick = opensList
     ? (event: MouseEvent<HTMLElement>) => {
         event.preventDefault();
         event.stopPropagation();
-        onOpenStack();
+        onOpenList();
       }
     : onOpenPullRequest;
-  const element = isStack ? (
+  const element = opensList ? (
     <button type="button" />
   ) : (
     <a href={url} target="_blank" rel="noopener noreferrer" />
   );
-  const content = (
-    <span className={cn("contents font-normal text-xs tabular-nums", presentation.toneClassName)}>
-      <presentation.Icon aria-hidden className="size-3 shrink-0" />
-      {/* An element, not bare text: bare text takes its line box from the control, which
-          inherits the row's size, so beside a text-sm title it sat below the other meta. */}
-      <span>{presentation.text}</span>
-    </span>
-  );
-  // The sidebar's PR link relies on the thread hover card for the linked PR list, so it renders
-  // its content itself instead of inside a tooltip trigger.
-  const bare = !isStack && !tooltip;
   // The caller's control (InlineButton, ComposerControl) renders as the link or stack button
   // through its own render prop; useRender merges the badge's behavior into it.
   const control = useRender({
@@ -281,13 +265,20 @@ function PullRequestBadge({
       "aria-label": presentation.label,
       onPointerDown: (event: MouseEvent<HTMLElement>) => event.stopPropagation(),
       onClick,
-      ...(bare ? { children: content } : {}),
     },
   });
-  if (bare) return control;
   return (
     <Tooltip>
-      <TooltipTrigger render={control}>{content}</TooltipTrigger>
+      <TooltipTrigger render={control}>
+        <span
+          className={cn("contents font-normal text-xs tabular-nums", presentation.toneClassName)}
+        >
+          <presentation.Icon aria-hidden className="size-3 shrink-0" />
+          {/* An element, not bare text: bare text takes its line box from the control, which
+              inherits the row's size, so beside a text-sm title it sat below the other meta. */}
+          <span>{presentation.text}</span>
+        </span>
+      </TooltipTrigger>
       <TooltipPopup side="top">{presentation.label}</TooltipPopup>
     </Tooltip>
   );

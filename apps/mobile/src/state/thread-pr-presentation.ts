@@ -22,7 +22,7 @@ export interface ThreadPrPresentation {
   /** Provider-side last activity, bounding when a terminal state landed. */
   readonly updatedAt: string | null;
   readonly url: string;
-  /** Pull request number, with an additional link count when more are linked. */
+  /** Compact pull request number or linked count, e.g. "3774" or "+2". */
   readonly label: string;
   /** Full, provider-aware label for assistive technologies. */
   readonly accessibilityLabel: string;
@@ -63,8 +63,8 @@ export function presentThreadLinkedPullRequests(
   const badge = resolveThreadPullRequestBadge(links);
   if (link === null || badge === null) return null;
   const snapshot = link.snapshot;
-  const additionalCount = badge.kind === "pull-request" && badge.others > 0 ? badge.others : null;
-  const isMultiple = badge.kind === "stack" || additionalCount !== null;
+  const linkedCount = badge.kind === "pull-request" && badge.others > 0 ? badge.others + 1 : null;
+  const isMultiple = badge.kind === "stack" || linkedCount !== null;
   const state = isMultiple
     ? badge.state === "draft"
       ? "open"
@@ -76,8 +76,8 @@ export function presentThreadLinkedPullRequests(
   const label =
     badge.kind === "stack"
       ? String(badge.layers)
-      : additionalCount !== null
-        ? `${link.number}+${additionalCount}`
+      : linkedCount !== null
+        ? `+${linkedCount}`
         : String(link.number);
   return {
     kind: badge.kind,
@@ -91,8 +91,8 @@ export function presentThreadLinkedPullRequests(
     accessibilityLabel:
       badge.kind === "stack"
         ? `${badge.layers} pull requests in stack, ${isDraft ? "draft" : (state ?? "status pending")}`
-        : additionalCount !== null
-          ? `#${link.number} pull request ${!snapshot ? "status pending" : snapshot.state === "open" && snapshot.isDraft ? "draft" : snapshot.state}, ${additionalCount} more linked; overall ${badge.state}`
+        : linkedCount !== null
+          ? `${linkedCount} linked pull requests, overall ${badge.state}`
           : `#${link.number} pull request ${state === null ? "status pending" : isDraft ? "draft" : state}`,
     textClassName:
       state === null || isDraft

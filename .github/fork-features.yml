@@ -2456,31 +2456,24 @@ features:
       retire_when: Upstream shares cached repository label metadata across pull requests while refreshing, keeps applied state specific to the current pull request, and applies label edits optimistically with rollback on failure.
 
   - id: pull-request-linked-extras
-    title: Show the current pull request and additional link count
-    status: retiring
-    prs: [537, 587]
+    title: List the branch pull request in the thread hover card
+    status: maintained
+    prs: [587]
     invariants:
-      - Web and mobile show the current pull request number followed by +1 for one additional unrelated link and +2 for two; a lone link shows its number and stacks show their total layer count.
-      - The badge's additional count agrees with its accessibility label; the sidebar PR link relies on the thread hover card for the linked PR list instead of showing a second tooltip.
-      - The thread hover card lists the badge's pull request when the thread has no linked pull requests, including one found through the thread's branch.
+      - The sidebar thread hover card lists the badge's pull request when the thread has no linked pull requests, including one found through the thread's branch; linked pull requests are listed as before.
+    rationale: A thread whose badge comes from the pull request found through its branch, such as one an agent opened with `gh pr create` without linking it, otherwise shows a number on the row and no pull request in the card. The badge itself follows upstream; the fork's earlier label format and no-tooltip rule were retired in favour of upstream's badge button and tooltip.
     implementation_paths:
-      - apps/mobile/src/state/thread-pr-presentation.ts
       - apps/web/src/components/Sidebar.tsx
       - apps/web/src/components/ThreadStatusIndicators.tsx
     upstream_paths:
-      - apps/mobile/src/state/thread-pr-presentation.ts
       - apps/web/src/components/Sidebar.tsx
       - apps/web/src/components/ThreadStatusIndicators.tsx
     tests:
-      - apps/mobile/src/state/use-thread-pr.test.ts
       - apps/web/src/components/ThreadStatusIndicators.test.tsx
     upstream:
-      status: partial
-      tracking:
-        - https://github.com/pingdotgg/t3code/pull/11104
-        - https://github.com/pingdotgg/t3code/pull/13211
-        - https://github.com/pingdotgg/t3code/pull/2829
-      retire_when: Upstream's pull request badge button and its pull request list tooltip are taken in. The maintainer chose upstream's badge over this label format and the hover-card-only list.
+      status: unassessed
+      tracking: []
+      retire_when: Upstream's thread hover card lists the pull request a thread's badge found through its branch when the thread has no linked pull requests.
 
   - id: pull-request-live-refresh
     title: Keep open pull request details current
