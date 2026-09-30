@@ -139,6 +139,15 @@ describe("upstream intake audit", () => {
     assert.include(result.summary, "Manual approval required");
   });
 
+  it("blocks a candidate whose own fork feature ledger is invalid", () => {
+    const result = audit({
+      candidateLedgerErrors: ["Candidate fork feature ledger: x.tracking must be sorted."],
+    });
+
+    assert.isFalse(result.valid);
+    assert.include(result.errors, "Candidate fork feature ledger: x.tracking must be sorted.");
+  });
+
   it("blocks a candidate whose upstream migration history differs from upstream", () => {
     const result = audit({
       changedPaths: ["apps/server/src/persistence/Migrations.ts"],
