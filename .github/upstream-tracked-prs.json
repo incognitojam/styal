@@ -29,6 +29,10 @@
       "reason": "Fixes a mobile launch crash on threads with a PR stack, introduced by #10839."
     },
     {
+      "pr": 11577,
+      "reason": "An agent click in a preview tab takes keyboard focus from the composer, even from a hidden tab in another thread. This hosts preview pages outside the app window's focus hierarchy so an agent click cannot move focus; restoring focus after the click (#13914) still lets a few keystrokes reach the page. Reworks page display, input and capture, so it overlaps hidden-tab capture, recording and the mini player. Watching, not importing early."
+    },
+    {
       "pr": 11611,
       "reason": "Android draws assistant message timestamps and copy buttons over the message text, and link icons over list item text."
     },
