@@ -4,7 +4,7 @@ import {
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { VariantProps } from "class-variance-authority";
 import { Badge } from "../ui/badge";
 import { buttonVariants } from "../ui/button";
@@ -55,6 +55,16 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
+  /**
+   * Effort dial shown when the trigger opens the popover. The full model
+   * list is shown instead while `view` is "all".
+   */
+  dialPanel?: ReactNode;
+  view?: "dial" | "models" | "all";
+  /** Muted text after the model name, such as the dial level. */
+  triggerDetail?: string | null;
+  /** Tooltip for the trigger when it can say more than the label. */
+  triggerTooltip?: string | null;
 }) {
   const [uncontrolledIsMenuOpen, setUncontrolledIsMenuOpen] = useState(false);
   const isMenuOpen = props.open ?? uncontrolledIsMenuOpen;
@@ -117,7 +127,10 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     }
 
     const shouldAllowOverlayScroll = (target: EventTarget | null) => {
-      return target instanceof Element && target.closest("[data-model-picker-content]");
+      return (
+        target instanceof Element &&
+        target.closest("[data-model-picker-content], [data-effort-dial]") !== null
+      );
     };
     const preventBackgroundWheel = (event: WheelEvent) => {
       if (shouldAllowOverlayScroll(event.target)) {
@@ -209,8 +222,18 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             >
               {props.triggerLabel ?? triggerTitle}
             </TooltipTrigger>
-            <TooltipPopup side="top">{props.triggerLabel ?? triggerLabel}</TooltipPopup>
+            <TooltipPopup side="top">
+              {props.triggerTooltip ?? props.triggerLabel ?? triggerLabel}
+            </TooltipPopup>
           </Tooltip>
+          {props.triggerDetail ? (
+            <span
+              className="shrink-0 whitespace-nowrap text-muted-foreground"
+              data-chat-provider-model-picker-detail="true"
+            >
+              {props.triggerDetail}
+            </span>
+          ) : null}
           {selectedModel?.isUnavailable && props.triggerLabel === undefined ? (
             <Badge variant="outline" size="sm">
               Unavailable
@@ -227,22 +250,28 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         className="before:hidden [--viewport-inline-padding:0]"
         viewportClassName="overflow-hidden! rounded-[calc(var(--radius-lg)-1px)] p-0 [clip-path:inset(0_round_calc(var(--radius-lg)-1px))]"
       >
-        <ModelPickerContent
-          activeInstanceId={activeInstanceId}
-          model={props.model}
-          lockedProvider={props.lockedProvider}
-          lockedContinuationGroupKey={props.lockedContinuationGroupKey ?? null}
-          instanceEntries={props.instanceEntries}
-          {...(props.keybindings ? { keybindings: props.keybindings } : {})}
-          modelOptionsByInstance={props.modelOptionsByInstance}
-          terminalOpen={props.terminalOpen ?? false}
-          onRequestClose={() => setIsMenuOpen(false)}
-          {...(props.onOpenProviderSetup ? { onOpenProviderSetup: props.onOpenProviderSetup } : {})}
-          {...(props.getModelDisabledReason
-            ? { getModelDisabledReason: props.getModelDisabledReason }
-            : {})}
-          onInstanceModelChange={handleInstanceModelChange}
-        />
+        {props.dialPanel && props.view !== "all" ? (
+          props.dialPanel
+        ) : (
+          <ModelPickerContent
+            activeInstanceId={activeInstanceId}
+            model={props.model}
+            lockedProvider={props.lockedProvider}
+            lockedContinuationGroupKey={props.lockedContinuationGroupKey ?? null}
+            instanceEntries={props.instanceEntries}
+            {...(props.keybindings ? { keybindings: props.keybindings } : {})}
+            modelOptionsByInstance={props.modelOptionsByInstance}
+            terminalOpen={props.terminalOpen ?? false}
+            onRequestClose={() => setIsMenuOpen(false)}
+            {...(props.onOpenProviderSetup
+              ? { onOpenProviderSetup: props.onOpenProviderSetup }
+              : {})}
+            {...(props.getModelDisabledReason
+              ? { getModelDisabledReason: props.getModelDisabledReason }
+              : {})}
+            onInstanceModelChange={handleInstanceModelChange}
+          />
+        )}
       </PopoverPopup>
     </Popover>
   );
