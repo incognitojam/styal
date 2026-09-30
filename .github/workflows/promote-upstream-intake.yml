@@ -113,6 +113,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          git fetch --no-tags https://github.com/pingdotgg/t3code.git '+refs/heads/main:refs/remotes/upstream/main'
           vp run --filter @t3tools/scripts intake:check -- \
             --base "${{ steps.candidate.outputs.base_sha }}" \
             --head "${{ steps.candidate.outputs.candidate_sha }}"

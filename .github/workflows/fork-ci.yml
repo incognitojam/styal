@@ -78,8 +78,10 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
-      - name: Fetch main
-        run: git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+      - name: Fetch main and upstream
+        run: |
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          git fetch --no-tags https://github.com/pingdotgg/t3code.git '+refs/heads/main:refs/remotes/upstream/main'
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1
@@ -153,6 +155,11 @@ jobs:
 
       - name: Check fork feature ledger
         run: vp run --filter @t3tools/scripts ledger:check
+
+      - name: Check upstream migration history
+        run: |
+          git fetch --no-tags https://github.com/pingdotgg/t3code.git '+refs/heads/main:refs/remotes/upstream/main'
+          vp run --filter @t3tools/scripts migrations:check
 
       - name: Typecheck
         run: vpr typecheck
