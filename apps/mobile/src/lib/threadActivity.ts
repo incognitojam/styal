@@ -1937,9 +1937,32 @@ function threadFeedEntryTurnId(entry: ThreadFeedEntry): TurnId | null {
   return entry.type === "activity-group" ? entry.turnId : null;
 }
 
+/** Keep promptless replacement turns in the active response until work settles. */
+export function deriveThreadFeedActiveTurnIds(
+  feed: ReadonlyArray<ThreadFeedEntry>,
+  latestTurn: ThreadFeedLatestTurn | null,
+  isWorking: boolean,
+): ReadonlySet<TurnId> {
+  const turnIds = new Set<TurnId>();
+  const unsettledTurnId = deriveUnsettledTurnId(latestTurn);
+  if (unsettledTurnId === null) return turnIds;
+  turnIds.add(unsettledTurnId);
+  if (!isWorking) return turnIds;
+
+  const latestUserMessageIndex = feed.findLastIndex(
+    (entry) => entry.type === "message" && entry.message.role === "user",
+  );
+  for (let index = latestUserMessageIndex + 1; index < feed.length; index += 1) {
+    const turnId = threadFeedEntryTurnId(feed[index]!);
+    if (turnId !== null) turnIds.add(turnId);
+  }
+  return turnIds;
+}
+
 function deriveThreadFeedTurnFolds(
   feed: ReadonlyArray<ThreadFeedEntry>,
   latestTurn: ThreadFeedLatestTurn | null,
+  activeTurnIds: ReadonlySet<TurnId>,
 ): ReadonlyMap<string, ThreadFeedTurnFold> {
   const continuedTurnRoots = deriveContinuedTurnRoots(feed, (entry) => ({
     turnId: threadFeedEntryTurnId(entry),
@@ -1993,11 +2016,10 @@ function deriveThreadFeedTurnFolds(
     group.entries.push(entry);
   }
 
-  const unsettledTurnId = deriveUnsettledTurnId(latestTurn);
   const foldsByAnchorId = new Map<string, ThreadFeedTurnFold>();
   for (const [turnId, group] of groupsByTurnId) {
     const { entries } = group;
-    if (unsettledTurnId !== null && group.turnIds.has(unsettledTurnId)) {
+    if ([...group.turnIds].some((turnId) => activeTurnIds.has(turnId))) {
       continue;
     }
     if (entries.some((entry) => entry.type === "message" && entry.message.streaming)) {
@@ -2112,9 +2134,10 @@ export function deriveThreadFeedPresentation(
   const activeTailGroup = sourceFeed.findLast(
     (entry) => entry.type !== "message" || !isEmptyMessage(entry),
   );
-  const foldsByAnchorId = deriveThreadFeedTurnFolds(sourceFeed, latestTurn);
   const unsettledTurnId = deriveUnsettledTurnId(latestTurn);
   const isWorking = activeWorkStartedAt !== null;
+  const activeTurnIds = deriveThreadFeedActiveTurnIds(sourceFeed, latestTurn, isWorking);
+  const foldsByAnchorId = deriveThreadFeedTurnFolds(sourceFeed, latestTurn, activeTurnIds);
   const collapsedEntryIds = new Set<string>();
   for (const fold of foldsByAnchorId.values()) {
     if (!expandedTurnIds.has(fold.turnId)) {

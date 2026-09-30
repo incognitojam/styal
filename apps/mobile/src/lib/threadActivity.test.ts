@@ -17,6 +17,7 @@ import {
   agentSpawnSummary,
   buildPendingUserInputAnswers,
   buildThreadFeed,
+  deriveThreadFeedActiveTurnIds,
   deriveThreadFeedPresentation,
   isPendingUserInputOptionSelected,
   setPendingUserInputCustomAnswer,
@@ -360,6 +361,15 @@ describe("buildThreadFeed", () => {
           updatedAt: "2026-04-01T00:00:01.000Z",
         },
         {
+          id: MessageId.make("next-request"),
+          role: "user",
+          text: "Run checks",
+          turnId: null,
+          streaming: false,
+          createdAt: "2026-04-01T00:00:02.500Z",
+          updatedAt: "2026-04-01T00:00:02.500Z",
+        },
+        {
           id: MessageId.make("streaming-message"),
           role: "assistant",
           text: "Current response",
@@ -405,13 +415,13 @@ describe("buildThreadFeed", () => {
       latestTurn.startedAt,
     );
     const updatedMessage = {
-      ...thread.messages[1]!,
+      ...thread.messages[2]!,
       text: "Current response with more text",
       updatedAt: "2026-04-01T00:00:05.000Z",
     };
     const nextFeed = buildThreadFeed({
       ...thread,
-      messages: [thread.messages[0]!, updatedMessage],
+      messages: [thread.messages[0]!, thread.messages[1]!, updatedMessage],
     });
     const nextRows = deriveThreadFeedPresentation(
       nextFeed,
@@ -2256,6 +2266,122 @@ describe("buildThreadFeed", () => {
     expect(serializedToolOutputs).toBe(1);
     expect(group.activities[0]?.getCopyText()).toContain('"output"');
     expect(serializedToolOutputs).toBe(1);
+  });
+
+  it("keeps a promptless restart open until completion, but respects a new user message", () => {
+    const oldTurnId = TurnId.make("turn-before-restart");
+    const newTurnId = TurnId.make("turn-after-restart");
+    const thread = makeThread({
+      id: ThreadId.make("thread-promptless-restart"),
+      projectId: ProjectId.make("project-1"),
+      title: "Restarted work",
+      latestTurn: {
+        turnId: newTurnId,
+        state: "running",
+        requestedAt: "2026-04-01T00:01:00.000Z",
+        startedAt: "2026-04-01T00:01:00.000Z",
+        completedAt: null,
+        assistantMessageId: null,
+      },
+      messages: [
+        {
+          id: MessageId.make("request"),
+          role: "user",
+          text: "Inspect the project",
+          turnId: null,
+          streaming: false,
+          createdAt: "2026-04-01T00:00:00.000Z",
+          updatedAt: "2026-04-01T00:00:00.000Z",
+        },
+        {
+          id: MessageId.make("plan"),
+          role: "assistant",
+          text: "Checking files",
+          turnId: oldTurnId,
+          streaming: false,
+          createdAt: "2026-04-01T00:00:05.000Z",
+          updatedAt: "2026-04-01T00:00:05.000Z",
+        },
+        {
+          id: MessageId.make("progress"),
+          role: "assistant",
+          text: "Continuing the checks",
+          turnId: oldTurnId,
+          streaming: false,
+          createdAt: "2026-04-01T00:00:20.000Z",
+          updatedAt: "2026-04-01T00:00:20.000Z",
+        },
+      ],
+      activities: [oldTurnId, newTurnId].map((turnId, index) =>
+        makeActivity({
+          id: EventId.make(index === 0 ? "old-work" : "new-work"),
+          kind: "tool.updated",
+          tone: "tool",
+          summary: "Reading files",
+          turnId,
+          createdAt: index === 0 ? "2026-04-01T00:00:10.000Z" : "2026-04-01T00:01:05.000Z",
+          payload: { title: "Reading files", itemType: "file_read", status: "inProgress" },
+        }),
+      ),
+    });
+    const present = (value: OrchestrationThread, active: string | null) =>
+      deriveThreadFeedPresentation(
+        buildThreadFeed(value),
+        value.latestTurn,
+        new Set(),
+        new Set(),
+        active,
+      );
+    expect(deriveThreadFeedActiveTurnIds(buildThreadFeed(thread), thread.latestTurn, true)).toEqual(
+      new Set([oldTurnId, newTurnId]),
+    );
+    expect(
+      deriveThreadFeedActiveTurnIds(buildThreadFeed(thread), thread.latestTurn, false),
+    ).toEqual(new Set([newTurnId]));
+    const rows = present(thread, thread.latestTurn!.startedAt);
+    expect(rows.some((entry) => entry.type === "turn-fold")).toBe(false);
+    expect(rows.map((entry) => entry.id)).toContain("progress");
+    expect(rows.filter((entry) => entry.type === "work-toggle" && entry.shimmer)).toEqual([
+      expect.objectContaining({ groupId: "work-group:new-work" }),
+    ]);
+    expect(rows.some((entry) => entry.type === "thinking")).toBe(false);
+
+    const settled = present(
+      {
+        ...thread,
+        latestTurn: {
+          ...thread.latestTurn!,
+          state: "completed",
+          completedAt: "2026-04-01T00:01:30.000Z",
+        },
+      },
+      null,
+    );
+    expect(settled.some((entry) => entry.type === "turn-fold" && entry.turnId === oldTurnId)).toBe(
+      true,
+    );
+
+    const steered = present(
+      {
+        ...thread,
+        messages: [
+          ...thread.messages,
+          {
+            id: MessageId.make("steer"),
+            role: "user",
+            text: "Check another file",
+            turnId: null,
+            streaming: false,
+            createdAt: "2026-04-01T00:00:30.000Z",
+            updatedAt: "2026-04-01T00:00:30.000Z",
+          },
+        ],
+      },
+      thread.latestTurn!.startedAt,
+    );
+    expect(steered.some((entry) => entry.type === "turn-fold" && entry.turnId === oldTurnId)).toBe(
+      true,
+    );
   });
 
   describe("a turn continued after a server restart", () => {
