@@ -63,7 +63,7 @@ node scripts/upstream/queue.ts status --fork-ref intake/<batch>
 vp run --filter @t3tools/scripts intake:check -- --base origin/main --head intake/<batch>
 ```
 
-The successful local audit inspects the remote branch and reports the next action: push the candidate, watch Fork CI, address a failed run, or dispatch promotion. Rerun the audit after completing the reported step. Review the combined batch once, including source completeness, relevant exceptions, fork compatibility, and observed behavior. Do not repeat upstream's entire manual test plan for unchanged code.
+The successful local audit inspects the remote branch and reports the next action: push the candidate, watch Fork CI, address a failed run, or dispatch promotion. Rerun the audit after completing the reported step. Review the combined batch once, including source completeness, relevant exceptions, fork compatibility, and observed behavior. The audit's Commits section lists each candidate commit under its upstream PR with its `Fork adaptation` note, and shows how its change differs from the upstream commits it imports; a commit reported as matching upstream changes exactly the lines upstream changed. Do not repeat upstream's entire manual test plan for unchanged code.
 
 ## 4. Promote without a PR
 

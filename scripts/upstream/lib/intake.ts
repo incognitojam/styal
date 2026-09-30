@@ -1,5 +1,6 @@
 import type { ForkFeatureLedger } from "../../fork-feature-ledger.ts";
 import { findForkFeatureOverlaps } from "../../fork-feature-ledger.ts";
+import { type CommitReview, renderCommitReviews } from "./commit-review.ts";
 import { parseUpstreamProvenance } from "./provenance.ts";
 
 export interface UpstreamIntakeAuditInput {
@@ -17,6 +18,8 @@ export interface UpstreamIntakeAuditInput {
   readonly migrationErrors?: ReadonlyArray<string>;
   /** Upstream migration manifest entries the candidate adds or changes, such as "adds 51 Name". */
   readonly migrationChanges?: ReadonlyArray<string>;
+  /** Each candidate commit compared with its upstream sources, in candidate order. */
+  readonly commitReviews?: ReadonlyArray<CommitReview>;
 }
 
 export interface UpstreamIntakeAudit {
@@ -186,7 +189,7 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
   }
   if (overlapFeatureIds.length > 0) {
     manualReviewReasons.push(
-      `tracked fork feature paths overlap (${overlapPaths.size} ${overlapPaths.size === 1 ? "path" : "paths"}, ${overlapFeatureIds.length} features); see Fork feature overlap below`,
+      `tracked fork feature paths overlap (${overlapPaths.size} ${overlapPaths.size === 1 ? "path" : "paths"}, ${overlapFeatureIds.length} features); see Commits and Fork feature overlap below`,
     );
   }
 
@@ -215,6 +218,10 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
               `- \`${path}\`: ${featureIds.map((id) => `\`${id}\``).join(", ")}`,
           )
           .join("\n")}\n`;
+  const commitSection = renderCommitReviews({
+    upstreamRepository: input.ledger.upstream_repository,
+    reviews: input.commitReviews ?? [],
+  });
   const summary = `# Upstream intake audit
 
 | Field | Value |
@@ -240,7 +247,7 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
       .join(", ") || "None"
   } |
 | Decision | ${promotion} |
-${errorSection}${manualReviewSection}${overlapSection}
+${errorSection}${manualReviewSection}${commitSection}${overlapSection}
 > This audit is report-only. It does not update \`main\`.
 `;
 
