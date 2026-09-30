@@ -75,6 +75,10 @@
     {
       "pr": 13914,
       "reason": "Imported early from its unmerged commits: puts keyboard focus back in the app after an agent click in a preview tab. When it merges, the queue takes it and must reconcile with that import. Known gap to recheck then: a person clicking into the page during an agent click gets focus moved back to the composer, because the interruption check reads an error tag that desktop IPC does not carry."
+    },
+    {
+      "pr": 14445,
+      "reason": "Imported early from its unmerged commits: Claude Haiku 4.5 shows thinking On by default, matching Claude Code, and Claude text generation sends a thinking setting only when one was chosen. When it merges, the queue takes it and must reconcile with that import; the fork's manifest copy was reapplied with its own updatedAt, so expect a conflict there only."
     }
   ]
 }
