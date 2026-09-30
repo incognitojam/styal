@@ -492,6 +492,7 @@ features:
       - Shutdown confirmation is available on recovery screens; failed presentation alone arms a subsequent Quit override that preserves cleanup, cannot be consumed by restart actions, and clears when the renderer recovers or displays a dialog.
       - Available desktop updates download automatically while preserving accurate available, downloading, downloaded, install, and retry state across updater events and pre-install refreshes.
       - Downloaded updates install on normal app quit; the sidebar only offers restart once an installer is ready, while Settings presents automatic checks and downloads as status and reserves download actions for failure retries.
+      - A downloaded update remains visible in the sidebar during rechecks, with restart temporarily disabled and release notes retained until the check settles.
       - A late native window-close event cannot bypass cleanup and the selected-channel installer handoff after scoped lifecycle listeners are removed.
       - Changing update channels clears installation eligibility; only a ready download from the selected channel may install on quit, including on macOS where native staging waits until shutdown.
       - Remote desktop updates reuse the automatic-download reservation and recover failed installations without bypassing local manual-restart confirmation or install-on-quit behavior.
