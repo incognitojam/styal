@@ -14,6 +14,7 @@ import {
   CircleSlashIcon,
   CircleXIcon,
   EyeOffIcon,
+  FilterXIcon,
   FolderGit2Icon,
   GitPullRequestDraftIcon,
   LayersIcon,
@@ -412,6 +413,7 @@ export function PullRequestFiltersMenu({
   projectEnvironmentId,
   unavailable,
   onProject,
+  onReset,
 }: {
   onOpenChange?: (open: boolean) => void;
   state: PullRequestListState;
@@ -455,6 +457,8 @@ export function PullRequestFiltersMenu({
   unavailable: ReadonlyMap<string, string>;
   /** The environment comes with the project id, since picking a row picks a specific server's copy of it. */
   onProject: (projectId: ProjectId | undefined, environmentId: EnvironmentId | undefined) => void;
+  /** Puts every group above back to its default; offered only while one is off it. */
+  onReset: () => void;
 }) {
   const selectedLabels = (filters.labels ?? []).flatMap((group) => group);
   const filterCount = [
@@ -600,6 +604,15 @@ export function PullRequestFiltersMenu({
             else if (projectId !== undefined) onProject(undefined, undefined);
           }}
         />
+        {filterCount > 0 ? (
+          <>
+            <MenuSeparator />
+            <MenuItem onClick={onReset}>
+              <FilterXIcon aria-hidden className="size-3.5" />
+              Reset filters
+            </MenuItem>
+          </>
+        ) : null}
       </MenuPopup>
     </Menu>
   );

@@ -67,11 +67,36 @@ function menu(overrides: Partial<Parameters<typeof PullRequestFiltersMenu>[0]>) 
     projectEnvironmentId: undefined,
     unavailable: new Map(),
     onProject: () => undefined,
+    onReset: () => undefined,
     ...overrides,
   });
 }
 
+/** The menu item whose own text reads "Reset filters". */
+function findResetItem(
+  node: ReactNode,
+): ReactElement<{ readonly children?: ReactNode; readonly onClick: () => void }> | undefined {
+  for (const child of Children.toArray(node)) {
+    if (!isValidElement(child)) continue;
+    const props = child.props as { readonly children?: ReactNode; readonly onClick?: () => void };
+    if (props.onClick && Children.toArray(props.children).includes("Reset filters")) {
+      return child as ReactElement<{ readonly children?: ReactNode; readonly onClick: () => void }>;
+    }
+    const nested = findResetItem(props.children);
+    if (nested) return nested;
+  }
+  return undefined;
+}
+
 describe("pull request filters menu", () => {
+  it("offers a reset only while a filter is off its default", () => {
+    expect(findResetItem(menu({}))).toBeUndefined();
+    expect(findResetItem(menu({ filters: { draft: "hide" } }))).toBeDefined();
+    const onReset = vi.fn();
+    findResetItem(menu({ state: "closed", onReset }))?.props.onClick();
+    expect(onReset).toHaveBeenCalledTimes(1);
+  });
+
   it("does not emit a change when the selected state is chosen again", () => {
     const onState = vi.fn();
     const group = findValueChange(findLabeledGroup(menu({ onState }), "State"));

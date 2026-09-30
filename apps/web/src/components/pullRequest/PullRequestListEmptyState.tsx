@@ -12,7 +12,7 @@ import { RefreshIcon } from "~/components/ui/refresh-icon";
  * with no project to read from — leave the button out, since pressing it could only repeat what
  * is already happening or ask nobody.
  */
-import { PlusIcon, SearchIcon } from "lucide-react";
+import { FilterXIcon, PlusIcon, SearchIcon } from "lucide-react";
 
 import { openCommandPalette } from "../../commandPaletteBus";
 import { Button } from "../ui/button";
@@ -75,12 +75,13 @@ export function PullRequestListEmptyState({
   loadingMore,
   refreshing,
   onClearQuery,
+  onResetFilters,
   onLoadMore,
   onRefresh,
 }: {
   /** The text being searched for, so the reader is told what was searched rather than guessing. */
   query: string;
-  /** True when a state, involvement or project filter is narrowing the list. */
+  /** True when any filter is narrowing the list. */
   filtered: boolean;
   /** A search is in flight; the rows on screen are the previous answer. */
   searching: boolean;
@@ -94,6 +95,7 @@ export function PullRequestListEmptyState({
   /** A re-read of the hosts is already running, from here or from the header. */
   refreshing: boolean;
   onClearQuery: () => void;
+  onResetFilters: () => void;
   onLoadMore: () => void;
   onRefresh: () => void;
 }) {
@@ -147,6 +149,12 @@ export function PullRequestListEmptyState({
             <SearchIcon className="size-3.5" />
             Clear search
           </Button>
+          {filtered ? (
+            <Button size="sm" variant="outline" onClick={onResetFilters}>
+              <FilterXIcon className="size-3.5" />
+              Reset filters
+            </Button>
+          ) : null}
           {/* The hosts answered this query once; a pull request opened since then would answer
               differently, and nothing on screen says which of the two the reader is looking at. */}
           <Button size="sm" variant="outline" disabled={refreshing} onClick={onRefresh}>
@@ -165,11 +173,17 @@ export function PullRequestListEmptyState({
         <EmptyTitle>{filtered ? "Nothing under these filters" : "No pull requests"}</EmptyTitle>
         <EmptyDescription>
           {filtered
-            ? "Widen the state, involvement or project filter to see more."
+            ? "Reset or widen the filters to see more."
             : "Pull requests from every project in this workspace appear here."}
         </EmptyDescription>
       </EmptyHeader>
       <EmptyContent className="flex-row flex-wrap justify-center gap-2">
+        {filtered ? (
+          <Button size="sm" variant="outline" onClick={onResetFilters}>
+            <FilterXIcon className="size-3.5" />
+            Reset filters
+          </Button>
+        ) : null}
         {canLoadMore ? (
           <Button size="sm" variant="outline" disabled={loadingMore} onClick={onLoadMore}>
             {loadingMore ? "Loading..." : "Load more pull requests"}

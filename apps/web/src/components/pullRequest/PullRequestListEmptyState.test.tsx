@@ -24,6 +24,7 @@ const baseProps = {
   loadingMore: false,
   refreshing: false,
   onClearQuery: () => {},
+  onResetFilters: () => {},
   onLoadMore: () => {},
   onRefresh: () => {},
 };
@@ -50,5 +51,11 @@ describe("PullRequestListEmptyState", () => {
     expect(render({ query: "fix" })).toContain("Check again");
     expect(render({ canLoadMore: true })).toContain("Load more pull requests");
     expect(render({ refreshing: true })).toContain("Checking...");
+  });
+
+  it("offers to reset the filters only while they narrow the list", () => {
+    expect(render({})).not.toContain("Reset filters");
+    expect(render({ filtered: true })).toContain("Reset filters");
+    expect(render({ filtered: true, query: "fix" })).toContain("Reset filters");
   });
 });
