@@ -88,6 +88,18 @@ function isFileAtRevision(revision: string, path: string): boolean {
   return result.status === 0 && result.stdout.trim() === "blob";
 }
 
+/** Validates the candidate's own ledger, as Fork CI's ledger check would. */
+function candidateLedgerReview(headSha: string): ReadonlyArray<string> {
+  try {
+    const candidate = decodeForkFeatureLedger(git(["show", `${headSha}:${ledgerRelativePath}`]));
+    return validateForkFeatureLedger(candidate, repoRoot, {
+      isFile: (path) => isFileAtRevision(headSha, path),
+    }).map((error) => `Candidate fork feature ledger: ${error}`);
+  } catch (error) {
+    return [`Candidate fork feature ledger could not be read: ${String(error)}`];
+  }
+}
+
 /** Checks the candidate's upstream migration history against fetched upstream. */
 function upstreamMigrationReview(input: {
   readonly baseSha: string;
@@ -392,6 +404,7 @@ try {
   });
   if (ledgerErrors.length > 0) throw new Error(ledgerErrors.join("\n"));
 
+  const candidateLedgerErrors = candidateLedgerReview(headSha);
   const migrations = upstreamMigrationReview({
     baseSha,
     headSha,
@@ -411,6 +424,7 @@ try {
     changedPaths: lines(git(["diff", "--name-only", "--no-renames", `${baseSha}...${headSha}`])),
     ledger,
     commitPullRequests: upstreamCommitPullRequests(ledger.upstream_repository, commitMessages),
+    candidateLedgerErrors,
     migrationErrors: migrations.errors,
     migrationChanges: migrations.changes,
     commitReviews: withScratchDirectory((scratch) =>

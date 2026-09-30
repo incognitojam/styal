@@ -14,6 +14,8 @@ export interface UpstreamIntakeAuditInput {
   readonly ledger: ForkFeatureLedger;
   /** Upstream PRs associated with each Upstream-Commit SHA that shares a commit with Upstream-PR. */
   readonly commitPullRequests: ReadonlyMap<string, ReadonlyArray<number>>;
+  /** Problems in the candidate's own fork feature ledger. */
+  readonly candidateLedgerErrors?: ReadonlyArray<string>;
   /** Differences between the candidate's upstream migration history and upstream's. */
   readonly migrationErrors?: ReadonlyArray<string>;
   /** Upstream migration manifest entries the candidate adds or changes, such as "adds 51 Name". */
@@ -165,6 +167,7 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
 
   const provenance = parseUpstreamProvenance(input.commitMessages);
   errors.push(...provenance.errors);
+  errors.push(...(input.candidateLedgerErrors ?? []));
   errors.push(...(input.migrationErrors ?? []));
   const overlaps = findForkFeatureOverlaps(input.ledger, input.changedPaths);
   const overlapFeatureIds = overlaps.map(({ feature }) => feature.id);
