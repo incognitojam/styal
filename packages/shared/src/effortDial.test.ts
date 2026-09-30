@@ -6,7 +6,7 @@ import {
   resolveEffortDialLevel,
   type EffortDialContext,
   type EffortDialModel,
-} from "./effortDial";
+} from "./effortDial.ts";
 
 const CODEX_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max", "ultracode"];
