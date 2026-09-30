@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-09-29T20:30:00Z",
+  "updatedAt": "2026-09-30T15:17:50Z",
   "currentModels": {
     "codex": [
       "gpt-6.1-sol",
@@ -632,7 +632,8 @@
               {
                 "id": "thinking",
                 "label": "Thinking",
-                "type": "boolean"
+                "type": "boolean",
+                "currentValue": true
               }
             ]
           },
