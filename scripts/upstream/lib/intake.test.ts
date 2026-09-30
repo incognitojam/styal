@@ -5,15 +5,18 @@ import * as NodeURL from "node:url";
 import { assert, describe, it } from "@effect/vitest";
 import { parse } from "yaml";
 
-import type { ForkFeatureLedger } from "./fork-feature-ledger.ts";
+import type { ForkFeatureLedger } from "../../fork-feature-ledger.ts";
 import {
   auditUpstreamIntakeCandidate,
   formatForkCiWatchCommand,
   formatUpstreamIntakePromotionCommand,
   formatUpstreamIntakePushCommand,
-} from "./upstream-intake.ts";
+} from "./intake.ts";
 
-const repoRoot = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
+const repoRoot = NodePath.resolve(
+  NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
+  "../../..",
+);
 const ciWorkflowPath = NodePath.resolve(repoRoot, ".github/workflows/fork-ci.yml");
 const promotionWorkflowPath = NodePath.resolve(
   repoRoot,
@@ -372,11 +375,11 @@ describe("upstream intake audit", () => {
     );
     assert.include(
       projectedReport?.run ?? "",
-      'upstream-lag-report.ts --fork-ref "$CANDIDATE_SHA"',
+      'upstream/lag-report.ts --fork-ref "$CANDIDATE_SHA"',
     );
     assert.include(
       projectedReport?.run ?? "",
-      'upstream-tracked-prs-report.ts --fork-ref "$CANDIDATE_SHA"',
+      'upstream/tracked-prs-report.ts --fork-ref "$CANDIDATE_SHA"',
     );
 
     assert.equal(workflow.jobs.promote.needs, "validate");
@@ -413,6 +416,6 @@ describe("upstream intake audit", () => {
     };
     const tracked = workflow.jobs.report.steps.find((step) => step.name === "Report tracked PRs");
     assert.equal(tracked?.env?.GH_TOKEN, "${{ github.token }}");
-    assert.include(tracked?.run ?? "", 'upstream-tracked-prs-report.ts >> "$GITHUB_STEP_SUMMARY"');
+    assert.include(tracked?.run ?? "", 'upstream/tracked-prs-report.ts >> "$GITHUB_STEP_SUMMARY"');
   });
 });

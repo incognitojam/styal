@@ -1,6 +1,6 @@
-import type { ForkFeatureLedger } from "./fork-feature-ledger.ts";
-import { findForkFeatureOverlaps } from "./fork-feature-ledger.ts";
-import { parseUpstreamProvenance } from "./upstream-provenance.ts";
+import type { ForkFeatureLedger } from "../../fork-feature-ledger.ts";
+import { findForkFeatureOverlaps } from "../../fork-feature-ledger.ts";
+import { parseUpstreamProvenance } from "./provenance.ts";
 
 export interface UpstreamIntakeAuditInput {
   readonly baseSha: string;

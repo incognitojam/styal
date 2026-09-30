@@ -9,13 +9,9 @@ import {
   assessEarlyCandidates,
   earlierSourcesTouching,
   resolveEarlyDependencies,
-} from "./upstream-early.ts";
-import { parseUpstreamProvenance, withoutFencedExamples } from "./upstream-provenance.ts";
-import {
-  decodeTrackedPRs,
-  fetchTrackedPRMetadata,
-  trackedPRStatuses,
-} from "./upstream-tracked-prs.ts";
+} from "./lib/early.ts";
+import { parseUpstreamProvenance, withoutFencedExamples } from "./lib/provenance.ts";
+import { decodeTrackedPRs, fetchTrackedPRMetadata, trackedPRStatuses } from "./lib/tracked-prs.ts";
 
 export interface IntakeState {
   upstreamRepository: string;
@@ -417,7 +413,7 @@ function main() {
   const [command = "status", source] = positionals;
   if (values.help) {
     console.log(
-      "Usage: node scripts/upstream-queue.ts status|next|explain <PR-or-SHA> [--count 20] [--json] [--refresh-metadata]\n       node scripts/upstream-queue.ts early [PR ...] [--count 20] [--through upstream/main] [--json]\n       node scripts/upstream-queue.ts advance <SHA> | target <SHA>\nReads .github/upstream-intake.json and fetched origin/main, upstream/main. Status also reports .github/upstream-tracked-prs.json. No fetch, checkout, cherry-pick, or GitHub writes. advance/target edit only the local state file.",
+      "Usage: node scripts/upstream/queue.ts status|next|explain <PR-or-SHA> [--count 20] [--json] [--refresh-metadata]\n       node scripts/upstream/queue.ts early [PR ...] [--count 20] [--through upstream/main] [--json]\n       node scripts/upstream/queue.ts advance <SHA> | target <SHA>\nReads .github/upstream-intake.json and fetched origin/main, upstream/main. Status also reports .github/upstream-tracked-prs.json. No fetch, checkout, cherry-pick, or GitHub writes. advance/target edit only the local state file.",
     );
     return;
   }
@@ -445,7 +441,7 @@ function main() {
   const count = Number(values.count);
   if (!Number.isSafeInteger(count) || count < 1)
     throw new Error("Count must be a positive integer.");
-  const root = NodePath.resolve(import.meta.dirname, "..");
+  const root = NodePath.resolve(import.meta.dirname, "../..");
   const run: Run = (cmd, args) =>
     NodeChildProcess.execFileSync(cmd, args, {
       cwd: root,

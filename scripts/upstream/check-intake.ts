@@ -10,17 +10,20 @@ import {
   decodeForkFeatureLedger,
   ledgerRelativePath,
   validateForkFeatureLedger,
-} from "./fork-feature-ledger.ts";
+} from "../fork-feature-ledger.ts";
 import {
   auditUpstreamIntakeCandidate,
   formatForkCiWatchCommand,
   formatUpstreamIntakePromotionCommand,
   formatUpstreamIntakePushCommand,
-} from "./upstream-intake.ts";
-import { parseUpstreamProvenance } from "./upstream-provenance.ts";
-import { fetchAssociations } from "./upstream-queue.ts";
+} from "./lib/intake.ts";
+import { parseUpstreamProvenance } from "./lib/provenance.ts";
+import { fetchAssociations } from "./queue.ts";
 
-const repoRoot = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
+const repoRoot = NodePath.resolve(
+  NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
+  "../..",
+);
 
 function flag(name: string): string {
   const index = process.argv.indexOf(name);

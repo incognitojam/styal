@@ -1,4 +1,4 @@
-import type { QueueEntry } from "./upstream-queue.ts";
+import type { QueueEntry } from "../queue.ts";
 
 export interface EarlyCandidate {
   pr: number;

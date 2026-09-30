@@ -4,8 +4,8 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeUtil from "node:util";
-import { parseUpstreamProvenance } from "./upstream-provenance.ts";
-import { decodeState } from "./upstream-queue.ts";
+import { parseUpstreamProvenance } from "./lib/provenance.ts";
+import { decodeState } from "./queue.ts";
 
 type Run = (command: string, args: string[]) => string;
 
@@ -401,7 +401,7 @@ export function renderLagReport(
     "",
     "</details>",
     "",
-    `Upstream integrations are first-parent commits on upstream main after the divergence point. A fork commit imports one when its \`Upstream-PR\`, \`Upstream-Commit\`, or \`cherry picked from\` metadata names it, and baseline advances in the intake state file account for everything up to the baseline. The in-order tip is the longest accounted prefix of upstream, matching \`upstream-queue.ts status\`. Fork times are committer times on \`${refs.fork}\`, which approximate when intake landed. The catch-up date assumes both ${summary.windowDays}-day paces hold.`,
+    `Upstream integrations are first-parent commits on upstream main after the divergence point. A fork commit imports one when its \`Upstream-PR\`, \`Upstream-Commit\`, or \`cherry picked from\` metadata names it, and baseline advances in the intake state file account for everything up to the baseline. The in-order tip is the longest accounted prefix of upstream, matching \`queue.ts status\`. Fork times are committer times on \`${refs.fork}\`, which approximate when intake landed. The catch-up date assumes both ${summary.windowDays}-day paces hold.`,
     "",
   ];
   return lines.join("\n");
@@ -418,11 +418,11 @@ function main() {
   });
   if (values.help) {
     console.log(
-      "Usage: node scripts/upstream-lag-report.ts [--fork-ref origin/main] [--upstream-ref upstream/main]\nPrints a Markdown report of how far the fork trails upstream. Reads fetched refs only.",
+      "Usage: node scripts/upstream/lag-report.ts [--fork-ref origin/main] [--upstream-ref upstream/main]\nPrints a Markdown report of how far the fork trails upstream. Reads fetched refs only.",
     );
     return;
   }
-  const root = NodePath.resolve(import.meta.dirname, "..");
+  const root = NodePath.resolve(import.meta.dirname, "../..");
   const run: Run = (command, args) =>
     NodeChildProcess.execFileSync(command, args, {
       cwd: root,

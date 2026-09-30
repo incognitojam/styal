@@ -1,5 +1,5 @@
-import type { QueueEntry } from "./upstream-queue.ts";
-import { parseUpstreamProvenance, withoutFencedExamples } from "./upstream-provenance.ts";
+import type { QueueEntry } from "../queue.ts";
+import { parseUpstreamProvenance, withoutFencedExamples } from "./provenance.ts";
 
 export interface TrackedPR {
   readonly number: number;
