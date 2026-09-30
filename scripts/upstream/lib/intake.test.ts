@@ -390,7 +390,7 @@ describe("upstream intake audit", () => {
     );
     assert.equal(tokenStep?.uses, "actions/create-github-app-token@v3");
     assert.equal(tokenStep?.with?.["permission-contents"], "write");
-    assert.equal(tokenStep?.with?.["app-id"], "${{ vars.STYAL_INTAKE_APP_ID }}");
+    assert.equal(tokenStep?.with?.["client-id"], "${{ vars.STYAL_INTAKE_APP_ID }}");
 
     const promoteStep = workflow.jobs.promote.steps.find(
       (step) => step.name === "Fast-forward main to the candidate",
