@@ -225,6 +225,8 @@ features:
       - Provider-owned schemas and installed Claude Code versions filter manifest data before clients receive model aliases, presentation metadata, effort mappings, and context-window capabilities.
       - The fork can publish model availability independently of an app release without treating Claude's initialization response as an account-entitlement list.
       - New Claude Code threads prefer Opus 5.5 when the installed CLI supports it; older CLIs use an available model from the filtered catalog.
+      - Claude Sonnet 5.5 has its own profile that follows the Claude Code catalog, with medium as the default effort and Ultracode offered, instead of reusing the Sonnet 5 profile, whose default effort is high.
+      - Claude Sonnet 5 and Claude Opus 5 are legacy models.
     implementation_paths:
       - apps/server/src/provider/ClaudeModelCatalog.ts
       - apps/server/src/provider/ClaudeModelManifest.ts
@@ -250,6 +252,7 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/13094
+        - https://github.com/pingdotgg/t3code/pull/14152
         - https://github.com/pingdotgg/t3code/pull/9078
         - https://github.com/pingdotgg/t3code/pull/9084
       retire_when: Upstream supports a downstream-owned manifest source and publication policy, or the fork adopts upstream's catalog unchanged.
