@@ -192,6 +192,34 @@ describe("OpenAI status notice", () => {
     ).toEqual(["CLI", "Responses", "Login", "Codex API"]);
   });
 
+  it("ignores Space degradation while retaining a concurrent Responses incident", () => {
+    const components = [{ name: "Space", status: "degraded_performance" }];
+    expect(resolveOpenAIStatusNotice(statusSummary({ indicator: "minor", components }))).toBeNull();
+
+    expect(
+      resolveOpenAIStatusNotice(
+        statusSummary({
+          indicator: "minor",
+          components: [...components, { name: "Responses", status: "degraded_performance" }],
+          incidents: [
+            {
+              components: [{ name: "Space" }, { name: "Responses" }],
+              impact: "minor",
+              name: "Elevated latency for some API requests",
+              status: "identified",
+            },
+          ],
+        }),
+      ),
+    ).toMatchObject({
+      label: "Outage: Responses",
+      affectedComponents: [{ name: "Responses" }],
+      activeIncidents: [
+        { affectedComponents: ["Responses"], name: "Elevated latency for some API requests" },
+      ],
+    });
+  });
+
   describe.each(["ChatGPT Work", "ChatGPT Space Pages"])("%s incidents", (surface) => {
     it.each([undefined, []])("ignores a componentless incident (%j)", (components) => {
       expect(
