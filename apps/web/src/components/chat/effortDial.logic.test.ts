@@ -7,7 +7,11 @@ import {
 import { describe, expect, it } from "vite-plus/test";
 
 import { deriveProviderInstanceEntries } from "../../providerInstances";
-import { buildEffortDialModels, getEffortDialSpeedControl } from "./effortDial.logic";
+import {
+  buildEffortDialModelChoices,
+  buildEffortDialModels,
+  getEffortDialSpeedControl,
+} from "./effortDial.logic";
 
 const claudeOpus: ServerProviderModel = {
   slug: "claude-opus-5-5",
@@ -105,6 +109,28 @@ describe("buildEffortDialModels", () => {
       },
       { instanceId: "codex", driver: "codex", model: "gpt-6.1-sol", efforts: ["low", "medium"] },
     ]);
+  });
+});
+
+describe("buildEffortDialModelChoices", () => {
+  it("offers current models on the thread's provider only", () => {
+    const entries = deriveProviderInstanceEntries([
+      provider({
+        instanceId: "claudeAgent",
+        driver: "claudeAgent",
+        models: [
+          claudeOpus,
+          { ...claudeOpus, slug: "claude-opus-4-8", isLegacy: true },
+          { ...claudeOpus, slug: "my-model", isCustom: true },
+        ],
+      }),
+      provider({ instanceId: "codex", driver: "codex", models: [codexSol] }),
+    ]);
+    const slugs = (lockedDriver: "claudeAgent" | null) =>
+      buildEffortDialModelChoices(entries, lockedDriver).map((choice) => choice.model.slug);
+
+    expect(slugs(null)).toEqual(["claude-opus-5-5", "gpt-6.1-sol"]);
+    expect(slugs("claudeAgent")).toEqual(["claude-opus-5-5"]);
   });
 });
 

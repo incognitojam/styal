@@ -63,7 +63,7 @@ export const DiffLayout = Schema.Literals(["stacked", "split"]);
 export type DiffLayout = typeof DiffLayout.Type;
 const DEFAULT_DIFF_LAYOUT: DiffLayout = "stacked";
 
-/** Whether the composer's effort slider offers dial levels or the model's own efforts. */
+/** "levels" when Codex and Claude use the dial's default models; "custom" after choosing a model, whose own efforts the slider then offers. */
 export const EffortControl = Schema.Literals(["levels", "custom"]);
 export type EffortControl = typeof EffortControl.Type;
 

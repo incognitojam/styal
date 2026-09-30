@@ -707,8 +707,8 @@ features:
     invariants:
       - For Codex and Claude models, the composer's model control offers Light, Standard, Deep and Ultra instead of each model's reasoning levels; each level resolves to a model and effort from a fixed table, across both providers for a new thread when both are ready.
       - A started thread's levels stay on its provider, and levels that would switch its model are marked and explained before the next turn.
-      - A model chosen from the model list that the table does not cover stays selected; the levels change only its effort.
-      - Choosing Custom instead offers the selected model's own efforts, and the choice persists as a client setting.
+      - Choosing a specific Codex or Claude model switches the slider to that model's own efforts; choosing Default returns to the levels. The mode persists as a client setting.
+      - The dial's model list offers only current built-in models on the thread's provider, with every other model behind All models.
       - Other providers keep their own reasoning controls.
     implementation_paths:
       - apps/web/src/components/chat/ChatComposer.tsx

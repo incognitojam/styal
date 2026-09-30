@@ -54,6 +54,33 @@ export function buildEffortDialModels(
   return models;
 }
 
+export interface EffortDialModelChoice {
+  readonly entry: ProviderInstanceEntry;
+  readonly model: ServerProviderModel;
+}
+
+/**
+ * Models offered in place of the levels: current, built-in models with an
+ * effort option on ready Codex and Claude instances, limited to the locked
+ * provider in a started thread. Legacy and custom models stay in the full list.
+ */
+export function buildEffortDialModelChoices(
+  entries: ReadonlyArray<ProviderInstanceEntry>,
+  lockedDriver: EffortDialDriver | null,
+): ReadonlyArray<EffortDialModelChoice> {
+  const choices: EffortDialModelChoice[] = [];
+  for (const entry of entries) {
+    const driver = entry.driverKind;
+    if (!isEffortDialDriver(driver) || !isProviderInstancePickerReady(entry)) continue;
+    if (lockedDriver !== null && driver !== lockedDriver) continue;
+    for (const model of entry.models) {
+      if (model.isCustom || model.isLegacy || !findEffortDescriptor(driver, model)) continue;
+      choices.push({ entry, model });
+    }
+  }
+  return choices;
+}
+
 /** `options` with `id` set to `value`, keeping every other option. */
 export function withProviderOption(
   options: ReadonlyArray<ProviderOptionSelection> | undefined,

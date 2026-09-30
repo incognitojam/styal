@@ -56,11 +56,11 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
   /**
-   * Effort dial shown when the trigger opens the popover. The model list is
-   * shown instead while `view` is "models".
+   * Effort dial shown when the trigger opens the popover. The full model
+   * list is shown instead while `view` is "all".
    */
   dialPanel?: ReactNode;
-  view?: "dial" | "models";
+  view?: "dial" | "models" | "all";
   /** Muted text after the model name, such as the dial level. */
   triggerDetail?: string | null;
   /** Tooltip for the trigger when it can say more than the label. */
@@ -250,7 +250,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         className="before:hidden [--viewport-inline-padding:0]"
         viewportClassName="overflow-hidden! rounded-[calc(var(--radius-lg)-1px)] p-0 [clip-path:inset(0_round_calc(var(--radius-lg)-1px))]"
       >
-        {props.dialPanel && props.view !== "models" ? (
+        {props.dialPanel && props.view !== "all" ? (
           props.dialPanel
         ) : (
           <ModelPickerContent

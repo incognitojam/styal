@@ -1,6 +1,6 @@
 import type { EffortControl, ProviderDriverKind } from "@t3tools/contracts";
-import { ChevronRightIcon, CircleDollarSignIcon } from "lucide-react";
-import type { CSSProperties } from "react";
+import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, CircleDollarSignIcon } from "lucide-react";
+import type { CSSProperties, ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
@@ -17,25 +17,36 @@ export interface EffortDialStop {
   readonly switchesModel: boolean;
 }
 
+interface EffortDialModelIdentity {
+  readonly driverKind: ProviderDriverKind;
+  readonly providerName: string;
+  readonly accentColor?: string | undefined;
+  readonly name: string;
+}
+
+export interface EffortDialModelRow extends EffortDialModelIdentity {
+  readonly key: string;
+  readonly selected: boolean;
+}
+
 export interface EffortDialPanelProps {
-  /** Dial levels, or the selected model's own efforts. */
+  /** The slider, or the list of models to choose instead of the levels. */
+  readonly view: "dial" | "models";
+  /** Dial levels ("Default"), or the selected model's own efforts. */
   readonly control: EffortControl;
   readonly stops: ReadonlyArray<EffortDialStop>;
   /** Index into `stops`, or -1 when the selection matches none. */
   readonly selectedIndex: number;
   readonly note: string | null;
-  readonly model: {
-    readonly driverKind: ProviderDriverKind;
-    readonly providerName: string;
-    readonly accentColor?: string | undefined;
-    readonly name: string;
-    readonly effortLabel: string | null;
-  };
+  readonly model: EffortDialModelIdentity & { readonly effortLabel: string | null };
   readonly speed: EffortDialSpeedControl | null;
+  readonly models: ReadonlyArray<EffortDialModelRow>;
   readonly onSelect: (index: number) => void;
-  readonly onControlChange: (control: EffortControl) => void;
   readonly onSpeedChange: (value: string) => void;
-  readonly onChooseModel: () => void;
+  readonly onViewChange: (view: "dial" | "models") => void;
+  readonly onChooseDefault: () => void;
+  readonly onChooseModel: (key: string) => void;
+  readonly onShowAllModels: () => void;
 }
 
 // The fill cools to warm as effort rises and ends violet, where cost is highest.
@@ -45,26 +56,62 @@ const FILL_COLORS = [
   "oklch(0.7 0.16 290)",
   "oklch(0.7 0.18 305)",
 ] as const;
+// Half the track height: the thumb's travel is inset by it so the thumb stays inside.
+const TRACK_RADIUS = "14px";
 
-function SegmentedRow(props: {
-  readonly label: string;
-  readonly value: string;
-  readonly choices: ReadonlyArray<{ value: string; label: string; description?: string }>;
+function ModelIdentity(props: { readonly model: EffortDialModelIdentity }) {
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <ProviderInstanceIcon
+        driverKind={props.model.driverKind}
+        displayName={props.model.providerName}
+        accentColor={props.model.accentColor}
+        className="size-4"
+        iconClassName="size-4"
+      />
+      <span className="truncate">{props.model.name}</span>
+    </span>
+  );
+}
+
+function PanelRow(props: {
+  readonly children: ReactNode;
+  readonly trailing?: ReactNode;
+  readonly onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="flex min-h-8 w-full cursor-pointer items-center justify-between gap-3 rounded-sm px-2 py-1 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent"
+      onClick={props.onClick}
+    >
+      {props.children}
+      {props.trailing ? (
+        <span className="flex shrink-0 items-center gap-1 text-muted-foreground text-xs">
+          {props.trailing}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
+function SpeedRow(props: {
+  readonly speed: EffortDialSpeedControl;
   readonly onChange: (value: string) => void;
 }) {
   return (
     <div className="flex min-h-8 items-center justify-between gap-3 px-2 text-sm">
-      <span>{props.label}</span>
+      <span>Speed</span>
       <ToggleGroup
-        aria-label={props.label}
+        aria-label="Speed"
         variant="segmented"
-        value={[props.value]}
+        value={[props.speed.value]}
         onValueChange={(value) => {
           const next = value[0];
           if (typeof next === "string") props.onChange(next);
         }}
       >
-        {props.choices.map((choice) =>
+        {props.speed.choices.map((choice) =>
           choice.description ? (
             <Tooltip key={choice.value}>
               <TooltipTrigger
@@ -88,8 +135,50 @@ function SegmentedRow(props: {
   );
 }
 
-/** Effort slider with the model and speed its choice resolves to. */
+function ModelList(props: EffortDialPanelProps) {
+  return (
+    <div className="flex w-72 flex-col p-1.5" data-effort-dial="true">
+      <button
+        type="button"
+        className="flex cursor-pointer items-center gap-1 rounded-sm px-1 py-1 text-muted-foreground text-xs outline-none hover:text-foreground focus-visible:text-foreground"
+        onClick={() => props.onViewChange("dial")}
+      >
+        <ChevronLeftIcon className="size-3.5" />
+        Select model
+      </button>
+      <PanelRow
+        trailing={props.control === "levels" ? <CheckIcon className="size-4" /> : null}
+        onClick={props.onChooseDefault}
+      >
+        <span className="flex min-w-0 flex-col">
+          <span>Default</span>
+          <span className="text-muted-foreground text-xs">Picks a model for each level</span>
+        </span>
+      </PanelRow>
+      {props.models.map((model) => (
+        <PanelRow
+          key={model.key}
+          trailing={model.selected ? <CheckIcon className="size-4" /> : null}
+          onClick={() => props.onChooseModel(model.key)}
+        >
+          <ModelIdentity model={model} />
+        </PanelRow>
+      ))}
+      <div className="mx-1 my-1 h-px bg-border" />
+      <PanelRow
+        trailing={<ChevronRightIcon className="size-3.5 opacity-60" />}
+        onClick={props.onShowAllModels}
+      >
+        <span className="text-muted-foreground">All models</span>
+      </PanelRow>
+    </div>
+  );
+}
+
+/** Effort slider under the model it applies to, or the list of models to choose from. */
 export function EffortDialPanel(props: EffortDialPanelProps) {
+  if (props.view === "models") return <ModelList {...props} />;
+
   const count = props.stops.length;
   const index = props.selectedIndex;
   const position = (stopIndex: number) =>
@@ -102,136 +191,116 @@ export function EffortDialPanel(props: EffortDialPanelProps) {
   };
   // Thumb and fill move by transform so a change animates without layout.
   const motion = "transition-transform duration-150 ease-out motion-reduce:transition-none";
+  const inset = { left: TRACK_RADIUS, right: TRACK_RADIUS } satisfies CSSProperties;
 
   return (
     <div className="flex w-72 flex-col p-1.5" data-effort-dial="true">
-      <div className="relative mx-4 mt-2 h-5">
-        {props.stops.map((stop, stopIndex) =>
-          // A model's own efforts are too many to label, so only the chosen one is named.
-          props.control === "custom" && stopIndex !== index ? null : (
-            <button
-              key={stop.key}
-              type="button"
-              // The range input below owns keyboard focus; the labels are pointer shortcuts.
-              tabIndex={-1}
-              disabled={!stop.available}
-              className={cn(
-                "absolute top-0 cursor-pointer whitespace-nowrap text-sm transition-colors duration-150 motion-reduce:transition-none disabled:cursor-default disabled:opacity-40",
-                // End labels lean inward so they stay clear of the popover edges.
-                stopIndex === 0
-                  ? "-translate-x-2"
-                  : stopIndex === count - 1
-                    ? "-translate-x-[calc(100%-0.5rem)]"
-                    : "-translate-x-1/2",
-                stopIndex === index
-                  ? "font-medium text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-              style={{ left: position(stopIndex) }}
-              onClick={() => selectStop(stopIndex)}
-            >
-              {stop.label}
-            </button>
-          ),
-        )}
-      </div>
-      <div className="relative mx-4 mb-1 h-7">
-        <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-foreground/14" />
-        <div
-          className={cn("absolute inset-x-0 top-1/2 h-1 origin-left rounded-full", motion)}
-          style={{
-            transform: `translateY(-50%) scaleX(${fraction})`,
-            background: `linear-gradient(90deg, ${FILL_COLORS[0]}, ${fillColor})`,
-          }}
-        />
-        {props.stops.map((stop, stopIndex) => (
-          <span
-            key={stop.key}
-            aria-hidden="true"
-            className={cn(
-              "pointer-events-none absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-150 motion-reduce:transition-none",
-              stopIndex < index ? "bg-white/60" : "bg-foreground/28",
-              !stop.available && "opacity-30",
-              stop.switchesModel &&
-                "outline-[1.5px] outline-muted-foreground outline-offset-3 outline-dashed",
-            )}
-            style={{ left: position(stopIndex) }}
+      <PanelRow
+        trailing={
+          <>
+            {props.model.effortLabel}
+            <ChevronRightIcon className="size-3.5 opacity-60" />
+          </>
+        }
+        onClick={() => props.onViewChange("models")}
+      >
+        <ModelIdentity model={props.model} />
+      </PanelRow>
+      <div className="px-2 pt-2 pb-1">
+        <div className="relative h-5" style={{ marginInline: TRACK_RADIUS }}>
+          {props.stops.map((stop, stopIndex) =>
+            // A model's own efforts are too many to label, so only the chosen one is named.
+            props.control === "custom" && stopIndex !== index ? null : (
+              <button
+                key={stop.key}
+                type="button"
+                // The range input below owns keyboard focus; the labels are pointer shortcuts.
+                tabIndex={-1}
+                disabled={!stop.available}
+                className={cn(
+                  "absolute top-0 cursor-pointer whitespace-nowrap text-sm transition-colors duration-150 motion-reduce:transition-none disabled:cursor-default disabled:opacity-40",
+                  // End labels line up with the track's ends rather than centring on the stop.
+                  stopIndex === 0
+                    ? "-translate-x-3.5"
+                    : stopIndex === count - 1
+                      ? "-translate-x-[calc(100%-0.875rem)]"
+                      : "-translate-x-1/2",
+                  stopIndex === index
+                    ? "font-medium text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                style={{ left: position(stopIndex) }}
+                onClick={() => selectStop(stopIndex)}
+              >
+                {stop.label}
+              </button>
+            ),
+          )}
+        </div>
+        <div className="relative mt-1.5 h-7 overflow-hidden rounded-full bg-foreground/10">
+          <div
+            className={cn("absolute inset-0 rounded-full", motion)}
+            style={{
+              // Ends just past the thumb: at `fraction` of the travel plus one track radius.
+              transform: `translateX(calc(${1 - fraction} * (2 * ${TRACK_RADIUS} - 100%)))`,
+              background: `linear-gradient(90deg, ${FILL_COLORS[0]}, ${fillColor})`,
+              opacity: index < 0 ? 0 : 1,
+            }}
           />
-        ))}
-        <div
-          aria-hidden="true"
-          className={cn("pointer-events-none absolute inset-0", motion)}
-          style={{ transform: `translateX(${fraction * 100}%)` }}
-        >
-          <span
-            className={cn(
-              "absolute top-1/2 left-0 size-4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground shadow-[0_0_0_4px_var(--dial-ring),0_1px_3px_rgb(0_0_0/0.5)] transition-opacity duration-150 motion-reduce:transition-none",
-              index < 0 && "opacity-0",
-              selectedStop?.switchesModel &&
-                "outline-[1.5px] outline-muted-foreground outline-offset-3 outline-dashed",
-            )}
-            style={
-              {
-                "--dial-ring": `color-mix(in oklab, ${fillColor} 35%, transparent)`,
-              } as CSSProperties
-            }
+          <div className="absolute inset-y-0" style={inset}>
+            {props.stops.map((stop, stopIndex) => (
+              <span
+                key={stop.key}
+                aria-hidden="true"
+                className={cn(
+                  "pointer-events-none absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-150 motion-reduce:transition-none",
+                  stopIndex < index ? "bg-white/70" : "bg-foreground/30",
+                  !stop.available && "opacity-30",
+                  stop.switchesModel &&
+                    "outline-[1.5px] outline-muted-foreground outline-offset-3 outline-dashed",
+                )}
+                style={{ left: position(stopIndex) }}
+              />
+            ))}
+            <div
+              aria-hidden="true"
+              className={cn("pointer-events-none absolute inset-0", motion)}
+              style={{ transform: `translateX(${fraction * 100}%)` }}
+            >
+              <span
+                className={cn(
+                  "absolute top-1/2 left-0 size-6 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_1px_4px_rgb(0_0_0/0.35)] transition-opacity duration-150 motion-reduce:transition-none",
+                  index < 0 && "opacity-0",
+                  selectedStop?.switchesModel &&
+                    "outline-[1.5px] outline-muted-foreground outline-offset-2 outline-dashed",
+                )}
+              />
+            </div>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={Math.max(count - 1, 0)}
+            step={1}
+            value={Math.max(index, 0)}
+            aria-label="Effort"
+            aria-valuetext={selectedStop?.label ?? "Custom"}
+            className="absolute inset-0 size-full cursor-pointer appearance-none bg-transparent opacity-0"
+            onChange={(event) => selectStop(Number(event.currentTarget.value))}
+            // With nothing selected the input already rests on the first stop,
+            // so choosing it fires no change event.
+            onClick={(event) => selectStop(Number(event.currentTarget.value))}
           />
         </div>
-        <input
-          type="range"
-          min={0}
-          max={Math.max(count - 1, 0)}
-          step={1}
-          value={Math.max(index, 0)}
-          aria-label="Effort"
-          aria-valuetext={selectedStop?.label ?? "Custom"}
-          className="absolute inset-x-[-0.5rem] inset-y-0 w-[calc(100%+1rem)] cursor-pointer appearance-none bg-transparent opacity-0"
-          onChange={(event) => selectStop(Number(event.currentTarget.value))}
-          // With nothing selected the input already rests on the first stop,
-          // so choosing it fires no change event.
-          onClick={(event) => selectStop(Number(event.currentTarget.value))}
-        />
       </div>
       {props.note ? (
         <p className="px-2 pb-1 text-warning text-xs leading-snug">{props.note}</p>
       ) : null}
-      <div className="mx-1 my-1 h-px bg-border" />
-      <button
-        type="button"
-        className="flex min-h-8 w-full cursor-pointer items-center justify-between gap-3 rounded-sm px-2 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent"
-        onClick={props.onChooseModel}
-      >
-        <span className="flex min-w-0 items-center gap-2">
-          <ProviderInstanceIcon
-            driverKind={props.model.driverKind}
-            displayName={props.model.providerName}
-            accentColor={props.model.accentColor}
-            className="size-4"
-            iconClassName="size-4"
-          />
-          <span className="truncate">{props.model.name}</span>
-        </span>
-        <span className="flex shrink-0 items-center gap-1 text-muted-foreground text-xs">
-          {props.model.effortLabel ? `${props.model.effortLabel} effort` : null}
-          <ChevronRightIcon className="size-3.5 opacity-60" />
-        </span>
-      </button>
-      <SegmentedRow
-        label="Effort"
-        value={props.control}
-        choices={[
-          { value: "levels", label: "Levels" },
-          { value: "custom", label: "Custom" },
-        ]}
-        onChange={(value) => props.onControlChange(value === "custom" ? "custom" : "levels")}
-      />
       {props.speed ? (
-        <SegmentedRow
-          label="Speed"
-          value={props.speed.value}
-          choices={props.speed.choices}
-          onChange={props.onSpeedChange}
-        />
+        <>
+          <div className="mx-1 my-1 h-px bg-border" />
+          <SpeedRow speed={props.speed} onChange={props.onSpeedChange} />
+        </>
       ) : null}
     </div>
   );
