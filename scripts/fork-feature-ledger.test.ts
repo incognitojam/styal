@@ -151,6 +151,7 @@ features: []
 
     const overlaps = findForkFeatureOverlaps(ledger, [
       "apps/web/src/AppRoot.tsx",
+      "apps/web/src/components/ThreadNotificationCoordinator.tsx",
       "apps/web/src/components/sidebar/SidebarChrome.tsx",
       "apps/web/src/untracked.ts",
     ]);
@@ -158,7 +159,10 @@ features: []
     assert.deepEqual(
       overlaps.map(({ feature, paths }) => ({ id: feature.id, paths })),
       [
-        { id: "completion-sounds", paths: ["apps/web/src/AppRoot.tsx"] },
+        {
+          id: "completion-sounds",
+          paths: ["apps/web/src/components/ThreadNotificationCoordinator.tsx"],
+        },
         { id: "first-turn-unread-state", paths: ["apps/web/src/AppRoot.tsx"] },
         {
           id: "github-outage-status",
@@ -173,7 +177,10 @@ features: []
     try {
       const changedPathsFile = NodePath.join(fixtureRoot, "changed-paths.txt");
       const summaryFile = NodePath.join(fixtureRoot, "summary.md");
-      NodeFS.writeFileSync(changedPathsFile, "apps/web/src/AppRoot.tsx\n");
+      NodeFS.writeFileSync(
+        changedPathsFile,
+        "apps/web/src/components/ThreadNotificationCoordinator.tsx\n",
+      );
 
       const result = NodeChildProcess.spawnSync(
         process.execPath,
