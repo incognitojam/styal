@@ -81,7 +81,7 @@ function SidebarUpdateControl() {
   const [isActionPending, setIsActionPending] = useState(false);
   const action = state ? resolveDesktopUpdateButtonAction(state) : "none";
   const tooltip = state ? getDesktopUpdateButtonTooltip(state) : "Restart to update";
-  const isInteractionDisabled = isActionPending;
+  const isInteractionDisabled = isActionPending || state?.status === "checking";
   const [releaseNotesPopoverHandle] = useState(() => PopoverCreateHandle());
   const suppressReleaseNotesFocusOpen = useRef(false);
   const releaseNotesPopupRef = useRef<HTMLDivElement>(null);

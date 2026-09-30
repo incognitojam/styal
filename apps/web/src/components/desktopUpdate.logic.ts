@@ -52,7 +52,10 @@ export function shouldShowDesktopUpdateButton(state: DesktopUpdateState | null):
   if (!state || !state.enabled) {
     return false;
   }
-  return resolveDesktopUpdateButtonAction(state) === "install";
+  return (
+    resolveDesktopUpdateButtonAction(state) === "install" ||
+    (state.status === "checking" && state.downloadedVersion !== null)
+  );
 }
 
 export type DesktopUpdateButtonTone = "cta" | "quiet" | "idle";
@@ -116,6 +119,9 @@ export function getArm64IntelBuildWarningDescription(state: DesktopUpdateState):
 }
 
 export function getDesktopUpdateButtonTooltip(state: DesktopUpdateState): string {
+  if (state.status === "checking" && state.downloadedVersion !== null) {
+    return `Update ${state.downloadedVersion} downloaded. Checking for newer updates…`;
+  }
   if (state.status === "available") {
     if (state.errorContext === "download") {
       return `Download failed for ${state.availableVersion ?? "the available update"}. Click to retry.`;

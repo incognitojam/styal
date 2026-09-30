@@ -110,7 +110,7 @@ describe("desktop update button state", () => {
     expect(resolveDesktopUpdateButtonAction(state)).toBe("none");
   });
 
-  it("hides the install action while checking for a newer release", () => {
+  it("keeps the downloaded update visible while checking without offering install", () => {
     const state: DesktopUpdateState = {
       ...baseState,
       status: "checking",
@@ -119,6 +119,12 @@ describe("desktop update button state", () => {
       downloadPercent: 100,
     };
     expect(resolveDesktopUpdateButtonAction(state)).toBe("none");
+    expect(shouldShowDesktopUpdateButton(state)).toBe(true);
+    expect(getDesktopUpdateButtonTooltip(state)).toBe(
+      "Update 1.1.0 downloaded. Checking for newer updates…",
+    );
+    expect(canCheckForUpdate(state)).toBe(false);
+    expect(shouldShowDesktopUpdateButton({ ...state, enabled: false })).toBe(false);
   });
 
   it("hides the button for non-actionable check errors", () => {
