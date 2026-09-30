@@ -196,6 +196,7 @@ import { observeResponsiveBreakpointFade, usePanelAnimationSettings } from "../.
 import { type ComposerPromptEditorHandle, ComposerPromptEditor } from "../ComposerPromptEditor";
 import { ProviderModelPicker } from "./ProviderModelPicker";
 import { EffortDialPanel } from "./EffortDialPanel";
+import { useUpdateClientSettings } from "../../hooks/useSettings";
 import {
   buildEffortDialModels,
   EFFORT_DIAL_OPTION_ID,
@@ -2389,21 +2390,42 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ?.find((candidate) => candidate.slug === model);
       return option ? getTriggerDisplayModelName(option) : model;
     };
+    const level = currentEffortDialLevel(
+      { instanceId: selectedInstanceId, model: selectedModel, effort },
+      context,
+    );
+    // Custom offers the model's own efforts; prompt-injected ones (ultrathink) are typed instead.
+    const injected = new Set(effortDescriptor.promptInjectedValues ?? []);
+    const efforts = effortDescriptor.options.filter((option) => !injected.has(option.id));
+    const custom = settings.effortControl === "custom";
     return {
-      level: currentEffortDialLevel(
-        { instanceId: selectedInstanceId, model: selectedModel, effort },
-        context,
-      ),
+      driver,
+      control: settings.effortControl,
+      level,
       targets,
-      stops: EFFORT_DIAL_LEVELS.map((level) => {
-        const target = targets.get(level) ?? null;
-        return {
-          level,
-          available: target !== null,
-          switchesModel:
-            runningModel !== undefined && target !== null && target.model !== runningModel,
-        };
-      }),
+      efforts,
+      stops: custom
+        ? efforts.map((option) => ({
+            key: option.id,
+            label: option.label,
+            available: true,
+            switchesModel: false,
+          }))
+        : EFFORT_DIAL_LEVELS.map((dialLevel) => {
+            const target = targets.get(dialLevel) ?? null;
+            return {
+              key: dialLevel,
+              label: EFFORT_DIAL_LEVEL_LABELS[dialLevel],
+              available: target !== null,
+              switchesModel:
+                runningModel !== undefined && target !== null && target.model !== runningModel,
+            };
+          }),
+      selectedIndex: custom
+        ? efforts.findIndex((option) => option.id === effort)
+        : level === null
+          ? -1
+          : EFFORT_DIAL_LEVELS.indexOf(level),
       note:
         runningModel !== undefined && selectedModel !== runningModel
           ? `Switches to ${displayName(selectedInstanceId, selectedModel)}. The next turn re-reads the whole conversation.`
@@ -2424,10 +2446,28 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedModel,
     selectedProvider,
     selectedProviderModels,
+    settings.effortControl,
   ]);
-  const onEffortDialLevelChange = useCallback(
-    (level: EffortDialLevel) => {
-      const target = effortDial?.targets.get(level);
+  const updateClientSettings = useUpdateClientSettings();
+  const onEffortDialSelect = useCallback(
+    (index: number) => {
+      if (!effortDial) return;
+      if (effortDial.control === "custom") {
+        const option = effortDial.efforts[index];
+        if (!option) return;
+        onProviderModelSelect(
+          selectedInstanceId,
+          selectedModel,
+          withProviderOption(
+            effortDial.selections,
+            EFFORT_DIAL_OPTION_ID[effortDial.driver],
+            option.id,
+          ),
+        );
+        return;
+      }
+      const level: EffortDialLevel | undefined = EFFORT_DIAL_LEVELS[index];
+      const target = level ? effortDial.targets.get(level) : undefined;
       if (!target) return;
       onProviderModelSelect(
         ProviderInstanceId.make(target.instanceId),
@@ -2439,7 +2479,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ),
       );
     },
-    [composerModelOptions, effortDial, onProviderModelSelect],
+    [composerModelOptions, effortDial, onProviderModelSelect, selectedInstanceId, selectedModel],
   );
   const onEffortDialSpeedChange = useCallback(
     (value: string) => {
@@ -2456,8 +2496,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const effortDialPanel =
     effortDial && selectedProviderEntry ? (
       <EffortDialPanel
+        control={effortDial.control}
         stops={effortDial.stops}
-        level={effortDial.level}
+        selectedIndex={effortDial.selectedIndex}
         note={effortDial.note}
         model={{
           driverKind: selectedProviderEntry.driverKind,
@@ -2467,7 +2508,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           effortLabel: effortDial.effortLabel,
         }}
         speed={effortDial.speed}
-        onLevelChange={onEffortDialLevelChange}
+        onSelect={onEffortDialSelect}
+        onControlChange={(effortControl) => updateClientSettings({ effortControl })}
         onSpeedChange={onEffortDialSpeedChange}
         onChooseModel={() => setModelPickerView("models")}
       />
@@ -2476,7 +2518,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     ? `${effortDial.modelName}, ${effortDial.effortLabel.toLowerCase()} effort`
     : null;
   const effortDialTriggerDetail = effortDial
-    ? effortDial.level
+    ? effortDial.control === "levels" && effortDial.level
       ? EFFORT_DIAL_LEVEL_LABELS[effortDial.level]
       : effortDial.effortLabel
     : null;

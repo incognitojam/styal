@@ -68,7 +68,12 @@ const NORMAL_SPEED_LABEL = "Normal";
 
 export interface EffortDialSpeedControl {
   readonly id: string;
-  readonly choices: ReadonlyArray<{ readonly value: string; readonly label: string }>;
+  readonly choices: ReadonlyArray<{
+    readonly value: string;
+    readonly label: string;
+    /** What the choice costs or does, from the provider. */
+    readonly description?: string;
+  }>;
   readonly value: string;
   /** Converts a choice back to the option value it stores. */
   readonly toOptionValue: (choice: string) => string | boolean;
@@ -87,7 +92,11 @@ export function getEffortDialSpeedControl(
       id: "fastMode",
       choices: [
         { value: "standard", label: NORMAL_SPEED_LABEL },
-        { value: "fast", label: "Fast" },
+        {
+          value: "fast",
+          label: "Fast",
+          ...(fastMode.description ? { description: fastMode.description } : {}),
+        },
       ],
       value: fastMode.currentValue === true ? "fast" : "standard",
       toOptionValue: (choice) => choice === "fast",
@@ -100,6 +109,7 @@ export function getEffortDialSpeedControl(
       choices: serviceTier.options.map((option) => ({
         value: option.id,
         label: option.id === "default" ? NORMAL_SPEED_LABEL : option.label,
+        ...(option.description ? { description: option.description } : {}),
       })),
       value:
         serviceTier.currentValue ??

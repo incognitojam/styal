@@ -63,6 +63,10 @@ reasoning effort. Once a thread has started, levels stay on its provider. A leve
 model makes the next turn re-read the whole conversation, which uses more of your plan than
 changing effort.
 
+To choose a model's exact reasoning effort instead, set **Effort** to **Custom** in the same
+control. The slider then offers every effort the model supports, and the choice is remembered on
+this device. Hover the cost icon on **Fast** to see how the provider bills faster output.
+
 Other providers keep their own reasoning controls.
 
 ## Quote an assistant response

@@ -27,7 +27,12 @@ const claudeOpus: ServerProviderModel = {
         ],
         promptInjectedValues: ["ultrathink"],
       },
-      { id: "fastMode", label: "Fast Mode", type: "boolean" },
+      {
+        id: "fastMode",
+        label: "Fast Mode",
+        type: "boolean",
+        description: "Same model, faster output.",
+      },
     ],
   },
 };
@@ -53,7 +58,7 @@ const codexSol: ServerProviderModel = {
         type: "select",
         options: [
           { id: "default", label: "Standard", isDefault: true },
-          { id: "priority", label: "Fast" },
+          { id: "priority", label: "Fast", description: "2x speed, increased usage" },
         ],
       },
     ],
@@ -108,10 +113,12 @@ describe("getEffortDialSpeedControl", () => {
     const claude = getEffortDialSpeedControl(claudeOpus, [{ id: "fastMode", value: true }]);
     expect(claude?.value).toBe("fast");
     expect(claude?.toOptionValue("standard")).toBe(false);
+    expect(claude?.choices[1]?.description).toBe("Same model, faster output.");
 
     const codex = getEffortDialSpeedControl(codexSol, undefined);
     expect(codex?.choices.map((choice) => choice.label)).toEqual(["Normal", "Fast"]);
     expect(codex?.value).toBe("default");
+    expect(codex?.choices[1]?.description).toBe("2x speed, increased usage");
   });
 
   it("offers no speed control for a model without one", () => {
