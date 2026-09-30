@@ -2225,8 +2225,9 @@ features:
       - apps/mobile/src/persistence/mobile-preferences.ts
       - apps/server/src/orchestration/Layers/ProjectionPipeline.ts
       - apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts
+      - apps/server/src/persistence/ForkMigrations.ts
+      - apps/server/src/persistence/ForkMigrations/004_ProjectionThreadLatestMessageAt.ts
       - apps/server/src/persistence/Layers/ProjectionThreads.ts
-      - apps/server/src/persistence/Migrations/051_ProjectionThreadLatestMessageAt.ts
       - apps/web/src/components/CommandPalette.logic.ts
       - apps/web/src/components/LegacySidebar.tsx
       - apps/web/src/components/Sidebar.tsx
@@ -2246,7 +2247,7 @@ features:
       - packages/contracts/src/orchestration.ts
     tests:
       - apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts
-      - apps/server/src/persistence/Migrations/051_ProjectionThreadLatestMessageAt.test.ts
+      - apps/server/src/persistence/ForkMigrations.test.ts
       - apps/web/src/components/CommandPalette.logic.test.ts
       - packages/client-runtime/src/state/thread-timestamp.test.ts
       - packages/contracts/src/settings.test.ts

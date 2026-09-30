@@ -1,9 +1,11 @@
 import * as Effect from "effect/Effect";
 import * as Migrator from "effect/unstable/sql/Migrator";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import ForkMigration0001 from "./ForkMigrations/001_ComposerDrafts.ts";
 import ForkMigration0002 from "./ForkMigrations/002_WorkspacePortAllocations.ts";
 import ForkMigration0003 from "./ForkMigrations/003_ProjectAdditionalInstructions.ts";
+import ForkMigration0004 from "./ForkMigrations/004_ProjectionThreadLatestMessageAt.ts";
 import { runMigrations } from "./Migrations.ts";
 
 const FORK_MIGRATIONS_TABLE = "yngatech_sql_migrations";
@@ -15,6 +17,7 @@ export const forkMigrationEntries = [
   [1, "ComposerDrafts", ForkMigration0001],
   [2, "WorkspacePortAllocations", ForkMigration0002],
   [3, "ProjectAdditionalInstructions", ForkMigration0003],
+  [4, "ProjectionThreadLatestMessageAt", ForkMigration0004],
 ] as const;
 
 export const forkMigrationManifest = forkMigrationEntries.map(([id, name]) => [id, name] as const);
@@ -48,7 +51,43 @@ export const runForkMigrations = Effect.fn("runForkMigrations")(function* ({
   return executedMigrations;
 });
 
+const MISPLACED_LATEST_MESSAGE_MIGRATION_ID = 51;
+const MISPLACED_LATEST_MESSAGE_MIGRATION_NAME = "ProjectionThreadLatestMessageAt";
+
+/**
+ * Nightlies from 2026-09-29 recorded fork migration `ProjectionThreadLatestMessageAt` as upstream
+ * migration 51, which would make the migrator skip upstream's own migration 51. Dropping that
+ * record lets upstream 51 run; fork migration 4 then finds the column in place and only records it.
+ */
+export const releaseMisplacedLatestMessageMigration = Effect.fn(
+  "releaseMisplacedLatestMessageMigration",
+)(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const upstreamMigrationTables = yield* sql<{ readonly name: string }>`
+    SELECT name
+    FROM sqlite_master
+    WHERE type = 'table' AND name = 'effect_sql_migrations'
+  `;
+  if (upstreamMigrationTables.length === 0) return false;
+  const misplaced = yield* sql<{ readonly migration_id: number }>`
+    SELECT migration_id
+    FROM effect_sql_migrations
+    WHERE migration_id = ${MISPLACED_LATEST_MESSAGE_MIGRATION_ID}
+      AND name = ${MISPLACED_LATEST_MESSAGE_MIGRATION_NAME}
+  `;
+  if (misplaced.length === 0) return false;
+  yield* sql`
+    DELETE FROM effect_sql_migrations
+    WHERE migration_id = ${MISPLACED_LATEST_MESSAGE_MIGRATION_ID}
+      AND name = ${MISPLACED_LATEST_MESSAGE_MIGRATION_NAME}
+  `;
+  return true;
+});
+
 export const runAllMigrations = Effect.fn("runAllMigrations")(function* () {
+  if (yield* releaseMisplacedLatestMessageMigration()) {
+    yield* Effect.log("Moved the latest message migration out of upstream migration history");
+  }
   const upstream = yield* runMigrations();
   const fork = yield* runForkMigrations();
   return { upstream, fork } as const;

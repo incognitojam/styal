@@ -22,6 +22,14 @@ in may change those paths, and it should carry upstream's change verbatim. The s
 Fork Nightly upgrade disposable databases built from the released `nightly` branch to check that the
 two histories stay separate and composer drafts survive.
 
+## Released upstream migration 51
+
+Nightlies from September 29, 2026 ran fork migration `ProjectionThreadLatestMessageAt` as
+upstream migration 51, an ID upstream also uses. Before the upstream pass, startup deletes an
+`effect_sql_migrations` row with that ID and name so upstream's own migration 51 runs; fork
+migration `4_ProjectionThreadLatestMessageAt` then finds the column already present and only
+records itself. Keep the repair until those nightlies no longer need a direct upgrade path.
+
 ## Retired pre-split repair
 
 The one-time repair for `39_ComposerDrafts` in the upstream history has been removed. Supported
