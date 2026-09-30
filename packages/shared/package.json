@@ -24,6 +24,10 @@
       "types": "./src/model.ts",
       "import": "./src/model.ts"
     },
+    "./effortDial": {
+      "types": "./src/effortDial.ts",
+      "import": "./src/effortDial.ts"
+    },
     "./advertisedEndpoint": {
       "types": "./src/advertisedEndpoint.ts",
       "import": "./src/advertisedEndpoint.ts"
