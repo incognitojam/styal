@@ -537,6 +537,22 @@ function PullRequestsRouteView() {
     updateSearch(patch);
   };
 
+  // Everything the Filters menu narrows by goes back to its default. Search and sort are their
+  // own controls and stay as they are.
+  const resetFilters = () =>
+    updateListScope({
+      state: "open",
+      involvement: "all",
+      environmentId: undefined,
+      projectId: undefined,
+      host: undefined,
+      draft: undefined,
+      review: undefined,
+      checks: undefined,
+      author: undefined,
+      labels: undefined,
+    });
+
   // Searching asks the hosts, which takes a round trip, so the text is held for a moment before
   // it is sent. Until it lands, the rows already on screen are narrowed locally: the answer is
   // late but the page is not.
@@ -1651,6 +1667,7 @@ function PullRequestsRouteView() {
             menuFiltered ||
             search.state !== "open" ||
             search.involvement !== "all" ||
+            scopedEnvironmentId !== null ||
             scopedProjectId !== undefined ||
             search.host !== undefined
           }
@@ -1658,6 +1675,7 @@ function PullRequestsRouteView() {
           canLoadMore={listData?.truncated === true && (canContinue || pageSize < MAX_PAGE_SIZE)}
           loadingMore={loadingMore}
           onClearQuery={() => updateListScope({ q: undefined })}
+          onResetFilters={resetFilters}
           onLoadMore={loadMore}
         />
       ) : (
@@ -1778,6 +1796,7 @@ function PullRequestsRouteView() {
   );
   const filtersMenu = (
     <PullRequestFiltersMenu
+      onReset={resetFilters}
       onOpenChange={setFiltersOpen}
       state={search.state}
       stateOptions={STATE_TABS}
