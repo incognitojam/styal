@@ -336,6 +336,25 @@ features:
         - https://github.com/pingdotgg/t3code/commit/2cbc24fcae2b5649d7b60b68da72053a37fa82d5
       retire_when: Upstream prefers GPT-6.1-Sol for new Codex threads, retains a fallback when it is unavailable, and shows the effort unselected turns run at.
 
+  - id: codex-model-display-names
+    title: Display Codex model word suffixes with spaces
+    status: maintained
+    prs: []
+    invariants:
+      - Codex catalog labels use spaces before word suffixes, such as GPT-6 Luna and GPT-6.1 Sol, while preserving model IDs and the hyphen before the version.
+    implementation_paths:
+      - apps/server/src/provider/Layers/CodexProvider.ts
+      - apps/server/src/provider/model-manifest.json
+    upstream_paths:
+      - apps/server/src/provider/Layers/CodexProvider.ts
+    tests:
+      - apps/server/src/provider/Layers/CodexProvider.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/451afcb22d93f06cb24f9bc16703404564952553
+      retire_when: Upstream displays Codex model word suffixes with spaces while preserving model IDs.
+
   - id: completion-sounds
     title: Configurable agent completion sounds
     status: maintained

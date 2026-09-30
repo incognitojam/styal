@@ -1,6 +1,43 @@
 import { assert, it } from "@effect/vitest";
 
-import { applyPreferredCodexDefaultModel, mapCodexModelCapabilities } from "./CodexProvider.ts";
+import {
+  applyPreferredCodexDefaultModel,
+  mapCodexModelCapabilities,
+  parseCodexModelListResponse,
+} from "./CodexProvider.ts";
+
+it("formats Codex catalog labels without changing model ids", () => {
+  const names = [
+    ["gpt-6-luna", "gpt-6-luna", "GPT-6 Luna"],
+    ["gpt-6-astra", "GPT-6-Astra", "GPT-6 Astra"],
+    ["gpt-6.1-sol", "GPT-6.1-Sol", "GPT-6.1 Sol"],
+    ["gpt-6-sol", "GPT-6 Sol", "GPT-6 Sol"],
+    ["gpt-5.3-codex", "gpt-5.3-codex", "GPT-5.3 Codex"],
+    ["gpt-5.1-codex-max", "gpt-5.1-codex-max", "GPT-5.1 Codex Max"],
+    ["gpt-5.4", "GPT-5.4", "GPT-5.4"],
+  ] as const;
+  const models = parseCodexModelListResponse({
+    data: names.map(([slug, displayName]) => ({
+      additionalSpeedTiers: [],
+      defaultReasoningEffort: "medium",
+      defaultServiceTier: null,
+      description: "Test model",
+      displayName,
+      hidden: false,
+      id: slug,
+      isDefault: false,
+      model: slug,
+      serviceTiers: [],
+      supportedReasoningEfforts: [],
+    })),
+    nextCursor: null,
+  });
+
+  assert.deepStrictEqual(
+    models.map(({ slug, name }) => [slug, name]),
+    names.map(([slug, , name]) => [slug, name]),
+  );
+});
 
 it("maps current Codex model capability fields", () => {
   const capabilities = mapCodexModelCapabilities({
