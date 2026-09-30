@@ -24,6 +24,7 @@ const OPENAI_IGNORED_COMPONENTS = [
   "Batch",
   "Chat Completions",
   "ChatGPT Atlas",
+  "ChatGPT Space Pages",
   "ChatGPT Work",
   "Codex in ChatGPT Desktop",
   "Codex Web",
@@ -56,6 +57,7 @@ const OPENAI_IGNORED_COMPONENTS = [
 const OPENAI_IGNORED_INCIDENT_PATTERNS = [
   /^Delayed support responses\.?$/i,
   /^Support available via email\.?$/i,
+  /^Elevated errors in ChatGPT Space Pages\.?$/i,
   /^Elevated errors in ChatGPT Work\.?$/i,
   /^Overbilling for OpenAI-hosted containers in the Agent API\.?$/i,
   /^SSO sign-in and SCIM provisioning issues\.?$/i,
