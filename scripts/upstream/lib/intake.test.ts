@@ -152,6 +152,27 @@ describe("upstream intake audit", () => {
     assert.include(result.summary, "Blocked");
   });
 
+  it("reviews each candidate commit against its upstream sources", () => {
+    const result = audit({
+      commitReviews: [
+        {
+          sha: "b".repeat(40),
+          subject: "fix(server): synthetic change",
+          pullRequestNumbers: [1234],
+          sourceCommits: ["c".repeat(40)],
+          listedCommits: [],
+          adaptationNote: null,
+          comparison: { status: "matches" },
+          featureIds: [],
+        },
+      ],
+    });
+
+    assert.include(result.summary, "## Commits");
+    assert.include(result.summary, "### 1. fix(server): synthetic change");
+    assert.include(result.summary, "Matches upstream.");
+  });
+
   it("groups overlapping fork features by the changed path", () => {
     const result = audit({
       changedPaths: ["apps/web/src/AppRoot.tsx"],

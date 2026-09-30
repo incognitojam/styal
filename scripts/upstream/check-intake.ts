@@ -3,14 +3,23 @@
 
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
 import {
   decodeForkFeatureLedger,
+  findForkFeatureOverlaps,
+  type ForkFeatureLedger,
   ledgerRelativePath,
   validateForkFeatureLedger,
 } from "../fork-feature-ledger.ts";
+import {
+  cherryPickSources,
+  type CommitReview,
+  compareWithUpstream,
+  forkAdaptationNote,
+} from "./lib/commit-review.ts";
 import {
   auditUpstreamIntakeCandidate,
   formatForkCiWatchCommand,
@@ -115,6 +124,108 @@ function upstreamMigrationReview(input: {
     }),
     changes,
   };
+}
+
+function commitExists(sha: string): boolean {
+  return (
+    NodeChildProcess.spawnSync("git", ["cat-file", "-e", `${sha}^{commit}`], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    }).status === 0
+  );
+}
+
+function patch(sha: string): string {
+  const result = NodeChildProcess.spawnSync(
+    "git",
+    ["diff", "--no-color", "--no-renames", "--no-ext-diff", "-U0", `${sha}^`, sha],
+    { cwd: repoRoot, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 },
+  );
+  if (result.status !== 0) throw new Error(result.stderr.trim() || `git diff ${sha} failed.`);
+  return result.stdout;
+}
+
+/** A diff between two lists of changed lines, keeping one line of context. */
+function interdiff(
+  scratch: string,
+  upstreamLines: ReadonlyArray<string>,
+  forkLines: ReadonlyArray<string>,
+): ReadonlyArray<string> {
+  const upstreamFile = NodePath.join(scratch, "upstream");
+  const forkFile = NodePath.join(scratch, "fork");
+  NodeFS.writeFileSync(upstreamFile, `${upstreamLines.join("\n")}\n`);
+  NodeFS.writeFileSync(forkFile, `${forkLines.join("\n")}\n`);
+  const result = NodeChildProcess.spawnSync(
+    "git",
+    ["diff", "--no-index", "--no-color", "--no-ext-diff", "-U1", upstreamFile, forkFile],
+    { cwd: repoRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+  );
+  if (result.status !== 0 && result.status !== 1) {
+    throw new Error(result.stderr.trim() || "git diff --no-index failed.");
+  }
+  return lines(result.stdout.trimEnd()).flatMap((line) =>
+    /^(diff --git|index |--- |\+\+\+ )/u.test(line) ? [] : line.startsWith("@@") ? ["…"] : [line],
+  );
+}
+
+/** Compares each candidate commit with the upstream commits it imports. */
+function reviewCommits(input: {
+  readonly commits: ReadonlyArray<string>;
+  readonly commitMessages: ReadonlyArray<string>;
+  readonly ledger: ForkFeatureLedger;
+  readonly scratch: string;
+}): ReadonlyArray<CommitReview> {
+  return input.commits.map((sha, index) => {
+    const message = input.commitMessages[index] ?? "";
+    const provenance = parseUpstreamProvenance([message]);
+    const sourceCommits = [...new Set([...cherryPickSources(message), ...provenance.commitShas])];
+    const paths = lines(git(["diff-tree", "--no-commit-id", "--name-only", "-r", sha]));
+    const featureIds = findForkFeatureOverlaps(input.ledger, paths).map(
+      ({ feature }) => feature.id,
+    );
+    const missing = sourceCommits.filter((source) => !commitExists(source));
+    const comparison: CommitReview["comparison"] =
+      paths.length === 0
+        ? { status: "provenance-only" }
+        : sourceCommits.length === 0
+          ? { status: "unavailable", reason: "no cherry-picked or Upstream-Commit source." }
+          : missing.length > 0
+            ? {
+                status: "unavailable",
+                reason: `upstream ${missing.map((source) => source.slice(0, 10)).join(", ")} not fetched.`,
+              }
+            : (() => {
+                const files = compareWithUpstream({
+                  upstreamPatches: sourceCommits.map(patch),
+                  forkPatch: patch(sha),
+                }).map((file) => ({
+                  ...file,
+                  interdiff: interdiff(input.scratch, file.upstreamLines, file.forkLines),
+                }));
+                return files.length === 0
+                  ? { status: "matches" as const }
+                  : { status: "adapted" as const, files };
+              })();
+    return {
+      sha,
+      subject: message.split(/\r?\n/u)[0] ?? sha,
+      pullRequestNumbers: provenance.pullRequestNumbers,
+      sourceCommits,
+      listedCommits: provenance.commitShas,
+      adaptationNote: forkAdaptationNote(message),
+      comparison,
+      featureIds,
+    };
+  });
+}
+
+function withScratchDirectory<A>(use: (directory: string) => A): A {
+  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "styal-intake-review-"));
+  try {
+    return use(directory);
+  } finally {
+    NodeFS.rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 function writeOutput(name: string, value: string | boolean): void {
@@ -302,6 +413,9 @@ try {
     commitPullRequests: upstreamCommitPullRequests(ledger.upstream_repository, commitMessages),
     migrationErrors: migrations.errors,
     migrationChanges: migrations.changes,
+    commitReviews: withScratchDirectory((scratch) =>
+      reviewCommits({ commits, commitMessages, ledger, scratch }),
+    ),
   });
 
   process.stdout.write(audit.summary);
