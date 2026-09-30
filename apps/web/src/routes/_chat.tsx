@@ -14,6 +14,7 @@ import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { useScopedProjectGroup } from "../sidebarProjectScopeStore";
 import { dispatchPreviewAction } from "../components/preview/previewActionBus";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useScratchProject } from "../hooks/useScratchProject";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isRightPanelFocused } from "../lib/rightPanelFocus";
@@ -42,6 +43,7 @@ function ChatRouteGlobalShortcuts() {
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const { scratchEnvironmentId, startScratchThread } = useScratchProject();
   const activeProject = useMemo(
     () =>
       activeThread
@@ -139,6 +141,17 @@ function ChatRouteGlobalShortcuts() {
         return;
       }
 
+      if (command === "chat.newWithoutProject") {
+        const environmentId = scratchEnvironmentId(
+          activeThread?.environmentId ?? activeDraftThread?.environmentId ?? primaryEnvironmentId,
+        );
+        if (environmentId === null) return;
+        event.preventDefault();
+        event.stopPropagation();
+        void startScratchThread(environmentId);
+        return;
+      }
+
       if (command === "chat.new") {
         event.preventDefault();
         event.stopPropagation();
@@ -232,10 +245,13 @@ function ChatRouteGlobalShortcuts() {
     keybindings,
     defaultProjectRef,
     previewOpen,
+    primaryEnvironmentId,
     projectGroups.length,
     routeThreadRef,
     scopedProjectGroup,
+    scratchEnvironmentId,
     selectedThreadKeysSize,
+    startScratchThread,
     legacySidebarEnabled,
     terminalOpen,
     viewPullRequest,

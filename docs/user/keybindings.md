@@ -123,7 +123,8 @@ through the pages you have visited, like a browser's back and forward buttons.
 `chat.new` may ask you to choose a project when there is more than one.
 `chat.newLocal` skips that chooser. Both use your
 [new-thread defaults](./thread-sidebar.md#start-a-thread). With no thread open,
-they use the project the sidebar is filtered to.
+they use the project the sidebar is filtered to. `chat.newWithoutProject`
+(`mod+alt+n`) starts a thread [without a project](./thread-sidebar.md#start-without-a-project).
 
 `sourceControl.focusPullRequestTab` opens the active thread's open pull request
 in the right panel. It has no default shortcut; use **View PR** in the command
