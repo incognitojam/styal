@@ -77,13 +77,6 @@ const manualReviewRules: ReadonlyArray<ManualReviewRule> = [
       return normalized.includes("/auth") || normalized.includes("/authorization");
     },
   },
-  {
-    description: "a user-facing client changed and needs surface-specific review",
-    matches: (path) =>
-      path.startsWith("apps/web/") ||
-      path.startsWith("apps/desktop/") ||
-      path.startsWith("apps/mobile/"),
-  },
 ];
 
 function abbreviated(sha: string): string {

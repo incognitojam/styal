@@ -77,6 +77,19 @@ describe("upstream intake audit", () => {
     assert.include(result.summary, "report-only");
   });
 
+  it("does not require review just because a client changed", () => {
+    const result = audit({
+      changedPaths: [
+        "apps/web/src/components/Sidebar.tsx",
+        "apps/desktop/src/app/DesktopApp.ts",
+        "apps/mobile/src/lib/threadActivity.ts",
+      ],
+    });
+
+    assert.deepEqual(result.manualReviewReasons, []);
+    assert.isTrue(result.automaticEligible);
+  });
+
   it("blocks missing or malformed upstream provenance", () => {
     const missing = audit({ commitMessages: ["fix(server): no source"] });
     const malformed = audit({ commitMessages: ["Upstream-PR: nope"] });
@@ -122,10 +135,6 @@ describe("upstream intake audit", () => {
     assert.include(result.manualReviewReasons, "a database migration changed");
     assert.include(result.manualReviewReasons, "authentication or authorization code changed");
     assert.include(result.manualReviewReasons, "a cross-surface contract changed");
-    assert.include(
-      result.manualReviewReasons,
-      "a user-facing client changed and needs surface-specific review",
-    );
     assert.deepEqual(result.overlapFeatureIds, ["watched-capability"]);
     assert.include(result.summary, "Manual approval required");
   });
