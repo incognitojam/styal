@@ -9,7 +9,7 @@ import * as Scope from "effect/Scope";
 import * as TestClock from "effect/testing/TestClock";
 import * as Tracer from "effect/Tracer";
 
-import { OpenSpans, reportStalledShutdown, trackOpenSpans } from "./OpenSpans.ts";
+import { OpenSpans, reportStalledShutdown, trackOpenSpans, traceShutdown } from "./OpenSpans.ts";
 
 const makeTracked = () =>
   trackOpenSpans(Tracer.make({ span: (options) => new Tracer.NativeSpan(options) }));
@@ -94,5 +94,39 @@ it.effect("names the open work when shutdown is still running", () =>
 
     yield* Deferred.succeed(releaseFinalizer, undefined);
     yield* Fiber.join(closing);
+  }),
+);
+
+it.effect("names the layer group whose untraced teardown is still running", () =>
+  Effect.gen(function* () {
+    const { tracer, openSpans } = makeTracked();
+    const finalizerStarted = yield* Deferred.make<void>();
+    const releaseFinalizer = yield* Deferred.make<void>();
+    // A teardown step with no span of its own.
+    const untracedStep = Layer.effectDiscard(
+      Effect.addFinalizer(() =>
+        Deferred.succeed(finalizerStarted, undefined).pipe(
+          Effect.andThen(Deferred.await(releaseFinalizer)),
+        ),
+      ),
+    );
+    const scope = yield* Scope.make();
+    yield* Layer.build(
+      traceShutdown("group")(untracedStep).pipe(
+        Layer.provide(Layer.succeed(Tracer.Tracer, tracer)),
+      ),
+    ).pipe(Scope.provide(scope));
+    assert.deepStrictEqual(yield* openSpans.list, []);
+
+    const closing = yield* Scope.close(scope, Exit.void).pipe(Effect.forkChild);
+    yield* Deferred.await(finalizerStarted);
+    assert.deepStrictEqual(
+      (yield* openSpans.list).map((span) => span.name),
+      ["shutdown.group"],
+    );
+
+    yield* Deferred.succeed(releaseFinalizer, undefined);
+    yield* Fiber.join(closing);
+    assert.deepStrictEqual(yield* openSpans.list, []);
   }),
 );

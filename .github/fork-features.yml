@@ -2098,6 +2098,29 @@ features:
       tracking: []
       retire_when: Upstream records in the conversation where restart recovery continued a thread and shows it on web and mobile without folding it into grouped work.
 
+  - id: server-shutdown-diagnostics
+    title: Stop providers first and report slow server shutdowns
+    status: maintained
+    prs: [529, 530, 558]
+    invariants:
+      - Server shutdown stops provider sessions before any other shutdown step, so a launcher kill after a stalled step cannot leave a provider CLI working on its own.
+      - Shutdown logs when it starts and, while it is still running at 1.5, 3, and 4.5 seconds, lists the open spans with their ages, newest first.
+      - Each runtime layer group tears down inside a shutdown.<group> span, so a report names the group that is still tearing down even when its own finalizers are untraced.
+    implementation_paths:
+      - apps/server/src/observability/OpenSpans.ts
+      - apps/server/src/provider/Layers/ProviderService.ts
+      - apps/server/src/server.ts
+    upstream_paths:
+      - apps/server/src/provider/Layers/ProviderService.ts
+      - apps/server/src/server.ts
+    tests:
+      - apps/server/src/observability/OpenSpans.test.ts
+      - apps/server/src/provider/Layers/ProviderService.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream stops provider sessions first on shutdown and reports which shutdown step is still running before the process is killed.
+
   - id: server-update-guidance
     title: Match server update instructions to the advertised capability
     status: maintained
