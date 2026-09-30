@@ -3,6 +3,7 @@ import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Scope from "effect/Scope";
 import * as Tracer from "effect/Tracer";
 
 /**
@@ -84,3 +85,25 @@ export const reportStalledShutdown = Layer.effectDiscard(
     );
   }),
 );
+
+/**
+ * Tear a layer down inside a `shutdown.<name>` span, so the stalled shutdown
+ * report names a group whose finalizers are still running. Layers shared with
+ * other groups stay shared; their teardown counts toward the group that
+ * releases them last.
+ */
+export const traceShutdown =
+  (name: string) =>
+  <A, E, R>(layer: Layer.Layer<A, E, R>): Layer.Layer<A, E, R> =>
+    Layer.fromBuild((memoMap, scope) =>
+      Effect.gen(function* () {
+        const layerScope = yield* Scope.fork(scope, "sequential");
+        const context = yield* Layer.buildWithMemoMap(layer, memoMap, layerScope);
+        // Effect.addFinalizer keeps the build context, so the span reaches the
+        // server tracer when the root scope closes.
+        yield* Effect.addFinalizer((exit) =>
+          Scope.close(layerScope, exit).pipe(Effect.withSpan(`shutdown.${name}`)),
+        ).pipe(Effect.provideService(Scope.Scope, scope));
+        return context;
+      }),
+    );

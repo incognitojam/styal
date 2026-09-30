@@ -110,7 +110,7 @@ import * as SourceControlRateLimit from "./sourceControl/SourceControlRateLimit.
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import { ObservabilityLive } from "./observability/Layers/Observability.ts";
-import { reportStalledShutdown } from "./observability/OpenSpans.ts";
+import { reportStalledShutdown, traceShutdown } from "./observability/OpenSpans.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import { authHttpApiLayer, environmentAuthenticatedAuthLayer } from "./auth/http.ts";
@@ -451,18 +451,24 @@ const AntigravityInstallationRefreshLive = Layer.effectDiscard(
   }),
 );
 
+// Each group tears down inside a `shutdown.<group>` span, so a stalled shutdown
+// report names the group still running. Teardown runs in reverse build order,
+// from the reactors down to the managed endpoint.
 const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
-  Layer.provideMerge(AntigravityInstallationRefreshLive),
-  Layer.provideMerge(ProviderAuthServiceLive),
+  traceShutdown("reactors"),
+  Layer.provideMerge(AntigravityInstallationRefreshLive.pipe(traceShutdown("antigravity-refresh"))),
+  Layer.provideMerge(ProviderAuthServiceLive.pipe(traceShutdown("provider-auth"))),
   // Core Services
-  Layer.provideMerge(ServerSettingsLayerLive),
-  Layer.provideMerge(CheckpointingLayerLive),
+  Layer.provideMerge(ServerSettingsLayerLive.pipe(traceShutdown("server-settings"))),
+  Layer.provideMerge(CheckpointingLayerLive.pipe(traceShutdown("checkpointing"))),
   Layer.provideMerge(
-    Layer.mergeAll(SourceControlProviderRegistryLayerLive, PullRequestServiceLive),
+    Layer.mergeAll(SourceControlProviderRegistryLayerLive, PullRequestServiceLive).pipe(
+      traceShutdown("pull-requests"),
+    ),
   ),
-  Layer.provideMerge(GitLayerLive),
-  Layer.provideMerge(VcsLayerLive),
-  Layer.provideMerge(ProviderRuntimeLayerLive),
+  Layer.provideMerge(GitLayerLive.pipe(traceShutdown("git"))),
+  Layer.provideMerge(VcsLayerLive.pipe(traceShutdown("vcs"))),
+  Layer.provideMerge(ProviderRuntimeLayerLive.pipe(traceShutdown("provider-runtime"))),
   Layer.provideMerge(
     Layer.mergeAll(
       TerminalLayerLive,
@@ -472,23 +478,27 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
       // WebSocket, MCP, and terminal browser-open callbacks must all route through
       // one broker so focused-host selection and tab assignments stay coherent.
       PreviewAutomationBrokerLayerLive,
-    ),
+    ).pipe(traceShutdown("terminals-previews-devices")),
   ),
-  Layer.provideMerge(PersistenceLayerLive),
+  Layer.provideMerge(PersistenceLayerLive.pipe(traceShutdown("persistence"))),
   // Both read a user-owned file out of the state directory and stream changes
   // to clients; neither depends on the other.
   Layer.provideMerge(
-    Layer.mergeAll(Keybindings.layer, EnvironmentTheme.layer, UsageLimitSources.layer),
+    Layer.mergeAll(Keybindings.layer, EnvironmentTheme.layer, UsageLimitSources.layer).pipe(
+      traceShutdown("user-files"),
+    ),
   ),
-  Layer.provideMerge(ProviderRegistryLive),
+  Layer.provideMerge(ProviderRegistryLive.pipe(traceShutdown("provider-registry"))),
   // The instance registry is the new routing keystone — text generation,
   // adapter lookup, and runtime ingestion all resolve `ProviderInstanceId`
   // through this layer. Built-in drivers come from `BUILT_IN_DRIVERS`;
   // `providerInstances` hydration merges `settings.providers.<kind>`
   // with explicit `providerInstances` entries on boot.
-  Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+  Layer.provideMerge(
+    ProviderInstanceRegistryHydrationLive.pipe(traceShutdown("provider-instances")),
+  ),
 ).pipe(
-  Layer.provideMerge(AntigravityInstallation.layer),
+  Layer.provideMerge(AntigravityInstallation.layer.pipe(traceShutdown("antigravity-installation"))),
   // Shared native/canonical NDJSON writers used by both the per-instance
   // drivers (native stream, written from inside each `<X>Adapter`) and
   // `ProviderService` (canonical stream, written after event normalization).
@@ -498,19 +508,21 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // from the repo's `model-manifest.json` on `main` and applied by the
   // Codex/Claude drivers.
   Layer.provideMerge(
-    Layer.mergeAll(ProviderEventLoggers.layer, ModelManifest.layer, CodexResetCredit.layer),
+    Layer.mergeAll(ProviderEventLoggers.layer, ModelManifest.layer, CodexResetCredit.layer).pipe(
+      traceShutdown("provider-support"),
+    ),
   ),
   // `OpenCodeDriver.create()` yields `OpenCodeRuntime`; previously the old
   // `ProviderRegistryLive` pulled `OpenCodeRuntimeLive` in for itself, but
   // the rewritten registry reads snapshots off the instance registry and
   // no longer transitively provides it. Exposing it at the runtime level
   // keeps a single Live for all opencode consumers.
-  Layer.provideMerge(OpenCodeRuntime.OpenCodeRuntimeLive),
-  Layer.provideMerge(WorkspaceLayerLive),
+  Layer.provideMerge(OpenCodeRuntime.OpenCodeRuntimeLive.pipe(traceShutdown("opencode-runtime"))),
+  Layer.provideMerge(WorkspaceLayerLive.pipe(traceShutdown("workspace"))),
   Layer.provideMerge(Layer.mergeAll(NativeAppIconResolver.layer, ProjectFaviconResolverLayerLive)),
   Layer.provideMerge(RepositoryIdentityResolver.layer),
   Layer.provideMerge(ServerEnvironmentLayerLive),
-  Layer.provideMerge(AuthLayerLive),
+  Layer.provideMerge(AuthLayerLive.pipe(traceShutdown("auth"))),
   Layer.provideMerge(ServerSecretStore.layer),
   Layer.provideMerge(
     Layer.mergeAll(
@@ -519,17 +531,17 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
         Layer.provide(ExternalLauncher.layer),
       ),
       CloudManagedEndpointRuntimeLive,
-    ),
+    ).pipe(traceShutdown("cloud")),
   ),
 );
 
 const RuntimeDependenciesLive = RuntimeCoreDependenciesLive.pipe(
   // Misc.
-  Layer.provideMerge(BackgroundLayerLive),
-  Layer.provideMerge(ResourceDiagnosticsLayerLive),
-  Layer.provideMerge(UsageLayerLive),
+  Layer.provideMerge(BackgroundLayerLive.pipe(traceShutdown("background"))),
+  Layer.provideMerge(ResourceDiagnosticsLayerLive.pipe(traceShutdown("resource-diagnostics"))),
+  Layer.provideMerge(UsageLayerLive.pipe(traceShutdown("usage"))),
   Layer.provideMerge(TraceDiagnostics.layer),
-  Layer.provideMerge(AnalyticsService.layer),
+  Layer.provideMerge(AnalyticsService.layer.pipe(traceShutdown("analytics"))),
   Layer.provideMerge(ExternalLauncher.layer),
   Layer.provideMerge(RemoteOpenTargets.layer),
   Layer.provideMerge(ServerLifecycleEvents.layer),
