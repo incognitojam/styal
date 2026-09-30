@@ -63,6 +63,9 @@ export function withProviderOption(
   return [...(options ?? []).filter((option) => option.id !== id), { id, value }];
 }
 
+// "Standard" is also a dial level, so the usual speed is called Normal here.
+const NORMAL_SPEED_LABEL = "Normal";
+
 export interface EffortDialSpeedControl {
   readonly id: string;
   readonly choices: ReadonlyArray<{ readonly value: string; readonly label: string }>;
@@ -83,7 +86,7 @@ export function getEffortDialSpeedControl(
     return {
       id: "fastMode",
       choices: [
-        { value: "standard", label: "Standard" },
+        { value: "standard", label: NORMAL_SPEED_LABEL },
         { value: "fast", label: "Fast" },
       ],
       value: fastMode.currentValue === true ? "fast" : "standard",
@@ -94,7 +97,10 @@ export function getEffortDialSpeedControl(
   if (serviceTier?.type === "select" && serviceTier.options.length > 1) {
     return {
       id: "serviceTier",
-      choices: serviceTier.options.map((option) => ({ value: option.id, label: option.label })),
+      choices: serviceTier.options.map((option) => ({
+        value: option.id,
+        label: option.id === "default" ? NORMAL_SPEED_LABEL : option.label,
+      })),
       value:
         serviceTier.currentValue ??
         serviceTier.options.find((option) => option.isDefault)?.id ??

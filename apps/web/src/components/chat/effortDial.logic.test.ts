@@ -110,7 +110,7 @@ describe("getEffortDialSpeedControl", () => {
     expect(claude?.toOptionValue("standard")).toBe(false);
 
     const codex = getEffortDialSpeedControl(codexSol, undefined);
-    expect(codex?.choices.map((choice) => choice.label)).toEqual(["Standard", "Fast"]);
+    expect(codex?.choices.map((choice) => choice.label)).toEqual(["Normal", "Fast"]);
     expect(codex?.value).toBe("default");
   });
 

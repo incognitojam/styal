@@ -63,6 +63,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   view?: "dial" | "models";
   /** Muted text after the model name, such as the dial level. */
   triggerDetail?: string | null;
+  /** Tooltip for the trigger when it can say more than the label. */
+  triggerTooltip?: string | null;
 }) {
   const [uncontrolledIsMenuOpen, setUncontrolledIsMenuOpen] = useState(false);
   const isMenuOpen = props.open ?? uncontrolledIsMenuOpen;
@@ -220,7 +222,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             >
               {props.triggerLabel ?? triggerTitle}
             </TooltipTrigger>
-            <TooltipPopup side="top">{props.triggerLabel ?? triggerLabel}</TooltipPopup>
+            <TooltipPopup side="top">
+              {props.triggerTooltip ?? props.triggerLabel ?? triggerLabel}
+            </TooltipPopup>
           </Tooltip>
           {props.triggerDetail ? (
             <span

@@ -2472,6 +2472,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         onChooseModel={() => setModelPickerView("models")}
       />
     ) : null;
+  const effortDialTriggerTooltip = effortDial?.effortLabel
+    ? `${effortDial.modelName}, ${effortDial.effortLabel.toLowerCase()} effort`
+    : null;
   const effortDialTriggerDetail = effortDial
     ? effortDial.level
       ? EFFORT_DIAL_LEVEL_LABELS[effortDial.level]
@@ -4485,6 +4488,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         dialPanel={effortDialPanel}
         view={modelPickerView}
         triggerDetail={effortDialTriggerDetail}
+        triggerTooltip={effortDialTriggerTooltip}
         getModelDisabledReason={getModelDisabledReason}
         onInstanceModelChange={onProviderModelSelect}
         onOpenProviderSetup={onOpenProviderSetup}
