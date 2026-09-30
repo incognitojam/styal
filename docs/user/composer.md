@@ -50,6 +50,21 @@ returns to the remembered selection.
 
 Leaving reasoning level or service tier unset uses the provider's own configuration.
 
+## Effort levels
+
+For Codex and Claude, the model control in the composer sets how hard the agent works:
+**Light**, **Standard**, **Deep**, or **Ultra**. Each level picks a model and reasoning effort
+that suit it. When both Codex and Claude are set up, a new thread can use either provider,
+depending on the level. Open the control to see the model a level uses, change its speed, or
+choose a specific model.
+
+A model you choose that the levels do not cover stays selected, and the levels change only its
+reasoning effort. Once a thread has started, levels stay on its provider. A level that switches
+model makes the next turn re-read the whole conversation, which uses more of your plan than
+changing effort.
+
+Other providers keep their own reasoning controls.
+
 ## Quote an assistant response
 
 On web and desktop, select text within one assistant response and choose

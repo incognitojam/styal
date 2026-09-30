@@ -32,6 +32,11 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   available, then GPT-6-Sol, GPT-6-Astra or an older model offered by the installed CLI. T3 Code
   defaults to GPT-6-Astra as of
   [revision 2cbc24f](https://github.com/pingdotgg/t3code/tree/2cbc24fcae2b5649d7b60b68da72053a37fa82d5).
+- **Effort levels instead of reasoning menus.** For Codex and Claude, the composer offers four
+  levels, Light to Ultra, that each pick a model and reasoning effort, across both providers when
+  both are set up. T3 Code lists every reasoning level each model offers as of
+  [revision c18e5ea](https://github.com/pingdotgg/t3code/tree/c18e5ea6ed741443a8ec4a5d22d4b6939b0ecd21).
+  [Effort levels](./composer.md#effort-levels).
 - **New threads start in a worktree.** Both apps support isolated Git worktrees. styal defaults new
   threads to a worktree, while T3 Code defaults to the local checkout as of
   [revision 451afcb](https://github.com/pingdotgg/t3code/tree/451afcb22d93f06cb24f9bc16703404564952553);

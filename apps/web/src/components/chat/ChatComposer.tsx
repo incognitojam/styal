@@ -16,6 +16,7 @@ import type {
   PreviewAnnotationPayload,
   ProviderApprovalDecision,
   ProviderInteractionMode,
+  ProviderOptionSelection,
   ResolvedKeybindingsConfig,
   RuntimeMode,
   ScopedThreadRef,
@@ -33,6 +34,16 @@ import {
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
+import {
+  currentEffortDialLevel,
+  EFFORT_DIAL_LEVEL_LABELS,
+  EFFORT_DIAL_LEVELS,
+  isEffortDialDriver,
+  resolveEffortDialLevel,
+  type EffortDialContext,
+  type EffortDialDriver,
+  type EffortDialLevel,
+} from "@t3tools/shared/effortDial";
 import { USAGE_LIMITS_COMMAND } from "@t3tools/shared/usageLimits";
 import {
   Fragment,
@@ -184,6 +195,15 @@ import { measureRestingComposerControls } from "./restingComposerControlsMeasure
 import { observeResponsiveBreakpointFade, usePanelAnimationSettings } from "../../panelAnimations";
 import { type ComposerPromptEditorHandle, ComposerPromptEditor } from "../ComposerPromptEditor";
 import { ProviderModelPicker } from "./ProviderModelPicker";
+import { EffortDialPanel } from "./EffortDialPanel";
+import {
+  buildEffortDialModels,
+  EFFORT_DIAL_OPTION_ID,
+  findEffortDescriptor,
+  getEffortDialSpeedControl,
+  withProviderOption,
+} from "./effortDial.logic";
+import { getTriggerDisplayModelName } from "./providerIconUtils";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
@@ -1358,7 +1378,12 @@ export interface ChatComposerProps {
     cursorAdjacentToMention: boolean,
   ) => void;
 
-  onProviderModelSelect: (instanceId: ProviderInstanceId, model: string) => void;
+  /** Selects a model; `options` replaces the instance's options when given. */
+  onProviderModelSelect: (
+    instanceId: ProviderInstanceId,
+    model: string,
+    options?: ReadonlyArray<ProviderOptionSelection>,
+  ) => void;
   onOpenProviderSetup: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason: (instanceId: ProviderInstanceId, model: string) => string | null;
   toggleInteractionMode: () => void;
@@ -2317,18 +2342,156 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [composerDraftTarget, promptRef, scheduleComposerFocus, setComposerDraftPrompt],
   );
 
-  const providerTraitsMenuContent = renderProviderTraitsMenuContent({
-    provider: selectedProvider,
-    instanceId: selectedInstanceId,
-    ...(routeKind === "server" ? { threadRef: routeThreadRef } : {}),
-    ...(routeKind === "draft" && draftId ? { draftId } : {}),
-    model: selectedModel,
-    models: selectedProviderModels,
-    modelOptions: composerModelOptions?.[selectedInstanceId],
-    prompt,
-    onPromptChange: setPromptFromTraits,
-    planModeEnabled: settings.planModeEnabled,
-  });
+  // ------------------------------------------------------------------
+  // Effort dial
+  // ------------------------------------------------------------------
+  // Codex and Claude pick effort, model and speed through the dial; other
+  // providers keep their own effort menu.
+  const [modelPickerView, setModelPickerView] = useState<"dial" | "models">("dial");
+  if (!isComposerModelPickerOpen && modelPickerView !== "dial") {
+    setModelPickerView("dial");
+  }
+  const effortDialModels = useMemo(
+    () => buildEffortDialModels(providerInstanceEntries),
+    [providerInstanceEntries],
+  );
+  const effortDial = useMemo(() => {
+    if (!isEffortDialDriver(selectedProvider) || noProviderAvailable) return null;
+    const driver: EffortDialDriver = selectedProvider;
+    const serverModel = selectedProviderModels.find((model) => model.slug === selectedModel);
+    const effortDescriptor = findEffortDescriptor(driver, serverModel);
+    if (!effortDescriptor) return null;
+    const selections = composerModelOptions?.[selectedInstanceId];
+    const rawEffort = selections?.find(
+      (option) => option.id === EFFORT_DIAL_OPTION_ID[driver],
+    )?.value;
+    const effort =
+      typeof rawEffort === "string"
+        ? rawEffort
+        : (effortDescriptor.currentValue ??
+          effortDescriptor.options.find((option) => option.isDefault)?.id ??
+          null);
+    const lockedDriver =
+      lockedProvider !== null && isEffortDialDriver(lockedProvider) ? lockedProvider : null;
+    const context: EffortDialContext = {
+      models: effortDialModels,
+      lockedDriver,
+      current: { instanceId: selectedInstanceId, model: selectedModel },
+    };
+    // A started thread runs its persisted model until the next turn picks up the draft.
+    const runningModel = lockedDriver !== null ? activeThreadModelSelection?.model : undefined;
+    const targets = new Map(
+      EFFORT_DIAL_LEVELS.map((level) => [level, resolveEffortDialLevel(level, context)] as const),
+    );
+    const displayName = (instanceId: string, model: string) => {
+      const option = modelOptionsByInstance
+        .get(ProviderInstanceId.make(instanceId))
+        ?.find((candidate) => candidate.slug === model);
+      return option ? getTriggerDisplayModelName(option) : model;
+    };
+    return {
+      level: currentEffortDialLevel(
+        { instanceId: selectedInstanceId, model: selectedModel, effort },
+        context,
+      ),
+      targets,
+      stops: EFFORT_DIAL_LEVELS.map((level) => {
+        const target = targets.get(level) ?? null;
+        return {
+          level,
+          available: target !== null,
+          switchesModel:
+            runningModel !== undefined && target !== null && target.model !== runningModel,
+        };
+      }),
+      note:
+        runningModel !== undefined && selectedModel !== runningModel
+          ? `Switches to ${displayName(selectedInstanceId, selectedModel)}. The next turn re-reads the whole conversation.`
+          : null,
+      effortLabel: effortDescriptor.options.find((option) => option.id === effort)?.label ?? null,
+      modelName: serverModel?.name ?? displayName(selectedInstanceId, selectedModel),
+      selections,
+      speed: getEffortDialSpeedControl(serverModel, selections),
+    };
+  }, [
+    activeThreadModelSelection?.model,
+    composerModelOptions,
+    effortDialModels,
+    lockedProvider,
+    modelOptionsByInstance,
+    noProviderAvailable,
+    selectedInstanceId,
+    selectedModel,
+    selectedProvider,
+    selectedProviderModels,
+  ]);
+  const onEffortDialLevelChange = useCallback(
+    (level: EffortDialLevel) => {
+      const target = effortDial?.targets.get(level);
+      if (!target) return;
+      onProviderModelSelect(
+        ProviderInstanceId.make(target.instanceId),
+        target.model,
+        withProviderOption(
+          composerModelOptions?.[ProviderInstanceId.make(target.instanceId)],
+          EFFORT_DIAL_OPTION_ID[target.driver],
+          target.effort,
+        ),
+      );
+    },
+    [composerModelOptions, effortDial, onProviderModelSelect],
+  );
+  const onEffortDialSpeedChange = useCallback(
+    (value: string) => {
+      const speed = effortDial?.speed;
+      if (!speed) return;
+      onProviderModelSelect(
+        selectedInstanceId,
+        selectedModel,
+        withProviderOption(effortDial.selections, speed.id, speed.toOptionValue(value)),
+      );
+    },
+    [effortDial, onProviderModelSelect, selectedInstanceId, selectedModel],
+  );
+  const effortDialPanel =
+    effortDial && selectedProviderEntry ? (
+      <EffortDialPanel
+        stops={effortDial.stops}
+        level={effortDial.level}
+        note={effortDial.note}
+        model={{
+          driverKind: selectedProviderEntry.driverKind,
+          providerName: selectedProviderEntry.displayName,
+          accentColor: selectedProviderEntry.accentColor,
+          name: effortDial.modelName,
+          effortLabel: effortDial.effortLabel,
+        }}
+        speed={effortDial.speed}
+        onLevelChange={onEffortDialLevelChange}
+        onSpeedChange={onEffortDialSpeedChange}
+        onChooseModel={() => setModelPickerView("models")}
+      />
+    ) : null;
+  const effortDialTriggerDetail = effortDial
+    ? effortDial.level
+      ? EFFORT_DIAL_LEVEL_LABELS[effortDial.level]
+      : effortDial.effortLabel
+    : null;
+
+  const providerTraitsMenuContent = effortDial
+    ? null
+    : renderProviderTraitsMenuContent({
+        provider: selectedProvider,
+        instanceId: selectedInstanceId,
+        ...(routeKind === "server" ? { threadRef: routeThreadRef } : {}),
+        ...(routeKind === "draft" && draftId ? { draftId } : {}),
+        model: selectedModel,
+        models: selectedProviderModels,
+        modelOptions: composerModelOptions?.[selectedInstanceId],
+        prompt,
+        onPromptChange: setPromptFromTraits,
+        planModeEnabled: settings.planModeEnabled,
+      });
   const providerTraitsPickerInput = {
     provider: selectedProvider,
     instanceId: selectedInstanceId,
@@ -2342,7 +2505,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     planModeEnabled: settings.planModeEnabled,
     isComposerOwned: true,
   } satisfies Parameters<typeof renderProviderTraitsPicker>[0];
-  const providerTraitsPicker = renderProviderTraitsPicker(providerTraitsPickerInput);
+  const providerTraitsPicker = effortDial
+    ? null
+    : renderProviderTraitsPicker(providerTraitsPickerInput);
   const {
     controlsRef: restingComposerControlsRef,
     hiddenBlockCount: restingControlsHiddenBlockCount,
@@ -2959,6 +3124,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           });
           if (applied) {
             setComposerHighlightedItemId(null);
+            setModelPickerView("models");
             setIsComposerModelPickerOpen(true);
           }
           return;
@@ -4210,11 +4376,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const restingHiddenBlockCount = composerControlsInStrip ? restingControlsHiddenBlockCount : 0;
   const composerControlsCompact = !composerControlsInStrip && isComposerFooterCompact;
-  const restingProviderTraitsPicker = renderProviderTraitsPicker({
-    ...providerTraitsPickerInput,
-    size: "xs",
-    hidden: composerControlsHidden || restingHiddenBlockCount > 1,
-  });
+  const restingProviderTraitsPicker = effortDial
+    ? null
+    : renderProviderTraitsPicker({
+        ...providerTraitsPickerInput,
+        size: "xs",
+        hidden: composerControlsHidden || restingHiddenBlockCount > 1,
+      });
   const restingBlockDefs = [
     ...(providerTraitsPicker
       ? [
@@ -4314,6 +4482,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             }
           : {})}
         onOpenChange={setIsComposerModelPickerOpen}
+        dialPanel={effortDialPanel}
+        view={modelPickerView}
+        triggerDetail={effortDialTriggerDetail}
         getModelDisabledReason={getModelDisabledReason}
         onInstanceModelChange={onProviderModelSelect}
         onOpenProviderSetup={onOpenProviderSetup}
@@ -4878,6 +5049,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       setIsComposerScrollCollapsed(false);
       setIsComposerFocused(true);
     }
+    setModelPickerView("models");
     setIsComposerModelPickerOpen(true);
   }, [composerControlsHidden, setIsComposerFocused, setIsComposerScrollCollapsed]);
 

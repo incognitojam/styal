@@ -700,6 +700,34 @@ features:
       tracking: []
       retire_when: Upstream supports equivalent in-place editing of anchored diff comments with stable drafts and keyboard controls.
 
+  - id: effort-dial
+    title: Choose Codex and Claude effort with four levels
+    status: maintained
+    prs: []
+    invariants:
+      - For Codex and Claude models, the composer's model control offers Light, Standard, Deep and Ultra instead of each model's reasoning levels; each level resolves to a model and effort from a fixed table, across both providers for a new thread when both are ready.
+      - A started thread's levels stay on its provider, and levels that would switch its model are marked and explained before the next turn.
+      - A model chosen from the model list that the table does not cover stays selected; the levels change only its effort.
+      - Other providers keep their own reasoning controls.
+    implementation_paths:
+      - apps/web/src/components/chat/ChatComposer.tsx
+      - apps/web/src/components/chat/EffortDialPanel.tsx
+      - apps/web/src/components/chat/ProviderModelPicker.tsx
+      - apps/web/src/components/chat/effortDial.logic.ts
+      - packages/shared/src/effortDial.ts
+    upstream_paths:
+      - apps/web/src/components/chat/ChatComposer.tsx
+      - apps/web/src/components/chat/ProviderModelPicker.tsx
+      - apps/web/src/components/chat/TraitsPicker.tsx
+    tests:
+      - apps/web/src/components/chat/effortDial.logic.test.ts
+      - packages/shared/src/effortDial.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/c18e5ea6ed741443a8ec4a5d22d4b6939b0ecd21
+      retire_when: Upstream replaces per-model reasoning menus with curated effort levels for Codex and Claude.
+
   - id: first-turn-unread-state
     title: Mark first thread completions unread
     status: maintained
