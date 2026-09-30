@@ -703,7 +703,7 @@ features:
   - id: effort-dial
     title: Choose Codex and Claude effort with four levels
     status: maintained
-    prs: []
+    prs: [551]
     invariants:
       - For Codex and Claude models, the composer's model control offers Light, Standard, Deep and Ultra instead of each model's reasoning levels; each level resolves to a model and effort from a fixed table, across both providers for a new thread when both are ready.
       - A started thread's levels stay on its provider, and levels that would switch its model are marked and explained before the next turn.
