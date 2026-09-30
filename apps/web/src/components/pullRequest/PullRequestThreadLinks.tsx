@@ -117,7 +117,7 @@ function EnabledPullRequestThreadLinks({
                   })
                 }
               >
-                <MessageSquareIcon aria-hidden className="size-3.5" />
+                <LinkIcon aria-hidden className="size-3.5" />
                 <span aria-hidden>{linkedThreads.length || "?"}</span>
               </Button>
             }
