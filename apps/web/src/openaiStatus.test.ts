@@ -192,22 +192,84 @@ describe("OpenAI status notice", () => {
     ).toEqual(["CLI", "Responses", "Login", "Codex API"]);
   });
 
-  it.each([undefined, []])("ignores the componentless ChatGPT Work incident (%j)", (components) => {
-    expect(
-      resolveOpenAIStatusNotice(
-        statusSummary({
-          indicator: "minor",
-          incidents: [
-            {
-              ...(components === undefined ? {} : { components }),
-              impact: "minor",
-              name: "Elevated errors in ChatGPT Work",
-              status: "monitoring",
-            },
-          ],
-        }),
-      ),
-    ).toBeNull();
+  describe.each(["ChatGPT Work", "ChatGPT Space Pages"])("%s incidents", (surface) => {
+    it.each([undefined, []])("ignores a componentless incident (%j)", (components) => {
+      expect(
+        resolveOpenAIStatusNotice(
+          statusSummary({
+            indicator: "minor",
+            incidents: [
+              {
+                ...(components === undefined ? {} : { components }),
+                impact: "minor",
+                name: `Elevated errors in ${surface}`,
+                status: "monitoring",
+              },
+            ],
+          }),
+        ),
+      ).toBeNull();
+    });
+
+    it("ignores an outage confined to the component", () => {
+      expect(
+        resolveOpenAIStatusNotice(
+          statusSummary({
+            indicator: "minor",
+            components: [{ name: surface, status: "degraded_performance" }],
+            incidents: [
+              {
+                components: [{ name: surface }],
+                impact: "minor",
+                name: `Elevated errors in ${surface}`,
+                status: "monitoring",
+              },
+            ],
+          }),
+        ),
+      ).toBeNull();
+    });
+
+    it("keeps an incident whose components include Codex", () => {
+      expect(
+        resolveOpenAIStatusNotice(
+          statusSummary({
+            incidents: [
+              {
+                components: [{ name: surface }, { name: "Codex API" }],
+                impact: "minor",
+                name: `Elevated errors in ${surface}`,
+                status: "monitoring",
+              },
+            ],
+          }),
+        ),
+      ).toMatchObject({ label: "Incident: Codex API" });
+    });
+
+    it("keeps concurrent API outages and broader componentless incidents", () => {
+      const broaderIncident = {
+        impact: "minor",
+        name: `Elevated errors in ${surface} and Codex`,
+        status: "investigating",
+      };
+      expect(
+        resolveOpenAIStatusNotice(
+          statusSummary({
+            indicator: "major",
+            components: [{ name: "Responses", status: "partial_outage" }],
+            incidents: [
+              { impact: "minor", name: `Elevated errors in ${surface}`, status: "monitoring" },
+              broaderIncident,
+            ],
+          }),
+        ),
+      ).toMatchObject({
+        label: "Outage: Responses",
+        tone: "error",
+        activeIncidents: [broaderIncident],
+      });
+    });
   });
 
   it.each([
@@ -224,47 +286,6 @@ describe("OpenAI status notice", () => {
         }),
       ),
     ).toBeNull();
-  });
-
-  it("keeps a Work-titled incident when its components include Codex", () => {
-    expect(
-      resolveOpenAIStatusNotice(
-        statusSummary({
-          incidents: [
-            {
-              components: [{ name: "ChatGPT Work" }, { name: "Codex API" }],
-              impact: "minor",
-              name: "Elevated errors in ChatGPT Work",
-              status: "monitoring",
-            },
-          ],
-        }),
-      ),
-    ).toMatchObject({ label: "Incident: Codex API" });
-  });
-
-  it("keeps concurrent API outages and broader componentless incidents", () => {
-    const broaderIncident = {
-      impact: "minor",
-      name: "Elevated errors in ChatGPT Work and Codex",
-      status: "investigating",
-    };
-    expect(
-      resolveOpenAIStatusNotice(
-        statusSummary({
-          indicator: "major",
-          components: [{ name: "Responses", status: "partial_outage" }],
-          incidents: [
-            { impact: "minor", name: "Elevated errors in ChatGPT Work", status: "monitoring" },
-            broaderIncident,
-          ],
-        }),
-      ),
-    ).toMatchObject({
-      label: "Outage: Responses",
-      tone: "error",
-      activeIncidents: [broaderIncident],
-    });
   });
 
   it("ignores malformed responses", () => {
