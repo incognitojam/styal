@@ -19,7 +19,7 @@ import {
   TurnId,
 } from "@t3tools/contracts";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
-import { normalizeModelSlug } from "@t3tools/shared/model";
+import { getProviderOptionCurrentValue, normalizeModelSlug } from "@t3tools/shared/model";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -504,6 +504,18 @@ function normalizeCodexModelSlug(
     return preferredId;
   }
   return normalized;
+}
+
+/** The effort the model picker shows as `model`'s default, for a turn that names none. */
+export function defaultCodexReasoningEffort(
+  model: ServerProviderModel | undefined,
+): EffectCodexSchema.V2TurnStartParams__ReasoningEffort | undefined {
+  const effort = getProviderOptionCurrentValue(
+    model?.capabilities?.optionDescriptors?.find(
+      (descriptor) => descriptor.id === "reasoningEffort",
+    ),
+  );
+  return typeof effort === "string" ? effort : undefined;
 }
 
 function readResumeCursorThreadId(
@@ -2563,7 +2575,9 @@ export const makeCodexSessionRuntime = (
             input.model ?? (yield* Ref.get(sessionRef)).model,
           );
           const models = options.models ? yield* options.models : [];
-          const modelName = models.find((model) => model.slug === normalizedModel)?.name;
+          const model = models.find((candidate) => candidate.slug === normalizedModel);
+          const modelName = model?.name;
+          const effort = input.effort ?? defaultCodexReasoningEffort(model);
           const params = yield* buildTurnStartParams({
             threadId: providerThreadId,
             runtimeMode: options.runtimeMode,
@@ -2572,7 +2586,7 @@ export const makeCodexSessionRuntime = (
             ...(normalizedModel ? { model: normalizedModel } : {}),
             ...(modelName ? { modelName } : {}),
             ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
-            ...(input.effort ? { effort: input.effort } : {}),
+            ...(effort ? { effort } : {}),
             ...(input.interactionMode ? { interactionMode: input.interactionMode } : {}),
             // Derived from the session's own credential rather than the
             // setting, so the prompt describes the tools this turn actually

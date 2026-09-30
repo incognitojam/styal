@@ -14,8 +14,10 @@ import {
   buildCodexDeveloperInstructions,
 } from "../CodexDeveloperInstructions.ts";
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
+import { mapCodexModelCapabilities } from "./CodexProvider.ts";
 import {
   buildTurnStartParams,
+  defaultCodexReasoningEffort,
   describeMcpElicitation,
   hasConfiguredMcpServer,
   isRecoverableThreadResumeError,
@@ -379,6 +381,49 @@ describe("buildTurnStartParams", () => {
         },
       ],
     });
+  });
+});
+
+describe("defaultCodexReasoningEffort", () => {
+  const codexModel = (slug: string, defaultReasoningEffort: string) => ({
+    slug,
+    name: slug,
+    isCustom: false,
+    capabilities: mapCodexModelCapabilities({
+      additionalSpeedTiers: [],
+      defaultReasoningEffort,
+      defaultServiceTier: null,
+      description: "Test model",
+      displayName: slug,
+      hidden: false,
+      id: slug,
+      isDefault: false,
+      model: slug,
+      serviceTiers: [],
+      supportedReasoningEfforts: [
+        { description: "Fast", reasoningEffort: "low" },
+        { description: "Balanced", reasoningEffort: "medium" },
+        { description: "Deep", reasoningEffort: "high" },
+      ],
+    }),
+  });
+
+  it("uses the effort the picker shows as the model's default", () => {
+    NodeAssert.equal(defaultCodexReasoningEffort(codexModel("gpt-6.1-sol", "low")), "low");
+    NodeAssert.equal(defaultCodexReasoningEffort(codexModel("gpt-6-astra", "low")), "medium");
+  });
+
+  it("leaves the effort unset for a model without effort options", () => {
+    NodeAssert.equal(defaultCodexReasoningEffort(undefined), undefined);
+    NodeAssert.equal(
+      defaultCodexReasoningEffort({
+        slug: "custom-model",
+        name: "Custom",
+        isCustom: true,
+        capabilities: null,
+      }),
+      undefined,
+    );
   });
 });
 
