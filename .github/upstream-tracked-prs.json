@@ -65,10 +65,6 @@
       "reason": "Found while adding Claude Opus 5.5: Refresh bypasses cached model lists so new models appear immediately."
     },
     {
-      "pr": 13115,
-      "reason": "The fork still defaults text generation to gpt-5.6-luna; this switches it to GPT-6 Luna."
-    },
-    {
       "pr": 13183,
       "reason": "Mobile Settings still offers the Legacy Thread List switch; this removes the old grouped thread list and the switch. Too entangled with 16 earlier pending mobile PRs to import early."
     },
