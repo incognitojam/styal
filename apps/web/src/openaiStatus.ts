@@ -45,6 +45,7 @@ const OPENAI_IGNORED_COMPONENTS = [
   "Search",
   "Sites",
   "Sora",
+  "Space",
   "Voice mode",
   "VS Code extension",
 ];
