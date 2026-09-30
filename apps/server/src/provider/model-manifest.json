@@ -16,7 +16,7 @@
     "codex": {
       "profiles": {},
       "models": [
-        { "slug": "gpt-6.1-sol", "name": "GPT-6.1-Sol", "status": "current", "badge": "new" }
+        { "slug": "gpt-6.1-sol", "name": "GPT-6.1 Sol", "status": "current", "badge": "new" }
       ]
     },
     "claudeAgent": {
