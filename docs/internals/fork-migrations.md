@@ -18,7 +18,11 @@ idempotent so upgrades remain safe across rebases and interrupted starts.
 
 A fork PR must not touch `apps/server/src/persistence/Migrations.ts` or anything under
 `apps/server/src/persistence/Migrations/`. Only a PR that deliberately brings an upstream migration
-in may change those paths, and it should carry upstream's change verbatim. The server test job and
+in may change those paths, and it should carry upstream's change verbatim. Fork Check and the intake
+audit enforce this with `vp run --filter @t3tools/scripts migrations:check`: the upstream manifest
+must be a prefix of upstream `main`'s, with the same IDs, names and modules, and every file under
+those paths must match a version upstream has had. An early import of an unmerged upstream migration
+therefore fails until upstream merges it, because its ID can still change. The server test job and
 Fork Nightly upgrade disposable databases built from the released `nightly` branch to check that the
 two histories stay separate and composer drafts survive.
 

@@ -130,6 +130,19 @@ describe("upstream intake audit", () => {
     assert.include(result.summary, "Manual approval required");
   });
 
+  it("blocks a candidate whose upstream migration history differs from upstream", () => {
+    const result = audit({
+      changedPaths: ["apps/server/src/persistence/Migrations.ts"],
+      migrationErrors: ["Upstream migration manifest position 51 is 51 ForkOnly."],
+      migrationChanges: ["adds 51 ForkOnly"],
+    });
+
+    assert.isFalse(result.valid);
+    assert.include(result.errors, "Upstream migration manifest position 51 is 51 ForkOnly.");
+    assert.include(result.manualReviewReasons, "a database migration changed: adds 51 ForkOnly");
+    assert.include(result.summary, "Blocked");
+  });
+
   it("groups overlapping fork features by the changed path", () => {
     const result = audit({
       changedPaths: ["apps/web/src/AppRoot.tsx"],
@@ -274,12 +287,31 @@ describe("upstream intake audit", () => {
     assert.equal(workflow.jobs.intake.name, "Fork Intake Audit");
     assert.include(workflow.jobs.intake.if, "refs/heads/intake/");
     assert.include(workflow.jobs.intake.if, "incognitojam/styal");
+    const fetchStep = workflow.jobs.intake.steps.find(
+      (step) => step.name === "Fetch main and upstream",
+    );
+    assert.include(fetchStep?.run ?? "", "refs/remotes/upstream/main");
     const auditStep = workflow.jobs.intake.steps.find(
       (step) => step.name === "Audit upstream intake candidate",
     );
     assert.include(auditStep?.run ?? "", "intake:check");
     assert.include(auditStep?.run ?? "", "refs/remotes/origin/main");
     assert.include(auditStep?.run ?? "", '"$GITHUB_SHA"');
+  });
+
+  it("checks the upstream migration history in Fork CI", () => {
+    const workflow = parse(NodeFS.readFileSync(ciWorkflowPath, "utf8")) as {
+      readonly jobs: {
+        readonly check: {
+          readonly steps: ReadonlyArray<{ readonly name?: string; readonly run?: string }>;
+        };
+      };
+    };
+    const step = workflow.jobs.check.steps.find(
+      (candidate) => candidate.name === "Check upstream migration history",
+    );
+    assert.include(step?.run ?? "", "refs/remotes/upstream/main");
+    assert.include(step?.run ?? "", "migrations:check");
   });
 
   it("gates manual promotion on trusted validation and environment approval", () => {
@@ -348,6 +380,7 @@ describe("upstream intake audit", () => {
       (step) => step.name === "Audit candidate with trusted main code",
     );
     assert.include(auditCandidate?.run ?? "", "intake:check");
+    assert.include(auditCandidate?.run ?? "", "refs/remotes/upstream/main");
     assert.notInclude(auditCandidate?.run ?? "", "expected-source");
 
     assert.isUndefined(

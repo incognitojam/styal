@@ -13,6 +13,10 @@ export interface UpstreamIntakeAuditInput {
   readonly ledger: ForkFeatureLedger;
   /** Upstream PRs associated with each Upstream-Commit SHA that shares a commit with Upstream-PR. */
   readonly commitPullRequests: ReadonlyMap<string, ReadonlyArray<number>>;
+  /** Differences between the candidate's upstream migration history and upstream's. */
+  readonly migrationErrors?: ReadonlyArray<string>;
+  /** Upstream migration manifest entries the candidate adds or changes, such as "adds 51 Name". */
+  readonly migrationChanges?: ReadonlyArray<string>;
 }
 
 export interface UpstreamIntakeAudit {
@@ -30,6 +34,15 @@ interface ManualReviewRule {
   readonly description: string;
   readonly matches: (path: string) => boolean;
 }
+
+const migrationReviewRule: ManualReviewRule = {
+  description: "a database migration changed",
+  matches: (path) =>
+    path
+      .toLowerCase()
+      .split("/")
+      .some((segment) => segment.includes("migration")),
+};
 
 const manualReviewRules: ReadonlyArray<ManualReviewRule> = [
   {
@@ -58,14 +71,7 @@ const manualReviewRules: ReadonlyArray<ManualReviewRule> = [
       );
     },
   },
-  {
-    description: "a database migration changed",
-    matches: (path) =>
-      path
-        .toLowerCase()
-        .split("/")
-        .some((segment) => segment.includes("migration")),
-  },
+  migrationReviewRule,
   {
     description: "a cross-surface contract changed",
     matches: (path) => path.startsWith("packages/contracts/"),
@@ -163,6 +169,7 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
 
   const provenance = parseUpstreamProvenance(input.commitMessages);
   errors.push(...provenance.errors);
+  errors.push(...(input.migrationErrors ?? []));
   const overlaps = findForkFeatureOverlaps(input.ledger, input.changedPaths);
   const overlapFeatureIds = overlaps.map(({ feature }) => feature.id);
   const overlapPaths = new Map<string, Array<string>>();
@@ -173,9 +180,14 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
       overlapPaths.set(path, featureIds);
     }
   }
+  const migrationChanges = input.migrationChanges ?? [];
   const manualReviewReasons = manualReviewRules
     .filter((rule) => input.changedPaths.some(rule.matches))
-    .map((rule) => rule.description);
+    .map((rule) =>
+      rule === migrationReviewRule && migrationChanges.length > 0
+        ? `${rule.description}: ${migrationChanges.join("; ")}`
+        : rule.description,
+    );
   if (provenance.commitShas.length > 0) {
     manualReviewReasons.push("explicit upstream commits require source-diff review");
   }

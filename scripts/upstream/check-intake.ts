@@ -17,7 +17,14 @@ import {
   formatUpstreamIntakePromotionCommand,
   formatUpstreamIntakePushCommand,
 } from "./lib/intake.ts";
+import {
+  changedUpstreamMigrations,
+  checkUpstreamMigrationsAtRevision,
+  parseUpstreamMigrationManifest,
+  upstreamMigrationManifestPath,
+} from "./lib/migrations.ts";
 import { parseUpstreamProvenance } from "./lib/provenance.ts";
+import { makeUpstreamMigrationGit } from "./migration-git.ts";
 import { fetchAssociations } from "./queue.ts";
 
 const repoRoot = NodePath.resolve(
@@ -32,6 +39,10 @@ function flag(name: string): string {
     throw new Error(`${name} requires a value.`);
   }
   return value;
+}
+
+function optionalFlag(name: string): string | undefined {
+  return process.argv.includes(name) ? flag(name) : undefined;
 }
 
 function git(args: ReadonlyArray<string>): string {
@@ -66,6 +77,44 @@ function isFileAtRevision(revision: string, path: string): boolean {
     encoding: "utf8",
   });
   return result.status === 0 && result.stdout.trim() === "blob";
+}
+
+/** Checks the candidate's upstream migration history against fetched upstream. */
+function upstreamMigrationReview(input: {
+  readonly baseSha: string;
+  readonly headSha: string;
+  readonly upstreamRef: string;
+}): { readonly errors: ReadonlyArray<string>; readonly changes: ReadonlyArray<string> } {
+  const migrationGit = makeUpstreamMigrationGit(repoRoot);
+  const manifestAt = (revision: string) =>
+    parseUpstreamMigrationManifest(
+      migrationGit.show(revision, upstreamMigrationManifestPath) ?? "",
+    );
+  const changes = changedUpstreamMigrations({
+    base: manifestAt(input.baseSha),
+    head: manifestAt(input.headSha),
+  });
+  const upstream = NodeChildProcess.spawnSync(
+    "git",
+    ["rev-parse", "--verify", "--quiet", `${input.upstreamRef}^{commit}`],
+    { cwd: repoRoot, encoding: "utf8" },
+  );
+  if (upstream.status !== 0) {
+    return {
+      errors: [
+        `${input.upstreamRef} is not available, so the upstream migration history was not checked. Fetch it with: git fetch --no-tags https://github.com/pingdotgg/t3code.git main:refs/remotes/upstream/main`,
+      ],
+      changes,
+    };
+  }
+  return {
+    errors: checkUpstreamMigrationsAtRevision({
+      git: migrationGit,
+      revision: input.headSha,
+      upstreamRevision: upstream.stdout.trim(),
+    }),
+    changes,
+  };
 }
 
 function writeOutput(name: string, value: string | boolean): void {
@@ -232,6 +281,11 @@ try {
   });
   if (ledgerErrors.length > 0) throw new Error(ledgerErrors.join("\n"));
 
+  const migrations = upstreamMigrationReview({
+    baseSha,
+    headSha,
+    upstreamRef: optionalFlag("--upstream-ref") ?? "refs/remotes/upstream/main",
+  });
   const commits = lines(git(["rev-list", "--reverse", `${baseSha}..${headSha}`]));
   const commitMessages = commits.map((commit) => git(["show", "-s", "--format=%B", commit]));
   const audit = auditUpstreamIntakeCandidate({
@@ -246,6 +300,8 @@ try {
     changedPaths: lines(git(["diff", "--name-only", "--no-renames", `${baseSha}...${headSha}`])),
     ledger,
     commitPullRequests: upstreamCommitPullRequests(ledger.upstream_repository, commitMessages),
+    migrationErrors: migrations.errors,
+    migrationChanges: migrations.changes,
   });
 
   process.stdout.write(audit.summary);
