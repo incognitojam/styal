@@ -46,19 +46,10 @@ export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"])
 export type TimestampFormat = typeof TimestampFormat.Type;
 const DEFAULT_TIMESTAMP_FORMAT: TimestampFormat = "locale";
 
-export const CompletionSound = Schema.Literals(["none", "resolve", "avanti"]);
-export type CompletionSound = typeof CompletionSound.Type;
-export const DEFAULT_COMPLETION_SOUND: CompletionSound = "resolve";
+export const NotificationSound = Schema.Literals(["t3-completion", "t3-input", "avanti", "none"]);
+export type NotificationSound = typeof NotificationSound.Type;
+const LegacyCompletionSound = Schema.Literals(["none", "chime", "resolve", "avanti"]);
 
-const PersistedCompletionSound = Schema.Literals(["none", "chime", "resolve", "avanti"]).pipe(
-  Schema.decodeTo(
-    CompletionSound,
-    SchemaTransformation.transformOrFail({
-      decode: (sound) => Effect.succeed(sound === "chime" ? "resolve" : sound),
-      encode: Effect.succeed,
-    }),
-  ),
-);
 export const DiffLayout = Schema.Literals(["stacked", "split"]);
 export type DiffLayout = typeof DiffLayout.Type;
 const DEFAULT_DIFF_LAYOUT: DiffLayout = "stacked";
@@ -306,7 +297,7 @@ export const LoadBalancingWeights = Schema.Record(
 
 export const DiffColorScheme = Schema.Literals(["red-green", "blue-orange"]);
 
-export const ClientSettingsSchema = Schema.Struct({
+const ClientSettingsFields = Schema.Struct({
   notificationMode: NotificationMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("off" as const)),
   ),
@@ -370,8 +361,14 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   // Desktop-only, opt-in sharing of aggregate activity with the local Discord client.
   discordRichPresence: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  completionSound: PersistedCompletionSound.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_COMPLETION_SOUND)),
+  completionSound: NotificationSound.pipe(
+    Schema.withDecodingDefault(Effect.succeed("t3-completion" as const)),
+  ),
+  inputSound: NotificationSound.pipe(
+    Schema.withDecodingDefault(Effect.succeed("t3-input" as const)),
+  ),
+  approvalSound: NotificationSound.pipe(
+    Schema.withDecodingDefault(Effect.succeed("t3-input" as const)),
   ),
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
@@ -502,6 +499,34 @@ export const ClientSettingsSchema = Schema.Struct({
   snapShotAnimations: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   wordWrap: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 });
+// Read the original fields before defaults erase the distinction between a fresh
+// install and an existing sound preference. Explicit notification modes always win.
+export const ClientSettingsSchema = Schema.Struct({
+  ...ClientSettingsFields.fields,
+  notificationMode: Schema.optionalKey(NotificationMode),
+  completionSound: Schema.optionalKey(Schema.Union([NotificationSound, LegacyCompletionSound])),
+}).pipe(
+  Schema.decodeTo(
+    Schema.toType(ClientSettingsFields),
+    SchemaTransformation.transform({
+      decode: (settings) => ({
+        ...settings,
+        notificationMode:
+          settings.notificationMode ??
+          (settings.completionSound === "resolve" ||
+          settings.completionSound === "chime" ||
+          settings.completionSound === "avanti"
+            ? "notifications-and-sound"
+            : "off"),
+        completionSound:
+          settings.completionSound === "resolve" || settings.completionSound === "chime"
+            ? "t3-completion"
+            : (settings.completionSound ?? "t3-completion"),
+      }),
+      encode: (settings) => settings,
+    }),
+  ),
+);
 export type ClientSettings = typeof ClientSettingsSchema.Type;
 
 export const DEFAULT_CLIENT_SETTINGS: ClientSettings = Schema.decodeSync(ClientSettingsSchema)({});
@@ -1475,7 +1500,9 @@ export const ClientSettingsPatch = Schema.Struct({
   browserDefaultProfileId: Schema.optionalKey(BrowserProfileId),
   confirmQuit: Schema.optionalKey(QuitConfirmationMode),
   discordRichPresence: Schema.optionalKey(Schema.Boolean),
-  completionSound: Schema.optionalKey(CompletionSound),
+  completionSound: Schema.optionalKey(NotificationSound),
+  inputSound: Schema.optionalKey(NotificationSound),
+  approvalSound: Schema.optionalKey(NotificationSound),
   confirmThreadArchive: Schema.optionalKey(Schema.Boolean),
   confirmThreadDelete: Schema.optionalKey(Schema.Boolean),
   confirmThreadUnpin: Schema.optionalKey(Schema.Boolean),

@@ -1,83 +1,177 @@
 import { useState } from "react";
+import { DEFAULT_CLIENT_SETTINGS, type NotificationSound } from "@t3tools/contracts/settings";
 
 import {
   hasDesktopNotifications,
   hasNotificationSound,
   NOTIFICATION_MODE_LABELS,
+  NOTIFICATION_SOUND_LABELS,
+  playNotificationSound,
   unlockNotificationAudio,
 } from "../../threadNotifications";
+import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
-import { SettingsRow } from "./settingsLayout";
+import { SettingsRow, SettingResetButton } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 
+const SOUND_SETTINGS = [
+  {
+    key: "completionSound",
+    id: "completion-sound",
+    label: "Completion sound",
+    kind: "completion",
+    description: "When a thread finishes.",
+  },
+  {
+    key: "inputSound",
+    id: "input-sound",
+    label: "Input sound",
+    kind: "input",
+    description: "When an agent asks for your input.",
+  },
+  {
+    key: "approvalSound",
+    id: "approval-sound",
+    label: "Approval sound",
+    kind: "input",
+    description: "When an agent needs your approval.",
+  },
+] as const;
+
+function isNotificationSound(value: string | null): value is NotificationSound {
+  return (
+    value === "t3-completion" || value === "t3-input" || value === "avanti" || value === "none"
+  );
+}
+
 export function NotificationSettings() {
-  const mode = useScopedSettings((settings) => settings.notificationMode);
+  const settings = useScopedSettings();
+  const mode = settings.notificationMode;
   const updateSettings = useUpdateScopedSettings();
   const [permissionMessage, setPermissionMessage] = useState<string | null>(null);
   const [requesting, setRequesting] = useState(false);
+  const needsPermission =
+    hasDesktopNotifications(mode) &&
+    (typeof Notification === "undefined" || Notification.permission !== "granted");
+
+  async function changeMode(value: string | null) {
+    if (
+      value !== "off" &&
+      value !== "notifications" &&
+      value !== "sound" &&
+      value !== "notifications-and-sound"
+    )
+      return;
+    setPermissionMessage(null);
+    if (hasNotificationSound(value)) void unlockNotificationAudio();
+    if (hasDesktopNotifications(value)) {
+      if (typeof Notification === "undefined" || !window.isSecureContext) {
+        setPermissionMessage(
+          "Notifications need a supported browser over HTTPS, or the desktop app. Sound only is still available.",
+        );
+        return;
+      }
+      setRequesting(true);
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission !== "granted") {
+          setPermissionMessage(
+            "Allow notifications in your browser or system settings, then choose this option again. Sound only is still available.",
+          );
+          return;
+        }
+      } catch {
+        setPermissionMessage(
+          "Notifications are unavailable in this browser. Sound only is still available.",
+        );
+        return;
+      } finally {
+        setRequesting(false);
+      }
+    }
+    updateSettings({ notificationMode: value });
+  }
 
   return (
-    <SettingsRow
-      {...searchableSetting("thread-notifications")}
-      description={
-        permissionMessage ??
-        "Alert when a thread finishes or needs input. Applies to this device while styal is open."
-      }
-      control={
-        <Select
-          value={mode}
-          disabled={requesting}
-          onValueChange={async (value) => {
-            if (
-              value !== "off" &&
-              value !== "notifications" &&
-              value !== "sound" &&
-              value !== "notifications-and-sound"
-            )
-              return;
-            setPermissionMessage(null);
-            if (hasNotificationSound(value)) unlockNotificationAudio();
-            if (hasDesktopNotifications(value)) {
-              if (typeof Notification === "undefined" || !window.isSecureContext) {
-                setPermissionMessage(
-                  "Notifications need a supported browser over HTTPS, or the desktop app. Sound only is still available.",
-                );
-                return;
-              }
-              setRequesting(true);
-              try {
-                const permission = await Notification.requestPermission();
-                if (permission !== "granted") {
-                  setPermissionMessage(
-                    "Allow notifications in your browser or system settings, then choose this option again. Sound only is still available.",
-                  );
-                  return;
-                }
-              } catch {
-                setPermissionMessage(
-                  "Notifications are unavailable in this browser. Sound only is still available.",
-                );
-                return;
-              } finally {
-                setRequesting(false);
-              }
-            }
-            updateSettings({ notificationMode: value });
-          }}
-        >
-          <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Thread notifications">
-            <SelectValue>{NOTIFICATION_MODE_LABELS[mode]}</SelectValue>
-          </SelectTrigger>
-          <SelectPopup align="end" alignItemWithTrigger={false}>
-            {Object.entries(NOTIFICATION_MODE_LABELS).map(([value, label]) => (
-              <SelectItem key={value} hideIndicator value={value}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
-      }
-    />
+    <>
+      <SettingsRow
+        {...searchableSetting("thread-notifications")}
+        description={
+          permissionMessage ??
+          (needsPermission
+            ? "System notifications need permission on this device. Sound follows your selected mode."
+            : "Alert when a thread finishes or needs input or approval. Applies to this device while styal is open.")
+        }
+        control={
+          <>
+            <Select value={mode} disabled={requesting} onValueChange={changeMode}>
+              <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Thread notifications">
+                <SelectValue>{NOTIFICATION_MODE_LABELS[mode]}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {Object.entries(NOTIFICATION_MODE_LABELS).map(([value, label]) => (
+                  <SelectItem key={value} hideIndicator value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+            {needsPermission ? (
+              <Button variant="outline" disabled={requesting} onClick={() => void changeMode(mode)}>
+                Allow notifications
+              </Button>
+            ) : null}
+          </>
+        }
+      />
+      {SOUND_SETTINGS.map(({ key, id, label, kind, description }) => (
+        <SettingsRow
+          key={key}
+          {...searchableSetting(id)}
+          description={`${description} Used when Thread notifications includes sound; Preview always plays it.`}
+          resetAction={
+            settings[key] !== DEFAULT_CLIENT_SETTINGS[key] ? (
+              <SettingResetButton
+                label={label.toLowerCase()}
+                onClick={() => updateSettings({ [key]: DEFAULT_CLIENT_SETTINGS[key] })}
+              />
+            ) : null
+          }
+          control={
+            <>
+              <Select
+                value={settings[key]}
+                onValueChange={(value) => {
+                  if (isNotificationSound(value)) updateSettings({ [key]: value });
+                }}
+              >
+                <SelectTrigger size="sm" className="w-full sm:w-40" aria-label={label}>
+                  <SelectValue>{NOTIFICATION_SOUND_LABELS[settings[key]]}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  {Object.entries(NOTIFICATION_SOUND_LABELS).map(([value, soundLabel]) => (
+                    <SelectItem key={value} hideIndicator value={value}>
+                      {soundLabel}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+              <Button
+                variant="outline"
+                aria-label={`Preview ${label.toLowerCase()}`}
+                disabled={settings[key] === "none"}
+                onClick={async () => {
+                  await unlockNotificationAudio();
+                  await playNotificationSound(kind, () => true, settings[key]);
+                }}
+              >
+                Preview
+              </Button>
+            </>
+          }
+        />
+      ))}
+    </>
   );
 }

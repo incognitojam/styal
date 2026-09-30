@@ -356,32 +356,36 @@ features:
       retire_when: Upstream displays Codex model word suffixes with spaces while preserving model IDs.
 
   - id: completion-sounds
-    title: Configurable agent completion sounds
-    status: maintained
+    title: Configurable thread notification sounds
+    status: review-needed
     prs: [5, 7, 19, 72, 249, 250]
     invariants:
-      - Users can select, preview, and disable the sound played when an agent finishes or awaits input.
-      - Sound playback follows persisted client settings without firing repeatedly for the same turn state.
-      - Resolve is the fork's default completion sound, legacy Chime preferences migrate to it, and every offered sound uses a comparable playback level.
+      - Users can independently select, preview, and disable sounds for completion, input, and approval events.
+      - Playback follows the persisted notification mode and event sound choice without repeating the same turn state.
+      - Fresh settings default to Off with upstream completion and attention sounds; legacy Resolve or Chime migrates to T3 completion, and Avanti remains Avanti, with notifications and sound enabled unless a notification mode was explicitly saved.
+      - Legacy None stays disabled, Resolve is retired, and Avanti retains its normalized playback level.
     implementation_paths:
-      - apps/web/src/components/TurnCompletionSound.tsx
+      - apps/web/src/components/ThreadNotificationCoordinator.tsx
+      - apps/web/src/components/settings/NotificationSettings.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
-      - apps/web/src/lib/completionSound.logic.ts
-      - apps/web/src/lib/completionSound.ts
+      - apps/web/src/threadNotifications.ts
       - packages/contracts/src/settings.ts
     upstream_paths:
-      - apps/web/src/AppRoot.tsx
+      - apps/web/src/components/ThreadNotificationCoordinator.tsx
+      - apps/web/src/components/settings/NotificationSettings.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
+      - apps/web/src/threadNotifications.ts
       - packages/contracts/src/settings.ts
     tests:
       - apps/desktop/src/settings/DesktopClientSettings.test.ts
-      - apps/web/src/lib/completionSound.logic.test.ts
-      - apps/web/src/lib/completionSound.test.ts
+      - apps/web/src/components/ThreadNotificationCoordinator.test.tsx
+      - apps/web/src/threadNotifications.test.ts
       - packages/contracts/src/settings.test.ts
     upstream:
-      status: unassessed
-      tracking: []
-      retire_when: Upstream provides configurable completion and awaiting-input sounds with equivalent persistence and playback behavior.
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/11481
+      retire_when: Upstream provides independent event sound choices and previews with equivalent preference migration and playback behavior.
 
   - id: composer-draft-sync
     title: Cross-device composer draft synchronization

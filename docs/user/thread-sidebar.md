@@ -156,6 +156,17 @@ finishes; the call's own result shows its status.
 
 ## Completion sounds
 
-On web and desktop, choose a **Completion sound** in **Settings → General** to hear
-when an agent finishes or asks for input: **Resolve**, **Avanti**, or none. A thread
-waiting for your input shows **Awaiting Input** until you answer.
+On web and desktop, choose **Thread notifications** in **Settings → General** for
+system notifications, sound, or both when a thread finishes or needs input or
+approval. Alerts apply to this device while styal is open. Browser notifications
+need permission and HTTPS (or localhost); use **Allow notifications** if prompted.
+
+Choose a sound independently for **Completion**, **Input**, and **Approval**:
+**T3 completion**, **T3 attention**, **Avanti**, or **None**. Preview plays the
+selected sound even when alerts are off. The defaults use T3 completion for
+finished threads and T3 attention for input and approval requests.
+
+Fresh installations start with notifications **Off**. Existing Resolve and Chime
+preferences become T3 completion, and Avanti stays Avanti, with notifications and
+sound enabled. An existing None preference stays off. Any previously saved
+notification mode takes precedence over this migration.

@@ -11,6 +11,7 @@ import {
   hasDesktopNotifications,
   hasNotificationSound,
   playNotificationSound,
+  notificationSoundForEvent,
   unlockNotificationAudio,
 } from "../threadNotifications";
 import { resolveSidebarThreadStatus } from "./Sidebar.logic";
@@ -75,8 +76,14 @@ function EnvironmentNotifications({ environmentId }: { environmentId: Environmen
             : null;
       if (!kind) continue;
       if (hasNotificationSound(mode)) {
-        void playNotificationSound(kind, () =>
-          hasNotificationSound(getClientSettings().notificationMode),
+        const event = status === "approval" ? "approval" : kind;
+        const sound = notificationSoundForEvent(getClientSettings(), event);
+        void playNotificationSound(
+          kind,
+          () =>
+            hasNotificationSound(getClientSettings().notificationMode) &&
+            notificationSoundForEvent(getClientSettings(), event) === sound,
+          sound,
         );
       }
       if (

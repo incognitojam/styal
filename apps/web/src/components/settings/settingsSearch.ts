@@ -302,6 +302,18 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["command menu dollar $ slash /"],
   },
   {
+    id: "input-sound",
+    title: "Input sound",
+    to: "/settings/general",
+    searchTerms: ["notification audio attention preview"],
+  },
+  {
+    id: "approval-sound",
+    title: "Approval sound",
+    to: "/settings/general",
+    searchTerms: ["notification audio permission preview"],
+  },
+  {
     id: "completion-sound",
     title: "Completion sound",
     to: "/settings/general",

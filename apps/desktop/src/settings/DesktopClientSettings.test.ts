@@ -123,6 +123,36 @@ describe("DesktopClientSettings", () => {
     ),
   );
 
+  for (const [legacy, expected] of [
+    ["resolve", "t3-completion"],
+    ["avanti", "avanti"],
+  ] as const) {
+    it.effect(`migrates persisted ${legacy} notifications and preserves a later opt-out`, () =>
+      withClientSettings(
+        Effect.gen(function* () {
+          const environment = yield* DesktopEnvironment.DesktopEnvironment;
+          const fileSystem = yield* FileSystem.FileSystem;
+          const settings = yield* DesktopClientSettings.DesktopClientSettings;
+          yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
+          yield* fileSystem.writeFileString(
+            environment.clientSettingsPath,
+            yield* Schema.encodeEffect(
+              Schema.fromJsonString(Schema.Struct({ completionSound: Schema.String })),
+            )({ completionSound: legacy }),
+          );
+          const migrated = Option.getOrThrow(yield* settings.get);
+          assert.equal(migrated.completionSound, expected);
+          assert.equal(migrated.notificationMode, "notifications-and-sound");
+          assert.equal(migrated.inputSound, "t3-input");
+          yield* settings.set({ ...migrated, notificationMode: "off" });
+          const reloaded = Option.getOrThrow(yield* settings.get);
+          assert.equal(reloaded.notificationMode, "off");
+          assert.equal(reloaded.completionSound, expected);
+        }),
+      ),
+    );
+  }
+
   it.effect("persists and reloads client settings", () =>
     withClientSettings(
       Effect.gen(function* () {

@@ -90,14 +90,6 @@ export check's workspace selectors as more workspaces become clean. Review calle
 deleting code; production mode can also report development scripts and test fixtures.
 Runtime-discovered entrypoints and dependency exceptions belong in [knip.jsonc](../../knip.jsonc).
 
-## Sound assets
-
-Run `node scripts/generate-resolve-sound.ts` to regenerate `apps/web/public/resolve.wav`.
-The script uses only Node builtins and contains the tone frequencies, timing, and gain envelope.
-It writes a 0.48-second, 48 kHz mono PCM WAV with the playback volume and fades baked in.
-Commit the generated WAV alongside any changes to the generator; it is shipped as a static asset
-and played through the same sample player as Avanti on web and desktop.
-
 ## Desktop artifacts
 
 Local artifact builds are unsigned by default and write to `release/`:

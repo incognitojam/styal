@@ -570,28 +570,48 @@ describe("ServerSettings thread settlement", () => {
   });
 });
 
-describe("ClientSettings completion sound", () => {
-  it("defaults to Resolve", () => {
-    expect(decodeClientSettings({}).completionSound).toBe("resolve");
+describe("ClientSettings notification sound migration", () => {
+  it("keeps fresh settings off with upstream event sounds", () => {
+    expect(decodeClientSettings({})).toMatchObject({
+      notificationMode: "off",
+      completionSound: "t3-completion",
+      inputSound: "t3-input",
+      approvalSound: "t3-input",
+    });
   });
 
-  it("accepts valid persisted values", () => {
-    expect(decodeClientSettings({ completionSound: "none" }).completionSound).toBe("none");
-    expect(decodeClientSettings({ completionSound: "resolve" }).completionSound).toBe("resolve");
-    expect(decodeClientSettings({ completionSound: "avanti" }).completionSound).toBe("avanti");
+  it.each(["resolve", "chime", "avanti"])("migrates legacy %s to all alerts on", (legacy) => {
+    const migrated = decodeClientSettings({ completionSound: legacy });
+    expect(migrated).toMatchObject({
+      notificationMode: "notifications-and-sound",
+      completionSound: legacy === "avanti" ? "avanti" : "t3-completion",
+      inputSound: "t3-input",
+      approvalSound: "t3-input",
+    });
+    expect(decodeClientSettings(encodeClientSettings(migrated))).toEqual(migrated);
   });
 
-  it("migrates the retired Chime sound to Resolve", () => {
-    const migrated = decodeClientSettings({ completionSound: "chime" });
-
-    expect(migrated.completionSound).toBe("resolve");
-    expect(encodeClientSettings(migrated).completionSound).toBe("resolve");
-    expect(() => decodeClientSettingsPatch({ completionSound: "chime" })).toThrow();
+  it("preserves disabled legacy sounds and explicit notification modes", () => {
+    expect(decodeClientSettings({ completionSound: "none" }).notificationMode).toBe("off");
+    for (const notificationMode of ["off", "notifications", "sound", "notifications-and-sound"]) {
+      expect(
+        decodeClientSettings({ completionSound: "avanti", notificationMode }).notificationMode,
+      ).toBe(notificationMode);
+    }
   });
 
-  it("rejects invalid persisted values", () => {
-    expect(() => decodeClientSettings({ completionSound: "silent" })).toThrow();
-  });
+  it.each(["completionSound", "inputSound", "approvalSound"])(
+    "round-trips independent %s choices",
+    (key) => {
+      for (const sound of ["none", "t3-completion", "t3-input", "avanti"]) {
+        const settings = decodeClientSettings({ [key]: sound, notificationMode: "off" });
+        expect(encodeClientSettings(settings)).toHaveProperty(key, sound);
+        expect(decodeClientSettingsPatch({ [key]: sound })).toHaveProperty(key, sound);
+      }
+      expect(() => decodeClientSettings({ [key]: "silent" })).toThrow();
+      expect(() => decodeClientSettingsPatch({ [key]: "resolve" })).toThrow();
+    },
+  );
 });
 
 describe("ClientSettings Claude status alerts", () => {

@@ -21,7 +21,6 @@ import {
 import {
   DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
   DEFAULT_UNIFIED_SETTINGS,
-  type CompletionSound,
   type DiffLayout,
   type EnvironmentIdentificationMode,
   MAX_APPEARANCE_CONTRAST,
@@ -100,7 +99,6 @@ import { ensureLocalApi, readLocalApi } from "../../localApi";
 import { isMacPlatform } from "../../lib/utils";
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
-import { playCompletionSound } from "../../lib/completionSound";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
@@ -180,12 +178,6 @@ const TIMESTAMP_FORMAT_LABELS = {
   "12-hour": "12-hour",
   "24-hour": "24-hour",
 } as const;
-
-const COMPLETION_SOUND_LABELS: Record<CompletionSound, string> = {
-  none: "No sound",
-  resolve: "Resolve",
-  avanti: "Avanti",
-};
 
 const DIFF_LAYOUT_LABELS: Record<DiffLayout, string> = {
   stacked: "Stacked",
@@ -543,6 +535,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.completionSound !== DEFAULT_UNIFIED_SETTINGS.completionSound
         ? ["Completion sound"]
         : []),
+      ...(settings.inputSound !== DEFAULT_UNIFIED_SETTINGS.inputSound ? ["Input sound"] : []),
+      ...(settings.approvalSound !== DEFAULT_UNIFIED_SETTINGS.approvalSound
+        ? ["Approval sound"]
+        : []),
       ...(settings.notificationMode !== DEFAULT_UNIFIED_SETTINGS.notificationMode
         ? ["Thread notifications"]
         : []),
@@ -637,6 +633,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.enableAgentBrowserAccess,
       settings.confirmQuit,
       settings.completionSound,
+      settings.inputSound,
+      settings.approvalSound,
       settings.confirmThreadArchive,
       settings.confirmThreadDelete,
       settings.confirmThreadUnpin,
@@ -747,6 +745,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
       sidebarThreadTimestampMode: DEFAULT_UNIFIED_SETTINGS.sidebarThreadTimestampMode,
       completionSound: DEFAULT_UNIFIED_SETTINGS.completionSound,
+      inputSound: DEFAULT_UNIFIED_SETTINGS.inputSound,
+      approvalSound: DEFAULT_UNIFIED_SETTINGS.approvalSound,
       notificationMode: DEFAULT_UNIFIED_SETTINGS.notificationMode,
       wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
       diffFilesCollapsed: DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed,
@@ -2574,57 +2574,6 @@ export function GeneralSettingsPanel() {
               }
               aria-label="Show skills in slash menu"
             />
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("completion-sound")}
-          description="Choose whether styal plays a sound when a response finishes or the agent asks for your input."
-          resetAction={
-            settings.completionSound !== DEFAULT_UNIFIED_SETTINGS.completionSound ? (
-              <SettingResetButton
-                label="completion sound"
-                onClick={() =>
-                  updateSettings({
-                    completionSound: DEFAULT_UNIFIED_SETTINGS.completionSound,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <>
-              <Select
-                value={settings.completionSound}
-                onValueChange={(value) => {
-                  if (value === "none" || value === "resolve" || value === "avanti") {
-                    updateSettings({ completionSound: value });
-                  }
-                }}
-              >
-                <SelectTrigger className="w-full sm:w-40" aria-label="Completion sound">
-                  <SelectValue>{COMPLETION_SOUND_LABELS[settings.completionSound]}</SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  <SelectItem hideIndicator value="resolve">
-                    {COMPLETION_SOUND_LABELS.resolve}
-                  </SelectItem>
-                  <SelectItem hideIndicator value="avanti">
-                    {COMPLETION_SOUND_LABELS.avanti}
-                  </SelectItem>
-                  <SelectItem hideIndicator value="none">
-                    {COMPLETION_SOUND_LABELS.none}
-                  </SelectItem>
-                </SelectPopup>
-              </Select>
-              <Button
-                variant="outline"
-                disabled={settings.completionSound === "none"}
-                onClick={() => playCompletionSound(settings.completionSound)}
-              >
-                Test
-              </Button>
-            </>
           }
         />
 
