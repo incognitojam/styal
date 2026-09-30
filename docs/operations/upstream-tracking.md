@@ -13,8 +13,8 @@ From the worktree root:
 ```bash
 git fetch --no-tags origin main
 git fetch --no-tags https://github.com/pingdotgg/t3code.git main:refs/remotes/upstream/main
-node scripts/upstream-queue.ts status
-node scripts/upstream-queue.ts next --count 20
+node scripts/upstream/queue.ts status
+node scripts/upstream/queue.ts next --count 20
 ```
 
 The state in `.github/upstream-intake.json` has three parts:
@@ -25,17 +25,15 @@ The state in `.github/upstream-intake.json` has three parts:
 
 For upstream changes worth watching, add an entry to `.github/upstream-tracked-prs.json` with the PR number and a `reason`: what the fork is waiting on it for, such as a blocked fork change or a bug users hit. Write a fork PR as "fork #123"; a bare number is an upstream PR. Both reports show the reason next to the PR. `status` reads current upstream PR metadata and reports each tracked change as open, pending, recorded, skipped, or awaiting a fresh upstream fetch. Pending entries show how many days their upstream merge is ahead of the fork's last reconciled upstream integration, and whether they fall beyond the fixed target. The report uses the same intake provenance as the queue; a recorded import is evidence of intake, not proof that the behavior still works. Remove an entry once the report shows it recorded, or once its reason no longer applies. This list does not change queue order or authorize early intake.
 
-The daily **Upstream lag report** workflow includes the tracked PR table in its run summary. **Promote upstream intake** also writes a projected lag report and tracked PR table during candidate validation, using the exact candidate SHA. These reports are informational and do not gate promotion. To print the table locally, run `node scripts/upstream-tracked-prs-report.ts` after fetching both repositories.
+The daily **Upstream lag report** workflow includes the tracked PR table in its run summary. **Promote upstream intake** also writes a projected lag report and tracked PR table during candidate validation, using the exact candidate SHA. These reports are informational and do not gate promotion. To print the table locally, run `node scripts/upstream/tracked-prs-report.ts` after fetching both repositories.
 
 Normal commands compare against fetched `origin/main`, not the current branch. `next --count 20` selects the next 20 distinct outstanding PRs, plus intervening direct commits, in upstream first-parent order. Multi-commit PRs stay together. Twenty is a starting point, not a quota: inspect nearby reverts, corrections, and refactors before choosing a coherent boundary. Extend through a needed correction; stop before an independently substantial integration when appropriate.
 
 During initial catch-up, later upstream changes may already be present in the fork. Chronological intake removes prerequisite selection only when earlier changes are accounted for; it does not eliminate conflicts with those later imports or maintained fork differences.
 
-To see how far fork `main` trails upstream over time, run `node scripts/upstream-lag-report.ts`. It prints a Markdown report with Mermaid charts of upstream merges against the in-order tip reported by `status`, separates in-order imports from early ones, and estimates a catch-up date from the last three days of progress. The **Upstream lag report** workflow publishes the same report to its run summary daily and on manual dispatch.
+To see how far fork `main` trails upstream over time, run `node scripts/upstream/lag-report.ts`. It prints a Markdown report with Mermaid charts of upstream merges against the in-order tip reported by `status`, separates in-order imports from early ones, and estimates a catch-up date from the last three days of progress. The **Upstream lag report** workflow publishes the same report to its run summary daily and on manual dispatch.
 
-To plan an early import, run `node scripts/upstream-queue.ts early <PR-number> --through upstream/main`. Pass several PR numbers to plan them together. The command applies the selected patches at the reconciled upstream boundary, replays intervening upstream integrations in order, and adds PRs or direct commits only when that replay encounters a textual conflict. It then checks whether the resulting selection applies to fetched fork `main`. When a selected PR does not apply at the boundary itself, because it builds on upstream work the fork has not taken in, the command lists the conflicting files and the earlier pending upstream PRs that change them; `--json` includes every one. `early --count 20 --through upstream/main` provides a quick file-overlap screen without replay. A clean replay establishes that moving the selected patches earlier does not change the upstream result under Git's merge rules; review semantic dependencies and validate behavior before importing. This check changes no refs or working-tree files; simulation objects live in an ignored directory that the command removes afterward. The normal intake and promotion order remains chronological unless maintainers deliberately change this policy.
-
-To see how far fork `main` trails upstream over time, run `node scripts/upstream-lag-report.ts`. It prints a Markdown report with Mermaid charts of upstream merges against the in-order tip reported by `status`, separates in-order imports from early ones, and estimates a catch-up date from the last three days of progress. The **Upstream lag report** workflow publishes the same report to its run summary daily and on manual dispatch.
+Early imports are covered [below](#early-imports).
 
 ## 2. Apply in order
 
@@ -61,7 +59,7 @@ Do not run the full validation loop after every cherry-pick. Test intermediate s
 Review `origin/main...candidate` against the upstream sources and the fork feature ledger. Focus local tests and real-client checks on conflict resolutions, changed behavior, and fork integration boundaries. In particular, preserve styal's runtime homes, environment variables, browser storage, installed-app identity, and maintained capabilities. These are behavioral invariants, not a reason to mechanically replace every upstream name. Carry upstream migration files verbatim.
 
 ```bash
-node scripts/upstream-queue.ts status --fork-ref intake/<batch>
+node scripts/upstream/queue.ts status --fork-ref intake/<batch>
 vp run --filter @t3tools/scripts intake:check -- --base origin/main --head intake/<batch>
 ```
 
@@ -90,8 +88,8 @@ After promotion, fetch `origin/main`, verify the batch is accounted for, and adv
 
 ```bash
 git fetch --no-tags origin main
-node scripts/upstream-queue.ts status
-node scripts/upstream-queue.ts advance <full-upstream-boundary-SHA>
+node scripts/upstream/queue.ts status
+node scripts/upstream/queue.ts advance <full-upstream-boundary-SHA>
 ```
 
 `advance` edits only the local state file and rejects unresolved preceding commits or a boundary inside a multi-commit PR. Commit that state change through the normal maintainer review path, separately from the preserved upstream batch. A state-only PR must not include the intake commit history.
@@ -99,11 +97,27 @@ node scripts/upstream-queue.ts advance <full-upstream-boundary-SHA>
 Once baseline equals target, choose a new destination from fetched upstream and repeat:
 
 ```bash
-node scripts/upstream-queue.ts target <full-new-target-SHA>
-node scripts/upstream-queue.ts next --count 20
+node scripts/upstream/queue.ts target <full-new-target-SHA>
+node scripts/upstream/queue.ts next --count 20
 ```
 
 Commit the target change too. Neither command promotes code.
+
+## Early imports
+
+Intake stays chronological by default. Import a change ahead of the queue only when a maintainer asks for it.
+
+For a PR already merged into upstream `main`, plan the import first:
+
+```bash
+node scripts/upstream/queue.ts early <PR-number> [<PR-number> ...] --through upstream/main --json
+```
+
+`--through` sets the upstream commit to plan against for this run, in place of the target in the state file. Without it, a PR merged after the target fails with "not pending after the reconciled boundary". The command applies the selected patches at the reconciled upstream boundary, replays intervening upstream integrations in order, and adds PRs or direct commits only when that replay encounters a textual conflict. It then checks whether the resulting selection applies to fetched fork `main`. When a selected PR does not apply at the boundary itself, because it builds on upstream work the fork has not taken in, the command lists the conflicting files and the earlier pending upstream PRs that change them; `--json` includes every one. `early --count 20 --through upstream/main` without PR numbers provides a quick file-overlap screen without replay. A clean replay establishes that moving the selected patches earlier does not change the upstream result under Git's merge rules; review semantic dependencies and validate behavior before importing. The check changes no refs or working-tree files.
+
+Import a clean plan on its own `intake/upstream-<PR>` branch, including every PR and direct commit the plan added, and follow steps 2 to 4 with the usual `Upstream-PR` trailers. The queue then shows those sources as recorded when chronological intake reaches them.
+
+`early` only accepts PRs merged into upstream `main`. To import an open upstream PR, cherry-pick its commits onto an `intake/upstream-<PR>` branch with `Upstream-Commit` trailers only, as described in step 2. When upstream merges the PR, the queue lists the merge as pending; take upstream's final version at that point.
 
 ## T3 Code import check
 
@@ -119,6 +133,7 @@ node apps/server/scripts/generate-t3-import-fixture.ts --server <upstream-checko
 
 - `explain <PR-number-or-SHA-prefix>` shows sources and import evidence. SHA prefixes must be unambiguous and at least seven characters.
 - `--fork-ref intake/<batch>` inspects a candidate; `--state` and `--upstream-ref` select alternate local inputs.
+- `node scripts/upstream/queue.ts --help` lists every command. Modules under `scripts/upstream/lib/` are libraries and do nothing when run directly.
 - `--json` provides structured output for queue commands.
 - PR associations are cached in the primary checkout's ignored `.scratch/`, shared across worktrees and saved incrementally. New targets reuse settled associations from a previous cache and recheck direct or unmerged commits. Use `--refresh-metadata` to rebuild them.
 - Recorded evidence includes ancestry, provenance trailers, cherry-pick references, and historical `Source PRs:` sections. Incomplete or ambiguous associations stop the queue.

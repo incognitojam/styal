@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest";
-import { decodeTrackedPRs, trackedPRStatuses } from "./upstream-tracked-prs.ts";
-import type { QueueEntry } from "./upstream-queue.ts";
+import { decodeTrackedPRs, trackedPRStatuses } from "./tracked-prs.ts";
+import type { QueueEntry } from "../queue.ts";
 
 const sha = (n: number) => n.toString(16).padStart(40, "0");
 const mergedAt = "2026-09-01T00:00:00Z";

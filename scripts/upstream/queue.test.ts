@@ -15,8 +15,8 @@ import {
   reconciledThrough,
   reusableAssociations,
   shortenCommitSha,
-} from "./upstream-queue.ts";
-import type { Integration } from "./upstream-queue.ts";
+} from "./queue.ts";
+import type { Integration } from "./queue.ts";
 
 const sha = (n: number) => n.toString(16).padStart(40, "0");
 const integration = (n: number, pr: number | null = null): Integration => ({
@@ -306,7 +306,7 @@ describe("chronological upstream queue", () => {
   });
 
   it("walks real first-parent history despite backdated commits, includes merges and empties, and rejects side-branch baselines", () => {
-    const root = NodePath.resolve(import.meta.dirname, "..");
+    const root = NodePath.resolve(import.meta.dirname, "../..");
     const scratch = ensureScratchDirectory(root);
     const directory = NodeFS.mkdtempSync(NodePath.resolve(scratch, "upstream-queue-test-"));
     const run = (command: string, args: string[]) =>

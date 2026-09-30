@@ -4,8 +4,8 @@ import {
   earlierSourcesTouching,
   resolveEarlyDependencies,
   selectEarlySources,
-} from "./upstream-early.ts";
-import type { QueueEntry } from "./upstream-queue.ts";
+} from "./early.ts";
+import type { QueueEntry } from "../queue.ts";
 
 const entry = (
   n: number,

@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest";
 
-import { parseSourceCommitInput, parseUpstreamProvenance } from "./upstream-provenance.ts";
+import { parseSourceCommitInput, parseUpstreamProvenance } from "./provenance.ts";
 
 describe("upstream commit provenance", () => {
   it("ignores fenced PR-description examples while retaining actual import metadata", () => {

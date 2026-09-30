@@ -5,14 +5,14 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeUtil from "node:util";
-import { readLagHistory, replayIntake } from "./upstream-lag-report.ts";
-import { decodeState } from "./upstream-queue.ts";
+import { readLagHistory, replayIntake } from "./lag-report.ts";
+import { decodeState } from "./queue.ts";
 import {
   decodeTrackedPRs,
   fetchTrackedPRMetadata,
   trackedPRStatuses,
   type TrackedPRStatus,
-} from "./upstream-tracked-prs.ts";
+} from "./lib/tracked-prs.ts";
 
 export function renderTrackedPRReport(
   repository: string,
@@ -47,11 +47,11 @@ function main() {
   });
   if (values.help) {
     console.log(
-      "Usage: node scripts/upstream-tracked-prs-report.ts [--fork-ref origin/main] [--upstream-ref upstream/main]\nPrints a Markdown report for tracked upstream PRs. Reads fetched refs and GitHub PR metadata.",
+      "Usage: node scripts/upstream/tracked-prs-report.ts [--fork-ref origin/main] [--upstream-ref upstream/main]\nPrints a Markdown report for tracked upstream PRs. Reads fetched refs and GitHub PR metadata.",
     );
     return;
   }
-  const root = NodePath.resolve(import.meta.dirname, "..");
+  const root = NodePath.resolve(import.meta.dirname, "../..");
   const run = (command: string, args: string[]) =>
     NodeChildProcess.execFileSync(command, args, {
       cwd: root,
