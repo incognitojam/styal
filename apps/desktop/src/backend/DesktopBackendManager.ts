@@ -827,8 +827,12 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
           },
         ]);
 
+        // `killedBySignal` means the process had no exit code. The server exits
+        // with a code once its own shutdown finishes, so a requested stop that
+        // ends this way was force-killed mid-shutdown.
         const finalizeRun = Effect.fn("desktop.backendInstance.finalizeRun")(function* (
           reason: string,
+          killedBySignal = false,
         ) {
           yield* mutex.withPermits(1)(
             Effect.gen(function* () {
@@ -888,6 +892,12 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
                   if (exitObserved && !stopRequested) {
                     yield* backendOutputLog.persistFailure({
                       details: `pid=${pid.value} ${reason}`,
+                    });
+                  } else if (exitObserved && killedBySignal) {
+                    // Keep the output of a shutdown that ran out of time; it
+                    // holds the server's report of what shutdown was waiting on.
+                    yield* backendOutputLog.persistFailure({
+                      details: `pid=${pid.value} stop did not finish before the force kill: ${reason}`,
                     });
                   } else {
                     yield* backendOutputLog.discardSession;
@@ -971,7 +981,8 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
           Effect.provideService(HttpClient.HttpClient, httpClient),
           Scope.provide(runScope),
           Effect.matchEffect({
-            onFailure: (error) => finalizeRun(error.message),
+            onFailure: (error) =>
+              finalizeRun(error.message, error._tag === "BackendProcessExitStatusError"),
             onSuccess: (exit) => finalizeRun(exit.reason),
           }),
           Effect.ensuring(Scope.close(runScope, Exit.void).pipe(Effect.ignore)),

@@ -583,13 +583,15 @@ features:
   - id: desktop-graceful-shutdown
     title: Bounded graceful desktop shutdown
     status: maintained
-    prs: [203]
+    prs: [203, 557]
     invariants:
       - Quitting flushes settings and gracefully closes the main window before destroying remaining windows and terminating the backend.
       - Cleanup is bounded and observable so a stuck close, telemetry flush, or backend request cannot indefinitely delay process exit.
+      - A backend that is force-killed because its shutdown outlived the stop grace period keeps its captured output in the backend log, including the server's report of what shutdown was waiting on.
     implementation_paths:
       - apps/desktop/src/app/DesktopLifecycle.ts
       - apps/desktop/src/app/DesktopObservability.ts
+      - apps/desktop/src/backend/DesktopBackendManager.ts
       - apps/desktop/src/window/DesktopWindow.ts
     upstream_paths:
       - apps/desktop/src/app/DesktopLifecycle.ts
@@ -599,6 +601,7 @@ features:
     tests:
       - apps/desktop/src/app/DesktopLifecycle.test.ts
       - apps/desktop/src/app/DesktopObservability.test.ts
+      - apps/desktop/src/backend/DesktopBackendManager.test.ts
       - apps/desktop/src/window/DesktopWindow.test.ts
     upstream:
       status: partial
