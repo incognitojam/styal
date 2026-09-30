@@ -2081,6 +2081,7 @@ features:
       - A failed continuation records no restart activity; the thread settles with the existing continuation error instead.
       - Web and mobile show the restart as a standalone note in the turn's work that is never merged into grouped work rows and stays visible when a folded turn has nothing else to hide, while context compaction keeps its divider; each standalone kind names how clients draw it, so a new kind does not inherit the restart note.
       - A turn opened by a server-restart.continued note with no user message since the previous turn folds together with that turn as one response, with one "Worked for" row and one final answer; the time between the interrupted turn's last entry and the note is left out of that duration; background-work continuations stay separate.
+      - While a promptless replacement turn is working, mobile keeps all provider turns since the latest user message unfolded and their assistant footers hidden, matching web; live tool indicators stay scoped to the replacement turn, and a new user message starts a separate response.
     implementation_paths:
       - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/lib/threadActivity.ts
