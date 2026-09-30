@@ -916,6 +916,62 @@ describe("DesktopBackendManager", () => {
     ),
   );
 
+  it.effect("keeps the output of a stop that ends in a force kill", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const killed = yield* Deferred.make<void>();
+        const ready = yield* Deferred.make<void>();
+        const persisted = yield* Queue.unbounded<string>();
+        let discardedSessionCount = 0;
+
+        const spawnerLayer = Layer.succeed(
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.make(() =>
+            Effect.gen(function* () {
+              const scope = yield* Scope.Scope;
+              // The server did not finish shutting down within the grace
+              // period, so the kill ends it with a signal and no exit code.
+              yield* Scope.addFinalizer(scope, Deferred.succeed(killed, undefined));
+              return makeProcess({
+                exitCode: Deferred.await(killed).pipe(
+                  Effect.andThen(
+                    Effect.fail(
+                      PlatformError.systemError({
+                        _tag: "Unknown",
+                        module: "ChildProcess",
+                        method: "exitCode",
+                        description: "Process interrupted due to receipt of signal: 'SIGKILL'",
+                      }),
+                    ),
+                  ),
+                ),
+              });
+            }),
+          ),
+        );
+
+        const instance = yield* makeTestInstance({
+          spawnerLayer,
+          onReady: Deferred.succeed(ready, undefined).pipe(Effect.asVoid),
+          backendOutputLog: {
+            persistFailure: ({ details }) => Queue.offer(persisted, details).pipe(Effect.asVoid),
+            discardSession: Effect.sync(() => {
+              discardedSessionCount += 1;
+            }),
+          },
+        });
+
+        yield* instance.start;
+        yield* Deferred.await(ready);
+        yield* instance.stop().pipe(Effect.timeout("1 second"));
+
+        const details = yield* Queue.take(persisted).pipe(Effect.timeout("1 second"));
+        assert.include(details, "pid=123 stop did not finish before the force kill");
+        assert.equal(discardedSessionCount, 0);
+      }),
+    ),
+  );
+
   it.effect("restarts when start is requested during stop teardown", () =>
     Effect.scoped(
       Effect.gen(function* () {
