@@ -564,6 +564,44 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
   it.effect("completes a Grok turn from xAI prompt completion when the prompt RPC hangs", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("grok-xai-prompt-complete-fallback");
+      const trailingChunkReceived = yield* Deferred.make<void>();
+      const releaseTrailingChunk = yield* Deferred.make<void>();
+      const drainStarted = yield* Deferred.make<void>();
+      const drainCompleted = yield* Deferred.make<void>();
+      const makeRuntime = GrokAcpSupport.makeGrokAcpRuntime;
+      const runtimeSpy = vi
+        .spyOn(GrokAcpSupport, "makeGrokAcpRuntime")
+        .mockImplementation((options) =>
+          makeRuntime(options).pipe(
+            Effect.map((runtime) => ({
+              ...runtime,
+              getEvents: () =>
+                runtime
+                  .getEvents()
+                  .pipe(
+                    Stream.tap((event) =>
+                      event._tag === "ContentDelta" && event.text === "mock"
+                        ? Deferred.succeed(trailingChunkReceived, undefined).pipe(
+                            Effect.andThen(Deferred.await(releaseTrailingChunk)),
+                          )
+                        : Effect.void,
+                    ),
+                  ),
+              // The mock sends the final chunk after prompt_complete. Start the
+              // real drain once it arrives, but before the adapter can consume it.
+              drainEvents: Effect.gen(function* () {
+                yield* Deferred.await(trailingChunkReceived);
+                const drainFiber = yield* runtime.drainEvents.pipe(
+                  Effect.andThen(Deferred.succeed(drainCompleted, undefined)),
+                  Effect.forkChild({ startImmediately: true }),
+                );
+                yield* Deferred.succeed(drainStarted, undefined);
+                yield* Fiber.join(drainFiber);
+              }),
+            })),
+          ),
+        );
+      yield* Effect.addFinalizer(() => Effect.sync(() => runtimeSpy.mockRestore()));
       const wrapperPath = yield* Effect.promise(() =>
         makeMockGrokWrapper({
           T3_ACP_EMIT_XAI_PROMPT_COMPLETE_THEN_HANG: "1",
@@ -594,23 +632,23 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
         modelSelection: { instanceId: ProviderInstanceId.make("grok"), model: "grok-build" },
       });
 
-      const sendTurnResult = yield* adapter.sendTurn({
-        threadId,
-        input: "exercise fallback",
-        attachments: [],
-      });
+      const sendTurnFiber = yield* adapter
+        .sendTurn({ threadId, input: "exercise fallback", attachments: [] })
+        .pipe(Effect.forkChild);
 
+      yield* Deferred.await(drainStarted);
+      assert.isFalse(yield* Deferred.isDone(drainCompleted));
+      assert.isFalse(yield* Deferred.isDone(turnCompleted));
+      yield* Deferred.succeed(releaseTrailingChunk, undefined);
+
+      const sendTurnResult = yield* Fiber.join(sendTurnFiber);
       yield* Deferred.await(turnCompleted);
-      for (let yieldAttempt = 0; yieldAttempt < 8; yieldAttempt += 1) {
-        yield* Effect.yieldNow;
-      }
       const readySessions = yield* adapter.listSessions();
       const readySession = readySessions.find((session) => session.threadId === threadId);
-      const turnCompletedEvent = runtimeEvents.find(
+      const turnCompletedEvents = runtimeEvents.filter(
         (event): event is Extract<ProviderRuntimeEvent, { type: "turn.completed" }> =>
           event.type === "turn.completed",
       );
-      const eventTypes = runtimeEvents.map((event) => event.type);
       const content = runtimeEvents
         .filter(
           (event): event is Extract<ProviderRuntimeEvent, { type: "content.delta" }> =>
@@ -638,12 +676,12 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       );
 
       assert.equal(sendTurnResult.threadId, threadId);
-      assert.include(eventTypes, "turn.completed");
+      assert.lengthOf(turnCompletedEvents, 1);
       assert.equal(content, "hello from mock");
       assert.isAtLeast(terminalIndex, 0);
       assert.deepEqual(outputAfterTerminal, []);
       assert.notInclude(toolTitles, "Child-only tool");
-      assert.equal(turnCompletedEvent?.payload.stopReason, "end_turn");
+      assert.equal(turnCompletedEvents[0]?.payload.stopReason, "end_turn");
       assert.equal(readySession?.status, "ready");
       assert.isUndefined(readySession?.activeTurnId);
 
