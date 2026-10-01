@@ -33,16 +33,19 @@ export const PULL_REQUEST_MERGE_METHOD_LABELS: Record<PullRequestMergeMethod, st
   rebase: "Rebase and merge",
 };
 
-/** Old environments keep their existing actions; new ones must finish stack discovery first. */
+/**
+ * Old environments keep their existing actions; new ones must finish stack discovery first. Once
+ * the lookup has answered, refreshing that answer keeps the controls available, because they already
+ * relied on it for the whole time between refreshes.
+ */
 export function allowsSinglePullRequestMerge(input: {
   supportsStackActions: boolean;
   hasStack: boolean;
-  stackPending: boolean;
-  stackError: string | null;
+  stackQuery: { isSuccess: boolean; isPending: boolean; error: string | null };
 }): boolean {
   return (
     !input.supportsStackActions ||
-    (!input.hasStack && !input.stackPending && input.stackError === null)
+    (!input.hasStack && input.stackQuery.isSuccess && input.stackQuery.error === null)
   );
 }
 

@@ -806,8 +806,7 @@ function PullRequestDetailPanelBody({
   const canMergeSinglePullRequest = allowsSinglePullRequestMerge({
     supportsStackActions,
     hasStack: nativeStack !== null,
-    stackPending: !nativeStackQuery.isSuccess || nativeStackQuery.isPending,
-    stackError: nativeStackQuery.error,
+    stackQuery: nativeStackQuery,
   });
   const activityPending = activityQuery.isPending && activity === null;
   const activityError = activity === null ? activityQuery.error : null;

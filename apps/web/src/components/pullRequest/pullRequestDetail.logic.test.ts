@@ -1603,17 +1603,22 @@ describe("cached pull request detail", () => {
 
 describe("single-PR merge compatibility during stack discovery", () => {
   it.each([
-    [false, true, false, null, true],
-    [false, false, true, null, true],
-    [true, false, true, null, false],
-    [true, false, false, "Lookup failed", false],
-    [true, true, false, null, false],
-    [true, false, false, null, true],
+    [false, true, false, true, null, true],
+    [true, false, false, false, null, false],
+    [true, false, false, true, null, false],
+    [true, false, false, true, "Lookup failed", false],
+    [true, true, true, false, null, false],
+    [true, false, true, false, null, true],
+    [true, false, true, true, null, true],
   ] as const)(
-    "capability=%s stack=%s pending=%s error=%s permits=%s",
-    (supportsStackActions, hasStack, stackPending, stackError, allowed) => {
+    "capability=%s stack=%s answered=%s refreshing=%s error=%s permits=%s",
+    (supportsStackActions, hasStack, isSuccess, isPending, error, allowed) => {
       expect(
-        allowsSinglePullRequestMerge({ supportsStackActions, hasStack, stackPending, stackError }),
+        allowsSinglePullRequestMerge({
+          supportsStackActions,
+          hasStack,
+          stackQuery: { isSuccess, isPending, error },
+        }),
       ).toBe(allowed);
     },
   );
