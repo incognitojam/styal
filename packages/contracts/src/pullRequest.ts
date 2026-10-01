@@ -217,7 +217,7 @@ export const PullRequestComment = Schema.Struct({
   url: Schema.NullOr(Schema.String),
   path: Schema.NullOr(Schema.String),
   reviewState: Schema.NullOr(Schema.String),
-  /** Absent from a host with no reactions at all, which is a different thing from none on this. */
+  /** Absent when unsupported or unavailable, which is a different thing from none on this. */
   reactions: Schema.optional(Schema.Array(PullRequestReaction)),
 });
 export type PullRequestComment = typeof PullRequestComment.Type;

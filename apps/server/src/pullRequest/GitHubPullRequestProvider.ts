@@ -497,8 +497,9 @@ export const make = Effect.gen(function* () {
         Effect.mapError(fail("getChangeRequestActivity")),
         Effect.map(([pullRequest, reviewThreads]): ProviderChangeRequestActivity => ({
           author: withAvatar(pullRequest.author, reviewThreads.avatarsByLogin, input.host),
-          ...(reviewThreads.unavailable ? {} : { reviewers: reviewThreads.reviewers }),
-          reactions: reviewThreads.reactions,
+          ...(reviewThreads.unavailable
+            ? {}
+            : { reviewers: reviewThreads.reviewers, reactions: reviewThreads.reactions }),
           commits: (reviewThreads.commits.length > 0
             ? reviewThreads.commits
             : pullRequest.commits
@@ -525,7 +526,11 @@ export const make = Effect.gen(function* () {
               author: withAvatar(comment.author, reviewThreads.avatarsByLogin, input.host),
               // A comment out of `gh pr view --json` carries none of its own: that read
               // reports no reaction at all, so they arrive from the GraphQL page by node id.
-              reactions: comment.reactions ?? reviewThreads.reactionsById.get(comment.id) ?? [],
+              ...(comment.reactions !== undefined
+                ? { reactions: comment.reactions }
+                : reviewThreads.unavailable
+                  ? {}
+                  : { reactions: reviewThreads.reactionsById.get(comment.id) ?? [] }),
             }))
             .toSorted((left, right) => left.createdAt.localeCompare(right.createdAt)),
           // `gh pr view --json comments,reviews` follows GitHub's cursors itself, so those two

@@ -569,7 +569,7 @@ export function PullRequestTimelineTab({
   const events = buildPullRequestTimeline(detail);
   const newestCommitAt = newestPullRequestCommitAt(detail.commits);
   const reactions: ReactionSurface = {
-    canReact: detail.capabilities.reactions === true,
+    canReact: detail.capabilities.reactions === true && !detail.commentsUnavailable,
     environmentId,
     threadRef,
     reference,

@@ -686,7 +686,9 @@ export function PullRequestSummaryTab({
                           <PullRequestReactionBar
                             className="mt-2"
                             reactions={comment.reactions ?? []}
-                            canReact={detail.capabilities.reactions === true}
+                            canReact={
+                              detail.capabilities.reactions === true && !detail.commentsUnavailable
+                            }
                             subjectId={comment.id}
                             environmentId={environmentId}
                             reference={reference}
@@ -715,7 +717,9 @@ export function PullRequestSummaryTab({
                   const reactionBar = (
                     <PullRequestReactionBar
                       reactions={comment.reactions ?? []}
-                      canReact={detail.capabilities.reactions === true}
+                      canReact={
+                        detail.capabilities.reactions === true && !detail.commentsUnavailable
+                      }
                       subjectId={comment.id}
                       environmentId={environmentId}
                       reference={reference}

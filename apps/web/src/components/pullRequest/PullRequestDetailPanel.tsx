@@ -743,7 +743,7 @@ function PullRequestDetailPanelBody({
             commentsUnavailable: activity?.commentsUnavailable,
             reviewThreads: activity?.reviewThreads ?? [],
             commits: activity?.commits ?? [],
-            reactions: activity?.reactions ?? [],
+            reactions: activity?.reactions,
           },
     [activity, coreDetail],
   );
@@ -1514,8 +1514,9 @@ function PullRequestDetailPanelBody({
   // Not counted at all from a conversation this page only holds the recent end of: an approval
   // older than the window would be missing, and "1" beside a tick is read as the whole answer.
   // The Summary tab's row can say it may be short; a bare number cannot, so it stays away.
+  // An unavailable thread read still has the full reviews and commits from `gh pr view`.
   const approvalCount =
-    detail && !detail.commentsTruncated && !detail.commentsUnavailable
+    detail && !detail.commentsTruncated
       ? latestPullRequestReviewOutcomes(detail.comments, detail.commits).filter(
           (entry) => entry.outcome === "approved" && !entry.stale,
         ).length

@@ -931,6 +931,12 @@ describe("getChangeRequest commits", () => {
 });
 
 describe("getChangeRequestActivity availability", () => {
+  const reaction: PullRequestReaction = {
+    content: "thumbs-up",
+    count: 1,
+    actors: [],
+    viewerHasReacted: true,
+  };
   const comment = {
     id: "IC_1",
     kind: "issue-comment" as const,
@@ -947,8 +953,8 @@ describe("getChangeRequestActivity availability", () => {
     reviewThreads: [],
     commentCount: 0,
     truncated: false,
-    reactions: [],
-    reactionsById: new Map(),
+    reactions: [reaction],
+    reactionsById: new Map([[comment.id, [reaction]]]),
     reviewers: [],
     avatarsByLogin: new Map(),
     commitStats: new Map(),
@@ -991,12 +997,17 @@ describe("getChangeRequestActivity availability", () => {
           expect(partial.commentsUnavailable).toBe(true);
           // Preserve the reviewers from core detail when the enriching read failed.
           expect(partial.reviewers).toBeUndefined();
+          expect(partial.reactions).toBeUndefined();
+          expect(partial.comments.every((entry) => entry.reactions === undefined)).toBe(true);
 
           threadsFail = false;
           const recovered = yield* provider.getChangeRequestActivity(ref);
           expect(recovered.commentsUnavailable).toBeUndefined();
           expect(recovered.commentsTruncated).toBe(false);
-          expect(recovered.comments).toEqual(partial.comments);
+          expect(recovered.reactions).toEqual([reaction]);
+          expect(recovered.comments).toEqual(
+            comments.map((entry) => ({ ...entry, reactions: [reaction] })),
+          );
         }),
     );
   }
