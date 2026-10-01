@@ -79,6 +79,7 @@ jobs:
           name: cli-package
           path: cli-release/@styal/*.tgz
           if-no-files-found: error
+          retention-days: 3
 
   publish:
     name: Publish CLI to npm

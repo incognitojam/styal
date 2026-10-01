@@ -87,4 +87,4 @@ jobs:
             apps/server/dist
             apps/desktop/dist-electron
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
