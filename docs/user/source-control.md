@@ -116,8 +116,9 @@ Open **Pull requests** to review changes and comments, request reviewers, check 
 or merge. You can edit review titles and descriptions and your own comments where the host allows it.
 GitLab calls these merge requests.
 
-GitHub, GitLab, and Azure DevOps support auto-merge while checks are outstanding. GitHub also
-supports approving waiting fork workflows and opening a revert pull request for a merged change.
+GitHub, GitLab, and Azure DevOps support auto-merge while checks are outstanding. Commits pushed
+after auto-merge is on are merged too, unless the host turns auto-merge off. GitHub also supports
+approving waiting fork workflows and opening a revert pull request for a merged change.
 
 GitHub routing is off by default. In Settings → Connections (Environments on mobile), choose
 **Read PRs** or **Read and act** for each environment you trust to share GitHub access.
