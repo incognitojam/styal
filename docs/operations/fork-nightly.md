@@ -30,7 +30,10 @@ upstream changes to bring in, and when, is a maintainer decision made per change
 automatic sync.
 
 A run skips the release when `main`'s tree matches `origin/nightly`, the source of the last
-published artifact. Dry runs build and verify without publishing.
+published artifact, or when no commit since then changes shipped code as defined under
+[Release notes](#release-notes). Skipped commits are counted in the next nightly that ships code.
+Run the workflow manually with `force_publish` to release anyway, for example after fixing the
+build or signing pipeline. Dry runs build and verify without publishing.
 
 ## Release notes
 
@@ -42,7 +45,7 @@ The desktop updater uses these same notes.
 
 Only commits that change shipped code are listed: files under `apps/web`, `apps/desktop`,
 `apps/mobile`, `apps/server`, `packages/`, or `patches/`, other than tests, fixtures, scripts, and
-Markdown. The decision uses changed paths rather than the commit subject, so a `ci(release)` commit
+Markdown, plus `pnpm-lock.yaml` and `pnpm-workspace.yaml`, which pin dependency versions. The decision uses changed paths rather than the commit subject, so a `ci(release)` commit
 that changes desktop code is still listed. Other commits, including relay changes, which deploy
 separately, are counted on the comparison link line instead.
 
