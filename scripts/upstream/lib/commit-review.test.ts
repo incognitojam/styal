@@ -1,10 +1,12 @@
 import { assert, describe, it } from "@effect/vitest";
 
 import {
+  adaptationErrors,
   cherryPickSources,
   type CommitReview,
   compareWithUpstream,
   forkAdaptationNote,
+  preservedFeatureIds,
   renderCommitReviews,
 } from "./commit-review.ts";
 
@@ -38,6 +40,16 @@ describe("commit review sources", () => {
       "Approval rows stay prominent, and the ledger entry narrows.",
     );
     assert.isNull(forkAdaptationNote("fix: plain import\n\nUpstream-PR: 1"));
+  });
+
+  it("reads the ledger features named in Fork-Feature trailers", () => {
+    assert.deepEqual(
+      preservedFeatureIds(
+        `${message}Fork-Feature: completion-sounds, github-reference-links\nfork-feature: completion-sounds\n`,
+      ),
+      ["completion-sounds", "github-reference-links"],
+    );
+    assert.deepEqual(preservedFeatureIds(message), []);
   });
 });
 
@@ -75,18 +87,82 @@ describe("compareWithUpstream", () => {
   });
 });
 
-describe("renderCommitReviews", () => {
-  const base: CommitReview = {
-    sha: "b".repeat(40),
-    subject: "fix(web): keep rows prominent (#1234)",
-    pullRequestNumbers: [1234],
-    sourceCommits: [sourceSha],
-    listedCommits: [],
-    adaptationNote: null,
-    comparison: { status: "matches" },
-    featureIds: [],
-  };
+const base: CommitReview = {
+  sha: "b".repeat(40),
+  subject: "fix(web): keep rows prominent (#1234)",
+  pullRequestNumbers: [1234],
+  sourceCommits: [sourceSha],
+  listedCommits: [],
+  adaptationNote: null,
+  preservedFeatureIds: [],
+  comparison: { status: "matches" },
+  featureIds: [],
+};
 
+const adapted: CommitReview["comparison"] = {
+  status: "adapted",
+  files: [{ path: "src/a.ts", upstreamLines: ["+dos"], forkLines: ["+zwei"] }],
+};
+
+describe("adaptationErrors", () => {
+  const known = new Set(["completion-sounds"]);
+
+  it("accepts an explained difference that cites a ledger feature", () => {
+    assert.deepEqual(
+      adaptationErrors(
+        {
+          ...base,
+          comparison: adapted,
+          adaptationNote: "Keep per-event sounds.",
+          preservedFeatureIds: ["completion-sounds"],
+        },
+        known,
+      ),
+      [],
+    );
+  });
+
+  it("requires a note on a commit that differs from upstream", () => {
+    assert.deepEqual(adaptationErrors({ ...base, comparison: adapted }, known), [
+      "Candidate commit bbbbbbbbbbbb differs from upstream but has no `Fork adaptation:` note explaining why.",
+    ]);
+  });
+
+  it("rejects a cited feature on a commit that matches upstream", () => {
+    assert.deepEqual(
+      adaptationErrors({ ...base, preservedFeatureIds: ["completion-sounds"] }, known),
+      [
+        "Candidate commit bbbbbbbbbbbb matches upstream but cites Fork-Feature completion-sounds; remove the trailer.",
+      ],
+    );
+  });
+
+  it("rejects a feature the ledger does not list", () => {
+    assert.deepEqual(
+      adaptationErrors(
+        {
+          ...base,
+          comparison: adapted,
+          adaptationNote: "Keep project headers.",
+          preservedFeatureIds: ["sidebar-project-groups"],
+        },
+        known,
+      ),
+      [
+        "Candidate commit bbbbbbbbbbbb cites Fork-Feature sidebar-project-groups, which is not in the fork feature ledger.",
+      ],
+    );
+  });
+
+  it("allows a note without a feature on a commit that matches upstream", () => {
+    assert.deepEqual(
+      adaptationErrors({ ...base, adaptationNote: "Adopt upstream's composer drafts." }, known),
+      [],
+    );
+  });
+});
+
+describe("renderCommitReviews", () => {
   it("lists each commit with its upstream PR and whether it matches", () => {
     const summary = renderCommitReviews({
       upstreamRepository: "example/upstream",
@@ -125,6 +201,7 @@ describe("renderCommitReviews", () => {
           ...base,
           listedCommits: ["d".repeat(40)],
           adaptationNote: "Approval rows stay prominent.",
+          preservedFeatureIds: ["sidebar-attention-prominence"],
           comparison: {
             status: "adapted",
             files: [
@@ -142,6 +219,7 @@ describe("renderCommitReviews", () => {
 
     assert.include(summary, "1 of 1 commits differ from their upstream sources.");
     assert.include(summary, "Differs from upstream in 1 file.");
+    assert.include(summary, "Preserves: `sidebar-attention-prominence`");
     assert.include(summary, "commit [`dddddddddd`]");
     assert.include(summary, "```diff\n# src/a.ts\n-+dos\n++zwei\n```");
     assert.include(summary, "git range-diff aaaaaaaaaaaa^! bbbbbbbbbbbb^!");

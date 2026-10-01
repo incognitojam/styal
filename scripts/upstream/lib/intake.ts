@@ -1,6 +1,6 @@
 import type { ForkFeatureLedger } from "../../fork-feature-ledger.ts";
 import { findForkFeatureOverlaps } from "../../fork-feature-ledger.ts";
-import { type CommitReview, renderCommitReviews } from "./commit-review.ts";
+import { adaptationErrors, type CommitReview, renderCommitReviews } from "./commit-review.ts";
 import { parseUpstreamProvenance } from "./provenance.ts";
 
 export interface UpstreamIntakeAuditInput {
@@ -22,6 +22,8 @@ export interface UpstreamIntakeAuditInput {
   readonly migrationChanges?: ReadonlyArray<string>;
   /** Each candidate commit compared with its upstream sources, in candidate order. */
   readonly commitReviews?: ReadonlyArray<CommitReview>;
+  /** Feature IDs in the candidate's own ledger, so a batch can cite an entry it adds. */
+  readonly candidateFeatureIds?: ReadonlyArray<string>;
 }
 
 export interface UpstreamIntakeAudit {
@@ -169,6 +171,12 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
   errors.push(...provenance.errors);
   errors.push(...(input.candidateLedgerErrors ?? []));
   errors.push(...(input.migrationErrors ?? []));
+  const commitReviews = input.commitReviews ?? [];
+  const knownFeatureIds = new Set([
+    ...input.ledger.features.map((feature) => feature.id),
+    ...(input.candidateFeatureIds ?? []),
+  ]);
+  for (const review of commitReviews) errors.push(...adaptationErrors(review, knownFeatureIds));
   const overlaps = findForkFeatureOverlaps(input.ledger, input.changedPaths);
   const overlapFeatureIds = overlaps.map(({ feature }) => feature.id);
   const overlapPaths = new Map<string, Array<string>>();
@@ -189,6 +197,14 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
     );
   if (provenance.commitShas.length > 0) {
     manualReviewReasons.push("explicit upstream commits require source-diff review");
+  }
+  const uncitedAdaptations = commitReviews.filter(
+    (review) => review.comparison.status === "adapted" && review.preservedFeatureIds.length === 0,
+  ).length;
+  if (uncitedAdaptations > 0) {
+    manualReviewReasons.push(
+      `${uncitedAdaptations} ${uncitedAdaptations === 1 ? "commit differs" : "commits differ"} from upstream without a Fork-Feature trailer; confirm each difference keeps an intentional fork change or an early upstream import`,
+    );
   }
   if (overlapFeatureIds.length > 0) {
     manualReviewReasons.push(
@@ -223,7 +239,7 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
           .join("\n")}\n`;
   const commitSection = renderCommitReviews({
     upstreamRepository: input.ledger.upstream_repository,
-    reviews: input.commitReviews ?? [],
+    reviews: commitReviews,
   });
   const summary = `# Upstream intake audit
 

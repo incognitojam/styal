@@ -6,6 +6,7 @@ import { assert, describe, it } from "@effect/vitest";
 import { parse } from "yaml";
 
 import type { ForkFeatureLedger } from "../../fork-feature-ledger.ts";
+import type { CommitReview } from "./commit-review.ts";
 import {
   auditUpstreamIntakeCandidate,
   formatForkCiWatchCommand,
@@ -171,6 +172,7 @@ describe("upstream intake audit", () => {
           sourceCommits: ["c".repeat(40)],
           listedCommits: [],
           adaptationNote: null,
+          preservedFeatureIds: [],
           comparison: { status: "matches" },
           featureIds: [],
         },
@@ -180,6 +182,49 @@ describe("upstream intake audit", () => {
     assert.include(result.summary, "## Commits");
     assert.include(result.summary, "### 1. fix(server): synthetic change");
     assert.include(result.summary, "Matches upstream.");
+  });
+
+  it("requires each difference from upstream to be explained and traced to the ledger", () => {
+    const review = {
+      sha: "b".repeat(40),
+      subject: "fix(server): synthetic change",
+      pullRequestNumbers: [1234],
+      sourceCommits: ["c".repeat(40)],
+      listedCommits: [],
+      adaptationNote: null,
+      preservedFeatureIds: [],
+      comparison: {
+        status: "adapted",
+        files: [{ path: "src/a.ts", upstreamLines: ["+dos"], forkLines: ["+zwei"] }],
+      },
+      featureIds: [],
+    } satisfies CommitReview;
+
+    const unexplained = audit({ commitReviews: [review] });
+    assert.isFalse(unexplained.valid);
+    assert.include(
+      unexplained.errors,
+      "Candidate commit bbbbbbbbbbbb differs from upstream but has no `Fork adaptation:` note explaining why.",
+    );
+
+    const uncited = audit({
+      commitReviews: [{ ...review, adaptationNote: "Keep the fork test." }],
+    });
+    assert.isTrue(uncited.valid);
+    assert.include(
+      uncited.manualReviewReasons,
+      "1 commit differs from upstream without a Fork-Feature trailer; confirm each difference keeps an intentional fork change or an early upstream import",
+    );
+
+    // A batch may cite a ledger entry it adds itself.
+    const cited = audit({
+      commitReviews: [
+        { ...review, adaptationNote: "Keep project headers.", preservedFeatureIds: ["new-entry"] },
+      ],
+      candidateFeatureIds: ["new-entry", "watched-capability"],
+    });
+    assert.isTrue(cited.valid);
+    assert.isFalse(cited.manualReviewReasons.some((reason) => reason.includes("Fork-Feature")));
   });
 
   it("groups overlapping fork features by the changed path", () => {

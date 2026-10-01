@@ -20,6 +20,8 @@ CI validates the file with `vp run --filter @t3tools/scripts ledger:check`.
 - `status`: `maintained`, `review-needed`, or `retiring`.
 - `prs`: fork pull requests that introduced or materially repaired the capability. Leave empty until the first pull request exists.
 - `invariants`: observable behavior that must remain true after upstream integration.
+- `rationale` (optional): why the fork diverges, when the invariants do not make it obvious. Upstream
+  intake uses it to decide whether a conflicting fork change is kept or dropped.
 - `implementation_paths`: fork implementation files whose removal or rename must update the ledger.
 - `upstream_paths`: files shared with upstream whose upstream changes should prompt semantic review.
 - `tests`: focused evidence for the invariants. These files must continue to exist.
@@ -35,10 +37,10 @@ the watched deletion and a new addition.
 
 ## Workflow
 
-Add a ledger entry when a pull request creates a new maintained divergence. Add follow-up pull request
-numbers, invariants, paths, and test evidence to the existing entry when repairing or extending one.
-Keep implementation and upstream paths distinct, entries sorted by ID, and values within structured
-lists sorted.
+Add a ledger entry when a pull request creates a new maintained divergence, and record its reason in
+`rationale` unless the invariants already state it. Add follow-up pull request numbers, invariants,
+paths, and test evidence to the existing entry when repairing or extending one. Keep implementation
+and upstream paths distinct, entries sorted by ID, and values within structured lists sorted.
 
 When a change adds, materially changes, or removes a notable user-facing difference, update
 `docs/user/styal-differences.md` in the same pull request. Use the ledger's invariants and the relevant
