@@ -1874,15 +1874,18 @@ features:
   - id: pull-request-linked-extras
     title: Show the current pull request and additional link count
     status: maintained
-    prs: [537]
+    prs: [537, 587]
     invariants:
       - Web and mobile show the current pull request number followed by +1 for one additional unrelated link and +2 for two; a lone link shows its number and stacks show their total layer count.
       - The badge's additional count agrees with its accessibility label; the sidebar PR link relies on the thread hover card for the linked PR list instead of showing a second tooltip.
+      - The thread hover card lists the badge's pull request when the thread has no linked pull requests, including one found through the thread's branch.
     implementation_paths:
       - apps/mobile/src/state/thread-pr-presentation.ts
+      - apps/web/src/components/Sidebar.tsx
       - apps/web/src/components/ThreadStatusIndicators.tsx
     upstream_paths:
       - apps/mobile/src/state/thread-pr-presentation.ts
+      - apps/web/src/components/Sidebar.tsx
       - apps/web/src/components/ThreadStatusIndicators.tsx
     tests:
       - apps/mobile/src/state/use-thread-pr.test.ts

@@ -30,7 +30,7 @@ import { resolveThreadStatusPill, type ThreadStatusPill } from "./Sidebar.logic"
 import type { SidebarThreadSummary } from "../types";
 import { formatWorktreePathForDisplay } from "../worktreeCleanup";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
-import { pullRequestListLines } from "./pullRequest/pullRequestListLines";
+import { pullRequestListLines, type PullRequestListLine } from "./pullRequest/pullRequestListLines";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 
 export interface PrStatusIndicator {
@@ -221,59 +221,97 @@ export function ThreadPullRequestBadgeControl({
 
 /**
  * A miniature of the pull-requests panel for the thread tooltip: same order, same indentation,
- * so the hover answers "what is in here" without opening the surface.
+ * so the hover answers "what is in here" without opening the surface. A thread with no linked
+ * pull requests lists `fallback`, the pull request its badge found through the branch.
  */
 export function ThreadPullRequestsMiniList({
   pullRequests,
+  fallback,
 }: {
   pullRequests: ReadonlyArray<ThreadPullRequestLink>;
+  fallback?: ThreadPr | undefined;
 }) {
   const lines = useMemo(
     () =>
       pullRequestListLines(resolveThreadPullRequestChains(visibleThreadPullRequests(pullRequests))),
     [pullRequests],
   );
-  if (lines.length === 0) return null;
+  if (lines.length === 0) {
+    if (!fallback) return null;
+    return (
+      <ul className="flex flex-col gap-1">
+        <PullRequestMiniListRow
+          number={fallback.number}
+          title={fallback.title}
+          presentation={resolvePullRequestState({
+            state: fallback.state,
+            isDraft: fallback.isDraft === true,
+          })}
+          depth={0}
+          stack={null}
+        />
+      </ul>
+    );
+  }
   return (
     <ul className="flex flex-col gap-1">
       {lines.map((line) => {
         const snapshot = line.link.snapshot;
-        const presentation =
-          snapshot === null
-            ? null
-            : resolvePullRequestState({ state: snapshot.state, isDraft: snapshot.isDraft });
         return (
-          <li
+          <PullRequestMiniListRow
             key={`${line.link.host}/${line.link.repository}#${line.link.number}`}
-            className="flex min-w-0 items-center gap-2"
-            // Capped like the panel: past a few layers the indent only repeats "still in the
-            // stack", and sixteen of them would walk the titles off the popover.
-            style={{ paddingLeft: `${Math.min(line.depth, 3) * 0.75}rem` }}
-          >
-            {presentation ? (
-              <presentation.Icon
-                aria-hidden
-                className={cn("size-3 shrink-0", presentation.toneClassName)}
-              />
-            ) : (
-              <GitPullRequestArrowIcon
-                aria-hidden
-                className="size-3 shrink-0 stroke-muted-foreground"
-              />
-            )}
-            <span className="shrink-0 font-mono tabular-nums">#{line.link.number}</span>
-            <span className="min-w-0 truncate text-foreground/75">
-              {snapshot?.title ?? line.link.repository}
-            </span>
-            {line.stack ? (
-              <span className="ml-auto shrink-0 pl-1 text-[10px]">
-                {line.stack.kind === "native" ? "stack" : "chain"} · {line.stack.size}
-              </span>
-            ) : null}
-          </li>
+            number={line.link.number}
+            title={snapshot?.title ?? line.link.repository}
+            presentation={
+              snapshot === null
+                ? null
+                : resolvePullRequestState({ state: snapshot.state, isDraft: snapshot.isDraft })
+            }
+            depth={line.depth}
+            stack={line.stack}
+          />
         );
       })}
     </ul>
+  );
+}
+
+function PullRequestMiniListRow({
+  number,
+  title,
+  presentation,
+  depth,
+  stack,
+}: {
+  number: number;
+  title: string;
+  presentation: ReturnType<typeof resolvePullRequestState> | null;
+  depth: number;
+  stack: PullRequestListLine["stack"];
+}) {
+  return (
+    <li
+      className="flex min-w-0 items-center gap-2"
+      // Capped like the panel: past a few layers the indent only repeats "still in the
+      // stack", and sixteen of them would walk the titles off the popover.
+      style={{ paddingLeft: `${Math.min(depth, 3) * 0.75}rem` }}
+    >
+      {presentation ? (
+        <presentation.Icon
+          aria-hidden
+          className={cn("size-3 shrink-0", presentation.toneClassName)}
+        />
+      ) : (
+        <GitPullRequestArrowIcon aria-hidden className="size-3 shrink-0 stroke-muted-foreground" />
+      )}
+      <span className="shrink-0 font-mono tabular-nums">#{number}</span>
+      <span className="min-w-0 truncate text-foreground/75">{title}</span>
+      {stack ? (
+        <span className="ml-auto shrink-0 pl-1 text-[10px]">
+          {stack.kind === "native" ? "stack" : "chain"} · {stack.size}
+        </span>
+      ) : null}
+    </li>
   );
 }
 
