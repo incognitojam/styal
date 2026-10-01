@@ -1851,15 +1851,18 @@ features:
     invariants:
       - Label pickers show a previously fetched repository catalogue while their pull-request-specific read loads or fails, retaining cached data for thirty idle minutes.
       - Repository catalogues are isolated by environment, project, host, and repository; applied checkmarks come from the current pull request.
+      - Applied labels missing from a cached repository page remain available for removal while the current pull request read loads or fails.
     implementation_paths:
       - apps/web/src/components/pullRequest/PullRequestLabelPicker.tsx
       - apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx
+      - apps/web/src/components/pullRequest/pullRequestLabelPicker.logic.ts
       - packages/client-runtime/src/state/pullRequests.ts
     upstream_paths:
       - apps/web/src/components/pullRequest/PullRequestLabelPicker.tsx
       - apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx
       - packages/client-runtime/src/state/pullRequests.ts
     tests:
+      - apps/web/src/components/pullRequest/pullRequestLabelPicker.logic.test.ts
       - packages/client-runtime/src/state/pullRequests.test.ts
     upstream:
       status: partial

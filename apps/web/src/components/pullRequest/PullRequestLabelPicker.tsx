@@ -24,6 +24,7 @@ import { toastManager } from "../ui/toast";
 import { PullRequestCandidatePicker } from "./PullRequestCandidatePicker";
 import { readableFailure } from "./pullRequestDetail.logic";
 import { pullRequestLabelColor } from "./pullRequestList.logic";
+import { cachedPullRequestLabelCandidates } from "./pullRequestLabelPicker.logic";
 
 /** Narrows only what arrived: the host is asked once, when the menu opens. */
 function matches(candidate: PullRequestLabelCandidate, query: string): boolean {
@@ -66,10 +67,7 @@ export function PullRequestLabelPicker({
     () =>
       (
         candidatesQuery.data?.candidates ??
-        (cachedLabels?.candidates ?? []).map((entry) => ({
-          ...entry,
-          isApplied: labels.some((label) => label.name === entry.name),
-        }))
+        cachedPullRequestLabelCandidates(cachedLabels?.candidates ?? [], labels)
       ).filter((entry) => matches(entry, query)),
     [candidatesQuery.data, cachedLabels, labels, query],
   );
