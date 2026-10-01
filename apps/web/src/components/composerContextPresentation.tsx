@@ -70,6 +70,7 @@ export interface ComposerContextActions {
   openFile: (fileId: string) => void;
   openMention: (path: string) => void;
   openPullRequest: (event: MouseEvent<HTMLElement>, url: string) => void;
+  onExternalLinkContextMenu: (event: MouseEvent<HTMLElement>, url: string) => void;
 }
 
 export const ComposerContextActionsContext = createContext<ComposerContextActions>({
@@ -78,6 +79,7 @@ export const ComposerContextActionsContext = createContext<ComposerContextAction
   openFile: () => {},
   openMention: () => {},
   openPullRequest: () => {},
+  onExternalLinkContextMenu: () => {},
 });
 
 export type ComposerDraftContextRecords = ReadonlyMap<string, ComposerDraftContextRecord>;
@@ -251,6 +253,7 @@ function PullRequestContextChip(props: { record: ReviewCommentContext; toneClass
       className={cn(COMPOSER_INLINE_CHIP_CLASS_NAME, props.toneClassName)}
       labelClassName={COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME}
       onOpen={actions.openPullRequest}
+      onContextMenu={actions.onExternalLinkContextMenu}
     />
   );
 }

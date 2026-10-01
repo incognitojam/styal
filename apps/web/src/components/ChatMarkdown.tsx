@@ -1,4 +1,4 @@
-import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
+import { useExternalLinkContextMenu } from "~/hooks/useExternalLinkContextMenu";
 import { useAtomValue } from "@effect/atom-react";
 import {
   COMPOSER_CONTEXT_CLIPBOARD_MIME,
@@ -32,7 +32,6 @@ import type {
   EnvironmentId,
   ScopedThreadRef,
   ServerProviderSkill,
-  ThreadPullRequestKey,
 } from "@t3tools/contracts";
 import { faviconUrlForOrigin } from "@t3tools/shared/favicon";
 import {
@@ -121,10 +120,7 @@ import {
   revealInFileExplorerLabelForKind,
   revealInFileExplorerLabelForOs,
 } from "./preview/fileExplorerLabel";
-import {
-  resolveExternalWebLinkHost,
-  showExternalLinkContextMenu,
-} from "./chat/externalLinkContextMenu";
+import { resolveExternalWebLinkHost } from "./chat/externalLinkContextMenu";
 import { shouldOpenLinkInIntegratedBrowser } from "./chat/loopbackLinkPreview";
 import { hasSpecificPierreIconForFileName, syntheticFileNameForLanguageId } from "../pierre-icons";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
@@ -133,7 +129,6 @@ import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "./ui/collapsi
 import { ScrollArea } from "./ui/scroll-area";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "./ui/menu";
 import { stackedThreadToast, toastManager } from "./ui/toast";
-import { recordVisitForThread } from "../browserHistoryStore";
 import {
   PreferredEditorEnvironmentRequiredError,
   useOpenInPreferredEditor,
@@ -173,7 +168,7 @@ import { useAssetUrlRefresh, useAssetUrlState } from "../assets/assetUrls";
 import { cn } from "../lib/utils";
 import { useRemoteOpenResolution, type RemoteOpenMode } from "../remoteOpen";
 import { useRightPanelStore } from "../rightPanelStore";
-import { readThreadShell, useProjects } from "../state/entities";
+import { useProjects } from "../state/entities";
 import { serverEnvironment } from "../state/server";
 import { shellEnvironment } from "../state/shell";
 import { assetEnvironment } from "../state/assets";
@@ -201,7 +196,6 @@ import { isAbsolutePath, resolvePathLinkTarget } from "../terminal-links";
 import {
   isBrowserPreviewFile,
   openFileInPreview,
-  openUrlInPreview,
   BrowserPreviewUnavailableError,
   BrowserSettingsReadError,
 } from "../browser/openFileInPreview";
@@ -2217,7 +2211,8 @@ function useChatMarkdownState({
   const openPreview = useAtomCommand(previewEnvironment.open, {
     reportFailure: false,
   });
-  const pullRequestLinking = usePullRequestLinking(threadRef?.environmentId);
+  const { onContextMenu: onExternalLinkContextMenu, openExternalLinkInPreview } =
+    useExternalLinkContextMenu(threadRef);
   const environmentId = threadRef?.environmentId ?? explicitEnvironmentId ?? null;
   const remoteOpen = useRemoteOpenResolution(environmentId);
   const canUseShellActions = canUseMarkdownFileShellActions(
@@ -2366,69 +2361,8 @@ function useChatMarkdownState({
   );
   const openDeferredMarkdownLink = useOpenLink(threadRef);
   const linkTargetPreference = useClientSettings((settings) => settings.browserLinkTarget);
-  const resolveThreadPullRequest = useCallback(
-    (href: string): (ThreadPullRequestKey & { readonly url: string }) | null => {
-      if (
-        threadRef === undefined ||
-        readThreadShell(threadRef) === null ||
-        !pullRequestLinking.canLink(href)
-      )
-        return null;
-      const parsed = parseChangeRequestUrl(href);
-      return parsed === null ? null : { ...parsed, url: href };
-    },
-    [pullRequestLinking, threadRef],
-  );
-  const linkedThreadPullRequestFor = useCallback(
-    (href: string) => {
-      if (threadRef === undefined || !pullRequestLinking.isLinked(readThreadShell(threadRef), href))
-        return null;
-      const parsed = parseChangeRequestUrl(href);
-      return parsed === null ? null : { ...parsed, url: href };
-    },
-    [pullRequestLinking, threadRef],
-  );
-  const updateThreadPullRequestLink = useCallback(
-    async (href: string, linked: boolean) => {
-      if (threadRef === undefined || (!linked && linkedThreadPullRequestFor(href) === null)) return;
-      await pullRequestLinking.changeLink(threadRef, href, linked);
-    },
-    [linkedThreadPullRequestFor, pullRequestLinking, threadRef],
-  );
   const lookupReference = useGithubReferenceResolutions(referenceContext, text);
   const openReference = useGithubReferenceOpener(lookupReference, openChangeRequestLink);
-  const openExternalLinkInPreview = useCallback(
-    (url: string) => {
-      if (!threadRef) {
-        return Promise.resolve(
-          AsyncResult.failure<void, BrowserPreviewUnavailableError>(
-            Cause.fail(
-              new BrowserPreviewUnavailableError({
-                message: "Thread context is unavailable.",
-              }),
-            ),
-          ),
-        );
-      }
-      return openUrlInPreview({ threadRef, url, openPreview }).then((result) => {
-        if (result._tag === "Success") recordVisitForThread(threadRef, url);
-        else if (!isAtomCommandInterrupted(result)) {
-          const error = squashAtomCommandFailure(result);
-          if (error instanceof BrowserSettingsReadError) {
-            toastManager.add(
-              stackedThreadToast({
-                type: "error",
-                title: "Unable to open link in browser",
-                description: error.message,
-              }),
-            );
-          }
-        }
-        return result;
-      });
-    },
-    [openPreview, threadRef],
-  );
   // Where a left click opened the integrated browser and it could not be opened, the click still
   // asked for the link: fall back to the browser the link would have used on its own.
   const openLinkInIntegratedBrowser = useCallback(
@@ -2629,18 +2563,16 @@ function useChatMarkdownState({
       openChangeRequestLink,
       openDeferredMarkdownLink,
       openExternalLinkInPreview,
+      onExternalLinkContextMenu,
       openLinkInIntegratedBrowser,
       openMarkdownMedia,
       openReference,
       projects,
-      linkedThreadPullRequestFor,
-      resolveThreadPullRequest,
       resolvedTheme,
       serverConfig,
       skills,
       text,
       threadRef,
-      updateThreadPullRequestLink,
     }),
     [
       cwd,
@@ -2663,18 +2595,16 @@ function useChatMarkdownState({
       openChangeRequestLink,
       openDeferredMarkdownLink,
       openExternalLinkInPreview,
+      onExternalLinkContextMenu,
       openLinkInIntegratedBrowser,
       openMarkdownMedia,
       openReference,
       projects,
-      linkedThreadPullRequestFor,
-      resolveThreadPullRequest,
       resolvedTheme,
       serverConfig,
       skills,
       text,
       threadRef,
-      updateThreadPullRequestLink,
     ],
   );
   return {
@@ -2810,11 +2740,9 @@ const CHAT_MARKDOWN_COMPONENTS = {
       openDeferredMarkdownLink,
       linkTargetPreference,
       openExternalLinkInPreview,
+      onExternalLinkContextMenu,
       projects,
-      linkedThreadPullRequestFor,
-      resolveThreadPullRequest,
       serverConfig,
-      updateThreadPullRequestLink,
       fileLinkChip,
       lookupReference,
       openReference,
@@ -2994,54 +2922,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
             });
           }}
           onContextMenu={(event) => {
-            if (!href || !faviconHost) return;
-            event.preventDefault();
-            event.stopPropagation();
-            const api = readLocalApi();
-            if (!api) return;
-            const threadLinkAction =
-              linkedThreadPullRequestFor(href) !== null
-                ? "unlink-from-thread"
-                : resolveThreadPullRequest(href) === null
-                  ? undefined
-                  : "link-to-thread";
-            void showExternalLinkContextMenu({
-              href,
-              canOpenInPreview,
-              threadLinkAction,
-              position: { x: event.clientX, y: event.clientY },
-              showContextMenu: (items, position) => api.contextMenu.show(items, position),
-              openInPreview: async (target) => {
-                const result = await openExternalLinkInPreview(target);
-                if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-                  reportMarkdownActionFailure(
-                    { operation: "open-link-in-preview", target },
-                    result.cause,
-                  );
-                }
-              },
-              openExternal: (target) => api.shell.openExternal(target),
-              copyLink: (target) => writeTextToClipboard(target, "link"),
-              updateThreadLink: updateThreadPullRequestLink,
-              reportFailure: (operation, cause) => {
-                reportMarkdownActionFailure({ operation, target: href }, cause);
-                if (
-                  operation === "link-pull-request-to-thread" ||
-                  operation === "unlink-pull-request-from-thread"
-                ) {
-                  toastManager.add(
-                    stackedThreadToast({
-                      type: "error",
-                      title:
-                        operation === "link-pull-request-to-thread"
-                          ? "Unable to link pull request"
-                          : "Unable to unlink pull request",
-                      description: cause instanceof Error ? cause.message : "The request failed.",
-                    }),
-                  );
-                }
-              },
-            });
+            if (href) onExternalLinkContextMenu(event, href);
           }}
         >
           {faviconHost && hastHasText(node) && !isPullRequestAutolink ? (
