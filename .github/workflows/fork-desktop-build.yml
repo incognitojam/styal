@@ -20,6 +20,11 @@ on:
         required: false
         default: all
         type: string
+      retention_days:
+        description: Retention period for downloadable desktop build artifacts
+        required: false
+        default: 3
+        type: number
       sign_macos:
         description: Sign and notarize the macOS artifact
         required: false
@@ -494,7 +499,7 @@ jobs:
           name: ${{ matrix.artifact }}
           path: release-publish/*
           if-no-files-found: error
-          retention-days: 3
+          retention-days: ${{ inputs.retention_days }}
 
       - name: Upload native resource monitor for CLI
         uses: actions/upload-artifact@v7
@@ -502,4 +507,4 @@ jobs:
           name: cli-resource-monitor-${{ matrix.cli_platform }}
           path: native/resource-monitor/target/${{ matrix.rust_target }}/release/styal-resource-monitor${{ matrix.platform == 'win' && '.exe' || '' }}
           if-no-files-found: error
-          retention-days: 3
+          retention-days: ${{ inputs.retention_days }}

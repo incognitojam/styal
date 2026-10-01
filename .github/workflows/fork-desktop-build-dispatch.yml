@@ -39,5 +39,7 @@ jobs:
       ref: ${{ github.sha }}
       version: 0.0.0-build.${{ github.run_number }}
       target: ${{ inputs.target }}
+      # These artifacts are the deliverable; manual builds do not publish a release.
+      retention_days: 90
       sign_macos: false
       check_notarization: false
