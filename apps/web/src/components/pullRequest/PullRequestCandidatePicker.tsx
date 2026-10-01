@@ -68,7 +68,7 @@ export function PullRequestCandidatePicker<T>({
   truncated: boolean;
   truncatedLabel: string;
   candidateKey: (candidate: T) => string;
-  /** Every row locks while one change is in flight, so a second press cannot race the first. */
+  /** Lets callers lock every row while a change is in flight. */
   disabled: boolean;
   onSelect: (candidate: T) => void;
   children: (candidate: T) => ReactNode;

@@ -70,7 +70,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 ## GitHub and code review
 
 - **Immediate label feedback.** Adding or removing a pull request label updates the view immediately;
-  if the host rejects the change, the previous label state returns. T3 Code waits for confirmation
+  you can keep selecting labels while changes are pending. If the host rejects an edit, that change
+  rolls back independently. T3 Code waits for confirmation
   as of [revision 5cc99e1](https://github.com/pingdotgg/t3code/tree/5cc99e1c23980d7995a13c47f969b47cb68ed1be),
   checked October 1, 2026.
 - **Forks with an explicit destination.** Cloning a GitHub fork configures its parent remote and lets

@@ -2004,6 +2004,7 @@ features:
       - Repository catalogues are isolated by environment, project, host, and repository; applied checkmarks come from the current pull request.
       - Applied labels missing from a cached repository page remain available for removal while the current pull request read loads or fails.
       - Submitting a label edit immediately updates the current pull request's chips and picker checkmarks even while another mutation is running; a rejected edit rolls back without losing unrelated host updates or newer queued edits.
+      - Label pickers remain interactive while edits are pending; further selections update immediately and their host requests run in order.
       - Background reads cannot overwrite pending label edits, and confirmed edits remain cached without redundant host reads.
     implementation_paths:
       - apps/web/src/components/pullRequest/PullRequestLabelPicker.tsx
