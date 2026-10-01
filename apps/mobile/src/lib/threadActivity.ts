@@ -1,4 +1,5 @@
 import * as Option from "effect/Option";
+import { makeBackgroundExitTurnLookup } from "@t3tools/client-runtime/work-log/background-exit";
 import { makeToolStartLookup } from "@t3tools/client-runtime/work-log/tool-start";
 import { foldUserInputActivities } from "@t3tools/client-runtime/work-log/user-input";
 import {
@@ -529,7 +530,9 @@ function deriveWorkLogEntries(
     entries.push(toDerivedWorkLogEntry(activity));
   }
   const toolStartedAt = makeToolStartLookup(ordered);
-  return omitRetriedFindingsReports(collapseDerivedWorkLogEntries(entries)).map((entry) => {
+  return omitRetriedFindingsReports(
+    collapseDerivedWorkLogEntries(entries, makeBackgroundExitTurnLookup(ordered)),
+  ).map((entry) => {
     const startedAt =
       entry.sourceActivityKind === "tool.updated" || entry.sourceActivityKind === "tool.completed"
         ? toolStartedAt(entry)
@@ -845,6 +848,7 @@ function agentSpawnLifecycleStatus(
 
 function collapseDerivedWorkLogEntries(
   entries: ReadonlyArray<DerivedWorkLogEntry>,
+  backgroundExitTurn: ReturnType<typeof makeBackgroundExitTurnLookup>,
 ): DerivedWorkLogEntry[] {
   const collapsed: DerivedWorkLogEntry[] = [];
   const setupRowIndex = new Map<string, number>();
@@ -908,6 +912,18 @@ function collapseDerivedWorkLogEntries(
         // foreground command; the call's own result reports how it went.
         if (entry.taskOutcome && toolRow.sourceActivityKind === "tool.completed") {
           collapsed[toolRowIndex] = withBackgroundOutcome(toolRow, entry.taskOutcome);
+        }
+        const exit =
+          entry.sourceActivityKind === "task.completed"
+            ? backgroundExitTurn(entry, toolRow.turnId)
+            : undefined;
+        if (exit !== undefined) {
+          collapsed.push(
+            withBackgroundOutcome(
+              { ...entry, turnId: exit.turnId },
+              entry.taskOutcome ?? { status: exit.status },
+            ),
+          );
         }
         continue;
       }

@@ -3,6 +3,7 @@ import {
   type PendingApproval,
 } from "@t3tools/client-runtime/pending-requests";
 import { UserInputAttachmentAnswerPayload } from "@t3tools/contracts";
+import { makeBackgroundExitTurnLookup } from "@t3tools/client-runtime/work-log/background-exit";
 import { makeToolStartLookup } from "@t3tools/client-runtime/work-log/tool-start";
 import { foldUserInputActivities } from "@t3tools/client-runtime/work-log/user-input";
 import * as Option from "effect/Option";
@@ -547,7 +548,9 @@ export function deriveWorkLogEntries(
     entries.push(entry);
   }
   const toolStartedAt = makeToolStartLookup(ordered);
-  return omitRetriedFindingsReports(collapseDerivedWorkLogEntries(entries)).map((collapsed) => {
+  return omitRetriedFindingsReports(
+    collapseDerivedWorkLogEntries(entries, makeBackgroundExitTurnLookup(ordered)),
+  ).map((collapsed) => {
     const startedAt =
       collapsed.sourceActivityKind === "tool.updated" ||
       collapsed.sourceActivityKind === "tool.completed"
@@ -798,6 +801,7 @@ function toolLifecycleCollapseMapKey(entry: DerivedWorkLogEntry): string | undef
 
 function collapseDerivedWorkLogEntries(
   entries: ReadonlyArray<DerivedWorkLogEntry>,
+  backgroundExitTurn: ReturnType<typeof makeBackgroundExitTurnLookup>,
 ): DerivedWorkLogEntry[] {
   const collapsed: DerivedWorkLogEntry[] = [];
   // Setup lifecycle events describe one operation. Keep the row anchored at
@@ -852,6 +856,15 @@ function collapseDerivedWorkLogEntries(
         // foreground command; the call's own result reports how it went.
         if (entry.taskOutcome && toolRow.sourceActivityKind === "tool.completed") {
           collapsed[toolRowIndex] = withBackgroundOutcome(toolRow, entry.taskOutcome);
+        }
+        const exit = backgroundExitTurn(entry, toolRow.turnId);
+        if (exit !== undefined) {
+          collapsed.push(
+            withBackgroundOutcome(
+              { ...entry, turnId: exit.turnId },
+              entry.taskOutcome ?? { status: exit.status },
+            ),
+          );
         }
         continue;
       }

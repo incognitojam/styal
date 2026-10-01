@@ -529,7 +529,7 @@ describe("deriveWorkLogEntries", () => {
       });
     const taskEnd = (overrides: {
       createdAt: string;
-      turnId: string;
+      turnId?: string;
       status: string;
       summary: string;
     }) =>
@@ -539,7 +539,7 @@ describe("deriveWorkLogEntries", () => {
         summary: "Task stopped",
         tone: "info",
         createdAt: overrides.createdAt,
-        turnId: overrides.turnId,
+        ...(overrides.turnId ? { turnId: overrides.turnId } : {}),
         payload: {
           taskId: "bg-1",
           taskType: "local_bash",
@@ -629,6 +629,60 @@ describe("deriveWorkLogEntries", () => {
           turnId: "turn-later",
           label: 'Background command "vp run dev" failed with exit code 137',
         },
+      ]);
+    });
+
+    it("also shows an ending in the turn it wakes the agent for", () => {
+      const ending = taskEnd({
+        createdAt: "2026-02-23T00:05:00.000Z",
+        status: "completed",
+        summary: 'Background command "vp run dev" completed',
+      });
+      const launched = [bashCall("tool.completed", "2026-02-23T00:00:02.000Z"), ending];
+      const wokenTurnWork = makeActivity({
+        id: "woken-work",
+        createdAt: "2026-02-23T00:05:07.000Z",
+        kind: "tool.completed",
+        turnId: "turn-woken",
+        payload: { itemType: "command_execution", toolCallId: "toolu-check", status: "completed" },
+      });
+
+      // Until the agent picks the ending up, only the launching row reports it.
+      expect(deriveWorkLogEntries(launched).map((entry) => entry.id)).toEqual([
+        "bash-tool.completed",
+      ]);
+
+      const entries = deriveWorkLogEntries([...launched, wokenTurnWork]);
+      expect(entries).toMatchObject([
+        {
+          id: "bash-tool.completed",
+          turnId: "turn-launch",
+          backgroundOutcome: { status: "completed" },
+        },
+        {
+          id: "task-end",
+          turnId: "turn-woken",
+          label: 'Background command "vp run dev" completed',
+          backgroundOutcome: { status: "completed" },
+        },
+        { id: "woken-work", turnId: "turn-woken" },
+      ]);
+    });
+
+    it("also shows an ending in the later turn it arrives during", () => {
+      const entries = deriveWorkLogEntries([
+        bashCall("tool.completed", "2026-02-23T00:00:02.000Z"),
+        taskEnd({
+          createdAt: "2026-02-23T00:05:00.000Z",
+          turnId: "turn-later",
+          status: "failed",
+          summary: 'Background command "vp run dev" failed with exit code 1',
+        }),
+      ]);
+
+      expect(entries).toMatchObject([
+        { id: "bash-tool.completed", turnId: "turn-launch", toolLifecycleStatus: "failed" },
+        { id: "task-end", turnId: "turn-later", backgroundOutcome: { status: "failed" } },
       ]);
     });
   });

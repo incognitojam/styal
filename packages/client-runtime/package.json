@@ -259,6 +259,10 @@
       "types": "./src/work-log/commandLabel.ts",
       "default": "./src/work-log/commandLabel.ts"
     },
+    "./work-log/background-exit": {
+      "types": "./src/work-log/backgroundExit.ts",
+      "default": "./src/work-log/backgroundExit.ts"
+    },
     "./work-log/tool-start": {
       "types": "./src/work-log/toolStart.ts",
       "default": "./src/work-log/toolStart.ts"
