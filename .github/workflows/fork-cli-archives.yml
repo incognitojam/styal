@@ -163,6 +163,7 @@ jobs:
           name: ${{ inputs.artifact_namespace }}-archive-${{ matrix.key }}
           path: .scratch/cli-archives/*
           if-no-files-found: error
+          retention-days: 3
 
   checksums:
     name: Verify archive inventory and hash final bytes
@@ -198,3 +199,4 @@ jobs:
           name: ${{ inputs.artifact_namespace }}-archive-checksums
           path: cli-archives/SHA256SUMS
           if-no-files-found: error
+          retention-days: 3
