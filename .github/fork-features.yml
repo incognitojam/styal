@@ -77,7 +77,7 @@ features:
   - id: antigravity-reasoning-effort
     title: Separate Antigravity model generations from reasoning effort
     status: maintained
-    prs: []
+    prs: [583]
     invariants:
       - Antigravity advertises each Gemini family and generation once, with only account-available native thinking variants as reasoning choices.
       - Web, desktop, mobile, and text generation preserve exact native reasoning choices across model changes, legacy selections, and session resumes.
@@ -90,6 +90,7 @@ features:
       - apps/server/src/provider/ModelManifest.ts
       - apps/server/src/provider/acp/AntigravityAcpSupport.ts
       - apps/server/src/textGeneration/AntigravityTextGeneration.ts
+      - apps/web/src/components/chat/composerProviderState.tsx
       - apps/web/src/composerDraftStore.ts
       - apps/web/src/modelSelection.ts
       - packages/shared/src/model.ts
@@ -100,6 +101,7 @@ features:
       - apps/server/src/provider/ModelManifest.ts
       - apps/server/src/provider/acp/AntigravityAcpSupport.ts
       - apps/server/src/textGeneration/AntigravityTextGeneration.ts
+      - apps/web/src/components/chat/composerProviderState.tsx
       - apps/web/src/composerDraftStore.ts
       - apps/web/src/modelSelection.ts
       - packages/shared/src/model.ts
@@ -107,8 +109,10 @@ features:
       - apps/mobile/src/lib/modelOptions.test.ts
       - apps/server/src/provider/Layers/AntigravityAdapter.test.ts
       - apps/server/src/provider/Layers/AntigravityProvider.test.ts
+      - apps/server/src/provider/ModelManifest.test.ts
       - apps/server/src/provider/acp/AntigravityAcpSupport.test.ts
       - apps/server/src/textGeneration/AntigravityTextGeneration.test.ts
+      - apps/web/src/components/chat/composerProviderState.test.tsx
       - apps/web/src/modelSelection.test.ts
       - packages/shared/src/model.test.ts
     upstream:
