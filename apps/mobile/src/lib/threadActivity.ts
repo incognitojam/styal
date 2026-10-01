@@ -9,6 +9,7 @@ import {
 import {
   isToolLifecycleItemType,
   ProjectScriptIcon,
+  TURN_USAGE_ACTIVITY_KIND,
   UserInputAttachmentAnswerPayload,
 } from "@t3tools/contracts";
 import {
@@ -523,6 +524,7 @@ function deriveWorkLogEntries(
     if (activity.kind === "task.updated" && !isTerminalTaskUpdate(activity)) continue;
     if (activity.kind === "tool.progress") continue;
     if (activity.kind === "context-window.updated") continue;
+    if (activity.kind === TURN_USAGE_ACTIVITY_KIND) continue;
     if (activity.summary === "Checkpoint captured") continue;
     if (isNoContentRuntimeWarning(activity)) continue;
     if (isPlanBoundaryToolActivity(activity)) continue;

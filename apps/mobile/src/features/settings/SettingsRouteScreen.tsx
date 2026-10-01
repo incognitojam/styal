@@ -599,6 +599,16 @@ function GeneralSettingsSection() {
         }
         onValueChange={(value) => savePreferences({ confirmThreadUnpin: value })}
       />
+      <SettingsSwitchRow
+        icon="info.circle"
+        label="Turn usage"
+        subtitle="Show the tokens each agent turn used. Tap for the breakdown."
+        value={
+          !AsyncResult.isSuccess(preferencesResult) ||
+          preferencesResult.value.turnUsageEnabled !== false
+        }
+        onValueChange={(value) => savePreferences({ turnUsageEnabled: value })}
+      />
       <SettingsRow icon="chart.bar.xaxis" label="Usage" target="SettingsUsage" />
     </SettingsSection>
   );

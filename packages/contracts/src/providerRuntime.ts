@@ -399,6 +399,12 @@ export const TurnTokenUsage = Schema.Union([
 ]);
 export type TurnTokenUsage = typeof TurnTokenUsage.Type;
 
+/**
+ * Thread activity holding a finished turn's `TurnTokenUsage`, shown under
+ * the turn. Recorded only when the provider reported some usage.
+ */
+export const TURN_USAGE_ACTIVITY_KIND = "turn.usage";
+
 const TurnCompletedPayload = Schema.Struct({
   state: RuntimeTurnState,
   stopReason: Schema.optional(Schema.NullOr(TrimmedNonEmptyStringSchema)),

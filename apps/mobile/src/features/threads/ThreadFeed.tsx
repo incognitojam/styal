@@ -10,7 +10,9 @@ import type {
   OrchestrationMessageContext,
   ThreadId,
   TurnId,
+  TurnTokenUsage,
 } from "@t3tools/contracts";
+import { turnUsageView } from "@t3tools/shared/turnUsage";
 import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -160,6 +162,7 @@ import {
   type ThreadFeedLatestTurn,
 } from "../../lib/threadActivity";
 import type { ThreadContentPresentation } from "./threadContentPresentation";
+import { TurnUsageText } from "./TurnUsageText";
 import {
   resolveThreadFeedLiveFollow,
   type ThreadFeedLiveFollowEvent,
@@ -253,6 +256,8 @@ export interface ThreadFeedProps {
   readonly threadId: ThreadId;
   readonly workspaceRoot?: string | null;
   readonly feed: ReadonlyArray<ThreadFeedEntry>;
+  /** Usage for completed turns; empty when turn usage is turned off. */
+  readonly turnUsageByTurnId: ReadonlyMap<string, TurnTokenUsage>;
   readonly contentPresentation: ThreadContentPresentation;
   readonly agentLabel: string;
   readonly latestTurn: ThreadFeedLatestTurn | null;
@@ -1417,6 +1422,7 @@ function renderFeedEntry(
     | "skills"
     | "dispatchingMessageId"
     | "onEditPendingMessage"
+    | "turnUsageByTurnId"
   > & {
     readonly copiedRowId: string | null;
     readonly expandedWorkRows: Record<string, boolean>;
@@ -1599,6 +1605,10 @@ function renderFeedEntry(
       props.terminalAssistantMessageIds.has(message.id) &&
       !assistantTurnStillInProgress &&
       !message.streaming;
+    const turnUsage =
+      showAssistantMeta && message.turnId != null
+        ? props.turnUsageByTurnId.get(message.turnId)
+        : undefined;
 
     if (isUser) {
       const referenceIds = new Set(
@@ -1806,6 +1816,12 @@ function renderFeedEntry(
             <Text className="font-t3-medium text-xs tabular-nums text-adaptive-neutral-600-400">
               {timestampLabel}
             </Text>
+            {turnUsage ? (
+              <>
+                <Text className="text-xs text-adaptive-neutral-600-400">·</Text>
+                <TurnUsageText view={turnUsageView(turnUsage)} />
+              </>
+            ) : null}
           </View>
         ) : null}
       </Animated.View>
@@ -2348,6 +2364,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const listAppearanceData = useMemo(
     () => ({
       dispatchingMessageId: props.dispatchingMessageId,
+      turnUsageByTurnId: props.turnUsageByTurnId,
       activeTurnIds,
       copiedRowId,
       expandedWorkRows,
@@ -2361,6 +2378,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     }),
     [
       props.dispatchingMessageId,
+      props.turnUsageByTurnId,
       activeTurnIds,
       copiedRowId,
       expandedWorkRows,
@@ -2779,6 +2797,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             environmentId: props.environmentId,
             dispatchingMessageId: props.dispatchingMessageId,
             onEditPendingMessage: props.onEditPendingMessage,
+            turnUsageByTurnId: props.turnUsageByTurnId,
             copiedRowId,
             expandedWorkRows,
             workRowSizing,
@@ -2812,6 +2831,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     [
       props.dispatchingMessageId,
       props.onEditPendingMessage,
+      props.turnUsageByTurnId,
       copiedRowId,
       disclosureToggleSettling,
       expandedWorkRows,

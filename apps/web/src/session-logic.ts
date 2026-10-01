@@ -2,7 +2,7 @@ import {
   requestKindFromRequestType,
   type PendingApproval,
 } from "@t3tools/client-runtime/pending-requests";
-import { UserInputAttachmentAnswerPayload } from "@t3tools/contracts";
+import { TURN_USAGE_ACTIVITY_KIND, UserInputAttachmentAnswerPayload } from "@t3tools/contracts";
 import { makeBackgroundExitTurnLookup } from "@t3tools/client-runtime/work-log/background-exit";
 import { makeToolStartLookup } from "@t3tools/client-runtime/work-log/tool-start";
 import { foldUserInputActivities } from "@t3tools/client-runtime/work-log/user-input";
@@ -519,6 +519,7 @@ export function deriveWorkLogEntries(
     if (activity.kind === "task.updated") continue;
     if (activity.kind === "tool.progress") continue;
     if (activity.kind === "context-window.updated") continue;
+    if (activity.kind === TURN_USAGE_ACTIVITY_KIND) continue;
     if (activity.kind === "turn.plan.updated") continue;
     if (activity.summary === "Checkpoint captured") continue;
     if (isNoContentRuntimeWarning(activity)) continue;

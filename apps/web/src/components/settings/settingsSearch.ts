@@ -366,6 +366,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["composer rest resting scroll wheel conversation timeline shrink minimize"],
   },
   {
+    id: "turn-usage",
+    title: "Turn usage",
+    to: "/settings/general",
+    searchTerms: ["usage tokens cache reasoning input output turn"],
+  },
+  {
     id: "provider-update-checks",
     title: "Provider update checks",
     to: "/settings/general",
