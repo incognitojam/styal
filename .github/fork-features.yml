@@ -1934,7 +1934,8 @@ features:
     status: maintained
     prs: [589]
     invariants:
-      - A GitHub merge or auto-merge started from the pull request panel sends the head commit the panel showed, and GitHub refuses it when the branch has moved since.
+      - A GitHub merge, or turning on auto-merge, from the pull request panel sends the head commit from the panel's last read, and GitHub refuses it when the branch has moved since.
+      - After a refused action, the next detail read goes to the host, so retrying a merge uses the current head.
       - A merge refused because the head moved reports that new commits were pushed instead of the generic access hint.
       - Hosts that do not report a head commit, older clients, and older servers merge as before.
     rationale: Upstream single pull request merges run plain `gh pr merge`, which merges whatever the head is when the command runs.

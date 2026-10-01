@@ -1008,8 +1008,9 @@ export const PullRequestActionInput = Schema.Struct({
    */
   mergeMethod: Schema.optional(PullRequestMergeMethod),
   /**
-   * The detail's `headSha` the reader saw, read for `merge` and `enable-auto-merge`. The host
-   * refuses the merge if the branch has moved since, rather than merging commits nobody reviewed.
+   * The detail's `headSha` at the client's last read, sent with `merge` and `enable-auto-merge`.
+   * The host refuses the merge, or turning on auto-merge, if the branch has moved since. An armed
+   * auto-merge does not keep this check and merges commits pushed after it was turned on.
    */
   expectedHeadSha: Schema.optional(TrimmedNonEmptyString),
   /** Only read for `update-branch`, where absent means the host's own default. */

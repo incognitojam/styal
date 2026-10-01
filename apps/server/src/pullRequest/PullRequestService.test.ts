@@ -1268,6 +1268,39 @@ it.effect("gates arming a merge for later exactly as it gates merging now", () =
   }),
 );
 
+it.effect("reads the change request from the host again after a refused merge", () =>
+  Effect.gen(function* () {
+    let headSha = "abc123";
+    const service = yield* makeService({
+      projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
+      providers: [
+        fakeProvider("github", {
+          getChangeRequest: () => Effect.sync(() => ({ ...changeRequestDetail(1), headSha })),
+          runAction: () =>
+            Effect.fail(
+              new PullRequestProviderError({
+                provider: "github",
+                operation: "runAction",
+                reason: "failed",
+                detail: "New commits were pushed to #1 since it was last loaded.",
+              }),
+            ),
+        }),
+      ],
+    });
+    const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+
+    assert.strictEqual((yield* service.detail(reference)).headSha, "abc123");
+    headSha = "def456";
+    yield* Effect.flip(
+      service.runAction({ ...reference, action: "merge", expectedHeadSha: "abc123" }),
+    );
+
+    // The next merge attempt must be made against the head the host has now.
+    assert.strictEqual((yield* service.detail(reference)).headSha, "def456");
+  }),
+);
+
 it.effect("hands the host the strategy an armed merge was asked for", () =>
   Effect.gen(function* () {
     let ranWith: {

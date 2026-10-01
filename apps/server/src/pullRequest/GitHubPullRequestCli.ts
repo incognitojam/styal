@@ -1070,7 +1070,8 @@ function actionArgs(
   expectedHeadSha: string | undefined,
   updateMethod: PullRequestUpdateMethod | undefined,
 ): ReadonlyArray<string> {
-  // GitHub refuses the merge, armed or immediate, once the head has moved past this commit.
+  // GitHub refuses an immediate merge, or turning on auto-merge, when the head is no longer this
+  // commit. Auto-merge does not keep the check: commits pushed after it is on are merged too.
   const headGuard = expectedHeadSha === undefined ? [] : ["--match-head-commit", expectedHeadSha];
   switch (action) {
     case "merge":

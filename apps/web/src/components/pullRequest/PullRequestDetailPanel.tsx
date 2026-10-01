@@ -967,7 +967,7 @@ function PullRequestDetailPanelBody({
         ...reference,
         action,
         ...(method ? { mergeMethod: method } : {}),
-        // The head this panel showed, so the host refuses to merge commits pushed since.
+        // The head at this panel's last read, so the host refuses commits pushed after it.
         ...((action === "merge" || action === "enable-auto-merge") && detail?.headSha
           ? { expectedHeadSha: detail.headSha }
           : {}),
