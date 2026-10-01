@@ -64,7 +64,7 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string
   const toolPresentation = resolveWorkEntryToolPresentation(entry);
   if (toolPresentation) return toolPresentation.displayName;
   if (
-    entry.toolName &&
+    (entry.toolName || entry.itemType) &&
     !entry.sourceActivityKind?.startsWith("setup-script.") &&
     !entry.agentSpawn
   ) {
@@ -79,7 +79,9 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string
       failed: workEntryDisplayIndicatesToolFailure(entry),
       stopped: workEntryIsStoppedToolCall(entry),
     });
-    if (presentation) {
+    // Tool-less rows keep their raw command or detail unless the shared
+    // presentation found a path to shorten (ACP reads put it in the detail).
+    if (presentation && (entry.toolName || presentation.argument?.kind === "path")) {
       const argument = presentation.argument;
       const value =
         argument?.kind === "path"

@@ -111,6 +111,22 @@ describe("deriveToolRowPresentation", () => {
     ).toBe("DesignSync");
   });
 
+  it("presents tool-less ACP reads as Read with a path argument", () => {
+    expect(
+      deriveToolRowPresentation({
+        itemType: "dynamic_tool_call",
+        label: "Read file",
+        detail: "/repo/.worktrees/feature/src/index.ts",
+      }),
+    ).toEqual({
+      heading: "Read",
+      argument: { kind: "path", value: "/repo/.worktrees/feature/src/index.ts" },
+    });
+    expect(
+      deriveToolRowPresentation({ itemType: "dynamic_tool_call", label: "Read file" }),
+    ).toEqual({ heading: "Read" });
+  });
+
   it("overrides the adapters' substring misclassification", () => {
     // "TaskCreate" contains "create", so it arrives typed as a file change.
     expect(

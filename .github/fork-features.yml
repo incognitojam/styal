@@ -2500,7 +2500,7 @@ features:
     status: maintained
     prs: [89, 129, 337, 354]
     invariants:
-      - Scoped tool activity and Markdown file chips on web and mobile omit generated worktree directory names and display workspace-relative paths, while paths outside the workspace remain absolute.
+      - Scoped tool activity and Markdown file chips on web and mobile omit generated worktree directory names and display workspace-relative paths, while paths outside the workspace remain absolute. This includes ACP file reads (Antigravity, Cursor, Grok), which report no tool name and carry their path only as the row detail.
       - Opening a file still uses its full resolved target, while visible labels and Copy relative path actions retain the scoped path.
       - Open-in-editor menus can copy their resolved project, worktree, or file target and report clipboard success or failure.
       - Descriptive Markdown file-link labels retain their authored text and formatting without an appended filename chip; labels naming the destination file retain compact chips, including line references, throughout chat and previews where file chips are supported.
@@ -2512,6 +2512,7 @@ features:
       - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/web/src/components/ChatMarkdown.tsx
+      - apps/web/src/components/chat/MessagesTimeline.logic.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/chat/OpenInPicker.tsx
       - apps/web/src/components/files/FileMarkdownPreview.tsx
@@ -2519,10 +2520,12 @@ features:
       - apps/web/src/index.css
       - apps/web/src/markdown-links.ts
       - packages/shared/src/filePathDisplay.ts
+      - packages/shared/src/toolRowPresentation.ts
     upstream_paths:
       - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/web/src/components/ChatMarkdown.tsx
+      - apps/web/src/components/chat/MessagesTimeline.logic.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/chat/OpenInPicker.tsx
       - apps/web/src/components/files/FileMarkdownPreview.tsx
@@ -2536,13 +2539,16 @@ features:
       - apps/web/src/components/ChatMarkdown.file-preview.test.tsx
       - apps/web/src/components/ChatMarkdown.test.tsx
       - apps/web/src/components/chat/ChatHeader.test.ts
+      - apps/web/src/components/chat/MessagesTimeline.logic.test.ts
       - apps/web/src/components/chat/MessagesTimeline.test.tsx
       - apps/web/src/filePathDisplay.test.ts
       - apps/web/src/markdown-clipboard.test.ts
       - apps/web/src/markdown-links.test.ts
+      - packages/shared/src/toolRowPresentation.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/13375
       retire_when: Upstream presents equivalent workspace-scoped paths across clients, preserves descriptive Markdown link labels without redundant chips while retaining chips for file-path labels, and preserves full file targets and authored-label copy actions.
 
   - id: workspace-thread-organization
