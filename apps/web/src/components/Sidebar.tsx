@@ -181,7 +181,7 @@ import {
   shouldClearProjectScope,
   shouldCreateNewThreadInCurrentProject,
   resolveWorkingStartedAt,
-  clusterSidebarItemsByGroup,
+  groupActiveThreadsForSidebar,
   resolveSidebarProjectDrop,
   sidebarListItemId,
   sidebarMarkerId,
@@ -2937,7 +2937,11 @@ export default function Sidebar() {
       // Grouping clusters rows without changing their order within a
       // project, so jump shortcuts and range select follow what renders.
       activeThreads: groupThreadsByProject
-        ? clusterSidebarItemsByGroup(optimisticActive, threadProjectGroup, orderedProjectGroupKeys)
+        ? groupActiveThreadsForSidebar(
+            optimisticActive,
+            threadProjectGroup,
+            orderedProjectGroupKeys,
+          )
         : optimisticActive,
       // Soonest wake first: "what comes back next" is the shelf's question.
       snoozedThreads: snoozed.toSorted(

@@ -17,6 +17,7 @@ import {
   reduceSidebarProjectScopeMenuState,
   getFallbackThreadIdAfterDelete,
   getProjectSortTimestamp,
+  groupActiveThreadsForSidebar,
   hasUnseenCompletion,
   isContextMenuPointerDown,
   isSidebarNestedLinkClick,
@@ -2609,6 +2610,77 @@ describe("resolveSidebarDropVerb", () => {
     expect(resolveSidebarDropVerb("pinned", "pinned")).toBeNull();
     expect(resolveSidebarDropVerb("active", null)).toBeNull();
     expect(resolveSidebarDropVerb("active", "snoozed")).toBeNull();
+  });
+});
+
+describe("groupActiveThreadsForSidebar", () => {
+  const threads = [
+    { id: "a1", group: "A", createdAt: "2026-10-01T10:03:00Z", activeOrderKey: null },
+    { id: "b1", group: "B", createdAt: "2026-10-01T10:02:00Z", activeOrderKey: null },
+    { id: "c1", group: "C", createdAt: "2026-10-01T10:01:00Z", activeOrderKey: null },
+    { id: "a2", group: "A", createdAt: "2026-10-01T10:00:00Z", activeOrderKey: null },
+  ];
+  const group = (thread: { group: string }) => thread.group;
+  const ids = (rows: readonly { id: string }[]) => rows.map((row) => row.id);
+
+  it("keeps project placement after the first reorder materializes thread keys", () => {
+    const before = groupActiveThreadsForSidebar(sortThreadsForSidebar(threads), group);
+    const assignments = planPinnedReorder({
+      orderedIds: ["a2", "a1"],
+      keysById: new Map(threads.map((thread) => [thread.id, thread.activeOrderKey])),
+      movedId: "a1",
+    });
+    const keys = new Map(assignments.map(({ id, orderKey }) => [id, orderKey]));
+    const after = groupActiveThreadsForSidebar(
+      sortThreadsForSidebar(
+        threads.map((thread) => ({ ...thread, activeOrderKey: keys.get(thread.id) ?? null })),
+      ),
+      group,
+    );
+
+    expect(ids(before)).toEqual(["a1", "a2", "b1", "c1"]);
+    expect(ids(after)).toEqual(["a2", "a1", "b1", "c1"]);
+  });
+
+  it("keeps project placement during an optimistic reorder", () => {
+    expect(ids(groupActiveThreadsForSidebar(threads.toReversed(), group))).toEqual([
+      "a2",
+      "a1",
+      "b1",
+      "c1",
+    ]);
+  });
+
+  it("honors saved project order and leads with unsaved projects", () => {
+    expect(ids(groupActiveThreadsForSidebar(threads, group, ["C", "A"]))).toEqual([
+      "b1",
+      "c1",
+      "a1",
+      "a2",
+    ]);
+    expect(ids(groupActiveThreadsForSidebar(threads, group, ["C", "B", "A"]))).toEqual([
+      "c1",
+      "b1",
+      "a1",
+      "a2",
+    ]);
+  });
+
+  it("still promotes a project when a thread is created or reopened", () => {
+    for (const fields of [
+      { createdAt: "2026-10-01T10:04:00Z" },
+      { unsettledAt: "2026-10-01T10:04:00Z" },
+    ]) {
+      const updated = threads.map((thread) =>
+        thread.id === "c1" ? { ...thread, ...fields } : thread,
+      );
+      expect(ids(groupActiveThreadsForSidebar(sortThreadsForSidebar(updated), group))).toEqual([
+        "c1",
+        "a1",
+        "a2",
+        "b1",
+      ]);
+    }
   });
 });
 
