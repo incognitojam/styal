@@ -370,8 +370,27 @@ export class GitHubWorkflowApprovalHeadChangedError extends Schema.TaggedError<G
   }
 }
 
+/** A merge pinned to the head the reader saw, refused because the branch has moved since. */
+export class GitHubMergeHeadChangedError extends Schema.TaggedError<GitHubMergeHeadChangedError>()(
+  "GitHubMergeHeadChangedError",
+  {
+    command: Schema.Literal("gh"),
+    cwd: Schema.String,
+    number: Schema.Int,
+  },
+) {
+  get detail(): string {
+    return `New commits were pushed to #${this.number} since it was last loaded. Review them, then merge again.`;
+  }
+
+  override get message(): string {
+    return `GitHub CLI refused merge: ${this.detail}`;
+  }
+}
+
 export type GitHubPullRequestCliError =
   | GitHubStackActionError
+  | GitHubMergeHeadChangedError
   | GitHubCli.GitHubCliError
   | GitHubPullRequestReadError
   | GitHubDiffCursorError
@@ -727,6 +746,7 @@ export class GitHubPullRequestCli extends Context.Service<
       readonly stackNumber?: number;
       readonly expectedStackHeads?: ReadonlyArray<PullRequestStackHead>;
       readonly mergeMethod?: PullRequestMergeMethod;
+      readonly expectedHeadSha?: string;
       readonly updateMethod?: PullRequestUpdateMethod;
     }) => Effect.Effect<void, GitHubPullRequestCliError>;
 
@@ -1047,15 +1067,18 @@ function cursorVariable(cursor: string | null): readonly [string, string] {
 function actionArgs(
   action: PullRequestAction,
   mergeMethod: PullRequestMergeMethod | undefined,
+  expectedHeadSha: string | undefined,
   updateMethod: PullRequestUpdateMethod | undefined,
 ): ReadonlyArray<string> {
+  // GitHub refuses the merge, armed or immediate, once the head has moved past this commit.
+  const headGuard = expectedHeadSha === undefined ? [] : ["--match-head-commit", expectedHeadSha];
   switch (action) {
     case "merge":
-      return ["merge", `--${mergeMethod ?? "merge"}`];
+      return ["merge", `--${mergeMethod ?? "merge"}`, ...headGuard];
     // `--auto` arms the same command instead of running it, and still needs the strategy: GitHub
     // stores the strategy with the standing instruction rather than choosing one at merge time.
     case "enable-auto-merge":
-      return ["merge", "--auto", `--${mergeMethod ?? "merge"}`];
+      return ["merge", "--auto", `--${mergeMethod ?? "merge"}`, ...headGuard];
     case "disable-auto-merge":
       return ["merge", "--disable-auto"];
     // `gh` updates with a merge commit unless asked to rebase, which is GitHub's own default.
@@ -2677,14 +2700,41 @@ export const make = Effect.gen(function* () {
       const [subcommand, ...flags] = actionArgs(
         input.action,
         input.mergeMethod,
+        input.expectedHeadSha,
         input.updateMethod,
       );
+      const expectedHeadSha =
+        input.action === "merge" || input.action === "enable-auto-merge"
+          ? input.expectedHeadSha
+          : undefined;
       return github
         .execute({
           cwd: input.cwd,
           args: ["pr", subcommand!, String(input.number), ...repositoryArgs(input), ...flags],
         })
-        .pipe(Effect.asVoid);
+        .pipe(
+          Effect.asVoid,
+          // `gh` reports a moved head only in its stderr wording, so a refused pinned merge reads
+          // the head again to say why, and otherwise keeps the original failure.
+          Effect.catchTag("GitHubCliCommandError", (error) =>
+            expectedHeadSha === undefined
+              ? Effect.fail(error)
+              : getPullRequestDetail(input).pipe(
+                  Effect.orElseSucceed(() => null),
+                  Effect.flatMap((current) =>
+                    Effect.fail<GitHubCli.GitHubCliError | GitHubMergeHeadChangedError>(
+                      current?.headSha !== undefined && current.headSha !== expectedHeadSha
+                        ? new GitHubMergeHeadChangedError({
+                            command: "gh",
+                            cwd: input.cwd,
+                            number: input.number,
+                          })
+                        : error,
+                    ),
+                  ),
+                ),
+          ),
+        );
     },
 
     commentOnPullRequest: (input) =>

@@ -834,6 +834,11 @@ export const PullRequestDetail = Schema.Struct({
   deletions: NonNegativeInt,
   changedFiles: NonNegativeInt,
   headBranch: TrimmedNonEmptyString,
+  /**
+   * The head commit this detail was read at. Reported only by hosts that refuse a merge whose
+   * head has moved since, so a client that sends it back as `expectedHeadSha` gets that refusal.
+   */
+  headSha: Schema.optional(TrimmedNonEmptyString),
   headRepositoryNameWithOwner: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   baseBranch: TrimmedNonEmptyString,
   createdAt: IsoDateTime,
@@ -1002,6 +1007,11 @@ export const PullRequestActionInput = Schema.Struct({
    * than at the moment it happens. Absent means the host's own default.
    */
   mergeMethod: Schema.optional(PullRequestMergeMethod),
+  /**
+   * The detail's `headSha` the reader saw, read for `merge` and `enable-auto-merge`. The host
+   * refuses the merge if the branch has moved since, rather than merging commits nobody reviewed.
+   */
+  expectedHeadSha: Schema.optional(TrimmedNonEmptyString),
   /** Only read for `update-branch`, where absent means the host's own default. */
   updateMethod: Schema.optional(PullRequestUpdateMethod),
 });
