@@ -1896,6 +1896,27 @@ features:
         - https://github.com/pingdotgg/t3code/commit/98beed1a226c42b85c52ff5ee9d5dbb67d776a77
       retire_when: Upstream offers swipe-to-discard on new-task drafts in mobile Home and the tablet sidebar with confirmation or equivalent recovery.
 
+  - id: mobile-permission-registry-synchronization
+    title: Synchronize the iOS native permission registry
+    status: maintained
+    prs: []
+    invariants:
+      - Concurrent registration and lookup of Expo permission requesters on iOS cannot corrupt the native registry, and clean installs resolve the patched expo-modules-core version.
+    rationale: Upstream added this patch in #12482 and dropped it when upgrading to Expo SDK 58, although expo-modules-core 58.0.9 still mutates the registry without synchronization and upstream keeps the macOS regression test. Compared with upstream revision 024d49520eadb24cc2f2cef0b0a82c33f0290813 on October 10, 2026.
+    implementation_paths:
+      - patches/expo-modules-core@58.0.9.patch
+    upstream_paths:
+      - apps/mobile/scripts/permissions-service.test.ts
+      - pnpm-workspace.yaml
+    tests:
+      - apps/mobile/scripts/permissions-service.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/12045
+        - https://github.com/pingdotgg/t3code/pull/12482
+      retire_when: Upstream restores the permissions registry patch for its Expo SDK 58 expo-modules-core version, or Expo ships synchronized registry access.
+
   - id: pending-question-answer-drafts
     title: Keep unsubmitted question answers when the chat view remounts
     status: maintained
