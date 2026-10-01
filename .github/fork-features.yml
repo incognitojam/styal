@@ -1203,7 +1203,7 @@ features:
   - id: inspectable-tool-activity
     title: Keep tool activity concise and inspectable
     status: maintained
-    prs: [4, 11, 36, 58, 60, 66, 117, 139, 158, 168, 190, 204, 230, 238, 278, 282, 301]
+    prs: [4, 11, 36, 58, 60, 66, 117, 139, 158, 168, 190, 204, 230, 238, 278, 282, 301, 582]
     invariants:
       - Web and mobile name supported tool calls by their action with a concise useful argument, while agent panels and approval rows use the same vocabulary instead of raw provider names or serialized input.
       - Clarifying-question calls name what was asked and expand into those questions with their options, rather than restating the provider's serialized input.
