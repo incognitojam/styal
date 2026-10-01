@@ -172,6 +172,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
       expect(second.capabilities.threadPullRequests).toBe(true);
       expect(second.capabilities.threadPullRequestLinking).toBe(true);
       expect(second.capabilities.agentActivityPublishing).toBe(false);
+      expect(second.platform.timeZone).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
     }),
   );
 

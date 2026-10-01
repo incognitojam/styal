@@ -27,6 +27,13 @@ for complete values. Use **Expand table cells** to wrap the text again. Tables w
 than can fit may still scroll to keep their headings readable.
 This works in messages and Markdown file previews.
 
+On web and desktop, times an agent writes in a message, such as `14:20 UTC`, `Sunday 17:00`, or
+`49 minutes ago`, are lightly highlighted. Hover one to see that moment in your own time zone and
+how far it is from now. A time written without a zone is read in the zone the rest of the message
+uses, or otherwise in the time zone of the machine the agent runs on. A time without a date is
+taken as the one nearest to when the message was sent, unless the sentence makes clear it is still
+to come or already past. The tooltip says when it relied on these assumptions.
+
 On web and desktop, select an image in an agent message to expand it. Images that link somewhere
 keep their link action.
 

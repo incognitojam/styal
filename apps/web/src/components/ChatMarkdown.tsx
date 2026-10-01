@@ -91,6 +91,12 @@ import remarkGfm from "remark-gfm";
 import { remarkGithubAlerts } from "../markdown-github-alerts";
 import { remarkGithubReferences } from "../markdown-github-references";
 import {
+  MENTIONED_TIME_PROPERTY,
+  readMentionedTime,
+  remarkMentionedTimes,
+} from "../markdown-mentioned-times";
+import { MentionedTimeChip } from "./chat/MentionedTimeChip";
+import {
   githubReferenceHref,
   GithubReferenceThreadContext,
   MISSING_GITHUB_REFERENCE_ATTRIBUTE,
@@ -246,6 +252,9 @@ interface ChatMarkdownProps {
       text nests under the heading that introduces it, such as a chat message's
       author. Rendered tags and their styling are unchanged. */
   headingLevelOffset?: number | undefined;
+  /** When the text was written. Turns the times it mentions into chips that read them in the
+      reader's zone; days and offsets the text leaves out are counted from here. */
+  writtenAt?: string | undefined;
 }
 
 export interface ChatMarkdownContextReference {
@@ -494,6 +503,7 @@ export const CHAT_MARKDOWN_SANITIZE_SCHEMA: NonNullable<Parameters<typeof rehype
     blockquote: [...(defaultSchema.attributes?.blockquote ?? []), "dataAlert"],
     a: [...(defaultSchema.attributes?.a ?? []), "dataGithubReference", "dataPullRequestAutolink"],
     div: [...(defaultSchema.attributes?.div ?? []), ...CODEX_ARTIFACT_TEMPLATE_HAST_PROPERTIES],
+    span: [...(defaultSchema.attributes?.span ?? []), MENTIONED_TIME_PROPERTY],
     img: [
       ...(defaultSchema.attributes?.img ?? []),
       "dataLocalSrc",
@@ -2195,6 +2205,7 @@ function useChatMarkdownState({
   onImageExpand,
   renderContextReference,
   headingLevelOffset = 0,
+  writtenAt,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
   const [localMediaPreview, setLocalMediaPreview] = useState<ExpandedImagePreview | null>(null);
@@ -2269,6 +2280,11 @@ function useChatMarkdownState({
     [createAssetUrl, cwd, expandMedia, preparedConnection, threadRef],
   );
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
+  const environmentTimeZone = serverConfig?.environment.platform.timeZone ?? null;
+  const mentionedTimeAnchor = useMemo(() => {
+    const writtenAtMs = writtenAt === undefined ? Number.NaN : Date.parse(writtenAt);
+    return Number.isNaN(writtenAtMs) ? null : { writtenAtMs, environmentTimeZone };
+  }, [writtenAt, environmentTimeZone]);
   const projects = useProjects();
   const availableEditors = serverConfig?.availableEditors ?? [];
   const [preferredEditor] = usePreferredEditor(availableEditors);
@@ -2623,6 +2639,7 @@ function useChatMarkdownState({
       linkTargetPreference,
       lookupReference,
       markdownFileLinkMetaByHref,
+      mentionedTimeAnchor,
       onRunCodeBlock,
       onTaskListChange,
       onUseArtifactTemplate,
@@ -2657,6 +2674,7 @@ function useChatMarkdownState({
       linkTargetPreference,
       lookupReference,
       markdownFileLinkMetaByHref,
+      mentionedTimeAnchor,
       onRunCodeBlock,
       onTaskListChange,
       onUseArtifactTemplate,
@@ -2710,6 +2728,17 @@ function markdownHeadingRenderer(level: 1 | 2 | 3 | 4 | 5 | 6) {
   };
 }
 
+function MarkdownMentionedTime(props: { encoded: unknown; children: ReactNode }) {
+  const { mentionedTimeAnchor } = use(ChatMarkdownRendererContext);
+  const time = useMemo(() => readMentionedTime(props.encoded), [props.encoded]);
+  if (time === null || mentionedTimeAnchor === null) return props.children;
+  return (
+    <MentionedTimeChip time={time} anchor={mentionedTimeAnchor}>
+      {props.children}
+    </MentionedTimeChip>
+  );
+}
+
 // Keep component types stable when streaming changes the message state.
 const CHAT_MARKDOWN_COMPONENTS = {
   h1: markdownHeadingRenderer(1),
@@ -2727,6 +2756,11 @@ const CHAT_MARKDOWN_COMPONENTS = {
       );
     }
     return <div {...props}>{children}</div>;
+  },
+  span: function MarkdownSpan({ node, children, ...props }) {
+    const encoded = node?.properties?.[MENTIONED_TIME_PROPERTY];
+    if (encoded === undefined) return <span {...props}>{children}</span>;
+    return <MarkdownMentionedTime encoded={encoded}>{children}</MarkdownMentionedTime>;
   },
   p: function MarkdownParagraph({ node: _node, children, ...props }) {
     const { skills } = use(ChatMarkdownRendererContext);
@@ -3307,21 +3341,32 @@ function ChatMarkdown({
   // Held apart so a caller spelling the context inline does not reparse the body every render.
   const referenceHost = referenceContext?.host;
   const referenceRepository = referenceContext?.repository;
+  const marksMentionedTimes = props.writtenAt !== undefined;
   const remarkPlugins = useMemo(() => {
     const base = lineBreaks
       ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS
       : CHAT_MARKDOWN_REMARK_PLUGINS;
     const incremental = incrementalParsing ? [createIncrementalMarkdownPlugin()] : [];
+    // After the references, whose links it leaves alone.
+    const mentionedTimes = marksMentionedTimes ? [remarkMentionedTimes] : [];
     if (referenceHost === undefined || referenceRepository === undefined)
-      return [...base, ...extraRemarkPlugins, ...incremental];
+      return [...base, ...mentionedTimes, ...extraRemarkPlugins, ...incremental];
     // After remark-gfm, whose autolink literals are the links this rewrites as shorthand.
     return [
       ...base,
       [remarkGithubReferences, { host: referenceHost, repository: referenceRepository }],
+      ...mentionedTimes,
       ...extraRemarkPlugins,
       ...incremental,
     ] satisfies NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
-  }, [lineBreaks, referenceHost, referenceRepository, extraRemarkPlugins, incrementalParsing]);
+  }, [
+    lineBreaks,
+    referenceHost,
+    referenceRepository,
+    marksMentionedTimes,
+    extraRemarkPlugins,
+    incrementalParsing,
+  ]);
 
   // react-markdown converts unparsed HTML nodes to text when skipHtml is false.
   // Keep that behavior explicit because literal mode depends on escaping the

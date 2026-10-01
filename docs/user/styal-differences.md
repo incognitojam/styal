@@ -125,6 +125,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   scrolling still leave your position alone. Compared with
   [T3 Code revision d15210c](https://github.com/pingdotgg/t3code/tree/d15210cd3da79f9a1a495a6309d912d76362a046),
   checked September 28, 2026.
+- **Times in your time zone.** Times an agent writes, such as `14:20 UTC` or `49 minutes ago`,
+  show the moment in your own time zone and how far it is from now when you hover them. This helps
+  when the agent's machine runs in another zone. Compared with
+  [T3 Code revision 5cc99e1](https://github.com/pingdotgg/t3code/tree/5cc99e1c23980d7995a13c47f969b47cb68ed1be),
+  checked October 1, 2026, which shows these times as plain text.
+  [Reading the chat timeline](./chat-timeline.md).
 - **Complete conversation export.** Copy a thread's user and assistant messages as Markdown,
   including history that is not currently loaded in the view.
   [Transcripts](./thread-sidebar.md#copying-a-transcript).

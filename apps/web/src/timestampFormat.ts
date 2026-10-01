@@ -296,3 +296,53 @@ export function formatExpiresInLabel(isoDate: string, nowMs: number = Date.now()
   if (seconds > 0) tail.push(`${seconds}s`);
   return tail.length > 0 ? `Expires in ${days}d ${tail.join(" ")}` : `Expires in ${days}d`;
 }
+
+const mentionedTimeFormatterCache = new Map<string, Intl.DateTimeFormat>();
+
+/**
+ * A time mentioned in a message, spelled out in full in the reader's zone with the zone named,
+ * e.g. `Thursday 1 October 2026 at 15:20 BST`. Whole-label locale formatting, so the word order
+ * and month names agree with each other.
+ */
+export function formatMentionedTimeLabel(
+  instantMs: number,
+  timestampFormat: TimestampFormat,
+  includeSeconds: boolean,
+): string {
+  const cacheKey = `${timestampFormat}:${includeSeconds ? "seconds" : "minutes"}`;
+  let formatter = mentionedTimeFormatterCache.get(cacheKey);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(timestampLocale, {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      ...getTimestampFormatOptions(timestampFormat, includeSeconds),
+      timeZoneName: "short",
+    });
+    mentionedTimeFormatterCache.set(cacheKey, formatter);
+  }
+  return formatter.format(instantMs);
+}
+
+const relativeTimeFormatter = new Intl.RelativeTimeFormat(timestampLocale, { numeric: "auto" });
+
+const RELATIVE_UNITS: ReadonlyArray<[Intl.RelativeTimeFormatUnit, number]> = [
+  ["year", 365 * 86_400_000],
+  ["month", 30 * 86_400_000],
+  ["week", 7 * 86_400_000],
+  ["day", 86_400_000],
+  ["hour", 3_600_000],
+  ["minute", 60_000],
+];
+
+/** How far an instant is from now in its largest whole unit: `in 3 hours`, `49 minutes ago`. */
+export function formatRelativeToNow(instantMs: number, nowMs: number = Date.now()): string {
+  const diffMs = instantMs - nowMs;
+  for (const [unit, unitMs] of RELATIVE_UNITS) {
+    if (Math.abs(diffMs) >= unitMs) {
+      return relativeTimeFormatter.format(Math.trunc(diffMs / unitMs), unit);
+    }
+  }
+  return relativeTimeFormatter.format(0, "second");
+}

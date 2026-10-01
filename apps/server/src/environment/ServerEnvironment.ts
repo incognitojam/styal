@@ -53,6 +53,12 @@ export class ServerEnvironmentIdentity extends Context.Service<
   }
 >()("@styal/cli/environment/ServerEnvironment/ServerEnvironmentIdentity") {}
 
+/** The host clock's IANA zone; absent when the runtime cannot name one. */
+function hostTimeZone(): string | undefined {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone?.trim();
+  return timeZone && timeZone !== "Etc/Unknown" ? timeZone : undefined;
+}
+
 function platformOs(platform: NodeJS.Platform): ExecutionEnvironmentDescriptor["platform"]["os"] {
   switch (platform) {
     case "darwin":
@@ -191,6 +197,7 @@ export const make = Effect.gen(function* () {
   const cwdBaseName = path.basename(serverConfig.cwd).trim();
   const label = yield* resolveServerEnvironmentLabel({ cwdBaseName });
   const machine = yield* detectServerEnvironmentMachineKind();
+  const timeZone = hostTimeZone();
   const launcher = yield* resolveServiceLauncherMode();
   const serverSelfUpdate = resolveServerSelfUpdateCapability({
     desktopManaged: serverConfig.mode === "desktop",
@@ -210,6 +217,7 @@ export const make = Effect.gen(function* () {
       os: platformOs(hostPlatform),
       arch: platformArch(hostArchitecture),
       ...(machine === null ? {} : { machine }),
+      ...(timeZone === undefined ? {} : { timeZone }),
     },
     serverVersion: packageJson.version,
     serverPackageName: packageJson.name,

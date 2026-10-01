@@ -31,6 +31,10 @@
       "types": "./src/markdownImages.ts",
       "default": "./src/markdownImages.ts"
     },
+    "./mentioned-times": {
+      "types": "./src/mentionedTimes.ts",
+      "default": "./src/mentionedTimes.ts"
+    },
     "./markdown-links": {
       "types": "./src/markdownLinks.ts",
       "default": "./src/markdownLinks.ts"

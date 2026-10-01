@@ -45,6 +45,9 @@ export const ExecutionEnvironmentPlatform = Schema.Struct({
       signal (containers, Windows, unknown DMI), on servers that predate it, or
       when a newer server names a kind this build cannot draw. */
   machine: ForwardCompatibleOptional(EnvironmentMachineKind),
+  /** IANA zone of the host clock, which agents read when they write a time without a zone.
+      Absent on servers that predate it. */
+  timeZone: Schema.optionalKey(TrimmedNonEmptyString),
 });
 
 /**
