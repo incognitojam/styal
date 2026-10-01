@@ -278,9 +278,7 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
   readonly fullSwipeWidth?: number;
   readonly onSwipeableWillOpen: (methods: SwipeableMethods) => void;
   readonly onSwipeableClose: (methods: SwipeableMethods) => void;
-  readonly simultaneousSwipeGesture?: ComponentProps<
-    typeof ThreadSwipeable
-  >["simultaneousWithExternalGesture"];
+  readonly simultaneousSwipeGesture?: ComponentProps<typeof ThreadSwipeable>["simultaneousWith"];
 }) {
   const { pendingTask, onSelectPendingTask, onDeletePendingTask } = props;
   const { width: windowWidth } = useWindowDimensions();
@@ -472,7 +470,7 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
           }}
           secondaryAction={null}
           resetKey={pendingTask.key}
-          simultaneousWithExternalGesture={props.simultaneousSwipeGesture}
+          simultaneousWith={props.simultaneousSwipeGesture}
           threadTitle={pendingTask.title}
         >
           {renderRow}
@@ -572,9 +570,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly activationKey?: string;
   readonly searchMatch?: EnvironmentThreadSearchMatch;
   readonly searchQuery?: string;
-  readonly simultaneousSwipeGesture?: ComponentProps<
-    typeof ThreadSwipeable
-  >["simultaneousWithExternalGesture"];
+  readonly simultaneousSwipeGesture?: ComponentProps<typeof ThreadSwipeable>["simultaneousWith"];
 }) {
   const { width: windowWidth } = useWindowDimensions();
   const {
@@ -1255,7 +1251,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         primaryAction={primaryAction}
         secondaryAction={secondaryAction}
         resetKey={`${thread.environmentId}:${thread.id}:${variant}:${snoozedRow}:${thread.settledAt}:${thread.unsettledAt}:${thread.snoozedUntil}`}
-        simultaneousWithExternalGesture={props.simultaneousSwipeGesture}
+        simultaneousWith={props.simultaneousSwipeGesture}
         threadTitle={thread.title}
       >
         {(close) => (

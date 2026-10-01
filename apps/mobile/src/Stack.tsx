@@ -531,7 +531,12 @@ function RootStackLayout(props: {
   const { pendingShare, discardShare } = useIncomingShare();
   const sharePresentationRef = useRef(EMPTY_INCOMING_SHARE_PRESENTATION_STATE);
   const [sharePresentationRetry, setSharePresentationRetry] = useState(0);
-  useAgentNotificationNavigation();
+  // Keyboard commands follow the top route; notification suppression follows
+  // the thread beneath overlay sheets.
+  const path = getPathFromState(props.state, navigationPathConfig);
+  const pathname = path.startsWith("/") ? path : `/${path}`;
+  const workspaceLocation = workspaceLocationFromState(props.state);
+  useAgentNotificationNavigation(workspaceLocation.pathname);
   // Presents the styal Link onboarding sheet after an in-session sign-in.
   useConnectOnboardingNavigation();
   // Launcher app shortcuts: routes shortcut taps and tracks opened threads.
@@ -570,11 +575,6 @@ function RootStackLayout(props: {
     // Retry after a failed discard even when the inbox and routes are unchanged.
     // eslint-disable-next-line react/exhaustive-effect-dependencies
   }, [discardShare, navigation, pendingShare, props.state, sharePresentationRetry]);
-  // Full pathname (sheets included) for keyboard-command scoping; the
-  // workspace layout only reacts to the underlying non-overlay route.
-  const path = getPathFromState(props.state, navigationPathConfig);
-  const pathname = path.startsWith("/") ? path : `/${path}`;
-  const workspaceLocation = workspaceLocationFromState(props.state);
 
   return (
     <HardwareKeyboardCommandProvider pathname={pathname}>
