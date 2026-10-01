@@ -1,6 +1,9 @@
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
 import { useCompactSidebarEnabled } from "../hooks/useSettings";
-import { resolveThreadCurrentPullRequestLink } from "@t3tools/shared/threadPullRequests";
+import {
+  resolveThreadCurrentPullRequestLink,
+  visibleThreadPullRequests,
+} from "@t3tools/shared/threadPullRequests";
 import { useAtomValue } from "@effect/atom-react";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import * as Schema from "effect/Schema";
@@ -210,6 +213,7 @@ import {
   resolveThreadPullRequestBadge,
   terminalStatusFromRunningIds,
   type TerminalStatusIndicator,
+  type ThreadPr,
   useLinkedThreadPullRequest,
 } from "./ThreadStatusIndicators";
 import {
@@ -333,6 +337,7 @@ function SidebarThreadTooltip({
   terminalStatus,
   terminalProcessCount,
   compactStatus,
+  pullRequest,
 }: {
   thread: SidebarThreadSummary;
   project: ProjectFaviconProject | null;
@@ -350,9 +355,12 @@ function SidebarThreadTooltip({
   terminalStatus: TerminalStatusIndicator | null;
   terminalProcessCount: number;
   compactStatus?: string | undefined;
+  /** The row badge's pull request, listed when the thread has no linked ones. */
+  pullRequest?: ThreadPr | undefined;
 }) {
   const driverKind = providerEntry?.driverKind ?? null;
   const supportsMultiplePullRequests = useSupportsMultiplePullRequests(thread.environmentId);
+  const pullRequests = supportsMultiplePullRequests ? thread.pullRequests : [];
   return (
     <TooltipPopup
       side="right"
@@ -435,9 +443,9 @@ function SidebarThreadTooltip({
             </div>
           ) : null}
         </div>
-        {supportsMultiplePullRequests && thread.pullRequests.length > 0 ? (
+        {visibleThreadPullRequests(pullRequests).length > 0 || pullRequest ? (
           <div className="border-t border-border/60 pt-2 pl-0.5 text-xs text-muted-foreground">
-            <ThreadPullRequestsMiniList pullRequests={thread.pullRequests} />
+            <ThreadPullRequestsMiniList pullRequests={pullRequests} fallback={pullRequest} />
           </div>
         ) : null}
       </div>
@@ -1355,6 +1363,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       branchMismatch={branchMismatch}
       terminalStatus={terminalStatus}
       terminalProcessCount={terminalProcessCount}
+      pullRequest={pr}
       compactStatus={
         compact
           ? (topStatus?.label ??
