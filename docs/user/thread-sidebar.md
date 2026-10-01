@@ -167,14 +167,15 @@ finishes; the call's own result shows its status.
 
 ## Completion sounds
 
-On web and desktop, choose **Thread notifications** in **Settings → General** for
-system notifications, sound, or both when a thread finishes or needs input or
-approval. Alerts apply to this device while styal is open. Browser notifications
-need permission and HTTPS (or localhost); use **Allow notifications** if prompted.
+On web and desktop, **Thread notifications** in **Settings → General** alerts you
+when a thread finishes, fails, or needs input or approval. Turn on any of
+**System notifications**, **In-app toasts**, and **Sounds**. Alerts apply to this
+device while styal is open. Browser notifications need permission and HTTPS (or
+localhost); use **Allow notifications** if prompted.
 
-When the mode includes sound, choose a sound independently for **Completion**,
-**Input**, and **Approval**: **T3 completion**, **T3 attention**, **Avanti**, or
-**None**, and use **Preview** to hear it. The defaults use T3 completion for
+With **Sounds** on, choose a sound independently for **Completion**, **Input**,
+and **Approval**: **T3 completion**, **T3 attention**, **Avanti**, or **None**, and
+use the speaker button to hear it. The defaults use T3 completion for
 finished threads and T3 attention for input and approval requests.
 
 Fresh installations start with notifications **Off**. Existing Resolve and Chime

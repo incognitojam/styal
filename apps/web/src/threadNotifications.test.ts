@@ -51,3 +51,14 @@ it("suppresses playback before a gesture, for None, and when preferences change 
   await playNotificationSound("completion", () => false);
   expect(start).not.toHaveBeenCalled();
 });
+
+it("toggles system notifications and sounds without changing the other", async () => {
+  const { hasDesktopNotifications, hasNotificationSound, notificationModeFor } =
+    await import("./threadNotifications");
+  for (const desktop of [false, true]) {
+    for (const sound of [false, true]) {
+      const mode = notificationModeFor(desktop, sound);
+      expect([hasDesktopNotifications(mode), hasNotificationSound(mode)]).toEqual([desktop, sound]);
+    }
+  }
+});
