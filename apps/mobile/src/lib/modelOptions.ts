@@ -86,11 +86,6 @@ export function isModelSelectionUnavailable(
   );
   const driver =
     provider?.driver ?? config.settings?.providerInstances[selection.instanceId]?.driver;
-  const model = provider?.models.find((entry) => entry.slug === selection.model);
-  const effort = selection.options?.find((entry) => entry.id === "reasoningEffort");
-  const descriptor = model?.capabilities?.optionDescriptors?.find(
-    (entry) => entry.id === "reasoningEffort" && entry.type === "select",
-  );
   return (
     driver === "antigravity" &&
     (!provider ||
@@ -98,10 +93,7 @@ export function isModelSelectionUnavailable(
       !provider.installed ||
       provider.auth.status === "unauthenticated" ||
       provider.availability === "unavailable" ||
-      !model ||
-      (effort !== undefined &&
-        descriptor?.type === "select" &&
-        !descriptor.options.some((choice) => choice.id === effort.value)))
+      !provider.models.some((model) => model.slug === selection.model))
   );
 }
 
@@ -217,9 +209,6 @@ export function buildModelOptions(
     if (existing) {
       options.set(key, {
         ...existing,
-        ...(isModelSelectionUnavailable(config, fallbackModelSelection)
-          ? { isUnavailable: true }
-          : {}),
         selection:
           existing.providerDriver === "antigravity"
             ? fallbackModelSelection

@@ -124,22 +124,24 @@ describe("applyAntigravityAcpModelSelection", () => {
     }),
   );
 
-  it.effect("rejects removed thinking choices without falling back", () =>
+  it.effect("runs a removed thinking choice at the model's default effort", () =>
     Effect.gen(function* () {
       const { runtime, selections } = makeModelRuntime([
         {
           ...thinkingConfig,
+          currentValue: "flash-medium",
           options: thinkingConfig.options.filter((option) => option.value !== "flash-low"),
         },
       ]);
-      const error = yield* applyAntigravityAcpModelSelection({
-        runtime,
-        model: "gemini-9.1-flash",
-        modelOptions: [{ id: "reasoningEffort", value: "flash-low" }],
-        mapError: (cause) => cause,
-      }).pipe(Effect.flip);
-      expect(error._tag).toBe("AcpRequestError");
-      expect(selections).toEqual([]);
+      expect(
+        yield* applyAntigravityAcpModelSelection({
+          runtime,
+          model: "gemini-9.1-flash",
+          modelOptions: [{ id: "reasoningEffort", value: "flash-low" }],
+          mapError: (cause) => cause,
+        }),
+      ).toBe("flash-high");
+      expect(selections).toEqual(["flash-high"]);
     }),
   );
 

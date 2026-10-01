@@ -73,7 +73,7 @@ const ULTRATHINK_FRAME_CLASSES = {
 } as const;
 
 describe("getComposerProviderState", () => {
-  it("keeps removed Antigravity effort choices for the adapter to reject", () => {
+  it("dispatches the default Antigravity effort when the saved one was removed", () => {
     const state = getComposerProviderState({
       provider: ProviderDriverKind.make("antigravity"),
       model: MODEL,
@@ -85,8 +85,8 @@ describe("getComposerProviderState", () => {
       modelOptions: selections(["reasoningEffort", "native-low"]),
       planModeEnabled: false,
     });
-    expect(state.modelOptionsForDispatch).toEqual(selections(["reasoningEffort", "native-low"]));
-    expect(state.promptEffort).toBe("native-low");
+    expect(state.modelOptionsForDispatch).toEqual(selections(["reasoningEffort", "native-high"]));
+    expect(state.promptEffort).toBe("native-high");
   });
 
   it("derives a stable prompt injection state for ordinary prompt edits", () => {

@@ -11,7 +11,6 @@ import { AnimatedLegendList } from "@legendapp/list/reanimated";
 import { HeaderHeightContext } from "@react-navigation/elements";
 import {
   getProviderOptionCurrentLabel,
-  isProviderOptionSelectionUnavailable,
   getProviderOptionCurrentValue,
   getProviderOptionDescriptors,
 } from "@t3tools/shared/model";
@@ -430,7 +429,6 @@ function ThreadSettingsSessionProvider(
           ? getProviderOptionDescriptors({
               caps: pendingModel.capabilities,
               selections: pendingModel.selection.options,
-              preserveUnavailableSelections: pendingModel.providerDriver === "antigravity",
             })
           : []
         : props.optionDescriptors,
@@ -736,11 +734,7 @@ function ThreadSettingsOptionsItem(props: {
               >
                 <DisclosureRow
                   label={descriptor.label}
-                  value={
-                    isProviderOptionSelectionUnavailable(descriptor)
-                      ? "Unavailable effort"
-                      : getProviderOptionCurrentLabel(descriptor)
-                  }
+                  value={getProviderOptionCurrentLabel(descriptor)}
                   onPress={() => props.onOpenSubmenu({ kind: "descriptor", id: descriptor.id })}
                 />
               </Animated.View>
@@ -959,11 +953,6 @@ function ThreadSettingsChoiceContent(props: {
       contentInsetAdjustmentBehavior="automatic"
       showsVerticalScrollIndicator={false}
     >
-      {activeDescriptor && isProviderOptionSelectionUnavailable(activeDescriptor) ? (
-        <Text className="pb-3 text-sm font-t3-regular text-foreground-muted">
-          Your saved effort is unavailable. Choose an available effort.
-        </Text>
-      ) : null}
       <View className="overflow-hidden rounded-2xl bg-card">
         {submenuContent.rows.map((row, index) => (
           <ChoiceRow
@@ -1305,13 +1294,8 @@ export function NewTaskThreadSettingsRouteScreen() {
       resolveProviderOptionDescriptors({
         capabilities: flow.selectedModelOption?.capabilities,
         selections: flow.selectedModel?.options,
-        preserveUnavailableSelections: flow.selectedModelOption?.providerDriver === "antigravity",
       }),
-    [
-      flow.selectedModel?.options,
-      flow.selectedModelOption?.capabilities,
-      flow.selectedModelOption?.providerDriver,
-    ],
+    [flow.selectedModel?.options, flow.selectedModelOption?.capabilities],
   );
 
   return (

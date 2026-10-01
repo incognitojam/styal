@@ -30,24 +30,6 @@ const CODEX_CAPABILITIES: ModelCapabilities = {
 };
 
 describe("mobile provider options", () => {
-  it("preserves a missing effort for display and allows replacing it", () => {
-    const descriptors = resolveProviderOptionDescriptors({
-      capabilities: CODEX_CAPABILITIES,
-      selections: [{ id: "reasoningEffort", value: "removed-native" }],
-      preserveUnavailableSelections: true,
-    });
-    expect(descriptors[0]?.currentValue).toBe("removed-native");
-    expect(
-      applyProviderOptionSelection(descriptors, { id: "reasoningEffort", value: "high" }),
-    ).toEqual([
-      { id: "reasoningEffort", value: "high" },
-      { id: "serviceTier", value: "default" },
-    ]);
-    expect(
-      applyProviderOptionSelection(descriptors, { id: "reasoningEffort", value: "removed-native" }),
-    ).toBeNull();
-  });
-
   it("updates generic select options without knowing provider-specific ids", () => {
     const descriptors = resolveProviderOptionDescriptors({
       capabilities: CODEX_CAPABILITIES,

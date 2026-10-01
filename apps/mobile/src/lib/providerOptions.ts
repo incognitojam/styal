@@ -11,7 +11,6 @@ import {
 export function resolveProviderOptionDescriptors(input: {
   readonly capabilities: ModelCapabilities | null | undefined;
   readonly selections: ReadonlyArray<ProviderOptionSelection> | null | undefined;
-  readonly preserveUnavailableSelections?: boolean;
 }): ReadonlyArray<ProviderOptionDescriptor> {
   if (!input.capabilities) {
     return [];
@@ -19,7 +18,6 @@ export function resolveProviderOptionDescriptors(input: {
   return getProviderOptionDescriptors({
     caps: input.capabilities,
     selections: input.selections,
-    preserveUnavailableSelections: input.preserveUnavailableSelections,
   });
 }
 
