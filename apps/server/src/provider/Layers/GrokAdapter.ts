@@ -1836,9 +1836,6 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               // Keep prompt settlement atomic with respect to Stop and steering.
               // interruptTurn marks its target before waiting for this lock, so
               // cancellation can still win while queued ACP events are drained.
-              for (let yieldAttempt = 0; yieldAttempt < 8; yieldAttempt += 1) {
-                yield* Effect.yieldNow;
-              }
               yield* prepared.acp.drainEvents;
               consumePromptResponseReady(ctx);
               if (ctx.interruptedTurnIds.has(prepared.turnId)) {

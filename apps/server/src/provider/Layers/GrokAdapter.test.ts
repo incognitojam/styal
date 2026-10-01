@@ -37,6 +37,7 @@ import {
   selectGrokPermissionOptionId,
 } from "./GrokAdapter.ts";
 import * as GrokAcpSupport from "../acp/GrokAcpSupport.ts";
+import type * as AcpSessionRuntime from "../acp/AcpSessionRuntime.ts";
 
 const decodeGrokSettings = Schema.decodeSync(GrokSettings);
 
@@ -239,6 +240,16 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
     it.effect(`emits the ${taskType} background lifecycle`, () =>
       Effect.gen(function* () {
         const threadId = ThreadId.make(`grok-background-${taskType}`);
+        const runtimeReady = yield* Deferred.make<AcpSessionRuntime.AcpSessionRuntime["Service"]>();
+        const makeRuntime = GrokAcpSupport.makeGrokAcpRuntime;
+        const runtimeSpy = vi
+          .spyOn(GrokAcpSupport, "makeGrokAcpRuntime")
+          .mockImplementation((options) =>
+            makeRuntime(options).pipe(
+              Effect.tap((runtime) => Deferred.succeed(runtimeReady, runtime)),
+            ),
+          );
+        yield* Effect.addFinalizer(() => Effect.sync(() => runtimeSpy.mockRestore()));
         const wrapperPath = yield* Effect.promise(() =>
           makeMockGrokWrapper({
             [taskType === "monitor"
@@ -259,6 +270,10 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
         ).pipe(Effect.forkChild);
         yield* adapter.startSession({ threadId, cwd: process.cwd(), runtimeMode: "full-access" });
         yield* adapter.sendTurn({ threadId, input: "watch the unit" });
+        if (taskType === "monitor") {
+          const runtime = yield* Deferred.await(runtimeReady);
+          yield* runtime.request("_test/release-monitor-poll", {});
+        }
         yield* Deferred.await(finished).pipe(Effect.timeout("3 seconds"));
 
         const started = events.find((event) => event.type === "task.started");
@@ -561,9 +576,49 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
     }),
   );
 
-  it.effect("completes a Grok turn from xAI prompt completion when the prompt RPC hangs", () =>
+  it.effect("drains queued Grok output before xAI fallback completes a hung prompt", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("grok-xai-prompt-complete-fallback");
+      const trailingChunkReceived = yield* Deferred.make<void>();
+      const releaseTrailingChunk = yield* Deferred.make<void>();
+      const drainStarted = yield* Deferred.make<void>();
+      const drainCompleted = yield* Deferred.make<void>();
+      const makeRuntime = GrokAcpSupport.makeGrokAcpRuntime;
+      const runtimeSpy = vi
+        .spyOn(GrokAcpSupport, "makeGrokAcpRuntime")
+        .mockImplementation((options) =>
+          makeRuntime(options).pipe(
+            Effect.map((runtime) => ({
+              ...runtime,
+              getEvents: () =>
+                runtime
+                  .getEvents()
+                  .pipe(
+                    Stream.tap((event) =>
+                      event._tag === "ContentDelta" && event.text === "mock"
+                        ? Deferred.succeed(trailingChunkReceived, undefined).pipe(
+                            Effect.andThen(Deferred.await(releaseTrailingChunk)),
+                          )
+                        : Effect.void,
+                    ),
+                  ),
+              // The mock sends this chunk after prompt_complete. Hold it after
+              // receipt to check that the real drain waits for consumption.
+              // The separate delayed-output test holds the chunk in the peer
+              // to exercise settlement before transport delivery.
+              drainEvents: Effect.gen(function* () {
+                yield* Deferred.await(trailingChunkReceived);
+                const drainFiber = yield* runtime.drainEvents.pipe(
+                  Effect.andThen(Deferred.succeed(drainCompleted, undefined)),
+                  Effect.forkChild({ startImmediately: true }),
+                );
+                yield* Deferred.succeed(drainStarted, undefined);
+                yield* Fiber.join(drainFiber);
+              }),
+            })),
+          ),
+        );
+      yield* Effect.addFinalizer(() => Effect.sync(() => runtimeSpy.mockRestore()));
       const wrapperPath = yield* Effect.promise(() =>
         makeMockGrokWrapper({
           T3_ACP_EMIT_XAI_PROMPT_COMPLETE_THEN_HANG: "1",
@@ -594,23 +649,23 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
         modelSelection: { instanceId: ProviderInstanceId.make("grok"), model: "grok-build" },
       });
 
-      const sendTurnResult = yield* adapter.sendTurn({
-        threadId,
-        input: "exercise fallback",
-        attachments: [],
-      });
+      const sendTurnFiber = yield* adapter
+        .sendTurn({ threadId, input: "exercise fallback", attachments: [] })
+        .pipe(Effect.forkChild);
 
-      yield* Deferred.await(turnCompleted);
-      for (let yieldAttempt = 0; yieldAttempt < 8; yieldAttempt += 1) {
-        yield* Effect.yieldNow;
-      }
+      yield* Deferred.await(drainStarted).pipe(Effect.timeout("2 seconds"));
+      assert.isFalse(yield* Deferred.isDone(drainCompleted));
+      assert.isFalse(yield* Deferred.isDone(turnCompleted));
+      yield* Deferred.succeed(releaseTrailingChunk, undefined);
+
+      const sendTurnResult = yield* Fiber.join(sendTurnFiber).pipe(Effect.timeout("2 seconds"));
+      yield* Deferred.await(turnCompleted).pipe(Effect.timeout("2 seconds"));
       const readySessions = yield* adapter.listSessions();
       const readySession = readySessions.find((session) => session.threadId === threadId);
-      const turnCompletedEvent = runtimeEvents.find(
+      const turnCompletedEvents = runtimeEvents.filter(
         (event): event is Extract<ProviderRuntimeEvent, { type: "turn.completed" }> =>
           event.type === "turn.completed",
       );
-      const eventTypes = runtimeEvents.map((event) => event.type);
       const content = runtimeEvents
         .filter(
           (event): event is Extract<ProviderRuntimeEvent, { type: "content.delta" }> =>
@@ -638,16 +693,102 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       );
 
       assert.equal(sendTurnResult.threadId, threadId);
-      assert.include(eventTypes, "turn.completed");
+      assert.lengthOf(turnCompletedEvents, 1);
       assert.equal(content, "hello from mock");
       assert.isAtLeast(terminalIndex, 0);
       assert.deepEqual(outputAfterTerminal, []);
       assert.notInclude(toolTitles, "Child-only tool");
-      assert.equal(turnCompletedEvent?.payload.stopReason, "end_turn");
+      assert.equal(turnCompletedEvents[0]?.payload.stopReason, "end_turn");
       assert.equal(readySession?.status, "ready");
       assert.isUndefined(readySession?.activeTurnId);
 
       yield* Fiber.interrupt(runtimeEventsFiber);
+      yield* adapter.stopSession(threadId);
+    }).pipe(TestClock.withLive),
+  );
+
+  it.effect("keeps Grok output that arrives after the xAI completion notification", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("grok-delayed-xai-tail");
+      const runtimeReady = yield* Deferred.make<AcpSessionRuntime.AcpSessionRuntime["Service"]>();
+      const makeRuntime = GrokAcpSupport.makeGrokAcpRuntime;
+      const runtimeSpy = vi
+        .spyOn(GrokAcpSupport, "makeGrokAcpRuntime")
+        .mockImplementation((options) =>
+          makeRuntime(options).pipe(
+            Effect.tap((runtime) => Deferred.succeed(runtimeReady, runtime)),
+          ),
+        );
+      yield* Effect.addFinalizer(() => Effect.sync(() => runtimeSpy.mockRestore()));
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockGrokWrapper({
+          T3_ACP_EMIT_XAI_PROMPT_COMPLETE_THEN_HANG: "1",
+          T3_ACP_WAIT_FOR_XAI_TAIL_RELEASE: "1",
+        }),
+      );
+      const adapter = yield* makeTestAdapter(wrapperPath);
+      const events: ProviderRuntimeEvent[] = [];
+      const completed = yield* Deferred.make<void>();
+      const firstChunk = yield* Deferred.make<void>();
+      yield* adapter.streamEvents.pipe(
+        Stream.runForEach((event) =>
+          Effect.sync(() => events.push(event)).pipe(
+            Effect.andThen(
+              event.type === "turn.completed"
+                ? Deferred.succeed(completed, undefined)
+                : Effect.void,
+            ),
+            Effect.andThen(
+              event.type === "content.delta" && event.payload.delta === "hello from "
+                ? Deferred.succeed(firstChunk, undefined)
+                : Effect.void,
+            ),
+          ),
+        ),
+        Effect.forkChild,
+      );
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("grok"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+      });
+      const runtime = yield* Deferred.await(runtimeReady);
+      const turn = yield* adapter
+        .sendTurn({ threadId, input: "delay the final chunk", attachments: [] })
+        .pipe(Effect.forkChild);
+
+      // The peer replies only after writing prompt_complete. The final chunk
+      // remains in the peer, outside both the transport and runtime event queue.
+      yield* Deferred.await(firstChunk).pipe(Effect.timeout("2 seconds"), TestClock.withLive);
+      yield* runtime
+        .request("_test/await-xai-completion", {})
+        .pipe(Effect.timeout("2 seconds"), TestClock.withLive);
+      yield* TestClock.adjust("100 millis");
+      assert.isFalse(yield* Deferred.isDone(completed), "completed before the delayed output");
+      yield* runtime.request("_test/release-xai-tail", {});
+      yield* TestClock.adjust("1 second");
+      yield* Fiber.join(turn).pipe(Effect.timeout("2 seconds"), TestClock.withLive);
+      yield* Deferred.await(completed).pipe(Effect.timeout("2 seconds"), TestClock.withLive);
+
+      assert.equal(
+        events
+          .filter((event) => event.type === "content.delta")
+          .map((event) => event.payload.delta)
+          .join(""),
+        "hello from mock",
+      );
+      assert.lengthOf(
+        events.filter((event) => event.type === "turn.completed"),
+        1,
+      );
+      assert.isBelow(
+        events.findIndex(
+          (event) => event.type === "content.delta" && event.payload.delta === "mock",
+        ),
+        events.findIndex((event) => event.type === "turn.completed"),
+      );
+      assert.equal((yield* adapter.listSessions())[0]?.status, "ready");
       yield* adapter.stopSession(threadId);
     }),
   );
@@ -1045,7 +1186,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
         })
         .pipe(Effect.forkChild);
 
-      yield* Deferred.await(drainingEvents).pipe(Effect.timeout("2 seconds"), TestClock.withLive);
+      yield* Deferred.await(drainingEvents).pipe(Effect.timeout("2 seconds"));
       yield* Fiber.interrupt(sendTurnFiber);
 
       const snapshot = yield* adapter.readThread(threadId);
@@ -1053,7 +1194,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       assert.equal(snapshot.turns[0]?.items.length, 1);
 
       yield* adapter.stopSession(threadId);
-    }),
+    }).pipe(TestClock.withLive),
   );
 
   it.effect("does not report a synthetic stop reason when xAI omits one", () =>
@@ -1106,7 +1247,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
 
       yield* Fiber.interrupt(runtimeEventsFiber);
       yield* adapter.stopSession(threadId);
-    }),
+    }).pipe(TestClock.withLive),
   );
 
   it.effect("lets Stop unblock a fully silent Grok prompt and accept a follow-up turn", () =>
@@ -1722,18 +1863,15 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
         })
         .pipe(Effect.forkChild);
 
-      const turnId = yield* Deferred.await(turnStarted).pipe(
-        Effect.timeout("2 seconds"),
-        TestClock.withLive,
-      );
-      yield* Deferred.await(drainingEvents).pipe(Effect.timeout("2 seconds"), TestClock.withLive);
+      const turnId = yield* Deferred.await(turnStarted).pipe(Effect.timeout("2 seconds"));
+      yield* Deferred.await(drainingEvents).pipe(Effect.timeout("2 seconds"));
       const interruptFiber = yield* adapter
         .interruptTurn(threadId, turnId)
         .pipe(Effect.forkChild({ startImmediately: true }));
       yield* Deferred.succeed(releaseDrain, undefined);
-      yield* Fiber.join(interruptFiber).pipe(Effect.timeout("2 seconds"), TestClock.withLive);
-      yield* Fiber.join(sendTurnFiber).pipe(Effect.timeout("2 seconds"), TestClock.withLive);
-      yield* Deferred.await(turnCompleted).pipe(Effect.timeout("2 seconds"), TestClock.withLive);
+      yield* Fiber.join(interruptFiber).pipe(Effect.timeout("2 seconds"));
+      yield* Fiber.join(sendTurnFiber).pipe(Effect.timeout("2 seconds"));
+      yield* Deferred.await(turnCompleted).pipe(Effect.timeout("2 seconds"));
 
       const turnCompletedEvents = runtimeEvents.filter(
         (event): event is Extract<ProviderRuntimeEvent, { type: "turn.completed" }> =>
@@ -1749,7 +1887,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
 
       yield* Fiber.interrupt(runtimeEventsFiber);
       yield* adapter.stopSession(threadId);
-    }),
+    }).pipe(TestClock.withLive),
   );
 
   it.effect("settles the in-flight prompt before emitting completion", () =>
@@ -1922,7 +2060,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
 
       yield* Fiber.interrupt(runtimeEventsFiber);
       yield* adapter.stopSession(threadId);
-    }),
+    }).pipe(TestClock.withLive),
   );
 
   it.effect("ignores replayed session/load updates when resuming a Grok session", () =>

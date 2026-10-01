@@ -1,6 +1,7 @@
 import * as NodeOS from "node:os";
 
 import type { ProviderUserInputAnswers, UserInputQuestion } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
@@ -22,6 +23,8 @@ type XAiPromptCompleteNotification = typeof XAiPromptCompleteNotification.Type;
 interface PendingXAiPromptCompletion {
   readonly sessionId: string;
   readonly promptId: string;
+  readonly notified: boolean;
+  readonly cancelled: Deferred.Deferred<void>;
   readonly deferred: Deferred.Deferred<
     EffectAcpSchema.PromptResponse,
     EffectAcpErrors.AcpRequestError
@@ -31,6 +34,8 @@ interface PendingXAiPromptCompletion {
 const completedXAiPromptIdLimit = 128;
 const xAiStopReasonMissingMetaKey = "xAiStopReasonMissing";
 const xAiRateLimitedErrorCode = -32003;
+const xAiCompletionQuietMs = 250;
+const xAiCompletionMaxWaitMs = 2_000;
 
 const XAiAskUserQuestionOption = Schema.Struct({
   label: Schema.String,
@@ -424,6 +429,10 @@ export const makeXAiPromptCompletionRuntime = Effect.fn("makeXAiPromptCompletion
     const activeSessionIdRef = yield* Ref.make<string | undefined>(undefined);
     const pendingRef = yield* Ref.make<ReadonlyArray<PendingXAiPromptCompletion>>([]);
     const completedPromptIdsRef = yield* Ref.make<ReadonlyArray<string>>([]);
+    const monotonicMillis = Clock.monotonicTimeNanos.pipe(
+      Effect.map((nanos) => Number(nanos) / 1_000_000),
+    );
+    const lastReplyAt = yield* Ref.make(0);
     let nextPromptFallbackId = 0;
     const allocatePromptFallbackId = Effect.sync(() => {
       nextPromptFallbackId += 1;
@@ -440,6 +449,40 @@ export const makeXAiPromptCompletionRuntime = Effect.fn("makeXAiPromptCompletion
           notification,
         }),
     );
+    yield* runtime.handleSessionUpdate((notification) =>
+      Effect.gen(function* () {
+        if (
+          notification.sessionId !== (yield* Ref.get(activeSessionIdRef)) ||
+          notification._meta?.isReplay === true ||
+          (notification.update.sessionUpdate !== "agent_message_chunk" &&
+            notification.update.sessionUpdate !== "agent_thought_chunk")
+        ) {
+          return;
+        }
+        yield* Ref.set(lastReplyAt, yield* monotonicMillis);
+      }),
+    );
+
+    // Grok's private completion can precede the last reply chunks. Keep the RPC
+    // alive while waiting for a quiet reply stream; child sessions and background
+    // tool polls must not keep a completed reply open. Silence is only a bounded
+    // fallback, not a wire-level end marker: chunks after the quiet boundary can
+    // still be dropped. Fail if output prevents a quiet window within the budget.
+    const waitForReplyIdle = Effect.gen(function* () {
+      const startedAt = yield* monotonicMillis;
+      const deadline = startedAt + xAiCompletionMaxWaitMs;
+      while (true) {
+        const now = yield* monotonicMillis;
+        const quietAt = Math.max(startedAt, yield* Ref.get(lastReplyAt)) + xAiCompletionQuietMs;
+        if (now >= quietAt) return;
+        if (now >= deadline) {
+          return yield* EffectAcpErrors.AcpRequestError.internalError(
+            "Grok kept streaming after reporting prompt completion; the reply may be incomplete.",
+          );
+        }
+        yield* Effect.sleep(Math.min(quietAt, deadline) - now);
+      }
+    });
 
     return {
       ...runtime,
@@ -469,10 +512,17 @@ export const makeXAiPromptCompletionRuntime = Effect.fn("makeXAiPromptCompletion
             },
           } satisfies Omit<EffectAcpSchema.PromptRequest, "sessionId">;
 
-          return yield* Effect.raceFirst(
+          return yield* Effect.raceAllFirst([
             runtime.prompt(requestPayload, promptOptions),
-            Deferred.await(fallback.deferred),
-          ).pipe(
+            Effect.gen(function* () {
+              const result = yield* Deferred.await(fallback.deferred);
+              yield* waitForReplyIdle;
+              return result;
+            }),
+            Deferred.await(fallback.cancelled).pipe(
+              Effect.as(promptResponseFromXAi({ sessionId, promptId, stopReason: "cancelled" })),
+            ),
+          ]).pipe(
             Effect.tap((response) =>
               rememberCompletedXAiPromptId(completedPromptIdsRef, response, fallback.promptId),
             ),
@@ -497,12 +547,18 @@ const registerXAiPromptCompletionFallback = (
   sessionId: string,
   promptId: string,
 ) =>
-  Deferred.make<EffectAcpSchema.PromptResponse, EffectAcpErrors.AcpRequestError>().pipe(
-    Effect.tap((deferred) =>
-      Ref.update(pendingRef, (pending) => [...pending, { sessionId, promptId, deferred }]),
-    ),
-    Effect.map((deferred) => ({ deferred, promptId })),
-  );
+  Effect.gen(function* () {
+    const deferred = yield* Deferred.make<
+      EffectAcpSchema.PromptResponse,
+      EffectAcpErrors.AcpRequestError
+    >();
+    const cancelled = yield* Deferred.make<void>();
+    yield* Ref.update(pendingRef, (pending) => [
+      ...pending,
+      { sessionId, promptId, deferred, cancelled, notified: false },
+    ]);
+    return { deferred, promptId, cancelled };
+  });
 
 const unregisterXAiPromptCompletionFallback = (
   pendingRef: Ref.Ref<ReadonlyArray<PendingXAiPromptCompletion>>,
@@ -525,20 +581,9 @@ const abortPendingPromptCompletions = (
       return [Effect.void, pending] as const;
     }
     return [
-      Effect.forEach(
-        toAbort,
-        (entry) =>
-          Deferred.succeed(
-            entry.deferred,
-            promptResponseFromXAi({
-              sessionId: entry.sessionId,
-              promptId: entry.promptId,
-              stopReason: "cancelled",
-              agentResult: null,
-            }),
-          ),
-        { concurrency: "unbounded" },
-      ).pipe(Effect.asVoid),
+      Effect.forEach(toAbort, (entry) => Deferred.succeed(entry.cancelled, undefined), {
+        concurrency: "unbounded",
+      }).pipe(Effect.asVoid),
       remaining,
     ] as const;
   }).pipe(Effect.flatten);
@@ -565,10 +610,13 @@ const resolveXAiPromptCompletionFallback = ({
           notification.promptId !== undefined
             ? pending.findIndex(
                 (entry) =>
+                  !entry.notified &&
                   entry.sessionId === notification.sessionId &&
                   entry.promptId === notification.promptId,
               )
-            : pending.findIndex((entry) => entry.sessionId === notification.sessionId);
+            : pending.findIndex(
+                (entry) => !entry.notified && entry.sessionId === notification.sessionId,
+              );
         if (index < 0) {
           return [Effect.void, pending] as const;
         }
@@ -578,7 +626,7 @@ const resolveXAiPromptCompletionFallback = ({
         }
         return [
           settleXAiPromptCompletion(entry.deferred, notification),
-          [...pending.slice(0, index), ...pending.slice(index + 1)],
+          pending.map((current) => (current === entry ? { ...current, notified: true } : current)),
         ] as const;
       }).pipe(Effect.flatten);
     }),
