@@ -49,7 +49,12 @@ import {
 import {
   ANTIGRAVITY_SIGN_IN_REQUIRED_MESSAGE,
   isAntigravitySignInRequiredError,
+  resolveAntigravityProfileDirectory,
 } from "../antigravityAuthSupport.ts";
+import {
+  extractAntigravityTurnTokenUsage,
+  readAntigravityBaselineGenIndex,
+} from "../acp/AntigravityTokenUsage.ts";
 import { mapAcpToAdapterError } from "../acp/AcpAdapterSupport.ts";
 import {
   makeAcpAssistantItemEvent,
@@ -125,6 +130,7 @@ function mapAntigravityError(threadId: ThreadId, method: string, cause: EffectAc
 
 export interface AntigravityAdapterOptions {
   readonly instanceId: ProviderInstanceId;
+  readonly profileDirectory?: string;
   readonly makeRuntime: (
     input: Omit<AntigravityAcpRuntimeInput, "spawn" | "childProcessSpawner" | "onAuthorizationUrl">,
   ) => Effect.Effect<Runtime, EffectAcpErrors.AcpError | ProviderSetupError, Scope.Scope>;
@@ -187,11 +193,14 @@ interface TurnIntent {
   readonly turnId: TurnId;
   readonly generation: number;
   settled: boolean;
+  baselineGenIndex: number;
+  hasSubagents: boolean;
 }
 
 interface SessionContext {
   readonly threadId: ThreadId;
   readonly cwd: string;
+  readonly dbPath: string;
   readonly nativeSessionId: string;
   readonly scope: Scope.Closeable;
   readonly runtime: Runtime;
@@ -206,6 +215,7 @@ interface SessionContext {
   readonly turns: Array<{ id: TurnId; items: Array<unknown> }>;
   session: ProviderSession;
   activeTurnId: TurnId | undefined;
+  activeTurnIntent: TurnIntent | undefined;
   promptFiber: Fiber.Fiber<EffectAcpSchema.PromptResponse, EffectAcpErrors.AcpError> | undefined;
   generation: number;
   stopped: boolean;
@@ -626,6 +636,9 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
             if (isMcp) context.subagents.set(toolCall.toolCallId, "mcp");
             const subagent = tracked === "mcp" ? undefined : tracked;
             if (!isMcp && (subagent || kind === "subagent")) {
+              if (context.activeTurnIntent) {
+                context.activeTurnIntent.hasSubagents = true;
+              }
               const turnId = subagent?.turnId ?? context.activeTurnId;
               const linkage = subagentLinkage(toolCall.toolCallId);
               // Replay starts claim completion before the result says whether the call failed.
@@ -863,9 +876,19 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
                 createdAt,
                 updatedAt: createdAt,
               };
+              const profileDirectory =
+                options.profileDirectory ??
+                resolveAntigravityProfileDirectory(serverConfig.stateDir, options.instanceId);
+              const dbPath = path.join(
+                profileDirectory,
+                "antigravity-acp",
+                "conversations",
+                `${started.sessionId}.db`,
+              );
               context = {
                 threadId: input.threadId,
                 cwd,
+                dbPath,
                 nativeSessionId: started.sessionId,
                 scope: sessionScope,
                 runtime,
@@ -879,6 +902,7 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
                 turns: [],
                 session,
                 activeTurnId: undefined,
+                activeTurnIntent: undefined,
                 promptFiber: undefined,
                 generation: 0,
                 stopped: false,
@@ -1007,6 +1031,7 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
           payload.errorMessage,
         );
         context.activeTurnId = undefined;
+        context.activeTurnIntent = undefined;
         context.promptFiber = undefined;
         context.session = {
           ...context.session,
@@ -1017,13 +1042,24 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
             ? { lastError: payload.errorMessage }
             : { lastError: undefined }),
         };
+        const tokenUsage =
+          payload.tokenUsage ??
+          extractAntigravityTurnTokenUsage({
+            dbPath: context.dbPath,
+            baselineGenIndex: turn.baselineGenIndex,
+            completed: payload.state === "completed",
+            hasSubagents: turn.hasSubagents,
+          });
         yield* emit({
           type: "turn.completed",
           ...(yield* stamp),
           provider: PROVIDER,
           threadId: input.threadId,
           turnId: turn.turnId,
-          payload,
+          payload: {
+            ...payload,
+            ...(tokenUsage ? { tokenUsage } : {}),
+          },
         });
       }).pipe(Effect.uninterruptible);
 
@@ -1047,9 +1083,17 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
           }
           const turnId = context.activeTurnId ?? TurnId.make(yield* randomId);
           const steering = context.activeTurnId !== undefined;
-          const turn: TurnIntent = { turnId, generation: ++context.generation, settled: false };
+          const baselineGenIndex = readAntigravityBaselineGenIndex(context.dbPath);
+          const turn: TurnIntent = {
+            turnId,
+            generation: ++context.generation,
+            settled: false,
+            baselineGenIndex,
+            hasSubagents: false,
+          };
           intent = turn;
           context.activeTurnId = turnId;
+          context.activeTurnIntent = turn;
           if (!steering) {
             yield* emit({
               type: "turn.started",
