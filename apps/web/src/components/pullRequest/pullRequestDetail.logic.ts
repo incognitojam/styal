@@ -33,16 +33,20 @@ export const PULL_REQUEST_MERGE_METHOD_LABELS: Record<PullRequestMergeMethod, st
   rebase: "Rebase and merge",
 };
 
-/** Old environments keep their existing actions; new ones must finish stack discovery first. */
+/**
+ * Old environments keep their existing actions; new ones must finish stack discovery first. After
+ * the first answer, refreshing it keeps the merge controls available, because that answer is no
+ * older than the detail shown beside it.
+ */
 export function allowsSinglePullRequestMerge(input: {
   supportsStackActions: boolean;
   hasStack: boolean;
-  stackPending: boolean;
+  stackAnswered: boolean;
   stackError: string | null;
 }): boolean {
   return (
     !input.supportsStackActions ||
-    (!input.hasStack && !input.stackPending && input.stackError === null)
+    (!input.hasStack && input.stackAnswered && input.stackError === null)
   );
 }
 
