@@ -433,6 +433,32 @@ features:
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream's Claude adapter waits for the CLI process to exit before a stop completes and logs the process's spawn, exit and stderr.
 
+  - id: claude-subagent-task-ownership
+    title: Keep a Claude subagent's own work inside its spawn card
+    status: maintained
+    prs: [539]
+    invariants:
+      - A task that a Claude subagent starts, such as a background shell or a nested agent, carries that subagent as its owner, including after the subagent is resumed through SendMessage and when the task starts after the resume.
+      - Web and mobile show a nested agent in its owner's spawn card instead of opening a card of its own.
+    rationale: Upstream attributes tasks started from a subagent's snapshot tool calls to that subagent, but a resumed subagent registers again under its SendMessage call while its messages keep the original Agent call as their parent, and upstream clients group nested agents by turn, so the parent timeline fills with one-agent cards and update rows.
+    implementation_paths:
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/web/src/session-logic.ts
+    upstream_paths:
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/web/src/session-logic.ts
+    tests:
+      - apps/mobile/src/lib/threadActivity.test.ts
+      - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
+      - apps/web/src/session-logic.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/14540
+      retire_when: Upstream's Claude adapter keeps a resumed subagent as the owner of the tasks it starts, and upstream clients place nested agents in their owner's spawn card.
+
   - id: clone-failure-guidance
     title: Explain clone authentication and rate-limit failures
     status: maintained
