@@ -1792,7 +1792,7 @@ features:
   - id: pull-request-chip-context-menu
     title: Give pull request chips the chat link menu
     status: maintained
-    prs: []
+    prs: [597]
     invariants:
       - Pull request chips in sent messages and the composer share Markdown links' Copy Link, system browser, and available integrated browser actions on web and desktop.
       - Menus offer Link to thread or Unlink from thread using the current conversation's environment, capabilities, and link state at invocation.
