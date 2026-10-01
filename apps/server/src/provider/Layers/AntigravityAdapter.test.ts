@@ -1,3 +1,5 @@
+// @effect-diagnostics nodeBuiltinImport:off - Test fixtures create ephemeral SQLite databases
+import * as NodeSqlite from "node:sqlite";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
@@ -38,6 +40,33 @@ const threadId = ThreadId.make("antigravity-thread");
 const nativeSessionId = "b75db7e9-cd99-40e5-aa63-ac2b4674a6a9";
 const nativeDefault = "gemini-test-low";
 const nativeAlternative = "gemini-test-high";
+function encodeVarint(val: number): Buffer {
+  const bytes: number[] = [];
+  let remaining = val;
+  while (remaining >= 0x80) {
+    bytes.push((remaining & 0x7f) | 0x80);
+    remaining = Math.floor(remaining / 128);
+  }
+  bytes.push(remaining);
+  return Buffer.from(bytes);
+}
+
+function encodeField(num: number, wireType: number, payload: Buffer): Buffer {
+  const tag = (num << 3) | wireType;
+  return Buffer.concat([encodeVarint(tag), payload]);
+}
+
+function makeGenMetadataBlob(uncachedInput: number, output: number): Buffer {
+  const tokenParts = [
+    encodeField(2, 0, encodeVarint(uncachedInput)),
+    encodeField(3, 0, encodeVarint(output)),
+  ];
+  const tokenMsg = Buffer.concat(tokenParts);
+  const tokenField = encodeField(4, 2, Buffer.concat([encodeVarint(tokenMsg.length), tokenMsg]));
+  const genField = encodeField(1, 2, Buffer.concat([encodeVarint(tokenField.length), tokenField]));
+  return genField;
+}
+
 const decodeSettings = Schema.decodeSync(AntigravitySettings);
 const decodeRequestLog = Schema.decodeEffect(
   Schema.Array(
@@ -75,6 +104,7 @@ const makeHarness = Effect.fn("makeAntigravityAdapterHarness")(function* (option
   readonly holdCancel?: boolean;
   readonly holdClose?: boolean;
   readonly holdDispatch?: boolean;
+  readonly profileDirectory?: string;
 }) {
   const runtimeEvents = yield* Queue.unbounded<AcpSessionRuntimeEvent>();
   const canonicalEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();
@@ -225,6 +255,7 @@ const makeHarness = Effect.fn("makeAntigravityAdapterHarness")(function* (option
     decodeSettings({ enabled: options?.enabled ?? true }),
     {
       instanceId,
+      ...(options?.profileDirectory ? { profileDirectory: options.profileDirectory } : {}),
       makeRuntime: (input) =>
         Effect.gen(function* () {
           launches.push(input);
@@ -762,6 +793,60 @@ it.layer(layer)("AntigravityAdapter", (it) => {
       const recovered = yield* Fiber.join(later);
       expect(recovered.turnId).not.toBe(ended.turnId);
       expect((yield* h.adapter.listSessions())[0]?.status).toBe("ready");
+    }),
+  );
+
+  it.effect("preserves an unknown baseline across steering and reports unavailable usage", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-agy-steer-test-" });
+      const convDir = path.join(tempDir, "antigravity-acp", "conversations");
+      yield* fs.makeDirectory(convDir, { recursive: true });
+      const dbPath = path.join(convDir, `${nativeSessionId}.db`);
+
+      yield* fs.writeFileString(dbPath, "not a valid sqlite database");
+
+      const h = yield* makeHarness({ profileDirectory: tempDir });
+      yield* h.adapter.startSession({
+        threadId,
+        cwd: process.cwd(),
+        runtimeMode: "approval-required",
+      });
+
+      const first = yield* h.adapter
+        .sendTurn({ threadId, input: "First prompt" })
+        .pipe(Effect.forkChild);
+      yield* h.nextPrompt;
+
+      yield* fs.remove(dbPath);
+      const db = new NodeSqlite.DatabaseSync(dbPath);
+      db.exec("CREATE TABLE gen_metadata (idx integer primary key, data blob)");
+      const stmt = db.prepare("INSERT INTO gen_metadata (idx, data) VALUES (?, ?)");
+      stmt.run(0, makeGenMetadataBlob(100, 20));
+
+      const second = yield* h.adapter
+        .sendTurn({ threadId, input: "Steer prompt" })
+        .pipe(Effect.forkChild);
+      yield* h.nextCancellation;
+
+      const replacement = yield* h.nextPrompt;
+      stmt.run(1, makeGenMetadataBlob(100, 20));
+      db.close();
+
+      yield* Deferred.succeed(replacement.result, { stopReason: "end_turn" });
+      yield* Effect.all([Fiber.join(first), Fiber.join(second)]);
+
+      const completed = yield* h.waitForEvent(
+        (event): event is Extract<ProviderRuntimeEvent, { type: "turn.completed" }> =>
+          event.type === "turn.completed",
+      );
+
+      expect(completed.payload.tokenUsage).toEqual({
+        usageStatus: "unavailable",
+        usageScope: "main_agent",
+        hasSubagents: false,
+      });
     }),
   );
 
