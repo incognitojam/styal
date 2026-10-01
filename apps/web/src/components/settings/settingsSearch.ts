@@ -289,9 +289,9 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "in-app-notifications",
-    title: "In-app toasts",
+    title: "In-app notifications",
     to: "/settings/general",
-    searchTerms: ["in-app notifications toast popup completion input approval failure"],
+    searchTerms: ["notification toast popup completion input approval failure"],
   },
   {
     id: "time-format",

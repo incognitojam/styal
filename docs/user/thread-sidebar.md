@@ -167,18 +167,20 @@ finishes; the call's own result shows its status.
 
 ## Completion sounds
 
-On web and desktop, **Thread notifications** in **Settings → General** alerts you
-on this device when a thread finishes, fails, or needs input or approval. Turn on
-**System notifications**, **In-app toasts**, or both, and turn on **Notification
-sounds** to also hear alerts. Alerts only arrive while styal is open; system
-notifications and sounds also work while it is in the background, and toasts
-appear only while it has focus. Browser notifications need permission and HTTPS
-(or localhost); use **Allow notifications** if prompted.
+On web and desktop, **Thread notifications** in **Settings → General** alerts
+you on this device when a thread finishes, fails, or needs input or approval.
+Turn on **System notifications**, **In-app notifications**, or both, and turn on
+**Notification sounds** to also hear alerts. Alerts only arrive while styal is
+open; system notifications and sounds also work while it is in the background,
+and in-app notifications appear only while it has focus. Browser notifications
+need permission and HTTPS (or localhost); use **Allow notifications** if
+prompted.
 
-With **Notification sounds** on, choose a sound independently for **Completion**, **Input**,
-and **Approval**: **T3 completion**, **T3 attention**, **Avanti**, or **None**, and
-use the speaker button to hear it. The defaults use T3 completion for
-finished threads and T3 attention for input and approval requests.
+With **Notification sounds** on, choose a sound independently for
+**Completion**, **Input**, and **Approval**: **T3 completion**, **T3
+attention**, **Avanti**, or **None**, and use the speaker button to hear it. The
+defaults use T3 completion for finished threads and T3 attention for input and
+approval requests.
 
 Fresh installations start with notifications **Off**. Existing Resolve and Chime
 preferences become T3 completion, and Avanti stays Avanti, with notifications and

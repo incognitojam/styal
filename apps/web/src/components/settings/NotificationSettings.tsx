@@ -113,15 +113,15 @@ export function NotificationSettings() {
           />
           <SettingsSubRow
             {...searchableSetting("in-app-notifications")}
-            title="In-app toasts"
-            description="Shown for other threads while styal has focus."
+            title="In-app notifications"
+            description="Show a toast when another thread finishes, fails, or needs input or approval while this app has focus."
             control={
               <Switch
                 checked={settings.inAppNotificationsEnabled}
                 onCheckedChange={(checked) =>
                   updateSettings({ inAppNotificationsEnabled: checked })
                 }
-                aria-label="In-app toasts"
+                aria-label="In-app notifications"
               />
             }
           />

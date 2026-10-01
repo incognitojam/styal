@@ -567,7 +567,7 @@ export function useSettingsRestore(onRestored?: () => void) {
         ? ["Thread notifications"]
         : []),
       ...(settings.inAppNotificationsEnabled !== DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled
-        ? ["In-app toasts"]
+        ? ["In-app notifications"]
         : []),
       ...(settings.sidebarThreadPreviewCount !== DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount
         ? ["Visible threads"]
