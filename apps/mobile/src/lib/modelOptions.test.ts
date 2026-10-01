@@ -62,15 +62,6 @@ describe("mobile model options", () => {
     expect(isModelSelectionUnavailable(config, selection)).toBe(false);
     expect(buildModelOptions(config, selection)).toHaveLength(1);
     expect(buildModelOptions(config, selection)[0]?.selection).toEqual(normalized);
-    const removedEffort = {
-      ...normalized,
-      options: [{ id: "reasoningEffort", value: "removed-choice" }],
-    };
-    expect(isModelSelectionUnavailable(config, removedEffort)).toBe(true);
-    expect(buildModelOptions(config, removedEffort)[0]).toMatchObject({
-      isUnavailable: true,
-      selection: removedEffort,
-    });
   });
 
   it("groups models by provider and flags legacy entries", () => {

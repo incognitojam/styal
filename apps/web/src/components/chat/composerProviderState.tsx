@@ -145,11 +145,7 @@ export function getComposerProviderState(input: ComposerProviderStateInput): Com
     modelOptions,
     planModeEnabled,
   );
-  const descriptors = getProviderOptionDescriptors({
-    caps,
-    selections,
-    preserveUnavailableSelections: provider === "antigravity",
-  });
+  const descriptors = getProviderOptionDescriptors({ caps, selections });
   const primarySelectDescriptor = descriptors.find(
     (descriptor): descriptor is Extract<(typeof descriptors)[number], { type: "select" }> =>
       descriptor.type === "select",
@@ -163,10 +159,10 @@ export function getComposerProviderState(input: ComposerProviderStateInput): Com
   return {
     provider,
     promptEffort,
-    modelOptionsForDispatch:
-      provider === "antigravity"
-        ? selections
-        : buildExplicitProviderOptionSelectionsFromDescriptors(descriptors, selections),
+    modelOptionsForDispatch: buildExplicitProviderOptionSelectionsFromDescriptors(
+      descriptors,
+      selections,
+    ),
     ...(ultrathinkActive
       ? {
           composerFrameClassName: "ultrathink-frame",

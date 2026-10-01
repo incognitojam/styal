@@ -116,14 +116,15 @@ export function antigravityModelOptions(
  * Resolves the model a turn should run on. A saved selection is reapplied
  * as-is. The provider default alias resolves to `defaultModel` when the
  * account offers it, so T3 can pick a newer model than the one Google marks
- * current. Otherwise the agent's current selection stands.
+ * current. Otherwise the agent's current selection stands. A saved effort the
+ * account no longer offers falls back to the model's default effort.
  */
-export const resolveAntigravityModel = Effect.fn("resolveAntigravityModel")(function* (input: {
+export function resolveAntigravityModel(input: {
   readonly configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption>;
   readonly model: string | null | undefined;
   readonly modelOptions?: ReadonlyArray<ProviderOptionSelection> | undefined;
   readonly defaultModel?: string | undefined;
-}): Effect.fn.Return<string | undefined, EffectAcpErrors.AcpRequestError> {
+}): string | undefined {
   const modelConfig = input.configOptions.find((option) => option.id === "model");
   const current = modelConfig?.type === "select" ? modelConfig.currentValue : undefined;
   const options = antigravityModelOptions(input.configOptions);
@@ -153,18 +154,13 @@ export const resolveAntigravityModel = Effect.fn("resolveAntigravityModel")(func
   );
   if (descriptor?.type !== "select") return requested;
   const effort = selection.options?.find((entry) => entry.id === descriptor.id)?.value;
-  if (effort !== undefined) {
-    if (typeof effort !== "string" || !descriptor.options.some((entry) => entry.id === effort)) {
-      return yield* EffectAcpErrors.AcpRequestError.invalidParams(
-        `Reasoning effort '${String(effort)}' is unavailable for Antigravity model '${selection.model}'. Select an available effort.`,
-      );
-    }
+  if (typeof effort === "string" && descriptor.options.some((entry) => entry.id === effort)) {
     return effort;
   }
   return input.defaultModel && descriptor.options.some((option) => option.id === input.defaultModel)
     ? input.defaultModel
     : descriptor.currentValue;
-});
+}
 
 /** Never replace a saved selection with the default returned by a cold resume. */
 export const applyAntigravityAcpModelSelection = Effect.fn("applyAntigravityAcpModelSelection")(
@@ -182,12 +178,12 @@ export const applyAntigravityAcpModelSelection = Effect.fn("applyAntigravityAcpM
     const configOptions = yield* input.runtime.getConfigOptions;
     const modelConfig = configOptions.find((option) => option.id === "model");
     const current = modelConfig?.type === "select" ? modelConfig.currentValue : undefined;
-    const resolved = yield* resolveAntigravityModel({
+    const resolved = resolveAntigravityModel({
       configOptions,
       model: input.model,
       modelOptions: input.modelOptions,
       defaultModel: input.defaultModel,
-    }).pipe(Effect.mapError(input.mapError));
+    });
     // The default alias never sends an internal ID. It selects the manifest
     // default when that differs from the agent's current model, and otherwise
     // leaves the agent's choice alone.

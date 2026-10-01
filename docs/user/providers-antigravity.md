@@ -73,7 +73,7 @@ Antigravity apps. Choose the Gemini generation in the model picker and its
 thinking level in **Reasoning effort**. Only levels available to your account are
 offered. A resumed thread keeps its selected model and effort. If access to that
 model ends, select another available model before continuing. If a saved effort
-becomes unavailable, open **Unavailable effort** and choose an available level.
+is no longer offered, the model's default effort is used instead.
 
 Use Antigravity's native `/plan` command for planning. styal's separate Plan mode
 is unavailable. Tool approvals follow [Permission modes](./permission-modes.md).
