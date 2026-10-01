@@ -128,9 +128,11 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
   public closeEmitsSessionClosed = false;
 
   readonly options: CodexSessionRuntimeOptions;
+  private readonly scope: Scope.Scope | undefined;
 
-  constructor(options: CodexSessionRuntimeOptions) {
+  constructor(options: CodexSessionRuntimeOptions, scope?: Scope.Scope) {
     this.options = options;
+    this.scope = scope;
   }
 
   start() {
@@ -187,7 +189,9 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
             })
           : Effect.void,
       ),
-      // The real runtime ends (not shuts down) its event queue on close.
+      // Like the real runtime: close the supplied scope, then end (not shut
+      // down) the event queue.
+      Effect.andThen(() => (this.scope ? Scope.close(this.scope, Exit.void) : Effect.void)),
       Effect.andThen(() => Queue.end(this.eventQueue)),
       Effect.asVoid,
     );
@@ -200,20 +204,22 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
 
 function makeRuntimeFactory(config?: { readonly failLegacyResume?: boolean }) {
   const runtimes: Array<FakeCodexRuntime> = [];
-  const factory = vi.fn((runtimeOptions: CodexSessionRuntimeOptions) => {
-    const runtime = new FakeCodexRuntime(runtimeOptions);
-    if (config?.failLegacyResume && runtime.options.mcpServerName === "t3-code") {
-      runtime.startImpl.mockImplementationOnce(() =>
-        Promise.reject(
-          new CodexSessionRuntimeLegacyResumeUnavailableError({
-            threadId: runtime.options.resumeCursor?.threadId ?? "missing-thread",
-          }),
-        ),
-      );
-    }
-    runtimes.push(runtime);
-    return Effect.succeed(runtime);
-  });
+  const factory = vi.fn((runtimeOptions: CodexSessionRuntimeOptions) =>
+    Effect.gen(function* () {
+      const runtime = new FakeCodexRuntime(runtimeOptions, yield* Scope.Scope);
+      if (config?.failLegacyResume && runtime.options.mcpServerName === "t3-code") {
+        runtime.startImpl.mockImplementationOnce(() =>
+          Promise.reject(
+            new CodexSessionRuntimeLegacyResumeUnavailableError({
+              threadId: runtime.options.resumeCursor?.threadId ?? "missing-thread",
+            }),
+          ),
+        );
+      }
+      runtimes.push(runtime);
+      return runtime;
+    }),
+  );
 
   return {
     factory,
@@ -232,7 +238,7 @@ function makeScopedRuntimeFactory(options?: { readonly failConstruction?: boolea
 
   const factory = vi.fn((runtimeOptions: CodexSessionRuntimeOptions) =>
     Effect.gen(function* () {
-      yield* Scope.Scope;
+      const scope = yield* Scope.Scope;
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
           releasedThreadIds.push(runtimeOptions.threadId);
@@ -246,7 +252,7 @@ function makeScopedRuntimeFactory(options?: { readonly failConstruction?: boolea
         });
       }
 
-      const runtime = new FakeCodexRuntime(runtimeOptions);
+      const runtime = new FakeCodexRuntime(runtimeOptions, scope);
       runtimes.push(runtime);
       return runtime;
     }),
@@ -1954,14 +1960,15 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
       // the exit the runtime emits on close, or the thread stays "running".
       yield* adapter.stopSession(threadId);
 
-      const exited = yield* Fiber.join(exitedFiber);
+      const exited = yield* Fiber.join(exitedFiber).pipe(Effect.timeout("2 seconds"));
       NodeAssert.equal(exited._tag, "Some");
       if (exited._tag !== "Some" || exited.value.type !== "session.exited") {
         return;
       }
       NodeAssert.equal(exited.value.payload.exitKind, "graceful");
       NodeAssert.equal(yield* adapter.hasSession(threadId), false);
-    }),
+      // Live clock so a lost exit fails at the timeout instead of hanging.
+    }).pipe(TestClock.withLive),
   );
 
   it.effect("maps retryable Codex error notifications to runtime.warning", () =>
