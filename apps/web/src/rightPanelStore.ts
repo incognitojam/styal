@@ -93,7 +93,8 @@ const RIGHT_PANEL_STORAGE_KEY = "styal:right-panel-state:v2";
 // v10 keys pull-request surfaces by reference instead of a singleton tab.
 // v11 stops persisting the pull-request list's shared panel, so a restart opens the page fresh.
 // v12 adds the device surface.
-const RIGHT_PANEL_STORAGE_VERSION = 13;
+// v14 resolves URL-only pull request hosts before the panel mounts.
+const RIGHT_PANEL_STORAGE_VERSION = 14;
 
 /** A fixed workspace-level ref: each PR surface carries its own real environment. */
 export const PULL_REQUESTS_PANEL_REF = scopeThreadRef(
@@ -256,12 +257,18 @@ export function pullRequestSurface(target: {
   number: number;
   url?: string;
 }): PullRequestSurface {
+  // Linked references carry the host in their URL. Resolve it before rendering so an explicit
+  // link to the same PR cannot change the panel's React key or its query/snapshot cache keys.
+  const host =
+    target.host?.toLowerCase() ??
+    (typeof target.url === "string" ? parseChangeRequestUrl(target.url)?.host : undefined);
   return {
+    // Keep historical tab IDs: upsertSurface already matches explicit and URL-derived hosts.
     id: pullRequestSurfaceId(target),
     kind: "pull-request",
     ...(target.environmentId === undefined ? {} : { environmentId: target.environmentId }),
     projectId: target.projectId,
-    ...(typeof target.host === "string" ? { host: target.host.toLowerCase() } : {}),
+    ...(host === undefined ? {} : { host }),
     repository: target.repository,
     number: target.number,
     ...(typeof target.url === "string" ? { url: target.url } : {}),
@@ -429,10 +436,17 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                       const { environmentId, ...rest } = surface;
                       // Anything else stored under that name is not an environment.
                       return [
-                        pullRequestSurface({
-                          ...rest,
-                          ...(typeof environmentId === "string" ? { environmentId } : {}),
-                        }),
+                        {
+                          ...pullRequestSurface({
+                            ...rest,
+                            ...(typeof environmentId === "string" ? { environmentId } : {}),
+                          }),
+                          // Resolving the host must not change the selected tab on reload.
+                          ...(typeof surface.id === "string" &&
+                          surface.id.startsWith("pull-request:")
+                            ? { id: surface.id }
+                            : {}),
+                        },
                       ];
                     }
                     if (surface.kind !== "terminal") return [surface];

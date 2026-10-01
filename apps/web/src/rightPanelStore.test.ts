@@ -738,6 +738,53 @@ describe("rightPanelStore", () => {
     },
   );
 
+  it("keeps the rendered PR reference stable when its chat link is opened", () => {
+    const linked = {
+      projectId: "project-a",
+      repository: "acme/api",
+      number: 5,
+      url: "https://github.com/acme/api/pull/5",
+    };
+    const store = useRightPanelStore.getState();
+    store.openProactive(refA, pullRequestSurface(linked), store.getUserActionRevision(refA));
+    const before = selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA);
+    expect(before).toMatchObject({ host: "github.com" });
+    store.openPullRequest(refA, { ...linked, host: "github.com" });
+    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)).toEqual(
+      before,
+    );
+  });
+
+  it("resolves a saved URL-only PR host without changing the active tab", () => {
+    const legacy = {
+      id: "pull-request:project-a:acme%2Fapi:5",
+      kind: "pull-request",
+      projectId: "project-a",
+      repository: "acme/api",
+      number: 5,
+      url: "https://github.com/acme/api/pull/5",
+    };
+    const migrated = migratePersistedRightPanelState({
+      byThreadKey: {
+        "env-1:thread-A": {
+          isOpen: true,
+          activeSurfaceId: legacy.id,
+          surfaces: [completedDiff, legacy],
+        },
+      },
+    });
+    useRightPanelStore.setState(migrated);
+    expect(selectActiveRightPanelSurface(migrated.byThreadKey, refA)).toEqual({
+      ...legacy,
+      host: "github.com",
+    });
+    useRightPanelStore.getState().openPullRequest(refA, { ...legacy, host: "github.com" });
+    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      ...legacy,
+      host: "github.com",
+    });
+  });
+
   it("consolidates previously duplicated PR tabs when reopened", () => {
     const linked = pullRequestSurface({
       projectId: "project-a",
