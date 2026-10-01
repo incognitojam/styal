@@ -2815,7 +2815,7 @@ function PullRequestDetailPanelBody({
               {confirmAction === "merge"
                 ? `This merges #${reference.number} using ${selectedMergeMethod}.`
                 : confirmAction === "enable-auto-merge"
-                  ? `This merges #${reference.number} using ${selectedMergeMethod} as soon as the host considers it ready.${requiredBranchUpdate ? " This branch must be updated first; enabling auto-merge will not update it." : " This may be immediate."}`
+                  ? `This merges #${reference.number} using ${selectedMergeMethod} as soon as the host considers it ready.${requiredBranchUpdate ? " This branch must be updated first; enabling auto-merge will not update it." : " This may be immediate."} Commits pushed after this are merged too, unless the host turns auto-merge off.`
                   : confirmAction === "revert"
                     ? `This opens a new pull request that reverses the changes merged by #${reference.number}.`
                     : confirmAction === "approve-workflows"
