@@ -3,6 +3,7 @@ import {
   type EnvironmentId,
   type PullRequestActor,
   type PullRequestDetail,
+  type PullRequestLabelCandidateList,
   type PullRequestDiffInput,
   type PullRequestRef,
   type PullRequestSummary,
@@ -46,6 +47,7 @@ function writableQueryFamily<A, E>(
     readonly environmentId: EnvironmentId;
     readonly input: PullRequestRef;
   }) => Atom.Atom<AsyncResult.AsyncResult<A, E>>,
+  idleTtlMs = 5 * 60_000,
 ) {
   const writable = Atom.family((source: Atom.Atom<AsyncResult.AsyncResult<A, E>>) =>
     Atom.writable(
@@ -61,7 +63,7 @@ function writableQueryFamily<A, E>(
       },
       (context, value: AsyncResult.AsyncResult<A, E>) => context.setSelf(value),
       (refresh) => refresh(source),
-    ).pipe(Atom.setIdleTTL(5 * 60_000)),
+    ).pipe(Atom.setIdleTTL(idleTtlMs)),
   );
   return ({
     environmentId,
@@ -176,13 +178,50 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
     }),
   );
+  // Only the catalogue is shared: applied state belongs to each pull request. Keep project
+  // and environment in the key because repository access can differ between connections.
+  const repositoryLabels = Atom.family((_key: string) =>
+    Atom.make<{
+      readonly candidates: ReadonlyArray<
+        Omit<PullRequestLabelCandidateList["candidates"][number], "isApplied">
+      >;
+      readonly truncated: boolean;
+    } | null>(null).pipe(Atom.setIdleTTL(30 * 60_000)),
+  );
+  const repositoryLabelCandidates = ({
+    environmentId,
+    input,
+  }: {
+    readonly environmentId: EnvironmentId;
+    readonly input: PullRequestRef;
+  }) =>
+    repositoryLabels(
+      JSON.stringify([environmentId, input.projectId, input.host ?? null, input.repository]),
+    );
   const labelCandidates = writableQueryFamily(
-    createEnvironmentRpcQueryAtomFamily(runtime, {
+    createEnvironmentQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:label-candidates",
-      tag: WS_METHODS.pullRequestsLabelCandidates,
-      execute: (input) => routedRequest(WS_METHODS.pullRequestsLabelCandidates, input),
       staleTimeMs: 60_000,
+      idleTtlMs: 30 * 60_000,
+      execute: Effect.fn("pullRequests.labelCandidates")(function* (input: PullRequestRef) {
+        const result = yield* routedRequest(WS_METHODS.pullRequestsLabelCandidates, input);
+        const supervisor = yield* EnvironmentSupervisor;
+        const registry = yield* AtomRegistry.AtomRegistry;
+        registry.set(
+          repositoryLabelCandidates({ environmentId: supervisor.target.environmentId, input }),
+          {
+            candidates: result.candidates.map(({ name, color, description }) => ({
+              name,
+              color,
+              description,
+            })),
+            truncated: result.truncated,
+          },
+        );
+        return result;
+      }),
     }),
+    30 * 60_000,
   );
   const reviewerCandidates = writableQueryFamily(
     createEnvironmentRpcQueryAtomFamily(runtime, {
@@ -403,7 +442,9 @@ export function createPullRequestEnvironmentAtoms<R, E>(
           );
         }),
     }),
-    /** Read when the label menu opens, and kept for a minute, like the reviewer candidates. */
+    /** A repository catalogue for immediate display while a PR-specific read revalidates. */
+    repositoryLabelCandidates,
+    /** Read on menu-open; fresh for a minute and retained for thirty idle minutes. */
     labelCandidates,
     setLabels: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:set-labels",
