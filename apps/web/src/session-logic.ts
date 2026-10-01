@@ -3,6 +3,7 @@ import {
   type PendingApproval,
 } from "@t3tools/client-runtime/pending-requests";
 import { UserInputAttachmentAnswerPayload } from "@t3tools/contracts";
+import { makeToolStartLookup } from "@t3tools/client-runtime/work-log/tool-start";
 import { foldUserInputActivities } from "@t3tools/client-runtime/work-log/user-input";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -545,7 +546,14 @@ export function deriveWorkLogEntries(
     }
     entries.push(entry);
   }
-  return omitRetriedFindingsReports(collapseDerivedWorkLogEntries(entries)).map((entry) => {
+  const toolStartedAt = makeToolStartLookup(ordered);
+  return omitRetriedFindingsReports(collapseDerivedWorkLogEntries(entries)).map((collapsed) => {
+    const startedAt =
+      collapsed.sourceActivityKind === "tool.updated" ||
+      collapsed.sourceActivityKind === "tool.completed"
+        ? toolStartedAt(collapsed)
+        : undefined;
+    const entry = startedAt ? { ...collapsed, createdAt: startedAt } : collapsed;
     if (entry.setupRunId === undefined) return entry;
     const { setupRunId: _setupRunId, ...rest } = entry;
     return rest;
@@ -1010,6 +1018,10 @@ function mergeDerivedWorkLogEntries(
   return {
     ...previous,
     ...next,
+    // A tool sits where it started. Completions can land after the turn's
+    // final message or a later user message (dev servers, providers that
+    // batch completions), and must not drag the row there.
+    createdAt: previous.createdAt,
     ...(detail ? { detail } : {}),
     ...(viewedImagePath ? { viewedImagePath } : {}),
     ...(command ? { command } : {}),

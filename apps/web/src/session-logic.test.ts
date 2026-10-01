@@ -1350,6 +1350,100 @@ describe("deriveWorkLogEntries", () => {
     ]);
   });
 
+  it("keeps a tool where it started when it completes after later messages", () => {
+    const devServer = deriveWorkLogEntries([
+      makeActivity({
+        id: "dev-server-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        turnId: "turn-1",
+        kind: "tool.updated",
+        summary: "Ran command",
+        payload: {
+          itemType: "command_execution",
+          toolCallId: "call-dev",
+          status: "inProgress",
+          data: { command: "vp run dev" },
+        },
+      }),
+      makeActivity({
+        id: "dev-server-exit",
+        createdAt: "2026-02-23T00:20:00.000Z",
+        turnId: "turn-1",
+        kind: "tool.completed",
+        summary: "Ran command",
+        payload: { itemType: "command_execution", toolCallId: "call-dev", status: "failed" },
+      }),
+    ]);
+    const message = (id: string, role: "user" | "assistant", createdAt: string) => ({
+      id: MessageId.make(id),
+      role,
+      text: id,
+      turnId: role === "assistant" ? TurnId.make("turn-1") : null,
+      createdAt,
+      updatedAt: createdAt,
+      streaming: false,
+    });
+
+    const timeline = deriveTimelineEntries(
+      [
+        message("ask", "user", "2026-02-23T00:00:00.000Z"),
+        message("answer", "assistant", "2026-02-23T00:00:05.000Z"),
+        message("follow-up", "user", "2026-02-23T00:10:00.000Z"),
+      ],
+      [],
+      devServer,
+    );
+
+    expect(devServer).toMatchObject([
+      { toolLifecycleStatus: "failed", createdAt: "2026-02-23T00:00:01.000Z" },
+    ]);
+    expect(timeline.map((entry) => entry.id)).toEqual([
+      "ask",
+      devServer[0]!.id,
+      "answer",
+      "follow-up",
+    ]);
+  });
+
+  it("places Codex and snapshot completions at their start", () => {
+    const completion = (
+      id: string,
+      toolCallId: string,
+      createdAt: string,
+      extra: Record<string, unknown> = {},
+    ) =>
+      makeActivity({
+        id,
+        createdAt,
+        turnId: "turn-1",
+        kind: "tool.completed",
+        summary: "Ran command",
+        payload: { itemType: "command_execution", toolCallId, status: "completed", ...extra },
+      });
+
+    const entries = deriveWorkLogEntries([
+      // Codex: clients skip tool.started rows but keep their time.
+      makeActivity({
+        id: "dev-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        turnId: "turn-1",
+        kind: "tool.started",
+        summary: "Ran command started",
+        payload: { itemType: "command_execution", toolCallId: "call-dev" },
+      }),
+      completion("dev-exit", "call-dev", "2026-02-23T00:20:00.000Z"),
+      // Snapshot completion whose dropped updates left their start behind.
+      completion("read-done", "call-read", "2026-02-23T00:00:06.000Z", {
+        startedAt: "2026-02-23T00:00:02.000Z",
+      }),
+    ]);
+
+    expect(Object.fromEntries(entries.map((entry) => [entry.id, entry.createdAt]))).toEqual({
+      "dev-exit": "2026-02-23T00:00:01.000Z",
+      "read-done": "2026-02-23T00:00:02.000Z",
+    });
+  });
+
   it("does not merge reused tool call ids across turns", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
@@ -1903,7 +1997,7 @@ describe("deriveWorkLogEntries", () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
       id: "tool-complete",
-      createdAt: "2026-02-23T00:00:03.000Z",
+      createdAt: "2026-02-23T00:00:01.000Z",
       label: "Tool call completed",
       detail: 'Read: {"file_path":"/tmp/app.ts"}',
       command: "sed -n 1,40p /tmp/app.ts",

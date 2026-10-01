@@ -1,4 +1,5 @@
 import * as Option from "effect/Option";
+import { makeToolStartLookup } from "@t3tools/client-runtime/work-log/tool-start";
 import { foldUserInputActivities } from "@t3tools/client-runtime/work-log/user-input";
 import {
   requestKindFromRequestType,
@@ -527,7 +528,14 @@ function deriveWorkLogEntries(
     if (isAgentInternalActivity(activity)) continue;
     entries.push(toDerivedWorkLogEntry(activity));
   }
-  return omitRetriedFindingsReports(collapseDerivedWorkLogEntries(entries));
+  const toolStartedAt = makeToolStartLookup(ordered);
+  return omitRetriedFindingsReports(collapseDerivedWorkLogEntries(entries)).map((entry) => {
+    const startedAt =
+      entry.sourceActivityKind === "tool.updated" || entry.sourceActivityKind === "tool.completed"
+        ? toolStartedAt(entry)
+        : undefined;
+    return startedAt ? { ...entry, createdAt: startedAt } : entry;
+  });
 }
 
 /** Adapters forward unknown wire-only SDK messages (background_tasks_changed,

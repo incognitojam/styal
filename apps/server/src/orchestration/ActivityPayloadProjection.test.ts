@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { OrchestrationThreadActivity } from "@t3tools/contracts";
-import { projectActivityPayload } from "./ActivityPayloadProjection.ts";
+import type {
+  OrchestrationThreadActivity,
+  OrchestrationThreadDetailSnapshot,
+} from "@t3tools/contracts";
+import {
+  projectActivityPayload,
+  projectThreadDetailSnapshot,
+} from "./ActivityPayloadProjection.ts";
 
 function activity(payload: Record<string, unknown>): OrchestrationThreadActivity {
   return {
@@ -894,5 +900,54 @@ describe("projectActivityPayload file changes", () => {
       },
     });
     expect(JSON.stringify(projected.payload)).not.toContain("@@ -1,3");
+  });
+});
+
+describe("projectThreadDetailSnapshot tool lifecycles", () => {
+  function lifecycle(
+    id: string,
+    kind: "tool.updated" | "tool.completed",
+    toolCallId: string,
+    createdAt: string,
+  ): OrchestrationThreadActivity {
+    return {
+      ...activity({ itemType: "dynamic_tool_call", toolCallId, title: "Read file" }),
+      id,
+      kind,
+      turnId: "turn-1",
+      createdAt,
+    } as OrchestrationThreadActivity;
+  }
+
+  function project(activities: ReadonlyArray<OrchestrationThreadActivity>) {
+    return projectThreadDetailSnapshot({
+      snapshotSequence: 0,
+      thread: { activities },
+    } as unknown as OrchestrationThreadDetailSnapshot).thread.activities.map((row) => ({
+      id: row.id,
+      startedAt: (row.payload as Record<string, unknown>).startedAt,
+    }));
+  }
+
+  it("moves a dropped update's start time onto its completion", () => {
+    expect(
+      project([
+        lifecycle("read-start", "tool.updated", "call-read", "2026-08-01T10:00:01.000Z"),
+        lifecycle("read-progress", "tool.updated", "call-read", "2026-08-01T10:00:02.000Z"),
+        lifecycle("other-start", "tool.updated", "call-other", "2026-08-01T10:00:03.000Z"),
+        lifecycle("other-done", "tool.completed", "call-other", "2026-08-01T10:00:04.000Z"),
+        // Antigravity reports some completions only when the turn ends.
+        lifecycle("read-done", "tool.completed", "call-read", "2026-08-01T10:00:35.000Z"),
+        // A reused id is a new call with its own start.
+        lifecycle("reuse-start", "tool.updated", "call-read", "2026-08-01T10:00:40.000Z"),
+        lifecycle("reuse-done", "tool.completed", "call-read", "2026-08-01T10:00:41.000Z"),
+        lifecycle("running", "tool.updated", "call-running", "2026-08-01T10:00:42.000Z"),
+      ]),
+    ).toEqual([
+      { id: "other-done", startedAt: "2026-08-01T10:00:03.000Z" },
+      { id: "read-done", startedAt: "2026-08-01T10:00:01.000Z" },
+      { id: "reuse-done", startedAt: "2026-08-01T10:00:40.000Z" },
+      { id: "running", startedAt: undefined },
+    ]);
   });
 });

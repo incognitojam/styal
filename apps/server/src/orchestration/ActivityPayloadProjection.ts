@@ -989,6 +989,12 @@ function toolLifecycleIdentity(activity: OrchestrationThreadActivity): string | 
  * update rows: zero dropped rows held a client-merged field — detail, title,
  * command, item, kind, files — their completion lacked), so no expanded-row
  * content is lost.
+ *
+ * The one thing a completion lacks is when the call started. Clients place a
+ * tool row at its start so a call that finishes late (a dev server left
+ * running, a provider that batches completions) stays where the agent made
+ * it, so the earliest dropped update's time moves onto its completion as
+ * `payload.startedAt`.
  */
 function dropSupersededToolUpdatedActivities(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
@@ -1015,17 +1021,39 @@ function dropSupersededToolUpdatedActivities(
     return activities;
   }
 
-  return activities.filter((activity, index) => {
-    if (activity.kind !== "tool.updated") {
-      return true;
+  // A dropped update always has a later completion, and the first one after
+  // it closes the same call, so each completion takes the pending start.
+  const pendingStartByKey = new Map<string, string>();
+  const retained: OrchestrationThreadActivity[] = [];
+  for (const [index, activity] of activities.entries()) {
+    if (activity.kind !== "tool.updated" && activity.kind !== "tool.completed") {
+      retained.push(activity);
+      continue;
     }
     const identity = toolLifecycleIdentity(activity);
     if (!identity) {
-      return true;
+      retained.push(activity);
+      continue;
     }
-    const indices = completionIndicesByKey.get(`${activity.turnId ?? ""}\u0000${identity}`);
-    return !indices?.some((completionIndex) => completionIndex > index);
-  });
+    const key = `${activity.turnId ?? ""}\u0000${identity}`;
+    if (activity.kind === "tool.updated") {
+      const indices = completionIndicesByKey.get(key);
+      if (!indices?.some((completionIndex) => completionIndex > index)) {
+        retained.push(activity);
+      } else if (!pendingStartByKey.has(key)) {
+        pendingStartByKey.set(key, activity.createdAt);
+      }
+      continue;
+    }
+    const startedAt = pendingStartByKey.get(key);
+    pendingStartByKey.delete(key);
+    retained.push(
+      startedAt !== undefined && startedAt < activity.createdAt
+        ? { ...activity, payload: { ...asRecord(activity.payload), startedAt } }
+        : activity,
+    );
+  }
+  return retained;
 }
 
 export function projectThreadDetailSnapshot(
