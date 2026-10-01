@@ -15,10 +15,12 @@ import {
   validateForkFeatureLedger,
 } from "../fork-feature-ledger.ts";
 import {
+  changedLinesByFile,
   cherryPickSources,
   type CommitReview,
   compareWithUpstream,
   forkAdaptationNote,
+  preservedFeatureIds,
 } from "./lib/commit-review.ts";
 import {
   auditUpstreamIntakeCandidate,
@@ -88,15 +90,24 @@ function isFileAtRevision(revision: string, path: string): boolean {
   return result.status === 0 && result.stdout.trim() === "blob";
 }
 
-/** Validates the candidate's own ledger, as Fork CI's ledger check would. */
-function candidateLedgerReview(headSha: string): ReadonlyArray<string> {
+/** Validates the candidate's own ledger, as Fork CI's ledger check would, and lists its IDs. */
+function candidateLedgerReview(headSha: string): {
+  readonly errors: ReadonlyArray<string>;
+  readonly featureIds: ReadonlyArray<string>;
+} {
   try {
     const candidate = decodeForkFeatureLedger(git(["show", `${headSha}:${ledgerRelativePath}`]));
-    return validateForkFeatureLedger(candidate, repoRoot, {
-      isFile: (path) => isFileAtRevision(headSha, path),
-    }).map((error) => `Candidate fork feature ledger: ${error}`);
+    return {
+      errors: validateForkFeatureLedger(candidate, repoRoot, {
+        isFile: (path) => isFileAtRevision(headSha, path),
+      }).map((error) => `Candidate fork feature ledger: ${error}`),
+      featureIds: candidate.features.map((feature) => feature.id),
+    };
   } catch (error) {
-    return [`Candidate fork feature ledger could not be read: ${String(error)}`];
+    return {
+      errors: [`Candidate fork feature ledger could not be read: ${String(error)}`],
+      featureIds: [],
+    };
   }
 }
 
@@ -157,6 +168,16 @@ function patch(sha: string): string {
   return result.stdout;
 }
 
+/** The blob a path has at a revision, or null when the path does not exist there. */
+function blobAt(revision: string, path: string): string | null {
+  const result = NodeChildProcess.spawnSync(
+    "git",
+    ["rev-parse", "--verify", "--quiet", `${revision}:${path}`],
+    { cwd: repoRoot, encoding: "utf8" },
+  );
+  return result.status === 0 ? result.stdout.trim() : null;
+}
+
 /** A diff between two lists of changed lines, keeping one line of context. */
 function interdiff(
   scratch: string,
@@ -207,13 +228,26 @@ function reviewCommits(input: {
                 reason: `upstream ${missing.map((source) => source.slice(0, 10)).join(", ")} not fetched.`,
               }
             : (() => {
+                const upstreamPatches = sourceCommits.map(patch);
                 const files = compareWithUpstream({
-                  upstreamPatches: sourceCommits.map(patch),
+                  upstreamPatches,
                   forkPatch: patch(sha),
-                }).map((file) => ({
-                  ...file,
-                  interdiff: interdiff(input.scratch, file.upstreamLines, file.forkLines),
-                }));
+                })
+                  .filter((file) => {
+                    // A commit whose file ends identical to upstream's has nothing to explain,
+                    // even when an earlier fork difference made its patch differ.
+                    const lastSource = upstreamPatches.findLastIndex((source) =>
+                      changedLinesByFile([source]).has(file.path),
+                    );
+                    return (
+                      lastSource === -1 ||
+                      blobAt(sha, file.path) !== blobAt(sourceCommits[lastSource]!, file.path)
+                    );
+                  })
+                  .map((file) => ({
+                    ...file,
+                    interdiff: interdiff(input.scratch, file.upstreamLines, file.forkLines),
+                  }));
                 return files.length === 0
                   ? { status: "matches" as const }
                   : { status: "adapted" as const, files };
@@ -225,6 +259,7 @@ function reviewCommits(input: {
       sourceCommits,
       listedCommits: provenance.commitShas,
       adaptationNote: forkAdaptationNote(message),
+      preservedFeatureIds: preservedFeatureIds(message),
       comparison,
       featureIds,
     };
@@ -404,7 +439,7 @@ try {
   });
   if (ledgerErrors.length > 0) throw new Error(ledgerErrors.join("\n"));
 
-  const candidateLedgerErrors = candidateLedgerReview(headSha);
+  const candidateLedger = candidateLedgerReview(headSha);
   const migrations = upstreamMigrationReview({
     baseSha,
     headSha,
@@ -424,7 +459,8 @@ try {
     changedPaths: lines(git(["diff", "--name-only", "--no-renames", `${baseSha}...${headSha}`])),
     ledger,
     commitPullRequests: upstreamCommitPullRequests(ledger.upstream_repository, commitMessages),
-    candidateLedgerErrors,
+    candidateLedgerErrors: candidateLedger.errors,
+    candidateFeatureIds: candidateLedger.featureIds,
     migrationErrors: migrations.errors,
     migrationChanges: migrations.changes,
     commitReviews: withScratchDirectory((scratch) =>

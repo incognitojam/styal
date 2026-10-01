@@ -21,6 +21,7 @@ export const ForkFeatureLedgerEntry = Schema.Struct({
   status: Schema.Literals(["maintained", "review-needed", "retiring"]),
   prs: Schema.Array(PositiveInteger),
   invariants: Schema.Array(Schema.NonEmptyString),
+  rationale: Schema.optionalKey(Schema.NonEmptyString),
   implementation_paths: Schema.Array(Schema.NonEmptyString),
   upstream_paths: Schema.Array(Schema.NonEmptyString),
   tests: Schema.Array(Schema.NonEmptyString),

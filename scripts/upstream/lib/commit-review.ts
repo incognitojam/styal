@@ -1,5 +1,6 @@
 const CHERRY_PICK_LINE = /^\(cherry picked from commit ([0-9a-f]{40})\)$/gmu;
 const ADAPTATION_NOTE = /^Fork adaptation:[\t ]*(.*)$/mu;
+const FORK_FEATURE_TRAILER = /^Fork-Feature:[\t ]*(.*)$/gimu;
 
 /** Upstream commits a candidate commit was cherry-picked from, in message order. */
 export function cherryPickSources(message: string): ReadonlyArray<string> {
@@ -16,6 +17,18 @@ export function forkAdaptationNote(message: string): string | null {
     .filter((line) => line.length > 0)
     .join(" ");
   return note.length > 0 ? note : null;
+}
+
+/** Ledger feature IDs named in `Fork-Feature: id, id` trailers, in message order. */
+export function preservedFeatureIds(message: string): ReadonlyArray<string> {
+  return [
+    ...new Set(
+      Array.from(message.matchAll(FORK_FEATURE_TRAILER), (match) => match[1] ?? "")
+        .flatMap((value) => value.split(","))
+        .map((id) => id.trim())
+        .filter((id) => id.length > 0),
+    ),
+  ];
 }
 
 /** Added and removed lines per file, each starting with "+" or "-", in patch order. */
@@ -107,9 +120,45 @@ export interface CommitReview {
   /** Upstream commits named in Upstream-Commit trailers, beside any Upstream-PR. */
   readonly listedCommits: ReadonlyArray<string>;
   readonly adaptationNote: string | null;
+  /** Ledger features the commit's adaptation preserves, from its `Fork-Feature` trailers. */
+  readonly preservedFeatureIds: ReadonlyArray<string>;
   readonly comparison: CommitComparison;
   /** Fork features whose upstream paths this commit changes. */
   readonly featureIds: ReadonlyArray<string>;
+}
+
+/**
+ * Problems with how a commit accounts for its differences from upstream. A difference needs a
+ * `Fork adaptation:` note, and a cited feature must exist in the ledger. A commit that matches
+ * upstream preserves nothing, so it must not cite one.
+ */
+export function adaptationErrors(
+  review: CommitReview,
+  knownFeatureIds: ReadonlySet<string>,
+): ReadonlyArray<string> {
+  const commit = review.sha.slice(0, 12);
+  const errors: Array<string> = [];
+  if (review.comparison.status === "adapted" && review.adaptationNote === null) {
+    errors.push(
+      `Candidate commit ${commit} differs from upstream but has no \`Fork adaptation:\` note explaining why.`,
+    );
+  }
+  if (
+    (review.comparison.status === "matches" || review.comparison.status === "provenance-only") &&
+    review.preservedFeatureIds.length > 0
+  ) {
+    errors.push(
+      `Candidate commit ${commit} matches upstream but cites Fork-Feature ${review.preservedFeatureIds.join(", ")}; remove the trailer.`,
+    );
+  }
+  for (const id of review.preservedFeatureIds) {
+    if (!knownFeatureIds.has(id)) {
+      errors.push(
+        `Candidate commit ${commit} cites Fork-Feature ${id}, which is not in the fork feature ledger.`,
+      );
+    }
+  }
+  return errors;
 }
 
 const MAX_DIFFERENCE_LINES = 80;
@@ -197,6 +246,12 @@ export function renderCommitReviews(input: {
       `\`${review.sha.slice(0, 10)}\`${sources.length > 0 ? ` from ${sources.join(" · ")}` : ""}. ${statusLine(review)}`,
     ];
     if (review.adaptationNote !== null) lines.push("", `> ${review.adaptationNote}`);
+    if (review.preservedFeatureIds.length > 0) {
+      lines.push(
+        "",
+        `Preserves: ${review.preservedFeatureIds.map((id) => `\`${id}\``).join(", ")}`,
+      );
+    }
     if (review.comparison.status === "adapted") {
       const firstSource = review.sourceCommits[0];
       lines.push(

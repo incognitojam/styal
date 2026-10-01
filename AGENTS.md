@@ -83,7 +83,7 @@ The most common defect in this repo is a change that works on the path you teste
 ### Maintaining fork differences
 
 - [How styal differs from T3 Code](docs/user/styal-differences.md) is the curated user-facing overview. Update it in the same PR when a notable difference is added, materially changed, or removed. Check the current upstream implementation before claiming a difference, describe refinements precisely, and record the comparison revision. Remove highlights when the described behavior becomes shared.
-- The [fork feature ledger](.github/fork-features.yml) records maintained capabilities, invariants, implementation paths, and test evidence. Update the relevant entry when changing fork behavior; add an entry for a new maintained divergence. Its coverage is incremental, and inclusion is not proof that a feature remains exclusive to styal.
+- The [fork feature ledger](.github/fork-features.yml) records maintained capabilities, invariants, implementation paths, and test evidence. Update the relevant entry when changing fork behavior; add an entry for a new maintained divergence, with a `rationale` when the reason is not obvious from its invariants. Upstream intake relies on it to decide whether a conflicting fork change stays. Its coverage is incremental, and inclusion is not proof that a feature remains exclusive to styal.
 - Follow the [ledger maintenance guide](docs/internals/fork-feature-ledger.md) for upstream overlap and retirement decisions. Keep the overview concise rather than copying every ledger entry. Nightly changelogs use PR and commit titles; the overview is maintained through reviewed edits.
 
 ## Dev servers

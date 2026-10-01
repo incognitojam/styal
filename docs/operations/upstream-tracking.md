@@ -48,6 +48,17 @@ Apply upstream merge commits against their first parent (`git cherry-pick -m 1 -
 
 Follow upstream behavior by default. General guidance inherited from upstream is not a separate fork requirement or a reason to redesign an upstream change during intake. Record deliberate styal-specific policies and maintained divergences in the fork feature ledger (with supporting documentation where needed); do not invent new differences while resolving conflicts.
 
+A conflict is a prompt to reconsider the fork's side, not a reason to keep it. Before resolving one, find where the fork's lines came from with `git log -S` or `git blame` on `origin/main`:
+
+- From an upstream import, carrying an `Upstream-PR` or `Upstream-Commit` trailer: resolve to the code upstream has once both changes are applied.
+- From a fork change the [fork feature ledger](../internals/fork-feature-ledger.md) records: keep it while its invariants still require it, rebuilt on upstream's new code, or retire it as the ledger guide describes.
+- From a fork change the ledger does not record: read its pull request to decide whether the difference was deliberate. Add a ledger entry with a `rationale` for a difference worth keeping; otherwise take upstream's code.
+- Formatting, import order, or other incidental differences: take upstream's code.
+
+Decide when the evidence is clear. Ask the maintainer when the intent remains unclear or the choice changes what users see.
+
+A commit whose change differs from upstream's needs a `Fork adaptation:` paragraph saying what differs and why, and a `Fork-Feature: <ledger-id>, <ledger-id>` trailer naming the ledger entries it preserves. The intake audit blocks a differing commit without a note, a commit that matches upstream but cites a feature, and a feature ID the ledger does not list. A differing commit without `Fork-Feature`, such as one shaped by an early import, requires manual review. A note on a matching commit remains useful when it records that a fork change was dropped in favor of upstream's.
+
 Every candidate commit needs an `Upstream-PR: 1234, 5678` and/or `Upstream-Commit: <full lowercase SHA>` trailer. `Upstream-PR` records a PR's own commits, including its squash or merge commit, so never repeat those SHAs in `Upstream-Commit`; the intake audit looks up each `Upstream-Commit` beside `Upstream-PR` on GitHub and blocks repeats. Use `Upstream-Commit` for direct upstream commits, commits from other PRs folded into the same change, and early imports of an unmerged PR, where an `Upstream-PR` trailer would make the queue skip upstream's eventual merge. A verified empty import may use a provenance-only commit; do not infer completeness merely because a cherry-pick is empty.
 
 Read the actual source diffs when reconciling reverts or already-present work; never assume an adjacent commit implements a source. If an exact change/revert pair is accounted for together, verify its net effect and record both sources; do not silently skip either. Existing provenance proves an import was recorded, not that today's tree still has equivalent behavior.
@@ -63,7 +74,7 @@ node scripts/upstream/queue.ts status --fork-ref intake/<batch>
 vp run --filter @t3tools/scripts intake:check -- --base origin/main --head intake/<batch>
 ```
 
-The successful local audit inspects the remote branch and reports the next action: push the candidate, watch Fork CI, address a failed run, or dispatch promotion. Rerun the audit after completing the reported step. Review the combined batch once, including source completeness, relevant exceptions, fork compatibility, and observed behavior. The audit's Commits section lists each candidate commit under its upstream PR with its `Fork adaptation` note, and shows how its change differs from the upstream commits it imports; a commit reported as matching upstream changes exactly the lines upstream changed. Do not repeat upstream's entire manual test plan for unchanged code.
+The successful local audit inspects the remote branch and reports the next action: push the candidate, watch Fork CI, address a failed run, or dispatch promotion. Rerun the audit after completing the reported step. Review the combined batch once, including source completeness, relevant exceptions, fork compatibility, and observed behavior. The audit's Commits section lists each candidate commit under its upstream PR with its `Fork adaptation` note, and shows how its change differs from the upstream commits it imports; a commit reported as matching upstream changes exactly the lines upstream changed, or leaves each file it changes identical to upstream's version. Do not repeat upstream's entire manual test plan for unchanged code.
 
 ## 4. Promote without a PR
 

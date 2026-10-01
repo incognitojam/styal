@@ -2552,6 +2552,7 @@ features:
     invariants:
       - New threads default to isolated worktrees unless a user explicitly chooses another workspace mode or the repository has no commit to branch from.
       - In a repository without a commit, web and mobile run new threads in the current checkout while retaining the worktree default for after the first commit; the server rejects an unresolvable worktree base with an actionable error.
+    rationale: Choosing New worktree means the agent works apart from the user's checkout. Falling back to the project checkout when the base cannot be resolved would let the agent edit the user's current branch without being asked, so the server refuses instead.
     implementation_paths:
       - apps/mobile/src/features/threads/new-task-flow-provider.tsx
       - apps/server/src/ws.ts
