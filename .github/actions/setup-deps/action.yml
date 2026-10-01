@@ -17,10 +17,11 @@ runs:
       id: key
       shell: bash
       env:
-        DEPENDENCY_HASH: ${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', 'package.json', 'apps/*/package.json', 'packages/*/package.json', 'infra/*/package.json', 'scripts/package.json', 'oxlint-plugin-t3code/package.json', 'patches/**', 'scripts/clean-tsgo-backups.mjs', '.github/actions/setup-deps/**') }}
+        DEPENDENCY_HASH: ${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', 'package.json', 'apps/*/package.json', 'apps/mobile/modules/**', 'packages/*/package.json', 'infra/*/package.json', 'scripts/package.json', 'oxlint-plugin-t3code/package.json', 'patches/**', 'scripts/clean-tsgo-backups.mjs', '.github/actions/setup-deps/**') }}
         INSTALL_FILTERS: ${{ inputs.filters }}
       # Compute once before restore. Re-evaluating a recursive manifest glob in
       # the cache post-step traverses node_modules and costs tens of seconds.
+      # file: mobile modules are copied at install, so their contents must match too.
       run: |
         node --input-type=module <<'JS'
         import { createHash } from 'node:crypto';
