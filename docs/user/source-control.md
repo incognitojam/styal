@@ -169,7 +169,7 @@ that changes files switches to its diff when the turn completes. Turn it off in
   remotes can require separate setup from the hosting provider's API access.
 - **GitHub operations fail unexpectedly:** when GitHub reports a disruption, web and desktop show
   the affected services in the sidebar while you have a GitHub project. Select the notice to open
-  GitHub Status.
+  GitHub Status. Turn these alerts off under **GitHub** in **Settings > General > Outage alerts**.
 - **A review cannot load:** open it on the host website while resolving connectivity, permissions,
   or rate limits.
 

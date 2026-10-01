@@ -250,14 +250,28 @@ export const SETTINGS_SEARCH_ITEMS = [
     scope: "project-defaults",
   },
   {
+    id: "outage-alerts",
+    title: "Outage alerts",
+    to: "/settings/general",
+    searchTerms: ["status incident sidebar"],
+  },
+  {
     id: "claude-outage-alerts",
     title: "Claude outage alerts",
     to: "/settings/general",
+    searchTerms: ["anthropic status incident"],
   },
   {
     id: "openai-codex-outage-alerts",
     title: "OpenAI outage alerts",
     to: "/settings/general",
+    searchTerms: ["oai codex chatgpt status incident"],
+  },
+  {
+    id: "github-outage-alerts",
+    title: "GitHub outage alerts",
+    to: "/settings/general",
+    searchTerms: ["status incident"],
   },
   {
     id: "thread-notifications",
