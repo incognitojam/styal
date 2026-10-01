@@ -1,6 +1,10 @@
 name: Fork Nightly
 
 on:
+  workflow_run:
+    workflows: [Fork CI]
+    types: [completed]
+    branches: [main]
   schedule:
     - cron: "23 */3 * * *"
   workflow_dispatch:
@@ -30,12 +34,39 @@ permissions:
   id-token: none
 
 concurrency:
-  group: fork-nightly-publish
+  # A rejected CI completion must not replace a valid pending publisher.
+  # Accepted requests share one running publisher and one replaceable pending run.
+  group: >-
+    fork-nightly-${{
+      (
+        github.event_name != 'workflow_run' ||
+        (
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_branch == 'main' &&
+          github.event.workflow_run.head_repository.full_name == github.repository
+        )
+      ) && 'publish' || github.run_id
+    }}
+  cancel-in-progress: false
 
 jobs:
   prepare:
     name: Prepare and verify candidate
-    if: github.repository == 'incognitojam/t3code' || github.repository == 'incognitojam/styal'
+    if: >-
+      (
+        github.repository == 'incognitojam/t3code' ||
+        github.repository == 'incognitojam/styal'
+      ) &&
+      (
+        github.event_name != 'workflow_run' ||
+        (
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_branch == 'main' &&
+          github.event.workflow_run.head_repository.full_name == github.repository
+        )
+      )
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     permissions:
@@ -58,8 +89,9 @@ jobs:
           ref: main
           fetch-depth: 0
 
+      # A CI completion wakes the publisher; it does not pin an older candidate.
       # Picks the newest commit on main that passed Fork CI, waiting for any
-      # run still in flight.
+      # run still in flight, so queued requests can include later merges.
       - id: candidate
         name: Resolve candidate
         shell: bash
