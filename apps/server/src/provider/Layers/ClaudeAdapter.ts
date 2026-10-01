@@ -169,8 +169,8 @@ interface ClaudeTurnState {
   /**
    * True for turns auto-started by assistant output arriving without an
    * active turn (background agent/subagent responses between user prompts).
-   * Synthetic turns are auto-closed by the next sendTurn; real turns are
-   * steered instead (the queued message continues the same turn).
+   * Idle synthetic turns are auto-closed by the next sendTurn. A synthetic
+   * turn still streaming a response is promoted to a real, steered turn.
    */
   readonly synthetic?: boolean;
   readonly items: Array<unknown>;
@@ -374,6 +374,8 @@ interface ClaudeSessionContext {
   /** Task ids that have started and not yet reached a terminal state. */
   readonly liveTaskIds: Set<string>;
   turnState: ClaudeTurnState | undefined;
+  /** Parent message boundaries can arrive before a synthetic turn starts. */
+  assistantMessageStreaming: boolean;
   /** A resumed SDK stream emits one success result with num_turns: 0 while
    * initializing. It is stream setup, never the completion of a T3 turn. */
   resumeHandshakePending: boolean;
@@ -2753,6 +2755,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
     const updatedAt = yield* nowIso;
     context.turnState = undefined;
+    context.assistantMessageStreaming = false;
     context.session = {
       ...context.session,
       status: "ready",
@@ -2782,6 +2785,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     // re-homed by the quiet-timeline filter.
     const streamParentToolUseId = (message as { parent_tool_use_id?: string | null })
       .parent_tool_use_id;
+    if (streamParentToolUseId == null) {
+      if (event.type === "message_start") context.assistantMessageStreaming = true;
+      else if (event.type === "message_stop") context.assistantMessageStreaming = false;
+    }
     if (streamParentToolUseId !== null && streamParentToolUseId !== undefined) {
       // Drop only the subagent's narration (text/thinking); tool_use blocks
       // and their input_json_delta frames must flow so attributed tool items
@@ -5004,6 +5011,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         workflowMemberFingerprints,
         liveTaskIds,
         turnState: undefined,
+        assistantMessageStreaming: false,
         resumeHandshakePending: existingResumeSessionId !== undefined,
         suppressNextIdleStreamFailure: false,
         lastKnownContextWindow: initialContextWindow,
@@ -5105,13 +5113,19 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       context.startInput = { ...context.startInput, modelSelection };
     }
 
-    // A sendTurn while a real turn is running is a steer: the message is
-    // queued into the live SDK agent loop and the work continues as the same
-    // turn — no synthetic turn boundary. Stale synthetic turns (from
-    // background agent responses between user prompts) are auto-closed
-    // instead, so they don't block the user's next turn.
+    // Background responses can still be streaming when a user sends a steer.
+    // Keep their turn and text blocks intact; only close idle synthetic turns.
     const steeringTurnState =
-      context.turnState && context.turnState.synthetic !== true ? context.turnState : null;
+      context.turnState &&
+      (context.turnState.synthetic !== true ||
+        context.assistantMessageStreaming ||
+        context.turnState.assistantTextBlocks.size > 0 ||
+        context.inFlightTools.size > 0)
+        ? context.turnState
+        : null;
+    if (steeringTurnState?.synthetic) {
+      context.turnState = { ...steeringTurnState, synthetic: false };
+    }
     if (context.turnState && steeringTurnState === null) {
       yield* completeTurn(context, "completed");
     }

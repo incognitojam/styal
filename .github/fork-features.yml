@@ -253,6 +253,26 @@ features:
         - https://github.com/pingdotgg/t3code/pull/13789
       retire_when: Upstream keeps a background task's ending with the tool call or run that started it on web and mobile, so late endings no longer land in a later turn.
 
+  - id: claude-background-response-steering
+    title: Keep Claude background responses intact when steered
+    status: maintained
+    prs: []
+    invariants:
+      - A user message sent while a Claude background response is streaming preserves its turn and text block, so a word or sentence cannot split across turns on web, desktop, or mobile.
+      - Repeated steering continues the same turn until the provider finishes it; subagent message boundaries do not close the parent response.
+      - Idle synthetic turns still close before a new user turn starts.
+    implementation_paths:
+      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+    upstream_paths:
+      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+    tests:
+      - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/blob/5cc99e1c23980d7995a13c47f969b47cb68ed1be/apps/server/src/provider/Layers/ClaudeAdapter.ts
+      retire_when: Upstream preserves actively streaming synthetic Claude turns when a user sends a steer while retaining cleanup of idle synthetic turns.
+
   - id: claude-live-effort-change
     title: Apply Claude effort changes without restarting the session
     status: maintained

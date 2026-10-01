@@ -1842,6 +1842,142 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  for (const phase of [
+    "streaming",
+    "missing-boundaries",
+    "between-blocks",
+    "subagent-stop",
+    "idle",
+  ] as const) {
+    it.effect(`handles steering during a synthetic Claude response (${phase})`, () => {
+      const harness = makeHarness();
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        const { runtimeEvents, runtimeEventsFiber, drainSdkMessages } =
+          yield* observeClaudeRuntimeEvents(adapter, harness.query);
+        yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        const emitStream = (event: unknown, parentToolUseId: string | null = null) =>
+          harness.query.emit({
+            type: "stream_event",
+            session_id: "sdk-background-response",
+            uuid: "background-stream-frame",
+            parent_tool_use_id: parentToolUseId,
+            event,
+          } as unknown as SDKMessage);
+
+        // A background wake starts streaming before its first assistant snapshot
+        // creates the synthetic turn, just as it does after a monitor finishes.
+        if (phase !== "missing-boundaries") {
+          emitStream({ type: "message_start", message: { id: "background-message" } });
+        }
+        harness.query.emit({
+          type: "assistant",
+          session_id: "sdk-background-response",
+          uuid: "background-thinking",
+          parent_tool_use_id: null,
+          message: {
+            id: "background-message",
+            content: [{ type: "thinking", thinking: "Checking the result." }],
+          },
+        } as unknown as SDKMessage);
+        emitStream({
+          type: "content_block_start",
+          index: 1,
+          content_block: { type: "text", text: "" },
+        });
+        emitStream({
+          type: "content_block_delta",
+          index: 1,
+          delta: { type: "text_delta", text: "Checks pass" },
+        });
+        const betweenBlocks = phase === "between-blocks" || phase === "subagent-stop";
+        if (betweenBlocks || phase === "idle") {
+          emitStream({ type: "content_block_stop", index: 1 });
+        }
+        if (phase === "idle") emitStream({ type: "message_stop" });
+        if (phase === "subagent-stop") {
+          emitStream({ type: "message_stop" }, "nested-agent-call");
+        }
+        yield* drainSdkMessages;
+        const backgroundTurn = runtimeEvents.find((event) => event.type === "turn.started");
+        assert.ok(backgroundTurn?.turnId);
+
+        const steer = yield* adapter.sendTurn({
+          threadId: THREAD_ID,
+          input: "Show the results here.",
+          attachments: [],
+        });
+        yield* drainSdkMessages;
+        if (phase === "idle") {
+          assert.notEqual(steer.turnId, backgroundTurn.turnId);
+          assert.equal(runtimeEvents.filter((event) => event.type === "turn.completed").length, 1);
+        } else {
+          assert.equal(steer.turnId, backgroundTurn.turnId);
+          if (betweenBlocks) {
+            emitStream({
+              type: "content_block_start",
+              index: 2,
+              content_block: { type: "text", text: "" },
+            });
+          }
+          emitStream({
+            type: "content_block_delta",
+            index: betweenBlocks ? 2 : 1,
+            delta: { type: "text_delta", text: "ed successfully." },
+          });
+          emitStream({ type: "content_block_stop", index: betweenBlocks ? 2 : 1 });
+          emitStream({ type: "message_stop" });
+          yield* drainSdkMessages;
+
+          // Once steered, another send continues this turn even between messages.
+          const followUp = yield* adapter.sendTurn({
+            threadId: THREAD_ID,
+            input: "Include a short explanation.",
+            attachments: [],
+          });
+          assert.equal(followUp.turnId, steer.turnId);
+          assert.equal(runtimeEvents.filter((event) => event.type === "turn.started").length, 1);
+          assert.equal(runtimeEvents.filter((event) => event.type === "turn.completed").length, 0);
+          const textDeltas = runtimeEvents.filter(
+            (event) =>
+              event.type === "content.delta" && event.payload.streamKind === "assistant_text",
+          );
+          assert.equal(
+            textDeltas
+              .map((event) => (event.type === "content.delta" ? event.payload.delta : ""))
+              .join(""),
+            "Checks passed successfully.",
+          );
+          assert.ok(textDeltas.every((event) => event.turnId === steer.turnId));
+          if (!betweenBlocks) {
+            assert.equal(new Set(textDeltas.map((event) => event.itemId)).size, 1);
+          }
+        }
+
+        harness.query.emit({
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          errors: [],
+          session_id: "sdk-background-response",
+          uuid: "background-result",
+        } as unknown as SDKMessage);
+        yield* drainSdkMessages;
+        const completions = runtimeEvents.filter((event) => event.type === "turn.completed");
+        assert.equal(completions.length, phase === "idle" ? 2 : 1);
+        assert.equal(completions.at(-1)?.turnId, steer.turnId);
+        yield* Fiber.interrupt(runtimeEventsFiber);
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    });
+  }
+
   it.effect("maps Claude reasoning deltas, streamed tool inputs, and tool results", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
@@ -5074,7 +5210,7 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
-  const observeUsageLimitEvents = (adapter: ClaudeAdapterShape, query: FakeClaudeQuery) =>
+  const observeClaudeRuntimeEvents = (adapter: ClaudeAdapterShape, query: FakeClaudeQuery) =>
     Effect.gen(function* () {
       const runtimeEvents: Array<ProviderRuntimeEvent> = [];
       let receipt: Deferred.Deferred<void> | undefined;
@@ -5114,7 +5250,7 @@ describe("ClaudeAdapterLive", () => {
     return Effect.gen(function* () {
       const adapter = yield* ClaudeAdapter;
       const { runtimeEvents, runtimeEventsFiber, drainSdkMessages } =
-        yield* observeUsageLimitEvents(adapter, harness.query);
+        yield* observeClaudeRuntimeEvents(adapter, harness.query);
 
       yield* adapter.startSession({
         threadId: THREAD_ID,
@@ -5209,7 +5345,7 @@ describe("ClaudeAdapterLive", () => {
     return Effect.gen(function* () {
       const adapter = yield* ClaudeAdapter;
       const { runtimeEvents, runtimeEventsFiber, drainSdkMessages } =
-        yield* observeUsageLimitEvents(adapter, harness.query);
+        yield* observeClaudeRuntimeEvents(adapter, harness.query);
 
       yield* adapter.startSession({
         threadId: THREAD_ID,
@@ -5256,7 +5392,7 @@ describe("ClaudeAdapterLive", () => {
     return Effect.gen(function* () {
       const adapter = yield* ClaudeAdapter;
       const { runtimeEvents, runtimeEventsFiber, drainSdkMessages } =
-        yield* observeUsageLimitEvents(adapter, harness.query);
+        yield* observeClaudeRuntimeEvents(adapter, harness.query);
 
       yield* adapter.startSession({
         threadId: THREAD_ID,
@@ -5327,7 +5463,7 @@ describe("ClaudeAdapterLive", () => {
     return Effect.gen(function* () {
       const adapter = yield* ClaudeAdapter;
       const { runtimeEvents, runtimeEventsFiber, drainSdkMessages } =
-        yield* observeUsageLimitEvents(adapter, harness.query);
+        yield* observeClaudeRuntimeEvents(adapter, harness.query);
 
       yield* adapter.startSession({
         threadId: THREAD_ID,
@@ -5370,7 +5506,7 @@ describe("ClaudeAdapterLive", () => {
     return Effect.gen(function* () {
       const adapter = yield* ClaudeAdapter;
       const { runtimeEvents, runtimeEventsFiber, drainSdkMessages } =
-        yield* observeUsageLimitEvents(adapter, harness.query);
+        yield* observeClaudeRuntimeEvents(adapter, harness.query);
 
       yield* adapter.startSession({
         threadId: THREAD_ID,
@@ -5422,7 +5558,7 @@ describe("ClaudeAdapterLive", () => {
     return Effect.gen(function* () {
       const adapter = yield* ClaudeAdapter;
       const { runtimeEvents, runtimeEventsFiber, drainSdkMessages } =
-        yield* observeUsageLimitEvents(adapter, harness.query);
+        yield* observeClaudeRuntimeEvents(adapter, harness.query);
 
       yield* adapter.startSession({
         threadId: THREAD_ID,
@@ -5485,7 +5621,7 @@ describe("ClaudeAdapterLive", () => {
     return Effect.gen(function* () {
       const adapter = yield* ClaudeAdapter;
       const { runtimeEvents, runtimeEventsFiber, drainSdkMessages } =
-        yield* observeUsageLimitEvents(adapter, harness.query);
+        yield* observeClaudeRuntimeEvents(adapter, harness.query);
 
       yield* adapter.startSession({
         threadId: THREAD_ID,
@@ -5540,7 +5676,7 @@ describe("ClaudeAdapterLive", () => {
     return Effect.gen(function* () {
       const adapter = yield* ClaudeAdapter;
       const { runtimeEvents, runtimeEventsFiber, drainSdkMessages } =
-        yield* observeUsageLimitEvents(adapter, harness.query);
+        yield* observeClaudeRuntimeEvents(adapter, harness.query);
       yield* adapter.startSession({
         threadId: THREAD_ID,
         provider: ProviderDriverKind.make("claudeAgent"),
