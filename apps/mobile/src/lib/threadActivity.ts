@@ -920,7 +920,7 @@ function collapseDerivedWorkLogEntries(
         if (exit !== undefined) {
           collapsed.push(
             withBackgroundOutcome(
-              { ...entry, turnId: exit.turnId },
+              { ...entry, turnId: exit.turnId, createdAt: exit.createdAt },
               entry.taskOutcome ?? { status: exit.status },
             ),
           );

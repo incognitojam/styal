@@ -230,7 +230,7 @@ features:
     prs: [535, 601]
     invariants:
       - A background task that ends after its launching tool call returned reports its ending on that call's row in the original turn, on web and mobile.
-      - A completed or failed ending also shows as its own row, with the same status mark, in the turn where the agent learns about it, which is the later turn it arrived during or, when it arrived while the agent was idle, the next turn to start. Endings in their launching turn, stopped endings, and idle endings no turn has followed add no row.
+      - A completed or failed ending also shows as its own row, with the same status mark, in the turn where the agent learns about it, which is the later turn it arrived during or, when it arrived while the agent was idle, the next turn to start, placed with that turn's work after any user message that started it. Endings in their launching turn, stopped endings, and idle endings no turn has followed add no row.
       - A task left running when a provider session ended does not add a row to the next turn, so a manual compaction in that turn stays visible as a divider.
       - The launching row stays visible inside collapsed tool groups; a failed ending marks the call failed, and a stopped or completed ending leaves the call's own status unchanged.
       - A task that ends while its call is still running leaves the call's own result in place, and an ending whose launching row is not loaded still shows as its own row.

@@ -669,6 +669,60 @@ describe("deriveWorkLogEntries", () => {
       ]);
     });
 
+    it("places an idle ending inside the turn the user starts, after their message", () => {
+      const message = (
+        id: string,
+        role: "user" | "assistant",
+        createdAt: string,
+        turnId?: string,
+      ) => ({
+        id: MessageId.make(id),
+        role,
+        text: id,
+        turnId: turnId ? TurnId.make(turnId) : null,
+        createdAt,
+        updatedAt: createdAt,
+        streaming: false,
+      });
+      const work = deriveWorkLogEntries([
+        bashCall("tool.completed", "2026-02-23T00:00:02.000Z"),
+        // Finishes while the agent is idle; the user speaks before anything wakes it.
+        taskEnd({
+          createdAt: "2026-02-23T00:05:00.000Z",
+          status: "completed",
+          summary: 'Background command "vp run dev" completed',
+        }),
+        makeActivity({
+          id: "next-work",
+          createdAt: "2026-02-23T00:06:02.000Z",
+          kind: "tool.completed",
+          turnId: "turn-next",
+          payload: { itemType: "command_execution", toolCallId: "toolu-next", status: "completed" },
+        }),
+      ]);
+
+      const timeline = deriveTimelineEntries(
+        [
+          message("ask", "user", "2026-02-23T00:00:00.000Z"),
+          message("answer", "assistant", "2026-02-23T00:00:03.000Z", "turn-launch"),
+          message("follow-up", "user", "2026-02-23T00:06:00.000Z"),
+          message("next-answer", "assistant", "2026-02-23T00:06:10.000Z", "turn-next"),
+        ],
+        [],
+        work,
+      );
+
+      expect(timeline.map((entry) => entry.id)).toEqual([
+        "ask",
+        "bash-tool.completed",
+        "answer",
+        "follow-up",
+        "task-end",
+        "next-work",
+        "next-answer",
+      ]);
+    });
+
     it("also shows an ending in the later turn it arrives during", () => {
       const entries = deriveWorkLogEntries([
         bashCall("tool.completed", "2026-02-23T00:00:02.000Z"),

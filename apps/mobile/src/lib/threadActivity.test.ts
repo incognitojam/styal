@@ -292,6 +292,87 @@ function makeThread(
 }
 
 describe("buildThreadFeed", () => {
+  it("places an idle background ending inside the turn the user starts, after their message", () => {
+    const launchTurn = TurnId.make("turn-launch");
+    const nextTurn = TurnId.make("turn-next");
+    const message = (
+      id: string,
+      role: "user" | "assistant",
+      createdAt: string,
+      turnId: TurnId | null,
+    ) => ({
+      id: MessageId.make(id),
+      role,
+      text: id,
+      turnId,
+      streaming: false,
+      createdAt,
+      updatedAt: createdAt,
+    });
+    const thread = makeThread({
+      id: ThreadId.make("thread-user-next"),
+      projectId: ProjectId.make("project-1"),
+      title: "User speaks before the agent wakes",
+      messages: [
+        message("ask", "user", "2026-04-01T00:00:00.000Z", null),
+        message("started", "assistant", "2026-04-01T00:00:03.000Z", launchTurn),
+        message("follow-up", "user", "2026-04-01T00:06:00.000Z", null),
+        message("answered", "assistant", "2026-04-01T00:06:10.000Z", nextTurn),
+      ],
+      activities: [
+        makeActivity({
+          id: EventId.make("launch"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "Command run",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          turnId: launchTurn,
+          payload: {
+            itemType: "command_execution",
+            toolCallId: "toolu-bash",
+            status: "completed",
+            title: "Command run",
+            detail: "Bash: vp run test --watch",
+            data: { toolName: "Bash", input: { command: "vp run test --watch" } },
+          },
+        }),
+        makeActivity({
+          id: EventId.make("ending"),
+          kind: "task.completed",
+          summary: "Task completed",
+          createdAt: "2026-04-01T00:05:00.000Z",
+          payload: {
+            taskId: "bg-1",
+            taskType: "local_bash",
+            agentKind: "background",
+            toolUseId: "toolu-bash",
+            status: "completed",
+            summary: 'Background command "vp run test --watch" completed',
+          },
+        }),
+        makeActivity({
+          id: EventId.make("next-work"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "Ran command",
+          createdAt: "2026-04-01T00:06:02.000Z",
+          turnId: nextTurn,
+          payload: { itemType: "command_execution", toolCallId: "toolu-next", status: "completed" },
+        }),
+      ],
+    });
+
+    expect(
+      buildThreadFeed(thread).map((entry) =>
+        entry.type === "activity-group"
+          ? entry.activities.map((activity) => activity.id)
+          : entry.type === "message"
+            ? entry.message.id
+            : entry.type,
+      ),
+    ).toEqual(["ask", ["launch"], "started", "follow-up", ["ending", "next-work"], "answered"]);
+  });
+
   it("also shows a background ending in the turn it wakes the agent for", () => {
     const launchTurn = TurnId.make("turn-launch");
     const wokenTurn = TurnId.make("turn-woken");

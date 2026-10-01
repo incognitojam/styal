@@ -10,11 +10,12 @@ export interface BackgroundExitEntry {
 /**
  * Finds the turn where a background task's exit also gets its own work log
  * row, beside the outcome its launch row already shows, and the status that
- * row reports. That is the turn the
- * agent learns about the exit in: the turn it arrived during, or, when it
- * arrived while the agent was idle, the next turn to start (Claude wakes the
- * agent with the result). Exits in their launch turn, stops, and idle exits no
- * turn has followed yet get no row of their own.
+ * row reports. That is the turn the agent learns about the exit in: the turn
+ * it arrived during, or, when it arrived while the agent was idle, the next
+ * turn to start (Claude wakes the agent with the result). An idle exit takes
+ * that turn's first activity time, so it sorts inside the turn rather than
+ * before a user message that started it. Exits in their launch turn, stops,
+ * and idle exits no turn has followed yet get no row of their own.
  */
 export function makeBackgroundExitTurnLookup(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
@@ -26,17 +27,25 @@ export function makeBackgroundExitTurnLookup(
   return (
     exit: BackgroundExitEntry,
     launchTurnId: TurnId | null | undefined,
-  ): { readonly turnId: TurnId; readonly status: "completed" | "failed" } | undefined => {
+  ):
+    | {
+        readonly turnId: TurnId;
+        readonly createdAt: string;
+        readonly status: "completed" | "failed";
+      }
+    | undefined => {
     const status = exit.toolLifecycleStatus;
     if (status !== "completed" && status !== "failed") return undefined;
     if (exit.turnId) {
-      return exit.turnId !== launchTurnId ? { turnId: exit.turnId, status } : undefined;
+      return exit.turnId !== launchTurnId
+        ? { turnId: exit.turnId, createdAt: exit.createdAt, status }
+        : undefined;
     }
     let next: (OrchestrationThreadActivity & { turnId: TurnId }) | undefined;
     for (const activity of turnActivities) {
       if (activity.createdAt <= exit.createdAt || activity.turnId === launchTurnId) continue;
       if (next === undefined || activity.createdAt < next.createdAt) next = activity;
     }
-    return next ? { turnId: next.turnId, status } : undefined;
+    return next ? { turnId: next.turnId, createdAt: next.createdAt, status } : undefined;
   };
 }
