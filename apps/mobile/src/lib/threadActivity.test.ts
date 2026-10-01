@@ -292,6 +292,63 @@ function makeThread(
 }
 
 describe("buildThreadFeed", () => {
+  it("keeps tools that complete after the answer where they started", () => {
+    const turnId = TurnId.make("turn-late");
+    const message = (id: string, role: "user" | "assistant", createdAt: string) => ({
+      id: MessageId.make(id),
+      role,
+      text: id,
+      turnId: role === "assistant" ? turnId : null,
+      streaming: false,
+      createdAt,
+      updatedAt: createdAt,
+    });
+    const tool = (
+      id: string,
+      kind: "tool.started" | "tool.completed",
+      toolCallId: string,
+      createdAt: string,
+      extra: Record<string, unknown> = {},
+    ) =>
+      makeActivity({
+        id: EventId.make(id),
+        kind,
+        tone: "tool",
+        summary: "Ran command",
+        createdAt,
+        turnId,
+        payload: { itemType: "command_execution", toolCallId, title: "Ran command", ...extra },
+      });
+    const thread = makeThread({
+      id: ThreadId.make("thread-late"),
+      projectId: ProjectId.make("project-1"),
+      title: "Late completions",
+      messages: [
+        message("ask", "user", "2026-04-01T00:00:00.000Z"),
+        message("answer", "assistant", "2026-04-01T00:00:05.000Z"),
+      ],
+      activities: [
+        // Codex: clients skip tool.started rows but keep their time.
+        tool("dev-start", "tool.started", "call-dev", "2026-04-01T00:00:01.000Z"),
+        tool("dev-exit", "tool.completed", "call-dev", "2026-04-01T00:20:00.000Z"),
+        // Snapshot completion whose dropped updates left their start behind.
+        tool("read-done", "tool.completed", "call-read", "2026-04-01T00:00:06.000Z", {
+          startedAt: "2026-04-01T00:00:02.000Z",
+        }),
+      ],
+    });
+
+    expect(
+      buildThreadFeed(thread).map((entry) =>
+        entry.type === "activity-group"
+          ? entry.activities.map((activity) => activity.id)
+          : entry.type === "message"
+            ? entry.message.id
+            : entry.type,
+      ),
+    ).toEqual(["ask", ["dev-exit", "read-done"], "answer"]);
+  });
+
   it("shows preview tool calls as browser work", () => {
     const turnId = TurnId.make("turn-preview");
     const thread = makeThread({
