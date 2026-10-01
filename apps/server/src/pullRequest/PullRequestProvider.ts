@@ -227,6 +227,8 @@ export interface ProviderChangeRequestDetail extends ProviderChangeRequest {
   readonly autoMergeMethod?: PullRequestMergeMethod;
   /** Workflow runs on this head commit that still need a maintainer's approval. */
   readonly workflowApprovalsRequired?: number;
+  /** Only from a host whose `runAction` honours `expectedHeadSha`. */
+  readonly headSha?: string;
 }
 
 /** The conversation-shaped half of a detail, loaded after the core can already render. */
@@ -482,6 +484,8 @@ export interface PullRequestProviderApi {
       readonly expectedStackHeads?: ReadonlyArray<PullRequestStackHead>;
       /** Meaningful for `merge` and `enable-auto-merge`; absent takes the host's own default. */
       readonly mergeMethod?: PullRequestMergeMethod;
+      /** Meaningful for `merge` and `enable-auto-merge`; absent merges whatever the head is. */
+      readonly expectedHeadSha?: string;
       /** Only meaningful for `update-branch`; absent takes the host's own default. */
       readonly updateMethod?: PullRequestUpdateMethod;
     },

@@ -1564,6 +1564,7 @@ export const make = Effect.gen(function* () {
             deletions: changeRequest.deletions,
             changedFiles: changeRequest.changedFiles,
             headBranch: changeRequest.headBranch,
+            ...(changeRequest.headSha === undefined ? {} : { headSha: changeRequest.headSha }),
             ...(changeRequest.headRepositoryNameWithOwner === undefined
               ? {}
               : { headRepositoryNameWithOwner: changeRequest.headRepositoryNameWithOwner }),
@@ -1841,6 +1842,9 @@ export const make = Effect.gen(function* () {
                   ? {}
                   : { expectedStackHeads: input.expectedStackHeads }),
                 ...(input.mergeMethod === undefined ? {} : { mergeMethod: input.mergeMethod }),
+                ...(input.expectedHeadSha === undefined
+                  ? {}
+                  : { expectedHeadSha: input.expectedHeadSha }),
                 ...(input.updateMethod === undefined ? {} : { updateMethod: input.updateMethod }),
               })
               .pipe(
@@ -2937,7 +2941,12 @@ export const make = Effect.gen(function* () {
     "PullRequestService.runActionAndInvalidate",
   )(function* (input) {
     yield* readCache.invalidate;
-    const repository = yield* runAction(input).pipe(Effect.ensuring(readCache.invalidate));
+    const repository = yield* runAction(input).pipe(
+      Effect.ensuring(readCache.invalidate),
+      // A refusal often means this copy is out of date, such as a merge refused because the
+      // head moved. The next detail read goes to the host so a retry uses the current head.
+      Effect.tapError(() => Effect.sync(() => bumpRefEpoch(input, "detail"))),
+    );
     bumpRefEpoch({ ...input, repository });
     listingsEpoch = ++epochCounter;
     if (input.action === "merge" || input.action === "enable-auto-merge") {

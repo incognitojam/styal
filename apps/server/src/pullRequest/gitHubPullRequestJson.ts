@@ -1295,7 +1295,7 @@ export interface GitHubPullRequestDetail extends GitHubPullRequestListItem {
   readonly isCrossRepository?: boolean;
   /** The owner of the head branch's repository; null where `gh` did not say. */
   readonly headRepositoryOwner: string | null;
-  readonly headSha?: string | null;
+  readonly headSha?: string;
   readonly body: string;
   readonly changedFiles: number;
   readonly mergedAt: string | null;
@@ -1739,13 +1739,14 @@ function toListItem(raw: Schema.Schema.Type<typeof RawListItemSchema>): GitHubPu
 
 function toDetail(raw: Schema.Schema.Type<typeof RawDetailSchema>): GitHubPullRequestDetail {
   const autoMergeMethod = toAutoMergeMethod(raw.autoMergeRequest?.mergeMethod);
+  const headSha = trimmed(raw.headRefOid);
   return {
     ...toListItem(raw),
     ...(typeof raw.isCrossRepository === "boolean"
       ? { isCrossRepository: raw.isCrossRepository }
       : {}),
     headRepositoryOwner: trimmed(raw.headRepositoryOwner?.login),
-    headSha: trimmed(raw.headRefOid),
+    ...(headSha === null ? {} : { headSha }),
     body: raw.body ?? "",
     changedFiles: raw.changedFiles ?? 0,
     mergedAt: trimmed(raw.mergedAt),

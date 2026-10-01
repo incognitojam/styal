@@ -1670,6 +1670,104 @@ layer("GitHubPullRequestCli.layer", (it) => {
     }),
   );
 
+  it.effect("pins a merge and an armed auto-merge to the head the reader saw", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockReturnValue(Effect.succeed(output("")));
+      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+      const expectedHeadSha = "0962ce611d58a27a0baa269cc60804dbd5242a78";
+
+      yield* cli.runPullRequestAction({
+        cwd: "/w",
+        repository: "acme/web",
+        host: "github.com",
+        number: 7,
+        action: "merge",
+        mergeMethod: "squash",
+        expectedHeadSha,
+      });
+      yield* cli.runPullRequestAction({
+        cwd: "/w",
+        repository: "acme/web",
+        host: "github.com",
+        number: 7,
+        action: "enable-auto-merge",
+        mergeMethod: "squash",
+        expectedHeadSha,
+      });
+
+      expect(callAt(0).args).toEqual([
+        "pr",
+        "merge",
+        "7",
+        "--repo",
+        "github.com/acme/web",
+        "--squash",
+        "--match-head-commit",
+        expectedHeadSha,
+      ]);
+      expect(callAt(1).args).toEqual([
+        "pr",
+        "merge",
+        "7",
+        "--repo",
+        "github.com/acme/web",
+        "--auto",
+        "--squash",
+        "--match-head-commit",
+        expectedHeadSha,
+      ]);
+    }),
+  );
+
+  it.effect("says the head moved when a pinned merge is refused for that reason", () =>
+    Effect.gen(function* () {
+      const refused = new GitHubCli.GitHubCliCommandError({
+        command: "gh",
+        cwd: "/w",
+        cause: new Error("Head branch was modified. Review and try the merge again."),
+      });
+      const detailAt = (headRefOid: string) =>
+        Effect.succeed(
+          output(
+            JSON.stringify({
+              number: 7,
+              title: "Pull request 7",
+              url: "https://github.com/acme/web/pull/7",
+              headRefName: "feat/page",
+              headRefOid,
+              baseRefName: "main",
+              createdAt: "2026-07-01T00:00:00Z",
+              updatedAt: "2026-07-02T00:00:00Z",
+            }),
+          ),
+        );
+      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+      const merge = () =>
+        cli.runPullRequestAction({
+          cwd: "/w",
+          repository: "acme/web",
+          host: "github.com",
+          number: 7,
+          action: "merge",
+          mergeMethod: "squash",
+          expectedHeadSha: "abc123",
+        });
+
+      mockedExecute
+        .mockReturnValueOnce(Effect.fail(refused))
+        .mockReturnValueOnce(detailAt("def456"));
+      const moved = yield* Effect.flip(merge());
+      expect(moved).toMatchObject({ _tag: "GitHubMergeHeadChangedError", number: 7 });
+      expect(moved.detail).toContain("New commits were pushed to #7");
+
+      // Refused for some other reason while the head stayed put: the original failure stands.
+      mockedExecute
+        .mockReturnValueOnce(Effect.fail(refused))
+        .mockReturnValueOnce(detailAt("abc123"));
+      expect(yield* Effect.flip(merge())).toBe(refused);
+    }),
+  );
+
   it.effect("takes auto-merge back off without naming a strategy", () =>
     Effect.gen(function* () {
       mockedExecute.mockReturnValue(Effect.succeed(output("")));

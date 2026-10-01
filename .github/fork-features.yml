@@ -2076,6 +2076,38 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9496
       retire_when: Upstream keeps the visible pull request current without stale responses, unnecessary activity reads, or invalidating cached diffs.
 
+  - id: pull-request-merge-head-guard
+    title: Refuse GitHub merges when the head moved since the panel loaded
+    status: maintained
+    prs: [589]
+    invariants:
+      - A GitHub merge, or turning on auto-merge, from the pull request panel sends the head commit from the panel's last read, and GitHub refuses it when the branch has moved since.
+      - After a refused action, the next detail read goes to the host, so retrying a merge uses the current head.
+      - A merge refused because the head moved reports that new commits were pushed instead of the generic access hint.
+      - Hosts that do not report a head commit, older clients, and older servers merge as before.
+    rationale: Upstream single pull request merges run plain `gh pr merge`, which merges whatever the head is when the command runs.
+    implementation_paths:
+      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/GitHubPullRequestProvider.ts
+      - apps/server/src/pullRequest/PullRequestService.ts
+      - apps/server/src/pullRequest/gitHubPullRequestJson.ts
+      - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
+      - packages/contracts/src/pullRequest.ts
+    upstream_paths:
+      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/GitHubPullRequestProvider.ts
+      - apps/server/src/pullRequest/PullRequestService.ts
+      - apps/server/src/pullRequest/gitHubPullRequestJson.ts
+      - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
+      - packages/contracts/src/pullRequest.ts
+    tests:
+      - apps/server/src/pullRequest/GitHubPullRequestCli.test.ts
+      - apps/server/src/pullRequest/PullRequestService.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream pins single pull request merges and auto-merges to the head commit the reader saw.
+
   - id: pull-request-open-entry-points
     title: Open associated pull requests from every workflow
     status: maintained
