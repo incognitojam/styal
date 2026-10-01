@@ -53,6 +53,7 @@ import { getProviderSummary } from "../settings/providerStatus";
 import { getDriverOption } from "../settings/providerDriverMeta";
 import { TerminalViewport } from "../ThreadTerminalDrawer";
 import { CloudEnvironmentConnectRows } from "../cloud/CloudEnvironmentConnectList";
+import { StyalWordmark } from "../StyalWordmark";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
@@ -237,11 +238,7 @@ export function WelcomeWizard({
         <DialogTitle className="sr-only">Set up styal</DialogTitle>
         <div className="flex min-h-0 flex-col">
           <DialogHeader className="shrink-0 gap-4">
-            <div className="flex items-baseline gap-1.5" role="img" aria-label="styal">
-              <span className="text-[1.4rem] font-medium tracking-tight text-muted-foreground">
-                styal
-              </span>
-            </div>
+            <StyalWordmark className="h-7 self-start text-muted-foreground" />
             <WizardSteps
               steps={stages}
               currentStep={stageIndex}
