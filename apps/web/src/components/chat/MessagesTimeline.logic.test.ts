@@ -1890,6 +1890,12 @@ describe("deriveMessagesTimelineRows", () => {
         { id: "edit-1", itemType: "file_change" as const },
         { id: "read-1", requestKind: "file-read" as const },
         { id: "web-1", itemType: "web_search" as const },
+        // An ACP workspace grep counts like Grep, not as a web lookup.
+        {
+          id: "grep-1",
+          itemType: "web_search" as const,
+          toolInput: { directory_path: "/repo", query: "needle" },
+        },
         { id: "image-1", itemType: "image_view" as const },
         { id: "tool-1", itemType: "mcp_tool_call" as const },
         {
@@ -1939,7 +1945,7 @@ describe("deriveMessagesTimelineRows", () => {
         { kind: "file-change", count: 1 },
         { kind: "file-read", count: 1 },
         { kind: "web", count: 2 },
-        { kind: "tool", count: 1 },
+        { kind: "tool", count: 2 },
         { kind: "image", count: 1 },
       ],
     });

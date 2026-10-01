@@ -1264,7 +1264,7 @@ features:
   - id: inspectable-tool-activity
     title: Keep tool activity concise and inspectable
     status: maintained
-    prs: [4, 11, 36, 58, 60, 66, 117, 139, 158, 168, 190, 204, 230, 238, 278, 282, 301]
+    prs: [4, 11, 36, 58, 60, 66, 117, 139, 158, 168, 190, 204, 230, 238, 278, 282, 301, 582]
     invariants:
       - Web and mobile name supported tool calls by their action with a concise useful argument, while agent panels and approval rows use the same vocabulary instead of raw provider names or serialized input.
       - Clarifying-question calls name what was asked and expand into those questions with their options, rather than restating the provider's serialized input.
@@ -1274,6 +1274,7 @@ features:
       - Claude, Codex, and OpenCode file edits retain structured paths, line statistics, lifecycle state, and provider-independent presentation without eagerly sending full diffs to clients.
       - Folded completed turns summarize the categories of tools used with recognizable icons.
       - Claude project memory writes and index updates form a distinct work-log category on web and mobile; similarly named repository files remain ordinary edits.
+      - Page fetches read as "Fetched page" with their URL for Claude and ACP providers, and ACP workspace searches read and count as code searches rather than web lookups, including in historical threads.
     implementation_paths:
       - apps/mobile/src/features/threads/thread-work-log.tsx
       - apps/mobile/src/lib/threadActivity.ts
@@ -1327,6 +1328,7 @@ features:
     upstream:
       status: partial
       tracking:
+        - https://github.com/pingdotgg/t3code/pull/13375
         - https://github.com/pingdotgg/t3code/pull/7152
         - https://github.com/pingdotgg/t3code/pull/8395
         - https://github.com/pingdotgg/t3code/pull/9106

@@ -142,6 +142,43 @@ describe("deriveToolRowPresentation", () => {
     });
   });
 
+  it("tells ACP page fetches and workspace searches apart from web searches", () => {
+    const acpSearch = { itemType: "web_search" as const, label: "Searched files" };
+    expect(
+      deriveToolRowPresentation({ ...acpSearch, input: { url: "https://example.com/docs" } }),
+    ).toEqual({
+      heading: "Fetched page",
+      argument: { kind: "text", value: "https://example.com/docs" },
+    });
+    expect(
+      deriveToolRowPresentation({
+        ...acpSearch,
+        detail: "posthog",
+        input: { directory_path: "/repo", query: "posthog" },
+      }),
+    ).toEqual({ heading: "Searched code", argument: { kind: "text", value: "posthog" } });
+    expect(
+      deriveToolRowPresentation({
+        ...acpSearch,
+        detail: "release notes",
+        input: { query: "release notes" },
+      }),
+    ).toEqual({ heading: "Searched web", argument: { kind: "text", value: "release notes" } });
+
+    // Claude's fetches read the same way.
+    expect(
+      deriveToolRowPresentation({
+        toolName: "WebFetch",
+        itemType: "dynamic_tool_call",
+        label: "Tool call",
+        input: { url: "https://example.com/docs" },
+      }),
+    ).toEqual({
+      heading: "Fetched page",
+      argument: { kind: "text", value: "https://example.com/docs" },
+    });
+  });
+
   it("distinguishes memory writes from ordinary file writes", () => {
     expect(
       deriveToolRowPresentation({

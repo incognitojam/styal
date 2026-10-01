@@ -501,6 +501,21 @@ describe("browser group summaries", () => {
     ).toBe("Used browser 1 time, used 1 tool, and searched the web 1 time");
   });
 
+  it("counts ACP workspace searches as code searches and fetches as web lookups", () => {
+    const acpSearch = {
+      label: "Searched files",
+      tone: "tool" as const,
+      itemType: "web_search" as const,
+    };
+    expect(
+      summarizeToolGroup([
+        { ...acpSearch, toolInput: { directory_path: "/repo", query: "posthog" } },
+        { ...acpSearch, toolInput: { url: "https://example.com/docs" } },
+        { ...acpSearch, toolInput: { query: "release notes" } },
+      ]),
+    ).toBe("Searched code 1 time and searched the web 2 times");
+  });
+
   it("keeps browser screenshots in the browser count while preserving their image path", () => {
     const entry = { ...browserEntry, viewedImagePath: "/workspace/page.png" };
     expect(summarizeToolGroup([entry])).toBe("Used browser 1 time");

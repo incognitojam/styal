@@ -529,6 +529,14 @@ const ITEM_TYPE_BY_TOOL_NAME: Readonly<Record<string, ToolLifecycleItemType>> = 
 };
 
 /**
+ * ACP adapters type every search as `web_search`, including greps of the
+ * workspace; only those name the directory they searched.
+ */
+export function isWorkspaceSearchInput(input: Record<string, unknown> | undefined): boolean {
+  return asTrimmedString(input?.directory_path) !== undefined;
+}
+
+/**
  * Tools whose own name would mislead. Deliberately tiny: everything else names
  * itself, so tools added later (including MCP and user-defined ones) get a
  * correct row with no entry here.
@@ -543,6 +551,9 @@ function overrideHeading(toolName: string, filePath: string | undefined): string
       return "Updated task";
     case "TaskList":
       return "Listed tasks";
+    // Named like ACP's page fetches rather than by the tool's identifier.
+    case "WebFetch":
+      return "Fetched page";
     case "Write":
     case "Edit": {
       const slug = memorySlug(filePath);
@@ -747,6 +758,18 @@ function deriveBaseToolRowPresentation(
         heading: input.failed ? spec.failedHeading : spec.heading,
         ...(previewArgument ? { argument: previewArgument } : {}),
       };
+    }
+  }
+
+  // ACP rows name no tool and arrive as `web_search` for page fetches and
+  // workspace greps too, titled "Searched files"; the input says which ran.
+  if (!toolName && itemType === "web_search") {
+    const url = asTrimmedString(toolInput?.url);
+    if (url) {
+      return { heading: "Fetched page", argument: { kind: "text", value: url } };
+    }
+    if (isWorkspaceSearchInput(toolInput)) {
+      return { heading: "Searched code", ...(argument ? { argument } : {}) };
     }
   }
 

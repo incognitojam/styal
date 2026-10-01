@@ -402,6 +402,24 @@ describe("projectActivityPayload tool identity", () => {
     expect((projected.payload as Record<string, unknown>).status).toBe("failed");
   });
 
+  it("keeps identifying ACP arguments from rawInput", () => {
+    const project = (rawInput: Record<string, unknown>) =>
+      (
+        (
+          projectActivityPayload(
+            activity({ itemType: "web_search", data: { kind: "search", rawInput } }),
+          ).payload as Record<string, unknown>
+        ).data as Record<string, unknown>
+      ).input;
+
+    expect(project({ url: "https://example.com/docs", title: "", content_path: "" })).toEqual({
+      url: "https://example.com/docs",
+    });
+    expect(
+      project({ directory_path: "/repo", query: "posthog", num_results: 0, content: "x" }),
+    ).toEqual({ directory_path: "/repo", query: "posthog" });
+  });
+
   it("never ships file contents or message bodies", () => {
     const projected = projectActivityPayload(
       activity({
