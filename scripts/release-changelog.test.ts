@@ -291,6 +291,9 @@ it.each([
   { paths: ["apps/desktop/package.json"], shipped: true },
   { paths: ["packages/contracts/src/settings.ts"], shipped: true },
   { paths: ["patches/effect@4.0.0-rc.112.patch", "pnpm-lock.yaml"], shipped: true },
+  { paths: ["pnpm-lock.yaml"], shipped: true },
+  { paths: ["pnpm-workspace.yaml"], shipped: true },
+  { paths: ["package.json"], shipped: false },
   { paths: ["docs/operations/fork-nightly.md", "apps/web/src/main.tsx"], shipped: true },
   { paths: ["docs/operations/fork-nightly.md"], shipped: false },
   { paths: [".github/workflows/fork-nightly.yml"], shipped: false },
@@ -467,6 +470,37 @@ it("resolves no latest stable tag before the first stable release", () => {
 
     assert.equal(latestStableTag(fixtureRoot), "");
     assert.equal(latestStableTag(fixtureRoot, "v0.1.0"), "");
+  } finally {
+    NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+it.each([
+  {
+    paths: [[".github/actions/setup-deps/action.yml"], ["docs/operations/fork-nightly.md"]],
+    shipped: false,
+  },
+  { paths: [["docs/operations/fork-nightly.md"], ["apps/web/src/main.tsx"]], shipped: true },
+])("finds shipped code in a range of $paths: $shipped", ({ paths, shipped }) => {
+  const fixtureRoot = createFixture();
+  try {
+    const from = commitFile(fixtureRoot, "base.txt", "base\n", "feat: base");
+    const commits = paths.map((changed) => commitPaths(fixtureRoot, changed, "chore: change"));
+    const result = NodeChildProcess.spawnSync(
+      "bash",
+      [
+        "-c",
+        'set -euo pipefail; source "$1"; range_changes_shipped_code "$2" "$3"',
+        "release-changelog-test",
+        helperPath,
+        from,
+        commits.at(-1) ?? from,
+      ],
+      { cwd: fixtureRoot, encoding: "utf8" },
+    );
+    if (result.error) throw result.error;
+    assert.equal(result.stderr, "");
+    assert.equal(result.status, shipped ? 0 : 1);
   } finally {
     NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
   }

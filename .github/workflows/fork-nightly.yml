@@ -17,6 +17,13 @@ on:
         required: false
         type: boolean
         default: false
+      force_publish:
+        description: >-
+          Publish even when no commit since the last nightly changes shipped
+          code, such as after a fix to the build or signing pipeline
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -58,6 +65,7 @@ jobs:
         shell: bash
         env:
           DRY_RUN: ${{ inputs.dry_run == true }}
+          FORCE_PUBLISH: ${{ inputs.force_publish == true }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -103,6 +111,18 @@ jobs:
             if [[ "$DRY_RUN" != "true" ]] && git diff --quiet origin/nightly "$candidate_ref" --; then
               has_changes=false
             fi
+          fi
+
+          # Docs, CI, and tooling commits alone would publish an identical app.
+          # They are counted in the next nightly that ships code instead. Older
+          # candidates predate range_changes_shipped_code.
+          source .github/scripts/release-changelog.sh
+          if [[ "$has_changes" == "true" && "$DRY_RUN" != "true" && "$FORCE_PUBLISH" != "true" ]] \
+            && declare -F range_changes_shipped_code >/dev/null \
+            && git rev-parse --verify refs/remotes/origin/nightly >/dev/null 2>&1 \
+            && ! range_changes_shipped_code origin/nightly "$candidate_ref"; then
+            echo "No commit since the last nightly changes shipped code; skipping the release."
+            has_changes=false
           fi
 
           {

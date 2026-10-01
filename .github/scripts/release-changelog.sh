@@ -1,18 +1,31 @@
 #!/usr/bin/env bash
 
 # Succeeds when the commit changes a file that ships in the server, web,
-# desktop, or mobile builds, including dependency patches. Docs, CI, repository
-# tooling, the separately deployed relay, tests, and their fixtures do not
-# count, whatever the commit subject says.
+# desktop, or mobile builds, including dependency patches, the lockfile, and
+# the workspace catalog. Docs, CI, repository tooling, the separately deployed
+# relay, tests, and their fixtures do not count, whatever the commit subject
+# says.
 changes_shipped_code() {
   local sha="$1" shipped
   shipped=$(
     git diff-tree --no-commit-id --name-only -r --root "$sha" \
-      | grep -E '^(apps/(web|desktop|mobile|server)|packages/[^/]+|patches)/' \
+      | grep -E '^((apps/(web|desktop|mobile|server)|packages/[^/]+|patches)/|pnpm-(lock|workspace)\.yaml$)' \
       | grep -vE '\.md$|\.(test|spec)\.[cm]?[jt]sx?$|/(__tests__|tests?|testing|testUtils|testFixtures|fixtures|integration|scripts)/' \
       || true
   )
   [[ -n "$shipped" ]]
+}
+
+# Succeeds when any commit in from..to changes shipped code. The nightly skips
+# a release otherwise.
+range_changes_shipped_code() {
+  local sha
+  for sha in $(git rev-list "$1..$2"); do
+    if changes_shipped_code "$sha"; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 append_release_changes() {
