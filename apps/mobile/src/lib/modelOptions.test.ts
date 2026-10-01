@@ -4,6 +4,7 @@ import { ProviderInstanceId, type ModelSelection, type ServerConfig } from "@t3t
 
 import {
   buildModelOptions,
+  normalizeModelSelection,
   groupByProvider,
   isModelSelectionUnavailable,
   resolveDefaultableModelSelection,
@@ -13,6 +14,65 @@ import {
 } from "./modelOptions";
 
 describe("mobile model options", () => {
+  it("reopens native Antigravity picks as one model with its exact reasoning choice", () => {
+    const config = {
+      providers: [
+        {
+          instanceId: "antigravity",
+          driver: "antigravity",
+          enabled: true,
+          installed: true,
+          auth: { status: "authenticated" },
+          models: [
+            {
+              slug: "gemini-9.1-pro",
+              name: "Gemini 9.1 Pro",
+              isCustom: false,
+              aliases: ["synthetic-pro-agent", "synthetic-low"],
+              capabilities: {
+                optionDescriptors: [
+                  {
+                    id: "reasoningEffort",
+                    label: "Reasoning effort",
+                    type: "select",
+                    currentValue: "synthetic-pro-agent",
+                    options: [
+                      { id: "synthetic-pro-agent", label: "High", isDefault: true },
+                      { id: "synthetic-low", label: "Low" },
+                    ],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    } as unknown as ServerConfig;
+    const selection = {
+      instanceId: ProviderInstanceId.make("antigravity"),
+      model: "synthetic-low",
+    };
+    const normalized = normalizeModelSelection(config, selection);
+    expect(normalized).toEqual({
+      ...selection,
+      model: "gemini-9.1-pro",
+      options: [{ id: "reasoningEffort", value: "synthetic-low" }],
+    });
+    expect(resolveSelectableModelSelection(config, selection)).toEqual(normalized);
+    expect(isModelSelectionUnavailable(config, selection)).toBe(false);
+    expect(buildModelOptions(config, selection)).toHaveLength(1);
+    expect(buildModelOptions(config, selection)[0]?.selection).toEqual(normalized);
+    const removedEffort = {
+      ...normalized,
+      options: [{ id: "reasoningEffort", value: "removed-choice" }],
+    };
+    expect(isModelSelectionUnavailable(config, removedEffort)).toBe(true);
+    expect(buildModelOptions(config, removedEffort)[0]).toMatchObject({
+      isUnavailable: true,
+      selection: removedEffort,
+    });
+  });
+
   it("groups models by provider and flags legacy entries", () => {
     const config = {
       providers: [

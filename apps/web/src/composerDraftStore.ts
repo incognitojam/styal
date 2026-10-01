@@ -38,7 +38,11 @@ import * as Schema from "effect/Schema";
 import * as Equal from "effect/Equal";
 import * as Effect from "effect/Effect";
 import { DeepMutable } from "effect/Types";
-import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
+import {
+  createModelSelection,
+  normalizeModelSlug,
+  normalizeAntigravityModelSelection,
+} from "@t3tools/shared/model";
 import { useMemo } from "react";
 import { getLocalStorageItem } from "./hooks/useLocalStorage";
 import { resolveAppModelSelection, resolveAppModelSelectionForInstance } from "./modelSelection";
@@ -1276,12 +1280,28 @@ export function deriveEffectiveComposerModelState(input: {
   projectModelSelection: ModelSelection | null | undefined;
   settings: UnifiedSettings;
 }): EffectiveComposerModelState {
-  const baseModelCandidate =
-    input.threadModelSelection?.model ?? input.projectModelSelection?.model ?? null;
+  const normalize = (selection: ModelSelection | null | undefined) => {
+    if (!selection) return selection;
+    const provider = input.providers.find((entry) => entry.instanceId === selection.instanceId);
+    return provider?.driver === "antigravity"
+      ? normalizeAntigravityModelSelection(selection, provider.models)
+      : selection;
+  };
+  const threadSelection = normalize(input.threadModelSelection);
+  const projectSelection = normalize(input.projectModelSelection);
+  const draftSelections =
+    input.draft?.modelSelectionByProvider &&
+    Object.fromEntries(
+      Object.entries(input.draft.modelSelectionByProvider).map(([id, selection]) => [
+        id,
+        selection ? (normalize(selection) ?? undefined) : undefined,
+      ]),
+    );
+  const baseModelCandidate = threadSelection?.model ?? projectSelection?.model ?? null;
   const preserveThreadModel =
     input.selectedInstanceId !== null &&
     input.selectedInstanceId !== undefined &&
-    input.threadModelSelection?.instanceId === input.selectedInstanceId;
+    threadSelection?.instanceId === input.selectedInstanceId;
   const baseModel =
     (input.selectedInstanceId
       ? resolveAppModelSelectionForInstance(
@@ -1307,14 +1327,14 @@ export function deriveEffectiveComposerModelState(input: {
   // `ProviderDriverKind` literal is a valid `ProviderInstanceId` slug, so the
   // cast to the branded type is safe.
   const instanceSelection = input.selectedInstanceId
-    ? input.draft?.modelSelectionByProvider?.[input.selectedInstanceId]
+    ? draftSelections?.[input.selectedInstanceId]
     : undefined;
   const legacySelection =
     input.selectedProvider === "antigravity" &&
     input.selectedInstanceId &&
     input.selectedInstanceId !== defaultInstanceIdForDriver(input.selectedProvider)
       ? undefined
-      : input.draft?.modelSelectionByProvider?.[ProviderInstanceId.make(input.selectedProvider)];
+      : draftSelections?.[ProviderInstanceId.make(input.selectedProvider)];
   const activeSelection = instanceSelection ?? legacySelection;
   const activeSelectionInstanceId = instanceSelection
     ? (input.selectedInstanceId ?? ProviderInstanceId.make(input.selectedProvider))
@@ -1336,9 +1356,9 @@ export function deriveEffectiveComposerModelState(input: {
       ))
     : baseModel;
   const modelOptions =
-    modelSelectionByProviderToOptions(input.draft?.modelSelectionByProvider) ??
-    providerSelectionsFromModelSelection(input.threadModelSelection) ??
-    providerSelectionsFromModelSelection(input.projectModelSelection) ??
+    modelSelectionByProviderToOptions(draftSelections) ??
+    providerSelectionsFromModelSelection(threadSelection) ??
+    providerSelectionsFromModelSelection(projectSelection) ??
     null;
 
   return {

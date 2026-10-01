@@ -565,6 +565,64 @@ describe("instance-scoped model selection", () => {
     expect(state.modelOptions?.[instanceId]).toEqual(draftSelection.options);
   });
 
+  it("recovers legacy Antigravity effort in threads, drafts, and helper settings", () => {
+    const instanceId = ProviderInstanceId.make("antigravity_work");
+    const driver = ProviderDriverKind.make("antigravity");
+    const saved = createModelSelection(instanceId, "synthetic-low");
+    const providers: ServerProvider[] = [
+      {
+        ...provider({ provider: driver, instanceId }),
+        models: [
+          {
+            slug: "gemini-9.1-flash",
+            name: "Gemini 9.1 Flash",
+            isCustom: false,
+            isDefault: true,
+            aliases: ["synthetic-high", "synthetic-low"],
+            capabilities: {
+              optionDescriptors: [
+                {
+                  id: "reasoningEffort",
+                  label: "Reasoning effort",
+                  type: "select",
+                  currentValue: "synthetic-high",
+                  options: [
+                    { id: "synthetic-high", label: "High", isDefault: true },
+                    { id: "synthetic-low", label: "Low" },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ];
+    const settings = { ...settingsWithProviderInstances(), textGenerationModelSelection: saved };
+    for (const draft of [
+      null,
+      { activeProvider: instanceId, modelSelectionByProvider: { [instanceId]: saved } },
+    ]) {
+      const state = deriveEffectiveComposerModelState({
+        draft,
+        providers,
+        selectedProvider: driver,
+        selectedInstanceId: instanceId,
+        threadModelSelection: saved,
+        projectModelSelection: null,
+        settings,
+      });
+      expect(state.selectedModel).toBe("gemini-9.1-flash");
+      expect(state.modelOptions?.[instanceId]).toEqual([
+        { id: "reasoningEffort", value: "synthetic-low" },
+      ]);
+    }
+    expect(resolveAppModelSelectionState(settings, providers)).toEqual(
+      createModelSelection(instanceId, "gemini-9.1-flash", [
+        { id: "reasoningEffort", value: "synthetic-low" },
+      ]),
+    );
+  });
+
   it("preserves the Antigravity model in drafts and existing threads after sign-out", () => {
     const instanceId = ProviderInstanceId.make("antigravity_work");
     const driver = ProviderDriverKind.make("antigravity");

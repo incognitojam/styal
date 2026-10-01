@@ -13,6 +13,7 @@ import {
   getProviderOptionCurrentValue,
   getProviderOptionDescriptors,
   isClaudeUltrathinkPrompt,
+  isProviderOptionSelectionUnavailable,
   normalizeModelSlug,
 } from "@t3tools/shared/model";
 import { memo, useCallback } from "react";
@@ -155,6 +156,7 @@ function getSelectedTraits(
     : getProviderOptionDescriptors({
         caps,
         selections: modelOptions,
+        preserveUnavailableSelections: provider === "antigravity",
       });
   const selectDescriptors = descriptors.filter(
     (descriptor): descriptor is Extract<ProviderOptionDescriptor, { type: "select" }> =>
@@ -405,6 +407,11 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
                   option.
                 </div>
               ) : null}
+              {isProviderOptionSelectionUnavailable(descriptor) ? (
+                <div role="status" className="max-w-64 px-2 pb-1.5 text-muted-foreground text-xs">
+                  Your saved effort is unavailable. Choose an available effort.
+                </div>
+              ) : null}
               <MenuRadioGroup
                 value={selectedValue}
                 onValueChange={(value) => handleSelectChange(descriptor, value)}
@@ -521,7 +528,9 @@ export function buildTraitsTriggerDisplay(input: {
         ? "Ultrathink"
         : descriptor.type === "boolean"
           ? `${descriptor.label} ${descriptor.currentValue === true ? "On" : "Off"}`
-          : getProviderOptionCurrentLabel(descriptor);
+          : isProviderOptionSelectionUnavailable(descriptor)
+            ? "Unavailable effort"
+            : getProviderOptionCurrentLabel(descriptor);
     if (typeof label === "string" && label.length > 0) {
       labels.push(label);
     }

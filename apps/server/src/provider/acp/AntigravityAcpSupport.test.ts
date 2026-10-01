@@ -48,6 +48,101 @@ function makeModelRuntime(
 }
 
 describe("applyAntigravityAcpModelSelection", () => {
+  const thinkingConfig = {
+    ...modelConfig,
+    currentValue: "flash-high",
+    options: [
+      { value: "flash-high", name: "Gemini 9.1 Flash (High)" },
+      { value: "flash-medium", name: "Gemini 9.1 Flash (Medium)" },
+      { value: "flash-low", name: "Gemini 9.1 Flash (Low)" },
+      { value: "pro-native", name: "Gemini 9.1 Pro (High)" },
+      { value: "pro-low", name: "Gemini 9.1 Pro (Low)" },
+    ],
+  } satisfies EffectAcpSchema.SessionConfigOption;
+
+  it.effect("changes effort on a grouped model and restores it after a cold resume", () =>
+    Effect.gen(function* () {
+      const { runtime, selections } = makeModelRuntime([thinkingConfig]);
+      for (const effort of ["flash-low", "flash-medium", "flash-high"]) {
+        expect(
+          yield* applyAntigravityAcpModelSelection({
+            runtime,
+            model: "gemini-9.1-flash",
+            modelOptions: [{ id: "reasoningEffort", value: effort }],
+            mapError: (cause) => cause,
+          }),
+        ).toBe(effort);
+      }
+      expect(selections).toEqual(["flash-low", "flash-medium", "flash-high"]);
+    }),
+  );
+
+  it.effect("preserves native picks and carries effort when switching model families", () =>
+    Effect.gen(function* () {
+      const { runtime, selections } = makeModelRuntime([thinkingConfig]);
+      expect(
+        yield* applyAntigravityAcpModelSelection({
+          runtime,
+          model: "pro-native",
+          mapError: (cause) => cause,
+        }),
+      ).toBe("pro-native");
+      expect(
+        yield* applyAntigravityAcpModelSelection({
+          runtime,
+          model: "gemini-9.1-pro",
+          modelOptions: [{ id: "reasoningEffort", value: "flash-low" }],
+          mapError: (cause) => cause,
+        }),
+      ).toBe("pro-low");
+      expect(selections).toEqual(["pro-native", "pro-low"]);
+    }),
+  );
+
+  it.effect("honors a native manifest default and uses a stable default for another family", () =>
+    Effect.gen(function* () {
+      const { runtime, selections } = makeModelRuntime([
+        { ...thinkingConfig, currentValue: "flash-medium" },
+      ]);
+      expect(
+        yield* applyAntigravityAcpModelSelection({
+          runtime,
+          model: "gemini-9.1-flash",
+          defaultModel: "flash-low",
+          mapError: (cause) => cause,
+        }),
+      ).toBe("flash-low");
+      expect(
+        yield* applyAntigravityAcpModelSelection({
+          runtime,
+          model: "gemini-9.1-pro",
+          defaultModel: "flash-low",
+          mapError: (cause) => cause,
+        }),
+      ).toBe("pro-native");
+      expect(selections).toEqual(["flash-low", "pro-native"]);
+    }),
+  );
+
+  it.effect("rejects removed thinking choices without falling back", () =>
+    Effect.gen(function* () {
+      const { runtime, selections } = makeModelRuntime([
+        {
+          ...thinkingConfig,
+          options: thinkingConfig.options.filter((option) => option.value !== "flash-low"),
+        },
+      ]);
+      const error = yield* applyAntigravityAcpModelSelection({
+        runtime,
+        model: "gemini-9.1-flash",
+        modelOptions: [{ id: "reasoningEffort", value: "flash-low" }],
+        mapError: (cause) => cause,
+      }).pipe(Effect.flip);
+      expect(error._tag).toBe("AcpRequestError");
+      expect(selections).toEqual([]);
+    }),
+  );
+
   it.effect("restores the saved model instead of the cold-resume default", () =>
     Effect.gen(function* () {
       const { runtime, selections } = makeModelRuntime();

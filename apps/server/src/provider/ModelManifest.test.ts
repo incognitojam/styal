@@ -99,6 +99,63 @@ describe("classifyModels", () => {
 });
 
 describe("applyManifestDefault", () => {
+  it("resolves native Antigravity defaults without moving other native aliases", () => {
+    const driver = ProviderDriverKind.make("antigravity");
+    const manifest: ModelManifestData = {
+      version: 1,
+      currentModels: { antigravity: ["native-low"] },
+      providers: {
+        antigravity: { defaults: { chat: "native-low" }, models: [], profiles: {} },
+      },
+    };
+    const models = [
+      model({ slug: "old-group", isDefault: true, aliases: ["old-native", "antigravity-default"] }),
+      model({
+        slug: "new-group",
+        isLegacy: true,
+        aliases: ["native-high", "native-low"],
+        capabilities: {
+          optionDescriptors: [
+            {
+              id: "reasoningEffort",
+              label: "Reasoning effort",
+              type: "select",
+              currentValue: "native-high",
+              options: [
+                { id: "native-high", label: "High", isDefault: true },
+                { id: "native-low", label: "Low" },
+              ],
+            },
+          ],
+        },
+      }),
+    ];
+    const resolved = applyManifestDefault(
+      classifyModels(models, manifest, driver),
+      manifest,
+      driver,
+    );
+    assert.deepStrictEqual(resolved[0]?.aliases, ["old-native"]);
+    assert.strictEqual(resolved[0]?.isDefault, undefined);
+    assert.deepStrictEqual(resolved[1]?.aliases, [
+      "native-high",
+      "native-low",
+      "antigravity-default",
+    ]);
+    assert.strictEqual(resolved[1]?.isDefault, true);
+    assert.strictEqual(resolved[1]?.isLegacy, undefined);
+    assert.deepStrictEqual(resolved[1]?.capabilities?.optionDescriptors?.[0], {
+      id: "reasoningEffort",
+      label: "Reasoning effort",
+      type: "select",
+      currentValue: "native-low",
+      options: [
+        { id: "native-high", label: "High", isDefault: false },
+        { id: "native-low", label: "Low", isDefault: true },
+      ],
+    });
+  });
+
   it("resolves the manifest default to the qualified live model", () => {
     const manifest: ModelManifestData = {
       version: 1,

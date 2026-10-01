@@ -29,6 +29,7 @@ import {
   resolveProviderInstanceDisplayName,
   shouldShowInstanceBadge,
 } from "@t3tools/client-runtime/state/provider-instance-display";
+import { normalizeAntigravityModelSelection } from "@t3tools/shared/model";
 
 export { normalizeProviderAccentColor, shouldShowInstanceBadge };
 
@@ -284,7 +285,8 @@ export function resolveSelectableProviderInstance(
 
 /**
  * Resolve the model selection persisted for a project or new thread. A valid
- * stored selection is preserved byte-for-byte. Falling back to another
+ * stored selection retains its options, resolving native Antigravity picks
+ * into grouped models. Falling back to another
  * instance also resets the model to that instance's own default, avoiding
  * cross-provider instance/model pairs.
  */
@@ -294,9 +296,20 @@ export function resolveDefaultProviderModelSelection(
 ): ModelSelection | null {
   const instanceId = resolveSelectableProviderInstance(providers, selection?.instanceId);
   if (instanceId === undefined) return null;
-  if (selection?.instanceId === instanceId) return selection;
+  if (selection?.instanceId === instanceId)
+    return normalizeProviderModelSelection(providers, selection);
   const model = getDefaultProviderInstanceModel(providers, instanceId);
   return model ? { instanceId, model } : null;
+}
+
+export function normalizeProviderModelSelection(
+  providers: ReadonlyArray<ServerProvider>,
+  selection: ModelSelection,
+): ModelSelection {
+  const provider = providers.find((entry) => entry.instanceId === selection.instanceId);
+  return provider?.driver === "antigravity"
+    ? normalizeAntigravityModelSelection(selection, provider.models)
+    : selection;
 }
 
 /**

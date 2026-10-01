@@ -8,6 +8,7 @@ import {
   isProviderInstancePickerReady,
   isProviderInstancePickerVisible,
   resolveDefaultProviderModelSelection,
+  normalizeProviderModelSelection,
   resolveSelectableProviderInstance,
   resolveProviderDriverKindForInstanceSelection,
 } from "./providerInstances";
@@ -455,6 +456,53 @@ describe("getDefaultProviderInstanceModel", () => {
 });
 
 describe("resolveDefaultProviderModelSelection", () => {
+  it("normalizes saved Antigravity defaults before displaying or changing effort", () => {
+    const providers = [
+      provider({
+        provider: ProviderDriverKind.make("antigravity"),
+        instanceId: "antigravity_work",
+        models: [
+          {
+            slug: "gemini-9.1-flash",
+            name: "Gemini 9.1 Flash",
+            isCustom: false,
+            aliases: ["native-high", "native-low"],
+            capabilities: {
+              optionDescriptors: [
+                {
+                  id: "reasoningEffort",
+                  label: "Reasoning effort",
+                  type: "select",
+                  currentValue: "native-high",
+                  options: [
+                    { id: "native-high", label: "High", isDefault: true },
+                    { id: "native-low", label: "Low" },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    ];
+    const saved = { instanceId: ProviderInstanceId.make("antigravity_work"), model: "native-low" };
+    const resolved = resolveDefaultProviderModelSelection(providers, saved);
+    expect(resolved).toEqual({
+      ...saved,
+      model: "gemini-9.1-flash",
+      options: [{ id: "reasoningEffort", value: "native-low" }],
+    });
+    const changed = normalizeProviderModelSelection(providers, {
+      ...saved,
+      options: [{ id: "reasoningEffort", value: "native-high" }],
+    });
+    expect(changed).toEqual({
+      ...resolved,
+      options: [{ id: "reasoningEffort", value: "native-high" }],
+    });
+    expect(providers[0]?.models.some((model) => model.slug === changed.model)).toBe(true);
+  });
+
   it.each([
     ["codex", "codex", "gpt-5.6"],
     ["claudeAgent", "claudeAgent", "claude-fable-5"],

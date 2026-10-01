@@ -33,6 +33,7 @@ import type { DraftComposerAttachment } from "../../lib/composerImages";
 import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
 import {
   buildModelOptions,
+  normalizeModelSelection,
   groupByProvider,
   resolveDefaultableModelSelection,
   resolveNewTaskModelSelection,
@@ -509,12 +510,15 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
 
   // An unsent draft keeps its explicit pick. Fresh drafts resolve the project
   // default before the last manual app-wide selection and provider default.
-  const selectedModel = resolveNewTaskModelSelection({
+  const rawSelectedModel = resolveNewTaskModelSelection({
     draftSelection: draftModelSelection,
     projectDefaultSelection: projectDefaultModelSelection,
     stickySelection: stickyModelSelection,
     modelOptions,
   });
+  const selectedModel = rawSelectedModel
+    ? normalizeModelSelection(selectedEnvironmentServerConfig, rawSelectedModel)
+    : null;
   const selectedModelKey = selectedModel
     ? `${selectedModel.instanceId}:${selectedModel.model}`
     : null;
