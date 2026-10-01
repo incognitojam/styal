@@ -40,6 +40,33 @@ const threadId = ThreadId.make("antigravity-thread");
 const nativeSessionId = "b75db7e9-cd99-40e5-aa63-ac2b4674a6a9";
 const nativeDefault = "gemini-test-low";
 const nativeAlternative = "gemini-test-high";
+function encodeVarint(val: number): Buffer {
+  const bytes: number[] = [];
+  let remaining = val;
+  while (remaining >= 0x80) {
+    bytes.push((remaining & 0x7f) | 0x80);
+    remaining = Math.floor(remaining / 128);
+  }
+  bytes.push(remaining);
+  return Buffer.from(bytes);
+}
+
+function encodeField(num: number, wireType: number, payload: Buffer): Buffer {
+  const tag = (num << 3) | wireType;
+  return Buffer.concat([encodeVarint(tag), payload]);
+}
+
+function makeGenMetadataBlob(uncachedInput: number, output: number): Buffer {
+  const tokenParts = [
+    encodeField(2, 0, encodeVarint(uncachedInput)),
+    encodeField(3, 0, encodeVarint(output)),
+  ];
+  const tokenMsg = Buffer.concat(tokenParts);
+  const tokenField = encodeField(4, 2, Buffer.concat([encodeVarint(tokenMsg.length), tokenMsg]));
+  const genField = encodeField(1, 2, Buffer.concat([encodeVarint(tokenField.length), tokenField]));
+  return genField;
+}
+
 const decodeSettings = Schema.decodeSync(AntigravitySettings);
 const decodeRequestLog = Schema.decodeEffect(
   Schema.Array(
@@ -796,7 +823,7 @@ it.layer(layer)("AntigravityAdapter", (it) => {
       const db = new NodeSqlite.DatabaseSync(dbPath);
       db.exec("CREATE TABLE gen_metadata (idx integer primary key, data blob)");
       const stmt = db.prepare("INSERT INTO gen_metadata (idx, data) VALUES (?, ?)");
-      stmt.run(0, Buffer.from([8, 1]));
+      stmt.run(0, makeGenMetadataBlob(100, 20));
 
       const second = yield* h.adapter
         .sendTurn({ threadId, input: "Steer prompt" })
@@ -804,7 +831,7 @@ it.layer(layer)("AntigravityAdapter", (it) => {
       yield* h.nextCancellation;
 
       const replacement = yield* h.nextPrompt;
-      stmt.run(1, Buffer.from([8, 1]));
+      stmt.run(1, makeGenMetadataBlob(100, 20));
       db.close();
 
       yield* Deferred.succeed(replacement.result, { stopReason: "end_turn" });
