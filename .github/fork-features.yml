@@ -1219,7 +1219,7 @@ features:
   - id: github-pull-request-query-budget
     title: Bound GitHub pull request query cost
     status: review-needed
-    prs: [131]
+    prs: [131, 606]
     invariants:
       - Opening and refreshing a pull request cannot exhaust the GitHub GraphQL quota through unbounded nested review-thread connections.
       - Large review conversations remain pageable up to the maintained safety ceiling instead of being silently truncated to the cheap initial query.
