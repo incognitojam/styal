@@ -256,7 +256,7 @@ features:
   - id: claude-background-response-steering
     title: Keep Claude background responses intact when steered
     status: maintained
-    prs: []
+    prs: [598]
     invariants:
       - A user message sent while a Claude background response is streaming preserves its turn and text block, so a word or sentence cannot split across turns on web, desktop, or mobile.
       - Repeated steering continues the same turn until the provider finishes it; subagent message boundaries do not close the parent response.
