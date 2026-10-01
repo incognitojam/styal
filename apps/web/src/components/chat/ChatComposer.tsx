@@ -204,6 +204,7 @@ import {
   composerContextRecordsFromDraft,
   uploadedContextRecordFromDraft,
 } from "../composerContextPresentation";
+import { useExternalLinkContextMenu } from "~/hooks/useExternalLinkContextMenu";
 import { useOpenPrLink } from "~/lib/openPullRequestLink";
 import {
   collectInlineContextIds,
@@ -1611,6 +1612,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const nonPersistedComposerImageIds = attachmentDraft.nonPersistedImageIds;
   const uploadsByImageId = useAttachmentUploadStore((state) => state.uploadsByImageId);
   const openPrLink = useOpenPrLink(routeThreadRef);
+  const { onContextMenu: onExternalLinkContextMenu } = useExternalLinkContextMenu(routeThreadRef);
   const [previewFileId, setPreviewFileId] = useState<string | null>(null);
   const previewFile = composerFiles.find((file) => file.id === previewFileId);
   const composerContextActions = useMemo(
@@ -1641,11 +1643,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         });
         if (persistedPreview) onExpandImage(persistedPreview);
       },
+      onExternalLinkContextMenu,
       openPullRequest: (event: React.MouseEvent<HTMLElement>, url: string) => {
         openPrLink(event, url);
       },
     }),
-    [composerFiles, composerImages, environmentId, onExpandImage, openPrLink, routeThreadRef],
+    [
+      composerFiles,
+      composerImages,
+      environmentId,
+      onExpandImage,
+      onExternalLinkContextMenu,
+      openPrLink,
+      routeThreadRef,
+    ],
   );
   const composerContextRecords = useMemo(
     () =>

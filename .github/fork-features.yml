@@ -1789,6 +1789,36 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9125
       retire_when: Upstream keeps repository-scoped pull request association correct across multiple remotes and branch pruning.
 
+  - id: pull-request-chip-context-menu
+    title: Give pull request chips the chat link menu
+    status: maintained
+    prs: [597]
+    invariants:
+      - Pull request chips in sent messages and the composer share Markdown links' Copy Link, system browser, and available integrated browser actions on web and desktop.
+      - Menus offer Link to thread or Unlink from thread using the current conversation's environment, capabilities, and link state at invocation.
+      - Opening a context menu preserves the chip's click and hover behavior and does not submit the composer draft.
+    implementation_paths:
+      - apps/web/src/components/ChatMarkdown.tsx
+      - apps/web/src/components/chat/ChatComposer.tsx
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/composerContextPresentation.tsx
+      - apps/web/src/components/contextChipParts.tsx
+      - apps/web/src/hooks/useExternalLinkContextMenu.ts
+    upstream_paths:
+      - apps/web/src/components/ChatMarkdown.tsx
+      - apps/web/src/components/chat/ChatComposer.tsx
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/composerContextPresentation.tsx
+      - apps/web/src/components/contextChipParts.tsx
+    tests:
+      - apps/web/src/components/chat/externalLinkContextMenu.test.ts
+      - apps/web/src/hooks/useExternalLinkContextMenu.test.tsx
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/5cc99e1c23980d7995a13c47f969b47cb68ed1be
+      retire_when: Upstream gives PR chips in sent messages and the composer the same environment-aware context menu as Markdown links.
+
   - id: pull-request-comment-drafts
     title: Preserve pull request comment drafts across panel tabs
     status: maintained

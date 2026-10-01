@@ -259,6 +259,7 @@ import {
   PULL_REQUEST_INLINE_CHIP_TONE_CLASS_NAMES,
 } from "../composerInlineChip";
 import { createContextPresentationRegistry } from "../contextPresentationRegistry";
+import { useExternalLinkContextMenu } from "~/hooks/useExternalLinkContextMenu";
 import { useOpenPrLink } from "~/lib/openPullRequestLink";
 import type { ChatMarkdownContextReference } from "../ChatMarkdown";
 import { cn } from "~/lib/utils";
@@ -300,6 +301,7 @@ interface TimelineRowSharedState {
   onFileOpen: (attachment: ChatFileAttachment) => void;
   onFileDownload: (attachment: ChatFileAttachment) => void;
   openPullRequest: (event: MouseEvent<HTMLElement>, url: string) => void;
+  onExternalLinkContextMenu: (event: MouseEvent<HTMLElement>, url: string) => void;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   onRunCodeBlock?: ((code: string) => void) | undefined;
   onToggleTurnFold: (turnId: TurnId) => void;
@@ -535,6 +537,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   }, []);
   const citationThreadRef = useMemo(() => parseScopedThreadKey(routeThreadKey), [routeThreadKey]);
   const openPullRequest = useOpenPrLink(citationThreadRef ?? undefined);
+  const { onContextMenu: onExternalLinkContextMenu } = useExternalLinkContextMenu(
+    citationThreadRef ?? undefined,
+  );
   const expandCitedTurn = useCallback((turnId: TurnId) => {
     setExpandedTurnIds((current) =>
       current.has(turnId) ? current : new Set([...current, turnId]),
@@ -910,6 +915,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onFileOpen,
       onFileDownload,
       openPullRequest,
+      onExternalLinkContextMenu,
       onOpenTurnDiff,
       onRunCodeBlock,
       onToggleTurnFold,
@@ -938,6 +944,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onFileOpen,
       onFileDownload,
       openPullRequest,
+      onExternalLinkContextMenu,
       onOpenTurnDiff,
       onRunCodeBlock,
       onToggleTurnFold,
@@ -2907,7 +2914,7 @@ function UserMessagePullRequestContextChip(props: {
   copyMarkdown: string;
   toneClassName: string;
 }) {
-  const { openPullRequest } = use(TimelineRowCtx);
+  const { openPullRequest, onExternalLinkContextMenu } = use(TimelineRowCtx);
   const metadata = props.record.pullRequest;
   if (metadata === undefined) return null;
   return (
@@ -2919,6 +2926,7 @@ function UserMessagePullRequestContextChip(props: {
       labelClassName={CHAT_INLINE_CHIP_LABEL_CLASS_NAME}
       copyMarkdown={props.copyMarkdown}
       onOpen={openPullRequest}
+      onContextMenu={onExternalLinkContextMenu}
     />
   );
 }

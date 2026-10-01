@@ -117,6 +117,7 @@ export function PullRequestChip(props: {
   labelClassName: string;
   copyMarkdown?: string;
   onOpen: (event: MouseEvent<HTMLElement>, url: string) => void;
+  onContextMenu: (event: MouseEvent<HTMLElement>, url: string) => void;
 }) {
   return (
     <Tooltip>
@@ -133,6 +134,7 @@ export function PullRequestChip(props: {
             aria-label={`Open ${props.kindLabel} ${props.label}: ${props.metadata.title}`}
             data-markdown-copy={props.copyMarkdown}
             onClick={(event) => props.onOpen(event, props.metadata.url)}
+            onContextMenu={(event) => props.onContextMenu(event, props.metadata.url)}
           >
             <GitPullRequestIcon className={cn(COMPOSER_INLINE_CHIP_ICON_CLASS_NAME, "size-3.5")} />
             <span className={props.labelClassName}>{props.label}</span>
