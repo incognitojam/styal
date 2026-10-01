@@ -11,32 +11,14 @@ import {
 } from "../../threadNotifications";
 import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
-import { SettingsRow, SettingResetButton } from "./settingsLayout";
+import { SettingsRow, SettingsSubRow, SettingsSubRows, SettingResetButton } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 
 const SOUND_SETTINGS = [
-  {
-    key: "completionSound",
-    id: "completion-sound",
-    label: "Completion sound",
-    kind: "completion",
-    description: "When a thread finishes.",
-  },
-  {
-    key: "inputSound",
-    id: "input-sound",
-    label: "Input sound",
-    kind: "input",
-    description: "When an agent asks for your input.",
-  },
-  {
-    key: "approvalSound",
-    id: "approval-sound",
-    label: "Approval sound",
-    kind: "input",
-    description: "When an agent needs your approval.",
-  },
+  { key: "completionSound", id: "completion-sound", label: "Completion sound", kind: "completion" },
+  { key: "inputSound", id: "input-sound", label: "Input sound", kind: "input" },
+  { key: "approvalSound", id: "approval-sound", label: "Approval sound", kind: "input" },
 ] as const;
 
 function isNotificationSound(value: string | null): value is NotificationSound {
@@ -51,6 +33,7 @@ export function NotificationSettings() {
   const updateSettings = useUpdateScopedSettings();
   const [permissionMessage, setPermissionMessage] = useState<string | null>(null);
   const [requesting, setRequesting] = useState(false);
+  const soundEnabled = hasNotificationSound(mode);
   const needsPermission =
     hasDesktopNotifications(mode) &&
     (typeof Notification === "undefined" || Notification.permission !== "granted");
@@ -94,84 +77,88 @@ export function NotificationSettings() {
   }
 
   return (
-    <>
-      <SettingsRow
-        {...searchableSetting("thread-notifications")}
-        description={
-          permissionMessage ??
-          (needsPermission
-            ? "System notifications need permission on this device. Sound follows your selected mode."
-            : "Alert when a thread finishes or needs input or approval. Applies to this device while styal is open.")
-        }
-        control={
-          <>
-            <Select value={mode} disabled={requesting} onValueChange={changeMode}>
-              <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Thread notifications">
-                <SelectValue>{NOTIFICATION_MODE_LABELS[mode]}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                {Object.entries(NOTIFICATION_MODE_LABELS).map(([value, label]) => (
-                  <SelectItem key={value} hideIndicator value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-            {needsPermission ? (
-              <Button variant="outline" disabled={requesting} onClick={() => void changeMode(mode)}>
-                Allow notifications
-              </Button>
-            ) : null}
-          </>
-        }
-      />
-      {SOUND_SETTINGS.map(({ key, id, label, kind, description }) => (
-        <SettingsRow
-          key={key}
-          {...searchableSetting(id)}
-          description={`${description} Used when Thread notifications includes sound; Preview always plays it.`}
-          resetAction={
-            settings[key] !== DEFAULT_CLIENT_SETTINGS[key] ? (
-              <SettingResetButton
-                label={label.toLowerCase()}
-                onClick={() => updateSettings({ [key]: DEFAULT_CLIENT_SETTINGS[key] })}
-              />
-            ) : null
-          }
-          control={
-            <>
-              <Select
-                value={settings[key]}
-                onValueChange={(value) => {
-                  if (isNotificationSound(value)) updateSettings({ [key]: value });
-                }}
-              >
-                <SelectTrigger size="sm" className="w-full sm:w-40" aria-label={label}>
-                  <SelectValue>{NOTIFICATION_SOUND_LABELS[settings[key]]}</SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  {Object.entries(NOTIFICATION_SOUND_LABELS).map(([value, soundLabel]) => (
-                    <SelectItem key={value} hideIndicator value={value}>
-                      {soundLabel}
-                    </SelectItem>
-                  ))}
-                </SelectPopup>
-              </Select>
-              <Button
-                variant="outline"
-                aria-label={`Preview ${label.toLowerCase()}`}
-                disabled={settings[key] === "none"}
-                onClick={async () => {
-                  await unlockNotificationAudio();
-                  await playNotificationSound(kind, () => true, settings[key]);
-                }}
-              >
-                Preview
-              </Button>
-            </>
-          }
-        />
-      ))}
-    </>
+    <SettingsRow
+      {...searchableSetting("thread-notifications")}
+      description={
+        permissionMessage ??
+        (needsPermission
+          ? "System notifications need permission on this device. Sound follows your selected mode."
+          : "Alert when a thread finishes or needs input or approval. Applies to this device while styal is open.")
+      }
+      control={
+        <>
+          <Select value={mode} disabled={requesting} onValueChange={changeMode}>
+            <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Thread notifications">
+              <SelectValue>{NOTIFICATION_MODE_LABELS[mode]}</SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              {Object.entries(NOTIFICATION_MODE_LABELS).map(([value, label]) => (
+                <SelectItem key={value} hideIndicator value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+          {needsPermission ? (
+            <Button variant="outline" disabled={requesting} onClick={() => void changeMode(mode)}>
+              Allow notifications
+            </Button>
+          ) : null}
+        </>
+      }
+    >
+      <SettingsSubRows>
+        {SOUND_SETTINGS.map(({ key, id, label, kind }) => (
+          <SettingsSubRow
+            key={key}
+            {...searchableSetting(id)}
+            disabled={!soundEnabled}
+            resetAction={
+              settings[key] !== DEFAULT_CLIENT_SETTINGS[key] ? (
+                <SettingResetButton
+                  label={label.toLowerCase()}
+                  disabled={!soundEnabled}
+                  onClick={() => updateSettings({ [key]: DEFAULT_CLIENT_SETTINGS[key] })}
+                />
+              ) : null
+            }
+            control={
+              <>
+                <Select
+                  value={settings[key]}
+                  disabled={!soundEnabled}
+                  onValueChange={(value) => {
+                    if (isNotificationSound(value)) updateSettings({ [key]: value });
+                  }}
+                >
+                  <SelectTrigger size="sm" className="w-full sm:w-40" aria-label={label}>
+                    <SelectValue>{NOTIFICATION_SOUND_LABELS[settings[key]]}</SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
+                    {Object.entries(NOTIFICATION_SOUND_LABELS).map(([value, soundLabel]) => (
+                      <SelectItem key={value} hideIndicator value={value}>
+                        {soundLabel}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-label={`Preview ${label.toLowerCase()}`}
+                  disabled={!soundEnabled || settings[key] === "none"}
+                  onClick={async () => {
+                    await unlockNotificationAudio();
+                    await playNotificationSound(kind, () => true, settings[key]);
+                  }}
+                >
+                  Preview
+                </Button>
+              </>
+            }
+          />
+        ))}
+      </SettingsSubRows>
+    </SettingsRow>
   );
 }

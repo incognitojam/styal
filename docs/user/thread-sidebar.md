@@ -161,9 +161,9 @@ system notifications, sound, or both when a thread finishes or needs input or
 approval. Alerts apply to this device while styal is open. Browser notifications
 need permission and HTTPS (or localhost); use **Allow notifications** if prompted.
 
-Choose a sound independently for **Completion**, **Input**, and **Approval**:
-**T3 completion**, **T3 attention**, **Avanti**, or **None**. Preview plays the
-selected sound even when alerts are off. The defaults use T3 completion for
+When the mode includes sound, choose a sound independently for **Completion**,
+**Input**, and **Approval**: **T3 completion**, **T3 attention**, **Avanti**, or
+**None**, and use **Preview** to hear it. The defaults use T3 completion for
 finished threads and T3 attention for input and approval requests.
 
 Fresh installations start with notifications **Off**. Existing Resolve and Chime
