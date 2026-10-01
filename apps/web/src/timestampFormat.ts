@@ -296,3 +296,65 @@ export function formatExpiresInLabel(isoDate: string, nowMs: number = Date.now()
   if (seconds > 0) tail.push(`${seconds}s`);
   return tail.length > 0 ? `Expires in ${days}d ${tail.join(" ")}` : `Expires in ${days}d`;
 }
+
+const mentionedDateFormatter = new Intl.DateTimeFormat(timestampLocale, {
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+});
+const mentionedDateWithYearFormatter = new Intl.DateTimeFormat(timestampLocale, {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+});
+
+/**
+ * A time mentioned in a message, in the reader's zone and named by its day: `Today at 15:20`,
+ * `Tomorrow at 08:00`, `Sun 20 Sep, 08:00`, or `25 Dec 2025, 00:00` once the year differs.
+ * Day boundaries are local calendar days.
+ */
+export function formatMentionedTimeLabel(
+  instantMs: number,
+  timestampFormat: TimestampFormat,
+  includeSeconds: boolean,
+  nowMs: number = Date.now(),
+): string {
+  const date = new Date(instantMs);
+  const time = getTimestampFormatter(timestampFormat, includeSeconds).format(date);
+  const now = new Date(nowMs);
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  // Round so DST-shifted 23/25 hour days still count as whole days.
+  const dayDiff = Math.round((startOfDay - startOfToday) / 86_400_000);
+
+  if (dayDiff === 0) return `Today at ${time}`;
+  if (dayDiff === 1) return `Tomorrow at ${time}`;
+  if (dayDiff === -1) return `Yesterday at ${time}`;
+  const dateFormatter =
+    date.getFullYear() === now.getFullYear()
+      ? mentionedDateFormatter
+      : mentionedDateWithYearFormatter;
+  return `${dateFormatter.format(date)}, ${time}`;
+}
+
+const relativeTimeFormatter = new Intl.RelativeTimeFormat(timestampLocale, { numeric: "auto" });
+
+const RELATIVE_UNITS: ReadonlyArray<[Intl.RelativeTimeFormatUnit, number]> = [
+  ["year", 365 * 86_400_000],
+  ["month", 30 * 86_400_000],
+  ["week", 7 * 86_400_000],
+  ["day", 86_400_000],
+  ["hour", 3_600_000],
+  ["minute", 60_000],
+];
+
+/** How far an instant is from now in its largest whole unit: `in 3 hours`, `49 minutes ago`. */
+export function formatRelativeToNow(instantMs: number, nowMs: number = Date.now()): string {
+  const diffMs = instantMs - nowMs;
+  for (const [unit, unitMs] of RELATIVE_UNITS) {
+    if (Math.abs(diffMs) >= unitMs) {
+      return relativeTimeFormatter.format(Math.trunc(diffMs / unitMs), unit);
+    }
+  }
+  return relativeTimeFormatter.format(0, "second");
+}

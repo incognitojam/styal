@@ -1425,6 +1425,40 @@ features:
         - https://github.com/pingdotgg/t3code/pull/8868
       retire_when: Upstream provides equivalent width-fitting wrapped tables, reversible untruncated horizontal scrolling without locked column widths, and discoverable overflow across shared web and desktop Markdown surfaces while preserving the Word wrap preference.
 
+  - id: mentioned-time-chips
+    title: Explain times mentioned in agent messages in the reader's time zone
+    status: maintained
+    prs: [595]
+    invariants:
+      - Times in assistant message prose (clock times with or without a zone or date, "N units ago", and cued "in N units") render as chips that keep the written text; code spans, code blocks and link labels are never marked.
+      - Hovering a chip shows the moment in the reader's zone, locale and 12/24-hour setting, how far it is from now, and which assumptions were made (the environment's zone, the message's day, or counting from when the message was sent); the relative time is computed when the tooltip opens and never ticks.
+      - Zone-less times take the one zone the rest of the message uses, else the zone the environment reports as `platform.timeZone`; against a server that reports none and a message that names none, they stay plain text rather than guessing.
+      - Times without a date take the occurrence nearest to when the message was sent, unless a tense cue in the same sentence ("next", "merged") points the other way and the nearest occurrence is more than three hours on the wrong side.
+      - Durations such as "finished in 36 seconds" and single-digit zone-less clocks such as "2:48" are not marked.
+    implementation_paths:
+      - apps/server/src/environment/ServerEnvironment.ts
+      - apps/web/src/components/ChatMarkdown.tsx
+      - apps/web/src/components/chat/MentionedTimeChip.tsx
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/markdown-mentioned-times.ts
+      - apps/web/src/timestampFormat.ts
+      - packages/client-runtime/src/mentionedTimes.ts
+      - packages/contracts/src/environment.ts
+    upstream_paths:
+      - apps/server/src/environment/ServerEnvironment.ts
+      - apps/web/src/components/ChatMarkdown.tsx
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/timestampFormat.ts
+      - packages/contracts/src/environment.ts
+    tests:
+      - apps/server/src/environment/ServerEnvironment.test.ts
+      - apps/web/src/markdown-mentioned-times.test.tsx
+      - packages/client-runtime/src/mentionedTimes.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream marks times in agent messages and explains them in the reader's time zone, including zone-less times read in the environment's zone.
+
   - id: missing-workspace-provider-guard
     title: Fail provider startup clearly for missing workspaces
     status: review-needed
