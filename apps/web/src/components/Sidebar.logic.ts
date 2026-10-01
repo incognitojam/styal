@@ -8,7 +8,10 @@ import {
 import type { ContextMenuItem } from "@t3tools/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import type { AsyncResult } from "effect/unstable/reactivity";
-import { planPinnedReorder } from "@t3tools/client-runtime/state/thread-sort";
+import {
+  planPinnedReorder,
+  sortActiveThreadsByOrderKey,
+} from "@t3tools/client-runtime/state/thread-sort";
 import {
   getThreadSortTimestamp,
   resolveSettledThreadTimestamp,
@@ -153,6 +156,35 @@ export function clusterSidebarItemsByGroup<T>(
     ...[...clusters].flatMap(([group, cluster]) => (ordered.has(group) ? [] : cluster)),
     ...groupOrder.flatMap((group) => clusters.get(group) ?? []),
   ];
+}
+
+/** Group placement follows new/reopened threads or the saved project order.
+ * Manual thread keys only affect rows within a project, including during an
+ * optimistic drop before those keys have arrived from the server. */
+export function groupActiveThreadsForSidebar<
+  T extends Parameters<typeof sortActiveThreadsByOrderKey>[0][number],
+>(
+  orderedThreads: readonly T[],
+  groupOf: (thread: T) => string,
+  savedGroupOrder: readonly string[] = [],
+): T[] {
+  const recentGroups = sortActiveThreadsByOrderKey(
+    orderedThreads.map((thread) => ({
+      id: thread.id,
+      environmentId: thread.environmentId,
+      createdAt: thread.createdAt,
+      unsettledAt: thread.unsettledAt,
+      group: groupOf(thread),
+    })),
+  );
+  const savedGroups = new Set(savedGroupOrder);
+  const groupOrder = [
+    ...new Set(
+      recentGroups.map((thread) => thread.group).filter((group) => !savedGroups.has(group)),
+    ),
+    ...savedGroupOrder,
+  ];
+  return clusterSidebarItemsByGroup(orderedThreads, groupOf, groupOrder);
 }
 
 /** Project groups in the order their headers render. */
