@@ -8,6 +8,7 @@ import {
 import { expect, it } from "@effect/vitest";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Latch from "effect/Latch";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -884,6 +885,272 @@ it.effect("refreshes pull request activity after a comment is updated", () =>
   ),
 );
 
+for (const applied of [true, false]) {
+  for (const refuse of [false, true]) {
+    it.effect(
+      `optimistically ${applied ? "adds" : "removes"} labels and ${refuse ? "rolls back" : "commits"} after the reply`,
+      () =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const label = { name: "bug", color: "abcdef" };
+            const unrelated = { name: "documentation", color: "111111" };
+            let refreshed = false;
+            let reads = 0;
+            const started = yield* Latch.make();
+            const reply = yield* Latch.make();
+            const client = {
+              [WS_METHODS.pullRequestsSubscribeRefreshes]: () => Stream.never,
+              [WS_METHODS.pullRequestsDetail]: () =>
+                Effect.sync(() => {
+                  reads++;
+                  return {
+                    title: refreshed ? "new title" : "old title",
+                    labels: [...(applied ? [] : [label]), ...(refreshed ? [unrelated] : [])],
+                  };
+                }),
+              [WS_METHODS.pullRequestsLabelCandidates]: () =>
+                Effect.sync(() => {
+                  reads++;
+                  return {
+                    candidates: [
+                      { ...label, description: null, isApplied: !applied },
+                      { ...unrelated, description: null, isApplied: refreshed },
+                    ],
+                    truncated: false,
+                  };
+                }),
+              [WS_METHODS.pullRequestsSetLabels]: () =>
+                Effect.gen(function* () {
+                  yield* started.open;
+                  yield* reply.await;
+                  if (refuse) return yield* Effect.fail(new MutationRefused());
+                }),
+            } as unknown as WsRpcProtocolClient;
+            const { atoms, registry } = yield* makeTestRuntime(client);
+            const target = {
+              environmentId: TARGET.environmentId,
+              input: {
+                projectId: ProjectId.make("project-1"),
+                repository: "acme/web",
+                number: 1,
+              },
+            };
+            const detail = atoms.detail(target);
+            const candidates = atoms.labelCandidates(target);
+            registry.mount(detail);
+            registry.mount(candidates);
+            yield* AtomRegistry.getResult(registry, detail, { suspendOnWaiting: true });
+            yield* AtomRegistry.getResult(registry, candidates, { suspendOnWaiting: true });
+            const mutation = yield* Effect.forkChild(
+              Effect.promise(() =>
+                atoms.setLabels.run(registry, {
+                  ...target,
+                  input: { ...target.input, labels: [label.name], applied },
+                }),
+              ),
+            );
+            yield* started.await;
+            expect((yield* AtomRegistry.getResult(registry, detail)).labels).toEqual(
+              applied ? [label] : [],
+            );
+            expect(
+              (yield* AtomRegistry.getResult(registry, candidates)).candidates[0]?.isApplied,
+            ).toBe(applied);
+            expect(reads).toBe(2);
+
+            // A read begun before the reply must retain the edit and accept unrelated host updates.
+            refreshed = true;
+            registry.refresh(detail);
+            registry.refresh(candidates);
+            const latestDetail = yield* AtomRegistry.getResult(registry, detail, {
+              suspendOnWaiting: true,
+            });
+            expect(latestDetail.title).toBe("new title");
+            expect(latestDetail.labels).toEqual(applied ? [unrelated, label] : [unrelated]);
+            expect(
+              (yield* AtomRegistry.getResult(registry, candidates, { suspendOnWaiting: true }))
+                .candidates,
+            ).toMatchObject([{ isApplied: applied }, { isApplied: true }]);
+            yield* reply.open;
+            expect((yield* Fiber.join(mutation))._tag).toBe(refuse ? "Failure" : "Success");
+            expect((yield* AtomRegistry.getResult(registry, detail)).labels).toEqual(
+              refuse
+                ? applied
+                  ? [unrelated]
+                  : [label, unrelated]
+                : applied
+                  ? [unrelated, label]
+                  : [unrelated],
+            );
+            expect((yield* AtomRegistry.getResult(registry, detail)).title).toBe("new title");
+            expect((yield* AtomRegistry.getResult(registry, candidates)).candidates).toMatchObject([
+              { isApplied: refuse ? !applied : applied },
+              { isApplied: true },
+            ]);
+            expect(reads).toBe(4);
+          }),
+        ),
+    );
+  }
+}
+
+for (const refuse of [false, true]) {
+  it.effect(
+    `shows queued labels before an earlier reaction finishes and ${refuse ? "rolls back" : "commits"} the reply`,
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const label = { name: "bug", color: "abcdef" };
+          const reactionStarted = yield* Latch.make();
+          const releaseReaction = yield* Latch.make();
+          const labelsStarted = yield* Latch.make();
+          const releaseLabels = yield* Latch.make();
+          let labelCalls = 0;
+          const client = {
+            [WS_METHODS.pullRequestsSubscribeRefreshes]: () => Stream.never,
+            [WS_METHODS.pullRequestsDetail]: () => Effect.succeed({ labels: [] }),
+            [WS_METHODS.pullRequestsLabelCandidates]: () =>
+              Effect.succeed({
+                candidates: [{ ...label, description: null, isApplied: false }],
+                truncated: false,
+              }),
+            [WS_METHODS.pullRequestsSetReaction]: () =>
+              Effect.gen(function* () {
+                yield* reactionStarted.open;
+                yield* releaseReaction.await;
+              }),
+            [WS_METHODS.pullRequestsSetLabels]: () =>
+              Effect.gen(function* () {
+                labelCalls++;
+                yield* labelsStarted.open;
+                yield* releaseLabels.await;
+                if (refuse) return yield* Effect.fail(new MutationRefused());
+              }),
+          } as unknown as WsRpcProtocolClient;
+          const { atoms, registry } = yield* makeTestRuntime(client);
+          const target = {
+            environmentId: TARGET.environmentId,
+            input: {
+              projectId: ProjectId.make("project-1"),
+              repository: "acme/web",
+              number: 1,
+            },
+          };
+          const detail = atoms.detail(target);
+          const candidates = atoms.labelCandidates(target);
+          registry.mount(detail);
+          registry.mount(candidates);
+          yield* AtomRegistry.getResult(registry, detail, { suspendOnWaiting: true });
+          yield* AtomRegistry.getResult(registry, candidates, { suspendOnWaiting: true });
+          const reaction = atoms.setReaction.run(registry, {
+            ...target,
+            input: { ...target.input, content: "thumbs-up", reacted: true },
+          });
+          yield* reactionStarted.await;
+          const labels = atoms.setLabels.run(registry, {
+            ...target,
+            input: { ...target.input, labels: [label.name], applied: true },
+          });
+          expect(labelCalls).toBe(0);
+          expect(Option.getOrThrow(AsyncResult.value(registry.get(detail))).labels).toEqual([
+            label,
+          ]);
+          expect(
+            Option.getOrThrow(AsyncResult.value(registry.get(candidates))).candidates[0]?.isApplied,
+          ).toBe(true);
+          yield* releaseReaction.open;
+          yield* labelsStarted.await;
+          expect(labelCalls).toBe(1);
+          yield* releaseLabels.open;
+          expect((yield* Effect.promise(() => reaction))._tag).toBe("Success");
+          expect((yield* Effect.promise(() => labels))._tag).toBe(refuse ? "Failure" : "Success");
+          expect((yield* AtomRegistry.getResult(registry, detail)).labels).toEqual(
+            refuse ? [] : [label],
+          );
+          expect(
+            (yield* AtomRegistry.getResult(registry, candidates)).candidates[0]?.isApplied,
+          ).toBe(!refuse);
+        }),
+      ),
+  );
+}
+
+it.effect("keeps newer queued label edits visible while earlier replies settle", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const label = { name: "bug", color: "abcdef" };
+      const firstStarted = yield* Latch.make();
+      const releaseFirst = yield* Latch.make();
+      const secondStarted = yield* Latch.make();
+      const releaseSecond = yield* Latch.make();
+      let calls = 0;
+      const client = {
+        [WS_METHODS.pullRequestsSubscribeRefreshes]: () => Stream.never,
+        [WS_METHODS.pullRequestsDetail]: () => Effect.succeed({ labels: [] }),
+        [WS_METHODS.pullRequestsLabelCandidates]: () =>
+          Effect.succeed({
+            candidates: [{ ...label, description: null, isApplied: false }],
+            truncated: false,
+          }),
+        [WS_METHODS.pullRequestsSetLabels]: () =>
+          Effect.gen(function* () {
+            calls++;
+            if (calls === 1) {
+              yield* firstStarted.open;
+              yield* releaseFirst.await;
+            } else {
+              yield* secondStarted.open;
+              yield* releaseSecond.await;
+              return yield* Effect.fail(new MutationRefused());
+            }
+          }),
+      } as unknown as WsRpcProtocolClient;
+      const { atoms, registry } = yield* makeTestRuntime(client);
+      const target = {
+        environmentId: TARGET.environmentId,
+        input: {
+          projectId: ProjectId.make("project-1"),
+          repository: "acme/web",
+          number: 1,
+        },
+      };
+      const detail = atoms.detail(target);
+      const candidates = atoms.labelCandidates(target);
+      registry.mount(detail);
+      registry.mount(candidates);
+      yield* AtomRegistry.getResult(registry, detail, { suspendOnWaiting: true });
+      yield* AtomRegistry.getResult(registry, candidates, { suspendOnWaiting: true });
+      const first = atoms.setLabels.run(registry, {
+        ...target,
+        input: { ...target.input, labels: [label.name], applied: true },
+      });
+      yield* firstStarted.await;
+      const second = atoms.setLabels.run(registry, {
+        ...target,
+        input: { ...target.input, labels: [label.name], applied: false },
+      });
+      expect(calls).toBe(1);
+      expect(Option.getOrThrow(AsyncResult.value(registry.get(detail))).labels).toEqual([]);
+      expect(
+        Option.getOrThrow(AsyncResult.value(registry.get(candidates))).candidates[0]?.isApplied,
+      ).toBe(false);
+      yield* releaseFirst.open;
+      yield* secondStarted.await;
+      expect((yield* Effect.promise(() => first))._tag).toBe("Success");
+      expect((yield* AtomRegistry.getResult(registry, detail)).labels).toEqual([]);
+      expect((yield* AtomRegistry.getResult(registry, candidates)).candidates[0]?.isApplied).toBe(
+        false,
+      );
+      yield* releaseSecond.open;
+      expect((yield* Effect.promise(() => second))._tag).toBe("Failure");
+      expect((yield* AtomRegistry.getResult(registry, detail)).labels).toEqual([label]);
+      expect((yield* AtomRegistry.getResult(registry, candidates)).candidates[0]?.isApplied).toBe(
+        true,
+      );
+    }),
+  ),
+);
+
 it.effect("updates cached labels after successful edits without rereading the host", () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -1248,6 +1515,72 @@ it.effect("shares only repository label metadata while another PR refreshes or f
       ]) {
         expect(registry.get(atoms.repositoryLabelCandidates(isolated))).toBeNull();
       }
+    }),
+  ),
+);
+
+it.effect("uses cached label colors for optimistic edits without changing another PR", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const label = { name: "bug", color: "abcdef" };
+      const started = yield* Latch.make();
+      const reply = yield* Latch.make();
+      const client = {
+        [WS_METHODS.pullRequestsSubscribeRefreshes]: () => Stream.never,
+        [WS_METHODS.pullRequestsDetail]: () => Effect.succeed({ labels: [] }),
+        [WS_METHODS.pullRequestsLabelCandidates]: (input: { number: number }) =>
+          input.number === 1
+            ? Effect.succeed({
+                candidates: [{ ...label, description: null, isApplied: false }],
+                truncated: false,
+              })
+            : Effect.fail(new MutationRefused()),
+        [WS_METHODS.pullRequestsSetLabels]: () =>
+          Effect.gen(function* () {
+            yield* started.open;
+            yield* reply.await;
+          }),
+      } as unknown as WsRpcProtocolClient;
+      const { atoms, registry } = yield* makeTestRuntime(client);
+      const first = {
+        environmentId: TARGET.environmentId,
+        input: { projectId: ProjectId.make("project-1"), repository: "acme/web", number: 1 },
+      };
+      const second = { ...first, input: { ...first.input, number: 2 } };
+      const firstCandidates = atoms.labelCandidates(first);
+      registry.mount(firstCandidates);
+      yield* AtomRegistry.getResult(registry, firstCandidates, { suspendOnWaiting: true });
+      for (const target of [first, second]) {
+        registry.mount(atoms.detail(target));
+        yield* AtomRegistry.getResult(registry, atoms.detail(target), { suspendOnWaiting: true });
+      }
+      yield* Effect.exit(
+        AtomRegistry.getResult(registry, atoms.labelCandidates(second), {
+          suspendOnWaiting: true,
+        }),
+      );
+      const mutation = yield* Effect.forkChild(
+        Effect.promise(() =>
+          atoms.setLabels.run(registry, {
+            ...second,
+            input: { ...second.input, labels: [label.name], applied: true },
+          }),
+        ),
+      );
+      yield* started.await;
+      expect((yield* AtomRegistry.getResult(registry, atoms.detail(second))).labels).toEqual([
+        label,
+      ]);
+      expect((yield* AtomRegistry.getResult(registry, atoms.detail(first))).labels).toEqual([]);
+      expect(
+        (yield* AtomRegistry.getResult(registry, firstCandidates)).candidates[0]?.isApplied,
+      ).toBe(false);
+      yield* reply.open;
+      expect((yield* Fiber.join(mutation))._tag).toBe("Success");
+      expect((yield* AtomRegistry.getResult(registry, atoms.detail(second))).labels).toEqual([
+        label,
+      ]);
+      expect((yield* AtomRegistry.getResult(registry, atoms.detail(first))).labels).toEqual([]);
     }),
   ),
 );

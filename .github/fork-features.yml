@@ -1998,13 +1998,16 @@ features:
       retire_when: Upstream propagates draft state through every supported source-control adapter and presents it consistently in both pull request details and thread status.
 
   - id: pull-request-label-catalogue-cache
-    title: Show cached repository labels while the picker refreshes
+    title: Responsive pull request label pickers
     status: maintained
-    prs: []
+    prs: [602]
     invariants:
       - Label pickers show a previously fetched repository catalogue while their pull-request-specific read loads or fails, retaining cached data for thirty idle minutes.
       - Repository catalogues are isolated by environment, project, host, and repository; applied checkmarks come from the current pull request.
       - Applied labels missing from a cached repository page remain available for removal while the current pull request read loads or fails.
+      - Submitting a label edit immediately updates the current pull request's chips and picker checkmarks even while another mutation is running; a rejected edit rolls back without losing unrelated host updates or newer queued edits.
+      - Label pickers remain interactive while edits are pending; further selections update immediately and their host requests run in order.
+      - Background reads cannot overwrite pending label edits, and confirmed edits remain cached without redundant host reads.
     implementation_paths:
       - apps/web/src/components/pullRequest/PullRequestLabelPicker.tsx
       - apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx
@@ -2021,7 +2024,7 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/commit/5cc99e1c23980d7995a13c47f969b47cb68ed1be
-      retire_when: Upstream shares cached repository label metadata across pull requests while refreshing and keeps applied state specific to the current pull request.
+      retire_when: Upstream shares cached repository label metadata across pull requests while refreshing, keeps applied state specific to the current pull request, and applies label edits optimistically with rollback on failure.
 
   - id: pull-request-linked-extras
     title: Show the current pull request and additional link count
