@@ -3,6 +3,7 @@ import {
   type MentionedTimeAnchor,
   mentionedTimeZoneName,
   resolveMentionedTime,
+  type ResolvedMentionedTime,
 } from "@t3tools/client-runtime/mentioned-times";
 import { type ReactNode, useMemo } from "react";
 
@@ -45,57 +46,47 @@ export function MentionedTimeChip(props: {
         <MentionedTimeDetails
           instantMs={resolved.instantMs}
           includeSeconds={time.kind === "clock" && time.second !== undefined}
-          environmentTimeZone={
-            resolved.assumedEnvironmentZone && anchor.environmentTimeZone !== READER_TIME_ZONE
-              ? anchor.environmentTimeZone
-              : null
-          }
-          messageZone={
-            resolved.zoneFromMessage && time.kind === "clock" && time.zone
-              ? mentionedTimeZoneName(time.zone)
-              : null
-          }
-          assumedDay={
-            resolved.assumedDay && !isSameReaderDay(resolved.instantMs, anchor.writtenAtMs)
-          }
-          fromWrittenAt={resolved.fromWrittenAt}
+          note={assumptionNote(time, anchor, resolved)}
         />
       </TooltipPopup>
     </Tooltip>
   );
 }
 
+/** One short line saying what the tooltip had to assume, or nothing when it assumed nothing. */
+function assumptionNote(
+  time: MentionedTime,
+  anchor: MentionedTimeAnchor,
+  resolved: ResolvedMentionedTime,
+): string | null {
+  if (resolved.fromWrittenAt) return "Counted from when sent";
+  let zone: string | null = null;
+  if (resolved.zoneFromMessage && time.kind === "clock" && time.zone) {
+    zone = mentionedTimeZoneName(time.zone);
+  } else if (resolved.assumedEnvironmentZone && anchor.environmentTimeZone !== READER_TIME_ZONE) {
+    zone = anchor.environmentTimeZone;
+  }
+  const date = resolved.assumedDay && !isSameReaderDay(resolved.instantMs, anchor.writtenAtMs);
+  if (zone !== null) return date ? `Assumed ${zone} and date` : `Assumed ${zone}`;
+  return date ? "Assumed date" : null;
+}
+
 /** Mounted only while the tooltip is open, so "in 3 hours" is computed then and never ticks. */
 function MentionedTimeDetails(props: {
   instantMs: number;
   includeSeconds: boolean;
-  environmentTimeZone: string | null;
-  messageZone: string | null;
-  assumedDay: boolean;
-  fromWrittenAt: boolean;
+  note: string | null;
 }) {
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
-  const notes = [
-    props.environmentTimeZone === null
-      ? null
-      : `Read in ${props.environmentTimeZone}, the agent's time zone`,
-    props.messageZone === null
-      ? null
-      : `Read in ${props.messageZone}, the zone used elsewhere in this message`,
-    props.assumedDay ? "Day taken from when the message was sent" : null,
-    props.fromWrittenAt ? "Counted from when the message was sent" : null,
-  ].filter((note) => note !== null);
   return (
     <div className="flex flex-col gap-0.5">
       <span className="font-medium">
         {formatMentionedTimeLabel(props.instantMs, timestampFormat, props.includeSeconds)}
       </span>
       <span className="text-muted-foreground">{formatRelativeToNow(props.instantMs)}</span>
-      {notes.map((note) => (
-        <span key={note} className="text-muted-foreground text-xs">
-          {note}
-        </span>
-      ))}
+      {props.note === null ? null : (
+        <span className="text-muted-foreground text-xs">{props.note}</span>
+      )}
     </div>
   );
 }
