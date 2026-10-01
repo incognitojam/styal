@@ -2498,7 +2498,7 @@ features:
   - id: workspace-path-presentation
     title: Keep workspace file paths concise and actionable
     status: maintained
-    prs: [89, 129, 337, 354]
+    prs: [89, 129, 337, 354, 580]
     invariants:
       - Scoped tool activity and Markdown file chips on web and mobile omit generated worktree directory names and display workspace-relative paths, while paths outside the workspace remain absolute. This includes ACP file reads (Antigravity, Cursor, Grok), which report no tool name and carry their path only as the row detail.
       - Opening a file still uses its full resolved target, while visible labels and Copy relative path actions retain the scoped path.
