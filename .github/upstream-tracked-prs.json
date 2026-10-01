@@ -17,6 +17,10 @@
       "reason": "Follow-up to #10300: keeps same-email Codex subscriptions on different plans apart when pooling."
     },
     {
+      "pr": 11088,
+      "reason": "Renaming or recolouring a provider rebuilds its instance and stops every running turn on it; this keeps the instance for presentation-only edits and warns before rebuilds that would stop running threads. Watching, not importing early; the early import of #12533 makes such rebuilds end turns visibly instead of leaving them running."
+    },
+    {
       "pr": 11144,
       "reason": "The sidebar and composer pull request badge shows the same icon for every state and only changes colour; this gives draft, closed and merged pull requests their own icons."
     },
@@ -43,6 +47,10 @@
     {
       "pr": 12231,
       "reason": "Found while adding Claude Opus 5.5: brings model picker favorites to mobile."
+    },
+    {
+      "pr": 12533,
+      "reason": "Imported early from its unmerged commits: editing a provider instance's settings stopped its running Codex turns without telling orchestration, leaving threads showing running until the next message. When it merges, the queue takes it and must reconcile with that import; the fork kept its legacy resume test option and took only the live Codex registry test."
     },
     {
       "pr": 12645,
