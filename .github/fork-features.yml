@@ -2336,6 +2336,38 @@ features:
         - https://github.com/pingdotgg/t3code/pull/1996
       retire_when: Upstream labels thread rows and command palette actions using the latest chat message timestamp across web and mobile without letting non-message updates reset the clock.
 
+  - id: sidebar-project-thread-groups
+    title: Group active sidebar threads under project headers
+    status: maintained
+    prs: [533]
+    invariants:
+      - Settings → General → Organization → Group threads by project is off by default; when off, active threads stay one flat list.
+      - With grouping on, active threads sit under one header per logical project, so matching repositories across environments share a header. Cards under a header omit the project icon and name, while pinned, snoozed, and settled threads keep their existing layout.
+      - A dragged thread reorders only within its own project and never moves a project. Dragging a project header moves the whole project, and that order persists in the client's manual project order.
+    rationale: With several projects active, a flat list makes the user read each card's project label to see which threads belong together. The fork keeps full thread cards under the headers and leaves grouping opt-in, whereas upstream's open proposal collapses groups into title-only lists.
+    implementation_paths:
+      - apps/web/src/components/Sidebar.drag.ts
+      - apps/web/src/components/Sidebar.logic.ts
+      - apps/web/src/components/Sidebar.tsx
+      - apps/web/src/components/settings/SettingsPanels.tsx
+      - apps/web/src/components/settings/settingsSearch.ts
+      - packages/contracts/src/settings.ts
+    upstream_paths:
+      - apps/web/src/components/Sidebar.drag.ts
+      - apps/web/src/components/Sidebar.logic.ts
+      - apps/web/src/components/Sidebar.tsx
+      - apps/web/src/components/settings/SettingsPanels.tsx
+      - apps/web/src/components/settings/settingsSearch.ts
+      - packages/contracts/src/settings.ts
+    tests:
+      - apps/web/src/components/Sidebar.drag.test.ts
+      - apps/web/src/components/Sidebar.logic.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/13815
+      retire_when: Upstream groups active sidebar threads under project headers while keeping full thread cards, limits thread drags to their own project, and reorders projects by dragging their headers.
+
   - id: source-control-fork-remotes
     title: Configure fork remotes and default repositories
     status: maintained
