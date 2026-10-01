@@ -1223,9 +1223,19 @@ features:
     invariants:
       - Opening and refreshing a pull request cannot exhaust the GitHub GraphQL quota through unbounded nested review-thread connections.
       - Large review conversations remain pageable up to the maintained safety ceiling instead of being silently truncated to the cheap initial query.
+      - Failed review-comment reads preserve loaded comments and offer retry without claiming the conversation is long or empty; pagination bounds are reported separately.
     implementation_paths:
       - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/GitHubPullRequestProvider.ts
+      - apps/server/src/pullRequest/PullRequestProvider.ts
+      - apps/server/src/pullRequest/PullRequestService.ts
       - apps/server/src/pullRequest/gitHubPullRequestJson.ts
+      - apps/web/src/components/pullRequest/PullRequestConversationNotice.tsx
+      - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
+      - apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx
+      - apps/web/src/components/pullRequest/PullRequestTimelineTab.tsx
+      - apps/web/src/components/pullRequest/pullRequestDetail.logic.ts
+      - packages/contracts/src/pullRequest.ts
     upstream_paths:
       - apps/server/src/pullRequest/GitHubPullRequestCli.ts
       - apps/server/src/pullRequest/GitHubPullRequestProvider.ts
@@ -1233,7 +1243,10 @@ features:
       - apps/server/src/pullRequest/gitHubPullRequestJson.ts
     tests:
       - apps/server/src/pullRequest/GitHubPullRequestCli.test.ts
+      - apps/server/src/pullRequest/GitHubPullRequestProvider.test.ts
+      - apps/server/src/pullRequest/PullRequestService.test.ts
       - apps/server/src/pullRequest/gitHubPullRequestJson.test.ts
+      - apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts
     upstream:
       status: partial
       tracking:

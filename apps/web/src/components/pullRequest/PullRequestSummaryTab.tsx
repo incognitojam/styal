@@ -54,6 +54,7 @@ import { PullRequestMarkdown } from "./PullRequestMarkdown";
 import { PullRequestMarkdownEditor } from "./PullRequestMarkdownEditor";
 import { PullRequestReactionBar } from "./PullRequestReactions";
 import { PullRequestConversationGhost } from "./PullRequestGhosts";
+import { PullRequestConversationNotice } from "./PullRequestConversationNotice";
 import { pullRequestLabelColor } from "./pullRequestList.logic";
 import { sectionCollapseAnchorScrollTop } from "./pullRequestSummaryScroll.logic";
 
@@ -310,6 +311,7 @@ export function PullRequestSummaryTab({
   detail,
   activityPending,
   activityError,
+  onRetryActivity,
   pendingFinding,
   fixFindingLabel = "Fix in a thread",
   onFixFinding,
@@ -321,6 +323,7 @@ export function PullRequestSummaryTab({
   detail: PullRequestDetailView;
   activityPending: boolean;
   activityError: string | null;
+  onRetryActivity: () => void;
   /** The hand-off currently preparing, if any, so only the finding it belongs to says so. */
   pendingFinding?: string | null;
   fixFindingLabel?: string;
@@ -658,17 +661,18 @@ export function PullRequestSummaryTab({
         {activityPending ? (
           <PullRequestConversationGhost />
         ) : activityError ? (
-          <PullRequestActivityUnavailableState compact error={activityError} onRetry={onRefresh} />
+          <PullRequestActivityUnavailableState
+            compact
+            error={activityError}
+            onRetry={onRetryActivity}
+          />
         ) : (
           <>
-            {detail.commentsTruncated ? (
-              <p className="mb-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-2 py-1.5 text-xs">
-                This conversation is longer than this page reads in one go. The most recent{" "}
-                {detail.comments.length} are here; open it on the host to read the rest.
-              </p>
-            ) : null}
+            <PullRequestConversationNotice activity={detail} onRetry={onRetryActivity} />
             {detail.comments.length === 0 ? (
-              <p className="py-2 text-xs text-muted-foreground">No comments yet.</p>
+              !detail.commentsUnavailable && !detail.commentsTruncated ? (
+                <p className="py-2 text-xs text-muted-foreground">No comments yet.</p>
+              ) : null
             ) : (
               <div className="space-y-3">
                 {commentOrder === "oldest" ? showOldestCommentsButton : null}

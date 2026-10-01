@@ -722,6 +722,7 @@ export function buildFixFindingsHandoff(input: {
   readonly comments: ReadonlyArray<PullRequestComment>;
   readonly checks: ReadonlyArray<PullRequestCheck>;
   readonly commentsTruncated: boolean;
+  readonly commentsUnavailable?: boolean | undefined;
 }): FixFindingsHandoff {
   // A resolved conversation is finished work, and one nobody wrote in says nothing.
   const threads = input.reviewThreads.filter(
@@ -795,6 +796,9 @@ export function buildFixFindingsHandoff(input: {
         : []),
       ...(input.commentsTruncated
         ? ["The conversation was truncated; more review comments may exist on GitHub."]
+        : []),
+      ...(input.commentsUnavailable
+        ? ["Some review comments could not be loaded; inspect the full conversation on the host."]
         : []),
       ...(omitted > 0 ? [`${omitted} further findings were omitted.`] : []),
       ...(includedThreads.length === 0 &&

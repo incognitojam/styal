@@ -467,9 +467,11 @@ export const make = Effect.gen(function* () {
       Effect.all(
         [
           cli.getPullRequestActivity(input),
-          // Line comments live on review threads, which `gh pr view --json` cannot reach. A
-          // GraphQL hiccup degrades to a truncated conversation rather than blanking activity.
+          // Line comments live on review threads, which `gh pr view --json` cannot reach.
+          // A failed read leaves the other comments available, but does not imply a long
+          // conversation: truncation is reserved for a successfully read pagination bound.
           cli.listReviewThreadComments(input).pipe(
+            Effect.map((comments) => ({ ...comments, unavailable: false })),
             Effect.orElseSucceed(() => ({
               comments: [],
               dismissalsByReviewId: new Map<string, string>(),
@@ -477,7 +479,8 @@ export const make = Effect.gen(function* () {
               reactionsById: new Map<string, ReadonlyArray<PullRequestReaction>>(),
               reviewThreads: [],
               commentCount: 0,
-              truncated: true,
+              truncated: false,
+              unavailable: true,
               reviewers: [],
               avatarsByLogin: new Map<string, string>(),
               commitStats: new Map<
@@ -494,7 +497,7 @@ export const make = Effect.gen(function* () {
         Effect.mapError(fail("getChangeRequestActivity")),
         Effect.map(([pullRequest, reviewThreads]): ProviderChangeRequestActivity => ({
           author: withAvatar(pullRequest.author, reviewThreads.avatarsByLogin, input.host),
-          reviewers: reviewThreads.reviewers,
+          ...(reviewThreads.unavailable ? {} : { reviewers: reviewThreads.reviewers }),
           reactions: reviewThreads.reactions,
           commits: (reviewThreads.commits.length > 0
             ? reviewThreads.commits
@@ -529,6 +532,7 @@ export const make = Effect.gen(function* () {
           // are always whole and only the thread walk can stop short of the host.
           commentCount: pullRequest.comments.length + reviewThreads.commentCount,
           commentsTruncated: reviewThreads.truncated,
+          ...(reviewThreads.unavailable ? { commentsUnavailable: true } : {}),
           reviewThreads: reviewThreads.reviewThreads.map((thread) => ({
             ...thread,
             comments: thread.comments.map((comment) => ({

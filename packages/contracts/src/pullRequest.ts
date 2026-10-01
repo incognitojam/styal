@@ -895,6 +895,8 @@ export const PullRequestActivity = Schema.Struct({
    * however long it is.
    */
   commentsTruncated: Schema.Boolean,
+  /** Part of the conversation failed to load; successfully read comments remain available. */
+  commentsUnavailable: Schema.optional(Schema.Boolean),
   reviewThreads: Schema.Array(PullRequestReviewThread),
   commits: Schema.Array(PullRequestCommit),
   /**

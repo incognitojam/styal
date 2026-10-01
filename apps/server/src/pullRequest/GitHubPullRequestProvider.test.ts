@@ -930,6 +930,102 @@ describe("getChangeRequest commits", () => {
   );
 });
 
+describe("getChangeRequestActivity availability", () => {
+  const comment = {
+    id: "IC_1",
+    kind: "issue-comment" as const,
+    author: null,
+    body: "Please check the loading state.",
+    createdAt: "2026-07-03T00:00:00Z",
+    url: null,
+    path: null,
+    reviewState: null,
+  };
+  const threadComments: GitHubReviewThreadComments = {
+    comments: [],
+    dismissalsByReviewId: new Map(),
+    reviewThreads: [],
+    commentCount: 0,
+    truncated: false,
+    reactions: [],
+    reactionsById: new Map(),
+    reviewers: [],
+    avatarsByLogin: new Map(),
+    commitStats: new Map(),
+    commits: [],
+    viewer: { canUpdate: true, didAuthor: false },
+  };
+
+  for (const comments of [[], [comment]]) {
+    it.effect(
+      `distinguishes a failed thread read with ${comments.length} loaded comments and recovers`,
+      () =>
+        Effect.gen(function* () {
+          let threadsFail = true;
+          const provider = yield* make.pipe(
+            Effect.provide(
+              Layer.mock(GitHubPullRequestCli.GitHubPullRequestCli)({
+                getPullRequestActivity: () =>
+                  Effect.succeed({ author: null, comments, commits: [] }),
+                listReviewThreadComments: () =>
+                  threadsFail
+                    ? Effect.fail(
+                        new GitHubPullRequestCli.GitHubPullRequestReadError({
+                          command: "gh",
+                          cwd: "/w",
+                          operation: "listReviewThreadComments",
+                          cause: new Error("Review thread read failed"),
+                        }),
+                      )
+                    : Effect.succeed(threadComments),
+              }),
+            ),
+          );
+          const ref = { cwd: "/w", repository: "acme/web", host: "github.com", number: 7 };
+          const partial = yield* provider.getChangeRequestActivity(ref);
+          expect(partial.comments.map((entry) => entry.body)).toEqual(
+            comments.map((entry) => entry.body),
+          );
+          expect(partial.commentCount).toBe(comments.length);
+          expect(partial.commentsTruncated).toBe(false);
+          expect(partial.commentsUnavailable).toBe(true);
+          // Preserve the reviewers from core detail when the enriching read failed.
+          expect(partial.reviewers).toBeUndefined();
+
+          threadsFail = false;
+          const recovered = yield* provider.getChangeRequestActivity(ref);
+          expect(recovered.commentsUnavailable).toBeUndefined();
+          expect(recovered.commentsTruncated).toBe(false);
+          expect(recovered.comments).toEqual(partial.comments);
+        }),
+    );
+  }
+
+  it.effect("reports a successful bounded read as truncated rather than unavailable", () =>
+    Effect.gen(function* () {
+      const provider = yield* make.pipe(
+        Effect.provide(
+          Layer.mock(GitHubPullRequestCli.GitHubPullRequestCli)({
+            getPullRequestActivity: () =>
+              Effect.succeed({ author: null, comments: [], commits: [] }),
+            listReviewThreadComments: () =>
+              Effect.succeed({ ...threadComments, truncated: true, commentCount: 20 }),
+          }),
+        ),
+      );
+      const activity = yield* provider.getChangeRequestActivity({
+        cwd: "/w",
+        repository: "acme/web",
+        host: "github.com",
+        number: 7,
+      });
+      expect(activity.commentsTruncated).toBe(true);
+      expect(activity.commentsUnavailable).toBeUndefined();
+      expect(activity.commentCount).toBe(20);
+    }),
+  );
+});
+
 describe("getChangeRequestActivity dismissed reviews", () => {
   const dismissedReview = (body: string) => ({
     id: "PRR_1",

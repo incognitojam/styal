@@ -740,6 +740,7 @@ function PullRequestDetailPanelBody({
             comments: activity?.comments ?? [],
             commentCount: activity?.commentCount ?? 0,
             commentsTruncated: activity?.commentsTruncated ?? false,
+            commentsUnavailable: activity?.commentsUnavailable,
             reviewThreads: activity?.reviewThreads ?? [],
             commits: activity?.commits ?? [],
             reactions: activity?.reactions ?? [],
@@ -836,6 +837,10 @@ function PullRequestDetailPanelBody({
     activityRevision.current = next;
   }, [activityQuery.isPending, activityQuery.refresh, coreDetail, tabScopeKey]);
   const invalidate = useAtomCommand(pullRequestEnvironment.invalidate, { reportFailure: false });
+  const refreshActivityFromHost = async () => {
+    await invalidate({ environmentId, input: { reference, scope: "detail" } });
+    activityQuery.refresh();
+  };
   const refreshDetailFromHost = useCallback(
     async (scope: PullRequestInvalidationScope) => {
       await invalidate({
@@ -1391,6 +1396,7 @@ function PullRequestDetailPanelBody({
         comments: detail.comments,
         checks: detail.checks,
         commentsTruncated: detail.commentsTruncated,
+        commentsUnavailable: detail.commentsUnavailable,
       }),
     );
   };
@@ -1513,7 +1519,7 @@ function PullRequestDetailPanelBody({
   // older than the window would be missing, and "1" beside a tick is read as the whole answer.
   // The Summary tab's row can say it may be short; a bare number cannot, so it stays away.
   const approvalCount =
-    detail && !detail.commentsTruncated
+    detail && !detail.commentsTruncated && !detail.commentsUnavailable
       ? latestPullRequestReviewOutcomes(detail.comments, detail.commits).filter(
           (entry) => entry.outcome === "approved" && !entry.stale,
         ).length
@@ -2579,7 +2585,7 @@ function PullRequestDetailPanelBody({
                   <span
                     className="inline-flex items-center gap-1"
                     aria-label={
-                      activityError
+                      activityError || detail.commentsUnavailable
                         ? "Comments unavailable"
                         : `${detail.commentCount.toLocaleString()} ${
                             detail.commentCount === 1 ? "comment" : "comments"
@@ -2587,7 +2593,7 @@ function PullRequestDetailPanelBody({
                     }
                   >
                     <MessageSquareIcon aria-hidden className="size-3" />
-                    {activityError
+                    {activityError || detail.commentsUnavailable
                       ? "—"
                       : activityPending
                         ? "…"
@@ -2703,6 +2709,7 @@ function PullRequestDetailPanelBody({
                   detail={detail}
                   activityPending={activityPending}
                   activityError={activityError}
+                  onRetryActivity={() => void refreshActivityFromHost()}
                   pendingFinding={handoff}
                   fixFindingLabel={handoffLabels.fixFinding}
                   onFixFinding={startFixFinding}
@@ -2732,10 +2739,11 @@ function PullRequestDetailPanelBody({
                 ) : activityError ? (
                   <PullRequestActivityUnavailableState
                     error={activityError}
-                    onRetry={activityQuery.refresh}
+                    onRetry={() => void refreshActivityFromHost()}
                   />
                 ) : (
                   <PullRequestTimelineTab
+                    onRetryActivity={() => void refreshActivityFromHost()}
                     environmentId={environmentId}
                     detail={detail}
                     threadRef={threadRef}

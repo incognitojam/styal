@@ -2487,6 +2487,35 @@ it.effect("passes a reaction through with its subject id on a host that has them
   }),
 );
 
+it.effect("carries unavailable comments through activity and clears them on refresh", () =>
+  Effect.gen(function* () {
+    let unavailable = true;
+    const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+    const service = yield* makeService({
+      projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
+      providers: [
+        fakeProvider("github", {
+          getChangeRequestActivity: () =>
+            Effect.succeed({
+              comments: [],
+              commentCount: 0,
+              commentsTruncated: false,
+              ...(unavailable ? { commentsUnavailable: true } : {}),
+              reviewThreads: [],
+              commits: [],
+            }),
+        }),
+      ],
+    });
+    assert.strictEqual((yield* service.activity(reference)).commentsUnavailable, true);
+    unavailable = false;
+    yield* service.invalidate({ reference, scope: "detail" });
+    const recovered = yield* service.activity(reference);
+    assert.strictEqual(recovered.commentsUnavailable, undefined);
+    assert.strictEqual(recovered.commentsTruncated, false);
+  }),
+);
+
 it.effect("invalidates the cached activity after reacting, like the other mutations", () =>
   Effect.gen(function* () {
     let activityCalls = 0;

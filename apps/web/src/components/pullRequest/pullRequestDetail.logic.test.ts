@@ -798,6 +798,17 @@ describe("fix findings handoff", () => {
     expect(handoff.reviewComments).toEqual([]);
   });
 
+  it("tells the agent when review comments failed to load without claiming truncation", () => {
+    const handoff = buildFixFindingsHandoff({
+      ...base,
+      reviewThreads: [],
+      checks: [],
+      commentsUnavailable: true,
+    });
+    expect(handoff.prompt).toContain("Some review comments could not be loaded");
+    expect(handoff.prompt).not.toContain("The conversation was truncated");
+  });
+
   it("bounds a hostile review body instead of attaching it whole", () => {
     const handoff = buildFixFindingsHandoff({
       ...base,
