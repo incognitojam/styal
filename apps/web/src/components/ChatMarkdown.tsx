@@ -2280,7 +2280,9 @@ function useChatMarkdownState({
     [createAssetUrl, cwd, expandMedia, preparedConnection, threadRef],
   );
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
-  const environmentTimeZone = serverConfig?.environment.platform.timeZone ?? null;
+  // Read only where times are marked; other markdown surfaces never need the server's zone.
+  const environmentTimeZone =
+    writtenAt === undefined ? null : (serverConfig?.environment.platform.timeZone ?? null);
   const mentionedTimeAnchor = useMemo(() => {
     const writtenAtMs = writtenAt === undefined ? Number.NaN : Date.parse(writtenAt);
     return Number.isNaN(writtenAtMs) ? null : { writtenAtMs, environmentTimeZone };
