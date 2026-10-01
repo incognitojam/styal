@@ -193,7 +193,7 @@ interface TurnIntent {
   readonly turnId: TurnId;
   readonly generation: number;
   settled: boolean;
-  baselineGenIndex: number;
+  baselineGenIndex?: number | undefined;
   hasSubagents: boolean;
 }
 
@@ -1083,13 +1083,17 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
           }
           const turnId = context.activeTurnId ?? TurnId.make(yield* randomId);
           const steering = context.activeTurnId !== undefined;
-          const baselineGenIndex = readAntigravityBaselineGenIndex(context.dbPath);
+          const baselineGenIndex =
+            steering && context.activeTurnIntent?.baselineGenIndex !== undefined
+              ? context.activeTurnIntent.baselineGenIndex
+              : readAntigravityBaselineGenIndex(context.dbPath);
+          const hasSubagents = steering ? (context.activeTurnIntent?.hasSubagents ?? false) : false;
           const turn: TurnIntent = {
             turnId,
             generation: ++context.generation,
             settled: false,
             baselineGenIndex,
-            hasSubagents: false,
+            hasSubagents,
           };
           intent = turn;
           context.activeTurnId = turnId;

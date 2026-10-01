@@ -101,9 +101,87 @@ describe("AntigravityTokenUsage", () => {
         NodeFS.rmSync(tempDir, { recursive: true, force: true });
       }
     });
+    it("returns undefined when reading an existing file fails (e.g. invalid sqlite file)", () => {
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "agy-test-"));
+      const dbPath = NodePath.join(tempDir, "corrupted.db");
+      try {
+        NodeFS.writeFileSync(dbPath, "not a sqlite database");
+        expect(readAntigravityBaselineGenIndex(dbPath)).toBeUndefined();
+      } finally {
+        NodeFS.rmSync(tempDir, { recursive: true, force: true });
+      }
+    });
   });
 
   describe("extractAntigravityTurnTokenUsage", () => {
+    it("aggregates all generation steps across steered turns when baseline is preserved", () => {
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "agy-test-"));
+      const dbPath = NodePath.join(tempDir, "test.db");
+      try {
+        const db = new NodeSqlite.DatabaseSync(dbPath);
+        db.exec("CREATE TABLE gen_metadata (idx integer primary key, data blob)");
+        const stmt = db.prepare("INSERT INTO gen_metadata (idx, data) VALUES (?, ?)");
+
+        // Baseline captured at initial turn start
+        const initialBaseline = -1;
+
+        // Step 0: Pre-steering generation
+        stmt.run(0, makeGenMetadataBlob(100, 20));
+
+        // Step 1: Post-steering generation
+        stmt.run(1, makeGenMetadataBlob(30, 5));
+        db.close();
+
+        // When steering preserves the initial turn baseline, all steps in the turn are included
+        const result = extractAntigravityTurnTokenUsage({
+          dbPath,
+          baselineGenIndex: initialBaseline,
+          completed: true,
+          hasSubagents: false,
+        });
+
+        expect(result).toEqual({
+          usageStatus: "complete",
+          usageScope: "main_agent",
+          hasSubagents: false,
+          inputTokens: 130,
+          cachedInputTokens: 0,
+          outputTokens: 25,
+          reasoningTokens: 0,
+        });
+      } finally {
+        NodeFS.rmSync(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    it("returns unavailable if baselineGenIndex is undefined (failed baseline read)", () => {
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "agy-test-"));
+      const dbPath = NodePath.join(tempDir, "test.db");
+      try {
+        const db = new NodeSqlite.DatabaseSync(dbPath);
+        db.exec("CREATE TABLE gen_metadata (idx integer primary key, data blob)");
+        db.prepare("INSERT INTO gen_metadata (idx, data) VALUES (?, ?)").run(
+          0,
+          makeGenMetadataBlob(100, 20),
+        );
+        db.close();
+
+        const result = extractAntigravityTurnTokenUsage({
+          dbPath,
+          baselineGenIndex: undefined,
+          completed: true,
+          hasSubagents: false,
+        });
+        expect(result).toEqual({
+          usageStatus: "unavailable",
+          usageScope: "main_agent",
+          hasSubagents: false,
+        });
+      } finally {
+        NodeFS.rmSync(tempDir, { recursive: true, force: true });
+      }
+    });
+
     it("returns unavailable if DB file does not exist", () => {
       const result = extractAntigravityTurnTokenUsage({
         dbPath: "/nonexistent/test.db",

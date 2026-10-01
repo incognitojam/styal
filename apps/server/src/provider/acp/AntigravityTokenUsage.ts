@@ -106,7 +106,7 @@ export function decodeAntigravityStepTokens(data: Uint8Array): AntigravityStepTo
  * Returns the highest generation index currently recorded in `gen_metadata` for the conversation.
  * Returns -1 if the database or table does not exist yet.
  */
-export function readAntigravityBaselineGenIndex(dbPath: string): number {
+export function readAntigravityBaselineGenIndex(dbPath: string): number | undefined {
   if (!NodeFS.existsSync(dbPath)) return -1;
   let db: NodeSqlite.DatabaseSync | undefined;
   try {
@@ -116,7 +116,7 @@ export function readAntigravityBaselineGenIndex(dbPath: string): number {
       | undefined;
     return typeof row?.maxIdx === "number" ? row.maxIdx : -1;
   } catch {
-    return -1;
+    return undefined;
   } finally {
     try {
       db?.close();
@@ -132,12 +132,12 @@ export function readAntigravityBaselineGenIndex(dbPath: string): number {
  */
 export function extractAntigravityTurnTokenUsage(input: {
   readonly dbPath: string;
-  readonly baselineGenIndex?: number;
+  readonly baselineGenIndex?: number | undefined;
   readonly completed: boolean;
   readonly hasSubagents: boolean;
 }): TurnTokenUsage {
-  const { dbPath, baselineGenIndex = -1, completed, hasSubagents } = input;
-  if (!NodeFS.existsSync(dbPath)) {
+  const { dbPath, baselineGenIndex, completed, hasSubagents } = input;
+  if (baselineGenIndex === undefined || !NodeFS.existsSync(dbPath)) {
     return {
       usageStatus: "unavailable",
       usageScope: "main_agent",
