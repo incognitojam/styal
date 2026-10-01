@@ -955,9 +955,6 @@ features:
       - The macOS installer backgrounds and the Dev and Nightly sidebar and send-button artwork use styal's channel grounds and sewing motifs (pinked linen, cutting mat, starry horizon) rather than upstream's T3 Code installer and stage artwork.
       - Linux desktop entries, SnapShot D-Bus names, the GNOME Shell extension, and the KDE and Hyprland capture helpers use styal identities (`build.styal.Styal`, `snap-shot@styal.build`, `styal-*-snap-shot`) so they cannot collide with an upstream T3 Code install.
     implementation_paths:
-      - apps/web/src/components/StyalWordmark.tsx
-      - apps/web/src/components/onboarding/WelcomeWizard.tsx
-      - apps/web/src/components/sidebar/SidebarChrome.tsx
       - .github/workflows/fork-cli-archives.yml
       - .github/workflows/fork-cli-build.yml
       - .github/workflows/fork-js-bundle.yml
@@ -992,7 +989,10 @@ features:
       - apps/web/src/branding.logic.ts
       - apps/web/src/branding.ts
       - apps/web/src/components/SidebarStageBackdrop.tsx
+      - apps/web/src/components/StyalWordmark.tsx
+      - apps/web/src/components/onboarding/WelcomeWizard.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
+      - apps/web/src/components/sidebar/SidebarChrome.tsx
       - apps/web/src/fork-theme.css
       - packages/shared/src/brandAssets.ts
       - packages/shared/src/cliRelease.ts
