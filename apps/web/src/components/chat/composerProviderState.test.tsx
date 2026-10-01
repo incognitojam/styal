@@ -86,6 +86,7 @@ describe("getComposerProviderState", () => {
       planModeEnabled: false,
     });
     expect(state.modelOptionsForDispatch).toEqual(selections(["reasoningEffort", "native-low"]));
+    expect(state.promptEffort).toBe("native-low");
   });
 
   it("derives a stable prompt injection state for ordinary prompt edits", () => {

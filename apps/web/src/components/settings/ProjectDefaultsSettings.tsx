@@ -12,6 +12,7 @@ import { getCustomModelOptionsByInstance } from "../../modelSelection";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
+  normalizeProviderModelSelection,
   resolveDefaultProviderModelSelection,
   sortProviderInstanceEntries,
 } from "../../providerInstances";
@@ -124,6 +125,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
   }
 
   const setModel = (value: ModelSelection | null) => {
+    value = value ? normalizeProviderModelSelection(providers, value) : null;
     const reason = value ? modelDisabledReason(value.instanceId, value.model) : null;
     if (reason) {
       toastManager.add({ type: "error", title: "Default model not saved", description: reason });

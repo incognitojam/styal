@@ -145,7 +145,11 @@ export function getComposerProviderState(input: ComposerProviderStateInput): Com
     modelOptions,
     planModeEnabled,
   );
-  const descriptors = getProviderOptionDescriptors({ caps, selections });
+  const descriptors = getProviderOptionDescriptors({
+    caps,
+    selections,
+    preserveUnavailableSelections: provider === "antigravity",
+  });
   const primarySelectDescriptor = descriptors.find(
     (descriptor): descriptor is Extract<(typeof descriptors)[number], { type: "select" }> =>
       descriptor.type === "select",

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { ProviderDriverKind, type ProviderOptionDescriptor } from "@t3tools/contracts";
+import { getProviderOptionDescriptors } from "@t3tools/shared/model";
 import { buildTraitsTriggerDisplay, buildUnavailableModelOptionDescriptors } from "./TraitsPicker";
 
 function selectDescriptor(
@@ -61,6 +62,22 @@ function display(descriptors: ReadonlyArray<ProviderOptionDescriptor>) {
 }
 
 describe("buildTraitsTriggerDisplay", () => {
+  it("labels a removed effort as unavailable instead of the catalog default", () => {
+    const descriptors = getProviderOptionDescriptors({
+      caps: { optionDescriptors: [EFFORT] },
+      selections: [{ id: "reasoningEffort", value: "removed-native" }],
+      preserveUnavailableSelections: true,
+    });
+    expect(
+      buildTraitsTriggerDisplay({
+        provider: ProviderDriverKind.make("antigravity"),
+        descriptors,
+        primarySelectDescriptorId: "reasoningEffort",
+        ultrathinkPromptControlled: false,
+      }),
+    ).toEqual({ label: "Unavailable effort", showFastModeIcon: false });
+  });
+
   it("omits fast mode from the label entirely when it is off", () => {
     expect(display([EFFORT, fastModeDescriptor(false), CONTEXT_WINDOW])).toEqual({
       label: "High · 1M",

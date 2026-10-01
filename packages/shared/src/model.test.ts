@@ -15,6 +15,8 @@ import {
   getModelSelectionBooleanOptionValue,
   getModelSelectionStringOptionValue,
   getProviderOptionDescriptors,
+  getProviderOptionCurrentValue,
+  isProviderOptionSelectionUnavailable,
   readCustomModelEntries,
   toCustomModelSetting,
   getProviderOptionBooleanSelectionValue,
@@ -69,6 +71,25 @@ const claudeCaps: ModelCapabilities = createModelCapabilities({
 });
 
 describe("descriptor helpers", () => {
+  it("keeps unavailable saved choices distinct from defaults until replaced", () => {
+    const selection = [{ id: "reasoningEffort", value: "removed-native" }];
+    const descriptors = getProviderOptionDescriptors({
+      caps: codexCaps,
+      selections: selection,
+      preserveUnavailableSelections: true,
+    });
+    expect(getProviderOptionCurrentValue(descriptors[0])).toBe("removed-native");
+    expect(isProviderOptionSelectionUnavailable(descriptors[0]!)).toBe(true);
+    expect(buildProviderOptionSelectionsFromDescriptors(descriptors)?.[0]).toEqual(selection[0]);
+    const replaced = getProviderOptionDescriptors({
+      caps: codexCaps,
+      selections: [{ id: "reasoningEffort", value: "high" }],
+      preserveUnavailableSelections: true,
+    });
+    expect(getProviderOptionCurrentValue(replaced[0])).toBe("high");
+    expect(isProviderOptionSelectionUnavailable(replaced[0]!)).toBe(false);
+  });
+
   it("applies selection values to capability descriptors", () => {
     expect(
       getProviderOptionDescriptors({

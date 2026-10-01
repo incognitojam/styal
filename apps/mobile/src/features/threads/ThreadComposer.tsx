@@ -550,8 +550,13 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       resolveProviderOptionDescriptors({
         capabilities: currentModelOption?.capabilities,
         selections: currentModelSelection.options,
+        preserveUnavailableSelections: currentModelOption?.providerDriver === "antigravity",
       }),
-    [currentModelOption?.capabilities, currentModelSelection.options],
+    [
+      currentModelOption?.capabilities,
+      currentModelOption?.providerDriver,
+      currentModelSelection.options,
+    ],
   );
   const settingsOwnerId = composerOwnerKey;
   const settingsRouteSession = useMemo<ExistingThreadSettingsRouteSession>(

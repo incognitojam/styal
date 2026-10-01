@@ -81,39 +81,52 @@ features:
     invariants:
       - Antigravity advertises each Gemini family and generation once, with only account-available native thinking variants as reasoning choices.
       - Web, desktop, mobile, and text generation preserve exact native reasoning choices across model changes, legacy selections, and session resumes.
-      - Unknown native models remain selectable and unavailable native choices are rejected rather than replaced by another effort.
+      - Unknown native models remain selectable. Unavailable native efforts are shown explicitly, can be replaced with an available choice, and are rejected on dispatch.
     implementation_paths:
+      - apps/mobile/src/features/threads/ThreadSettingsSheet.tsx
       - apps/mobile/src/lib/modelOptions.ts
+      - apps/mobile/src/lib/providerOptions.ts
       - apps/server/src/provider/AntigravityModels.ts
       - apps/server/src/provider/Layers/AntigravityAdapter.ts
       - apps/server/src/provider/Layers/AntigravityProvider.ts
       - apps/server/src/provider/ModelManifest.ts
       - apps/server/src/provider/acp/AntigravityAcpSupport.ts
       - apps/server/src/textGeneration/AntigravityTextGeneration.ts
+      - apps/web/src/components/chat/TraitsPicker.tsx
       - apps/web/src/components/chat/composerProviderState.tsx
+      - apps/web/src/components/settings/ProjectDefaultsSettings.tsx
       - apps/web/src/composerDraftStore.ts
       - apps/web/src/modelSelection.ts
+      - apps/web/src/providerInstances.ts
       - packages/shared/src/model.ts
     upstream_paths:
+      - apps/mobile/src/features/threads/ThreadSettingsSheet.tsx
       - apps/mobile/src/lib/modelOptions.ts
+      - apps/mobile/src/lib/providerOptions.ts
       - apps/server/src/provider/Layers/AntigravityAdapter.ts
       - apps/server/src/provider/Layers/AntigravityProvider.ts
       - apps/server/src/provider/ModelManifest.ts
       - apps/server/src/provider/acp/AntigravityAcpSupport.ts
       - apps/server/src/textGeneration/AntigravityTextGeneration.ts
+      - apps/web/src/components/chat/TraitsPicker.tsx
       - apps/web/src/components/chat/composerProviderState.tsx
+      - apps/web/src/components/settings/ProjectDefaultsSettings.tsx
       - apps/web/src/composerDraftStore.ts
       - apps/web/src/modelSelection.ts
+      - apps/web/src/providerInstances.ts
       - packages/shared/src/model.ts
     tests:
       - apps/mobile/src/lib/modelOptions.test.ts
+      - apps/mobile/src/lib/providerOptions.test.ts
       - apps/server/src/provider/Layers/AntigravityAdapter.test.ts
       - apps/server/src/provider/Layers/AntigravityProvider.test.ts
       - apps/server/src/provider/ModelManifest.test.ts
       - apps/server/src/provider/acp/AntigravityAcpSupport.test.ts
       - apps/server/src/textGeneration/AntigravityTextGeneration.test.ts
+      - apps/web/src/components/chat/TraitsPicker.test.ts
       - apps/web/src/components/chat/composerProviderState.test.tsx
       - apps/web/src/modelSelection.test.ts
+      - apps/web/src/providerInstances.test.ts
       - packages/shared/src/model.test.ts
     upstream:
       status: partial

@@ -182,15 +182,34 @@ function withDescriptorCurrentValue(
 export function getProviderOptionDescriptors(input: {
   caps: ModelCapabilities;
   selections?: ReadonlyArray<ProviderOptionSelection> | null | undefined;
+  /** Keep saved values visible when account discovery removes a choice. */
+  preserveUnavailableSelections?: boolean;
 }): ReadonlyArray<ProviderOptionDescriptor> {
   const { caps, selections } = input;
   const baseDescriptors = (caps.optionDescriptors ?? []).map(cloneDescriptor);
 
-  return baseDescriptors.map((descriptor) =>
-    withDescriptorCurrentValue(
-      descriptor,
-      getRawSelectionValueById(selections, descriptor.id) ?? descriptor.currentValue,
-    ),
+  return baseDescriptors.map((descriptor) => {
+    const selectedValue = getRawSelectionValueById(selections, descriptor.id);
+    if (
+      input.preserveUnavailableSelections &&
+      descriptor.type === "select" &&
+      typeof selectedValue === "string" &&
+      !descriptor.options.some((option) => option.id === selectedValue)
+    ) {
+      return { ...descriptor, currentValue: selectedValue };
+    }
+    return withDescriptorCurrentValue(descriptor, selectedValue ?? descriptor.currentValue);
+  });
+}
+
+export function isProviderOptionSelectionUnavailable(
+  descriptor: ProviderOptionDescriptor,
+): boolean {
+  return (
+    descriptor.type === "select" &&
+    descriptor.options.length > 0 &&
+    descriptor.currentValue !== undefined &&
+    !descriptor.options.some((option) => option.id === descriptor.currentValue)
   );
 }
 
