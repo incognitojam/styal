@@ -3,6 +3,7 @@ import {
   type EnvironmentId,
   type PullRequestActor,
   type PullRequestDetail,
+  type PullRequestLabel,
   type PullRequestLabelCandidateList,
   type PullRequestDiffInput,
   type PullRequestRef,
@@ -40,6 +41,18 @@ export class EnvironmentHttpConnectionNotReadyError extends Data.TaggedError(
 )<{ readonly message: string }> {}
 
 const LINKED_PULL_REQUEST_IDLE_TTL_MS = 5_000;
+
+interface PendingLabelEdit {
+  readonly labels: ReadonlyArray<PullRequestLabel>;
+  readonly applied: boolean;
+}
+
+function applyLabelEdit(labels: PullRequestDetail["labels"], edit: PendingLabelEdit) {
+  const names = new Set(edit.labels.map((label) => label.name));
+  return edit.applied
+    ? [...labels, ...edit.labels.filter((label) => !labels.some(({ name }) => name === label.name))]
+    : labels.filter((label) => !names.has(label.name));
+}
 
 /** Keep confirmed edits on the same cached reference regardless of input property order. */
 function writableQueryFamily<A, E>(
@@ -148,7 +161,7 @@ export function pullRequestDetailToVcsStatus(
 /**
  * Reopening a PR within a minute reuses detail and activity. Explicit refreshes and
  * turn notifications still revalidate. Mutations run serially per environment: actions on the same
- * pull request are order-sensitive. Confirmed label and reviewer edits update cached state.
+ * pull request are order-sensitive. Labels update optimistically; confirmed edits update cached state.
  */
 export function createPullRequestEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | PullRequestDiffLoader | R, E>,
@@ -231,6 +244,51 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       staleTimeMs: 60_000,
     }),
   );
+  // Overlay the latest read rather than saving a snapshot: rollback must not undo other changes.
+  const pendingLabelEdits = Atom.family((_source: ReturnType<typeof detail>) =>
+    Atom.make<PendingLabelEdit | null>(null).pipe(Atom.setIdleTTL(5 * 60_000)),
+  );
+  function withPendingLabelEdits<A, E>(
+    family: (target: {
+      readonly environmentId: EnvironmentId;
+      readonly input: PullRequestRef;
+    }) => Atom.Writable<AsyncResult.AsyncResult<A, E>>,
+    update: (value: A, edit: PendingLabelEdit) => A,
+    idleTtlMs = 5 * 60_000,
+  ) {
+    const overlays = Atom.family((source: ReturnType<typeof family>) =>
+      Atom.family((pending: ReturnType<typeof pendingLabelEdits>) =>
+        Atom.writable(
+          (get) => {
+            const result = get(source);
+            const edit = get(pending);
+            return edit === null ? result : AsyncResult.map(result, (value) => update(value, edit));
+          },
+          (context, value: AsyncResult.AsyncResult<A, E>) => context.set(source, value),
+          (refresh) => refresh(source),
+        ).pipe(Atom.setIdleTTL(idleTtlMs)),
+      ),
+    );
+    return (target: Parameters<typeof family>[0]) =>
+      overlays(family(target))(pendingLabelEdits(detail(target)));
+  }
+  const optimisticDetail = withPendingLabelEdits(detail, (value, edit) => ({
+    ...value,
+    labels: applyLabelEdit(value.labels, edit),
+  }));
+  const optimisticLabelCandidates = withPendingLabelEdits(
+    labelCandidates,
+    (value, edit) => {
+      const names = new Set(edit.labels.map((label) => label.name));
+      return {
+        ...value,
+        candidates: value.candidates.map((candidate) =>
+          names.has(candidate.name) ? { ...candidate, isApplied: edit.applied } : candidate,
+        ),
+      };
+    },
+    30 * 60_000,
+  );
   return {
     refreshes,
     linkedThreads: createEnvironmentRpcQueryAtomFamily(runtime, {
@@ -259,7 +317,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       staleTimeMs: 60_000,
       refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
     }),
-    detail,
+    detail: optimisticDetail,
     activity,
     threadComments: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:thread-comments",
@@ -445,18 +503,32 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     /** A repository catalogue for immediate display while a PR-specific read revalidates. */
     repositoryLabelCandidates,
     /** Read on menu-open; fresh for a minute and retained for thirty idle minutes. */
-    labelCandidates,
+    labelCandidates: optimisticLabelCandidates,
     setLabels: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:set-labels",
       tag: WS_METHODS.pullRequestsSetLabels,
-      execute: (input) => routedRequest(WS_METHODS.pullRequestsSetLabels, input),
+      execute: Effect.fn("pullRequests.setLabels")(function* (input, registry, environmentId) {
+        const target = { environmentId, input };
+        const candidates = Option.getOrNull(
+          AsyncResult.value(registry.get(labelCandidates(target))),
+        );
+        const catalogue =
+          candidates?.candidates ?? registry.get(repositoryLabelCandidates(target))?.candidates;
+        registry.set(pendingLabelEdits(detail(target)), {
+          labels: input.labels.map((name) => ({
+            name,
+            color: catalogue?.find((candidate) => candidate.name === name)?.color ?? null,
+          })),
+          applied: input.applied,
+        });
+        return yield* routedRequest(WS_METHODS.pullRequestsSetLabels, input);
+      }),
       scheduler: commandScheduler,
       concurrency: serialPerEnvironment,
       onSuccess: (target, registry) =>
         Effect.sync(() => {
           const { labels, applied } = target.input;
           const candidatesAtom = labelCandidates(target);
-          const candidates = Option.getOrNull(AsyncResult.value(registry.get(candidatesAtom)));
           const names = new Set(labels);
           updateCached(registry, candidatesAtom, (value) => ({
             ...value,
@@ -464,23 +536,16 @@ export function createPullRequestEnvironmentAtoms<R, E>(
               names.has(candidate.name) ? { ...candidate, isApplied: applied } : candidate,
             ),
           }));
-          updateCached(registry, detail(target), (value) => ({
-            ...value,
-            labels: applied
-              ? [
-                  ...value.labels,
-                  ...labels
-                    .filter((name) => !value.labels.some((label) => label.name === name))
-                    .map((name) => ({
-                      name,
-                      color:
-                        candidates?.candidates.find((candidate) => candidate.name === name)
-                          ?.color ?? null,
-                    })),
-                ]
-              : value.labels.filter((label) => !names.has(label.name)),
-          }));
+          const edit = registry.get(pendingLabelEdits(detail(target)));
+          if (edit !== null) {
+            updateCached(registry, detail(target), (value) => ({
+              ...value,
+              labels: applyLabelEdit(value.labels, edit),
+            }));
+          }
         }),
+      onSettled: (target, registry) =>
+        Effect.sync(() => registry.set(pendingLabelEdits(detail(target)), null)),
     }),
     setThreadResolution: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:set-thread-resolution",

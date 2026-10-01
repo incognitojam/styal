@@ -682,6 +682,8 @@ export function createEnvironmentRpcCommand<R, ER, TTag extends EnvironmentUnary
     readonly tag: TTag;
     readonly execute?: (
       input: EnvironmentRpcInput<TTag>,
+      registry: AtomRegistry.AtomRegistry,
+      environmentId: EnvironmentIdType,
     ) => Effect.Effect<
       EnvironmentRpcSuccess<TTag>,
       EnvironmentRpcFailure<TTag> | EnvironmentRpcUnavailableError,
@@ -717,7 +719,9 @@ export function createEnvironmentRpcCommand<R, ER, TTag extends EnvironmentUnary
         environmentId,
         input,
       };
-      return (options.execute?.(input) ?? request(options.tag, input)).pipe(
+      return (
+        options.execute?.(input, registry, environmentId) ?? request(options.tag, input)
+      ).pipe(
         Effect.tap(() => options.onSuccess?.(target, registry) ?? Effect.void),
         Effect.ensuring(options.onSettled?.(target, registry) ?? Effect.void),
       );
