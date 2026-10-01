@@ -94,6 +94,17 @@ selected, **New thread** creates the thread there without asking. The **new thre
 in current project** shortcut uses the open thread's project, or the selected
 project when no thread is open. Choose **All projects** to clear the filter.
 
+## Group threads by project
+
+On web and desktop, turn on **Settings → General → Organization → Group threads by
+project** to list active threads under a header for each project. Repositories that
+Project grouping combines across environments share one header. Pinned, snoozed, and
+settled threads are not grouped.
+
+While grouping is on, dragging a thread reorders it only within its own project. Drag a
+project's header to move the project and all its threads. The project order is saved on
+this device and does not sync to your other devices.
+
 ## Settle finished work
 
 Choose **Settle thread** from its menu to move finished work out of the active list

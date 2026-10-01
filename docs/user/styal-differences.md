@@ -94,6 +94,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   shown without rearranging threads. Compared with
   [T3 Code revision d2c9281](https://github.com/pingdotgg/t3code/tree/d2c9281b8112dc3b2991642c4bdb985e4b08b9bb),
   which shows the last user message without this choice. [Working with threads](./thread-sidebar.md).
+- **Threads grouped by project.** An optional setting lists active threads under a header for
+  each project, and dragging a header reorders projects. Compared with
+  [T3 Code revision 5cc99e1](https://github.com/pingdotgg/t3code/tree/5cc99e1c23980d7995a13c47f969b47cb68ed1be),
+  checked October 1, 2026, which shows active threads as one list; an open pull request
+  ([#13815](https://github.com/pingdotgg/t3code/pull/13815)) proposes collapsible, title-only
+  groups instead. [Group threads by project](./thread-sidebar.md#group-threads-by-project).
 - **Proactive panels by default.** Newly linked reviews open automatically, and completed agent work
   switches to its diff. You can turn this off in Settings. Compared with
   [T3 Code revision f223312](https://github.com/pingdotgg/t3code/tree/f22331240ed1a97fae560e314bffb75fe39db8ca),
