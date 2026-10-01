@@ -2003,7 +2003,7 @@ features:
       - Label pickers show a previously fetched repository catalogue while their pull-request-specific read loads or fails, retaining cached data for thirty idle minutes.
       - Repository catalogues are isolated by environment, project, host, and repository; applied checkmarks come from the current pull request.
       - Applied labels missing from a cached repository page remain available for removal while the current pull request read loads or fails.
-      - Adding or removing a label immediately updates the current pull request's label chips and picker checkmarks; a rejected edit rolls back without losing unrelated host updates.
+      - Submitting a label edit immediately updates the current pull request's chips and picker checkmarks even while another mutation is running; a rejected edit rolls back without losing unrelated host updates or newer queued edits.
       - Background reads cannot overwrite pending label edits, and confirmed edits remain cached without redundant host reads.
     implementation_paths:
       - apps/web/src/components/pullRequest/PullRequestLabelPicker.tsx
