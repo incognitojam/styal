@@ -80,10 +80,12 @@ function MentionedTimeDetails(props: {
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="font-medium">
-        {formatMentionedTimeLabel(props.instantMs, timestampFormat, props.includeSeconds)}
+      <span>
+        <span className="font-medium">
+          {formatMentionedTimeLabel(props.instantMs, timestampFormat, props.includeSeconds)}
+        </span>
+        <span className="text-muted-foreground"> · {formatRelativeToNow(props.instantMs)}</span>
       </span>
-      <span className="text-muted-foreground">{formatRelativeToNow(props.instantMs)}</span>
       {props.note === null ? null : (
         <span className="text-muted-foreground text-xs">{props.note}</span>
       )}

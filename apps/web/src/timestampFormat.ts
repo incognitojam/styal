@@ -297,32 +297,44 @@ export function formatExpiresInLabel(isoDate: string, nowMs: number = Date.now()
   return tail.length > 0 ? `Expires in ${days}d ${tail.join(" ")}` : `Expires in ${days}d`;
 }
 
-const mentionedTimeFormatterCache = new Map<string, Intl.DateTimeFormat>();
+const mentionedDateFormatter = new Intl.DateTimeFormat(timestampLocale, {
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+});
+const mentionedDateWithYearFormatter = new Intl.DateTimeFormat(timestampLocale, {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+});
 
 /**
- * A time mentioned in a message, spelled out in full in the reader's zone with the zone named,
- * e.g. `Thursday 1 October 2026 at 15:20 BST`. Whole-label locale formatting, so the word order
- * and month names agree with each other.
+ * A time mentioned in a message, in the reader's zone and named by its day: `Today at 15:20`,
+ * `Tomorrow at 08:00`, `Sun 20 Sep, 08:00`, or `25 Dec 2025, 00:00` once the year differs.
+ * Day boundaries are local calendar days.
  */
 export function formatMentionedTimeLabel(
   instantMs: number,
   timestampFormat: TimestampFormat,
   includeSeconds: boolean,
+  nowMs: number = Date.now(),
 ): string {
-  const cacheKey = `${timestampFormat}:${includeSeconds ? "seconds" : "minutes"}`;
-  let formatter = mentionedTimeFormatterCache.get(cacheKey);
-  if (!formatter) {
-    formatter = new Intl.DateTimeFormat(timestampLocale, {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-      ...getTimestampFormatOptions(timestampFormat, includeSeconds),
-      timeZoneName: "short",
-    });
-    mentionedTimeFormatterCache.set(cacheKey, formatter);
-  }
-  return formatter.format(instantMs);
+  const date = new Date(instantMs);
+  const time = getTimestampFormatter(timestampFormat, includeSeconds).format(date);
+  const now = new Date(nowMs);
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  // Round so DST-shifted 23/25 hour days still count as whole days.
+  const dayDiff = Math.round((startOfDay - startOfToday) / 86_400_000);
+
+  if (dayDiff === 0) return `Today at ${time}`;
+  if (dayDiff === 1) return `Tomorrow at ${time}`;
+  if (dayDiff === -1) return `Yesterday at ${time}`;
+  const dateFormatter =
+    date.getFullYear() === now.getFullYear()
+      ? mentionedDateFormatter
+      : mentionedDateWithYearFormatter;
+  return `${dateFormatter.format(date)}, ${time}`;
 }
 
 const relativeTimeFormatter = new Intl.RelativeTimeFormat(timestampLocale, { numeric: "auto" });

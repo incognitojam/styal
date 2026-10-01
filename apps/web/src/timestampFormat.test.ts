@@ -4,6 +4,7 @@ import {
   formatDayAwareTimestamp,
   formatElapsedDurationLabel,
   formatExpiresInLabel,
+  formatMentionedTimeLabel,
   formatRelativeTime,
   formatRelativeTimeLabel,
   formatShortTimestamp,
@@ -160,6 +161,41 @@ describe("formatDayAwareTimestamp", () => {
 
   it("returns an empty string for invalid input", () => {
     expect(formatDayAwareTimestamp("not-a-date", "12-hour", now)).toBe("");
+  });
+});
+
+describe("formatMentionedTimeLabel", () => {
+  // Local-time instants keep the calendar-day boundaries in any test timezone.
+  const at = (y: number, monthIndex: number, d: number, h: number, mi: number) =>
+    new Date(y, monthIndex, d, h, mi).getTime();
+  const now = at(2026, 9, 1, 14, 0);
+  const time = (instantMs: number) =>
+    formatShortTimestamp(new Date(instantMs).toISOString(), "24-hour");
+
+  it("names today, tomorrow and yesterday by local calendar day", () => {
+    const today = at(2026, 9, 1, 23, 50);
+    const tomorrow = at(2026, 9, 2, 0, 10);
+    const yesterday = at(2026, 8, 30, 8, 0);
+    expect(formatMentionedTimeLabel(today, "24-hour", false, now)).toBe(`Today at ${time(today)}`);
+    expect(formatMentionedTimeLabel(tomorrow, "24-hour", false, now)).toBe(
+      `Tomorrow at ${time(tomorrow)}`,
+    );
+    expect(formatMentionedTimeLabel(yesterday, "24-hour", false, now)).toBe(
+      `Yesterday at ${time(yesterday)}`,
+    );
+  });
+
+  it("adds the weekday and date further out, and the year once it differs", () => {
+    const sameYear = at(2026, 8, 20, 8, 0);
+    const lastYear = at(2025, 11, 25, 0, 0);
+    const date = (instantMs: number, options: Intl.DateTimeFormatOptions) =>
+      new Intl.DateTimeFormat(undefined, options).format(instantMs);
+    expect(formatMentionedTimeLabel(sameYear, "24-hour", false, now)).toBe(
+      `${date(sameYear, { weekday: "short", day: "numeric", month: "short" })}, ${time(sameYear)}`,
+    );
+    expect(formatMentionedTimeLabel(lastYear, "24-hour", false, now)).toBe(
+      `${date(lastYear, { day: "numeric", month: "short", year: "numeric" })}, ${time(lastYear)}`,
+    );
   });
 });
 
