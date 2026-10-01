@@ -2105,6 +2105,27 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9496
       retire_when: Upstream keeps the visible pull request current without stale responses, unnecessary activity reads, or invalidating cached diffs.
 
+  - id: pull-request-merge-controls-during-refresh
+    title: Keep pull request merge controls visible while the stack lookup refreshes
+    status: maintained
+    prs: [591]
+    invariants:
+      - After the stack lookup has answered that a pull request is not in a stack, refreshing that answer keeps Merge, Auto-merge, and Merge now visible.
+      - A first stack lookup, a failed lookup, or a pull request in a stack still hides the single pull request merge controls.
+    rationale: Upstream hides the merge controls for every stack refresh, so a manual refresh or refresh trigger removes them until the lookup finishes.
+    implementation_paths:
+      - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
+      - apps/web/src/components/pullRequest/pullRequestDetail.logic.ts
+    upstream_paths:
+      - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
+      - apps/web/src/components/pullRequest/pullRequestDetail.logic.ts
+    tests:
+      - apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream keeps single pull request merge controls visible while an earlier stack lookup answer is refreshed.
+
   - id: pull-request-merge-head-guard
     title: Refuse GitHub merges when the head moved since the panel loaded
     status: maintained
