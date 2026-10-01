@@ -1844,6 +1844,32 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9537
       retire_when: Upstream propagates draft state through every supported source-control adapter and presents it consistently in both pull request details and thread status.
 
+  - id: pull-request-label-catalogue-cache
+    title: Show cached repository labels while the picker refreshes
+    status: maintained
+    prs: []
+    invariants:
+      - Label pickers show a previously fetched repository catalogue while their pull-request-specific read loads or fails, retaining cached data for thirty idle minutes.
+      - Repository catalogues are isolated by environment, project, host, and repository; applied checkmarks come from the current pull request.
+      - Applied labels missing from a cached repository page remain available for removal while the current pull request read loads or fails.
+    implementation_paths:
+      - apps/web/src/components/pullRequest/PullRequestLabelPicker.tsx
+      - apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx
+      - apps/web/src/components/pullRequest/pullRequestLabelPicker.logic.ts
+      - packages/client-runtime/src/state/pullRequests.ts
+    upstream_paths:
+      - apps/web/src/components/pullRequest/PullRequestLabelPicker.tsx
+      - apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx
+      - packages/client-runtime/src/state/pullRequests.ts
+    tests:
+      - apps/web/src/components/pullRequest/pullRequestLabelPicker.logic.test.ts
+      - packages/client-runtime/src/state/pullRequests.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/5cc99e1c23980d7995a13c47f969b47cb68ed1be
+      retire_when: Upstream shares cached repository label metadata across pull requests while refreshing and keeps applied state specific to the current pull request.
+
   - id: pull-request-linked-extras
     title: Show the current pull request and additional link count
     status: maintained

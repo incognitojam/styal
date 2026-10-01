@@ -1186,3 +1186,68 @@ it.effect("refreshes stack state after reopening and head SHAs after a turn", ()
     }),
   ),
 );
+
+it.effect("shares only repository label metadata while another PR refreshes or fails", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const started = yield* Latch.make();
+      const release = yield* Latch.make();
+      const client = {
+        [WS_METHODS.pullRequestsLabelCandidates]: (input: { number: number }) =>
+          Effect.gen(function* () {
+            if (input.number === 2) {
+              yield* started.open;
+              yield* release.await;
+              return yield* Effect.fail(new MutationRefused());
+            }
+            return {
+              candidates: [
+                { name: "bug", color: "abcdef", description: "Fix a bug", isApplied: true },
+              ],
+              truncated: true,
+            };
+          }),
+      } as unknown as WsRpcProtocolClient;
+      const { atoms, registry } = yield* makeTestRuntime(client);
+      const target = {
+        environmentId: TARGET.environmentId,
+        input: {
+          projectId: ProjectId.make("project-1"),
+          repository: "acme/web",
+          host: "github.com",
+          number: 1,
+        },
+      };
+      const catalogue = atoms.repositoryLabelCandidates(target);
+      registry.mount(catalogue);
+      expect(registry.get(catalogue)).toBeNull();
+      yield* AtomRegistry.getResult(registry, atoms.labelCandidates(target), {
+        suspendOnWaiting: true,
+      });
+      const expected = {
+        candidates: [{ name: "bug", color: "abcdef", description: "Fix a bug" }],
+        truncated: true,
+      };
+      expect(registry.get(catalogue)).toEqual(expected);
+      const other = { ...target, input: { ...target.input, number: 2 } };
+      expect(atoms.repositoryLabelCandidates(other)).toBe(catalogue);
+      const candidates = atoms.labelCandidates(other);
+      registry.mount(candidates);
+      yield* started.await;
+      expect(registry.get(candidates).waiting).toBe(true);
+      expect(registry.get(catalogue)).toEqual(expected);
+      yield* release.open;
+      yield* Effect.exit(AtomRegistry.getResult(registry, candidates, { suspendOnWaiting: true }));
+      expect(AsyncResult.isFailure(registry.get(candidates))).toBe(true);
+      expect(registry.get(catalogue)).toEqual(expected);
+      for (const isolated of [
+        { ...target, environmentId: EnvironmentId.make("environment-2") },
+        { ...target, input: { ...target.input, projectId: ProjectId.make("project-2") } },
+        { ...target, input: { ...target.input, repository: "acme/other" } },
+        { ...target, input: { ...target.input, host: "github.example.com" } },
+      ]) {
+        expect(registry.get(atoms.repositoryLabelCandidates(isolated))).toBeNull();
+      }
+    }),
+  ),
+);

@@ -5,7 +5,13 @@
  * reads its people then: they are worth a request when somebody wants them and worth nothing on
  * every pull request they merely open.
  */
-import type { EnvironmentId, PullRequestLabelCandidate, PullRequestRef } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
+import type {
+  EnvironmentId,
+  PullRequestDetail,
+  PullRequestLabelCandidate,
+  PullRequestRef,
+} from "@t3tools/contracts";
 import { CheckIcon, TagIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -18,6 +24,7 @@ import { toastManager } from "../ui/toast";
 import { PullRequestCandidatePicker } from "./PullRequestCandidatePicker";
 import { readableFailure } from "./pullRequestDetail.logic";
 import { pullRequestLabelColor } from "./pullRequestList.logic";
+import { cachedPullRequestLabelCandidates } from "./pullRequestLabelPicker.logic";
 
 /** Narrows only what arrived: the host is asked once, when the menu opens. */
 function matches(candidate: PullRequestLabelCandidate, query: string): boolean {
@@ -32,10 +39,12 @@ function matches(candidate: PullRequestLabelCandidate, query: string): boolean {
 export function PullRequestLabelPicker({
   environmentId,
   reference,
+  labels,
   allowed,
 }: {
   environmentId: EnvironmentId;
   reference: PullRequestRef;
+  labels: PullRequestDetail["labels"];
   /** False where the host would refuse this account's change. Disabled with the reason rather
    * than hidden, like the reviewer control beside it. */
   allowed: boolean;
@@ -48,11 +57,19 @@ export function PullRequestLabelPicker({
   const candidatesQuery = useEnvironmentQuery(
     open ? pullRequestEnvironment.labelCandidates({ environmentId, input: reference }) : null,
   );
+  const cachedLabels = useAtomValue(
+    pullRequestEnvironment.repositoryLabelCandidates({ environmentId, input: reference }),
+  );
+  const catalogue = candidatesQuery.data ?? cachedLabels;
   const setLabels = useAtomCommand(pullRequestEnvironment.setLabels, { reportFailure: false });
 
   const candidates = useMemo(
-    () => (candidatesQuery.data?.candidates ?? []).filter((entry) => matches(entry, query)),
-    [candidatesQuery.data, query],
+    () =>
+      (
+        candidatesQuery.data?.candidates ??
+        cachedPullRequestLabelCandidates(cachedLabels?.candidates ?? [], labels)
+      ).filter((entry) => matches(entry, query)),
+    [candidatesQuery.data, cachedLabels, labels, query],
   );
 
   const toggle = async (candidate: PullRequestLabelCandidate) => {
@@ -89,13 +106,13 @@ export function PullRequestLabelPicker({
       query={query}
       onQueryChange={setQuery}
       searchLabel="Search labels"
-      isPending={candidatesQuery.isPending && candidatesQuery.data === null}
-      error={candidatesQuery.data === null ? candidatesQuery.error : null}
+      isPending={candidatesQuery.isPending && catalogue === null}
+      error={catalogue === null ? candidatesQuery.error : null}
       candidates={candidates}
       emptyLabel="This repository has no labels."
       noMatchLabel="No label matches that."
       errorLabel="The labels could not be read."
-      truncated={candidatesQuery.data?.truncated === true}
+      truncated={catalogue?.truncated === true}
       truncatedLabel="This repository has more labels than are listed here. Apply the rest on the host."
       candidateKey={(candidate) => candidate.name}
       disabled={pending !== null}

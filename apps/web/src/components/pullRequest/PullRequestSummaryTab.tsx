@@ -585,6 +585,7 @@ export function PullRequestSummaryTab({
                   <PullRequestLabelPicker
                     environmentId={environmentId}
                     reference={reference}
+                    labels={detail.labels}
                     allowed={detail.viewerPermissions.labels !== false}
                   />
                 ) : null}
