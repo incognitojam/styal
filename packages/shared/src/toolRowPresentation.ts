@@ -786,6 +786,12 @@ function deriveBaseToolRowPresentation(
     };
   }
 
+  // ACP rows name no tool: `deriveToolActivityPresentation` titles their reads
+  // "Read file" and carries the path as the detail, so present them as Read.
+  if (!toolName && asTrimmedString(input.label)?.toLowerCase() === "read file") {
+    return { heading: "Read", ...(detail ? { argument: { kind: "path", value: detail } } : {}) };
+  }
+
   // A title the provider chose for this specific call says more than any verb
   // derived from its item type.
   const cleanedLabel = cleanLabel(asTrimmedString(input.label));

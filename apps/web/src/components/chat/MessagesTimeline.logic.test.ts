@@ -740,6 +740,18 @@ describe("work entry labels", () => {
     );
   });
 
+  it("shortens ACP read paths inside the thread worktree", () => {
+    const readEntry = {
+      ...entry,
+      itemType: "dynamic_tool_call" as const,
+      toolTitle: "Read file",
+      detail: "/home/dev/worktrees/app-1234/src/server.ts",
+    };
+    expect(liveWorkEntryLabel(readEntry, "/home/dev/worktrees/app-1234", true)).toBe(
+      "Read - src/server.ts",
+    );
+  });
+
   it("keeps command summaries compact without replacing the full command in expanded rows", () => {
     const commandEntry = { ...entry, command: "vp test run", detail: "All tests passed" };
     expect(liveWorkEntryLabel(commandEntry, undefined, true)).toBe("Running vp");
