@@ -270,7 +270,7 @@ features:
   - id: claude-exact-history-rewind
     title: Rewind Claude turns using complete saved history and fork provenance
     status: maintained
-    prs: []
+    prs: [611]
     rationale: Claude's history reader can omit retained prompts and assistant messages even though the native fork preserves them; matching its filtered message bodies or positions cannot recover those turn boundaries.
     invariants:
       - Claude rewind retains every preceding turn and removes the requested turns even when the SDK conversation reader hides disconnected saved history or trailing system notices.
