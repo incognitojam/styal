@@ -5,8 +5,11 @@ import * as NodeURL from "node:url";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 import { describe, expect } from "vite-plus/test";
 
 import {
@@ -44,7 +47,155 @@ const makePromptCompletionRuntime = (env: NodeJS.ProcessEnv) =>
 
 const decodeXAiAskUserQuestionRequest = Schema.decodeUnknownSync(XAiAskUserQuestionRequest);
 
+const startControlledCompletion = (env: NodeJS.ProcessEnv = {}) =>
+  Effect.gen(function* () {
+    const runtime = yield* makePromptCompletionRuntime({
+      T3_ACP_EMIT_XAI_PROMPT_COMPLETE_THEN_HANG: "1",
+      T3_ACP_WAIT_FOR_XAI_TAIL_RELEASE: "1",
+      ...env,
+    });
+    const firstChunk = yield* Deferred.make<void>();
+    const finished = yield* Deferred.make<void>();
+    yield* runtime.handleSessionUpdate((notification) =>
+      notification.update.sessionUpdate === "agent_message_chunk"
+        ? Deferred.succeed(firstChunk, undefined).pipe(Effect.asVoid)
+        : Effect.void,
+    );
+    yield* runtime.start();
+    const prompt = yield* runtime
+      .prompt({ prompt: [{ type: "text", text: "controlled completion" }] })
+      .pipe(Effect.ensuring(Deferred.succeed(finished, undefined)), Effect.forkChild);
+    yield* Deferred.await(firstChunk).pipe(Effect.timeout("2 seconds"), TestClock.withLive);
+    yield* runtime
+      .request("_test/await-xai-completion", {})
+      .pipe(Effect.timeout("2 seconds"), TestClock.withLive);
+    return { runtime, prompt, finished };
+  });
+
 describe("XAiAcpExtension", () => {
+  it.effect("waits for a quiet reply stream and extends the window for text and thoughts", () =>
+    Effect.gen(function* () {
+      const { runtime, prompt, finished } = yield* startControlledCompletion();
+      for (const sessionUpdate of ["agent_message_chunk", "agent_thought_chunk"] as const) {
+        yield* TestClock.adjust("200 millis");
+        expect(yield* Deferred.isDone(finished)).toBe(false);
+        yield* runtime.request("_test/xai-update", {
+          sessionId: "mock-session-1",
+          update: { sessionUpdate, content: { type: "text", text: "late reply" } },
+        });
+      }
+      yield* TestClock.adjust("249 millis");
+      expect(yield* Deferred.isDone(finished)).toBe(false);
+      yield* TestClock.adjust("1 millis");
+      expect(
+        yield* Fiber.join(prompt).pipe(Effect.timeout("2 seconds"), TestClock.withLive),
+      ).toMatchObject({ stopReason: "end_turn" });
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("ignores child replies, replay, metadata, and background tools during settlement", () =>
+    Effect.gen(function* () {
+      const { runtime, prompt, finished } = yield* startControlledCompletion();
+      yield* TestClock.adjust("200 millis");
+      for (const notification of [
+        {
+          sessionId: "mock-child-session",
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "child" },
+          },
+        },
+        {
+          sessionId: "mock-session-1",
+          _meta: { isReplay: true },
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "replay" },
+          },
+        },
+        {
+          sessionId: "mock-session-1",
+          update: { sessionUpdate: "current_mode_update", currentModeId: "code" },
+        },
+        {
+          sessionId: "mock-session-1",
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "monitor",
+            status: "in_progress",
+          },
+        },
+      ]) {
+        yield* runtime.request("_test/xai-update", notification);
+      }
+      yield* TestClock.adjust("50 millis");
+      expect(yield* Deferred.isDone(finished)).toBe(true);
+      expect(
+        yield* Fiber.join(prompt).pipe(Effect.timeout("2 seconds"), TestClock.withLive),
+      ).toMatchObject({ stopReason: "end_turn" });
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("uses the real prompt result if it arrives during fallback settlement", () =>
+    Effect.gen(function* () {
+      const { runtime, prompt } = yield* startControlledCompletion({
+        T3_ACP_REPLY_AFTER_XAI_TAIL: "1",
+      });
+      yield* TestClock.adjust("100 millis");
+      yield* runtime.request("_test/release-xai-tail", {});
+      const result = yield* Fiber.join(prompt).pipe(
+        Effect.timeout("2 seconds"),
+        TestClock.withLive,
+      );
+      expect(result).toEqual({ stopReason: "max_tokens" });
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("cancels a prompt while its already-received completion is settling", () =>
+    Effect.gen(function* () {
+      const { runtime, prompt } = yield* startControlledCompletion({
+        T3_ACP_REPLY_AFTER_XAI_TAIL: "1",
+      });
+      yield* runtime.cancel;
+      const result = yield* Fiber.join(prompt).pipe(
+        Effect.timeout("2 seconds"),
+        TestClock.withLive,
+      );
+      expect(result.stopReason).toBe("cancelled");
+      yield* runtime.request("_test/release-xai-tail", {});
+      const next = yield* runtime
+        .prompt({ prompt: [{ type: "text", text: "follow up" }] })
+        .pipe(Effect.timeout("2 seconds"), TestClock.withLive);
+      expect(next.stopReason).toBe("max_tokens");
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("fails visibly if reply output keeps arriving beyond the settlement budget", () =>
+    Effect.gen(function* () {
+      const { runtime, prompt, finished } = yield* startControlledCompletion();
+      for (let update = 0; update < 9; update += 1) {
+        yield* TestClock.adjust("200 millis");
+        expect(yield* Deferred.isDone(finished)).toBe(false);
+        yield* runtime.request("_test/xai-update", {
+          sessionId: "mock-session-1",
+          update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "more" } },
+        });
+      }
+      yield* TestClock.adjust("200 millis");
+      expect(
+        yield* Fiber.join(prompt).pipe(
+          Effect.flip,
+          Effect.timeout("2 seconds"),
+          TestClock.withLive,
+        ),
+      ).toMatchObject({
+        _tag: "AcpRequestError",
+        errorMessage:
+          "Grok kept streaming after reporting prompt completion; the reply may be incomplete.",
+      });
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it("extracts questions from the real xAI ask_user_question payload shape", () => {
     const questions = extractXAiAskUserQuestions({
       sessionId: "session-1",
@@ -303,7 +454,7 @@ describe("XAiAcpExtension", () => {
           requestId: promptId,
         },
       });
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), TestClock.withLive),
   );
 
   it.effect("fails a hung standard prompt from an xAI rate-limit completion", () =>
@@ -324,7 +475,7 @@ describe("XAiAcpExtension", () => {
         code: -32003,
         errorMessage: "Grok usage limit reached. Try again later.",
       });
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), TestClock.withLive),
   );
 
   it.effect("ignores stale xAI completion from an already settled prompt", () =>
@@ -355,7 +506,7 @@ describe("XAiAcpExtension", () => {
           requestId: secondPromptId,
         },
       });
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), TestClock.withLive),
   );
 
   it("extracts plan markdown from exit_plan_mode payloads", () => {

@@ -4,13 +4,16 @@ import * as NodeFS from "node:fs";
 
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
+import * as Schema from "effect/Schema";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 
 import * as EffectAcpAgent from "effect-acp/agent";
 import * as AcpError from "effect-acp/errors";
-import type * as AcpSchema from "effect-acp/schema";
+import * as AcpSchema from "effect-acp/schema";
+
+const decodeSessionNotification = Schema.decodeUnknownEffect(AcpSchema.SessionNotification);
 
 const requestLogPath = process.env.T3_ACP_REQUEST_LOG_PATH;
 const exitLogPath = process.env.T3_ACP_EXIT_LOG_PATH;
@@ -24,6 +27,8 @@ const emitXAiAskUserQuestion = process.env.T3_ACP_EMIT_XAI_ASK_USER_QUESTION ===
 const emitXAiExitPlanMode = process.env.T3_ACP_EMIT_XAI_EXIT_PLAN_MODE === "1";
 const emitXAiPlanMdWrite = process.env.T3_ACP_EMIT_XAI_PLAN_MD_WRITE === "1";
 const emitXAiPromptCompleteThenHang = process.env.T3_ACP_EMIT_XAI_PROMPT_COMPLETE_THEN_HANG === "1";
+const waitForXAiTailRelease = process.env.T3_ACP_WAIT_FOR_XAI_TAIL_RELEASE === "1";
+const replyAfterXAiTail = process.env.T3_ACP_REPLY_AFTER_XAI_TAIL === "1";
 const emitXAiRateLimitThenHang = process.env.T3_ACP_EMIT_XAI_RATE_LIMIT_THEN_HANG === "1";
 const emitXAiAskUserQuestionThenHang =
   process.env.T3_ACP_EMIT_XAI_ASK_USER_QUESTION_THEN_HANG === "1";
@@ -369,6 +374,10 @@ const program = Effect.gen(function* () {
   const resumeRelease = yield* Deferred.make<void>();
   const nativeCancelRequested = yield* Deferred.make<void>();
   const nativeCancelRelease = yield* Deferred.make<void>();
+  const monitorPollRelease = yield* Deferred.make<void>();
+  const xaiCompletionEmitted = yield* Deferred.make<void>();
+  const xaiTailRelease = yield* Deferred.make<void>();
+  const xaiTailEmitted = yield* Deferred.make<void>();
   const publishAntigravityCommands = (targetSessionId: string) =>
     agent.client.sessionUpdate({
       sessionId: targetSessionId,
@@ -797,6 +806,7 @@ const program = Effect.gen(function* () {
           ...(omitXAiPromptCompleteStopReason ? {} : { stopReason: "end_turn" }),
           agentResult: null,
         });
+        yield* Deferred.succeed(xaiCompletionEmitted, undefined);
 
         if (emitForeignSessionUpdates) {
           writeJsonRpcNotification("session/update", {
@@ -819,6 +829,9 @@ const program = Effect.gen(function* () {
           });
         }
 
+        if (waitForXAiTailRelease) {
+          yield* Deferred.await(xaiTailRelease);
+        }
         writeJsonRpcNotification("session/update", {
           sessionId: requestedSessionId,
           update: {
@@ -826,7 +839,8 @@ const program = Effect.gen(function* () {
             content: { type: "text", text: "mock" },
           },
         });
-
+        yield* Deferred.succeed(xaiTailEmitted, undefined);
+        if (replyAfterXAiTail) return { stopReason: "max_tokens" };
         return yield* Effect.never;
       }
 
@@ -869,7 +883,7 @@ const program = Effect.gen(function* () {
           stopReason: "end_turn",
           agentResult: null,
         });
-        yield* Effect.sleep("120 millis");
+        yield* Deferred.await(monitorPollRelease);
         writeJsonRpcNotification("session/update", {
           sessionId: requestedSessionId,
           update: {
@@ -1329,6 +1343,27 @@ const program = Effect.gen(function* () {
   );
 
   yield* agent.handleUnknownExtRequest((method, params) => {
+    if (method === "_test/xai-update") {
+      return decodeSessionNotification(params).pipe(
+        Effect.orDie,
+        Effect.tap((notification) =>
+          Effect.sync(() => writeJsonRpcNotification("session/update", notification)),
+        ),
+        Effect.as({}),
+      );
+    }
+    if (method === "_test/release-monitor-poll") {
+      return Deferred.succeed(monitorPollRelease, undefined).pipe(Effect.as({}));
+    }
+    if (method === "_test/await-xai-completion") {
+      return Deferred.await(xaiCompletionEmitted).pipe(Effect.as({}));
+    }
+    if (method === "_test/release-xai-tail") {
+      return Deferred.succeed(xaiTailRelease, undefined).pipe(
+        Effect.andThen(Deferred.await(xaiTailEmitted)),
+        Effect.as({}),
+      );
+    }
     if (method === "_test/environment") {
       return Effect.succeed({
         inherited: process.env.T3_ACP_RUNTIME_AMBIENT === "sentinel",

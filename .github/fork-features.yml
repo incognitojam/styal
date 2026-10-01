@@ -1279,6 +1279,31 @@ features:
         - https://github.com/pingdotgg/t3code/pull/8812
       retire_when: Upstream resolves equivalent environment-scoped GitHub references in chat and pull request Markdown with the same navigation behavior.
 
+  - id: grok-prompt-settlement
+    title: Settle Grok fallback completions after reply output quiets
+    status: maintained
+    prs: [605]
+    invariants:
+      - A private xAI completion keeps the standard prompt RPC alive while waiting for 250 ms without root-session reply text or thoughts, so delayed transport output can arrive before the adapter drains its event queue.
+      - The standard RPC can settle first and explicit cancellation remains immediate, including after a private completion has arrived.
+      - Child-session output, replay, metadata, and background tool polls do not extend the reply quiet window.
+      - Reply output that prevents settlement for two seconds produces a visible incomplete-reply error; output after a completed quiet window remains outside the settled turn.
+    rationale: A queue barrier covers events already received, while Grok can send reply chunks after its private completion. A bounded quiet window supports hung RPCs without claiming the private signal is an end-of-stream marker.
+    implementation_paths:
+      - apps/server/src/provider/Layers/GrokAdapter.ts
+      - apps/server/src/provider/acp/XAiAcpExtension.ts
+    upstream_paths:
+      - apps/server/src/provider/Layers/GrokAdapter.ts
+      - apps/server/src/provider/acp/XAiAcpExtension.ts
+    tests:
+      - apps/server/src/provider/Layers/GrokAdapter.test.ts
+      - apps/server/src/provider/acp/XAiAcpExtension.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/5a574a77d1bef579b01d137b81888f68eabf7d4b
+      retire_when: Upstream retains delayed Grok reply output before fallback settlement, preserves prompt cancellation and real RPC results, and bounds failure to settle without reporting incomplete output as successful.
+
   - id: inspectable-tool-activity
     title: Keep tool activity concise and inspectable
     status: maintained
