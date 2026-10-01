@@ -1729,7 +1729,6 @@ layer("GitHubPullRequestCli.layer", (it) => {
       const detailAt = (headRefOid: string) =>
         Effect.succeed(
           output(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off - canned gh response.
             JSON.stringify({
               number: 7,
               title: "Pull request 7",
