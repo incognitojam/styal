@@ -9,7 +9,6 @@
 import {
   type CanUseTool,
   query,
-  getSessionMessages,
   forkSession,
   type Options as ClaudeQueryOptions,
   type PermissionMode,
@@ -113,6 +112,11 @@ import {
 } from "../Errors.ts";
 import { type ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import { spawnAndCollect } from "../providerSnapshot.ts";
+import {
+  ClaudeSessionHistoryMessage,
+  readClaudeSessionHistory,
+  remapClaudeForkTurnBoundaries,
+} from "../claudeSessionHistory.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 const decodeUnknownJsonStringExit = Schema.decodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
@@ -121,16 +125,7 @@ const decodeHistoryFork = Schema.decodeSync(
   Schema.fromJsonString(Schema.Struct({ sessionId: Schema.String })),
 );
 const decodeSessionMessages = Schema.decodeSync(
-  Schema.fromJsonString(
-    Schema.Array(
-      Schema.Struct({
-        type: Schema.Literals(["user", "assistant", "system"]),
-        uuid: Schema.String,
-        parent_tool_use_id: Schema.NullOr(Schema.String),
-        message: Schema.Unknown,
-      }),
-    ),
-  ),
+  Schema.fromJsonString(Schema.Array(ClaudeSessionHistoryMessage)),
 );
 
 const PROVIDER = ProviderDriverKind.make("claudeAgent");
@@ -407,7 +402,7 @@ export interface ClaudeAdapterLiveOptions {
     readonly prompt: AsyncIterable<SDKUserMessage>;
     readonly options: ClaudeQueryOptions;
   }) => ClaudeQueryRuntime;
-  readonly getSessionMessages?: typeof getSessionMessages;
+  readonly readSessionHistory?: typeof readClaudeSessionHistory;
   readonly forkSession?: typeof forkSession;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
@@ -5327,7 +5322,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         )
         .pipe(Effect.mapError((cause) => toRequestError(threadId, "thread/rollback", cause)));
       const runScopedHistoryCommand = async (
-        method: "getSessionMessages" | "forkSession",
+        method: "readSessionHistory" | "forkSession",
         args: object,
         historySessionId = sessionId,
       ) => {
@@ -5352,17 +5347,14 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const readHistory = (historySessionId: string) =>
         Effect.tryPromise({
           try: async () => {
-            const readOptions = {
-              ...(context.session.cwd ? { dir: context.session.cwd } : {}),
-              includeSystemMessages: true,
-            };
-            if (options?.getSessionMessages)
-              return options.getSessionMessages(historySessionId, readOptions);
+            const readOptions = context.session.cwd ? { dir: context.session.cwd } : {};
+            if (options?.readSessionHistory)
+              return options.readSessionHistory(historySessionId, readOptions);
             if (claudeEnvironment.CLAUDE_CONFIG_DIR === process.env.CLAUDE_CONFIG_DIR) {
-              return getSessionMessages(historySessionId, readOptions);
+              return readClaudeSessionHistory(historySessionId, readOptions);
             }
             return decodeSessionMessages(
-              await runScopedHistoryCommand("getSessionMessages", readOptions, historySessionId),
+              await runScopedHistoryCommand("readSessionHistory", readOptions, historySessionId),
             );
           },
           catch: (cause) => toRequestError(threadId, "thread/rollback", cause),
@@ -5370,7 +5362,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const messages = yield* readHistory(sessionId);
       // Tool results are user-role messages too. Only human prompts begin a turn.
       const turnStarts = messages.flatMap((message, index) => {
-        if (message.type !== "user" || message.parent_tool_use_id !== null) return [];
+        if (message.type !== "user" || message.parent_tool_use_id != null) return [];
         const body = message.message;
         if (typeof body !== "object" || body === null || !("content" in body)) return [];
         const content = body.content;
@@ -5442,20 +5434,20 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const retainedBoundaries = boundaries.slice(0, retainedCount);
       if (fork) {
         const forkMessages = yield* readHistory(fork.sessionId);
-        if (forkMessages.length !== firstRemoved) {
+        const remappedBoundaries = remapClaudeForkTurnBoundaries(
+          sessionId,
+          messages.slice(0, firstRemoved),
+          forkMessages,
+          retainedBoundaries,
+        );
+        if (!remappedBoundaries) {
           return yield* new ProviderAdapterRequestError({
             provider: PROVIDER,
             method: "thread/rollback",
             detail: "Claude fork history did not preserve the retained turn boundaries.",
           });
         }
-        // Native forks replace every UUID while preserving transcript order.
-        for (let index = 0; index < retainedBoundaries.length; index++) {
-          const messageIndex = messages.findIndex(
-            (message) => message.uuid === retainedBoundaries[index],
-          );
-          retainedBoundaries[index] = forkMessages[messageIndex]?.uuid ?? null;
-        }
+        retainedBoundaries.splice(0, retainedBoundaries.length, ...remappedBoundaries);
       }
       yield* stopSessionInternal(context, { emitExitEvent: false });
       yield* startSession({

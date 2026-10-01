@@ -13,6 +13,7 @@ import type {
   SDKResultError,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
 import {
   ApprovalRequestId,
   ClaudeSettings,
@@ -49,6 +50,7 @@ import {
 } from "../ClaudeModelCatalog.testFixtures.ts";
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
 import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
+import { remapClaudeForkTurnBoundaries } from "../claudeSessionHistory.ts";
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import type { ClaudeScopedLimitNames } from "./claudeUsageLimits.ts";
 import { makeClaudeAdapter, type ClaudeAdapterLiveOptions } from "./ClaudeAdapter.ts";
@@ -177,8 +179,9 @@ function makeHarness(config?: {
   readonly instanceId?: ProviderInstanceId;
   readonly scopedLimitNames?: ClaudeAdapterLiveOptions["scopedLimitNames"];
   readonly environment?: ClaudeAdapterLiveOptions["environment"];
-  readonly getSessionMessages?: ClaudeAdapterLiveOptions["getSessionMessages"];
+  readonly readSessionHistory?: ClaudeAdapterLiveOptions["readSessionHistory"];
   readonly forkSession?: ClaudeAdapterLiveOptions["forkSession"];
+  readonly freshQueries?: boolean;
 }) {
   const query = new FakeClaudeQuery();
   const queries = [query];
@@ -194,10 +197,12 @@ function makeHarness(config?: {
     ...(config?.instanceId ? { instanceId: config.instanceId } : {}),
     ...(config?.scopedLimitNames ? { scopedLimitNames: config.scopedLimitNames } : {}),
     modelCatalog: Effect.succeed(SYNTHETIC_CLAUDE_MODEL_CATALOG),
-    ...(config?.getSessionMessages ? { getSessionMessages: config.getSessionMessages } : {}),
+    ...(config?.readSessionHistory ? { readSessionHistory: config.readSessionHistory } : {}),
     ...(config?.forkSession ? { forkSession: config.forkSession } : {}),
     createQuery: (input) => {
-      if (createInput && config?.getSessionMessages) queries.push(new FakeClaudeQuery());
+      if (createInput && (config?.readSessionHistory || config?.freshQueries)) {
+        queries.push(new FakeClaudeQuery());
+      }
       createInput = input;
       return queries.at(-1)!;
     },
@@ -7192,77 +7197,68 @@ describe("ClaudeAdapterLive", () => {
         forkCalls.push(args);
         return { sessionId: "550e8400-e29b-41d4-a716-446655440020" };
       },
-      getSessionMessages: async (sessionId) => {
+      readSessionHistory: async (sessionId) => {
         const history: Awaited<
-          ReturnType<NonNullable<ClaudeAdapterLiveOptions["getSessionMessages"]>>
+          ReturnType<NonNullable<ClaudeAdapterLiveOptions["readSessionHistory"]>>
         > = [
           {
             type: "user",
             uuid: firstTurnId,
-            session_id: "550e8400-e29b-41d4-a716-446655440010",
             parent_tool_use_id: null,
-            parent_agent_id: null,
             message: { content: "first" },
           },
           {
             type: "assistant",
             uuid: "assistant-1",
-            session_id: "550e8400-e29b-41d4-a716-446655440010",
             parent_tool_use_id: null,
-            parent_agent_id: null,
             message: { content: [] },
           },
           {
             type: "user",
             uuid: "tool-result-1",
-            session_id: "550e8400-e29b-41d4-a716-446655440010",
             parent_tool_use_id: null,
-            parent_agent_id: null,
             message: { content: [{ type: "tool_result" }] },
           },
           {
             type: "assistant",
             uuid: "assistant-1-final",
-            session_id: "550e8400-e29b-41d4-a716-446655440010",
             parent_tool_use_id: null,
-            parent_agent_id: null,
             message: { content: [] },
           },
           {
             type: "user",
             uuid: secondTurnId,
-            session_id: "550e8400-e29b-41d4-a716-446655440010",
             parent_tool_use_id: null,
-            parent_agent_id: null,
             message: { content: "second" },
           },
           {
             type: "assistant",
             uuid: "assistant-2",
-            session_id: "550e8400-e29b-41d4-a716-446655440010",
             parent_tool_use_id: null,
-            parent_agent_id: null,
             message: { content: [] },
           },
           {
             type: "user",
             uuid: "steer",
-            session_id: sessionId,
             parent_tool_use_id: null,
-            parent_agent_id: null,
             message: { content: "steer the second turn" },
           },
           {
             type: "assistant",
             uuid: "assistant-steer",
-            session_id: sessionId,
             parent_tool_use_id: null,
-            parent_agent_id: null,
             message: { content: [] },
           },
         ];
         return sessionId.endsWith("0020")
-          ? history.slice(0, 4).map((message) => ({ ...message, uuid: `fork-${message.uuid}` }))
+          ? history.slice(0, 4).map((message) => ({
+              ...message,
+              uuid: `fork-${message.uuid}`,
+              forkedFrom: {
+                sessionId: "550e8400-e29b-41d4-a716-446655440010",
+                messageUuid: message.uuid,
+              },
+            }))
           : legacyHistory
             ? history.slice(0, 6)
             : missingBoundary
@@ -7400,6 +7396,230 @@ describe("ClaudeAdapterLive", () => {
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect(
+    "rewinds disconnected saved Claude history through an isolated native SDK worker",
+    () => {
+      const baseDir = NodeFS.mkdtempSync(NodePath.resolve(".scratch/claude-rollback-native-"));
+      const cwd = NodePath.join(baseDir, "workspace");
+      const homeDir = NodePath.join(baseDir, "claude-home");
+      const originalSessionId = "550e8400-e29b-41d4-a716-446655440010";
+      const uuid = (value: number) => `550e8400-e29b-41d4-a716-${String(value).padStart(12, "0")}`;
+      const turnIds = [uuid(101), uuid(102), uuid(103)];
+      const projectDir = NodePath.join(homeDir, "projects", cwd.replace(/[^a-zA-Z0-9-]/g, "-"));
+      NodeFS.mkdirSync(cwd, { recursive: true });
+      NodeFS.mkdirSync(projectDir, { recursive: true });
+      const entry = (type: string, id: number, parent: number | null, message?: unknown) => ({
+        type,
+        uuid: uuid(id),
+        parentUuid: parent === null ? null : uuid(parent),
+        sessionId: originalSessionId,
+        cwd,
+        timestamp: "2026-01-01T00:00:00.000Z",
+        ...(message === undefined ? {} : { message }),
+      });
+      const history = [
+        entry("user", 101, null, { role: "user", content: "repeat this prompt" }),
+        entry("assistant", 201, 101, {
+          role: "assistant",
+          content: [{ type: "text", text: "first" }],
+        }),
+        {
+          ...entry("system", 301, 201, { subtype: "stop_hook_summary" }),
+          subtype: "stop_hook_summary",
+        },
+        // A resumed branch need not link to the preceding turn. The native reader
+        // hides that turn even though the fork copies it and T3 still retains it.
+        entry("user", 102, null, { role: "user", content: "repeat this prompt" }),
+        entry("assistant", 202, 102, {
+          role: "assistant",
+          content: [{ type: "tool_use", id: "tool-1", name: "Read", input: {} }],
+        }),
+        entry("user", 401, 202, {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "tool-1", content: "synthetic result" }],
+        }),
+        entry("user", 402, 401, { role: "user", content: "steer the second turn" }),
+        entry("assistant", 203, 402, {
+          role: "assistant",
+          content: [{ type: "text", text: "second" }],
+        }),
+        {
+          ...entry("system", 302, 203, { subtype: "stop_hook_summary" }),
+          subtype: "stop_hook_summary",
+        },
+        entry("user", 103, 302, { role: "user", content: "remove this turn" }),
+        entry("assistant", 204, 103, {
+          role: "assistant",
+          content: [{ type: "text", text: "third" }],
+        }),
+      ];
+      const sourcePath = NodePath.join(projectDir, `${originalSessionId}.jsonl`);
+      const source = history.map((message) => JSON.stringify(message)).join("\n") + "\n";
+      NodeFS.writeFileSync(sourcePath, source);
+      const harness = makeHarness({
+        cwd,
+        baseDir,
+        claudeConfig: { homePath: homeDir },
+        freshQueries: true,
+      });
+      return Effect.gen(function* () {
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => NodeFS.rmSync(baseDir, { recursive: true, force: true })),
+        );
+        const adapter = yield* ClaudeAdapter;
+        const originalReaderMessages = yield* Effect.promise(() =>
+          getSessionMessages(originalSessionId, {
+            dir: cwd,
+            includeSystemMessages: true,
+            sessionStore: { load: async () => history, append: async () => {} },
+          }),
+        );
+        assert.equal(
+          originalReaderMessages.some((message) => message.uuid === turnIds[0]),
+          false,
+        );
+        yield* adapter.startSession({
+          threadId: THREAD_ID,
+          runtimeMode: "full-access",
+          cwd,
+          resumeCursor: { resume: originalSessionId, turnCount: 3, turnStartMessageIds: turnIds },
+        });
+        const originalQuery = harness.queries.at(-1)!;
+        yield* adapter.rollbackThread(THREAD_ID, 1);
+        assert.equal(originalQuery.closeCalls, 1);
+        const cursor = (yield* adapter.listSessions())[0]!.resumeCursor as {
+          resume: string;
+          turnCount: number;
+          turnStartMessageIds: Array<string>;
+        };
+        assert.notEqual(cursor.resume, originalSessionId);
+        assert.equal(cursor.turnCount, 2);
+        const forkHistory = NodeFS.readFileSync(
+          NodePath.join(projectDir, `${cursor.resume}.jsonl`),
+          "utf8",
+        )
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line));
+        const forkReaderMessages = yield* Effect.promise(() =>
+          getSessionMessages(cursor.resume, {
+            dir: cwd,
+            includeSystemMessages: true,
+            sessionStore: { load: async () => forkHistory, append: async () => {} },
+          }),
+        );
+        const removedIndex = originalReaderMessages.findIndex(
+          (message) => message.uuid === turnIds[2],
+        );
+        assert.notEqual(forkReaderMessages.length, removedIndex);
+        const forkPrompts = forkHistory.filter((message) =>
+          turnIds.includes(message.forkedFrom?.messageUuid),
+        );
+        assert.deepEqual(
+          forkPrompts.map((message) => message.forkedFrom.messageUuid),
+          turnIds.slice(0, 2),
+        );
+        assert.deepEqual(
+          cursor.turnStartMessageIds,
+          forkPrompts.map((message) => message.uuid),
+        );
+        assert.equal(
+          forkHistory.some((message) => message.forkedFrom?.messageUuid === uuid(402)),
+          true,
+        );
+        assert.equal(harness.getLastCreateQueryInput()?.options.env?.CLAUDE_CONFIG_DIR, homeDir);
+        assert.equal(NodeFS.readFileSync(sourcePath, "utf8"), source);
+
+        // A second rewind must use the fork's rewritten native IDs, including
+        // the retained first turn that getSessionMessages cannot return.
+        yield* adapter.rollbackThread(THREAD_ID, 1);
+        const secondCursor = (yield* adapter.listSessions())[0]!.resumeCursor as typeof cursor;
+        assert.equal(secondCursor.turnCount, 1);
+        const secondFork = NodeFS.readFileSync(
+          NodePath.join(projectDir, `${secondCursor.resume}.jsonl`),
+          "utf8",
+        )
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line));
+        assert.equal(
+          secondFork.some(
+            (message) => message.forkedFrom?.messageUuid === cursor.turnStartMessageIds[1],
+          ),
+          false,
+        );
+        assert.equal(
+          secondFork.some((message) => message.uuid === secondCursor.turnStartMessageIds[0]),
+          true,
+        );
+
+        yield* adapter.rollbackThread(THREAD_ID, 1);
+        assert.equal(harness.getLastCreateQueryInput()?.options.resume, undefined);
+        const newTurn = yield* adapter.sendTurn({
+          threadId: THREAD_ID,
+          input: "start again",
+          attachments: [],
+        });
+        assert.deepEqual(
+          ((yield* adapter.listSessions())[0]!.resumeCursor as typeof cursor).turnStartMessageIds,
+          [newTurn.turnId],
+        );
+      }).pipe(Effect.provide(harness.layer));
+    },
+  );
+
+  it("rejects a fork with changed, missing, reordered, or unrelated retained conversation", () => {
+    const sessionId = "synthetic-original-session";
+    const original = [
+      { type: "user" as const, uuid: "turn-1", message: { content: "repeated prompt" } },
+      { type: "assistant" as const, uuid: "reply-1", message: { content: "first reply" } },
+      { type: "system" as const, uuid: "notice" },
+      { type: "user" as const, uuid: "turn-2", message: { content: "repeated prompt" } },
+      { type: "assistant" as const, uuid: "reply-2", message: { content: "second reply" } },
+    ];
+    const fork = original
+      .filter((message) => message.type !== "system")
+      .map((message) => ({
+        ...message,
+        uuid: `fork-${message.uuid}`,
+        forkedFrom: { sessionId, messageUuid: message.uuid },
+      }));
+    assert.deepEqual(
+      remapClaudeForkTurnBoundaries(sessionId, original, fork, ["turn-1", "turn-2"]),
+      ["fork-turn-1", "fork-turn-2"],
+    );
+    const invalidForks = [
+      fork.slice(1),
+      [fork[2]!, fork[1]!, fork[0]!, fork[3]!],
+      fork.map((message, index) =>
+        index === 1 ? { ...message, message: { content: "changed reply" } } : message,
+      ),
+      fork.map((message, index) =>
+        index === 0
+          ? { ...message, forkedFrom: { sessionId: "unrelated", messageUuid: "turn-1" } }
+          : message,
+      ),
+      fork.map((message, index) =>
+        index === 2 ? { ...message, forkedFrom: { sessionId, messageUuid: "turn-1" } } : message,
+      ),
+      fork.map((message, index) =>
+        index === 2
+          ? { ...message, forkedFrom: { sessionId, messageUuid: "removed-turn" } }
+          : message,
+      ),
+    ];
+    for (const invalidFork of invalidForks) {
+      assert.equal(
+        remapClaudeForkTurnBoundaries(sessionId, original, invalidFork, ["turn-1", "turn-2"]),
+        undefined,
+      );
+    }
+    assert.equal(
+      remapClaudeForkTurnBoundaries(sessionId, original, fork, ["missing-turn"]),
+      undefined,
     );
   });
 
