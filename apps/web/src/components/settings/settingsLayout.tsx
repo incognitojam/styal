@@ -492,12 +492,14 @@ export function SettingsSubRows({ children }: { children: ReactNode }) {
  */
 export function SettingsSubRow({
   title,
+  description,
   resetAction,
   control,
   disabled = false,
   ...rowProps
 }: Omit<ComponentPropsWithoutRef<"div">, "title"> & {
   title: string;
+  description?: string;
   resetAction?: ReactNode;
   control: ReactNode;
   disabled?: boolean;
@@ -509,21 +511,24 @@ export function SettingsSubRow({
       ref={targetRef}
       tabIndex={rowProps.id ? -1 : rowProps.tabIndex}
       aria-disabled={disabled || undefined}
-      className="flex flex-col gap-2 rounded-md py-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-8"
+      className="flex flex-wrap items-center justify-between gap-x-8 gap-y-2 rounded-md py-1.5"
     >
-      <div className="flex min-h-5 items-center gap-1.5">
-        <h4
-          className={cn("text-[13px]", disabled ? "text-muted-foreground" : "text-foreground/90")}
-        >
-          {title}
-        </h4>
-        <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
-          {resetAction}
-        </span>
+      <div className="min-w-0">
+        <div className="flex min-h-5 items-center gap-1.5">
+          <h4
+            className={cn("text-[13px]", disabled ? "text-muted-foreground" : "text-foreground/90")}
+          >
+            {title}
+          </h4>
+          <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+            {resetAction}
+          </span>
+        </div>
+        {description ? (
+          <p className="text-xs leading-[1.45] text-muted-foreground/80">{description}</p>
+        ) : null}
       </div>
-      <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
-        {control}
-      </div>
+      <div className="ml-auto flex shrink-0 items-center gap-2">{control}</div>
     </div>
   );
 }

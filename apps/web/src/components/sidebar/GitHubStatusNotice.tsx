@@ -4,6 +4,7 @@ import {
   hasGitHubProject,
   resolveGitHubStatusNotice,
 } from "../../githubStatus";
+import { useClientSettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { useProjects } from "../../state/entities";
 import { GitHubIcon, type Icon } from "../Icons";
@@ -14,11 +15,12 @@ const GitHubBrandIcon: Icon = ({ className, ...props }) => (
 );
 
 export function GitHubStatusNotice() {
+  const enabled = useClientSettings((settings) => settings.githubStatusAlertsEnabled);
   const projects = useProjects();
   const hasRelevantProject = hasGitHubProject(projects);
   return (
     <StatusPageNotice
-      enabled={hasRelevantProject}
+      enabled={enabled && hasRelevantProject}
       icon={GitHubBrandIcon}
       pageName="GitHub"
       pageUrl={GITHUB_STATUS_PAGE_URL}

@@ -407,6 +407,7 @@ const ClientSettingsFields = Schema.Struct({
   fontSmoothing: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   claudeStatusAlertsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   openaiStatusAlertsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  githubStatusAlertsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   // When the first-run welcome wizard finished (or was skipped), as an ISO
   // timestamp. `null` alone does not mean "show the wizard" — every install
   // that predates this field decodes to `null` — so the gate also requires an
@@ -1526,6 +1527,7 @@ export const ClientSettingsPatch = Schema.Struct({
   fontSmoothing: Schema.optionalKey(Schema.Boolean),
   claudeStatusAlertsEnabled: Schema.optionalKey(Schema.Boolean),
   openaiStatusAlertsEnabled: Schema.optionalKey(Schema.Boolean),
+  githubStatusAlertsEnabled: Schema.optionalKey(Schema.Boolean),
   favorites: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({

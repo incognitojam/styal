@@ -159,6 +159,8 @@ import {
   SettingResetButton,
   SettingsPageContainer,
   SettingsRow,
+  SettingsSubRow,
+  SettingsSubRows,
   SettingsSection,
   useSettingsSearchTarget,
   useSettingsSearchTargetId,
@@ -2356,32 +2358,52 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
-          {...searchableSetting("claude-outage-alerts")}
-          description="Shows affected Claude services in the sidebar during incidents, based on Anthropic's official status page."
-          control={
-            <Switch
-              checked={settings.claudeStatusAlertsEnabled}
-              onCheckedChange={(checked) =>
-                updateSettings({ claudeStatusAlertsEnabled: Boolean(checked) })
+          {...searchableSetting("outage-alerts")}
+          description="Shows affected services in the sidebar during incidents, based on each service's official status page."
+        >
+          <SettingsSubRows>
+            <SettingsSubRow
+              {...searchableSetting("claude-outage-alerts")}
+              title="Claude"
+              control={
+                <Switch
+                  checked={settings.claudeStatusAlertsEnabled}
+                  onCheckedChange={(checked) =>
+                    updateSettings({ claudeStatusAlertsEnabled: Boolean(checked) })
+                  }
+                  aria-label="Enable Claude outage alerts"
+                />
               }
-              aria-label="Enable Claude outage alerts"
             />
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("openai-codex-outage-alerts")}
-          description="Shows affected services in the sidebar during incidents, based on OpenAI's official status page."
-          control={
-            <Switch
-              checked={settings.openaiStatusAlertsEnabled}
-              onCheckedChange={(checked) =>
-                updateSettings({ openaiStatusAlertsEnabled: Boolean(checked) })
+            <SettingsSubRow
+              {...searchableSetting("openai-codex-outage-alerts")}
+              title="OpenAI"
+              control={
+                <Switch
+                  checked={settings.openaiStatusAlertsEnabled}
+                  onCheckedChange={(checked) =>
+                    updateSettings({ openaiStatusAlertsEnabled: Boolean(checked) })
+                  }
+                  aria-label="Enable OpenAI outage alerts"
+                />
               }
-              aria-label="Enable OpenAI outage alerts"
             />
-          }
-        />
+            <SettingsSubRow
+              {...searchableSetting("github-outage-alerts")}
+              title="GitHub"
+              description="Shown while you have a GitHub project."
+              control={
+                <Switch
+                  checked={settings.githubStatusAlertsEnabled}
+                  onCheckedChange={(checked) =>
+                    updateSettings({ githubStatusAlertsEnabled: Boolean(checked) })
+                  }
+                  aria-label="Enable GitHub outage alerts"
+                />
+              }
+            />
+          </SettingsSubRows>
+        </SettingsRow>
 
         <SettingsRow
           {...searchableSetting("time-format")}

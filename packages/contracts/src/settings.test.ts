@@ -673,6 +673,21 @@ describe("ClientSettings OpenAI status alerts", () => {
   });
 });
 
+describe("ClientSettings GitHub status alerts", () => {
+  it("defaults the alerts on", () => {
+    expect(decodeClientSettings({}).githubStatusAlertsEnabled).toBe(true);
+  });
+
+  it("accepts the setting in stored settings and patches", () => {
+    expect(decodeClientSettingsPatch({ githubStatusAlertsEnabled: false })).toEqual({
+      githubStatusAlertsEnabled: false,
+    });
+    expect(
+      decodeClientSettings({ githubStatusAlertsEnabled: false }).githubStatusAlertsEnabled,
+    ).toBe(false);
+  });
+});
+
 describe("ClientSettings pull request merge methods", () => {
   it("defaults to no project overrides and accepts supported methods", () => {
     expect(decodeClientSettings({}).pullRequestMergeMethodOverrides).toEqual({});

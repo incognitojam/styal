@@ -131,7 +131,7 @@ export function NotificationSettings() {
                     if (isNotificationSound(value)) updateSettings({ [key]: value });
                   }}
                 >
-                  <SelectTrigger size="sm" className="w-full sm:w-40" aria-label={label}>
+                  <SelectTrigger size="sm" className="w-40" aria-label={label}>
                     <SelectValue>{NOTIFICATION_SOUND_LABELS[settings[key]]}</SelectValue>
                   </SelectTrigger>
                   <SelectPopup align="end" alignItemWithTrigger={false}>
