@@ -481,6 +481,53 @@ export function SettingsRow({
   );
 }
 
+/** Groups SettingsSubRows as children of the SettingsRow they refine. */
+export function SettingsSubRows({ children }: { children: ReactNode }) {
+  return <div className="mt-2 mb-2 border-l border-border/60 pl-3 sm:pl-4">{children}</div>;
+}
+
+/**
+ * A compact option nested under a parent SettingsRow. `disabled` dims the
+ * label; the caller disables its own controls.
+ */
+export function SettingsSubRow({
+  title,
+  resetAction,
+  control,
+  disabled = false,
+  ...rowProps
+}: Omit<ComponentPropsWithoutRef<"div">, "title"> & {
+  title: string;
+  resetAction?: ReactNode;
+  control: ReactNode;
+  disabled?: boolean;
+}) {
+  const targetRef = useSettingsSearchTarget<HTMLDivElement>(rowProps.id);
+  return (
+    <div
+      {...rowProps}
+      ref={targetRef}
+      tabIndex={rowProps.id ? -1 : rowProps.tabIndex}
+      aria-disabled={disabled || undefined}
+      className="flex flex-col gap-2 rounded-md py-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-8"
+    >
+      <div className="flex min-h-5 items-center gap-1.5">
+        <h4
+          className={cn("text-[13px]", disabled ? "text-muted-foreground" : "text-foreground/90")}
+        >
+          {title}
+        </h4>
+        <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+          {resetAction}
+        </span>
+      </div>
+      <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
+        {control}
+      </div>
+    </div>
+  );
+}
+
 export function SettingResetButton({
   label,
   tooltip = "Reset to default",
