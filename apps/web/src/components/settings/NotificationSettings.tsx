@@ -1,3 +1,4 @@
+import { Volume2Icon } from "lucide-react";
 import { useState } from "react";
 import { DEFAULT_CLIENT_SETTINGS, type NotificationSound } from "@t3tools/contracts/settings";
 
@@ -11,6 +12,7 @@ import {
 } from "../../threadNotifications";
 import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SettingsRow, SettingsSubRow, SettingsSubRows, SettingResetButton } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
@@ -142,18 +144,25 @@ export function NotificationSettings() {
                     ))}
                   </SelectPopup>
                 </Select>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  aria-label={`Preview ${label.toLowerCase()}`}
-                  disabled={!soundEnabled || settings[key] === "none"}
-                  onClick={async () => {
-                    await unlockNotificationAudio();
-                    await playNotificationSound(kind, () => true, settings[key]);
-                  }}
-                >
-                  Preview
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost-muted"
+                        size="icon-sm"
+                        aria-label={`Preview ${label.toLowerCase()}`}
+                        disabled={!soundEnabled || settings[key] === "none"}
+                        onClick={async () => {
+                          await unlockNotificationAudio();
+                          await playNotificationSound(kind, () => true, settings[key]);
+                        }}
+                      >
+                        <Volume2Icon />
+                      </Button>
+                    }
+                  />
+                  <TooltipPopup side="top">Preview</TooltipPopup>
+                </Tooltip>
               </>
             }
           />
