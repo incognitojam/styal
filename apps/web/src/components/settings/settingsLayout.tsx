@@ -511,7 +511,12 @@ export function SettingsSubRow({
       ref={targetRef}
       tabIndex={rowProps.id ? -1 : rowProps.tabIndex}
       aria-disabled={disabled || undefined}
-      className="flex flex-wrap items-center justify-between gap-x-8 gap-y-2 rounded-md py-1.5"
+      // With a description, align the control to the title line so controls in
+      // neighbouring sub-rows stay evenly spaced.
+      className={cn(
+        "flex flex-wrap justify-between gap-x-8 gap-y-2 rounded-md py-1.5",
+        description ? "items-start" : "items-center",
+      )}
     >
       <div className="min-w-0">
         <div className="flex min-h-5 items-center gap-1.5">
