@@ -1223,7 +1223,7 @@ features:
     invariants:
       - Opening and refreshing a pull request cannot exhaust the GitHub GraphQL quota through unbounded nested review-thread connections.
       - Large review conversations remain pageable up to the maintained safety ceiling instead of being silently truncated to the cheap initial query.
-      - Failed review-comment reads preserve loaded comments and offer retry without claiming the conversation is long or empty; pagination bounds are reported separately.
+      - Failed review-comment reads preserve loaded comments and direct users to the existing Refresh action without claiming the conversation is long or empty; pagination bounds are reported separately.
     implementation_paths:
       - apps/server/src/pullRequest/GitHubPullRequestCli.ts
       - apps/server/src/pullRequest/GitHubPullRequestProvider.ts

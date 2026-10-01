@@ -311,7 +311,6 @@ export function PullRequestSummaryTab({
   detail,
   activityPending,
   activityError,
-  onRetryActivity,
   pendingFinding,
   fixFindingLabel = "Fix in a thread",
   onFixFinding,
@@ -323,7 +322,6 @@ export function PullRequestSummaryTab({
   detail: PullRequestDetailView;
   activityPending: boolean;
   activityError: string | null;
-  onRetryActivity: () => void;
   /** The hand-off currently preparing, if any, so only the finding it belongs to says so. */
   pendingFinding?: string | null;
   fixFindingLabel?: string;
@@ -661,14 +659,10 @@ export function PullRequestSummaryTab({
         {activityPending ? (
           <PullRequestConversationGhost />
         ) : activityError ? (
-          <PullRequestActivityUnavailableState
-            compact
-            error={activityError}
-            onRetry={onRetryActivity}
-          />
+          <PullRequestActivityUnavailableState compact error={activityError} onRetry={onRefresh} />
         ) : (
           <>
-            <PullRequestConversationNotice activity={detail} onRetry={onRetryActivity} />
+            <PullRequestConversationNotice activity={detail} />
             {detail.comments.length === 0 ? (
               !detail.commentsUnavailable && !detail.commentsTruncated ? (
                 <p className="py-2 text-xs text-muted-foreground">No comments yet.</p>

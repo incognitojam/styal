@@ -557,7 +557,6 @@ export function PullRequestTimelineTab({
   order,
   onOpenCommit,
   onRefresh,
-  onRetryActivity,
 }: {
   detail: PullRequestDetailView;
   environmentId: EnvironmentId;
@@ -566,7 +565,6 @@ export function PullRequestTimelineTab({
   order: "newest" | "oldest";
   onOpenCommit: (oid: string) => void;
   onRefresh: () => void;
-  onRetryActivity: () => void;
 }) {
   const events = buildPullRequestTimeline(detail);
   const newestCommitAt = newestPullRequestCommitAt(detail.commits);
@@ -593,7 +591,7 @@ export function PullRequestTimelineTab({
   return (
     <div className="h-full overflow-y-auto px-4 py-5">
       <div className="mx-auto max-w-3xl">
-        <PullRequestConversationNotice activity={detail} onRetry={onRetryActivity} />
+        <PullRequestConversationNotice activity={detail} />
         <div className="relative">
           <span aria-hidden className="absolute bottom-5 left-[15px] top-1 w-px bg-border/45" />
           {rows.map((row) => {

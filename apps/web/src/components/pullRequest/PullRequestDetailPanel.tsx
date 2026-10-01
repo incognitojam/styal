@@ -837,10 +837,6 @@ function PullRequestDetailPanelBody({
     activityRevision.current = next;
   }, [activityQuery.isPending, activityQuery.refresh, coreDetail, tabScopeKey]);
   const invalidate = useAtomCommand(pullRequestEnvironment.invalidate, { reportFailure: false });
-  const refreshActivityFromHost = async () => {
-    await invalidate({ environmentId, input: { reference, scope: "detail" } });
-    activityQuery.refresh();
-  };
   const refreshDetailFromHost = useCallback(
     async (scope: PullRequestInvalidationScope) => {
       await invalidate({
@@ -2709,7 +2705,6 @@ function PullRequestDetailPanelBody({
                   detail={detail}
                   activityPending={activityPending}
                   activityError={activityError}
-                  onRetryActivity={() => void refreshActivityFromHost()}
                   pendingFinding={handoff}
                   fixFindingLabel={handoffLabels.fixFinding}
                   onFixFinding={startFixFinding}
@@ -2739,11 +2734,10 @@ function PullRequestDetailPanelBody({
                 ) : activityError ? (
                   <PullRequestActivityUnavailableState
                     error={activityError}
-                    onRetry={() => void refreshActivityFromHost()}
+                    onRetry={activityQuery.refresh}
                   />
                 ) : (
                   <PullRequestTimelineTab
-                    onRetryActivity={() => void refreshActivityFromHost()}
                     environmentId={environmentId}
                     detail={detail}
                     threadRef={threadRef}
