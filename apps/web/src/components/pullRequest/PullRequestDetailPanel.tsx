@@ -806,9 +806,7 @@ function PullRequestDetailPanelBody({
   const canMergeSinglePullRequest = allowsSinglePullRequestMerge({
     supportsStackActions,
     hasStack: nativeStack !== null,
-    // `isSuccess` stays true while an earlier answer is refreshed, so merge buttons stay visible.
-    stackAnswered: nativeStackQuery.isSuccess,
-    stackError: nativeStackQuery.error,
+    stackQuery: nativeStackQuery,
   });
   const activityPending = activityQuery.isPending && activity === null;
   const activityError = activity === null ? activityQuery.error : null;
