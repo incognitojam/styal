@@ -77,7 +77,7 @@ features:
   - id: antigravity-reasoning-effort
     title: Separate Antigravity model generations from reasoning effort
     status: maintained
-    prs: [583]
+    prs: [583, 603]
     invariants:
       - Antigravity advertises each Gemini family and generation once, with only account-available native thinking variants as reasoning choices.
       - Web, desktop, mobile, and text generation preserve exact native reasoning choices across model changes, legacy selections, and session resumes.
