@@ -1,5 +1,5 @@
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { act } from "react";
+import { act, useLayoutEffect } from "react";
 import { create } from "react-test-renderer";
 import { describe, expect, it, vi } from "vite-plus/test";
 
@@ -52,13 +52,15 @@ async function withMenu(
   let open = () => {};
   function Consumer() {
     const { onContextMenu } = useExternalLinkContextMenu(ref);
-    open = () =>
-      onContextMenu(
-        { preventDefault() {}, stopPropagation() {}, clientX: 5, clientY: 8 } as Parameters<
-          typeof onContextMenu
-        >[0],
-        url,
-      );
+    useLayoutEffect(() => {
+      open = () =>
+        onContextMenu(
+          { preventDefault() {}, stopPropagation() {}, clientX: 5, clientY: 8 } as Parameters<
+            typeof onContextMenu
+          >[0],
+          url,
+        );
+    }, [onContextMenu]);
     return null;
   }
   const renderer = await act(() => create(<Consumer />));
