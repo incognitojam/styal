@@ -1286,6 +1286,7 @@ features:
     invariants:
       - A private xAI completion keeps the standard prompt RPC alive while waiting for 250 ms without root-session reply text or thoughts, so delayed transport output can arrive before the adapter drains its event queue.
       - The standard RPC can settle first and explicit cancellation remains immediate, including after a private completion has arrived.
+      - Provider-reported rate limits and errors settle immediately with their original failure reason.
       - Child-session output, replay, metadata, and background tool polls do not extend the reply quiet window.
       - Reply output that prevents settlement for two seconds produces a visible incomplete-reply error; output after a completed quiet window remains outside the settled turn.
     rationale: A queue barrier covers events already received, while Grok can send reply chunks after its private completion. A bounded quiet window supports hung RPCs without claiming the private signal is an end-of-stream marker.

@@ -429,6 +429,9 @@ export const makeXAiPromptCompletionRuntime = Effect.fn("makeXAiPromptCompletion
     const activeSessionIdRef = yield* Ref.make<string | undefined>(undefined);
     const pendingRef = yield* Ref.make<ReadonlyArray<PendingXAiPromptCompletion>>([]);
     const completedPromptIdsRef = yield* Ref.make<ReadonlyArray<string>>([]);
+    const monotonicMillis = Clock.monotonicTimeNanos.pipe(
+      Effect.map((nanos) => Number(nanos) / 1_000_000),
+    );
     const lastReplyAt = yield* Ref.make(0);
     let nextPromptFallbackId = 0;
     const allocatePromptFallbackId = Effect.sync(() => {
@@ -456,7 +459,7 @@ export const makeXAiPromptCompletionRuntime = Effect.fn("makeXAiPromptCompletion
         ) {
           return;
         }
-        yield* Ref.set(lastReplyAt, yield* Clock.currentTimeMillis);
+        yield* Ref.set(lastReplyAt, yield* monotonicMillis);
       }),
     );
 
@@ -466,10 +469,10 @@ export const makeXAiPromptCompletionRuntime = Effect.fn("makeXAiPromptCompletion
     // fallback, not a wire-level end marker: chunks after the quiet boundary can
     // still be dropped. Fail if output prevents a quiet window within the budget.
     const waitForReplyIdle = Effect.gen(function* () {
-      const startedAt = yield* Clock.currentTimeMillis;
+      const startedAt = yield* monotonicMillis;
       const deadline = startedAt + xAiCompletionMaxWaitMs;
       while (true) {
-        const now = yield* Clock.currentTimeMillis;
+        const now = yield* monotonicMillis;
         const quietAt = Math.max(startedAt, yield* Ref.get(lastReplyAt)) + xAiCompletionQuietMs;
         if (now >= quietAt) return;
         if (now >= deadline) {
@@ -512,9 +515,9 @@ export const makeXAiPromptCompletionRuntime = Effect.fn("makeXAiPromptCompletion
           return yield* Effect.raceAllFirst([
             runtime.prompt(requestPayload, promptOptions),
             Effect.gen(function* () {
-              const result = yield* Effect.exit(Deferred.await(fallback.deferred));
+              const result = yield* Deferred.await(fallback.deferred);
               yield* waitForReplyIdle;
-              return yield* result;
+              return result;
             }),
             Deferred.await(fallback.cancelled).pipe(
               Effect.as(promptResponseFromXAi({ sessionId, promptId, stopReason: "cancelled" })),

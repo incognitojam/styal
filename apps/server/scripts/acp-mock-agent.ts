@@ -29,6 +29,7 @@ const emitXAiPlanMdWrite = process.env.T3_ACP_EMIT_XAI_PLAN_MD_WRITE === "1";
 const emitXAiPromptCompleteThenHang = process.env.T3_ACP_EMIT_XAI_PROMPT_COMPLETE_THEN_HANG === "1";
 const waitForXAiTailRelease = process.env.T3_ACP_WAIT_FOR_XAI_TAIL_RELEASE === "1";
 const replyAfterXAiTail = process.env.T3_ACP_REPLY_AFTER_XAI_TAIL === "1";
+const emitXAiErrorThenHang = process.env.T3_ACP_EMIT_XAI_ERROR_THEN_HANG === "1";
 const emitXAiRateLimitThenHang = process.env.T3_ACP_EMIT_XAI_RATE_LIMIT_THEN_HANG === "1";
 const emitXAiAskUserQuestionThenHang =
   process.env.T3_ACP_EMIT_XAI_ASK_USER_QUESTION_THEN_HANG === "1";
@@ -726,12 +727,12 @@ const program = Effect.gen(function* () {
         return yield* Effect.never;
       }
 
-      if (emitXAiRateLimitThenHang) {
+      if (emitXAiRateLimitThenHang || emitXAiErrorThenHang) {
         writeJsonRpcNotification("_x.ai/session/prompt_complete", {
           sessionId: requestedSessionId,
           promptId: promptIdFromRequestMeta(request) ?? "mock-xai-rate-limit-prompt-1",
-          stopReason: "rate_limit",
-          agentResult: null,
+          stopReason: emitXAiRateLimitThenHang ? "rate_limit" : "error",
+          agentResult: emitXAiErrorThenHang ? "Synthetic Grok failure." : null,
         });
         return yield* Effect.never;
       }

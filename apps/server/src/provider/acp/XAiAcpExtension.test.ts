@@ -457,26 +457,38 @@ describe("XAiAcpExtension", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), TestClock.withLive),
   );
 
-  it.effect("fails a hung standard prompt from an xAI rate-limit completion", () =>
-    Effect.gen(function* () {
-      const runtime = yield* makePromptCompletionRuntime({
-        T3_ACP_EMIT_XAI_RATE_LIMIT_THEN_HANG: "1",
-      });
-      yield* runtime.start();
-
-      const error = yield* Effect.flip(
-        runtime.prompt({
-          prompt: [{ type: "text", text: "hi" }],
-        }),
-      );
-
-      expect(error).toMatchObject({
-        _tag: "AcpRequestError",
-        code: -32003,
-        errorMessage: "Grok usage limit reached. Try again later.",
-      });
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), TestClock.withLive),
-  );
+  for (const reason of ["rate_limit", "error"] as const) {
+    it.effect(`preserves an xAI ${reason} failure without waiting for output to quiet`, () =>
+      Effect.gen(function* () {
+        const runtime = yield* makePromptCompletionRuntime({
+          [reason === "rate_limit"
+            ? "T3_ACP_EMIT_XAI_RATE_LIMIT_THEN_HANG"
+            : "T3_ACP_EMIT_XAI_ERROR_THEN_HANG"]: "1",
+        });
+        yield* runtime.start();
+        // Keep the prompt on the frozen test clock. Only the join's failure
+        // guard uses live time, so a settlement sleep would time out here.
+        const prompt = yield* runtime
+          .prompt({
+            prompt: [{ type: "text", text: "hi" }],
+          })
+          .pipe(Effect.forkChild);
+        const error = yield* Fiber.join(prompt).pipe(
+          Effect.flip,
+          Effect.timeout("2 seconds"),
+          TestClock.withLive,
+        );
+        expect(error).toMatchObject({
+          _tag: "AcpRequestError",
+          code: reason === "rate_limit" ? -32003 : -32603,
+          errorMessage:
+            reason === "rate_limit"
+              ? "Grok usage limit reached. Try again later."
+              : "Synthetic Grok failure.",
+        });
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    );
+  }
 
   it.effect("ignores stale xAI completion from an already settled prompt", () =>
     Effect.gen(function* () {
