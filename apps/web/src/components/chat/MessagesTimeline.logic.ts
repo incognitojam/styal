@@ -39,6 +39,7 @@ import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@t3to
 import {
   deriveToolRowPresentation,
   isPreviewToolName,
+  isWorkspaceSearchInput,
   memoryFileToolKind,
   memoryFileToolPath,
 } from "@t3tools/shared/toolRowPresentation";
@@ -615,7 +616,10 @@ function turnFoldActivityKind(entry: WorkLogEntry): TurnFoldActivityKind | null 
   if (entry.itemType === "file_change" || (entry.changedFiles?.length ?? 0) > 0) {
     return "file-change";
   }
-  if (entry.itemType === "web_search") return "web";
+  // ACP workspace greps arrive typed as web searches; count them like Grep.
+  if (entry.itemType === "web_search") {
+    return isWorkspaceSearchInput(entry.toolInput) ? "tool" : "web";
+  }
   if (
     entry.itemType === "mcp_tool_call" ||
     entry.itemType === "dynamic_tool_call" ||

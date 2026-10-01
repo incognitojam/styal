@@ -186,6 +186,8 @@ const TOOL_INPUT_KEPT_FIELDS = [
   "file_path",
   "notebook_path",
   "path",
+  // ACP searches name the directory they ran in; web searches have none.
+  "directory_path",
   "pattern",
   "query",
   "skill",
@@ -346,7 +348,11 @@ export function projectToolInput(
 
 function projectToolIdentity(data: Record<string, unknown>): Record<string, unknown> {
   const toolName = asTrimmedString(data.toolName) ?? asTrimmedString(data.tool);
-  const input = projectToolInput(data.input ?? asRecord(data.state)?.input, toolName);
+  // ACP adapters keep the agent's arguments as `rawInput`.
+  const input = projectToolInput(
+    data.input ?? asRecord(data.state)?.input ?? data.rawInput,
+    toolName,
+  );
   return {
     ...(toolName ? { toolName } : {}),
     ...(input ? { input } : {}),

@@ -1213,6 +1213,7 @@ features:
       - Claude, Codex, and OpenCode file edits retain structured paths, line statistics, lifecycle state, and provider-independent presentation without eagerly sending full diffs to clients.
       - Folded completed turns summarize the categories of tools used with recognizable icons.
       - Claude project memory writes and index updates form a distinct work-log category on web and mobile; similarly named repository files remain ordinary edits.
+      - Page fetches read as "Fetched page" with their URL for Claude and ACP providers, and ACP workspace searches read and count as code searches rather than web lookups, including in historical threads.
     implementation_paths:
       - apps/mobile/src/features/threads/thread-work-log.tsx
       - apps/mobile/src/lib/threadActivity.ts
@@ -1266,6 +1267,7 @@ features:
     upstream:
       status: partial
       tracking:
+        - https://github.com/pingdotgg/t3code/pull/13375
         - https://github.com/pingdotgg/t3code/pull/7152
         - https://github.com/pingdotgg/t3code/pull/8395
         - https://github.com/pingdotgg/t3code/pull/9106

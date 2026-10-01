@@ -18,7 +18,11 @@ import {
   readReviewFindingsReport,
   type ReviewFindingsReport,
 } from "@t3tools/shared/reviewFindings";
-import { memoryFileToolKind, memoryFileToolPath } from "@t3tools/shared/toolRowPresentation";
+import {
+  isWorkspaceSearchInput,
+  memoryFileToolKind,
+  memoryFileToolPath,
+} from "@t3tools/shared/toolRowPresentation";
 
 /**
  * Activity kinds clients show as a row of their own: never merged into a
@@ -619,7 +623,8 @@ export function workEntryIndicatesToolSuccess(entry: WorkLogPresentationEntry): 
 function workLogEntryIsLocalCodeSearch(entry: WorkLogPresentationEntry): boolean {
   return (
     entry.itemType === "web_search" &&
-    /\bgrep\b/i.test(normalizeCompactToolLabel(entry.toolTitle ?? entry.label))
+    (/\bgrep\b/i.test(normalizeCompactToolLabel(entry.toolTitle ?? entry.label)) ||
+      isWorkspaceSearchInput(entry.toolInput))
   );
 }
 

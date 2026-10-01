@@ -52,7 +52,7 @@ const SERVER_CONFIG_STORE_NAME = "server-config";
 const VCS_REFS_STORE_NAME = "vcs-refs";
 const CATALOG_KEY = "document";
 const SHELL_SNAPSHOT_CACHE_SCHEMA_VERSION = 1;
-const THREAD_SNAPSHOT_CACHE_SCHEMA_VERSION = 4;
+const THREAD_SNAPSHOT_CACHE_SCHEMA_VERSION = 5;
 
 const StoredShellSnapshot = Schema.Struct({
   schemaVersion: Schema.Literal(SHELL_SNAPSHOT_CACHE_SCHEMA_VERSION),
@@ -66,8 +66,9 @@ const StoredShellSnapshotJson = Schema.fromJsonString(StoredShellSnapshot);
 // exists for rollback safety: a pre-pagination client would decode a windowed
 // v2 record, silently drop the unknown `page` field, and treat the partial
 // thread as complete forever. v4 refreshes cached activity payloads after
-// command exit codes were added to the compact server projection. Older entries
-// fail to decode and are treated as a cold cache.
+// command exit codes were added to the compact server projection, and v5 after
+// ACP tool arguments joined it. Older entries fail to decode and are treated as
+// a cold cache.
 const StoredThreadSnapshot = Schema.Struct({
   schemaVersion: Schema.Literal(THREAD_SNAPSHOT_CACHE_SCHEMA_VERSION),
   environmentId: EnvironmentId,
