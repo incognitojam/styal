@@ -1,7 +1,7 @@
 import {
   type ModelCapabilities,
   type ProviderDriverKind,
-  type ProviderInstanceId,
+  ProviderInstanceId,
   type ProviderOptionSelection,
   type ScopedThreadRef,
   type ServerProviderModel,
@@ -12,6 +12,7 @@ import {
   getProviderOptionDescriptors,
   isClaudeUltrathinkPrompt,
   normalizeModelSlug,
+  normalizeAntigravityModelSelection,
 } from "@t3tools/shared/model";
 import type { VariantProps } from "class-variance-authority";
 import type { ReactNode } from "react";
@@ -98,8 +99,19 @@ function resolveComposerOptionSelections(
   caps: ModelCapabilities;
   selections: ReadonlyArray<ProviderOptionSelection> | undefined;
 } {
+  const options =
+    provider === "antigravity"
+      ? normalizeAntigravityModelSelection(
+          {
+            instanceId: ProviderInstanceId.make("antigravity"),
+            model,
+            ...(modelOptions ? { options: modelOptions } : {}),
+          },
+          models,
+        ).options
+      : modelOptions;
   const caps = getProviderModelCapabilities(models, model, provider, planModeEnabled);
-  return { caps, selections: withImplicitFastModeDefault(caps, modelOptions) };
+  return { caps, selections: withImplicitFastModeDefault(caps, options) };
 }
 
 export function getComposerProviderState(input: ComposerProviderStateInput): ComposerProviderState {
@@ -147,10 +159,10 @@ export function getComposerProviderState(input: ComposerProviderStateInput): Com
   return {
     provider,
     promptEffort,
-    modelOptionsForDispatch: buildExplicitProviderOptionSelectionsFromDescriptors(
-      descriptors,
-      selections,
-    ),
+    modelOptionsForDispatch:
+      provider === "antigravity"
+        ? selections
+        : buildExplicitProviderOptionSelectionsFromDescriptors(descriptors, selections),
     ...(ultrathinkActive
       ? {
           composerFrameClassName: "ultrathink-frame",

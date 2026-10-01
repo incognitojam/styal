@@ -12,6 +12,7 @@ import {
 import {
   type CustomModelDefinition,
   createModelSelection,
+  normalizeAntigravityModelSelection,
   normalizeCustomModelSlug,
   readCustomModelEntries,
   resolveSelectableModel,
@@ -398,10 +399,17 @@ export function resolveAppModelSelectionState(
   settings: UnifiedSettings,
   providers: ReadonlyArray<ServerProvider>,
 ): ModelSelection {
-  const selection = settings.textGenerationModelSelection ?? {
+  const storedSelection = settings.textGenerationModelSelection ?? {
     instanceId: DEFAULT_TEXT_GENERATION_INSTANCE_ID,
     model: DEFAULT_TEXT_GENERATION_MODEL,
   };
+  const selectedProvider = providers.find(
+    (provider) => provider.instanceId === storedSelection.instanceId,
+  );
+  const selection =
+    selectedProvider?.driver === "antigravity"
+      ? normalizeAntigravityModelSelection(storedSelection, selectedProvider.models)
+      : storedSelection;
   const supportedProviders = providers.filter(
     (provider) => provider.supportsTextGeneration !== false,
   );

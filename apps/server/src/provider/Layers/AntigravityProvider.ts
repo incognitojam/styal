@@ -1,5 +1,4 @@
 import {
-  ANTIGRAVITY_DEFAULT_MODEL,
   ProviderDriverKind,
   type AntigravitySettings,
   type ProviderSetupError,
@@ -7,7 +6,6 @@ import {
   type ServerProviderModel,
   type ServerProviderSlashCommand,
 } from "@t3tools/contracts";
-import { createModelCapabilities } from "@t3tools/shared/model";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -18,6 +16,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import type * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/schema";
 
+import { groupAntigravityModels } from "../AntigravityModels.ts";
 import type { AcpSessionRuntimeStartResult } from "../acp/AcpSessionRuntime.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
 import {
@@ -30,7 +29,6 @@ import {
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
 
-const EMPTY_MODEL_CAPABILITIES = createModelCapabilities({ optionDescriptors: [] });
 const MAX_WORKSPACE_SNAPSHOTS = 32;
 const HEALTH_CHECK_TIMEOUT = "90 seconds";
 const SIGN_IN_MESSAGE = "Sign in with Google to use Antigravity.";
@@ -42,7 +40,7 @@ type SessionSetupResult = Pick<
   "configOptions" | "models"
 >;
 
-/** Keep the native model IDs, including model-specific thinking levels. */
+/** Advertise one model per generation, with native thinking variants as options. */
 export function buildAntigravityModelsFromSession(
   setup: SessionSetupResult,
 ): ReadonlyArray<ServerProviderModel> {
@@ -60,22 +58,7 @@ export function buildAntigravityModelsFromSession(
             name: model.name,
           })) ?? [])
         : [];
-  const seen = new Set<string>();
-  return entries.flatMap((entry): ServerProviderModel[] => {
-    if (!entry.value.trim() || seen.has(entry.value)) return [];
-    seen.add(entry.value);
-    return [
-      {
-        slug: entry.value,
-        name: entry.name.trim() ? entry.name : entry.value,
-        isCustom: false,
-        ...(entry.value === currentValue
-          ? { isDefault: true, aliases: [ANTIGRAVITY_DEFAULT_MODEL] }
-          : {}),
-        capabilities: EMPTY_MODEL_CAPABILITIES,
-      },
-    ];
-  });
+  return groupAntigravityModels(entries, currentValue);
 }
 
 function nativeCommands(

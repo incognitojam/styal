@@ -6,6 +6,7 @@ import type {
 import {
   buildExplicitProviderOptionSelectionsFromDescriptors,
   getProviderOptionDescriptors,
+  normalizeAntigravityModelSelection,
 } from "@t3tools/shared/model";
 
 export type ModelOption = {
@@ -61,6 +62,16 @@ function normalizeSelectionOptions(
       };
 }
 
+export function normalizeModelSelection(
+  config: T3ServerConfig | null | undefined,
+  selection: ModelSelection,
+): ModelSelection {
+  const provider = config?.providers.find((entry) => entry.instanceId === selection.instanceId);
+  return provider?.driver === "antigravity"
+    ? normalizeAntigravityModelSelection(selection, provider.models)
+    : selection;
+}
+
 /** Whether a known Antigravity selection needs setup or a different model. */
 export function isModelSelectionUnavailable(
   config: T3ServerConfig | null | undefined,
@@ -69,11 +80,17 @@ export function isModelSelectionUnavailable(
   if (!config || !selection) {
     return false;
   }
+  selection = normalizeModelSelection(config, selection);
   const provider = config.providers.find(
     (candidate) => candidate.instanceId === selection.instanceId,
   );
   const driver =
     provider?.driver ?? config.settings?.providerInstances[selection.instanceId]?.driver;
+  const model = provider?.models.find((entry) => entry.slug === selection.model);
+  const effort = selection.options?.find((entry) => entry.id === "reasoningEffort");
+  const descriptor = model?.capabilities?.optionDescriptors?.find(
+    (entry) => entry.id === "reasoningEffort" && entry.type === "select",
+  );
   return (
     driver === "antigravity" &&
     (!provider ||
@@ -81,7 +98,10 @@ export function isModelSelectionUnavailable(
       !provider.installed ||
       provider.auth.status === "unauthenticated" ||
       provider.availability === "unavailable" ||
-      !provider.models.some((model) => model.slug === selection.model))
+      !model ||
+      (effort !== undefined &&
+        descriptor?.type === "select" &&
+        !descriptor.options.some((choice) => choice.id === effort.value)))
   );
 }
 
@@ -97,6 +117,7 @@ export function resolveSelectableModelSelection(
   if (!selection || !config) {
     return selection;
   }
+  selection = normalizeModelSelection(config, selection);
   const provider = config.providers.find(
     (candidate) => candidate.instanceId === selection.instanceId,
   );
@@ -151,6 +172,9 @@ export function buildModelOptions(
   config: T3ServerConfig | null | undefined,
   fallbackModelSelection: ModelSelection | null,
 ): ReadonlyArray<ModelOption> {
+  fallbackModelSelection = fallbackModelSelection
+    ? normalizeModelSelection(config, fallbackModelSelection)
+    : null;
   const options = new Map<string, ModelOption>();
 
   for (const provider of config?.providers ?? []) {
@@ -193,6 +217,9 @@ export function buildModelOptions(
     if (existing) {
       options.set(key, {
         ...existing,
+        ...(isModelSelectionUnavailable(config, fallbackModelSelection)
+          ? { isUnavailable: true }
+          : {}),
         selection:
           existing.providerDriver === "antigravity"
             ? fallbackModelSelection

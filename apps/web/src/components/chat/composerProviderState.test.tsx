@@ -73,6 +73,21 @@ const ULTRATHINK_FRAME_CLASSES = {
 } as const;
 
 describe("getComposerProviderState", () => {
+  it("keeps removed Antigravity effort choices for the adapter to reject", () => {
+    const state = getComposerProviderState({
+      provider: ProviderDriverKind.make("antigravity"),
+      model: MODEL,
+      models: modelWith([
+        selectDescriptor("reasoningEffort", [
+          { id: "native-high", label: "High", isDefault: true },
+        ]),
+      ]),
+      modelOptions: selections(["reasoningEffort", "native-low"]),
+      planModeEnabled: false,
+    });
+    expect(state.modelOptionsForDispatch).toEqual(selections(["reasoningEffort", "native-low"]));
+  });
+
   it("derives a stable prompt injection state for ordinary prompt edits", () => {
     expect(getComposerPromptInjectionState("Investigate this failure")).toBe("none");
     expect(getComposerPromptInjectionState("Ultrathink:\nInvestigate this failure")).toBe(

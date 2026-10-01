@@ -14,6 +14,7 @@
  * payload separately.
  */
 import {
+  ANTIGRAVITY_DEFAULT_MODEL,
   ModelCapabilities,
   TrimmedNonEmptyString,
   type ProviderDriverKind,
@@ -272,7 +273,11 @@ export function applyManifestDefault(
   const requestedSlug = manifestDefaultModel(manifest, driverKind);
   if (requestedSlug === undefined) return models;
   const slug =
-    models.find((model) => model.slug === requestedSlug)?.slug ??
+    models.find(
+      (model) =>
+        model.slug === requestedSlug ||
+        (driverKind === "antigravity" && model.aliases?.includes(requestedSlug)),
+    )?.slug ??
     (driverKind === "codex"
       ? models.find(
           (model) =>
@@ -281,16 +286,48 @@ export function applyManifestDefault(
       : undefined);
   if (slug === undefined) return models;
   const previous = models.find((model) => model.isDefault && model.slug !== slug);
-  if (!previous) return models;
-  const movedAliases = previous.aliases ?? [];
+  if (!previous && driverKind !== "antigravity") return models;
+  const movedAliases =
+    driverKind === "antigravity" ? [ANTIGRAVITY_DEFAULT_MODEL] : (previous?.aliases ?? []);
   return models.map((model) => {
-    if (model.slug === previous.slug) {
+    if (model.slug === previous?.slug) {
       const { isDefault: _isDefault, aliases: _aliases, ...rest } = model;
-      return rest;
+      const aliases =
+        driverKind === "antigravity"
+          ? _aliases?.filter((alias) => alias !== ANTIGRAVITY_DEFAULT_MODEL)
+          : undefined;
+      return { ...rest, ...(aliases?.length ? { aliases } : {}) };
     }
     if (model.slug === slug) {
       const aliases = [...new Set([...(model.aliases ?? []), ...movedAliases])];
-      return { ...model, isDefault: true, ...(aliases.length > 0 ? { aliases } : {}) };
+      const capabilities =
+        driverKind === "antigravity" && model.capabilities
+          ? {
+              ...model.capabilities,
+              optionDescriptors: model.capabilities.optionDescriptors?.map((descriptor) => {
+                if (
+                  descriptor.type !== "select" ||
+                  descriptor.id !== "reasoningEffort" ||
+                  !descriptor.options.some((option) => option.id === requestedSlug)
+                )
+                  return descriptor;
+                return {
+                  ...descriptor,
+                  currentValue: requestedSlug,
+                  options: descriptor.options.map((option) => ({
+                    ...option,
+                    isDefault: option.id === requestedSlug,
+                  })),
+                };
+              }),
+            }
+          : model.capabilities;
+      return {
+        ...model,
+        capabilities,
+        isDefault: true,
+        ...(aliases.length > 0 ? { aliases } : {}),
+      };
     }
     return model;
   });
@@ -307,7 +344,16 @@ export function classifyModels(
     // Codex lists its own models, so a catalog entry for one can only badge it.
     const badge = findCatalogModel(manifest, driverKind, discovered.slug)?.badge;
     const model = badge && !discovered.badge ? { ...discovered, badge } : discovered;
-    if (isLegacyModel(manifest, driverKind, model.slug)) {
+    if (
+      isLegacyModel(manifest, driverKind, model.slug) &&
+      !(
+        driverKind === "antigravity" &&
+        model.aliases?.some(
+          (alias) =>
+            alias !== ANTIGRAVITY_DEFAULT_MODEL && !isLegacyModel(manifest, driverKind, alias),
+        )
+      )
+    ) {
       return model.isLegacy ? model : { ...model, isLegacy: true };
     }
     if (!model.isLegacy) return model;

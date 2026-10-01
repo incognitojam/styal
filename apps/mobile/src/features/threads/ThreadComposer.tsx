@@ -83,6 +83,7 @@ import {
 } from "../../lib/composerImages";
 import {
   buildModelOptions,
+  normalizeModelSelection,
   groupByProvider,
   isModelSelectionUnavailable,
 } from "../../lib/modelOptions";
@@ -322,7 +323,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     props.connectionState !== "connected" || props.queueCount > 0 || attachmentsUploading
       ? "Queue"
       : "Send";
-  const currentModelSelection = props.selectedThread.modelSelection;
+  const currentModelSelection = useMemo(
+    () => normalizeModelSelection(props.serverConfig, props.selectedThread.modelSelection),
+    [props.serverConfig, props.selectedThread.modelSelection],
+  );
   const currentRuntimeMode = props.selectedThread.runtimeMode;
   const modelUnavailable =
     props.connectionState === "connected" &&

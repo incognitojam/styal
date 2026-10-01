@@ -7,6 +7,7 @@ import {
   ProviderInstanceId,
   type ProviderOptionDescriptor,
   type ProviderOptionSelection,
+  type ServerProviderModel,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -24,6 +25,46 @@ export function createModelCapabilities(input: {
 }): ModelCapabilities {
   return {
     optionDescriptors: input.optionDescriptors.map(cloneDescriptor),
+  };
+}
+
+/** Preserve native Antigravity picks when the catalog groups them into reasoning choices. */
+export function normalizeAntigravityModelSelection(
+  selection: ModelSelection,
+  models: ReadonlyArray<ServerProviderModel>,
+): ModelSelection {
+  const model = models.find(
+    (entry) => entry.slug === selection.model || entry.aliases?.includes(selection.model),
+  );
+  const descriptor = model?.capabilities?.optionDescriptors?.find(
+    (entry) => entry.id === "reasoningEffort" && entry.type === "select",
+  );
+  if (!model || descriptor?.type !== "select") return selection;
+  const selectedEffort = selection.options?.find((entry) => entry.id === descriptor.id);
+  let value =
+    selectedEffort?.value ?? descriptor.options.find((entry) => entry.id === selection.model)?.id;
+  if (typeof value === "string" && !descriptor.options.some((entry) => entry.id === value)) {
+    // Changing generations can retain the previous model's native option value.
+    const previousChoice = models
+      .flatMap((entry) => entry.capabilities?.optionDescriptors ?? [])
+      .flatMap((entry) =>
+        entry.id === descriptor.id && entry.type === "select" ? entry.options : [],
+      )
+      .find((entry) => entry.id === value);
+    value = descriptor.options.find((entry) => entry.label === previousChoice?.label)?.id ?? value;
+  }
+  if (model.slug === selection.model && value === selectedEffort?.value) return selection;
+  return {
+    ...selection,
+    model: model.slug,
+    ...(value !== undefined
+      ? {
+          options: [
+            ...(selection.options ?? []).filter((entry) => entry.id !== descriptor.id),
+            { id: descriptor.id, value },
+          ],
+        }
+      : {}),
   };
 }
 

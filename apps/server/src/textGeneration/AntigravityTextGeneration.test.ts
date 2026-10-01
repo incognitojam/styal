@@ -55,6 +55,7 @@ interface PromptContext {
 
 const makeFixture = Effect.fn("makeAntigravityTextGenerationFixture")(function* (
   options: {
+    readonly thinkingModels?: boolean;
     readonly outputs?: ReadonlyArray<string>;
     readonly prompt?: (context: PromptContext) => Effect.Effect<AcpSchema.PromptResponse, AcpError>;
     readonly startError?: AcpError;
@@ -162,7 +163,12 @@ const makeFixture = Effect.fn("makeAntigravityTextGenerationFixture")(function* 
             category: "model",
             type: "select",
             currentValue: modelSelection.model,
-            options: [{ value: modelSelection.model, name: "Gemini test" }],
+            options: options.thinkingModels
+              ? [
+                  { value: "synthetic-high", name: "Gemini 9.1 Flash (High)" },
+                  { value: "synthetic-low", name: "Gemini 9.1 Flash (Low)" },
+                ]
+              : [{ value: modelSelection.model, name: "Gemini test" }],
           },
         ]),
         getEvents: () => Stream.fromQueue(events),
@@ -278,6 +284,23 @@ const makeFixture = Effect.fn("makeAntigravityTextGenerationFixture")(function* 
 });
 
 it.layer(NodeServices.layer)("AntigravityTextGeneration", (it) => {
+  it.effect("uses the chosen native effort for grouped helper models", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeFixture({ thinkingModels: true });
+      const result = yield* fixture.textGeneration.generateThreadTitle({
+        ...fixture.titleInput,
+        modelSelection: {
+          ...modelSelection,
+          model: "gemini-9.1-flash",
+          options: [{ id: "reasoningEffort", value: "synthetic-low" }],
+        },
+      });
+      expect(result).toEqual({ title: "Repair login" });
+      expect(fixture.state.selectedModels).toEqual(["synthetic-low"]);
+      yield* fixture.assertCleaned;
+    }),
+  );
+
   it.effect(
     "generates all helper types in empty workspaces and removes only owned session files",
     () =>

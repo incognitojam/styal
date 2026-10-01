@@ -25,6 +25,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Workspaces and agent sessions
 
+- **Separate Gemini model and reasoning choices.** Antigravity lists each Gemini generation once,
+  with a separate reasoning effort control. Existing threads retain their selected effort.
+  T3 Code lists thinking variants as separate models as of
+  [revision 5cc99e1](https://github.com/pingdotgg/t3code/tree/5cc99e1c23980d7995a13c47f969b47cb68ed1be).
+  [Antigravity](./providers-antigravity.md).
+
 - **Claude Code starts with Opus 5.5.** New Claude Code threads select Opus 5.5 when the installed
   CLI supports it; older installations use an available Claude model. T3 Code defaults to Fable 5.1
   as of [revision f5ef0dd](https://github.com/pingdotgg/t3code/tree/f5ef0ddb90a8c36584e181b1913e7b8a5df30ffc0618).

@@ -74,6 +74,49 @@ features:
       tracking: []
       retire_when: Upstream opens the Add Project browser in ~/Developer on macOS when that folder exists and no base directory is configured.
 
+  - id: antigravity-reasoning-effort
+    title: Separate Antigravity model generations from reasoning effort
+    status: maintained
+    prs: []
+    invariants:
+      - Antigravity advertises each Gemini family and generation once, with only account-available native thinking variants as reasoning choices.
+      - Web, desktop, mobile, and text generation preserve exact native reasoning choices across model changes, legacy selections, and session resumes.
+      - Unknown native models remain selectable and unavailable native choices are rejected rather than replaced by another effort.
+    implementation_paths:
+      - apps/mobile/src/lib/modelOptions.ts
+      - apps/server/src/provider/AntigravityModels.ts
+      - apps/server/src/provider/Layers/AntigravityAdapter.ts
+      - apps/server/src/provider/Layers/AntigravityProvider.ts
+      - apps/server/src/provider/ModelManifest.ts
+      - apps/server/src/provider/acp/AntigravityAcpSupport.ts
+      - apps/server/src/textGeneration/AntigravityTextGeneration.ts
+      - apps/web/src/composerDraftStore.ts
+      - apps/web/src/modelSelection.ts
+      - packages/shared/src/model.ts
+    upstream_paths:
+      - apps/mobile/src/lib/modelOptions.ts
+      - apps/server/src/provider/Layers/AntigravityAdapter.ts
+      - apps/server/src/provider/Layers/AntigravityProvider.ts
+      - apps/server/src/provider/ModelManifest.ts
+      - apps/server/src/provider/acp/AntigravityAcpSupport.ts
+      - apps/server/src/textGeneration/AntigravityTextGeneration.ts
+      - apps/web/src/composerDraftStore.ts
+      - apps/web/src/modelSelection.ts
+      - packages/shared/src/model.ts
+    tests:
+      - apps/mobile/src/lib/modelOptions.test.ts
+      - apps/server/src/provider/Layers/AntigravityAdapter.test.ts
+      - apps/server/src/provider/Layers/AntigravityProvider.test.ts
+      - apps/server/src/provider/acp/AntigravityAcpSupport.test.ts
+      - apps/server/src/textGeneration/AntigravityTextGeneration.test.ts
+      - apps/web/src/modelSelection.test.ts
+      - packages/shared/src/model.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/5cc99e1c23980d7995a13c47f969b47cb68ed1be
+      retire_when: Upstream groups Antigravity thinking variants into model generations with separate reasoning controls and preserves native selections on every client and dispatch path.
+
   - id: arbitrary-file-attachments
     title: Attach arbitrary files to agent messages
     status: review-needed

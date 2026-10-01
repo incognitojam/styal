@@ -71,6 +71,7 @@ function nativeToolUpdate(
 
 const makeHarness = Effect.fn("makeAntigravityAdapterHarness")(function* (options?: {
   readonly enabled?: boolean;
+  readonly thinkingModels?: boolean;
   readonly holdCancel?: boolean;
   readonly holdClose?: boolean;
   readonly holdDispatch?: boolean;
@@ -110,8 +111,14 @@ const makeHarness = Effect.fn("makeAntigravityAdapterHarness")(function* (option
       category: "model",
       currentValue: currentModel,
       options: [
-        { value: nativeDefault, name: "Gemini test low" },
-        { value: nativeAlternative, name: "Gemini test high" },
+        {
+          value: nativeDefault,
+          name: options?.thinkingModels ? "Gemini 9.1 Flash (Low)" : "Gemini test low",
+        },
+        {
+          value: nativeAlternative,
+          name: options?.thinkingModels ? "Gemini 9.1 Flash (High)" : "Gemini test high",
+        },
       ],
     },
   ];
@@ -400,6 +407,51 @@ it.layer(layer)("AntigravityAdapter", (it) => {
             .map((request) => request.params),
         ).toContainEqual({ sessionId: "mock-session-1", configId: "mode", value: "auto_edit" });
       }),
+  );
+
+  it.effect("dispatches grouped model effort at startup, live changes, and resume", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness({ thinkingModels: true });
+      const selection = {
+        instanceId,
+        model: "gemini-9.1-flash",
+        options: [{ id: "reasoningEffort", value: nativeAlternative }],
+      };
+      const first = yield* h.adapter.startSession({
+        threadId,
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        modelSelection: selection,
+      });
+      expect(first.model).toBe(nativeAlternative);
+      const sending = yield* h.adapter
+        .sendTurn({
+          threadId,
+          input: "Synthetic turn",
+          modelSelection: {
+            ...selection,
+            options: [{ id: "reasoningEffort", value: nativeDefault }],
+          },
+        })
+        .pipe(Effect.forkChild);
+      const prompt = yield* h.nextPrompt;
+      expect(h.calls).toContain(`model:${nativeDefault}`);
+      yield* Deferred.succeed(prompt.result, { stopReason: "end_turn" });
+      yield* Fiber.join(sending);
+      yield* h.waitForEvent(
+        (event): event is Extract<ProviderRuntimeEvent, { type: "turn.completed" }> =>
+          event.type === "turn.completed",
+      );
+      yield* h.adapter.stopSession(threadId);
+      const resumed = yield* h.adapter.startSession({
+        threadId,
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        modelSelection: selection,
+        resumeCursor: first.resumeCursor,
+      });
+      expect(resumed.model).toBe(nativeAlternative);
+    }),
   );
 
   it.effect("reapplies the exact saved model and mode after a native resume", () =>

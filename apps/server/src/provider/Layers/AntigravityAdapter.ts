@@ -844,6 +844,7 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
               const model = yield* applyAntigravityAcpModelSelection({
                 runtime,
                 model: input.modelSelection?.model,
+                modelOptions: input.modelSelection?.options,
                 defaultModel: yield* options.defaultModel ?? Effect.succeed(undefined),
                 mapError: (cause) => cause,
               });
@@ -1032,9 +1033,10 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
           yield* requireSession(input.threadId);
           const requestedModel = input.modelSelection?.model ?? context.session.model;
           const configOptions = yield* context.runtime.getConfigOptions;
-          const model = resolveAntigravityModel({
+          const model = yield* resolveAntigravityModel({
             configOptions,
             model: requestedModel,
+            modelOptions: input.modelSelection?.options,
             defaultModel: yield* options.defaultModel ?? Effect.succeed(undefined),
           });
           const availableModels = antigravityModelOptions(configOptions);

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
-import { ProviderInstanceId, type ModelCapabilities } from "@t3tools/contracts";
+import {
+  ProviderInstanceId,
+  type ServerProviderModel,
+  type ModelCapabilities,
+} from "@t3tools/contracts";
 
 import {
   applyClaudePromptEffortPrefix,
@@ -7,6 +11,7 @@ import {
   buildProviderOptionSelectionsFromDescriptors,
   createModelCapabilities,
   createModelSelection,
+  normalizeAntigravityModelSelection,
   getModelSelectionBooleanOptionValue,
   getModelSelectionStringOptionValue,
   getProviderOptionDescriptors,
@@ -242,5 +247,67 @@ describe("readCustomModelEntries", () => {
       name: "X",
       capabilities,
     });
+  });
+});
+
+describe("Antigravity grouped selections", () => {
+  const models = ["flash", "pro"].map((family): ServerProviderModel => ({
+    slug: `gemini-9.1-${family}`,
+    name: `Gemini 9.1 ${family}`,
+    isCustom: false,
+    aliases: [`${family}-native`, `${family}-low`],
+    capabilities: {
+      optionDescriptors: [
+        {
+          id: "reasoningEffort",
+          label: "Reasoning effort",
+          type: "select",
+          currentValue: `${family}-native`,
+          options: [
+            { id: `${family}-native`, label: "High", isDefault: true },
+            { id: `${family}-low`, label: "Low" },
+          ],
+        },
+      ],
+    },
+  }));
+  const instanceId = ProviderInstanceId.make("antigravity-work");
+  it("recovers exact effort from legacy IDs including IDs without effort suffixes", () => {
+    for (const [native, model] of [
+      ["flash-low", "gemini-9.1-flash"],
+      ["pro-native", "gemini-9.1-pro"],
+    ]) {
+      expect(normalizeAntigravityModelSelection({ instanceId, model: native! }, models)).toEqual({
+        instanceId,
+        model,
+        options: [{ id: "reasoningEffort", value: native }],
+      });
+    }
+  });
+  it("carries effort to the new model's native choice when changing families", () => {
+    expect(
+      normalizeAntigravityModelSelection(
+        {
+          instanceId,
+          model: "gemini-9.1-pro",
+          options: [{ id: "reasoningEffort", value: "flash-low" }],
+        },
+        models,
+      ),
+    ).toEqual({
+      instanceId,
+      model: "gemini-9.1-pro",
+      options: [{ id: "reasoningEffort", value: "pro-low" }],
+    });
+  });
+  it("retains missing models and choices instead of changing their effort", () => {
+    const selection = { instanceId, model: "removed-native" };
+    expect(normalizeAntigravityModelSelection(selection, models)).toBe(selection);
+    const invalid = {
+      instanceId,
+      model: "gemini-9.1-pro",
+      options: [{ id: "reasoningEffort", value: "removed-effort" }],
+    };
+    expect(normalizeAntigravityModelSelection(invalid, models)).toBe(invalid);
   });
 });
