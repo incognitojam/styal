@@ -141,7 +141,9 @@ const CLOCK =
 const ZONE =
   `(?:(?<isoOffset>[+\\-−]\\d{2}:?\\d{2})` +
   `|\\s?(?<utc>UTC|GMT|utc|gmt|Z)(?:\\s?(?<utcOffset>[+\\-−]\\d{1,2}(?::?\\d{2})?))?` +
-  `|\\s(?<abbreviation>${ZONE_ABBREVIATION}))`;
+  `|\\s(?<abbreviation>${ZONE_ABBREVIATION})` +
+  `|\\s\\((?<parenthesizedZone>${ZONE_ABBREVIATION})\\)` +
+  `|\\s+in\\s+(?<inZone>${ZONE_ABBREVIATION}))`;
 
 const TRAILING_DAY = `(?:,?\\s+(?<trailingDay>today|tonight|tomorrow|yesterday))`;
 const CLOCK_PATTERN = new RegExp(
@@ -245,7 +247,8 @@ function parseZone(
     const offsetMinutes = parseOffsetMinutes(groups.utcOffset);
     return offsetMinutes === null ? null : { offsetMinutes, name: `${name}${groups.utcOffset}` };
   }
-  if (groups.abbreviation !== undefined) return namedZone(groups.abbreviation);
+  const abbreviation = groups.abbreviation ?? groups.parenthesizedZone ?? groups.inZone;
+  if (abbreviation !== undefined) return namedZone(abbreviation);
   return undefined;
 }
 

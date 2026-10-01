@@ -29,6 +29,8 @@ describe("findMentionedTimes", () => {
     ["PR 330 merged at 14:39 UTC.", ["14:39 UTC"]],
     ["finished at **15:52:27 UTC** today", ["15:52:27 UTC"]],
     ["the browser shows 3:41 PM BST", ["3:41 PM BST"]],
+    ["merged at 14:20 (UTC)", ["14:20 (UTC)"]],
+    ["merged at 14:20 in UTC", ["14:20 in UTC"]],
     ["committed 2026-09-18 11:42 UTC", ["2026-09-18 11:42 UTC"]],
     ["landed at 2026-09-29T20:30Z", ["2026-09-29T20:30Z"]],
     ["at 2026-09-23 12:12:00+00:00 exactly", ["2026-09-23 12:12:00+00:00"]],
@@ -76,6 +78,14 @@ describe("findMentionedTimes", () => {
     ]);
     const table = "| Time (UTC) | Event |\n|---|---|\n| 12:17:07 | Worktree created |";
     expect(findMessageZone(table)).toEqual({ offsetMinutes: 0, name: "UTC" });
+  });
+
+  it("treats a zone in parentheses or after 'in' as written with the time", () => {
+    for (const text of ["merged at 14:20 (UTC)", "merged at 14:20 in UTC"]) {
+      const [match] = findMentionedTimes(text, { messageZone: findMessageZone(text) });
+      expect(match?.time).toMatchObject({ zone: { offsetMinutes: 0, name: "UTC" } });
+      expect(match?.time).not.toHaveProperty("zoneFromMessage");
+    }
   });
 
   it("keeps the environment's zone when a message names more than one", () => {
