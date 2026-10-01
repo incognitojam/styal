@@ -227,7 +227,7 @@ features:
   - id: background-task-endings
     title: Show background task endings on the call that started them and in the turn they wake
     status: maintained
-    prs: [535]
+    prs: [535, 601]
     invariants:
       - A background task that ends after its launching tool call returned reports its ending on that call's row in the original turn, on web and mobile.
       - A completed or failed ending also shows as its own row, with the same status mark, in the turn where the agent learns about it, which is the later turn it arrived during or, when it arrived while the agent was idle, the next turn to start. Endings in their launching turn, stopped endings, and idle endings no turn has followed add no row.
