@@ -499,7 +499,7 @@ export function SettingsSubRow({
   ...rowProps
 }: Omit<ComponentPropsWithoutRef<"div">, "title"> & {
   title: string;
-  description?: string;
+  description?: string | undefined;
   resetAction?: ReactNode;
   control: ReactNode;
   disabled?: boolean;

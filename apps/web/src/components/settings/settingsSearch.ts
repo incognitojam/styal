@@ -276,6 +276,18 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["notification sound alert completion input approval desktop"],
   },
   {
+    id: "system-notifications",
+    title: "System notifications",
+    to: "/settings/general",
+    searchTerms: ["notification desktop browser os alert permission"],
+  },
+  {
+    id: "notification-sounds",
+    title: "Notification sounds",
+    to: "/settings/general",
+    searchTerms: ["sound audio alert completion input approval mute"],
+  },
+  {
     id: "in-app-notifications",
     title: "In-app notifications",
     to: "/settings/general",

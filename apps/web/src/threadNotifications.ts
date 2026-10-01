@@ -22,13 +22,6 @@ export function notificationSoundForEvent(
 }
 
 type NotificationMode = ClientSettings["notificationMode"];
-export const NOTIFICATION_MODE_LABELS = {
-  off: "Off",
-  notifications: "Notifications only",
-  sound: "Sound only",
-  "notifications-and-sound": "Notifications with sound",
-} satisfies Record<NotificationMode, string>;
-
 export function hasNotificationSound(mode: NotificationMode) {
   return mode === "sound" || mode === "notifications-and-sound";
 }
@@ -80,6 +73,12 @@ export function setNotificationBadge(count: number) {
     }
   }
   void bridge?.setNotificationBadge?.({ count, image }).catch(() => undefined);
+}
+
+/** The mode that turns system notifications and sounds on or off independently. */
+export function notificationModeFor(desktop: boolean, sound: boolean): NotificationMode {
+  if (desktop) return sound ? "notifications-and-sound" : "notifications";
+  return sound ? "sound" : "off";
 }
 
 let audioContext: AudioContext | undefined;

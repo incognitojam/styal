@@ -434,7 +434,8 @@ features:
     status: review-needed
     prs: [5, 7, 19, 72, 249, 250]
     invariants:
-      - Users can independently select, preview, and disable sounds for completion, input, and approval events; the sound choices are nested under Thread notifications and disabled unless its mode includes sound.
+      - Users can independently select, preview, and disable sounds for completion, input, and approval events; the sound choices are nested under the Notification sounds switch and disabled while it is off.
+      - System notifications, in-app notifications, and notification sounds are independent switches; the system notification and sound switches together set the persisted notification mode.
       - Playback follows the persisted notification mode and event sound choice without repeating the same turn state.
       - Fresh settings default to Off with upstream completion and attention sounds; legacy Resolve or Chime migrates to T3 completion, and Avanti remains Avanti, with notifications and sound enabled unless a notification mode was explicitly saved.
       - Legacy None stays disabled, Resolve is retired, and Avanti retains its normalized playback level.
