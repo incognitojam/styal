@@ -73,123 +73,133 @@ export function NotificationSettings() {
   }
 
   return (
-    <SettingsRow
-      {...searchableSetting("thread-notifications")}
-      description="Alerts when a thread finishes, fails, or needs input or approval. Applies to this device while styal is open."
-    >
-      <SettingsSubRows>
-        <SettingsSubRow
-          {...searchableSetting("system-notifications")}
-          title="System notifications"
-          description={
-            permissionMessage ?? (needsPermission ? "Needs permission on this device." : undefined)
-          }
-          control={
-            <>
-              {needsPermission ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={requesting}
-                  onClick={() => void changeMode(mode)}
-                >
-                  Allow notifications
-                </Button>
-              ) : null}
-              <Switch
-                checked={hasDesktopNotifications(mode)}
-                disabled={requesting}
-                onCheckedChange={(checked) =>
-                  void changeMode(notificationModeFor(checked, soundEnabled))
-                }
-                aria-label="System notifications"
-              />
-            </>
-          }
-        />
-        <SettingsSubRow
-          {...searchableSetting("in-app-notifications")}
-          title="In-app toasts"
-          description="Shown for other threads while styal has focus."
-          control={
-            <Switch
-              checked={settings.inAppNotificationsEnabled}
-              onCheckedChange={(checked) => updateSettings({ inAppNotificationsEnabled: checked })}
-              aria-label="In-app toasts"
-            />
-          }
-        />
-        <SettingsSubRow
-          {...searchableSetting("notification-sounds")}
-          title="Sounds"
-          control={
-            <Switch
-              checked={soundEnabled}
-              onCheckedChange={(checked) =>
-                void changeMode(notificationModeFor(hasDesktopNotifications(mode), checked))
-              }
-              aria-label="Notification sounds"
-            />
-          }
-        />
-        {SOUND_SETTINGS.map(({ key, id, label, kind }) => (
+    <>
+      <SettingsRow
+        {...searchableSetting("thread-notifications")}
+        description="Alerts on this device when a thread finishes, fails, or needs input or approval."
+      >
+        <SettingsSubRows>
           <SettingsSubRow
-            key={key}
-            {...searchableSetting(id)}
-            disabled={!soundEnabled}
-            resetAction={
-              settings[key] !== DEFAULT_CLIENT_SETTINGS[key] ? (
-                <SettingResetButton
-                  label={label.toLowerCase()}
-                  disabled={!soundEnabled}
-                  onClick={() => updateSettings({ [key]: DEFAULT_CLIENT_SETTINGS[key] })}
-                />
-              ) : null
+            {...searchableSetting("system-notifications")}
+            title="System notifications"
+            description={
+              permissionMessage ??
+              (needsPermission
+                ? "Needs permission on this device."
+                : "Shown while styal is open, including in the background.")
             }
             control={
               <>
-                <Select
-                  value={settings[key]}
-                  disabled={!soundEnabled}
-                  onValueChange={(value) => {
-                    if (isNotificationSound(value)) updateSettings({ [key]: value });
-                  }}
-                >
-                  <SelectTrigger size="sm" className="w-40" aria-label={label}>
-                    <SelectValue>{NOTIFICATION_SOUND_LABELS[settings[key]]}</SelectValue>
-                  </SelectTrigger>
-                  <SelectPopup align="end" alignItemWithTrigger={false}>
-                    {Object.entries(NOTIFICATION_SOUND_LABELS).map(([value, soundLabel]) => (
-                      <SelectItem key={value} hideIndicator value={value}>
-                        {soundLabel}
-                      </SelectItem>
-                    ))}
-                  </SelectPopup>
-                </Select>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        variant="ghost-muted"
-                        size="icon-sm"
-                        aria-label={`Preview ${label.toLowerCase()}`}
-                        disabled={!soundEnabled || settings[key] === "none"}
-                        onClick={async () => {
-                          await unlockNotificationAudio();
-                          await playNotificationSound(kind, () => true, settings[key]);
-                        }}
-                      >
-                        <Volume2Icon />
-                      </Button>
-                    }
-                  />
-                  <TooltipPopup side="top">Preview</TooltipPopup>
-                </Tooltip>
+                {needsPermission ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={requesting}
+                    onClick={() => void changeMode(mode)}
+                  >
+                    Allow notifications
+                  </Button>
+                ) : null}
+                <Switch
+                  checked={hasDesktopNotifications(mode)}
+                  disabled={requesting}
+                  onCheckedChange={(checked) =>
+                    void changeMode(notificationModeFor(checked, soundEnabled))
+                  }
+                  aria-label="System notifications"
+                />
               </>
             }
           />
-        ))}
-      </SettingsSubRows>
-    </SettingsRow>
+          <SettingsSubRow
+            {...searchableSetting("in-app-notifications")}
+            title="In-app toasts"
+            description="Shown for other threads while styal has focus."
+            control={
+              <Switch
+                checked={settings.inAppNotificationsEnabled}
+                onCheckedChange={(checked) =>
+                  updateSettings({ inAppNotificationsEnabled: checked })
+                }
+                aria-label="In-app toasts"
+              />
+            }
+          />
+        </SettingsSubRows>
+      </SettingsRow>
+      <SettingsRow
+        {...searchableSetting("notification-sounds")}
+        description="Plays for every thread while styal is open, including in the background."
+        control={
+          <Switch
+            checked={soundEnabled}
+            onCheckedChange={(checked) =>
+              void changeMode(notificationModeFor(hasDesktopNotifications(mode), checked))
+            }
+            aria-label="Notification sounds"
+          />
+        }
+      >
+        <SettingsSubRows>
+          {SOUND_SETTINGS.map(({ key, id, label, kind }) => (
+            <SettingsSubRow
+              key={key}
+              {...searchableSetting(id)}
+              disabled={!soundEnabled}
+              resetAction={
+                settings[key] !== DEFAULT_CLIENT_SETTINGS[key] ? (
+                  <SettingResetButton
+                    label={label.toLowerCase()}
+                    disabled={!soundEnabled}
+                    onClick={() => updateSettings({ [key]: DEFAULT_CLIENT_SETTINGS[key] })}
+                  />
+                ) : null
+              }
+              control={
+                <>
+                  <Select
+                    value={settings[key]}
+                    disabled={!soundEnabled}
+                    onValueChange={(value) => {
+                      if (isNotificationSound(value)) updateSettings({ [key]: value });
+                    }}
+                  >
+                    <SelectTrigger size="sm" className="w-40" aria-label={label}>
+                      <SelectValue>{NOTIFICATION_SOUND_LABELS[settings[key]]}</SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup align="end" alignItemWithTrigger={false}>
+                      {Object.entries(NOTIFICATION_SOUND_LABELS).map(([value, soundLabel]) => (
+                        <SelectItem key={value} hideIndicator value={value}>
+                          {soundLabel}
+                        </SelectItem>
+                      ))}
+                    </SelectPopup>
+                  </Select>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          variant="ghost-muted"
+                          size="icon-sm"
+                          aria-label={`Preview ${label.toLowerCase()}`}
+                          disabled={!soundEnabled || settings[key] === "none"}
+                          onClick={async () => {
+                            await unlockNotificationAudio();
+                            await playNotificationSound(kind, () => true, settings[key]);
+                          }}
+                        >
+                          <Volume2Icon />
+                        </Button>
+                      }
+                    />
+                    <TooltipPopup side="top">Preview</TooltipPopup>
+                  </Tooltip>
+                </>
+              }
+            />
+          ))}
+        </SettingsSubRows>
+      </SettingsRow>
+    </>
   );
 }
