@@ -1,3 +1,5 @@
+// @effect-diagnostics nodeBuiltinImport:off - Test fixtures create ephemeral SQLite databases
+import * as NodeSqlite from "node:sqlite";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
@@ -75,6 +77,7 @@ const makeHarness = Effect.fn("makeAntigravityAdapterHarness")(function* (option
   readonly holdCancel?: boolean;
   readonly holdClose?: boolean;
   readonly holdDispatch?: boolean;
+  readonly profileDirectory?: string;
 }) {
   const runtimeEvents = yield* Queue.unbounded<AcpSessionRuntimeEvent>();
   const canonicalEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();
@@ -225,6 +228,7 @@ const makeHarness = Effect.fn("makeAntigravityAdapterHarness")(function* (option
     decodeSettings({ enabled: options?.enabled ?? true }),
     {
       instanceId,
+      ...(options?.profileDirectory ? { profileDirectory: options.profileDirectory } : {}),
       makeRuntime: (input) =>
         Effect.gen(function* () {
           launches.push(input);
@@ -762,6 +766,60 @@ it.layer(layer)("AntigravityAdapter", (it) => {
       const recovered = yield* Fiber.join(later);
       expect(recovered.turnId).not.toBe(ended.turnId);
       expect((yield* h.adapter.listSessions())[0]?.status).toBe("ready");
+    }),
+  );
+
+  it.effect("preserves an unknown baseline across steering and reports unavailable usage", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-agy-steer-test-" });
+      const convDir = path.join(tempDir, "antigravity-acp", "conversations");
+      yield* fs.makeDirectory(convDir, { recursive: true });
+      const dbPath = path.join(convDir, `${nativeSessionId}.db`);
+
+      yield* fs.writeFileString(dbPath, "not a valid sqlite database");
+
+      const h = yield* makeHarness({ profileDirectory: tempDir });
+      yield* h.adapter.startSession({
+        threadId,
+        cwd: process.cwd(),
+        runtimeMode: "approval-required",
+      });
+
+      const first = yield* h.adapter
+        .sendTurn({ threadId, input: "First prompt" })
+        .pipe(Effect.forkChild);
+      yield* h.nextPrompt;
+
+      yield* fs.remove(dbPath);
+      const db = new NodeSqlite.DatabaseSync(dbPath);
+      db.exec("CREATE TABLE gen_metadata (idx integer primary key, data blob)");
+      const stmt = db.prepare("INSERT INTO gen_metadata (idx, data) VALUES (?, ?)");
+      stmt.run(0, Buffer.from([8, 1]));
+
+      const second = yield* h.adapter
+        .sendTurn({ threadId, input: "Steer prompt" })
+        .pipe(Effect.forkChild);
+      yield* h.nextCancellation;
+
+      const replacement = yield* h.nextPrompt;
+      stmt.run(1, Buffer.from([8, 1]));
+      db.close();
+
+      yield* Deferred.succeed(replacement.result, { stopReason: "end_turn" });
+      yield* Effect.all([Fiber.join(first), Fiber.join(second)]);
+
+      const completed = yield* h.waitForEvent(
+        (event): event is Extract<ProviderRuntimeEvent, { type: "turn.completed" }> =>
+          event.type === "turn.completed",
+      );
+
+      expect(completed.payload.tokenUsage).toEqual({
+        usageStatus: "unavailable",
+        usageScope: "main_agent",
+        hasSubagents: false,
+      });
     }),
   );
 

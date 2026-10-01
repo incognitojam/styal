@@ -130,7 +130,7 @@ function mapAntigravityError(threadId: ThreadId, method: string, cause: EffectAc
 
 export interface AntigravityAdapterOptions {
   readonly instanceId: ProviderInstanceId;
-  readonly profileDirectory?: string;
+  readonly profileDirectory?: string | undefined;
   readonly makeRuntime: (
     input: Omit<AntigravityAcpRuntimeInput, "spawn" | "childProcessSpawner" | "onAuthorizationUrl">,
   ) => Effect.Effect<Runtime, EffectAcpErrors.AcpError | ProviderSetupError, Scope.Scope>;
@@ -1083,10 +1083,9 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
           }
           const turnId = context.activeTurnId ?? TurnId.make(yield* randomId);
           const steering = context.activeTurnId !== undefined;
-          const baselineGenIndex =
-            steering && context.activeTurnIntent?.baselineGenIndex !== undefined
-              ? context.activeTurnIntent.baselineGenIndex
-              : readAntigravityBaselineGenIndex(context.dbPath);
+          const baselineGenIndex = steering
+            ? context.activeTurnIntent?.baselineGenIndex
+            : readAntigravityBaselineGenIndex(context.dbPath);
           const hasSubagents = steering ? (context.activeTurnIntent?.hasSubagents ?? false) : false;
           const turn: TurnIntent = {
             turnId,
