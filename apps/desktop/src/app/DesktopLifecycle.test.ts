@@ -255,8 +255,9 @@ describe("DesktopLifecycle", () => {
     }),
   );
 
-  for (const platform of ["darwin", "win32", "linux"] satisfies ReadonlyArray<NodeJS.Platform>) {
-    it.effect(`lets the updater's quit event proceed on ${platform}`, () => {
+  it.effect.each(["darwin", "win32", "linux"] satisfies ReadonlyArray<NodeJS.Platform>)(
+    "lets the updater's quit event proceed on %s",
+    (platform) => {
       const appListeners = new Map<string, (...args: readonly unknown[]) => void>();
       let windowsDestroyed = false;
 
@@ -324,8 +325,8 @@ describe("DesktopLifecycle", () => {
           ),
         ),
       );
-    });
-  }
+    },
+  );
 
   it.effect("flushes shutdown spans and records Electron's will-quit milestone", () =>
     Effect.gen(function* () {
@@ -400,8 +401,9 @@ describe("DesktopLifecycle", () => {
     }),
   );
 
-  for (const updaterOwnsQuit of [false, true]) {
-    it.effect(`waits for cleanup before final quit (updater handoff: ${updaterOwnsQuit})`, () =>
+  it.effect.each([false, true])(
+    "waits for cleanup before final quit (updater handoff: %s)",
+    (updaterOwnsQuit) =>
       Effect.gen(function* () {
         const appListeners = new Map<string, (...args: readonly unknown[]) => void>();
         const finalQuit = yield* Deferred.make<void>();
@@ -466,8 +468,7 @@ describe("DesktopLifecycle", () => {
           ),
         );
       }),
-    );
-  }
+  );
 
   it.effect("closes the main window before requesting application cleanup", () =>
     Effect.gen(function* () {

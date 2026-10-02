@@ -37,32 +37,29 @@ const harness = Effect.gen(function* () {
 });
 
 describe("DesktopShutdownConfirmation", () => {
-  for (const confirmed of [false, true]) {
-    it.effect(`resolves ${confirmed} from the matching renderer response`, () =>
-      Effect.gen(function* () {
-        const h = yield* harness;
-        yield* Effect.gen(function* () {
-          const service = yield* Confirmation.DesktopShutdownConfirmation;
-          const request = yield* service
-            .request("Restart with running work?")
-            .pipe(Effect.forkChild);
-          const sent = yield* Deferred.await(h.sent);
-          // A newly opened renderer can recover the request after mounting.
-          assert.deepEqual(yield* service.current, sent);
-          yield* service.resolve(sent.requestId + 1, !confirmed);
-          assert.deepEqual(yield* service.current, sent);
-          yield* service.acknowledge(sent.requestId);
-          yield* service.resolve(sent.requestId, confirmed);
-          assert.equal(yield* Fiber.join(request), confirmed);
-          assert.isNull(yield* service.current);
-          assert.equal(h.window.listenerCount("closed"), 0);
-          assert.equal(h.window.webContents.listenerCount("did-start-navigation"), 0);
-        }).pipe(Effect.provide(h.layer));
-      }),
-    );
-  }
-  for (const event of ["closed", "render-process-gone", "did-fail-load", "did-start-navigation"]) {
-    it.effect(`cancels when the renderer becomes unavailable: ${event}`, () =>
+  it.effect.each([false, true])("resolves %s from the matching renderer response", (confirmed) =>
+    Effect.gen(function* () {
+      const h = yield* harness;
+      yield* Effect.gen(function* () {
+        const service = yield* Confirmation.DesktopShutdownConfirmation;
+        const request = yield* service.request("Restart with running work?").pipe(Effect.forkChild);
+        const sent = yield* Deferred.await(h.sent);
+        // A newly opened renderer can recover the request after mounting.
+        assert.deepEqual(yield* service.current, sent);
+        yield* service.resolve(sent.requestId + 1, !confirmed);
+        assert.deepEqual(yield* service.current, sent);
+        yield* service.acknowledge(sent.requestId);
+        yield* service.resolve(sent.requestId, confirmed);
+        assert.equal(yield* Fiber.join(request), confirmed);
+        assert.isNull(yield* service.current);
+        assert.equal(h.window.listenerCount("closed"), 0);
+        assert.equal(h.window.webContents.listenerCount("did-start-navigation"), 0);
+      }).pipe(Effect.provide(h.layer));
+    }),
+  );
+  it.effect.each(["closed", "render-process-gone", "did-fail-load", "did-start-navigation"])(
+    "cancels when the renderer becomes unavailable: %s",
+    (event) =>
       Effect.gen(function* () {
         const h = yield* harness;
         yield* Effect.gen(function* () {
@@ -78,8 +75,7 @@ describe("DesktopShutdownConfirmation", () => {
           assert.equal(yield* service.consumeQuitOverride, event !== "closed");
         }).pipe(Effect.provide(h.layer));
       }),
-    );
-  }
+  );
 });
 
 describe("shutdown presentation failure", () => {
@@ -122,8 +118,9 @@ describe("shutdown presentation failure", () => {
       }).pipe(Effect.provide(h.layer));
     }),
   );
-  for (const recovery of ["ready", "displayed"] as const) {
-    it.effect(`clears the escape after renderer recovery: ${recovery}`, () =>
+  it.effect.each(["ready", "displayed"] as const)(
+    "clears the escape after renderer recovery: %s",
+    (recovery) =>
       Effect.gen(function* () {
         const h = yield* harness;
         yield* Effect.gen(function* () {
@@ -148,8 +145,7 @@ describe("shutdown presentation failure", () => {
           assert.isFalse(yield* service.consumeQuitOverride);
         }).pipe(Effect.provide(h.layer));
       }),
-    );
-  }
+  );
   it.effect("arms the escape if a displayed renderer crashes", () =>
     Effect.gen(function* () {
       const h = yield* harness;

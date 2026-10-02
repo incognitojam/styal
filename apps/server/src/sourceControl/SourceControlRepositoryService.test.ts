@@ -833,7 +833,7 @@ it.effect("falls back to the requested clone URL when the repository lookup fail
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 
-for (const [name, stderr, expectedDetail] of [
+it.effect.each([
   [
     "missing HTTPS credentials",
     "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
@@ -854,8 +854,9 @@ for (const [name, stderr, expectedDetail] of [
     "remote: Too many requests (HTTP 429)",
     "The Git host rate limit was exceeded.",
   ],
-] as const) {
-  it.effect(`explains clone ${name} with recovery guidance in place of git's output`, () =>
+] as const)(
+  "explains clone %s with recovery guidance in place of git's output",
+  ([_name, stderr, expectedDetail]) =>
     Effect.gen(function* () {
       const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
       const error = yield* Effect.flip(
@@ -895,8 +896,7 @@ for (const [name, stderr, expectedDetail] of [
         }),
       ),
     ),
-  );
-}
+);
 
 it.effect("preserves clone process failures such as timeouts", () =>
   Effect.gen(function* () {

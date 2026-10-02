@@ -726,8 +726,9 @@ layer("ProviderEventIngestorV2", (it) => {
     }),
   );
 
-  for (const terminal of ["completed", "interrupted", "failed", "cancelled", "control"] as const) {
-    it.effect(`dismisses only native questions when a provider turn ends with ${terminal}`, () =>
+  it.effect.each(["completed", "interrupted", "failed", "cancelled", "control"] as const)(
+    "dismisses only native questions when a provider turn ends with %s",
+    (terminal) =>
       Effect.gen(function* () {
         const now = yield* DateTime.now;
         const eventSink = yield* EventSink.EventSinkV2;
@@ -911,8 +912,7 @@ layer("ProviderEventIngestorV2", (it) => {
         const repeated = yield* ingestor.ingestNormalized(input);
         assert.isFalse(repeated.some((entry) => entry.event.type === "runtime-request.updated"));
       }),
-    );
-  }
+  );
 
   it.effect(
     "preserves an answer committed after terminal normalization reads a pending question",

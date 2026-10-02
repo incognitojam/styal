@@ -157,8 +157,9 @@ describe("DesktopShutdownGuard", () => {
       assert.include(h.messages[0]!, "2 terminal sessions");
     }).pipe(Effect.provide(h.layer));
   });
-  for (const failure of ["http", "invalid", "defect"] as const) {
-    it.effect(`requires confirmation on ${failure} failure`, () => {
+  it.effect.each(["http", "invalid", "defect"] as const)(
+    "requires confirmation on %s failure",
+    (failure) => {
       const h = harness({
         status: failure === "http" ? 404 : 200,
         activity: () =>
@@ -171,8 +172,8 @@ describe("DesktopShutdownGuard", () => {
         assert.isFalse(yield* guard.confirm("quit"));
         assert.include(h.messages[0]!, "Could not check every local environment");
       }).pipe(Effect.provide(h.layer));
-    });
-  }
+    },
+  );
   it.effect("does not treat deliberately stopped backends as unavailable", () => {
     const h = harness({ stopped: true });
     return Effect.gen(function* () {

@@ -620,31 +620,30 @@ describe("core detail author avatars", () => {
     { author: null, host: "github.com", expected: null },
   ];
 
-  for (const { author, host, expected } of cases) {
-    it.effect(`returns the avatar for ${author?.login ?? "ghost"} on ${host}: ${expected}`, () =>
-      Effect.gen(function* () {
-        const provider = yield* make;
-        const detail = yield* provider.getChangeRequest({
-          cwd: "/w",
-          repository: "acme/web",
-          host,
-          number: 7,
-        });
-        expect(detail.author?.avatarUrl ?? null).toBe(expected);
-        expect(detail.author?.login ?? null).toBe(author?.login ?? null);
-      }).pipe(
-        Effect.provide(
-          Layer.mock(GitHubPullRequestCli.GitHubPullRequestCli)({
-            getPullRequestDetail: () =>
-              Effect.succeed({ ...openDetail, author, isCrossRepository: false }),
-            getRequiredChecks: () => Effect.succeed([]),
-            getBranchPolicy: () =>
-              Effect.succeed({ requiredChecks: [], allowedMergeMethods: null }),
-          }),
-        ),
+  it.effect.each(
+    cases.map((testCase) => ({ ...testCase, login: testCase.author?.login ?? "ghost" })),
+  )("returns the avatar for $login on $host: $expected", ({ author, host, expected }) =>
+    Effect.gen(function* () {
+      const provider = yield* make;
+      const detail = yield* provider.getChangeRequest({
+        cwd: "/w",
+        repository: "acme/web",
+        host,
+        number: 7,
+      });
+      expect(detail.author?.avatarUrl ?? null).toBe(expected);
+      expect(detail.author?.login ?? null).toBe(author?.login ?? null);
+    }).pipe(
+      Effect.provide(
+        Layer.mock(GitHubPullRequestCli.GitHubPullRequestCli)({
+          getPullRequestDetail: () =>
+            Effect.succeed({ ...openDetail, author, isCrossRepository: false }),
+          getRequiredChecks: () => Effect.succeed([]),
+          getBranchPolicy: () => Effect.succeed({ requiredChecks: [], allowedMergeMethods: null }),
+        }),
       ),
-    );
-  }
+    ),
+  );
 });
 
 it.effect(

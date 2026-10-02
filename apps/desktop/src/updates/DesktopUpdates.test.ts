@@ -783,13 +783,9 @@ describe("DesktopUpdates", () => {
     }),
   );
 
-  for (const outcome of [
-    "no-update",
-    "check-failed",
-    "download-failed",
-    "replacement-ready",
-  ] as const) {
-    it.effect(`does not install the old channel on quit after ${outcome}`, () => {
+  it.effect.each(["no-update", "check-failed", "download-failed", "replacement-ready"] as const)(
+    "does not install the old channel on quit after %s",
+    (outcome) => {
       let check = Effect.void as Effect.Effect<
         void,
         ElectronUpdater.ElectronUpdaterCheckForUpdatesError
@@ -853,8 +849,8 @@ describe("DesktopUpdates", () => {
           assert.isFalse(harness.autoInstallOnAppQuit());
         }),
       ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
-    });
-  }
+    },
+  );
 
   it.effect(
     "keeps a same-channel download eligible and installs only after shutdown begins",

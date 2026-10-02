@@ -41,12 +41,13 @@ import { isCursorCancellationError, loggedCursorAgentOptions } from "./CursorAge
 const decodeCursorSettings = Schema.decodeEffect(CursorSettings);
 
 describe("CursorAdapterV2", () => {
-  for (const { status, model } of [
+  it.effect.each([
     { status: "finished", model: undefined },
     { status: "cancelled", model: "claude-opus-4-6" },
     { status: "error", model: "custom-fable" },
-  ] as const) {
-    it.effect(`settles missing task completions when the Cursor run is ${status}`, () =>
+  ] as const)(
+    "settles missing task completions when the Cursor run is $status",
+    ({ status, model }) =>
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
@@ -187,8 +188,7 @@ describe("CursorAdapterV2", () => {
         );
         assert.isNotNull(rows.at(-1)?.subagent.completedAt);
       }).pipe(Effect.scoped, Effect.provide(Layer.merge(NodeServices.layer, IdAllocator.layer))),
-    );
-  }
+  );
 
   it.effect(
     "preserves first-agent instructions through compaction and failed attachment reads",

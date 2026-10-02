@@ -1310,8 +1310,9 @@ describe("composer and pull request shortcuts", () => {
     ["Enter", "thread.steerQueuedMessage"],
   ] as const;
 
-  for (const platform of ["MacIntel", "Win32", "Linux"]) {
-    it(`separates queued steering and background start on ${platform}`, () => {
+  it.each(["MacIntel", "Win32", "Linux"])(
+    "separates queued steering and background start on %s",
+    (platform) => {
       const modifier = {
         metaKey: platform === "MacIntel",
         ctrlKey: platform !== "MacIntel",
@@ -1332,8 +1333,8 @@ describe("composer and pull request shortcuts", () => {
         }),
         "composer.sendBackground",
       );
-    });
-  }
+    },
+  );
 
   for (const platform of ["MacIntel", "Win32", "Linux"]) {
     it.each(shortcuts)(
@@ -1362,8 +1363,9 @@ describe("composer and pull request shortcuts", () => {
     );
   }
 
-  for (const platform of ["MacIntel", "Win32", "Linux"]) {
-    it(`edits the last queued message with Alt+ArrowUp from the composer on ${platform}`, () => {
+  it.each(["MacIntel", "Win32", "Linux"])(
+    "edits the last queued message with Alt+ArrowUp from the composer on %s",
+    (platform) => {
       const input = event({ key: "ArrowUp", altKey: true });
       assert.strictEqual(
         resolveShortcutCommand(input, DEFAULT_RESOLVED_KEYBINDINGS, {
@@ -1378,8 +1380,8 @@ describe("composer and pull request shortcuts", () => {
           context: { composerFocus: false },
         }),
       );
-    });
-  }
+    },
+  );
 
   for (const platform of ["MacIntel", "Win32", "Linux"]) {
     it.each([

@@ -625,8 +625,9 @@ describe("DesktopWindow", () => {
     );
   });
 
-  for (const platform of ["win32", "linux"] as const) {
-    it.effect(`keeps the ${platform} window open until guarded shutdown closes it`, () =>
+  it.effect.each(["win32", "linux"] as const)(
+    "keeps the %s window open until guarded shutdown closes it",
+    (platform) =>
       Effect.gen(function* () {
         const fake = makeFakeBrowserWindow();
         const createCount = yield* Ref.make(0);
@@ -667,8 +668,7 @@ describe("DesktopWindow", () => {
           yield* Fiber.join(closing);
         }).pipe(Effect.provide(layer));
       }),
-    );
-  }
+  );
 
   it.effect("does not open a development window until the backend is ready", () =>
     Effect.gen(function* () {
@@ -989,8 +989,9 @@ describe("DesktopWindow", () => {
     }),
   );
 
-  for (const platform of ["win32", "linux"] as const) {
-    it.effect(`ignores saved macOS fullscreen state on ${platform}`, () =>
+  it.effect.each(["win32", "linux"] as const)(
+    "ignores saved macOS fullscreen state on %s",
+    (platform) =>
       Effect.gen(function* () {
         const fakeWindow = makeFakeBrowserWindow();
         const createdWindowOptions: Electron.BrowserWindowConstructorOptions[] = [];
@@ -1024,8 +1025,7 @@ describe("DesktopWindow", () => {
           assert.equal(fakeWindow.setFullScreen.mock.calls.length, 0);
         }).pipe(Effect.provide(layer));
       }),
-    );
-  }
+  );
 
   // The window boots hidden with throttling disabled so first paint runs at
   // full speed; the first reveal must hand it back to normal hidden-window
@@ -1240,8 +1240,9 @@ describe("DesktopWindow", () => {
     }),
   );
 
-  for (const mainWindowMaximized of [false, true]) {
-    it.effect(`preserves off-display fullscreen bounds with maximized=${mainWindowMaximized}`, () =>
+  it.effect.each([false, true])(
+    "preserves off-display fullscreen bounds with maximized=%s",
+    (mainWindowMaximized) =>
       Effect.gen(function* () {
         const fakeWindow = makeFakeBrowserWindow();
         const createCount = yield* Ref.make(0);
@@ -1286,8 +1287,7 @@ describe("DesktopWindow", () => {
           assert.deepEqual(mainWindowBoundsUpdates, [{ x: 0, y: 0, width: 1100, height: 780 }]);
         }).pipe(Effect.provide(layer));
       }),
-    );
-  }
+  );
 
   it.effect("preserves fullscreen through hold-to-quit concealment and shutdown flush", () =>
     Effect.gen(function* () {
