@@ -20,7 +20,6 @@ import {
   type ProviderDriverKind,
   type ServerProviderModel,
 } from "@t3tools/contracts";
-import { cliReleaseChannelOf } from "@t3tools/shared/cliRelease";
 import { codexModelFamily } from "@t3tools/shared/model";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -32,7 +31,6 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 
-import packageJson from "../../package.json" with { type: "json" };
 import { ServerConfig } from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { hasValidClaudeManifestAdapters } from "./ClaudeModelManifest.ts";
@@ -142,25 +140,6 @@ const decodeManifest = Schema.decodeUnknownEffect(ModelManifestSchema);
 
 export const BUNDLED_MODEL_MANIFEST: ModelManifestData =
   Schema.decodeUnknownSync(ModelManifestSchema)(bundledManifestJson);
-
-/**
- * TEMPORARY V2 preview stopgap. Revert before V2 merges into main; it is on
- * #2829's "Revert before merging into main" checklist.
- *
- * The fetched manifest is `main`'s, and its compatibility policy is written for
- * stable and nightly builds, which do not run OpenCode 2. A policy's
- * `t3CodeRange` cannot single out preview builds because range matching drops
- * prerelease tags. Preview builds therefore keep the compatibility policy they
- * shipped with and take everything else from the fetched manifest.
- */
-function withPreviewCompatibility(
-  manifest: ModelManifestData,
-  t3CodeVersion: string,
-): ModelManifestData {
-  return cliReleaseChannelOf(t3CodeVersion) === "preview"
-    ? { ...manifest, compatibility: BUNDLED_MODEL_MANIFEST.compatibility }
-    : manifest;
-}
 
 /** Epoch millis of the manifest's `updatedAt`, or 0 when absent or unparsable. */
 function manifestUpdatedAtMs(manifest: ModelManifestData): number {
@@ -412,8 +391,7 @@ const BundledOnlyModelManifest: ModelManifest["Service"] = {
 
 export const layerTest = Layer.succeed(ModelManifest, BundledOnlyModelManifest);
 
-/** `make` for a given T3 Code version, so tests can exercise each release channel. */
-export const makeForVersion = Effect.fnUntraced(function* (t3CodeVersion: string) {
+export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const config = yield* ServerConfig;
@@ -446,7 +424,7 @@ export const makeForVersion = Effect.fnUntraced(function* (t3CodeVersion: string
       if (manifestUpdatedAtMs(BUNDLED_MODEL_MANIFEST) > manifestUpdatedAtMs(fromDisk.manifest)) {
         return;
       }
-      manifest = withPreviewCompatibility(fromDisk.manifest, t3CodeVersion);
+      manifest = fromDisk.manifest;
       fetchedAtMs = fromDisk.fetchedAtMs;
     }),
   );
@@ -485,7 +463,7 @@ export const makeForVersion = Effect.fnUntraced(function* (t3CodeVersion: string
       return manifest;
     }
 
-    manifest = withPreviewCompatibility(fetched, t3CodeVersion);
+    manifest = fetched;
     fetchedAtMs = now;
     yield* encodeManifestCache({ fetchedAtMs: now, manifest: fetched }).pipe(
       Effect.flatMap((serialized) => fileSystem.writeFileString(cachePath, serialized)),
@@ -503,7 +481,5 @@ export const makeForVersion = Effect.fnUntraced(function* (t3CodeVersion: string
     refreshInBackground: Effect.forkIn(guardedRefresh, serviceScope).pipe(Effect.asVoid),
   });
 });
-
-export const make = makeForVersion(packageJson.version);
 
 export const layer = Layer.effect(ModelManifest, make);

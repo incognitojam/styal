@@ -1342,6 +1342,7 @@ features:
       - npm publication starts only after every release artifact has passed its build verification, waits for every platform package to become readable with the uploaded integrity before exposing its launcher, and a retry accepts an existing package version only when its registry integrity matches the exact tarball being released and its channel tag points to that version.
       - Stale release retries are rejected before npm publication or integrity acceptance when any package channel tag is newer; nightly source promotion cannot move the branch backward.
       - Mobile environment checks and CLI channel updates read the compact @styal/cli npm dist-tags endpoint once, reject missing, malformed, or mismatched channel versions without fallback, offer a version only after its GitHub release checksums are downloadable, and retain downgrade protection; publication and runtime discovery share the release version parser.
+      - Provider compatibility policies in the model manifest select styal release versions rather than T3 Code's, because every installed build fetches the manifest from fork main. Releases up to styal 0.1.0 keep the OpenCode 1 policy their V1 orchestrator needs, and the OpenCode 2 and Pi policies start at styal 0.1.1.
       - Successful Fork CI pushes to main request a nightly of the newest eligible green commit; rejected CI completions cannot replace a pending publisher, manual requests retain the same release gates, and there is no scheduled trigger.
       - Stable and nightly notes omit changes outside shipped code and version-only manifest edits, support explicit Release-Note skip/include commit trailers, and retain a full comparison link and omitted count; note visibility never changes release eligibility.
       - Fork release intermediate artifacts expire after three days; manual desktop deliverables remain downloadable for 90 days, and published GitHub release assets keep their own lifetimes.
@@ -1410,6 +1411,7 @@ features:
       - apps/server/src/device/sshDeviceScript.ts
       - apps/server/src/provider/AntigravityInstallation.ts
       - apps/server/src/provider/Services/ProviderAuthService.ts
+      - apps/server/src/provider/model-manifest.json
       - apps/server/vite.config.ts
       - apps/web/src/branding.logic.ts
       - apps/web/src/branding.ts
@@ -1443,6 +1445,7 @@ features:
       - apps/desktop/src/app/DesktopEnvironment.ts
       - apps/mobile/app.config.ts
       - apps/server/src/device/sshDeviceScript.ts
+      - apps/server/src/provider/model-manifest.json
       - apps/web/src/branding.logic.ts
       - apps/web/src/branding.ts
       - apps/web/src/components/SidebarStageBackdrop.tsx
@@ -1466,6 +1469,7 @@ features:
       - apps/server/src/cli/update.test.ts
       - apps/server/src/cloud/bootService.test.ts
       - apps/server/src/device/sshDeviceScript.test.ts
+      - apps/server/src/provider/providerCompatibility.test.ts
       - apps/web/src/branding.test.ts
       - apps/web/src/components/SidebarStageBackdrop.test.tsx
       - packages/client-runtime/src/connection/compatibility.test.ts
