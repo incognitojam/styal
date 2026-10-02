@@ -1902,9 +1902,9 @@ features:
     prs: []
     invariants:
       - Concurrent registration and lookup of Expo permission requesters on iOS cannot corrupt the native registry, and clean installs resolve the patched expo-modules-core version.
-    rationale: Upstream added this patch in #12482 and dropped it when upgrading to Expo SDK 58, although expo-modules-core 58.0.9 still mutates the registry without synchronization and upstream keeps the macOS regression test. Compared with upstream revision 024d49520eadb24cc2f2cef0b0a82c33f0290813 on October 10, 2026.
+    rationale: Upstream added this patch in #12482 and dropped it when upgrading to Expo SDK 58, although expo-modules-core 58.0.11 still mutates the registry without synchronization and upstream keeps the macOS regression test. Compared with upstream revision 024d49520eadb24cc2f2cef0b0a82c33f0290813 on October 10, 2026.
     implementation_paths:
-      - patches/expo-modules-core@58.0.9.patch
+      - patches/expo-modules-core@58.0.11.patch
     upstream_paths:
       - apps/mobile/scripts/permissions-service.test.ts
       - pnpm-workspace.yaml
