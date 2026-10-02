@@ -2508,7 +2508,7 @@ features:
   - id: server-update-guidance
     title: Match server update instructions to the advertised capability
     status: maintained
-    prs: [351]
+    prs: [351, 623]
     invariants:
       - Normal managed services retain the direct in-app Update action in chat and Connections settings.
       - Manual update instructions reserve service update for detected legacy services; absent update capability is treated as an unknown installation, with serve qualified for terminal launches and service or container users directed to their existing deployment method.
