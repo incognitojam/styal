@@ -13,8 +13,8 @@
         "faviconPath": null,
         "projectIcon": null,
         "scripts": [],
-        "createdAt": "2026-10-02T11:13:47.497Z",
-        "updatedAt": "2026-10-02T11:13:47.497Z",
+        "createdAt": "2026-10-02T13:17:07.979Z",
+        "updatedAt": "2026-10-02T13:17:07.979Z",
         "deletedAt": null
       },
       {
@@ -28,8 +28,8 @@
         "faviconPath": null,
         "projectIcon": null,
         "scripts": [],
-        "createdAt": "2026-10-02T11:13:47.512Z",
-        "updatedAt": "2026-10-02T11:13:47.512Z",
+        "createdAt": "2026-10-02T13:17:07.994Z",
+        "updatedAt": "2026-10-02T13:17:07.994Z",
         "deletedAt": null
       }
     ],
@@ -49,15 +49,15 @@
         "pullRequests": [],
         "branchPullRequest": null,
         "latestTurn": {
-          "turnId": "41542b65-4b01-44ca-89d9-7b3bba31b6f7",
+          "turnId": "bb5bf63a-ac04-4d36-a353-ee67c40171b4",
           "state": "completed",
-          "requestedAt": "2026-10-02T11:13:49.744Z",
-          "startedAt": "2026-10-02T11:13:49.744Z",
-          "completedAt": "2026-10-02T11:13:50.037Z",
-          "assistantMessageId": "assistant:b0142b3b-2419-4f74-82a2-a1a2b969952e"
+          "requestedAt": "2026-10-02T13:17:10.221Z",
+          "startedAt": "2026-10-02T13:17:10.221Z",
+          "completedAt": "2026-10-02T13:17:10.507Z",
+          "assistantMessageId": "assistant:cdb689b1-349b-4fa5-a485-f9917232f955"
         },
-        "createdAt": "2026-10-02T11:13:47.520Z",
-        "updatedAt": "2026-10-02T11:13:50.037Z",
+        "createdAt": "2026-10-02T13:17:08.001Z",
+        "updatedAt": "2026-10-02T13:17:10.507Z",
         "archivedAt": null,
         "settledOverride": null,
         "settledAt": null,
@@ -82,7 +82,7 @@
           "runtimeMode": "full-access",
           "activeTurnId": null,
           "lastError": null,
-          "updatedAt": "2026-10-02T11:13:50.037Z"
+          "updatedAt": "2026-10-02T13:17:10.507Z"
         }
       },
       {
@@ -100,18 +100,18 @@
         "pullRequests": [],
         "branchPullRequest": null,
         "latestTurn": {
-          "turnId": "9340b90b-6b75-4469-ae95-cdf16af12b40",
+          "turnId": "eada5924-dde4-421c-b578-22a3e169cb65",
           "state": "completed",
-          "requestedAt": "2026-10-02T11:13:50.204Z",
-          "startedAt": "2026-10-02T11:13:50.204Z",
-          "completedAt": "2026-10-02T11:13:51.053Z",
-          "assistantMessageId": "assistant:d3694b91-eb77-464d-97bd-a189c58f580c"
+          "requestedAt": "2026-10-02T13:17:10.671Z",
+          "startedAt": "2026-10-02T13:17:10.671Z",
+          "completedAt": "2026-10-02T13:17:11.538Z",
+          "assistantMessageId": "assistant:78595216-4416-4c10-95ca-46cbd57c5642"
         },
-        "createdAt": "2026-10-02T11:13:50.195Z",
-        "updatedAt": "2026-10-02T11:13:51.270Z",
+        "createdAt": "2026-10-02T13:17:10.662Z",
+        "updatedAt": "2026-10-02T13:17:11.753Z",
         "archivedAt": null,
         "settledOverride": "settled",
-        "settledAt": "2026-10-02T11:13:51.270Z",
+        "settledAt": "2026-10-02T13:17:11.753Z",
         "unsettledAt": null,
         "snoozedUntil": null,
         "snoozedAt": null,
@@ -133,7 +133,7 @@
           "runtimeMode": "full-access",
           "activeTurnId": null,
           "lastError": null,
-          "updatedAt": "2026-10-02T11:13:51.270Z"
+          "updatedAt": "2026-10-02T13:17:11.753Z"
         }
       },
       {
@@ -151,19 +151,19 @@
         "pullRequests": [],
         "branchPullRequest": null,
         "latestTurn": {
-          "turnId": "d9721e8e-3043-491c-974f-2b8f7e3b2aef",
+          "turnId": "cb91f11e-7e28-410b-9c2c-a62adfda6481",
           "state": "completed",
-          "requestedAt": "2026-10-02T11:13:51.307Z",
-          "startedAt": "2026-10-02T11:13:51.307Z",
-          "completedAt": "2026-10-02T11:13:52.154Z",
-          "assistantMessageId": "assistant:8350d5e3-9456-4392-9b90-e2fde755d3ef"
+          "requestedAt": "2026-10-02T13:17:11.824Z",
+          "startedAt": "2026-10-02T13:17:11.824Z",
+          "completedAt": "2026-10-02T13:17:12.694Z",
+          "assistantMessageId": "assistant:fa34d559-33d4-4792-a64d-ae174b8832f0"
         },
-        "createdAt": "2026-10-02T11:13:51.286Z",
-        "updatedAt": "2026-10-02T11:13:52.368Z",
+        "createdAt": "2026-10-02T13:17:11.776Z",
+        "updatedAt": "2026-10-02T13:17:13.004Z",
         "archivedAt": null,
         "settledOverride": "active",
         "settledAt": null,
-        "unsettledAt": "2026-10-02T11:13:52.383Z",
+        "unsettledAt": "2026-10-02T13:17:13.087Z",
         "snoozedUntil": null,
         "snoozedAt": null,
         "pinnedAt": null,
@@ -184,7 +184,7 @@
           "runtimeMode": "full-access",
           "activeTurnId": null,
           "lastError": null,
-          "updatedAt": "2026-10-02T11:13:52.368Z"
+          "updatedAt": "2026-10-02T13:17:13.004Z"
         }
       },
       {
@@ -202,16 +202,16 @@
         "pullRequests": [],
         "branchPullRequest": null,
         "latestTurn": {
-          "turnId": "2eb69e8d-1f94-4f74-a7e9-38e48a7d4daf",
+          "turnId": "e0dae9ee-ee33-478f-b838-5c79bd68017b",
           "state": "completed",
-          "requestedAt": "2026-10-02T11:13:52.407Z",
-          "startedAt": "2026-10-02T11:13:52.407Z",
-          "completedAt": "2026-10-02T11:13:53.265Z",
-          "assistantMessageId": "assistant:cc077696-e03e-4e04-8e50-d1daf673d1c8"
+          "requestedAt": "2026-10-02T13:17:13.132Z",
+          "startedAt": "2026-10-02T13:17:13.132Z",
+          "completedAt": "2026-10-02T13:17:13.993Z",
+          "assistantMessageId": "assistant:460ec785-ba8b-4758-8063-208ac5fac9f6"
         },
-        "createdAt": "2026-10-02T11:13:52.397Z",
-        "updatedAt": "2026-10-02T11:13:53.479Z",
-        "archivedAt": "2026-10-02T11:13:53.479Z",
+        "createdAt": "2026-10-02T13:17:13.120Z",
+        "updatedAt": "2026-10-02T13:17:14.259Z",
+        "archivedAt": "2026-10-02T13:17:14.259Z",
         "settledOverride": null,
         "settledAt": null,
         "unsettledAt": null,
@@ -235,7 +235,7 @@
           "runtimeMode": "full-access",
           "activeTurnId": null,
           "lastError": null,
-          "updatedAt": "2026-10-02T11:13:53.265Z"
+          "updatedAt": "2026-10-02T13:17:13.993Z"
         }
       },
       {
@@ -253,15 +253,15 @@
         "pullRequests": [],
         "branchPullRequest": null,
         "latestTurn": {
-          "turnId": "470bec4c-92e6-4fb1-8773-38f5daa6081f",
+          "turnId": "858f500c-b211-4172-9977-8c3c3c809240",
           "state": "completed",
-          "requestedAt": "2026-10-02T11:13:53.505Z",
-          "startedAt": "2026-10-02T11:13:53.505Z",
-          "completedAt": "2026-10-02T11:13:54.351Z",
-          "assistantMessageId": "assistant:9416685c-276b-49e9-90ed-869b538db1b0"
+          "requestedAt": "2026-10-02T13:17:14.290Z",
+          "startedAt": "2026-10-02T13:17:14.290Z",
+          "completedAt": "2026-10-02T13:17:15.141Z",
+          "assistantMessageId": "assistant:b0f10edc-af3f-4434-8259-47302228beb8"
         },
-        "createdAt": "2026-10-02T11:13:53.493Z",
-        "updatedAt": "2026-10-02T11:13:54.556Z",
+        "createdAt": "2026-10-02T13:17:14.277Z",
+        "updatedAt": "2026-10-02T13:17:15.384Z",
         "archivedAt": null,
         "settledOverride": null,
         "settledAt": null,
@@ -273,7 +273,7 @@
         "activeOrderKey": null,
         "titleRegeneration": null,
         "titleState": null,
-        "deletedAt": "2026-10-02T11:13:54.556Z",
+        "deletedAt": "2026-10-02T13:17:15.384Z",
         "messages": [],
         "proposedPlans": [],
         "activities": [],
@@ -286,7 +286,7 @@
           "runtimeMode": "full-access",
           "activeTurnId": null,
           "lastError": null,
-          "updatedAt": "2026-10-02T11:13:54.351Z"
+          "updatedAt": "2026-10-02T13:17:15.141Z"
         }
       },
       {
@@ -304,15 +304,15 @@
         "pullRequests": [],
         "branchPullRequest": null,
         "latestTurn": {
-          "turnId": "e90d3219-15c2-45ed-8de5-7e78dce2ca8e",
+          "turnId": "b4ff7bd0-67e0-4653-9e4c-a47f35222716",
           "state": "error",
-          "requestedAt": "2026-10-02T11:13:54.578Z",
-          "startedAt": "2026-10-02T11:13:54.578Z",
-          "completedAt": "2026-10-02T11:13:54.918Z",
-          "assistantMessageId": "assistant:ee810325-f696-4102-bd3a-f363758f2883"
+          "requestedAt": "2026-10-02T13:17:15.420Z",
+          "startedAt": "2026-10-02T13:17:15.420Z",
+          "completedAt": "2026-10-02T13:17:15.762Z",
+          "assistantMessageId": "assistant:3e26ecd3-d8c2-4a5c-bd9a-de0c648f60e5"
         },
-        "createdAt": "2026-10-02T11:13:54.566Z",
-        "updatedAt": "2026-10-02T11:13:54.918Z",
+        "createdAt": "2026-10-02T13:17:15.404Z",
+        "updatedAt": "2026-10-02T13:17:15.762Z",
         "archivedAt": null,
         "settledOverride": null,
         "settledAt": null,
@@ -337,7 +337,7 @@
           "runtimeMode": "full-access",
           "activeTurnId": null,
           "lastError": "Simulated provider failure.",
-          "updatedAt": "2026-10-02T11:13:54.918Z"
+          "updatedAt": "2026-10-02T13:17:15.762Z"
         }
       },
       {
@@ -355,15 +355,15 @@
         "pullRequests": [],
         "branchPullRequest": null,
         "latestTurn": {
-          "turnId": "092fe448-62bd-436e-85ba-4f8b3a4de880",
+          "turnId": "d8c0b8b5-f04b-4c90-b7ee-a79fc568209f",
           "state": "completed",
-          "requestedAt": "2026-10-02T11:13:55.248Z",
-          "startedAt": "2026-10-02T11:13:55.248Z",
-          "completedAt": "2026-10-02T11:13:55.851Z",
-          "assistantMessageId": "assistant:eba6dc3f-4fde-404a-8d0d-b35ddb6ffa3d"
+          "requestedAt": "2026-10-02T13:17:16.101Z",
+          "startedAt": "2026-10-02T13:17:16.101Z",
+          "completedAt": "2026-10-02T13:17:16.721Z",
+          "assistantMessageId": "assistant:f1d2289e-f96a-4600-a410-82a9a5c83bac"
         },
-        "createdAt": "2026-10-02T11:13:55.228Z",
-        "updatedAt": "2026-10-02T11:13:55.851Z",
+        "createdAt": "2026-10-02T13:17:16.076Z",
+        "updatedAt": "2026-10-02T13:17:16.721Z",
         "archivedAt": null,
         "settledOverride": null,
         "settledAt": null,
@@ -388,7 +388,7 @@
           "runtimeMode": "full-access",
           "activeTurnId": null,
           "lastError": null,
-          "updatedAt": "2026-10-02T11:13:55.851Z"
+          "updatedAt": "2026-10-02T13:17:16.721Z"
         }
       },
       {
@@ -406,8 +406,8 @@
         "pullRequests": [],
         "branchPullRequest": null,
         "latestTurn": null,
-        "createdAt": "2026-10-02T11:13:56.095Z",
-        "updatedAt": "2026-10-02T11:13:56.095Z",
+        "createdAt": "2026-10-02T13:17:16.982Z",
+        "updatedAt": "2026-10-02T13:17:16.982Z",
         "archivedAt": null,
         "settledOverride": null,
         "settledAt": null,
@@ -441,15 +441,15 @@
         "pullRequests": [],
         "branchPullRequest": null,
         "latestTurn": {
-          "turnId": "66b8b0cc-532c-4960-ab10-217f0884bc11",
+          "turnId": "b5b44a81-a25e-461b-9cb8-c588f505faf3",
           "state": "completed",
-          "requestedAt": "2026-10-02T11:13:56.110Z",
-          "startedAt": "2026-10-02T11:13:56.110Z",
-          "completedAt": "2026-10-02T11:13:56.969Z",
-          "assistantMessageId": "assistant:33a053a1-444e-4e64-a4f0-053d9a75831f"
+          "requestedAt": "2026-10-02T13:17:17.006Z",
+          "startedAt": "2026-10-02T13:17:17.006Z",
+          "completedAt": "2026-10-02T13:17:17.854Z",
+          "assistantMessageId": "assistant:45654b07-c24c-42d4-941a-1c9e6a00f972"
         },
-        "createdAt": "2026-10-02T11:13:56.102Z",
-        "updatedAt": "2026-10-02T11:13:56.969Z",
+        "createdAt": "2026-10-02T13:17:16.996Z",
+        "updatedAt": "2026-10-02T13:17:17.854Z",
         "archivedAt": null,
         "settledOverride": null,
         "settledAt": null,
@@ -474,11 +474,11 @@
           "runtimeMode": "full-access",
           "activeTurnId": null,
           "lastError": null,
-          "updatedAt": "2026-10-02T11:13:56.969Z"
+          "updatedAt": "2026-10-02T13:17:17.854Z"
         }
       }
     ],
-    "updatedAt": "2026-10-02T11:13:56.969Z"
+    "updatedAt": "2026-10-02T13:17:17.854Z"
   },
   "threads": {
     "thread-archived": {
@@ -496,15 +496,15 @@
       "pullRequests": [],
       "branchPullRequest": null,
       "latestTurn": {
-        "turnId": "2eb69e8d-1f94-4f74-a7e9-38e48a7d4daf",
+        "turnId": "e0dae9ee-ee33-478f-b838-5c79bd68017b",
         "state": "completed",
-        "requestedAt": "2026-10-02T11:13:52.407Z",
-        "startedAt": "2026-10-02T11:13:52.407Z",
-        "completedAt": "2026-10-02T11:13:53.265Z",
-        "assistantMessageId": "assistant:cc077696-e03e-4e04-8e50-d1daf673d1c8"
+        "requestedAt": "2026-10-02T13:17:13.132Z",
+        "startedAt": "2026-10-02T13:17:13.132Z",
+        "completedAt": "2026-10-02T13:17:13.993Z",
+        "assistantMessageId": "assistant:460ec785-ba8b-4758-8063-208ac5fac9f6"
       },
-      "createdAt": "2026-10-02T11:13:52.397Z",
-      "updatedAt": "2026-10-02T11:13:53.265Z",
+      "createdAt": "2026-10-02T13:17:13.120Z",
+      "updatedAt": "2026-10-02T13:17:13.993Z",
       "archivedAt": null,
       "settledOverride": null,
       "settledAt": null,
@@ -525,29 +525,29 @@
           "attachments": [],
           "turnId": null,
           "streaming": false,
-          "createdAt": "2026-10-02T11:13:52.407Z",
-          "updatedAt": "2026-10-02T11:13:52.407Z"
+          "createdAt": "2026-10-02T13:17:13.132Z",
+          "updatedAt": "2026-10-02T13:17:13.132Z"
         },
         {
-          "id": "assistant:cc077696-e03e-4e04-8e50-d1daf673d1c8",
+          "id": "assistant:460ec785-ba8b-4758-8063-208ac5fac9f6",
           "role": "assistant",
           "text": "The README has a single **Demo** heading.",
-          "turnId": "2eb69e8d-1f94-4f74-a7e9-38e48a7d4daf",
+          "turnId": "e0dae9ee-ee33-478f-b838-5c79bd68017b",
           "streaming": false,
-          "createdAt": "2026-10-02T11:13:53.265Z",
-          "updatedAt": "2026-10-02T11:13:53.265Z"
+          "createdAt": "2026-10-02T13:17:13.993Z",
+          "updatedAt": "2026-10-02T13:17:13.993Z"
         }
       ],
       "proposedPlans": [],
       "activities": [
         {
-          "id": "47eb5374-a76c-4ca7-9392-c4e60d747c73",
+          "id": "7e2427a2-a5e9-4f7b-ac9f-b88402d139cd",
           "tone": "tool",
           "kind": "tool.started",
           "summary": "Ran command started",
           "payload": {
             "itemType": "command_execution",
-            "toolCallId": "a1ee6a8f-d6d4-4701-a4fe-9544f6c52e1d",
+            "toolCallId": "c39054e4-27a9-4242-b97a-c05c650abb13",
             "status": "inProgress",
             "title": "Ran command",
             "detail": "cat README.md",
@@ -557,17 +557,17 @@
               }
             }
           },
-          "turnId": "2eb69e8d-1f94-4f74-a7e9-38e48a7d4daf",
-          "createdAt": "2026-10-02T11:13:53.012Z"
+          "turnId": "e0dae9ee-ee33-478f-b838-5c79bd68017b",
+          "createdAt": "2026-10-02T13:17:13.742Z"
         },
         {
-          "id": "61ba18ef-1bfe-4563-9350-ee0599778c2b",
+          "id": "9a419eba-5840-45bc-b1b5-a1d775479ab2",
           "tone": "tool",
           "kind": "tool.completed",
           "summary": "Ran command",
           "payload": {
             "itemType": "command_execution",
-            "toolCallId": "a1ee6a8f-d6d4-4701-a4fe-9544f6c52e1d",
+            "toolCallId": "c39054e4-27a9-4242-b97a-c05c650abb13",
             "status": "completed",
             "title": "Ran command",
             "detail": "cat README.md",
@@ -578,23 +578,11 @@
               }
             }
           },
-          "turnId": "2eb69e8d-1f94-4f74-a7e9-38e48a7d4daf",
-          "createdAt": "2026-10-02T11:13:53.014Z"
+          "turnId": "e0dae9ee-ee33-478f-b838-5c79bd68017b",
+          "createdAt": "2026-10-02T13:17:13.743Z"
         },
         {
-          "id": "3c31b2a8-a181-414f-b4c1-a71b330d342d",
-          "tone": "info",
-          "kind": "checkpoint.captured",
-          "summary": "Checkpoint captured",
-          "payload": {
-            "turnCount": 1,
-            "status": "ready"
-          },
-          "turnId": "2eb69e8d-1f94-4f74-a7e9-38e48a7d4daf",
-          "createdAt": "2026-10-02T11:13:53.265Z"
-        },
-        {
-          "id": "c84c193e-97a6-4fed-8070-b529e68b8837",
+          "id": "9daa586f-bfcb-4369-8f9e-fa69456f2226",
           "tone": "info",
           "kind": "context-window.updated",
           "summary": "Context window updated",
@@ -612,18 +600,30 @@
             "compactsAutomatically": true
           },
           "turnId": null,
-          "createdAt": "2026-10-02T11:13:53.265Z"
+          "createdAt": "2026-10-02T13:17:13.993Z"
+        },
+        {
+          "id": "f47a2b25-2cde-49e6-808c-9b89d1127e02",
+          "tone": "info",
+          "kind": "checkpoint.captured",
+          "summary": "Checkpoint captured",
+          "payload": {
+            "turnCount": 1,
+            "status": "ready"
+          },
+          "turnId": "e0dae9ee-ee33-478f-b838-5c79bd68017b",
+          "createdAt": "2026-10-02T13:17:13.993Z"
         }
       ],
       "checkpoints": [
         {
-          "turnId": "2eb69e8d-1f94-4f74-a7e9-38e48a7d4daf",
+          "turnId": "e0dae9ee-ee33-478f-b838-5c79bd68017b",
           "checkpointTurnCount": 1,
           "checkpointRef": "refs/t3/checkpoints/dGhyZWFkLWFyY2hpdmVk/turn/1",
           "status": "ready",
           "files": [],
-          "assistantMessageId": "assistant:cc077696-e03e-4e04-8e50-d1daf673d1c8",
-          "completedAt": "2026-10-02T11:13:53.265Z"
+          "assistantMessageId": "assistant:460ec785-ba8b-4758-8063-208ac5fac9f6",
+          "completedAt": "2026-10-02T13:17:13.993Z"
         }
       ],
       "session": {
@@ -634,7 +634,7 @@
         "runtimeMode": "full-access",
         "activeTurnId": null,
         "lastError": null,
-        "updatedAt": "2026-10-02T11:13:53.265Z"
+        "updatedAt": "2026-10-02T13:17:13.993Z"
       }
     },
     "thread-completed": {
@@ -652,15 +652,15 @@
       "pullRequests": [],
       "branchPullRequest": null,
       "latestTurn": {
-        "turnId": "41542b65-4b01-44ca-89d9-7b3bba31b6f7",
+        "turnId": "bb5bf63a-ac04-4d36-a353-ee67c40171b4",
         "state": "completed",
-        "requestedAt": "2026-10-02T11:13:49.744Z",
-        "startedAt": "2026-10-02T11:13:49.744Z",
-        "completedAt": "2026-10-02T11:13:50.037Z",
-        "assistantMessageId": "assistant:b0142b3b-2419-4f74-82a2-a1a2b969952e"
+        "requestedAt": "2026-10-02T13:17:10.221Z",
+        "startedAt": "2026-10-02T13:17:10.221Z",
+        "completedAt": "2026-10-02T13:17:10.507Z",
+        "assistantMessageId": "assistant:cdb689b1-349b-4fa5-a485-f9917232f955"
       },
-      "createdAt": "2026-10-02T11:13:47.520Z",
-      "updatedAt": "2026-10-02T11:13:50.037Z",
+      "createdAt": "2026-10-02T13:17:08.001Z",
+      "updatedAt": "2026-10-02T13:17:10.507Z",
       "archivedAt": null,
       "settledOverride": null,
       "settledAt": null,
@@ -681,17 +681,17 @@
           "attachments": [],
           "turnId": null,
           "streaming": false,
-          "createdAt": "2026-10-02T11:13:47.549Z",
-          "updatedAt": "2026-10-02T11:13:47.549Z"
+          "createdAt": "2026-10-02T13:17:08.028Z",
+          "updatedAt": "2026-10-02T13:17:08.028Z"
         },
         {
-          "id": "assistant:6b30a87e-6ef6-4116-a634-acc7fe8fa64c",
+          "id": "assistant:bc8e4c76-577d-4d70-bbe6-ba2cc4326610",
           "role": "assistant",
           "text": "The README has a single **Demo** heading.",
-          "turnId": "41379323-aeee-45f9-87fd-87cfff66fbb5",
+          "turnId": "7ea2737a-b59d-45fe-a140-37705018f361",
           "streaming": false,
-          "createdAt": "2026-10-02T11:13:48.441Z",
-          "updatedAt": "2026-10-02T11:13:48.442Z"
+          "createdAt": "2026-10-02T13:17:08.920Z",
+          "updatedAt": "2026-10-02T13:17:08.920Z"
         },
         {
           "id": "fixture-message-7",
@@ -700,17 +700,17 @@
           "attachments": [],
           "turnId": null,
           "streaming": false,
-          "createdAt": "2026-10-02T11:13:48.658Z",
-          "updatedAt": "2026-10-02T11:13:48.658Z"
+          "createdAt": "2026-10-02T13:17:09.141Z",
+          "updatedAt": "2026-10-02T13:17:09.141Z"
         },
         {
-          "id": "assistant:b2b4c8aa-08ad-4593-b03f-d5e1779a775f",
+          "id": "assistant:35839e4c-c4d5-4d0b-bf49-8335a7467e5d",
           "role": "assistant",
           "text": "Added `CHANGELOG.md` with one entry.",
-          "turnId": "34aba74c-2615-450a-a50f-16e64b3748b2",
+          "turnId": "340953e2-55ee-4bef-b719-02d9ae057dd9",
           "streaming": false,
-          "createdAt": "2026-10-02T11:13:49.431Z",
-          "updatedAt": "2026-10-02T11:13:49.433Z"
+          "createdAt": "2026-10-02T13:17:09.917Z",
+          "updatedAt": "2026-10-02T13:17:09.917Z"
         },
         {
           "id": "fixture-message-9",
@@ -719,7 +719,7 @@
           "attachments": [
             {
               "type": "image",
-              "id": "thread-completed-c77f7717-266e-45b0-9af6-b1fb7b059a03",
+              "id": "thread-completed-42e1a450-05c0-43ca-9dee-dde0a51e8157",
               "name": "pixel.png",
               "mimeType": "image/png",
               "sizeBytes": 70
@@ -727,29 +727,29 @@
           ],
           "turnId": null,
           "streaming": false,
-          "createdAt": "2026-10-02T11:13:49.744Z",
-          "updatedAt": "2026-10-02T11:13:49.744Z"
+          "createdAt": "2026-10-02T13:17:10.221Z",
+          "updatedAt": "2026-10-02T13:17:10.221Z"
         },
         {
-          "id": "assistant:b0142b3b-2419-4f74-82a2-a1a2b969952e",
+          "id": "assistant:cdb689b1-349b-4fa5-a485-f9917232f955",
           "role": "assistant",
           "text": "The screenshot is a single transparent pixel.",
-          "turnId": "41542b65-4b01-44ca-89d9-7b3bba31b6f7",
+          "turnId": "bb5bf63a-ac04-4d36-a353-ee67c40171b4",
           "streaming": false,
-          "createdAt": "2026-10-02T11:13:50.035Z",
-          "updatedAt": "2026-10-02T11:13:50.035Z"
+          "createdAt": "2026-10-02T13:17:10.507Z",
+          "updatedAt": "2026-10-02T13:17:10.507Z"
         }
       ],
       "proposedPlans": [],
       "activities": [
         {
-          "id": "0258d7cd-7f03-4a96-9c86-37d66d23b722",
+          "id": "98c9c235-acd6-4929-8e2e-7804c96008a8",
           "tone": "tool",
           "kind": "tool.started",
           "summary": "Ran command started",
           "payload": {
             "itemType": "command_execution",
-            "toolCallId": "e858b0e6-3dd4-40de-9f06-074245c66df9",
+            "toolCallId": "a9a729f4-4cf4-4565-ae9b-b5d67b34ea65",
             "status": "inProgress",
             "title": "Ran command",
             "detail": "cat README.md",
@@ -759,17 +759,17 @@
               }
             }
           },
-          "turnId": "41379323-aeee-45f9-87fd-87cfff66fbb5",
-          "createdAt": "2026-10-02T11:13:48.185Z"
+          "turnId": "7ea2737a-b59d-45fe-a140-37705018f361",
+          "createdAt": "2026-10-02T13:17:08.665Z"
         },
         {
-          "id": "93a7d237-85ab-4399-aec7-40ff134c04f6",
+          "id": "336a8629-31ea-411b-ac97-712649b7973e",
           "tone": "tool",
           "kind": "tool.completed",
           "summary": "Ran command",
           "payload": {
             "itemType": "command_execution",
-            "toolCallId": "e858b0e6-3dd4-40de-9f06-074245c66df9",
+            "toolCallId": "a9a729f4-4cf4-4565-ae9b-b5d67b34ea65",
             "status": "completed",
             "title": "Ran command",
             "detail": "cat README.md",
@@ -780,11 +780,11 @@
               }
             }
           },
-          "turnId": "41379323-aeee-45f9-87fd-87cfff66fbb5",
-          "createdAt": "2026-10-02T11:13:48.186Z"
+          "turnId": "7ea2737a-b59d-45fe-a140-37705018f361",
+          "createdAt": "2026-10-02T13:17:08.668Z"
         },
         {
-          "id": "77bbdba6-18e6-4fda-b7e1-1da7f535d7ba",
+          "id": "b8eb739b-acf7-4bec-960c-1f2a87edca38",
           "tone": "info",
           "kind": "checkpoint.captured",
           "summary": "Checkpoint captured",
@@ -792,37 +792,17 @@
             "turnCount": 1,
             "status": "ready"
           },
-          "turnId": "41379323-aeee-45f9-87fd-87cfff66fbb5",
-          "createdAt": "2026-10-02T11:13:48.442Z"
+          "turnId": "7ea2737a-b59d-45fe-a140-37705018f361",
+          "createdAt": "2026-10-02T13:17:08.920Z"
         },
         {
-          "id": "8e05954b-9274-42c1-bff6-113350a9e9a8",
-          "tone": "tool",
-          "kind": "tool.started",
-          "summary": "Ran command started",
-          "payload": {
-            "itemType": "command_execution",
-            "toolCallId": "55ef4282-4483-4143-ba51-21461d9cfc27",
-            "status": "inProgress",
-            "title": "Ran command",
-            "detail": "git status --short",
-            "data": {
-              "item": {
-                "command": "git status --short"
-              }
-            }
-          },
-          "turnId": "34aba74c-2615-450a-a50f-16e64b3748b2",
-          "createdAt": "2026-10-02T11:13:48.928Z"
-        },
-        {
-          "id": "fdc6aff6-fa57-447d-b731-dd47aac4e55e",
+          "id": "2e7a9b50-2acd-48a4-99bc-690deb5eaa75",
           "tone": "tool",
           "kind": "tool.completed",
           "summary": "Ran command",
           "payload": {
             "itemType": "command_execution",
-            "toolCallId": "55ef4282-4483-4143-ba51-21461d9cfc27",
+            "toolCallId": "25d3171c-c83d-4545-8f37-eeb7d8f9b7df",
             "status": "completed",
             "title": "Ran command",
             "detail": "git status --short",
@@ -832,17 +812,37 @@
               }
             }
           },
-          "turnId": "34aba74c-2615-450a-a50f-16e64b3748b2",
-          "createdAt": "2026-10-02T11:13:48.929Z"
+          "turnId": "340953e2-55ee-4bef-b719-02d9ae057dd9",
+          "createdAt": "2026-10-02T13:17:09.415Z"
         },
         {
-          "id": "fb29fa2b-9637-4742-a93b-fb97bfbf2ae8",
+          "id": "9c0322b3-64f6-43c7-a34d-3b7439a0f1f8",
+          "tone": "tool",
+          "kind": "tool.started",
+          "summary": "Ran command started",
+          "payload": {
+            "itemType": "command_execution",
+            "toolCallId": "25d3171c-c83d-4545-8f37-eeb7d8f9b7df",
+            "status": "inProgress",
+            "title": "Ran command",
+            "detail": "git status --short",
+            "data": {
+              "item": {
+                "command": "git status --short"
+              }
+            }
+          },
+          "turnId": "340953e2-55ee-4bef-b719-02d9ae057dd9",
+          "createdAt": "2026-10-02T13:17:09.415Z"
+        },
+        {
+          "id": "897a2a62-1497-45fb-a0c6-4e9f1c0f7484",
           "tone": "tool",
           "kind": "tool.started",
           "summary": "File change started",
           "payload": {
             "itemType": "file_change",
-            "toolCallId": "95dc4bb1-4acb-402f-9192-93d7bd85ea01",
+            "toolCallId": "41096646-f444-4c1b-b711-88ea4a637b32",
             "status": "inProgress",
             "title": "File change",
             "data": {
@@ -853,17 +853,17 @@
               ]
             }
           },
-          "turnId": "34aba74c-2615-450a-a50f-16e64b3748b2",
-          "createdAt": "2026-10-02T11:13:49.180Z"
+          "turnId": "340953e2-55ee-4bef-b719-02d9ae057dd9",
+          "createdAt": "2026-10-02T13:17:09.667Z"
         },
         {
-          "id": "369eee36-8eab-4019-8f0a-0fd1a371476e",
+          "id": "3c4e994c-35b5-453b-8212-c117eb42de6b",
           "tone": "tool",
           "kind": "tool.completed",
           "summary": "File change",
           "payload": {
             "itemType": "file_change",
-            "toolCallId": "95dc4bb1-4acb-402f-9192-93d7bd85ea01",
+            "toolCallId": "41096646-f444-4c1b-b711-88ea4a637b32",
             "status": "completed",
             "title": "File change",
             "data": {
@@ -874,11 +874,11 @@
               ]
             }
           },
-          "turnId": "34aba74c-2615-450a-a50f-16e64b3748b2",
-          "createdAt": "2026-10-02T11:13:49.181Z"
+          "turnId": "340953e2-55ee-4bef-b719-02d9ae057dd9",
+          "createdAt": "2026-10-02T13:17:09.668Z"
         },
         {
-          "id": "b8953b99-8c54-495a-b7ce-0ef777af97a5",
+          "id": "702b7ad9-83e7-4fdd-b6b3-c5f63d925380",
           "tone": "info",
           "kind": "checkpoint.captured",
           "summary": "Checkpoint captured",
@@ -886,23 +886,11 @@
             "turnCount": 2,
             "status": "ready"
           },
-          "turnId": "34aba74c-2615-450a-a50f-16e64b3748b2",
-          "createdAt": "2026-10-02T11:13:49.433Z"
+          "turnId": "340953e2-55ee-4bef-b719-02d9ae057dd9",
+          "createdAt": "2026-10-02T13:17:09.920Z"
         },
         {
-          "id": "b284f4d1-e226-4c6f-ac86-cbbd25739932",
-          "tone": "info",
-          "kind": "checkpoint.captured",
-          "summary": "Checkpoint captured",
-          "payload": {
-            "turnCount": 3,
-            "status": "ready"
-          },
-          "turnId": "41542b65-4b01-44ca-89d9-7b3bba31b6f7",
-          "createdAt": "2026-10-02T11:13:50.037Z"
-        },
-        {
-          "id": "d2251fee-ccde-418d-bc38-cf5c79938efd",
+          "id": "3600d301-a93f-47e4-baea-5228209767fc",
           "tone": "info",
           "kind": "context-window.updated",
           "summary": "Context window updated",
@@ -920,21 +908,33 @@
             "compactsAutomatically": true
           },
           "turnId": null,
-          "createdAt": "2026-10-02T11:13:50.037Z"
+          "createdAt": "2026-10-02T13:17:10.507Z"
+        },
+        {
+          "id": "fd8226dc-6de2-4677-b4a8-012ce71e7594",
+          "tone": "info",
+          "kind": "checkpoint.captured",
+          "summary": "Checkpoint captured",
+          "payload": {
+            "turnCount": 3,
+            "status": "ready"
+          },
+          "turnId": "bb5bf63a-ac04-4d36-a353-ee67c40171b4",
+          "createdAt": "2026-10-02T13:17:10.507Z"
         }
       ],
       "checkpoints": [
         {
-          "turnId": "41379323-aeee-45f9-87fd-87cfff66fbb5",
+          "turnId": "7ea2737a-b59d-45fe-a140-37705018f361",
           "checkpointTurnCount": 1,
           "checkpointRef": "refs/t3/checkpoints/dGhyZWFkLWNvbXBsZXRlZA/turn/1",
           "status": "ready",
           "files": [],
-          "assistantMessageId": "assistant:6b30a87e-6ef6-4116-a634-acc7fe8fa64c",
-          "completedAt": "2026-10-02T11:13:48.442Z"
+          "assistantMessageId": "assistant:bc8e4c76-577d-4d70-bbe6-ba2cc4326610",
+          "completedAt": "2026-10-02T13:17:08.920Z"
         },
         {
-          "turnId": "34aba74c-2615-450a-a50f-16e64b3748b2",
+          "turnId": "340953e2-55ee-4bef-b719-02d9ae057dd9",
           "checkpointTurnCount": 2,
           "checkpointRef": "refs/t3/checkpoints/dGhyZWFkLWNvbXBsZXRlZA/turn/2",
           "status": "ready",
@@ -946,17 +946,17 @@
               "deletions": 0
             }
           ],
-          "assistantMessageId": "assistant:b2b4c8aa-08ad-4593-b03f-d5e1779a775f",
-          "completedAt": "2026-10-02T11:13:49.433Z"
+          "assistantMessageId": "assistant:35839e4c-c4d5-4d0b-bf49-8335a7467e5d",
+          "completedAt": "2026-10-02T13:17:09.920Z"
         },
         {
-          "turnId": "41542b65-4b01-44ca-89d9-7b3bba31b6f7",
+          "turnId": "bb5bf63a-ac04-4d36-a353-ee67c40171b4",
           "checkpointTurnCount": 3,
           "checkpointRef": "refs/t3/checkpoints/dGhyZWFkLWNvbXBsZXRlZA/turn/3",
           "status": "ready",
           "files": [],
-          "assistantMessageId": "assistant:b0142b3b-2419-4f74-82a2-a1a2b969952e",
-          "completedAt": "2026-10-02T11:13:50.037Z"
+          "assistantMessageId": "assistant:cdb689b1-349b-4fa5-a485-f9917232f955",
+          "completedAt": "2026-10-02T13:17:10.507Z"
         }
       ],
       "session": {
@@ -967,7 +967,7 @@
         "runtimeMode": "full-access",
         "activeTurnId": null,
         "lastError": null,
-        "updatedAt": "2026-10-02T11:13:50.037Z"
+        "updatedAt": "2026-10-02T13:17:10.507Z"
       }
     },
     "thread-settled": {
@@ -985,18 +985,18 @@
       "pullRequests": [],
       "branchPullRequest": null,
       "latestTurn": {
-        "turnId": "9340b90b-6b75-4469-ae95-cdf16af12b40",
+        "turnId": "eada5924-dde4-421c-b578-22a3e169cb65",
         "state": "completed",
-        "requestedAt": "2026-10-02T11:13:50.204Z",
-        "startedAt": "2026-10-02T11:13:50.204Z",
-        "completedAt": "2026-10-02T11:13:51.053Z",
-        "assistantMessageId": "assistant:d3694b91-eb77-464d-97bd-a189c58f580c"
+        "requestedAt": "2026-10-02T13:17:10.671Z",
+        "startedAt": "2026-10-02T13:17:10.671Z",
+        "completedAt": "2026-10-02T13:17:11.538Z",
+        "assistantMessageId": "assistant:78595216-4416-4c10-95ca-46cbd57c5642"
       },
-      "createdAt": "2026-10-02T11:13:50.195Z",
-      "updatedAt": "2026-10-02T11:13:51.270Z",
+      "createdAt": "2026-10-02T13:17:10.662Z",
+      "updatedAt": "2026-10-02T13:17:11.753Z",
       "archivedAt": null,
       "settledOverride": "settled",
-      "settledAt": "2026-10-02T11:13:51.270Z",
+      "settledAt": "2026-10-02T13:17:11.753Z",
       "unsettledAt": null,
       "snoozedUntil": null,
       "snoozedAt": null,
@@ -1014,29 +1014,29 @@
           "attachments": [],
           "turnId": null,
           "streaming": false,
-          "createdAt": "2026-10-02T11:13:50.204Z",
-          "updatedAt": "2026-10-02T11:13:50.204Z"
+          "createdAt": "2026-10-02T13:17:10.671Z",
+          "updatedAt": "2026-10-02T13:17:10.671Z"
         },
         {
-          "id": "assistant:d3694b91-eb77-464d-97bd-a189c58f580c",
+          "id": "assistant:78595216-4416-4c10-95ca-46cbd57c5642",
           "role": "assistant",
           "text": "The README has a single **Demo** heading.",
-          "turnId": "9340b90b-6b75-4469-ae95-cdf16af12b40",
+          "turnId": "eada5924-dde4-421c-b578-22a3e169cb65",
           "streaming": false,
-          "createdAt": "2026-10-02T11:13:51.053Z",
-          "updatedAt": "2026-10-02T11:13:51.053Z"
+          "createdAt": "2026-10-02T13:17:11.537Z",
+          "updatedAt": "2026-10-02T13:17:11.538Z"
         }
       ],
       "proposedPlans": [],
       "activities": [
         {
-          "id": "e999c22f-5273-4630-b1b8-9faf6c75e65b",
+          "id": "714c60d5-9920-4922-842f-6662e35178a2",
           "tone": "tool",
           "kind": "tool.started",
           "summary": "Ran command started",
           "payload": {
             "itemType": "command_execution",
-            "toolCallId": "9d177f57-1c88-4604-b957-cbb283471322",
+            "toolCallId": "ca700809-6c3f-49fe-9ebb-38ce4a7fe812",
             "status": "inProgress",
             "title": "Ran command",
             "detail": "cat README.md",
@@ -1046,17 +1046,17 @@
               }
             }
           },
-          "turnId": "9340b90b-6b75-4469-ae95-cdf16af12b40",
-          "createdAt": "2026-10-02T11:13:50.798Z"
+          "turnId": "eada5924-dde4-421c-b578-22a3e169cb65",
+          "createdAt": "2026-10-02T13:17:11.285Z"
         },
         {
-          "id": "97891025-608d-41ef-8662-7ecafe660b41",
+          "id": "0c948412-b2a6-4833-80bd-d7ada8a82b4e",
           "tone": "tool",
           "kind": "tool.completed",
           "summary": "Ran command",
           "payload": {
             "itemType": "command_execution",
-            "toolCallId": "9d177f57-1c88-4604-b957-cbb283471322",
+            "toolCallId": "ca700809-6c3f-49fe-9ebb-38ce4a7fe812",
             "status": "completed",
             "title": "Ran command",
             "detail": "cat README.md",
@@ -1067,11 +1067,11 @@
               }
             }
           },
-          "turnId": "9340b90b-6b75-4469-ae95-cdf16af12b40",
-          "createdAt": "2026-10-02T11:13:50.799Z"
+          "turnId": "eada5924-dde4-421c-b578-22a3e169cb65",
+          "createdAt": "2026-10-02T13:17:11.286Z"
         },
         {
-          "id": "a908c5f4-e10d-4655-85a2-18979c95f415",
+          "id": "0688f87d-f673-4572-9b95-95b93c0ca694",
           "tone": "info",
           "kind": "context-window.updated",
           "summary": "Context window updated",
@@ -1089,10 +1089,10 @@
             "compactsAutomatically": true
           },
           "turnId": null,
-          "createdAt": "2026-10-02T11:13:51.053Z"
+          "createdAt": "2026-10-02T13:17:11.538Z"
         },
         {
-          "id": "c4dc426d-23d6-4398-9322-82aac0c1f8ec",
+          "id": "58b593dc-9e10-45f1-8d48-755030194641",
           "tone": "info",
           "kind": "checkpoint.captured",
           "summary": "Checkpoint captured",
@@ -1100,19 +1100,19 @@
             "turnCount": 1,
             "status": "ready"
           },
-          "turnId": "9340b90b-6b75-4469-ae95-cdf16af12b40",
-          "createdAt": "2026-10-02T11:13:51.053Z"
+          "turnId": "eada5924-dde4-421c-b578-22a3e169cb65",
+          "createdAt": "2026-10-02T13:17:11.538Z"
         }
       ],
       "checkpoints": [
         {
-          "turnId": "9340b90b-6b75-4469-ae95-cdf16af12b40",
+          "turnId": "eada5924-dde4-421c-b578-22a3e169cb65",
           "checkpointTurnCount": 1,
           "checkpointRef": "refs/t3/checkpoints/dGhyZWFkLXNldHRsZWQ/turn/1",
           "status": "ready",
           "files": [],
-          "assistantMessageId": "assistant:d3694b91-eb77-464d-97bd-a189c58f580c",
-          "completedAt": "2026-10-02T11:13:51.053Z"
+          "assistantMessageId": "assistant:78595216-4416-4c10-95ca-46cbd57c5642",
+          "completedAt": "2026-10-02T13:17:11.538Z"
         }
       ],
       "session": {
@@ -1123,7 +1123,7 @@
         "runtimeMode": "full-access",
         "activeTurnId": null,
         "lastError": null,
-        "updatedAt": "2026-10-02T11:13:51.270Z"
+        "updatedAt": "2026-10-02T13:17:11.753Z"
       }
     },
     "thread-unsettled": {
@@ -1141,19 +1141,19 @@
       "pullRequests": [],
       "branchPullRequest": null,
       "latestTurn": {
-        "turnId": "d9721e8e-3043-491c-974f-2b8f7e3b2aef",
+        "turnId": "cb91f11e-7e28-410b-9c2c-a62adfda6481",
         "state": "completed",
-        "requestedAt": "2026-10-02T11:13:51.307Z",
-        "startedAt": "2026-10-02T11:13:51.307Z",
-        "completedAt": "2026-10-02T11:13:52.154Z",
-        "assistantMessageId": "assistant:8350d5e3-9456-4392-9b90-e2fde755d3ef"
+        "requestedAt": "2026-10-02T13:17:11.824Z",
+        "startedAt": "2026-10-02T13:17:11.824Z",
+        "completedAt": "2026-10-02T13:17:12.694Z",
+        "assistantMessageId": "assistant:fa34d559-33d4-4792-a64d-ae174b8832f0"
       },
-      "createdAt": "2026-10-02T11:13:51.286Z",
-      "updatedAt": "2026-10-02T11:13:52.368Z",
+      "createdAt": "2026-10-02T13:17:11.776Z",
+      "updatedAt": "2026-10-02T13:17:13.004Z",
       "archivedAt": null,
       "settledOverride": "active",
       "settledAt": null,
-      "unsettledAt": "2026-10-02T11:13:52.383Z",
+      "unsettledAt": "2026-10-02T13:17:13.087Z",
       "snoozedUntil": null,
       "snoozedAt": null,
       "pinnedAt": null,
@@ -1170,29 +1170,29 @@
           "attachments": [],
           "turnId": null,
           "streaming": false,
-          "createdAt": "2026-10-02T11:13:51.307Z",
-          "updatedAt": "2026-10-02T11:13:51.307Z"
+          "createdAt": "2026-10-02T13:17:11.824Z",
+          "updatedAt": "2026-10-02T13:17:11.824Z"
         },
         {
-          "id": "assistant:8350d5e3-9456-4392-9b90-e2fde755d3ef",
+          "id": "assistant:fa34d559-33d4-4792-a64d-ae174b8832f0",
           "role": "assistant",
           "text": "The README has a single **Demo** heading.",
-          "turnId": "d9721e8e-3043-491c-974f-2b8f7e3b2aef",
+          "turnId": "cb91f11e-7e28-410b-9c2c-a62adfda6481",
           "streaming": false,
-          "createdAt": "2026-10-02T11:13:52.154Z",
-          "updatedAt": "2026-10-02T11:13:52.154Z"
+          "createdAt": "2026-10-02T13:17:12.694Z",
+          "updatedAt": "2026-10-02T13:17:12.694Z"
         }
       ],
       "proposedPlans": [],
       "activities": [
         {
-          "id": "48522749-8b91-4cd2-ab8a-0cb1f3ed10d6",
+          "id": "625c3345-af8d-487a-8997-4f5c2bffbca4",
           "tone": "tool",
           "kind": "tool.started",
           "summary": "Ran command started",
           "payload": {
             "itemType": "command_execution",
-            "toolCallId": "4047be96-8d87-4b01-a546-abd8ff2c78b0",
+            "toolCallId": "5ced6840-edd7-4be7-bb57-c24e06057819",
             "status": "inProgress",
             "title": "Ran command",
             "detail": "cat README.md",
@@ -1202,17 +1202,17 @@
               }
             }
           },
-          "turnId": "d9721e8e-3043-491c-974f-2b8f7e3b2aef",
-          "createdAt": "2026-10-02T11:13:51.904Z"
+          "turnId": "cb91f11e-7e28-410b-9c2c-a62adfda6481",
+          "createdAt": "2026-10-02T13:17:12.443Z"
         },
         {
-          "id": "8ca571bb-54b1-401c-8f22-90e254477bb8",
+          "id": "8bccbcf0-373a-46b9-ac7f-bdb458720158",
           "tone": "tool",
           "kind": "tool.completed",
           "summary": "Ran command",
           "payload": {
             "itemType": "command_execution",
-            "toolCallId": "4047be96-8d87-4b01-a546-abd8ff2c78b0",
+            "toolCallId": "5ced6840-edd7-4be7-bb57-c24e06057819",
             "status": "completed",
             "title": "Ran command",
             "detail": "cat README.md",
@@ -1223,11 +1223,11 @@
               }
             }
           },
-          "turnId": "d9721e8e-3043-491c-974f-2b8f7e3b2aef",
-          "createdAt": "2026-10-02T11:13:51.905Z"
+          "turnId": "cb91f11e-7e28-410b-9c2c-a62adfda6481",
+          "createdAt": "2026-10-02T13:17:12.445Z"
         },
         {
-          "id": "262ae11d-bb9e-4b51-b2f6-eaf6852dbb4e",
+          "id": "971c21a7-da57-4e05-a2f5-5d137b5ec439",
           "tone": "info",
           "kind": "context-window.updated",
           "summary": "Context window updated",
@@ -1245,10 +1245,10 @@
             "compactsAutomatically": true
           },
           "turnId": null,
-          "createdAt": "2026-10-02T11:13:52.154Z"
+          "createdAt": "2026-10-02T13:17:12.694Z"
         },
         {
-          "id": "b58be78d-6ddc-450e-9f84-cece1f6606b3",
+          "id": "cc9df68b-6d98-436f-ae8f-ef135daf1ec6",
           "tone": "info",
           "kind": "checkpoint.captured",
           "summary": "Checkpoint captured",
@@ -1256,19 +1256,19 @@
             "turnCount": 1,
             "status": "ready"
           },
-          "turnId": "d9721e8e-3043-491c-974f-2b8f7e3b2aef",
-          "createdAt": "2026-10-02T11:13:52.154Z"
+          "turnId": "cb91f11e-7e28-410b-9c2c-a62adfda6481",
+          "createdAt": "2026-10-02T13:17:12.694Z"
         }
       ],
       "checkpoints": [
         {
-          "turnId": "d9721e8e-3043-491c-974f-2b8f7e3b2aef",
+          "turnId": "cb91f11e-7e28-410b-9c2c-a62adfda6481",
           "checkpointTurnCount": 1,
           "checkpointRef": "refs/t3/checkpoints/dGhyZWFkLXVuc2V0dGxlZA/turn/1",
           "status": "ready",
           "files": [],
-          "assistantMessageId": "assistant:8350d5e3-9456-4392-9b90-e2fde755d3ef",
-          "completedAt": "2026-10-02T11:13:52.154Z"
+          "assistantMessageId": "assistant:fa34d559-33d4-4792-a64d-ae174b8832f0",
+          "completedAt": "2026-10-02T13:17:12.694Z"
         }
       ],
       "session": {
@@ -1279,7 +1279,7 @@
         "runtimeMode": "full-access",
         "activeTurnId": null,
         "lastError": null,
-        "updatedAt": "2026-10-02T11:13:52.368Z"
+        "updatedAt": "2026-10-02T13:17:13.004Z"
       }
     },
     "thread-failed": {
@@ -1297,15 +1297,15 @@
       "pullRequests": [],
       "branchPullRequest": null,
       "latestTurn": {
-        "turnId": "e90d3219-15c2-45ed-8de5-7e78dce2ca8e",
+        "turnId": "b4ff7bd0-67e0-4653-9e4c-a47f35222716",
         "state": "error",
-        "requestedAt": "2026-10-02T11:13:54.578Z",
-        "startedAt": "2026-10-02T11:13:54.578Z",
-        "completedAt": "2026-10-02T11:13:54.918Z",
-        "assistantMessageId": "assistant:ee810325-f696-4102-bd3a-f363758f2883"
+        "requestedAt": "2026-10-02T13:17:15.420Z",
+        "startedAt": "2026-10-02T13:17:15.420Z",
+        "completedAt": "2026-10-02T13:17:15.762Z",
+        "assistantMessageId": "assistant:3e26ecd3-d8c2-4a5c-bd9a-de0c648f60e5"
       },
-      "createdAt": "2026-10-02T11:13:54.566Z",
-      "updatedAt": "2026-10-02T11:13:54.918Z",
+      "createdAt": "2026-10-02T13:17:15.404Z",
+      "updatedAt": "2026-10-02T13:17:15.762Z",
       "archivedAt": null,
       "settledOverride": null,
       "settledAt": null,
@@ -1326,23 +1326,35 @@
           "attachments": [],
           "turnId": null,
           "streaming": false,
-          "createdAt": "2026-10-02T11:13:54.578Z",
-          "updatedAt": "2026-10-02T11:13:54.578Z"
+          "createdAt": "2026-10-02T13:17:15.420Z",
+          "updatedAt": "2026-10-02T13:17:15.420Z"
         },
         {
-          "id": "assistant:ee810325-f696-4102-bd3a-f363758f2883",
+          "id": "assistant:3e26ecd3-d8c2-4a5c-bd9a-de0c648f60e5",
           "role": "assistant",
           "text": "Starting the risky step.",
-          "turnId": "e90d3219-15c2-45ed-8de5-7e78dce2ca8e",
+          "turnId": "b4ff7bd0-67e0-4653-9e4c-a47f35222716",
           "streaming": false,
-          "createdAt": "2026-10-02T11:13:54.918Z",
-          "updatedAt": "2026-10-02T11:13:54.918Z"
+          "createdAt": "2026-10-02T13:17:15.762Z",
+          "updatedAt": "2026-10-02T13:17:15.762Z"
         }
       ],
       "proposedPlans": [],
       "activities": [
         {
-          "id": "47aa7f94-3df5-4b16-90a6-750aafeb689d",
+          "id": "50c25abe-4c06-4e1a-901e-b9d133b0ee19",
+          "tone": "info",
+          "kind": "checkpoint.captured",
+          "summary": "Checkpoint captured",
+          "payload": {
+            "turnCount": 1,
+            "status": "error"
+          },
+          "turnId": "b4ff7bd0-67e0-4653-9e4c-a47f35222716",
+          "createdAt": "2026-10-02T13:17:15.762Z"
+        },
+        {
+          "id": "7e9397c5-be75-4484-86ab-a9f9f39ca98b",
           "tone": "info",
           "kind": "context-window.updated",
           "summary": "Context window updated",
@@ -1360,30 +1372,18 @@
             "compactsAutomatically": true
           },
           "turnId": null,
-          "createdAt": "2026-10-02T11:13:54.918Z"
-        },
-        {
-          "id": "abb3d9e8-16e2-4f7c-9334-b8870f06bd50",
-          "tone": "info",
-          "kind": "checkpoint.captured",
-          "summary": "Checkpoint captured",
-          "payload": {
-            "turnCount": 1,
-            "status": "error"
-          },
-          "turnId": "e90d3219-15c2-45ed-8de5-7e78dce2ca8e",
-          "createdAt": "2026-10-02T11:13:54.918Z"
+          "createdAt": "2026-10-02T13:17:15.762Z"
         }
       ],
       "checkpoints": [
         {
-          "turnId": "e90d3219-15c2-45ed-8de5-7e78dce2ca8e",
+          "turnId": "b4ff7bd0-67e0-4653-9e4c-a47f35222716",
           "checkpointTurnCount": 1,
           "checkpointRef": "refs/t3/checkpoints/dGhyZWFkLWZhaWxlZA/turn/1",
           "status": "error",
           "files": [],
-          "assistantMessageId": "assistant:ee810325-f696-4102-bd3a-f363758f2883",
-          "completedAt": "2026-10-02T11:13:54.918Z"
+          "assistantMessageId": "assistant:3e26ecd3-d8c2-4a5c-bd9a-de0c648f60e5",
+          "completedAt": "2026-10-02T13:17:15.762Z"
         }
       ],
       "session": {
@@ -1394,7 +1394,7 @@
         "runtimeMode": "full-access",
         "activeTurnId": null,
         "lastError": "Simulated provider failure.",
-        "updatedAt": "2026-10-02T11:13:54.918Z"
+        "updatedAt": "2026-10-02T13:17:15.762Z"
       }
     },
     "thread-worktree": {
@@ -1412,15 +1412,15 @@
       "pullRequests": [],
       "branchPullRequest": null,
       "latestTurn": {
-        "turnId": "092fe448-62bd-436e-85ba-4f8b3a4de880",
+        "turnId": "d8c0b8b5-f04b-4c90-b7ee-a79fc568209f",
         "state": "completed",
-        "requestedAt": "2026-10-02T11:13:55.248Z",
-        "startedAt": "2026-10-02T11:13:55.248Z",
-        "completedAt": "2026-10-02T11:13:55.851Z",
-        "assistantMessageId": "assistant:eba6dc3f-4fde-404a-8d0d-b35ddb6ffa3d"
+        "requestedAt": "2026-10-02T13:17:16.101Z",
+        "startedAt": "2026-10-02T13:17:16.101Z",
+        "completedAt": "2026-10-02T13:17:16.721Z",
+        "assistantMessageId": "assistant:f1d2289e-f96a-4600-a410-82a9a5c83bac"
       },
-      "createdAt": "2026-10-02T11:13:55.228Z",
-      "updatedAt": "2026-10-02T11:13:55.851Z",
+      "createdAt": "2026-10-02T13:17:16.076Z",
+      "updatedAt": "2026-10-02T13:17:16.721Z",
       "archivedAt": null,
       "settledOverride": null,
       "settledAt": null,
@@ -1441,50 +1441,29 @@
           "attachments": [],
           "turnId": null,
           "streaming": false,
-          "createdAt": "2026-10-02T11:13:55.248Z",
-          "updatedAt": "2026-10-02T11:13:55.248Z"
+          "createdAt": "2026-10-02T13:17:16.101Z",
+          "updatedAt": "2026-10-02T13:17:16.101Z"
         },
         {
-          "id": "assistant:eba6dc3f-4fde-404a-8d0d-b35ddb6ffa3d",
+          "id": "assistant:f1d2289e-f96a-4600-a410-82a9a5c83bac",
           "role": "assistant",
           "text": "Wrote `notes.md` on the feature branch.",
-          "turnId": "092fe448-62bd-436e-85ba-4f8b3a4de880",
+          "turnId": "d8c0b8b5-f04b-4c90-b7ee-a79fc568209f",
           "streaming": false,
-          "createdAt": "2026-10-02T11:13:55.851Z",
-          "updatedAt": "2026-10-02T11:13:55.851Z"
+          "createdAt": "2026-10-02T13:17:16.721Z",
+          "updatedAt": "2026-10-02T13:17:16.721Z"
         }
       ],
       "proposedPlans": [],
       "activities": [
         {
-          "id": "51b61160-05dd-4fba-8e1d-9e5a8bbdb92f",
-          "tone": "tool",
-          "kind": "tool.started",
-          "summary": "File change started",
-          "payload": {
-            "itemType": "file_change",
-            "toolCallId": "5940a088-3b96-40ea-82e7-89551badeefb",
-            "status": "inProgress",
-            "title": "File change",
-            "data": {
-              "files": [
-                {
-                  "path": "/tmp/t3-import-fixture/worktrees/alpha-feature/notes.md"
-                }
-              ]
-            }
-          },
-          "turnId": "092fe448-62bd-436e-85ba-4f8b3a4de880",
-          "createdAt": "2026-10-02T11:13:55.600Z"
-        },
-        {
-          "id": "cd90b1e2-9d15-469a-8740-864cfff63ce0",
+          "id": "2ac1a7ad-ffb0-4c06-8c60-ff817a87864a",
           "tone": "tool",
           "kind": "tool.completed",
           "summary": "File change",
           "payload": {
             "itemType": "file_change",
-            "toolCallId": "5940a088-3b96-40ea-82e7-89551badeefb",
+            "toolCallId": "32ad75f8-1d8e-431a-9724-5c81e2eabead",
             "status": "completed",
             "title": "File change",
             "data": {
@@ -1495,11 +1474,32 @@
               ]
             }
           },
-          "turnId": "092fe448-62bd-436e-85ba-4f8b3a4de880",
-          "createdAt": "2026-10-02T11:13:55.600Z"
+          "turnId": "d8c0b8b5-f04b-4c90-b7ee-a79fc568209f",
+          "createdAt": "2026-10-02T13:17:16.470Z"
         },
         {
-          "id": "35cc647e-9b1b-40fa-9445-34f2eed50e18",
+          "id": "c79ce4a9-b643-4932-81b4-083e3c2e291b",
+          "tone": "tool",
+          "kind": "tool.started",
+          "summary": "File change started",
+          "payload": {
+            "itemType": "file_change",
+            "toolCallId": "32ad75f8-1d8e-431a-9724-5c81e2eabead",
+            "status": "inProgress",
+            "title": "File change",
+            "data": {
+              "files": [
+                {
+                  "path": "/tmp/t3-import-fixture/worktrees/alpha-feature/notes.md"
+                }
+              ]
+            }
+          },
+          "turnId": "d8c0b8b5-f04b-4c90-b7ee-a79fc568209f",
+          "createdAt": "2026-10-02T13:17:16.470Z"
+        },
+        {
+          "id": "b31ccbb4-f413-453c-80bb-e7155ab53a2a",
           "tone": "info",
           "kind": "context-window.updated",
           "summary": "Context window updated",
@@ -1517,10 +1517,10 @@
             "compactsAutomatically": true
           },
           "turnId": null,
-          "createdAt": "2026-10-02T11:13:55.851Z"
+          "createdAt": "2026-10-02T13:17:16.721Z"
         },
         {
-          "id": "dae7d793-e279-44e5-85e2-c67405e03df0",
+          "id": "bc40ee0a-aa85-47dd-b77d-81d2ca3afe03",
           "tone": "info",
           "kind": "checkpoint.captured",
           "summary": "Checkpoint captured",
@@ -1528,13 +1528,13 @@
             "turnCount": 1,
             "status": "ready"
           },
-          "turnId": "092fe448-62bd-436e-85ba-4f8b3a4de880",
-          "createdAt": "2026-10-02T11:13:55.851Z"
+          "turnId": "d8c0b8b5-f04b-4c90-b7ee-a79fc568209f",
+          "createdAt": "2026-10-02T13:17:16.721Z"
         }
       ],
       "checkpoints": [
         {
-          "turnId": "092fe448-62bd-436e-85ba-4f8b3a4de880",
+          "turnId": "d8c0b8b5-f04b-4c90-b7ee-a79fc568209f",
           "checkpointTurnCount": 1,
           "checkpointRef": "refs/t3/checkpoints/dGhyZWFkLXdvcmt0cmVl/turn/1",
           "status": "ready",
@@ -1546,8 +1546,8 @@
               "deletions": 0
             }
           ],
-          "assistantMessageId": "assistant:eba6dc3f-4fde-404a-8d0d-b35ddb6ffa3d",
-          "completedAt": "2026-10-02T11:13:55.851Z"
+          "assistantMessageId": "assistant:f1d2289e-f96a-4600-a410-82a9a5c83bac",
+          "completedAt": "2026-10-02T13:17:16.721Z"
         }
       ],
       "session": {
@@ -1558,7 +1558,7 @@
         "runtimeMode": "full-access",
         "activeTurnId": null,
         "lastError": null,
-        "updatedAt": "2026-10-02T11:13:55.851Z"
+        "updatedAt": "2026-10-02T13:17:16.721Z"
       }
     },
     "thread-empty": {
@@ -1576,8 +1576,8 @@
       "pullRequests": [],
       "branchPullRequest": null,
       "latestTurn": null,
-      "createdAt": "2026-10-02T11:13:56.095Z",
-      "updatedAt": "2026-10-02T11:13:56.095Z",
+      "createdAt": "2026-10-02T13:17:16.982Z",
+      "updatedAt": "2026-10-02T13:17:16.982Z",
       "archivedAt": null,
       "settledOverride": null,
       "settledAt": null,
@@ -1611,15 +1611,15 @@
       "pullRequests": [],
       "branchPullRequest": null,
       "latestTurn": {
-        "turnId": "66b8b0cc-532c-4960-ab10-217f0884bc11",
+        "turnId": "b5b44a81-a25e-461b-9cb8-c588f505faf3",
         "state": "completed",
-        "requestedAt": "2026-10-02T11:13:56.110Z",
-        "startedAt": "2026-10-02T11:13:56.110Z",
-        "completedAt": "2026-10-02T11:13:56.969Z",
-        "assistantMessageId": "assistant:33a053a1-444e-4e64-a4f0-053d9a75831f"
+        "requestedAt": "2026-10-02T13:17:17.006Z",
+        "startedAt": "2026-10-02T13:17:17.006Z",
+        "completedAt": "2026-10-02T13:17:17.854Z",
+        "assistantMessageId": "assistant:45654b07-c24c-42d4-941a-1c9e6a00f972"
       },
-      "createdAt": "2026-10-02T11:13:56.102Z",
-      "updatedAt": "2026-10-02T11:13:56.969Z",
+      "createdAt": "2026-10-02T13:17:16.996Z",
+      "updatedAt": "2026-10-02T13:17:17.854Z",
       "archivedAt": null,
       "settledOverride": null,
       "settledAt": null,
@@ -1640,29 +1640,29 @@
           "attachments": [],
           "turnId": null,
           "streaming": false,
-          "createdAt": "2026-10-02T11:13:56.110Z",
-          "updatedAt": "2026-10-02T11:13:56.110Z"
+          "createdAt": "2026-10-02T13:17:17.006Z",
+          "updatedAt": "2026-10-02T13:17:17.006Z"
         },
         {
-          "id": "assistant:33a053a1-444e-4e64-a4f0-053d9a75831f",
+          "id": "assistant:45654b07-c24c-42d4-941a-1c9e6a00f972",
           "role": "assistant",
           "text": "The README has a single **Demo** heading.",
-          "turnId": "66b8b0cc-532c-4960-ab10-217f0884bc11",
+          "turnId": "b5b44a81-a25e-461b-9cb8-c588f505faf3",
           "streaming": false,
-          "createdAt": "2026-10-02T11:13:56.969Z",
-          "updatedAt": "2026-10-02T11:13:56.969Z"
+          "createdAt": "2026-10-02T13:17:17.853Z",
+          "updatedAt": "2026-10-02T13:17:17.853Z"
         }
       ],
       "proposedPlans": [],
       "activities": [
         {
-          "id": "d6c53de6-0e9b-4bc4-96a8-505c25f9c389",
+          "id": "6f7637a5-6197-41b2-b679-bb7b273453b8",
           "tone": "tool",
           "kind": "tool.started",
           "summary": "Ran command started",
           "payload": {
             "itemType": "command_execution",
-            "toolCallId": "88067496-bd65-49ff-8881-97a0d6293bbf",
+            "toolCallId": "1cf2e8f8-8314-479b-8d5b-2a09ddd9ee1b",
             "status": "inProgress",
             "title": "Ran command",
             "detail": "cat README.md",
@@ -1672,17 +1672,17 @@
               }
             }
           },
-          "turnId": "66b8b0cc-532c-4960-ab10-217f0884bc11",
-          "createdAt": "2026-10-02T11:13:56.719Z"
+          "turnId": "b5b44a81-a25e-461b-9cb8-c588f505faf3",
+          "createdAt": "2026-10-02T13:17:17.601Z"
         },
         {
-          "id": "0aadded1-eaa1-4f03-85a3-4528ac4e9fe0",
+          "id": "6797e59a-87f0-4fbd-a94d-21518634c9ef",
           "tone": "tool",
           "kind": "tool.completed",
           "summary": "Ran command",
           "payload": {
             "itemType": "command_execution",
-            "toolCallId": "88067496-bd65-49ff-8881-97a0d6293bbf",
+            "toolCallId": "1cf2e8f8-8314-479b-8d5b-2a09ddd9ee1b",
             "status": "completed",
             "title": "Ran command",
             "detail": "cat README.md",
@@ -1693,23 +1693,11 @@
               }
             }
           },
-          "turnId": "66b8b0cc-532c-4960-ab10-217f0884bc11",
-          "createdAt": "2026-10-02T11:13:56.720Z"
+          "turnId": "b5b44a81-a25e-461b-9cb8-c588f505faf3",
+          "createdAt": "2026-10-02T13:17:17.602Z"
         },
         {
-          "id": "2ea79575-d3f3-468f-b278-7a88e408c2e0",
-          "tone": "info",
-          "kind": "checkpoint.captured",
-          "summary": "Checkpoint captured",
-          "payload": {
-            "turnCount": 1,
-            "status": "ready"
-          },
-          "turnId": "66b8b0cc-532c-4960-ab10-217f0884bc11",
-          "createdAt": "2026-10-02T11:13:56.969Z"
-        },
-        {
-          "id": "6827d8da-4ed1-4599-8247-3e75fedc8bb3",
+          "id": "2227f081-9f78-40d8-898f-f56462445aa2",
           "tone": "info",
           "kind": "context-window.updated",
           "summary": "Context window updated",
@@ -1727,18 +1715,30 @@
             "compactsAutomatically": true
           },
           "turnId": null,
-          "createdAt": "2026-10-02T11:13:56.969Z"
+          "createdAt": "2026-10-02T13:17:17.854Z"
+        },
+        {
+          "id": "c2234920-15e3-49dd-a1e9-d14fac8e22d5",
+          "tone": "info",
+          "kind": "checkpoint.captured",
+          "summary": "Checkpoint captured",
+          "payload": {
+            "turnCount": 1,
+            "status": "ready"
+          },
+          "turnId": "b5b44a81-a25e-461b-9cb8-c588f505faf3",
+          "createdAt": "2026-10-02T13:17:17.854Z"
         }
       ],
       "checkpoints": [
         {
-          "turnId": "66b8b0cc-532c-4960-ab10-217f0884bc11",
+          "turnId": "b5b44a81-a25e-461b-9cb8-c588f505faf3",
           "checkpointTurnCount": 1,
           "checkpointRef": "refs/t3/checkpoints/dGhyZWFkLWJldGE/turn/1",
           "status": "ready",
           "files": [],
-          "assistantMessageId": "assistant:33a053a1-444e-4e64-a4f0-053d9a75831f",
-          "completedAt": "2026-10-02T11:13:56.969Z"
+          "assistantMessageId": "assistant:45654b07-c24c-42d4-941a-1c9e6a00f972",
+          "completedAt": "2026-10-02T13:17:17.854Z"
         }
       ],
       "session": {
@@ -1749,7 +1749,7 @@
         "runtimeMode": "full-access",
         "activeTurnId": null,
         "lastError": null,
-        "updatedAt": "2026-10-02T11:13:56.969Z"
+        "updatedAt": "2026-10-02T13:17:17.854Z"
       }
     }
   }
