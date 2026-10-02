@@ -267,6 +267,30 @@ features:
         - https://github.com/pingdotgg/t3code/blob/5cc99e1c23980d7995a13c47f969b47cb68ed1be/apps/server/src/provider/Layers/ClaudeAdapter.ts
       retire_when: Upstream preserves actively streaming synthetic Claude turns when a user sends a steer while retaining cleanup of idle synthetic turns.
 
+  - id: claude-exact-history-rewind
+    title: Rewind Claude turns using complete saved history and fork provenance
+    status: maintained
+    prs: [611]
+    rationale: Claude's history reader can omit retained prompts and assistant messages even though the native fork preserves them; matching its filtered message bodies or positions cannot recover those turn boundaries.
+    invariants:
+      - Claude rewind retains every preceding turn and removes the requested turns even when the SDK conversation reader hides disconnected saved history or trailing system notices.
+      - Repeated rewind uses the fork's rewritten native turn IDs; repeated prompts, steering, and tool results do not shift turn boundaries.
+      - Missing, changed, reordered, or unrelated retained conversation fails validation before replacing the current provider session.
+      - Native history operations stay within the selected provider instance's Claude configuration directory.
+    implementation_paths:
+      - apps/server/src/claudeHistoryWorker.ts
+      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/server/src/provider/claudeSessionHistory.ts
+    upstream_paths:
+      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+    tests:
+      - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/11954
+      retire_when: Upstream validates complete retained Claude history and remaps fork boundaries when getSessionMessages omits saved human prompts or assistant records, including subsequent rewinds.
+
   - id: claude-live-effort-change
     title: Apply Claude effort changes without restarting the session
     status: maintained

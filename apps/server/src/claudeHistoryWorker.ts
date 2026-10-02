@@ -1,5 +1,7 @@
-import { forkSession, getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
+import { forkSession } from "@anthropic-ai/claude-agent-sdk";
 import * as Schema from "effect/Schema";
+
+import { readClaudeSessionHistory } from "./provider/claudeSessionHistory.ts";
 
 // A separate process gives SDK history helpers the provider's environment without
 // mutating the server's environment. This entry is bundled alongside the server.
@@ -8,15 +10,14 @@ const options = Schema.decodeSync(
   Schema.fromJsonString(
     Schema.Struct({
       dir: Schema.optionalKey(Schema.String),
-      includeSystemMessages: Schema.optionalKey(Schema.Boolean),
       upToMessageId: Schema.optionalKey(Schema.String),
     }),
   ),
 )(rawOptions ?? "{}");
 if (!sessionId) throw new Error("Claude history session id is required.");
 const result =
-  method === "getSessionMessages"
-    ? await getSessionMessages(sessionId, options)
+  method === "readSessionHistory"
+    ? await readClaudeSessionHistory(sessionId, options)
     : method === "forkSession"
       ? await forkSession(sessionId, options)
       : (() => {
