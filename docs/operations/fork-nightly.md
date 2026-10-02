@@ -3,6 +3,14 @@
 The `Fork Nightly` workflow takes the newest commit on `main` that Fork CI has passed, builds the
 supported desktop targets and CLI package from it, and publishes a GitHub prerelease. It never modifies `main`.
 
+Successful Fork CI push runs on `main` trigger the nightly automatically. The three-hour
+schedule remains a fallback, and manual dispatch still supports dry runs and forced publication.
+CI completions request a release of the newest eligible commit rather than pinning their own
+commit. One publisher runs at a time; newer requests replace a pending request, and the
+candidate is compared with the last published nightly before any builds start. Failed CI,
+pull request CI, and intake branch CI do not request publication. There is no minimum interval
+between releases, so merges spread throughout the day can each produce a nightly.
+
 Fork CI is the only verifier: the nightly does not repeat its checks, tests, or desktop build. It
 walks `main` from the tip and skips any commit whose Fork CI run failed, so a briefly red `main` delays
 those commits to a later nightly rather than shipping them. If the tip's run is still in progress the
