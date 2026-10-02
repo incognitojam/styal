@@ -7402,7 +7402,11 @@ describe("ClaudeAdapterLive", () => {
   it.effect(
     "rewinds disconnected saved Claude history through an isolated native SDK worker",
     () => {
-      const baseDir = NodeFS.mkdtempSync(NodePath.resolve(".scratch/claude-rollback-native-"));
+      const scratchDir = NodePath.resolve(import.meta.dirname, "../../../../../.scratch");
+      NodeFS.mkdirSync(scratchDir, { recursive: true });
+      const baseDir = NodeFS.realpathSync(
+        NodeFS.mkdtempSync(NodePath.join(scratchDir, "claude-rollback-native-")),
+      );
       const cwd = NodePath.join(baseDir, "workspace");
       const homeDir = NodePath.join(baseDir, "claude-home");
       const originalSessionId = "550e8400-e29b-41d4-a716-446655440010";
