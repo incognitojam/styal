@@ -29,10 +29,6 @@
       "reason": "An agent click in a preview tab takes keyboard focus from the composer, even from a hidden tab in another thread. This hosts preview pages outside the app window's focus hierarchy so an agent click cannot move focus; restoring focus after the click (#13914) still lets a few keystrokes reach the page. Reworks page display, input and capture, so it overlaps hidden-tab capture, recording and the mini player. Watching, not importing early."
     },
     {
-      "pr": 11673,
-      "reason": "The web composer sends follow-ups immediately while the agent is working; this queues them client-side instead."
-    },
-    {
       "pr": 12231,
       "reason": "Found while adding Claude Opus 5.5: brings model picker favorites to mobile."
     },
