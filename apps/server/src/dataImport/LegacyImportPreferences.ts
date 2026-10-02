@@ -5,10 +5,29 @@ import {
   type LegacyImportPreferences,
   type LegacyImportPreferencesPreview,
   ServerSettings,
+  ResponseStreamingMode,
 } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-const decodeServerSettingsJson = Schema.decodeUnknownSync(Schema.fromJsonString(ServerSettings));
+const decodeLegacySettingsJson = Schema.decodeUnknownSync(
+  Schema.fromJsonString(
+    Schema.Struct({
+      ...ServerSettings.fields,
+      responseStreamingMode: Schema.Union([ResponseStreamingMode, Schema.Literal("token")]).pipe(
+        Schema.withDecodingDefault(Effect.succeed("paragraph" as const)),
+      ),
+    }),
+  ),
+);
+const decodeServerSettingsJson = (raw: string): ServerSettings => {
+  const settings = decodeLegacySettingsJson(raw);
+  return {
+    ...settings,
+    responseStreamingMode:
+      settings.responseStreamingMode === "token" ? "paragraph" : settings.responseStreamingMode,
+  };
+};
 
 function selectLegacyImportPreferences(settings: ServerSettings): LegacyImportPreferences {
   return {

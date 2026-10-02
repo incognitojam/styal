@@ -1,4 +1,4 @@
-import { OrchestrationCommand, OrchestrationShellSnapshot } from "@t3tools/contracts";
+import { OrchestrationV2ShellSnapshotJson } from "@t3tools/contracts";
 import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
 import { fromJsonStringPretty } from "@t3tools/shared/schemaJson";
 import * as Console from "effect/Console";
@@ -13,20 +13,15 @@ import { Argument, Command, Flag, GlobalFlag } from "effect/unstable/cli";
 
 import * as ServerConfig from "../config.ts";
 import { expandHomePath } from "../os-jank.ts";
-import { OrchestrationLayerLive } from "../orchestration/runtimeLayer.ts";
-import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
-import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { OrchestrationV2EventSinkLayerLive } from "../orchestration-v2/runtimeLayer.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
+import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "../persistence/Layers/Sqlite.ts";
-import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import { SERVICE_LAUNCHER_CONTEXT_ENV } from "../cloud/serviceProtocol.ts";
-import { DriveMode } from "../driveMode.ts";
+import { DriveMode, DriveScenario, applyDriveScenario } from "../driveMode.ts";
+export { DriveScenario } from "../driveMode.ts";
 import { runServer } from "../server.ts";
 import { resolveServerConfig, sharedServerCommandFlags, resolveCliAuthConfig } from "./config.ts";
-
-export const DriveScenario = Schema.Struct({
-  version: Schema.Literal(1),
-  commands: Schema.Array(OrchestrationCommand).check(Schema.isNonEmpty()),
-});
 
 const decodeScenarioFile = Schema.decodeUnknownEffect(Schema.fromJsonString(DriveScenario));
 const decodeScenario = Schema.decodeUnknownEffect(DriveScenario);
@@ -36,8 +31,8 @@ const encodeScenarioSummary = Schema.encodeEffect(
   Schema.fromJsonString(
     Schema.Struct({
       homeDir: Schema.String,
-      commandCount: Schema.Int,
-      snapshot: OrchestrationShellSnapshot,
+      eventCount: Schema.Int,
+      snapshot: OrchestrationV2ShellSnapshotJson,
     }),
   ),
 );
@@ -47,10 +42,11 @@ class DriveScenarioError extends Schema.TaggedError<DriveScenarioError>()("Drive
   cause: Schema.optional(Schema.Defect()),
 }) {}
 
-const scenarioRuntimeLayer = OrchestrationLayerLive.pipe(
-  Layer.provideMerge(RepositoryIdentityResolver.layer),
-  Layer.provideMerge(SqlitePersistenceLayerLive),
-);
+const scenarioRuntimeLayer = Layer.mergeAll(
+  OrchestrationV2EventSinkLayerLive,
+  ProjectionStore.layer,
+  ProjectStore.layer,
+).pipe(Layer.provideMerge(SqlitePersistenceLayerLive));
 
 const prepareScenario = Effect.fn("drive.prepareScenario")(function* (
   file: string,
@@ -60,13 +56,13 @@ const prepareScenario = Effect.fn("drive.prepareScenario")(function* (
   const path = yield* Path.Path;
   const scenario = yield* decodeScenarioFile(yield* fs.readFileString(file));
   const ids = new Set<string>();
-  for (const command of scenario.commands) {
-    if (ids.has(command.commandId)) {
+  for (const command of scenario.events) {
+    if (ids.has(command.id)) {
       return yield* new DriveScenarioError({
-        message: `Duplicate commandId '${command.commandId}' would silently skip a command.`,
+        message: `Duplicate event id '${command.id}' would silently skip a command.`,
       });
     }
-    ids.add(command.commandId);
+    ids.add(command.id);
   }
   const homeDir = path.resolve(yield* expandHomePath(destination));
   yield* fs.makeDirectory(path.dirname(homeDir), { recursive: true });
@@ -85,7 +81,7 @@ const prepareScenario = Effect.fn("drive.prepareScenario")(function* (
 });
 
 export const driveScenarioCommand = Command.make("scenario", {
-  file: Argument.String("file").pipe(Argument.withDescription("Version 1 scenario JSON file.")),
+  file: Argument.String("file").pipe(Argument.withDescription("Version 2 scenario JSON file.")),
   homeDir: Flag.String("home-dir").pipe(
     Flag.withDescription("New, nonexistent T3 home to populate. Existing paths are refused."),
   ),
@@ -99,23 +95,20 @@ export const driveScenarioCommand = Command.make("scenario", {
       const logLevel = yield* GlobalFlag.LogLevel;
       const config = yield* resolveCliAuthConfig({ baseDir: Option.some(homeDir) }, logLevel);
       const snapshot = yield* Effect.gen(function* () {
-        const engine = yield* OrchestrationEngineService;
-        const query = yield* ProjectionSnapshotQuery;
-        for (const [index, command] of scenario.commands.entries()) {
-          yield* engine.dispatch(command).pipe(
-            Effect.mapError(
-              (cause) =>
-                new DriveScenarioError({
-                  message: `Scenario command ${index + 1} (${command.type}) failed. Partial state remains at '${homeDir}'.`,
-                  cause,
-                }),
-            ),
-          );
-        }
-        return yield* query.getShellSnapshot();
+        yield* applyDriveScenario(scenario);
+        const query = yield* ProjectionStore.ProjectionStoreV2;
+        const projects = yield* ProjectStore.ProjectStoreV2;
+        const threads = yield* query.getShellSnapshot();
+        return {
+          schemaVersion: threads.schemaVersion,
+          snapshotSequence: threads.snapshotSequence,
+          projects: yield* projects.listShells(),
+          threads: threads.threads,
+          archivedThreads: threads.archivedThreads,
+        };
       }).pipe(Effect.provide(scenarioRuntimeLayer.pipe(Layer.provide(ServerConfig.layer(config)))));
       yield* Console.log(
-        yield* encodeScenarioSummary({ homeDir, commandCount: scenario.commands.length, snapshot }),
+        yield* encodeScenarioSummary({ homeDir, eventCount: scenario.events.length, snapshot }),
       );
     }),
   ),
@@ -165,7 +158,7 @@ export const driveServeCommand = Command.make("serve", {
           T3_BOOT_SERVICE_UNIT: undefined,
         }),
         Effect.provideService(ServerConfig.ServerConfig, config),
-        Effect.provideService(DriveMode, scenario.commands),
+        Effect.provideService(DriveMode, scenario),
       );
     }),
   ),
@@ -186,101 +179,137 @@ export const driveExampleCommand = Command.make("example", {
       const createdAt = DateTime.formatIso(now);
       const completedAt = DateTime.formatIso(DateTime.add(now, { milliseconds: 1 }));
       const projectId = "drive-project";
-      const commands: unknown[] = [
+      const projects = [
         {
-          type: "project.create",
-          commandId: "drive-project-create",
           projectId,
           title: "Drive scenarios",
           workspaceRoot: path.resolve(yield* expandHomePath(flags.workspace)),
+          defaultModelSelection: null,
+          scripts: [],
           createdAt,
+          updatedAt: createdAt,
         },
       ];
+      const events: unknown[] = [];
       for (const state of ["empty", "completed", "streaming", "error", "archived"] as const) {
         const threadId = `drive-${state}`;
-        commands.push({
-          type: "thread.create",
-          commandId: `${threadId}-create`,
-          threadId,
+        const runId = `${threadId}-run`;
+        const thread = {
+          id: threadId,
           projectId,
           title: `Drive: ${state}`,
+          createdBy: "system",
+          creationSource: "server",
+          providerInstanceId: "codex",
           modelSelection: { instanceId: "codex", model: "gpt-5" },
           runtimeMode: "approval-required",
           interactionMode: "default",
           branch: null,
           worktreePath: null,
+          activeProviderThreadId: null,
+          historyOrigin: "native",
+          lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+          forkedFrom: null,
           createdAt,
-          historyImport: true,
+          updatedAt: createdAt,
+          archivedAt: state === "archived" ? createdAt : null,
+          settledOverride: null,
+          settledAt: null,
+          deletedAt: null,
+        };
+        events.push({
+          id: `${threadId}-create`,
+          type: "thread.created",
+          threadId,
+          occurredAt: createdAt,
+          payload: thread,
         });
-        if (state === "completed" || state === "archived") {
-          commands.push({
-            type: "thread.history.import",
-            commandId: `${threadId}-history`,
+        if (state === "empty") continue;
+        events.push({
+          id: `${threadId}-run-event`,
+          type: "run.created",
+          threadId,
+          runId,
+          occurredAt: createdAt,
+          payload: {
+            id: runId,
             threadId,
-            messages: [
-              {
-                messageId: `${threadId}-user`,
-                role: "user",
-                text: "Show the verification results.",
-                createdAt,
-              },
-              {
-                messageId: `${threadId}-assistant`,
-                role: "assistant",
-                text: "## Verification\n\nThis is synthetic scenario content.\n\n- [x] Completed state\n- [x] Markdown rendering\n\n```ts\nconst result = { status: 'ready' };\n```",
-                createdAt: completedAt,
-              },
-            ],
-          });
-        }
-        if (state === "streaming" || state === "error") {
-          commands.push({
-            type: "thread.turn.start",
-            commandId: `${threadId}-start`,
+            ordinal: 1,
+            providerInstanceId: "codex",
+            modelSelection: thread.modelSelection,
+            providerThreadId: null,
+            userMessageId: `${threadId}-user`,
+            rootNodeId: null,
+            activeAttemptId: null,
+            status: state === "streaming" ? "running" : state === "error" ? "failed" : "completed",
+            requestedAt: createdAt,
+            startedAt: createdAt,
+            completedAt: state === "streaming" ? null : completedAt,
+            checkpointId: null,
+            contextHandoffId: null,
+          },
+        });
+        for (const role of ["user", "assistant"] as const) {
+          const messageId = `${threadId}-${role}`;
+          const streaming = role === "assistant" && state === "streaming";
+          const text =
+            role === "user"
+              ? "Show the verification results."
+              : state === "error"
+                ? "Synthetic provider failure for verification."
+                : streaming
+                  ? "Synthetic partial response, preserved for inspecting the streaming state…"
+                  : "## Verification\n\nThis is synthetic scenario content.\n\n- [x] Completed state\n- [x] Markdown rendering";
+          const common = { threadId, runId, nodeId: null, text, createdAt, updatedAt: completedAt };
+          events.push({
+            id: `${messageId}-event`,
+            type: "message.updated",
             threadId,
-            message: {
-              messageId: `${threadId}-user`,
-              role: "user",
-              text: "Show the verification results.",
+            runId,
+            occurredAt: completedAt,
+            payload: {
+              ...common,
+              id: messageId,
+              role,
               attachments: [],
+              streaming,
+              createdBy: role === "user" ? "user" : "agent",
+              creationSource: "server",
             },
-            runtimeMode: "approval-required",
-            interactionMode: "default",
-            createdAt,
           });
-          commands.push({
-            type: "thread.session.set",
-            commandId: `${threadId}-session`,
+          events.push({
+            id: `${messageId}-item-event`,
+            type: "turn-item.updated",
             threadId,
-            session: {
-              threadId,
-              status: state === "streaming" ? "running" : "error",
-              providerName: "codex",
-              providerInstanceId: "codex",
-              runtimeMode: "approval-required",
-              activeTurnId: state === "streaming" ? `${threadId}-turn` : null,
-              lastError: state === "error" ? "Synthetic provider failure for verification." : null,
-              updatedAt: createdAt,
+            runId,
+            occurredAt: completedAt,
+            payload: {
+              ...common,
+              id: `${messageId}-item`,
+              providerThreadId: null,
+              providerTurnId: null,
+              nativeItemRef: null,
+              parentItemId: null,
+              ordinal: role === "user" ? 1 : 2,
+              status: streaming ? "running" : "completed",
+              title: null,
+              startedAt: createdAt,
+              completedAt: streaming ? null : completedAt,
+              messageId,
+              ...(role === "user"
+                ? {
+                    type: "user_message",
+                    inputIntent: "turn_start",
+                    attachments: [],
+                    createdBy: "user",
+                    creationSource: "server",
+                  }
+                : { type: "assistant_message", streaming }),
             },
-            createdAt,
           });
-        }
-        if (state === "streaming") {
-          commands.push({
-            type: "thread.message.assistant.delta",
-            commandId: `${threadId}-delta`,
-            threadId,
-            messageId: `${threadId}-assistant`,
-            turnId: `${threadId}-turn`,
-            delta: "Synthetic partial response, preserved for inspecting the streaming state…",
-            createdAt: completedAt,
-          });
-        }
-        if (state === "archived") {
-          commands.push({ type: "thread.archive", commandId: `${threadId}-archive`, threadId });
         }
       }
-      const scenario = yield* decodeScenario({ version: 1, commands });
+      const scenario = yield* decodeScenario({ version: 2, projects, events });
       yield* Console.log(yield* encodeScenario(scenario));
     }),
   ),

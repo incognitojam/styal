@@ -25,7 +25,6 @@ const BACKGROUND_ACTIVITY_PROFILE_LABELS: Readonly<Record<BackgroundActivityProf
 const RESPONSE_STREAMING_MODE_LABELS: Readonly<Record<ResponseStreamingMode, string>> = {
   turn: "Wait for the full response",
   paragraph: "Show finished paragraphs",
-  token: "Token by token (legacy)",
 };
 
 const THREAD_ENV_MODE_LABELS: Readonly<Record<ThreadEnvMode, string>> = {

@@ -25,6 +25,7 @@ name: Mobile EAS Production
 # workflow_dispatch remains as a manual override for both modes (e.g. to
 # retry an errored build or force an OTA).
 # Manual v2-preview builds keep the production app identity and disable OTA.
+# They auto-submit to TestFlight and the Google Play closed testing track v2.
 # Select the v2 branch when dispatching a preview build.
 on:
   workflow_dispatch:
@@ -38,7 +39,7 @@ on:
           - build
           - update
       profile:
-        description: "Store build profile (v2-preview supports build mode only)"
+        description: "Store build profile (v2-preview: TestFlight + Play closed track v2; build only)"
         required: true
         type: choice
         default: production
@@ -49,7 +50,7 @@ on:
         description: "Target platform"
         required: true
         type: choice
-        default: ios
+        default: all
         options:
           - ios
           - android

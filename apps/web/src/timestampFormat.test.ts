@@ -7,7 +7,11 @@ import {
   formatMentionedTimeLabel,
   formatRelativeTime,
   formatRelativeTimeLabel,
+  formatRelativeTimeUntil,
+  formatRelativeTimeUntilLabel,
   formatShortTimestamp,
+  formatTimestamp,
+  formatUpcomingTimestamp,
   getRelativeTimeState,
   resolveTimestampLocale,
 } from "./timestampFormat";
@@ -95,6 +99,33 @@ describe("formatChatTimestampTooltip", () => {
     const date = new Date(2026, 5, 4, 14, 4).toISOString();
 
     expect(format(date, "24-hour")).toBe("14:04, 4th June 2026");
+  });
+});
+
+describe("formatRelativeTimeUntilLabel", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-07T12:00:00.000Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("returns Expired when the instant is in the past", () => {
+    expect(formatRelativeTimeUntilLabel("2026-04-07T11:59:00.000Z")).toBe("Expired");
+  });
+
+  it("formats seconds remaining", () => {
+    expect(formatRelativeTimeUntilLabel("2026-04-07T12:00:45.000Z")).toBe("45s left");
+  });
+
+  it("formats minutes remaining", () => {
+    expect(formatRelativeTimeUntilLabel("2026-04-07T12:15:00.000Z")).toBe("15m left");
+  });
+
+  it("formats hours remaining", () => {
+    expect(formatRelativeTimeUntilLabel("2026-04-07T18:00:00.000Z")).toBe("6h left");
   });
 });
 
@@ -190,42 +221,33 @@ describe("formatDayAwareTimestamp", () => {
   });
 });
 
-describe("formatMentionedTimeLabel", () => {
-  // Local-time instants keep the calendar-day boundaries in any test timezone.
-  const at = (y: number, monthIndex: number, d: number, h: number, mi: number) =>
-    new Date(y, monthIndex, d, h, mi).getTime();
-  const now = at(2026, 9, 1, 14, 0);
-  const time = (instantMs: number) =>
-    formatShortTimestamp(new Date(instantMs).toISOString(), "24-hour");
+describe("formatUpcomingTimestamp", () => {
+  const now = new Date(2026, 7, 14, 12, 0).getTime();
 
-  it("names today, tomorrow and yesterday by local calendar day", () => {
-    const today = at(2026, 9, 1, 23, 50);
-    const tomorrow = at(2026, 9, 2, 0, 10);
-    const yesterday = at(2026, 8, 30, 8, 0);
-    expect(formatMentionedTimeLabel(today, "24-hour", false, now)).toBe(`Today at ${time(today)}`);
-    expect(formatMentionedTimeLabel(tomorrow, "24-hour", false, now)).toBe(
-      `Tomorrow at ${time(tomorrow)}`,
-    );
-    expect(formatMentionedTimeLabel(yesterday, "24-hour", false, now)).toBe(
-      `Yesterday at ${time(yesterday)}`,
+  it.each([
+    [14, ""],
+    [15, "tomorrow at "],
+    [13, "yesterday at "],
+  ])("keeps the reset day visible for day %i", (day, prefix) => {
+    const resetAt = new Date(2026, 7, day, 14, 30).toISOString();
+    expect(formatUpcomingTimestamp(resetAt, "12-hour", now)).toBe(
+      `${prefix}${formatShortTimestamp(resetAt, "12-hour")}`,
     );
   });
 
-  it("adds the weekday and date further out, and the year once it differs", () => {
-    const sameYear = at(2026, 8, 20, 8, 0);
-    const lastYear = at(2025, 11, 25, 0, 0);
-    const date = (instantMs: number, options: Intl.DateTimeFormatOptions) =>
-      new Intl.DateTimeFormat(undefined, options).format(instantMs);
-    expect(formatMentionedTimeLabel(sameYear, "24-hour", false, now)).toBe(
-      `${date(sameYear, { weekday: "short", day: "numeric", month: "short" })}, ${time(sameYear)}`,
-    );
-    expect(formatMentionedTimeLabel(lastYear, "24-hour", false, now)).toBe(
-      `${date(lastYear, { day: "numeric", month: "short", year: "numeric" })}, ${time(lastYear)}`,
+  it("preserves the date of an older reset in the transcript", () => {
+    const resetAt = new Date(2026, 7, 12, 14, 30).toISOString();
+    expect(formatUpcomingTimestamp(resetAt, "12-hour", now)).toBe(
+      formatDayAwareTimestamp(resetAt, "12-hour", now),
     );
   });
 });
 
 describe("invalid timestamp inputs", () => {
+  it("returns an empty timestamp instead of throwing", () => {
+    expect(formatTimestamp("not-a-date", "12-hour")).toBe("");
+  });
+
   it("returns an empty short timestamp instead of throwing", () => {
     expect(formatShortTimestamp("not-a-date", "12-hour")).toBe("");
   });
@@ -242,6 +264,11 @@ describe("invalid timestamp inputs", () => {
 
   it("returns an empty elapsed duration instead of a NaN label", () => {
     expect(formatElapsedDurationLabel("not-a-date")).toBe("");
+  });
+
+  it("returns an empty relative time until label instead of a NaN label", () => {
+    expect(formatRelativeTimeUntil("not-a-date")).toBeNull();
+    expect(formatRelativeTimeUntilLabel("not-a-date")).toBe("");
   });
 
   it("returns an empty expires-in label instead of a NaN label", () => {

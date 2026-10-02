@@ -1,16 +1,17 @@
 import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
-  ClientOrchestrationCommand,
+  OrchestrationV2Command,
   CommandId,
   EnvironmentHttpApi,
+  ORCHESTRATION_PROTOCOL_VERSION_TEXT,
+  ORCHESTRATION_PROTOCOL_HEADER,
   MessageId,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
 import * as Crypto from "effect/Crypto";
-import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -54,7 +55,7 @@ class DriveConnectionError extends Schema.TaggedError<DriveConnectionError>()(
 
 const decodeUrl = Schema.decodeUnknownEffect(Schema.URLFromString);
 const decodeThreadId = Schema.decodeUnknownEffect(ThreadId);
-const decodeCommand = Schema.decodeUnknownEffect(Schema.fromJsonString(ClientOrchestrationCommand));
+const decodeCommand = Schema.decodeUnknownEffect(Schema.fromJsonString(OrchestrationV2Command));
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 const makeClient = (origin: string) => HttpApiClient.make(EnvironmentHttpApi, { baseUrl: origin });
@@ -65,12 +66,18 @@ type DriveClient = Effect.Success<ReturnType<typeof makeClient>>;
 const withConnection = Effect.fn("drive.withConnection")(function* <A, E, R>(
   flags: ConnectionFlags,
   operate: boolean,
-  run: (client: DriveClient, headers: { authorization: string }) => Effect.Effect<A, E, R>,
+  run: (
+    client: DriveClient,
+    headers: { authorization: string; readonly "x-t3-orchestration-protocol": "2" },
+  ) => Effect.Effect<A, E, R>,
 ) {
   const call = (origin: string, token: string) =>
     Effect.gen(function* () {
       const client = yield* makeClient(origin);
-      return yield* run(client, { authorization: `Bearer ${token}` });
+      return yield* run(client, {
+        authorization: `Bearer ${token}`,
+        [ORCHESTRATION_PROTOCOL_HEADER]: ORCHESTRATION_PROTOCOL_VERSION_TEXT,
+      });
     }).pipe(Effect.timeout("30 seconds"), Effect.provide(FetchHttpClient.layer));
 
   if (Option.isSome(flags.url)) {
@@ -135,9 +142,8 @@ const snapshotCommand = Command.make("snapshot", {
           ? yield* client.orchestration.threadSnapshot({
               headers,
               params: { threadId: ThreadId.make(flags.thread.value) },
-              payload: {},
             })
-          : yield* client.orchestration.snapshot({ headers });
+          : yield* client.orchestration.shellSnapshot({ headers });
         yield* printJson(snapshot);
       }),
     ),
@@ -180,10 +186,9 @@ const sendCommand = Command.make("send", {
     withConnection(flags, true, (client, headers) =>
       Effect.gen(function* () {
         const threadId = yield* decodeThreadId(flags.thread);
-        const { thread } = yield* client.orchestration.threadSnapshot({
+        const { projection } = yield* client.orchestration.threadSnapshot({
           headers,
           params: { threadId },
-          payload: {},
         });
         const crypto = yield* Crypto.Crypto;
         const commandId = CommandId.make(yield* crypto.randomUUIDv4);
@@ -191,14 +196,18 @@ const sendCommand = Command.make("send", {
         const receipt = yield* client.orchestration.dispatch({
           headers,
           payload: {
-            type: "thread.turn.start",
+            type: "message.dispatch",
+            createdBy: "user",
+            creationSource: "server",
             commandId,
             threadId,
-            message: { messageId, role: "user", text: flags.text, attachments: [] },
-            modelSelection: thread.modelSelection,
-            runtimeMode: thread.runtimeMode,
-            interactionMode: thread.interactionMode,
-            createdAt: DateTime.formatIso(yield* DateTime.now),
+            messageId,
+            text: flags.text,
+            attachments: [],
+            ...(projection.thread === null
+              ? {}
+              : { modelSelection: projection.thread.modelSelection }),
+            dispatchMode: { type: "start_immediately" },
           },
         });
         yield* printJson({ commandId, messageId, ...receipt });
@@ -216,7 +225,7 @@ const schemaCommand = Command.make("schema", {
   Command.withHandler(({ scenario }) =>
     Effect.suspend(() => {
       const document = Schema.toJsonSchemaDocument(
-        scenario ? DriveScenario : ClientOrchestrationCommand,
+        scenario ? DriveScenario : OrchestrationV2Command,
       );
       return printJson({
         $schema: "https://json-schema.org/draft/2020-12/schema",

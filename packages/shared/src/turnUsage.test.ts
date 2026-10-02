@@ -1,14 +1,18 @@
 import {
   EventId,
+  NodeId,
+  RunId,
   ProviderInstanceId,
   TurnId,
-  type OrchestrationThreadActivity,
   type ServerProviderModel,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  type UsageActivity,
+  addTurnTokenUsage,
   deriveTurnUsage,
+  deriveProjectionTurnUsage,
   sumThreadTokenUsage,
   threadUsageView,
   turnModelLabel,
@@ -36,12 +40,10 @@ function activity(
   kind: string,
   payload: unknown = usage,
   createdAt = "2026-01-01T00:00:00.000Z",
-): OrchestrationThreadActivity {
+): UsageActivity {
   return {
     id: EventId.make(id),
-    tone: "info",
     kind,
-    summary: "Turn usage",
     turnId: TurnId.make(turnId),
     createdAt,
     payload,
@@ -59,6 +61,50 @@ const threadTotal = {
   partialTurns: 0,
   subagentTurns: 0,
 } as const;
+
+describe("addTurnTokenUsage", () => {
+  it("combines native turns within one run without losing subagent counts or recorded cost", () => {
+    expect(
+      addTurnTokenUsage(
+        {
+          ...usage,
+          inputTokens: 100,
+          outputTokens: 10,
+          cachedInputTokens: 40,
+          reasoningTokens: 2,
+          hasSubagents: true,
+          subagents: { inputTokens: 20, outputTokens: 3 },
+          costUsd: 0.125,
+        },
+        {
+          usageScope: "main_agent",
+          usageStatus: "partial",
+          hasSubagents: false,
+          inputTokens: 200,
+          outputTokens: 30,
+          costUsd: 0.25,
+        },
+      ),
+    ).toEqual({
+      usageScope: "main_agent",
+      usageStatus: "partial",
+      hasSubagents: true,
+      inputTokens: 300,
+      outputTokens: 40,
+      cachedInputTokens: 40,
+      reasoningTokens: 2,
+      subagents: { inputTokens: 20, outputTokens: 3 },
+      costUsd: 0.375,
+    });
+  });
+
+  it("keeps a run unpriced when one native turn has no recorded cost", () => {
+    const combined = addTurnTokenUsage({ ...usage, costUsd: 0.25 }, usage);
+    expect(combined.costUsd).toBeUndefined();
+    expect(combined.inputTokens).toBe(2_000_000);
+    expect(combined.outputTokens).toBe(100_000);
+  });
+});
 
 describe("deriveTurnUsage", () => {
   it("indexes usage by turn and skips records it cannot read", () => {
@@ -466,4 +512,56 @@ describe("turnModelLabel", () => {
       "gpt-5-retired (high)",
     );
   });
+});
+
+it("prefers newer live root usage and excludes child and rolled-back records", () => {
+  const run = (id: string, ordinal: number, status: "completed" | "running" | "rolled_back") => ({
+    id: RunId.make(id),
+    ordinal,
+    status,
+    modelSelection: {
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-opus-5-5",
+    },
+  });
+  const node = (id: string, runId: string, kind: "root_turn" | "subagent") => ({
+    id: NodeId.make(id),
+    runId: RunId.make(runId),
+    kind,
+  });
+  const total = (inputTokens: number) =>
+    sumThreadTokenUsage({
+      activities: [],
+      turnId: "total",
+      turns: 1,
+      usage: { ...usage, inputTokens },
+    });
+  const turn = (id: string, ordinal: number, inputTokens: number) => ({
+    nodeId: NodeId.make(id),
+    ordinal,
+    turnTokenUsage: { ...usage, inputTokens },
+    threadTokenUsage: total(inputTokens),
+  });
+  const result = deriveProjectionTurnUsage({
+    runs: [
+      run("done", 1, "completed"),
+      run("live", 2, "running"),
+      run("rollback", 3, "rolled_back"),
+    ],
+    nodes: [
+      node("done-node", "done", "root_turn"),
+      node("live-node", "live", "root_turn"),
+      node("child", "live", "subagent"),
+      node("rollback-node", "rollback", "root_turn"),
+    ],
+    providerTurns: [
+      turn("done-node", 99, 10),
+      turn("live-node", 1, 20),
+      turn("child", 100, 900),
+      turn("rollback-node", 101, 1000),
+    ],
+  });
+  expect(result.thread?.inputTokens).toBe(20);
+  expect([...result.byTurnId.keys()]).toEqual(["done", "live"]);
+  expect(result.byTurnId.get("live")?.usage?.inputTokens).toBe(20);
 });

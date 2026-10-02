@@ -4,13 +4,15 @@ import {
   IsoDateTime,
   MessageId,
   NonNegativeInt,
+  ThreadId,
+  TurnId,
+} from "@t3tools/contracts";
+import {
   OrchestrationEvent,
   OrchestrationEventMetadata,
   OrchestrationProposedPlanId,
   OrchestrationSessionStatus,
-  ThreadId,
-  TurnId,
-} from "@t3tools/contracts";
+} from "@t3tools/contracts/legacy-orchestration";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 

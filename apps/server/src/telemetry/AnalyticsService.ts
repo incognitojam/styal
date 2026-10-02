@@ -208,4 +208,4 @@ export const make = Effect.gen(function* () {
 
 export const layer = Layer.effect(AnalyticsService, make);
 
-export const layerTest = AnalyticsService.layerTest;
+const layerTest = AnalyticsService.layerTest;

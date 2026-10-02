@@ -1,4 +1,4 @@
-import { TurnId } from "@t3tools/contracts";
+import { RunId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { resolveThreadStatusPill } from "./components/Sidebar.logic";
@@ -20,15 +20,15 @@ const completedThread = {
   hasPendingApprovals: false,
   hasPendingUserInput: false,
   interactionMode: "default" as const,
-  latestTurn: {
-    turnId: TurnId.make("turn-1"),
-    state: "completed" as const,
+  latestRun: {
+    runId: RunId.make("run-1"),
+    status: "completed" as const,
     assistantMessageId: null,
     requestedAt,
     startedAt: "2026-08-09T10:00:01.000Z",
     completedAt,
   },
-  session: null,
+  runtime: null,
 };
 
 function statusPill(state: UiState) {

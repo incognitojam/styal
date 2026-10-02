@@ -1,83 +1,66 @@
 import {
   AuthOrchestrationReadScope,
   EnvironmentHttpApi,
+  OrchestrationV2GetShellSnapshotError,
   type HostActivity,
-  type OrchestrationThreadShell,
-  type ProviderSession,
+  type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 import { requireEnvironmentScope, failEnvironmentInternal } from "../auth/http.ts";
-import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
-import { ProviderService } from "../provider/Services/ProviderService.ts";
-import { listContinuableThreads } from "../serverRuntimeStartup.ts";
+import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
+import { listContinuableThreadIds } from "../orchestration-v2/ProviderRuntimeRecoveryService.ts";
 import { TerminalManager } from "../terminal/Manager.ts";
 
+type HostThread = Pick<
+  OrchestrationV2ThreadShell,
+  "id" | "status" | "pendingRuntimeRequest" | "pendingBackgroundTasks"
+>;
+
 export function summarizeHostSessions(
-  threads: ReadonlyArray<
-    Pick<
-      OrchestrationThreadShell,
-      | "id"
-      | "session"
-      | "latestTurn"
-      | "hasPendingApprovals"
-      | "hasPendingUserInput"
-      | "backgroundLiveness"
-    >
-  >,
-  sessions: ReadonlyArray<Pick<ProviderSession, "threadId" | "status" | "activeTurnId">>,
+  threads: ReadonlyArray<HostThread>,
   continuableThreadIds: ReadonlySet<string> = new Set(),
 ): Pick<HostActivity, "activeSessions" | "continuableSessions" | "waitingSessions"> {
   const active = new Set<string>();
   const waiting = new Set<string>();
-  for (const session of sessions) {
-    if (session.status === "connecting" || session.status === "running" || session.activeTurnId) {
-      active.add(session.threadId);
-    }
-  }
   for (const thread of threads) {
-    if (thread.hasPendingApprovals || thread.hasPendingUserInput) waiting.add(thread.id);
-    if (
-      thread.session?.status === "starting" ||
-      thread.session?.status === "running" ||
-      thread.session?.activeTurnId ||
-      thread.latestTurn?.state === "running" ||
-      thread.backgroundLiveness
+    if (thread.pendingRuntimeRequest !== null || thread.status === "waiting") {
+      waiting.add(thread.id);
+    } else if (
+      ["preparing", "starting", "running"].includes(thread.status) ||
+      (thread.pendingBackgroundTasks?.length ?? 0) > 0
     ) {
       active.add(thread.id);
     }
   }
-  for (const id of waiting) active.delete(id);
-  let continuable = 0;
-  for (const id of active) if (continuableThreadIds.has(id)) continuable++;
   return {
     activeSessions: active.size,
-    continuableSessions: continuable,
+    continuableSessions: [...active].filter((id) => continuableThreadIds.has(id)).length,
     waitingSessions: waiting.size,
   };
 }
 
 export const inspectHostActivity = Effect.gen(function* () {
-  const projection = yield* ProjectionSnapshotQuery;
-  const providers = yield* ProviderService;
+  const projections = yield* ProjectionStoreV2;
   const terminals = yield* TerminalManager;
   const terminalActivity = yield* terminals.shutdownPreflight;
-  const snapshot = yield* projection.getShellSnapshot();
-  const sessions = yield* providers.listSessions();
-  // Unknown continuation eligibility reads as interrupted, the cautious claim.
-  const continuable = yield* listContinuableThreads.pipe(
-    Effect.catchCause((cause) =>
-      Effect.logWarning("could not read continuable threads", { cause }).pipe(Effect.as([])),
+  const snapshot = yield* projections.getShellSnapshot().pipe(
+    Effect.mapError(
+      (cause) =>
+        new OrchestrationV2GetShellSnapshotError({
+          message: "Failed to read thread activity",
+          cause,
+        }),
     ),
   );
-  return {
-    ...summarizeHostSessions(
-      snapshot.threads,
-      sessions,
-      new Set(continuable.map((thread) => thread.threadId)),
+  const continuable = yield* listContinuableThreadIds.pipe(
+    Effect.catchCause((cause) =>
+      Effect.logWarning("could not read continuable threads", { cause }).pipe(
+        Effect.as(new Set<string>()),
+      ),
     ),
-    ...terminalActivity,
-  };
+  );
+  return { ...summarizeHostSessions(snapshot.threads, continuable), ...terminalActivity };
 });
 
 export const hostActivityHttpApiLayer = HttpApiBuilder.group(

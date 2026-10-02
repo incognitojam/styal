@@ -28,6 +28,7 @@ squashfs-root/
 .gstack/
 .plans/
 .scratch/
+/audits/
 dist-electron/
 .electron-runtime/
 .showcase/

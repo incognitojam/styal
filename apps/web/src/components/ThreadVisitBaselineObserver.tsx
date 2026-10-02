@@ -16,7 +16,7 @@ export function ThreadVisitBaselineObserver() {
     const pendingKeys = new Set(pendingThreadVisitBaselineKeys);
     for (const thread of threadShells) {
       const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
-      const requestedAt = thread.latestTurn?.requestedAt;
+      const requestedAt = thread.latestRun?.requestedAt;
       if (pendingKeys.has(threadKey) && requestedAt) {
         resolveThreadVisitBaseline(threadKey, requestedAt);
       }

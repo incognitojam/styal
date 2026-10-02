@@ -87,8 +87,8 @@ features:
       - Unknown native models remain selectable. A saved native effort the account no longer offers shows and runs as the model's default effort.
     implementation_paths:
       - apps/mobile/src/lib/modelOptions.ts
+      - apps/server/src/orchestration-v2/Adapters/AntigravityAdapterV2.ts
       - apps/server/src/provider/AntigravityModels.ts
-      - apps/server/src/provider/Layers/AntigravityAdapter.ts
       - apps/server/src/provider/Layers/AntigravityProvider.ts
       - apps/server/src/provider/ModelManifest.ts
       - apps/server/src/provider/acp/AntigravityAcpSupport.ts
@@ -101,7 +101,7 @@ features:
       - packages/shared/src/model.ts
     upstream_paths:
       - apps/mobile/src/lib/modelOptions.ts
-      - apps/server/src/provider/Layers/AntigravityAdapter.ts
+      - apps/server/src/orchestration-v2/Adapters/AntigravityAdapterV2.ts
       - apps/server/src/provider/Layers/AntigravityProvider.ts
       - apps/server/src/provider/ModelManifest.ts
       - apps/server/src/provider/acp/AntigravityAcpSupport.ts
@@ -114,7 +114,7 @@ features:
       - packages/shared/src/model.ts
     tests:
       - apps/mobile/src/lib/modelOptions.test.ts
-      - apps/server/src/provider/Layers/AntigravityAdapter.test.ts
+      - apps/server/src/orchestration-v2/Adapters/AntigravityAdapterV2.test.ts
       - apps/server/src/provider/Layers/AntigravityProvider.test.ts
       - apps/server/src/provider/ModelManifest.test.ts
       - apps/server/src/provider/acp/AntigravityAcpSupport.test.ts
@@ -152,14 +152,15 @@ features:
       - apps/mobile/src/state/edit-pending-thread-message.ts
       - apps/mobile/src/state/use-composer-drafts.ts
       - apps/server/src/attachmentStore.ts
-      - apps/server/src/orchestration/Normalizer.ts
-      - apps/server/src/provider/Layers/ProviderService.ts
+      - apps/server/src/orchestration-v2/AttachmentClaims.ts
+      - apps/server/src/orchestration-v2/AttachmentPrompt.ts
+      - apps/server/src/orchestration-v2/ThreadMessageIntake.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/ComposerPrimaryActions.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/composerDraftStore.ts
-      - packages/contracts/src/orchestration.ts
+      - packages/contracts/src/orchestrationV2.ts
     upstream_paths:
       - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/lib/attachmentUpload.ts
@@ -167,13 +168,14 @@ features:
       - apps/mobile/src/state/composer-attachment-uploads.ts
       - apps/mobile/src/state/use-composer-drafts.ts
       - apps/server/src/attachmentStore.ts
-      - apps/server/src/orchestration/Normalizer.ts
-      - apps/server/src/provider/Layers/ProviderService.ts
+      - apps/server/src/orchestration-v2/AttachmentClaims.ts
+      - apps/server/src/orchestration-v2/AttachmentPrompt.ts
+      - apps/server/src/orchestration-v2/ThreadMessageIntake.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/composerDraftStore.ts
-      - packages/contracts/src/orchestration.ts
+      - packages/contracts/src/orchestrationV2.ts
     tests:
       - apps/mobile/src/features/sharing/incoming-share-inbox.test.ts
       - apps/mobile/src/features/sharing/incoming-share-presentation.test.ts
@@ -185,13 +187,15 @@ features:
       - apps/mobile/src/state/use-thread-outbox-drain.test.ts
       - apps/server/src/assets/AssetAccess.test.ts
       - apps/server/src/attachmentStore.test.ts
-      - apps/server/src/orchestration/Normalizer.test.ts
-      - apps/server/src/provider/Layers/ProviderService.test.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/AttachmentClaims.test.ts
+      - apps/server/src/orchestration-v2/AttachmentPrompt.test.ts
+      - apps/server/src/orchestration-v2/ThreadMessageIntake.test.ts
       - apps/web/src/components/ChatView.logic.test.ts
       - apps/web/src/components/chat/ComposerPrimaryActions.test.tsx
       - apps/web/src/composerDraftStore.test.ts
       - apps/web/src/lib/threadTranscript.test.ts
-      - packages/contracts/src/orchestration.test.ts
+      - packages/contracts/src/orchestrationV2.test.ts
     upstream:
       status: partial
       tracking:
@@ -227,28 +231,32 @@ features:
 
   - id: background-task-endings
     title: Show background task endings on the call that started them and in the turn they wake
-    status: review-needed
+    status: maintained
     prs: [535, 601]
     invariants:
-      - A background task that ends after its launching tool call returned reports its ending on that call's row in the original turn, on web and mobile.
-      - A completed or failed ending also shows as its own row, with the same status mark, in the turn where the agent learns about it, which is the later turn it arrived during or, when it arrived while the agent was idle, the next turn to start, placed with that turn's work after any user message that started it. Endings in their launching turn, stopped endings, and idle endings no turn has followed add no row.
-      - A task left running when a provider session ended does not add a row to the next turn, so a manual compaction in that turn stays visible as a divider.
-      - The launching row stays visible inside collapsed tool groups; a failed ending marks the call failed, and a stopped or completed ending leaves the call's own status unchanged.
-      - A task that ends while its call is still running leaves the call's own result in place, and an ending whose launching row is not loaded still shows as its own row.
+      - An async Claude Bash launch stays running until its task notification updates the original canonical command item and tool node with completed, failed, or cancelled status on web and mobile.
+      - The original command keeps its source item, node, run, provider-turn ownership, and ordinal; completion reads persisted output on expansion, using the provider summary when the output file cannot be read.
+      - A later provider wake reports the task outcome in its own response without moving the launching row into the wake run or promoting a shell command to a subagent.
+      - An empty authoritative task roster does not discard command correlation before a delayed completion arrives.
+    rationale: Upstream V2 wake reports and canonical command items replace the V1 client-generated exit rows and turn inference. The fork still finalizes the launching command, which upstream de343914 leaves with its async launch acknowledgement; native cancelled status replaces the old stopped presentation.
     implementation_paths:
       - apps/mobile/src/lib/threadActivity.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/session-logic.ts
-      - packages/client-runtime/src/work-log/backgroundExit.ts
       - packages/client-runtime/src/work-log/presentation.ts
+      - packages/contracts/src/orchestrationV2.ts
     upstream_paths:
       - apps/mobile/src/lib/threadActivity.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/session-logic.ts
       - packages/client-runtime/src/work-log/presentation.ts
+      - packages/contracts/src/orchestrationV2.ts
     tests:
       - apps/mobile/src/lib/threadActivity.test.ts
-      - apps/web/src/session-logic.test.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
+      - apps/web/src/components/chat/MessagesTimeline.logic.test.ts
     upstream:
       status: partial
       tracking:
@@ -267,15 +275,15 @@ features:
       - Repeated steering continues the same turn until the provider finishes it; subagent message boundaries do not close the parent response.
       - Idle synthetic turns still close before a new user turn starts.
     implementation_paths:
-      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
     upstream_paths:
-      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
     tests:
-      - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
     upstream:
       status: tracking
       tracking:
-        - https://github.com/pingdotgg/t3code/blob/5cc99e1c23980d7995a13c47f969b47cb68ed1be/apps/server/src/provider/Layers/ClaudeAdapter.ts
+        - https://github.com/pingdotgg/t3code/blob/5cc99e1c23980d7995a13c47f969b47cb68ed1be/apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream preserves actively streaming synthetic Claude turns when a user sends a steer while retaining cleanup of idle synthetic turns.
 
@@ -305,9 +313,9 @@ features:
 
   - id: claude-exact-history-rewind
     title: Rewind Claude turns using the complete saved history
-    status: review-needed
+    status: maintained
     prs: [611, 631, 635]
-    rationale: Claude's history reader can omit retained prompts and assistant messages even though the native fork preserves them; matching its filtered message bodies or positions cannot recover those turn boundaries. The fork reads the complete saved transcript and matches it with upstream's fork boundary remapping.
+    rationale: Claude's history reader can omit retained prompts and assistant messages even though the native fork preserves them; matching its filtered message bodies or positions cannot recover those turn boundaries. V2 persists human prompt references, reads the complete saved transcript, validates native forks before replacing the provider thread, and remaps retained prompt and assistant references.
     invariants:
       - Claude rewind retains every preceding turn and removes the requested turns even when the SDK conversation reader hides disconnected saved history or trailing system notices.
       - Repeated rewind uses the fork's rewritten native turn IDs; repeated prompts, steering, and tool results do not shift turn boundaries.
@@ -316,12 +324,14 @@ features:
       - Native history operations stay within the selected provider instance's Claude configuration directory.
     implementation_paths:
       - apps/server/src/claudeHistoryWorker.ts
-      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeHistoryRewind.ts
       - apps/server/src/provider/claudeSessionHistory.ts
     upstream_paths:
-      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
     tests:
-      - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeHistoryRewind.test.ts
     upstream:
       status: partial
       tracking:
@@ -331,22 +341,20 @@ features:
 
   - id: claude-live-effort-change
     title: Apply Claude effort changes without restarting the session
-    status: review-needed
+    status: maintained
     prs: [541]
     invariants:
       - Changing only the effort level between turns on a live Claude thread applies the new level to the running Claude Code session, so its background tasks keep running and the next turn uses the new effort.
       - Ultracode, levels that resolve to no API effort, and any other model or option change still restart the session.
     implementation_paths:
-      - apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
-      - apps/server/src/provider/Layers/ClaudeAdapter.ts
-      - apps/server/src/provider/Services/ProviderAdapter.ts
+      - apps/server/src/claudeModelOptions.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
     upstream_paths:
-      - apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
-      - apps/server/src/provider/Layers/ClaudeAdapter.ts
-      - apps/server/src/provider/Services/ProviderAdapter.ts
+      - apps/server/src/claudeModelOptions.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
     tests:
-      - apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts
-      - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
+      - apps/server/src/claudeModelOptions.test.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
     upstream:
       status: tracking
       tracking:
@@ -445,12 +453,12 @@ features:
       - Every Claude CLI logs its pid at spawn and its exit code or signal at exit, with the end of its stderr when the exit was not clean.
     rationale: A server update resumes a running session in a new server process as soon as the old server exits, and the SDK's close returns before the CLI does, so without the wait two CLIs can hold the same session and transcript.
     implementation_paths:
-      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/server/src/provider/Layers/ClaudeProcess.ts
     upstream_paths:
-      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
     tests:
-      - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
       - apps/server/src/provider/Layers/ClaudeProcess.test.ts
     upstream:
       status: partial
@@ -468,15 +476,15 @@ features:
     rationale: Upstream attributes tasks started from a subagent's snapshot tool calls to that subagent, but a resumed subagent registers again under its SendMessage call while its messages keep the original Agent call as their parent, and upstream clients group nested agents by turn, so the parent timeline fills with one-agent cards and update rows.
     implementation_paths:
       - apps/mobile/src/lib/threadActivity.ts
-      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/web/src/session-logic.ts
     upstream_paths:
       - apps/mobile/src/lib/threadActivity.ts
-      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/web/src/session-logic.ts
     tests:
       - apps/mobile/src/lib/threadActivity.test.ts
-      - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
       - apps/web/src/session-logic.test.ts
     upstream:
       status: partial
@@ -518,13 +526,13 @@ features:
     invariants:
       - A Codex turn whose selection names no reasoning effort is sent the effort the provider snapshot marks as that model's default, which is the effort clients show.
     implementation_paths:
+      - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
       - apps/server/src/provider/Drivers/CodexDriver.ts
-      - apps/server/src/provider/Layers/CodexAdapter.ts
     upstream_paths:
+      - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
       - apps/server/src/provider/Drivers/CodexDriver.ts
-      - apps/server/src/provider/Layers/CodexAdapter.ts
     tests:
-      - apps/server/src/provider/Layers/CodexAdapter.test.ts
+      - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts
     upstream:
       status: tracking
       tracking:
@@ -587,14 +595,17 @@ features:
     implementation_paths:
       - apps/server/src/provider/Layers/CodexProvider.ts
       - apps/server/src/provider/model-manifest.json
+      - packages/shared/src/model.ts
     upstream_paths:
       - apps/server/src/provider/Layers/CodexProvider.ts
+      - packages/shared/src/model.ts
     tests:
       - apps/server/src/provider/Layers/CodexProvider.test.ts
+      - packages/shared/src/model.test.ts
     upstream:
       status: tracking
       tracking:
-        - https://github.com/pingdotgg/t3code/blob/9bd1d8009a6b7c50f9dd9458e2bf27d481ff3b43/packages/shared/src/model.ts
+        - https://github.com/pingdotgg/t3code/blob/de343914273eceb852a1d1d739cd1d38df7796ee/packages/shared/src/model.ts
       retire_when: Upstream displays Codex model word suffixes with spaces while preserving model IDs.
 
   - id: completion-sounds
@@ -697,6 +708,7 @@ features:
     title: T3 Code migration in setup and Settings
     status: review-needed
     prs: [294, 297, 298, 300, 306, 347, 349, 379, 478]
+    rationale: Upstream V2 supplies canonical orchestration and messages-only automatic V1 migration, but the maintained T3 import flow must retain full recorded history and costs. The batch explicitly preserves these values, converts V1 history at the boundary, imports native V2 projections through inert canonical events, and materializes unavailable fork ancestors.
     invariants:
       - A selected styal environment can preview and import projects, missing threads, attachments, provider continuations, and supported server preferences from a live T3 Code database, including older fork databases, without modifying the source.
       - Existing styal project configuration wins while each imported thread and its verified attachments commit atomically, so interrupted or repeated imports resume without duplication.
@@ -707,11 +719,18 @@ features:
       - Projects and optional Preferences are top-level setup steps with stable dimensions; Preferences is discovered on selected computers during Agents and omitted when no values differ, independently of the project source. Settings keeps one import page; switching steps or computers preserves selections, setup stays scoped to selected computers, and differing preferences start selected with an opt-out per computer. Setup imports each step as it is left, so projects land before Preferences opens and either step can be skipped without discarding the other. In-progress imports show remaining work and confirmed completion per computer; CLI history shows queued, importing, completed, and failed projects.
       - Imported user prompts stay linked to their root provider turns through derived thread.turn-prompt-linked events, so live, coalesced, replayed, and windowed thread-detail reads keep showing them; already-imported projects without those events reappear as repairable.
       - Partial imports keep failed work selected for retry and clear completed selections; pending imports remain locked across Settings remounts, and leaving the page prevents subsequent requests in the batch.
+      - V1 and native V2 source imports retain complete messages, structured tool and plan history, checkpoint metadata and associations, and recorded token and cost history without repricing; projection compaction and rebuild preserve the imported result.
+      - Imported native V2 sessions remain stopped while durable native conversation references remain resumable; process sessions, pending effects, and runtime requests never migrate.
+      - Fork imports retain history through the chosen source run even when ancestors are deleted, excluded, not yet imported, or fail during the batch. Materialized history keeps original fork lineage and never duplicates when an ancestor is imported later.
     implementation_paths:
+      - apps/server/src/dataImport/LegacyHistoryWriter.ts
       - apps/server/src/dataImport/LegacyImport.ts
       - apps/server/src/dataImport/LegacyImportPreferences.ts
       - apps/server/src/dataImport/LegacyImportPreview.ts
       - apps/server/src/dataImport/LegacyImportTurnPromptLinks.ts
+      - apps/server/src/dataImport/V2ForkHistoryImport.ts
+      - apps/server/src/dataImport/V2HistoryImport.ts
+      - apps/server/src/orchestration-v2/legacy/LegacyHistoricalItems.ts
       - apps/web/src/components/import/DataImportPanel.tsx
       - apps/web/src/components/import/ImportComputer.tsx
       - apps/web/src/components/import/ImportDataView.tsx
@@ -731,10 +750,11 @@ features:
       - packages/contracts/src/dataImport.ts
     upstream_paths:
       - apps/server/src/assets/AssetAccess.ts
-      - apps/server/src/orchestration/Layers/OrchestrationEngine.ts
-      - apps/server/src/orchestration/Layers/ProjectionPipeline.ts
-      - apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts
-      - apps/server/src/orchestration/ThreadLiveEventCoalescer.ts
+      - apps/server/src/orchestration-v2/EventSink.ts
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ProjectStore.ts
+      - apps/server/src/orchestration-v2/ProjectionMaintenance.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.ts
       - apps/server/src/project/AgentSessionImporter.ts
       - apps/server/src/ws.ts
       - apps/web/src/components/onboarding/WelcomeWizard.tsx
@@ -746,9 +766,12 @@ features:
       - packages/contracts/src/index.ts
       - packages/contracts/src/rpc.ts
     tests:
+      - apps/server/src/dataImport/LegacyHistoryWriter.test.ts
+      - apps/server/src/dataImport/LegacyImport.fixture.test.ts
       - apps/server/src/dataImport/LegacyImport.test.ts
       - apps/server/src/dataImport/LegacyImportPreview.test.ts
       - apps/server/src/dataImport/LegacyImportTurnPromptLinks.test.ts
+      - apps/server/src/dataImport/V2HistoryImport.test.ts
       - apps/web/src/components/import/useHistoryImport.test.ts
       - apps/web/src/components/import/useLegacyImport.test.ts
       - apps/web/src/components/settings/DataImportSettings.logic.test.ts
@@ -1008,7 +1031,7 @@ features:
       - apps/web/src/components/diffs/useReviewFilePatches.ts
       - apps/web/src/components/pullRequest/PullRequestCodeTab.tsx
       - apps/web/src/components/pullRequest/pullRequestDiff.logic.ts
-      - packages/contracts/src/orchestration.ts
+      - packages/contracts/src/orchestrationV2.ts
       - packages/contracts/src/pullRequest.ts
     tests:
       - apps/mobile/src/features/review/reviewFileVisibility.test.ts
@@ -1029,24 +1052,25 @@ features:
 
   - id: drive-cli
     title: Drive environments and synthetic scenarios from the command line
-    status: review-needed
+    status: maintained
     prs: [425]
     invariants:
       - "`styal drive snapshot`, `dispatch`, and `send` use the running environment's authenticated HTTP API: a short-lived session that is then revoked for a local home, or a bearer token for a remote origin. They never fall back to reading the database offline."
       - Live dispatch accepts only client orchestration commands and rejects synthetic-only commands before connecting.
       - "`drive scenario` and `drive serve` refuse an existing home. `drive serve` loads the scenario with orchestration reactors, provider session recovery, automatic project pulls, and Tailscale Serve disabled."
+    rationale: Upstream V2 command, event, shell, and thread APIs supersede the V1 drive payloads; the maintained CLI uses protocol 2, typed live commands, and version 2 isolated event scenarios. Behavioral coverage exercises the canonical CLI, HTTP permissions, model selection, and persisted SQLite scenario states.
     implementation_paths:
-      - apps/server/src/bin.ts
+      - apps/server/src/binCli.ts
       - apps/server/src/cli/drive.ts
       - apps/server/src/cli/driveScenario.ts
       - apps/server/src/driveMode.ts
       - apps/server/src/serverRuntimeStartup.ts
     upstream_paths:
-      - apps/server/src/bin.ts
+      - apps/server/src/binCli.ts
       - apps/server/src/serverRuntimeStartup.ts
       - packages/contracts/src/environmentHttp.ts
     tests:
-      - apps/server/src/bin.test.ts
+      - apps/server/src/cli/drive.test.ts
     upstream:
       status: tracking
       tracking:
@@ -1149,38 +1173,40 @@ features:
       - apps/mobile/src/lib/threadActivity.ts
       - apps/server/src/mcp/McpHttpServer.ts
       - apps/server/src/mcp/McpProviderSession.ts
+      - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.ts
+      - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
+      - apps/server/src/orchestration-v2/ProviderSessionManager.ts
       - apps/server/src/project/AgentSessionImporter.ts
       - apps/server/src/provider/CodexDeveloperInstructions.ts
-      - apps/server/src/provider/Layers/ClaudeAdapter.ts
-      - apps/server/src/provider/Layers/CodexAdapter.ts
-      - apps/server/src/provider/Layers/CodexSessionRuntime.ts
-      - apps/server/src/provider/Layers/CursorAdapter.ts
-      - apps/server/src/provider/Layers/GrokAdapter.ts
-      - apps/server/src/provider/Layers/OpenCodeAdapter.ts
-      - apps/server/src/provider/Layers/ProviderService.ts
       - apps/server/src/provider/RuntimeInstructions.ts
+      - apps/server/src/provider/T3OrchestrationInstructions.ts
       - packages/shared/src/toolRowPresentation.ts
     upstream_paths:
       - apps/mobile/src/lib/threadActivity.ts
       - apps/server/src/mcp/McpHttpServer.ts
       - apps/server/src/mcp/McpProviderSession.ts
+      - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.ts
+      - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
+      - apps/server/src/orchestration-v2/ProviderSessionManager.ts
       - apps/server/src/provider/CodexDeveloperInstructions.ts
-      - apps/server/src/provider/Layers/ClaudeAdapter.ts
-      - apps/server/src/provider/Layers/CodexAdapter.ts
-      - apps/server/src/provider/Layers/CodexSessionRuntime.ts
-      - apps/server/src/provider/Layers/CursorAdapter.ts
-      - apps/server/src/provider/Layers/GrokAdapter.ts
-      - apps/server/src/provider/Layers/OpenCodeAdapter.ts
-      - apps/server/src/provider/Layers/ProviderService.ts
       - apps/server/src/provider/RuntimeInstructions.ts
+      - apps/server/src/provider/T3OrchestrationInstructions.ts
     tests:
       - apps/mobile/src/lib/threadActivity.test.ts
       - apps/server/src/mcp/McpProviderSession.test.ts
-      - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
-      - apps/server/src/provider/Layers/CodexSessionRuntime.test.ts
-      - apps/server/src/provider/Layers/OpenCodeAdapter.test.ts
-      - apps/server/src/provider/RuntimeInstructions.test.ts
-      - packages/shared/src/toolRowPresentation.test.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/ProviderSessionManager.test.ts
+      - apps/server/src/provider/T3OrchestrationInstructions.test.ts
     upstream:
       status: tracking
       tracking:
@@ -1362,7 +1388,7 @@ features:
       - apps/mobile/src/features/updates/native-app-update-download.test.ts
       - apps/mobile/src/features/updates/native-app-updates.test.ts
       - apps/mobile/src/widgets/SubscriptionUsage.android.test.ts
-      - apps/server/src/bin.test.ts
+      - apps/server/src/cli/invocation.test.ts
       - apps/server/src/cli/update.test.ts
       - apps/server/src/cloud/bootService.test.ts
       - apps/server/src/device/sshDeviceScript.test.ts
@@ -1441,7 +1467,7 @@ features:
       - packages/shared/src/connectAuth.ts
     tests:
       - apps/mobile/src/features/cloud/publicConfig.test.ts
-      - apps/server/src/bin.test.ts
+      - apps/server/src/cli/connect.test.ts
       - apps/server/src/cli/pair.test.ts
       - apps/server/src/cloud/http.test.ts
       - apps/server/src/cloud/publicConfig.test.ts
@@ -1555,25 +1581,32 @@ features:
       - The command palette lists the current project's open GitHub issues through the GitHub CLI, with distinct states for a missing CLI, missing authentication, and no open issues, and choosing one opens a new draft with the issue attached as a removable context chip.
       - The attached issue persists with the draft across reloads without another CLI call and is appended to the outgoing prompt as an issue context block after the prose.
       - A message queued while the agent is working keeps its issue context, sends it when the queued message goes out, and returns it to the composer when the queued message is cancelled or the turn is stopped.
+    rationale: Queued V2 messages carry exact issue drafts in optional typed message context as well as the existing provider prompt block. Edit and successful cancellation recover chips; Stop cancels issue-backed queued runs durably before returning their drafts, avoiding duplicate sends. Older messages without structured metadata retain their serialized issue blocks intact.
     implementation_paths:
+      - apps/mobile/src/lib/composerContext.ts
+      - apps/mobile/src/state/queued-run-edit.ts
       - apps/server/src/sourceControl/GitHubSourceControlProvider.ts
       - apps/server/src/sourceControl/SourceControlRepositoryService.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/chat/ComposerPendingIssueContexts.tsx
+      - apps/web/src/components/chat/QueuedRunsControl.tsx
+      - apps/web/src/components/chat/queuedMessageEdit.ts
       - apps/web/src/composerDraftStore.ts
       - apps/web/src/lib/issueContext.ts
-      - apps/web/src/queuedMessageStore.ts
+      - packages/contracts/src/composerContext.ts
       - packages/contracts/src/sourceControl.ts
     upstream_paths:
       - apps/server/src/sourceControl/GitHubSourceControlProvider.ts
       - apps/server/src/sourceControl/SourceControlRepositoryService.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/CommandPalette.tsx
+      - apps/web/src/components/chat/QueuedRunsControl.tsx
       - apps/web/src/composerDraftStore.ts
-      - apps/web/src/queuedMessageStore.ts
       - packages/contracts/src/sourceControl.ts
     tests:
+      - apps/mobile/src/state/queued-run-edit.test.ts
+      - apps/web/src/components/chat/queuedMessageEdit.test.ts
       - apps/web/src/composerDraftStore.test.ts
       - apps/web/src/lib/issueContext.test.ts
     upstream:
@@ -1696,13 +1729,13 @@ features:
       - Reply output that prevents settlement for two seconds produces a visible incomplete-reply error; output after a completed quiet window remains outside the settled turn.
     rationale: A queue barrier covers events already received, while Grok can send reply chunks after its private completion. A bounded quiet window supports hung RPCs without claiming the private signal is an end-of-stream marker.
     implementation_paths:
-      - apps/server/src/provider/Layers/GrokAdapter.ts
+      - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts
       - apps/server/src/provider/acp/XAiAcpExtension.ts
     upstream_paths:
-      - apps/server/src/provider/Layers/GrokAdapter.ts
+      - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts
       - apps/server/src/provider/acp/XAiAcpExtension.ts
     tests:
-      - apps/server/src/provider/Layers/GrokAdapter.test.ts
+      - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.test.ts
       - apps/server/src/provider/acp/XAiAcpExtension.test.ts
     upstream:
       status: tracking
@@ -1710,14 +1743,50 @@ features:
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream retains delayed Grok reply output before fallback settlement, preserves prompt cancellation and real RPC results, and bounds failure to settle without reporting incomplete output as successful.
 
+  - id: historical-checkpoint-review
+    title: Keep migrated checkpoint changes available for review
+    status: maintained
+    prs: []
+    invariants:
+      - Migrated V1 checkpoints retain their original refs, assistant-message association, files, and exact checkpoint count including zero, without synthetic native runs.
+      - Web, desktop, and mobile review select the preserved checkpoint scope explicitly, so historical turn one and a new native run one cannot select each other's changes.
+      - Historical diffs use the original source thread's baseline ref even when import assigns a new thread id; requests without a scope retain native V2 behavior.
+    rationale: Upstream de343914 migrates messages only and its diff query excludes runless checkpoints. The fork keeps frozen checkpoint history readable through the V2 review APIs without assigning it native execution ownership.
+    implementation_paths:
+      - apps/mobile/src/features/review/useReviewSections.ts
+      - apps/mobile/src/state/queryTargets.ts
+      - apps/server/src/checkpointing/CheckpointDiffQuery.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.ts
+      - apps/server/src/orchestration-v2/legacy/LegacyHistoricalItems.ts
+      - apps/web/src/components/DiffPanel.tsx
+      - packages/client-runtime/src/state/threadCheckpoints.ts
+      - packages/contracts/src/checkpointDiff.ts
+    upstream_paths:
+      - apps/mobile/src/features/review/useReviewSections.ts
+      - apps/server/src/checkpointing/CheckpointDiffQuery.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.ts
+      - apps/web/src/components/DiffPanel.tsx
+      - packages/client-runtime/src/state/threadCheckpoints.ts
+      - packages/contracts/src/checkpointDiff.ts
+    tests:
+      - apps/server/src/checkpointing/CheckpointDiffQuery.test.ts
+      - apps/server/src/orchestration-v2/legacy/LegacyV1ThreadImporter.test.ts
+      - packages/client-runtime/src/state/threadCheckpoints.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/2829
+      retire_when: Upstream preserves historical checkpoints and original answer links during V2 migration and exposes their diffs without ordinal collisions with new runs.
+
   - id: inspectable-tool-activity
     title: Keep tool activity concise and inspectable
-    status: review-needed
+    status: maintained
     prs: [4, 11, 36, 58, 60, 66, 117, 139, 158, 168, 190, 204, 230, 238, 278, 282, 301, 582]
     invariants:
       - Web and mobile name supported tool calls by their action with a concise useful argument, while agent panels and approval rows use the same vocabulary instead of raw provider names or serialized input.
       - Clarifying-question calls name what was asked and expand into those questions with their options, rather than restating the provider's serialized input.
       - Completed web command rows reveal the full raw command and retrieve persisted output only after expansion, keeping routine timeline activity payloads bounded.
+      - Migrated commands resolve by canonical item ID or original activity ID using only V2 projections, preserving retained stdout, stderr, and exit codes when canonical output omits them.
       - Collapsed web tool groups expand into their individual named calls, with failure, exit-code, diff, and disclosure signals remaining independently visible.
       - Meaningful running-command interactions are shown with fixed sanitized summaries while empty polls and raw terminal input remain hidden.
       - Claude, Codex, and OpenCode file edits retain structured paths, line statistics, lifecycle state, and provider-independent presentation without eagerly sending full diffs to clients.
@@ -1725,56 +1794,15 @@ features:
       - Folded turn rows show no hover timestamp of their own, since the user message that starts the turn already reveals the same time.
       - Claude project memory writes and index updates form a distinct work-log category on web and mobile; similarly named repository files remain ordinary edits.
       - Page fetches read as "Fetched page" with their URL for Claude and ACP providers, and ACP workspace searches read and count as code searches rather than web lookups, including in historical threads.
+    rationale: Upstream V2 owns native item vocabulary, provider-attempt folds, read-path punctuation, and standalone compaction rows; the obsolete V1 aliases and activity inference are retired. The fork retains shared action labels, structured edit counts, findings cards, group summaries, approval details, and on-demand raw command output. Historical provider payloads remain frozen on V2 items so output lookup preserves imported details without reading the retired V1 activity projection.
     implementation_paths:
       - apps/mobile/src/features/threads/thread-work-log.tsx
-      - apps/mobile/src/lib/threadActivity.ts
-      - apps/server/src/orchestration/ActivityPayloadProjection.ts
-      - apps/server/src/orchestration/CommandOutputQuery.ts
-      - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
-      - apps/server/src/provider/Layers/OpenCodeAdapter.ts
-      - apps/server/src/ws.ts
-      - apps/web/src/components/AgentsPanel.tsx
-      - apps/web/src/components/chat/ComposerPendingApprovalPanel.tsx
-      - apps/web/src/components/chat/MessagesTimeline.logic.ts
-      - apps/web/src/components/chat/MessagesTimeline.tsx
-      - apps/web/src/session-logic.ts
-      - apps/web/src/state/queries.ts
-      - packages/client-runtime/src/state/orchestration.ts
-      - packages/client-runtime/src/work-log/presentation.ts
-      - packages/contracts/src/orchestration.ts
-      - packages/contracts/src/rpc.ts
-      - packages/shared/src/toolActivity.ts
-      - packages/shared/src/toolRowPresentation.ts
+      - apps/server/src/orchestration-v2/CommandOutputQuery.ts
     upstream_paths:
       - apps/mobile/src/features/threads/thread-work-log.tsx
-      - apps/mobile/src/lib/threadActivity.ts
-      - apps/server/src/orchestration/ActivityPayloadProjection.ts
-      - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
-      - apps/server/src/provider/Layers/OpenCodeAdapter.ts
-      - apps/server/src/ws.ts
-      - apps/web/src/components/AgentsPanel.tsx
-      - apps/web/src/components/chat/ComposerPendingApprovalPanel.tsx
-      - apps/web/src/components/chat/MessagesTimeline.logic.ts
-      - apps/web/src/components/chat/MessagesTimeline.tsx
-      - apps/web/src/session-logic.ts
-      - apps/web/src/state/queries.ts
-      - packages/client-runtime/src/state/orchestration.ts
-      - packages/contracts/src/orchestration.ts
-      - packages/contracts/src/rpc.ts
     tests:
       - apps/mobile/src/lib/threadActivity.test.ts
-      - apps/server/src/orchestration/ActivityPayloadProjection.test.ts
-      - apps/server/src/orchestration/CommandOutputQuery.test.ts
-      - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts
-      - apps/server/src/provider/Layers/OpenCodeAdapter.test.ts
-      - apps/web/src/components/chat/ComposerPendingApprovalPanel.test.tsx
-      - apps/web/src/components/chat/MessagesTimeline.logic.test.ts
-      - apps/web/src/components/chat/MessagesTimeline.test.tsx
-      - apps/web/src/session-logic.command-output.test.ts
-      - apps/web/src/session-logic.test.ts
-      - packages/client-runtime/src/work-log/presentation.test.ts
-      - packages/shared/src/toolActivity.test.ts
-      - packages/shared/src/toolRowPresentation.test.ts
+      - apps/server/src/orchestration-v2/CommandOutputQuery.test.ts
     upstream:
       status: partial
       tracking:
@@ -1902,14 +1930,14 @@ features:
       - Provider startup validates the resolved project or worktree path before launching a session and reports a controlled actionable error when the workspace is missing.
       - A later Claude stream failure does not replace the error of a failed result.
     implementation_paths:
-      - apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
-      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+      - apps/server/src/orchestration-v2/ProviderSessionManager.ts
     upstream_paths:
-      - apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
-      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+      - apps/server/src/orchestration-v2/ProviderSessionManager.ts
     tests:
-      - apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts
-      - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/ProviderSessionManager.test.ts
     upstream:
       status: equivalent
       tracking:
@@ -2058,22 +2086,18 @@ features:
       - Unpinning immediately queues a settlement check for that thread without resetting its activity timestamps; pending work, explicit Un-settle, and per-thread auto-settle opt-outs still prevent settlement.
       - Pinning settled work clears settlement without creating a separate keep-active override, while an existing explicit Un-settle override is preserved.
       - Manual settlement still removes the pin, and web, desktop, and mobile share the same server behavior and optimistic pin state.
-    rationale: This is a temporary adaptation for the V1 orchestrator. Upstream orchestration V2 already protects pinned threads, so retire the V1 patch during V2 intake rather than maintaining a parallel policy. Compared with upstream revision 4f63275ac7885281d245022e65f1e9e8816b1382 on October 10, 2026; its settlement service does not yet recheck on unpin.
+    rationale: Upstream Orchestration V2 protects pinned threads. Keep only the fork refinements that immediately check settlement after unpinning and avoid creating a permanent keep-active override when pinning settled work; retire the V1 policy, decider, and reactor implementation.
     implementation_paths:
-      - apps/server/src/orchestration/ThreadSettlementPolicy.ts
-      - apps/server/src/orchestration/ThreadSettlementReactor.ts
-      - apps/server/src/orchestration/decider.ts
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ThreadSettlementService.ts
       - packages/client-runtime/src/state/threadCommands.ts
     upstream_paths:
-      - apps/server/src/orchestration/ThreadSettlementPolicy.ts
-      - apps/server/src/orchestration/ThreadSettlementReactor.ts
-      - apps/server/src/orchestration/decider.ts
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ThreadSettlementService.ts
       - packages/client-runtime/src/state/threadCommands.ts
     tests:
-      - apps/server/src/orchestration/Layers/OrchestrationEngine.test.ts
-      - apps/server/src/orchestration/ThreadSettlementPolicy.test.ts
-      - apps/server/src/orchestration/ThreadSettlementReactor.test.ts
-      - apps/server/src/orchestration/decider.pinned.test.ts
+      - apps/server/src/orchestration-v2/Orchestrator.control-reads.test.ts
+      - apps/server/src/orchestration-v2/ThreadSettlementService.test.ts
       - packages/client-runtime/src/state/threadCommands.test.ts
     upstream:
       status: partial
@@ -2186,14 +2210,14 @@ features:
       - apps/mobile/src/lib/threadActivity.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/projectScriptEditor.tsx
-      - packages/contracts/src/orchestration.ts
+      - packages/contracts/src/orchestrationV2.ts
       - packages/contracts/src/t3ProjectFile.ts
     upstream_paths:
       - apps/mobile/src/components/AppSymbol.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/projectScriptEditor.tsx
-      - packages/contracts/src/orchestration.ts
+      - packages/contracts/src/orchestrationV2.ts
       - packages/contracts/src/t3ProjectFile.ts
     tests:
       - apps/mobile/src/features/terminal/terminalMenu.test.ts
@@ -2238,46 +2262,52 @@ features:
     invariants:
       - Additional instructions are persisted per logical project, shared across grouped checkouts, visible and clearable in Project Settings, and retained through projection recovery.
       - Fresh and recovered Codex, Claude, Cursor, Grok, and OpenCode sessions receive the instructions through native channels where available, with Cursor receiving them once in its first prompt.
+      - Cursor sends instructions with the first ordinary prompt of each SDK agent regardless of app run ordinal; native compaction and failed attachment reads do not consume them.
       - Codex receives complete project instructions through additional context even when the model catalog replaces collaboration-mode text, and restores that context after root-thread compaction.
       - Projects without additional instructions preserve the ordinary upstream provider prompt and session behavior.
     implementation_paths:
-      - apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
+      - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/PiAdapterV2.ts
+      - apps/server/src/orchestration-v2/ProjectStore.ts
+      - apps/server/src/orchestration-v2/ProviderAdapter.ts
+      - apps/server/src/orchestration-v2/RuntimePolicy.ts
       - apps/server/src/persistence/ForkMigrations/003_ProjectAdditionalInstructions.ts
       - apps/server/src/provider/CodexDeveloperInstructions.ts
-      - apps/server/src/provider/Layers/ClaudeAdapter.ts
-      - apps/server/src/provider/Layers/CodexAdapter.ts
-      - apps/server/src/provider/Layers/CodexSessionRuntime.ts
-      - apps/server/src/provider/Layers/CursorAdapter.ts
-      - apps/server/src/provider/Layers/GrokAdapter.ts
-      - apps/server/src/provider/Layers/OpenCodeAdapter.ts
-      - apps/server/src/provider/Layers/ProviderService.ts
       - apps/web/src/components/settings/ProjectSettingsPanel.tsx
-      - packages/contracts/src/orchestration.ts
-      - packages/contracts/src/provider.ts
+      - packages/contracts/src/orchestrationV2.ts
     upstream_paths:
-      - apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
+      - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/PiAdapterV2.ts
+      - apps/server/src/orchestration-v2/ProjectStore.ts
+      - apps/server/src/orchestration-v2/ProviderAdapter.ts
+      - apps/server/src/orchestration-v2/RuntimePolicy.ts
       - apps/server/src/provider/CodexDeveloperInstructions.ts
-      - apps/server/src/provider/Layers/ClaudeAdapter.ts
-      - apps/server/src/provider/Layers/CodexAdapter.ts
-      - apps/server/src/provider/Layers/CodexSessionRuntime.ts
-      - apps/server/src/provider/Layers/CursorAdapter.ts
-      - apps/server/src/provider/Layers/GrokAdapter.ts
-      - apps/server/src/provider/Layers/OpenCodeAdapter.ts
-      - apps/server/src/provider/Layers/ProviderService.ts
       - apps/web/src/components/settings/ProjectSettingsPanel.tsx
-      - packages/contracts/src/orchestration.ts
-      - packages/contracts/src/provider.ts
+      - packages/contracts/src/orchestrationV2.ts
     tests:
-      - apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts
-      - apps/server/src/orchestration/decider.projectThreadEnvMode.test.ts
+      - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.test.ts
+      - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/Adapters/PiAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/ProjectStore.test.ts
+      - apps/server/src/orchestration-v2/RuntimePolicy.test.ts
       - apps/server/src/persistence/ForkMigrations/003_ProjectAdditionalInstructions.test.ts
-      - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
-      - apps/server/src/provider/Layers/CodexAdapter.test.ts
-      - apps/server/src/provider/Layers/CodexSessionRuntime.test.ts
-      - apps/server/src/provider/Layers/CursorAdapter.test.ts
-      - apps/server/src/provider/Layers/GrokAdapter.test.ts
-      - apps/server/src/provider/Layers/OpenCodeAdapter.test.ts
-      - apps/server/src/provider/Layers/ProviderService.test.ts
     upstream:
       status: tracking
       tracking:
@@ -2414,17 +2444,21 @@ features:
 
   - id: provider-task-identity-recovery
     title: Recover background task identity after provider restarts
-    status: review-needed
+    status: maintained
     prs: [291]
     invariants:
-      - A delayed task completion after a provider restart or session exit recovers its missing title, task type, ownership, and tool linkage from persisted lifecycle activity before the server classifies it.
-      - Fields supplied by the current provider event take precedence over recovered values, and an ordinary background shell cannot be mislabeled as a completed subagent merely because its transient registry was cleared.
+      - A delayed Claude command completion recovers missing tool linkage, command text, task kind, and original item, node, run, and provider-turn ownership from the persisted provider-thread task roster after a runtime or server restart.
+      - Current notification fields supply the outcome and output, while recovered ownership preserves the original command identity; an ordinary shell remains a command when transient task registries are absent.
+      - Task identity survives an empty SDK roster preceding completion, and restored state is seeded only once per native conversation so later process replacements cannot resurrect stale waiting work.
+    rationale: Upstream V2 persists task rosters and classifies wakes but does not retain launching-command ownership in those rosters. Typed compact command metadata replaces V1 activity recovery without manufacturing runs or decoding the full transcript.
     implementation_paths:
-      - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+      - packages/contracts/src/orchestrationV2.ts
     upstream_paths:
-      - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+      - packages/contracts/src/orchestrationV2.ts
     tests:
-      - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
     upstream:
       status: partial
       tracking:
@@ -2440,20 +2474,21 @@ features:
       - A cleared Claude transient status keeps an active turn running but returns an idle session to ready after manual context compaction completes.
       - Requesting and compacting states retain their existing presentation, and a delayed provider status cannot leave a completed thread falsely Working.
       - Web and mobile recognize an unsettled manual compaction across provider restarts without requiring matching message and turn timestamps; a newer user prompt or matching result clears the compaction label.
-      - Cancelling manual compaction records a failure tied to its request before cancellation finishes, so a later provider session cannot revive its compaction label.
+      - Cancelling manual compaction durably cancels its canonical run, so a later provider session cannot revive its compaction label.
     implementation_paths:
       - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/mobile/src/state/use-thread-composer-state.ts
-      - apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
-      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+      - apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts
       - apps/web/src/components/ChatView.tsx
     upstream_paths:
-      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
     tests:
       - apps/mobile/src/lib/threadActivity.test.ts
-      - apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts
-      - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.test.ts
+      - apps/server/src/orchestration-v2/runtimeLayer.test.ts
     upstream:
       status: equivalent
       tracking:
@@ -2834,14 +2869,13 @@ features:
     status: review-needed
     prs: [532]
     invariants:
-      - When startup reconciliation finds a thread whose turn was running before the restart, every tool call in that turn with no completion gets a tool.completed activity with status stopped, whether or not the thread is continued afterwards; threads whose provider session is still live are left alone.
+      - When startup reconciliation finds a thread whose turn was running before the restart, every tool item in that turn with no completion is terminalized with native cancelled status, whether or not the thread is continued afterwards; ordinary live runtime activity is left alone.
       - The stopped row keeps the call's last payload and last update time, so it sorts with the work it ended rather than at the restart.
       - Web and mobile show a tool call whose completion is stopped instead of hiding it as still running, and label it as stopped (for example "Command stopped"); background task progress that reports cancelled or interrupted stays hidden.
+    rationale: Upstream V2 cancels unfinished native tool items and supersedes V1 stopped activity inference. The fork retains each interrupted tool's last recorded payload and timestamps instead of moving it to restart time, preserving its ordering and duration across an outage.
     implementation_paths:
       - apps/mobile/src/lib/threadActivity.ts
-      - apps/server/src/persistence/Layers/ProjectionThreadActivities.ts
-      - apps/server/src/persistence/Services/ProjectionThreadActivities.ts
-      - apps/server/src/serverRuntimeStartup.ts
+      - apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts
       - apps/web/src/components/chat/MessagesTimeline.logic.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/session-logic.ts
@@ -2849,24 +2883,23 @@ features:
       - packages/shared/src/toolRowPresentation.ts
     upstream_paths:
       - apps/mobile/src/lib/threadActivity.ts
-      - apps/server/src/persistence/Layers/ProjectionThreadActivities.ts
+      - apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts
       - apps/server/src/serverRuntimeStartup.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/session-logic.ts
       - packages/client-runtime/src/work-log/presentation.ts
     tests:
       - apps/mobile/src/lib/threadActivity.test.ts
-      - apps/server/src/persistence/Layers/ProjectionThreadActivities.test.ts
-      - apps/server/src/serverRuntimeStartup.reconcile.test.ts
+      - apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.test.ts
       - apps/web/src/session-logic.test.ts
       - packages/shared/src/toolRowPresentation.test.ts
     upstream:
-      status: equivalent
+      status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/15323
         - https://github.com/pingdotgg/t3code/pull/15604
         - https://github.com/pingdotgg/t3code/pull/2829
-      retire_when: Upstream records tool calls that a restart or crash left unfinished as stopped and shows them in both clients.
+      retire_when: Upstream records tool calls that a restart or crash left unfinished as stopped, preserves their last recorded payload and timestamps for ordering and duration across the outage, and shows them in both clients.
 
   - id: review-findings-card
     title: Show code-review findings as a card
@@ -2878,10 +2911,11 @@ features:
       - The findings card lists each finding's title and location when collapsed and adds the summary and failure scenario when expanded; on web it starts expanded while its report belongs to the thread's latest turn, on mobile it starts collapsed, and toggling flips that default.
       - A rejected ReportFindings call is hidden once the agent submits an accepted report in the same turn; a rejection with no accepted retry stays visible.
       - The activity projection carries ReportFindings findings with a bounded count and bounded field lengths, and keeps them off the wire for every other tool.
+    rationale: Upstream V2 owns dynamic tool items and transport bounds, but de343914 has no ReportFindings card and generic large-input summarization loses its findings array. The fork keeps bounded structured findings and the fold-visible cards against canonical items.
     implementation_paths:
       - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/lib/threadActivity.ts
-      - apps/server/src/orchestration/ActivityPayloadProjection.ts
+      - apps/server/src/orchestration-v2/WireProjection.ts
       - apps/web/src/components/chat/MessagesTimeline.logic.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/session-logic.ts
@@ -2891,21 +2925,22 @@ features:
     upstream_paths:
       - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/lib/threadActivity.ts
-      - apps/server/src/orchestration/ActivityPayloadProjection.ts
+      - apps/server/src/orchestration-v2/WireProjection.ts
       - apps/web/src/components/chat/MessagesTimeline.logic.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/session-logic.ts
       - packages/client-runtime/src/work-log/presentation.ts
     tests:
       - apps/mobile/src/lib/threadActivity.test.ts
-      - apps/server/src/orchestration/ActivityPayloadProjection.test.ts
+      - apps/server/src/orchestration-v2/WireProjection.test.ts
       - apps/web/src/components/chat/MessagesTimeline.logic.test.ts
       - packages/client-runtime/src/work-log/presentation.test.ts
       - packages/shared/src/reviewFindings.test.ts
       - packages/shared/src/toolRowPresentation.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream renders ReportFindings results as a readable findings list that survives turn folding on web and mobile.
 
   - id: same-turn-follow-up-lifecycle
@@ -2916,14 +2951,17 @@ features:
       - A queued replacement turn keeps the thread active across provider completion without briefly presenting completed work.
       - A follow-up absorbed into the active provider turn is adopted and cleared so the session settles instead of remaining falsely stuck on Working.
     implementation_paths:
-      - apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
-      - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
+      - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
     upstream_paths:
-      - apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
-      - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
+      - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
     tests:
-      - apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts
-      - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts
+      - apps/server/src/orchestration-v2/ProviderEventIngestor.test.ts
+      - apps/server/src/orchestration-v2/QueuedRunOrder.test.ts
+      - apps/server/src/orchestration-v2/SteeringCompletion.integration.test.ts
     upstream:
       status: tracking
       tracking:
@@ -2936,37 +2974,38 @@ features:
     status: maintained
     prs: [515, 744]
     invariants:
-      - When restart recovery sends a continuation, the thread records one server-restart.continued activity, timestamped before the send and attached to the turn the provider started for the continued work; background-work continuations record a separate server-restart.background-continued activity.
-      - A failed continuation records no restart activity; the thread settles with the existing continuation error instead.
-      - Web and mobile show the restart as a standalone note in the turn's work that is never merged into grouped work rows and stays visible when a folded turn has nothing else to hide, while context compaction keeps its divider; each standalone kind names how clients draw it, so a new kind does not inherit the restart note.
-      - A turn opened by a server-restart.continued note with no user message since the previous turn folds together with that turn as one response, with one "Worked for" row and one final answer; the time between the interrupted turn's last entry and the note is left out of that duration; background-work continuations stay separate.
-      - While a promptless replacement turn is working, mobile keeps all provider turns since the latest user message unfolded and their assistant footers hidden, matching web; live tool indicators stay scoped to the replacement turn, and a new user message starts a separate response.
-      - The live conversation timer on web and mobile includes the work before each restart and excludes the gaps between interrupted work and continuation notes, matching the completed or stopped response duration, including quiet work through its recorded end time; new user prompts start a fresh timer.
-      - Each prompt timestamp starts at most one response, so a separate background response restarted later excludes the earlier response and idle time. Tool completion timestamps remain timing boundaries when lifecycle rows are collapsed or positioned at their start; a stopped response includes the last tool's full duration even when an overlapping tool or message appears later in display order.
-    rationale: Upstream's new orchestrator continues a restarted thread with a visible "Continue where you left off." message that starts a new response. The fork shows the restart as a small note inside the interrupted response, so the work reads as one answer. When the new orchestrator is taken in, web and mobile draw its continuation message as this note.
+      - Restart recovery records a durable server-created continuation message and an explicit restartContinuationOfRunId link; retries do not dispatch the same recovery message twice and newer user work takes precedence.
+      - Web and mobile render the recovery prompt as a standalone note inside the interrupted response, preserving one final answer and one worked duration with the outage excluded; unrelated background wake continuations remain separate.
+      - While a linked replacement run is working, earlier assistant footers stay hidden and tools remain scoped to their own run; a new user message starts a separate response.
+      - The live conversation timer on web and mobile includes work before each linked restart and excludes outage gaps, matching completed or stopped response duration, including quiet work through its recorded end time; new user prompts start a fresh timer.
+      - Each prompt starts at most one response. Separate background responses exclude earlier response work and idle time; collapsed or start-positioned tool rows retain completion timing boundaries, and stopped responses include the full duration of overlapping tools.
+      - Recovery closes dead streaming messages and unfinished provider work using their last recorded update times, while event and run lifecycle timestamps still record when recovery occurred.
+    rationale: Upstream V2 durable continuation messages and explicit run lineage supersede V1 restart activity events and their inferred turn linkage. The fork retains the note presentation, linked response folding, outage exclusion, and mobile footer behavior against canonical V2 recovery state.
     implementation_paths:
       - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/mobile/src/state/use-thread-composer-state.ts
-      - apps/server/src/serverRuntimeStartup.ts
+      - apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts
+      - apps/server/src/orchestration-v2/RestartContinuation.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/chat/MessagesTimeline.logic.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/session-logic.ts
       - packages/client-runtime/src/work-log/presentation.ts
-      - packages/client-runtime/src/work-log/toolStart.ts
-      - packages/contracts/src/orchestration.ts
+      - packages/contracts/src/orchestrationV2.ts
     upstream_paths:
       - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/lib/threadActivity.ts
-      - apps/server/src/serverRuntimeStartup.ts
+      - apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts
+      - apps/server/src/orchestration-v2/RestartContinuation.ts
       - apps/web/src/components/chat/MessagesTimeline.logic.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - packages/client-runtime/src/work-log/presentation.ts
-      - packages/contracts/src/orchestration.ts
+      - packages/contracts/src/orchestrationV2.ts
     tests:
       - apps/mobile/src/lib/threadActivity.test.ts
-      - apps/server/src/serverRuntimeStartup.reconcile.test.ts
+      - apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.test.ts
+      - apps/server/src/orchestration-v2/RestartContinuation.test.ts
       - apps/web/src/components/chat/MessagesTimeline.logic.test.ts
       - packages/client-runtime/src/work-log/presentation.test.ts
     upstream:
@@ -2988,14 +3027,14 @@ features:
       - Each runtime layer group tears down inside a shutdown.<group> span, so a report names the group that is still tearing down even when its own finalizers are untraced.
     implementation_paths:
       - apps/server/src/observability/OpenSpans.ts
-      - apps/server/src/provider/Layers/ProviderService.ts
+      - apps/server/src/orchestration-v2/ProviderSessionManager.ts
       - apps/server/src/server.ts
     upstream_paths:
-      - apps/server/src/provider/Layers/ProviderService.ts
+      - apps/server/src/orchestration-v2/ProviderSessionManager.ts
       - apps/server/src/server.ts
     tests:
       - apps/server/src/observability/OpenSpans.test.ts
-      - apps/server/src/provider/Layers/ProviderService.test.ts
+      - apps/server/src/orchestration-v2/ProviderSessionManager.test.ts
     upstream:
       status: tracking
       tracking:
@@ -3031,9 +3070,9 @@ features:
       - apps/web/src/versionSkew.ts
     tests:
       - apps/server/src/environment/HostActivity.test.ts
-      - apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts
-      - apps/server/src/server.test.ts
-      - apps/server/src/serverRuntimeStartup.reconcile.test.ts
+      - apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.test.ts
+      - apps/server/src/orchestration-v2/RestartContinuation.test.ts
+      - apps/server/src/serverRuntimeStartup.test.ts
       - apps/web/src/components/ServerUpdateAction.logic.test.ts
       - apps/web/src/components/ServerUpdateAction.test.tsx
       - apps/web/src/versionSkew.test.ts
@@ -3144,14 +3183,42 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9759
       retire_when: Upstream keeps read Approval rows at full prominence, as it already does for Input rows.
 
+  - id: sidebar-checkpoint-diff-stats
+    title: Show the latest checkpoint change counts in the thread list
+    status: maintained
+    prs: []
+    invariants:
+      - Sidebar change counts use the latest ready completed native root checkpoint, falling back to frozen historical checkpoints, and exclude subagent checkpoint scopes.
+      - The server sums file additions and deletions only for the selected checkpoint and sends compact totals on the shell without hydrating the transcript or sending checkpoint file arrays.
+      - Missing checkpoints remove the badge, and obsolete transcript or checkpoint file payloads do not break shell reads.
+    rationale: Upstream de343914 leaves the sidebar diff badge calculation returning null because V2 shells lack checkpoint totals. The fork supplies a bounded shell summary while preserving the upstream separation between shell and thread detail.
+    implementation_paths:
+      - apps/server/src/orchestration-v2/ProjectionStore.ts
+      - apps/web/src/components/Sidebar.tsx
+      - packages/client-runtime/src/state/models.ts
+      - packages/contracts/src/orchestrationV2.ts
+    upstream_paths:
+      - apps/server/src/orchestration-v2/ProjectionStore.ts
+      - apps/web/src/components/Sidebar.tsx
+      - packages/client-runtime/src/state/models.ts
+      - packages/contracts/src/orchestrationV2.ts
+    tests:
+      - apps/server/src/orchestration-v2/ProjectionStore.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/2829
+      retire_when: Upstream supplies bounded latest checkpoint change totals through V2 shells and displays them in the sidebar, including preserved historical checkpoints.
+
   - id: sidebar-last-message-time
     title: Choose the timestamp shown for thread activity
-    status: review-needed
+    status: maintained
     prs: [538]
     invariants:
       - Active thread rows on web and mobile, and web command palette thread actions, default to time since the last user prompt; a local preference can instead show the latest message including agent replies. The preference does not change thread ordering.
       - When an older server omits the latest message timestamp, Last message uses the latest thread activity time as an approximation rather than reverting to the last user prompt.
       - Existing threads receive the latest message timestamp during migration; new messages advance it and reverting a turn recalculates it from retained messages without reading message bodies into sidebar summaries.
+    rationale: V2 derives the optional latestMessageAt field from retained message timestamps in both SQL shells and full projections; this supersedes the V1 timestamp column and backfill. Migrated historical messages participate without reading their bodies, and deleting reverted messages recalculates the timestamp immediately.
     implementation_paths:
       - apps/mobile/src/features/home/HomeScreen.tsx
       - apps/mobile/src/features/settings/SettingsThreadsRouteScreen.tsx
@@ -3159,31 +3226,28 @@ features:
       - apps/mobile/src/features/threads/thread-list-v2-items.tsx
       - apps/mobile/src/features/threads/threadListV2.ts
       - apps/mobile/src/persistence/mobile-preferences.ts
-      - apps/server/src/orchestration/Layers/ProjectionPipeline.ts
-      - apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.ts
       - apps/server/src/persistence/ForkMigrations.ts
       - apps/server/src/persistence/ForkMigrations/004_ProjectionThreadLatestMessageAt.ts
-      - apps/server/src/persistence/Layers/ProjectionThreads.ts
       - apps/web/src/components/CommandPalette.logic.ts
       - apps/web/src/components/LegacySidebar.tsx
       - apps/web/src/components/Sidebar.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
+      - packages/client-runtime/src/state/models.ts
       - packages/client-runtime/src/state/thread-timestamp.ts
-      - packages/contracts/src/orchestration.ts
+      - packages/contracts/src/orchestrationV2.ts
       - packages/contracts/src/settings.ts
     upstream_paths:
       - apps/mobile/src/features/threads/thread-list-v2-items.tsx
       - apps/mobile/src/features/threads/threadListV2.ts
-      - apps/server/src/orchestration/Layers/ProjectionPipeline.ts
-      - apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts
-      - apps/server/src/persistence/Layers/ProjectionThreads.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.ts
       - apps/web/src/components/CommandPalette.logic.ts
       - apps/web/src/components/LegacySidebar.tsx
       - apps/web/src/components/Sidebar.tsx
-      - packages/contracts/src/orchestration.ts
+      - packages/contracts/src/orchestrationV2.ts
     tests:
       - apps/mobile/src/features/threads/threadListV2.test.ts
-      - apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts
+      - apps/server/src/cli/drive.test.ts
       - apps/server/src/persistence/ForkMigrations.test.ts
       - apps/web/src/components/CommandPalette.logic.test.ts
       - packages/client-runtime/src/state/thread-timestamp.test.ts
@@ -3270,7 +3334,6 @@ features:
     tests:
       - apps/server/src/project/ProjectCloneTracker.test.ts
       - apps/server/src/project/RepositoryIdentityResolver.test.ts
-      - apps/server/src/server.test.ts
       - apps/server/src/sourceControl/GitHubCli.test.ts
       - apps/server/src/sourceControl/SourceControlRepositoryService.test.ts
       - packages/client-runtime/src/operations/projects.test.ts
@@ -3293,29 +3356,59 @@ features:
       - Each normalized workspace receives a persistent non-overlapping range of ten development ports that is reused across server restarts and threads sharing that workspace.
       - The first port is exposed canonically as `STYAL_WORKSPACE_PORT` to terminal children, project scripts, and fresh or resumed Codex, Claude, Cursor, Grok, and OpenCode sessions, with a one-way `T3CODE_WORKSPACE_PORT` compatibility alias for existing scripts.
       - The repository dev runner uses the workspace base port for the server and the next port for Vite while preserving explicit port, offset, instance, and development URL overrides.
+      - Cursor SDK sessions use separate worker environments, so simultaneous workspaces and provider profiles expose their own ports and device environment to shell children without changing the server environment.
     implementation_paths:
+      - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/CursorAgentSdk.ts
+      - apps/server/src/orchestration-v2/Adapters/CursorSdkWorker.ts
+      - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/PiAdapterV2.ts
+      - apps/server/src/orchestration-v2/RuntimePolicy.ts
       - apps/server/src/persistence/ForkMigrations/002_WorkspacePortAllocations.ts
-      - apps/server/src/provider/Layers/ProviderService.ts
       - apps/server/src/server.ts
       - apps/server/src/terminal/Manager.ts
       - apps/server/src/workspace/WorkspacePortAllocator.ts
       - scripts/dev-runner.ts
       - t3.json
     upstream_paths:
-      - apps/server/src/provider/Layers/ProviderService.ts
+      - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/CursorAgentSdk.ts
+      - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/PiAdapterV2.ts
+      - apps/server/src/orchestration-v2/RuntimePolicy.ts
       - apps/server/src/terminal/Manager.ts
       - scripts/dev-runner.ts
       - t3.json
     tests:
       - apps/server/integration/workspacePortEnvironment.integration.test.ts
+      - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/Adapters/CursorSdkWorker.test.ts
+      - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.test.ts
+      - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/Adapters/PiAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/RuntimePolicy.test.ts
       - apps/server/src/persistence/ForkMigrations.test.ts
-      - apps/server/src/provider/Layers/ProviderService.test.ts
       - apps/server/src/terminal/Manager.test.ts
       - apps/server/src/workspace/WorkspacePortAllocator.test.ts
       - scripts/dev-runner.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream assigns equivalent persistent workspace port ranges across every process surface and safely preserves existing installations carrying the fork allocation schema.
 
   - id: startup-navigation-continuity
@@ -3371,7 +3464,8 @@ features:
     rationale: Users bring their own subscriptions, so a fixed default provider fails for anyone without that subscription. Upstream falls back only when the selected provider is disabled in settings.
     implementation_paths:
       - apps/server/src/git/GitManager.ts
-      - apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
+      - apps/server/src/orchestration-v2/ThreadTitleRegenerationService.ts
+      - apps/server/src/textGeneration/TextGeneration.ts
       - apps/web/src/components/settings/SettingsPanels.tsx
       - apps/web/src/modelSelection.ts
       - packages/contracts/src/settings.ts
@@ -3383,6 +3477,7 @@ features:
       - packages/contracts/src/settings.ts
       - packages/shared/src/serverSettings.ts
     tests:
+      - apps/server/src/textGeneration/TextGeneration.test.ts
       - apps/web/src/modelSelection.test.ts
       - packages/shared/src/serverSettings.test.ts
     upstream:
@@ -3428,7 +3523,7 @@ features:
     upstream_paths:
       - apps/server/src/ws.ts
     tests:
-      - apps/server/src/server.test.ts
+      - apps/server/src/ws.test.ts
     upstream:
       status: partial
       tracking:
@@ -3492,25 +3587,30 @@ features:
   - id: turn-token-usage
     title: Show the model, token usage, and estimated cost under each agent turn, and the thread's total
     status: review-needed
-    prs: []
+    prs: [735, 736, 737]
     invariants:
-      - A completed or aborted turn records one usage activity when its provider reported token usage or its model is known; turns with neither record nothing.
+      - Completed or aborted provider turns retain reported token usage and model choices; turns with neither contribute no usage. Legacy threads preserve their recorded usage and exact cost as a frozen history baseline.
       - Every provider reports the model and reasoning-option id each turn starts with; the provider service copies them onto the turn's completion, replacing the model on a reroute, and clients name them as the composer does, falling back to the provider's ids.
       - Web and desktop show the turn's model and effort, then its total tokens, beside its timestamp, with input, cached share, output, reasoning, and cache writes on hover; mobile shows the same with details on tap.
-      - Each usage activity carries the thread's total, summed on the server over every recorded turn, so long threads are not undercounted by the client's activity window; the composer shows it, and its breakdown says how many turns it includes when some reported no usage. Activities without usage carry no total until some turn reports usage, and decode as no usage on clients that predate models.
+      - Thread totals combine every persisted provider turn with the frozen legacy history baseline, so bounded client history windows do not undercount long threads. Multiple provider turns in one application run aggregate once for its turn label; breakdowns indicate partial usage and cost coverage.
       - Claude, Codex, and OpenCode turns record their subagents' usage separately from the main agent's; turn and thread figures include it, and the breakdown notes subagent usage only where a provider could not report it.
       - The server prices each turn when recording it, by model where the provider splits usage, preferring custom rates, then the provider's own cost (Claude modelUsage, OpenCode steps), then LiteLLM rates; a turn with any unpriced model records no cost. Breakdowns show the turn's and thread's estimated API cost, and say how many turns the thread's cost covers.
       - A client setting (device-local on mobile) makes the turn and composer figures lead with the estimated cost, falling back to tokens where there is none; the composer's figure, tokens or cost, rolls its changed digits once when it changes within a thread, never on a thread switch and not under reduced motion.
-      - The thread summary carries the newest usage record's thread total, kept by the projector and recomputed after a revert; the web sidebar's thread hover card and the mobile thread menu's title show it, as tokens or cost per the same settings.
-      - Claude, Codex, and OpenCode report a running turn's usage as it grows; the server prices it and keeps it in memory only, adding it to the thread summary's total until the turn's usage record replaces it, so the composer's total moves during a turn without writing extra rows.
-      - A client setting (device-local on mobile) hides the figures, and usage activities never render as work-log rows.
+      - Compact thread shells carry the total across the complete retained provider-turn history and frozen legacy baseline; sidebar hover cards on web and desktop and thread-menu titles on mobile show tokens or estimated cost according to the same device setting.
+      - Claude, Codex, and OpenCode report partial usage while a turn runs; each update replaces that provider turn's prior snapshot, and its final result replaces live usage without double counting. Child provider turns contribute once, and rolled-back turns contribute nothing.
+      - A client setting (device-local on mobile) hides the figures; usage metadata does not render as a work-log row.
     implementation_paths:
       - apps/mobile/src/features/threads/MeterText.tsx
       - apps/mobile/src/features/threads/TurnUsageText.tsx
+      - apps/mobile/src/features/threads/thread-list-v2-items.tsx
       - apps/mobile/src/state/use-turn-usage.ts
-      - apps/server/src/orchestration/ThreadLiveTurnUsage.ts
-      - apps/server/src/persistence/ForkMigrations/005_ProjectionThreadTokenUsage.ts
+      - apps/server/src/dataImport/LegacyHistoryWriter.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.ts
+      - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
+      - apps/server/src/persistence/ForkMigrations/006_LegacyTurnUsage.ts
+      - apps/web/src/components/Sidebar.tsx
       - apps/web/src/components/chat/TurnUsageLabel.tsx
+      - packages/contracts/src/legacyTurnUsage.ts
       - packages/shared/src/turnUsage.ts
     upstream_paths:
       - apps/mobile/src/features/settings/SettingsThreadsRouteScreen.tsx
@@ -3520,20 +3620,13 @@ features:
       - apps/mobile/src/features/threads/thread-list-v2-items.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/mobile/src/persistence/mobile-preferences.ts
-      - apps/server/src/orchestration/Layers/ProjectionPipeline.ts
-      - apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts
-      - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
-      - apps/server/src/orchestration/runtimeLayer.ts
-      - apps/server/src/persistence/Layers/ProjectionThreads.ts
-      - apps/server/src/persistence/Layers/ProjectionTurns.ts
-      - apps/server/src/persistence/Services/ProjectionThreads.ts
-      - apps/server/src/provider/Layers/AntigravityAdapter.ts
-      - apps/server/src/provider/Layers/ClaudeAdapter.ts
-      - apps/server/src/provider/Layers/CodexAdapter.ts
-      - apps/server/src/provider/Layers/CursorAdapter.ts
-      - apps/server/src/provider/Layers/GrokAdapter.ts
-      - apps/server/src/provider/Layers/OpenCodeAdapter.ts
-      - apps/server/src/provider/Layers/ProviderService.ts
+      - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.ts
+      - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
       - apps/server/src/usage/UsageService.ts
       - apps/server/src/usage/usagePricing.ts
       - apps/web/src/components/BranchToolbar.tsx
@@ -3545,19 +3638,15 @@ features:
       - apps/web/src/components/settings/settingsSearch.ts
       - apps/web/src/index.css
       - apps/web/src/session-logic.ts
-      - packages/contracts/src/orchestration.ts
       - packages/contracts/src/providerRuntime.ts
       - packages/contracts/src/settings.ts
     tests:
-      - apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts
-      - apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.test.ts
-      - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.activity.test.ts
-      - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts
-      - apps/server/src/persistence/ForkMigrations.test.ts
-      - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
-      - apps/server/src/provider/Layers/CodexAdapter.test.ts
-      - apps/server/src/provider/Layers/OpenCodeAdapter.test.ts
-      - apps/server/src/provider/Layers/ProviderService.test.ts
+      - apps/server/src/dataImport/LegacyHistoryWriter.test.ts
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.test.ts
+      - apps/server/src/orchestration-v2/ProviderEventIngestor.test.ts
       - apps/server/src/usage/UsageService.test.ts
       - packages/shared/src/turnUsage.test.ts
     upstream:
@@ -3678,7 +3767,7 @@ features:
       - packages/contracts/src/t3ProjectFile.ts
       - packages/shared/src/projectSettings.ts
     tests:
-      - apps/server/src/server.test.ts
+      - apps/server/src/orchestration-v2/ThreadLaunchService.test.ts
       - apps/web/src/components/ChatView.logic.test.ts
       - packages/client-runtime/src/state/vcsStatus.test.ts
       - packages/contracts/src/settings.test.ts

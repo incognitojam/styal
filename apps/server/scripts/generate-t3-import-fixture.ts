@@ -4,12 +4,12 @@
  * Generates the T3 Code data directory that the import end-to-end test reads.
  *
  *   node apps/server/scripts/generate-t3-import-fixture.ts \
- *     --server <checkout> --out <dir> [--root /tmp/t3-import-fixture]
+ *     --server <checkout> --out <dir> [--root <isolated-scratch-directory>]
  *
  * `--server` is a T3 Code or styal checkout with dependencies installed. The
  * script starts that checkout's server in a new home under `--root`, points
  * Codex at `fake-codex.ts`, and builds projects, turns, and thread states
- * through the server's HTTP API, so every stored row comes from that server.
+ * through the server's V2 RPC and HTTP APIs, so every stored row comes from that server.
  * `--root` becomes part of the stored paths; the default keeps them neutral.
  *
  * `--out` receives:
@@ -78,10 +78,10 @@ const SCENARIO = {
 const SETTINGS = {
   defaultThreadEnvMode: "local",
   newWorktreesStartFromOrigin: false,
-  responseStreamingMode: "token",
+  responseStreamingMode: "paragraph",
   enableProviderUpdateChecks: false,
   enableAgentBrowserAccess: false,
-  addProjectBaseDirectory: "/tmp/t3-import-fixture/projects",
+  addProjectBaseDirectory: "/workspace/fixture/projects",
 };
 
 /** Tables with credentials or per-server identity; the importer never reads them. */
@@ -109,7 +109,9 @@ function parseArgs(argv: ReadonlyArray<string>): Args {
   return {
     server: NodePath.resolve(server),
     out: NodePath.resolve(out),
-    root: NodePath.resolve(value("--root") ?? "/tmp/t3-import-fixture"),
+    root: NodePath.resolve(
+      value("--root") ?? NodePath.join(STYAL_ROOT, ".scratch/upstream-v2-import-fixture-runtime"),
+    ),
   };
 }
 
@@ -185,6 +187,12 @@ async function waitFor<T>(
 class Api {
   private readonly origin: string;
   private readonly token: string;
+  private socket: WebSocket | null = null;
+  private nextRequestId = 0;
+  private readonly pending = new Map<
+    string,
+    { resolve: (value: unknown) => void; reject: (error: Error) => void }
+  >();
 
   constructor(origin: string, token: string) {
     this.origin = origin;
@@ -197,6 +205,7 @@ class Api {
       signal: AbortSignal.timeout(30_000),
       headers: {
         authorization: `Bearer ${this.token}`,
+        "x-t3-orchestration-protocol": "2",
         ...(body === undefined ? {} : { "content-type": "application/json" }),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -206,25 +215,91 @@ class Api {
     return text.length === 0 ? null : JSON.parse(text);
   }
 
+  async connect(): Promise<void> {
+    const { ticket } = (await this.request("POST", "/api/auth/websocket-ticket")) as {
+      ticket: string;
+    };
+    const socket = new WebSocket(
+      `${this.origin.replace(/^http/, "ws")}/ws?orchestrationProtocol=2&wsTicket=${encodeURIComponent(ticket)}`,
+    );
+    this.socket = socket;
+    socket.addEventListener("message", (event) => {
+      const messages = JSON.parse(String(event.data));
+      for (const message of Array.isArray(messages) ? messages : [messages]) {
+        if (message._tag === "Ping") {
+          socket.send(JSON.stringify({ _tag: "Pong" }));
+          continue;
+        }
+        if (message._tag !== "Exit") continue;
+        const pending = this.pending.get(String(message.requestId));
+        if (!pending) continue;
+        this.pending.delete(String(message.requestId));
+        if (message.exit._tag === "Success") pending.resolve(message.exit.value);
+        else pending.reject(new Error(JSON.stringify(message.exit)));
+      }
+    });
+    await new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener(
+        "error",
+        () => reject(new Error("Fixture websocket connection failed")),
+        { once: true },
+      );
+    });
+    socket.addEventListener("close", () => {
+      for (const pending of this.pending.values())
+        pending.reject(new Error("Fixture websocket closed"));
+      this.pending.clear();
+    });
+  }
+
+  rpc(tag: string, payload: unknown): Promise<unknown> {
+    const socket = this.socket;
+    if (!socket || socket.readyState !== WebSocket.OPEN)
+      return Promise.reject(new Error("Fixture websocket is not open"));
+    const id = String(++this.nextRequestId);
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+      socket.send(
+        JSON.stringify({
+          _tag: "Request",
+          id,
+          tag,
+          payload,
+          headers: [["x-t3-orchestration-protocol", "2"]],
+        }),
+      );
+    });
+  }
+
+  close(): void {
+    this.socket?.close();
+  }
+
   dispatch(command: Record<string, unknown>): Promise<unknown> {
-    return this.request("POST", "/api/orchestration/dispatch", command);
+    return this.rpc(
+      String(command.type).startsWith("project.")
+        ? "projects.mutate"
+        : "orchestration.dispatchCommand",
+      command,
+    );
   }
 
   async thread(threadId: string): Promise<ThreadDetail> {
-    // Without the opt-in, the server shows thinking messages as system messages for older clients.
-    const detail = (await this.request(
-      "GET",
-      `/api/orchestration/threads/${threadId}?reasoningMessages=true`,
-    )) as {
-      thread: ThreadDetail;
+    const detail = (await this.request("GET", `/api/orchestration/threads/${threadId}`)) as {
+      projection: ThreadDetail;
     };
-    return detail.thread;
+    return detail.projection;
   }
 }
 
 interface ThreadDetail {
-  readonly latestTurn: { readonly turnId: string; readonly state: string } | null;
-  readonly checkpoints: ReadonlyArray<{ readonly turnId: string }>;
+  readonly runs: ReadonlyArray<{
+    readonly id: string;
+    readonly status: string;
+    readonly checkpointId: string | null;
+  }>;
+  readonly checkpoints: ReadonlyArray<{ readonly id: string }>;
 }
 
 let commandCount = 0;
@@ -258,6 +333,8 @@ async function createThread(
     threadId: input.threadId,
     projectId: input.projectId,
     title: input.title,
+    createdBy: "user",
+    creationSource: "server",
     modelSelection: MODEL_SELECTION,
     runtimeMode: "full-access",
     interactionMode: "default",
@@ -267,33 +344,49 @@ async function createThread(
   });
 }
 
-/** Sends a message and waits for its turn to finish and its checkpoint to land. */
+/** Waits for terminal run state and, for completed runs, its persisted checkpoint. */
 async function sendTurn(
   api: Api,
   threadId: string,
   text: string,
   attachments: ReadonlyArray<Record<string, unknown>> = [],
 ) {
-  const before = (await api.thread(threadId)).latestTurn?.turnId;
+  const before = (await api.thread(threadId)).runs.at(-1)?.id;
+  const messageId = commandId("message");
+  const persisted =
+    attachments.length === 0
+      ? []
+      : (
+          (await api.rpc("assets.persistChatAttachments", {
+            threadId,
+            messageId,
+            attachments,
+          })) as { attachments: ReadonlyArray<Record<string, unknown>> }
+        ).attachments;
   await api.dispatch({
-    type: "thread.turn.start",
+    type: "message.dispatch",
     commandId: commandId("turn"),
     threadId,
-    message: { messageId: commandId("message"), role: "user", text, attachments },
+    messageId,
+    text,
+    attachments: persisted,
     modelSelection: MODEL_SELECTION,
-    runtimeMode: "full-access",
-    interactionMode: "default",
-    createdAt: now(),
+    createdBy: "user",
+    creationSource: "server",
+    dispatchMode: { type: "start_immediately" },
   });
-  const turnId = await waitFor(`the turn in ${threadId} to finish`, async () => {
-    const turn = (await api.thread(threadId)).latestTurn;
-    return turn && turn.turnId !== before && turn.state !== "running" ? turn.turnId : undefined;
+  await waitFor(`the run in ${threadId} to settle`, async () => {
+    const projection = await api.thread(threadId);
+    const run = projection.runs.at(-1);
+    return run &&
+      run.id !== before &&
+      ["completed", "failed", "interrupted", "cancelled"].includes(run.status) &&
+      (run.status !== "completed" ||
+        (run.checkpointId !== null &&
+          projection.checkpoints.some((checkpoint) => checkpoint.id === run.checkpointId)))
+      ? run.id
+      : undefined;
   });
-  await waitFor(`the checkpoint for ${threadId}`, async () =>
-    (await api.thread(threadId)).checkpoints.some((checkpoint) => checkpoint.turnId === turnId)
-      ? true
-      : undefined,
-  );
 }
 
 async function runScenario(api: Api, root: string) {
@@ -553,9 +646,10 @@ async function main() {
       .split("\n")
       .at(-1)!;
     const api = new Api(origin, token);
+    await api.connect();
     const expected = await runScenario(api, args.root);
     // The snapshot lists threads without their messages, activities, or checkpoints.
-    const snapshot = (await api.request("GET", "/api/orchestration/snapshot")) as {
+    const snapshot = (await api.request("GET", "/api/orchestration/shell")) as {
       readonly threads: ReadonlyArray<{ readonly id: string }>;
     };
     const { archivedDetails, ...manifestScenario } = expected;
@@ -565,13 +659,14 @@ async function main() {
     }
     const view = { snapshot, threads };
 
+    api.close();
     server.kill("SIGTERM");
     await exited;
 
     NodeFS.rmSync(args.out, { recursive: true, force: true });
     NodeFS.mkdirSync(args.out, { recursive: true });
     dumpDatabase(
-      NodePath.join(home, "userdata/state.sqlite"),
+      NodePath.join(home, "userdata/statev2.sqlite"),
       NodePath.join(args.out, "state.sql"),
     );
     NodeFS.cpSync(
@@ -593,6 +688,8 @@ async function main() {
       NodePath.join(args.out, "manifest.json"),
       `${JSON.stringify(
         {
+          orchestrationVersion: 2,
+          databaseFilename: "statev2.sqlite",
           serverRevision: git(args.server, "rev-parse", "HEAD"),
           generatedAt: now(),
           root: args.root,

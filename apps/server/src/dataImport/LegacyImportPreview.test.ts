@@ -10,9 +10,53 @@ import * as Option from "effect/Option";
 
 import {
   inspectLegacyImportDatabase,
+  inspectLegacyImportDestinationState,
+  legacyContinuationKey,
   makeLegacyImportPreviewService,
   sanitizeLegacyResumeCursor,
 } from "./LegacyImportPreview.ts";
+
+it("recognizes V2 imports and durable repair receipts", () => {
+  const database = new NodeSqlite.DatabaseSync(":memory:");
+  try {
+    database.exec(`
+      CREATE TABLE projection_projects (project_id TEXT, workspace_root TEXT, deleted_at TEXT);
+      CREATE TABLE projection_threads (thread_id TEXT, project_id TEXT);
+      CREATE TABLE orchestration_events (event_id TEXT, event_type TEXT);
+      CREATE TABLE orchestration_command_receipts (command_id TEXT, command_type TEXT, status TEXT);
+      CREATE TABLE orchestration_v2_projection_threads (thread_id TEXT, payload_json TEXT);
+      CREATE TABLE orchestration_v2_projection_messages (thread_id TEXT, payload_json TEXT);
+      CREATE TABLE orchestration_v2_projection_provider_threads (provider_thread_id TEXT, driver TEXT, provider_instance_id TEXT, payload_json TEXT);
+      INSERT INTO projection_projects VALUES ('project-v2', '/synthetic/workspace', NULL);
+      INSERT INTO projection_threads VALUES ('obsolete-v1-thread', 'project-v2');
+      INSERT INTO orchestration_v2_projection_threads VALUES ('thread-v2', '{"projectId":"project-v2","activeProviderThreadId":"provider-v2"}');
+      INSERT INTO orchestration_v2_projection_messages VALUES ('thread-v2', '{"legacyTurnId":"historical-turn"}');
+      INSERT INTO orchestration_v2_projection_provider_threads VALUES ('provider-v2', 'claudeAgent', 'claudeAgent', '{"nativeThreadRef":{"nativeId":"synthetic-native-session"},"nativeConversationHeadRef":{"nativeId":"synthetic-head"}}');
+      INSERT INTO orchestration_command_receipts VALUES ('import:v1:prompt:original-prompt-link', 'thread.turn-prompt-linked.import', 'accepted');
+    `);
+    const destination = inspectLegacyImportDestinationState({
+      exec: (sql) => database.exec(sql),
+      all: (sql, parameters = []) => database.prepare(sql).all(...parameters),
+      close: () => {},
+    });
+    assert.deepEqual([...destination.threadIds], ["thread-v2"]);
+    assert.deepEqual(
+      [...(destination.turnIdsByThreadId.get("thread-v2") ?? [])],
+      ["historical-turn"],
+    );
+    assert.isTrue(destination.turnPromptLinkEventIds.has("original-prompt-link"));
+    assert.equal(
+      destination.continuationKeys.get("thread-v2"),
+      legacyContinuationKey({
+        providerName: "claudeAgent",
+        providerInstanceId: "claudeAgent",
+        resumeCursor: { threadId: "synthetic-native-session", resumeSessionAt: "synthetic-head" },
+      }),
+    );
+  } finally {
+    database.close();
+  }
+});
 
 function makeTempDirectory(): string {
   return NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-legacy-import-preview-"));

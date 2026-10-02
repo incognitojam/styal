@@ -5,7 +5,14 @@ import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import { describe, expect } from "vite-plus/test";
 
-import { ProviderInstanceId } from "@t3tools/contracts";
+import {
+  ProviderInstanceId,
+  ProviderDriverKind,
+  type ServerProvider,
+  type ModelSelection,
+  DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
+  TextGenerationError,
+} from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 
 import type { ProviderInstance } from "../provider/ProviderDriver.ts";
@@ -40,8 +47,16 @@ const makeStubInstance = (
     },
     displayName: undefined,
     enabled: true,
-    snapshot: {} as ProviderInstance["snapshot"],
-    adapter: {} as ProviderInstance["adapter"],
+    snapshot: {
+      getSnapshot: Effect.succeed({
+        instanceId,
+        driver: instanceId === "claudeAgent" ? "claudeAgent" : "codex",
+        enabled: true,
+        status: "ready",
+        auth: { status: "authenticated" },
+      } as ServerProvider),
+    } as ProviderInstance["snapshot"],
+    orchestrationAdapter: {} as ProviderInstance["orchestrationAdapter"],
     textGeneration,
   }) satisfies ProviderInstance;
 
@@ -141,6 +156,120 @@ describe("TextGeneration.make", () => {
       expect(result.branch).toBe("personal-branch");
       expect(personalCalls).toEqual(["Refactor the routing layer"]);
     }),
+  );
+
+  it.effect(
+    "selects a signed-in provider before each operation and never retries a generation failure",
+    () =>
+      Effect.gen(function* () {
+        const requested = createModelSelection(ProviderInstanceId.make("codex"), "chosen-model");
+        const calls: ModelSelection[] = [];
+        let signedIn = false;
+        let fail = false;
+        const record = (input: { modelSelection: ModelSelection }) =>
+          Effect.sync(() => {
+            calls.push(input.modelSelection);
+          });
+        const codexBase = makeStubInstance(
+          requested.instanceId,
+          makeStubTextGeneration({
+            generateBranchName: (input) =>
+              record(input).pipe(Effect.as({ branch: "codex-branch" })),
+          }),
+        );
+        const codex = {
+          ...codexBase,
+          snapshot: {
+            ...codexBase.snapshot,
+            getSnapshot: Effect.sync(
+              () =>
+                ({
+                  instanceId: requested.instanceId,
+                  driver: "codex",
+                  enabled: true,
+                  status: "ready",
+                  auth: { status: signedIn ? "authenticated" : "unauthenticated" },
+                }) as ServerProvider,
+            ),
+          },
+        };
+        const claude = makeStubInstance(
+          ProviderInstanceId.make("claudeAgent"),
+          makeStubTextGeneration({
+            generateThreadTitle: (input) =>
+              record(input).pipe(Effect.as({ title: "Synthetic title" })),
+            generateBranchName: (input) =>
+              record(input).pipe(
+                Effect.andThen(() =>
+                  fail
+                    ? Effect.fail(
+                        new TextGenerationError({
+                          operation: "generateBranchName",
+                          detail: "Synthetic failure",
+                        }),
+                      )
+                    : Effect.succeed({ branch: "claude-branch" }),
+                ),
+              ),
+            generateCommitMessage: (input) =>
+              record(input).pipe(
+                Effect.as({ subject: "Synthetic subject", body: "Synthetic body" }),
+              ),
+            generatePrContent: (input) =>
+              record(input).pipe(Effect.as({ title: "Synthetic PR", body: "Synthetic body" })),
+          }),
+        );
+        const generation = yield* TextGeneration.make.pipe(
+          Effect.provideService(
+            ProviderInstanceRegistry.ProviderInstanceRegistry,
+            makeStubRegistry([codex, claude]),
+          ),
+          Effect.provide(
+            Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+              resolveLink: () => Effect.die("No link lookup expected"),
+            }),
+          ),
+        );
+        const base = { cwd: process.cwd(), modelSelection: requested };
+        yield* generation.generateThreadTitle({
+          ...base,
+          message: "Synthetic prompt",
+          linkedContext: "Synthetic context",
+        });
+        yield* generation.generateBranchName({ ...base, message: "Synthetic prompt" });
+        yield* generation.generateCommitMessage({
+          ...base,
+          branch: null,
+          stagedSummary: "Synthetic change",
+          stagedPatch: "",
+        });
+        yield* generation.generatePrContent({
+          ...base,
+          baseBranch: "main",
+          headBranch: "synthetic",
+          commitSummary: "Synthetic change",
+          diffSummary: "",
+          diffPatch: "",
+        });
+        expect(calls).toHaveLength(4);
+        for (const selection of calls) {
+          expect(selection.instanceId).toBe(claude.instanceId);
+          expect(selection.model).toBe(
+            DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[ProviderDriverKind.make("claudeAgent")],
+          );
+        }
+        fail = true;
+        const failed = yield* generation
+          .generateBranchName({ ...base, message: "Synthetic prompt" })
+          .pipe(Effect.result);
+        expect(Result.isFailure(failed)).toBe(true);
+        expect(calls).toHaveLength(5);
+        signedIn = true;
+        expect(
+          (yield* generation.generateBranchName({ ...base, message: "Synthetic prompt" })).branch,
+        ).toBe("codex-branch");
+        expect(calls[5]).toEqual(requested);
+      }),
   );
 
   it.effect("fails with TextGenerationError when the instance is unknown", () =>

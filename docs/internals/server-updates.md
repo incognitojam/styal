@@ -104,3 +104,23 @@ Quit may bypass confirmation; update installs and settings restarts cannot consu
 This is a point-in-time check, not a shutdown lease: new work can arrive after the response. Do not
 use it alone to authorize unattended restarts, which need an admission barrier spanning inspection
 and shutdown.
+
+## Recovering interrupted threads
+
+Restart continuation is an environment-owned preference, off by default. The
+[v2 recovery service](../../apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts)
+requires matching durable run, provider thread, session, and native resume identity.
+Ordinary queued work, finished runs, and background-only work do not qualify.
+
+Recovery retires effects tied to the lost process and records continuation intent
+in the durable outbox. That intent survives another restart before provider startup.
+Continuation effects wait for activation; a slow provider must not delay the server's
+readiness or the launcher's commit boundary. Graceful shutdown captures intent before
+closing providers, then reconciles after ingestion has stopped so a late completion
+cannot be overwritten by a stale cancellation.
+
+The [continuation handler](../../apps/server/src/orchestration-v2/RestartContinuation.ts)
+rechecks the preference, archive state, provider selection, and newer user work before
+dispatching. Stable command and message IDs prevent duplicate submissions after an
+outbox retry. Codex resumes without adding provider prompt text; other adapters receive
+the continuation message through their normal turn path.

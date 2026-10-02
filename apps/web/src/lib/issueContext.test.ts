@@ -1,7 +1,9 @@
-import type { SourceControlIssue } from "@t3tools/contracts";
+import { ThreadId, OrchestrationMessageContext, type SourceControlIssue } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  recoverQueuedIssueContext,
   appendIssueContextsToPrompt,
   buildIssueContextBlock,
   extractTrailingIssueContexts,
@@ -208,5 +210,34 @@ describe("newIssueContextId", () => {
     const ids = new Set(Array.from({ length: 10 }, () => newIssueContextId()));
     expect(ids.size).toBe(10);
     for (const id of ids) expect(id.startsWith("issue_")).toBe(true);
+  });
+});
+
+describe("recoverQueuedIssueContext", () => {
+  it("round trips typed issue payloads through canonical message context and restores editable chips without duplicate blocks", () => {
+    const issue = {
+      ...makeSelection({ body: "A body with comment by synthetic: inside it" }),
+      id: "issue-queued",
+      threadId: ThreadId.make("synthetic-thread"),
+      attachedAt: "2026-10-01T00:00:00Z",
+    };
+    const wire = Schema.encodeSync(Schema.fromJsonString(OrchestrationMessageContext))({
+      version: 1,
+      records: [],
+      issueContexts: [issue],
+    });
+    const context = Schema.decodeUnknownSync(Schema.fromJsonString(OrchestrationMessageContext))(
+      wire,
+    );
+    const text = appendIssueContextsToPrompt("Fix this queued issue", [issue]);
+    const recovered = recoverQueuedIssueContext(text, context);
+    expect(recovered.prompt).toBe("Fix this queued issue");
+    expect(recovered.issueContexts).toEqual([issue]);
+    expect(appendIssueContextsToPrompt(recovered.prompt, recovered.issueContexts)).toBe(text);
+    expect(recovered.issueContexts[0]?.comments).not.toBe(context.issueContexts?.[0]?.comments);
+  });
+  it("keeps older queued issue blocks intact when structured metadata was not recorded", () => {
+    const text = appendIssueContextsToPrompt("Keep this", [makeSelection()]);
+    expect(recoverQueuedIssueContext(text, undefined)).toEqual({ prompt: text, issueContexts: [] });
   });
 });

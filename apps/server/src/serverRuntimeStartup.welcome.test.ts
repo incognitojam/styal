@@ -1,127 +1,115 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { DEFAULT_SERVER_SETTINGS, ProjectId, ThreadId } from "@t3tools/contracts";
+import * as HttpServer from "effect/unstable/http/HttpServer";
+import * as NetAddress from "effect/unstable/net/NetAddress";
+import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
+import * as ExternalLauncher from "./process/externalLauncher.ts";
+import * as EventSink from "./orchestration-v2/EventSink.ts";
+import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
-import * as HttpServer from "effect/unstable/http/HttpServer";
-import * as ExternalLauncher from "./process/externalLauncher.ts";
-
-import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
-import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
 import * as ServerConfig from "./config.ts";
-import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as Keybindings from "./keybindings.ts";
-import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
-import * as OrchestrationReactor from "./orchestration/Services/OrchestrationReactor.ts";
-import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
-import * as ThreadBackgroundLiveness from "./orchestration/ThreadBackgroundLiveness.ts";
-import * as ProjectionThreadActivities from "./persistence/Services/ProjectionThreadActivities.ts";
-import * as ProviderService from "./provider/Services/ProviderService.ts";
-import * as ProviderSessionDirectory from "./provider/Services/ProviderSessionDirectory.ts";
-import * as ProviderSessionReaper from "./provider/Services/ProviderSessionReaper.ts";
-import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
-import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
-import * as ServerSettings from "./serverSettings.ts";
-import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
-import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
+import * as LegacyImporter from "./orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
+import * as Recovery from "./orchestration-v2/ProviderRuntimeRecoveryService.ts";
+import * as Sessions from "./orchestration-v2/ProviderSessionManager.ts";
+import * as ThreadManagement from "./orchestration-v2/ThreadManagementService.ts";
+import * as ThreadLaunch from "./orchestration-v2/ThreadLaunchService.ts";
+import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
+import * as EffectWorker from "./orchestration-v2/EffectWorker.ts";
+import * as Projects from "./project/ProjectService.ts";
+import * as Relay from "./relay/AgentAwarenessRelay.ts";
+import * as Lifecycle from "./serverLifecycleEvents.ts";
+import * as Startup from "./serverRuntimeStartup.ts";
+import * as Settings from "./serverSettings.ts";
+import * as Environment from "./environment/ServerEnvironment.ts";
+import * as Launcher from "./cloud/serviceLauncherClient.ts";
+import * as Analytics from "./telemetry/AnalyticsService.ts";
+import * as Git from "./vcs/GitVcsDriver.ts";
 
-it.effect("publishes pending before complete even without an activation gate", () =>
+it.effect("publishes completed bootstrap targets before accepting commands", () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const lifecycle = yield* ServerLifecycleEvents.ServerLifecycleEvents;
-      const bootstrapLookupDone = yield* Deferred.make<void>();
-      const completedWelcome = yield* Deferred.make<void>();
-      const statuses: string[] = [];
-      const startup = yield* ServerRuntimeStartup.make().pipe(
-        Effect.provide(
-          Layer.mergeAll(
-            Layer.succeed(HttpServer.HttpServer, {} as never),
-            Layer.succeed(ExternalLauncher.ExternalLauncher, {} as never),
-            Layer.succeed(ServerConfig.ServerConfig, {
-              cwd: "/workspace/example",
-              mode: "desktop",
-              port: 3773,
-              noBrowser: true,
-              autoBootstrapProjectFromCwd: true,
-            } as never),
-            Layer.succeed(Keybindings.Keybindings, { start: Effect.void } as never),
-            Layer.succeed(ServerSettings.ServerSettingsService, {
-              start: Effect.void,
-              getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
-            } as never),
-            Layer.succeed(OrchestrationReactor.OrchestrationReactor, {
-              start: () => Effect.void,
-            } as never),
-            Layer.succeed(ProviderSessionReaper.ProviderSessionReaper, {
-              start: () => Effect.void,
-            } as never),
-            Layer.succeed(ProviderService.ProviderService, {
-              listSessions: () => Effect.succeed([]),
-            } as never),
-            Layer.succeed(ProviderSessionDirectory.ProviderSessionDirectory, {} as never),
-            Layer.succeed(OrchestrationEngine.OrchestrationEngineService, {} as never),
-            Layer.succeed(
-              ProjectionThreadActivities.ProjectionThreadActivityRepository,
-              {} as never,
+      const lifecycle = yield* Lifecycle.ServerLifecycleEvents;
+      const bootstrapStarted = yield* Deferred.make<void>();
+      const finishBootstrap = yield* Deferred.make<void>();
+      const projectId = ProjectId.make("synthetic-bootstrap-project");
+      const threadId = ThreadId.make("synthetic-bootstrap-thread");
+      const services = Layer.mergeAll(
+        Layer.mock(HttpServer.HttpServer)({
+          address: NetAddress.inetAddressFromIpStringUnsafe("127.0.0.1", 3773),
+        }),
+        Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
+        Layer.mock(ExternalLauncher.ExternalLauncher)({}),
+        Layer.mock(EventSink.EventSinkV2)({}),
+        Layer.mock(ServerConfig.ServerConfig)({
+          cwd: "/workspace/example",
+          mode: "desktop",
+          port: 3773,
+          noBrowser: true,
+          autoBootstrapProjectFromCwd: true,
+        } as never),
+        Layer.mock(Keybindings.Keybindings)({ start: Effect.void }),
+        Layer.mock(Settings.ServerSettingsService)({
+          start: Effect.void,
+          getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
+        }),
+        Layer.mock(LegacyImporter.LegacyV1ThreadImporter)({
+          pendingThreadCount: Effect.succeed(0),
+          reconcileShells: Effect.succeed({ importedThreadCount: 0 } as never),
+          importPendingTranscripts: Effect.succeed({ importedThreadCount: 0 } as never),
+        }),
+        Layer.mock(Recovery.ProviderRuntimeRecoveryService)({
+          recover: Effect.succeed({} as never),
+          prepareForShutdown: Effect.void,
+          reconcile: () => Effect.succeed({} as never),
+        }),
+        Layer.mock(Sessions.ProviderSessionManagerV2)({ shutdown: Effect.void }),
+        Layer.mock(Relay.AgentAwarenessRelay)({ start: () => Effect.void }),
+        Layer.mock(Projects.ProjectService)({
+          bootstrap: () =>
+            Deferred.succeed(bootstrapStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(finishBootstrap)),
+              Effect.as({ project: { id: projectId } } as never),
             ),
-            ThreadBackgroundLiveness.layer,
-            Layer.succeed(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
-              getCommandReadModel: () => Effect.succeed({ threads: [] }),
-              getShellSnapshot: () => Effect.succeed({ projects: [] }),
-              getCounts: () => Effect.succeed({ projectCount: 1, threadCount: 1 }),
-              getActiveProjectByWorkspaceRoot: () =>
-                Effect.succeed(
-                  Option.some({
-                    id: ProjectId.make("existing-project"),
-                    defaultModelSelection: null,
-                  }),
-                ),
-              getFirstActiveThreadIdByProjectId: () =>
-                Deferred.succeed(bootstrapLookupDone, undefined).pipe(
-                  Effect.as(Option.some(ThreadId.make("existing-thread"))),
-                ),
+          snapshot: Effect.succeed({ projects: [] } as never),
+        }),
+        Layer.mock(ThreadManagement.ThreadManagementService)({
+          getShellSnapshot: () =>
+            Effect.succeed({
+              threads: [{ id: threadId, projectId, lineage: { relationshipToParent: null } }],
+              archivedThreads: [],
             } as never),
-            Layer.succeed(ServerEnvironment.ServerEnvironment, {
-              getDescriptor: Effect.succeed({ environmentId: "test-environment" }),
-            } as never),
-            Layer.succeed(ServiceLauncherClient.ServiceLauncherClient, {
-              prepareTrial: Effect.void,
-            } as never),
-            Layer.succeed(EnvironmentAuth.EnvironmentAuth, {} as never),
-            Layer.succeed(GitVcsDriver.GitVcsDriver, {} as never),
-            Layer.succeed(AnalyticsService.AnalyticsService, {
-              record: () => Effect.void,
-            } as never),
-            Layer.succeed(ServerLifecycleEvents.ServerLifecycleEvents, {
-              ...lifecycle,
-              publish: (event) =>
-                lifecycle.publish(event).pipe(
-                  Effect.tap(() => {
-                    if (event.type !== "welcome") return Effect.void;
-                    statuses.push(event.payload.bootstrapStatus ?? "unknown");
-                    return event.payload.bootstrapStatus === "complete"
-                      ? Deferred.succeed(completedWelcome, undefined)
-                      : Effect.void;
-                  }),
-                ),
-            }),
-          ),
-        ),
+        }),
+        Layer.mock(ThreadLaunch.ThreadLaunchService)({}),
+        Layer.mock(ProjectStore.ProjectStoreV2)({ listShells: () => Effect.succeed([]) }),
+        Layer.mock(Environment.ServerEnvironment)({
+          getDescriptor: Effect.succeed({ environmentId: "synthetic-environment" } as never),
+        }),
+        Layer.mock(Launcher.ServiceLauncherClient)({
+          managed: false,
+          prepareTrial: Effect.succeed(undefined),
+        }),
+        Layer.mock(Analytics.AnalyticsService)({ record: () => Effect.void }),
+        Layer.mock(Git.GitVcsDriver)({}),
+        Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({ runOnce: Effect.never }),
+        Layer.succeed(Lifecycle.ServerLifecycleEvents, lifecycle),
       );
-
-      // Bootstrap can finish while the HTTP listener is still preparing.
-      yield* Deferred.await(bootstrapLookupDone);
-      yield* Effect.yieldNow;
-      assert.deepStrictEqual(statuses, []);
+      const context = yield* Layer.build(
+        Startup.layerWithOptions().pipe(Layer.provide(services), Layer.provide(NodeServices.layer)),
+      );
+      const startup = Context.get(context, Startup.ServerRuntimeStartup);
+      yield* Deferred.await(bootstrapStarted);
       yield* startup.markHttpListening;
+      assert.equal((yield* lifecycle.snapshot).events.length, 0);
+      yield* Deferred.succeed(finishBootstrap, undefined);
       yield* startup.awaitCommandReady;
-      yield* Deferred.await(completedWelcome);
-      assert.deepStrictEqual(statuses, ["pending", "complete"]);
-      const snapshot = yield* lifecycle.snapshot;
-      const welcome = snapshot.events.find((event) => event.type === "welcome");
+      const welcome = (yield* lifecycle.snapshot).events.find((event) => event.type === "welcome");
       assert.equal(welcome?.payload.bootstrapStatus, "complete");
-    }).pipe(Effect.provide(Layer.mergeAll(ServerLifecycleEvents.layer, NodeServices.layer))),
+      assert.equal(welcome?.payload.bootstrapProjectId, projectId);
+      assert.equal(welcome?.payload.bootstrapThreadId, threadId);
+    }).pipe(Effect.provide(Layer.merge(Lifecycle.layer, NodeServices.layer))),
   ),
 );

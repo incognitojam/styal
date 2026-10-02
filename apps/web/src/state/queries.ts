@@ -1,3 +1,4 @@
+import type { EventId } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import {
   type CheckpointDiffTarget,
@@ -11,8 +12,6 @@ import {
 import { type VcsRefTarget } from "@t3tools/client-runtime/state/vcs";
 import type {
   EnvironmentId,
-  EventId,
-  OrchestrationThread,
   ProjectContentMatch,
   ProjectEntryKind,
   ThreadId,
@@ -55,14 +54,6 @@ const threadSearchResultsAtom = createThreadSearchResultsAtomFamily({
   labelPrefix: "web:thread-search",
 });
 
-export interface ThreadDetailView {
-  readonly data: OrchestrationThread | null;
-  readonly error: string | null;
-  readonly isPending: boolean;
-  readonly isDeleted: boolean;
-}
-
-/** Shared with the pull requests page, which debounces its search the same way. */
 export function useDebouncedValue<A>(value: A, delayMs: number): A {
   const [debounced, setDebounced] = useState(value);
 
@@ -335,6 +326,7 @@ export function useCheckpointDiff(
           input: {
             threadId: target.threadId!,
             toTurnCount: target.toTurnCount!,
+            ...(target.scopeId === undefined ? {} : { scopeId: target.scopeId }),
             ignoreWhitespace: target.ignoreWhitespace,
           },
         }
@@ -347,6 +339,7 @@ export function useCheckpointDiff(
             threadId: target.threadId!,
             fromTurnCount: target.fromTurnCount!,
             toTurnCount: target.toTurnCount!,
+            ...(target.scopeId === undefined ? {} : { scopeId: target.scopeId }),
             ignoreWhitespace: target.ignoreWhitespace,
           },
         }

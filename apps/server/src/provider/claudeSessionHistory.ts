@@ -15,7 +15,7 @@ export const ClaudeSessionHistoryMessage = Schema.Struct({
   isMeta: Schema.optionalKey(Schema.Boolean),
   teamName: Schema.optionalKey(Schema.String),
 });
-type ClaudeSessionHistoryMessage = typeof ClaudeSessionHistoryMessage.Type;
+export type ClaudeSessionHistoryMessage = typeof ClaudeSessionHistoryMessage.Type;
 
 const decodeMessage = Schema.decodeUnknownOption(ClaudeSessionHistoryMessage);
 

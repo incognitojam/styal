@@ -11,19 +11,33 @@ import {
   TURN_USAGE_ACTIVITY_KIND,
   TurnModel,
   TurnTokenUsage,
-  type OrchestrationThreadActivity,
   type ServerProvider,
+  type OrchestrationV2ThreadProjection,
+  type OrchestrationV2ExecutionNode,
+  type OrchestrationV2Run,
+  type OrchestrationV2ProviderTurn,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import { formatPercent, formatTokens, formatUsd } from "./usageFormat.ts";
+import { getModelSelectionStringOptionValue } from "./model.ts";
 
 const decodeTurnTokenUsage = Schema.decodeUnknownOption(TurnTokenUsage);
+const decodeTurnTokenUsageSync = Schema.decodeUnknownSync(TurnTokenUsage);
 const decodeTurnModel = Schema.decodeUnknownOption(TurnModel);
 const decodeThreadTokenUsage = Schema.decodeUnknownOption(
   Schema.Struct({ thread: ThreadTokenUsage }),
 );
+
+/** V1 records are read only during import; callers need no retired runtime types. */
+export interface UsageActivity {
+  readonly id: string;
+  readonly kind: string;
+  readonly turnId: string | null;
+  readonly payload: unknown;
+  readonly createdAt: string;
+}
 
 /** One turn's usage record. Either part may be missing, but not both. */
 export interface TurnRecord {
@@ -41,12 +55,118 @@ export interface TurnUsageByTurn {
 
 export const EMPTY_TURN_USAGE: TurnUsageByTurn = { key: "", byTurnId: new Map(), thread: null };
 
+/** Several native turns can complete one app run after compaction or a handoff. */
+export function addTurnTokenUsage(a: TurnTokenUsage, b: TurnTokenUsage): TurnTokenUsage {
+  const fields = [
+    "inputTokens",
+    "outputTokens",
+    "cachedInputTokens",
+    "cacheCreationTokens",
+    "reasoningTokens",
+  ] as const;
+  const counts = Object.fromEntries(
+    fields.flatMap((field) =>
+      a[field] === undefined && b[field] === undefined
+        ? []
+        : [[field, (a[field] ?? 0) + (b[field] ?? 0)]],
+    ),
+  );
+  const subagents =
+    a.subagents === undefined && b.subagents === undefined
+      ? undefined
+      : Object.fromEntries(
+          fields.flatMap((field) =>
+            a.subagents?.[field] === undefined && b.subagents?.[field] === undefined
+              ? []
+              : [[field, (a.subagents?.[field] ?? 0) + (b.subagents?.[field] ?? 0)]],
+          ),
+        );
+  return decodeTurnTokenUsageSync({
+    ...counts,
+    usageScope: "main_agent",
+    usageStatus:
+      a.usageStatus === "complete" && b.usageStatus === "complete" ? "complete" : "partial",
+    hasSubagents: a.hasSubagents || b.hasSubagents,
+    ...(subagents === undefined ? {} : { subagents }),
+    ...(a.costUsd === undefined || b.costUsd === undefined
+      ? {}
+      : { costUsd: a.costUsd + b.costUsd }),
+  });
+}
+
+/** Reads frozen V1 records and retained root V2 provider turns through the same view. */
+export function deriveProjectionTurnUsage(
+  projection: {
+    readonly legacyTurnUsage?: OrchestrationV2ThreadProjection["legacyTurnUsage"];
+    readonly nodes: ReadonlyArray<Pick<OrchestrationV2ExecutionNode, "id" | "runId" | "kind">>;
+    readonly runs: ReadonlyArray<
+      Pick<OrchestrationV2Run, "id" | "ordinal" | "status" | "modelSelection">
+    >;
+    readonly providerTurns: ReadonlyArray<
+      Pick<
+        OrchestrationV2ProviderTurn,
+        "nodeId" | "ordinal" | "turnTokenUsage" | "turnModel" | "threadTokenUsage"
+      >
+    >;
+  },
+  previous: TurnUsageByTurn = EMPTY_TURN_USAGE,
+): TurnUsageByTurn {
+  const records = new Map<string, TurnRecord>(
+    projection.legacyTurnUsage?.records.map((record) => [record.turnId, record]) ?? [],
+  );
+  const nodes = new Map(projection.nodes.map((node) => [node.id, node]));
+  const runs = new Map(projection.runs.map((run) => [run.id, run]));
+  const retainedRootTurns = projection.providerTurns.filter((turn) => {
+    const node = nodes.get(turn.nodeId);
+    const run =
+      node?.runId === null || node?.runId === undefined ? undefined : runs.get(node.runId);
+    return node?.kind === "root_turn" && run !== undefined && run.status !== "rolled_back";
+  });
+  for (const turn of retainedRootTurns) {
+    const node = nodes.get(turn.nodeId)!;
+    const runId = node.runId!;
+    const selection = runs.get(runId)?.modelSelection;
+    const effort =
+      selection === undefined
+        ? undefined
+        : (getModelSelectionStringOptionValue(selection, "reasoningEffort") ??
+          getModelSelectionStringOptionValue(selection, "effort"));
+    const previousUsage = records.get(runId)?.usage;
+    records.set(runId, {
+      usage:
+        turn.turnTokenUsage === undefined
+          ? (previousUsage ?? null)
+          : previousUsage
+            ? addTurnTokenUsage(previousUsage, turn.turnTokenUsage)
+            : turn.turnTokenUsage,
+      model:
+        turn.turnModel ??
+        (selection === undefined || selection === null
+          ? null
+          : {
+              instanceId: selection.instanceId,
+              model: selection.model,
+              ...(effort === undefined ? {} : { effort }),
+            }),
+    });
+  }
+  const latestTotal = retainedRootTurns
+    .filter((turn) => turn.threadTokenUsage !== undefined)
+    .sort((a, b) => {
+      const runOrdinal = (turn: typeof a) => runs.get(nodes.get(turn.nodeId)!.runId!)!.ordinal;
+      return runOrdinal(b) - runOrdinal(a) || b.ordinal - a.ordinal;
+    })[0]?.threadTokenUsage;
+  const thread = latestTotal ?? projection.legacyTurnUsage?.thread ?? null;
+  const key = JSON.stringify([Array.from(records), thread]);
+  return key === previous.key ? previous : { key, byTurnId: records, thread };
+}
+
 /**
  * Collects usage by turn. Returns `previous` unchanged while the thread gains
  * no usage activities, so views keyed on its identity skip streamed updates.
  */
 export function deriveTurnUsage(
-  activities: ReadonlyArray<OrchestrationThreadActivity>,
+  activities: ReadonlyArray<UsageActivity>,
   previous: TurnUsageByTurn = EMPTY_TURN_USAGE,
 ): TurnUsageByTurn {
   const usageActivities = activities.filter(
@@ -56,7 +176,7 @@ export function deriveTurnUsage(
   if (key === previous.key) return previous;
 
   const byTurnId = new Map<string, TurnRecord>();
-  let newest: OrchestrationThreadActivity | undefined;
+  let newest: UsageActivity | undefined;
   for (const activity of usageActivities) {
     const usage = Option.getOrNull(decodeTurnTokenUsage(activity.payload));
     const model = Option.getOrNull(decodeTurnModel(activity.payload));
@@ -80,7 +200,7 @@ export function deriveTurnUsage(
  * totals existed.
  */
 export function sumThreadTokenUsage(input: {
-  readonly activities: ReadonlyArray<Pick<OrchestrationThreadActivity, "turnId" | "payload">>;
+  readonly activities: ReadonlyArray<Pick<UsageActivity, "turnId" | "payload">>;
   readonly turnId: string;
   /** Null when the turn reported no usage. */
   readonly usage: TurnTokenUsage | null;
@@ -166,6 +286,24 @@ function addTurnUsage(total: ThreadTokenTotal, usage: TurnTokenUsage): ThreadTok
       total.subagentTurns + (usage.hasSubagents && usage.subagents === undefined ? 1 : 0),
     costUsd: total.costUsd + (usage.costUsd ?? 0),
     pricedTurns: total.pricedTurns + (priced ? 1 : 0),
+  };
+}
+
+/** Adds frozen imported totals to the usage recorded by the V2 runtime. */
+export function addThreadTokenUsage(a: ThreadTokenUsage, b: ThreadTokenUsage): ThreadTokenUsage {
+  return {
+    inputTokens: a.inputTokens + b.inputTokens,
+    cachedInputTokens: a.cachedInputTokens + b.cachedInputTokens,
+    cacheCreationTokens: a.cacheCreationTokens + b.cacheCreationTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    reasoningTokens: a.reasoningTokens + b.reasoningTokens,
+    countedTurns: a.countedTurns + b.countedTurns,
+    turns: a.turns + b.turns,
+    partialTurns: a.partialTurns + b.partialTurns,
+    subagentTurns: a.subagentTurns + b.subagentTurns,
+    subagentTokens: (a.subagentTokens ?? 0) + (b.subagentTokens ?? 0),
+    costUsd: (a.costUsd ?? 0) + (b.costUsd ?? 0),
+    pricedTurns: (a.pricedTurns ?? 0) + (b.pricedTurns ?? 0),
   };
 }
 

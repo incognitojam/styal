@@ -1,4 +1,4 @@
-import { type ThreadId } from "@t3tools/contracts";
+import { type OrchestrationMessageContext, type ThreadId } from "@t3tools/contracts";
 import type { SourceControlIssue, SourceControlProviderKind } from "@t3tools/contracts";
 
 /**
@@ -209,4 +209,19 @@ function parseIssueContextEntries(block: string): ParsedIssueContextEntry[] {
   }
   commit();
   return entries;
+}
+
+/** Recover typed queue context while keeping older serialized prompts intact. */
+export function recoverQueuedIssueContext(
+  text: string,
+  context: OrchestrationMessageContext | undefined,
+): { prompt: string; issueContexts: IssueContextDraft[] } {
+  const issueContexts = (context?.issueContexts ?? []).map((issue) => ({
+    ...issue,
+    comments: issue.comments.map((comment) => ({ ...comment })),
+  }));
+  return {
+    prompt: issueContexts.length === 0 ? text : extractTrailingIssueContexts(text).promptText,
+    issueContexts,
+  };
 }

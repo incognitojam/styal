@@ -1,4 +1,4 @@
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { CheckpointScopeId, EnvironmentId, ThreadId } from "@t3tools/contracts";
 
 export interface CheckpointDiffTarget {
   readonly environmentId: EnvironmentId | null;
@@ -6,6 +6,7 @@ export interface CheckpointDiffTarget {
   readonly fromTurnCount: number | null;
   readonly toTurnCount: number | null;
   readonly ignoreWhitespace: boolean;
+  readonly scopeId?: CheckpointScopeId | undefined;
 }
 
 export function normalizeComposerPathSearchQuery(query: string | null): string {
@@ -29,6 +30,7 @@ export function buildCheckpointDiffTargets(target: CheckpointDiffTarget) {
         input: {
           threadId: target.threadId,
           toTurnCount: target.toTurnCount,
+          ...(target.scopeId === undefined ? {} : { scopeId: target.scopeId }),
           ignoreWhitespace: target.ignoreWhitespace,
         },
       },
@@ -44,6 +46,7 @@ export function buildCheckpointDiffTargets(target: CheckpointDiffTarget) {
         threadId: target.threadId,
         fromTurnCount: target.fromTurnCount,
         toTurnCount: target.toTurnCount,
+        ...(target.scopeId === undefined ? {} : { scopeId: target.scopeId }),
         ignoreWhitespace: target.ignoreWhitespace,
       },
     },

@@ -8,12 +8,15 @@ import {
   OrchestrationMessageContext,
   type PullRequestContextMetadata,
   type ReviewCommentContextRecord,
+  type ScopedThreadRef,
+  type ThreadContextRecord,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import {
   collectComposerContextReferences,
   formatComposerContextReference,
   replaceComposerContextReferences,
+  sanitizeComposerContextLabel,
 } from "@t3tools/shared/composerContextReferences";
 import {
   collectComposerInlineTokens,
@@ -98,6 +101,20 @@ export function createComposerContextHistory() {
   };
 }
 
+/** Same identity as web: one record per thread, so re-attaching reuses the chip. */
+export function threadComposerContext(ref: ScopedThreadRef, title: string): ThreadContextRecord {
+  const label = sanitizeComposerContextLabel(title, "thread");
+  return {
+    version: 1,
+    kind: "thread",
+    contextId: ComposerContextId.make(`thread_${ref.threadId}`),
+    label,
+    environmentId: ref.environmentId,
+    threadId: ref.threadId,
+    title: label,
+  };
+}
+
 export function pullRequestComposerContext(
   pullRequest: PullRequestContextMetadata,
   id: string,
@@ -169,7 +186,7 @@ export function uploadedComposerContext(
   if (!context) return undefined;
   const ids = new Map(drafts.map((draft, index) => [draft.id, uploaded[index]?.id]));
   return {
-    version: 1,
+    ...context,
     records: context.records.map((record) =>
       "attachmentId" in record
         ? { ...record, attachmentId: ids.get(record.attachmentId) ?? record.attachmentId }

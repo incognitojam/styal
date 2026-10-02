@@ -1,9 +1,12 @@
 import * as Schema from "effect/Schema";
+import { SourceControlIssue } from "./sourceControl.ts";
 
 import {
+  EnvironmentId,
   ForwardCompatibleArray,
   NonNegativeInt,
   PositiveInt,
+  ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
 
@@ -25,6 +28,7 @@ export const COMPOSER_CONTEXT_KINDS = [
   "review-comment",
   "mention",
   "skill",
+  "thread",
 ] as const;
 export type KnownComposerContextKind = (typeof COMPOSER_CONTEXT_KINDS)[number];
 
@@ -216,6 +220,19 @@ export const SkillContextRecord = Schema.Struct({
 export type SkillContextRecord = typeof SkillContextRecord.Type;
 
 /**
+ * Another thread on the same server, attached so the agent can read its history through
+ * `t3_thread_read`. Only identity travels; the title is a display snapshot.
+ */
+export const ThreadContextRecord = Schema.Struct({
+  ...recordBase,
+  kind: Schema.Literal("thread"),
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  title: ContextLabel,
+});
+export type ThreadContextRecord = typeof ThreadContextRecord.Type;
+
+/**
  * Catch-all for kinds this build does not know. Known discriminators are excluded so a
  * malformed known record fails its own schema instead of sliding through unchecked.
  * Mirrors `ChatUnknownAttachment`.
@@ -245,6 +262,7 @@ export const KnownComposerContextRecord = Schema.Union([
   ReviewCommentContextRecord,
   MentionContextRecord,
   SkillContextRecord,
+  ThreadContextRecord,
 ]);
 export type KnownComposerContextRecord = typeof KnownComposerContextRecord.Type;
 
@@ -260,6 +278,16 @@ const COMPOSER_CONTEXT_MAX_SERIALIZED_CHARS = 16_000_000;
 /** Structured context riding on a user message. Undecodable records are dropped, not fatal. */
 export const OrchestrationMessageContext = Schema.Struct({
   version: Schema.Literal(1),
+  issueContexts: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        ...SourceControlIssue.fields,
+        id: TrimmedNonEmptyString,
+        threadId: ThreadId,
+        attachedAt: Schema.String,
+      }),
+    ).check(Schema.isMaxLength(200)),
+  ),
   records: Schema.Array(Schema.Unknown)
     .check(
       Schema.isMaxLength(COMPOSER_CONTEXT_MAX_RECORDS),

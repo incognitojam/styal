@@ -1,4 +1,13 @@
-import { CommandId, EventId, ProjectId, ProjectScriptIcon, ThreadId } from "@t3tools/contracts";
+import {
+  CommandId,
+  EventId,
+  ProjectId,
+  ProjectScriptIcon,
+  ThreadId,
+  TurnItemId,
+  OrchestrationV2TurnItemJson,
+  type ProjectScript,
+} from "@t3tools/contracts";
 import {
   isSetupScriptOutsideWorktree,
   projectScriptRuntimeEnv,
@@ -23,9 +32,10 @@ import {
   setupScriptDuration,
   setupScriptRunsTotal,
 } from "../observability/Metrics.ts";
-import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
-import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
-import * as ProjectionThreadActivities from "../persistence/Services/ProjectionThreadActivities.ts";
+import * as EventSink from "../orchestration-v2/EventSink.ts";
+import * as TurnItemPositions from "../orchestration-v2/TurnItemPositionStore.ts";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as ProjectService from "./ProjectService.ts";
 import { forkParked } from "../serverActivation.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
@@ -75,8 +85,13 @@ interface ActiveSetupRun {
   readonly pendingOutcome: SetupRunOutcome | null;
 }
 
-export function deriveUnfinishedSetupRuns(
-  activities: ReadonlyArray<ProjectionThreadActivities.ProjectionThreadActivity>,
+function deriveUnfinishedSetupRuns(
+  activities: ReadonlyArray<{
+    readonly threadId: string;
+    readonly kind: string;
+    readonly payload: unknown;
+    readonly createdAt: string;
+  }>,
 ): ReadonlyArray<ActiveSetupRun> {
   const unfinished = new Map<string, ActiveSetupRun>();
   for (const activity of activities) {
@@ -145,6 +160,11 @@ export interface ProjectSetupScriptRunnerInput {
   readonly projectId?: string;
   readonly projectCwd?: string;
   readonly worktreePath: string;
+  readonly project?: {
+    readonly id: ProjectId;
+    readonly workspaceRoot: string;
+    readonly scripts: ReadonlyArray<ProjectScript>;
+  };
   readonly preferredTerminalId?: string;
   /**
    * Report the script's exit through `completion`, and forward cleaned output
@@ -221,11 +241,11 @@ function stripTerminalControl(text: string): string {
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
-  const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+  const projects = yield* ProjectService.ProjectService;
   const terminalManager = yield* TerminalManager.TerminalManager;
-  const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
-  const projectionThreadActivities =
-    yield* ProjectionThreadActivities.ProjectionThreadActivityRepository;
+  const eventSink = yield* EventSink.EventSinkV2;
+  const positions = yield* TurnItemPositions.TurnItemPositionStoreV2;
+  const sql = yield* SqlClient.SqlClient;
   const activeRunsRef = yield* SynchronizedRef.make(new Map<string, ActiveSetupRun>());
   let nextRunSequence = 0;
 
@@ -241,21 +261,73 @@ export const make = Effect.gen(function* () {
     readonly createdAt: string;
     readonly payload: Record<string, unknown>;
   }) {
-    const activityId = EventId.make(`setup:${input.runId}:${input.kind}`);
-    yield* orchestrationEngine.dispatch({
-      type: "thread.activity.append",
-      commandId: CommandId.make(`server:setup-script:${input.runId}:${input.kind}`),
-      threadId: ThreadId.make(input.threadId),
-      activity: {
-        id: activityId,
-        tone: input.tone,
-        kind: input.kind,
-        summary: input.summary,
-        payload: input.payload,
-        turnId: null,
-        createdAt: input.createdAt,
-      },
-      createdAt: input.createdAt,
+    const metadata = yield* Schema.decodeUnknownEffect(SetupRunActivityPayload)(input.payload);
+    const threadId = ThreadId.make(input.threadId);
+    const id = TurnItemId.make(`setup:${input.runId}`);
+    const rows = yield* sql<{ readonly payload_json: string }>`
+      SELECT payload_json FROM orchestration_v2_projection_turn_items
+      WHERE thread_id = ${threadId} AND turn_item_id = ${id}
+    `;
+    const previous =
+      rows[0] === undefined
+        ? undefined
+        : yield* Schema.decodeUnknownEffect(Schema.fromJsonString(OrchestrationV2TurnItemJson))(
+            rows[0].payload_json,
+          );
+    const finished =
+      input.kind === "setup-script.completed" || input.kind === "setup-script.failed";
+    const stopped = ["server-restarted", "terminal-closed", "terminal-restarted"].includes(
+      String(input.payload.failureReason),
+    );
+    const at = DateTime.makeUnsafe(input.createdAt);
+    yield* eventSink.write({
+      events: [
+        {
+          id: EventId.make(`setup:${input.runId}:${input.kind}`),
+          type: "turn-item.updated",
+          threadId,
+          occurredAt: at,
+          payload: {
+            id,
+            threadId,
+            runId: null,
+            nodeId: null,
+            providerThreadId: null,
+            providerTurnId: null,
+            nativeItemRef: null,
+            parentItemId: null,
+            ordinal: yield* positions.allocate({ threadId, turnItemId: id, runId: null }),
+            type: "command_execution",
+            title: metadata.scriptName,
+            input: metadata.command,
+            setupScript: {
+              runId: metadata.runId,
+              scriptId: metadata.scriptId,
+              scriptName: metadata.scriptName,
+              ...(metadata.scriptIcon === undefined ? {} : { scriptIcon: metadata.scriptIcon }),
+              terminalId: metadata.terminalId,
+              worktreePath: metadata.worktreePath,
+            },
+            status:
+              input.kind === "setup-script.completed"
+                ? "completed"
+                : finished
+                  ? stopped
+                    ? "interrupted"
+                    : "failed"
+                  : input.kind === "setup-script.started"
+                    ? "running"
+                    : "pending",
+            startedAt: previous?.startedAt == null ? at : DateTime.makeUnsafe(previous.startedAt),
+            completedAt: finished ? at : null,
+            updatedAt: at,
+            ...(typeof input.payload.exitCode === "number"
+              ? { exitCode: input.payload.exitCode }
+              : {}),
+            ...(typeof input.payload.detail === "string" ? { output: input.payload.detail } : {}),
+          },
+        },
+      ],
     });
   });
 
@@ -388,7 +460,28 @@ export const make = Effect.gen(function* () {
 
   const recoverInterruptedRuns = Effect.fn("ProjectSetupScriptRunner.recoverInterruptedRuns")(
     function* () {
-      const activities = yield* projectionThreadActivities.listUnfinishedSetupRuns();
+      const rows = yield* sql<{ readonly thread_id: string; readonly payload_json: string }>`
+        SELECT thread_id, payload_json FROM orchestration_v2_projection_turn_items
+        WHERE type = 'command_execution' AND status IN ('pending', 'running')
+          AND json_type(payload_json, '$.setupScript') = 'object'
+      `;
+      const items = yield* Effect.forEach(rows, (row) =>
+        Schema.decodeUnknownEffect(Schema.fromJsonString(OrchestrationV2TurnItemJson))(
+          row.payload_json,
+        ).pipe(Effect.map((item) => ({ row, item }))),
+      );
+      const activities = items.flatMap(({ row, item }) =>
+        item.type !== "command_execution" || item.setupScript === undefined
+          ? []
+          : [
+              {
+                threadId: row.thread_id,
+                kind: "setup-script.started",
+                payload: { ...item.setupScript, command: item.input },
+                createdAt: DateTime.formatIso(item.startedAt ?? item.updatedAt),
+              },
+            ],
+      );
       yield* Effect.forEach(
         deriveUnfinishedSetupRuns(activities),
         (run) =>
@@ -490,23 +583,25 @@ export const make = Effect.gen(function* () {
       ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
       ...(input.projectCwd === undefined ? {} : { projectCwd: input.projectCwd }),
     };
-    const projectById = input.projectId
-      ? yield* projectionSnapshotQuery.getProjectShellById(ProjectId.make(input.projectId)).pipe(
-          Effect.map(Option.getOrUndefined),
-          Effect.mapError(
-            (cause) =>
-              new ProjectSetupScriptOperationError({
-                ...errorContext,
-                operation: "resolveProject",
-                cause,
-              }),
-          ),
-        )
-      : null;
+    const projectById =
+      input.project ??
+      (input.projectId
+        ? yield* projects.getById(ProjectId.make(input.projectId)).pipe(
+            Effect.map(Option.getOrUndefined),
+            Effect.mapError(
+              (cause) =>
+                new ProjectSetupScriptOperationError({
+                  ...errorContext,
+                  operation: "resolveProject",
+                  cause,
+                }),
+            ),
+          )
+        : null);
     const project =
       projectById ??
       (input.projectCwd
-        ? yield* projectionSnapshotQuery.getActiveProjectByWorkspaceRoot(input.projectCwd).pipe(
+        ? yield* projects.getByWorkspaceRoot(input.projectCwd).pipe(
             Effect.map(Option.getOrUndefined),
             Effect.mapError(
               (cause) =>

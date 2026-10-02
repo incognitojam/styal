@@ -1,3 +1,4 @@
+import { parseUnifiedDiffPaths } from "./Diffs.ts";
 /**
  * CheckpointDiffQuery - Query interface for computed checkpoint diffs.
  *
@@ -7,7 +8,7 @@
  * @module CheckpointDiffQuery
  */
 import {
-  type CheckpointRef,
+  CheckpointRef,
   OrchestrationGetTurnDiffResult,
   type OrchestrationGetFullThreadDiffInput,
   type OrchestrationGetFullThreadDiffResult,
@@ -18,20 +19,19 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import type { ProjectionCheckpointContext } from "../orchestration-v2/ProjectionStore.ts";
+import { checkpointRefForScopeOrdinal } from "../orchestration-v2/CheckpointService.ts";
+import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import {
   CheckpointDiffResultInvalidError,
   CheckpointRefUnavailableError,
   CheckpointThreadNotFoundError,
   CheckpointTurnRangeUnavailableError,
   CheckpointWorkspacePathMissingError,
+  type CheckpointServiceError,
 } from "./Errors.ts";
-import type { CheckpointServiceError } from "./Errors.ts";
-import { checkpointRefForThreadTurn } from "./Utils.ts";
-import { parseUnifiedDiffPaths } from "./Diffs.ts";
 import * as CheckpointStore from "./CheckpointStore.ts";
 
 /** Service tag for checkpoint diff queries. */
@@ -80,7 +80,7 @@ function buildTurnDiffResult(
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
-  const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+  const threads = yield* ThreadManagement.ThreadManagementService;
   const checkpointStore = yield* CheckpointStore.CheckpointStore;
 
   /** Best-effort `linguist-generated` attribution for a computed patch; failure yields none. */
@@ -107,12 +107,7 @@ export const make = Effect.gen(function* () {
       });
 
       if (input.fromTurnCount === input.toTurnCount) {
-        const emptyDiff: OrchestrationGetTurnDiffResultType = {
-          threadId: input.threadId,
-          fromTurnCount: input.fromTurnCount,
-          toTurnCount: input.toTurnCount,
-          diff: "",
-        };
+        const emptyDiff = buildTurnDiffResult(input, "");
         if (!isTurnDiffResult(emptyDiff)) {
           return yield* new CheckpointDiffResultInvalidError({
             operation,
@@ -122,18 +117,34 @@ export const make = Effect.gen(function* () {
         return emptyDiff;
       }
 
-      const threadContext = yield* projectionSnapshotQuery
-        .getThreadCheckpointContext(input.threadId)
-        .pipe(Effect.withSpan("checkpoint.turnDiff.lookupContext"));
-      if (Option.isNone(threadContext)) {
-        return yield* new CheckpointThreadNotFoundError({
-          operation,
-          threadId: input.threadId,
-        });
-      }
-
-      const maxTurnCount = threadContext.value.checkpoints.reduce(
-        (max, checkpoint) => Math.max(max, checkpoint.checkpointTurnCount),
+      const projection = yield* threads.getCheckpointContext(input.threadId).pipe(
+        Effect.mapError(
+          () =>
+            new CheckpointThreadNotFoundError({
+              operation,
+              threadId: input.threadId,
+            }),
+        ),
+        Effect.withSpan("checkpoint.turnDiff.lookupContext"),
+      );
+      const completedRunIds = new Set(
+        projection.runs.filter((run) => run.status === "completed").map((run) => run.id),
+      );
+      const checkpointCount = (checkpoint: ProjectionCheckpointContext["checkpoints"][number]) =>
+        checkpoint.legacyCheckpointTurnCount ?? checkpoint.appRunOrdinal;
+      const readyCheckpoints = projection.checkpoints.filter(
+        (checkpoint) =>
+          checkpoint.status === "ready" &&
+          (input.scopeId === undefined
+            ? checkpoint.legacyCheckpointTurnCount == null
+            : checkpoint.scopeId === input.scopeId) &&
+          (checkpoint.legacyCheckpointTurnCount != null ||
+            (checkpoint.appRunOrdinal !== null &&
+              checkpoint.runId !== null &&
+              completedRunIds.has(checkpoint.runId))),
+      );
+      const maxTurnCount = readyCheckpoints.reduce(
+        (max, checkpoint) => Math.max(max, checkpointCount(checkpoint) ?? 0),
         0,
       );
       if (input.toTurnCount > maxTurnCount) {
@@ -145,33 +156,10 @@ export const make = Effect.gen(function* () {
         });
       }
 
-      const workspaceCwd = threadContext.value.worktreePath ?? threadContext.value.workspaceRoot;
-      if (!workspaceCwd) {
-        return yield* new CheckpointWorkspacePathMissingError({
-          operation,
-          threadId: input.threadId,
-        });
-      }
-
-      const fromCheckpointRef =
-        input.fromTurnCount === 0
-          ? checkpointRefForThreadTurn(input.threadId, 0)
-          : threadContext.value.checkpoints.find(
-              (checkpoint) => checkpoint.checkpointTurnCount === input.fromTurnCount,
-            )?.checkpointRef;
-      if (!fromCheckpointRef) {
-        return yield* new CheckpointRefUnavailableError({
-          operation,
-          threadId: input.threadId,
-          turnCount: input.fromTurnCount,
-          checkpoint: "from",
-        });
-      }
-
-      const toCheckpointRef = threadContext.value.checkpoints.find(
-        (checkpoint) => checkpoint.checkpointTurnCount === input.toTurnCount,
-      )?.checkpointRef;
-      if (!toCheckpointRef) {
+      const toCheckpoint = readyCheckpoints.find(
+        (checkpoint) => checkpointCount(checkpoint) === input.toTurnCount,
+      );
+      if (toCheckpoint === undefined) {
         return yield* new CheckpointRefUnavailableError({
           operation,
           threadId: input.threadId,
@@ -180,17 +168,58 @@ export const make = Effect.gen(function* () {
         });
       }
 
+      const toScope = projection.checkpointScopes.find(
+        (scope) => scope.id === toCheckpoint.scopeId,
+      );
+      if (toScope === undefined) {
+        return yield* new CheckpointWorkspacePathMissingError({
+          operation,
+          threadId: input.threadId,
+        });
+      }
+
+      const fromCheckpointRef =
+        input.fromTurnCount === 0
+          ? (() => {
+              // The root scope is shared by every run in this thread. Its
+              // runId tracks the latest owner, while ordinal zero stays the baseline.
+              if (toCheckpoint.legacyCheckpointTurnCount != null) {
+                const baseline = toCheckpoint.ref.replace(/\/turn\/\d+$/, "/turn/0");
+                return baseline === toCheckpoint.ref ? undefined : CheckpointRef.make(baseline);
+              }
+              const firstScope = projection.checkpointScopes.find(
+                (scope) => scope.kind === "root_run",
+              );
+              return firstScope === undefined
+                ? undefined
+                : checkpointRefForScopeOrdinal({
+                    scopeId: firstScope.id,
+                    ordinalWithinScope: 0,
+                  });
+            })()
+          : readyCheckpoints.find(
+              (checkpoint) => checkpointCount(checkpoint) === input.fromTurnCount,
+            )?.ref;
+      if (fromCheckpointRef === undefined) {
+        return yield* new CheckpointRefUnavailableError({
+          operation,
+          threadId: input.threadId,
+          turnCount: input.fromTurnCount,
+          checkpoint: "from",
+        });
+      }
+
       const diff = yield* checkpointStore
         .diffCheckpoints({
-          cwd: workspaceCwd,
+          cwd: toScope.cwd,
           fromCheckpointRef,
-          toCheckpointRef,
+          toCheckpointRef: toCheckpoint.ref,
           fallbackFromToHead: false,
           ignoreWhitespace,
         })
         .pipe(Effect.withSpan("checkpoint.turnDiff.diffCheckpoints"));
 
-      const generatedPaths = yield* resolveGeneratedDiffPaths(workspaceCwd, diff);
+      const generatedPaths = yield* resolveGeneratedDiffPaths(toScope.cwd, diff);
       const turnDiff = buildTurnDiffResult(input, diff, generatedPaths);
       if (!isTurnDiffResult(turnDiff)) {
         return yield* new CheckpointDiffResultInvalidError({
@@ -234,63 +263,13 @@ export const make = Effect.gen(function* () {
       return emptyDiff satisfies OrchestrationGetFullThreadDiffResult;
     }
 
-    const threadContext = yield* projectionSnapshotQuery
-      .getFullThreadDiffContext(input.threadId, input.toTurnCount)
-      .pipe(Effect.withSpan("checkpoint.fullThread.lookupContext"));
-
-    if (Option.isNone(threadContext)) {
-      return yield* new CheckpointThreadNotFoundError({
-        operation,
-        threadId: input.threadId,
-      });
-    }
-
-    if (input.toTurnCount > threadContext.value.latestCheckpointTurnCount) {
-      return yield* new CheckpointTurnRangeUnavailableError({
-        operation,
-        threadId: input.threadId,
-        requestedTurnCount: input.toTurnCount,
-        availableTurnCount: threadContext.value.latestCheckpointTurnCount,
-      });
-    }
-
-    const workspaceCwd = threadContext.value.worktreePath ?? threadContext.value.workspaceRoot;
-    if (!workspaceCwd) {
-      return yield* new CheckpointWorkspacePathMissingError({
-        operation,
-        threadId: input.threadId,
-      });
-    }
-
-    if (!threadContext.value.toCheckpointRef) {
-      return yield* new CheckpointRefUnavailableError({
-        operation,
-        threadId: input.threadId,
-        turnCount: input.toTurnCount,
-        checkpoint: "to",
-      });
-    }
-
-    const diff = yield* checkpointStore
-      .diffCheckpoints({
-        cwd: workspaceCwd,
-        fromCheckpointRef: checkpointRefForThreadTurn(input.threadId, 0),
-        toCheckpointRef: threadContext.value.toCheckpointRef as CheckpointRef,
-        fallbackFromToHead: false,
-        ignoreWhitespace,
-      })
-      .pipe(Effect.withSpan("checkpoint.fullThread.diffCheckpoints"));
-
-    const generatedPaths = yield* resolveGeneratedDiffPaths(workspaceCwd, diff);
-    const turnDiff = buildTurnDiffResult(
-      {
-        threadId: input.threadId,
-        fromTurnCount: 0,
-        toTurnCount: input.toTurnCount,
-      },
-      diff,
-      generatedPaths,
-    );
+    const turnDiff = yield* getTurnDiff({
+      threadId: input.threadId,
+      fromTurnCount: 0,
+      toTurnCount: input.toTurnCount,
+      ...(input.scopeId === undefined ? {} : { scopeId: input.scopeId }),
+      ignoreWhitespace,
+    });
     if (!isTurnDiffResult(turnDiff)) {
       return yield* new CheckpointDiffResultInvalidError({
         operation,

@@ -1,6 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import {
@@ -11,6 +12,9 @@ import {
 } from "./ForkMigrations.ts";
 import { migrationManifest, runMigrations } from "./Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
+const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 
 const upstreamLayer = it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })));
 
@@ -50,6 +54,7 @@ upstreamLayer("ForkMigrations canonical upstream upgrade", (it) => {
         { migration_id: 3, name: "ProjectAdditionalInstructions" },
         { migration_id: 4, name: "ProjectionThreadLatestMessageAt" },
         { migration_id: 5, name: "ProjectionThreadTokenUsage" },
+        { migration_id: 6, name: "LegacyTurnUsage" },
       ]);
     }),
   );
@@ -81,6 +86,7 @@ it("keeps fork migrations out of the upstream manifest", () => {
     [3, "ProjectAdditionalInstructions"],
     [4, "ProjectionThreadLatestMessageAt"],
     [5, "ProjectionThreadTokenUsage"],
+    [6, "LegacyTurnUsage"],
   ]);
 });
 
@@ -117,6 +123,48 @@ const readLatestMessageAt = Effect.gen(function* () {
 });
 
 it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
+  "ForkMigrations recorded token history upgrade",
+  (it) => {
+    it.effect("upgrades a database with migration 5 without losing frozen usage", () =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* runMigrations();
+        yield* runForkMigrations({ toMigrationInclusive: 4 });
+        yield* insertSyntheticThread;
+        const threadUsage = { inputTokens: 321, outputTokens: 123, totalCostUsd: 0.012345 };
+        const activityUsage = yield* encodeJson({ thread: threadUsage });
+        yield* sql`INSERT INTO projection_thread_activities
+          (activity_id, thread_id, tone, kind, summary, payload_json, created_at)
+          VALUES ('usage-1', 'thread-1', 'info', 'turn.usage', 'Recorded usage',
+            ${activityUsage}, '2026-01-01T10:13:00.000Z')`;
+        yield* runForkMigrations({ toMigrationInclusive: 5 });
+
+        const frozenHistory = yield* encodeJson({
+          turns: [{ turnId: "turn-1", thread: threadUsage }],
+        });
+        const executed = yield* runForkMigrations();
+        assert.deepEqual(
+          executed.map(([id, name]) => [id, name]),
+          [[6, "LegacyTurnUsage"]],
+        );
+        yield* sql`INSERT INTO styal_projection_legacy_turn_usage (thread_id, payload_json)
+          VALUES ('thread-1', ${frozenHistory})`;
+        assert.deepEqual(yield* runForkMigrations(), []);
+
+        const totals = yield* sql<{ readonly token_usage_json: string }>`
+          SELECT token_usage_json FROM projection_threads WHERE thread_id = 'thread-1'
+        `;
+        assert.deepEqual(yield* decodeJson(totals[0]?.token_usage_json ?? "null"), threadUsage);
+        const history = yield* sql<{ readonly payload_json: string }>`
+          SELECT payload_json FROM styal_projection_legacy_turn_usage WHERE thread_id = 'thread-1'
+        `;
+        assert.deepEqual(history, [{ payload_json: frozenHistory }]);
+      }),
+    );
+  },
+);
+
+it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
   "ForkMigrations latest message time",
   (it) => {
     it.effect("backfills the last message time without using later thread updates", () =>
@@ -130,43 +178,6 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
         assert.deepEqual(yield* readLatestMessageAt, [
           { latestMessageAt: "2026-01-01T10:13:00.000Z" },
         ]);
-      }),
-    );
-  },
-);
-
-it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
-  "ForkMigrations thread token usage",
-  (it) => {
-    it.effect("backfills the total from the newest turn usage record", () =>
-      Effect.gen(function* () {
-        const sql = yield* SqlClient.SqlClient;
-        yield* runMigrations();
-        yield* runForkMigrations({ toMigrationInclusive: 4 });
-        yield* insertSyntheticThread;
-        yield* sql`
-        INSERT INTO projection_thread_activities (
-          activity_id, thread_id, turn_id, tone, kind, summary, payload_json, created_at
-        ) VALUES
-          ('usage-2', 'thread-1', 'turn-2', 'info', 'turn.usage', 'Turn usage',
-            '{"inputTokens":5,"thread":{"inputTokens":15,"countedTurns":2}}',
-            '2026-01-01T10:20:00.000Z'),
-          ('usage-1', 'thread-1', 'turn-1', 'info', 'turn.usage', 'Turn usage',
-            '{"inputTokens":10,"thread":{"inputTokens":10,"countedTurns":1}}',
-            '2026-01-01T10:10:00.000Z'),
-          ('other', 'thread-1', 'turn-2', 'info', 'tool.completed', 'Tool',
-            '{"thread":{"inputTokens":99}}', '2026-01-01T10:25:00.000Z')
-      `;
-
-        yield* runForkMigrations({ toMigrationInclusive: 5 });
-
-        const rows = yield* sql<{ readonly tokenUsage: string | null }>`
-        SELECT token_usage_json AS "tokenUsage" FROM projection_threads
-      `;
-        assert.deepEqual(
-          rows.map((row) => (row.tokenUsage === null ? null : JSON.parse(row.tokenUsage))),
-          [{ inputTokens: 15, countedTurns: 2 }],
-        );
       }),
     );
   },

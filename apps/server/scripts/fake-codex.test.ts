@@ -1,12 +1,11 @@
 // @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off - writes fixture files for a child process.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
-import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import { CodexSettings, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { CodexSettings, ProviderInstanceId } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -16,7 +15,10 @@ import * as Stream from "effect/Stream";
 
 import * as ServerConfig from "../src/config.ts";
 import { checkCodexProviderStatus } from "../src/provider/Layers/CodexProvider.ts";
-import { makeCodexSessionRuntime } from "../src/provider/Layers/CodexSessionRuntime.ts";
+import * as CodexProtocol from "effect-codex-app-server/protocol";
+import * as Sink from "effect/Sink";
+import * as Stdio from "effect/Stdio";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { makeCodexTextGeneration } from "../src/textGeneration/CodexTextGeneration.ts";
 
 const fakeCodexPath = NodePath.join(import.meta.dirname, "fake-codex.ts");
@@ -26,7 +28,9 @@ const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 const installFakeCodex = (scenario: unknown) =>
   Effect.acquireRelease(
     Effect.sync(() => {
-      const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "fake-codex-test-"));
+      const scratch = NodePath.resolve(import.meta.dirname, "../../../.scratch");
+      NodeFS.mkdirSync(scratch, { recursive: true });
+      const directory = NodeFS.mkdtempSync(NodePath.join(scratch, "upstream-v2-fake-codex-test-"));
       const scenarioPath = NodePath.join(directory, "scenario.json");
       // These sessions capture no checkpoints, so steps need no spacing.
       NodeFS.writeFileSync(
@@ -47,12 +51,89 @@ const installFakeCodex = (scenario: unknown) =>
       Effect.sync(() => NodeFS.rmSync(directory, { recursive: true, force: true })),
   );
 
+/** Exercises the same V2 protocol transport the production adapter uses, against a real child. */
 const startSession = (launcher: string, workspace: string) =>
-  makeCodexSessionRuntime({
-    threadId: ThreadId.make("thread-fake-codex"),
-    binaryPath: launcher,
-    cwd: workspace,
-    runtimeMode: "full-access",
+  Effect.gen(function* () {
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const child = yield* spawner.spawn(
+      ChildProcess.make(launcher, ["app-server"], {
+        cwd: workspace,
+        stdin: "pipe",
+        stdout: "pipe",
+        stderr: "pipe",
+      }),
+    );
+    const encoder = new TextEncoder();
+    const protocol = yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
+      stdio: Stdio.make({
+        args: Effect.succeed([]),
+        stdin: child.stdout,
+        stdout: () =>
+          Sink.mapInput(child.stdin, (chunk: string | Uint8Array) =>
+            typeof chunk === "string" ? encoder.encode(chunk) : chunk,
+          ),
+        stderr: () => Sink.drain,
+      }),
+    });
+    let nativeThreadId = "";
+    let nativeTurnId = "";
+    const events = Stream.merge(
+      protocol.incomingNotifications.pipe(
+        Stream.map((event) => ({
+          method: event.method,
+          payload: event.params,
+          textDelta:
+            event.params && typeof event.params === "object" && "delta" in event.params
+              ? String(event.params.delta)
+              : undefined,
+          requestId: undefined as string | number | undefined,
+        })),
+      ),
+      protocol.incomingRequests.pipe(
+        Stream.map((event) => ({
+          method: event.method,
+          payload: event.params,
+          textDelta: undefined as string | undefined,
+          requestId: event.id,
+        })),
+      ),
+    );
+    return {
+      events,
+      start: () =>
+        Effect.gen(function* () {
+          yield* protocol.request("initialize", {
+            clientInfo: { name: "styal_fake_codex_test", version: "1" },
+          });
+          yield* protocol.notify("initialized", {});
+          const response = yield* protocol.request("thread/start", {
+            cwd: workspace,
+            model: "fake-codex",
+            approvalPolicy: "never",
+            sandbox: "danger-full-access",
+          });
+          const result = response as { thread: { id: string }; model: string };
+          nativeThreadId = result.thread.id;
+          return { model: result.model };
+        }),
+      sendTurn: (input: { input: string }) =>
+        Effect.gen(function* () {
+          const result = yield* protocol.request("turn/start", {
+            threadId: nativeThreadId,
+            input: [{ type: "text", text: input.input }],
+          });
+          nativeTurnId = (result as { turn: { id: string } }).turn.id;
+        }),
+      respondToUserInput: (id: string | number, answers: Record<string, string>) =>
+        protocol.respond(id, {
+          answers: Object.fromEntries(
+            Object.entries(answers).map(([key, value]) => [key, { answers: [value] }]),
+          ),
+        }),
+      interruptTurn: () =>
+        protocol.request("turn/interrupt", { threadId: nativeThreadId, turnId: nativeTurnId }),
+      close: child.kill(),
+    };
   });
 
 it.layer(

@@ -1,9 +1,7 @@
+import { type ServerProviderModel } from "@t3tools/contracts";
+import { normalizeAntigravityModelSelection } from "./model.ts";
 import { describe, expect, it } from "vite-plus/test";
-import {
-  ProviderInstanceId,
-  type ServerProviderModel,
-  type ModelCapabilities,
-} from "@t3tools/contracts";
+import { ProviderDriverKind, ProviderInstanceId, type ModelCapabilities } from "@t3tools/contracts";
 
 import {
   applyClaudePromptEffortPrefix,
@@ -11,7 +9,8 @@ import {
   buildProviderOptionSelectionsFromDescriptors,
   createModelCapabilities,
   createModelSelection,
-  normalizeAntigravityModelSelection,
+  formatCodexModelName,
+  formatModelSlugName,
   getModelSelectionBooleanOptionValue,
   getModelSelectionStringOptionValue,
   getProviderOptionDescriptors,
@@ -19,7 +18,30 @@ import {
   toCustomModelSetting,
   getProviderOptionBooleanSelectionValue,
   getProviderOptionStringSelectionValue,
+  normalizeCustomModelSlug,
+  normalizeModelSlug,
+  modelSelectionsEqual,
 } from "./model.ts";
+
+it("keeps the Codex catalog display formatting", () => {
+  expect(formatCodexModelName("gpt-5.3-codex-spark")).toBe("GPT-5.3 Codex Spark");
+  expect(formatCodexModelName("GPT-6.1-Sol")).toBe("GPT-6.1 Sol");
+  expect(formatCodexModelName("GPT Test")).toBe("GPT Test");
+});
+
+it.each([
+  ["gpt-5.4", "GPT-5.4"],
+  ["claude-opus-4-6", "Claude Opus 4.6"],
+  ["claude-sonnet-4-20250514", "Claude Sonnet 4 20250514"],
+  ["claude-opus-4-6[1m]", "Claude Opus 4.6[1m]"],
+  ["openai/gpt-5.4-mini", "openai/GPT-5.4 Mini"],
+  ["gemini-2.5-pro-preview-06-05", "Gemini 2.5 Pro Preview 06 05"],
+  ["custom/model-v2", "custom/model-v2"],
+  ["gpt-proxy", "gpt-proxy"],
+  ["My Custom Model", "My Custom Model"],
+])("formats a known model ID without losing its qualifiers: %s", (slug, expected) => {
+  expect(formatModelSlugName(slug)).toBe(expected);
+});
 
 const codexCaps: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [
@@ -39,6 +61,17 @@ const codexCaps: ModelCapabilities = createModelCapabilities({
       type: "boolean",
     },
   ],
+});
+
+describe("model slug normalization", () => {
+  it("preserves exact custom slugs instead of expanding provider aliases", () => {
+    // Claude aliases now resolve through the model catalog (#9084), so the
+    // provider alias table passes unknown slugs through unchanged.
+    const claude = ProviderDriverKind.make("claudeAgent");
+
+    expect(normalizeModelSlug("opus", claude)).toBe("opus");
+    expect(normalizeCustomModelSlug(" opus ")).toBe("opus");
+  });
 });
 
 const claudeCaps: ModelCapabilities = createModelCapabilities({
@@ -167,6 +200,29 @@ describe("descriptor helpers", () => {
     ).toBeUndefined();
     expect(getModelSelectionStringOptionValue(selection, "reasoningEffort")).toBe("high");
     expect(getModelSelectionBooleanOptionValue(selection, "fastMode")).toBe(true);
+  });
+
+  it("compares complete model selections independent of option ordering", () => {
+    const left = createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.4", [
+      { id: "reasoningEffort", value: "high" },
+      { id: "fastMode", value: true },
+    ]);
+    const reordered = createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.4", [
+      { id: "fastMode", value: true },
+      { id: "reasoningEffort", value: "high" },
+    ]);
+
+    expect(modelSelectionsEqual(left, reordered)).toBe(true);
+    expect(
+      modelSelectionsEqual(left, {
+        ...reordered,
+        options: [
+          { id: "fastMode", value: true },
+          { id: "reasoningEffort", value: "medium" },
+        ],
+      }),
+    ).toBe(false);
+    expect(modelSelectionsEqual(left, { ...reordered, model: "gpt-5.5" })).toBe(false);
   });
 });
 

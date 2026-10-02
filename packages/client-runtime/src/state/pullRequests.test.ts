@@ -29,7 +29,7 @@ import {
 } from "../connection/model.ts";
 import * as EnvironmentRegistry from "../connection/registry.ts";
 import { SshConnectionProfile, type ConnectionCatalogEntry } from "../connection/catalog.ts";
-import { ConnectionProfileStore } from "../connection/profileStore.ts";
+import * as ConnectionProfileStore from "../connection/profileStore.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import type { RpcSession } from "../rpc/session.ts";
@@ -38,7 +38,7 @@ import {
   createPullRequestEnvironmentAtoms,
   createPullRequestStackAtomFamily,
 } from "./pullRequests.ts";
-import { PullRequestDiffLoader } from "./pullRequestDiffHttp.ts";
+import * as PullRequestDiffLoader from "./pullRequestDiffHttp.ts";
 import { executeAtomQuery } from "./runtime.ts";
 import { createPullRequestRouter } from "./pullRequestRouting.ts";
 import { GitHubRoutingPermissions } from "../connection/githubRoutingPermissions.ts";
@@ -328,7 +328,7 @@ function session(client: WsRpcProtocolClient): RpcSession {
       [WS_METHODS.pullRequestsInvalidate]:
         client[WS_METHODS.pullRequestsInvalidate] ?? (() => Effect.void),
     },
-    initialConfig: Effect.never,
+    initialConfig: client[WS_METHODS.serverGetConfig]?.({}).pipe(Effect.orDie) ?? Effect.never,
     subscribeServerConfig: (input) => client.subscribeServerConfig(input),
     ready: Effect.void,
     probe: Effect.void,
@@ -408,8 +408,8 @@ const makeTestRuntime = Effect.fn("makeTestRuntime")(function* (
     Layer.merge(
       Layer.succeed(EnvironmentRegistry.EnvironmentRegistry, environmentRegistry),
       Layer.succeed(
-        PullRequestDiffLoader,
-        PullRequestDiffLoader.of({ load: () => Effect.die("unused") }),
+        PullRequestDiffLoader.PullRequestDiffLoader,
+        PullRequestDiffLoader.PullRequestDiffLoader.of({ load: () => Effect.die("unused") }),
       ),
     ),
   );
@@ -580,7 +580,7 @@ for (const side of ["origin", "destination"] as const) {
           yield* stored === "unavailable"
             ? route
             : route.pipe(
-                Effect.provideService(ConnectionProfileStore, {
+                Effect.provideService(ConnectionProfileStore.ConnectionProfileStore, {
                   get: () => read,
                   put: () => Effect.die("unused"),
                   remove: () => Effect.die("unused"),
@@ -1152,268 +1152,110 @@ it.effect("refreshes pull request activity after a comment is updated", () =>
   ),
 );
 
-for (const applied of [true, false]) {
-  for (const refuse of [false, true]) {
-    it.effect(
-      `optimistically ${applied ? "adds" : "removes"} labels and ${refuse ? "rolls back" : "commits"} after the reply`,
-      () =>
-        Effect.scoped(
-          Effect.gen(function* () {
-            const label = { name: "bug", color: "abcdef" };
-            const unrelated = { name: "documentation", color: "111111" };
-            let refreshed = false;
-            let reads = 0;
-            const started = yield* Latch.make();
-            const reply = yield* Latch.make();
-            const client = {
-              [WS_METHODS.pullRequestsSubscribeRefreshes]: () => Stream.never,
-              [WS_METHODS.pullRequestsDetail]: () =>
-                Effect.sync(() => {
-                  reads++;
-                  return {
-                    title: refreshed ? "new title" : "old title",
-                    labels: [...(applied ? [] : [label]), ...(refreshed ? [unrelated] : [])],
-                  };
-                }),
-              [WS_METHODS.pullRequestsLabelCandidates]: () =>
-                Effect.sync(() => {
-                  reads++;
-                  return {
-                    candidates: [
-                      { ...label, description: null, isApplied: !applied },
-                      { ...unrelated, description: null, isApplied: refreshed },
-                    ],
-                    truncated: false,
-                  };
-                }),
-              [WS_METHODS.pullRequestsSetLabels]: () =>
-                Effect.gen(function* () {
-                  yield* started.open;
-                  yield* reply.await;
-                  if (refuse) return yield* Effect.fail(new MutationRefused());
-                }),
-            } as unknown as WsRpcProtocolClient;
-            const { atoms, registry } = yield* makeTestRuntime(client);
-            const target = {
-              environmentId: TARGET.environmentId,
-              input: {
-                projectId: ProjectId.make("project-1"),
-                repository: "acme/web",
-                number: 1,
-              },
-            };
-            const detail = atoms.detail(target);
-            const candidates = atoms.labelCandidates(target);
-            registry.mount(detail);
-            registry.mount(candidates);
-            yield* AtomRegistry.getResult(registry, detail, { suspendOnWaiting: true });
-            yield* AtomRegistry.getResult(registry, candidates, { suspendOnWaiting: true });
-            const mutation = yield* Effect.forkChild(
-              Effect.promise(() =>
-                atoms.setLabels.run(registry, {
-                  ...target,
-                  input: { ...target.input, labels: [label.name], applied },
-                }),
-              ),
-            );
-            yield* started.await;
-            expect((yield* AtomRegistry.getResult(registry, detail)).labels).toEqual(
-              applied ? [label] : [],
-            );
-            expect(
-              (yield* AtomRegistry.getResult(registry, candidates)).candidates[0]?.isApplied,
-            ).toBe(applied);
-            expect(reads).toBe(2);
-
-            // A read begun before the reply must retain the edit and accept unrelated host updates.
-            refreshed = true;
-            registry.refresh(detail);
-            registry.refresh(candidates);
-            const latestDetail = yield* AtomRegistry.getResult(registry, detail, {
-              suspendOnWaiting: true,
-            });
-            expect(latestDetail.title).toBe("new title");
-            expect(latestDetail.labels).toEqual(applied ? [unrelated, label] : [unrelated]);
-            expect(
-              (yield* AtomRegistry.getResult(registry, candidates, { suspendOnWaiting: true }))
-                .candidates,
-            ).toMatchObject([{ isApplied: applied }, { isApplied: true }]);
-            yield* reply.open;
-            expect((yield* Fiber.join(mutation))._tag).toBe(refuse ? "Failure" : "Success");
-            expect((yield* AtomRegistry.getResult(registry, detail)).labels).toEqual(
-              refuse
-                ? applied
-                  ? [unrelated]
-                  : [label, unrelated]
-                : applied
-                  ? [unrelated, label]
-                  : [unrelated],
-            );
-            expect((yield* AtomRegistry.getResult(registry, detail)).title).toBe("new title");
-            expect((yield* AtomRegistry.getResult(registry, candidates)).candidates).toMatchObject([
-              { isApplied: refuse ? !applied : applied },
-              { isApplied: true },
-            ]);
-            expect(reads).toBe(4);
-          }),
-        ),
-    );
-  }
-}
-
-for (const refuse of [false, true]) {
-  it.effect(
-    `shows queued labels before an earlier reaction finishes and ${refuse ? "rolls back" : "commits"} the reply`,
-    () =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const label = { name: "bug", color: "abcdef" };
-          const reactionStarted = yield* Latch.make();
-          const releaseReaction = yield* Latch.make();
-          const labelsStarted = yield* Latch.make();
-          const releaseLabels = yield* Latch.make();
-          let labelCalls = 0;
-          const client = {
-            [WS_METHODS.pullRequestsSubscribeRefreshes]: () => Stream.never,
-            [WS_METHODS.pullRequestsDetail]: () => Effect.succeed({ labels: [] }),
-            [WS_METHODS.pullRequestsLabelCandidates]: () =>
-              Effect.succeed({
-                candidates: [{ ...label, description: null, isApplied: false }],
-                truncated: false,
-              }),
-            [WS_METHODS.pullRequestsSetReaction]: () =>
-              Effect.gen(function* () {
-                yield* reactionStarted.open;
-                yield* releaseReaction.await;
-              }),
-            [WS_METHODS.pullRequestsSetLabels]: () =>
-              Effect.gen(function* () {
-                labelCalls++;
-                yield* labelsStarted.open;
-                yield* releaseLabels.await;
-                if (refuse) return yield* Effect.fail(new MutationRefused());
-              }),
-          } as unknown as WsRpcProtocolClient;
-          const { atoms, registry } = yield* makeTestRuntime(client);
-          const target = {
-            environmentId: TARGET.environmentId,
-            input: {
-              projectId: ProjectId.make("project-1"),
-              repository: "acme/web",
-              number: 1,
-            },
-          };
-          const detail = atoms.detail(target);
-          const candidates = atoms.labelCandidates(target);
-          registry.mount(detail);
-          registry.mount(candidates);
-          yield* AtomRegistry.getResult(registry, detail, { suspendOnWaiting: true });
-          yield* AtomRegistry.getResult(registry, candidates, { suspendOnWaiting: true });
-          const reaction = atoms.setReaction.run(registry, {
-            ...target,
-            input: { ...target.input, content: "thumbs-up", reacted: true },
-          });
-          yield* reactionStarted.await;
-          const labels = atoms.setLabels.run(registry, {
-            ...target,
-            input: { ...target.input, labels: [label.name], applied: true },
-          });
-          expect(labelCalls).toBe(0);
-          expect(Option.getOrThrow(AsyncResult.value(registry.get(detail))).labels).toEqual([
-            label,
-          ]);
-          expect(
-            Option.getOrThrow(AsyncResult.value(registry.get(candidates))).candidates[0]?.isApplied,
-          ).toBe(true);
-          yield* releaseReaction.open;
-          yield* labelsStarted.await;
-          expect(labelCalls).toBe(1);
-          yield* releaseLabels.open;
-          expect((yield* Effect.promise(() => reaction))._tag).toBe("Success");
-          expect((yield* Effect.promise(() => labels))._tag).toBe(refuse ? "Failure" : "Success");
-          expect((yield* AtomRegistry.getResult(registry, detail)).labels).toEqual(
-            refuse ? [] : [label],
-          );
-          expect(
-            (yield* AtomRegistry.getResult(registry, candidates)).candidates[0]?.isApplied,
-          ).toBe(!refuse);
-        }),
-      ),
-  );
-}
-
-it.effect("keeps newer queued label edits visible while earlier replies settle", () =>
+it.effect("refreshes checks without refreshing full detail", () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const label = { name: "bug", color: "abcdef" };
-      const firstStarted = yield* Latch.make();
-      const releaseFirst = yield* Latch.make();
-      const secondStarted = yield* Latch.make();
-      const releaseSecond = yield* Latch.make();
-      let calls = 0;
+      let detailReads = 0;
+      let checksReads = 0;
       const client = {
         [WS_METHODS.pullRequestsSubscribeRefreshes]: () => Stream.never,
-        [WS_METHODS.pullRequestsDetail]: () => Effect.succeed({ labels: [] }),
-        [WS_METHODS.pullRequestsLabelCandidates]: () =>
-          Effect.succeed({
-            candidates: [{ ...label, description: null, isApplied: false }],
-            truncated: false,
+        [WS_METHODS.pullRequestsDetail]: () =>
+          Effect.sync(() => {
+            detailReads++;
+            return { title: "PR" };
           }),
-        [WS_METHODS.pullRequestsSetLabels]: () =>
-          Effect.gen(function* () {
-            calls++;
-            if (calls === 1) {
-              yield* firstStarted.open;
-              yield* releaseFirst.await;
-            } else {
-              yield* secondStarted.open;
-              yield* releaseSecond.await;
-              return yield* Effect.fail(new MutationRefused());
-            }
+        [WS_METHODS.pullRequestsChecks]: () =>
+          Effect.sync(() => {
+            checksReads++;
+            return { state: checksReads === 1 ? "open" : "merged", checks: [] };
           }),
       } as unknown as WsRpcProtocolClient;
       const { atoms, registry } = yield* makeTestRuntime(client);
       const target = {
         environmentId: TARGET.environmentId,
-        input: {
+        input: { projectId: ProjectId.make("project-1"), repository: "acme/web", number: 1 },
+      };
+      const detail = atoms.detail(target);
+      const checks = atoms.checks(target);
+      yield* AtomRegistry.mount(registry, detail);
+      yield* AtomRegistry.mount(registry, checks);
+      yield* AtomRegistry.getResult(registry, detail);
+      expect((yield* AtomRegistry.getResult(registry, checks))?.state).toBe("open");
+      registry.refresh(checks);
+      expect(
+        (yield* AtomRegistry.getResult(registry, checks, { suspendOnWaiting: true }))?.state,
+      ).toBe("merged");
+      expect(detailReads).toBe(1);
+      expect(checksReads).toBe(2);
+    }),
+  ),
+);
+
+for (const oldAlternate of [false, true]) {
+  it.effect(`routes checks through one reader with old alternate: ${oldAlternate}`, () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const calls: string[] = [];
+        const clientFor = (local: boolean) =>
+          ({
+            [WS_METHODS.serverGetConfig]: () =>
+              Effect.succeed({
+                environment: {
+                  capabilities: local && oldAlternate ? {} : { pullRequestChecks: true },
+                },
+              }),
+            [local ? WS_METHODS.pullRequestsRoutingIdentity : WS_METHODS.pullRequestsRouting]: () =>
+              Effect.succeed({
+                host: "github.com",
+                provider: "github",
+                viewer: "viewer",
+                accountId: "123",
+              }),
+            [WS_METHODS.pullRequestsChecks]: () =>
+              Effect.gen(function* () {
+                calls.push(local ? "local" : "origin");
+                if (local && oldAlternate)
+                  return yield* Effect.die("Unknown request tag: pullRequests.checks");
+                return { state: "open", checks: [] };
+              }),
+          }) as unknown as WsRpcProtocolClient;
+        const { environmentRegistry, supervisor } = yield* makeTestRuntime(
+          clientFor(false),
+          clientFor(true),
+        );
+        const result = yield* createPullRequestRouter()(WS_METHODS.pullRequestsChecks, {
           projectId: ProjectId.make("project-1"),
           repository: "acme/web",
           number: 1,
-        },
+        }).pipe(
+          Effect.provideService(EnvironmentRegistry.EnvironmentRegistry, environmentRegistry),
+          Effect.provideService(GitHubRoutingPermissions, trustedRouting),
+          Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        );
+        expect(result).toEqual({ state: "open", checks: [] });
+        expect(calls).toEqual(oldAlternate ? ["origin"] : ["local"]);
+      }),
+    ),
+  );
+}
+
+it.effect("keeps live detail reads separate from reads that allow stale data", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const client = {
+        [WS_METHODS.pullRequestsSubscribeRefreshes]: () => Stream.never,
+        [WS_METHODS.pullRequestsDetail]: (input: { allowStale?: boolean }) =>
+          Effect.succeed({ title: input.allowStale === false ? "latest checks" : "cached checks" }),
+      } as unknown as WsRpcProtocolClient;
+      const { atoms, registry } = yield* makeTestRuntime(client);
+      const target = {
+        environmentId: TARGET.environmentId,
+        input: { projectId: ProjectId.make("project-1"), repository: "acme/web", number: 1 },
       };
-      const detail = atoms.detail(target);
-      const candidates = atoms.labelCandidates(target);
-      registry.mount(detail);
-      registry.mount(candidates);
-      yield* AtomRegistry.getResult(registry, detail, { suspendOnWaiting: true });
-      yield* AtomRegistry.getResult(registry, candidates, { suspendOnWaiting: true });
-      const first = atoms.setLabels.run(registry, {
-        ...target,
-        input: { ...target.input, labels: [label.name], applied: true },
-      });
-      yield* firstStarted.await;
-      const second = atoms.setLabels.run(registry, {
-        ...target,
-        input: { ...target.input, labels: [label.name], applied: false },
-      });
-      expect(calls).toBe(1);
-      expect(Option.getOrThrow(AsyncResult.value(registry.get(detail))).labels).toEqual([]);
-      expect(
-        Option.getOrThrow(AsyncResult.value(registry.get(candidates))).candidates[0]?.isApplied,
-      ).toBe(false);
-      yield* releaseFirst.open;
-      yield* secondStarted.await;
-      expect((yield* Effect.promise(() => first))._tag).toBe("Success");
-      expect((yield* AtomRegistry.getResult(registry, detail)).labels).toEqual([]);
-      expect((yield* AtomRegistry.getResult(registry, candidates)).candidates[0]?.isApplied).toBe(
-        false,
-      );
-      yield* releaseSecond.open;
-      expect((yield* Effect.promise(() => second))._tag).toBe("Failure");
-      expect((yield* AtomRegistry.getResult(registry, detail)).labels).toEqual([label]);
-      expect((yield* AtomRegistry.getResult(registry, candidates)).candidates[0]?.isApplied).toBe(
-        true,
-      );
+      const cached = atoms.detail(target);
+      const live = atoms.detail({ ...target, input: { ...target.input, allowStale: false } });
+      expect((yield* AtomRegistry.getResult(registry, cached)).title).toBe("cached checks");
+      expect((yield* AtomRegistry.getResult(registry, live)).title).toBe("latest checks");
     }),
   ),
 );

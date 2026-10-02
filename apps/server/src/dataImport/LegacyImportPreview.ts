@@ -164,7 +164,10 @@ function resumeCursorIdentity(resumeCursor: unknown): string {
     const cursor = resumeCursor as Record<string, unknown>;
     for (const key of ["resume", "sessionId", "threadId"] as const) {
       const value = cursor[key];
-      if (typeof value === "string" && value.length > 0) return `${key}:${value}`;
+      if (typeof value === "string" && value.length > 0) {
+        const head = cursor.resumeSessionAt;
+        return typeof head === "string" && head.length > 0 ? `${value}:${head}` : value;
+      }
     }
   }
   return `opaque:${encodeUnknownJsonString(resumeCursor)}`;
@@ -185,6 +188,33 @@ function readRuntimeContinuationKeys(
   database: ReadonlyDatabase,
   tableNames: ReadonlySet<string>,
 ): ReadonlyMap<string, string> {
+  if (tableNames.has("orchestration_v2_projection_provider_threads")) {
+    const rows = decodeRuntimeRows(
+      database.all(`
+      SELECT thread.thread_id AS threadId, provider.driver AS providerName,
+        provider.provider_instance_id AS providerInstanceId,
+        CASE provider.driver
+          WHEN 'codex' THEN json_object('threadId', json_extract(provider.payload_json, '$.nativeThreadRef.nativeId'))
+          WHEN 'claudeAgent' THEN json_object('resume', json_extract(provider.payload_json, '$.nativeThreadRef.nativeId'), 'resumeSessionAt', json_extract(provider.payload_json, '$.nativeConversationHeadRef.nativeId'))
+          ELSE json_object('sessionId', json_extract(provider.payload_json, '$.nativeThreadRef.nativeId'))
+        END AS resumeCursorJson
+      FROM orchestration_v2_projection_threads AS thread
+      JOIN orchestration_v2_projection_provider_threads AS provider
+        ON provider.provider_thread_id = json_extract(thread.payload_json, '$.activeProviderThreadId')
+      WHERE json_extract(provider.payload_json, '$.nativeThreadRef.nativeId') IS NOT NULL
+    `),
+    );
+    return new Map(
+      rows.flatMap((row) => {
+        const key = legacyContinuationKey({
+          providerName: row.providerName,
+          providerInstanceId: row.providerInstanceId,
+          resumeCursor: decodeUnknownJsonString(row.resumeCursorJson ?? "null"),
+        });
+        return key === null ? [] : [[row.threadId, key] as const];
+      }),
+    );
+  }
   if (!tableNames.has("provider_session_runtime")) return new Map();
   const runtimeColumns = new Set(
     decodeTableRows(database.all("PRAGMA table_info(provider_session_runtime)")).map(
@@ -226,7 +256,7 @@ function readTurnPromptLinkEventIds(
   tableNames: ReadonlySet<string>,
 ): ReadonlySet<string> {
   if (!tableNames.has("orchestration_events")) return new Set();
-  return new Set(
+  const ids = new Set(
     decodeEventIdRows(
       database.all(`
         SELECT event_id AS eventId
@@ -235,6 +265,20 @@ function readTurnPromptLinkEventIds(
       `),
     ).map(({ eventId }) => eventId),
   );
+  if (
+    tableNames.has("orchestration_v2_projection_threads") &&
+    tableNames.has("orchestration_command_receipts")
+  ) {
+    const receipts = decodeEventIdRows(
+      database.all(`
+      SELECT substr(command_id, length('import:v1:prompt:') + 1) AS eventId
+      FROM orchestration_command_receipts
+      WHERE command_type = 'thread.turn-prompt-linked.import' AND status = 'accepted'
+    `),
+    );
+    for (const receipt of receipts) ids.add(receipt.eventId);
+  }
+  return ids;
 }
 
 export function inspectLegacyImportDestinationState(
@@ -258,18 +302,31 @@ export function inspectLegacyImportDestinationState(
       FROM projection_projects
     `),
   );
+  const v2 = tableNames.has("orchestration_v2_projection_threads");
   const destinationThreads = decodeSourceThreadRows(
-    database.all("SELECT project_id AS projectId, thread_id AS threadId FROM projection_threads"),
+    database.all(
+      v2
+        ? "SELECT json_extract(payload_json, '$.projectId') AS projectId, thread_id AS threadId FROM orchestration_v2_projection_threads"
+        : "SELECT project_id AS projectId, thread_id AS threadId FROM projection_threads",
+    ),
   );
-  const destinationTurns = tableNames.has("projection_turns")
+  const destinationTurns = v2
     ? decodeProjectionTurnRows(
         database.all(`
+        SELECT DISTINCT thread_id AS threadId, json_extract(payload_json, '$.legacyTurnId') AS turnId
+        FROM orchestration_v2_projection_messages
+        WHERE json_extract(payload_json, '$.legacyTurnId') IS NOT NULL
+      `),
+      )
+    : tableNames.has("projection_turns")
+      ? decodeProjectionTurnRows(
+          database.all(`
           SELECT thread_id AS threadId, turn_id AS turnId
           FROM projection_turns
           WHERE turn_id IS NOT NULL
         `),
-      )
-    : [];
+        )
+      : [];
   const turnIdsByThreadId = new Map<string, Set<string>>();
   for (const turn of destinationTurns) {
     const turnIds = turnIdsByThreadId.get(turn.threadId) ?? new Set<string>();
@@ -314,7 +371,11 @@ export function inspectOpenDatabase(
       database.all("SELECT name FROM sqlite_master WHERE type = 'table'"),
     );
     const tableNames = new Set(tables.map(({ name }) => name));
-    if (!tableNames.has("projection_projects") || !tableNames.has("projection_threads")) {
+    if (
+      !tableNames.has("projection_projects") ||
+      (!tableNames.has("projection_threads") &&
+        !tableNames.has("orchestration_v2_projection_threads"))
+    ) {
       database.exec("ROLLBACK");
       return unavailable("unsupported-database");
     }
@@ -352,11 +413,11 @@ export function inspectOpenDatabase(
       `),
     );
     const sourceThreads = decodeSourceThreadRows(
-      database.all(`
-        SELECT project_id AS projectId, thread_id AS threadId
-        FROM projection_threads
-        WHERE deleted_at IS NULL
-      `),
+      database.all(
+        tableNames.has("orchestration_v2_projection_threads")
+          ? "SELECT json_extract(payload_json, '$.projectId') AS projectId, thread_id AS threadId FROM orchestration_v2_projection_threads WHERE json_extract(payload_json, '$.deletedAt') IS NULL"
+          : "SELECT project_id AS projectId, thread_id AS threadId FROM projection_threads WHERE deleted_at IS NULL",
+      ),
     );
     const sourceContinuationKeys = readRuntimeContinuationKeys(database, tableNames);
     const missingPromptLinkThreadIds = tableNames.has("orchestration_events")
@@ -571,10 +632,21 @@ export const makeLegacyImportPreviewService = Effect.fn(
 const make = Effect.gen(function* () {
   const config = yield* ServerConfig;
   return yield* makeLegacyImportPreviewService({
-    sourceDatabasePath: NodePath.join(NodeOS.homedir(), ".t3", "userdata", "state.sqlite"),
+    sourceDatabasePath: legacySourceDatabasePath(
+      NodePath.join(NodeOS.homedir(), ".t3", "userdata"),
+    ),
     sourceSettingsPath: NodePath.join(NodeOS.homedir(), ".t3", "userdata", "settings.json"),
     currentDatabasePath: config.dbPath,
   });
 });
 
 export const layer = Layer.effect(LegacyImportPreviewService, make);
+
+/** V2 is authoritative when an installation still retains its pre-migration database. */
+export function legacySourceDatabasePath(stateDir: string): string {
+  for (const filename of ["statev2.sqlite", "state-v2.sqlite"]) {
+    const v2 = NodePath.join(stateDir, filename);
+    if (NodeFS.existsSync(v2)) return v2;
+  }
+  return NodePath.join(stateDir, "state.sqlite");
+}

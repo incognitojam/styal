@@ -29,6 +29,21 @@ the agent picked up again, and a thread asked to restart background work shows
 If you previously enabled continuation for updates, enable this setting once
 to allow recovery without a connected client.
 
+Updates from the previous orchestration system preserve conversation transcripts but cannot carry
+every kind of runtime history forward. Read [Threads from older T3 Code versions](./thread-migration.md)
+before continuing an important older thread.
+
+## When versions don't match
+
+A client and server must speak the same orchestration protocol. If they do not, the connection is
+refused rather than running half-upgraded:
+
+- An app newer than the server is blocked before connecting, with a notice telling you to update
+  T3 Code on the machine named in the notice.
+- A server newer than your app refuses the connection with an update message.
+
+Update the side the notice names, then reconnect.
+
 ## Update a connected server
 
 The offered action depends on how the server runs:

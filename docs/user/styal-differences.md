@@ -203,7 +203,9 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 - **Import without replacing your existing setup.** Bring projects, threads, attachments, and
   supported preferences into styal while leaving the T3 Code installation intact. Existing styal
   project settings take precedence, and interrupted imports can resume without duplicating completed
-  threads. Migration is available during setup and later in Settings; setup reviews differing
+  threads. Existing threads retain recorded token use, API cost, tool activity, and checkpoints when
+  upgrading to the new history format; T3 Code migrates messages only as of
+  [revision de34391](https://github.com/pingdotgg/t3code/tree/de343914273eceb852a1d1d739cd1d38df7796ee). Migration is available during setup and later in Settings; setup reviews differing
   preferences in a separate step.[^import-comparison] Credentials and active sessions remain separate.
   [Import T3 Code data](./importing-t3-code-data.md).
 

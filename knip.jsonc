@@ -34,7 +34,9 @@
         "scripts/measure-pr-preview.ts",
         // Installed as the Codex binary by its test and the T3 import fixture generator.
         "scripts/fake-codex.ts",
+        "scripts/probe-claude-fork-local-rollback-replay.ts",
         "scripts/update-test-shard-weights.ts",
+        "scripts/verify-background-live.ts",
         "src/provider/testFixtures/*.mjs",
       ],
       // Keep the transitive Effect runtime pinned for standalone npm installs.

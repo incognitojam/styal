@@ -1,6 +1,7 @@
 import { EnvironmentId, ProjectId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { describe, expect, it } from "vite-plus/test";
+import { makeThreadFixture } from "./test-fixtures";
 import { deriveDiscordPresence } from "./discordPresence";
 
 const now = "2026-09-18T12:00:00.000Z";
@@ -21,30 +22,15 @@ function thread(
   id: string,
   overrides: Partial<EnvironmentThreadShell> = {},
 ): EnvironmentThreadShell {
-  return {
+  return makeThreadFixture({
     id: ThreadId.make(id),
     environmentId: local,
     projectId: ProjectId.make("project-a"),
     title: "Synthetic thread",
-    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
-    runtimeMode: "full-access",
-    interactionMode: "default",
-    branch: null,
-    worktreePath: null,
     createdAt: now,
     updatedAt: now,
-    archivedAt: null,
-    settledOverride: null,
-    settledAt: null,
-    session: null,
-    latestTurn: null,
-    latestUserMessageAt: null,
-    hasPendingApprovals: false,
-    hasPendingUserInput: false,
-    hasActionableProposedPlan: false,
-    pullRequests: [],
     ...overrides,
-  };
+  });
 }
 
 describe("Discord presence counts", () => {

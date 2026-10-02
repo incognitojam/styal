@@ -92,7 +92,6 @@ export class DesktopEnvironment extends Context.Service<
     readonly linuxWmClass: string;
     readonly linuxApplicationsDir: string;
     readonly appImagePath: Option.Option<string>;
-    readonly userDataDirName: string;
     readonly defaultDesktopSettings: DesktopAppSettings.DesktopSettings;
     readonly runtimeInfo: DesktopRuntimeInfo;
     readonly resolvePickFolderDefaultPath: (rawOptions: unknown) => Option.Option<string>;
@@ -201,7 +200,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
   // Electron keys OS credential storage on app.name: the macOS Keychain
   // service, and the libsecret/kwallet collection on Linux. There is no API to
   // name those entries directly, so app.name is an identity slug rather than a
-  // display string. It matches userDataDirName below, keeping secrets in the
+  // display string. It matches the Electron profile directory, keeping secrets in the
   // same namespace as the state they protect. Anything user-visible reads
   // displayName instead.
   const safeStorageName = identity.slug;
@@ -211,7 +210,6 @@ const make = Effect.fn("desktop.environment.make")(function* (
     joinPath: path.join,
     t3Home: config.t3Home,
   });
-  const userDataDirName = identity.slug;
   const linuxApplicationsDir = path.join(
     Option.getOrElse(config.xdgDataHome, () => path.join(homeDirectory, ".local", "share")),
     "applications",
@@ -268,7 +266,6 @@ const make = Effect.fn("desktop.environment.make")(function* (
     linuxWmClass: identity.slug,
     linuxApplicationsDir,
     appImagePath: config.appImagePath,
-    userDataDirName,
     defaultDesktopSettings: DesktopAppSettings.resolveDefaultDesktopSettings(input.appVersion),
     runtimeInfo: resolveDesktopRuntimeInfo({
       platform: input.platform,

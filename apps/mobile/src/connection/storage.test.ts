@@ -13,12 +13,12 @@ vi.mock("expo-secure-store", () => ({
 }));
 
 import { CONNECTION_CATALOG_KEY, make } from "./catalog-store";
-import { MobileSecureStorage } from "../persistence/mobile-secure-storage";
+import * as MobileSecureStorage from "../persistence/mobile-secure-storage";
 
 function makeStorage(initial: Readonly<Record<string, string>>) {
   const values = new Map(Object.entries(initial));
   const deleted: Array<string> = [];
-  const storage = MobileSecureStorage.of({
+  const storage = MobileSecureStorage.MobileSecureStorage.of({
     getItem: (key) => Effect.sync(() => values.get(key) ?? null),
     setItem: (key, value) =>
       Effect.sync(() => {
@@ -40,7 +40,7 @@ describe("mobile connection catalog storage", () => {
         [CONNECTION_CATALOG_KEY]: "{not-json",
       });
       const catalog = yield* make().pipe(
-        Effect.provideService(MobileSecureStorage, memory.storage),
+        Effect.provideService(MobileSecureStorage.MobileSecureStorage, memory.storage),
       );
 
       expect((yield* catalog.read).targets).toEqual([]);
@@ -52,7 +52,7 @@ describe("mobile connection catalog storage", () => {
     Effect.gen(function* () {
       const memory = makeStorage({});
       const catalog = yield* make().pipe(
-        Effect.provideService(MobileSecureStorage, memory.storage),
+        Effect.provideService(MobileSecureStorage.MobileSecureStorage, memory.storage),
       );
 
       expect((yield* catalog.read).targets).toEqual([]);
@@ -69,12 +69,12 @@ describe("mobile connection catalog storage", () => {
         [t3CodeCatalogKey]: "t3-owned-data",
       });
       const catalog = yield* make().pipe(
-        Effect.provideService(MobileSecureStorage, memory.storage),
+        Effect.provideService(MobileSecureStorage.MobileSecureStorage, memory.storage),
       );
 
       expect((yield* catalog.read).targets).toEqual([]);
       expect(memory.deleted).toEqual([CONNECTION_CATALOG_KEY]);
-      expect(memory.values.get(t3CodeCatalogKey)).toBe("t3-owned-data");
+      expect(memory.values.has(t3CodeCatalogKey)).toBe(true);
     }),
   );
 });

@@ -182,7 +182,6 @@ describe("DesktopEnvironment", () => {
       // keeps its own, matching its separate state directory.
       assert.equal(stable.safeStorageName, "styal");
       assert.equal(nightly.safeStorageName, "styal");
-      assert.equal(stable.userDataDirName, nightly.userDataDirName);
       assert.equal(stable.stateDir, nightly.stateDir);
       assert.equal(development.safeStorageName, "styal-dev");
 
@@ -208,7 +207,6 @@ describe("DesktopEnvironment", () => {
       assert.equal(preview.stateDir, "/Users/alice/.styal/preview/userdata");
       assert.equal(previewWithHome.baseDir, "/tmp/styal/preview");
       assert.equal(previewWithHome.stateDir, "/tmp/styal/preview/userdata");
-      assert.equal(preview.userDataDirName, "styal-preview");
       assert.equal(preview.safeStorageName, "styal-preview");
       assert.equal(preview.appUserModelId, "build.styal.app.preview");
       assert.equal(preview.linuxDesktopEntryName, "build.styal.Styal.Preview.desktop");

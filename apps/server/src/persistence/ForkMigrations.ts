@@ -7,6 +7,7 @@ import ForkMigration0002 from "./ForkMigrations/002_WorkspacePortAllocations.ts"
 import ForkMigration0003 from "./ForkMigrations/003_ProjectAdditionalInstructions.ts";
 import ForkMigration0004 from "./ForkMigrations/004_ProjectionThreadLatestMessageAt.ts";
 import ForkMigration0005 from "./ForkMigrations/005_ProjectionThreadTokenUsage.ts";
+import ForkMigration0006 from "./ForkMigrations/006_LegacyTurnUsage.ts";
 import { runMigrations } from "./Migrations.ts";
 
 const FORK_MIGRATIONS_TABLE = "yngatech_sql_migrations";
@@ -20,6 +21,7 @@ export const forkMigrationEntries = [
   [3, "ProjectAdditionalInstructions", ForkMigration0003],
   [4, "ProjectionThreadLatestMessageAt", ForkMigration0004],
   [5, "ProjectionThreadTokenUsage", ForkMigration0005],
+  [6, "LegacyTurnUsage", ForkMigration0006],
 ] as const;
 
 export const forkMigrationManifest = forkMigrationEntries.map(([id, name]) => [id, name] as const);

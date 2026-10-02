@@ -1,84 +1,13 @@
-import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
-import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
-import { Argument, Command } from "effect/unstable/cli";
-import * as CliError from "effect/unstable/cli/CliError";
-
-import * as NetService from "@t3tools/shared/Net";
-import packageJson from "../package.json" with { type: "json" };
-import { authCommand } from "./cli/auth.ts";
-import { connectCompatibilityCommand, linkCommand } from "./cli/connect.ts";
-import { appCommand } from "./cli/app.ts";
-import { driveCommand } from "./cli/drive.ts";
-import { pairCommand } from "./cli/pair.ts";
-import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
+/**
+ * Thin CLI entry.
+ *
+ * Every ACP agent spawns `t3 acp-mcp-bridge` while opening its session, and
+ * terminal-fallback agents run `t3 acp-mcp-call` per tool call, so their
+ * startup sits on first-message latency. Both dispatch here before the full
+ * CLI module graph (seconds of evaluation) loads; everything else defers to
+ * the real CLI in ./binCli.ts.
+ */
 import { isEntrypoint } from "./entrypoint.ts";
-import { projectCommand } from "./cli/project.ts";
-import { serveCommand, startCommand } from "./cli/server.ts";
-import { updateCommand } from "./cli/update.ts";
-import { uninstallCommand } from "./cli/uninstall.ts";
-import { serviceLauncherCommand } from "./cli/serviceLauncher.ts";
-import { serviceCommand } from "./cli/service.ts";
-import { servicePreflightCommand } from "./cli/servicePreflight.ts";
-import { sshHelperCommand } from "./cli/sshHelper.ts";
-import { themeCommand } from "./cli/theme.ts";
-import { traceCommand } from "./cli/trace.ts";
-import { triageCommand } from "./cli/triage.ts";
-
-const CliRuntimeLayer = Layer.mergeAll(NodeServices.layer, NetService.layer);
-
-const connectPublicConfigMissingMessage =
-  "styal Link commands are unavailable: this build is missing styal Link public configuration.";
-
-class ConnectPublicConfigMissingError extends CliError.UserError {
-  override get message() {
-    return connectPublicConfigMissingMessage;
-  }
-}
-
-const linkUnavailableCommand = Command.make("link", {
-  command: Argument.String("command").pipe(Argument.variadic),
-}).pipe(
-  Command.withDescription("styal Link is unavailable in builds without public configuration."),
-  Command.withAlias("connect"),
-  Command.unlisted,
-  Command.withHandler(() =>
-    Effect.fail(
-      new CliError.ShowHelp({
-        commandPath: ["styal", "link"],
-        errors: [new ConnectPublicConfigMissingError({ cause: connectPublicConfigMissingMessage })],
-      }),
-    ),
-  ),
-);
-
-export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
-  Command.make("styal").pipe(
-    Command.withDescription("Run and manage styal."),
-    Command.withSubcommands([
-      startCommand,
-      serveCommand,
-      appCommand,
-      driveCommand,
-      pairCommand,
-      authCommand,
-      projectCommand,
-      serviceCommand,
-      updateCommand,
-      uninstallCommand,
-      serviceLauncherCommand,
-      sshHelperCommand,
-      servicePreflightCommand,
-      themeCommand,
-      traceCommand,
-      triageCommand,
-      cloudEnabled ? linkCommand : linkUnavailableCommand,
-      ...(cloudEnabled ? [connectCompatibilityCommand] : []),
-    ]),
-  );
-
-export const cli = makeCli();
 
 if (
   isEntrypoint({
@@ -87,9 +16,12 @@ if (
     runtimeMain: import.meta.main,
   })
 ) {
-  Command.run(cli, { version: packageJson.version }).pipe(
-    Effect.scoped,
-    Effect.provide(CliRuntimeLayer),
-    NodeRuntime.runMain,
-  );
+  const command = process.argv[2];
+  if (command === "acp-mcp-bridge" || command === "acp-mcp-call") {
+    const { runAcpMcpCliFastPath } = await import("./mcp/AcpMcpStdioBridge.ts");
+    await runAcpMcpCliFastPath(command, process.argv.slice(3));
+  } else {
+    const { runCli } = await import("./binCli.ts");
+    runCli();
+  }
 }

@@ -12,9 +12,6 @@ import {
   type LegacyImportRequest,
   type LegacyImportResult,
   NonNegativeInt,
-  OrchestrationAggregateKind,
-  OrchestrationEvent,
-  OrchestrationEventType,
   ProviderDriverKind,
   ProviderInstanceId,
   ProjectId,
@@ -23,28 +20,41 @@ import {
   CommandId,
   IsoDateTime,
 } from "@t3tools/contracts";
+import {
+  OrchestrationAggregateKind,
+  OrchestrationEvent,
+  OrchestrationEventType,
+} from "@t3tools/contracts/legacy-orchestration";
+import * as DateTime from "effect/DateTime";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import { materializeV2ForkHistory } from "./V2ForkHistoryImport.ts";
+import { makeV2HistoryWriter, readV2SourceProjection } from "./V2HistoryImport.ts";
+import type { OrchestrationV2ThreadProjection } from "@t3tools/contracts";
 import { attachmentRelativePath } from "../attachmentStore.ts";
 import { ServerConfig } from "../config.ts";
 import {
-  OrchestrationEngineService,
+  makeLegacyHistoryWriter,
   type HistoricalProviderContinuation,
-} from "../orchestration/Services/OrchestrationEngine.ts";
-import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+} from "./LegacyHistoryWriter.ts";
+import { ProjectService } from "../project/ProjectService.ts";
+import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
+import {
+  ProviderSessionManagerV2,
+  type ProviderSessionManagerV2Error,
+} from "../orchestration-v2/ProviderSessionManager.ts";
 import { resolveAttachmentRelativePath } from "../attachmentPaths.ts";
-import type { ProviderServiceError } from "../provider/Errors.ts";
-import { ProviderService } from "../provider/Services/ProviderService.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import {
   emptyLegacyImportDestinationState,
   inspectLegacyImportDestinationState,
   inspectOpenDatabase,
   legacyContinuationKey,
+  legacySourceDatabasePath,
   openReadonlyDatabase,
   sanitizeLegacyResumeCursor,
   type LegacyImportDestinationState,
@@ -101,6 +111,8 @@ interface LegacySourceProjectPlan {
   readonly repairEvents: ReadonlyMap<ThreadId, ReadonlyArray<OrchestrationEvent>>;
   readonly continuations: ReadonlyMap<ThreadId, HistoricalProviderContinuation>;
   readonly events: ReadonlyArray<OrchestrationEvent>;
+  readonly v2Projections?: ReadonlyMap<ThreadId, OrchestrationV2ThreadProjection>;
+  readonly v2MaterializedFallbacks?: ReadonlyMap<ThreadId, OrchestrationV2ThreadProjection>;
 }
 
 const OMITTED_EVENT_TYPES = new Set<OrchestrationEvent["type"]>([
@@ -371,6 +383,121 @@ function inspectSelectedProjects(
     );
   }
 
+  const v2Tables = database.all(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'orchestration_v2_projection_threads'",
+  ) as ReadonlyArray<unknown>;
+  if (v2Tables.length > 0) {
+    database.exec("BEGIN");
+    try {
+      const selectedSourceThreads = decodeSourceThreadRows(
+        database.all(
+          `SELECT thread_id AS threadId FROM orchestration_v2_projection_threads WHERE json_extract(payload_json, '$.projectId') IN (${selectedProjects.map(() => "?").join(",") || "NULL"}) AND json_extract(payload_json, '$.deletedAt') IS NULL`,
+          selectedProjects.map((project) => project.projectId),
+        ),
+      );
+      const availableThreadIds = new Set([
+        ...destination.threadIds,
+        ...selectedSourceThreads.map((row) => row.threadId),
+      ]);
+      const plans = selectedProjects.map((project) => {
+        const projectId = decodeProjectId(project.projectId);
+        const allThreadIds = decodeSourceThreadRows(
+          database.all(
+            "SELECT thread_id AS threadId FROM orchestration_v2_projection_threads WHERE json_extract(payload_json, '$.projectId') = ? AND json_extract(payload_json, '$.deletedAt') IS NULL ORDER BY thread_id",
+            [projectId],
+          ),
+        ).map((row) => row.threadId);
+        const threadIds = allThreadIds.filter((id) => !destination.threadIds.has(id));
+        const v2Projections = new Map(
+          allThreadIds.map((id) => [
+            id,
+            materializeV2ForkHistory(
+              readV2SourceProjection(database, id),
+              availableThreadIds,
+              (ancestor) => readV2SourceProjection(database, ancestor),
+            ),
+          ]),
+        );
+        const v2MaterializedFallbacks = new Map(
+          [...v2Projections]
+            .filter(
+              ([, projection]) =>
+                projection.thread.forkedFrom?.type === "run" &&
+                !projection.thread.forkHistoryMaterialized,
+            )
+            .map(([id, projection]) => [
+              id,
+              materializeV2ForkHistory(projection, destination.threadIds, (ancestor) =>
+                readV2SourceProjection(database, ancestor),
+              ),
+            ]),
+        );
+        const continuations = new Map<ThreadId, HistoricalProviderContinuation>();
+        for (const [id, projection] of v2Projections) {
+          const provider = projection.providerThreads.find(
+            (row) => row.id === projection.thread.activeProviderThreadId,
+          );
+          if (
+            provider?.nativeThreadRef?.nativeId === undefined ||
+            provider.nativeThreadRef.nativeId === null
+          )
+            continue;
+          const nativeId = provider.nativeThreadRef.nativeId;
+          const resumeCursor =
+            provider.driver === "codex"
+              ? { threadId: nativeId }
+              : provider.driver === "claudeAgent"
+                ? {
+                    resume: nativeId,
+                    ...(provider.nativeConversationHeadRef?.nativeId == null
+                      ? {}
+                      : { resumeSessionAt: provider.nativeConversationHeadRef.nativeId }),
+                  }
+                : { sessionId: nativeId };
+          continuations.set(id, {
+            threadId: id,
+            provider: provider.driver,
+            providerInstanceId: provider.providerInstanceId,
+            runtimeMode: projection.thread.runtimeMode,
+            lastSeenAt: IsoDateTime.make(DateTime.formatIso(projection.thread.updatedAt)),
+            resumeCursor,
+          });
+        }
+        const repairThreadIds = allThreadIds.filter(
+          (id) =>
+            destination.threadIds.has(id) &&
+            continuations.has(id) &&
+            destination.continuationKeys.get(id) !==
+              legacyContinuationKey({
+                providerName: continuations.get(id)!.provider,
+                providerInstanceId: continuations.get(id)!.providerInstanceId,
+                resumeCursor: continuations.get(id)!.resumeCursor,
+              }),
+        );
+        const events = readProjectEvents(database, projectId, []).filter(
+          (event) => event.aggregateKind === "project",
+        );
+        if (!events.some((event) => event.type === "project.created"))
+          throw sourceFailure("unsupported-source", "The source project history is incomplete.");
+        return {
+          projectId,
+          project,
+          threadIds,
+          repairThreadIds,
+          repairEvents: new Map(),
+          continuations,
+          events,
+          v2Projections,
+          v2MaterializedFallbacks,
+        } satisfies LegacySourceProjectPlan;
+      });
+      database.exec("COMMIT");
+      return plans;
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+  }
   const tableRows = database.all(
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'orchestration_events'",
   ) as ReadonlyArray<unknown>;
@@ -565,6 +692,7 @@ const copyThreadAttachments = Effect.fn("LegacyImport.copyThreadAttachments")(fu
   readonly events: ReadonlyArray<OrchestrationEvent>;
   readonly threadId: ThreadId;
   readonly sourceAttachmentsDir: string;
+  readonly v2Projection?: OrchestrationV2ThreadProjection;
   readonly targetAttachmentsDir: string;
 }): Effect.fn.Return<ReadonlySet<string>, LegacyImportError> {
   const relativePaths = new Set<string>();
@@ -573,6 +701,12 @@ const copyThreadAttachments = Effect.fn("LegacyImport.copyThreadAttachments")(fu
       continue;
     }
     for (const attachment of event.payload.attachments ?? []) {
+      const relativePath = attachmentRelativePath(attachment);
+      if (relativePath !== null) relativePaths.add(relativePath);
+    }
+  }
+  for (const message of input.v2Projection?.messages ?? []) {
+    for (const attachment of message.attachments) {
       const relativePath = attachmentRelativePath(attachment);
       if (relativePath !== null) relativePaths.add(relativePath);
     }
@@ -715,14 +849,14 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
     >;
     readonly stopActiveProviderSession: (
       threadId: ThreadId,
-    ) => Effect.Effect<void, ProviderServiceError>;
+    ) => Effect.Effect<void, ProviderSessionManagerV2Error>;
   }) {
     const config = yield* ServerConfig;
-    const engine = yield* OrchestrationEngineService;
-    const snapshots = yield* ProjectionSnapshotQuery;
+    const projects = yield* ProjectService;
     const serverSettings = yield* ServerSettingsService;
-    const importHistoricalEvents = engine.importHistoricalEvents;
-    const sourceDatabasePath = NodePath.join(sourceStateDir, "state.sqlite");
+    const importHistoricalEvents = yield* makeLegacyHistoryWriter;
+    const importV2History = yield* makeV2HistoryWriter;
+    const sourceDatabasePath = legacySourceDatabasePath(sourceStateDir);
     const sourceSettingsPath = NodePath.join(sourceStateDir, "settings.json");
     const sourceAttachmentsDir = NodePath.join(sourceStateDir, "attachments");
     const loadCurrentDestinationState =
@@ -751,8 +885,8 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
 
       for (const plan of sourceProjects) {
         const sourceProjectId = plan.projectId;
-        const sameIdProject = yield* snapshots
-          .getProjectShellById(sourceProjectId)
+        const sameIdProject = yield* projects
+          .getById(sourceProjectId)
           .pipe(
             Effect.mapError(() =>
               sourceFailure("read-failed", "The destination environment could not be read."),
@@ -760,8 +894,8 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
           );
         const workspaceProject = Option.isSome(sameIdProject)
           ? Option.none()
-          : yield* snapshots
-              .getActiveProjectByWorkspaceRoot(plan.project.workspaceRoot)
+          : yield* projects
+              .getByWorkspaceRoot(plan.project.workspaceRoot)
               .pipe(
                 Effect.mapError(() =>
                   sourceFailure("read-failed", "The destination environment could not be read."),
@@ -832,10 +966,17 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
 
         for (const threadId of plan.threadIds) {
           if (importedThreadIds.has(threadId)) continue;
+          const plannedProjection = plan.v2Projections?.get(threadId);
+          const sourceFork = plannedProjection?.thread.forkedFrom;
+          const v2Projection =
+            sourceFork?.type === "run" && !importedThreadIds.has(sourceFork.threadId)
+              ? (plan.v2MaterializedFallbacks?.get(threadId) ?? plannedProjection)
+              : plannedProjection;
 
           const attachmentsOutcome = yield* Effect.exit(
             copyThreadAttachments({
               events: plan.events,
+              ...(v2Projection === undefined ? {} : { v2Projection }),
               threadId,
               sourceAttachmentsDir,
               targetAttachmentsDir: config.attachmentsDir,
@@ -860,10 +1001,19 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
           });
           const continuation = plan.continuations.get(threadId);
           const outcome = yield* Effect.exit(
-            importHistoricalEvents(
-              events,
-              continuation === undefined ? undefined : { continuation },
-            ),
+            plan.v2Projections?.has(threadId)
+              ? (includeProject
+                  ? importHistoricalEvents(prepareProjectEvents(plan))
+                  : Effect.void
+                ).pipe(
+                  Effect.andThen(
+                    importV2History(v2Projection!, targetProjectId, attachmentsOutcome.value),
+                  ),
+                )
+              : importHistoricalEvents(
+                  events,
+                  continuation === undefined ? undefined : { continuation },
+                ),
           );
           if (outcome._tag === "Failure") {
             failedThreadCount += 1;
@@ -900,12 +1050,19 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
           const outcome = yield* Effect.exit(
             (continuationNeedsRepair ? stopActiveProviderSession(threadId) : Effect.void).pipe(
               Effect.andThen(
-                importHistoricalEvents(
-                  events.map(withoutSequence),
-                  continuationNeedsRepair && continuation !== undefined
-                    ? { continuation }
-                    : undefined,
-                ),
+                plan.v2Projections?.has(threadId)
+                  ? importV2History(
+                      plan.v2Projections.get(threadId)!,
+                      targetProjectId,
+                      new Set(),
+                      true,
+                    )
+                  : importHistoricalEvents(
+                      events.map(withoutSequence),
+                      continuationNeedsRepair && continuation !== undefined
+                        ? { continuation }
+                        : undefined,
+                    ),
               ),
             ),
           );
@@ -1014,14 +1171,18 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
 );
 
 const make = Effect.gen(function* () {
-  const providerService = yield* ProviderService;
+  const sessions = yield* ProviderSessionManagerV2;
+  const projections = yield* ProjectionStoreV2;
   const stopActiveProviderSession = Effect.fn("LegacyImport.stopActiveProviderSession")(function* (
     threadId: ThreadId,
   ) {
-    const sessions = yield* providerService.listSessions();
-    if (sessions.some((session) => session.threadId === threadId)) {
-      yield* providerService.stopSession({ threadId });
-    }
+    const projection = yield* projections.getThreadProjection(threadId).pipe(Effect.orDie);
+    const sessionIds = new Set(
+      projection.providerThreads.flatMap((thread) =>
+        thread.providerSessionId === null ? [] : [thread.providerSessionId],
+      ),
+    );
+    yield* Effect.forEach(sessionIds, (id) => sessions.close(id), { discard: true });
   });
   return yield* makeLegacyImportService({
     sourceStateDir: NodePath.join(NodeOS.homedir(), ".t3", "userdata"),

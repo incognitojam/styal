@@ -1,43 +1,16 @@
-import type { OrchestrationThreadActivity } from "@t3tools/contracts";
+import type { OrchestrationV2TurnItem } from "@t3tools/contracts";
 
+type CommandItem = Extract<OrchestrationV2TurnItem, { type: "command_execution" }>;
 export type SetupScriptState = "running" | "completed" | "failed" | "stopped";
 
-export function setupScriptActivityState(
-  activity: OrchestrationThreadActivity,
-  payload: Record<string, unknown> | null,
-): SetupScriptState | undefined {
-  if (activity.kind === "setup-script.requested" || activity.kind === "setup-script.started") {
-    return "running";
-  }
-  if (activity.kind === "setup-script.completed") return "completed";
-  if (activity.kind !== "setup-script.failed") return undefined;
-  const failureReason = payload?.failureReason;
-  if (
-    failureReason === "server-restarted" ||
-    failureReason === "terminal-closed" ||
-    failureReason === "terminal-restarted"
-  ) {
-    return "stopped";
-  }
-  // Older activities described an interrupted run in the server-authored
-  // summary before they carried a structured failure reason.
-  if (activity.summary.toLowerCase().includes("stopped")) return "stopped";
+function setupScriptActivityState(item: CommandItem): SetupScriptState {
+  if (item.status === "pending" || item.status === "running") return "running";
+  if (item.status === "completed") return "completed";
+  if (item.status === "interrupted" || item.status === "cancelled") return "stopped";
   return "failed";
 }
 
-export function setupScriptActivityLabel(
-  activity: OrchestrationThreadActivity,
-  payload: Record<string, unknown> | null,
-): string {
-  if (!activity.kind.startsWith("setup-script.")) return activity.summary;
-  const scriptName = typeof payload?.scriptName === "string" ? payload.scriptName.trim() : "";
-  if (!scriptName) return activity.summary;
-  const state = setupScriptActivityState(activity, payload);
-  if (state === "running") return `${scriptName} running`;
-  if (state === "completed") return `${scriptName} completed`;
-  if (state === "stopped") return `${scriptName} stopped`;
-  if (payload?.failureReason === "launch-error") {
-    return `${scriptName} failed to start`;
-  }
-  return `${scriptName} failed`;
+export function setupScriptActivityLabel(item: CommandItem): string {
+  const name = item.setupScript?.scriptName.trim() || item.title || "Setup script";
+  return `${name} ${setupScriptActivityState(item)}`;
 }

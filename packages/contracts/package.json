@@ -18,6 +18,10 @@
     "./relay": {
       "types": "./src/relay.ts",
       "import": "./src/relay.ts"
+    },
+    "./legacy-orchestration": {
+      "types": "./src/legacyOrchestration.ts",
+      "default": "./src/legacyOrchestration.ts"
     }
   },
   "scripts": {

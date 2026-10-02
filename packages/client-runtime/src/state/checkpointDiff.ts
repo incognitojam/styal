@@ -1,4 +1,5 @@
 import type {
+  CheckpointScopeId,
   EnvironmentId,
   OrchestrationGetFullThreadDiffResult,
   OrchestrationGetTurnDiffResult,
@@ -21,5 +22,6 @@ export interface CheckpointDiffTarget {
   readonly fromTurnCount: number | null;
   readonly toTurnCount: number | null;
   readonly ignoreWhitespace: boolean;
+  readonly scopeId?: CheckpointScopeId | undefined;
   readonly cacheScope?: string | null;
 }

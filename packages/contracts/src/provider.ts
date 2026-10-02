@@ -9,10 +9,12 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import {
-  ChatAttachment,
-  ModelSelection,
   getProviderAttachmentLimitError,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
+  ChatAttachment,
+} from "./chatAttachment.ts";
+import { ModelSelection } from "./modelSelection.ts";
+import {
   ProviderApprovalDecision,
   ProviderApprovalPolicy,
   ProviderInteractionMode,
@@ -21,8 +23,8 @@ import {
   ProviderUserInputAnswers,
   UserInputAttachments,
   RuntimeMode,
-  ProjectAdditionalInstructions,
-} from "./orchestration.ts";
+} from "./providerPolicy.ts";
+import { ProjectAdditionalInstructions } from "./project.ts";
 import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
 
 const ProviderSessionStatus = Schema.Literals([
@@ -162,3 +164,6 @@ export const ProviderEvent = Schema.Struct({
   payload: Schema.optional(Schema.Unknown),
 });
 export type ProviderEvent = typeof ProviderEvent.Type;
+
+/** Total budget for one user message, shared by providers and clients. */
+export const PROVIDER_SEND_TURN_MAX_TOTAL_ATTACHMENT_BYTES = 50 * 1024 * 1024;

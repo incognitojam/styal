@@ -1,14 +1,13 @@
 import { assert, it } from "@effect/vitest";
 import {
   CommandId,
-  CorrelationId,
   EventId,
   MessageId,
-  type OrchestrationEvent,
   ProviderInstanceId,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
+import { CorrelationId, type OrchestrationEvent } from "@t3tools/contracts/legacy-orchestration";
 
 import {
   deriveLegacyTurnPromptLinks,

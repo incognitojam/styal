@@ -1,13 +1,13 @@
-import type { OrchestrationMessage } from "@t3tools/contracts";
+import type { OrchestrationV2ConversationMessage } from "@t3tools/contracts";
 import { upgradeLegacyContextMessage } from "@t3tools/shared/composerContextLegacy";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 
 import { extractTrailingIssueContexts } from "./issueContext";
 
-export type TranscriptMessage = Pick<
-  OrchestrationMessage,
-  "role" | "text" | "attachments" | "streaming"
->;
+export type TranscriptMessage = Pick<OrchestrationV2ConversationMessage, "text" | "streaming"> & {
+  readonly role: "user" | "assistant" | "system" | "reasoning";
+  readonly attachments?: OrchestrationV2ConversationMessage["attachments"];
+};
 
 export interface ThreadTranscript {
   readonly text: string;

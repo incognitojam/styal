@@ -1,15 +1,15 @@
 import { useAtomValue } from "@effect/atom-react";
 import type {
-  OrchestrationThreadActivity,
+  OrchestrationV2ThreadProjection,
   ServerProvider,
   ThreadTokenUsage,
 } from "@t3tools/contracts";
 import {
-  deriveTurnUsage,
+  deriveProjectionTurnUsage,
   EMPTY_TURN_SUMMARIES,
   EMPTY_TURN_USAGE,
-  threadUsageSummary,
   turnSummaryViews,
+  threadUsageSummary,
   type TurnRecord,
   type TurnSummaryView,
   type TurnUsageByTurn,
@@ -26,13 +26,14 @@ import { mobilePreferencesAtom } from "./preferences";
  * device preference hides it.
  */
 export function useTurnUsage(
-  activities: ReadonlyArray<OrchestrationThreadActivity> | undefined,
+  projection: OrchestrationV2ThreadProjection | undefined,
 ): TurnUsageByTurn {
   const enabled = useTurnUsageEnabled();
   const [previous, setPrevious] = useState(EMPTY_TURN_USAGE);
   const usage = useMemo(
-    () => (enabled && activities ? deriveTurnUsage(activities, previous) : EMPTY_TURN_USAGE),
-    [activities, enabled, previous],
+    () =>
+      enabled && projection ? deriveProjectionTurnUsage(projection, previous) : EMPTY_TURN_USAGE,
+    [projection, enabled, previous],
   );
   if (usage !== previous) setPrevious(usage);
   return usage;

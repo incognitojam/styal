@@ -2,11 +2,15 @@ import {
   DEFAULT_CLIENT_SETTINGS,
   EnvironmentId,
   ThreadId,
-  TurnId,
+  RunId,
+  RuntimeRequestId,
+  type OrchestrationV2ThreadShell,
   ProjectId,
   ProviderInstanceId,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
+import * as DateTime from "effect/DateTime";
+import { makeThreadProjectionFixture } from "../test-fixtures";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
@@ -29,7 +33,7 @@ vi.mock("../hooks/useSettings", () => ({
     select(state.settings),
 }));
 vi.mock("../state/environments", () => ({
-  useEnvironments: () => ({ environments: [{ environmentId: "test-environment" }] }),
+  useEnvironmentIds: () => [EnvironmentId.make("test-environment")],
 }));
 vi.mock("../state/shell", () => ({ environmentShell: { stateValueAtom: () => null } }));
 vi.mock("../threadNotifications", async (original) => ({
@@ -49,45 +53,39 @@ const notifications: {
   close: ReturnType<typeof vi.fn>;
 }[] = [];
 const threadId = ThreadId.make("test-thread");
-const turnId = TurnId.make("test-turn");
-function snapshot(completed: boolean, extra = {}): EnvironmentShellState {
+const runId = RunId.make("test-run");
+const requestedAt = DateTime.makeUnsafe("2026-09-30T11:59:00Z");
+const completedAt = DateTime.makeUnsafe("2026-09-30T12:00:00Z");
+function snapshot(
+  completed: boolean,
+  extra: Partial<OrchestrationV2ThreadShell> = {},
+): EnvironmentShellState {
   return {
     status: "live",
     error: Option.none(),
     snapshot: Option.some({
+      schemaVersion: 1,
       snapshotSequence: 1,
       projects: [],
-      updatedAt: "2026-09-30T12:00:00Z",
+      archivedThreads: [],
       threads: [
         {
+          ...makeThreadProjectionFixture().thread,
           id: threadId,
-          projectId: ProjectId.make("test-project"),
-          modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          branch: null,
-          worktreePath: null,
-          pullRequests: [],
-          createdAt: "2026-09-30T12:00:00Z",
-          updatedAt: "2026-09-30T12:00:00Z",
-          settledAt: null,
-          settledOverride: null,
+          title: "Synthetic task",
+          latestRunId: runId,
+          activeRunId: completed ? null : runId,
+          status: completed ? "completed" : "running",
+          latestRunRequestedAt: requestedAt,
+          latestRunStartedAt: requestedAt,
+          latestRunCompletedAt: completed ? completedAt : null,
+          pendingRuntimeRequest: null,
+          latestVisibleMessage: null,
           latestUserMessageAt: null,
           hasActionableProposedPlan: false,
-          title: "Synthetic task",
-          archivedAt: null,
-          hasPendingApprovals: false,
-          hasPendingUserInput: false,
-          backgroundLiveness: null,
-          session: null,
-          latestTurn: {
-            turnId,
-            startedAt: "2026-09-30T11:59:00Z",
-            requestedAt: "2026-09-30T11:59:00Z",
-            assistantMessageId: null,
-            state: completed ? "completed" : "running",
-            completedAt: completed ? "2026-09-30T12:00:00Z" : null,
-          },
+          itemCount: 0,
+          visibleItemCount: 0,
+          updatedAt: completedAt,
           ...extra,
         },
       ],
@@ -165,9 +163,21 @@ it.each(["off", "notifications", "sound", "notifications-and-sound"] as const)(
   (mode) => {
     state.settings = { ...state.settings, notificationMode: mode };
     render();
-    state.shell = snapshot(false, { hasPendingUserInput: true });
+    state.shell = snapshot(false, {
+      pendingRuntimeRequest: {
+        id: RuntimeRequestId.make("question"),
+        kind: "user_input",
+        createdAt: completedAt,
+      },
+    });
     render();
-    state.shell = snapshot(false, { hasPendingApprovals: true });
+    state.shell = snapshot(false, {
+      pendingRuntimeRequest: {
+        id: RuntimeRequestId.make("approval"),
+        kind: "command",
+        createdAt: completedAt,
+      },
+    });
     render();
     expect(state.play).toHaveBeenCalledTimes(
       mode === "sound" || mode === "notifications-and-sound" ? 2 : 0,
@@ -196,8 +206,8 @@ it("does not replay initial, reconnect, or archived completions", () => {
   state.shell = snapshot(false);
   render();
   state.shell = snapshot(true, {
-    archivedAt: "2026-09-30T12:01:00Z",
-    latestTurn: { turnId, state: "completed", completedAt: "2026-09-30T12:01:00Z" },
+    archivedAt: DateTime.makeUnsafe("2026-09-30T12:01:00Z"),
+    latestRunCompletedAt: DateTime.makeUnsafe("2026-09-30T12:01:00Z"),
   });
   render();
   expect(state.play).not.toHaveBeenCalled();

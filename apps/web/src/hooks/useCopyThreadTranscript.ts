@@ -80,7 +80,12 @@ export function useCopyThreadTranscript() {
         );
         return;
       }
-      const transcript = buildThreadTranscript(snapshot.thread.title, snapshot.thread.messages);
+      const thread = snapshot.thread;
+      if (thread === null) {
+        transcriptFailureToast("Could not load the conversation from the server.");
+        return;
+      }
+      const transcript = buildThreadTranscript(thread.title, snapshot.messages);
       if (transcript.messageCount === 0) {
         toastManager.add(
           stackedThreadToast({

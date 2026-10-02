@@ -1,86 +1,59 @@
-import { describe, expect, it } from "@effect/vitest";
-import { ThreadId, TurnId } from "@t3tools/contracts";
+import { ThreadId } from "@t3tools/contracts";
+import { describe, expect, it } from "vite-plus/test";
 import { summarizeHostSessions } from "./HostActivity.ts";
 
 const thread = (id: string) => ({
   id: ThreadId.make(id),
-  session: null,
-  latestTurn: null,
-  hasPendingApprovals: false,
-  hasPendingUserInput: false,
+  status: "idle" as const,
+  pendingRuntimeRequest: null,
+  pendingBackgroundTasks: [],
 });
-
 describe("host session activity", () => {
   it("does not count open idle sessions as running work", () => {
-    expect(
-      summarizeHostSessions(
-        [thread("idle")],
-        [{ threadId: ThreadId.make("idle"), status: "ready" }],
-      ),
-    ).toEqual({ activeSessions: 0, continuableSessions: 0, waitingSessions: 0 });
+    expect(summarizeHostSessions([thread("idle")])).toEqual({
+      activeSessions: 0,
+      continuableSessions: 0,
+      waitingSessions: 0,
+    });
   });
-  it("includes every provider and deduplicates runtime and projected activity", () => {
-    const id = ThreadId.make("remote-thread");
-    expect(
-      summarizeHostSessions(
-        [{ ...thread(id), backgroundLiveness: "working" }],
-        [
-          { threadId: id, status: "running" },
-          { threadId: ThreadId.make("connecting"), status: "connecting" },
-          {
-            threadId: ThreadId.make("active-turn"),
-            status: "ready",
-            activeTurnId: TurnId.make("turn"),
-          },
-        ],
-      ),
-    ).toEqual({ activeSessions: 3, continuableSessions: 0, waitingSessions: 0 });
+  it("deduplicates a running provider thread and its background work", () => {
+    const active = {
+      ...thread("active"),
+      status: "running" as const,
+      pendingBackgroundTasks: [{ taskId: "task", kind: "monitor" as const }],
+    };
+    expect(summarizeHostSessions([active])).toEqual({
+      activeSessions: 1,
+      continuableSessions: 0,
+      waitingSessions: 0,
+    });
   });
-  it("counts approval/input waits once and preserves background monitoring", () => {
+  it("counts input waits separately and protects monitoring", () => {
     expect(
-      summarizeHostSessions(
-        [
-          { ...thread("approval"), hasPendingApprovals: true, hasPendingUserInput: true },
-          { ...thread("input"), hasPendingUserInput: true },
-          { ...thread("monitor"), backgroundLiveness: "monitoring" },
-        ],
-        [{ threadId: ThreadId.make("approval"), status: "running" }],
-      ),
+      summarizeHostSessions([
+        { ...thread("approval"), status: "waiting" },
+        { ...thread("input"), status: "waiting" },
+        { ...thread("monitor"), pendingBackgroundTasks: [{ taskId: "monitor", kind: "monitor" }] },
+      ]),
     ).toEqual({ activeSessions: 1, continuableSessions: 0, waitingSessions: 2 });
   });
-  it("protects a dispatched turn before the provider has started it", () => {
+  it("protects dispatched turns while preparing or starting", () => {
     expect(
-      summarizeHostSessions(
-        [
-          {
-            ...thread("queued"),
-            latestTurn: {
-              turnId: TurnId.make("turn"),
-              state: "running",
-              requestedAt: "2026-01-01T00:00:00.000Z",
-              startedAt: null,
-              completedAt: null,
-              assistantMessageId: null,
-            },
-          },
-        ],
-        [],
-      ),
-    ).toEqual({ activeSessions: 1, continuableSessions: 0, waitingSessions: 0 });
+      summarizeHostSessions([
+        { ...thread("preparing"), status: "preparing" },
+        { ...thread("starting"), status: "starting" },
+      ]),
+    ).toEqual({ activeSessions: 2, continuableSessions: 0, waitingSessions: 0 });
   });
   it("counts continuable threads only among active threads", () => {
     expect(
       summarizeHostSessions(
         [
-          { ...thread("monitor"), backgroundLiveness: "monitoring" },
-          { ...thread("approval"), hasPendingApprovals: true },
+          { ...thread("active"), status: "running" },
+          { ...thread("wait"), status: "waiting" },
         ],
-        [
-          { threadId: ThreadId.make("turn"), status: "running" },
-          { threadId: ThreadId.make("approval"), status: "running" },
-        ],
-        new Set(["turn", "approval", "idle"]),
+        new Set(["active", "wait", "idle"]),
       ),
-    ).toEqual({ activeSessions: 2, continuableSessions: 1, waitingSessions: 1 });
+    ).toEqual({ activeSessions: 1, continuableSessions: 1, waitingSessions: 1 });
   });
 });

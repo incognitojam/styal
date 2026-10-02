@@ -1,0 +1,704 @@
+import { makeKeyedSerialExecutor } from "./KeyedSerialExecutor.ts";
+import {
+  NodeId,
+  CommandId,
+  OrchestrationV2DomainEvent,
+  OrchestrationV2StoredEvent,
+  type OrchestrationV2PlanArtifact,
+  type OrchestrationV2Run,
+  type OrchestrationV2ProviderTurn,
+  type ModelSelection,
+  type RuntimeMode,
+  type ProviderInteractionMode,
+  ProviderInstanceId,
+  ProviderSessionId,
+  ProviderThreadId,
+  ProviderTurnId,
+  RawEventId,
+  RunAttemptId,
+  RunId,
+  ThreadId,
+} from "@t3tools/contracts";
+import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+
+import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+import { addThreadTokenUsage, sumThreadTokenUsage } from "@t3tools/shared/turnUsage";
+import { UsageService } from "../usage/UsageService.ts";
+import * as McpProviderSession from "../mcp/McpProviderSession.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
+import * as EventSink from "./EventSink.ts";
+import * as ProjectionStore from "./ProjectionStore.ts";
+import * as IdAllocator from "./IdAllocator.ts";
+import { ProviderAdapterV2Event } from "./ProviderAdapter.ts";
+import { makeProviderFailureTurnItem } from "./ProviderFailure.ts";
+
+export class ProviderEventNormalizeError extends Schema.TaggedError<ProviderEventNormalizeError>()(
+  "ProviderEventNormalizeError",
+  {
+    providerSessionId: ProviderSessionId,
+    threadId: ThreadId,
+    providerEvent: ProviderAdapterV2Event,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    return `Failed to normalize provider event ${this.providerEvent.type} for thread ${this.threadId}.`;
+  }
+}
+
+export class ProviderEventPublishError extends Schema.TaggedError<ProviderEventPublishError>()(
+  "ProviderEventPublishError",
+  {
+    providerSessionId: ProviderSessionId,
+    eventCount: Schema.Number,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    return `Failed to publish ${this.eventCount} normalized provider event(s).`;
+  }
+}
+
+export const ProviderEventIngestorV2Error = Schema.Union([
+  ProviderEventNormalizeError,
+  ProviderEventPublishError,
+]);
+export type ProviderEventIngestorV2Error = typeof ProviderEventIngestorV2Error.Type;
+
+export interface ProviderTurnAnalyticsContext {
+  readonly modelSelection: ModelSelection;
+  readonly runtimeMode?: RuntimeMode;
+  readonly interactionMode?: ProviderInteractionMode;
+}
+
+export class ProviderTurnAnalytics extends Context.Reference<{
+  readonly record: (properties: Readonly<Record<string, unknown>>) => Effect.Effect<void>;
+}>("t3/orchestration-v2/ProviderTurnAnalytics", {
+  defaultValue: () => ({ record: () => Effect.void }),
+}) {}
+
+export const analyticsLive = Layer.effect(
+  ProviderTurnAnalytics,
+  Effect.gen(function* () {
+    const analytics = yield* AnalyticsService.AnalyticsService;
+    return {
+      record: (properties: Readonly<Record<string, unknown>>) =>
+        analytics.record("provider.turn.completed", properties),
+    };
+  }),
+);
+
+function providerTurnAnalyticsProperties(input: {
+  readonly driver: ProviderAdapterV2Event["driver"];
+  readonly providerTurn: OrchestrationV2ProviderTurn;
+  readonly context?: ProviderTurnAnalyticsContext;
+}): Readonly<Record<string, unknown>> {
+  const usage = input.providerTurn.turnTokenUsage;
+  const modelSelection = input.context?.modelSelection;
+  const effort = modelSelection
+    ? (getModelSelectionStringOptionValue(modelSelection, "reasoningEffort") ??
+      getModelSelectionStringOptionValue(modelSelection, "effort"))
+    : undefined;
+  return {
+    provider: input.driver,
+    terminalStatus: input.providerTurn.status,
+    usageStatus: usage?.usageStatus ?? "unavailable",
+    usageScope: usage?.usageScope ?? "main_agent",
+    ...(usage ? { hasSubagents: usage.hasSubagents } : {}),
+    ...(usage?.inputTokens === undefined ? {} : { inputTokens: usage.inputTokens }),
+    ...(usage?.cachedInputTokens === undefined
+      ? {}
+      : { cachedInputTokens: usage.cachedInputTokens }),
+    ...(usage?.cacheCreationTokens === undefined
+      ? {}
+      : { cacheCreationTokens: usage.cacheCreationTokens }),
+    ...(usage?.outputTokens === undefined ? {} : { outputTokens: usage.outputTokens }),
+    ...(usage?.reasoningTokens === undefined ? {} : { reasoningTokens: usage.reasoningTokens }),
+    ...(modelSelection ? { model: modelSelection.model, mixedModels: false } : {}),
+    ...(effort ? { effort } : {}),
+    ...(input.context?.runtimeMode ? { runtimeMode: input.context.runtimeMode } : {}),
+    ...(input.context?.interactionMode ? { interactionMode: input.context.interactionMode } : {}),
+    ...(input.providerTurn.startedAt && input.providerTurn.completedAt
+      ? {
+          durationMs: Math.max(
+            0,
+            DateTime.toEpochMillis(input.providerTurn.completedAt) -
+              DateTime.toEpochMillis(input.providerTurn.startedAt),
+          ),
+        }
+      : {}),
+  };
+}
+
+type TodoListPlan = Extract<OrchestrationV2PlanArtifact, { readonly kind: "todo_list" }>;
+
+function withPlanStepDurations(
+  plan: TodoListPlan,
+  previous: TodoListPlan | undefined,
+  occurredAt: DateTime.Utc,
+): TodoListPlan {
+  const occurredAtIso = DateTime.formatIso(occurredAt);
+  const occurredAtMs = DateTime.toEpochMillis(occurredAt);
+  const previousById = new Map(previous?.steps.map((step) => [step.id, step]));
+  // Provider step IDs may be positional. Changed text must not inherit another task's timing.
+  const previousStep = (step: TodoListPlan["steps"][number]) => {
+    const prior = previousById.get(step.id);
+    return prior?.text === step.text ? prior : undefined;
+  };
+  const hasNewCompletion = plan.steps.some((step) => {
+    const prior = previousStep(step);
+    return step.status === "completed" && prior?.status !== "completed";
+  });
+  let fallbackCompletionConsumed = false;
+
+  return {
+    ...plan,
+    steps: plan.steps.map((step) => {
+      const prior = previousStep(step);
+      const baseStep = { id: step.id, text: step.text, status: step.status };
+      if (step.status === "completed") {
+        if (prior?.status === "completed") {
+          return {
+            ...baseStep,
+            ...(prior.durationMs === undefined ? {} : { durationMs: prior.durationMs }),
+          };
+        }
+        const durationAnchorAt =
+          prior?.status === "running" || !fallbackCompletionConsumed
+            ? prior?.durationAnchorAt
+            : occurredAtIso;
+        fallbackCompletionConsumed = true;
+        const anchorMs =
+          durationAnchorAt === undefined ? occurredAtMs : Date.parse(durationAnchorAt);
+        const durationMs = Number.isFinite(anchorMs) ? Math.max(0, occurredAtMs - anchorMs) : 0;
+        return {
+          ...baseStep,
+          ...(durationMs > 0 ? { durationMs } : {}),
+        };
+      }
+      if (step.status === "running") {
+        return {
+          ...baseStep,
+          durationAnchorAt:
+            prior?.status === "running" ? (prior.durationAnchorAt ?? occurredAtIso) : occurredAtIso,
+        };
+      }
+      return {
+        ...baseStep,
+        durationAnchorAt:
+          hasNewCompletion || prior?.status !== "pending"
+            ? occurredAtIso
+            : (prior.durationAnchorAt ?? occurredAtIso),
+      };
+    }),
+  };
+}
+
+export interface ProviderEventIngestInput {
+  readonly providerSessionId: ProviderSessionId;
+  readonly providerInstanceId: ProviderInstanceId;
+  readonly commandId?: CommandId;
+  readonly threadId: ThreadId;
+  readonly runId?: RunId;
+  readonly nodeId?: NodeId;
+  readonly rawEventId?: RawEventId;
+  readonly event: ProviderAdapterV2Event;
+  readonly analyticsContext?: ProviderTurnAnalyticsContext;
+}
+
+export interface ProviderEventIngestorV2Shape {
+  readonly normalize: (
+    input: ProviderEventIngestInput,
+  ) => Effect.Effect<ReadonlyArray<OrchestrationV2DomainEvent>, ProviderEventIngestorV2Error>;
+  readonly ingestNormalized: (
+    input: ProviderEventIngestInput & {
+      /**
+       * Atomically reject mutable provider state emitted by an attempt that
+       * lost ownership while the adapter event was in flight.
+       */
+      readonly writeIfRunCurrent?: {
+        readonly runId: RunId;
+        readonly activeAttemptId: RunAttemptId;
+        readonly expectedStatus: OrchestrationV2Run["status"];
+      };
+      /**
+       * Atomically reject provider-thread snapshots from an attempt that no
+       * longer owns the run or from a run that no longer owns the thread.
+       */
+      readonly writeIfProviderThreadOwner?: {
+        readonly providerThreadId: ProviderThreadId;
+        readonly runId: RunId;
+        readonly activeAttemptId: RunAttemptId;
+        readonly expectedLastRunOrdinal: number;
+      };
+    },
+  ) => Effect.Effect<ReadonlyArray<OrchestrationV2StoredEvent>, ProviderEventIngestorV2Error>;
+}
+
+export class ProviderEventIngestorV2 extends Context.Service<
+  ProviderEventIngestorV2,
+  ProviderEventIngestorV2Shape
+>()("@styal/cli/orchestration-v2/ProviderEventIngestor/ProviderEventIngestorV2") {}
+
+function compactUndefined<T extends Record<string, unknown>>(record: T): T {
+  return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined)) as T;
+}
+
+const decodeDomainEvent = Schema.decodeUnknownEffect(OrchestrationV2DomainEvent);
+
+export const layer: Layer.Layer<
+  ProviderEventIngestorV2,
+  never,
+  EventSink.EventSinkV2 | IdAllocator.IdAllocatorV2 | ProjectionStore.ProjectionStoreV2
+> = Layer.effect(
+  ProviderEventIngestorV2,
+  Effect.gen(function* () {
+    const eventSink = yield* EventSink.EventSinkV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const idAllocator = yield* IdAllocator.IdAllocatorV2;
+    const analytics = yield* ProviderTurnAnalytics;
+    const completedTurnAnalytics = new Set<string>();
+    const usagePricing = yield* Effect.serviceOption(UsageService);
+    const ingestExecutor = yield* makeKeyedSerialExecutor<ThreadId>();
+
+    const recordTurnUsage = (input: ProviderEventIngestInput, turn: OrchestrationV2ProviderTurn) =>
+      Effect.gen(function* () {
+        if (
+          turn.turnTokenUsage === undefined &&
+          !["completed", "failed", "interrupted", "cancelled"].includes(turn.status)
+        )
+          return turn;
+        const threadId =
+          input.event.type === "provider_turn.updated"
+            ? (input.event.threadId ?? input.threadId)
+            : input.threadId;
+        const records = yield* projections.getThreadRecords(threadId, [
+          "providerTurns",
+          "nodes",
+          "runs",
+          "legacyTurnUsage",
+        ]);
+        const node = records.nodes.find((node) => node.id === turn.nodeId);
+        if (node?.kind !== "root_turn") return turn;
+        const model =
+          input.analyticsContext?.modelSelection ??
+          records.runs.find((run) => run.id === node.runId)?.modelSelection;
+        const reported =
+          turn.turnTokenUsage ??
+          records.providerTurns.find((record) => record.id === turn.id)?.turnTokenUsage;
+        const split =
+          reported?.byModel ??
+          (reported === undefined
+            ? []
+            : [
+                {
+                  inputTokens: (reported.inputTokens ?? 0) + (reported.subagents?.inputTokens ?? 0),
+                  cachedInputTokens:
+                    (reported.cachedInputTokens ?? 0) +
+                    (reported.subagents?.cachedInputTokens ?? 0),
+                  cacheCreationTokens:
+                    (reported.cacheCreationTokens ?? 0) +
+                    (reported.subagents?.cacheCreationTokens ?? 0),
+                  outputTokens:
+                    (reported.outputTokens ?? 0) + (reported.subagents?.outputTokens ?? 0),
+                },
+              ]);
+        const tokens = split.map((entry) => ({ ...entry, model: entry.model ?? model?.model }));
+        const known = tokens.filter(
+          (entry): entry is typeof entry & { readonly model: string } => entry.model !== undefined,
+        );
+        const costUsd =
+          reported?.costUsd ??
+          (known.length === tokens.length && known.length > 0 && Option.isSome(usagePricing)
+            ? yield* usagePricing.value.priceTokens(known)
+            : null);
+        const usage =
+          reported === undefined ? null : { ...reported, ...(costUsd === null ? {} : { costUsd }) };
+        const rolledBackRuns = new Set(
+          records.runs.filter((run) => run.status === "rolled_back").map((run) => run.id),
+        );
+        if (node.runId !== null && rolledBackRuns.has(node.runId)) return turn;
+        const rootNodes = new Set(
+          records.nodes
+            .filter(
+              (node) =>
+                node.kind === "root_turn" &&
+                (node.runId === null || !rolledBackRuns.has(node.runId)),
+            )
+            .map((node) => node.id),
+        );
+        const turns = records.providerTurns.filter((turn) => rootNodes.has(turn.nodeId));
+        const nativeTotal = sumThreadTokenUsage({
+          activities: turns.map((turn) => ({ turnId: turn.id, payload: turn.turnTokenUsage })),
+          turnId: turn.id,
+          usage,
+          turns: turns.some((record) => record.id === turn.id) ? turns.length : turns.length + 1,
+        });
+        const effort =
+          model === undefined
+            ? undefined
+            : (getModelSelectionStringOptionValue(model, "reasoningEffort") ??
+              getModelSelectionStringOptionValue(model, "effort"));
+        return {
+          ...turn,
+          ...(usage === null ? {} : { turnTokenUsage: usage }),
+          ...(model === undefined
+            ? {}
+            : {
+                turnModel: {
+                  instanceId: model.instanceId,
+                  model: model.model,
+                  ...(effort === undefined ? {} : { effort }),
+                },
+              }),
+          threadTokenUsage:
+            records.legacyTurnUsage === undefined
+              ? nativeTotal
+              : addThreadTokenUsage(records.legacyTurnUsage.thread, nativeTotal),
+        } satisfies OrchestrationV2ProviderTurn;
+      });
+
+    const makeDomainEvent = (
+      input: ProviderEventIngestInput,
+      payloadInput: {
+        readonly type: OrchestrationV2DomainEvent["type"];
+        readonly payload: OrchestrationV2DomainEvent["payload"];
+        readonly threadId?: ThreadId;
+        readonly runId?: RunId | null;
+        readonly nodeId?: NodeId | null;
+        readonly occurredAt?: DateTime.Utc;
+      },
+    ) =>
+      Effect.gen(function* () {
+        const threadId = payloadInput.threadId ?? input.threadId;
+        const eventId = yield* idAllocator.allocate.event({
+          threadId,
+          providerSessionId: input.providerSessionId,
+        });
+        const occurredAt = payloadInput.occurredAt ?? (yield* DateTime.now);
+        return yield* decodeDomainEvent(
+          compactUndefined({
+            id: eventId,
+            type: payloadInput.type,
+            threadId,
+            runId: payloadInput.runId ?? input.runId,
+            nodeId: payloadInput.nodeId ?? input.nodeId,
+            driver: input.event.driver,
+            providerInstanceId: input.providerInstanceId,
+            rawEventId: input.rawEventId,
+            occurredAt,
+            payload: payloadInput.payload,
+          }),
+        );
+      });
+
+    const dismissNativeUserInputs = Effect.fn("ProviderEventIngestor.dismissNativeUserInputs")(
+      function* (
+        input: ProviderEventIngestInput,
+        providerTurnId: ProviderTurnId,
+        threadId = input.threadId,
+      ) {
+        const pending = yield* projections.getPendingNativeUserInputs(threadId, providerTurnId);
+        const now = yield* DateTime.now;
+        const events: Array<OrchestrationV2DomainEvent> = [];
+        for (const request of pending.runtimeRequests) {
+          events.push(
+            yield* makeDomainEvent(input, {
+              type: "runtime-request.updated",
+              threadId,
+              nodeId: request.nodeId,
+              payload: { ...request, status: "cancelled", resolvedAt: now },
+            }),
+          );
+        }
+        for (const node of pending.nodes) {
+          events.push(
+            yield* makeDomainEvent(input, {
+              type: "node.updated",
+              threadId,
+              nodeId: node.id,
+              runId: node.runId,
+              payload: { ...node, status: "cancelled", completedAt: now },
+            }),
+          );
+        }
+        for (const item of pending.turnItems) {
+          events.push(
+            yield* makeDomainEvent(input, {
+              type: "turn-item.updated",
+              threadId,
+              nodeId: item.nodeId,
+              runId: item.runId,
+              payload: { ...item, status: "cancelled", completedAt: now, updatedAt: now },
+            }),
+          );
+        }
+        return events;
+      },
+    );
+
+    const normalize: ProviderEventIngestorV2Shape["normalize"] = (input) =>
+      Effect.gen(function* () {
+        switch (input.event.type) {
+          case "app_thread.created":
+            return [
+              yield* makeDomainEvent(input, {
+                type: "thread.created",
+                threadId: input.event.appThread.id,
+                payload: input.event.appThread,
+              }),
+            ];
+          case "provider_session.updated":
+            return [
+              yield* makeDomainEvent(input, {
+                type: "provider-session.updated",
+                payload: input.event.providerSession,
+              }),
+            ];
+          case "provider_thread.updated":
+            return [
+              yield* makeDomainEvent(input, {
+                type: "provider-thread.updated",
+                threadId: input.event.providerThread.appThreadId ?? input.threadId,
+                payload: {
+                  ...input.event.providerThread,
+                  ...(McpProviderSession.readMcpProviderSession(
+                    input.event.providerThread.appThreadId ?? input.threadId,
+                  ) === undefined
+                    ? {}
+                    : {
+                        nativeMetadata: {
+                          ...input.event.providerThread.nativeMetadata,
+                          mcpServerName:
+                            McpProviderSession.readMcpProviderSession(
+                              input.event.providerThread.appThreadId ?? input.threadId,
+                            )?.mcpServerName ?? McpProviderSession.ACTIVE_MCP_SERVER_NAME,
+                        },
+                      }),
+                },
+              }),
+            ];
+          case "provider_turn.updated":
+            return [
+              ...(["completed", "interrupted", "failed", "cancelled"].includes(
+                input.event.providerTurn.status,
+              )
+                ? yield* dismissNativeUserInputs(
+                    input,
+                    input.event.providerTurn.id,
+                    input.event.threadId,
+                  )
+                : []),
+              yield* makeDomainEvent(input, {
+                type: "provider-turn.updated",
+                ...(input.event.threadId === undefined ? {} : { threadId: input.event.threadId }),
+                payload: yield* recordTurnUsage(input, input.event.providerTurn),
+                nodeId: input.event.providerTurn.nodeId,
+              }),
+            ];
+          case "node.updated":
+            return [
+              yield* makeDomainEvent(input, {
+                type: "node.updated",
+                threadId: input.event.node.threadId,
+                payload: input.event.node,
+                runId: input.event.node.runId,
+                nodeId: input.event.node.id,
+              }),
+            ];
+          case "subagent.updated":
+            return [
+              yield* makeDomainEvent(input, {
+                type: "subagent.updated",
+                threadId: input.event.subagent.threadId,
+                payload: input.event.subagent,
+                runId: input.event.subagent.runId,
+                nodeId: input.event.subagent.id,
+              }),
+            ];
+          case "message.updated":
+            return [
+              yield* makeDomainEvent(input, {
+                type: "message.updated",
+                threadId: input.event.message.threadId,
+                payload: input.event.message,
+                runId: input.event.message.runId,
+                nodeId: input.event.message.nodeId,
+              }),
+            ];
+          case "turn_item.updated":
+            return [
+              yield* makeDomainEvent(input, {
+                type: "turn-item.updated",
+                threadId: input.event.turnItem.threadId,
+                payload: input.event.turnItem,
+                runId: input.event.turnItem.runId,
+                nodeId: input.event.turnItem.nodeId,
+              }),
+            ];
+          case "runtime_request.updated":
+            return [
+              yield* makeDomainEvent(input, {
+                type: "runtime-request.updated",
+                ...(input.event.threadId === undefined ? {} : { threadId: input.event.threadId }),
+                payload: input.event.runtimeRequest,
+                nodeId: input.event.runtimeRequest.nodeId,
+              }),
+            ];
+          case "plan.updated": {
+            const occurredAt = yield* DateTime.now;
+            const plan = input.event.plan;
+            const previous =
+              plan.kind === "todo_list"
+                ? yield* projections.getPlan(plan.threadId, plan.id)
+                : undefined;
+            const payload =
+              plan.kind === "todo_list"
+                ? withPlanStepDurations(
+                    plan,
+                    previous?.kind === "todo_list" ? previous : undefined,
+                    occurredAt,
+                  )
+                : plan;
+            return [
+              yield* makeDomainEvent(input, {
+                type: "plan.updated",
+                threadId: plan.threadId,
+                payload,
+                runId: plan.runId,
+                nodeId: plan.nodeId,
+                occurredAt,
+              }),
+            ];
+          }
+          case "turn.terminal":
+            const dismissed = yield* dismissNativeUserInputs(input, input.event.providerTurnId);
+            if (input.event.status !== "failed") {
+              return dismissed;
+            }
+            const occurredAt = yield* DateTime.now;
+            return [
+              ...dismissed,
+              yield* makeDomainEvent(input, {
+                type: "turn-item.updated",
+                payload: makeProviderFailureTurnItem({
+                  idAllocator,
+                  driver: input.event.driver,
+                  threadId: input.threadId,
+                  runId: input.runId ?? null,
+                  nodeId: input.nodeId ?? null,
+                  providerThreadId: input.event.providerThreadId,
+                  providerTurnId: input.event.providerTurnId,
+                  itemOrdinal: input.event.failureItemOrdinal,
+                  failure: input.event.failure,
+                  ...(input.event.retry === undefined ? {} : { retry: input.event.retry }),
+                  ...(input.event.retryStartedAt === undefined
+                    ? {}
+                    : { retryStartedAt: input.event.retryStartedAt }),
+                  occurredAt,
+                }),
+              }),
+            ];
+        }
+      }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ProviderEventNormalizeError({
+              providerSessionId: input.providerSessionId,
+              threadId: input.threadId,
+              providerEvent: input.event,
+              cause,
+            }),
+        ),
+      );
+
+    return ProviderEventIngestorV2.of({
+      normalize,
+      ingestNormalized: (input) =>
+        Effect.gen(function* () {
+          const events = yield* normalize(input);
+          if (events.length === 0) {
+            return [];
+          }
+          const mapWriteError = (cause: unknown) =>
+            new ProviderEventPublishError({
+              providerSessionId: input.providerSessionId,
+              eventCount: events.length,
+              cause,
+            });
+          if (input.writeIfProviderThreadOwner !== undefined) {
+            const ownerResult = yield* eventSink
+              .writeIfProviderThreadOwner({
+                guardPendingUserInputCancellations: true,
+                ...(input.commandId === undefined ? {} : { commandId: input.commandId }),
+                ...input.writeIfProviderThreadOwner,
+                events,
+              })
+              .pipe(Effect.mapError(mapWriteError));
+            return ownerResult.storedEvents;
+          }
+          if (input.writeIfRunCurrent === undefined) {
+            return yield* eventSink
+              .write({
+                guardPendingUserInputCancellations: true,
+                ...(input.commandId === undefined ? {} : { commandId: input.commandId }),
+                events,
+              })
+              .pipe(Effect.mapError(mapWriteError));
+          }
+          const result = yield* eventSink
+            .writeIfRunCurrent({
+              guardPendingUserInputCancellations: true,
+              ...(input.commandId === undefined ? {} : { commandId: input.commandId }),
+              threadId: input.threadId,
+              ...input.writeIfRunCurrent,
+              events,
+            })
+            .pipe(Effect.mapError(mapWriteError));
+          return result.storedEvents;
+        }).pipe(
+          (effect) =>
+            ingestExecutor.withLock(
+              input.event.type === "provider_turn.updated"
+                ? (input.event.threadId ?? input.threadId)
+                : input.threadId,
+              effect,
+            ),
+          Effect.tap((storedEvents) =>
+            Effect.gen(function* () {
+              if (storedEvents.length === 0 || input.event.type !== "provider_turn.updated") return;
+              const providerTurn = input.event.providerTurn;
+              if (
+                providerTurn.status !== "completed" &&
+                providerTurn.status !== "failed" &&
+                providerTurn.status !== "interrupted" &&
+                providerTurn.status !== "cancelled"
+              )
+                return;
+              const key = `${input.providerInstanceId}:${providerTurn.id}`;
+              if (completedTurnAnalytics.has(key)) return;
+              completedTurnAnalytics.add(key);
+              if (completedTurnAnalytics.size > 4096) {
+                const oldest = completedTurnAnalytics.values().next().value;
+                if (oldest !== undefined) completedTurnAnalytics.delete(oldest);
+              }
+              yield* analytics.record(
+                providerTurnAnalyticsProperties({
+                  driver: input.event.driver,
+                  providerTurn,
+                  ...(input.analyticsContext === undefined
+                    ? {}
+                    : { context: input.analyticsContext }),
+                }),
+              );
+            }),
+          ),
+        ),
+    });
+  }),
+);

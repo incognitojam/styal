@@ -15,7 +15,7 @@ import {
 } from "./baseSchemas.ts";
 import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
 import { ProviderUsageLimitsUpdate } from "./providerUsageLimits.ts";
-import { ProviderApprovalOption, UsdAmount } from "./orchestration.ts";
+import { ProviderApprovalOption } from "./providerPolicy.ts";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
 const UnknownRecordSchema = Schema.Record(Schema.String, Schema.Unknown);
@@ -165,7 +165,6 @@ const ThreadRealtimeClosedType = Schema.Literal("thread.realtime.closed");
 const TurnStartedType = Schema.Literal("turn.started");
 const TurnCompletedType = Schema.Literal("turn.completed");
 const TurnAbortedType = Schema.Literal("turn.aborted");
-const TurnUsageUpdatedType = Schema.Literal("turn.usage.updated");
 const TurnPlanUpdatedType = Schema.Literal("turn.plan.updated");
 const TurnProposedDeltaType = Schema.Literal("turn.proposed.delta");
 const TurnProposedCompletedType = Schema.Literal("turn.proposed.completed");
@@ -279,6 +278,12 @@ export const ThreadTokenUsageSnapshot = Schema.Struct({
   durationMs: Schema.optional(NonNegativeInt),
   compactsAutomatically: Schema.optional(Schema.Boolean),
   autoCompactThreshold: Schema.optional(PositiveInt),
+  cost: Schema.optional(
+    Schema.Struct({
+      amount: Schema.Number.check(Schema.isFinite()),
+      currency: TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(32)),
+    }),
+  ),
 });
 export type ThreadTokenUsageSnapshot = typeof ThreadTokenUsageSnapshot.Type;
 
@@ -337,6 +342,8 @@ export const SubagentTokenUsage = Schema.Struct({
   reasoningTokens: Schema.optional(NonNegativeInt),
 });
 export type SubagentTokenUsage = typeof SubagentTokenUsage.Type;
+
+const UsdAmount = Schema.Number.check(Schema.isFinite(), Schema.isGreaterThanOrEqualTo(0));
 
 /**
  * Tokens one model used during a turn, main agent and subagents together, for
@@ -414,6 +421,34 @@ export const TurnModel = Schema.Struct({
 });
 export type TurnModel = typeof TurnModel.Type;
 
+/**
+ * A thread's main-agent usage, summed over every turn with a usage record when
+ * the newest one was written. Clients see only recent activities, so the
+ * server sums instead of leaving clients to add up turns they may not have.
+ */
+export const ThreadTokenUsage = Schema.Struct({
+  /** Main agent and reported subagent usage combined. */
+  inputTokens: NonNegativeInt,
+  cachedInputTokens: NonNegativeInt,
+  cacheCreationTokens: NonNegativeInt,
+  outputTokens: NonNegativeInt,
+  reasoningTokens: NonNegativeInt,
+  /** Turns whose usage is included. */
+  countedTurns: NonNegativeInt,
+  /** Every turn the thread had, including those without usage. */
+  turns: NonNegativeInt,
+  partialTurns: NonNegativeInt,
+  /** Turns that ran subagents without reporting their usage. */
+  subagentTurns: NonNegativeInt,
+  /** Reported subagent input and output, already within the totals above. */
+  subagentTokens: Schema.optional(NonNegativeInt),
+  /** Estimated API cost of the turns that have one. */
+  costUsd: Schema.optional(UsdAmount),
+  /** Counted turns with a cost. */
+  pricedTurns: Schema.optional(NonNegativeInt),
+});
+export type ThreadTokenUsage = typeof ThreadTokenUsage.Type;
+
 const TurnCompletedPayload = Schema.Struct({
   state: RuntimeTurnState,
   stopReason: Schema.optional(Schema.NullOr(TrimmedNonEmptyStringSchema)),
@@ -436,14 +471,6 @@ const TurnAbortedPayload = Schema.Struct({
   effort: Schema.optional(TrimmedNonEmptyStringSchema),
 });
 export type TurnAbortedPayload = typeof TurnAbortedPayload.Type;
-
-/** A running turn's usage so far; its completion carries the final usage. */
-const TurnUsageUpdatedPayload = Schema.Struct({
-  tokenUsage: TurnTokenUsage,
-  /** Filled by the provider service from the turn's start. */
-  model: Schema.optional(TrimmedNonEmptyStringSchema),
-});
-export type TurnUsageUpdatedPayload = typeof TurnUsageUpdatedPayload.Type;
 
 const RuntimePlanStep = Schema.Struct({
   step: TrimmedNonEmptyStringSchema,
@@ -626,43 +653,6 @@ export const TaskRunHandles = Schema.Struct({
 export type TaskRunHandles = typeof TaskRunHandles.Type;
 
 /**
- * Watch-loop task types: Monitor-tool tasks plus background shells (a shell
- * that outlives its turn is in practice a watch loop). Canonical single copy —
- * the server liveness registry, ingestion's agentKind stamp, and the client
- * fold's legacy fallback all classify with these sets.
- */
-export const MONITOR_TASK_TYPES: ReadonlySet<string> = new Set([
-  "monitor",
-  "monitor_mcp",
-  "local_bash",
-  "shell",
-]);
-/** Task types that are neither agents nor watch loops (plan-mode bookkeeping). */
-export const INERT_TASK_TYPES: ReadonlySet<string> = new Set(["plan", "dream"]);
-
-/**
- * Agent-vs-background classification, stamped by ingestion as `agentKind` so
- * persisted rows are self-describing. A deliberate denylist: the SDK's
- * agent-flavored type names drift (subagent, local_agent, local_workflow, …)
- * and an allowlist silently dropped real subagents when "local_agent"
- * appeared. A task launched from inside a subagent (agentId set) is
- * agent-internal background work UNLESS it is itself agent-flavored — a
- * nested agent can outlive its parent and stays in the roster.
- */
-export function classifyTaskAgentKind(input: {
-  readonly taskType?: string | undefined;
-  readonly agentId?: string | undefined;
-}): "agent" | "background" {
-  const { taskType, agentId } = input;
-  const nonAgentType =
-    taskType !== undefined && (MONITOR_TASK_TYPES.has(taskType) || INERT_TASK_TYPES.has(taskType));
-  if (agentId !== undefined && agentId.trim().length > 0) {
-    return taskType === undefined || nonAgentType ? "background" : "agent";
-  }
-  return nonAgentType ? "background" : "agent";
-}
-
-/**
  * Optional agent-identity linkage carried on every task lifecycle payload.
  * Repeated on progress and terminal rows (not just start) so client folds can
  * reconstruct an agent even when its start row aged out of activity retention.
@@ -673,7 +663,7 @@ const taskAgentLinkageFields = {
    * every row so folds can classify without the start row. */
   taskType: Schema.optional(TrimmedNonEmptyStringSchema),
   /**
-   * Server-stamped classification (classifyTaskAgentKind at ingestion).
+   * Server-stamped classification, set at ingestion.
    * Clients trust this stamp outright; rows without it (legacy, pre-stamp)
    * fall back to client-side heuristics.
    */
@@ -1028,13 +1018,6 @@ const ProviderRuntimeTurnAbortedEvent = Schema.Struct({
 });
 export type ProviderRuntimeTurnAbortedEvent = typeof ProviderRuntimeTurnAbortedEvent.Type;
 
-const ProviderRuntimeTurnUsageUpdatedEvent = Schema.Struct({
-  ...ProviderRuntimeEventBase.fields,
-  type: TurnUsageUpdatedType,
-  payload: TurnUsageUpdatedPayload,
-});
-export type ProviderRuntimeTurnUsageUpdatedEvent = typeof ProviderRuntimeTurnUsageUpdatedEvent.Type;
-
 const ProviderRuntimeTurnPlanUpdatedEvent = Schema.Struct({
   ...ProviderRuntimeEventBase.fields,
   type: TurnPlanUpdatedType,
@@ -1298,7 +1281,6 @@ export const ProviderRuntimeEventV2 = Schema.Union([
   ProviderRuntimeTurnStartedEvent,
   ProviderRuntimeTurnCompletedEvent,
   ProviderRuntimeTurnAbortedEvent,
-  ProviderRuntimeTurnUsageUpdatedEvent,
   ProviderRuntimeTurnPlanUpdatedEvent,
   ProviderRuntimeTurnProposedDeltaEvent,
   ProviderRuntimeTurnProposedCompletedEvent,

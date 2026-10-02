@@ -3,12 +3,15 @@ import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { runForkMigrations } from "../src/persistence/ForkMigrations.ts";
 import { migrationManifest, runMigrations } from "../src/persistence/Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { runMigrateDevDb } from "./migrate-dev-db.ts";
+
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 const withDatabase = <A, E>(
   databasePath: string,
@@ -78,7 +81,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         { sharedHome: sourceDir },
       );
 
-      assert.equal(result.databasePath, path.join(destDir, "userdata", "state.sqlite"));
+      assert.equal(result.databasePath, path.join(destDir, "userdata", "statev2.sqlite"));
       const kept = yield* withDatabase(
         result.databasePath,
         Effect.gen(function* () {
@@ -166,6 +169,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
       );
 
       assert.include(result.executedMigrations, "fork:2_WorkspacePortAllocations");
+      assert.include(result.executedMigrations, "fork:6_LegacyTurnUsage");
       const migrated = yield* withDatabase(
         result.databasePath,
         Effect.gen(function* () {
@@ -194,7 +198,17 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
             FROM composer_drafts
             ORDER BY thread_id
           `;
-          return { projectColumns, upstreamHistory, forkHistory, drafts };
+          const recordedUsage = yield* encodeJson({
+            turns: [{ turnId: "recorded-turn", inputTokens: 123, costUsd: 0.012345 }],
+          });
+          yield* sql`INSERT INTO styal_projection_legacy_turn_usage (thread_id, payload_json)
+            VALUES ('stopped-thread', ${recordedUsage})`;
+          yield* runForkMigrations();
+          const usage = yield* sql<{ readonly payload_json: string }>`
+            SELECT payload_json FROM styal_projection_legacy_turn_usage
+            WHERE thread_id = 'stopped-thread'
+          `;
+          return { projectColumns, upstreamHistory, forkHistory, drafts, usage, recordedUsage };
         }),
       );
       assert.includeMembers(
@@ -213,8 +227,10 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         { migration_id: 3, name: "ProjectAdditionalInstructions" },
         { migration_id: 4, name: "ProjectionThreadLatestMessageAt" },
         { migration_id: 5, name: "ProjectionThreadTokenUsage" },
+        { migration_id: 6, name: "LegacyTurnUsage" },
       ]);
       assert.deepStrictEqual(migrated.drafts, [{ thread_id: "stopped-thread" }]);
+      assert.deepStrictEqual(migrated.usage, [{ payload_json: migrated.recordedUsage }]);
     }),
   );
 
@@ -252,7 +268,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
       const destDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-overlap-dest-" });
       // A leftover snapshot from a prior failed run, passed as --source: it
       // must not be deleted before it is read.
-      const leftoverSnapshot = path.join(destDir, "userdata", "state.sqlite.migrate-dev-db-tmp");
+      const leftoverSnapshot = path.join(destDir, "userdata", "statev2.sqlite.migrate-dev-db-tmp");
       yield* fs.makeDirectory(path.dirname(leftoverSnapshot), { recursive: true });
       yield* fs.writeFileString(leftoverSnapshot, "not a real db");
 
