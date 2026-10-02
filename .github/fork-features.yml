@@ -397,7 +397,7 @@ features:
   - id: claude-stop-waits-for-cli-exit
     title: Stop a Claude session only once its CLI has exited
     status: maintained
-    prs: []
+    prs: [620, 621]
     invariants:
       - Stopping a Claude session waits for its CLI process to exit, up to a grace measured from the SDK close, then kills the process itself; the session's exit event follows the process, not the close call.
       - Every Claude CLI logs its pid at spawn and its exit code or signal at exit, with the end of its stderr when the exit was not clean.
