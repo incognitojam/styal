@@ -81,6 +81,13 @@ cancel or continue; cancelling keeps the downloaded update. If the confirmation
 cannot be displayed and the app stays unresponsive, choose **Quit** again after
 five seconds to exit. This can interrupt running work.
 
+## Update providers
+
+**Settings → Providers** shows provider updates for the selected environment.
+**Update all** updates every outdated provider on every connected environment
+at once. Hover it to see which providers it will update. Providers that only
+offer a manual update command are not included.
+
 ## Mobile updates
 
 To update an environment from your phone, open **Settings → Environments** and
