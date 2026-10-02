@@ -1,5 +1,5 @@
 import type { ThreadPullRequestLink } from "@t3tools/contracts";
-import type { ThreadPullRequestChain } from "@t3tools/shared/threadPullRequests";
+import { isOpen, type ThreadPullRequestChain } from "@t3tools/shared/threadPullRequests";
 
 /** One line of a thread's pull-request list: a link plus how deep it sits in its stack. */
 export interface PullRequestListLine {
@@ -8,7 +8,7 @@ export interface PullRequestListLine {
   readonly depth: number;
   /** Which chain the line belongs to, so callers can tell one stack's lines from another's. */
   readonly chainKey: string;
-  /** Set on the bottom layer of a multi-layer stack, so that row can name the whole stack. */
+  /** Set on the first displayed layer of a multi-layer stack, including omitted preview layers. */
   readonly stack: { readonly kind: ThreadPullRequestChain["kind"]; readonly size: number } | null;
 }
 
@@ -25,15 +25,17 @@ function chainKeyOf(chain: ThreadPullRequestChain): string {
 /**
  * Flattens chains into indented lines, active work first and newest first within each group.
  * A stack is active if any layer is open or unsynced, sorts by its most recent layer, and
- * reads bottom to top so dependency order stays intact.
+ * reads bottom to top so dependency order stays intact. Previews start active stacks at their
+ * lowest open layer, preserving depth and moving the stack label to the first displayed row.
  */
 export function pullRequestListLines(
   chains: ReadonlyArray<ThreadPullRequestChain>,
+  { preview = false }: { preview?: boolean } = {},
 ): ReadonlyArray<PullRequestListLine> {
   const ordered = chains
     .map((chain) => ({
       chain,
-      active: chain.layers.some((link) => link.snapshot === null || link.snapshot.state === "open"),
+      active: chain.layers.some(isOpen),
       updatedAt: Math.max(...chain.layers.map(activityAt)),
     }))
     .sort(
@@ -42,12 +44,13 @@ export function pullRequestListLines(
     );
   return ordered.flatMap(({ chain }) => {
     const chainKey = chainKeyOf(chain);
-    return chain.layers.map((link, depth) => ({
+    const start = preview ? Math.max(0, chain.layers.findIndex(isOpen)) : 0;
+    return chain.layers.slice(start).map((link, index) => ({
       link,
-      depth,
+      depth: start + index,
       chainKey,
       stack:
-        depth === 0 && chain.layers.length > 1
+        index === 0 && chain.layers.length > 1
           ? { kind: chain.kind, size: chain.layers.length }
           : null,
     }));

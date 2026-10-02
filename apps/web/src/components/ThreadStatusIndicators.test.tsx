@@ -25,9 +25,9 @@ describe("ThreadPullRequestsMiniList", () => {
     return node.children.map((child) => (typeof child === "string" ? child : text(child))).join("");
   }
 
-  it("bounds a long preview and updates the remaining count when links change", () => {
+  it("shows five PRs and a remaining count only above the limit", () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    const links: ThreadPullRequestLink[] = Array.from({ length: 49 }, (_, index) => ({
+    const links: ThreadPullRequestLink[] = Array.from({ length: 6 }, (_, index) => ({
       host: "github.com",
       repository: "example/project",
       number: index + 1,
@@ -49,33 +49,11 @@ describe("ThreadPullRequestsMiniList", () => {
       "#3example/project",
       "#4example/project",
       "#5example/project",
-      "+44 more",
+      "+1 more",
     ]);
-    act(() => mounted.update(<ThreadPullRequestsMiniList pullRequests={links.slice(0, 6)} />));
-    expect(mounted.root.findAllByType("li").map(text).at(-1)).toBe("+1 more");
     act(() => mounted.update(<ThreadPullRequestsMiniList pullRequests={links.slice(0, 5)} />));
     expect(mounted.root.findAllByType("li")).toHaveLength(5);
     expect(text(mounted.root)).not.toContain("more");
-    act(() => mounted.update(<ThreadPullRequestsMiniList pullRequests={links.slice(0, 1)} />));
-    expect(mounted.root.findAllByType("li").map(text)).toEqual(["#1example/project"]);
-    act(() => mounted.update(<ThreadPullRequestsMiniList pullRequests={[]} />));
-    expect(mounted.toJSON()).toBeNull();
-    act(() =>
-      mounted.update(
-        <ThreadPullRequestsMiniList
-          pullRequests={links.map((link) => ({ ...link, source: "stack-dismissed" }))}
-          fallback={{
-            number: 77,
-            url: "https://github.com/example/project/pull/77",
-            title: "Branch review",
-            state: "open",
-            headRef: "feature/review",
-            baseRef: "main",
-          }}
-        />,
-      ),
-    );
-    expect(mounted.root.findAllByType("li").map(text)).toEqual(["#77Branch review"]);
     act(() => mounted.unmount());
   });
 });

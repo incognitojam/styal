@@ -71,7 +71,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 - **Active reviews first.** Linked pull requests put open work and drafts ahead of completed
   reviews, keeping stacks in dependency order. Thread previews show up to five pull requests
-  and a remaining count. Compared with
+  and a remaining count, starting partly landed stacks at their first open layer. Compared with
   [T3 Code revision 54084ae](https://github.com/pingdotgg/t3code/tree/54084ae1e6c32809db040e4fa571c80fdf2d8ae4),
   checked October 2, 2026, which orders by recent updates and shows every link in the preview.
 - **Immediate label feedback.** Adding or removing a pull request label updates the view immediately;
