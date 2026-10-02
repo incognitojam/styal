@@ -2516,6 +2516,7 @@ features:
       - In-app server updates check the server's host activity first; idle servers update without a dialog, while active or waiting threads, running terminal commands, or a failed check require confirmation, and cancelling leaves the server running.
       - When thread continuation is requested, the confirmation says a thread will continue only if the same selection the continuation step uses includes it; every other active thread is described as interrupted.
       - Continuation after an update also covers settled threads whose background work (monitors, background shells, subagents) is live; after the restart they receive a prompt to restart that work instead of a promptless turn continuation.
+      - A turn the restart cut short is recorded as interrupted before its continuation turn starts, rather than closed as completed when the resumed session reports ready.
     implementation_paths:
       - apps/server/src/environment/HostActivity.ts
       - apps/server/src/serverRuntimeStartup.ts
@@ -2532,6 +2533,7 @@ features:
       - apps/web/src/versionSkew.ts
     tests:
       - apps/server/src/environment/HostActivity.test.ts
+      - apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts
       - apps/server/src/server.test.ts
       - apps/server/src/serverRuntimeStartup.reconcile.test.ts
       - apps/web/src/components/ServerUpdateAction.logic.test.ts
