@@ -86,6 +86,7 @@ import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
+import { makeClaudeProcessSpawner } from "./ClaudeProcess.ts";
 import { claudeSignedOutMessage, makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import { planClaudeSkillDispatch } from "../Drivers/ClaudeSkillDispatch.ts";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
@@ -4379,6 +4380,32 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const runFork = Effect.runForkWith(runtimeContext);
       const runPromise = Effect.runPromiseWith(runtimeContext);
 
+      // The CLI's lifetime is otherwise invisible: the SDK reports neither
+      // its pid nor how it exited, and drops its stderr once the stream ends.
+      const claudeProcess = makeClaudeProcessSpawner({
+        observer: {
+          onSpawn: ({ pid }) => {
+            runFork(Effect.logInfo("claude.cli.spawned", { threadId, pid }));
+          },
+          onStderr: (text) => {
+            runFork(Effect.logDebug("claude.cli.stderr", { threadId, text }));
+          },
+          onExit: ({ pid, code, signal, stderrTail }) => {
+            runFork(
+              Effect.logInfo("claude.cli.exited", {
+                threadId,
+                pid,
+                code,
+                signal,
+                // A clean exit's stderr is deprecation chatter; keep it for
+                // the exits that need explaining.
+                ...(stderrTail.length > 0 && (code !== 0 || signal !== null) ? { stderrTail } : {}),
+              }),
+            );
+          },
+        },
+      });
+
       const promptQueue = yield* Queue.unbounded<PromptQueueItem>();
       const prompt = Stream.fromQueue(promptQueue).pipe(
         Stream.filter((item) => item.type === "message"),
@@ -4869,6 +4896,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(apiModelId ? { model: apiModelId } : {}),
         pathToClaudeCodeExecutable: claudeBinaryPath,
+        spawnClaudeCodeProcess: claudeProcess.spawnClaudeCodeProcess,
         systemPrompt: {
           type: "preset",
           preset: "claude_code",
