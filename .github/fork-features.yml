@@ -2143,7 +2143,7 @@ features:
   - id: pull-request-linked-extras
     title: Linked pull request badges and previews
     status: maintained
-    prs: [537, 587]
+    prs: [537, 587, 624]
     invariants:
       - Web and mobile show the current pull request number followed by +1 for one additional unrelated link and +2 for two; a lone link shows its number and stacks show their total layer count.
       - The badge's additional count agrees with its accessibility label; the sidebar PR link relies on the thread hover card for the linked PR list instead of showing a second tooltip.
