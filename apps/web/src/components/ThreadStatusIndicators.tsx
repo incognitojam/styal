@@ -219,8 +219,10 @@ export function ThreadPullRequestBadgeControl({
   );
 }
 
+const THREAD_PULL_REQUEST_PREVIEW_LIMIT = 5;
+
 /**
- * A miniature of the pull-requests panel for the thread tooltip: same order, same indentation,
+ * A miniature of the pull-requests panel for the thread tooltip: first five rows, same indentation,
  * so the hover answers "what is in here" without opening the surface. A thread with no linked
  * pull requests lists `fallback`, the pull request its badge found through the branch.
  */
@@ -255,7 +257,7 @@ export function ThreadPullRequestsMiniList({
   }
   return (
     <ul className="flex flex-col gap-1">
-      {lines.map((line) => {
+      {lines.slice(0, THREAD_PULL_REQUEST_PREVIEW_LIMIT).map((line) => {
         const snapshot = line.link.snapshot;
         return (
           <PullRequestMiniListRow
@@ -272,6 +274,9 @@ export function ThreadPullRequestsMiniList({
           />
         );
       })}
+      {lines.length > THREAD_PULL_REQUEST_PREVIEW_LIMIT ? (
+        <li>+{lines.length - THREAD_PULL_REQUEST_PREVIEW_LIMIT} more</li>
+      ) : null}
     </ul>
   );
 }

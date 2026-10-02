@@ -10,6 +10,7 @@ function link(
   base: string,
   updatedAt: string,
   stack: ThreadPullRequestLink["stack"] = null,
+  snapshot: Partial<NonNullable<ThreadPullRequestLink["snapshot"]>> = {},
 ): ThreadPullRequestLink {
   return {
     host: "github.com",
@@ -26,12 +27,50 @@ function link(
       isDraft: false,
       updatedAt,
       syncedAt: updatedAt,
+      ...snapshot,
     },
     stack,
   };
 }
 
 describe("pullRequestListLines", () => {
+  it("puts open, draft, and unsynced work before newer completed PRs", () => {
+    const unsynced = {
+      ...link(3, "pending", "main", "2026-01-01T10:00:00Z"),
+      linkedAt: "2026-01-01T10:00:00Z",
+      snapshot: null,
+    };
+    const lines = pullRequestListLines(
+      resolveThreadPullRequestChains([
+        link(5, "merged", "main", "2026-01-02T12:00:00Z", null, { state: "merged" }),
+        link(4, "closed", "main", "2026-01-02T11:00:00Z", null, { state: "closed" }),
+        link(1, "active", "main", "2026-01-01T08:00:00Z"),
+        link(2, "draft", "main", "2026-01-01T09:00:00Z", null, { isDraft: true }),
+        unsynced,
+      ]),
+    );
+    expect(lines.map((line) => line.link.number)).toEqual([3, 2, 1, 5, 4]);
+  });
+
+  it("keeps mixed stacks active and intact ahead of newer completed stacks", () => {
+    const lines = pullRequestListLines(
+      resolveThreadPullRequestChains([
+        link(9, "done-base", "main", "2026-01-03T10:00:00Z", null, { state: "merged" }),
+        link(10, "done-top", "done-base", "2026-01-03T11:00:00Z", null, { state: "closed" }),
+        link(1, "active-base", "main", "2026-01-01T10:00:00Z", null, { state: "merged" }),
+        link(2, "active-top", "active-base", "2026-01-01T11:00:00Z", null, { isDraft: true }),
+        link(3, "solo", "main", "2026-01-02T10:00:00Z"),
+      ]),
+    );
+    expect(lines.map((line) => [line.link.number, line.depth])).toEqual([
+      [3, 0],
+      [1, 0],
+      [2, 1],
+      [9, 0],
+      [10, 1],
+    ]);
+  });
+
   it("orders newest first and keeps a stack together under its base layer", () => {
     const lines = pullRequestListLines(
       resolveThreadPullRequestChains([

@@ -1,7 +1,7 @@
 import { ThreadId, type ThreadPullRequestLink } from "@t3tools/contracts";
 import { act, cloneElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { create, type ReactTestRenderer } from "react-test-renderer";
+import { create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 vi.mock("./ui/tooltip", () => ({
@@ -15,9 +15,70 @@ vi.mock("./ui/tooltip", () => ({
 
 import {
   ThreadPullRequestBadgeControl,
+  ThreadPullRequestsMiniList,
   ThreadWorktreeIndicator,
   linkedPullRequestSnapshotStatus,
 } from "./ThreadStatusIndicators";
+
+describe("ThreadPullRequestsMiniList", () => {
+  function text(node: ReactTestInstance): string {
+    return node.children.map((child) => (typeof child === "string" ? child : text(child))).join("");
+  }
+
+  it("bounds a long preview and updates the remaining count when links change", () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const links: ThreadPullRequestLink[] = Array.from({ length: 49 }, (_, index) => ({
+      host: "github.com",
+      repository: "example/project",
+      number: index + 1,
+      url: `https://github.com/example/project/pull/${index + 1}`,
+      source: "manual",
+      linkedAt: "2026-01-01T00:00:00Z",
+      snapshot: null,
+      stack: null,
+    }));
+    let renderer: ReactTestRenderer | undefined;
+    act(() => {
+      renderer = create(<ThreadPullRequestsMiniList pullRequests={links} />);
+    });
+    const mounted = renderer;
+    if (!mounted) throw new Error("Preview did not render");
+    expect(mounted.root.findAllByType("li").map(text)).toEqual([
+      "#1example/project",
+      "#2example/project",
+      "#3example/project",
+      "#4example/project",
+      "#5example/project",
+      "+44 more",
+    ]);
+    act(() => mounted.update(<ThreadPullRequestsMiniList pullRequests={links.slice(0, 6)} />));
+    expect(mounted.root.findAllByType("li").map(text).at(-1)).toBe("+1 more");
+    act(() => mounted.update(<ThreadPullRequestsMiniList pullRequests={links.slice(0, 5)} />));
+    expect(mounted.root.findAllByType("li")).toHaveLength(5);
+    expect(text(mounted.root)).not.toContain("more");
+    act(() => mounted.update(<ThreadPullRequestsMiniList pullRequests={links.slice(0, 1)} />));
+    expect(mounted.root.findAllByType("li").map(text)).toEqual(["#1example/project"]);
+    act(() => mounted.update(<ThreadPullRequestsMiniList pullRequests={[]} />));
+    expect(mounted.toJSON()).toBeNull();
+    act(() =>
+      mounted.update(
+        <ThreadPullRequestsMiniList
+          pullRequests={links.map((link) => ({ ...link, source: "stack-dismissed" }))}
+          fallback={{
+            number: 77,
+            url: "https://github.com/example/project/pull/77",
+            title: "Branch review",
+            state: "open",
+            headRef: "feature/review",
+            baseRef: "main",
+          }}
+        />,
+      ),
+    );
+    expect(mounted.root.findAllByType("li").map(text)).toEqual(["#77Branch review"]);
+    act(() => mounted.unmount());
+  });
+});
 
 describe("ThreadPullRequestBadgeControl", () => {
   it("shows the current PR number followed by additional linked PRs", () => {

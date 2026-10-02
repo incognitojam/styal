@@ -23,18 +23,24 @@ function chainKeyOf(chain: ThreadPullRequestChain): string {
 }
 
 /**
- * Flattens chains into indented lines, newest first. A stack sorts by its most recent layer and
- * then reads bottom to top beneath that slot, so the layer you would review first is at the
- * bottom of the indent and a fresh push anywhere in the stack floats the whole stack up.
+ * Flattens chains into indented lines, active work first and newest first within each group.
+ * A stack is active if any layer is open or unsynced, sorts by its most recent layer, and
+ * reads bottom to top so dependency order stays intact.
  */
 export function pullRequestListLines(
   chains: ReadonlyArray<ThreadPullRequestChain>,
 ): ReadonlyArray<PullRequestListLine> {
-  const ordered = [...chains].sort(
-    (left, right) =>
-      Math.max(...right.layers.map(activityAt)) - Math.max(...left.layers.map(activityAt)),
-  );
-  return ordered.flatMap((chain) => {
+  const ordered = chains
+    .map((chain) => ({
+      chain,
+      active: chain.layers.some((link) => link.snapshot === null || link.snapshot.state === "open"),
+      updatedAt: Math.max(...chain.layers.map(activityAt)),
+    }))
+    .sort(
+      (left, right) =>
+        Number(right.active) - Number(left.active) || right.updatedAt - left.updatedAt,
+    );
+  return ordered.flatMap(({ chain }) => {
     const chainKey = chainKeyOf(chain);
     return chain.layers.map((link, depth) => ({
       link,
