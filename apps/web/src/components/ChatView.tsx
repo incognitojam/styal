@@ -405,6 +405,8 @@ import {
   shouldOfferResumeCompaction,
 } from "./chat/ContextWindowMeter.logic";
 import { deriveLatestContextWindowSnapshot, formatContextWindowTokens } from "../lib/contextWindow";
+import { EMPTY_TURN_USAGE } from "@t3tools/shared/turnUsage";
+import { useTurnUsage } from "./chat/TurnUsageLabel";
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
   DRAFT_HERO_TRANSITION_DURATION_MS,
@@ -2873,6 +2875,7 @@ export default function ChatView(props: ChatViewProps) {
     () => deriveLatestContextWindowSnapshot(threadActivities),
     [threadActivities],
   );
+  const turnUsage = useTurnUsage(threadActivities, settings.turnUsageEnabled);
   const workLogEntries = useMemo(() => deriveWorkLogEntries(threadActivities), [threadActivities]);
   // Native subagent fold: memoized by activity-list identity, shared by the
   // Agents surface, live strip, and workflow cards. v2Projection is null
@@ -9627,6 +9630,9 @@ export default function ChatView(props: ChatViewProps) {
                   paintOnlyDisplayedTimeline
                     ? EMPTY_HELD_TURN_DIFF_SUMMARIES
                     : activeThread.checkpoints
+                }
+                turnUsageByTurnId={
+                  paintOnlyDisplayedTimeline ? EMPTY_TURN_USAGE.byTurnId : turnUsage.byTurnId
                 }
                 activeThreadEnvironmentId={
                   displayedThreadRef?.environmentId ?? activeThread.environmentId

@@ -447,6 +447,39 @@ describe("ProviderRuntimeIngestion", () => {
     };
   }
 
+  it("records a completed turn's reported usage on the thread", async () => {
+    const harness = await createHarness();
+    const base = {
+      provider: ProviderDriverKind.make("codex"),
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-1"),
+      createdAt: "2026-01-01T00:00:01.000Z",
+    };
+    const tokenUsage = {
+      usageScope: "main_agent",
+      usageStatus: "complete",
+      inputTokens: 120_000,
+      cachedInputTokens: 100_000,
+      outputTokens: 4_000,
+      hasSubagents: false,
+    } as const;
+    await harness.emitAndDrain([
+      { ...base, type: "turn.started", eventId: asEventId("evt-started") },
+      {
+        ...base,
+        type: "turn.completed",
+        eventId: asEventId("evt-completed"),
+        payload: { state: "completed", tokenUsage },
+      },
+    ]);
+
+    const thread = (await harness.readModel()).threads.find((entry) => entry.id === "thread-1");
+    const usage = thread?.activities.filter((activity) => activity.kind === "turn.usage");
+    expect(usage?.map((activity) => [activity.turnId, activity.payload])).toEqual([
+      ["turn-1", tokenUsage],
+    ]);
+  });
+
   it("maps turn started/completed events into thread session updates", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";

@@ -162,6 +162,7 @@ import type {
   ComposerContextId,
   ComposerContextRecord,
   KnownComposerContextRecord,
+  TurnTokenUsage,
 } from "@t3tools/contracts";
 import { Button } from "../ui/button";
 import type { QueuedComposerMessage } from "../../queuedMessageStore";
@@ -186,6 +187,8 @@ import {
   timelineContentOverflowsViewport,
 } from "./timelineScrollAnchoring";
 import { MessageCopyButton } from "./MessageCopyButton";
+import { TurnUsageLabel } from "./TurnUsageLabel";
+import { EMPTY_TURN_USAGE, turnUsageView } from "@t3tools/shared/turnUsage";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { inferEntryKindFromPath } from "../../pierre-icons";
 import { AssistantSelectionToolbar } from "./AssistantSelectionToolbar";
@@ -295,6 +298,7 @@ interface TimelineRowSharedState {
   citationRequest: AssistantCitationTarget | null;
   listRef: React.RefObject<LegendListRef | null>;
   timestampFormat: TimestampFormat;
+  turnUsageByTurnId: ReadonlyMap<string, TurnTokenUsage>;
   routeThreadKey: string;
   threadRef: ScopedThreadRef | null;
   markdownCwd: string | undefined;
@@ -434,6 +438,8 @@ interface MessagesTimelineProps {
   latestTurn: TimelineLatestTurn | null;
   runningTurnId: TurnId | null;
   turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
+  /** Usage for completed turns; empty when turn usage is turned off. */
+  turnUsageByTurnId?: ReadonlyMap<string, TurnTokenUsage>;
   routeThreadKey: string;
   /**
    * Thread whose entries are currently painted. Differs from `routeThreadKey`
@@ -507,6 +513,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   latestTurn,
   runningTurnId,
   turnDiffSummaries,
+  turnUsageByTurnId = EMPTY_TURN_USAGE.byTurnId,
   routeThreadKey,
   displayThreadKey,
   onOpenTurnDiff,
@@ -960,6 +967,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       citationRequest: readyCitationRequest,
       listRef,
       timestampFormat,
+      turnUsageByTurnId,
       routeThreadKey,
       // Keep Markdown callbacks memoized during unrelated activity updates.
       threadRef: citationThreadRef,
@@ -995,6 +1003,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       readyCitationRequest,
       listRef,
       timestampFormat,
+      turnUsageByTurnId,
       routeThreadKey,
       citationThreadRef,
       markdownCwd,
@@ -2277,6 +2286,7 @@ function AssistantMessageMeta({
   alwaysVisible?: boolean;
 }) {
   const ctx = use(TimelineRowCtx);
+  const turnUsage = message.turnId ? ctx.turnUsageByTurnId.get(message.turnId) : undefined;
 
   return (
     <div
@@ -2303,6 +2313,14 @@ function AssistantMessageMeta({
           </TooltipPopup>
         </Tooltip>
       )}
+      {!message.streaming && turnUsage ? (
+        <span className="flex items-center gap-1">
+          <span aria-hidden="true" className="text-muted-foreground/50">
+            ·
+          </span>
+          <TurnUsageLabel view={turnUsageView(turnUsage)} />
+        </span>
+      ) : null}
     </div>
   );
 }

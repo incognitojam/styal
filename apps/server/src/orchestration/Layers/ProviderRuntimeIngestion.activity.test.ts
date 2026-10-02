@@ -3,7 +3,9 @@ import {
   ProviderDriverKind,
   RuntimeTaskId,
   ThreadId,
+  TurnId,
   type ProviderRuntimeEvent,
+  type TurnTokenUsage,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -140,5 +142,50 @@ describe("runtimeEventToActivities tool streaming persistence", () => {
     expect(activities).toHaveLength(1);
     const payload = activities[0]?.payload as Record<string, unknown>;
     expect(payload.data).toEqual(streamingData);
+  });
+});
+
+describe("runtimeEventToActivities turn usage", () => {
+  const turnEnd = (eventId: string, tokenUsage: TurnTokenUsage | undefined) =>
+    ({
+      ...base,
+      type: "turn.completed",
+      eventId: EventId.make(eventId),
+      turnId: TurnId.make("turn-1"),
+      payload: { state: "completed", ...(tokenUsage ? { tokenUsage } : {}) },
+    }) satisfies ProviderRuntimeEvent;
+
+  it("records the turn's reported usage against the turn", () => {
+    const usage = {
+      usageScope: "main_agent",
+      usageStatus: "complete",
+      inputTokens: 120_000,
+      cachedInputTokens: 100_000,
+      outputTokens: 4_000,
+      reasoningTokens: 1_500,
+      hasSubagents: false,
+    } satisfies TurnTokenUsage;
+
+    const activities = runtimeEventToActivities(turnEnd("evt-turn-end", usage));
+
+    expect(activities).toHaveLength(1);
+    expect(activities[0]).toMatchObject({
+      kind: "turn.usage",
+      turnId: "turn-1",
+      payload: usage,
+    });
+  });
+
+  it("records nothing when the provider reports no usage", () => {
+    expect(runtimeEventToActivities(turnEnd("evt-none", undefined))).toEqual([]);
+    expect(
+      runtimeEventToActivities(
+        turnEnd("evt-unavailable", {
+          usageScope: "main_agent",
+          usageStatus: "unavailable",
+          hasSubagents: false,
+        }),
+      ),
+    ).toEqual([]);
   });
 });

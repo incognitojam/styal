@@ -875,6 +875,7 @@ function ThreadRouteContent(
           feedbackSubmissions={composer.feedbackSubmissions}
           onDismissFeedback={composer.dismissFeedback}
           selectedThreadFeed={composer.selectedThreadFeed}
+          turnUsageByTurnId={composer.selectedTurnUsage.byTurnId}
           activeWorkStartedAt={
             creationState?.kind === "preparing"
               ? (selectedThreadCreation?.message.createdAt ?? composer.activeWorkStartedAt)

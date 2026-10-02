@@ -19,6 +19,7 @@ import {
   RuntimeRequestId,
   type RuntimeTaskId,
   type TaskAgentLinkage,
+  TURN_USAGE_ACTIVITY_KIND,
 } from "@t3tools/contracts";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
@@ -683,6 +684,30 @@ export function runtimeEventToActivities(
             message: truncateDetail(event.payload.message),
             ...(event.payload.detail !== undefined ? { detail: event.payload.detail } : {}),
           },
+          turnId: toTurnId(event.turnId) ?? null,
+          ...maybeSequence,
+        },
+      ];
+    }
+
+    case "turn.completed":
+    case "turn.aborted": {
+      const usage = event.payload.tokenUsage;
+      if (
+        usage === undefined ||
+        usage.usageStatus === "unavailable" ||
+        (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0) === 0
+      ) {
+        return [];
+      }
+      return [
+        {
+          id: event.eventId,
+          createdAt: event.createdAt,
+          tone: "info",
+          kind: TURN_USAGE_ACTIVITY_KIND,
+          summary: "Turn usage",
+          payload: usage,
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,
         },

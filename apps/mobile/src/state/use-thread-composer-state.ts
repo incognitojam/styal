@@ -28,6 +28,7 @@ import {
 import { deriveActiveWorkStartedAt } from "@t3tools/shared/orchestrationTiming";
 import { upgradeLegacyContextMessage } from "@t3tools/shared/composerContextLegacy";
 import { composerContextSendBlockReason, reidentifyComposerContext } from "../lib/composerContext";
+import { useTurnUsage } from "../features/threads/TurnUsageText";
 import { uuidv4 } from "../lib/uuid";
 
 import { makeQueuedMessageMetadata } from "../lib/commandMetadata";
@@ -205,6 +206,7 @@ export function useThreadComposerState() {
   );
   const selectedThreadMessages = selectedThreadDetail?.messages;
   const selectedThreadActivities = selectedThreadDetail?.activities;
+  const selectedTurnUsage = useTurnUsage(selectedThreadActivities);
   const selectedThreadWorktreePath = selectedThreadDetail?.worktreePath ?? null;
   const selectedThreadFeed = useMemo(() => {
     const creationMessage = selectedThreadCreation?.message
@@ -819,6 +821,7 @@ export function useThreadComposerState() {
     feedbackSubmissions,
     dismissFeedback,
     selectedThreadFeed,
+    selectedTurnUsage,
     selectedThreadQueueCount,
     selectedThreadQueuedMessages,
     dispatchingQueuedMessageId,

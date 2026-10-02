@@ -23,6 +23,7 @@ import type {
   RuntimeMode,
   ServerConfig as T3ServerConfig,
   ThreadId,
+  TurnTokenUsage,
   UsageLimitsReport,
   UserInputQuestion,
 } from "@t3tools/contracts";
@@ -117,6 +118,7 @@ export interface ThreadDetailScreenProps {
   readonly feedbackSubmissions: ReadonlyArray<CodexFeedbackSubmission>;
   readonly onDismissFeedback: (id: MessageId) => void;
   readonly selectedThreadFeed: ReadonlyArray<ThreadFeedEntry>;
+  readonly turnUsageByTurnId: ReadonlyMap<string, TurnTokenUsage>;
   readonly activeWorkStartedAt: string | null;
   readonly creationState:
     | { readonly kind: "preparing" }
@@ -855,6 +857,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
             threadId={props.selectedThread.id}
             workspaceRoot={props.threadCwd}
             feed={props.selectedThreadFeed}
+            turnUsageByTurnId={props.turnUsageByTurnId}
             queuedMessages={props.queuedMessages}
             dispatchingMessageId={props.dispatchingMessageId}
             onEditPendingMessage={handleEditPendingMessage}
