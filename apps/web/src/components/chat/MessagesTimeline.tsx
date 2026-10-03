@@ -67,6 +67,7 @@ import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import { toolActivityFaviconUrl } from "@t3tools/shared/favicon";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
 import { getProjectFaviconCacheKey } from "@t3tools/shared/projectFavicon";
+import { claudeSkillInvocation } from "@t3tools/shared/toolActivity";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
 import {
   deriveToolRowPresentation,
@@ -5626,8 +5627,19 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
       : null;
   const isCommandExecution = workEntry.itemType === "command_execution";
   const viewedImagePath = workEntryViewedImagePath(workEntry);
-  const isRead = toolGroupAction(workEntry) === "read";
-  const readOutput = isRead ? workEntryReadOutput(workEntry, workspaceRoot) : null;
+  const payload = workEntry.structuredPayload;
+  const skill =
+    payload?.type === "dynamic_tool"
+      ? claudeSkillInvocation(payload.toolName, payload.input)
+      : undefined;
+  // Reads and skills expand to plain text instead of the item inspector. A
+  // skill's heading already names it, so only its arguments are left to show.
+  const plainOutput =
+    toolGroupAction(workEntry) === "read"
+      ? workEntryReadOutput(workEntry, workspaceRoot)
+      : skill
+        ? (skill.args ?? null)
+        : undefined;
   const viewedImage =
     viewedImagePath && threadRef
       ? resolveViewedImageAsset(viewedImagePath, {
@@ -5654,8 +5666,8 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
     );
   const expandedBody =
     expanded && !isReasoning
-      ? isRead
-        ? readOutput
+      ? plainOutput !== undefined
+        ? plainOutput
         : buildToolCallExpandedBody(
             workEntry,
             workspaceRoot,
@@ -5663,9 +5675,10 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
             viewedImage ? viewedImagePath : null,
           )
       : null;
-  const canExpandProjectedItem = isRead
-    ? Boolean(readOutput || viewedImage || workEntry.questionAnswer)
-    : canExpand || workEntry.projectedItem !== undefined;
+  const canExpandProjectedItem =
+    plainOutput !== undefined
+      ? Boolean(plainOutput || viewedImage || workEntry.questionAnswer)
+      : canExpand || workEntry.projectedItem !== undefined;
   // Reserve destructive row styling for severe failures, not routine tool errors.
   const iconWrapperClass = cn(
     "flex size-4 items-center justify-center",
@@ -5857,14 +5870,14 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
       !isReasoning &&
       !workEntry.questionAnswer &&
       canExpandProjectedItem &&
-      (expandedBody || (workEntry.projectedItem && !isRead)) ? (
+      (expandedBody || (workEntry.projectedItem && plainOutput === undefined)) ? (
         <WorkLogDetails kind="panel">
           {isCommandExecution ? (
             <CommandOutputExpandedBody
               workEntry={workEntry}
               showCommand={!commandMatchesVisibleLabel}
             />
-          ) : workEntry.projectedItem && !isRead ? (
+          ) : workEntry.projectedItem && plainOutput === undefined ? (
             <V2ItemInspector
               projectedItem={workEntry.projectedItem}
               environmentId={ctx.activeThreadEnvironmentId}
