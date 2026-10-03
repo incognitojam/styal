@@ -94,6 +94,7 @@ import { effectiveSnoozed, threadWokeAt } from "@t3tools/client-runtime/state/th
 import { useThreadActions } from "../hooks/useThreadActions";
 import {
   deriveProviderSubagentStatus,
+  deriveReportedModelSelection,
   formatModelSelectionEffort,
   deriveRunlessWorkStartedAt,
   deriveThreadActivityRun,
@@ -1640,6 +1641,9 @@ export default function ChatView(props: ChatViewProps) {
   });
   const serverThreadProjection = useThreadProjection(routeThreadDetailRef);
   const serverProjection = serverThreadProjection?.projection ?? null;
+  const reportedModelSelection = serverProjection
+    ? deriveReportedModelSelection(serverProjection)
+    : null;
   const threadStatus = useThreadStatus(routeThreadDetailRef);
   const threadSyncPhase = resolveThreadSyncPhase({
     detailExists: serverProjection !== null,
@@ -4178,7 +4182,11 @@ export default function ChatView(props: ChatViewProps) {
   const providerSubagentEffortLabel =
     activeThread === undefined
       ? null
-      : formatModelSelectionEffort(activeThread.modelSelection, providerSubagentModels);
+      : formatModelSelectionEffort(
+          activeThread.modelSelection,
+          providerSubagentModels,
+          reportedModelSelection,
+        );
   const mountComposerContextStrip = shouldShowComposerContextStrip({
     isDraftHeroState,
     persistInActiveThreads: settings.persistComposerContextStrip,
@@ -11014,6 +11022,7 @@ export default function ChatView(props: ChatViewProps) {
                           ) : null}
                           {!composerMounted ? null : (
                             <ChatComposer
+                              reportedModelSelection={reportedModelSelection}
                               multipleModelSelections={multipleModelSelections}
                               supportsMultipleModels={
                                 serverConfig?.environment.capabilities.requiredWorktreeBootstrap ===
