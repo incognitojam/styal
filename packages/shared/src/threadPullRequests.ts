@@ -84,7 +84,7 @@ export function visibleThreadPullRequests(
   return links.filter((link) => link.source !== "stack-dismissed");
 }
 
-function isOpen(link: ThreadPullRequestLink): boolean {
+export function isOpen(link: ThreadPullRequestLink): boolean {
   // Unsynced links are treated as open: they were just linked, and hiding them
   // behind a terminal PR until the first sync would make the link look lost.
   return link.snapshot === null || link.snapshot.state === "open";

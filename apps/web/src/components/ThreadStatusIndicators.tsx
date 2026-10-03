@@ -219,10 +219,12 @@ export function ThreadPullRequestBadgeControl({
   );
 }
 
+const THREAD_PULL_REQUEST_PREVIEW_LIMIT = 5;
+
 /**
- * A miniature of the pull-requests panel for the thread tooltip: same order, same indentation,
- * so the hover answers "what is in here" without opening the surface. A thread with no linked
- * pull requests lists `fallback`, the pull request its badge found through the branch.
+ * A miniature of the pull-requests panel for the thread tooltip: up to five rows, same indentation,
+ * starting active stacks at their lowest open layer and counting omitted layers as remaining.
+ * A thread with no linked pull requests lists `fallback`, the PR its badge found through the branch.
  */
 export function ThreadPullRequestsMiniList({
   pullRequests,
@@ -231,11 +233,13 @@ export function ThreadPullRequestsMiniList({
   pullRequests: ReadonlyArray<ThreadPullRequestLink>;
   fallback?: ThreadPr | undefined;
 }) {
-  const lines = useMemo(
-    () =>
-      pullRequestListLines(resolveThreadPullRequestChains(visibleThreadPullRequests(pullRequests))),
-    [pullRequests],
-  );
+  const { lines, remainingCount } = useMemo(() => {
+    const visible = visibleThreadPullRequests(pullRequests);
+    const lines = pullRequestListLines(resolveThreadPullRequestChains(visible), {
+      preview: true,
+    }).slice(0, THREAD_PULL_REQUEST_PREVIEW_LIMIT);
+    return { lines, remainingCount: visible.length - lines.length };
+  }, [pullRequests]);
   if (lines.length === 0) {
     if (!fallback) return null;
     return (
@@ -272,6 +276,7 @@ export function ThreadPullRequestsMiniList({
           />
         );
       })}
+      {remainingCount > 0 ? <li>+{remainingCount} more</li> : null}
     </ul>
   );
 }
