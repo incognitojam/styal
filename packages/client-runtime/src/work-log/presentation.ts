@@ -28,6 +28,7 @@ import { resolveMediaSource } from "@t3tools/client-runtime/media-source";
 import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 import { formatTokens } from "@t3tools/shared/usageFormat";
+import { orchestrationV2RunRecordedWorkEndMs } from "@t3tools/shared/orchestrationTiming";
 import * as DateTime from "effect/DateTime";
 import { classifyToolActivity } from "@t3tools/shared/toolActivity";
 import { toolOutputIndicatesFailure } from "@t3tools/shared/toolOutput";
@@ -38,7 +39,11 @@ import {
   type T3ToolSummaryCall,
 } from "@t3tools/client-runtime/t3ToolSummary";
 
-/** Carry recorded work across linked recovery runs, excluding the server outage. */
+/**
+ * Carry recorded work across linked recovery runs, excluding the server outage.
+ * A run stamped with `workStartedAt` already counts from the work it continues,
+ * moved later by each restart outage, so its start is used as is.
+ */
 export function continuedResponseWorkStartedAt(input: {
   readonly startedAt: string | null;
   readonly runId: RunId | null;
@@ -46,7 +51,13 @@ export function continuedResponseWorkStartedAt(input: {
     readonly runs: ReadonlyArray<
       Pick<
         OrchestrationV2Run,
-        "id" | "restartContinuationOfRunId" | "requestedAt" | "startedAt" | "completedAt" | "status"
+        | "id"
+        | "restartContinuationOfRunId"
+        | "requestedAt"
+        | "startedAt"
+        | "completedAt"
+        | "status"
+        | "workStartedAt"
       >
     >;
     readonly turnItems: ReadonlyArray<
@@ -61,10 +72,10 @@ export function continuedResponseWorkStartedAt(input: {
   if (startedAt === null || runId === null || projection === null) return startedAt;
   const runs = new Map(projection.runs.map((run) => [run.id, run]));
   const current = runs.get(runId);
+  if (current === undefined || current.workStartedAt !== undefined) return startedAt;
   if (
-    current === undefined ||
-    (startedAt !== DateTime.formatIso(current.startedAt ?? current.requestedAt) &&
-      startedAt !== DateTime.formatIso(current.requestedAt))
+    startedAt !== DateTime.formatIso(current.startedAt ?? current.requestedAt) &&
+    startedAt !== DateTime.formatIso(current.requestedAt)
   )
     return startedAt;
   const chain = [current];
@@ -79,30 +90,11 @@ export function continuedResponseWorkStartedAt(input: {
   if (chain.length === 1) return startedAt;
   let earlierWorkMs = 0;
   for (const run of chain.slice(0, -1)) {
-    const start = DateTime.toEpochMillis(run.requestedAt);
-    let end = start;
-    for (const item of projection.turnItems) {
-      if (
-        item.runId !== run.id ||
-        item.type === "user_message" ||
-        item.type === "notification" ||
-        item.type === "error" ||
-        item.type === "system_notice"
-      )
-        continue;
-      end = Math.max(end, DateTime.toEpochMillis(item.completedAt ?? item.updatedAt));
-    }
-    for (const message of projection.messages ?? []) {
-      if (message.runId === run.id && message.role === "assistant") {
-        end = Math.max(end, DateTime.toEpochMillis(message.updatedAt));
-      }
-    }
-    // Recovery stamps cancelled runs at startup; that synthetic terminal time
-    // includes the outage. Their items retain the last recorded provider work.
-    if ((run.status === "completed" || run.status === "failed") && run.completedAt !== null) {
-      end = Math.max(end, DateTime.toEpochMillis(run.completedAt));
-    }
-    earlierWorkMs += Math.max(0, end - start);
+    earlierWorkMs += Math.max(
+      0,
+      orchestrationV2RunRecordedWorkEndMs(run, projection) -
+        DateTime.toEpochMillis(run.requestedAt),
+    );
   }
   return DateTime.formatIso(DateTime.makeUnsafe(Date.parse(startedAt) - earlierWorkMs));
 }

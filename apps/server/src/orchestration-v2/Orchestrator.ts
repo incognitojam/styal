@@ -39,6 +39,7 @@ import {
   type OrchestrationV2Subagent,
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2TurnItem,
+  orchestrationV2RunWorkStartedAt,
   ProviderInstanceId,
   type ProviderSessionId,
   RunId,
@@ -46,6 +47,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import { modelSelectionsEqual } from "@t3tools/shared/model";
+import { orchestrationV2RunRecordedWorkEndMs } from "@t3tools/shared/orchestrationTiming";
 import {
   derivePendingBackgroundWork,
   pendingBackgroundTurnItems,
@@ -302,6 +304,55 @@ export class OrchestratorV2 extends Context.Service<OrchestratorV2, Orchestrator
 
 function nextRunOrdinal(projection: Pick<OrchestrationV2ThreadProjection, "runs">): number {
   return projection.runs.length + 1;
+}
+
+type WakeTrigger = {
+  readonly notification?: unknown;
+  readonly delegatedCompletion?: unknown;
+  readonly restartContinuationOfRunId?: RunId | undefined;
+};
+
+/**
+ * A wake (background notification, delegated task result, restart
+ * continuation) carries on the work of the run that started last, so it keeps
+ * that work's start. Stamp it when the wake run starts, not when it queues:
+ * a queued prompt ahead of it has no start yet, and delegated results jump
+ * the queue. Other runs start new work. A restart continuation moves that
+ * start later by the outage since the interrupted run's last recorded work, so
+ * working timers exclude it.
+ */
+function wakeWorkStartedAt(
+  runs: ReadonlyArray<OrchestrationV2Run>,
+  trigger: WakeTrigger,
+  now: DateTime.Utc,
+  interruptedTurnItems: ReadonlyArray<OrchestrationV2TurnItem>,
+): Pick<OrchestrationV2Run, "workStartedAt"> {
+  if (
+    trigger.notification === undefined &&
+    trigger.delegatedCompletion === undefined &&
+    trigger.restartContinuationOfRunId === undefined
+  ) {
+    return {};
+  }
+  const previous = runs
+    .flatMap((run) => (run.startedAt === null ? [] : [{ run, startedAt: run.startedAt }]))
+    .toSorted(
+      (left, right) =>
+        DateTime.Order(right.startedAt, left.startedAt) || right.run.ordinal - left.run.ordinal,
+    )[0]?.run;
+  if (previous === undefined) return {};
+  const workStartedAt = orchestrationV2RunWorkStartedAt(previous);
+  const interrupted =
+    trigger.restartContinuationOfRunId === undefined
+      ? undefined
+      : runs.find((run) => run.id === trigger.restartContinuationOfRunId);
+  if (interrupted === undefined) return { workStartedAt };
+  const outageMs = Math.max(
+    0,
+    DateTime.toEpochMillis(now) -
+      orchestrationV2RunRecordedWorkEndMs(interrupted, { turnItems: interruptedTurnItems }),
+  );
+  return { workStartedAt: DateTime.add(workStartedAt, { milliseconds: outageMs }) };
 }
 
 function isNativeMaintenanceCommand(message: {
@@ -810,6 +861,19 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         Effect.map((records) => records.turnItems),
         Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause })),
       );
+
+  // Command projections leave out run output, so a restart continuation reads
+  // the interrupted run's items to find where its recorded work ended.
+  const readWakeWorkStartedAt = (
+    threadId: ThreadId,
+    runs: ReadonlyArray<OrchestrationV2Run>,
+    trigger: WakeTrigger,
+    now: DateTime.Utc,
+  ) =>
+    (trigger.restartContinuationOfRunId === undefined
+      ? Effect.succeed([])
+      : readHandoffItems(threadId, [trigger.restartContinuationOfRunId])
+    ).pipe(Effect.map((items) => wakeWorkStartedAt(runs, trigger, now, items)));
 
   const getProjectionWithPendingEvents = (
     threadId: ThreadId,
@@ -1459,6 +1523,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         queuePosition: null,
         startedAt: null,
         contextHandoffId: activeHandoff?.id ?? null,
+        ...(yield* readWakeWorkStartedAt(
+          threadId,
+          projection.runs,
+          {
+            notification: queuedMessage.notification,
+            delegatedCompletion: queuedMessage.delegatedCompletion,
+            restartContinuationOfRunId: queuedRun.restartContinuationOfRunId,
+          },
+          now,
+        )),
       };
       const userTurnItem: OrchestrationV2TurnItem = {
         ...(legacyQueuedTurnItem ?? {
@@ -4948,6 +5022,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           ...(command.restartContinuationOfRunId === undefined
             ? {}
             : { restartContinuationOfRunId: command.restartContinuationOfRunId }),
+          ...(yield* readWakeWorkStartedAt(command.threadId, projection.runs, command, now)),
         };
         const attempt: OrchestrationV2RunAttempt = {
           id: attemptId,
@@ -5641,6 +5716,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...(command.restartContinuationOfRunId === undefined
           ? {}
           : { restartContinuationOfRunId: command.restartContinuationOfRunId }),
+        ...(yield* readWakeWorkStartedAt(command.threadId, projection.runs, command, now)),
       };
       const attempt: OrchestrationV2RunAttempt = {
         id: attemptId,

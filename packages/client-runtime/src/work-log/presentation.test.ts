@@ -1078,6 +1078,27 @@ describe("V2 continued response working clock", () => {
     expect(Date.parse(iso(45)) - Date.parse(effective!)).toBe(25 * 60_000);
   });
 
+  it("uses a stamped work start as is because the server already moved it past outages", () => {
+    // The server stamps continuations and later wakes with the start of the
+    // work they continue, moved later by each restart outage.
+    const wake = RunId.make("wake");
+    const continued = {
+      ...projection,
+      runs: [
+        projection.runs[0]!,
+        { ...projection.runs[1]!, workStartedAt: at(20) },
+        { ...projection.runs[2]!, workStartedAt: at(20) },
+        { ...run(wake, 50), workStartedAt: at(20) },
+      ],
+    };
+    expect(
+      continuedResponseWorkStartedAt({ startedAt: iso(20), runId: third, projection: continued }),
+    ).toBe(iso(20));
+    expect(
+      continuedResponseWorkStartedAt({ startedAt: iso(20), runId: wake, projection: continued }),
+    ).toBe(iso(20));
+  });
+
   it("uses canonical messages when the earlier response has no tool items", () => {
     expect(
       continuedResponseWorkStartedAt({

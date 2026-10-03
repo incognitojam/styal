@@ -1,4 +1,11 @@
-import { isOrchestrationV2WorkActive, type OrchestrationV2Subagent } from "@t3tools/contracts";
+import {
+  isOrchestrationV2WorkActive,
+  type OrchestrationV2ConversationMessage,
+  type OrchestrationV2Run,
+  type OrchestrationV2Subagent,
+  type OrchestrationV2TurnItem,
+} from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 
 /** Unknown settled timing must not turn a task's age into its work duration. */
 export function deriveSubagentElapsedMs(
@@ -86,4 +93,43 @@ export function deriveActiveWorkStartedAt(
     return latestRun?.startedAt ?? latestRun?.requestedAt ?? sendStartedAt;
   }
   return sendStartedAt;
+}
+
+/**
+ * When a run's recorded work ended: its last provider work or assistant
+ * message update. Restart recovery stamps the interrupted run cancelled at
+ * startup, so that terminal time includes the outage and is ignored.
+ */
+export function orchestrationV2RunRecordedWorkEndMs(
+  run: Pick<OrchestrationV2Run, "id" | "requestedAt" | "completedAt" | "status">,
+  projection: {
+    readonly turnItems: ReadonlyArray<
+      Pick<OrchestrationV2TurnItem, "runId" | "type" | "completedAt" | "updatedAt">
+    >;
+    readonly messages?: ReadonlyArray<
+      Pick<OrchestrationV2ConversationMessage, "runId" | "role" | "updatedAt">
+    >;
+  },
+): number {
+  let end = DateTime.toEpochMillis(run.requestedAt);
+  for (const item of projection.turnItems) {
+    if (
+      item.runId !== run.id ||
+      item.type === "user_message" ||
+      item.type === "notification" ||
+      item.type === "error" ||
+      item.type === "system_notice"
+    )
+      continue;
+    end = Math.max(end, DateTime.toEpochMillis(item.completedAt ?? item.updatedAt));
+  }
+  for (const message of projection.messages ?? []) {
+    if (message.runId === run.id && message.role === "assistant") {
+      end = Math.max(end, DateTime.toEpochMillis(message.updatedAt));
+    }
+  }
+  if ((run.status === "completed" || run.status === "failed") && run.completedAt !== null) {
+    end = Math.max(end, DateTime.toEpochMillis(run.completedAt));
+  }
+  return end;
 }
