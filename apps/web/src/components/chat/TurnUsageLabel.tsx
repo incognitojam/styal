@@ -44,21 +44,22 @@ export function TurnUsageLabel({ view }: { view: TurnUsageView }) {
         side="top"
         align="start"
         viewportClassName="p-0"
-        className="w-56 max-w-none text-left whitespace-normal"
+        className="w-max min-w-56 max-w-none text-left whitespace-normal"
       >
         <div className="flex flex-col gap-2 p-[var(--floating-content-inset)]">
           <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-[11px] leading-4">
             {view.rows.map((row) => (
               <div key={row.label} className="contents">
                 <dt className="whitespace-nowrap text-secondary-label">{row.label}</dt>
-                <dd className="min-w-0 truncate text-right font-medium tabular-nums text-secondary-label">
+                <dd className="whitespace-nowrap text-right font-medium tabular-nums text-secondary-label">
                   {row.value}
                 </dd>
               </div>
             ))}
           </dl>
+          {/* Notes wrap to the rows' width instead of widening the card. */}
           {view.notes.map((note) => (
-            <p key={note} className="text-pretty text-secondary-label text-[11px]">
+            <p key={note} className="w-0 min-w-full text-pretty text-secondary-label text-[11px]">
               {note}
             </p>
           ))}
