@@ -19,6 +19,7 @@ import * as ThreadManagement from "./orchestration-v2/ThreadManagementService.ts
 import * as ThreadLaunch from "./orchestration-v2/ThreadLaunchService.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as EffectWorker from "./orchestration-v2/EffectWorker.ts";
+import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as Projects from "./project/ProjectService.ts";
 import * as Relay from "./relay/AgentAwarenessRelay.ts";
 import * as Lifecycle from "./serverLifecycleEvents.ts";
@@ -44,6 +45,7 @@ it.effect("publishes completed bootstrap targets before accepting commands", () 
         Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
         Layer.mock(ExternalLauncher.ExternalLauncher)({}),
         Layer.mock(EventSink.EventSinkV2)({}),
+        Layer.mock(Orchestrator.OrchestratorV2)({ recoverDelegatedTasks: Effect.void }),
         Layer.mock(ServerConfig.ServerConfig)({
           cwd: "/workspace/example",
           mode: "desktop",
