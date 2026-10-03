@@ -2618,6 +2618,98 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
     }),
   );
 
+  it.effect("keeps a turn cut short by a server restart interrupted after continuation", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const now = "2026-01-01T00:00:00.000Z";
+      const threadId = ThreadId.make("thread-turn-restart");
+      const cutTurnId = TurnId.make("turn-cut-by-restart");
+      const continuationTurnId = TurnId.make("turn-continuation");
+
+      yield* eventStore.append({
+        type: "thread.created",
+        eventId: EventId.make("evt-tr1"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-tr1"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-tr1"),
+        metadata: {},
+        payload: {
+          threadId,
+          projectId: ProjectId.make("project-turn-restart"),
+          title: "Turn restart",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("claudeAgent"),
+            model: "claude-opus-5-5",
+          },
+          runtimeMode: "full-access",
+          branch: null,
+          worktreePath: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      const appendSessionSet = (
+        eventId: string,
+        status: "running" | "interrupted" | "starting" | "ready",
+        activeTurnId: TurnId | null,
+        updatedAt: string,
+      ) =>
+        eventStore.append({
+          type: "thread.session-set",
+          eventId: EventId.make(eventId),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: updatedAt,
+          commandId: CommandId.make(`cmd-${eventId}`),
+          causationEventId: null,
+          correlationId: CorrelationId.make(`cmd-${eventId}`),
+          metadata: {},
+          payload: {
+            threadId,
+            session: {
+              threadId,
+              status,
+              providerName: "claudeAgent",
+              runtimeMode: "full-access",
+              activeTurnId,
+              lastError: null,
+              updatedAt,
+            },
+          },
+        });
+
+      yield* appendSessionSet("evt-tr2", "running", cutTurnId, "2026-01-01T00:00:01.000Z");
+      // The new server settles the cut turn, then continues the thread.
+      yield* appendSessionSet("evt-tr3", "interrupted", null, "2026-01-01T00:00:20.000Z");
+      yield* appendSessionSet("evt-tr4", "starting", null, "2026-01-01T00:00:20.000Z");
+      yield* appendSessionSet("evt-tr5", "running", continuationTurnId, "2026-01-01T00:00:25.000Z");
+      yield* appendSessionSet("evt-tr6", "ready", null, "2026-01-01T00:00:40.000Z");
+
+      yield* projectionPipeline.bootstrap;
+
+      const rows = yield* sql<{
+        readonly turnId: string;
+        readonly state: string;
+        readonly completedAt: string | null;
+      }>`
+        SELECT turn_id AS "turnId", state, completed_at AS "completedAt"
+        FROM projection_turns
+        WHERE thread_id = ${threadId}
+        ORDER BY requested_at
+      `;
+      assert.deepEqual(rows, [
+        { turnId: cutTurnId, state: "interrupted", completedAt: "2026-01-01T00:00:20.000Z" },
+        { turnId: continuationTurnId, state: "completed", completedAt: "2026-01-01T00:00:40.000Z" },
+      ]);
+    }),
+  );
+
   it.effect("keeps accumulated assistant text when completion payload text is empty", () =>
     Effect.gen(function* () {
       const projectionPipeline = yield* OrchestrationProjectionPipeline;

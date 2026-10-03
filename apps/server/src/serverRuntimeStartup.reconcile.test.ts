@@ -344,7 +344,8 @@ it.effect.each(
       assert.isTrue(
         dispatched.every(
           (command) =>
-            command.type === "thread.session.set" && command.session.status === "starting",
+            command.type === "thread.session.set" &&
+            (command.session.status === "interrupted" || command.session.status === "starting"),
         ),
       );
       yield* Deferred.await(continuationSent);
@@ -375,17 +376,15 @@ it.effect.each(
               ]
             : [],
         ),
+        // A turn the restart cut short is settled as interrupted before its
+        // continuation starts; a session that was only starting had none.
         [
-          {
-            threadId: codex.id,
-            status: "starting",
-            activeTurnId: null,
-          },
-          {
-            threadId: fallback.id,
-            status: "starting",
-            activeTurnId: null,
-          },
+          { threadId: codex.id, status: "interrupted" as const, activeTurnId: null },
+          { threadId: codex.id, status: "starting" as const, activeTurnId: null },
+          ...(fallback.session.activeTurnId !== null
+            ? [{ threadId: fallback.id, status: "interrupted" as const, activeTurnId: null }]
+            : []),
+          { threadId: fallback.id, status: "starting" as const, activeTurnId: null },
         ],
       );
       // The thread shows where the server picked its work back up, on the
@@ -575,7 +574,7 @@ it.effect("retries continuation preparation before settling a persistent failure
           dispatched.map(
             (command) => command.type === "thread.session.set" && command.session.status,
           ),
-          ["starting", "starting", "error"],
+          ["interrupted", "starting", "interrupted", "starting", "error"],
         ),
       ),
     ),
@@ -1078,6 +1077,7 @@ it.effect("settles failed opt-in recovery without retrying the provider turn", (
           },
       ),
       [
+        { status: "interrupted", activeTurnId: null },
         { status: "starting", activeTurnId: null },
         { status: "error", activeTurnId: null },
       ],

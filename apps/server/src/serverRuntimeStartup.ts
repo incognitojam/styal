@@ -807,6 +807,24 @@ export const reconcileProviderSessions = Effect.gen(function* () {
           },
         });
         const resumedAt = DateTime.formatIso(yield* DateTime.now);
+        if (session.activeTurnId !== null) {
+          // The restart cut this turn short. Settle it as interrupted now;
+          // otherwise the projector closes it as completed once the resumed
+          // session reports ready, and the history never shows the break.
+          yield* orchestrationEngine.dispatch({
+            type: "thread.session.set",
+            commandId: CommandId.make(yield* crypto.randomUUIDv4),
+            threadId: thread.id,
+            session: {
+              ...session,
+              status: "interrupted",
+              activeTurnId: null,
+              lastError: null,
+              updatedAt: resumedAt,
+            },
+            createdAt: resumedAt,
+          });
+        }
         yield* orchestrationEngine.dispatch({
           type: "thread.session.set",
           commandId: CommandId.make(yield* crypto.randomUUIDv4),
