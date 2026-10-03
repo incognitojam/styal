@@ -10,9 +10,28 @@ import {
   formatDateTimeShort,
   formatHourShort,
   formatRelativeHourShort,
+  formatTokens,
   formatUsageEmissionsComparison,
   makeWindow,
 } from "./usageFormat.ts";
+
+describe("formatTokens", () => {
+  it("keeps three significant figures within a unit", () => {
+    expect(formatTokens(999)).toBe("999");
+    expect(formatTokens(1_234)).toBe("1.23K");
+    expect(formatTokens(48_200)).toBe("48.2K");
+    expect(formatTokens(999_400)).toBe("999K");
+    expect(formatTokens(2_407_600)).toBe("2.41M");
+  });
+
+  it("moves up a unit when rounding reaches 1000", () => {
+    expect(formatTokens(999.6)).toBe("1K");
+    expect(formatTokens(999_900)).toBe("1M");
+    expect(formatTokens(-999_900)).toBe("-1M");
+    expect(formatTokens(999_700_000)).toBe("1B");
+    expect(formatTokens(999_700_000_000)).toBe("1T");
+  });
+});
 
 describe("usage emissions estimate", () => {
   it("estimates operational emissions from generated tokens", () => {
