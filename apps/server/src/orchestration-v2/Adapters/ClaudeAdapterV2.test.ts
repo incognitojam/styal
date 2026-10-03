@@ -980,6 +980,7 @@ describe("ClaudeAdapterV2 Auto-accept edits", () => {
                   messages: Stream.never,
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
+                  setPermissionMode: () => Effect.void,
                   interrupt: Effect.void,
                   close: Effect.void,
                 };
@@ -1147,6 +1148,7 @@ const captureSdkExecutablePaths = Effect.fn("captureSdkExecutablePaths")(functio
             messages: Stream.never,
             offer: () => Effect.void,
             setModel: () => Effect.void,
+            setPermissionMode: () => Effect.void,
             interrupt: Effect.void,
             close: Effect.void,
           };
@@ -1237,6 +1239,7 @@ describe("ClaudeAdapterV2 resume compaction", () => {
                   messages: Stream.never,
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
+                  setPermissionMode: () => Effect.void,
                   interrupt: Effect.void,
                   close: Effect.void,
                 };
@@ -1456,6 +1459,7 @@ describe("ClaudeAdapterV2 attachments", () => {
                     offeredMessages.push(message);
                   }),
                 setModel: () => Effect.void,
+                setPermissionMode: () => Effect.void,
                 interrupt: Effect.void,
                 close: Effect.void,
               }),
@@ -1594,6 +1598,7 @@ describe("ClaudeAdapterV2 attachments", () => {
                   messages: Stream.never,
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
+                  setPermissionMode: () => Effect.void,
                   interrupt: Effect.void,
                   close: Effect.void,
                 };
@@ -1682,6 +1687,7 @@ describe("ClaudeAdapterV2 native fork", () => {
                   messages: Stream.empty,
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
+                  setPermissionMode: () => Effect.void,
                   interrupt: Effect.void,
                   close: Effect.void,
                 };
@@ -1853,6 +1859,7 @@ describe("ClaudeAdapterV2 native session identity", () => {
                   messages: Stream.empty,
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
+                  setPermissionMode: () => Effect.void,
                   interrupt: Effect.void,
                   close: Effect.void,
                 };
@@ -2109,6 +2116,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         yield* Deferred.await(processed);
       });
       const offeredMessages: Array<SDKUserMessage> = [];
+      const permissionModeChanges: Array<string> = [];
       const continuationRequests: Array<ProviderContinuationRequest> = [];
       const terminalReceipts =
         yield* Queue.unbounded<Extract<ProviderAdapterV2Event, { type: "turn.terminal" }>>();
@@ -2166,6 +2174,10 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   }),
                 setModel: () => Effect.void,
                 ...(options?.applyEffort === undefined ? {} : { applyEffort: options.applyEffort }),
+                setPermissionMode: (mode) =>
+                  Effect.sync(() => {
+                    permissionModeChanges.push(mode);
+                  }),
                 interrupt: options?.interrupt ?? Effect.void,
                 close: options?.close?.(sdkMessages) ?? Effect.void,
               };
@@ -2227,6 +2239,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         sdkMessages,
         offerAndWait,
         offeredMessages,
+        permissionModeChanges,
         continuationRequests,
         events,
         terminalReceipts,
@@ -2494,6 +2507,60 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         yield* Queue.take(harness.terminalReceipts);
         assert.strictEqual(harness.offeredMessages.length, 2);
       }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+  );
+
+  it.effect("puts the thread's permission mode back when an effort change reuses the process", () =>
+    Effect.gen(function* () {
+      const efforts: Array<string> = [];
+      const harness = yield* makeWakeHarnessWithOptions({
+        applyEffort: (effort) =>
+          Effect.sync(() => {
+            efforts.push(effort);
+          }),
+      });
+      const now = yield* DateTime.now;
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now,
+          attemptId: RunAttemptId.make("effort-plan-first"),
+          text: "Look around",
+          attachments: [],
+        }),
+      );
+      // Claude entered plan mode on its own (EnterPlanMode).
+      yield* harness.offerAndWait(
+        claudeSdkFrame({
+          type: "system",
+          subtype: "status",
+          status: null,
+          permissionMode: "plan",
+          uuid: "effort-plan-status",
+          session_id: WAKE_NATIVE_SESSION,
+        }),
+      );
+      yield* harness.offerAndWait(makeResultFrame({ uuid: "effort-plan-result", result: "Done" }));
+      yield* Queue.take(harness.terminalReceipts);
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now,
+          providerTurnOrdinal: 2,
+          attemptId: RunAttemptId.make("effort-plan-next"),
+          text: "Continue",
+          attachments: [],
+          modelSelection: {
+            ...CLAUDE_TEST_MODEL_SELECTION,
+            options: [{ id: "effort", value: "low" }],
+          },
+        }),
+      );
+      assert.deepStrictEqual(efforts, ["low"]);
+      assert.strictEqual(harness.getOpenCount(), 1);
+      assert.deepEqual(harness.permissionModeChanges, ["bypassPermissions"]);
+    }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
   );
 
   it.effect.each(["completed", "interrupted"] as const)(
@@ -3396,6 +3463,18 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           harness.sdkMessages,
           toolResults("00000000-0000-4000-8000-000000000502", ["tool-todo-1"]),
         );
+        // Claude entered plan mode on its own (EnterPlanMode).
+        yield* Queue.offer(
+          harness.sdkMessages,
+          claudeSdkFrame({
+            type: "system",
+            subtype: "status",
+            status: null,
+            permissionMode: "plan",
+            uuid: "00000000-0000-4000-8000-000000000508",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
         yield* Queue.offer(
           harness.sdkMessages,
           makeResultFrame({
@@ -3506,6 +3585,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         );
         const proposedPlan = [...plans.values()].find((plan) => plan.kind === "proposed_plan");
         assert.equal(proposedPlan?.status, "active");
+        // The second prompt reuses the live process, which is still in the
+        // plan mode Claude entered, so it is put back in the thread's mode.
+        assert.deepEqual(harness.permissionModeChanges, ["bypassPermissions"]);
       }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
     ),
   );
@@ -4031,6 +4113,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   messages: Stream.fromQueue(sdkMessages),
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
+                  setPermissionMode: () => Effect.void,
                   interrupt: Effect.void,
                   // The first CLI process keeps streaming until the test ends
                   // it, so Stop stays parked waiting for it to exit.
@@ -4280,6 +4363,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                     messages: Stream.fromQueue(queue),
                     offer: () => Effect.void,
                     setModel: () => Effect.void,
+                    setPermissionMode: () => Effect.void,
                     interrupt: Effect.void,
                     close: Queue.shutdown(queue),
                   };
@@ -7076,6 +7160,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   messages: Stream.fromQueue(sdkMessages),
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
+                  setPermissionMode: () => Effect.void,
                   interrupt: Effect.void,
                   // End this process stream so openQuery can replace it.
                   close: Queue.shutdown(sdkMessages),
@@ -7258,6 +7343,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                     messages: Stream.fromQueue(sdkMessages),
                     offer: () => Effect.void,
                     setModel: () => Effect.void,
+                    setPermissionMode: () => Effect.void,
                     interrupt: Effect.void,
                     close: Queue.shutdown(sdkMessages),
                   };
@@ -7492,6 +7578,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                     messages: Stream.fromQueue(sdkMessages),
                     offer: () => Effect.void,
                     setModel: () => Effect.void,
+                    setPermissionMode: () => Effect.void,
                     interrupt: Effect.void,
                     close: Queue.shutdown(sdkMessages),
                   };
@@ -7678,6 +7765,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   messages: Stream.fromQueue(sdkMessages),
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
+                  setPermissionMode: () => Effect.void,
                   interrupt: Effect.void,
                   close: Queue.shutdown(sdkMessages),
                 };
@@ -7854,6 +7942,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                     messages: Stream.fromQueue(sdkMessages),
                     offer: () => Effect.void,
                     setModel: () => Effect.void,
+                    setPermissionMode: () => Effect.void,
                     interrupt: Effect.void,
                     close: Queue.shutdown(sdkMessages),
                   };
@@ -7985,6 +8074,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                     messages: Stream.fromQueue(sdkMessages),
                     offer: () => Effect.void,
                     setModel: () => Effect.void,
+                    setPermissionMode: () => Effect.void,
                     interrupt: Effect.void,
                     close: Queue.shutdown(sdkMessages),
                   };
