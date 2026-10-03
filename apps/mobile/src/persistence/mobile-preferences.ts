@@ -47,6 +47,8 @@ export interface Preferences {
   readonly turnUsageEnabled?: boolean;
   /** Device-local counterpart of desktop's `turnUsageFigure`; unset means tokens. */
   readonly turnUsageFigure?: "tokens" | "cost";
+  /** Device-local counterpart of web's `sidebarWorkingShelfEnabled` beta. */
+  readonly workingShelfEnabled?: boolean;
   /** Model favorites belong to this device, like the web client setting. */
   readonly modelFavorites?: ReadonlyArray<{
     readonly provider: ProviderInstanceId;
@@ -57,6 +59,7 @@ export interface Preferences {
   readonly threadListSnoozedShelfExpanded?: boolean;
   /** The Android release tag the new-installation prompt last offered. */
   readonly nativeUpdatePromptedTag?: string;
+  readonly threadListWorkingShelfExpanded?: boolean;
 }
 
 export class MobilePreferencesLoadError extends Schema.TaggedError<MobilePreferencesLoadError>()(
@@ -123,6 +126,8 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     threadListSettledShelfExpanded?: boolean;
     threadListSnoozedShelfExpanded?: boolean;
     nativeUpdatePromptedTag?: string;
+    workingShelfEnabled?: boolean;
+    threadListWorkingShelfExpanded?: boolean;
   } = {};
 
   if (typeof parsed.liveActivitiesEnabled === "boolean") {
@@ -208,6 +213,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   if (parsed.turnUsageFigure === "tokens" || parsed.turnUsageFigure === "cost") {
     preferences.turnUsageFigure = parsed.turnUsageFigure;
   }
+  if (typeof parsed.workingShelfEnabled === "boolean") {
+    preferences.workingShelfEnabled = parsed.workingShelfEnabled;
+  }
   if (Array.isArray(parsed.modelFavorites)) {
     preferences.modelFavorites = parsed.modelFavorites.filter(
       (favorite) =>
@@ -227,6 +235,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.nativeUpdatePromptedTag === "string") {
     preferences.nativeUpdatePromptedTag = parsed.nativeUpdatePromptedTag;
+  }
+  if (typeof parsed.threadListWorkingShelfExpanded === "boolean") {
+    preferences.threadListWorkingShelfExpanded = parsed.threadListWorkingShelfExpanded;
   }
   return preferences;
 }

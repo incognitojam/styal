@@ -275,6 +275,10 @@
       "types": "./src/state/thread-timestamp.ts",
       "default": "./src/state/thread-timestamp.ts"
     },
+    "./state/thread-inbox": {
+      "types": "./src/state/threadInbox.ts",
+      "default": "./src/state/threadInbox.ts"
+    },
     "./state/thread-relationships": {
       "types": "./src/state/threadRelationships.ts",
       "default": "./src/state/threadRelationships.ts"
