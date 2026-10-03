@@ -50,6 +50,7 @@ function Player() {
     <ChatCanvasContext
       value={{
         container,
+        lane: { padding: 20, minChatWidth: 640 },
         previewKey: "browser:tab-1",
         layout: resolveChatCanvasLayout({
           container,
