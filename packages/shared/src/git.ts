@@ -417,6 +417,7 @@ function toLocalStatusPart(status: VcsStatusResult): VcsStatusLocalResult {
     refName: status.refName,
     hasWorkingTreeChanges: status.hasWorkingTreeChanges,
     workingTree: status.workingTree,
+    ...(status.branchChanges ? { branchChanges: status.branchChanges } : {}),
   };
 }
 

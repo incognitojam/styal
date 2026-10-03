@@ -13,7 +13,8 @@ export type DiffPanelSelection =
 /** "smart" reads source in dependency order with tests and generated output behind it. */
 export type DiffSortMode = "smart" | "alphabetical";
 
-const DEFAULT_SELECTION: DiffPanelSelection = { kind: "unstaged" };
+// "branch" is the Changes view: everything this checkout changed since its base.
+const DEFAULT_SELECTION: DiffPanelSelection = { kind: "branch", baseRef: null };
 
 interface DiffPanelStoreState {
   byThreadKey: Record<string, DiffPanelSelection>;
