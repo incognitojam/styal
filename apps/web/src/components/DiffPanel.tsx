@@ -445,12 +445,13 @@ export default function DiffPanel({
     preview: renderablePatch,
   });
   // A diff that loads file by file keeps the path order its files load in.
+  const effectiveDiffSortMode = lazySource ? "alphabetical" : diffSortMode;
   const renderableFiles = useMemo(
     () =>
-      diffSortMode === "smart" && !lazySource
+      effectiveDiffSortMode === "smart"
         ? orderDiffFiles(pathOrderedFiles, attributedGeneratedPaths)
         : pathOrderedFiles,
-    [attributedGeneratedPaths, diffSortMode, lazySource, pathOrderedFiles],
+    [attributedGeneratedPaths, effectiveDiffSortMode, pathOrderedFiles],
   );
   const refreshBranchDiffPreview = refreshPreviewQuery;
 
@@ -486,14 +487,14 @@ export default function DiffPanel({
   }, [attributedGeneratedPaths, renderableFileEntries]);
   // Fed to the header suffix chips; smart order is what makes the tier grouping legible.
   const fileTierByKey = useMemo(() => {
-    if (diffSortMode !== "smart") return null;
+    if (effectiveDiffSortMode !== "smart") return null;
     const attributedPaths = new Set(attributedGeneratedPaths ?? []);
     const tiers = new Map<string, DiffFileTier>();
     for (const { fileDiff, fileKey } of renderableFileEntries) {
       tiers.set(fileKey, diffFileTier(resolveFileDiffPath(fileDiff), attributedPaths));
     }
     return tiers;
-  }, [attributedGeneratedPaths, diffSortMode, renderableFileEntries]);
+  }, [attributedGeneratedPaths, effectiveDiffSortMode, renderableFileEntries]);
   // A saved default of collapsed folds every file; otherwise generated files fold on their own.
   const defaultCollapsedDiffFileKeys = useMemo(
     () =>
@@ -940,24 +941,49 @@ export default function DiffPanel({
         )}
         <Tooltip>
           <TooltipTrigger
+            // The trigger binds its hover listeners to the first element it renders.
+            key={lazySource ? "sort-unavailable" : "sort"}
             render={
-              <Toggle
-                aria-label={
-                  diffSortMode === "smart" ? "Sort files alphabetically" : "Sort files by relevance"
-                }
-                variant="ghost"
-                size="sm"
-                pressed={diffSortMode === "smart"}
-                onPressedChange={(pressed) => {
-                  setDiffSortMode(pressed ? "smart" : "alphabetical");
-                }}
-              />
+              lazySource ? (
+                // A disabled button gets no pointer events, so its wrapper shows why it is disabled.
+                <span className="inline-flex cursor-not-allowed" />
+              ) : (
+                <Toggle
+                  aria-label={
+                    diffSortMode === "smart"
+                      ? "Sort files alphabetically"
+                      : "Sort files by relevance"
+                  }
+                  variant="ghost"
+                  size="sm"
+                  pressed={diffSortMode === "smart"}
+                  onPressedChange={(pressed) => {
+                    setDiffSortMode(pressed ? "smart" : "alphabetical");
+                  }}
+                />
+              )
             }
           >
-            <SparklesIcon className="size-3.5" />
+            {lazySource ? (
+              <Toggle
+                aria-label="Sort files by relevance"
+                className="pointer-events-none"
+                variant="ghost"
+                size="sm"
+                disabled
+              >
+                <SparklesIcon className="size-3.5" />
+              </Toggle>
+            ) : (
+              <SparklesIcon className="size-3.5" />
+            )}
           </TooltipTrigger>
           <TooltipPopup side="top">
-            {diffSortMode === "smart" ? "Sort files alphabetically" : "Sort files by relevance"}
+            {lazySource
+              ? "Large diffs load in path order"
+              : diffSortMode === "smart"
+                ? "Sort files alphabetically"
+                : "Sort files by relevance"}
           </TooltipPopup>
         </Tooltip>
         <ToggleGroup
