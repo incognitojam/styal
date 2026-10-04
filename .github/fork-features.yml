@@ -3020,7 +3020,7 @@ features:
     status: maintained
     prs: [589]
     invariants:
-      - A GitHub merge, or turning on auto-merge, from the pull request panel sends the head commit from the panel's last read, and GitHub refuses it when the branch has moved since.
+      - A GitHub merge, or turning on auto-merge, from the pull request panel or quick actions sends the head commit from the client's last read, and GitHub refuses it when the branch has moved since.
       - After a refused action, the next detail read goes to the host, so retrying a merge uses the current head.
       - A merge refused because the head moved reports that new commits were pushed instead of the generic access hint.
       - Hosts that do not report a head commit, older clients, and older servers merge as before.
@@ -3031,6 +3031,8 @@ features:
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/server/src/pullRequest/gitHubPullRequestJson.ts
       - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
+      - apps/web/src/components/pullRequest/PullRequestSpeedActions.tsx
+      - apps/web/src/components/pullRequest/usePullRequestActions.ts
       - packages/contracts/src/pullRequest.ts
     upstream_paths:
       - apps/server/src/pullRequest/GitHubPullRequestCli.ts
@@ -3042,6 +3044,7 @@ features:
     tests:
       - apps/server/src/pullRequest/GitHubPullRequestCli.test.ts
       - apps/server/src/pullRequest/PullRequestService.test.ts
+      - apps/web/src/components/pullRequest/PullRequestSpeedActions.test.tsx
     upstream:
       status: tracking
       tracking:
