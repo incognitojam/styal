@@ -89,9 +89,9 @@ function isComposerDraftSyncEnabled(threadRef: ScopedThreadRef): boolean {
 }
 
 /**
- * Writes a closed thread's cleared draft to the server after a sidebar discard. Sync runs only
- * for the open composer, so without this the next visit restores the discarded text. A discard
- * is explicit, so a conflicting remote edit is overwritten once at the server's revision.
+ * Writes a closed thread's cleared or restored draft after sidebar discard or Undo. Sync runs
+ * only for the open composer, so these explicit actions need their own write. A conflicting
+ * remote edit is overwritten once at the server's revision.
  */
 export async function discardServerComposerDraft(threadRef: ScopedThreadRef): Promise<void> {
   if (!isComposerDraftSyncEnabled(threadRef)) return;
