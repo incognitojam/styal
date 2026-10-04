@@ -224,6 +224,7 @@ import {
   sortPinnedThreadsForSidebar,
   sortSidebarV2ProjectGroups,
   sortThreadsForSidebar,
+  sortWorkingThreadsBySend,
   useThreadJumpHintVisibility,
   useRetainedValue,
   useSidebarRowSubscriptionLease,
@@ -3106,8 +3107,8 @@ export default function Sidebar() {
             orderedProjectGroupKeys,
           )
         : optimisticActive,
-      // Newest work first, by the same clock as the inbox.
-      workingThreads: sortInboxThreadsByReturn(working),
+      // Newest send first; finishing and waking again do not move a row.
+      workingThreads: sortWorkingThreadsBySend(working),
       // Soonest wake first: "what comes back next" is the shelf's question.
       snoozedThreads: snoozed.toSorted(
         (left, right) =>
