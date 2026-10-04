@@ -1421,6 +1421,8 @@ export const OrchestrationV2TurnItem = Schema.Union([
     ),
     input: Schema.String,
     output: Schema.optional(Schema.String),
+    /** Set on the wire when output was withheld; fetch it with getTurnItem. */
+    outputOmitted: Schema.optional(Schema.Boolean),
     outputIndicatesFailure: Schema.optional(Schema.Boolean),
     exitCode: Schema.optional(Schema.Int),
   }),
@@ -1549,6 +1551,8 @@ export const OrchestrationV2TurnItem = Schema.Union([
     viewedImagePath: Schema.optional(TrimmedNonEmptyString),
     input: Schema.Unknown,
     output: Schema.optional(Schema.Unknown),
+    /** Set on the wire when output was withheld; fetch it with getTurnItem. */
+    outputOmitted: Schema.optional(Schema.Boolean),
   }),
 ]);
 export type OrchestrationV2TurnItem = typeof OrchestrationV2TurnItem.Type;
@@ -2175,6 +2179,8 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     ),
     input: Schema.String,
     output: Schema.optional(Schema.String),
+    /** Set on the wire when output was withheld; fetch it with getTurnItem. */
+    outputOmitted: Schema.optional(Schema.Boolean),
     outputIndicatesFailure: Schema.optional(Schema.Boolean),
     exitCode: Schema.optional(Schema.Int),
   }),
@@ -2300,6 +2306,8 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     viewedImagePath: Schema.optional(TrimmedNonEmptyString),
     input: Schema.Unknown,
     output: Schema.optional(Schema.Unknown),
+    /** Set on the wire when output was withheld; fetch it with getTurnItem. */
+    outputOmitted: Schema.optional(Schema.Boolean),
   }),
 ]);
 export type OrchestrationV2TurnItemJson = typeof OrchestrationV2TurnItemJson.Type;
@@ -3065,6 +3073,7 @@ export const ORCHESTRATION_V2_WS_METHODS = {
   getThreadProjection: "orchestration.getThreadProjection",
   getWorkflowScript: "orchestration.getWorkflowScript",
   getCommandOutput: "orchestration.getCommandOutput",
+  getTurnItem: "orchestration.getTurnItem",
   launchThread: "orchestration.launchThread",
   subscribeArchivedShell: "orchestration.subscribeArchivedShell",
   subscribeShell: "orchestration.subscribeShell",
@@ -3351,6 +3360,20 @@ export const OrchestrationV2GetWorkflowScriptResult = Schema.Struct({
 export type OrchestrationV2GetWorkflowScriptResult =
   typeof OrchestrationV2GetWorkflowScriptResult.Type;
 
+export const OrchestrationV2GetTurnItemInput = Schema.Struct({
+  threadId: ThreadId,
+  itemId: TurnItemId,
+  /** The item updatedAt the client last saw. Only keys the client cache. */
+  revision: Schema.optional(Schema.String),
+});
+export type OrchestrationV2GetTurnItemInput = typeof OrchestrationV2GetTurnItemInput.Type;
+
+/** One persisted turn item with its full, size-bounded input and output. */
+export const OrchestrationV2GetTurnItemResult = Schema.Struct({
+  item: Schema.NullOr(OrchestrationV2TurnItem),
+});
+export type OrchestrationV2GetTurnItemResult = typeof OrchestrationV2GetTurnItemResult.Type;
+
 const WORKFLOW_SCRIPT_ERROR_MESSAGES = {
   "invalid-path": "Workflow scripts must be absolute .js paths.",
   "root-unavailable": "Script root unavailable.",
@@ -3408,6 +3431,10 @@ export const OrchestrationV2RpcSchemas = {
   getWorkflowScript: {
     input: OrchestrationV2GetWorkflowScriptInput,
     output: OrchestrationV2GetWorkflowScriptResult,
+  },
+  getTurnItem: {
+    input: OrchestrationV2GetTurnItemInput,
+    output: OrchestrationV2GetTurnItemResult,
   },
   launchThread: {
     input: OrchestrationV2ThreadLaunchInput,

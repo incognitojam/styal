@@ -7,6 +7,9 @@ import type { OrchestrationV2TurnItem } from "@t3tools/contracts";
 import { T3_MCP_TOOL_NAMES } from "@t3tools/shared/t3McpToolPresentation";
 import { formatReadToolLabel, formatSearchToolLabel } from "@t3tools/shared/toolActivity";
 
+// Search results stay on the timeline wire, so keep their text a preview.
+const SEARCH_PREVIEW_MAX_CHARS = 8_000;
+
 type ToolItemBase = Omit<
   Extract<OrchestrationV2TurnItem, { type: "dynamic_tool" }>,
   "type" | "toolName" | "input" | "output"
@@ -121,7 +124,10 @@ export function openCodeToolTurnItem(
     case "file_change": {
       const oldStr = recordString(input, "oldString", "oldText");
       const newStr = recordString(input, "newString", "content", "newText");
-      const diffStr = recordString(tool.completedMetadata, "diff", "patch");
+      // A failed edit has no diff; keep its error where the diff would be.
+      const diffStr =
+        recordString(tool.completedMetadata, "diff", "patch") ??
+        (base.status === "failed" && output?.trim() ? output : undefined);
       return {
         ...base,
         type: "file_change",
@@ -133,6 +139,9 @@ export function openCodeToolTurnItem(
     }
     case "file_search": {
       const pattern = recordString(input, "pattern", "query", "path", "filePath");
+      // OpenCode reports matches as plain text, so keep it as one result row
+      // under the searched path, like the ACP search projection.
+      const searchRoot = (recordString(input, "path", "filePath") ?? pattern)?.trim();
       return {
         ...base,
         title:
@@ -140,14 +149,32 @@ export function openCodeToolTurnItem(
           base.title,
         type: "file_search",
         ...(pattern === undefined ? {} : { pattern }),
+        ...(!output?.trim() || searchRoot === undefined
+          ? {}
+          : {
+              results: [
+                { fileName: searchRoot, preview: output.slice(0, SEARCH_PREVIEW_MAX_CHARS) },
+              ],
+            }),
       };
     }
     case "web_search": {
       const pattern = recordString(input, "query", "url", "pattern");
+      const url = recordString(input, "url")?.trim();
       return {
         ...base,
         type: "web_search",
         ...(pattern === undefined ? {} : { patterns: [pattern] }),
+        ...(!output?.trim()
+          ? {}
+          : {
+              results: [
+                {
+                  ...(url === undefined ? {} : { url }),
+                  snippet: output.slice(0, SEARCH_PREVIEW_MAX_CHARS),
+                },
+              ],
+            }),
       };
     }
     case "dynamic_tool": {
