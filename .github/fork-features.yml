@@ -769,7 +769,7 @@ features:
     invariants:
       - Turn, working-tree, branch, and pull request diffs order source dependencies first, their tests next, and repository-attributed or recognized generated output last across web, desktop, and mobile review surfaces. A working-tree or branch diff too large to load at once keeps the path order its files load in, while still collapsing generated files.
       - Test and generated tiers remain visible, generated files start collapsed, and explicit reader fold choices take precedence over automatic classification.
-      - One persisted web preference switches the diff panel and pull request Code tab between relevance and alphabetical order.
+      - One persisted web preference switches the diff panel and pull request Code tab between relevance and alphabetical order. While a diff loads file by file, the diff panel disables the switch and says why, without changing the saved preference.
     implementation_paths:
       - .gitattributes
       - apps/mobile/src/features/review/reviewFileVisibility.ts
