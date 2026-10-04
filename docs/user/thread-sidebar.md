@@ -178,6 +178,11 @@ Settled threads wait in the collapsed **Settled** shelf at the bottom of the lis
 expanded, it stays open while you browse or un-settle threads, and closes when you open a
 thread outside it or send a message.
 
+On web and desktop, press a thread's **Settle** button and drag up or down to
+settle every thread in that section between it and the one you release on.
+The **Un-settle** and **Wake** buttons work the same way in their sections.
+Press `Escape` while dragging to cancel.
+
 By default, environments settle inactive threads after three days and settle
 threads whose pull request merged. A closed pull request can also settle an idle
 thread. Work in progress, pending questions or approvals, and live background work
