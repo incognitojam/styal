@@ -17,10 +17,6 @@
       "reason": "Renaming or recolouring a provider rebuilds its instance and stops every running turn on it; this keeps the instance for presentation-only edits and warns before rebuilds that would stop running threads. Watching, not importing early; the early import of #12533 makes such rebuilds end turns visibly instead of leaving them running."
     },
     {
-      "pr": 11144,
-      "reason": "The sidebar and composer pull request badge shows the same icon for every state and only changes colour; this gives draft, closed and merged pull requests their own icons."
-    },
-    {
       "pr": 11577,
       "reason": "An agent click in a preview tab takes keyboard focus from the composer, even from a hidden tab in another thread. This hosts preview pages outside the app window's focus hierarchy so an agent click cannot move focus; restoring focus after the click (#13914) still lets a few keystrokes reach the page. Reworks page display, input and capture, so it overlaps hidden-tab capture, recording and the mini player. Watching, not importing early."
     },
