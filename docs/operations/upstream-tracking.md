@@ -63,11 +63,17 @@ Every candidate commit needs an `Upstream-PR: 1234, 5678` and/or `Upstream-Commi
 
 Read the actual source diffs when reconciling reverts or already-present work; never assume an adjacent commit implements a source. If an exact change/revert pair is accounted for together, verify its net effect and record both sources; do not silently skip either. Existing provenance proves an import was recorded, not that today's tree still has equivalent behavior.
 
+Upstream's direct release commits (`chore(release): prepare vX.Y.Z`) bump package versions and can touch the lockfile. Take the version bumps, keep the fork's package names and lockfile, and cite `fork-distribution-identity`.
+
+Keep upstream files the fork does not use identical to upstream, such as `.github/workflows/release.yml`, which is disabled in favour of the fork's own release workflows. When an import adapts an upstream change into a fork-owned file instead of the file upstream changed, apply upstream's change to its own file too. Otherwise that file drifts, and later upstream commits to it conflict.
+
 ## 3. Validate the final batch
 
 Do not run the full validation loop after every cherry-pick. Test intermediate states only when needed to diagnose a problem or bisect.
 
 Review `origin/main...candidate` against the upstream sources and the fork feature ledger. Focus local tests and real-client checks on conflict resolutions, changed behavior, and fork integration boundaries. In particular, preserve styal's runtime homes, environment variables, browser storage, installed-app identity, and maintained capabilities. These are behavioral invariants, not a reason to mechanically replace every upstream name. Carry upstream migration files verbatim.
+
+A cherry-pick that applies cleanly can still break fork code it does not touch: upstream may rename an export that a fork-only file still calls, or add a lint rule that fork-only files break. Before pushing, typecheck and lint each package the batch changes as a whole, not only the changed files.
 
 ```bash
 node scripts/upstream/queue.ts status --fork-ref intake/<batch>
