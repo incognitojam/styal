@@ -275,6 +275,7 @@ features:
     invariants:
       - Claude rewind retains every preceding turn and removes the requested turns even when the SDK conversation reader hides disconnected saved history or trailing system notices.
       - Repeated rewind uses the fork's rewritten native turn IDs; repeated prompts, steering, and tool results do not shift turn boundaries.
+      - Unknown older turn IDs do not block rewind at a known recent boundary; the complete retained conversation is still validated and unknown IDs remain unknown across forks.
       - Missing, changed, reordered, or unrelated retained conversation fails validation before replacing the current provider session.
       - Native history operations stay within the selected provider instance's Claude configuration directory.
     implementation_paths:
