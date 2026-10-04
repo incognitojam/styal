@@ -5,6 +5,7 @@ import type { ProviderDriverKind, ProviderReplayTranscript } from "@t3tools/cont
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import type * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -188,6 +189,9 @@ export function runOrchestratorV2ProviderReplayScenario<
     // as server startup does after a crash or restart.
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
+    // Capture restart continuations before sessions stop at teardown, as
+    // server shutdown does before a restart.
+    readonly prepareForShutdownOnClose?: boolean;
   } = {},
 ): Effect.Effect<
   OrchestratorV2ScenarioResult,
@@ -233,6 +237,9 @@ export function makeOrchestratorV2ProviderReplayLayer<
     // as server startup does after a crash or restart.
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
+    // Capture restart continuations before sessions stop at teardown, as
+    // server shutdown does before a restart.
+    readonly prepareForShutdownOnClose?: boolean;
     readonly replayGate?: ProviderReplayGate;
   } = {},
 ): Layer.Layer<
@@ -262,6 +269,9 @@ export function makeOrchestratorV2ReplayLayerWithRegistry<Error>(
     // as server startup does after a crash or restart.
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
+    // Capture restart continuations before sessions stop at teardown, as
+    // server shutdown does before a restart.
+    readonly prepareForShutdownOnClose?: boolean;
   } = {},
 ): Layer.Layer<
   Orchestrator.OrchestratorV2 | EffectWorker.OrchestrationEffectWorkerV2 | EventSink.EventSinkV2,
@@ -495,14 +505,34 @@ export function makeOrchestratorV2ReplayLayerWithRegistry<Error>(
           ),
         )
       : Layer.empty;
+  const shutdownRecovery =
+    options.prepareForShutdownOnClose === true
+      ? ProviderRuntimeRecoveryService.layer.pipe(
+          Layer.provide(
+            Layer.mergeAll(storesLayer, eventSinkProvided, IdAllocator.layer, serverSettingsLayer),
+          ),
+        )
+      : Layer.empty;
   return Layer.effect(
     Orchestrator.OrchestratorV2,
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       // As in serverRuntimeStartup: after runtime recovery, before the worker.
       yield* orchestrator.recoverDelegatedTasks;
+      const recovery = yield* Effect.serviceOption(
+        ProviderRuntimeRecoveryService.ProviderRuntimeRecoveryService,
+      );
+      // Added before the worker forks, so teardown stops the worker first and
+      // then captures continuations while the replay runtime's sessions are live.
+      if (Option.isSome(recovery)) {
+        yield* Effect.addFinalizer(() => recovery.value.prepareForShutdown.pipe(Effect.orDie));
+      }
       yield* EffectWorker.runDaemon.pipe(Effect.forkScoped);
       return orchestrator;
     }),
-  ).pipe(Layer.provideMerge(replayRuntime), Layer.provide(startupRecovery));
+  ).pipe(
+    Layer.provideMerge(replayRuntime),
+    Layer.provide(startupRecovery),
+    Layer.provide(shutdownRecovery),
+  );
 }

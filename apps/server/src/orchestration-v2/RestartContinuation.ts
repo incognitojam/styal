@@ -73,16 +73,16 @@ export function restartContinuationRun(
   const session = projection.providerSessions.find(
     (candidate) => candidate.id === providerThread.providerSessionId,
   );
-  // A settled thread's session may already be stopped and out of the recovery
-  // read; the continuation reopens it from the provider thread's native ref.
   // Most adapters keep a live session "ready" through its turns, so only a
-  // stopped or failed session rules out a live turn.
+  // stopped or failed session rules out live work. A settled run's background
+  // work is live only while its session is: shutdown prepares the continuation
+  // before it stops providers, and a crash leaves live sessions unstopped. A
+  // session that had already stopped leaves only stale background records.
   if (
-    session === undefined
-      ? !settledWithCancelledWork
-      : session.providerInstanceId !== run.providerInstanceId ||
-        session.driver !== providerThread.driver ||
-        (liveTurnRequired && (session.status === "stopped" || session.status === "error"))
+    session === undefined ||
+    session.providerInstanceId !== run.providerInstanceId ||
+    session.driver !== providerThread.driver ||
+    (!preparedContinuation && (session.status === "stopped" || session.status === "error"))
   )
     return;
   if (

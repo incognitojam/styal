@@ -186,6 +186,8 @@ const runRestart = Effect.fn("runRestart")(function* (input: {
   const before = yield* Effect.scoped(
     runOrchestratorV2ProviderReplayScenario(scenario("before-restart", phase1Steps), harness, {
       databaseLayer,
+      continueThreadsAfterServerUpdate: input.continueThreadsAfterServerUpdate,
+      prepareForShutdownOnClose: true,
     }),
   );
   const settled = projectionFor(before, SCENARIO);

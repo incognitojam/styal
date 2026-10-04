@@ -155,18 +155,26 @@ it("recovers an admitted continuation after another crash before provider start"
   assert.equal(restartContinuationRun(starting)?.id, runId);
 });
 
-it("continues a settled root run only when the restart cancelled its background work", () => {
+it("continues a settled root run only when the restart cancelled its live background work", () => {
   const projection = makeProjection();
   const settled = {
     ...projection,
     runs: [{ ...projection.runs[0]!, status: "completed" as const }],
     providerThreads: [{ ...projection.providerThreads[0]!, status: "idle" as const }],
-    providerSessions: [{ ...projection.providerSessions[0]!, status: "stopped" as const }],
+    providerSessions: [{ ...projection.providerSessions[0]!, status: "ready" as const }],
     providerTurns: [],
   };
   const lostWork = new Set([providerThreadId]);
   assert.isUndefined(restartContinuationRun(settled));
   assert.equal(restartContinuationRun(settled, lostWork)?.id, runId);
+  // A session that stopped before the restart left only stale background
+  // records, so its settled thread stays asleep.
+  for (const providerSessions of [
+    [{ ...settled.providerSessions[0]!, status: "stopped" as const }],
+    [{ ...settled.providerSessions[0]!, status: "error" as const }],
+    [],
+  ])
+    assert.isUndefined(restartContinuationRun({ ...settled, providerSessions }, lostWork));
   // Work an older provider thread launched (before a provider switch) is not
   // this run's: its provider was never told about it and cannot continue it.
   assert.isUndefined(
