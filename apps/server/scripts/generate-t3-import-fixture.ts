@@ -211,7 +211,11 @@ class Api {
   }
 
   async thread(threadId: string): Promise<ThreadDetail> {
-    const detail = (await this.request("GET", `/api/orchestration/threads/${threadId}`)) as {
+    // Without the opt-in, the server shows thinking messages as system messages for older clients.
+    const detail = (await this.request(
+      "GET",
+      `/api/orchestration/threads/${threadId}?reasoningMessages=true`,
+    )) as {
       thread: ThreadDetail;
     };
     return detail.thread;
