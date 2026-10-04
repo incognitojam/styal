@@ -268,15 +268,15 @@ features:
       retire_when: Upstream preserves actively streaming synthetic Claude turns when a user sends a steer while retaining cleanup of idle synthetic turns.
 
   - id: claude-exact-history-rewind
-    title: Rewind Claude turns using complete saved history and fork provenance
+    title: Rewind Claude turns using the complete saved history
     status: maintained
-    prs: [611]
-    rationale: Claude's history reader can omit retained prompts and assistant messages even though the native fork preserves them; matching its filtered message bodies or positions cannot recover those turn boundaries.
+    prs: [611, 631, 635]
+    rationale: Claude's history reader can omit retained prompts and assistant messages even though the native fork preserves them; matching its filtered message bodies or positions cannot recover those turn boundaries. The fork reads the complete saved transcript and matches it with upstream's fork boundary remapping.
     invariants:
       - Claude rewind retains every preceding turn and removes the requested turns even when the SDK conversation reader hides disconnected saved history or trailing system notices.
       - Repeated rewind uses the fork's rewritten native turn IDs; repeated prompts, steering, and tool results do not shift turn boundaries.
       - Unknown older turn IDs do not block rewind at a known recent boundary; the complete retained conversation is still validated and unknown IDs remain unknown across forks.
-      - Missing, changed, reordered, or unrelated retained conversation fails validation before replacing the current provider session.
+      - Missing, changed, or reordered retained conversation fails validation before replacing the current provider session.
       - Native history operations stay within the selected provider instance's Claude configuration directory.
     implementation_paths:
       - apps/server/src/claudeHistoryWorker.ts
@@ -290,7 +290,7 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/11954
-      retire_when: Upstream validates complete retained Claude history and remaps fork boundaries when getSessionMessages omits saved human prompts or assistant records, including subsequent rewinds.
+      retire_when: Upstream rewind reads the complete saved transcript, so human prompts and assistant records that getSessionMessages omits keep their turn boundaries through repeated rewinds, and rewinds at a known recent boundary when older boundaries are unknown.
 
   - id: claude-live-effort-change
     title: Apply Claude effort changes without restarting the session
