@@ -1137,7 +1137,6 @@ features:
       - .github/workflows/deploy-web.yml
       - .github/workflows/desktop-macos-preview.yml
       - .github/workflows/fork-desktop-build.yml
-      - .github/workflows/release.yml
       - .github/workflows/web-preview.yml
       - apps/mobile/src/connection/platform.ts
       - apps/server/src/bin.ts
@@ -1159,7 +1158,6 @@ features:
     upstream_paths:
       - .github/workflows/deploy-relay.yml
       - .github/workflows/desktop-macos-preview.yml
-      - .github/workflows/release.yml
       - .github/workflows/web-preview.yml
       - apps/mobile/src/connection/platform.ts
       - apps/server/src/cloud/publicConfig.ts
