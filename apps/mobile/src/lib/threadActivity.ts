@@ -63,7 +63,8 @@ import {
   formatSearchToolLabel,
 } from "@t3tools/shared/toolActivity";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
-import { compactDynamicToolOutput } from "@t3tools/shared/toolOutput";
+import type { HtmlRenderReference } from "@t3tools/shared/htmlRender";
+import { compactDynamicToolOutput, htmlRenderFromToolItem } from "@t3tools/shared/toolOutput";
 import * as DateTime from "effect/DateTime";
 
 export type PendingApproval = ThreadPendingApproval;
@@ -190,6 +191,14 @@ type RawThreadFeedEntry =
       readonly createdAt: string;
       readonly runId: RunId | null;
       readonly activity: ThreadFeedActivity;
+    }
+  | {
+      /** A page a completed `html_render` call published, shown in place of its work row. */
+      readonly type: "html-render";
+      readonly id: string;
+      readonly createdAt: string;
+      readonly runId: RunId | null;
+      readonly render: HtmlRenderReference;
     };
 
 export type ThreadFeedEntry = ThreadFeedEntryContent & { readonly continuesWorkLog?: boolean };
@@ -220,7 +229,7 @@ type ThreadFeedEntryContent =
       readonly report: ReviewFindingsReport;
       readonly expanded: boolean;
     }
-  | Extract<RawThreadFeedEntry, { type: "message" }>
+  | Extract<RawThreadFeedEntry, { type: "message" | "html-render" }>
   | {
       readonly type: "activity-group";
       readonly id: string;
@@ -1111,7 +1120,7 @@ function deriveThreadFeedRunFolds(
     const entryRunId =
       entry.type === "message" && entry.message.role === "assistant"
         ? (entry.message.runId ?? runlessKey)
-        : entry.type === "activity-group"
+        : entry.type === "activity-group" || entry.type === "html-render"
           ? (entry.runId ?? runlessKey)
           : entry.type === "restart-note"
             ? entry.runId
@@ -1167,6 +1176,7 @@ function deriveThreadFeedRunFolds(
             ([...roots.values()].includes(runId) || entry.id !== firstAssistantId) &&
             entry.id !== terminalAssistantId &&
             !(entry.type === "activity-group" && isUserInputActivityGroup(entry)) &&
+            entry.type !== "html-render" &&
             !(
               entry.type === "activity-group" &&
               entry.activities.some(
@@ -1849,6 +1859,23 @@ export function buildThreadFeed(
       continue;
     }
     const createdAt = DateTime.formatIso(item.startedAt ?? item.updatedAt);
+    // A running or failed render stays an ordinary work row.
+    const render =
+      item.type === "dynamic_tool" && item.status === "completed"
+        ? htmlRenderFromToolItem(item)
+        : undefined;
+    if (render) {
+      const entry: RawThreadFeedEntry = {
+        type: "html-render",
+        id: `html-render:${row.visibility}:${row.sourceThreadId}:${row.sourceItemId}`,
+        createdAt,
+        runId: item.runId,
+        render,
+      };
+      projectedEntriesCache.set(row, { attemptId, entry });
+      entries.push(entry);
+      continue;
+    }
     if (item.type === "user_message" || item.type === "assistant_message") {
       const updatedAt = DateTime.formatIso(item.updatedAt);
       const entry: RawThreadFeedEntry = {

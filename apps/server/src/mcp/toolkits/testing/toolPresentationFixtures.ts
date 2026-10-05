@@ -20,6 +20,7 @@ import { ThreadToolkit } from "../thread/tools.ts";
 import { WorktreeToolkit } from "../worktree/tools.ts";
 import { DeviceToolkit } from "../device/tools.ts";
 import { PullRequestsToolkit } from "../pullRequests/tools.ts";
+import { HtmlToolkit } from "../html/tools.ts";
 
 /** The same published catalog checked by core.test, also used for visual intake fixtures. */
 export const publishedToolkits = [
@@ -33,6 +34,7 @@ export const publishedToolkits = [
   PreviewControlsToolkit,
   DeviceToolkit,
   PullRequestsToolkit,
+  HtmlToolkit,
 ];
 
 export const publishedTools = publishedToolkits.flatMap((toolkit) => Object.values(toolkit.tools));
