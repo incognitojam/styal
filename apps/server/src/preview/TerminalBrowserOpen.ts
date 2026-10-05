@@ -268,12 +268,17 @@ export const make = Effect.gen(function* TerminalBrowserOpenMake() {
     input: TerminalBrowserOpenPreviewInput,
   ) {
     const issuedAt = yield* Clock.currentTimeMillis;
+    const providerSessionId = `terminal-browser:${input.owner.threadId}\u0000${input.owner.terminalId}`;
     yield* broker.invoke({
       scope: {
         environmentId: input.environmentId,
-        threadId: ThreadId.make(input.owner.threadId),
-        providerSessionId: `terminal-browser:${input.owner.threadId}\u0000${input.owner.terminalId}`,
-        providerInstanceId: ProviderInstanceId.make("t3_terminal"),
+        requestNamespace: providerSessionId,
+        thread: {
+          threadId: ThreadId.make(input.owner.threadId),
+          providerSessionId,
+          providerInstanceId: ProviderInstanceId.make("t3_terminal"),
+        },
+        client: undefined,
         capabilities: new Set(["preview"]),
         issuedAt,
       },

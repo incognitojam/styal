@@ -66,7 +66,7 @@ export function agentDeviceQuickStart(
   ].join("\n");
 }
 
-const requireDeviceAccess = McpInvocationContext.requireMcpCapability("device").pipe(
+const requireDeviceAccess = McpInvocationContext.requireThreadMcpCapability("device").pipe(
   Effect.mapError(
     () =>
       new DeviceToolUnavailableError({
@@ -163,7 +163,7 @@ const handlers = {
       }
       const hostId = input?.hostId;
       const open = state.sessions
-        .filter((session) => session.threadId === scope.threadId)
+        .filter((session) => session.threadId === scope.thread.threadId)
         .map((session) => ({ hostId: session.hostId, deviceId: session.deviceId }));
       return {
         hostStatuses: Object.fromEntries(
@@ -176,7 +176,7 @@ const handlers = {
         open,
         openInOtherThreads: devicesOpenInOtherThreads(
           [...state.sessions, ...(state.externalSessions ?? [])],
-          scope.threadId,
+          scope.thread.threadId,
         ),
       };
     }).pipe(Effect.mapError(toolError)),
@@ -193,17 +193,17 @@ const handlers = {
       }
       const openInOtherThreads = devicesOpenInOtherThreads(
         [...state.sessions, ...(state.externalSessions ?? [])],
-        scope.threadId,
+        scope.thread.threadId,
       );
       const target = yield* pickDevice(state.devices, openInOtherThreads, input);
       // Resolve consent and agent connectivity before booting or registering a session.
       const agentArgs = yield* devices.agentTarget({
-        threadId: scope.threadId,
+        threadId: scope.thread.threadId,
         hostId: target.hostId,
         deviceId: target.id,
       });
       const session = yield* devices.open({
-        threadId: scope.threadId,
+        threadId: scope.thread.threadId,
         hostId: target.hostId,
         deviceId: target.id,
         platform: target.platform,
@@ -253,7 +253,7 @@ const handlers = {
     Effect.gen(function* () {
       const scope = yield* requireDeviceAccess;
       const devices = yield* DeviceService.DeviceService;
-      const sessions = yield* devices.sessionsForThread(scope.threadId);
+      const sessions = yield* devices.sessionsForThread(scope.thread.threadId);
       const target =
         input.deviceId !== undefined
           ? { hostId: input.hostId ?? LOCAL_DEVICE_HOST_ID, deviceId: input.deviceId }
@@ -280,7 +280,7 @@ const handlers = {
       const scope = yield* requireDeviceAccess;
       const devices = yield* DeviceService.DeviceService;
       yield* devices.close({
-        threadId: scope.threadId,
+        threadId: scope.thread.threadId,
         ...(input.hostId === undefined ? {} : { hostId: input.hostId }),
         ...(input.deviceId === undefined ? {} : { deviceId: input.deviceId }),
         ...(input.shutdown === undefined ? {} : { shutdown: input.shutdown }),
