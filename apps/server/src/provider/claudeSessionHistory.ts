@@ -50,7 +50,7 @@ export function remapClaudeForkTurnBoundaries(
   retainedMessages: ReadonlyArray<ClaudeSessionHistoryMessage>,
   forkMessages: ReadonlyArray<ClaudeSessionHistoryMessage>,
   retainedBoundaries: ReadonlyArray<string | null>,
-): Array<string> | undefined {
+): Array<string | null> | undefined {
   const conversation = retainedMessages.filter((message) => message.type !== "system");
   const forkConversation = forkMessages.filter((message) => message.type !== "system");
   // Fork provenance is stable even when the history reader changes its chain,
@@ -69,9 +69,13 @@ export function remapClaudeForkTurnBoundaries(
     }
     forkIds.set(message.uuid, forkMessage.uuid);
   }
-  const remapped: Array<string> = [];
+  const remapped: Array<string | null> = [];
   for (const id of retainedBoundaries) {
-    const forkId = id === null ? undefined : forkIds.get(id);
+    if (id === null) {
+      remapped.push(null);
+      continue;
+    }
+    const forkId = forkIds.get(id);
     if (forkId === undefined) return undefined;
     remapped.push(forkId);
   }

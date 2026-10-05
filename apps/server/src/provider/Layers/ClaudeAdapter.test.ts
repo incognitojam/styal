@@ -7614,9 +7614,9 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
-  it.effect(
-    "rewinds disconnected saved Claude history through an isolated native SDK worker",
-    () => {
+  it.effect.each([false, true])(
+    "rewinds disconnected saved Claude history through an isolated native SDK worker (unknown older boundaries: %s)",
+    (legacyPrefix) => {
       const scratchDir = NodePath.resolve(import.meta.dirname, "../../../../../.scratch");
       NodeFS.mkdirSync(scratchDir, { recursive: true });
       const baseDir = NodeFS.realpathSync(
@@ -7645,8 +7645,13 @@ describe("ClaudeAdapterLive", () => {
           role: "assistant",
           content: [{ type: "text", text: "first" }],
         }),
+        entry("user", 403, 201, { role: "user", content: "steer the first turn" }),
+        entry("assistant", 205, 403, {
+          role: "assistant",
+          content: [{ type: "text", text: "first after steering" }],
+        }),
         {
-          ...entry("system", 301, 201, { subtype: "stop_hook_summary" }),
+          ...entry("system", 301, 205, { subtype: "stop_hook_summary" }),
           subtype: "stop_hook_summary",
         },
         // A resumed branch need not link to the preceding turn. The native reader
@@ -7704,7 +7709,11 @@ describe("ClaudeAdapterLive", () => {
           threadId: THREAD_ID,
           runtimeMode: "full-access",
           cwd,
-          resumeCursor: { resume: originalSessionId, turnCount: 3, turnStartMessageIds: turnIds },
+          resumeCursor: {
+            resume: originalSessionId,
+            turnCount: 3,
+            turnStartMessageIds: legacyPrefix ? [null, ...turnIds.slice(1)] : turnIds,
+          },
         });
         const originalQuery = harness.queries.at(-1)!;
         yield* adapter.rollbackThread(THREAD_ID, 1);
@@ -7712,7 +7721,7 @@ describe("ClaudeAdapterLive", () => {
         const cursor = (yield* adapter.listSessions())[0]!.resumeCursor as {
           resume: string;
           turnCount: number;
-          turnStartMessageIds: Array<string>;
+          turnStartMessageIds: Array<string | null>;
         };
         assert.notEqual(cursor.resume, originalSessionId);
         assert.equal(cursor.turnCount, 2);
@@ -7743,7 +7752,7 @@ describe("ClaudeAdapterLive", () => {
         );
         assert.deepEqual(
           cursor.turnStartMessageIds,
-          forkPrompts.map((message) => message.uuid),
+          forkPrompts.map((message, index) => (legacyPrefix && index === 0 ? null : message.uuid)),
         );
         assert.equal(
           forkHistory.some((message) => message.forkedFrom?.messageUuid === uuid(402)),
@@ -7752,8 +7761,15 @@ describe("ClaudeAdapterLive", () => {
         assert.equal(harness.getLastCreateQueryInput()?.options.env?.CLAUDE_CONFIG_DIR, homeDir);
         assert.equal(NodeFS.readFileSync(sourcePath, "utf8"), source);
 
-        // A second rewind must use the fork's rewritten native IDs, including
-        // the retained first turn that getSessionMessages cannot return.
+        // Recovery must preserve unknown IDs and the fork's rewritten IDs.
+        yield* adapter.stopSession(THREAD_ID);
+        yield* adapter.startSession({
+          threadId: THREAD_ID,
+          runtimeMode: "full-access",
+          cwd,
+          resumeCursor: cursor,
+        });
+        assert.deepEqual((yield* adapter.listSessions())[0]!.resumeCursor, cursor);
         yield* adapter.rollbackThread(THREAD_ID, 1);
         const secondCursor = (yield* adapter.listSessions())[0]!.resumeCursor as typeof cursor;
         assert.equal(secondCursor.turnCount, 1);
@@ -7771,12 +7787,21 @@ describe("ClaudeAdapterLive", () => {
           false,
         );
         assert.equal(
-          secondFork.some((message) => message.uuid === secondCursor.turnStartMessageIds[0]),
+          secondFork.some((message) => message.forkedFrom?.messageUuid === forkPrompts[0].uuid),
           true,
         );
 
-        yield* adapter.rollbackThread(THREAD_ID, 1);
-        assert.equal(harness.getLastCreateQueryInput()?.options.resume, undefined);
+        if (legacyPrefix) {
+          assert.deepEqual(secondCursor.turnStartMessageIds, [null]);
+          const currentQuery = harness.queries.at(-1)!;
+          const unavailable = yield* adapter.rollbackThread(THREAD_ID, 1).pipe(Effect.flip);
+          assert.match(unavailable.message, /exact Claude turn boundary is unavailable/);
+          assert.equal(currentQuery.closeCalls, 0);
+          assert.deepEqual((yield* adapter.listSessions())[0]!.resumeCursor, secondCursor);
+        } else {
+          yield* adapter.rollbackThread(THREAD_ID, 1);
+          assert.equal(harness.getLastCreateQueryInput()?.options.resume, undefined);
+        }
         const newTurn = yield* adapter.sendTurn({
           threadId: THREAD_ID,
           input: "start again",
@@ -7784,7 +7809,7 @@ describe("ClaudeAdapterLive", () => {
         });
         assert.deepEqual(
           ((yield* adapter.listSessions())[0]!.resumeCursor as typeof cursor).turnStartMessageIds,
-          [newTurn.turnId],
+          legacyPrefix ? [null, newTurn.turnId] : [newTurn.turnId],
         );
       }).pipe(Effect.provide(harness.layer));
     },
@@ -7810,6 +7835,10 @@ describe("ClaudeAdapterLive", () => {
       remapClaudeForkTurnBoundaries(sessionId, original, fork, ["turn-1", "turn-2"]),
       ["fork-turn-1", "fork-turn-2"],
     );
+    assert.deepEqual(remapClaudeForkTurnBoundaries(sessionId, original, fork, [null, "turn-2"]), [
+      null,
+      "fork-turn-2",
+    ]);
     const invalidForks = [
       fork.slice(1),
       [fork[2]!, fork[1]!, fork[0]!, fork[3]!],
@@ -7833,6 +7862,10 @@ describe("ClaudeAdapterLive", () => {
     for (const invalidFork of invalidForks) {
       assert.equal(
         remapClaudeForkTurnBoundaries(sessionId, original, invalidFork, ["turn-1", "turn-2"]),
+        undefined,
+      );
+      assert.equal(
+        remapClaudeForkTurnBoundaries(sessionId, original, invalidFork, [null, "turn-2"]),
         undefined,
       );
     }

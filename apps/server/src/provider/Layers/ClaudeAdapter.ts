@@ -5515,9 +5515,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const retainedCount = Math.max(0, boundaries.length - numTurns);
       const firstRemovedId = boundaries[retainedCount];
       const firstRemoved = messages.findIndex((message) => message.uuid === firstRemovedId);
+      // Only the cut needs an exact boundary. Unknown older turn IDs can stay
+      // unknown while the fork validates and preserves their complete history.
       if (
         boundaries.length === 0 ||
-        boundaries.some((id) => id === null) ||
+        firstRemovedId == null ||
         (retainedCount > 0 && firstRemoved < 1)
       ) {
         return yield* new ProviderAdapterRequestError({
