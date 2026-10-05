@@ -1282,6 +1282,30 @@ features:
         - https://github.com/pingdotgg/t3code/pull/12087
       retire_when: Upstream supports equivalent in-place editing of anchored diff comments with stable drafts and keyboard controls.
 
+  - id: effort-picker-tooltip
+    title: Composer effort picker tooltip names the menu and its shortcut
+    status: maintained
+    prs: [790]
+    invariants:
+      - The composer effort button's tooltip reads "Effort and options" with the user's bound shortcut, because the button already shows the selected values.
+      - When the button collapses to its icon, the tooltip shows the selected values with the shortcut instead; an unbound command shows no shortcut.
+      - Effort pickers outside the composer, such as Settings and project defaults, keep their existing tooltip.
+    rationale: Upstream's tooltip repeats the values already shown on the button and does not say what the menu holds or how to open it.
+    implementation_paths:
+      - apps/web/src/components/chat/ChatComposer.tsx
+      - apps/web/src/components/chat/TraitsPicker.tsx
+      - apps/web/src/components/chat/composerProviderState.tsx
+    upstream_paths:
+      - apps/web/src/components/chat/ChatComposer.tsx
+      - apps/web/src/components/chat/TraitsPicker.tsx
+      - apps/web/src/components/chat/composerProviderState.tsx
+    tests:
+      - apps/web/src/components/chat/TraitsPicker.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream's composer effort tooltip names the menu and its shortcut.
+
   - id: first-turn-unread-state
     title: Mark first thread completions unread
     status: review-needed
