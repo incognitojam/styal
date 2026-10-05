@@ -36,6 +36,7 @@ import ThreadSidebar from "./Sidebar";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
+import { ThreadUndoShortcut } from "./sidebar/ThreadUndoShortcut";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import { useProjects } from "../state/entities";
 import {
@@ -331,6 +332,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         {children}
         <SidebarControl />
         <NavigationHistoryShortcuts />
+        {isOnSettings ? null : <ThreadUndoShortcut />}
         <MainAppLocationTracker />
       </SidebarProvider>
     </PanelAnimationSuppressionProvider>
