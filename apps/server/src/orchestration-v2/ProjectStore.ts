@@ -3,8 +3,8 @@ import {
   IsoDateTime,
   ModelSelection,
   type OrchestrationProjectShell,
-  ProjectIconOverride,
   ProjectAdditionalInstructions,
+  StoredProjectIcon,
   ProjectId,
   ProjectScript,
   ThreadEnvMode,
@@ -39,7 +39,7 @@ export const ProjectRow = Schema.Struct({
   autoPull: Schema.Boolean,
   faviconPath: Schema.NullOr(Schema.String),
   additionalInstructions: Schema.optional(Schema.NullOr(ProjectAdditionalInstructions)),
-  projectIcon: Schema.NullOr(ProjectIconOverride),
+  projectIcon: Schema.NullOr(StoredProjectIcon),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -51,7 +51,7 @@ const ProjectDbRow = Schema.Struct({
   ...ProjectRow.fields,
   defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
   autoPull: Schema.BooleanFromBit,
-  projectIcon: Schema.NullOr(Schema.fromJsonString(ProjectIconOverride)),
+  projectIcon: Schema.NullOr(Schema.fromJsonString(StoredProjectIcon)),
   scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
 });
 
