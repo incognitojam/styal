@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useRoute, type RouteProp } from "@react-navigation/native";
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   EnvironmentId,
   type OrchestrationThread,
@@ -16,10 +16,10 @@ import { useProject, useThreadShell } from "../state/entities";
 import { useEnvironmentThread } from "../state/threads";
 import {
   resolvePendingThreadCreation,
+  pendingThreadCreationOutcomesAtom,
   pendingThreadCreationShell,
   type PendingThreadCreation,
 } from "./pending-thread-creation";
-import { pendingThreadCreationOutcomesAtom } from "./pending-thread-creation-state";
 import {
   useRemoteEnvironmentRuntime,
   useSavedRemoteConnection,
@@ -148,14 +148,16 @@ function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefin
           : null),
     [pendingCreation, selectedThreadDetail, selectedThreadRef, selectedThreadShell],
   );
-  const previousCreationRef = useRef<PendingThreadCreation | null>(null);
+  const [previousCreation, setPreviousCreation] = useState<PendingThreadCreation | null>(null);
   const selectedThreadCreation = resolvePendingThreadCreation({
     threadKey: selectedThreadKey,
     pending: pendingCreation,
-    previous: previousCreationRef.current,
+    previous: previousCreation,
     detail: selectedThreadDetail,
   });
-  previousCreationRef.current = selectedThreadCreation;
+  if (previousCreation !== selectedThreadCreation) {
+    setPreviousCreation(selectedThreadCreation);
+  }
   const selectedProjectRef = useMemo<ScopedProjectRef | null>(
     () =>
       selectedThread === null

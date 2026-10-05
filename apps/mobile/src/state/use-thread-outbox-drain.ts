@@ -22,19 +22,20 @@ import { buildProjectThreadStartTurnInput } from "../lib/projectThreadStartTurn"
 import { serializeComposerMessageForServer, uploadedComposerContext } from "../lib/composerContext";
 import { prepareTurnAttachments, type PreparedTurnAttachments } from "../lib/attachmentUpload";
 import { randomHex } from "../lib/uuid";
+import { isModelSelectionUnavailable } from "../lib/modelOptions";
 import {
   retainAcknowledgedThreadMessage,
   forgetAcknowledgedThreadMessage,
 } from "./acknowledged-thread-messages";
-import { isModelSelectionUnavailable } from "../lib/modelOptions";
 import { appAtomRegistry } from "./atom-registry";
+import { restoredNewTaskDraftKey } from "./new-task-draft-key";
 import { useProjects, useServerConfigs, useThreadShells } from "./entities";
-import { serverEnvironment } from "./server";
 import {
   clearPendingThreadCreationOutcome,
   pendingThreadCreationOutcomesAtom,
   recordPendingThreadCreationOutcome,
-} from "./pending-thread-creation-state";
+} from "./pending-thread-creation";
+import { serverEnvironment } from "./server";
 import {
   confirmThreadOutboxMessageQueued,
   threadOutboxManager,
@@ -63,7 +64,6 @@ import {
   type ComposerDraft,
   getComposerDraftSnapshot,
   mergeComposerDraftContent,
-  newTaskDraftKey,
   replaceComposerDraftAttachments,
   removeDeliveredCloudQueuedMessage,
   undoComposerDraftMerge,
@@ -455,6 +455,8 @@ export async function restoreRejectedQueuedMessage(
     // must never be rolled back.
     rollback = null;
     if (queuedMessage.creation) {
+      // The thread screen for this creation is likely open; it reads the
+      // outcome to offer reopening the restored draft.
       recordPendingThreadCreationOutcome({
         kind: "failed",
         message: queuedMessage,
@@ -490,7 +492,7 @@ export async function restoreRejectedQueuedMessage(
  */
 function recoveryDraftKey(queuedMessage: QueuedThreadMessage): string {
   return queuedMessage.creation
-    ? newTaskDraftKey(`restored-${queuedMessage.messageId}`)
+    ? restoredNewTaskDraftKey(queuedMessage.messageId)
     : scopedThreadKey(queuedMessage.environmentId, queuedMessage.threadId);
 }
 
@@ -969,6 +971,8 @@ export function useThreadOutboxDrain(): void {
       if (failure?.action === "restore") {
         return restoreQueuedMessage(persistedMessage, failure.message);
       }
+      // Recorded before the queue entry goes so the thread screen never sees a
+      // gap between the queued creation and the server's shell.
       recordPendingThreadCreationOutcome({ kind: "delivered", message: persistedMessage });
       const outcome = await completeQueuedMessageDelivery(persistedMessage, deliveryRevision);
       if (outcome === "edited") {
@@ -987,6 +991,12 @@ export function useThreadOutboxDrain(): void {
     [makeDeliveryHelpers, restoreQueuedMessage, startTurn],
   );
 
+  // A creation outcome bridges setup until the server's shell has a turn.
+  // Drop it once that happens so the map cannot grow for a whole session; a
+  // failed outcome stays until its thread screen consumes it.
+  // Subscribed, not read once: the shell often lands before the outcome is
+  // recorded, and a non-reactive read would leave that entry uncollected
+  // because `threads` never changes again.
   useEffect(() => {
     for (const [threadKey, outcome] of Object.entries(creationOutcomes)) {
       if (

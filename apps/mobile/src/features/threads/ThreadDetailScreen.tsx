@@ -117,11 +117,16 @@ export interface ThreadDetailScreenProps {
   readonly selectedThreadFeed: ReadonlyArray<ThreadFeedEntry>;
   readonly turnUsageByTurnId: ReadonlyMap<string, TurnTokenUsage>;
   readonly activeWorkStartedAt: string | null;
+  readonly isCompacting: boolean;
+  /**
+   * The server has not created this thread yet. "preparing" runs while the
+   * queued creation is delivered (a worktree may be checking out); "failed"
+   * is a rejected creation whose content went back to the project draft.
+   */
   readonly creationState:
-    | { readonly kind: "preparing" }
+    | { readonly kind: "preparing"; readonly preparingWorktree: boolean }
     | { readonly kind: "failed"; readonly reason: string; readonly onEditTask: () => void }
     | null;
-  readonly isCompacting: boolean;
   readonly activePendingApproval: PendingApproval | null;
   readonly respondingApprovalId: ApprovalRequestId | null;
   readonly activePendingUserInput: PendingUserInput | null;
@@ -357,6 +362,15 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     if (props.activePendingApproval !== null || props.activePendingUserInput !== null) {
       return null;
     }
+    if (props.creationState?.kind === "preparing") {
+      return {
+        kind: "preparing",
+        label: props.creationState.preparingWorktree ? "Setting up worktree…" : "Starting…",
+      };
+    }
+    if (props.creationState?.kind === "failed") {
+      return null;
+    }
     if (threadSyncLabel !== null) {
       return { kind: "syncing", label: threadSyncLabel };
     }
@@ -369,6 +383,15 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     return null;
   })();
   const showWorkingControl = floatingStatus !== null;
+  // Connection and working status occupy the same space. Keep the feed inset
+  // stable when reconnecting hands off to syncing and then to a running turn.
+  const showFloatingStatus =
+    showWorkingControl ||
+    props.connectionStateLabel !== "connected" ||
+    props.queuedMessages.length > 0 ||
+    props.selectedThreadFeed.some(
+      (entry) => "acknowledged" in entry && entry.acknowledged === true,
+    );
   const selectedThreadFeed = props.selectedThreadFeed;
   const hasCompactableConversation =
     selectedThreadFeed.some(
@@ -508,14 +531,14 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   const userInputInsetProgress = useSharedValue(1);
   const userInputCardCoverage = useSharedValue(0);
   const floatingControlCoverage = useSharedValue(
-    showWorkingControl ? FLOATING_WORKING_CONTROL_COVERAGE : 0,
+    showFloatingStatus ? FLOATING_WORKING_CONTROL_COVERAGE : 0,
   );
   useEffect(() => {
     floatingControlCoverage.value = withTiming(
-      showWorkingControl ? FLOATING_WORKING_CONTROL_COVERAGE : 0,
+      showFloatingStatus ? FLOATING_WORKING_CONTROL_COVERAGE : 0,
       { duration: 180, reduceMotion: ReduceMotion.System },
     );
-  }, [floatingControlCoverage, showWorkingControl]);
+  }, [floatingControlCoverage, showFloatingStatus]);
   // Android renders the expanded card in-flow (it cannot hit-test the iOS
   // overlay outside the bar's bounds), so its measured overlay height already
   // includes the card — the coverage extra is iOS-only.
@@ -575,12 +598,12 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   useEffect(() => {
     const previous = previousWorkingControlStateRef.current;
     const threadChanged = previous.threadKey !== selectedThreadKey;
-    const visibilityChanged = previous.visible !== showWorkingControl;
+    const visibilityChanged = previous.visible !== showFloatingStatus;
     previousWorkingControlStateRef.current = {
       threadKey: selectedThreadKey,
-      visible: showWorkingControl,
+      visible: showFloatingStatus,
     };
-    if ((!threadChanged && !visibilityChanged) || (threadChanged && !showWorkingControl)) {
+    if ((!threadChanged && !visibilityChanged) || (threadChanged && !showFloatingStatus)) {
       return;
     }
     // LegendList applies the larger inset but does not re-anchor short
@@ -588,7 +611,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     // initial load. Re-pin after the finite inset transition; the callback
     // checks follow state again so a user who scrolled up stays put.
     scheduleOverlayRepin(230);
-  }, [scheduleOverlayRepin, selectedThreadKey, showWorkingControl]);
+  }, [scheduleOverlayRepin, selectedThreadKey, showFloatingStatus]);
   const handleToggleUserInputCollapsed = useCallback(() => {
     if (activeUserInputRequestId === null) {
       return;
@@ -868,7 +891,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
             contentInsetEndAdjustment={combinedContentInsetEndAdjustment}
             contentTopInset={0}
             contentBottomInset={
-              estimatedOverlayHeight + (showWorkingControl ? FLOATING_WORKING_CONTROL_COVERAGE : 0)
+              estimatedOverlayHeight + (showFloatingStatus ? FLOATING_WORKING_CONTROL_COVERAGE : 0)
             }
             contentMaxWidth={contentMaxWidth}
             layoutVariant={layoutVariant}
@@ -921,19 +944,6 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                     onDismiss={() => props.onDismissFeedback(submission.id)}
                   />
                 ))}
-                {props.creationState?.kind === "failed" ? (
-                  <Animated.View
-                    className="shrink-0 px-4"
-                    style={{ paddingBottom: composerBottomInset }}
-                    entering={FadeInDown.duration(220)}
-                    exiting={FadeOut.duration(140)}
-                  >
-                    <ThreadCreationFailedCard
-                      reason={props.creationState.reason}
-                      onEditTask={props.creationState.onEditTask}
-                    />
-                  </Animated.View>
-                ) : null}
                 {usageLimitsReport && activeUserInputRequestId === null ? (
                   <Animated.View
                     className="shrink-0 px-4 pb-3"
@@ -944,6 +954,19 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                       report={usageLimitsReport}
                       environmentId={props.environmentId}
                       onClose={dismissUsageLimits}
+                    />
+                  </Animated.View>
+                ) : null}
+                {props.creationState?.kind === "failed" ? (
+                  <Animated.View
+                    className="shrink-0 px-4"
+                    style={{ paddingBottom: composerBottomInset }}
+                    entering={FadeInDown.duration(220)}
+                    exiting={FadeOut.duration(140)}
+                  >
+                    <ThreadCreationFailedCard
+                      reason={props.creationState.reason}
+                      onEditTask={props.creationState.onEditTask}
                     />
                   </Animated.View>
                 ) : null}
@@ -991,7 +1014,9 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
               </View>
 
               {/* Hidden (not unmounted) while a user-input request owns the
-                composer slot, so composer drafts and editor state survive. */}
+                composer slot, so composer drafts and editor state survive.
+                A rejected creation has no thread to send to; the failure card
+                owns the slot instead. */}
               <View
                 style={
                   activeUserInputRequestId !== null || props.creationState?.kind === "failed"

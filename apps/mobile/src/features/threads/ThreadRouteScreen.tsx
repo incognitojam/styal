@@ -27,7 +27,9 @@ import { Alert, Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWorkspaceState } from "../../state/workspace";
 import { useEnvironmentShellState } from "../../state/shell";
-import { clearPendingThreadCreationOutcome } from "../../state/pending-thread-creation-state";
+import { restoredNewTaskDraftKey } from "../../state/new-task-draft-key";
+import { clearPendingThreadCreationOutcome } from "../../state/pending-thread-creation";
+import { recoverFailedThreadDraft } from "../../state/recover-failed-thread-draft";
 import { useEnvironmentQuery } from "../../state/query";
 import { dismissGitActionResult, useGitActionProgress } from "../../state/use-vcs-action-state";
 import { vcsEnvironment } from "../../state/vcs";
@@ -61,7 +63,7 @@ import {
   stagePendingTerminalLaunch,
 } from "../terminal/terminalLaunchContext";
 import { terminalDebugLog } from "../terminal/terminalDebugLog";
-import { ThreadDetailScreen } from "./ThreadDetailScreen";
+import { ThreadDetailScreen, type ThreadDetailScreenProps } from "./ThreadDetailScreen";
 import {
   ThreadGitControls,
   useThreadGitCenterHeaderItems,
@@ -271,23 +273,6 @@ function ThreadRouteContent(
   const threadId = firstRouteParam(params.threadId);
   const routeThreadIdentity =
     environmentIdRaw !== null && threadId !== null ? `${environmentIdRaw}:${threadId}` : null;
-  const handleEditFailedCreation = useCallback(() => {
-    const creation = selectedThreadCreation?.message;
-    if (!creation?.creation || routeThreadIdentity === null) {
-      return;
-    }
-    clearPendingThreadCreationOutcome(routeThreadIdentity);
-    navigation.dispatch(
-      StackActions.replace("NewTaskSheet", {
-        screen: "NewTaskDraft",
-        params: {
-          environmentId: String(creation.environmentId),
-          projectId: String(creation.creation.projectId),
-          title: creation.creation.projectTitle,
-        },
-      }),
-    );
-  }, [navigation, routeThreadIdentity, selectedThreadCreation]);
   const [inspectorSelection, setInspectorSelection] = useState<ThreadInspectorSelection | null>(
     () => (props.renderInspector ? { routeThreadIdentity, mode: "route" } : null),
   );
@@ -815,6 +800,69 @@ function ThreadRouteContent(
     selectedThreadProject?.workspaceRoot,
   ]);
 
+  const handleEditFailedCreation = useCallback(async () => {
+    const creation = selectedThreadCreation?.message;
+    if (!creation?.creation || routeThreadIdentity === null) {
+      return;
+    }
+    // The drain restored the prompt and attachments into the recovery draft
+    // the rejected creation owns. Open that draft by id: without it the sheet
+    // mints a fresh empty one and the restored content is unreachable.
+    try {
+      await recoverFailedThreadDraft(creation);
+    } catch (error) {
+      Alert.alert(
+        "Could not restore draft",
+        error instanceof Error ? error.message : String(error),
+      );
+      return;
+    }
+    clearPendingThreadCreationOutcome(routeThreadIdentity);
+    navigation.dispatch(
+      StackActions.replace("NewTaskSheet", {
+        screen: "NewTaskDraft",
+        params: {
+          draftId: restoredNewTaskDraftKey(creation.messageId),
+          environmentId: String(creation.environmentId),
+          projectId: String(creation.creation.projectId),
+          ...(selectedThreadProject ? { title: selectedThreadProject.title } : {}),
+        },
+      }),
+    );
+  }, [navigation, routeThreadIdentity, selectedThreadCreation, selectedThreadProject]);
+  // A worktree bootstrap records a running setup on the thread before its
+  // turn, so a thread opened from another device (or after a restart) shows
+  // the same preparing state the sending client does. A starting session is
+  // not enough on its own: an ordinary first turn projects one too.
+  const awaitingBootstrapTurn = useMemo(
+    () =>
+      selectedThreadDetail !== null &&
+      selectedThreadDetail.latestTurn === null &&
+      selectedThreadDetail.activities.some(
+        (activity) =>
+          activity.kind === "worktree-setup" &&
+          typeof activity.payload === "object" &&
+          activity.payload !== null &&
+          (activity.payload as { phase?: unknown }).phase === "running",
+      ),
+    [selectedThreadDetail],
+  );
+  const creationState = ((): ThreadDetailScreenProps["creationState"] => {
+    if (selectedThreadCreation === null) {
+      return awaitingBootstrapTurn ? { kind: "preparing", preparingWorktree: true } : null;
+    }
+    if (selectedThreadCreation.outcome?.kind === "failed") {
+      return {
+        kind: "failed",
+        reason: selectedThreadCreation.outcome.reason,
+        onEditTask: handleEditFailedCreation,
+      };
+    }
+    return {
+      kind: "preparing",
+      preparingWorktree: selectedThreadCreation.message.creation?.workspaceMode === "worktree",
+    };
+  })();
   // Deep links / cold starts land with Thread as the ONLY route, where the
   // native back button does not render. Provide an explicit Home escape for
   // that case; when history exists the native back button is used instead.
@@ -840,40 +888,19 @@ function ThreadRouteContent(
     return <OpeningThreadLoadingScreen />;
   }
 
-  const contentPresentation = projectThreadContentPresentation({
-    hasDetail: selectedThreadDetail !== null,
-    detailError: Option.getOrNull(selectedThreadDetailState.error),
-    detailDeleted: selectedThreadDetailState.status === "deleted",
-    connectionState: routeConnectionState,
-  });
+  // A queued creation renders as ready content: its prompt is the whole
+  // conversation until the server creates the thread. The subscription's
+  // not-found error for that window is expected, not a load failure.
+  const contentPresentation =
+    creationState !== null
+      ? { kind: "ready" as const }
+      : projectThreadContentPresentation({
+          hasDetail: selectedThreadDetail !== null,
+          detailError: Option.getOrNull(selectedThreadDetailState.error),
+          detailDeleted: selectedThreadDetailState.status === "deleted",
+          connectionState: routeConnectionState,
+        });
   const serverConfig = routeEnvironmentRuntime?.serverConfig ?? null;
-  // A worktree bootstrap records a running setup on the thread before its
-  // turn, so a thread opened from another device (or after a restart) shows
-  // the same preparing state the sending client does. A starting session is
-  // not enough on its own: an ordinary first turn projects one too.
-  const awaitingBootstrapTurn = useMemo(
-    () =>
-      selectedThreadDetail !== null &&
-      selectedThreadDetail.latestTurn === null &&
-      selectedThreadDetail.activities.some(
-        (activity) =>
-          activity.kind === "worktree-setup" &&
-          typeof activity.payload === "object" &&
-          activity.payload !== null &&
-          (activity.payload as { phase?: unknown }).phase === "running",
-      ),
-    [selectedThreadDetail],
-  );
-  const creationState =
-    selectedThreadCreation?.outcome?.kind === "failed"
-      ? {
-          kind: "failed" as const,
-          reason: selectedThreadCreation.outcome.reason,
-          onEditTask: handleEditFailedCreation,
-        }
-      : selectedThreadCreation !== null || awaitingBootstrapTurn
-        ? { kind: "preparing" as const }
-        : null;
   const renderThreadRouteBody = (showActionControls: boolean) => (
     <>
       <ThreadGitControls {...threadGitControlProps} showActionControls={showActionControls} />
@@ -902,13 +929,9 @@ function ThreadRouteContent(
           onDismissFeedback={composer.dismissFeedback}
           selectedThreadFeed={composer.selectedThreadFeed}
           turnUsageByTurnId={composer.selectedTurnUsage.byTurnId}
-          activeWorkStartedAt={
-            creationState?.kind === "preparing"
-              ? (selectedThreadCreation?.message.createdAt ?? composer.activeWorkStartedAt)
-              : composer.activeWorkStartedAt
-          }
-          creationState={creationState}
+          activeWorkStartedAt={composer.activeWorkStartedAt}
           isCompacting={composer.isCompacting}
+          creationState={creationState}
           activePendingApproval={requests.activePendingApproval}
           respondingApprovalId={requests.respondingApprovalId}
           activePendingUserInput={requests.activePendingUserInput}
