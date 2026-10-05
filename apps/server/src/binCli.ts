@@ -57,6 +57,12 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
   Command.make("styal").pipe(
     Command.withDescription("Run and manage styal."),
     Command.withSubcommands([
+      Command.make("help").pipe(
+        Command.withDescription("Show command help."),
+        Command.withHandler(() =>
+          Effect.fail(new CliError.ShowHelp({ commandPath: ["styal"], errors: [] })),
+        ),
+      ),
       acpMcpBridgeCommand,
       acpMcpCallCommand,
       startCommand,

@@ -10,6 +10,7 @@ const runServerCommand = (
   options?: {
     readonly startupPresentation?: ServerConfig.StartupPresentation;
     readonly forceAutoBootstrapProjectFromCwd?: boolean;
+    readonly rejectRunningServer?: boolean;
   },
 ) =>
   Effect.gen(function* () {
@@ -20,7 +21,7 @@ const runServerCommand = (
 
 export const startCommand = Command.make("start", { ...sharedServerCommandFlags }).pipe(
   Command.withDescription("Run the styal server."),
-  Command.withHandler((flags) => runServerCommand(flags)),
+  Command.withHandler((flags) => runServerCommand(flags, { rejectRunningServer: true })),
 );
 
 export const serveCommand = Command.make("serve", { ...sharedServerCommandFlags }).pipe(
