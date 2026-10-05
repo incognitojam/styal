@@ -569,6 +569,8 @@ export interface PullRequestProviderApi {
       readonly action: PullRequestAction;
       readonly stackNumber?: number;
       readonly expectedStackHeads?: ReadonlyArray<PullRequestStackHead>;
+      /** GitHub merge message cleanup; ignored by hosts without support. */
+      readonly removeAgentCreditsOnMerge?: boolean;
       /** Meaningful for `merge` and `enable-auto-merge`; absent takes the host's own default. */
       readonly mergeMethod?: PullRequestMergeMethod;
       /** Meaningful for `merge` and `enable-auto-merge`; absent merges whatever the head is. */

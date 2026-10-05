@@ -1,3 +1,4 @@
+import { removeAgentCredits } from "./mergeMessage.ts";
 import { makeChecksRevalidator } from "./gitHubConditionalChecks.ts";
 import { runGitHubStackAction, type GitHubStackActionError } from "./githubStackActions.ts";
 import * as Cause from "effect/Cause";
@@ -823,6 +824,7 @@ export class GitHubPullRequestCli extends Context.Service<
       readonly action: PullRequestAction;
       readonly stackNumber?: number;
       readonly expectedStackHeads?: ReadonlyArray<PullRequestStackHead>;
+      readonly removeAgentCreditsOnMerge?: boolean;
       readonly mergeMethod?: PullRequestMergeMethod;
       readonly expectedHeadSha?: string;
       readonly updateMethod?: PullRequestUpdateMethod;
@@ -1141,6 +1143,35 @@ function searchQuery(input: {
 function cursorVariable(cursor: string | null): readonly [string, string] {
   return cursor === null ? ["-F", "cursor=null"] : ["-f", `cursor=${cursor}`];
 }
+
+const MERGE_MESSAGE_GRAPHQL_QUERY = `
+query PullRequestMergeMessage($owner: String!, $name: String!, $number: Int!, $method: PullRequestMergeMethod!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      isMergeQueueEnabled
+      headRefOid
+      viewerMergeBodyText(mergeType: $method)
+    }
+  }
+}`;
+
+const decodeMergeMessageResponse = Schema.decodeUnknownResult(
+  Schema.fromJsonString(
+    Schema.Struct({
+      data: Schema.Struct({
+        repository: Schema.Struct({
+          pullRequest: Schema.Struct({
+            isMergeQueueEnabled: Schema.Boolean,
+            headRefOid: Schema.String,
+            viewerMergeBodyText: Schema.String,
+          }),
+        }),
+      }),
+    }),
+  ),
+);
+const decodeMergeMessage = (raw: string) =>
+  Result.map(decodeMergeMessageResponse(raw), (response) => response.data.repository.pullRequest);
 
 function actionArgs(
   action: PullRequestAction,
@@ -2947,34 +2978,80 @@ export const make = Effect.gen(function* () {
         input.action === "merge" || input.action === "enable-auto-merge"
           ? input.expectedHeadSha
           : undefined;
-      return github
-        .execute({
-          cwd: input.cwd,
-          args: ["pr", subcommand!, String(input.number), ...repositoryArgs(input), ...flags],
-        })
-        .pipe(
-          Effect.asVoid,
-          // `gh` reports a moved head only in its stderr wording, so a refused pinned merge reads
-          // the head again to say why, and otherwise keeps the original failure.
-          Effect.catchTag("GitHubCliCommandError", (error) =>
-            expectedHeadSha === undefined
-              ? Effect.fail(error)
-              : getPullRequestDetail(input).pipe(
-                  Effect.orElseSucceed(() => null),
-                  Effect.flatMap((current) =>
-                    Effect.fail<GitHubCli.GitHubCliError | GitHubMergeHeadChangedError>(
-                      current?.headSha !== undefined && current.headSha !== expectedHeadSha
-                        ? new GitHubMergeHeadChangedError({
-                            command: "gh",
-                            cwd: input.cwd,
-                            number: input.number,
-                          })
-                        : error,
+      return Effect.gen(function* () {
+        let body: string | undefined;
+        let expectedHead: string | undefined;
+        if (
+          input.removeAgentCreditsOnMerge === true &&
+          (input.action === "merge" || input.action === "enable-auto-merge") &&
+          input.mergeMethod !== "rebase"
+        ) {
+          const { owner, name } = parseRepositorySelector(input.repository);
+          const message = yield* graphqlRead({
+            cwd: input.cwd,
+            host: input.host,
+            operation: "runPullRequestAction",
+            allowReserve: true,
+            query: MERGE_MESSAGE_GRAPHQL_QUERY,
+            variables: [
+              ["-f", `owner=${owner}`],
+              ["-f", `name=${name}`],
+              ["-F", `number=${input.number}`],
+              ["-f", `method=${input.mergeMethod === "squash" ? "SQUASH" : "MERGE"}`],
+            ],
+            decode: decodeMergeMessage,
+          });
+          // GitHub's merge queue chooses its own message and ignores custom text.
+          if (!message.isMergeQueueEnabled) {
+            const cleaned = removeAgentCredits(message.viewerMergeBodyText);
+            if (cleaned !== message.viewerMergeBodyText) {
+              body = cleaned;
+              expectedHead = message.headRefOid;
+            }
+          }
+        }
+        // A caller's expected head already pins the merge through `actionArgs`; the cleaned
+        // message pins its own head only when the caller gave none.
+        const pinnedHead = expectedHeadSha ?? expectedHead;
+        yield* github
+          .execute({
+            cwd: input.cwd,
+            args: [
+              "pr",
+              subcommand!,
+              String(input.number),
+              ...repositoryArgs(input),
+              ...flags,
+              ...(expectedHeadSha !== undefined || expectedHead === undefined
+                ? []
+                : ["--match-head-commit", expectedHead]),
+              ...(body === undefined ? [] : ["--body-file", "-"]),
+            ],
+            ...(body === undefined ? {} : { stdin: body }),
+          })
+          .pipe(
+            // `gh` reports a moved head only in its stderr wording, so a refused pinned merge
+            // reads the head again to say why, and otherwise keeps the original failure.
+            Effect.catchTag("GitHubCliCommandError", (error) =>
+              pinnedHead === undefined
+                ? Effect.fail(error)
+                : getPullRequestDetail(input).pipe(
+                    Effect.orElseSucceed(() => null),
+                    Effect.flatMap((current) =>
+                      Effect.fail<GitHubCli.GitHubCliError | GitHubMergeHeadChangedError>(
+                        current?.headSha !== undefined && current.headSha !== pinnedHead
+                          ? new GitHubMergeHeadChangedError({
+                              command: "gh",
+                              cwd: input.cwd,
+                              number: input.number,
+                            })
+                          : error,
+                      ),
                     ),
                   ),
-                ),
-          ),
-        );
+            ),
+          );
+      });
     },
 
     commentOnPullRequest: (input) =>
