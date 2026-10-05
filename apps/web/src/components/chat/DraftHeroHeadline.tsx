@@ -3,7 +3,7 @@ import { composerDraftHasUserContent, useComposerDraftStore } from "~/composerDr
 import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
-import { FolderPlusIcon } from "lucide-react";
+import { FolderPlusIcon, PinIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -151,14 +151,18 @@ export function DraftHeroHeadline({
   const activeProjectKey = activeProjectGroup?.projectKey ?? "";
   const activeProjectDisplayName = activeProjectGroup?.displayName ?? activeProjectTitle;
   const hasResolvedProject = activeProjectTitle !== null;
-  const canChooseProject = projectPickerEntries.length > 0;
+  // Archived projects are not choices, so a catalog of only archived projects
+  // shows the add-project prompt instead of an empty picker.
+  const choosableEntries = projectPickerEntries.filter(({ group }) => group.archivedAt == null);
+  const canChooseProject = choosableEntries.length > 0;
   const shouldShowProjectMenu = canChooseProject;
   // The project that hosts threads without a project is not a row: the line
-  // under the headline is the way into it.
+  // under the headline is the way into it. Archived projects are not choices.
   const menuEntries = useMemo(
     () =>
       projectPickerEntries.filter(
-        ({ targetProject }) =>
+        ({ group, targetProject }) =>
+          group.archivedAt == null &&
           !isScratchProject(targetProject, scratchWorkspaceRootFor(targetProject.environmentId)),
       ),
     [projectPickerEntries, scratchWorkspaceRootFor],
@@ -346,6 +350,9 @@ export function DraftHeroHeadline({
                     primaryEnvironmentId={primaryEnvironmentId}
                     machineByEnvironmentId={environmentMachineById}
                   />
+                ) : null}
+                {entry?.group.pinnedAt != null ? (
+                  <PinIcon aria-label="Pinned" className="size-3 shrink-0 text-muted-foreground" />
                 ) : null}
               </ComboboxItem>
             );

@@ -175,6 +175,9 @@ export const make = Effect.gen(function* () {
     autoPull: row.autoPull,
     projectIcon: row.projectIcon,
     scripts: row.scripts,
+    pinnedAt: row.pinnedAt,
+    pinOrderKey: row.pinOrderKey,
+    archivedAt: row.archivedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     deletedAt: row.deletedAt,
@@ -390,6 +393,9 @@ export const make = Effect.gen(function* () {
           ? {}
           : { defaultThreadEnvMode: input.defaultThreadEnvMode }),
         ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
+        ...(input.pinned === undefined ? {} : { pinned: input.pinned }),
+        ...(input.pinOrderKey === undefined ? {} : { pinOrderKey: input.pinOrderKey }),
+        ...(input.archived === undefined ? {} : { archived: input.archived }),
       });
       if (workspaceRoot !== previousRoot) {
         yield* projectEnrichment.invalidate([previousRoot, workspaceRoot]);

@@ -59,6 +59,7 @@ upstreamLayer("ForkMigrations canonical upstream upgrade", (it) => {
         { migration_id: 8, name: "HistoryRewriteFence" },
         { migration_id: 9, name: "RederiveLegacyActivityItems" },
         { migration_id: 10, name: "HardwareLeases" },
+        { migration_id: 11, name: "ProjectionProjectsOrganization" },
       ]);
     }),
   );
@@ -95,6 +96,7 @@ it("keeps fork migrations out of the upstream manifest", () => {
     [8, "HistoryRewriteFence"],
     [9, "RederiveLegacyActivityItems"],
     [10, "HardwareLeases"],
+    [11, "ProjectionProjectsOrganization"],
   ]);
 });
 

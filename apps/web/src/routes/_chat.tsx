@@ -79,7 +79,7 @@ function ChatRouteGlobalShortcuts() {
         settings: projectGroupingSettings,
         primaryEnvironmentId,
         resolveEnvironmentLabel: () => null,
-      }),
+      }).filter((group) => group.archivedAt == null),
     [primaryEnvironmentId, projectGroupingSettings, projects],
   );
   // These commands start a thread beside your current work, so the thread you

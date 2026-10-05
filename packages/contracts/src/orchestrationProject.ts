@@ -23,6 +23,12 @@ export const OrchestrationProjectShell = Schema.Struct({
   additionalInstructions: Schema.optional(Schema.NullOr(ProjectAdditionalInstructions)),
   projectIcon: Schema.optional(Schema.NullOr(ReceivedProjectIcon)),
   scripts: Schema.Array(ProjectScript),
+  // Pinned projects lead every project picker, ordered by pinOrderKey (a
+  // fractional index, like a thread's). Optional so older servers decode.
+  pinnedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
+  pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  // Archived projects leave the pickers and their threads leave thread lists.
+  archivedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });

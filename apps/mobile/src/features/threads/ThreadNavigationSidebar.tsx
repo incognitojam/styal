@@ -44,7 +44,11 @@ import { useHardwareKeyboardCommand } from "../keyboard/hardwareKeyboardCommands
 import { useThreadJumpShortcuts } from "../keyboard/threadKeyboardShortcuts";
 import { useHomeListOptions } from "../home/home-list-options";
 import { buildHomeListFilterMenu } from "../home/home-list-filter-menu";
-import { buildHomeProjectScopes } from "../home/homeThreadList";
+import {
+  archivedProjectRefKeys,
+  buildHomeProjectScopes,
+  homeProjectFilterOptions,
+} from "../home/homeThreadList";
 import { SwipeableScrollGateProvider, useSwipeableScrollGate } from "../home/thread-swipe-actions";
 import { usePendingTaskListActions } from "../home/usePendingTaskListActions";
 import { useThreadListActions } from "../home/useThreadListActions";
@@ -235,13 +239,11 @@ function ThreadNavigationSidebarPane(
     [options.projectGroupingMode, options.selectedEnvironmentId, projects],
   );
   const projectFilterOptions = useMemo(
-    () =>
-      projectScopes.map((scope) => ({
-        key: scope.key,
-        label: scope.title,
-      })),
+    () => homeProjectFilterOptions(projectScopes),
     [projectScopes],
   );
+  // Threads of archived projects leave the list until the project is unarchived.
+  const archivedProjectKeys = useMemo(() => archivedProjectRefKeys(projectScopes), [projectScopes]);
   const projectTitleByProjectKey = useMemo(
     () =>
       new Map(
@@ -379,7 +381,11 @@ function ThreadNavigationSidebarPane(
     threadListInboxReturns.observe(workingShelfEnabled ? threads : null);
     return buildThreadListV2Items({
       pendingOrder,
-      threads: threads.filter((thread) => thread.archivedAt === null),
+      threads: threads.filter(
+        (thread) =>
+          thread.archivedAt === null &&
+          !archivedProjectKeys.has(scopedProjectKey(thread.environmentId, thread.projectId)),
+      ),
       environmentId: options.selectedEnvironmentId,
       projectRefs: selectedProjectScope === null ? null : selectedProjectScope.projectRefs,
       searchQuery: props.searchQuery,
@@ -414,6 +420,7 @@ function ThreadNavigationSidebarPane(
     snoozeEnvironmentIds,
     threads,
     selectedProjectScope,
+    archivedProjectKeys,
   ]);
   // Re-partition the moment the earliest snooze expires (clamped to the
   // signed-32-bit setTimeout range; far-future wakes re-arm at the clamp).
@@ -444,6 +451,9 @@ function ThreadNavigationSidebarPane(
           selectedProjectRefs.has(
             scopedProjectKey(pendingTask.environmentId, pendingTask.projectId),
           )) &&
+        !archivedProjectKeys.has(
+          scopedProjectKey(pendingTask.environmentId, pendingTask.projectId),
+        ) &&
         (v2SearchQuery.length === 0 ||
           pendingTask.title.toLocaleLowerCase().includes(v2SearchQuery)),
     );
@@ -476,6 +486,7 @@ function ThreadNavigationSidebarPane(
     }
     return items;
   }, [
+    archivedProjectKeys,
     nowMinute,
     options.selectedEnvironmentId,
     pendingTasks,

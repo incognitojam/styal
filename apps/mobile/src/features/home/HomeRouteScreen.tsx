@@ -27,7 +27,7 @@ import { HomeHeader } from "./HomeHeader";
 import { useHomeListOptions } from "./home-list-options";
 import { useAtomValueWhileVisible, useHomeRouteVisible } from "./home-route-visibility";
 import { useHomeThreadSelection } from "./home-thread-navigation";
-import { buildHomeProjectScopes } from "./homeThreadList";
+import { buildHomeProjectScopes, homeProjectFilterOptions } from "./homeThreadList";
 import { usePendingTaskListActions } from "./usePendingTaskListActions";
 import { useThreadListActions } from "./useThreadListActions";
 import { getConnectionAwareBrandHeaderOptions } from "./WorkspaceConnectionTitle";
@@ -140,14 +140,13 @@ export function HomeRouteScreen() {
   }, [projectScopeKey, resolvedProjectKey, setSelectedProjectKey]);
   const projectFilterOptions = useMemo(
     () =>
-      buildHomeProjectScopes({
-        projects,
-        environmentId: selectedEnvironmentId,
-        projectGroupingMode: listOptions.projectGroupingMode,
-      }).map((scope) => ({
-        key: scope.key,
-        label: scope.title,
-      })),
+      homeProjectFilterOptions(
+        buildHomeProjectScopes({
+          projects,
+          environmentId: selectedEnvironmentId,
+          projectGroupingMode: listOptions.projectGroupingMode,
+        }),
+      ),
     [listOptions.projectGroupingMode, projects, selectedEnvironmentId],
   );
   // A saved project stays selected while its environment is offline or filtered out.

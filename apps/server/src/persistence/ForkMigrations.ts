@@ -12,6 +12,7 @@ import ForkMigration0007 from "./ForkMigrations/007_DropUndisplayedLegacyActivit
 import ForkMigration0008 from "./ForkMigrations/008_HistoryRewriteFence.ts";
 import ForkMigration0009 from "./ForkMigrations/009_RederiveLegacyActivityItems.ts";
 import ForkMigration0010 from "./ForkMigrations/010_HardwareLeases.ts";
+import ForkMigration0011 from "./ForkMigrations/011_ProjectionProjectsOrganization.ts";
 import { runMigrations } from "./Migrations.ts";
 
 const FORK_MIGRATIONS_TABLE = "yngatech_sql_migrations";
@@ -30,6 +31,7 @@ export const forkMigrationEntries = [
   [8, "HistoryRewriteFence", ForkMigration0008],
   [9, "RederiveLegacyActivityItems", ForkMigration0009],
   [10, "HardwareLeases", ForkMigration0010],
+  [11, "ProjectionProjectsOrganization", ForkMigration0011],
 ] as const;
 
 export const forkMigrationManifest = forkMigrationEntries.map(([id, name]) => [id, name] as const);

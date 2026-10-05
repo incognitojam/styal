@@ -76,6 +76,9 @@ import {
   FolderGit2Icon,
   FolderIcon,
   FolderPlusIcon,
+  FoldersIcon,
+  PinIcon,
+  PinOffIcon,
   MessageSquareDashedIcon,
   LinkIcon,
   MessageSquareIcon,
@@ -108,6 +111,7 @@ import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useProjectGroupActions } from "../hooks/useProjectGroupActions";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
 import { useClientSettings, useLegacySidebarEnabled } from "../hooks/useSettings";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
@@ -1022,7 +1026,9 @@ function OpenCommandPaletteDialog(props: {
       projects,
     ],
   );
-  const projectGroups = useMemo(
+  // Archived projects still resolve the current thread's project for its
+  // actions; only the pick lists leave them out.
+  const allProjectGroups = useMemo(
     () =>
       sortLogicalProjectsForSidebar(
         unsortedProjectGroups,
@@ -1031,9 +1037,14 @@ function OpenCommandPaletteDialog(props: {
       ),
     [clientSettings.sidebarProjectSortOrder, threads, unsortedProjectGroups],
   );
+  const projectGroups = useMemo(
+    () => allProjectGroups.filter((group) => group.archivedAt == null),
+    [allProjectGroups],
+  );
   // The sidebar's project filter feeds this, so the palette's "New thread in
   // X" action names — and creates in — the project the sidebar is showing.
   const scopedProjectGroup = useScopedProjectGroup(projectGroups);
+  const { canOrganize: canOrganizeProject, setPinned: setProjectPinned } = useProjectGroupActions();
   const contextualProjectRef = useMemo(
     () =>
       resolveThreadActionProjectRef({
@@ -1048,17 +1059,16 @@ function OpenCommandPaletteDialog(props: {
   const projectPickerEntries = useMemo(
     () =>
       buildSidebarProjectPickerEntries({
-        groups: projectGroups,
+        groups: allProjectGroups,
         preferredProjectRef: contextualProjectRef,
       }),
-    [contextualProjectRef, projectGroups],
+    [allProjectGroups, contextualProjectRef],
   );
   const pickerProjects = useMemo(
     () =>
-      projectPickerEntries.map(({ group, targetProject }) => ({
-        ...targetProject,
-        displayName: group.displayName,
-      })),
+      projectPickerEntries.flatMap(({ group, targetProject }) =>
+        group.archivedAt == null ? [{ ...targetProject, displayName: group.displayName }] : [],
+      ),
     [projectPickerEntries],
   );
   const projectGroupByTargetKey = useMemo(
@@ -1533,10 +1543,28 @@ function OpenCommandPaletteDialog(props: {
     startScratchThread,
   ]);
 
+  // Threads of archived projects stay out of recent threads and search, as in
+  // the sidebar.
+  const listedThreads = useMemo(() => {
+    const archivedProjectKeys = new Set(
+      allProjectGroups.flatMap((group) =>
+        group.archivedAt == null
+          ? []
+          : group.memberProjectRefs.map(
+              (projectRef) => `${projectRef.environmentId}:${projectRef.projectId}`,
+            ),
+      ),
+    );
+    return archivedProjectKeys.size === 0
+      ? threads
+      : threads.filter(
+          (thread) => !archivedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`),
+        );
+  }, [allProjectGroups, threads]);
   const allThreadItems = useMemo(
     () =>
       buildThreadActionItems({
-        threads,
+        threads: listedThreads,
         ...(activeThreadId ? { activeThreadId } : {}),
         projectTitleById,
         sortOrder: clientSettings.sidebarThreadSortOrder,
@@ -1614,7 +1642,7 @@ function OpenCommandPaletteDialog(props: {
       threadContentMatchByKey,
       threadSearch.query,
       threadSearchQuery,
-      threads,
+      listedThreads,
     ],
   );
   const recentThreadItems = allThreadItems.slice(0, RECENT_THREAD_LIMIT);
@@ -2141,7 +2169,7 @@ function OpenCommandPaletteDialog(props: {
     setNewProjectFlow(null);
     setViewStack([]);
     setQuery("");
-    // projectThreadItems already lists the current project first.
+    // projectThreadItems already lead with pins, then the current project.
     pushPaletteView({
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
       groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
@@ -2657,15 +2685,53 @@ function OpenCommandPaletteDialog(props: {
     },
   });
 
+  actionItems.push({
+    kind: "action",
+    value: "action:projects",
+    searchTerms: ["projects", "pin", "archive", "unarchive", "manage"],
+    title: "Projects",
+    description: "Pin, archive and manage projects",
+    icon: <FoldersIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      // Clear any picked settings target so the list shows, not one project.
+      await navigate({
+        to: "/settings/projects",
+        search: () => ({ project: undefined, machine: undefined, checkout: undefined }),
+      });
+    },
+  });
+
+  // The active thread or draft's project, when it has one.
+  const activeProjectGroup = contextualProjectRef
+    ? (projectGroupByTargetKey.get(
+        `${contextualProjectRef.environmentId}:${contextualProjectRef.projectId}`,
+      ) ?? null)
+    : null;
+  if (
+    activeProjectGroup &&
+    activeProjectGroup.archivedAt == null &&
+    canOrganizeProject(activeProjectGroup)
+  ) {
+    const pinned = activeProjectGroup.pinnedAt != null;
+    actionItems.push({
+      kind: "action",
+      value: "action:project-pin",
+      searchTerms: ["project", pinned ? "unpin" : "pin", "favorite"],
+      title: pinned ? "Unpin project" : "Pin project",
+      description: activeProjectGroup.displayName,
+      icon: pinned ? (
+        <PinOffIcon className={ITEM_ICON_CLASS} />
+      ) : (
+        <PinIcon className={ITEM_ICON_CLASS} />
+      ),
+      run: async () => {
+        await setProjectPinned(activeProjectGroup, !pinned, allProjectGroups);
+      },
+    });
+  }
+
   // Target the active thread or draft's project, falling back to the first sidebar group.
-  const contextualProjectGroup =
-    (contextualProjectRef
-      ? projectGroupByTargetKey.get(
-          `${contextualProjectRef.environmentId}:${contextualProjectRef.projectId}`,
-        )
-      : null) ??
-    projectGroups[0] ??
-    null;
+  const contextualProjectGroup = activeProjectGroup ?? projectGroups[0] ?? null;
   if (contextualProjectGroup) {
     actionItems.push({
       kind: "action",
