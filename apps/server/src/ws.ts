@@ -130,6 +130,7 @@ import * as ThreadLaunchService from "./orchestration-v2/ThreadLaunchService.ts"
 import * as ThreadMessageIntake from "./orchestration-v2/ThreadMessageIntake.ts";
 import * as IdAllocator from "./orchestration-v2/IdAllocator.ts";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
+import * as SecretRequests from "./secrets/SecretRequests.ts";
 import {
   archivedShellStreamItemFromThreadShell,
   buildActiveShellSnapshot,
@@ -1251,6 +1252,7 @@ const makeWsRpcLayer = (
       const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
       const providerSessionManager = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
+      const secretRequests = yield* SecretRequests.SecretRequests;
       const pullRequests = yield* PullRequestService.PullRequestService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
       const deviceService = yield* ClientFeatureUsage.devices(clientAnalyticsProps);
@@ -2197,6 +2199,11 @@ const makeWsRpcLayer = (
             scheduledTasks.rotateWebhookToken(input),
             { "rpc.aggregate": "scheduledTasks", "scheduled_task.id": input.id },
           ),
+        [WS_METHODS.secretsAnswerRequest]: (input) =>
+          observeRpcEffect(WS_METHODS.secretsAnswerRequest, secretRequests.answer(input), {
+            "rpc.aggregate": "secrets",
+            "orchestration_v2.thread_id": input.threadId,
+          }),
         [WS_METHODS.scheduledTasksListWebhookDeliveries]: (input) =>
           observeRpcEffect(
             WS_METHODS.scheduledTasksListWebhookDeliveries,

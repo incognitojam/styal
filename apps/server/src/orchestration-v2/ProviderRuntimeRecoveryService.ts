@@ -192,6 +192,17 @@ function resolveStaleBackgroundItemProviderInstanceId(
   return projection.providerThreads[0]?.providerInstanceId ?? projection.thread.providerInstanceId;
 }
 
+/** An open item closed by recovery. A secret card also closes its form, so it takes no answer. */
+const cancelledItem = (
+  item: OrchestrationV2ThreadProjection["turnItems"][number],
+  now: DateTime.Utc,
+): OrchestrationV2ThreadProjection["turnItems"][number] => {
+  const timestamps = cancelledItemTimestamps(item, now);
+  return item.type === "secret_request" && item.secretStatus === "pending"
+    ? { ...item, status: "cancelled", secretStatus: "cancelled", ...timestamps }
+    : { ...item, status: "cancelled", ...timestamps };
+};
+
 /**
  * Provider threads with background work reconciliation would cancel and
  * record for their next turn.
@@ -497,7 +508,7 @@ export const make = Effect.gen(function* () {
             ...(item.nodeId === null ? {} : { nodeId: item.nodeId }),
             providerInstanceId: run.providerInstanceId,
             occurredAt: now,
-            payload: { ...item, status: "cancelled", ...cancelledItemTimestamps(item, now) },
+            payload: cancelledItem(item, now),
           });
         }
       }
@@ -527,7 +538,7 @@ export const make = Effect.gen(function* () {
           ...(item.nodeId === null || item.nodeId === undefined ? {} : { nodeId: item.nodeId }),
           providerInstanceId,
           occurredAt: now,
-          payload: { ...item, status: "cancelled", ...cancelledItemTimestamps(item, now) },
+          payload: cancelledItem(item, now),
         });
         if (item.nodeId !== null && item.nodeId !== undefined) {
           const staleItemNode = projection.nodes.find(
