@@ -83,7 +83,10 @@ import {
   TerminalOpenInput,
   type WorktreeSetupSnapshot,
 } from "@t3tools/contracts";
-import { type EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
+import {
+  connectionRoutes,
+  type EnvironmentConnectionPresentation,
+} from "@t3tools/client-runtime/connection";
 import { deriveThreadTitleSeed } from "@t3tools/client-runtime/operations";
 import {
   isOrchestrationDispatchCommandError,
@@ -2629,12 +2632,17 @@ export default function ChatView(props: ChatViewProps) {
       return null;
     }
 
+    // Only a machine reached solely through styal Link waits on the sign-in. One
+    // with a paired direct route keeps its own connection error and Reconnect.
+    const requiresCloudSession = connectionRoutes(activeEnvironment.entry).every(
+      (route) => route.target._tag === "RelayConnectionTarget",
+    );
     return {
       environmentId: activeEnvironment.environmentId,
       label: activeEnvironmentUnavailableLabel,
       connection: activeEnvironment.connection,
       missingCloudSession:
-        !activeEnvironment.relayManaged || managedRelaySession !== null
+        !requiresCloudSession || managedRelaySession !== null
           ? null
           : managedRelayAuthLoad === "loaded"
             ? "signed-out"

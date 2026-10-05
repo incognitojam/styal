@@ -48,6 +48,8 @@ function discoveredCompatibilityError(
 export interface SavedCloudEnvironmentConnection {
   readonly environmentId: EnvironmentId;
   readonly connection: EnvironmentConnectionPresentation;
+  /** False for a machine saved over another route (LAN, Tailscale, SSH) only. */
+  readonly relayManaged: boolean;
   /** Present once connected; carries the user's icon override. */
   readonly serverConfig?: ServerConfig | null;
 }
@@ -120,7 +122,15 @@ export function CloudEnvironmentConnectRows({
     ReadonlySet<EnvironmentId>
   >(new Set());
   const savedById = new Map(
-    savedEnvironments.map((environment) => [environment.environmentId, environment]),
+    savedEnvironments
+      .filter((environment) => environment.relayManaged)
+      .map((environment) => [environment.environmentId, environment]),
+  );
+  // Saved over another route only: T3 Connect would be an added fallback.
+  const savedWithoutRelay = new Set(
+    savedEnvironments
+      .filter((environment) => !environment.relayManaged)
+      .map((environment) => environment.environmentId),
   );
 
   useEffect(() => {
@@ -152,8 +162,12 @@ export function CloudEnvironmentConnectRows({
     if (result._tag === "Success") {
       toastManager.add({
         type: "success",
-        title: "Environment added",
-        description: `Connecting to ${environment.label} through styal Link.`,
+        title: savedWithoutRelay.has(environment.environmentId)
+          ? "styal Link route added"
+          : "Environment added",
+        description: savedWithoutRelay.has(environment.environmentId)
+          ? `${environment.label} falls back to styal Link when its other routes are unreachable.`
+          : `Connecting to ${environment.label} through styal Link.`,
       });
       return true;
     }
@@ -181,10 +195,14 @@ export function CloudEnvironmentConnectRows({
     return false;
   };
 
+  // During onboarding selection a machine saved over another route already
+  // has its own row elsewhere, and selecting it must not add a T3 Connect
+  // route as a side effect, so it is left out here.
   const visibleEnvironments = [...environmentsState.environments.values()].filter(
     ({ environment }) =>
       environment.environmentId !== primaryEnvironmentId &&
-      (showSavedEnvironments || !savedById.has(environment.environmentId)),
+      (showSavedEnvironments || !savedById.has(environment.environmentId)) &&
+      !(selection && savedWithoutRelay.has(environment.environmentId)),
   );
   const deselectUnsupportedComputers = useEffectEvent(() => {
     if (!selection) return;
@@ -325,19 +343,22 @@ export function CloudEnvironmentConnectRows({
           : availability === "checking"
             ? "bg-warning"
             : "bg-muted-foreground/35";
+    const notAdded = savedWithoutRelay.has(environment.environmentId)
+      ? "Saved without styal Link"
+      : "Not added";
     const statusText =
       unsupported && !savedEnvironment
-        ? "styal Link · Not added · Client not supported"
+        ? `styal Link · ${notAdded} · Client not supported`
         : savedConnection
           ? savedConnection.statusText
           : availability === "online"
-            ? "styal Link · Not added · Relay online"
+            ? `styal Link · ${notAdded} · Relay online`
             : availability === "offline"
-              ? "styal Link · Not added · Relay offline"
+              ? `styal Link · ${notAdded} · Relay offline`
               : availability === "checking"
-                ? "styal Link · Not added · Checking relay status…"
+                ? `styal Link · ${notAdded} · Checking relay status…`
                 : (Option.getOrNull(error)?.message ??
-                  "styal Link · Not added · Relay status unavailable");
+                  `styal Link · ${notAdded} · Relay status unavailable`);
     if (selection) {
       return (
         <label
@@ -452,7 +473,11 @@ export function CloudEnvironmentConnectRows({
               disabled={connectingEnvironmentIds.size > 0}
               onClick={() => void connectEnvironment(environment)}
             >
-              {connectingEnvironmentIds.has(environment.environmentId) ? "Adding…" : "Add"}
+              {connectingEnvironmentIds.has(environment.environmentId)
+                ? "Adding…"
+                : savedWithoutRelay.has(environment.environmentId)
+                  ? "Add route"
+                  : "Add"}
             </Button>
           )}
         </div>
