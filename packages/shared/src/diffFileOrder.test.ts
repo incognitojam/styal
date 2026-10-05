@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { diffFileTier, orderDiffFiles } from "./diffFileOrder.ts";
+import { diffFileTier, orderDiffFiles, orderUnloadedDiffFiles } from "./diffFileOrder.ts";
 
 interface Entry {
   readonly path: string;
@@ -218,5 +218,27 @@ describe("orderDiffFiles", () => {
       file("yarn.lock"),
     ];
     expect(order(files)).toEqual(order(files.toReversed()));
+  });
+});
+
+describe("orderUnloadedDiffFiles", () => {
+  it("orders files by tier from their paths alone", () => {
+    const files = [
+      { path: "bun.lock", additions: 900 },
+      { path: "src/z.test.ts", additions: 4 },
+      { path: "src/z.ts", additions: 2 },
+      { path: "src/a.test.ts", additions: 3 },
+      { path: "src/a.ts", additions: 1 },
+      { path: "src/schema.ts", additions: 7 },
+    ];
+
+    expect(orderUnloadedDiffFiles(files, ["src/schema.ts"]).map((file) => file.path)).toEqual([
+      "src/a.ts",
+      "src/z.ts",
+      "src/a.test.ts",
+      "src/z.test.ts",
+      "bun.lock",
+      "src/schema.ts",
+    ]);
   });
 });

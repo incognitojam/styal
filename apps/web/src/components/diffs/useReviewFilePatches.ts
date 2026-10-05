@@ -1,6 +1,10 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import type { FileDiffMetadata } from "@pierre/diffs";
-import type { EnvironmentId, ReviewDiffPreviewSource } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ReviewDiffFileStat,
+  ReviewDiffPreviewSource,
+} from "@t3tools/contracts";
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 import * as Atom from "effect/unstable/reactivity/Atom";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -16,6 +20,7 @@ export function useReviewFilePatches({
   theme,
   revision,
   preview,
+  orderFiles,
 }: {
   environmentId: EnvironmentId | undefined;
   cwd: string | undefined;
@@ -25,6 +30,10 @@ export function useReviewFilePatches({
   theme: "light" | "dark";
   revision: string | undefined;
   preview: RenderablePatch | null;
+  /** Reorders the path-sorted files, which then load in that order. Pass a memoized function. */
+  orderFiles?:
+    | ((files: ReadonlyArray<ReviewDiffFileStat>) => ReadonlyArray<ReviewDiffFileStat>)
+    | undefined;
 }) {
   const registry = useContext(RegistryContext);
   const scope = JSON.stringify([
@@ -40,13 +49,13 @@ export function useReviewFilePatches({
     () => (requested.scope === scope ? requested.indices : [0, 1, 2, 3]),
     [requested, scope],
   );
-  const files = useMemo(
-    () =>
+  const files = useMemo(() => {
+    const sorted =
       source?.files?.toSorted((a, b) =>
         a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: "base" }),
-      ) ?? [],
-    [source?.files],
-  );
+      ) ?? [];
+    return orderFiles ? orderFiles(sorted) : sorted;
+  }, [source?.files, orderFiles]);
   const queries = useMemo(
     () =>
       !environmentId || !cwd || !source

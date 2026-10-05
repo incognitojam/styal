@@ -768,18 +768,20 @@ features:
     status: maintained
     prs: [274, 275, 296]
     invariants:
-      - Turn, working-tree, branch, and pull request diffs order source dependencies first, their tests next, and repository-attributed or recognized generated output last across web, desktop, and mobile review surfaces. A working-tree or branch diff too large to load at once keeps the path order its files load in, while still collapsing generated files.
+      - Turn, working-tree, branch, and pull request diffs order source dependencies first, their tests next, and repository-attributed or recognized generated output last across web, desktop, and mobile review surfaces. A working-tree or branch diff too large to load at once loads its files in that tier order, by path within each tier, since their import lines are not known until they load.
       - Test and generated tiers remain visible, generated files start collapsed, and explicit reader fold choices take precedence over automatic classification.
-      - One persisted web preference switches the diff panel and pull request Code tab between relevance and alphabetical order. While a diff loads file by file, the diff panel disables the switch and says why, without changing the saved preference.
+      - One persisted web preference switches the diff panel and pull request Code tab between relevance and alphabetical order.
     implementation_paths:
       - .gitattributes
       - apps/mobile/src/features/review/reviewFileVisibility.ts
       - apps/mobile/src/features/review/reviewModel.ts
+      - apps/mobile/src/features/review/useReviewDiffData.ts
       - apps/server/src/checkpointing/CheckpointDiffQuery.ts
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/server/src/vcs/GitVcsDriverCore.ts
       - apps/web/src/components/DiffPanel.tsx
       - apps/web/src/components/diffs/DiffFileTierChip.tsx
+      - apps/web/src/components/diffs/useReviewFilePatches.ts
       - apps/web/src/components/pullRequest/pullRequestDiff.logic.ts
       - apps/web/src/diffPanelStore.ts
       - packages/shared/src/diffFileOrder.ts
@@ -787,10 +789,12 @@ features:
     upstream_paths:
       - .gitattributes
       - apps/mobile/src/features/review/reviewModel.ts
+      - apps/mobile/src/features/review/useReviewDiffData.ts
       - apps/server/src/checkpointing/CheckpointDiffQuery.ts
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/server/src/vcs/GitVcsDriverCore.ts
       - apps/web/src/components/DiffPanel.tsx
+      - apps/web/src/components/diffs/useReviewFilePatches.ts
       - apps/web/src/components/pullRequest/PullRequestCodeTab.tsx
       - apps/web/src/components/pullRequest/pullRequestDiff.logic.ts
       - packages/contracts/src/orchestration.ts

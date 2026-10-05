@@ -4,7 +4,9 @@ Diff views put the files that best explain a change first, instead of listing ev
 alphabetically. Source files come before the tests that cover them, ordered so that a file appears
 after the files it imports — you read the foundation of a change before the code built on it.
 Tests sit next in line, sorted to follow the source they cover, and generated output such as
-lockfiles, snapshots, and build artifacts comes last.
+lockfiles, snapshots, and build artifacts comes last. A working-tree or branch diff too large to
+load at once keeps these groups, but lists its source files by path, since what they import is
+only known once each file loads.
 
 Files that are not source code are labeled: a muted **tests** or **generated** tag appears beside
 the filename so you can see at a glance which part of the diff you are in. Generated files also
