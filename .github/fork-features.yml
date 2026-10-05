@@ -1756,6 +1756,7 @@ features:
       - A Clerk GET request on mobile that has no caller abort signal is aborted after 15 seconds, so a stalled startup load fails instead of keeping the account in the loading state.
       - Reading the saved Clerk client token on mobile times out after 15 seconds even before a network request starts. A timeout fails the load for retry without returning a signed-out client or deleting saved credentials and environments.
       - A failed headless Clerk load is retried with backoff capped at 30 seconds, and a pending retry runs immediately when the app returns to the foreground, so the relay session activates without restarting the app.
+      - A failed or interrupted mobile relay signing-key read can be retried without clearing saved credentials or environments; successful reads keep using the saved key.
       - On web and mobile, a relay connection without a cloud session reports whether the sign-in is still loading, Clerk could not be reached, or the user is signed out. Only the signed-out case asks the user to sign in, and each change of that state re-attempts blocked relay connections.
       - The web composer shows no unavailable banner for a relay environment while the sign-in loads, offers Reload when Clerk failed to load, and offers Sign in only when the user is signed out.
     implementation_paths:
@@ -1771,6 +1772,7 @@ features:
       - packages/client-runtime/src/relay/managedRelayState.ts
     tests:
       - apps/mobile/src/features/cloud/clerkLoadRecovery.test.ts
+      - apps/mobile/src/features/cloud/managedRelayLayer.test.ts
       - packages/client-runtime/src/authorization/layer.test.ts
     upstream:
       status: tracking
