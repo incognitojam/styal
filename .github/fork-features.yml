@@ -1803,6 +1803,7 @@ features:
       - Desktop, mobile, web, SSH, and server persistence use styal-owned directories, native identifiers, storage keys, cookies, partitions, and databases so styal and T3 Code can run in parallel without reading or overwriting each other's state.
       - The server defaults to a styal home and accepts the legacy home variable only for an already-installed styal service, never as a general fallback into T3 Code state.
       - Only the styal-owned hosted origin performs the bounded one-time cleanup of abandoned pre-rename browser data; localhost, desktop, and arbitrary self-hosted origins remain untouched.
+      - The desktop app does not copy Local Storage from T3 Code's V1 desktop profiles; upstream's V1 profile import stays unwired because styal keeps a single desktop profile.
     implementation_paths:
       - apps/desktop/src/app/DesktopConfig.ts
       - apps/desktop/src/app/DesktopEarlyElectronStartup.ts
@@ -1819,8 +1820,10 @@ features:
       - apps/web/src/hooks/useDefaultTheme.ts
       - apps/web/src/hostedStorageCleanup.ts
     upstream_paths:
+      - apps/desktop/src/app/DesktopApp.ts
       - apps/desktop/src/app/DesktopConfig.ts
       - apps/desktop/src/app/DesktopEarlyElectronStartup.ts
+      - apps/desktop/src/app/DesktopLegacyLocalStorage.ts
       - apps/mobile/app.config.ts
       - apps/mobile/src/persistence/mobile-database.ts
       - apps/mobile/src/persistence/mobile-preferences.ts
