@@ -216,6 +216,8 @@ export const OrchestrationV2TurnCapabilities = Schema.Struct({
   emitsTurnCompleted: Schema.Boolean,
   supportsInterrupt: Schema.Boolean,
   supportsActiveSteering: Schema.Boolean,
+  // Some native steering mechanisms cancel pending tools before consuming the message.
+  activeSteeringInterruptsTools: Schema.optional(Schema.Boolean),
   supportsSteeringByInterruptRestart: Schema.Boolean,
   supportsQueuedMessages: Schema.Boolean,
   terminalStatusQuality: Schema.Literals(["strong", "weak", "none"]),
@@ -1305,6 +1307,7 @@ export const OrchestrationV2LegacyActivity = Schema.Struct({
 const OrchestrationV2TurnItemBaseFields = {
   legacyTurnId: Schema.optional(Schema.String),
   legacyActivities: Schema.optional(Schema.Array(OrchestrationV2LegacyActivity)),
+  toolNonExecutionKind: Schema.optional(Schema.String),
   toolSurface: Schema.optional(ToolActivitySurface),
   toolIcon: Schema.optional(ToolActivityIcon),
   toolSource: Schema.optional(ToolActivitySource),
