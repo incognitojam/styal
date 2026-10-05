@@ -1,4 +1,3 @@
-import { makeKeyedSerialExecutor } from "./KeyedSerialExecutor.ts";
 import {
   NodeId,
   CommandId,
@@ -27,6 +26,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { addThreadTokenUsage, sumThreadTokenUsage } from "@t3tools/shared/turnUsage";
 import { UsageService } from "../usage/UsageService.ts";
@@ -270,7 +270,7 @@ export const layer: Layer.Layer<
     const analytics = yield* ProviderTurnAnalytics;
     const completedTurnAnalytics = new Set<string>();
     const usagePricing = yield* Effect.serviceOption(UsageService);
-    const ingestExecutor = yield* makeKeyedSerialExecutor<ThreadId>();
+    const ingestExecutor = yield* KeyedLock.make<ThreadId>();
 
     const recordTurnUsage = (input: ProviderEventIngestInput, turn: OrchestrationV2ProviderTurn) =>
       Effect.gen(function* () {
