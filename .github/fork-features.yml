@@ -3369,8 +3369,7 @@ features:
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/server/src/pullRequest/gitHubPullRequestJson.ts
       - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
-      - apps/web/src/components/pullRequest/PullRequestSpeedActions.tsx
-      - apps/web/src/components/pullRequest/usePullRequestActions.ts
+      - packages/client-runtime/src/state/pullRequests.ts
       - packages/contracts/src/pullRequest.ts
     upstream_paths:
       - apps/server/src/pullRequest/GitHubPullRequestCli.ts
@@ -3378,11 +3377,12 @@ features:
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/server/src/pullRequest/gitHubPullRequestJson.ts
       - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
+      - packages/client-runtime/src/state/pullRequests.ts
       - packages/contracts/src/pullRequest.ts
     tests:
       - apps/server/src/pullRequest/GitHubPullRequestCli.test.ts
       - apps/server/src/pullRequest/PullRequestService.test.ts
-      - apps/web/src/components/pullRequest/PullRequestSpeedActions.test.tsx
+      - packages/client-runtime/src/state/pullRequests.test.ts
     upstream:
       status: tracking
       tracking:
