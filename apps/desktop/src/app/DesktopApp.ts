@@ -33,6 +33,7 @@ import * as DesktopRemoteUpdates from "../updates/DesktopRemoteUpdates.ts";
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
 import * as DesktopSnapShot from "../snapShot/DesktopSnapShot.ts";
 import * as DesktopWslBackend from "../wsl/DesktopWslBackend.ts";
+import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 
 const DEFAULT_DESKTOP_BACKEND_PORT = 3773;
 const MAX_TCP_PORT = 65_535;
@@ -360,6 +361,7 @@ const scopedProgram = Effect.scoped(
     yield* Effect.annotateCurrentSpan({ scope: "desktop", runId });
 
     const shutdown = yield* DesktopShutdown.DesktopShutdown;
+    const rendererHistory = yield* DesktopRendererHistory.DesktopRendererHistory;
 
     yield* Effect.addFinalizer(() =>
       // Stop every backend in the pool, not just the primary. The
@@ -370,6 +372,7 @@ const scopedProgram = Effect.scoped(
       stopAllPoolInstances().pipe(
         Effect.withSpan("desktop.app.shutdownBackends"),
         Effect.andThen(DesktopObservability.flushTrace),
+        Effect.ensuring(rendererHistory.shutdown),
         Effect.ensuring(shutdown.markComplete),
       ),
     );
