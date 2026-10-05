@@ -8,7 +8,7 @@ import type {
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 
 import * as Cause from "effect/Cause";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { BrowserSettingsReadError } from "~/browser/openFileInPreview";
 import {
   browserDefaultOpenProfileId,

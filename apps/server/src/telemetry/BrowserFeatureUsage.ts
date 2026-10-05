@@ -1,6 +1,6 @@
 import type { PreviewAutomationOperation } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import type { Toolkit } from "effect/unstable/ai";
+import type { Toolkit } from "effect/ai";
 
 import type { PreviewStandardToolkit } from "../mcp/toolkits/preview/tools.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";

@@ -9,7 +9,7 @@ import {
 import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Config from "effect/Config";
 import * as Option from "effect/Option";
-import { HttpClient } from "effect/unstable/http";
+import { HttpClient } from "effect/http";
 import { CLI_RELEASE_BASE_URL_ENV } from "@t3tools/shared/cliRelease";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";

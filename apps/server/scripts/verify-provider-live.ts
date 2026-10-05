@@ -31,8 +31,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { Socket } from "effect/unstable/socket";
-import { RpcClient, RpcSerialization } from "effect/unstable/rpc";
+import { Socket } from "effect/socket";
+import { RpcClient, RpcSerialization } from "effect/rpc";
 import {
   ORCHESTRATION_PROTOCOL_VERSION,
   ORCHESTRATION_PROTOCOL_HEADER,

@@ -1,8 +1,8 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { DEFAULT_SERVER_SETTINGS, ProjectId, ThreadId } from "@t3tools/contracts";
-import * as HttpServer from "effect/unstable/http/HttpServer";
-import * as NetAddress from "effect/unstable/net/NetAddress";
+import * as HttpServer from "effect/http/HttpServer";
+import * as NetAddress from "effect/net/NetAddress";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as EventSink from "./orchestration-v2/EventSink.ts";

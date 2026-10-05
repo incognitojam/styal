@@ -12,7 +12,7 @@ import type {
   ComposerDraftSnapshot,
   ScopedThreadRef,
 } from "@t3tools/contracts";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 import { useEffect, useRef } from "react";
 
 import {

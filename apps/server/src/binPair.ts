@@ -3,7 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NetService from "@t3tools/shared/Net";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { Command } from "effect/unstable/cli";
+import { Command } from "effect/cli";
 
 import packageJson from "../package.json" with { type: "json" };
 import { pairCommand } from "./cli/pair.ts";

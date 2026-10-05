@@ -1,6 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { readHistoryRewriteFence } from "../../orchestration-v2/historyRewriteFence.ts";
 import { runForkMigrations } from "../ForkMigrations.ts";

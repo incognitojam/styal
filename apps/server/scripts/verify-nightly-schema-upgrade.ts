@@ -6,7 +6,7 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as CurrentForkMigrations from "../src/persistence/ForkMigrations.ts";
 import * as CurrentMigrations from "../src/persistence/Migrations.ts";
@@ -139,6 +139,24 @@ const runChecked = (
   return result.stdout;
 };
 
+const rewriteEffectImports = (directory: string): void => {
+  for (const entry of NodeFS.readdirSync(directory, { withFileTypes: true })) {
+    const entryPath = NodePath.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      rewriteEffectImports(entryPath);
+    } else if (entry.name.endsWith(".ts")) {
+      const source = NodeFS.readFileSync(entryPath, "utf8");
+      if (!source.includes("effect/unstable/")) continue;
+      NodeFS.writeFileSync(
+        entryPath,
+        source
+          .replaceAll("effect/unstable/httpapi", "effect/http-api")
+          .replaceAll("effect/unstable/", "effect/"),
+      );
+    }
+  }
+};
+
 const tempRoot = NodeFS.mkdtempSync(NodePath.join(repoRoot, ".nightly-schema-upgrade-"));
 
 try {
@@ -153,6 +171,9 @@ try {
     "apps/server/src",
   ]);
   runChecked("tar", ["-xf", "-", "-C", tempRoot], archive);
+  // The previous nightly runs on this checkout's dependencies, so source from before the
+  // Effect 4.0 stable release needs its `effect/unstable/*` imports moved to their new paths.
+  rewriteEffectImports(NodePath.join(tempRoot, "apps/server/src"));
   NodeFS.symlinkSync(
     NodePath.join(repoRoot, "apps/server/node_modules"),
     NodePath.join(tempRoot, "apps/server/node_modules"),

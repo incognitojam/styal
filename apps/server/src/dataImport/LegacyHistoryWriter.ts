@@ -21,7 +21,7 @@ import { deriveTurnUsage, sumThreadTokenUsage } from "@t3tools/shared/turnUsage"
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as EventSink from "../orchestration-v2/EventSink.ts";
 import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";

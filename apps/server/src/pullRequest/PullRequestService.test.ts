@@ -1,7 +1,7 @@
 import { VcsUnsupportedOperationError } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
-import * as KeyValueStore from "effect/unstable/persistence/KeyValueStore";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as KeyValueStore from "effect/persistence/KeyValueStore";
 import { assert, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";

@@ -3,7 +3,7 @@ import { useNavigation, type StaticScreenProps } from "@react-navigation/native"
 import { useCallback, useEffect, useState } from "react";
 import { Platform, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import * as Cause from "effect/Cause";
 
 import { AndroidSheetHeader } from "../../../components/AndroidScreenHeader";

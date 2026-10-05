@@ -15,7 +15,7 @@ import {
   type TurnUsageByTurn,
   type TurnUsageFigure,
 } from "@t3tools/shared/turnUsage";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { useMemo, useState } from "react";
 
 import { mobilePreferencesAtom } from "./preferences";

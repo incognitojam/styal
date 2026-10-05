@@ -2,7 +2,7 @@ import { OrchestrationV2TurnItemJson } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { legacyActivityTurnItem } from "../../orchestration-v2/legacy/LegacyHistoricalItems.ts";
 import { preserveLegacyPayloadSize } from "../../orchestration-v2/legacy/legacyPayloadEncoding.ts";

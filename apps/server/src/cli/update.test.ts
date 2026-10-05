@@ -6,7 +6,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Fiber from "effect/Fiber";
 import * as TestClock from "effect/testing/TestClock";
-import { HttpClient, HttpClientResponse } from "effect/unstable/http";
+import { HttpClient, HttpClientResponse } from "effect/http";
 import {
   HostProcessEnvironment,
   HostProcessInvokedAs,

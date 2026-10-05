@@ -4,7 +4,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 import { withT3CodeProjectEnvironmentAliases } from "@t3tools/shared/projectScripts";
 
 export const WORKSPACE_PORT_ENV_VAR = "STYAL_WORKSPACE_PORT";

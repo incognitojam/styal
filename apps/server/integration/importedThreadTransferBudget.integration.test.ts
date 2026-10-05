@@ -21,10 +21,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import * as HttpApi from "effect/unstable/httpapi/HttpApi";
-import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
-import { HttpRouter, HttpServer } from "effect/unstable/http";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as HttpApi from "effect/http-api/HttpApi";
+import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
+import { HttpRouter, HttpServer } from "effect/http";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerConfig from "../src/config.ts";
 import { httpCompressionLayer } from "../src/http.ts";

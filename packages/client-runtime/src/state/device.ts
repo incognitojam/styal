@@ -9,7 +9,7 @@ import {
 import { isLocalLoopbackHost } from "@t3tools/shared/hostClassification";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 
 import { EnvironmentRegistry } from "../connection/registry.ts";
 import { request } from "../rpc/client.ts";

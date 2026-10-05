@@ -1,5 +1,5 @@
 import * as Effect from "effect/Effect";
-import type * as SqlClient from "effect/unstable/sql/SqlClient";
+import type * as SqlClient from "effect/sql/SqlClient";
 
 /**
  * Migrations that rewrite stored history in place reserve an event sequence as a fence,

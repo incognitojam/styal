@@ -8,7 +8,7 @@ import {
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
+import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import { requireEnvironmentScope, failEnvironmentInternal } from "../auth/http.ts";
 import { DeviceSharing } from "../device/DeviceSharing.ts";
 import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";

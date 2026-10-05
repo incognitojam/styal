@@ -9,7 +9,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { readHistoryRewriteFence } from "../../orchestration-v2/historyRewriteFence.ts";
 import { runForkMigrations } from "../ForkMigrations.ts";

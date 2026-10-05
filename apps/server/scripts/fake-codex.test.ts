@@ -18,7 +18,7 @@ import { checkCodexProviderStatus } from "../src/provider/Layers/CodexProvider.t
 import * as CodexProtocol from "effect-codex-app-server/protocol";
 import * as Sink from "effect/Sink";
 import * as Stdio from "effect/Stdio";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { makeCodexTextGeneration } from "../src/textGeneration/CodexTextGeneration.ts";
 
 const fakeCodexPath = NodePath.join(import.meta.dirname, "fake-codex.ts");

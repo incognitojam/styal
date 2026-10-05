@@ -19,8 +19,8 @@ import type {
 } from "@t3tools/contracts";
 import { orderUnloadedDiffFiles } from "@t3tools/shared/diffFileOrder";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
-import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
-import * as Atom from "effect/unstable/reactivity/Atom";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
+import * as Atom from "effect/reactivity/Atom";
 import { reviewEnvironment } from "../../state/review";
 
 const EMPTY_INLINE_REVIEW_COMMENTS = Object.freeze([]);

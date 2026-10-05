@@ -1,6 +1,6 @@
 import { LOCAL_DEVICE_HOST_ID } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import type { Toolkit } from "effect/unstable/ai";
+import type { Toolkit } from "effect/ai";
 
 import type { DeviceStandardToolkit } from "../mcp/toolkits/device/tools.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";

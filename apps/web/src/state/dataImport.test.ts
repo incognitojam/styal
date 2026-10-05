@@ -1,5 +1,5 @@
 import { EnvironmentId } from "@t3tools/contracts";
-import { AtomRegistry } from "effect/unstable/reactivity";
+import { AtomRegistry } from "effect/reactivity";
 import { describe, expect, it } from "vite-plus/test";
 
 import { importLegacyData, legacyImportPendingCount, legacyImportRequestKey } from "./dataImport";

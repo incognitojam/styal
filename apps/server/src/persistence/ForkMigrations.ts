@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect";
-import * as Migrator from "effect/unstable/sql/Migrator";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as Migrator from "effect/sql/Migrator";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import ForkMigration0001 from "./ForkMigrations/001_ComposerDrafts.ts";
 import ForkMigration0002 from "./ForkMigrations/002_WorkspacePortAllocations.ts";

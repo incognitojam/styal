@@ -15,7 +15,7 @@ import {
   type SourceControlRepositoryCloneUrls,
   type SourceControlRepositoryVisibility,
 } from "@t3tools/contracts";
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { sanitizeBranchFragment, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
 import {
   detectSourceControlProviderFromRemoteUrl,
