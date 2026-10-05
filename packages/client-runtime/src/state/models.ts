@@ -5,6 +5,7 @@ import type {
   EnvironmentId,
   MessageId,
   OrchestrationProjectShell,
+  OrchestrationV2ProviderGoal,
   OrchestrationV2RunStatus,
   OrchestrationV2ProviderFailureClass,
   OrchestrationV2ThreadProjection,
@@ -114,6 +115,8 @@ export interface EnvironmentThreadShell {
   >;
   /** Provider instances that have owned the root conversation, oldest first. */
   readonly providerInstanceHistory: ReadonlyArray<ProviderInstanceId>;
+  /** Native `/goal` on the active provider thread. */
+  readonly goal: OrchestrationV2ProviderGoal | null;
   readonly itemCount: number;
   readonly visibleItemCount: number;
   readonly createdAt: string;
@@ -258,6 +261,7 @@ export function presentThreadShell(
     hasActionableProposedPlan: thread.hasActionableProposedPlan,
     pendingBackgroundTasks: thread.pendingBackgroundTasks ?? [],
     providerInstanceHistory: thread.providerInstanceHistory ?? [],
+    goal: thread.goal ?? null,
     itemCount: thread.itemCount,
     visibleItemCount: thread.visibleItemCount,
     createdAt: iso(thread.createdAt),
