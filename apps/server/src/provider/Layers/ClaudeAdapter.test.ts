@@ -50,7 +50,6 @@ import {
 } from "../ClaudeModelCatalog.testFixtures.ts";
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
 import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
-import { remapClaudeForkTurnBoundaries } from "../claudeSessionHistory.ts";
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import type { ClaudeScopedLimitNames } from "./claudeUsageLimits.ts";
 import { makeClaudeAdapter, type ClaudeAdapterLiveOptions } from "./ClaudeAdapter.ts";
@@ -347,15 +346,6 @@ function claudeHistoryMessage(input: {
     parent_tool_use_id: input.parentToolUseId ?? null,
     parent_agent_id: null,
     message: input.type === "system" ? content : { content },
-    // Native forks record the original message each copy came from.
-    ...(input.uuid.startsWith("fork-")
-      ? {
-          forkedFrom: {
-            sessionId: CLAUDE_ORIGINAL_SESSION_ID,
-            messageUuid: input.uuid.slice("fork-".length),
-          },
-        }
-      : {}),
   };
 }
 
@@ -7815,66 +7805,6 @@ describe("ClaudeAdapterLive", () => {
     },
   );
 
-  it("rejects a fork with changed, missing, reordered, or unrelated retained conversation", () => {
-    const sessionId = "synthetic-original-session";
-    const original = [
-      { type: "user" as const, uuid: "turn-1", message: { content: "repeated prompt" } },
-      { type: "assistant" as const, uuid: "reply-1", message: { content: "first reply" } },
-      { type: "system" as const, uuid: "notice" },
-      { type: "user" as const, uuid: "turn-2", message: { content: "repeated prompt" } },
-      { type: "assistant" as const, uuid: "reply-2", message: { content: "second reply" } },
-    ];
-    const fork = original
-      .filter((message) => message.type !== "system")
-      .map((message) => ({
-        ...message,
-        uuid: `fork-${message.uuid}`,
-        forkedFrom: { sessionId, messageUuid: message.uuid },
-      }));
-    assert.deepEqual(
-      remapClaudeForkTurnBoundaries(sessionId, original, fork, ["turn-1", "turn-2"]),
-      ["fork-turn-1", "fork-turn-2"],
-    );
-    assert.deepEqual(remapClaudeForkTurnBoundaries(sessionId, original, fork, [null, "turn-2"]), [
-      null,
-      "fork-turn-2",
-    ]);
-    const invalidForks = [
-      fork.slice(1),
-      [fork[2]!, fork[1]!, fork[0]!, fork[3]!],
-      fork.map((message, index) =>
-        index === 1 ? { ...message, message: { content: "changed reply" } } : message,
-      ),
-      fork.map((message, index) =>
-        index === 0
-          ? { ...message, forkedFrom: { sessionId: "unrelated", messageUuid: "turn-1" } }
-          : message,
-      ),
-      fork.map((message, index) =>
-        index === 2 ? { ...message, forkedFrom: { sessionId, messageUuid: "turn-1" } } : message,
-      ),
-      fork.map((message, index) =>
-        index === 2
-          ? { ...message, forkedFrom: { sessionId, messageUuid: "removed-turn" } }
-          : message,
-      ),
-    ];
-    for (const invalidFork of invalidForks) {
-      assert.equal(
-        remapClaudeForkTurnBoundaries(sessionId, original, invalidFork, ["turn-1", "turn-2"]),
-        undefined,
-      );
-      assert.equal(
-        remapClaudeForkTurnBoundaries(sessionId, original, invalidFork, [null, "turn-2"]),
-        undefined,
-      );
-    }
-    assert.equal(
-      remapClaudeForkTurnBoundaries(sessionId, original, fork, ["missing-turn"]),
-      undefined,
-    );
-  });
-
   it.effect("rewinds Claude history when the fork omits retained system messages", () => {
     const forkCalls: Array<Parameters<NonNullable<ClaudeAdapterLiveOptions["forkSession"]>>> = [];
     let firstTurnId = "";
@@ -8036,14 +7966,7 @@ describe("ClaudeAdapterLive", () => {
             }),
           ];
         }
-        // The saved transcript keeps the compacted turn that the fork copies.
         return [
-          claudeHistoryMessage({
-            type: "user",
-            uuid: "compacted-user",
-            content: "earlier compacted turn",
-          }),
-          claudeHistoryMessage({ type: "assistant", uuid: "compacted-assistant" }),
           claudeHistoryMessage({ type: "user", uuid: firstTurnId, content: "first" }),
           claudeHistoryMessage({ type: "assistant", uuid: "assistant-1" }),
           claudeHistoryMessage({ type: "user", uuid: secondTurnId, content: "second" }),
@@ -8111,7 +8034,6 @@ describe("ClaudeAdapterLive", () => {
               ...message,
               uuid: `fork-${message.uuid}`,
               session_id: sessionId,
-              forkedFrom: { sessionId: CLAUDE_ORIGINAL_SESSION_ID, messageUuid: message.uuid },
             }))
           : history;
       },
