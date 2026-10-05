@@ -70,6 +70,15 @@ next to it in the styal Link list. Pairing the same machine again over another
 address also adds a route instead of a second machine. A new route is placed by
 speed, in that order, and you can reorder routes at any time.
 
+While connected through styal Link or a paired address, styal also learns the
+machine's current LAN and Tailscale addresses and adds them as routes, so
+pairing once through styal Link is enough to use the LAN at home. When the
+machine's LAN address changes, for example after it joins another Wi-Fi network,
+the learned route follows it. The machine must allow network access for its LAN
+address to be learned. You can reorder a learned route, but not remove it; it
+goes away with the route it was learned through, or when the machine stops
+reporting that address.
+
 styal connects over the first route that answers. Away from home, a LAN
 address that does not answer is checked briefly and skipped. It is only tried
 again, after the other routes, if none of them connect. While connected over a
