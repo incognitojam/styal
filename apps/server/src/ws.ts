@@ -3291,6 +3291,7 @@ const makeWsRpcLayer = (
                 input.resource._tag === "attachment" ||
                 input.resource._tag === "pull-request-file" ||
                 input.resource._tag === "native-app-icon" ||
+                input.resource._tag === "tool-output-image" ||
                 // GitHub media names the repository it authenticates through itself.
                 input.resource._tag === "github-media" ||
                 (input.resource._tag === "media-file" && path.isAbsolute(input.resource.path))

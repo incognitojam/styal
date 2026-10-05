@@ -1715,7 +1715,8 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
         | "workspace-file"
         | "media-file"
         | "github-media"
-        | "pull-request-file";
+        | "pull-request-file"
+        | "tool-output-image";
     }
   >;
   readonly kind?: "image" | "video";
