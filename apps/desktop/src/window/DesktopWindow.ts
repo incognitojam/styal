@@ -30,6 +30,7 @@ import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopClientSettings from "../settings/DesktopClientSettings.ts";
 import * as DesktopDiscordPresence from "../discord/DesktopDiscordPresence.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
+import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 import { makeQuitShortcutHandler } from "./QuitHold.ts";
 import { copyContextMenuImage } from "./ContextMenuImage.ts";
 
@@ -86,6 +87,7 @@ type DesktopWindowRuntimeServices =
   | ElectronShell.ElectronShell
   | ElectronTheme.ElectronTheme
   | ElectronWindow.ElectronWindow
+  | DesktopRendererHistory.DesktopRendererHistory
   | PreviewManager.PreviewManager;
 
 export type DesktopWindowError =
@@ -326,6 +328,7 @@ export const make = Effect.gen(function* () {
   const clientSettings = yield* DesktopClientSettings.DesktopClientSettings;
   const discordPresence = yield* DesktopDiscordPresence.DesktopDiscordPresence;
   const electronApp = yield* ElectronApp.ElectronApp;
+  const rendererHistory = yield* DesktopRendererHistory.DesktopRendererHistory;
   // Window-side latch for the primary backend's readiness. Set by
   // handleBackendReady (driven by the pool's onReady callback), cleared
   // by handleBackendNotReady (driven by onShutdown). Only consumed by
@@ -459,6 +462,7 @@ export const make = Effect.gen(function* () {
       },
     });
 
+    yield* rendererHistory.register(window.webContents, { surface: "main" });
     if (environment.platform === "darwin") {
       window.setAutoHideCursor(false);
     }
@@ -1006,6 +1010,7 @@ export const make = Effect.gen(function* () {
         sandbox: true,
       },
     });
+    yield* rendererHistory.register(splash.webContents, { surface: "splash" });
     yield* Ref.set(splashWindowRef, Option.some(splash));
     splash.once("closed", () => {
       void runPromise(Ref.set(splashWindowRef, Option.none()));
