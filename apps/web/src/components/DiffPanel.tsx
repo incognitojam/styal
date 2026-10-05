@@ -7,7 +7,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
-import type { ScopedThreadRef, TurnId } from "@t3tools/contracts";
+import type { ReviewDiffFileStat, ScopedThreadRef, TurnId } from "@t3tools/contracts";
 import {
   ArrowRightIcon,
   CheckIcon,
@@ -47,7 +47,12 @@ import {
 import { PREFERRED_HIGHLIGHTER } from "../lib/syntaxHighlighting";
 import { areAllDiffFilesCollapsed, toggleAllDiffFiles } from "../lib/diffCollapse";
 import { DiffFileTierChip } from "./diffs/DiffFileTierChip";
-import { diffFileTier, orderDiffFiles, type DiffFileTier } from "../lib/diffFileOrder";
+import {
+  diffFileTier,
+  orderDiffFiles,
+  orderUnloadedDiffFiles,
+  type DiffFileTier,
+} from "../lib/diffFileOrder";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { useWorkspaceMutationRefresh } from "../hooks/useWorkspaceMutationRefresh";
 import { useProject, useThread } from "../state/entities";
@@ -422,6 +427,15 @@ export default function DiffPanel({
     () => new Map(lazySource?.files?.map((file) => [file.path, file])),
     [lazySource?.files],
   );
+  // Files that load one by one load in reading order; their import lines are not known yet.
+  const orderLazyFiles = useMemo(
+    () =>
+      diffSortMode === "smart"
+        ? (files: ReadonlyArray<ReviewDiffFileStat>) =>
+            orderUnloadedDiffFiles(files, attributedGeneratedPaths)
+        : undefined,
+    [attributedGeneratedPaths, diffSortMode],
+  );
   const {
     scope: filePatchScope,
     isPending: areFilePatchesPending,
@@ -429,7 +443,7 @@ export default function DiffPanel({
     retry,
     requestFile,
     readyFilePaths,
-    renderableFiles: pathOrderedFiles,
+    renderableFiles: reviewFiles,
     settledFileCount,
     loadNextFiles,
   } = useReviewFilePatches({
@@ -443,15 +457,15 @@ export default function DiffPanel({
       ? DateTime.formatIso(branchDiffPreview.data.generatedAt)
       : undefined,
     preview: renderablePatch,
+    orderFiles: orderLazyFiles,
   });
-  // A diff that loads file by file keeps the path order its files load in.
-  const effectiveDiffSortMode = lazySource ? "alphabetical" : diffSortMode;
+  // Lazy files arrive in load order, which already follows the sort mode.
   const renderableFiles = useMemo(
     () =>
-      effectiveDiffSortMode === "smart"
-        ? orderDiffFiles(pathOrderedFiles, attributedGeneratedPaths)
-        : pathOrderedFiles,
-    [attributedGeneratedPaths, effectiveDiffSortMode, pathOrderedFiles],
+      diffSortMode === "smart" && !lazySource
+        ? orderDiffFiles(reviewFiles, attributedGeneratedPaths)
+        : reviewFiles,
+    [attributedGeneratedPaths, diffSortMode, lazySource, reviewFiles],
   );
   const refreshBranchDiffPreview = refreshPreviewQuery;
 
@@ -487,14 +501,14 @@ export default function DiffPanel({
   }, [attributedGeneratedPaths, renderableFileEntries]);
   // Fed to the header suffix chips; smart order is what makes the tier grouping legible.
   const fileTierByKey = useMemo(() => {
-    if (effectiveDiffSortMode !== "smart") return null;
+    if (diffSortMode !== "smart") return null;
     const attributedPaths = new Set(attributedGeneratedPaths ?? []);
     const tiers = new Map<string, DiffFileTier>();
     for (const { fileDiff, fileKey } of renderableFileEntries) {
       tiers.set(fileKey, diffFileTier(resolveFileDiffPath(fileDiff), attributedPaths));
     }
     return tiers;
-  }, [attributedGeneratedPaths, effectiveDiffSortMode, renderableFileEntries]);
+  }, [attributedGeneratedPaths, diffSortMode, renderableFileEntries]);
   // A saved default of collapsed folds every file; otherwise generated files fold on their own.
   const defaultCollapsedDiffFileKeys = useMemo(
     () =>
@@ -941,49 +955,24 @@ export default function DiffPanel({
         )}
         <Tooltip>
           <TooltipTrigger
-            // The trigger binds its hover listeners to the first element it renders.
-            key={lazySource ? "sort-unavailable" : "sort"}
             render={
-              lazySource ? (
-                // A disabled button gets no pointer events, so its wrapper shows why it is disabled.
-                <span className="inline-flex cursor-not-allowed" />
-              ) : (
-                <Toggle
-                  aria-label={
-                    diffSortMode === "smart"
-                      ? "Sort files alphabetically"
-                      : "Sort files by relevance"
-                  }
-                  variant="ghost"
-                  size="sm"
-                  pressed={diffSortMode === "smart"}
-                  onPressedChange={(pressed) => {
-                    setDiffSortMode(pressed ? "smart" : "alphabetical");
-                  }}
-                />
-              )
-            }
-          >
-            {lazySource ? (
               <Toggle
-                aria-label="Sort files by relevance"
-                className="pointer-events-none"
+                aria-label={
+                  diffSortMode === "smart" ? "Sort files alphabetically" : "Sort files by relevance"
+                }
                 variant="ghost"
                 size="sm"
-                disabled
-              >
-                <SparklesIcon className="size-3.5" />
-              </Toggle>
-            ) : (
-              <SparklesIcon className="size-3.5" />
-            )}
+                pressed={diffSortMode === "smart"}
+                onPressedChange={(pressed) => {
+                  setDiffSortMode(pressed ? "smart" : "alphabetical");
+                }}
+              />
+            }
+          >
+            <SparklesIcon className="size-3.5" />
           </TooltipTrigger>
           <TooltipPopup side="top">
-            {lazySource
-              ? "Large diffs load in path order"
-              : diffSortMode === "smart"
-                ? "Sort files alphabetically"
-                : "Sort files by relevance"}
+            {diffSortMode === "smart" ? "Sort files alphabetically" : "Sort files by relevance"}
           </TooltipPopup>
         </Tooltip>
         <ToggleGroup

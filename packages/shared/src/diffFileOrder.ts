@@ -250,3 +250,19 @@ export function orderDiffFiles<T>(
 
   return [...orderedSource, ...orderedTests, ...orderedGenerated].map((path) => byPath.get(path)!);
 }
+
+const UNLOADED_FILE_ORDER_ACCESSORS = {
+  path: (file: { readonly path: string }) => file.path,
+  changedLines: () => [],
+};
+
+/**
+ * Reading order for a diff whose files load one by one. Without their patches there are no import
+ * lines to follow, so source stays in path order ahead of its tests and generated output.
+ */
+export function orderUnloadedDiffFiles<T extends { readonly path: string }>(
+  files: ReadonlyArray<T>,
+  generatedPaths?: ReadonlyArray<string>,
+): ReadonlyArray<T> {
+  return orderDiffFiles(files, UNLOADED_FILE_ORDER_ACCESSORS, generatedPaths);
+}

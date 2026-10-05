@@ -2,12 +2,13 @@ import type { FileDiffMetadata } from "@pierre/diffs";
 import {
   diffFileTier,
   orderDiffFiles as orderDiffFilesByRelevance,
+  orderUnloadedDiffFiles,
   type DiffFileTier,
 } from "@t3tools/shared/diffFileOrder";
 
 import { resolveFileDiffPath } from "~/lib/diffRendering";
 
-export { diffFileTier, type DiffFileTier };
+export { diffFileTier, orderUnloadedDiffFiles, type DiffFileTier };
 
 const FILE_DIFF_ORDER_ACCESSORS = {
   path: resolveFileDiffPath,

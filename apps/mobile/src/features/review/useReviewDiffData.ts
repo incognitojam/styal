@@ -17,6 +17,7 @@ import type {
   ReviewDiffFileStat,
   ReviewDiffPreviewSource,
 } from "@t3tools/contracts";
+import { orderUnloadedDiffFiles } from "@t3tools/shared/diffFileOrder";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 import * as Atom from "effect/unstable/reactivity/Atom";
@@ -129,6 +130,12 @@ export function useReviewDiffData(input: {
   const selectedSectionId = selectedSection?.id ?? null;
   const source = selectedSection?.source;
   const lazySource = source?.truncated && source.files ? source : null;
+  // Files that load one by one load in reading order; their import lines are not known yet.
+  const lazyFiles = useMemo(
+    () =>
+      lazySource?.files ? orderUnloadedDiffFiles(lazySource.files, lazySource.generatedPaths) : [],
+    [lazySource],
+  );
   const previewDiff = useMemo<ReviewParsedDiff>(
     () =>
       lazySource
@@ -167,7 +174,7 @@ export function useReviewDiffData(input: {
     () =>
       !environmentId || !cwd || !lazySource
         ? []
-        : (lazySource.files ?? []).map((file, index) =>
+        : lazyFiles.map((file, index) =>
             indices.has(index)
               ? reviewEnvironment.diffFilePatch({
                   environmentId,
@@ -186,7 +193,7 @@ export function useReviewDiffData(input: {
                 })
               : null,
           ),
-    [environmentId, cwd, lazySource, indices, scope],
+    [environmentId, cwd, lazySource, lazyFiles, indices, scope],
   );
   const parsedQuery = useMemo(
     () =>
@@ -226,8 +233,7 @@ export function useReviewDiffData(input: {
   }, [input.revision, queries, registry, scope]);
   const loadVisibleFile = useCallback(
     (fileId: string | null, retry = false) => {
-      const index =
-        fileId === null ? 0 : (lazySource?.files?.findIndex((file) => file.path === fileId) ?? -1);
+      const index = fileId === null ? 0 : lazyFiles.findIndex((file) => file.path === fileId);
       if (index < 0) return;
       setRequested((current) => {
         const previous = current.scope === scope ? current.indices : [0, 1, 2];
@@ -237,11 +243,11 @@ export function useReviewDiffData(input: {
       if (retry && patches[index]?._tag === "Failure" && queries[index])
         registry.refresh(queries[index]);
     },
-    [lazySource, scope, patches, queries, registry],
+    [lazyFiles, scope, patches, queries, registry],
   );
   const parsedDiff = useMemo<ReviewParsedDiff>(() => {
     if (!lazySource?.files) return applyReviewDiffMetadata(previewDiff, selectedSection);
-    const files = lazySource.files.map((stat, index) =>
+    const files = lazyFiles.map((stat, index) =>
       getCachedReviewFile(stat, lazySource.diffHash, patches[index]),
     );
     return {
@@ -252,7 +258,7 @@ export function useReviewDiffData(input: {
       deletions: files.reduce((total, file) => total + file.deletions, 0),
       notice: null,
     };
-  }, [lazySource, previewDiff, selectedSection, patches]);
+  }, [lazySource, lazyFiles, previewDiff, selectedSection, patches]);
   const headerDiffSummary = useMemo(
     () => formatHeaderDiffSummary(parsedDiff, selectedSection?.files),
     [parsedDiff, selectedSection?.files],
