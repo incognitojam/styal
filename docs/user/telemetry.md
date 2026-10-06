@@ -43,3 +43,6 @@ logs alongside an error are not sent.
 
 To stop error reports while keeping usage events, set `T3CODE_ERROR_REPORTING_ENABLED=false`.
 Disabling telemetry with `T3CODE_TELEMETRY_ENABLED=false` stops both.
+
+The desktop app reads the variable from your shell profile (for example `~/.zshrc`) on macOS and
+Linux, so export it there and restart the app. On Windows, set it as a user environment variable.
