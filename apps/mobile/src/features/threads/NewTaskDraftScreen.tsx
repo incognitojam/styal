@@ -491,8 +491,8 @@ export function NewTaskDraftScreen(props: {
     if (preventRemove || submitNavigationAction === null) {
       return;
     }
-
-    // Let the guard update reach the parent sheet before navigating.
+    // Give the guard update a frame to reach the parent sheet before navigating,
+    // just like the project-picker fallback below.
     const frame = requestAnimationFrame(() => {
       setSubmitNavigationAction(null);
       (navigation.getParent() ?? navigation).dispatch(submitNavigationAction);
@@ -1260,6 +1260,13 @@ export function NewTaskDraftScreen(props: {
 
     const editingPendingTask = flow.editingPendingTask;
 
+    // Every submission goes through the outbox: the drain uploads the
+    // attachments and delivers the creation, retrying across reconnects.
+    // When it can send now the thread screen opens immediately with the
+    // queued prompt and reports setup progress there, like the web draft
+    // does. Offline, or with uploads still in flight, the task stays a
+    // pending task and the sheet closes. Editing an existing pending task
+    // re-queues it under its original identifiers.
     const metadata = editingPendingTask
       ? {
           threadId: editingPendingTask.threadId,
@@ -1269,18 +1276,26 @@ export function NewTaskDraftScreen(props: {
         }
       : makeTurnCommandMetadata();
     const message = flow.buildPendingTaskMessage(metadata, {
+      // A task that waits in the outbox cannot know the checkout it will
+      // drain against; one that sends now runs against the live one.
       currentCheckoutBranch: queuesInsteadOfStarting ? null : flow.currentCheckoutBranchName,
     });
     if (!message) {
       return;
     }
     if (!queuesInsteadOfStarting) {
+      // Arm the lock-screen card before the async thread creation: backgrounding
+      // the app right after tapping submit would otherwise reject the foreground
+      // -only Activity start. If creation fails, the token registration's replay
+      // finds no work and ends the card within seconds.
       armAgentAwarenessLiveActivityForLocalWork({
         environmentId: selectedProject.environmentId,
         threadTitle: deriveThreadTitleFromPrompt(initialMessageText),
         projectTitle: selectedProject.title,
       });
     }
+    // Persist before clearing the draft or leaving its editor. This only waits
+    // for the local outbox write; server and worktree setup run on the thread.
     flow.setSubmitting(true);
     try {
       await enqueueThreadOutboxMessage(message);
@@ -1297,6 +1312,10 @@ export function NewTaskDraftScreen(props: {
     if (editingPendingTask) {
       flow.finishEditingPendingTask();
     } else {
+      // Drop draft-local model/workspace selections with the content. The
+      // next task re-resolves project defaults before sticky app defaults.
+      // The queued message owns the attachments now, so the sweep is deferred
+      // until the write confirms it.
       clearComposerDraftContent(draftKey, {
         clearModelSelection: true,
         clearWorkspaceSelection: true,

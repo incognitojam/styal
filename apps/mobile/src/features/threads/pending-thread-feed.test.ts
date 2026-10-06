@@ -40,11 +40,10 @@ describe("pending timeline messages", () => {
 
   it("keeps pending messages after newer agent activity in queue order", () => {
     const activity = {
-      type: "activity-group",
+      type: "thinking",
+      turnId: null,
       id: "thinking",
       createdAt: "2026-09-06T11:00:00.000Z",
-      turnId: null,
-      activities: [],
     } as const;
     const entries = appendPendingThreadMessages(
       [activity],

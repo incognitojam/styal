@@ -250,16 +250,12 @@ export async function removeAcknowledgedExistingThreadMessage(
         error,
       });
     });
-    retainAcknowledgedThreadMessage(queuedMessage);
     const removed = await removeThreadOutboxMessage(queuedMessage);
     if (removed) {
       acknowledgedMessageIds.delete(queuedMessage.messageId);
-    } else {
-      forgetAcknowledgedThreadMessage(queuedMessage);
     }
     return removed;
   } catch (error) {
-    forgetAcknowledgedThreadMessage(queuedMessage);
     console.warn("[thread-outbox] failed to remove acknowledged queued message", {
       environmentId: queuedMessage.environmentId,
       threadId: queuedMessage.threadId,
