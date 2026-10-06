@@ -48,8 +48,8 @@ import {
   type ComposerDocumentAttachment,
 } from "../../lib/composerContext";
 import {
+  ComposerActionButton,
   ComposerInlineControl,
-  ComposerToolbarButton,
   ComposerToolbarRow,
 } from "../../components/ComposerToolbar";
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
@@ -1412,7 +1412,6 @@ export function NewTaskDraftScreen(props: {
         style={{
           minHeight: 72,
           maxHeight: 160,
-          paddingHorizontal: 4,
           paddingVertical: 4,
         }}
         textStyle={{ ...bodyText, color: foregroundColor, fontFamily: regularFontFamily }}
@@ -1569,7 +1568,9 @@ export function NewTaskDraftScreen(props: {
 
   const composerDock = (
     <View
-      className={Platform.OS === "android" ? "bg-sheet-solid px-4 pt-1" : "bg-sheet px-4 pt-1"}
+      className={
+        Platform.OS === "android" ? "bg-sheet-solid px-[12px] pt-1" : "bg-sheet px-[12px] pt-1"
+      }
       style={{ paddingBottom: controlsBottomPadding }}
     >
       {!voiceInput.isBusy &&
@@ -1630,12 +1631,11 @@ export function NewTaskDraftScreen(props: {
           minHeight: 140,
           overflow: "hidden",
           paddingBottom: 6,
-          paddingHorizontal: 14,
           paddingTop: 14,
         }}
       >
         {stripAttachments.length > 0 ? (
-          <View className="pb-2.5">
+          <View className="px-[14px] pb-2.5">
             <ComposerAttachmentStrip
               environmentId={selectedProject.environmentId}
               attachments={stripAttachments}
@@ -1667,12 +1667,17 @@ export function NewTaskDraftScreen(props: {
           </View>
         ) : null}
 
-        {promptEditor}
+        <View className="px-[14px]">{promptEditor}</View>
         <View className="h-1" />
 
         <Animated.View layout={COMPOSER_LAYOUT_TRANSITION} collapsable={false}>
           <ComposerDictationToolbar showsDictation={isVoiceInputPresented}>
-            <ComposerToolbarRow paddingBottom={0} paddingHorizontal={0} paddingTop={0}>
+            <ComposerToolbarRow
+              paddingBottom={0}
+              paddingHorizontal={0}
+              paddingTop={0}
+              style={{ gap: 0 }}
+            >
               <ComposerDictationCancelAction
                 presentation={voicePresentation}
                 onCancel={voiceInput.cancel}
@@ -1745,7 +1750,7 @@ export function NewTaskDraftScreen(props: {
                 onCancel={voiceInput.cancel}
               />
               {voicePresentation.showsSend ? (
-                <ComposerToolbarButton
+                <ComposerActionButton
                   accessibilityLabel={
                     attachmentBlockReason ??
                     (cloneBlocksStart
@@ -1765,7 +1770,6 @@ export function NewTaskDraftScreen(props: {
                   disabled={!canStart}
                   icon={queuesInsteadOfStarting ? "tray.and.arrow.up" : "arrow.up"}
                   onPress={() => void handleStart()}
-                  showChevron={false}
                   variant="primary"
                 />
               ) : null}
