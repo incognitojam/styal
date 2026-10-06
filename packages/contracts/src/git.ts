@@ -201,11 +201,7 @@ const VcsStatusChangeRequest = Schema.Struct({
   baseRef: TrimmedNonEmptyStringSchema,
   headRef: TrimmedNonEmptyStringSchema,
   state: VcsStatusChangeRequestState,
-  /**
-   * Whether the change request is still a draft, which clients tone down rather
-   * than showing it as ready for review. Optional for old servers and providers
-   * whose lookups do not report it; absent means "not known to be a draft".
-   */
+  /** Optional for compatibility with older servers and providers. */
   isDraft: Schema.optional(Schema.Boolean),
   /**
    * Last provider-side activity (ISO), including comments and metadata edits.

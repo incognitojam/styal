@@ -14,7 +14,7 @@ export interface NormalizedGitLabMergeRequestRecord {
   readonly baseRefName: string;
   readonly headRefName: string;
   readonly state: "open" | "closed" | "merged";
-  readonly isDraft: boolean;
+  readonly isDraft?: boolean;
   readonly closedAt?: string | null;
   readonly mergedAt?: string | null;
   readonly updatedAt: Option.Option<DateTime.Utc>;
@@ -44,9 +44,8 @@ const GitLabMergeRequestSchema = Schema.Struct({
   source_branch: TrimmedNonEmptyString,
   target_branch: TrimmedNonEmptyString,
   state: Schema.optional(Schema.NullOr(Schema.String)),
-  // `work_in_progress` is the pre-14.0 spelling; both still appear in the wild.
-  draft: Schema.optional(Schema.NullOr(Schema.Boolean)),
-  work_in_progress: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  draft: Schema.optional(Schema.Boolean),
+  work_in_progress: Schema.optional(Schema.Boolean),
   closed_at: Schema.optional(Schema.NullOr(Schema.String)),
   merged_at: Schema.optional(Schema.NullOr(Schema.String)),
   updated_at: Schema.optional(Schema.OptionFromNullOr(Schema.DateTimeUtcFromString)),
@@ -116,7 +115,7 @@ function normalizeGitLabMergeRequestRecord(
     baseRefName: raw.target_branch,
     headRefName: raw.source_branch,
     state: normalizeGitLabMergeRequestState(raw.state),
-    isDraft: raw.draft ?? raw.work_in_progress ?? false,
+    ...(raw.draft === true || raw.work_in_progress === true ? { isDraft: true } : {}),
     closedAt: raw.closed_at ?? null,
     mergedAt: raw.merged_at ?? null,
     updatedAt: raw.updated_at ?? Option.none(),
