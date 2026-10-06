@@ -22,7 +22,6 @@ import {
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
 
-import { encodeGraphQlRequestJson } from "../pullRequest/gitHubPullRequestJson.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as GitHubApi from "./GitHubApi.ts";
 import * as GitHubGraphQlBudget from "./githubGraphQlBudget.ts";
@@ -47,15 +46,22 @@ import {
 } from "./gitHubPullRequests.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+
+/**
+ * A GraphQL request as `gh api graphql --input -` takes it. Variables travel in the document
+ * rather than as `-f name=value` flags, so a reader's own words never reach argv.
+ */
+const encodeGraphQlRequestJson = Schema.encodeSync(
+  Schema.fromJsonString(
+    Schema.Struct({ query: Schema.String, variables: Schema.Record(Schema.String, Schema.String) }),
+  ),
+);
 const DEFAULT_ISSUE_LIST_LIMIT = 50;
 
 /** Server-local credential scope; never put its value in RPC payloads or cache keys. */
 export const PinnedGitHubCredential = GitHubApi.PinnedGitHubCredential;
 
-export const AllowGitHubReserve = Context.Reference<boolean>(
-  "t3/sourceControl/AllowGitHubReserve",
-  { defaultValue: () => false },
-);
+export const AllowGitHubReserve = GitHubApi.AllowGitHubReserve;
 
 function commandHosts(args: ReadonlyArray<string>): Array<string | null> {
   const hosts: Array<string | null> = [];
