@@ -2434,7 +2434,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         });
       }),
     ).pipe(Effect.asVoid);
-    // Stopping a session can wait for its process to exit. Stop everything at
+    // Stopping a session waits for its process to exit. Stop everything at
     // once so a restart does not run out its grace period and kill the server
     // with provider processes still running.
     const stopResults = yield* Effect.forEach(

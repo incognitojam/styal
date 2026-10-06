@@ -70,14 +70,17 @@ import {
   formatClaudeResumeCompactionQuestion,
 } from "@t3tools/shared/claudeCompaction";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
@@ -89,7 +92,11 @@ import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
-import { makeClaudeProcessSpawner } from "./ClaudeProcess.ts";
+import {
+  type ClaudeProcessHandle,
+  makeClaudeProcessSpawner,
+  type SpawnClaudeChild,
+} from "./ClaudeProcess.ts";
 import { claudeSignedOutMessage, makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import { planClaudeSkillDispatch } from "../Drivers/ClaudeSkillDispatch.ts";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
@@ -418,6 +425,7 @@ interface ClaudeSessionContext {
   readonly turnStartMessageIds: Array<string | null>;
   readonly promptQueue: Queue.Queue<PromptQueueItem>;
   readonly query: ClaudeQueryRuntime;
+  readonly process: ClaudeProcessHandle;
   streamFiber: Fiber.Fiber<void, Error> | undefined;
   readonly startedAt: string;
   readonly basePermissionMode: PermissionMode | undefined;
@@ -505,7 +513,21 @@ export interface ClaudeAdapterLiveOptions {
   readonly modelCatalog?: Effect.Effect<ClaudeModelCatalog>;
   /** Scoped-bucket names the driver's status probe last saw; see `claudeUsageLimits`. */
   readonly scopedLimitNames?: Ref.Ref<ClaudeScopedLimitNames>;
+  /** Spawns the CLI in place of node's spawn; tests hand in a fake process. */
+  readonly spawnProcess?: SpawnClaudeChild;
+  /** How long a stop waits for the CLI to exit, from close, before SIGKILL. */
+  readonly processExitGraceMs?: number;
 }
+
+/**
+ * A stop closes the SDK query, which ends the CLI's stdin and sends SIGTERM
+ * two seconds later; an idle CLI exits on the EOF, a busy one on the signal,
+ * and either is gone within about half a second more. The service launcher
+ * SIGKILLs a server five seconds into its shutdown, so the wait stops well
+ * short of that and finishes the job itself.
+ */
+const CLAUDE_PROCESS_EXIT_GRACE_MS = 3_500;
+const CLAUDE_PROCESS_KILL_WAIT_MS = 500;
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -4399,6 +4421,31 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     });
   });
 
+  const processExitGraceMs = options?.processExitGraceMs ?? CLAUDE_PROCESS_EXIT_GRACE_MS;
+
+  const awaitProcessExit = Effect.fn("awaitProcessExit")(function* (
+    context: ClaudeSessionContext,
+    closeStartedAt: number,
+  ) {
+    const handle = context.process;
+    const pid = handle.pid();
+    if (pid === undefined || handle.exited() !== undefined) return;
+    const elapsedMs = (yield* Clock.currentTimeMillis) - closeStartedAt;
+    const exited = yield* Effect.promise(() => handle.exit).pipe(
+      Effect.timeoutOption(Duration.millis(Math.max(0, processExitGraceMs - elapsedMs))),
+    );
+    if (Option.isSome(exited)) return;
+    yield* Effect.logWarning("claude.cli.exit-timeout", {
+      threadId: context.session.threadId,
+      pid,
+      graceMs: processExitGraceMs,
+    });
+    handle.kill("SIGKILL");
+    yield* Effect.promise(() => handle.exit).pipe(
+      Effect.timeoutOption(Duration.millis(CLAUDE_PROCESS_KILL_WAIT_MS)),
+    );
+  });
+
   const stopSessionInternal = Effect.fn("stopSessionInternal")(function* (
     context: ClaudeSessionContext,
     options?: { readonly emitExitEvent?: boolean },
@@ -4407,6 +4454,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
     // Schedule process termination before any cleanup that can wait on the
     // provider. The SDK closes stdin, then escalates from SIGTERM to SIGKILL.
+    const closeStartedAt = yield* Clock.currentTimeMillis;
     yield* Effect.try({
       try: () => context.query.close(),
       catch: (cause) =>
@@ -4478,6 +4526,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     if (streamFiber && streamFiber.pollUnsafe() === undefined) {
       yield* Fiber.interrupt(streamFiber);
     }
+
+    // Nothing after this point, including the exit event, may run while the
+    // CLI is still alive: a server update resumes the same session in a new
+    // process as soon as the old server is gone.
+    yield* awaitProcessExit(context, closeStartedAt);
 
     const updatedAt = yield* nowIso;
     context.session = {
@@ -4568,6 +4621,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       // The CLI's lifetime is otherwise invisible: the SDK reports neither
       // its pid nor how it exited, and drops its stderr once the stream ends.
       const claudeProcess = makeClaudeProcessSpawner({
+        ...(options?.spawnProcess ? { spawn: options.spawnProcess } : {}),
         observer: {
           onSpawn: ({ pid }) => {
             runFork(Effect.logInfo("claude.cli.spawned", { threadId, pid }));
@@ -5218,6 +5272,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           : Array.from({ length: resumeState?.turnCount ?? 0 }, () => null),
         promptQueue,
         query: queryRuntime,
+        process: claudeProcess.handle,
         streamFiber: undefined,
         startedAt,
         basePermissionMode: permissionMode,
@@ -5743,8 +5798,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     contexts: ReadonlyArray<ClaudeSessionContext>,
     emitExitEvent: boolean,
   ) {
-    // Each stop can wait about two seconds for its CLI to exit. Stopping them
-    // together keeps shutdown within the service launcher's grace period.
+    // Each stop waits for its CLI to exit, up to the process exit grace.
+    // Stopping them together keeps shutdown within the service launcher's
+    // grace period however many sessions are open.
     const results = yield* Effect.forEach(
       contexts,
       (context) => stopSessionInternal(context, { emitExitEvent }).pipe(Effect.result),

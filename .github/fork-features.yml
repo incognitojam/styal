@@ -395,6 +395,27 @@ features:
       tracking: []
       retire_when: Upstream warns about Claude prompt cache loss on model and option changes, or Claude Code keeps the cache across them.
 
+  - id: claude-stop-waits-for-cli-exit
+    title: Stop a Claude session only once its CLI has exited
+    status: maintained
+    prs: [620, 621]
+    invariants:
+      - Stopping a Claude session waits for its CLI process to exit, up to a grace measured from the SDK close, then kills the process itself; the session's exit event follows the process, not the close call.
+      - Every Claude CLI logs its pid at spawn and its exit code or signal at exit, with the end of its stderr when the exit was not clean.
+    rationale: A server update resumes a running session in a new server process as soon as the old server exits, and the SDK's close returns before the CLI does, so without the wait two CLIs can hold the same session and transcript.
+    implementation_paths:
+      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/server/src/provider/Layers/ClaudeProcess.ts
+    upstream_paths:
+      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+    tests:
+      - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
+      - apps/server/src/provider/Layers/ClaudeProcess.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream's Claude adapter waits for the CLI process to exit before a stop completes and logs the process's spawn, exit and stderr.
+
   - id: clone-failure-guidance
     title: Explain clone authentication and rate-limit failures
     status: maintained

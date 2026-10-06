@@ -1,7 +1,10 @@
 // @effect-diagnostics nodeBuiltinImport:off
+import type * as NodeChildProcess from "node:child_process";
+import * as NodeEvents from "node:events";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import * as NodeStream from "node:stream";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import type {
@@ -3845,6 +3848,121 @@ describe("ClaudeAdapterLive", () => {
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),
+    );
+  });
+
+  class FakeClaudeChildProcess extends NodeEvents.EventEmitter {
+    readonly pid = 4242;
+    readonly stdin = new NodeStream.PassThrough();
+    readonly stdout = new NodeStream.PassThrough();
+    readonly stderr = new NodeStream.PassThrough();
+    exitCode: number | null = null;
+    signalCode: NodeJS.Signals | null = null;
+    killed = false;
+    readonly killSignals: Array<NodeJS.Signals> = [];
+    readonly exitsOn: ReadonlySet<NodeJS.Signals>;
+
+    constructor(exitsOn: ReadonlySet<NodeJS.Signals>) {
+      super();
+      this.exitsOn = exitsOn;
+    }
+
+    kill(signal: NodeJS.Signals): boolean {
+      this.killSignals.push(signal);
+      if (this.exitsOn.has(signal)) {
+        this.killed = true;
+        this.signalCode = signal;
+        queueMicrotask(() => this.emit("exit", null, signal));
+      }
+      return true;
+    }
+
+    exit(code: number): void {
+      this.exitCode = code;
+      this.emit("exit", code, null);
+    }
+  }
+
+  function makeProcessHarness(child: FakeClaudeChildProcess, processExitGraceMs?: number) {
+    const query = new FakeClaudeQuery();
+    const layer = Layer.effect(
+      ClaudeAdapter,
+      Effect.gen(function* () {
+        return yield* makeClaudeAdapter(decodeClaudeSettings({}), {
+          // The SDK spawns the CLI while it builds the query.
+          createQuery: (input) => {
+            input.options.spawnClaudeCodeProcess?.({
+              command: "claude",
+              args: [],
+              env: {},
+              signal: new AbortController().signal,
+            });
+            return query;
+          },
+          spawnProcess: () => child as unknown as NodeChildProcess.ChildProcess,
+          ...(processExitGraceMs !== undefined ? { processExitGraceMs } : {}),
+        });
+      }),
+    ).pipe(
+      Layer.provideMerge(ServerConfig.layerTest("/tmp/claude-adapter-test", "/tmp")),
+      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(NodeServices.layer),
+    );
+    return { layer, query };
+  }
+
+  // Live clock: the wait under test is a real timeout against a real promise.
+  it.live("stopSession waits for the CLI to exit", () => {
+    const child = new FakeClaudeChildProcess(new Set());
+    const { layer, query } = makeProcessHarness(child);
+
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      const stopFiber = yield* adapter.stopSession(THREAD_ID).pipe(Effect.forkChild);
+      yield* Effect.sleep("50 millis");
+      assert.equal(query.closeCalls, 1);
+      assert.equal(stopFiber.pollUnsafe(), undefined);
+
+      child.exit(0);
+      yield* Fiber.join(stopFiber);
+      assert.deepEqual(child.killSignals, []);
+      assert.equal(yield* adapter.hasSession(THREAD_ID), false);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(layer),
+    );
+  });
+
+  it.live("stopSession kills a CLI that outlives the exit grace", () => {
+    const child = new FakeClaudeChildProcess(new Set(["SIGKILL"]));
+    const { layer } = makeProcessHarness(child, 100);
+
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      const stopFiber = yield* adapter.stopSession(THREAD_ID).pipe(Effect.forkChild);
+      yield* Effect.sleep("50 millis");
+      assert.equal(stopFiber.pollUnsafe(), undefined);
+      assert.deepEqual(child.killSignals, []);
+
+      yield* Fiber.join(stopFiber);
+      assert.deepEqual(child.killSignals, ["SIGKILL"]);
+      assert.equal(child.signalCode, "SIGKILL");
+      assert.equal(yield* adapter.hasSession(THREAD_ID), false);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(layer),
     );
   });
 
