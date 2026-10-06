@@ -821,22 +821,6 @@ describe("ChatMarkdown artifact-template cards", () => {
   });
 });
 
-describe("ChatMarkdown image renderer", () => {
-  it("uses the surface renderer for raw HTML images", () => {
-    const html = renderToStaticMarkup(
-      <ChatMarkdown
-        cwd="/workspace/project"
-        text={'<img src="https://example.com/image.png" alt="Example">'}
-        imageRenderer={({ node: _node, ...props }) => (
-          <span data-proxied-image={props.src}>{props.alt}</span>
-        )}
-      />,
-    );
-
-    expect(html).toContain('data-proxied-image="https://example.com/image.png"');
-  });
-});
-
 describe("ChatMarkdown heading levels", () => {
   it("exposes headings below the host heading without changing their tags", () => {
     const html = renderToStaticMarkup(

@@ -238,7 +238,7 @@ function makeService(input: {
   );
 }
 
-it.effect("resolves a pull request file and its revision through a provider that supports it", () =>
+it.effect("resolves a pull request file through a provider that supports it", () =>
   Effect.gen(function* () {
     const service = yield* makeService({
       projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
@@ -246,7 +246,7 @@ it.effect("resolves a pull request file and its revision through a provider that
         fakeProvider("github", {
           getFile: (input) =>
             Effect.succeed({
-              url: `https://raw.example/${input.revision ?? "head"}/${input.number}/${input.path}?token=one`,
+              url: `https://raw.example/${input.number}/${input.path}?token=one`,
               size: 42,
             }),
         }),
@@ -259,10 +259,9 @@ it.effect("resolves a pull request file and its revision through a provider that
         repository: "acme/web",
         number: 7,
         path: "docs/screenshot.png",
-        revision: "assets",
       }),
       {
-        url: "https://raw.example/assets/7/docs/screenshot.png?token=one",
+        url: "https://raw.example/7/docs/screenshot.png?token=one",
         size: 42,
       },
     );

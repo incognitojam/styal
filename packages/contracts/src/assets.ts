@@ -62,10 +62,8 @@ export const AssetResource = Schema.Union([
     projectId: ProjectId,
     repository: TrimmedNonEmptyString.check(Schema.isMaxLength(ASSET_PATH_MAX_LENGTH)),
     number: PositiveInt,
+    // Repository-relative, read at the pull request head.
     path: TrimmedNonEmptyString.check(Schema.isMaxLength(ASSET_PATH_MAX_LENGTH)),
-    revision: Schema.optionalKey(
-      TrimmedNonEmptyString.check(Schema.isMaxLength(ASSET_PATH_MAX_LENGTH)),
-    ),
   }),
   Schema.TaggedStruct("native-app-icon", {
     app: ToolActivityNativeAppReference,

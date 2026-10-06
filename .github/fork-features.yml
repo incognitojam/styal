@@ -2035,24 +2035,29 @@ features:
       retire_when: Upstream preserves environment-scoped pull request conversation drafts across right-panel surface changes and clears them safely after posting.
 
   - id: pull-request-description-images
-    title: Render repository images in pull request descriptions
+    title: Render relative repository images in pull request descriptions
     status: maintained
     prs: [103, 288]
     invariants:
-      - Repository-relative image references resolve against the pull request head, while qualified GitHub blob and raw references can resolve against their named revision or asset branch through a bounded short-lived same-origin asset URL.
-      - Private repository and raw HTML images use the environment's authorized GitHub CLI, while external, public, ambiguous, and unsupported image URLs retain their ordinary browser fallback.
-      - Rendered pull request images, including repository-backed images, open in the shared image gallery while linked images keep their link action.
+      - Repository-relative image references in GitHub pull request descriptions and comments resolve against the pull request head, not the local checkout, through a bounded short-lived same-origin asset URL read with the environment's authorized GitHub CLI.
+      - Qualified GitHub URLs, including blob, raw, asset-branch and attachment URLs, take upstream's `github-media` path; external and unsupported image URLs keep the default resolution.
+      - Relative repository images render through the shared Markdown asset image, so they open in the pull request's image gallery like every other description image.
+    rationale: Upstream resolves a relative image in a pull request body against the local workspace, which shows a missing or different file whenever the pull request head is not checked out there.
     implementation_paths:
       - apps/server/src/assets/AssetAccess.ts
+      - apps/server/src/http.ts
       - apps/server/src/pullRequest/GitHubPullRequestCli.ts
       - apps/server/src/pullRequest/PullRequestService.ts
+      - apps/web/src/components/ChatMarkdown.tsx
       - apps/web/src/components/pullRequest/PullRequestMarkdown.tsx
       - apps/web/src/components/pullRequest/pullRequestMarkdown.logic.ts
       - packages/contracts/src/assets.ts
     upstream_paths:
       - apps/server/src/assets/AssetAccess.ts
+      - apps/server/src/http.ts
       - apps/server/src/pullRequest/GitHubPullRequestCli.ts
       - apps/server/src/pullRequest/PullRequestService.ts
+      - apps/web/src/components/ChatMarkdown.tsx
       - apps/web/src/components/pullRequest/PullRequestMarkdown.tsx
       - apps/web/src/components/pullRequest/pullRequestMarkdown.logic.ts
       - packages/contracts/src/assets.ts
@@ -2060,13 +2065,12 @@ features:
       - apps/server/src/assets/AssetAccess.test.ts
       - apps/server/src/pullRequest/GitHubPullRequestCli.test.ts
       - apps/server/src/pullRequest/PullRequestService.test.ts
-      - apps/web/src/components/pullRequest/PullRequestMarkdown.test.tsx
       - apps/web/src/components/pullRequest/pullRequestMarkdown.logic.test.ts
     upstream:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/11706
-      retire_when: Upstream resolves repository-relative pull request images against the pull request head through an equivalently bounded and environment-scoped asset path.
+      retire_when: Upstream resolves repository-relative images in pull request descriptions against the pull request head rather than the local workspace.
 
   - id: pull-request-diff-expansion
     title: Open reviewable pull request diffs by default

@@ -219,7 +219,7 @@ export class PullRequestService extends Context.Service<
       input: PullRequestDiffFileContentsInput,
     ) => Effect.Effect<PullRequestDiffFileContentsResult, PullRequestError>;
     readonly file: (
-      input: PullRequestRef & { readonly path: string; readonly revision?: string },
+      input: PullRequestRef & { readonly path: string },
     ) => Effect.Effect<ProviderPullRequestFile, PullRequestError>;
     readonly filesViewed: (
       input: PullRequestRef,
@@ -1823,7 +1823,6 @@ export const make = Effect.gen(function* () {
               host: project.host,
               number: input.number,
               path: input.path,
-              ...(input.revision === undefined ? {} : { revision: input.revision }),
             }).pipe(Effect.mapError(toPullRequestError("file")))
           : Effect.fail(
               new PullRequestOperationError({

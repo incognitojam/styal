@@ -1,112 +1,36 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  resolvePullRequestRepositoryImage,
-  splitPullRequestBody,
-} from "./pullRequestMarkdown.logic";
+import { pullRequestRelativeImagePath, splitPullRequestBody } from "./pullRequestMarkdown.logic";
 
-const GITHUB_CONTEXT = {
-  provider: "github",
-  repository: "incognitojam/timeline",
-  url: "https://github.com/incognitojam/timeline/pull/753",
-  headBranch: "add-self-contact-flag",
-};
-
-describe("pull request repository images", () => {
-  it("resolves a GitHub blob image at the pull request branch", () => {
-    expect(
-      resolvePullRequestRepositoryImage(
-        "https://github.com/incognitojam/timeline/blob/add-self-contact-flag/web/e2e/contact-detail.png?raw=1",
-        GITHUB_CONTEXT,
-      ),
-    ).toEqual({ path: "web/e2e/contact-detail.png" });
+describe("pull request relative images", () => {
+  it("reads a relative image as a repository path", () => {
+    expect(pullRequestRelativeImagePath("./docs/screenshot.png", "github")).toBe(
+      "docs/screenshot.png",
+    );
+    expect(pullRequestRelativeImagePath("docs/hello%20world.png?raw=1#frag", "github")).toBe(
+      "docs/hello world.png",
+    );
   });
 
-  it("resolves relative and commit-pinned repository images", () => {
-    expect(resolvePullRequestRepositoryImage("./docs/screenshot.png", GITHUB_CONTEXT)).toEqual({
-      path: "docs/screenshot.png",
-    });
-    expect(
-      resolvePullRequestRepositoryImage(
-        "https://github.com/incognitojam/timeline/blob/f4913679f3b33ba1848c6bf4934228e9eb71b30f/docs/screenshot.png",
-        GITHUB_CONTEXT,
-      ),
-    ).toEqual({
-      path: "docs/screenshot.png",
-      revision: "f4913679f3b33ba1848c6bf4934228e9eb71b30f",
-    });
+  it("leaves qualified URLs to the default resolution", () => {
+    for (const source of [
+      "https://github.com/acme/web/blob/feature/docs/screenshot.png",
+      "https://raw.githubusercontent.com/acme/web/assets/pr-7/screenshot.png",
+      "https://github.com/user-attachments/assets/0f0e0d0c-1111-2222-3333-444455556666",
+      "https://example.com/screenshot.png",
+      "//example.com/screenshot.png",
+      "/acme/web/raw/main/screenshot.png",
+      "data:image/png;base64,AAAA",
+    ]) {
+      expect(pullRequestRelativeImagePath(source, "github")).toBeNull();
+    }
   });
 
-  it("resolves an image kept on a separate single-segment asset branch", () => {
-    expect(
-      resolvePullRequestRepositoryImage(
-        "https://github.com/incognitojam/timeline/raw/assets/pr-858/sleep-card.png",
-        GITHUB_CONTEXT,
-      ),
-    ).toEqual({
-      path: "pr-858/sleep-card.png",
-      revision: "assets",
-      browserFallback: "https://github.com/incognitojam/timeline/raw/assets/pr-858/sleep-card.png",
-    });
-  });
-
-  it("resolves raw-host and qualified-ref image URLs", () => {
-    expect(
-      resolvePullRequestRepositoryImage(
-        "https://raw.githubusercontent.com/incognitojam/timeline/assets/pr-858/sleep-card.png",
-        GITHUB_CONTEXT,
-      ),
-    ).toEqual({
-      path: "pr-858/sleep-card.png",
-      revision: "assets",
-      browserFallback:
-        "https://raw.githubusercontent.com/incognitojam/timeline/assets/pr-858/sleep-card.png",
-    });
-    expect(
-      resolvePullRequestRepositoryImage(
-        "https://raw.githubusercontent.com/incognitojam/timeline/refs/heads/assets/pr-858/sleep-card.png",
-        GITHUB_CONTEXT,
-      ),
-    ).toEqual({
-      path: "pr-858/sleep-card.png",
-      revision: "refs/heads/assets",
-      browserFallback:
-        "https://raw.githubusercontent.com/incognitojam/timeline/refs/heads/assets/pr-858/sleep-card.png",
-    });
-  });
-
-  it("keeps the authored URL when an unfamiliar ref and path split is only a guess", () => {
-    const source = "https://github.com/incognitojam/timeline/raw/release/v1.2/docs/screenshot.png";
-    expect(resolvePullRequestRepositoryImage(source, GITHUB_CONTEXT)).toEqual({
-      path: "v1.2/docs/screenshot.png",
-      revision: "release",
-      browserFallback: source,
-    });
-  });
-
-  it("leaves external, cross-repository, and unsafe paths alone", () => {
-    expect(
-      resolvePullRequestRepositoryImage("https://example.com/screenshot.png", GITHUB_CONTEXT),
-    ).toBeNull();
-    expect(
-      resolvePullRequestRepositoryImage(
-        "https://github.com/acme/other/blob/add-self-contact-flag/screenshot.png",
-        GITHUB_CONTEXT,
-      ),
-    ).toBeNull();
-    expect(resolvePullRequestRepositoryImage("../secret.png", GITHUB_CONTEXT)).toBeNull();
-    expect(
-      resolvePullRequestRepositoryImage(
-        "https://raw.githubusercontent.com/incognitojam/timeline/assets/../../secret.png",
-        GITHUB_CONTEXT,
-      ),
-    ).toBeNull();
-    expect(
-      resolvePullRequestRepositoryImage(
-        "https://raw.githubusercontent.com/incognitojam/timeline/assets/%252e%252e/secret.png",
-        GITHUB_CONTEXT,
-      ),
-    ).toBeNull();
+  it("rejects paths that leave the repository and other providers", () => {
+    expect(pullRequestRelativeImagePath("../secret.png", "github")).toBeNull();
+    expect(pullRequestRelativeImagePath("docs/%2e%2e/%2e%2e/secret.png", "github")).toBeNull();
+    expect(pullRequestRelativeImagePath("docs\\screenshot.png", "github")).toBeNull();
+    expect(pullRequestRelativeImagePath("docs/screenshot.png", "gitlab")).toBeNull();
   });
 });
 

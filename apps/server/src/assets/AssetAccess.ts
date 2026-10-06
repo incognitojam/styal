@@ -140,7 +140,6 @@ const AssetClaimsSchema = Schema.Union([
     repository: Schema.String,
     number: PositiveInt,
     path: Schema.String,
-    revision: Schema.optionalKey(Schema.String),
     expiresAt: Schema.Number,
   }),
   Schema.Struct({
@@ -179,7 +178,6 @@ export type ResolvedAsset =
       readonly repository: string;
       readonly number: number;
       readonly path: string;
-      readonly revision?: string;
     }
   | {
       readonly kind: "github-media";
@@ -696,7 +694,6 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
         repository: input.resource.repository,
         number: input.resource.number,
         path: input.resource.path,
-        ...(input.resource.revision === undefined ? {} : { revision: input.resource.revision }),
         expiresAt,
       };
       fileName = path.basename(input.resource.path);
@@ -834,7 +831,6 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       repository: claims.repository,
       number: claims.number,
       path: claims.path,
-      ...(claims.revision === undefined ? {} : { revision: claims.revision }),
     } satisfies ResolvedAsset;
   }
 
