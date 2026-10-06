@@ -504,7 +504,9 @@ export const layerWithOptions = (
                   dropMcpCredentialReservation(threadId, existing.providerSessionId);
                 }
                 const projection = yield* projectionStore.getThreadProjection(threadId).pipe(
-                  Effect.catchTag("ProjectionStoreThreadNotFoundError", () => Effect.succeed(null)),
+                  Effect.catchTags({
+                    ProjectionStoreThreadNotFoundError: () => Effect.succeed(null),
+                  }),
                   Effect.orDie,
                 );
                 const activeProviderThread = projection?.providerThreads.find(

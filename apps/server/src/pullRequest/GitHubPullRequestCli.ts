@@ -3111,24 +3111,25 @@ export const make = Effect.gen(function* () {
           .pipe(
             // `gh` reports a moved head only in its stderr wording, so a refused pinned merge
             // reads the head again to say why, and otherwise keeps the original failure.
-            Effect.catchTag("GitHubCliCommandError", (error) =>
-              pinnedHead === undefined
-                ? Effect.fail(error)
-                : getPullRequestDetail(input).pipe(
-                    Effect.orElseSucceed(() => null),
-                    Effect.flatMap((current) =>
-                      Effect.fail<GitHubCli.GitHubCliError | GitHubMergeHeadChangedError>(
-                        current?.headSha !== undefined && current.headSha !== pinnedHead
-                          ? new GitHubMergeHeadChangedError({
-                              command: "gh",
-                              cwd: input.cwd,
-                              number: input.number,
-                            })
-                          : error,
+            Effect.catchTags({
+              GitHubCliCommandError: (error) =>
+                pinnedHead === undefined
+                  ? Effect.fail(error)
+                  : getPullRequestDetail(input).pipe(
+                      Effect.orElseSucceed(() => null),
+                      Effect.flatMap((current) =>
+                        Effect.fail<GitHubCli.GitHubCliError | GitHubMergeHeadChangedError>(
+                          current?.headSha !== undefined && current.headSha !== pinnedHead
+                            ? new GitHubMergeHeadChangedError({
+                                command: "gh",
+                                cwd: input.cwd,
+                                number: input.number,
+                              })
+                            : error,
+                        ),
                       ),
                     ),
-                  ),
-            ),
+            }),
           );
       });
     },

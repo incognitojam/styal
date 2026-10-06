@@ -421,7 +421,7 @@ function drainBackendOutput(
               cause,
             }),
         ),
-        Effect.catchTag("BackendProcessOutputHandlingError", onOutputFailure),
+        Effect.catchTags({ BackendProcessOutputHandlingError: onOutputFailure }),
       ),
     ),
     Effect.catchTags({
