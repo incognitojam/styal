@@ -1,10 +1,6 @@
 {
   "pullRequests": [
     {
-      "pr": 7721,
-      "reason": "Decodes the octal escapes git writes for non-ASCII file names in diff headers. Once it lands, drop the fork's core.quotePath=false from review and turn diffs (fork #275, #296), which exists so those names match the generated-file attributions, and decode names with upstream's helper instead."
-    },
-    {
       "pr": 10027,
       "reason": "The styal Link authorization complete page still has the blue and indigo banner from before the cotton reel artwork (fork #477); this replaces it with a plain card. Swap in the styal wordmark on intake."
     },
