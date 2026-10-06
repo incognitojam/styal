@@ -298,12 +298,21 @@ export function renderLagReport(
   const sampled = days.filter((_, index) => (days.length - 1 - index) % stride === 0);
   const recent = days.slice(-30);
   // Mermaid draws every category label, so only the first label and month starts carry the month.
-  const labels = (rows: LagDay[]) =>
-    rows.map((row, index) => {
+  // It also merges categories with the same name, so a repeated day number (9/2 and 10/2 both
+  // read "2") gets invisible zero-width spaces appended to keep each category distinct.
+  const labels = (rows: LagDay[]) => {
+    const seen = new Set<string>();
+    return rows.map((row, index) => {
       const date = new Date(row.day);
       const month = date.getUTCMonth() !== new Date(rows[index - 1]?.day ?? NaN).getUTCMonth();
-      return month ? `${date.getUTCMonth() + 1}/${date.getUTCDate()}` : String(date.getUTCDate());
+      let label = month
+        ? `${date.getUTCMonth() + 1}/${date.getUTCDate()}`
+        : String(date.getUTCDate());
+      while (seen.has(label)) label += "​";
+      seen.add(label);
+      return label;
     });
+  };
 
   const lines = [
     "## Upstream lag",
