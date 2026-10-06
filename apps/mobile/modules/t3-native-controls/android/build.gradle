@@ -32,8 +32,12 @@ def reactNativePackageJson = new File(
 )
 def reactNativeVersionCatalog = new File(reactNativePackageJson.parentFile, "gradle/libs.versions.toml")
 def reactNativeFbjniVersion = (reactNativeVersionCatalog.text =~ /(?m)^fbjni\s*=\s*"([^"]+)"/)[0][1]
+// Expo's run:android configures projects on demand, so :app can resolve configurations such as
+// androidJdkImage before this module is evaluated. Gradle rejects changes to those.
 rootProject.allprojects {
-  configurations.configureEach {
-    resolutionStrategy.force "com.facebook.fbjni:fbjni:${reactNativeFbjniVersion}"
+  configurations.configureEach { configuration ->
+    if (configuration.state == Configuration.State.UNRESOLVED) {
+      configuration.resolutionStrategy.force "com.facebook.fbjni:fbjni:${reactNativeFbjniVersion}"
+    }
   }
 }
