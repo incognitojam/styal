@@ -201,7 +201,7 @@ it.effect("clones a looked-up repository into the requested destination", () =>
       assert.deepStrictEqual(cloneCalls, [
         {
           cwd: parent,
-          args: ["clone", "--progress", CLONE_URLS.url, "t3code"],
+          args: ["clone", "--progress", "--", CLONE_URLS.url, "t3code"],
         },
       ]);
       assert.strictEqual("upstream" in result, false);
@@ -219,6 +219,43 @@ it.effect("clones a looked-up repository into the requested destination", () =>
       ),
     );
   }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect.each(["--bare", "source.git"])(
+  "clones a local repository named %s as a working tree",
+  (repositoryName) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const git = yield* GitVcsDriver.GitVcsDriver;
+      const parent = yield* fs.makeTempDirectoryScoped({ prefix: "t3-clone-options-" });
+      yield* git.execute({
+        operation: "test.init",
+        cwd: parent,
+        args: ["init", "--bare", path.join(parent, repositoryName)],
+      });
+      const destinationPath = path.join(parent, "checkout");
+      yield* Effect.gen(function* () {
+        const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+        const result = yield* service.cloneRepository({
+          remoteUrl: repositoryName,
+          destinationPath,
+        });
+        assert.strictEqual(result.cwd, destinationPath);
+        assert.isTrue(yield* fs.exists(path.join(destinationPath, ".git")));
+      }).pipe(Effect.provide(makeLayer({ git: { execute: git.execute } })));
+    }).pipe(
+      Effect.provide(
+        GitVcsDriver.layer.pipe(
+          Layer.provide(
+            ServerConfig.layerTest(process.cwd(), {
+              prefix: "t3-clone-options-config-",
+            }),
+          ),
+          Layer.provideMerge(NodeServices.layer),
+        ),
+      ),
+    ),
 );
 
 it.effect("reports clone progress from git's stderr and keeps its error text on failure", () =>
@@ -578,7 +615,7 @@ it.effect("keeps the client-resolved fork transport when wiring and pinning its 
         { cwd: destinationPath, preferredName: "upstream", url: PARENT_URLS.url },
       ]);
       assert.deepStrictEqual(gitCalls, [
-        { cwd: parent, args: ["clone", "--progress", CLONE_URLS.url, "t3code"] },
+        { cwd: parent, args: ["clone", "--progress", "--", CLONE_URLS.url, "t3code"] },
         {
           cwd: destinationPath,
           args: ["config", "--replace-all", "remote.origin.gh-resolved", "base"],
@@ -675,7 +712,7 @@ it.effect("pins the parent when the clone asks to contribute upstream", () =>
       });
 
       assert.deepStrictEqual(gitCalls, [
-        { cwd: parent, args: ["clone", "--progress", CLONE_URLS.url, "t3code"] },
+        { cwd: parent, args: ["clone", "--progress", "--", CLONE_URLS.url, "t3code"] },
         {
           cwd: destinationPath,
           args: ["config", "--replace-all", "remote.upstream.gh-resolved", "base"],
@@ -806,7 +843,9 @@ it.effect("falls back to the requested clone URL when the repository lookup fail
 
       assert.strictEqual(result.repository, null);
       assert.strictEqual(result.remoteUrl, CLONE_URLS.sshUrl);
-      assert.deepStrictEqual(cloneCalls, [["clone", "--progress", CLONE_URLS.sshUrl, "t3code"]]);
+      assert.deepStrictEqual(cloneCalls, [
+        ["clone", "--progress", "--", CLONE_URLS.sshUrl, "t3code"],
+      ]);
     }).pipe(
       Effect.provide(
         layer({
@@ -943,7 +982,7 @@ it.effect("clones beneath a Windows drive root without trying to create the root
 
     assert.strictEqual(result.cwd, "D:\\t3code");
     assert.deepStrictEqual(cloneCalls, [
-      { cwd: "D:\\", args: ["clone", "--progress", CLONE_URLS.url, "t3code"] },
+      { cwd: "D:\\", args: ["clone", "--progress", "--", CLONE_URLS.url, "t3code"] },
     ]);
   }).pipe(
     Effect.provide(
