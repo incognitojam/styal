@@ -30,7 +30,7 @@ const invokeSetWslDistro = (distro: string | null) =>
 const invokeSetWslOnly = (enabled: boolean) =>
   setWslOnly.handler(enabled).pipe(Effect.flatMap(decodeWslState));
 
-function makeWslBackendLayer(input: { readonly onReconcile?: Effect.Effect<void> } = {}) {
+function layerWslBackend(input: { readonly onReconcile?: Effect.Effect<void> } = {}) {
   return Layer.succeed(
     DesktopWslBackend.DesktopWslBackend,
     DesktopWslBackend.DesktopWslBackend.of({
@@ -40,7 +40,7 @@ function makeWslBackendLayer(input: { readonly onReconcile?: Effect.Effect<void>
   );
 }
 
-function makeLifecycleLayer(relaunchReasons: Array<string>, accepted = true) {
+function layerLifecycle(relaunchReasons: Array<string>, accepted = true) {
   return Layer.succeed(
     DesktopLifecycle.DesktopLifecycle,
     DesktopLifecycle.DesktopLifecycle.of({
@@ -60,7 +60,7 @@ function makeLifecycleLayer(relaunchReasons: Array<string>, accepted = true) {
   );
 }
 
-const unusedLifecycleRuntimeLayer = Layer.mergeAll(
+const layerUnusedLifecycleRuntime = Layer.mergeAll(
   Layer.succeed(
     DesktopObservability.DesktopTrace,
     DesktopObservability.DesktopTrace.of({ flush: Effect.void }),
@@ -117,9 +117,9 @@ describe("WSL IPC", () => {
         Layer.mergeAll(
           DesktopAppSettings.layerTest(initial),
           DesktopWslEnvironment.layerTest({ isAvailable: true }),
-          makeWslBackendLayer(),
-          makeLifecycleLayer([], false),
-          unusedLifecycleRuntimeLayer,
+          layerWslBackend(),
+          layerLifecycle([], false),
+          layerUnusedLifecycleRuntime,
         ),
       ),
     );
@@ -155,7 +155,7 @@ describe("WSL IPC", () => {
             wslOnly: true,
           }),
           DesktopWslEnvironment.layerTest(),
-          makeWslBackendLayer(),
+          layerWslBackend(),
         ),
       ),
     ),
@@ -170,9 +170,9 @@ describe("WSL IPC", () => {
         wslOnly: true,
       }),
       DesktopWslEnvironment.layerTest({ isAvailable: true }),
-      makeWslBackendLayer(),
-      makeLifecycleLayer(relaunchReasons),
-      unusedLifecycleRuntimeLayer,
+      layerWslBackend(),
+      layerLifecycle(relaunchReasons),
+      layerUnusedLifecycleRuntime,
     );
 
     return Effect.gen(function* () {
@@ -201,9 +201,9 @@ describe("WSL IPC", () => {
         wslOnly: false,
       }),
       DesktopWslEnvironment.layerTest({ isAvailable: true }),
-      makeWslBackendLayer(),
-      makeLifecycleLayer(relaunchReasons),
-      unusedLifecycleRuntimeLayer,
+      layerWslBackend(),
+      layerLifecycle(relaunchReasons),
+      layerUnusedLifecycleRuntime,
     );
 
     return Effect.gen(function* () {
@@ -238,13 +238,13 @@ describe("WSL IPC", () => {
         wslOnly: true,
       }),
       DesktopWslEnvironment.layerTest({ isAvailable: true }),
-      makeWslBackendLayer({
+      layerWslBackend({
         onReconcile: Effect.sync(() => {
           reconcileCount += 1;
         }),
       }),
-      makeLifecycleLayer(relaunchReasons),
-      unusedLifecycleRuntimeLayer,
+      layerLifecycle(relaunchReasons),
+      layerUnusedLifecycleRuntime,
     );
 
     return Effect.gen(function* () {
@@ -273,13 +273,13 @@ describe("WSL IPC", () => {
         wslOnly: false,
       }),
       DesktopWslEnvironment.layerTest({ isAvailable: true }),
-      makeWslBackendLayer({
+      layerWslBackend({
         onReconcile: Effect.sync(() => {
           reconcileCount += 1;
         }),
       }),
-      makeLifecycleLayer(relaunchReasons),
-      unusedLifecycleRuntimeLayer,
+      layerLifecycle(relaunchReasons),
+      layerUnusedLifecycleRuntime,
     );
 
     return Effect.gen(function* () {
@@ -302,13 +302,13 @@ describe("WSL IPC", () => {
         wslOnly: true,
       }),
       DesktopWslEnvironment.layerTest({ isAvailable: true }),
-      makeWslBackendLayer({
+      layerWslBackend({
         onReconcile: Effect.sync(() => {
           reconcileCount += 1;
         }),
       }),
-      makeLifecycleLayer(relaunchReasons),
-      unusedLifecycleRuntimeLayer,
+      layerLifecycle(relaunchReasons),
+      layerUnusedLifecycleRuntime,
     );
 
     return Effect.gen(function* () {
@@ -341,13 +341,13 @@ describe("WSL IPC", () => {
         wslOnly: false,
       }),
       DesktopWslEnvironment.layerTest({ isAvailable: true }),
-      makeWslBackendLayer({
+      layerWslBackend({
         onReconcile: Effect.sync(() => {
           reconcileCount += 1;
         }),
       }),
-      makeLifecycleLayer(relaunchReasons),
-      unusedLifecycleRuntimeLayer,
+      layerLifecycle(relaunchReasons),
+      layerUnusedLifecycleRuntime,
     );
 
     return Effect.gen(function* () {

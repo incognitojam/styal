@@ -13,7 +13,7 @@ import { Argument, Command, Flag, GlobalFlag } from "effect/cli";
 
 import * as ServerConfig from "../config.ts";
 import { expandHomePath } from "../os-jank.ts";
-import { OrchestrationV2EventSinkLayerLive } from "../orchestration-v2/runtimeLayer.ts";
+import { layerEventSink } from "../orchestration-v2/runtimeLayer.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "../persistence/Layers/Sqlite.ts";
@@ -43,7 +43,7 @@ class DriveScenarioError extends Schema.TaggedError<DriveScenarioError>()("Drive
 }) {}
 
 const scenarioRuntimeLayer = Layer.mergeAll(
-  OrchestrationV2EventSinkLayerLive,
+  layerEventSink,
   ProjectionStore.layer,
   ProjectStore.layer,
 ).pipe(Layer.provideMerge(SqlitePersistenceLayerLive));

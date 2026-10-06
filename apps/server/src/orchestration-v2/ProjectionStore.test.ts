@@ -30,7 +30,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import { projectThreadAwarenessV2 } from "@t3tools/shared/agentAwareness";
 
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Layers/Sqlite.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import {
@@ -41,9 +41,9 @@ import {
 } from "./threadHistoryPaging.ts";
 import { COMMAND_OUTPUT_WIRE_PREFIX_LENGTH } from "./WireProjection.ts";
 
-const TestLayer = Layer.mergeAll(
-  ProjectionStore.layer.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
-  SqlitePersistenceMemory,
+const layerTest = Layer.mergeAll(
+  ProjectionStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemory)),
+  SqlitePersistence.layerMemory,
 );
 const modelSelection = {
   instanceId: ProviderInstanceId.make("codex"),
@@ -331,7 +331,7 @@ it.effect("memory recovery selection includes unfinished items from missing runs
   }).pipe(Effect.provide(ProjectionStore.layerMemory)),
 );
 
-it.layer(TestLayer)("ProjectionStoreV2", (it) => {
+it.layer(layerTest)("ProjectionStoreV2", (it) => {
   it.effect(
     "keeps restart-cancelled work through a stale run.updated",
     () => restartCancelledWorkSurvivesStaleRunUpdate,
@@ -4980,5 +4980,5 @@ it.effect(
         payload: { ...run, status: "rolled_back", completedAt: now },
       });
       yield* check(frozen);
-    }).pipe(Effect.provide(TestLayer)),
+    }).pipe(Effect.provide(layerTest)),
 );

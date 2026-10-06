@@ -82,7 +82,7 @@ new DataView(png.buffer).setUint32(12, 0x49484452);
 new DataView(png.buffer).setUint32(16, 1206);
 new DataView(png.buffer).setUint32(20, 2622);
 
-const DeviceServiceMock = Layer.mock(DeviceService.DeviceService)({
+const layerDeviceServiceMock = Layer.mock(DeviceService.DeviceService)({
   state: Effect.succeed(state),
   list: Effect.succeed(state),
   open: (input) =>
@@ -101,10 +101,10 @@ const DeviceServiceMock = Layer.mock(DeviceService.DeviceService)({
   agentTarget: () => Effect.succeed(["--config", "/host.json", "--session", "thread-device"]),
 });
 
-const TestLayer = McpHttpServer.DeviceToolkitRegistrationLive.pipe(
+const layerTest = McpHttpServer.layerDeviceToolkit.pipe(
   Layer.provide(AnalyticsService.AnalyticsService.layerTest),
   Layer.provideMerge(McpServer.McpServer.layer),
-  Layer.provideMerge(DeviceServiceMock),
+  Layer.provideMerge(layerDeviceServiceMock),
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-device-toolkit-test-" })),
   Layer.provide(NodeServices.layer),
 );
@@ -140,11 +140,11 @@ it.effect("registers the device tools and returns the screenshot as image conten
         .pipe(callWith(["preview"]), Effect.provideService(McpSchema.McpServerClient, client));
       expect(denied.isError).toBe(true);
     }),
-  ).pipe(Effect.provide(TestLayer)),
+  ).pipe(Effect.provide(layerTest)),
 );
 
 it.effect("rejects unavailable agent access before booting or opening a device", () => {
-  const unavailable = Layer.mock(DeviceService.DeviceService)({
+  const layerUnavailable = Layer.mock(DeviceService.DeviceService)({
     list: Effect.succeed(state),
     agentTarget: () =>
       Effect.fail(
@@ -172,10 +172,10 @@ it.effect("rejects unavailable agent access before booting or opening a device",
   }).pipe(
     Effect.scoped,
     Effect.provide(
-      McpHttpServer.DeviceToolkitRegistrationLive.pipe(
+      McpHttpServer.layerDeviceToolkit.pipe(
         Layer.provide(AnalyticsService.AnalyticsService.layerTest),
         Layer.provideMerge(McpServer.McpServer.layer),
-        Layer.provide(unavailable),
+        Layer.provide(layerUnavailable),
         Layer.provide(NodeServices.layer),
       ),
     ),
@@ -269,7 +269,7 @@ it.effect("reports another thread's device and does not open it unless named", (
   }).pipe(
     Effect.scoped,
     Effect.provide(
-      McpHttpServer.DeviceToolkitRegistrationLive.pipe(
+      McpHttpServer.layerDeviceToolkit.pipe(
         Layer.provide(AnalyticsService.AnalyticsService.layerTest),
         Layer.provideMerge(McpServer.McpServer.layer),
         Layer.provide(service),

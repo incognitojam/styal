@@ -41,7 +41,7 @@ const client = McpSchema.McpServerClient.of({
   getClient: Effect.die("unused"),
 });
 const makeTestLayer = (analyticsLayer: Layer.Layer<AnalyticsService.AnalyticsService>) =>
-  McpHttpServer.PreviewToolkitRegistrationLive.pipe(
+  McpHttpServer.layerPreviewToolkit.pipe(
     Layer.provideMerge(McpServer.McpServer.layer),
     Layer.provideMerge(PreviewAutomationBroker.layer),
     Layer.provideMerge(

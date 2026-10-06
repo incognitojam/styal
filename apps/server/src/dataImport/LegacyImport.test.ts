@@ -35,7 +35,7 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ProjectionMaintenance from "../orchestration-v2/ProjectionMaintenance.ts";
 import * as ProjectService from "../project/ProjectService.ts";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import { layerMemory } from "../persistence/Layers/Sqlite.ts";
 import { makeLegacyHistoryWriter } from "./LegacyHistoryWriter.ts";
 import { ServerSettingsService, layerTest as serverSettingsLayerTest } from "../serverSettings.ts";
 import { makeLegacyImportService, readLegacySourceSnapshot } from "./LegacyImport.ts";

@@ -39,7 +39,7 @@ import {
 
 import packageJson from "../../package.json" with { type: "json" };
 
-const CliRuntimeLayer = Layer.mergeAll(NodeServices.layer, NetService.layer);
+const layerCliRuntime = Layer.mergeAll(NodeServices.layer, NetService.layer);
 
 const baseState = {
   version: 1,
@@ -102,7 +102,7 @@ const runCli = (args: ReadonlyArray<string>) =>
   Command.runWith(args[0] === "pair" ? pairCli : cli, { version: "0.0.0" })(args);
 
 const provideCliTestLayers = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-  Effect.provide(effect, Layer.mergeAll(CliRuntimeLayer, TestConsole.layer));
+  Effect.provide(effect, Layer.mergeAll(layerCliRuntime, TestConsole.layer));
 
 // Console output accumulates across CLI runs within a test, and each
 // Console.log call is one entry — so the latest command's output is the last

@@ -20,7 +20,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as SqlClient from "effect/sql/SqlClient";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import { layerMemory } from "../persistence/Layers/Sqlite.ts";
 
 import * as EffectWorker from "./EffectWorker.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
@@ -952,7 +952,7 @@ it.effect(
           assert.equal(rows[0]?.streaming, 0);
           assert.equal(rows[0]?.updated_at, DateTime.formatIso(recordedAt));
         }).pipe(
-          Effect.provide(ProjectionStore.layer.pipe(Layer.provideMerge(SqlitePersistenceMemory))),
+          Effect.provide(ProjectionStore.layer.pipe(Layer.provideMerge(layerMemory))),
         );
       }
     }).pipe(Effect.provide(layer));

@@ -667,7 +667,7 @@ export function runScopedClaudeHistory(
   });
 }
 
-export const claudeAgentSdkQueryRunnerLiveLayer: Layer.Layer<
+export const layerQueryRunner: Layer.Layer<
   ClaudeAgentSdkQueryRunner,
   never,
   Crypto.Crypto | ProviderEventLoggers.ProviderEventLoggers

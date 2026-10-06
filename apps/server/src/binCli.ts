@@ -26,7 +26,7 @@ import { themeCommand } from "./cli/theme.ts";
 import { traceCommand } from "./cli/trace.ts";
 import { triageCommand } from "./cli/triage.ts";
 
-const CliRuntimeLayer = Layer.mergeAll(NodeServices.layer, NetService.layer);
+const layerCliRuntime = Layer.mergeAll(NodeServices.layer, NetService.layer);
 
 const connectPublicConfigMissingMessage =
   "styal Link commands are unavailable: this build is missing styal Link public configuration.";
@@ -91,7 +91,7 @@ export const cli = makeCli();
 export function runCli() {
   Command.run(cli, { version: packageJson.version }).pipe(
     Effect.scoped,
-    Effect.provide(CliRuntimeLayer),
+    Effect.provide(layerCliRuntime),
     NodeRuntime.runMain,
   );
 }

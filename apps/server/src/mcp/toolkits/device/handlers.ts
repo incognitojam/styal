@@ -324,11 +324,11 @@ export function pngDimensions(png: Uint8Array): { width: number; height: number 
 
 const { device_screenshot, ...standardHandlers } = handlers;
 
-export const DeviceStandardToolkitHandlersLive = DeviceStandardToolkit.toLayer(
+export const layerStandard = DeviceStandardToolkit.toLayer(
   DeviceFeatureUsage.observeHandlers(standardHandlers),
 );
 
-export const DeviceScreenshotToolkitHandlersLive = DeviceScreenshotToolkit.toLayer(
+export const layerScreenshot = DeviceScreenshotToolkit.toLayer(
   Effect.map(DeviceFeatureUsage.snapshotObserver, (observe) => ({
     device_screenshot: (input) => observe(device_screenshot(input)),
   })),

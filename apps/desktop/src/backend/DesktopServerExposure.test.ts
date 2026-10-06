@@ -47,7 +47,7 @@ const tailnetNetworkInterfaces: DesktopNetworkInterfaces.NetworkInterfaces = {
   ],
 };
 
-function mockSpawnerLayer(statusJson = "{}") {
+function layerMockSpawner(statusJson = "{}") {
   return Layer.succeed(
     ChildProcessSpawner.ChildProcessSpawner,
     ChildProcessSpawner.make(() =>
@@ -70,14 +70,14 @@ function mockSpawnerLayer(statusJson = "{}") {
   );
 }
 
-function dieOnSpawnLayer() {
+function layerDieOnSpawn() {
   return Layer.succeed(
     ChildProcessSpawner.ChildProcessSpawner,
     ChildProcessSpawner.make(() => Effect.die("unexpected tailscale spawn")),
   );
 }
 
-function makeEnvironmentLayer(baseDir: string, env: Record<string, string | undefined> = {}) {
+function layerEnvironmentFor(baseDir: string, env: Record<string, string | undefined> = {}) {
   return DesktopEnvironment.layer({
     dirname: "/repo/apps/desktop/src",
     homeDirectory: baseDir,
@@ -95,7 +95,7 @@ function makeEnvironmentLayer(baseDir: string, env: Record<string, string | unde
   );
 }
 
-function makeLayer(input: {
+function layer(input: {
   readonly baseDir: string;
   readonly networkInterfaces?: DesktopNetworkInterfaces.NetworkInterfaces;
   readonly env?: Record<string, string | undefined>;
@@ -103,8 +103,8 @@ function makeLayer(input: {
   readonly desktopSettingsLayer?: Layer.Layer<DesktopAppSettings.DesktopAppSettings>;
 }) {
   const env = { STYAL_HOME: input.baseDir, ...input.env };
-  const environmentLayer = makeEnvironmentLayer(input.baseDir, env);
-  const networkLayer = Layer.succeed(DesktopNetworkInterfaces.DesktopNetworkInterfaces, {
+  const layerEnvironment = layerEnvironmentFor(input.baseDir, env);
+  const layerNetwork = Layer.succeed(DesktopNetworkInterfaces.DesktopNetworkInterfaces, {
     read: Effect.succeed(input.networkInterfaces ?? emptyNetworkInterfaces),
   });
 
@@ -112,10 +112,10 @@ function makeLayer(input: {
     Layer.provideMerge(input.desktopSettingsLayer ?? DesktopAppSettings.layer),
     Layer.provideMerge(NodeFileSystem.layer),
     Layer.provideMerge(NodeHttpClient.layerUndici),
-    Layer.provideMerge(input.spawnerLayer ?? mockSpawnerLayer()),
-    Layer.provideMerge(networkLayer),
+    Layer.provideMerge(input.spawnerLayer ?? layerMockSpawner()),
+    Layer.provideMerge(layerNetwork),
     Layer.provideMerge(DesktopConfig.layerTest(env)),
-    Layer.provideMerge(environmentLayer),
+    Layer.provideMerge(layerEnvironment),
   );
 }
 
@@ -141,7 +141,7 @@ const withHarness = <A, E, R>(
     });
     return yield* effect.pipe(
       Effect.provide(
-        makeLayer({
+        layer({
           baseDir,
           networkInterfaces,
           env,
@@ -155,8 +155,8 @@ const withHarness = <A, E, R>(
 describe("DesktopServerExposure", () => {
   it.effect("restores network preferences when restart is cancelled", () => {
     const initial = { ...DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS };
-    const layer = Layer.mergeAll(
-      makeLayer({
+    const layerExposure = Layer.mergeAll(
+      layer({
         baseDir: "/synthetic",
         networkInterfaces: lanNetworkInterfaces,
         desktopSettingsLayer: DesktopAppSettings.layerTest(initial),
@@ -180,7 +180,7 @@ describe("DesktopServerExposure", () => {
       yield* setTailscaleServeEnabled.handler({ enabled: true, port: 8443 });
       assert.deepEqual(yield* settings.get, initial);
       assert.deepEqual(yield* exposure.getState, before);
-    }).pipe(Effect.provide(layer));
+    }).pipe(Effect.provide(layerExposure));
   });
 
   it.effect("falls back to local-only without losing the requested network preference", () =>
@@ -286,7 +286,7 @@ describe("DesktopServerExposure", () => {
       path: "/tmp/desktop-settings.json",
       cause: diskFailure,
     });
-    const settingsLayer = Layer.succeed(DesktopAppSettings.DesktopAppSettings, {
+    const layerSettings = Layer.succeed(DesktopAppSettings.DesktopAppSettings, {
       get: Effect.succeed(DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS),
       load: Effect.succeed(DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS),
       setMainWindowBounds: () => Effect.die("unexpected main window bounds update"),
@@ -340,7 +340,7 @@ describe("DesktopServerExposure", () => {
       }),
       {},
       undefined,
-      settingsLayer,
+      layerSettings,
     );
   });
 
@@ -404,7 +404,7 @@ describe("DesktopServerExposure", () => {
         );
       }),
       {},
-      dieOnSpawnLayer(),
+      layerDieOnSpawn(),
     ),
   );
 

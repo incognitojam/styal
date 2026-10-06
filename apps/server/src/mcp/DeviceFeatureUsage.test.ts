@@ -29,7 +29,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const events: Array<{ event: string; properties: unknown }> = [];
-      const layer = McpHttpServer.DeviceToolkitRegistrationLive.pipe(
+      const layer = McpHttpServer.layerDeviceToolkit.pipe(
         Layer.provideMerge(McpServer.McpServer.layer),
         Layer.provide(
           Layer.mock(DeviceService.DeviceService)({

@@ -234,10 +234,10 @@ const handlers = {
 
 const { preview_snapshot, ...standardHandlers } = handlers;
 
-export const PreviewStandardToolkitHandlersLive = PreviewStandardToolkit.toLayer(
+export const layerStandard = PreviewStandardToolkit.toLayer(
   BrowserFeatureUsage.observeHandlers(standardHandlers),
 );
 
-export const PreviewSnapshotToolkitHandlersLive = PreviewSnapshotToolkit.toLayer({
+export const layerSnapshot = PreviewSnapshotToolkit.toLayer({
   preview_snapshot,
 });

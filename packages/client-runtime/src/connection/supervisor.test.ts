@@ -18,7 +18,7 @@ import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import * as TokenStore from "../authorization/tokenStore.ts";
 import * as ClientCapabilities from "../platform/capabilities.ts";
 import * as ManagedRelay from "../relay/managedRelay.ts";
-import { remoteHttpClientLayer } from "../rpc/http.ts";
+import * as RpcHttp from "../rpc/http.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import { fetchEnvironmentSessionState } from "../state/session.ts";
 import type { ConnectionCatalogEntry, ConnectionRoute } from "./catalog.ts";
@@ -237,7 +237,7 @@ const makeHarness = Effect.fn("TestConnectionHarness.make")(function* (options?:
     );
   });
 
-  const dependencies = Layer.mergeAll(
+  const layerDependencies = Layer.mergeAll(
     // Jitter at its maximum, so each retry waits exactly its ceiling: 2s, 4s, 8s...
     Layer.succeed(Random.Random, {
       nextDoubleUnsafe: () => 1 - Number.EPSILON,
@@ -265,7 +265,7 @@ const makeHarness = Effect.fn("TestConnectionHarness.make")(function* (options?:
   );
 
   return {
-    dependencies,
+    dependencies: layerDependencies,
     prepareCount,
     sessionCount,
     releaseCount,
@@ -410,7 +410,7 @@ const makeRelayAuthorization = Effect.fn("TestRelayAuthorization.make")(function
     getAgentActivitySnapshot: unused,
     resetTokenCache: Effect.void,
   });
-  const httpLayer = remoteHttpClientLayer(input.fetchFn);
+  const httpLayer = RpcHttp.layerRemoteHttpClient(input.fetchFn);
   const remoteAuthorization = yield* RemoteEnvironmentAuthorization.make.pipe(
     Effect.provide(
       Layer.mergeAll(

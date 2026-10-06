@@ -211,7 +211,7 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
     const countFrame = () => {
       receivedFrames += 1;
     };
-    const socketLayer = Socket.layerWebSocket(connection.socketUrl, {
+    const layerSocket = Socket.layerWebSocket(connection.socketUrl, {
       openTimeout: SOCKET_OPEN_TIMEOUT,
     }).pipe(
       Layer.provide(
@@ -223,7 +223,7 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
         }),
       ),
     );
-    const protocolLayer = Layer.effect(
+    const layerProtocol = Layer.effect(
       RpcClient.Protocol,
       RpcClient.makeProtocolSocket({
         retryTransientErrors: false,
@@ -232,13 +232,13 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
     ).pipe(
       Layer.provide(
         Layer.mergeAll(
-          socketLayer,
+          layerSocket,
           RpcSerialization.layerJson,
           Layer.succeed(RpcClient.ConnectionHooks, hooks),
         ),
       ),
     );
-    const protocolContext = yield* Layer.build(protocolLayer).pipe(
+    const protocolContext = yield* Layer.build(layerProtocol).pipe(
       Effect.withSpan("environment.websocket.connect"),
     );
     const protocolClient = yield* makeWsRpcProtocolClient.pipe(Effect.provide(protocolContext));

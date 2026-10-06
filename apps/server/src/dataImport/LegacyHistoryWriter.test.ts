@@ -11,7 +11,7 @@ import { OrchestrationEvent } from "@t3tools/contracts/legacy-orchestration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import { layerMemory } from "../persistence/Layers/Sqlite.ts";
 import * as EventSink from "../orchestration-v2/EventSink.ts";
 import * as EventStore from "../orchestration-v2/EventStore.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
@@ -20,7 +20,7 @@ import * as ProjectionMaintenance from "../orchestration-v2/ProjectionMaintenanc
 import { makeLegacyHistoryWriter } from "./LegacyHistoryWriter.ts";
 
 const stores = Layer.mergeAll(EventStore.layer, ProjectionStore.layer, ProjectStore.layer).pipe(
-  Layer.provideMerge(SqlitePersistenceMemory),
+  Layer.provideMerge(layerMemory),
 );
 const testLayer = Layer.mergeAll(EventSink.layer, ProjectionMaintenance.layer).pipe(
   Layer.provideMerge(stores),

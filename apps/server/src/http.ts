@@ -269,11 +269,11 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
   return yield* HttpServerResponse.file(asset.path, { status, offset, bytesToRead, headers });
 });
 
-export const httpCompressionLayer = HttpRouter.middleware(HttpMiddleware.compression(), {
+export const layerHttpCompression = HttpRouter.middleware(HttpMiddleware.compression(), {
   global: true,
 });
 
-export const browserApiCorsLayer = Layer.unwrap(
+export const layerBrowserApiCors = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
     const devOrigin = config.devUrl?.origin;
@@ -336,7 +336,7 @@ const authenticateRawRouteWithScope = (
     }
   });
 
-export const serverEnvironmentHttpApiLayer = HttpApiBuilder.group(
+export const layerServerEnvironmentHttpApi = HttpApiBuilder.group(
   EnvironmentHttpApi,
   "metadata",
   Effect.fnUntraced(function* (handlers) {
@@ -359,7 +359,7 @@ class DecodeOtlpTraceRecordsError extends Data.TaggedError("DecodeOtlpTraceRecor
 // tracing this proxy would add more server spans than it forwards.
 // withTracerEnabled(false) drops the handler's spans, including the forward.
 // untracedRequestsLayer drops the HTTP server span.
-export const otlpTracesProxyRouteLayer = HttpRouter.add(
+export const layerOtlpTracesProxyRoute = HttpRouter.add(
   "POST",
   OTLP_TRACES_PROXY_PATH,
   Effect.gen(function* () {
@@ -421,16 +421,16 @@ const UNTRACED_REQUEST_PATHS: ReadonlySet<string> = new Set([OTLP_TRACES_PROXY_P
 // privately, so it is provided to the served layer, never merged into the
 // routes. Add paths here instead of providing it again. The query string is
 // ignored, as in routing.
-const untracedRequestsLayer = Layer.succeed(HttpMiddleware.TracerDisabledWhen)((request) => {
+const layerUntracedRequests = Layer.succeed(HttpMiddleware.TracerDisabledWhen)((request) => {
   const queryIndex = request.url.indexOf("?");
   const path = queryIndex === -1 ? request.url : request.url.slice(0, queryIndex);
   // Webhook URLs carry their secret token in the path, so they never reach a trace.
   return UNTRACED_REQUEST_PATHS.has(path) || path.startsWith(`${WEBHOOK_ROUTE_PREFIX}/`);
 });
 
-export const withUntracedRequests = Layer.provide(untracedRequestsLayer);
+export const withUntracedRequests = Layer.provide(layerUntracedRequests);
 
-export const terminalBrowserOpenRouteLayer = HttpRouter.add(
+export const layerTerminalBrowserOpenRoute = HttpRouter.add(
   "POST",
   TerminalBrowserOpen.TERMINAL_BROWSER_OPEN_PATH,
   Effect.gen(function* () {
@@ -478,7 +478,7 @@ export const terminalBrowserOpenRouteLayer = HttpRouter.add(
   }),
 );
 
-export const assetRouteLayer = Layer.unwrap(
+export const layerAssetRoute = Layer.unwrap(
   Effect.gen(function* () {
     const pullRequests = yield* PullRequestService.PullRequestService;
     return HttpRouter.add(
@@ -597,7 +597,7 @@ export const assetRouteLayer = Layer.unwrap(
   }),
 );
 
-export const attachmentUploadRouteLayer = HttpRouter.add(
+export const layerAttachmentUploadRoute = HttpRouter.add(
   "POST",
   `${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/*`,
   Effect.gen(function* () {
@@ -825,7 +825,7 @@ const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
 );
 
 // Read the installed build's manifest once. Unknown files use revalidation.
-export const staticAndDevRouteLayer = Layer.unwrap(
+export const layerStaticAndDevRoute = Layer.unwrap(
   loadImmutableBuildAssets.pipe(
     Effect.map((assets) => HttpRouter.add("GET", "*", handleStaticAndDevRequest(assets))),
   ),

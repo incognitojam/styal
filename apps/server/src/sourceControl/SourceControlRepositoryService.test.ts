@@ -73,13 +73,13 @@ function processOutput(): GitVcsDriver.ExecuteGitResult {
   };
 }
 
-function makeLayer(input: {
+function layer(input: {
   readonly provider?: SourceControlProvider.SourceControlProvider["Service"];
   readonly git?: Partial<GitVcsDriver.GitVcsDriver["Service"]>;
   readonly fileSystem?: FileSystem.FileSystem;
   readonly pathLayer?: typeof NodePath.layer;
 }) {
-  const serviceLayer = SourceControlRepositoryService.layer.pipe(
+  const layerService = SourceControlRepositoryService.layer.pipe(
     Layer.provide(
       Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
         resolveLink: () => undefined,
@@ -111,11 +111,11 @@ function makeLayer(input: {
   );
 
   return input.fileSystem
-    ? serviceLayer.pipe(
+    ? layerService.pipe(
         Layer.provide(Layer.succeed(FileSystem.FileSystem, input.fileSystem)),
         Layer.provideMerge(input.pathLayer ?? NodePath.layer),
       )
-    : serviceLayer.pipe(Layer.provideMerge(NodeServices.layer));
+    : layerService.pipe(Layer.provideMerge(NodeServices.layer));
 }
 
 it.effect("looks up repositories through the requested provider without search", () => {
@@ -138,7 +138,7 @@ it.effect("looks up repositories through the requested provider without search",
 
     assert.deepStrictEqual(result, { provider: "github", ...CLONE_URLS });
     assert.deepStrictEqual(calls, [{ cwd: "/workspace", repository: "octocat/t3code" }]);
-  }).pipe(Effect.provide(makeLayer({ provider })));
+  }).pipe(Effect.provide(layer({ provider })));
 });
 
 it.effect("preserves provider failures without deriving the repository message from them", () => {
@@ -171,7 +171,7 @@ it.effect("preserves provider failures without deriving the repository message f
       "Source control repository operation lookupRepository failed for github: The source control operation could not be completed.",
     );
     assert.strictEqual(error.cause, providerCause);
-  }).pipe(Effect.provide(makeLayer({ provider })));
+  }).pipe(Effect.provide(layer({ provider })));
 });
 
 it.effect("clones a looked-up repository into the requested destination", () =>
@@ -207,7 +207,7 @@ it.effect("clones a looked-up repository into the requested destination", () =>
       assert.strictEqual("upstream" in result, false);
     }).pipe(
       Effect.provide(
-        makeLayer({
+        layer({
           git: {
             execute: (input) =>
               Effect.sync(() => {
@@ -249,7 +249,7 @@ it.effect("reports clone progress from git's stderr and keeps its error text on 
       );
     }).pipe(
       Effect.provide(
-        makeLayer({
+        layer({
           git: {
             execute: (input) =>
               Effect.gen(function* () {
@@ -297,7 +297,7 @@ it.effect("strips embedded credentials from the remote URL it reports", () =>
       });
     }).pipe(
       Effect.provide(
-        makeLayer({
+        layer({
           git: {
             execute: (input) =>
               Effect.sync(() => {
@@ -339,7 +339,7 @@ it.effect("discards only a directory git wrote to", () =>
       assert.include(replacedError.detail, "could not be inspected");
       // A destination that never got created is nothing to discard.
       yield* service.discardClone(path.join(parent, "missing"));
-    }).pipe(Effect.provide(makeLayer({})));
+    }).pipe(Effect.provide(layer({})));
 
     // The partial clone is emptied but its directory (the workspace root) stays.
     assert.deepStrictEqual(yield* fs.readDirectory(partial), []);
@@ -365,7 +365,7 @@ it.effect("redacts query tokens and userinfo containing '@' from reported URLs",
         destinationPath: path.join(parent, "b"),
       });
       assert.equal(nested.remoteUrl, "https://github.com/octocat/t3code.git");
-    }).pipe(Effect.provide(makeLayer({})));
+    }).pipe(Effect.provide(layer({})));
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 
@@ -402,7 +402,7 @@ it.effect("lists remote candidates and the current default repository", () =>
     });
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         git: {
           execute: () =>
             Effect.succeed({ ...processOutput(), stdout: forkRemoteConfigStdout("upstream") }),
@@ -425,7 +425,7 @@ it.effect("moves the default repository pin to the chosen remote", () => {
     ]);
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         git: {
           execute: (input) =>
             Effect.sync(() => {
@@ -451,7 +451,7 @@ it.effect("rejects a default repository that is not one of the remotes", () =>
     assert.strictEqual(error.detail, "Choose a remote that exists in this repository.");
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         git: {
           execute: () =>
             Effect.succeed({ ...processOutput(), stdout: forkRemoteConfigStdout(null) }),
@@ -474,7 +474,7 @@ it.effect("clears every pin when the default repository is unset", () => {
     assert.strictEqual(state.remotes.length, 2);
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         git: {
           execute: (input) =>
             Effect.sync(() => {
@@ -500,7 +500,7 @@ it.effect("reports the repository a pin names when it is not the remote's own", 
     assert.strictEqual(state.defaultRepositoryPath, PARENT_URLS.nameWithOwner);
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         git: {
           execute: () =>
             Effect.succeed({
@@ -531,7 +531,7 @@ it.effect("reads remote names containing dots, and a repository with no remotes"
     assert.deepStrictEqual(empty, { remotes: [], defaultRemoteName: null });
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         git: {
           execute: (input) =>
             Effect.succeed({
@@ -586,7 +586,7 @@ it.effect("keeps the client-resolved fork transport when wiring and pinning its 
       ]);
     }).pipe(
       Effect.provide(
-        makeLayer({
+        layer({
           provider: makeForkProvider(),
           git: {
             execute: (input) =>
@@ -639,7 +639,7 @@ it.effect("infers SSH upstreams for SSH fork URLs and custom URL fallbacks", () 
       );
     }).pipe(
       Effect.provide(
-        makeLayer({
+        layer({
           provider: makeForkProvider(),
           git: {
             ensureRemote: (input) =>
@@ -683,7 +683,7 @@ it.effect("pins the parent when the clone asks to contribute upstream", () =>
       ]);
     }).pipe(
       Effect.provide(
-        makeLayer({
+        layer({
           provider: makeForkProvider(),
           git: {
             execute: (input) =>
@@ -725,7 +725,7 @@ it.effect("fetches the upstream remote, and keeps the clone when that fetch fail
       assert.strictEqual(result.upstream?.remoteName, "upstream");
     }).pipe(
       Effect.provide(
-        makeLayer({
+        layer({
           provider: makeForkProvider(),
           git: {
             ensureRemote: () => Effect.succeed("upstream"),
@@ -769,7 +769,7 @@ it.effect("keeps a fork clone when the upstream remote cannot be added", () =>
       assert.strictEqual(result.upstream, undefined);
     }).pipe(
       Effect.provide(
-        makeLayer({
+        layer({
           provider: makeForkProvider(),
           git: {
             ensureRemote: (input) =>
@@ -809,7 +809,7 @@ it.effect("falls back to the requested clone URL when the repository lookup fail
       assert.deepStrictEqual(cloneCalls, [["clone", "--progress", CLONE_URLS.sshUrl, "t3code"]]);
     }).pipe(
       Effect.provide(
-        makeLayer({
+        layer({
           provider: makeProvider({
             getRepositoryCloneUrls: (input) =>
               new SourceControlProviderError({
@@ -875,7 +875,7 @@ it.effect.each([
       }
     }).pipe(
       Effect.provide(
-        makeLayer({
+        layer({
           fileSystem: FileSystem.makeNoop({
             exists: () => Effect.succeed(false),
             makeDirectory: () => Effect.void,
@@ -910,7 +910,7 @@ it.effect("preserves clone process failures such as timeouts", () =>
     assert.strictEqual(error.detail, "Git command timed out.");
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         fileSystem: FileSystem.makeNoop({
           exists: () => Effect.succeed(false),
           makeDirectory: () => Effect.void,
@@ -947,7 +947,7 @@ it.effect("clones beneath a Windows drive root without trying to create the root
     ]);
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         pathLayer: NodePath.layerWin32,
         fileSystem: FileSystem.makeNoop({
           exists: (path) => Effect.succeed(path === "D:\\"),
@@ -989,7 +989,7 @@ it.effect("creates missing parent directories before cloning", () =>
       });
     }).pipe(
       Effect.provide(
-        makeLayer({
+        layer({
           git: {
             execute: (input) =>
               Effect.gen(function* () {
@@ -1026,7 +1026,7 @@ it.effect("preserves destination probe failures instead of treating them as miss
     assert.strictEqual(error.cause, fileSystemCause);
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         fileSystem: FileSystem.makeNoop({
           exists: () => Effect.fail(fileSystemCause),
           makeDirectory: () => Effect.void,
@@ -1080,7 +1080,7 @@ it.effect("publishes by creating the repository, adding a remote, and pushing up
     assert.deepStrictEqual(pushCalls, [{ cwd: "/workspace", remoteName: "origin" }]);
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         provider,
         git: {
           ensureRemote: (input) =>
@@ -1122,7 +1122,7 @@ it.effect("publishes to the remote name returned by ensureRemote", () => {
     assert.deepStrictEqual(pushCalls, [{ cwd: "/workspace", remoteName: "origin-1" }]);
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         git: {
           ensureRemote: () => Effect.succeed("origin-1"),
           pushCurrentBranch: (cwd, _fallbackBranch, options) =>
@@ -1164,7 +1164,7 @@ it.effect("publish succeeds with status remote_added when the local repo has no 
     assert.strictEqual(pushCalls, 0);
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         git: {
           execute: (input) =>
             input.args[0] === "rev-parse"

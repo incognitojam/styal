@@ -28,7 +28,7 @@ const cursorSdkMock = vi.hoisted(() => ({
 vi.mock("../provider/cursorSdk.ts", () => ({ Agent: { create: cursorSdkMock.create } }));
 
 let hasCustomPolicy = false;
-const fsLayer = FileSystem.layerNoop({
+const layerFs = FileSystem.layerNoop({
   exists: () => Effect.succeed(hasCustomPolicy),
   makeTempDirectoryScoped: () => Effect.succeed("/isolated-text-generation"),
 });
@@ -90,7 +90,7 @@ describe("CursorTextGeneration", () => {
       expect(cursorSdkMock.create).toHaveBeenLastCalledWith(
         expect.objectContaining({ apiKey: "second-browser-key" }),
       );
-    }).pipe(Effect.provide(fsLayer)),
+    }).pipe(Effect.provide(layerFs)),
   );
 
   it.effect("uses the Cursor SDK prompt API with model parameters and API key", () =>
@@ -139,7 +139,7 @@ describe("CursorTextGeneration", () => {
           enableAgentRetries: true,
         },
       });
-    }).pipe(Effect.provide(fsLayer)),
+    }).pipe(Effect.provide(layerFs)),
   );
 
   it.effect("continues in the temp directory when the SDK cannot sandbox", () =>
@@ -175,7 +175,7 @@ describe("CursorTextGeneration", () => {
           enableAgentRetries: true,
         },
       });
-    }).pipe(Effect.provide(fsLayer)),
+    }).pipe(Effect.provide(layerFs)),
   );
 
   it.effect("does not retry Agent.create for errors other than an unsupported sandbox", () =>
@@ -199,7 +199,7 @@ describe("CursorTextGeneration", () => {
 
       expect(error.detail).toBe("Cursor SDK text generation failed.");
       expect(cursorSdkMock.create).toHaveBeenCalledTimes(1);
-    }).pipe(Effect.provide(fsLayer)),
+    }).pipe(Effect.provide(layerFs)),
   );
 
   it.effect("accepts json objects with extra assistant text around them", () =>
@@ -227,7 +227,7 @@ describe("CursorTextGeneration", () => {
 
       expect(generated.subject).toBe("Update README dummy comment with attribution and date");
       expect(generated.body).toBe("");
-    }).pipe(Effect.provide(fsLayer)),
+    }).pipe(Effect.provide(layerFs)),
   );
 
   it.effect("generates thread titles through Cursor SDK text generation", () =>
@@ -251,7 +251,7 @@ describe("CursorTextGeneration", () => {
       });
 
       expect(generated.title).toBe("Trim reconnect spinner status after resume.");
-    }).pipe(Effect.provide(fsLayer)),
+    }).pipe(Effect.provide(layerFs)),
   );
 
   it.effect.each(["error", "cancelled"] as const)(
@@ -287,7 +287,7 @@ describe("CursorTextGeneration", () => {
         );
         expect(isTextGenerationRateLimitError(failure)).toBe(status === "error");
         expect(cursorSdkMock.close).toHaveBeenCalledOnce();
-      }).pipe(Effect.provide(fsLayer)),
+      }).pipe(Effect.provide(layerFs)),
   );
 
   it.effect("fails closed when ambient sandbox policy can expand write access", () =>
@@ -303,7 +303,7 @@ describe("CursorTextGeneration", () => {
       );
       expect(failure.detail).toContain("custom ~/.cursor/sandbox.json");
       expect(cursorSdkMock.prompt).not.toHaveBeenCalled();
-    }).pipe(Effect.provide(fsLayer)),
+    }).pipe(Effect.provide(layerFs)),
   );
 
   it.effect("cancels the native run when text generation times out", () =>
@@ -329,7 +329,7 @@ describe("CursorTextGeneration", () => {
       expect((yield* Fiber.join(result)).detail).toContain("timed out");
       expect(cursorSdkMock.cancel).toHaveBeenCalledOnce();
       expect(cursorSdkMock.close).toHaveBeenCalledOnce();
-    }).pipe(Effect.provide(fsLayer), Effect.scoped),
+    }).pipe(Effect.provide(layerFs), Effect.scoped),
   );
 
   it.effect.each(["create", "send"] as const)(
@@ -391,7 +391,7 @@ describe("CursorTextGeneration", () => {
         expect(cursorSdkMock.close).toHaveBeenCalledOnce();
         expect(wait).not.toHaveBeenCalled();
         if (phase === "send") expect(cursorSdkMock.cancel).toHaveBeenCalledOnce();
-      }).pipe(Effect.provide(fsLayer), Effect.scoped),
+      }).pipe(Effect.provide(layerFs), Effect.scoped),
   );
 
   it.effect("requires CURSOR_API_KEY before calling the SDK", () =>
@@ -413,6 +413,6 @@ describe("CursorTextGeneration", () => {
 
       expect(error.detail).toBe("Sign in with Cursor or add CURSOR_API_KEY in provider settings.");
       expect(cursorSdkMock.prompt).not.toHaveBeenCalled();
-    }).pipe(Effect.provide(fsLayer)),
+    }).pipe(Effect.provide(layerFs)),
   );
 });

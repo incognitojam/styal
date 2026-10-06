@@ -53,7 +53,7 @@ const mockProcess = (exitCode: number, stalled = false) =>
     getOutputFd: () => Stream.empty,
   });
 
-const makeHandlerLayer = (
+const layerHandler = (
   recorded: RecordedRegistration,
   input: {
     readonly environment?: Record<string, unknown>;
@@ -144,12 +144,12 @@ const makeHandlerLayer = (
 
 const runRegister = (
   recorded: RecordedRegistration,
-  input: Parameters<typeof makeHandlerLayer>[1] = {},
+  input: Parameters<typeof layerHandler>[1] = {},
 ) =>
   Effect.gen(function* () {
     const handler = yield* DesktopLinuxUrlHandler.DesktopLinuxUrlHandler;
     yield* handler.register;
-  }).pipe(Effect.provide(makeHandlerLayer(recorded, input)));
+  }).pipe(Effect.provide(layerHandler(recorded, input)));
 
 const emptyRecording = (): RecordedRegistration => ({
   directories: [],

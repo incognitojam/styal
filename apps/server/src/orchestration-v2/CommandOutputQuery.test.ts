@@ -6,11 +6,11 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import { expect } from "vite-plus/test";
 
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import { layerMemory } from "../persistence/Layers/Sqlite.ts";
 
 import { CommandOutputQuery, layer, normalizeCommandOutput } from "./CommandOutputQuery.ts";
 
-const TestLayer = layer.pipe(Layer.provideMerge(SqlitePersistenceMemory));
+const TestLayer = layer.pipe(Layer.provideMerge(layerMemory));
 const encodeFixtureJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 describe("normalizeCommandOutput", () => {

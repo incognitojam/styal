@@ -112,20 +112,20 @@ function neverFinishingMockHandle() {
 
 // The executable name depends on the host platform (`tailscale.exe` on
 // Windows), so pin it: these tests assert the posix spelling.
-function spawnerLayer(spawner: ChildProcessSpawner.ChildProcessSpawner["Service"]) {
+function layerSpawner(spawner: ChildProcessSpawner.ChildProcessSpawner["Service"]) {
   return Layer.merge(
     Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
     Layer.succeed(HostProcessPlatform, "linux"),
   );
 }
 
-function mockSpawnerLayer(
+function layerMockSpawner(
   handler: (
     command: string,
     args: ReadonlyArray<string>,
   ) => { stdout?: string; stderr?: string; code?: number },
 ) {
-  return spawnerLayer(
+  return layerSpawner(
     ChildProcessSpawner.make((command) => {
       const childProcess = command as unknown as {
         readonly command: string;
@@ -189,7 +189,7 @@ describe("tailscale", () => {
   );
 
   it.effect("reads tailscale status through the process spawner service", () => {
-    const layer = mockSpawnerLayer((command, args) => {
+    const layer = layerMockSpawner((command, args) => {
       assert.equal(command, "tailscale");
       assert.deepEqual(args, ["status", "--json"]);
       return {
@@ -214,7 +214,7 @@ describe("tailscale", () => {
       method: "spawn",
       cause: systemCause,
     });
-    const layer = spawnerLayer(ChildProcessSpawner.make(() => Effect.fail(cause)));
+    const layer = layerSpawner(ChildProcessSpawner.make(() => Effect.fail(cause)));
 
     return Effect.gen(function* () {
       const error = yield* readTailscaleStatus.pipe(Effect.flip, Effect.provide(layer));
@@ -235,7 +235,7 @@ describe("tailscale", () => {
     // inside an `Effect.callback` registration, so that throw arrives as a
     // defect rather than a typed error - the shape reproduced here.
     const defect = Object.assign(new Error("spawn tailscale ENOTDIR"), { code: "ENOTDIR" });
-    const layer = spawnerLayer(
+    const layer = layerSpawner(
       ChildProcessSpawner.make(() =>
         Effect.callback<never, never>(() => {
           throw defect;
@@ -268,7 +268,7 @@ describe("tailscale", () => {
   });
 
   it.effect("keeps nonzero exit diagnostics structured", () => {
-    const layer = mockSpawnerLayer(() => ({
+    const layer = layerMockSpawner(() => ({
       code: 7,
       stderr: "not logged in tskey-auth-secret-token-value",
     }));
@@ -293,7 +293,7 @@ describe("tailscale", () => {
   });
 
   it.effect("classifies unrecognized stderr without quoting it", () => {
-    const layer = mockSpawnerLayer(() => ({
+    const layer = layerMockSpawner(() => ({
       code: 3,
       stderr: "something novel went wrong for node fluffy-badger tskey-auth-secret-token-value",
     }));
@@ -313,7 +313,7 @@ describe("tailscale", () => {
   it.effect("times out tailscale status through TestClock", () => {
     const layer = Layer.merge(
       TestClock.layer(),
-      spawnerLayer(ChildProcessSpawner.make(() => Effect.succeed(neverFinishingMockHandle()))),
+      layerSpawner(ChildProcessSpawner.make(() => Effect.succeed(neverFinishingMockHandle()))),
     );
 
     return Effect.gen(function* () {
@@ -334,7 +334,7 @@ describe("tailscale", () => {
 
   it.effect("configures tailscale serve through the process spawner service", () => {
     const commands: ReadonlyArray<string>[] = [];
-    const layer = mockSpawnerLayer((command, args) => {
+    const layer = layerMockSpawner((command, args) => {
       assert.equal(command, "tailscale");
       commands.push(args);
       if (args[1] === "status") {
@@ -356,7 +356,7 @@ describe("tailscale", () => {
 
   it.effect("treats a null first-time serve status as unconfigured", () => {
     const commands: ReadonlyArray<string>[] = [];
-    const layer = mockSpawnerLayer((_command, args) => {
+    const layer = layerMockSpawner((_command, args) => {
       commands.push(args);
       return args[1] === "status" ? { stdout: "null" } : {};
     });
@@ -374,7 +374,7 @@ describe("tailscale", () => {
 
   it.effect("reuses only the exact existing handler", () => {
     const commands: ReadonlyArray<string>[] = [];
-    const layer = mockSpawnerLayer((_command, args) => {
+    const layer = layerMockSpawner((_command, args) => {
       commands.push(args);
       return { stdout: serveStatusJson(8443, "http://127.0.0.1:13773") };
     });
@@ -424,7 +424,7 @@ describe("tailscale", () => {
     },
   ])("refuses to reuse, replace, or disable a $name handler", ({ background, foreground }) => {
     const commands: ReadonlyArray<string>[] = [];
-    const layer = mockSpawnerLayer((_command, args) => {
+    const layer = layerMockSpawner((_command, args) => {
       commands.push(args);
       return {
         stdout: JSON.stringify({
@@ -456,7 +456,7 @@ describe("tailscale", () => {
 
   it.effect("configures an unused port while another port has a foreground handler", () => {
     const commands: ReadonlyArray<string>[] = [];
-    const layer = mockSpawnerLayer((_command, args) => {
+    const layer = layerMockSpawner((_command, args) => {
       commands.push(args);
       return {
         stdout: JSON.stringify({
@@ -480,7 +480,7 @@ describe("tailscale", () => {
     "disables an exact background handler while another port has a foreground handler",
     () => {
       const commands: ReadonlyArray<string>[] = [];
-      const layer = mockSpawnerLayer((_command, args) => {
+      const layer = layerMockSpawner((_command, args) => {
         commands.push(args);
         return {
           stdout: JSON.stringify({
@@ -503,7 +503,7 @@ describe("tailscale", () => {
   );
 
   it.effect("refuses to replace a configured port even when its backend differs", () => {
-    const layer = mockSpawnerLayer(() => ({
+    const layer = layerMockSpawner(() => ({
       stdout: serveStatusJson(8443, "http://127.0.0.1:39831"),
     }));
 
@@ -519,7 +519,7 @@ describe("tailscale", () => {
 
   it.effect("replaces a handler only when its environment was already verified", () => {
     const commands: ReadonlyArray<string>[] = [];
-    const layer = mockSpawnerLayer((_command, args) => {
+    const layer = layerMockSpawner((_command, args) => {
       commands.push(args);
       return { stdout: serveStatusJson(8443, "http://127.0.0.1:13773") };
     });
@@ -539,7 +539,7 @@ describe("tailscale", () => {
 
   it.effect("does not replace a complex handler after an environment probe", () => {
     const commands: ReadonlyArray<string>[] = [];
-    const layer = mockSpawnerLayer((_command, args) => {
+    const layer = layerMockSpawner((_command, args) => {
       commands.push(args);
       const status = JSON.parse(serveStatusJson(8443, "http://127.0.0.1:13773")) as {
         Web: Record<string, { Handlers: Record<string, unknown> }>;
@@ -562,7 +562,7 @@ describe("tailscale", () => {
   });
 
   it.effect("treats a non-web listener on the selected port as occupied", () => {
-    const layer = mockSpawnerLayer(() => ({
+    const layer = layerMockSpawner(() => ({
       stdout: JSON.stringify({ TCP: { 8443: { TCPForward: "127.0.0.1:39831" } }, Web: {} }),
     }));
 
@@ -577,7 +577,7 @@ describe("tailscale", () => {
 
   it.effect("refuses to reuse or disable a Funnel-enabled handler", () => {
     const commands: ReadonlyArray<string>[] = [];
-    const layer = mockSpawnerLayer((_command, args) => {
+    const layer = layerMockSpawner((_command, args) => {
       commands.push(args);
       const status = JSON.parse(serveStatusJson(8443, "http://127.0.0.1:13773")) as Record<
         string,
@@ -612,7 +612,7 @@ describe("tailscale", () => {
   });
 
   it.effect("retains tailscale serve exit diagnostics", () => {
-    const layer = mockSpawnerLayer((_command, args) =>
+    const layer = layerMockSpawner((_command, args) =>
       args[1] === "status"
         ? { stdout: emptyServeStatusJson }
         : {
@@ -648,7 +648,7 @@ describe("tailscale", () => {
       readonly command: string;
       readonly args: ReadonlyArray<string>;
     }[] = [];
-    const layer = mockSpawnerLayer((command, args) => {
+    const layer = layerMockSpawner((command, args) => {
       commands.push({ command, args });
       assert.equal(command, "tailscale");
       if (args[1] === "status") {
@@ -670,7 +670,7 @@ describe("tailscale", () => {
 
   it.effect("refuses to disable a handler owned by another service", () => {
     const commands: ReadonlyArray<string>[] = [];
-    const layer = mockSpawnerLayer((_command, args) => {
+    const layer = layerMockSpawner((_command, args) => {
       commands.push(args);
       return { stdout: serveStatusJson(8443, "http://127.0.0.1:39831") };
     });

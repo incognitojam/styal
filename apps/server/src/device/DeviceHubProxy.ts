@@ -261,8 +261,4 @@ const handler = Effect.gen(function* () {
   );
 });
 
-export const deviceHubProxyRouteLayer = HttpRouter.add(
-  "*",
-  `${DeviceService.DEVICE_HUB_ROUTE_PREFIX}/*`,
-  handler,
-);
+export const layer = HttpRouter.add("*", `${DeviceService.DEVICE_HUB_ROUTE_PREFIX}/*`, handler);

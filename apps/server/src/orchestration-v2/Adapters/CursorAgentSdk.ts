@@ -604,7 +604,7 @@ export function makeCursorAgentSdkRunner(
   });
 }
 
-export const cursorAgentSdkRunnerLiveLayer: Layer.Layer<
+export const layer: Layer.Layer<
   CursorAgentSdkRunner,
   never,
   ProviderEventLoggers.ProviderEventLoggers

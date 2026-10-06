@@ -18,7 +18,7 @@ import type { EnvironmentRegistry } from "../connection/registry.ts";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import { environmentEndpointUrl } from "../environment/endpoint.ts";
 import * as ManagedRelay from "../relay/managedRelay.ts";
-import { remoteHttpClientLayer, type RemoteEnvironmentRequestError } from "../rpc/http.ts";
+import { layerRemoteHttpClient, type RemoteEnvironmentRequestError } from "../rpc/http.ts";
 import {
   executeAuthenticatedEnvironmentHttpRequest,
   withOrchestrationProtocolHeader,
@@ -53,7 +53,7 @@ export function createThreadSnapshotCommands<R, E>(
             threadId: input.threadId,
             signer,
             remoteAuthorization,
-          }).pipe(Effect.provide(remoteHttpClientLayer(globalThis.fetch)), Effect.option);
+          }).pipe(Effect.provide(layerRemoteHttpClient(globalThis.fetch)), Effect.option);
           if (Option.isSome(snapshot)) return Option.some(snapshot.value.projection);
           return Option.some(
             yield* EnvironmentRpc.request(ORCHESTRATION_V2_WS_METHODS.getThreadProjection, {

@@ -121,7 +121,7 @@ const withConnection = Effect.fn("drive.withConnection")(function* <A, E, R>(
       (issued) => auth.revokeSession(issued.sessionId).pipe(Effect.ignore({ log: true })),
     );
   }).pipe(
-    Effect.provide(EnvironmentAuth.runtimeLayer.pipe(Layer.provide(ServerConfig.layer(config)))),
+    Effect.provide(EnvironmentAuth.layerRuntime.pipe(Layer.provide(ServerConfig.layer(config)))),
   );
 });
 

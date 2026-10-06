@@ -222,11 +222,8 @@ import * as DirectEndpoints from "./environment/DirectEndpoints.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
-import {
-  requiredScopeForDeviceList,
-  rpcAuthorizationError,
-  rpcScopeAuthorizationLayer,
-} from "./auth/RpcAuthorization.ts";
+import { requiredScopeForDeviceList, rpcAuthorizationError } from "./auth/RpcAuthorization.ts";
+import * as RpcAuthorization from "./auth/RpcAuthorization.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
@@ -1216,7 +1213,7 @@ export const recordAcceptedClientCommandAnalytics = (
     : analytics.record(event, properties).pipe(Effect.ignore);
 };
 
-const makeWsRpcLayer = (
+const layerWsRpc = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   clientOrigin: OrchestrationClientOrigin,
   clientAnalyticsProps: Readonly<Record<string, unknown>>,
@@ -3996,7 +3993,7 @@ const makeWsRpcLayer = (
     }),
   );
 
-export const websocketRpcRouteLayer = Layer.unwrap(
+export const layer = Layer.unwrap(
   Effect.gen(function* () {
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
@@ -4041,19 +4038,14 @@ export const websocketRpcRouteLayer = Layer.unwrap(
           const { protocol, httpEffect } = yield* RpcServer.makeProtocolWithHttpEffectWebsocket;
           yield* RpcServer.make(ServerWsRpcGroup, { disableTracing: true }).pipe(
             Effect.provideService(RpcServer.Protocol, withTerminalOutputWindow(protocol)),
-            Effect.provide(rpcScopeAuthorizationLayer(session.scopes)),
+            Effect.provide(RpcAuthorization.layer(session.scopes)),
             Effect.forkScoped,
           );
           // @effect-diagnostics-next-line returnEffectInGen:off
           return httpEffect;
         }).pipe(
           Effect.provide(
-            makeWsRpcLayer(
-              session,
-              clientOrigin,
-              clientAnalyticsProps,
-              previewAutomationBroker,
-            ).pipe(
+            layerWsRpc(session, clientOrigin, clientAnalyticsProps, previewAutomationBroker).pipe(
               Layer.provide(Layer.succeed(ComposerDrafts.ComposerDraftRepository, composerDrafts)),
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(Layer.succeed(SqlClient.SqlClient, sql)),

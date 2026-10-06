@@ -49,7 +49,7 @@ const makeElectronApp = (
   ...overrides,
 });
 
-const makeElectronWindowLayer = (destroyAll: Effect.Effect<void> = Effect.void) =>
+const layerElectronWindow = (destroyAll: Effect.Effect<void> = Effect.void) =>
   Layer.succeed(ElectronWindow.ElectronWindow, {
     create: () => Effect.die("unexpected window creation"),
     main: Effect.die("unexpected main window read"),
@@ -64,7 +64,7 @@ const makeElectronWindowLayer = (destroyAll: Effect.Effect<void> = Effect.void) 
     syncAllAppearance: () => Effect.void,
   });
 
-const makeDesktopWindowLayer = (
+const layerDesktopWindow = (
   closeMainForShutdown: Effect.Effect<void> = Effect.void,
   activate: Effect.Effect<void> = Effect.void,
 ) =>
@@ -86,7 +86,7 @@ const makeDesktopWindowLayer = (
     syncAppearance: Effect.void,
   });
 
-const electronThemeLayer = Layer.succeed(ElectronTheme.ElectronTheme, {
+const layerElectronTheme = Layer.succeed(ElectronTheme.ElectronTheme, {
   shouldUseDarkColors: Effect.succeed(false),
   setSource: () => Effect.void,
   onUpdated: () => Effect.void,
@@ -124,9 +124,9 @@ const makeLifecycleLayer = (
       }),
     ),
     Layer.provideMerge(Layer.succeed(ElectronApp.ElectronApp, electronApp)),
-    Layer.provideMerge(electronThemeLayer),
-    Layer.provideMerge(makeElectronWindowLayer(destroyAll)),
-    Layer.provideMerge(makeDesktopWindowLayer(closeMainForShutdown, activate)),
+    Layer.provideMerge(layerElectronTheme),
+    Layer.provideMerge(layerElectronWindow(destroyAll)),
+    Layer.provideMerge(layerDesktopWindow(closeMainForShutdown, activate)),
     Layer.provideMerge(
       Layer.succeed(DesktopEnvironment.DesktopEnvironment, {
         platform,

@@ -11,8 +11,8 @@ import * as SecureStore from "expo-secure-store";
 import * as Layer from "effect/Layer";
 import { FetchHttpClient } from "effect/http";
 
-import { cryptoLayer, loadOrCreateDpopProofKeyPair } from "./dpop";
-import { managedRelayClientLayer } from "./managedRelayLayer";
+import * as Dpop from "./dpop";
+import * as ManagedRelayLayer from "./managedRelayLayer";
 
 vi.mock("expo-crypto", () => ({
   CryptoDigestAlgorithm: { SHA256: "SHA-256" },
@@ -47,8 +47,8 @@ describe("managed relay DPoP signer", () => {
   it.effect("retries an interrupted native key read without clearing the saved key", () =>
     Effect.gen(function* () {
       const signer = yield* ManagedRelay.ManagedRelayDpopSigner;
-      const initialThumbprint = yield* loadOrCreateDpopProofKeyPair().pipe(
-        Effect.provide(cryptoLayer),
+      const initialThumbprint = yield* Dpop.loadOrCreateDpopProofKeyPair().pipe(
+        Effect.provide(Dpop.layer),
         Effect.map((key) => key.thumbprint),
       );
       const savedKeys = new Map(secureStore);
@@ -70,8 +70,8 @@ describe("managed relay DPoP signer", () => {
       stalledRead.resolve(null);
     }).pipe(
       Effect.provide(
-        managedRelayClientLayer("https://relay.example.test").pipe(
-          Layer.provide(Layer.mergeAll(FetchHttpClient.layer, cryptoLayer)),
+        ManagedRelayLayer.layer("https://relay.example.test").pipe(
+          Layer.provide(Layer.mergeAll(FetchHttpClient.layer, Dpop.layer)),
         ),
       ),
     ),
@@ -91,8 +91,8 @@ describe("managed relay DPoP signer", () => {
       assert.equal(vi.mocked(SecureStore.getItemAsync).mock.calls.length, readsBefore + 2);
     }).pipe(
       Effect.provide(
-        managedRelayClientLayer("https://relay.example.test").pipe(
-          Layer.provide(Layer.mergeAll(FetchHttpClient.layer, cryptoLayer)),
+        ManagedRelayLayer.layer("https://relay.example.test").pipe(
+          Layer.provide(Layer.mergeAll(FetchHttpClient.layer, Dpop.layer)),
         ),
       ),
     ),

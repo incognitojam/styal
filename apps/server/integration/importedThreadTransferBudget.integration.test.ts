@@ -27,16 +27,16 @@ import { HttpRouter, HttpServer } from "effect/http";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerConfig from "../src/config.ts";
-import { httpCompressionLayer } from "../src/http.ts";
+import { layerHttpCompression } from "../src/http.ts";
 import * as EventSink from "../src/orchestration-v2/EventSink.ts";
 import * as EventStore from "../src/orchestration-v2/EventStore.ts";
-import { orchestrationHttpApiLayer } from "../src/orchestration-v2/http.ts";
+import * as OrchestrationHttp from "../src/orchestration-v2/http.ts";
 import * as LegacyV1ThreadImporter from "../src/orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
 import * as ProjectionStore from "../src/orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../src/orchestration-v2/ProjectStore.ts";
 import * as ThreadManagementService from "../src/orchestration-v2/ThreadManagementService.ts";
-import { OrchestrationEventStoreLive } from "../src/persistence/Layers/OrchestrationEventStore.ts";
-import { SqlitePersistenceMemory } from "../src/persistence/Layers/Sqlite.ts";
+import * as OrchestrationEventStoreLayer from "../src/persistence/Layers/OrchestrationEventStore.ts";
+import { layerMemory } from "../src/persistence/Layers/Sqlite.ts";
 import * as ProjectEnrichmentService from "../src/project/ProjectEnrichmentService.ts";
 import * as ProjectService from "../src/project/ProjectService.ts";
 import * as ServerRuntimeStartup from "../src/serverRuntimeStartup.ts";
@@ -67,8 +67,8 @@ const decodeThreadSnapshot = Schema.decodeUnknownEffect(
 const persistence = EventSink.layer.pipe(
   Layer.provideMerge(EventStore.layerFromOrchestrationEventStore),
   Layer.provideMerge(ProjectionStore.layer),
-  Layer.provideMerge(OrchestrationEventStoreLive),
-  Layer.provideMerge(SqlitePersistenceMemory),
+  Layer.provideMerge(OrchestrationEventStoreLayer.layer),
+  Layer.provideMerge(layerMemory),
 );
 // Reads delegate to the real SQL projection, as the runtime does once a transcript is imported.
 const management = Layer.unwrap(
@@ -106,9 +106,9 @@ const auth = Layer.succeed(EnvironmentAuthenticatedAuth, (effect) =>
   ),
 );
 const routes = HttpApiBuilder.layer(TransferApi).pipe(
-  Layer.provide(orchestrationHttpApiLayer),
+  Layer.provide(OrchestrationHttp.layer),
   Layer.provide(auth),
-  Layer.provide(httpCompressionLayer),
+  Layer.provide(layerHttpCompression),
   Layer.provide(NodeHttpPlatform.layer),
 );
 

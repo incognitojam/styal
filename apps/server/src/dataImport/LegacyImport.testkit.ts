@@ -9,10 +9,10 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ProjectionMaintenance from "../orchestration-v2/ProjectionMaintenance.ts";
 import * as ProjectService from "../project/ProjectService.ts";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import { layerMemory } from "../persistence/Layers/Sqlite.ts";
 import { layerTest as serverSettingsLayerTest } from "../serverSettings.ts";
 const stores = Layer.mergeAll(EventStore.layer, ProjectionStore.layer, ProjectStore.layer).pipe(
-  Layer.provideMerge(SqlitePersistenceMemory),
+  Layer.provideMerge(layerMemory),
 );
 const projects = Layer.unwrap(
   Effect.gen(function* () {

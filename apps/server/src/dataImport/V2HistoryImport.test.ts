@@ -10,7 +10,7 @@ import * as EventStore from "../orchestration-v2/EventStore.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as Maintenance from "../orchestration-v2/ProjectionMaintenance.ts";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import { layerMemory } from "../persistence/Layers/Sqlite.ts";
 import { materializeV2ForkHistory } from "./V2ForkHistoryImport.ts";
 import { makeV2HistoryWriter, readV2SourceProjection } from "./V2HistoryImport.ts";
 
@@ -177,7 +177,7 @@ const source = Schema.decodeUnknownSync(OrchestrationV2ThreadProjectionJson)({
   updatedAt: at,
 });
 const stores = Layer.mergeAll(EventStore.layer, ProjectionStore.layer, ProjectStore.layer).pipe(
-  Layer.provideMerge(SqlitePersistenceMemory),
+  Layer.provideMerge(layerMemory),
 );
 const layer = Layer.mergeAll(EventSink.layer, Maintenance.layer).pipe(Layer.provideMerge(stores));
 it.layer(layer)("V2 source history import", (it) => {
