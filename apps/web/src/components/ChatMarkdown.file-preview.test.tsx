@@ -27,6 +27,7 @@ vi.mock("../state/session", async (importOriginal) => ({
   usePreparedConnection: () => ({ _tag: "Loading" }),
 }));
 vi.mock("../state/entities", () => ({
+  readEnvironmentSupportsServerBrowser: () => false,
   readThreadShell: () => null,
   useProjects: () => [],
   useServerConfigs: () => new Map(),

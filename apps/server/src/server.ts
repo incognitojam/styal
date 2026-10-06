@@ -75,6 +75,10 @@ import {
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as TerminalBrowserOpen from "./preview/TerminalBrowserOpen.ts";
+import * as ServerBrowser from "./preview/ServerBrowser.ts";
+import * as DesktopBrowserChannel from "./preview/DesktopBrowserChannel.ts";
+import * as ServerBrowserStream from "./preview/ServerBrowserStream.ts";
+import * as PreviewBrowser from "./preview/PreviewBrowser.ts";
 import * as ProcessRunner from "./processRunner.ts";
 import * as GitManager from "./git/GitManager.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
@@ -401,7 +405,7 @@ const layerPortScanner = PortScanner.layer.pipe(Layer.provide(ProcessRunner.laye
 const layerPreviewAutomationBroker = PreviewAutomationBroker.layer;
 
 const layerTerminalBrowserOpen = TerminalBrowserOpen.layer.pipe(
-  Layer.provide(layerPreviewAutomationBroker),
+  Layer.provide(PreviewManager.layer),
 );
 
 const layerTerminal = Layer.merge(
@@ -719,6 +723,7 @@ const layerMakeRoutes = Layer.mergeAll(
     deviceSharingRouteLayer,
     deviceSharingProxyRouteLayer,
     deviceSharingAgentRouteLayer,
+    ServerBrowserStream.routeLayer,
     ServerHttp.layerStaticAndDevRoute,
     Ws.layer,
   ),
@@ -732,6 +737,10 @@ const layerMakeRoutes = Layer.mergeAll(
   ),
 ).pipe(
   Layer.provide(layerPullRequestService),
+  // The stream route and the WebSocket RPCs share one browser.
+  Layer.provide(ServerBrowser.layer.pipe(Layer.provide(DesktopBrowserChannel.layer))),
+  // Server browser tabs and HTML render previews install and run the same headless browser.
+  Layer.provide(PreviewBrowser.layer),
   Layer.provide(layerPreviewAutomationBroker),
   Layer.provide(ServerSelfUpdate.layer.pipe(Layer.provide(layerDesktopAppUpdate))),
   Layer.provide(layerCommandReadiness),

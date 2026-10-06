@@ -4,7 +4,7 @@ export interface ExecutableBrowserWebview extends Element {
 
 export const BROWSER_CAPTURE_SURFACE_TIMEOUT_MS = 5_000;
 
-export const findBrowserWebview = (tabId: string): ExecutableBrowserWebview | null =>
+const findBrowserWebview = (tabId: string): ExecutableBrowserWebview | null =>
   Array.from(document.querySelectorAll<ExecutableBrowserWebview>("webview[data-preview-tab]")).find(
     (candidate) => candidate.getAttribute("data-preview-tab") === tabId,
   ) ?? null;

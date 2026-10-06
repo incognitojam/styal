@@ -457,9 +457,7 @@ export const layerTerminalBrowserOpenRoute = HttpRouter.add(
       return HttpServerResponse.text("Bad Request", { status: 400 });
     }
 
-    const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
-    const environmentId = yield* serverEnvironment.getEnvironmentId;
-    return yield* browserOpen.openInPreview({ environmentId, owner, url }).pipe(
+    return yield* browserOpen.openInPreview({ owner, url }).pipe(
       Effect.as(HttpServerResponse.empty({ status: 204 })),
       Effect.catch((cause) =>
         Effect.logWarning("failed to route terminal browser-open request to preview", {

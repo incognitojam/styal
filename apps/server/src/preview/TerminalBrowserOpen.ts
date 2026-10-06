@@ -1,11 +1,5 @@
-import {
-  ProviderInstanceId,
-  ThreadId,
-  type EnvironmentId,
-  type PreviewAutomationError,
-} from "@t3tools/contracts";
+import { ThreadId, type PreviewError } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -16,7 +10,7 @@ import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import { writeFileStringAtomically } from "../atomicWrite.ts";
 import * as ServerConfig from "../config.ts";
-import * as PreviewAutomationBroker from "../mcp/PreviewAutomationBroker.ts";
+import * as PreviewManager from "./Manager.ts";
 
 export const TERMINAL_BROWSER_OPEN_PATH = "/api/internal/terminal-browser-open";
 export const TERMINAL_BROWSER_OPEN_RUNTIME_STATE_ENV = "T3CODE_TERMINAL_BROWSER_OPEN_RUNTIME_STATE";
@@ -151,7 +145,6 @@ export interface TerminalBrowserOpenOwner {
 }
 
 export interface TerminalBrowserOpenPreviewInput {
-  readonly environmentId: EnvironmentId;
   readonly owner: TerminalBrowserOpenOwner;
   readonly url: string;
 }
@@ -172,7 +165,7 @@ export class TerminalBrowserOpen extends Context.Service<
     readonly resolve: (token: string) => Effect.Effect<TerminalBrowserOpenOwner | undefined>;
     readonly openInPreview: (
       input: TerminalBrowserOpenPreviewInput,
-    ) => Effect.Effect<void, PreviewAutomationError>;
+    ) => Effect.Effect<void, PreviewError>;
   }
 >()("@styal/cli/preview/TerminalBrowserOpen") {}
 
@@ -180,7 +173,7 @@ export const make = Effect.gen(function* TerminalBrowserOpenMake() {
   const config = yield* ServerConfig.ServerConfig;
   const crypto = yield* Crypto.Crypto;
   const platform = yield* HostProcessPlatform;
-  const broker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
+  const previews = yield* PreviewManager.PreviewManager;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const shimDir = path.join(config.stateDir, SHIM_DIRECTORY_NAME);
@@ -264,28 +257,18 @@ export const make = Effect.gen(function* TerminalBrowserOpenMake() {
     SynchronizedRef.get(state).pipe(Effect.map((current) => current.ownersByToken.get(token))),
   );
 
+  // A link the user opens from a terminal is the user's tab, not an agent's:
+  // it has no automation owner, so idle cleanup and agent tab limits leave it
+  // alone, and it opens in the right panel rather than floating.
   const openInPreview = Effect.fn("TerminalBrowserOpen.openInPreview")(function* (
     input: TerminalBrowserOpenPreviewInput,
   ) {
-    const issuedAt = yield* Clock.currentTimeMillis;
-    const providerSessionId = `terminal-browser:${input.owner.threadId}\u0000${input.owner.terminalId}`;
-    yield* broker.invoke({
-      scope: {
-        environmentId: input.environmentId,
-        requestNamespace: providerSessionId,
-        thread: {
-          threadId: ThreadId.make(input.owner.threadId),
-          providerSessionId,
-          providerInstanceId: ProviderInstanceId.make("t3_terminal"),
-        },
-        client: undefined,
-        capabilities: new Set(["preview"]),
-        issuedAt,
-      },
-      operation: "open",
-      input: { url: input.url, reuseExistingTab: false },
-      timeoutMs: 15_000,
-      presentation: "right-panel",
+    yield* previews.open({
+      threadId: ThreadId.make(input.owner.threadId),
+      url: input.url,
+      runtime: "server",
+      reveal: true,
+      revealSurface: "right-panel",
     });
   });
 

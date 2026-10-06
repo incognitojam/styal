@@ -28,13 +28,6 @@ await build({
       resolveId(id) {
         if (id.startsWith("effect/")) return require.resolve(id);
       },
-      transform(code, id) {
-        if (id.endsWith("/preview/PlaywrightInjectedRuntime.ts")) {
-          // Its createRequire must still resolve from the production source's
-          // workspace, rather than the scratch bundle's directory.
-          return code.replaceAll("import.meta.url", JSON.stringify(NodeURL.pathToFileURL(id).href));
-        }
-      },
     },
   ],
   build: {

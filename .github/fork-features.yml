@@ -1890,8 +1890,6 @@ features:
     status: maintained
     prs: []
     invariants:
-      - Browser automation failures carry only allowlisted error kinds and network codes across the client boundary; arbitrary causes, messages, URLs, selectors, and evaluated scripts remain excluded from this diagnostic field.
-      - Browser automation failures also carry an allowlisted client step, such as page capture or viewport rendering, so the agent's error names where the client stopped without exposing page content.
       - Release server builds report every Error or Fatal log entry, and every RPC handler defect, as a PostHog `$exception` event through the analytics delivery path, sharing its identity and opt-out.
       - Reports carry only the thrown value and log message, scrubbed of home directories, user names, emails, URL credentials and queries, and token-like strings; log annotations are never sent.
       - Operators can disable reports alone with `T3CODE_ERROR_REPORTING_ENABLED=false`; development servers do not report unless it is set to true.
@@ -1910,7 +1908,6 @@ features:
       - apps/server/src/serverLogger.ts
       - apps/server/src/telemetry/ErrorReporting.ts
       - apps/server/vite.config.ts
-      - apps/web/src/components/preview/previewAutomationErrors.ts
       - packages/contracts/src/previewAutomation.ts
       - packages/shared/src/previewErrorDiagnostics.ts
     upstream_paths:
@@ -1923,7 +1920,6 @@ features:
       - apps/server/src/mcp/PreviewAutomationBroker.test.ts
       - apps/server/src/observability/RpcInstrumentation.test.ts
       - apps/server/src/telemetry/ErrorReporting.test.ts
-      - apps/web/src/components/preview/previewAutomationRequestConsumer.test.ts
       - packages/shared/src/previewErrorDiagnostics.test.ts
     upstream:
       status: unassessed
@@ -2235,20 +2231,22 @@ features:
       - Loopback links opened from chat or terminal activity resolve on the environment machine in the integrated browser, unless a Cmd/Ctrl-click asks for the system browser.
       - The browser link preference applies to other web links; choosing the system browser does not redirect loopback development links away from their environment.
       - Unsupported links retain an external-browser path and never strand the user behind an unavailable preview runtime.
+      - A link a terminal opens becomes the user's own server browser tab, not an agent's, so idle cleanup and agent tab limits leave it alone, and it opens in the right panel whatever the floating-preview setting.
     implementation_paths:
       - apps/desktop/src/preview/BrowserSession.ts
       - apps/server/src/preview/TerminalBrowserOpen.ts
       - apps/web/src/components/chat/loopbackLinkPreview.ts
-      - apps/web/src/components/preview/PreviewAutomationHosts.tsx
       - apps/web/src/components/preview/openTerminalLinkInPreview.ts
       - apps/web/src/terminal/ghostty/surface.ts
     upstream_paths:
       - apps/desktop/src/preview/Manager.ts
       - apps/server/src/http.ts
+      - apps/server/src/preview/Manager.ts
       - apps/server/src/terminal/Manager.ts
       - apps/web/src/components/ChatMarkdown.tsx
+      - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/ThreadTerminalDrawer.tsx
-      - apps/web/src/components/preview/PreviewAutomationHosts.tsx
+      - packages/contracts/src/preview.ts
     tests:
       - apps/desktop/src/preview/BrowserSession.test.ts
       - apps/server/src/preview/TerminalBrowserOpen.test.ts
@@ -2756,12 +2754,10 @@ features:
       - apps/web/src/browser/HostedBrowserWebview.tsx
       - apps/web/src/browser/browserRecording.ts
       - apps/web/src/browser/browserSurfaceStore.ts
-      - apps/web/src/components/preview/PreviewAutomationHosts.tsx
     upstream_paths:
       - apps/desktop/src/preview/Manager.ts
       - apps/web/src/browser/HostedBrowserWebview.tsx
       - apps/web/src/browser/browserRecording.ts
-      - apps/web/src/components/preview/PreviewAutomationHosts.tsx
     tests:
       - apps/desktop/src/preview/Manager.test.ts
       - apps/web/src/browser/browserRecording.test.ts
@@ -2783,7 +2779,7 @@ features:
     prs: [193, 197, 198, 217, 833, 841]
     invariants:
       - Fitted previews apply logical viewport dimensions through device metrics while preserving sharp presentation scaling and a working DevTools fallback. Presentation accounts for independent desktop window and page zoom, including zoom changes, so the requested CSS viewport fits its visible and captured surface.
-      - Hiding, reopening, or moving a preview preserves its owning surface and viewport state. Fitted screenshots capture the displayed surface rather than tiling it, and annotation crops and automation clicks are given in logical page coordinates and mapped into that surface.
+      - Hiding, reopening, or moving a preview preserves its owning surface and viewport state. Fitted screenshots the user takes capture the displayed surface rather than tiling it, and annotation crops are given in logical page coordinates and mapped into that surface. Agent input and captures on a desktop tab follow upstream's server-driven browser, which does not map them through the fitted scale.
       - Floating browser and device previews remain visible but do not send pointer or keyboard input to their page or device; dragging anywhere on the view-only surface moves the frame, double-clicking it opens that source in the right panel, and its frame controls remain usable.
     implementation_paths:
       - .github/workflows/fork-ci.yml
