@@ -51,8 +51,11 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { classifyNonZeroExit } from "../vcs/VcsProcess.ts";
 import { MAX_REFERENCES_PER_REQUEST } from "./gitHubReferences.ts";
 import { makeReferenceCache } from "./referenceCache.ts";
+import * as BitbucketApi from "./BitbucketApi.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
+const isSourceControlProviderError = Schema.is(SourceControlProviderError);
+const isBitbucketRepositoryLocatorError = Schema.is(BitbucketApi.BitbucketRepositoryLocatorError);
 
 export class SourceControlRepositoryService extends Context.Service<
   SourceControlRepositoryService,
@@ -181,7 +184,12 @@ function mapRepositoryError(operation: string, provider: SourceControlProviderKi
       : new SourceControlRepositoryError({
           operation,
           provider,
-          detail: "The source control operation could not be completed.",
+          detail:
+            isSourceControlProviderError(cause) &&
+            cause.provider === "bitbucket" &&
+            isBitbucketRepositoryLocatorError(cause.cause)
+              ? BitbucketApi.BitbucketRepositoryLocatorError.detail
+              : "The source control operation could not be completed.",
           cause,
         }),
   );
