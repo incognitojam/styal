@@ -100,8 +100,6 @@ import {
   decodePullRequestStackMembershipsJson,
   pullRequestSearchGraphQlQuery,
   PULL_REQUEST_SEARCH_MAX_ROWS,
-  BASE_COMPARISON_GRAPHQL_QUERY,
-  decodeBaseComparisonJson,
   PULL_REQUEST_FILES_VIEWED_GRAPHQL_QUERY,
   PULL_REQUEST_NODE_ID_GRAPHQL_QUERY,
   REACTION_SUBJECT_PULL_REQUEST_GRAPHQL_QUERY,
@@ -121,7 +119,6 @@ import {
   UPDATE_REVIEW_COMMENT_GRAPHQL_MUTATION,
   VIEWER_PERMISSIONS_GRAPHQL_QUERY,
   decodeViewerPermissionsJson,
-  type GitHubBaseComparison,
   type GitHubBranchRulePolicy,
   type GitHubPullRequestActivity,
   type GitHubPullRequestActivityPage,
@@ -154,7 +151,7 @@ export class GitHubPullRequestReadError extends Schema.TaggedError<GitHubPullReq
   },
 ) {
   override get message(): string {
-    return `GitHub CLI returned an unreadable ${this.operation} response.`;
+    return `GitHub returned an unreadable ${this.operation} response.`;
   }
 }
 
@@ -167,7 +164,7 @@ export class GitHubViewerLoginUnavailableError extends Schema.TaggedError<GitHub
   },
 ) {
   override get message(): string {
-    return "GitHub CLI returned no login for the authenticated account.";
+    return "GitHub returned no login for the authenticated account.";
   }
 }
 
@@ -665,22 +662,6 @@ export class GitHubPullRequestCli extends Context.Service<
       readonly host: string;
       readonly number: number;
     }) => Effect.Effect<GitHubPullRequestStack | null, GitHubPullRequestCliError>;
-
-    /**
-     * How far the branch trails its base, and whether this viewer may update it. Its own read
-     * because the comparison needs the head ref the detail answers with — a fork's branch is not
-     * addressable in the base repository by name alone.
-     */
-    readonly getPullRequestBaseComparison: (input: {
-      readonly cwd: string;
-      readonly repository: string;
-      readonly host: string;
-      readonly number: number;
-      /** Qualified `owner:branch`, which is the only form a fork's head resolves under. */
-      readonly headRef: string;
-      /** Manual action checks may use the quota held back from automatic reads. */
-      readonly allowReserve?: boolean | undefined;
-    }) => Effect.Effect<GitHubBaseComparison, GitHubPullRequestCliError>;
 
     readonly getPullRequestActivity: (input: {
       readonly cwd: string;
@@ -2383,19 +2364,6 @@ export const make = Effect.gen(function* () {
           GitHubApiNotFoundError: () => Effect.succeed(null),
         }),
       );
-    },
-
-    getPullRequestBaseComparison: (input) => {
-      const { owner, name } = parseRepositorySelector(input.repository);
-      return graphqlRead({
-        cwd: input.cwd,
-        host: input.host,
-        operation: "getPullRequestBaseComparison",
-        ...(input.allowReserve === true ? { allowReserve: true } : {}),
-        variables: { owner, name, number: input.number, headRef: input.headRef },
-        query: BASE_COMPARISON_GRAPHQL_QUERY,
-        decode: decodeBaseComparisonJson,
-      });
     },
 
     getPullRequestActivity: (input) =>

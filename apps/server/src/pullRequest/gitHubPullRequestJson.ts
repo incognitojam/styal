@@ -922,6 +922,8 @@ const RawCoreSchema = Schema.Struct({
         ...RawDetailSchema.fields,
         ...RawViewerFieldsSchema.fields,
         viewerCanUpdateBranch: Schema.Boolean,
+        viewerCanEnableAutoMerge: Schema.optional(Schema.Boolean),
+        viewerCanDisableAutoMerge: Schema.optional(Schema.Boolean),
         baseRef: Schema.NullOr(
           Schema.Struct({
             compare: Schema.NullOr(Schema.Struct({ behindBy: Schema.Int })),
@@ -1035,7 +1037,13 @@ function checkContextNodesSelection(
 }
 
 export const pullRequestCoreGraphQlQuery = (host: string) => {
-  const mergeQueue = host.toLowerCase() === "github.com" ? " isInMergeQueue" : "";
+  const isGitHubDotCom = host.toLowerCase() === "github.com";
+  const mergeQueue = isGitHubDotCom ? " isInMergeQueue" : "";
+  // Exact auto-merge permissions are asked for on github.com only. Elsewhere the capability falls
+  // back to write access, as it does when their separate query fails.
+  const autoMergeAccess = isGitHubDotCom
+    ? " viewerCanEnableAutoMerge viewerCanDisableAutoMerge"
+    : "";
   return `query($owner: String!, $name: String!, $number: Int!, $headRef: String!) {
   repository(owner: $owner, name: $name) {
     mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed viewerPermission
@@ -1046,7 +1054,7 @@ export const pullRequestCoreGraphQlQuery = (host: string) => {
       headRepositoryOwner { login }
       author { login avatarUrl ... on User { id name } }
       autoMergeRequest { mergeMethod }
-      viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch
+      viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch${autoMergeAccess}
       baseRef { compare(headRef: $headRef) { behindBy } }
       reviewRequests(first: 100) {
         nodes { requestedReviewer { ... on User { login name } ... on Bot { login } ... on Team { slug name } } }
@@ -2618,6 +2626,12 @@ export function decodePullRequestCoreJson(
       canWrite: toCanWrite(repository.viewerPermission),
       canTriage: toCanTriage(repository.viewerPermission),
       ...toPullRequestViewerFields(pr),
+      ...(pr.viewerCanEnableAutoMerge === undefined
+        ? {}
+        : { canEnableAutoMerge: pr.viewerCanEnableAutoMerge }),
+      ...(pr.viewerCanDisableAutoMerge === undefined
+        ? {}
+        : { canDisableAutoMerge: pr.viewerCanDisableAutoMerge }),
       mergeCapabilities: {
         merge: repository.mergeCommitAllowed,
         squash: repository.squashMergeAllowed,
@@ -3207,73 +3221,10 @@ function toCanTriage(viewerPermission: string | null | undefined): boolean {
  * need `read:org`, which a repository-scoped token need not carry — and a query GitHub refuses
  * fails whole, taking the people down with the teams.
  */
-/**
- * Where the branch stands against its base, and whether this viewer may move it.
- *
- * `mergeStateStatus` is not the answer: GitHub only reports BEHIND where the repository requires
- * branches to be up to date before merging, so on every other repository a stale branch reads as
- * CLEAN or BLOCKED like any other. The comparison counts the commits instead, which is the same
- * number GitHub's own "out-of-date" banner shows.
- *
- * `headRef` is qualified `owner:branch` because a pull request from a fork has no branch of that
- * name in the base repository, and an unqualified name is simply not found there.
- */
-export const BASE_COMPARISON_GRAPHQL_QUERY = `query($owner: String!, $name: String!, $number: Int!, $headRef: String!) {
-  repository(owner: $owner, name: $name) {
-    pullRequest(number: $number) {
-      viewerCanUpdateBranch
-      baseRef {
-        compare(headRef: $headRef) {
-          behindBy
-        }
-      }
-    }
-  }
-}`;
-
-const RawBaseComparisonSchema = Schema.Struct({
-  data: Schema.Struct({
-    repository: Schema.NullOr(
-      Schema.Struct({
-        pullRequest: Schema.NullOr(
-          Schema.Struct({
-            viewerCanUpdateBranch: Schema.optional(Schema.NullOr(Schema.Boolean)),
-            /** Null where the head repository is gone, which is a comparison nobody can make. */
-            baseRef: Schema.optional(
-              Schema.NullOr(
-                Schema.Struct({
-                  compare: Schema.optional(
-                    Schema.NullOr(Schema.Struct({ behindBy: Schema.Number })),
-                  ),
-                }),
-              ),
-            ),
-          }),
-        ),
-      }),
-    ),
-  }),
-});
-
-const decodeBaseComparison = decodeJsonResult(RawBaseComparisonSchema);
-
 export interface GitHubBaseComparison {
   /** Null where the host could not compare, which the page reads as "unknown". */
   readonly behindBy: number | null;
   readonly viewerCanUpdate: boolean;
-}
-
-export function decodeBaseComparisonJson(
-  raw: string,
-): Result.Result<GitHubBaseComparison, DecodeFailure> {
-  const decoded = decodeBaseComparison(raw);
-  if (!Result.isSuccess(decoded)) return Result.fail(decoded.failure);
-  const pullRequest = decoded.success.data.repository?.pullRequest;
-  const behindBy = pullRequest?.baseRef?.compare?.behindBy;
-  return Result.succeed({
-    behindBy: typeof behindBy === "number" && behindBy >= 0 ? behindBy : null,
-    viewerCanUpdate: pullRequest?.viewerCanUpdateBranch === true,
-  });
 }
 
 export const REVIEWER_CANDIDATES_GRAPHQL_QUERY = `query($owner: String!, $name: String!, $number: Int!) {

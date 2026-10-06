@@ -18,7 +18,6 @@ import * as GitHubGraphQlBudget from "../sourceControl/githubGraphQlBudget.ts";
 import * as SourceControlRateLimit from "../sourceControl/SourceControlRateLimit.ts";
 import * as GitHubPullRequestCli from "./GitHubPullRequestCli.ts";
 import { KnownWorkflowRuns } from "./gitHubConditionalChecks.ts";
-import { BASE_COMPARISON_GRAPHQL_QUERY } from "./gitHubPullRequestJson.ts";
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -4546,45 +4545,6 @@ layer("GitHubPullRequestCli.layer", (it) => {
       }),
   );
 
-  it.effect("sends the base comparison's head as a variable, not inside the document", () =>
-    Effect.gen(function* () {
-      mockedExecute.mockReturnValue(
-        Effect.succeed(
-          output(
-            encodeJson({
-              data: {
-                repository: {
-                  pullRequest: {
-                    viewerCanUpdateBranch: true,
-                    baseRef: { compare: { behindBy: 4 } },
-                  },
-                },
-              },
-            }),
-          ),
-        ),
-      );
-      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
-
-      const comparison = yield* cli.getPullRequestBaseComparison({
-        cwd: "/w",
-        repository: "acme/web",
-        host: "github.com",
-        number: 7,
-        headRef: "fork:feat/page",
-      });
-
-      expect(varsAt(0)).toEqual({
-        owner: "acme",
-        name: "web",
-        number: 7,
-        headRef: "fork:feat/page",
-      });
-      expect(comparison).toEqual({ behindBy: 4, viewerCanUpdate: true });
-      expect(queryAt(0)).toContain(BASE_COMPARISON_GRAPHQL_QUERY.slice(0, -2));
-    }),
-  );
-
   it.effect("stops GraphQL reads at the protected reserve until reset", () =>
     Effect.gen(function* () {
       mockedExecute.mockReturnValue(
@@ -4593,10 +4553,11 @@ layer("GitHubPullRequestCli.layer", (it) => {
             encodeJson({
               data: {
                 repository: {
-                  pullRequest: {
-                    viewerCanUpdateBranch: true,
-                    baseRef: { compare: { behindBy: 4 } },
-                  },
+                  mergeCommitAllowed: true,
+                  squashMergeAllowed: false,
+                  rebaseMergeAllowed: true,
+                  viewerPermission: "READ",
+                  pullRequest: { viewerCanUpdate: true, viewerDidAuthor: true },
                 },
                 rateLimit: {
                   cost: 1,
@@ -4615,13 +4576,12 @@ layer("GitHubPullRequestCli.layer", (it) => {
         repository: "acme/web",
         host: "github.com",
         number: 7,
-        headRef: "fork:feat/page",
       } as const;
 
-      yield* cli.getPullRequestBaseComparison(input);
+      yield* cli.getViewerAccess(input);
       expect(queryAt(0)).toContain("rateLimit { cost limit remaining resetAt }");
 
-      const error = yield* Effect.flip(cli.getPullRequestBaseComparison(input));
+      const error = yield* Effect.flip(cli.getViewerAccess(input));
 
       assert.strictEqual(error._tag, "SourceControlRateLimitPausedError");
       if (error._tag !== "SourceControlRateLimitPausedError") return;
@@ -4632,66 +4592,75 @@ layer("GitHubPullRequestCli.layer", (it) => {
     }),
   );
 
+  it.effect("reads exact auto-merge permissions with the detail on github.com only", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockReturnValue(
+        Effect.succeed(
+          output(
+            encodeJson(
+              coreResponse({ viewerCanEnableAutoMerge: false, viewerCanDisableAutoMerge: true }),
+            ),
+          ),
+        ),
+      );
+      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+      const read = (host: string) =>
+        cli.getPullRequestDetail({ cwd: "/w", repository: "acme/web", host, number: 7 });
+
+      const detail = yield* read("github.com");
+      expect(detail.viewerAccess).toMatchObject({
+        canEnableAutoMerge: false,
+        canDisableAutoMerge: true,
+      });
+      expect(queryAt(0)).toContain("viewerCanEnableAutoMerge viewerCanDisableAutoMerge");
+
+      // An Enterprise schema may predate the fields, and an unknown field fails the whole read.
+      yield* read("github.example.test");
+      expect(queryAt(1)).not.toContain("viewerCanEnableAutoMerge");
+    }),
+  );
+
   it.effect("lets an interactive permission read use the protected reserve", () =>
     Effect.gen(function* () {
-      mockedExecute
-        .mockReturnValueOnce(
-          Effect.succeed(
-            output(
-              encodeJson({
-                data: {
-                  repository: {
-                    pullRequest: {
-                      viewerCanUpdateBranch: true,
-                      baseRef: { compare: { behindBy: 4 } },
-                    },
-                  },
-                  rateLimit: {
+      const permissions = (rateLimit?: Readonly<Record<string, unknown>>) =>
+        encodeJson({
+          data: {
+            repository: {
+              mergeCommitAllowed: true,
+              squashMergeAllowed: false,
+              rebaseMergeAllowed: true,
+              viewerPermission: "READ",
+              pullRequest: { viewerCanUpdate: true, viewerDidAuthor: true },
+            },
+            ...(rateLimit === undefined ? {} : { rateLimit }),
+          },
+        });
+      let permissionReads = 0;
+      // Each access read is the permissions query and the separate auto-merge query, sent
+      // together; the first permissions answer leaves the quota inside the reserve.
+      mockedExecute.mockImplementation((call) =>
+        Effect.succeed(
+          output(
+            call.kind === "graphql" && call.query.includes("viewerCanEnableAutoMerge")
+              ? encodeJson({ data: { repository: { pullRequest: {} } } })
+              : permissionReads++ === 0
+                ? permissions({
                     cost: 1,
                     limit: 5_000,
                     remaining: 500,
                     resetAt: "2099-08-13T14:00:00Z",
-                  },
-                },
-              }),
-            ),
+                  })
+                : permissions(),
           ),
-        )
-        .mockReturnValueOnce(
-          Effect.succeed(
-            output(
-              encodeJson({
-                data: {
-                  repository: {
-                    mergeCommitAllowed: true,
-                    squashMergeAllowed: false,
-                    rebaseMergeAllowed: true,
-                    viewerPermission: "READ",
-                    pullRequest: { viewerCanUpdate: true, viewerDidAuthor: true },
-                  },
-                },
-              }),
-            ),
-          ),
-        )
-        .mockReturnValueOnce(
-          Effect.succeed(
-            output(
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
-              JSON.stringify({
-                data: { repository: { pullRequest: {} } },
-              }),
-            ),
-          ),
-        );
+        ),
+      );
       const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
 
-      yield* cli.getPullRequestBaseComparison({
+      yield* cli.getViewerAccess({
         cwd: "/w",
         repository: "acme/web",
         host: "github.com",
         number: 7,
-        headRef: "fork:feat/page",
       });
       const access = yield* cli.getViewerAccess({
         cwd: "/w",
@@ -4701,7 +4670,7 @@ layer("GitHubPullRequestCli.layer", (it) => {
         allowReserve: true,
       });
 
-      assert.strictEqual(mockedExecute.mock.calls.length, 3);
+      assert.strictEqual(mockedExecute.mock.calls.length, 4);
       expect(access).toEqual({
         mergeCapabilities: { merge: true, squash: false, rebase: true },
         canWrite: false,
