@@ -1,5 +1,3 @@
-import { VideoPreviewModal, type VideoPreviewSource } from "../../components/VideoPreviewModal";
-import { ComposerAttachmentButton } from "../../components/ComposerAttachmentButton";
 import type { ComposerTextPaste } from "../../native/T3ComposerEditor.types";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { useAtomValue } from "@effect/atom-react";
@@ -36,6 +34,11 @@ import {
 } from "react";
 import { Alert, Keyboard, Platform, Pressable, View, type ViewStyle } from "react-native";
 import { FilePreviewModal, type FilePreviewSource } from "../../components/FilePreviewModal";
+import {
+  composerAttachmentUploadBlockReason,
+  composerAttachmentsStillUploading,
+  composerAttachmentUploadsAtom,
+} from "../../state/composer-attachment-uploads";
 import Animated, {
   FadeIn,
   FadeOut,
@@ -45,11 +48,6 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import {
-  composerAttachmentUploadBlockReason,
-  composerAttachmentsStillUploading,
-  composerAttachmentUploadsAtom,
-} from "../../state/composer-attachment-uploads";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { themeColorWithAlpha } from "../../lib/mobileTheme";
 import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/remoteRegistration";
@@ -63,19 +61,20 @@ import { useProject } from "../../state/entities";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 
 import { AppText as Text } from "../../components/AppText";
+import { ComposerAttachmentButton } from "../../components/ComposerAttachmentButton";
 import {
   ComposerAttachmentStrip,
   ComposerAttachmentThumbnail,
 } from "../../components/ComposerAttachmentStrip";
+import { VideoPreviewModal, type VideoPreviewSource } from "../../components/VideoPreviewModal";
 import { GlassSurface } from "../../components/GlassSurface";
 import { ComposerEditor, type ComposerEditorHandle } from "../../components/ComposerEditor";
 import { fileRoutePathSegments } from "../files/filePath";
 import {
+  ComposerActionButton,
   ComposerInlineControl,
-  ComposerToolbarButton,
   ComposerToolbarRow,
 } from "../../components/ComposerToolbar";
-import { ControlPill } from "../../components/ControlPill";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import {
   composerStripAttachments,
@@ -97,6 +96,7 @@ import {
   ComposerDictationCancelAction,
   ComposerDictationDraftContent,
   ComposerDictationPrimaryAction,
+  ComposerDictationStartAction,
   ComposerDictationStatus,
   ComposerDictationToolbar,
 } from "../voice-input/ComposerDictationControl";
@@ -137,6 +137,7 @@ export interface ThreadComposerProps {
   readonly queueCount: number;
   readonly environmentId: EnvironmentId;
   readonly projectCwd: string | null;
+  /** Why sending is blocked right now (shown as the send button's label), or null. */
   readonly sendBlockedReason?: string | null;
   readonly editorRef?: RefObject<ComposerEditorHandle | null>;
   readonly onChangeDraftMessage: (value: string) => void;
@@ -305,6 +306,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     !hasContent &&
     (props.selectedThread.session?.status === "running" ||
       props.selectedThread.session?.status === "starting");
+
   const uploadStates = useAtomValue(composerAttachmentUploadsAtom);
   const attachmentsUploading =
     props.connectionState === "connected" &&
@@ -314,6 +316,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       serverConfig: props.serverConfig,
       states: uploadStates,
     });
+  // Every send goes through the outbox; the label says whether it leaves now
+  // or waits (for the connection, an earlier queued message, or an upload).
   const sendLabel =
     props.connectionState !== "connected" || props.queueCount > 0 || attachmentsUploading
       ? "Queue"
@@ -618,7 +622,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
   return (
     <Animated.View
-      className="px-4"
+      className="px-[12px]"
       style={{
         paddingTop: isExpanded ? 8 : 6,
         paddingBottom: (props.bottomInset ?? 0) + (isExpanded ? 8 : 6),
@@ -669,7 +673,6 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   minHeight: 140,
                   overflow: "hidden" as const,
                   paddingBottom: 6,
-                  paddingHorizontal: 14,
                   paddingTop: 14,
                 }
               : {
@@ -677,18 +680,27 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   // shape morph stays bounded while rendering as a capsule.
                   borderRadius: 27,
                   overflow: "hidden" as const,
-                  paddingHorizontal: 14,
-                  paddingVertical: showsCompactDictation ? 2 : 5,
+                  paddingVertical: 2,
                 }
           }
         >
           <ComposerDictationDraftContent
             className={isExpanded ? undefined : "flex-row items-center"}
-            collapsed={showsCompactDictation}
+            compact={!isExpanded}
+            hidden={showsCompactDictation}
           >
+            {!isExpanded ? (
+              <ComposerAttachmentButton
+                supportsFiles={Boolean(
+                  props.serverConfig?.environment.capabilities.fileAttachments,
+                )}
+                onPickMedia={props.onPickDraftMedia}
+                onPickFiles={props.onPickDraftFiles}
+              />
+            ) : null}
             {isExpanded && stripAttachments.length > 0 ? (
               <Animated.View
-                className="pb-2.5"
+                className="px-[14px] pb-2.5"
                 entering={COMPOSER_ATTACHMENT_ENTERING}
                 exiting={FadeOut.duration(120)}
               >
@@ -713,7 +725,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
               </Animated.View>
             ) : null}
             <Animated.View
-              className={isExpanded ? undefined : "min-w-0 flex-1"}
+              className={isExpanded ? "px-[14px]" : "min-w-0 flex-1 px-[4px]"}
               layout={COMPOSER_LAYOUT_TRANSITION}
             >
               <ComposerEditor
@@ -825,12 +837,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                     ? {
                         minHeight: 72,
                         maxHeight: 160,
-                        paddingHorizontal: 4,
                         paddingVertical: 4,
                       }
                     : {
                         height: 36,
-                        paddingHorizontal: 4,
                       }
                 }
                 textStyle={{
@@ -839,7 +849,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 }}
               />
             </Animated.View>
-            {!isExpanded && !voiceInput.isBusy && stripAttachments.length > 0 ? (
+            {!isExpanded && stripAttachments.length > 0 ? (
               <View className="flex-row gap-1 pl-1">
                 {stripAttachments.slice(0, 3).map((attachment) => (
                   <ComposerAttachmentThumbnail
@@ -862,26 +872,23 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 ) : null}
               </View>
             ) : null}
-            {!isExpanded && !voiceInput.isBusy ? (
-              <Animated.View
-                className="flex-row items-center gap-1.5"
-                entering={FadeIn.duration(180)}
-                exiting={FadeOut.duration(100)}
-              >
-                {voiceInput.isAvailable ? (
-                  <ComposerDictationPrimaryAction
-                    state={voiceInput.state}
-                    presentation={voicePresentation}
-                    isAvailable={voiceInput.isAvailable}
-                    onStart={voiceInput.start}
-                    onConfirm={voiceInput.stop}
-                    onCancel={voiceInput.cancel}
-                  />
-                ) : null}
+            {!isExpanded ? (
+              <View className="flex-row items-center">
+                <ComposerDictationStartAction
+                  state={voiceInput.state}
+                  isAvailable={voiceInput.isAvailable}
+                  onStart={voiceInput.start}
+                  onCancel={voiceInput.cancel}
+                />
                 {showStopAction ? (
-                  <ControlPill icon="stop.fill" variant="danger" onPress={props.onStopThread} />
+                  <ComposerActionButton
+                    accessibilityLabel="Stop agent"
+                    icon="stop.fill"
+                    variant="danger"
+                    onPress={props.onStopThread}
+                  />
                 ) : (
-                  <ControlPill
+                  <ComposerActionButton
                     accessibilityLabel={sendBlockedReason ?? sendLabel}
                     icon="arrow.up"
                     variant="primary"
@@ -889,7 +896,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                     onPress={handleSend}
                   />
                 )}
-              </Animated.View>
+              </View>
             ) : null}
             {isExpanded ? <View className="h-1" /> : null}
           </ComposerDictationDraftContent>
@@ -900,12 +907,13 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
             layout={COMPOSER_LAYOUT_TRANSITION}
             pointerEvents={isToolbarVisible ? "auto" : "none"}
             style={
-              isToolbarVisible
+              isExpanded
                 ? undefined
                 : {
-                    height: 0,
-                    opacity: 0,
-                    overflow: "hidden",
+                    position: "absolute",
+                    bottom: 2,
+                    left: 0,
+                    right: 0,
                   }
             }
           >
@@ -913,7 +921,12 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
               showsDictation={isVoiceInputPresented}
               visible={isToolbarVisible}
             >
-              <ComposerToolbarRow paddingBottom={0} paddingHorizontal={0} paddingTop={0}>
+              <ComposerToolbarRow
+                paddingBottom={0}
+                paddingHorizontal={0}
+                paddingTop={0}
+                style={{ gap: 0 }}
+              >
                 <ComposerDictationCancelAction
                   presentation={voicePresentation}
                   onCancel={voiceInput.cancel}
@@ -927,7 +940,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                     onDismissError={voiceInput.cancel}
                   />
                 ) : (
-                  <View className="min-w-0 flex-1 flex-row items-center gap-2">
+                  <View className="min-w-0 flex-1 flex-row items-center justify-between">
                     <ComposerAttachmentButton
                       supportsFiles={Boolean(
                         props.serverConfig?.environment.capabilities.fileAttachments,
@@ -949,7 +962,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                     </View>
                   </View>
                 )}
-                <View className="shrink-0 flex-row items-center gap-2">
+                <View className="shrink-0 flex-row items-center">
                   <ComposerDictationPrimaryAction
                     state={voiceInput.state}
                     presentation={voicePresentation}
@@ -959,21 +972,19 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                     onCancel={voiceInput.cancel}
                   />
                   {showStopAction ? (
-                    <ComposerToolbarButton
+                    <ComposerActionButton
                       accessibilityLabel="Stop agent"
                       icon="stop.fill"
                       variant="danger"
                       onPress={props.onStopThread}
-                      showChevron={false}
                     />
                   ) : voicePresentation.showsSend ? (
-                    <ComposerToolbarButton
+                    <ComposerActionButton
                       accessibilityLabel={sendBlockedReason ?? sendLabel}
                       icon="arrow.up"
                       variant="primary"
                       disabled={!canSend}
                       onPress={handleSend}
-                      showChevron={false}
                     />
                   ) : null}
                 </View>
