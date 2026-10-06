@@ -38,7 +38,7 @@ function toChangeRequest(summary: GitHubCli.GitHubPullRequestSummary): ChangeReq
     baseRefName: summary.baseRefName,
     headRefName: summary.headRefName,
     state: summary.state ?? "open",
-    isDraft: summary.isDraft,
+    ...(summary.isDraft === true ? { isDraft: true } : {}),
     closedAt: summary.closedAt ?? null,
     mergedAt: summary.mergedAt ?? null,
     updatedAt:

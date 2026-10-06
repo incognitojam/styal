@@ -183,7 +183,7 @@ interface OpenPrInfo {
 
 interface PullRequestInfo extends OpenPrInfo, PullRequestHeadRemoteInfo {
   state: "open" | "closed" | "merged";
-  isDraft: boolean;
+  isDraft?: boolean;
   closedAt?: string | null;
   mergedAt?: string | null;
   updatedAt: Option.Option<DateTime.Utc>;
@@ -458,7 +458,7 @@ function toPullRequestInfo(summary: ChangeRequest): PullRequestInfo {
     baseRefName: summary.baseRefName,
     headRefName: summary.headRefName,
     state: summary.state ?? "open",
-    isDraft: summary.isDraft ?? false,
+    ...(summary.isDraft === true ? { isDraft: true } : {}),
     closedAt: summary.closedAt ?? null,
     mergedAt: summary.mergedAt ?? null,
     updatedAt: summary.updatedAt,
@@ -615,7 +615,7 @@ function toStatusPr(pr: PullRequestInfo): {
   baseRef: string;
   headRef: string;
   state: "open" | "closed" | "merged";
-  isDraft: boolean;
+  isDraft?: boolean;
   updatedAt: string | null;
 } {
   return {
@@ -625,7 +625,7 @@ function toStatusPr(pr: PullRequestInfo): {
     baseRef: pr.baseRefName,
     headRef: pr.headRefName,
     state: pr.state,
-    isDraft: pr.isDraft,
+    ...(pr.isDraft === true ? { isDraft: true } : {}),
     updatedAt: Option.match(pr.updatedAt, {
       onNone: () => null,
       onSome: (updatedAt) => DateTime.formatIso(updatedAt),
@@ -1651,7 +1651,6 @@ export const make = Effect.gen(function* () {
         return {
           ...firstPullRequest,
           state: "open",
-          isDraft: firstPullRequest.isDraft,
           updatedAt: Option.none(),
         } satisfies PullRequestInfo;
       }

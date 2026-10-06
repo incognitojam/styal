@@ -128,7 +128,7 @@ function normalizeFakePullRequestSummary(raw: unknown): GitHubCli.GitHubPullRequ
           ? "closed"
           : "merged"
       : undefined;
-  const isDraft = record.isDraft === true;
+  const isDraft = typeof record.isDraft === "boolean" ? record.isDraft : undefined;
   const isCrossRepository =
     typeof record.isCrossRepository === "boolean" ? record.isCrossRepository : undefined;
   const headRepositoryNameWithOwner =
@@ -150,8 +150,8 @@ function normalizeFakePullRequestSummary(raw: unknown): GitHubCli.GitHubPullRequ
     url,
     baseRefName,
     headRefName,
-    isDraft,
     ...(state ? { state } : {}),
+    ...(isDraft === true ? { isDraft: true } : {}),
     ...(isCrossRepository !== undefined ? { isCrossRepository } : {}),
     ...(headRepositoryNameWithOwner ? { headRepositoryNameWithOwner } : {}),
     ...(headRepositoryOwnerLogin ? { headRepositoryOwnerLogin } : {}),
@@ -728,7 +728,7 @@ const GitManagerTestLayer = GitVcsDriver.layer.pipe(
 );
 
 it.layer(GitManagerTestLayer)("GitManager", (it) => {
-  it.effect("status includes PR metadata when branch already has an open PR", () =>
+  it.effect("status includes draft PR metadata when branch already has a draft PR", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
       yield* initRepo(repoDir);
@@ -748,6 +748,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
                 url: "https://github.com/pingdotgg/codething-mvp/pull/13",
                 baseRefName: "main",
                 headRefName: "feature/status-open-pr",
+                isDraft: true,
               },
             ]),
           ],
@@ -765,47 +766,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         url: "https://github.com/pingdotgg/codething-mvp/pull/13",
         baseRef: "main",
         headRef: "feature/status-open-pr",
-        state: "open",
-        isDraft: false,
-        updatedAt: null,
-      });
-    }),
-  );
-
-  it.effect("status reports a draft PR as a draft", () =>
-    Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
-      yield* initRepo(repoDir);
-      yield* runGit(repoDir, ["checkout", "-b", "feature/status-draft-pr"]);
-      const remoteDir = yield* createBareRemote();
-      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
-      yield* runGit(repoDir, ["push", "-u", "origin", "feature/status-draft-pr"]);
-
-      const { manager } = yield* makeManager({
-        ghScenario: {
-          prListSequence: [
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
-            JSON.stringify([
-              {
-                number: 18,
-                title: "Draft PR",
-                url: "https://github.com/pingdotgg/codething-mvp/pull/18",
-                baseRefName: "main",
-                headRefName: "feature/status-draft-pr",
-                isDraft: true,
-              },
-            ]),
-          ],
-        },
-      });
-
-      const status = yield* manager.status({ cwd: repoDir });
-      expect(status.pr).toEqual({
-        number: 18,
-        title: "Draft PR",
-        url: "https://github.com/pingdotgg/codething-mvp/pull/18",
-        baseRef: "main",
-        headRef: "feature/status-draft-pr",
         state: "open",
         isDraft: true,
         updatedAt: null,
@@ -848,7 +808,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         baseRef: "main",
         headRef: "feature/status-trimmed-pr",
         state: "open",
-        isDraft: false,
         updatedAt: null,
       });
     }),
@@ -902,7 +861,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         baseRef: "main",
         headRef: "feature/status-valid-pr-entry",
         state: "open",
-        isDraft: false,
         updatedAt: null,
       });
     }),
@@ -954,7 +912,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         baseRef: "main",
         headRef: "feature/status-lowercase-state",
         state: "merged",
-        isDraft: false,
         updatedAt: "2026-01-02T00:00:00.000Z",
       });
     }),
@@ -1642,7 +1599,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         baseRef: "main",
         headRef: "feature/merged-branch-deleted",
         state: "merged",
-        isDraft: false,
         updatedAt: "2026-04-02T15:00:00.000Z",
       });
       expect(ghCalls.filter((call) => call.startsWith("pr list ")).length).toBeGreaterThan(0);
@@ -1721,7 +1677,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         baseRef: "main",
         headRef: "feature/pruned-after-merge",
         state: "merged",
-        isDraft: false,
         updatedAt: "2026-04-02T15:00:00.000Z",
       });
       expect(ghCalls.filter((call) => call.startsWith("pr list ")).length).toBeGreaterThan(0);
@@ -1771,7 +1726,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         baseRef: "main",
         headRef: "feature/hosted-name",
         state: "merged",
-        isDraft: false,
         updatedAt: "2026-04-03T15:00:00.000Z",
       });
       expect(ghCalls).toContain(
@@ -2111,7 +2065,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           baseRef: "main",
           headRef: "statemachine",
           state: "open",
-          isDraft: false,
           updatedAt: "2026-03-10T07:00:00.000Z",
         });
         expect(ghCalls).toContain(
@@ -2178,7 +2131,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           baseRef: "main",
           headRef: "main",
           state: "open",
-          isDraft: false,
           updatedAt: "2026-03-10T07:00:00.000Z",
         });
         expect(ghCalls).toContain(
@@ -2288,7 +2240,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           baseRef: "main",
           headRef: "effect-atom",
           state: "open",
-          isDraft: false,
           updatedAt: "2026-03-01T10:00:00.000Z",
         });
         expect(ghCalls.some((call) => call.includes("pr list --head upstream/effect-atom "))).toBe(
@@ -2341,7 +2292,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         baseRef: "main",
         headRef: "feature/status-merged-pr",
         state: "merged",
-        isDraft: false,
         updatedAt: "2026-01-30T10:00:00.000Z",
       });
     }),
@@ -2666,7 +2616,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         baseRef: "main",
         headRef: "feature/status-open-over-merged",
         state: "open",
-        isDraft: false,
         updatedAt: "2026-01-30T10:00:00.000Z",
       });
     }),
@@ -4171,7 +4120,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
             baseRefName: "main",
             headRefName: "statemachine",
             state: "open",
-            isDraft: false,
             updatedAt: Option.none(),
             isCrossRepository: false,
             headRepositoryNameWithOwner: "pingdotgg/codething-mvp",
@@ -4190,7 +4138,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
             baseRefName: "main",
             headRefName: "statemachine",
             state: "open",
-            isDraft: false,
             updatedAt: Option.none(),
             isCrossRepository: true,
             headRepositoryNameWithOwner: "pingdotgg/codething-mvp",
@@ -4220,7 +4167,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
             baseRefName: "main",
             headRefName: "t3code/git-audit-stability",
             state: "open",
-            isDraft: false,
             updatedAt: Option.none(),
             isCrossRepository: true,
             headRepositoryNameWithOwner: "justsomelegs/t3code",

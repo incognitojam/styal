@@ -354,11 +354,6 @@ function PullRequestMiniListRow({
   );
 }
 
-/**
- * How a change request reads on a thread row. State and tone come from the same resolver the
- * pull request panel uses, so a draft cannot be muted in one place and emerald in the other.
- * The panel's conflict arm stays out of reach here: VCS status carries no mergeability.
- */
 export function prStatusIndicator(
   pr: ThreadPr,
   provider: VcsStatusResult["sourceControlProvider"] | null | undefined,

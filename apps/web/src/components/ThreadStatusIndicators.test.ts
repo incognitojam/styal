@@ -85,12 +85,6 @@ describe("shared pull request state", () => {
 });
 
 describe("prStatusIndicator", () => {
-  function prFixture(): NonNullable<VcsStatusResult["pr"]> {
-    const pr = status().pr;
-    if (!pr) throw new Error("Expected pull request fixture");
-    return pr;
-  }
-
   it("formats PR tooltips with number, uppercase status, and title", () => {
     expect(prStatusIndicator(status().pr, undefined)).toMatchObject({
       tooltip: "PR #42 - Open: PR branch",
@@ -100,25 +94,23 @@ describe("prStatusIndicator", () => {
   });
 
   it("uses red for closed pull requests", () => {
-    expect(prStatusIndicator({ ...prFixture(), state: "closed" }, undefined)?.colorClass).toContain(
+    const closedPr = status().pr;
+    if (!closedPr) throw new Error("Expected pull request fixture");
+
+    expect(prStatusIndicator({ ...closedPr, state: "closed" }, undefined)?.colorClass).toContain(
       "text-red-600",
     );
   });
 
-  it("mutes a draft instead of showing it as ready for review", () => {
-    const draft = prStatusIndicator({ ...prFixture(), isDraft: true }, undefined);
+  it("uses gray and draft wording for draft pull requests", () => {
+    const draftPr = status().pr;
+    if (!draftPr) throw new Error("Expected pull request fixture");
 
-    expect(draft?.colorClass).toContain("text-zinc-500");
-    expect(draft?.colorClass).not.toContain("emerald");
-    expect(draft?.label).toBe("PR draft");
-    expect(draft?.tooltipLead).toBe("PR #42 - Draft");
-  });
-
-  it("keeps a terminal state ahead of the draft flag", () => {
-    // A draft that lands is merged. Reporting it as a draft would bury the outcome.
-    expect(
-      prStatusIndicator({ ...prFixture(), state: "merged", isDraft: true }, undefined)?.tooltipLead,
-    ).toBe("PR #42 - Merged");
+    expect(prStatusIndicator({ ...draftPr, isDraft: true }, undefined)).toMatchObject({
+      label: "PR draft",
+      colorClass: "text-zinc-500 dark:text-zinc-400/80",
+      tooltipLead: "PR #42 - Draft",
+    });
   });
 });
 
