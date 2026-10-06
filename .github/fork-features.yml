@@ -122,7 +122,7 @@ features:
       - apps/mobile/src/lib/modelOptions.ts
       - apps/server/src/orchestration-v2/Adapters/AntigravityAdapterV2.ts
       - apps/server/src/provider/AntigravityModels.ts
-      - apps/server/src/provider/Layers/AntigravityProvider.ts
+      - apps/server/src/provider/AntigravityProvider.ts
       - apps/server/src/provider/ModelManifest.ts
       - apps/server/src/provider/acp/AntigravityAcpSupport.ts
       - apps/server/src/textGeneration/AntigravityTextGeneration.ts
@@ -135,7 +135,7 @@ features:
     upstream_paths:
       - apps/mobile/src/lib/modelOptions.ts
       - apps/server/src/orchestration-v2/Adapters/AntigravityAdapterV2.ts
-      - apps/server/src/provider/Layers/AntigravityProvider.ts
+      - apps/server/src/provider/AntigravityProvider.ts
       - apps/server/src/provider/ModelManifest.ts
       - apps/server/src/provider/acp/AntigravityAcpSupport.ts
       - apps/server/src/textGeneration/AntigravityTextGeneration.ts
@@ -148,7 +148,7 @@ features:
     tests:
       - apps/mobile/src/lib/modelOptions.test.ts
       - apps/server/src/orchestration-v2/Adapters/AntigravityAdapterV2.test.ts
-      - apps/server/src/provider/Layers/AntigravityProvider.test.ts
+      - apps/server/src/provider/AntigravityProvider.test.ts
       - apps/server/src/provider/ModelManifest.test.ts
       - apps/server/src/provider/acp/AntigravityAcpSupport.test.ts
       - apps/server/src/textGeneration/AntigravityTextGeneration.test.ts
@@ -495,12 +495,12 @@ features:
     rationale: A server update resumes a running session in a new server process as soon as the old server exits, and the SDK's close returns before the CLI does, so without the wait two CLIs can hold the same session and transcript.
     implementation_paths:
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
-      - apps/server/src/provider/Layers/ClaudeProcess.ts
+      - apps/server/src/provider/ClaudeProcess.ts
     upstream_paths:
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
     tests:
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
-      - apps/server/src/provider/Layers/ClaudeProcess.test.ts
+      - apps/server/src/provider/ClaudeProcess.test.ts
     upstream:
       status: partial
       tracking:
@@ -588,13 +588,13 @@ features:
       - New Codex threads select GPT-6.1-Sol when available, then GPT-6-Sol, then GPT-6-Astra, then an older available model; an unavailable preferred model never blocks the live Codex catalog.
       - A Codex model's default reasoning effort is the one a turn without an explicit effort actually runs at, medium when the model supports it.
     implementation_paths:
-      - apps/server/src/provider/Layers/CodexProvider.ts
+      - apps/server/src/provider/CodexProvider.ts
       - packages/contracts/src/model.ts
     upstream_paths:
-      - apps/server/src/provider/Layers/CodexProvider.ts
+      - apps/server/src/provider/CodexProvider.ts
       - packages/contracts/src/model.ts
     tests:
-      - apps/server/src/provider/Layers/CodexProvider.test.ts
+      - apps/server/src/provider/CodexProvider.test.ts
     upstream:
       status: tracking
       tracking:
@@ -634,14 +634,14 @@ features:
     invariants:
       - Codex catalog labels use spaces before word suffixes, such as GPT-6 Luna and GPT-6.1 Sol, while preserving model IDs and the hyphen before the version.
     implementation_paths:
-      - apps/server/src/provider/Layers/CodexProvider.ts
+      - apps/server/src/provider/CodexProvider.ts
       - apps/server/src/provider/model-manifest.json
       - packages/shared/src/model.ts
     upstream_paths:
-      - apps/server/src/provider/Layers/CodexProvider.ts
+      - apps/server/src/provider/CodexProvider.ts
       - packages/shared/src/model.ts
     tests:
-      - apps/server/src/provider/Layers/CodexProvider.test.ts
+      - apps/server/src/provider/CodexProvider.test.ts
       - packages/shared/src/model.test.ts
     upstream:
       status: tracking
@@ -1605,7 +1605,7 @@ features:
       - apps/server/src/cloud/serviceProtocol.ts
       - apps/server/src/device/sshDeviceScript.ts
       - apps/server/src/provider/AntigravityInstallation.ts
-      - apps/server/src/provider/Services/ProviderAuthService.ts
+      - apps/server/src/provider/ProviderAuthService.ts
       - apps/server/src/provider/model-manifest.json
       - apps/server/vite.config.ts
       - apps/web/src/branding.logic.ts
@@ -3038,9 +3038,9 @@ features:
       - apps/mobile/src/features/settings/environment-maintenance.ts
       - apps/server/scripts/verify-provider-live.ts
       - apps/server/src/environment/ServerEnvironment.ts
-      - apps/server/src/provider/Layers/ProviderRegistry.ts
       - apps/server/src/provider/ModelManifest.ts
       - apps/server/src/provider/ProviderAutoUpdater.ts
+      - apps/server/src/provider/ProviderRegistry.ts
       - apps/server/src/provider/providerCompatibility.ts
       - apps/server/src/provider/providerMaintenanceRunner.ts
       - apps/server/src/server.ts
@@ -3057,8 +3057,8 @@ features:
     upstream_paths:
       - apps/mobile/src/features/settings/SettingsServerControlsRouteScreen.tsx
       - apps/server/src/environment/ServerEnvironment.ts
-      - apps/server/src/provider/Layers/ProviderRegistry.ts
       - apps/server/src/provider/ModelManifest.ts
+      - apps/server/src/provider/ProviderRegistry.ts
       - apps/server/src/provider/model-manifest.json
       - apps/server/src/provider/providerCompatibility.ts
       - apps/server/src/provider/providerMaintenanceRunner.ts
@@ -3168,16 +3168,16 @@ features:
       - A restart keeps the last known windows from the provider status cache until a live probe replaces them.
       - Signing out of Codex clears its windows instead of keeping the previous account's windows as a failed read.
     implementation_paths:
-      - apps/server/src/provider/Layers/CodexProvider.ts
+      - apps/server/src/provider/CodexProvider.ts
       - apps/server/src/provider/providerStatusCache.ts
     upstream_paths:
-      - apps/server/src/provider/Layers/CodexProvider.ts
+      - apps/server/src/provider/CodexProvider.ts
       - apps/server/src/provider/providerStatusCache.ts
       - apps/server/src/provider/providerUsageLimits.ts
       - packages/contracts/src/providerUsageLimits.ts
       - packages/shared/src/usageLimits.ts
     tests:
-      - apps/server/src/provider/Layers/ProviderRegistry.test.ts
+      - apps/server/src/provider/ProviderRegistry.test.ts
       - apps/server/src/provider/providerStatusCache.test.ts
       - apps/server/src/provider/providerUsageLimits.test.ts
     upstream:
@@ -4601,23 +4601,23 @@ features:
       - Clients connected to a server that reports only the next expiry keep showing the next-expiry summary.
     implementation_paths:
       - apps/mobile/src/features/usage/UsageLimitsSection.tsx
-      - apps/server/src/provider/Layers/claudeResetCredits.ts
-      - apps/server/src/provider/Layers/codexUsageLimits.ts
+      - apps/server/src/provider/claudeResetCredits.ts
+      - apps/server/src/provider/codexUsageLimits.ts
       - apps/server/src/usage/cliproxyApi.ts
       - apps/web/src/components/usage/UsageLimitsPooled.tsx
       - packages/contracts/src/providerUsageLimits.ts
       - packages/shared/src/usageLimits.ts
     upstream_paths:
       - apps/mobile/src/features/usage/UsageLimitsSection.tsx
-      - apps/server/src/provider/Layers/claudeResetCredits.ts
-      - apps/server/src/provider/Layers/codexUsageLimits.ts
+      - apps/server/src/provider/claudeResetCredits.ts
+      - apps/server/src/provider/codexUsageLimits.ts
       - apps/server/src/usage/cliproxyApi.ts
       - apps/web/src/components/usage/UsageLimitsPooled.tsx
       - packages/contracts/src/providerUsageLimits.ts
       - packages/shared/src/usageLimits.ts
     tests:
-      - apps/server/src/provider/Layers/claudeResetCredits.test.ts
-      - apps/server/src/provider/Layers/codexUsageLimits.test.ts
+      - apps/server/src/provider/claudeResetCredits.test.ts
+      - apps/server/src/provider/codexUsageLimits.test.ts
       - apps/server/src/usage/cliproxyApi.test.ts
       - packages/shared/src/usageLimits.test.ts
     upstream:

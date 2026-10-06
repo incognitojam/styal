@@ -14,7 +14,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import * as ServerConfig from "../src/config.ts";
-import { checkCodexProviderStatus } from "../src/provider/Layers/CodexProvider.ts";
+import { checkCodexProviderStatus } from "../src/provider/CodexProvider.ts";
 import * as CodexProtocol from "effect-codex-app-server/protocol";
 import * as Sink from "effect/Sink";
 import * as Stdio from "effect/Stdio";

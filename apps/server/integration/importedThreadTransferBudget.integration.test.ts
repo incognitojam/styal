@@ -35,8 +35,8 @@ import * as LegacyV1ThreadImporter from "../src/orchestration-v2/legacy/LegacyV1
 import * as ProjectionStore from "../src/orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../src/orchestration-v2/ProjectStore.ts";
 import * as ThreadManagementService from "../src/orchestration-v2/ThreadManagementService.ts";
-import * as OrchestrationEventStoreLayer from "../src/persistence/Layers/OrchestrationEventStore.ts";
-import { layerMemory } from "../src/persistence/Layers/Sqlite.ts";
+import * as OrchestrationEventStoreLayer from "../src/persistence/OrchestrationEventStore.ts";
+import { layerMemory } from "../src/persistence/Sqlite.ts";
 import * as ProjectEnrichmentService from "../src/project/ProjectEnrichmentService.ts";
 import * as ProjectService from "../src/project/ProjectService.ts";
 import * as ServerRuntimeStartup from "../src/serverRuntimeStartup.ts";

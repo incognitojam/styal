@@ -9,7 +9,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 
-import { layerMemory } from "../src/persistence/Layers/Sqlite.ts";
+import { layerMemory } from "../src/persistence/Sqlite.ts";
 import * as ProcessRunner from "../src/processRunner.ts";
 import * as TerminalManager from "../src/terminal/Manager.ts";
 import * as NodePtyAdapter from "../src/terminal/NodePtyAdapter.ts";

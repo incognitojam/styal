@@ -12,7 +12,7 @@ import * as PlatformError from "effect/PlatformError";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
-import { buildCodexInitializeParams } from "../../provider/Layers/CodexProvider.ts";
+import { buildCodexInitializeParams } from "../../provider/CodexProvider.ts";
 import * as ServerConfig from "../../config.ts";
 import * as IdAllocator from "../IdAllocator.ts";
 import { ProviderAdapterOpenSessionError } from "../ProviderAdapter.ts";

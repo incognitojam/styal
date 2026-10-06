@@ -31,7 +31,7 @@ import {
   stableProviderVersion,
 } from "./providerCompatibility.ts";
 import { ProviderMaintenanceRunner } from "./providerMaintenanceRunner.ts";
-import { ProviderRegistry } from "./Services/ProviderRegistry.ts";
+import { ProviderRegistry } from "./ProviderRegistry.ts";
 
 const FIRST_PASS_DELAY = Duration.minutes(2);
 const PASS_INTERVAL = Duration.minutes(30);

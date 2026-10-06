@@ -11,9 +11,8 @@ import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as ServerConfig from "../config.ts";
 import * as ModelManifest from "./ModelManifest.ts";
-import * as ProviderRegistryLayer from "./Layers/ProviderRegistry.ts";
-import * as ProviderRegistry from "./Services/ProviderRegistry.ts";
-import * as ProviderInstanceRegistry from "./Services/ProviderInstanceRegistry.ts";
+import * as ProviderRegistry from "./ProviderRegistry.ts";
+import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
 import type { ProviderInstance } from "./ProviderDriver.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "./providerMaintenance.ts";
 import { BUILT_IN_DRIVERS } from "./builtInDrivers.ts";
@@ -407,7 +406,7 @@ it.effect("a remote policy refresh preserves a newer health result on the regist
       assert.strictEqual(updated?.compatibilityAdvisory?.status, "supported");
       assert.strictEqual(updated?.status, "error");
       assert.strictEqual(updated?.message, "Authentication failed");
-    }).pipe(Effect.provide(ProviderRegistryLayer.layer.pipe(Layer.provide(layerDependencies))));
+    }).pipe(Effect.provide(ProviderRegistry.layer.pipe(Layer.provide(layerDependencies))));
   }).pipe(Effect.scoped),
 );
 
@@ -472,7 +471,7 @@ it.effect("publishes the verified version from a recent remote manifest", () =>
       const stale = yield* registry.refreshInstance(provider.instanceId);
       assert.strictEqual(stale[0]?.compatibilityAdvisory?.status, "supported");
       assert.strictEqual(stale[0]?.compatibilityAdvisory?.verifiedVersion, undefined);
-    }).pipe(Effect.provide(ProviderRegistryLayer.layer.pipe(Layer.provide(dependencies))));
+    }).pipe(Effect.provide(ProviderRegistry.layer.pipe(Layer.provide(dependencies))));
   }).pipe(Effect.scoped),
 );
 

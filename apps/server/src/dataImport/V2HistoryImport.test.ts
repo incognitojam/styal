@@ -10,7 +10,7 @@ import * as EventStore from "../orchestration-v2/EventStore.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as Maintenance from "../orchestration-v2/ProjectionMaintenance.ts";
-import { layerMemory } from "../persistence/Layers/Sqlite.ts";
+import { layerMemory } from "../persistence/Sqlite.ts";
 import { materializeV2ForkHistory } from "./V2ForkHistoryImport.ts";
 import { makeV2HistoryWriter, readV2SourceProjection } from "./V2HistoryImport.ts";
 

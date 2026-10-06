@@ -33,8 +33,8 @@ import { vi } from "vite-plus/test";
 import { cli } from "../binCli.ts";
 import * as ServerConfig from "../config.ts";
 import * as Startup from "../serverRuntimeStartup.ts";
-import * as Sqlite from "../persistence/Layers/Sqlite.ts";
-import * as OrchestrationEventStoreLayer from "../persistence/Layers/OrchestrationEventStore.ts";
+import * as Sqlite from "../persistence/Sqlite.ts";
+import * as OrchestrationEventStoreLayer from "../persistence/OrchestrationEventStore.ts";
 import * as ProjectEnrichment from "../project/ProjectEnrichmentService.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
@@ -100,7 +100,11 @@ const makeScenario = (root: string) =>
     return { home, scenarioFile, example, summary };
   });
 const persistence = (home: string) =>
-  Layer.mergeAll(ProjectionStore.layer, ProjectStore.layer, OrchestrationEventStoreLayer.layer).pipe(
+  Layer.mergeAll(
+    ProjectionStore.layer,
+    ProjectStore.layer,
+    OrchestrationEventStoreLayer.layer,
+  ).pipe(
     Layer.provideMerge(Sqlite.layerConfig),
     Layer.provideMerge(ServerConfig.layerTest(process.cwd(), home)),
     Layer.provideMerge(NodeServices.layer),

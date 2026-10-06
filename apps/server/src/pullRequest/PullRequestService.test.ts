@@ -27,7 +27,7 @@ import { PullRequestOperationError } from "@t3tools/contracts";
 
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import * as ProjectService from "../project/ProjectService.ts";
-import * as SqlitePersistence from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as PullRequestFilesViewed from "../persistence/PullRequestFilesViewed.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
