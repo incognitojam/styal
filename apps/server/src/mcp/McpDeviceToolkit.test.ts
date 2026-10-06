@@ -17,6 +17,7 @@ import * as DeviceService from "../device/DeviceService.ts";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
+import * as McpToolAccessTestkit from "./McpToolAccess.testkit.ts";
 
 const environmentId = EnvironmentId.make("environment-device-test");
 const threadId = ThreadId.make("thread-device-test");
@@ -106,6 +107,7 @@ const layerDeviceServiceMock = Layer.mock(DeviceService.DeviceService)({
 const layerTest = McpHttpServer.layerDeviceToolkit.pipe(
   Layer.provide(AnalyticsService.AnalyticsService.layerTest),
   Layer.provideMerge(McpServer.McpServer.layer),
+  Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
   Layer.provideMerge(layerDeviceServiceMock),
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-device-toolkit-test-" })),
   Layer.provide(NodeServices.layer),
@@ -177,6 +179,7 @@ it.effect("rejects unavailable agent access before booting or opening a device",
       McpHttpServer.layerDeviceToolkit.pipe(
         Layer.provide(AnalyticsService.AnalyticsService.layerTest),
         Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
         Layer.provide(layerUnavailable),
         Layer.provide(NodeServices.layer),
       ),
@@ -292,6 +295,7 @@ it.effect("names the thread using a device and opens it only on a take-over", ()
       McpHttpServer.layerDeviceToolkit.pipe(
         Layer.provide(AnalyticsService.AnalyticsService.layerTest),
         Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
         Layer.provide(service),
         Layer.provide(
           ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-device-shared-test-" }),

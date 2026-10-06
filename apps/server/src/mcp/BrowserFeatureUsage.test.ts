@@ -13,6 +13,7 @@ import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
+import * as McpToolAccessTestkit from "./McpToolAccess.testkit.ts";
 
 const environmentId = EnvironmentId.make("environment-mcp-test");
 const threadId = ThreadId.make("thread-mcp-test");
@@ -43,6 +44,7 @@ const client = McpSchema.McpServerClient.of({
 const makeTestLayer = (analyticsLayer: Layer.Layer<AnalyticsService.AnalyticsService>) =>
   McpHttpServer.layerPreviewToolkit.pipe(
     Layer.provideMerge(McpServer.McpServer.layer),
+    Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
     Layer.provideMerge(PreviewAutomationBroker.layer),
     Layer.provideMerge(
       ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-http-server-test-" }),

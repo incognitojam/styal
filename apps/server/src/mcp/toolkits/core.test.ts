@@ -36,6 +36,7 @@ import * as SecretRequests from "../../secrets/SecretRequests.ts";
 import * as ScheduledTaskService from "../../scheduledTasks/ScheduledTaskService.ts";
 import * as McpHttpServer from "../McpHttpServer.ts";
 import * as McpInvocationContext from "../McpInvocationContext.ts";
+import * as McpToolAccessTestkit from "../McpToolAccess.testkit.ts";
 import { dispatchFailure } from "../threadAccess.ts";
 import * as EnvironmentHandlers from "./environment/handlers.ts";
 import * as AttachmentHandlers from "./attachment/handlers.ts";
@@ -109,7 +110,7 @@ const client = McpSchema.McpServerClient.of({
   getClient: Effect.die("unused"),
 });
 
-it.effect("checks capability before accessing services through the production registration", () =>
+it.effect("checks capability through the production registration", () =>
   Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
     expect(server.tools.some(({ tool }) => tool.name === "t3_thread_organize")).toBe(true);
@@ -130,7 +131,7 @@ it.effect("checks capability before accessing services through the production re
       McpHttpServer.layerThreadToolkit.pipe(
         Layer.provideMerge(McpServer.McpServer.layer),
         Layer.provide(NodeCrypto.layer),
-        Layer.provide(Layer.mock(ThreadManagement.ThreadManagementService)({})),
+        Layer.provide(McpToolAccessTestkit.liveThreadsLayer),
       ),
     ),
   ),
@@ -431,12 +432,8 @@ it.effect("a client caller targets any thread within its ceiling and cannot act 
         Layer.provide(NodeCrypto.layer),
         Layer.provide(
           Layer.mock(ThreadManagement.ThreadManagementService)({
-            getThreadShell: () =>
-              Effect.succeed({
-                id: ThreadId.make("other-project-thread"),
-                projectId: "other-project",
-                deletedAt: null,
-              } as never),
+            getThreadShell: (id) =>
+              Effect.succeed(McpToolAccessTestkit.liveThreadShell(id, { runtimeMode: "auto" })),
             getProjectThreadRecords: () =>
               Effect.succeed({
                 thread: {
@@ -447,7 +444,7 @@ it.effect("a client caller targets any thread within its ceiling and cannot act 
                   deletedAt: null,
                 },
               } as never),
-            dispatch: () => Effect.succeed({ sequence: 7 } as never),
+            dispatch: () => Effect.succeed({ sequence: 7, storedEvents: [] }),
           }),
         ),
       ),

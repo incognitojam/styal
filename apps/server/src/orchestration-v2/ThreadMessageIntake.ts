@@ -24,6 +24,7 @@ export function dispatchWasNotAccepted(error: unknown) {
     case "OrchestratorCommandPreviouslyRejectedError":
     case "OrchestratorCommandIdConflictError":
     case "OrchestratorSubagentThreadReadOnlyError":
+    case "OrchestratorThreadAboveModeLimitError":
       return true;
     default:
       return false;
