@@ -677,7 +677,6 @@ export class GitHubPullRequestCli extends Context.Service<
       readonly host: string;
       readonly number: number;
       readonly path: string;
-      readonly revision?: string;
     }) => Effect.Effect<{ readonly url: string; readonly size: number }, GitHubPullRequestCliError>;
 
     /**
@@ -1610,7 +1609,6 @@ export const make = Effect.gen(function* () {
   const getPullRequestFile: GitHubPullRequestCli["Service"]["getPullRequestFile"] = (input) =>
     Effect.gen(function* () {
       const { owner, name } = parseRepositorySelector(input.repository);
-      const revision = input.revision ?? `refs/pull/${input.number}/head`;
       const result = yield* github.execute({
         cwd: input.cwd,
         args: [
@@ -1620,7 +1618,7 @@ export const make = Effect.gen(function* () {
           `repos/${owner}/${name}/contents/${input.path
             .split("/")
             .map(encodeURIComponent)
-            .join("/")}?ref=${encodeURIComponent(revision)}`,
+            .join("/")}?ref=${encodeURIComponent(`refs/pull/${input.number}/head`)}`,
           "--jq",
           "{ url: .download_url, size: .size }",
         ],

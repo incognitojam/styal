@@ -20,21 +20,6 @@ export type PullRequestBodySegment =
       readonly media: "video" | "unknown";
     };
 
-export interface PullRequestImageContext {
-  readonly provider: string;
-  readonly repository: string;
-  readonly url: string;
-  readonly headBranch: string;
-}
-
-export interface PullRequestRepositoryImage {
-  readonly path: string;
-  /** Absent reads the pull request head; present reads the revision parsed from the URL. */
-  readonly revision?: string;
-  /** Original URL retained when separating an unfamiliar revision from its path is best-effort. */
-  readonly browserFallback?: string;
-}
-
 function normalizeRepositoryPath(value: string): string | null {
   let decoded: string;
   try {
@@ -49,97 +34,16 @@ function normalizeRepositoryPath(value: string): string | null {
   return path.length <= 1_024 ? path : null;
 }
 
-function decodedUrlSegments(url: URL): string[] | null {
-  try {
-    return url.pathname
-      .split("/")
-      .filter(Boolean)
-      .map((segment) => decodeURIComponent(segment));
-  } catch {
-    return null;
-  }
-}
-
 /**
- * Finds the repository location behind an image in GitHub-flavoured pull request markdown.
- * Private repository blob URLs cannot load as cross-site images: the browser does not carry the
- * CLI's authentication. The caller exchanges this location for a short-lived host URL through
- * the server.
+ * The repository path a relative image in a GitHub pull request body names. It is read at the
+ * pull request head, which the local workspace may not have checked out, so the caller signs it
+ * as a pull request file. Qualified URLs return null and keep the default resolution, which
+ * fetches GitHub-hosted media with the `gh` credential.
  */
-export function resolvePullRequestRepositoryImage(
-  source: string,
-  context: PullRequestImageContext,
-): PullRequestRepositoryImage | null {
-  if (context.provider !== "github") return null;
-
-  // A relative image in a pull request body names a file at the pull request head.
-  if (!/^(?:[a-z][a-z\d+.-]*:|\/\/|\/)/iu.test(source)) {
-    const path = normalizeRepositoryPath(source.split(/[?#]/u, 1)[0] ?? "");
-    return path === null ? null : { path };
-  }
-
-  let sourceUrl: URL;
-  let pullRequestUrl: URL;
-  try {
-    sourceUrl = new URL(source);
-    pullRequestUrl = new URL(context.url);
-  } catch {
-    return null;
-  }
-  if (sourceUrl.protocol !== "https:" && sourceUrl.protocol !== "http:") return null;
-
-  const repository = context.repository.split("/").filter(Boolean);
-  const head = context.headBranch.split("/").filter(Boolean);
-  const segments = decodedUrlSegments(sourceUrl);
-  if (repository.length !== 2 || head.length === 0 || segments === null) return null;
-
-  const resolveTail = (
-    unprefixedTail: ReadonlyArray<string>,
-  ): PullRequestRepositoryImage | null => {
-    const hasQualifiedRef =
-      unprefixedTail[0] === "refs" &&
-      (unprefixedTail[1] === "heads" || unprefixedTail[1] === "tags");
-    const tail = hasQualifiedRef ? unprefixedTail.slice(2) : unprefixedTail;
-    const matchesHead = head.every((segment, index) => tail[index] === segment);
-    if (matchesHead) {
-      const path = normalizeRepositoryPath(tail.slice(head.length).join("/"));
-      return path === null ? null : { path };
-    }
-
-    // Other refs cannot be separated from their path perfectly when either contains slashes.
-    // Try GitHub's single-segment form, but preserve the authored URL for public-repository
-    // fallback if the authenticated lookup proves that guess wrong.
-    const revisionSegment = tail[0];
-    const path = normalizeRepositoryPath(tail.slice(1).join("/"));
-    if (revisionSegment === undefined || path === null) return null;
-    const revision = hasQualifiedRef
-      ? `refs/${unprefixedTail[1]}/${revisionSegment}`
-      : revisionSegment;
-    return /^[a-f\d]{7,64}$/iu.test(revisionSegment)
-      ? { path, revision }
-      : { path, revision, browserFallback: source };
-  };
-
-  let image: PullRequestRepositoryImage | null = null;
-  if (sourceUrl.host === pullRequestUrl.host) {
-    const markerIndex = repository.length;
-    const marker = segments[markerIndex];
-    if (
-      segments.slice(0, repository.length).join("/") !== repository.join("/") ||
-      (marker !== "blob" && marker !== "raw")
-    ) {
-      return null;
-    }
-    image = resolveTail(segments.slice(markerIndex + 1));
-  } else if (
-    pullRequestUrl.host === "github.com" &&
-    sourceUrl.host === "raw.githubusercontent.com"
-  ) {
-    const matchesRepository = repository.every((segment, index) => segments[index] === segment);
-    if (matchesRepository) image = resolveTail(segments.slice(repository.length));
-  }
-
-  return image;
+export function pullRequestRelativeImagePath(source: string, provider: string): string | null {
+  if (provider !== "github") return null;
+  if (/^(?:[a-z][a-z\d+.-]*:|\/\/|\/)/iu.test(source)) return null;
+  return normalizeRepositoryPath(source.split(/[?#]/u, 1)[0] ?? "");
 }
 
 const FENCE_PATTERN = /^\s{0,3}((?:`{3,})|(?:~{3,}))(.*)$/u;

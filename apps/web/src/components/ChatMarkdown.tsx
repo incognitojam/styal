@@ -229,11 +229,12 @@ interface ChatMarkdownProps {
   /** Runs completed shell-language fences in the thread terminal. */
   onRunCodeBlock?: ((code: string) => void) | undefined;
   /**
-   * A surface-specific image renderer, used when the source needs authenticated resolution.
-   * Returning `undefined` leaves the image to the default renderer.
+   * The asset an image source names on this surface when the default resolution would read the
+   * wrong file, such as a pull request body's relative image. Returning null leaves the image to
+   * the default resolution.
    */
-  imageRenderer?:
-    | ((props: ComponentProps<"img"> & ReactMarkdownExtraProps) => ReactNode | undefined)
+  imageAssetResource?:
+    | ((src: string) => ComponentProps<typeof ChatMarkdownAssetImage>["resource"] | null)
     | undefined;
   /**
    * The repository `#123` refers to. Without one, references stay plain text — which is what a
@@ -1552,7 +1553,14 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
   readonly environmentId: EnvironmentId;
   readonly resource: Extract<
     AssetResource,
-    { readonly _tag: "attachment" | "workspace-file" | "media-file" | "github-media" }
+    {
+      readonly _tag:
+        | "attachment"
+        | "workspace-file"
+        | "media-file"
+        | "github-media"
+        | "pull-request-file";
+    }
   >;
   readonly kind?: "image" | "video";
   readonly alt: string;
@@ -2232,7 +2240,7 @@ function useChatMarkdownState({
   isStreaming = false,
   skills = EMPTY_MARKDOWN_SKILLS,
   onRunCodeBlock,
-  imageRenderer,
+  imageAssetResource,
   referenceContext,
   onUseArtifactTemplate,
   imageBaseDir,
@@ -2611,7 +2619,7 @@ function useChatMarkdownState({
       renderContextReference,
       headingLevelOffset,
       imageBaseDir,
-      imageRenderer,
+      imageAssetResource,
       inlineCodeFileLinkMetaByText,
       isStreaming,
       linkTargetPreference,
@@ -2645,7 +2653,7 @@ function useChatMarkdownState({
       renderContextReference,
       headingLevelOffset,
       imageBaseDir,
-      imageRenderer,
+      imageAssetResource,
       inlineCodeFileLinkMetaByText,
       isStreaming,
       linkTargetPreference,
@@ -3100,24 +3108,18 @@ const CHAT_MARKDOWN_COMPONENTS = {
       </code>
     );
   },
-  img: function MarkdownImage(markdownImageProps) {
+  img: function MarkdownImage({ node, title, src, alt, ...props }) {
     const {
       expandMedia,
       cwd,
       environmentId,
       githubMedia,
+      imageAssetResource,
       imageBaseDir,
-      imageRenderer,
       threadRef,
       renderContextReference,
     } = use(ChatMarkdownRendererContext);
     const imageExpand = use(MarkdownLinkContext) ? undefined : expandMedia;
-    // A surface renderer may decline a source, which then renders as any other image.
-    const rendered = imageRenderer?.(markdownImageProps);
-    if (rendered !== undefined) {
-      return rendered;
-    }
-    const { node, title, src, alt, ...props } = markdownImageProps;
     const contextReference = typeof src === "string" ? parseComposerContextHref(src) : null;
     if (contextReference) {
       const label = alt || contextReference.contextId;
@@ -3142,6 +3144,26 @@ const CHAT_MARKDOWN_COMPONENTS = {
     const authoredSizeStyle = authoredImageSizeStyle(width, height);
     const imageSource = classifyMarkdownImageSource(classifiedSrc, imageBaseDir ?? cwd);
     const kind = mediaKindFromPath(classifiedSrc) ?? "image";
+    const surfaceResource =
+      environmentId === null ? null : (imageAssetResource?.(srcString) ?? null);
+    if (environmentId !== null && surfaceResource !== null) {
+      return (
+        <ChatMarkdownAssetImage
+          environmentId={environmentId}
+          resource={surfaceResource}
+          alt={altText}
+          kind={kind}
+          copyMarkdown={copyMarkdown}
+          standalone={standalone}
+          className={className}
+          style={authoredSizeStyle}
+          imageProps={imageProps}
+          srcFragment={markdownImageSourceFragment(classifiedSrc)}
+          framed={false}
+          onImageExpand={imageExpand}
+        />
+      );
+    }
     const directUri = imageSource._tag === "Direct" ? imageSource.uri : null;
     const githubMediaUrl =
       directUri === null ? null : githubMediaFetchUrl(resolveProtocolRelativeMediaUrl(directUri));

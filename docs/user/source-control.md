@@ -163,7 +163,8 @@ For GitHub pull requests:
   merging, it explains why and offers the update methods you can use. Auto-merge waits for that
   update; it does not perform it.
 - Images stored in the repository display in pull request descriptions, including for private
-  repositories.
+  repositories. A relative image path is read from the pull request's head, so it displays even when
+  that branch is not checked out.
 - On web and desktop, pull request links in descriptions and comments open another tab beside the
   same thread when the linked repository is available in that environment. Cmd/Ctrl-click opens the
   link in your browser.
