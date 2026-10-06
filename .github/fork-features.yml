@@ -1811,7 +1811,7 @@ features:
       - apps/mobile/src/features/cloud/publicConfig.test.ts
       - apps/server/src/cli/connect.test.ts
       - apps/server/src/cli/pair.test.ts
-      - apps/server/src/cloud/http.test.ts
+      - apps/server/src/cloud/CloudLink.lifecycle.test.ts
       - apps/server/src/cloud/publicConfig.test.ts
       - apps/web/src/cloud/linkEnvironment.test.ts
       - infra/relay/src/Config.test.ts
