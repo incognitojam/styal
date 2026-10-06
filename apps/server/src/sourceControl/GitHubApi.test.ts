@@ -9,6 +9,7 @@ import * as Tracer from "effect/Tracer";
 import { ChildProcessSpawner } from "effect/process";
 import { VcsProcessSpawnError, VcsProcessTimeoutError } from "@t3tools/contracts";
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http";
+import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
 
 import * as GitHubApi from "./GitHubApi.ts";
 import * as GitHubCredentials from "./GitHubCredentials.ts";
@@ -96,6 +97,24 @@ describe("environmentToken", () => {
 });
 
 describe("GitHubApi", () => {
+  it.effect("sends every host's requests to T3CODE_TEST_GITHUB_API_URL when it is set", () => {
+    const { layer, requests } = harness(() => json({ data: {} }));
+    return Effect.gen(function* () {
+      const api = yield* GitHubApi.GitHubApi;
+      yield* api.graphql({ host: "github.com", operation: "viewer", query: "query { viewer }" });
+      yield* api.rest({ host: "git.acme.internal", operation: "getViewer", path: "/user" });
+      expect(requests.map((request) => request.url)).toEqual([
+        "http://127.0.0.1:4010/graphql",
+        "http://127.0.0.1:4010/user",
+      ]);
+    }).pipe(
+      Effect.provide(layer),
+      Effect.provideService(HostProcessEnvironment, {
+        T3CODE_TEST_GITHUB_API_URL: "http://127.0.0.1:4010/",
+      }),
+    );
+  });
+
   it.effect("sends GraphQL with the token and records the reported budget", () => {
     const { layer, requests } = harness(() =>
       json({
@@ -230,6 +249,45 @@ describe("GitHubApi", () => {
       }).pipe(Effect.provide(layer));
     },
   );
+
+  it.effect("returns a partial answer only to a caller that accepts one", () => {
+    const { layer } = harness(() =>
+      json({
+        data: { r0: { i0: { __typename: "Issue" }, i1: null } },
+        errors: [{ type: "NOT_FOUND", message: "Could not resolve to an issue" }],
+      }),
+    );
+    return Effect.gen(function* () {
+      const api = yield* GitHubApi.GitHubApi;
+      const read = (acceptPartialData: boolean) =>
+        api.graphql({
+          host: "github.com",
+          operation: "references",
+          query: "query { viewer { id } }",
+          acceptPartialData,
+        });
+      expect(yield* read(true)).toContain('"i0"');
+      expect((yield* Effect.flip(read(false)))._tag).toBe("GitHubApiNotFoundError");
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("still fails a rate-limited answer that carries data", () => {
+    const { layer } = harness(() =>
+      json({ data: { r0: null }, errors: [{ type: "RATE_LIMITED", message: "Slow down" }] }),
+    );
+    return Effect.gen(function* () {
+      const api = yield* GitHubApi.GitHubApi;
+      const error = yield* Effect.flip(
+        api.graphql({
+          host: "github.com",
+          operation: "references",
+          query: "query { viewer { id } }",
+          acceptPartialData: true,
+        }),
+      );
+      expect(error._tag).toBe("GitHubApiRateLimitError");
+    }).pipe(Effect.provide(layer));
+  });
 
   it.effect("pauses the host after a GraphQL RATE_LIMITED answer until the reset", () => {
     const reset = Math.floor(NOW / 1000) + 600;

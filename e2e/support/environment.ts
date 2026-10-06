@@ -7,6 +7,7 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
 import { hasTestFailed, markFailed } from "./failures.ts";
+import { type FakeGitHubApiRequest, startFakeGitHubApi } from "./fake-github-api.ts";
 
 const REPO_ROOT = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
@@ -19,7 +20,7 @@ const FAKE_GH = NodePath.join(REPO_ROOT, "e2e/fixtures/fake-gh.ts");
 
 export const PROJECT_NAME = "demo-app";
 
-/** A GitHub issue in `gh issue view --json number,title,state,url,body,author,comments` shape. */
+/** A GitHub issue the fake GitHub API serves to the issue list and issue reads. */
 export interface FakeGitHubIssue {
   readonly number: number;
   readonly title: string;
@@ -59,14 +60,17 @@ export interface Environment {
   readonly codexTurns: () => ReadonlyArray<CodexTurnRequest>;
   /** Argument lists of every `gh` call, oldest first. */
   readonly ghCalls: () => ReadonlyArray<ReadonlyArray<string>>;
+  /** Every request the server sent to the fake GitHub API, oldest first. */
+  readonly gitHubApiRequests: () => ReadonlyArray<FakeGitHubApiRequest>;
   readonly serverLog: () => string;
   readonly stop: () => Promise<void>;
 }
 
 /**
  * Starts an isolated server for one test file: a fresh home and base dir, a git project with
- * a GitHub remote, Codex backed by fake-codex with every other provider off, and a fake `gh`.
- * The server serves the prebuilt web bundle on its own port.
+ * a GitHub remote, Codex backed by fake-codex with every other provider off, a fake `gh` that
+ * hands out a token, and a fake GitHub API the server sends its GitHub requests to. The server
+ * serves the prebuilt web bundle on its own port.
  *
  * The server runs with an allowlisted environment and a throwaway HOME, so it cannot read
  * the developer's provider credentials, `gh` login, or git config. Its login shell reads the
@@ -96,12 +100,8 @@ export async function startEnvironment(options: EnvironmentOptions = {}): Promis
   NodeFS.writeFileSync(NodePath.join(home, ".profile"), profile);
   NodeFS.writeFileSync(NodePath.join(home, ".bash_profile"), profile);
 
-  const issuesPath = NodePath.join(root, "gh-issues.json");
-  NodeFS.writeFileSync(issuesPath, JSON.stringify(options.issues ?? []));
-  writeLauncher(NodePath.join(bin, "gh"), FAKE_GH, {
-    E2E_GH_ISSUES: issuesPath,
-    E2E_GH_CALL_LOG: ghCallLog,
-  });
+  writeLauncher(NodePath.join(bin, "gh"), FAKE_GH, { E2E_GH_CALL_LOG: ghCallLog });
+  const gitHubApi = await startFakeGitHubApi(options.issues ?? []);
 
   const scenarioPath = NodePath.join(root, "codex-scenario.json");
   NodeFS.writeFileSync(scenarioPath, JSON.stringify(options.scenario ?? { turns: [] }));
@@ -128,7 +128,7 @@ export async function startEnvironment(options: EnvironmentOptions = {}): Promis
     }),
   );
 
-  const env = isolatedEnv(home, bin);
+  const env = { ...isolatedEnv(home, bin), T3CODE_TEST_GITHUB_API_URL: gitHubApi.url };
   const git = (...args: ReadonlyArray<string>) =>
     NodeChildProcess.execFileSync("git", args, { cwd: projectDir, env, stdio: "ignore" });
   git("init", "-q");
@@ -168,6 +168,7 @@ export async function startEnvironment(options: EnvironmentOptions = {}): Promis
       clearTimeout(killTimer);
     }
     NodeFS.closeSync(serverLog);
+    await gitHubApi.stop();
     if (process.env.E2E_KEEP_STATE || hasTestFailed()) {
       process.stderr.write(`e2e state kept at ${root}\n`);
     } else {
@@ -194,6 +195,7 @@ export async function startEnvironment(options: EnvironmentOptions = {}): Promis
     projectDir,
     codexTurns: () => readJsonLines<CodexTurnRequest>(codexRequestLog),
     ghCalls: () => readJsonLines<ReadonlyArray<string>>(ghCallLog),
+    gitHubApiRequests: gitHubApi.requests,
     serverLog: readServerLog,
     stop,
   };

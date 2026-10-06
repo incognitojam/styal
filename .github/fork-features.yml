@@ -1965,7 +1965,7 @@ features:
     status: review-needed
     prs: [31, 773]
     invariants:
-      - The command palette lists the current project's open GitHub issues through the GitHub CLI, with distinct states for a missing CLI, missing authentication, and no open issues, and choosing one opens a new draft with the issue attached as an inline context chip.
+      - The command palette lists the current project's open GitHub issues through GitHub's API, with `gh` or an environment token supplying the credential, with distinct states for a missing CLI, missing authentication, and no open issues, and choosing one opens a new draft with the issue attached as an inline context chip.
       - The attached issue is an `issue` composer context record carrying the issue's title, body, and comments, so drafts, queued-message edits, copy and paste, sent-message chips, and the provider prompt handle it like any other context kind.
       - The same issue always gets the same context id, so attaching it again does not add a second chip.
       - Messages sent before issues became context records keep showing their trailing issue block as a chip in the web timeline and stay out of copied transcripts.
@@ -1974,6 +1974,7 @@ features:
       - apps/mobile/src/components/ComposerContextSheet.tsx
       - apps/server/src/sourceControl/GitHubSourceControlProvider.ts
       - apps/server/src/sourceControl/SourceControlRepositoryService.ts
+      - apps/server/src/sourceControl/gitHubIssues.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/IssueContextChip.tsx
@@ -2088,6 +2089,7 @@ features:
       - PR links in descriptions and comments of any tab beside a thread open another tab beside that thread when the repository is available in its environment; Cmd/Ctrl-click retains browser navigation.
       - Reference resolution is environment-scoped, authorized, and cached without leaking repository context across projects.
     implementation_paths:
+      - apps/server/src/sourceControl/GitHubApi.ts
       - apps/server/src/sourceControl/gitHubReferences.ts
       - apps/server/src/sourceControl/referenceCache.ts
       - apps/web/src/components/ChatMarkdown.tsx
@@ -3325,7 +3327,7 @@ features:
     status: maintained
     prs: [103, 288]
     invariants:
-      - Repository-relative image references in GitHub pull request descriptions and comments resolve against the pull request head, not the local checkout, through a bounded short-lived same-origin asset URL read with the environment's authorized GitHub CLI.
+      - Repository-relative image references in GitHub pull request descriptions and comments resolve against the pull request head, not the local checkout, through a bounded short-lived same-origin asset URL read through GitHub's API with the environment's GitHub credential.
       - Qualified GitHub URLs, including blob, raw, asset-branch and attachment URLs, take upstream's `github-media` path; external and unsupported image URLs keep the default resolution.
       - Relative repository images render through the shared Markdown asset image, so they open in the pull request's image gallery like every other description image.
     rationale: Upstream resolves a relative image in a pull request body against the local workspace, which shows a missing or different file whenever the pull request head is not checked out there.

@@ -10,6 +10,8 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http";
 
+import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
+
 import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
 import * as GitHubCredentials from "./GitHubCredentials.ts";
 import * as GitHubGraphQlBudget from "./githubGraphQlBudget.ts";
@@ -145,6 +147,13 @@ export interface GitHubGraphQlInput {
   readonly query: string;
   readonly variables?: Readonly<Record<string, unknown>>;
   readonly allowReserve?: boolean;
+  readonly maxResponseBytes?: number;
+  /**
+   * Returns an answer that carries `data` alongside `errors`, for a document of independent
+   * lookups where a field the host nulls (a reference nobody can see) is a normal answer.
+   * Rate limits and refused credentials still fail.
+   */
+  readonly acceptPartialData?: boolean;
 }
 
 export class GitHubApi extends Context.Service<
@@ -238,6 +247,10 @@ function retryAtFrom(
   return Number.isFinite(reset) && reset > now ? reset : undefined;
 }
 
+const decodeGraphQlData = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Struct({ data: Schema.Record(Schema.String, Schema.Unknown) })),
+);
+
 const decodeGraphQlErrors = Schema.decodeUnknownOption(
   Schema.fromJsonString(
     Schema.Struct({
@@ -312,6 +325,7 @@ function classify(input: {
   readonly body: string;
   readonly graphql: boolean;
   readonly acceptNotModified: boolean;
+  readonly acceptPartialData?: boolean;
 }): Answer {
   const { status, headers, body } = input;
   const errors = input.graphql
@@ -337,6 +351,13 @@ function classify(input: {
   }
   if (status === 401) return Answer.Unauthorized();
   if (
+    input.acceptPartialData === true &&
+    status === 200 &&
+    Option.isSome(decodeGraphQlData(body))
+  ) {
+    return Answer.Ok();
+  }
+  if (
     status === 404 ||
     (errors !== undefined && errors.every((error) => error.type === "NOT_FOUND"))
   ) {
@@ -356,6 +377,15 @@ export const make = Effect.gen(function* () {
   const budget = yield* GitHubGraphQlBudget.GitHubGraphQlBudget;
   const limits = yield* SourceControlRateLimit.SourceControlRateLimit;
   const gate = yield* Semaphore.make(CONCURRENCY);
+  // Test-only: the end-to-end tests set this to a local fake GitHub API
+  // (e2e/support/fake-github-api.ts), which then answers for every host. Unset, each host's
+  // real API is used.
+  const testApiUrl = (yield* HostProcessEnvironment).T3CODE_TEST_GITHUB_API_URL?.trim().replace(
+    /\/+$/,
+    "",
+  );
+  const apiUrls = (host: string) =>
+    testApiUrl ? { rest: testApiUrl, graphql: `${testApiUrl}/graphql` } : gitHubApiUrls(host);
 
   const credential: GitHubApi["Service"]["credential"] = Effect.fn("GitHubApi.credential")(
     function* (host) {
@@ -390,6 +420,7 @@ export const make = Effect.gen(function* () {
     readonly acceptNotModified: boolean;
     /** Reads the body for GraphQL `errors`, which GitHub sends with HTTP 200. */
     readonly graphql?: boolean;
+    readonly acceptPartialData?: boolean;
   }) {
     const host = normalizeHost(input.host);
     // Only the path: a query string can carry a SHA or a branch, and never needs to be in a trace.
@@ -463,6 +494,7 @@ export const make = Effect.gen(function* () {
           body: collected.text,
           graphql: input.graphql === true,
           acceptNotModified: input.acceptNotModified,
+          acceptPartialData: input.acceptPartialData === true,
         }),
         {
           Ok: () =>
@@ -512,7 +544,7 @@ export const make = Effect.gen(function* () {
   });
 
   const rest: GitHubApi["Service"]["rest"] = (input) => {
-    const url = `${gitHubApiUrls(input.host).rest}/${input.path.replace(/^\/+/, "")}`;
+    const url = `${apiUrls(input.host).rest}/${input.path.replace(/^\/+/, "")}`;
     const base = HttpClientRequest.make(input.method ?? "GET")(url).pipe(
       HttpClientRequest.setHeader("accept", input.accept ?? "application/vnd.github+json"),
     );
@@ -563,14 +595,15 @@ export const make = Effect.gen(function* () {
         const response = yield* send({
           host,
           operation: input.operation,
-          request: HttpClientRequest.post(gitHubApiUrls(host).graphql).pipe(
+          request: HttpClientRequest.post(apiUrls(host).graphql).pipe(
             HttpClientRequest.acceptJson,
             HttpClientRequest.bodyJsonUnsafe({ query, variables: input.variables ?? {} }),
           ),
-          maxResponseBytes: DEFAULT_MAX_RESPONSE_BYTES,
+          maxResponseBytes: input.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
           allowReserve,
           acceptNotModified: false,
           graphql: true,
+          acceptPartialData: input.acceptPartialData === true,
         });
         // A body cut at the byte cap hides any `errors` past the cut and cannot be decoded.
         if (response.truncated) {

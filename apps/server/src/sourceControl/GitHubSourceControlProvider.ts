@@ -2,27 +2,35 @@ import * as Schema from "effect/Schema";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Result from "effect/Result";
 import {
   SourceControlProviderError,
   type ChangeRequest,
   type SourceControlIssue,
   type SourceControlIssueSummary,
+  type SourceControlProviderDiscoveryItem,
 } from "@t3tools/contracts";
 
+import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
+
+import * as GitHubApi from "./GitHubApi.ts";
 import * as GitHubCli from "./GitHubCli.ts";
 import { findAuthenticatedGitHubAccount, parseGitHubAuthStatus } from "./gitHubAuthStatus.ts";
 import * as SourceControlProvider from "./SourceControlProvider.ts";
 import {
   combinedAuthOutput,
   firstSafeAuthLine,
+  probeSourceControlProvider,
   providerAuth,
   type SourceControlAuthProbeInput,
   type SourceControlCliDiscoverySpec,
+  type SourceControlManagedCliDiscoverySpec,
 } from "./SourceControlProviderDiscovery.ts";
+import * as VcsProcess from "../vcs/VcsProcess.ts";
 
 const decodeLinkSubject = Schema.decodeUnknownEffect(
   Schema.fromJsonString(
-    Schema.Struct({ title: Schema.String, body: Schema.NullOr(Schema.String) }),
+    Schema.Struct({ title: Schema.String, body: Schema.optional(Schema.NullOr(Schema.String)) }),
   ),
 );
 
@@ -142,8 +150,70 @@ export const discovery = {
     "Install the GitHub command-line tool (`gh`) via https://cli.github.com/ or your package manager (for example `brew install gh`).",
 } satisfies SourceControlCliDiscoverySpec;
 
+const decodeViewer = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Struct({ login: Schema.String })),
+);
+
+/** The environment variable gh would take a github.com token from, if one is set. */
+function environmentTokenVariable(environment: NodeJS.ProcessEnv): string | null {
+  return ["GH_TOKEN", "GITHUB_TOKEN"].find((name) => environment[name]?.trim()) ?? null;
+}
+
+/**
+ * GitHub is usable with a token from the environment or with `gh` to hand one over. An
+ * environment token is checked against the API, since `gh auth status` may not know it.
+ */
+export const makeDiscovery = Effect.gen(function* () {
+  const api = yield* GitHubApi.GitHubApi;
+  const process = yield* VcsProcess.VcsProcess;
+  const environment = yield* HostProcessEnvironment;
+  return {
+    type: "managed-cli",
+    kind: discovery.kind,
+    label: discovery.label,
+    installHint: discovery.installHint,
+    probe: Effect.fn("GitHubSourceControlProvider.discovery")(function* (cwd: string) {
+      const cli = yield* probeSourceControlProvider({ cwd, process, spec: discovery });
+      const variable = environmentTokenVariable(environment);
+      if (variable === null) return cli;
+      const viewer = yield* api
+        .rest({ host: "github.com", operation: "discovery", path: "user" })
+        .pipe(Effect.result);
+      const login = Result.isSuccess(viewer)
+        ? Option.getOrUndefined(decodeViewer(viewer.success.body))?.login
+        : undefined;
+      return {
+        ...cli,
+        status: "available" as const,
+        auth:
+          login !== undefined
+            ? providerAuth({
+                status: "authenticated",
+                account: login,
+                host: "github.com",
+                detail: `Using the token in ${variable} from the server environment.`,
+              })
+            : Result.isFailure(viewer) && viewer.failure._tag !== "GitHubApiAuthenticationError"
+              ? // Only a refusal says the token is bad; a network error or a pause says nothing.
+                providerAuth({
+                  status: "unknown",
+                  host: "github.com",
+                  detail: `Could not check the token in ${variable}: ${viewer.failure.message}`,
+                })
+              : providerAuth({
+                  status: "unauthenticated",
+                  host: "github.com",
+                  detail: `GitHub refused the token in ${variable}. Replace it, or unset it to use \`gh auth login\`.`,
+                }),
+      } satisfies SourceControlProviderDiscoveryItem;
+    }),
+    refineUnknownRemote: () => Effect.succeed(null),
+  } satisfies SourceControlManagedCliDiscoverySpec;
+});
+
 export const make = Effect.gen(function* () {
   const github = yield* GitHubCli.GitHubCli;
+  const api = yield* GitHubApi.GitHubApi;
 
   const listChangeRequests: SourceControlProvider.SourceControlProvider["Service"]["listChangeRequests"] =
     (input) => {
@@ -169,7 +239,7 @@ export const make = Effect.gen(function* () {
                   reference: SourceControlProvider.transportSafeSourceControlErrorValue(
                     input.headSelector,
                   ),
-                  detail: error.detail,
+                  detail: error.message,
                   cause: error,
                 }),
             ),
@@ -208,7 +278,7 @@ export const make = Effect.gen(function* () {
                 reference: SourceControlProvider.transportSafeSourceControlErrorValue(
                   input.headSelector,
                 ),
-                detail: error.detail,
+                detail: error.message,
                 cause: error,
               }),
           ),
@@ -219,15 +289,15 @@ export const make = Effect.gen(function* () {
     input: { readonly cwd: string; readonly url: URL },
     endpoint: string,
   ) {
-    const result = yield* github
-      .execute({
-        cwd: input.cwd,
-        args: ["api", "--hostname", input.url.host, endpoint, "--jq", "{title, body}"],
-        env: { GH_PROMPT_DISABLED: "1" },
-        timeoutMs: 3_000,
-        maxOutputBytes: 32_000,
+    const result = yield* api
+      .rest({
+        host: input.url.host,
+        operation: "resolveLink",
+        path: endpoint,
+        maxResponseBytes: 1_000_000,
       })
       .pipe(
+        Effect.timeout("3 seconds"),
         Effect.mapError(
           (cause) =>
             new SourceControlProviderError({
@@ -239,7 +309,7 @@ export const make = Effect.gen(function* () {
             }),
         ),
       );
-    const subject = yield* decodeLinkSubject(result.stdout).pipe(
+    const subject = yield* decodeLinkSubject(result.body).pipe(
       Effect.mapError(
         (cause) =>
           new SourceControlProviderError({
@@ -251,7 +321,7 @@ export const make = Effect.gen(function* () {
           }),
       ),
     );
-    return { title: subject.title, body: subject.body };
+    return { title: subject.title, body: subject.body ?? null };
   });
 
   return SourceControlProvider.SourceControlProvider.of({
@@ -286,7 +356,7 @@ export const make = Effect.gen(function* () {
                 reference: SourceControlProvider.transportSafeSourceControlErrorValue(
                   input.reference,
                 ),
-                detail: error.detail,
+                detail: error.message,
                 cause: error,
               }),
           ),
@@ -306,7 +376,7 @@ export const make = Effect.gen(function* () {
                 operation: "listIssues",
                 command: error.command,
                 cwd: input.cwd,
-                detail: error.detail,
+                detail: error.message,
                 cause: error,
               }),
           ),
@@ -322,7 +392,7 @@ export const make = Effect.gen(function* () {
               command: error.command,
               cwd: input.cwd,
               reference: String(input.number),
-              detail: error.detail,
+              detail: error.message,
               cause: error,
             }),
         ),
@@ -342,7 +412,7 @@ export const make = Effect.gen(function* () {
                 operation: "resolveReferences",
                 command: error.command,
                 cwd: input.cwd,
-                detail: error.detail,
+                detail: error.message,
                 cause: error,
               }),
           ),
@@ -367,7 +437,7 @@ export const make = Effect.gen(function* () {
                 reference: SourceControlProvider.transportSafeSourceControlErrorValue(
                   input.headSelector,
                 ),
-                detail: error.detail,
+                detail: error.message,
                 cause: error,
               }),
           ),
@@ -384,7 +454,7 @@ export const make = Effect.gen(function* () {
               repository: SourceControlProvider.transportSafeSourceControlErrorValue(
                 input.repository,
               ),
-              detail: error.detail,
+              detail: error.message,
               cause: error,
             }),
         ),
@@ -401,7 +471,7 @@ export const make = Effect.gen(function* () {
               repository: SourceControlProvider.transportSafeSourceControlErrorValue(
                 input.repository,
               ),
-              detail: error.detail,
+              detail: error.message,
               cause: error,
             }),
         ),
@@ -422,7 +492,7 @@ export const make = Effect.gen(function* () {
                 operation: "getDefaultBranch",
                 command: error.command,
                 cwd: input.cwd,
-                detail: error.detail,
+                detail: error.message,
                 cause: error,
               }),
           ),
@@ -439,7 +509,7 @@ export const make = Effect.gen(function* () {
               reference: SourceControlProvider.transportSafeSourceControlErrorValue(
                 input.reference,
               ),
-              detail: error.detail,
+              detail: error.message,
               cause: error,
             }),
         ),
