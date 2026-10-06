@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { it, expect } from "@effect/vitest";
 import {
   AuthDeviceOperateScope,
@@ -319,6 +320,7 @@ const fixture = Effect.gen(function* () {
     stop: Effect.void,
   });
   const targetDevices = yield* DeviceService.makeWithHosts(new Map([[local.id, local]])).pipe(
+    Effect.provide(NodeCrypto.layer),
     Effect.provideService(ServerSettingsService.ServerSettingsService, targetSettings.service),
     Effect.provideService(HttpClient.HttpClient, http),
   );
@@ -592,6 +594,7 @@ it.effect(
       yield* f.connect;
       const host = yield* f.host;
       const source = yield* DeviceService.makeWithHosts(new Map([[host.id, host]])).pipe(
+        Effect.provide(NodeCrypto.layer),
         Effect.provideService(
           ServerSettingsService.ServerSettingsService,
           f.sourceSettings.service,
@@ -823,6 +826,7 @@ it.effect("closes the local session when the device environment is unreachable",
     yield* f.connect;
     const host = yield* f.host;
     const source = yield* DeviceService.makeWithHosts(new Map([[host.id, host]])).pipe(
+      Effect.provide(NodeCrypto.layer),
       Effect.provideService(ServerSettingsService.ServerSettingsService, f.sourceSettings.service),
       Effect.provideService(HttpClient.HttpClient, f.http),
     );
@@ -1071,6 +1075,7 @@ it.effect(
         DeviceService.makeWithHosts(new Map([[host.id, host]]), undefined, () =>
           Effect.succeed("/synthetic/driver.json"),
         ).pipe(
+          Effect.provide(NodeCrypto.layer),
           Effect.provideService(
             ServerSettingsService.ServerSettingsService,
             f.sourceSettings.service,

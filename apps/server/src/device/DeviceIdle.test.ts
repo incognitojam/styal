@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { describe, expect, it } from "@effect/vitest";
 import { DEFAULT_SERVER_SETTINGS, LOCAL_DEVICE_HOST_ID, ThreadId } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
@@ -43,6 +44,18 @@ const fixture = Effect.fn("fixture")(function* (
     readonly saveGate?: Deferred.Deferred<void>;
   } = {},
 ) {
+  for (const [thread, hostId] of [
+    ["thread-1", LOCAL_DEVICE_HOST_ID],
+    ["thread-2", LOCAL_DEVICE_HOST_ID],
+    ["agent-environment:peer-thread", environmentDeviceHostId(OWN_ENVIRONMENT)],
+  ] as const) {
+    for (const deviceId of ["Pixel_API_35", "emulator-5554"]) {
+      knownSessionNames.set(
+        sessionKey(thread, hostId, deviceId),
+        yield* agentDeviceSession(thread, hostId, deviceId).pipe(Effect.provide(NodeCrypto.layer)),
+      );
+    }
+  }
   const settings = yield* Ref.make({
     ...DEFAULT_SERVER_SETTINGS,
     enableAgentDeviceAccess: true,
@@ -153,6 +166,7 @@ const fixture = Effect.fn("fixture")(function* (
       }),
     ),
     Effect.provideService(HttpClient.HttpClient, httpClient),
+    Effect.provide(NodeCrypto.layer),
   );
   const idle = yield* DeviceIdle.make(inner, {
     ledger: {
@@ -173,7 +187,10 @@ const fixture = Effect.fn("fixture")(function* (
     environmentId: OWN_ENVIRONMENT,
     threadStatus: (thread) =>
       Effect.sync(() => (busy.has(thread) ? "working" : (ended.get(thread) ?? "idle"))),
-  }).pipe(Effect.provideService(HttpClient.HttpClient, httpClient));
+  }).pipe(
+    Effect.provideService(HttpClient.HttpClient, httpClient),
+    Effect.provide(NodeCrypto.layer),
+  );
   const bootElsewhere = () => {
     booted = true;
   };
@@ -195,8 +212,18 @@ const fixture = Effect.fn("fixture")(function* (
 
 const threadId = ThreadId.make("thread-1");
 const thread2 = ThreadId.make("thread-2");
+/** Session names the tests expect, computed once by `fixture`, which every test calls first. */
+const knownSessionNames = new Map<string, string>();
+const sessionKey = (thread: string, hostId: string, deviceId: string) =>
+  `${thread}\u0000${hostId}\u0000${deviceId}`;
+const agentSessionName = (thread: string, hostId: string, deviceId: string) => {
+  const key = sessionKey(thread, hostId, deviceId);
+  const name = knownSessionNames.get(key);
+  if (name === undefined) throw new Error(`No session name computed for ${key}`);
+  return name;
+};
 const sessionName = (thread: string, deviceId = "Pixel_API_35") =>
-  agentDeviceSession(thread, LOCAL_DEVICE_HOST_ID, deviceId);
+  agentSessionName(thread, LOCAL_DEVICE_HOST_ID, deviceId);
 const release = (thread: string, deviceId = "Pixel_API_35") =>
   `release ${sessionName(thread, deviceId)}`;
 const withShutdown = { shutdownAfter: Duration.minutes(10), agentAccess: true };
@@ -605,7 +632,7 @@ describe("hand-back", () => {
         });
         yield* service.shutdown({ deviceId: "emulator-5554", platform: "android" });
         const peerName = (deviceId: string) =>
-          `release ${agentDeviceSession("agent-environment:peer-thread", environmentDeviceHostId(OWN_ENVIRONMENT), deviceId)}`;
+          `release ${agentSessionName("agent-environment:peer-thread", environmentDeviceHostId(OWN_ENVIRONMENT), deviceId)}`;
         expect(calls).toEqual([
           release("thread-1"),
           peerName("emulator-5554"),

@@ -1,3 +1,5 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as Effect from "effect/Effect";
 import * as NodeModule from "node:module";
 import * as NodeVM from "node:vm";
 import { EnvironmentId, ProviderInstanceId, ThreadId, TurnItemId } from "@t3tools/contracts";
@@ -105,14 +107,16 @@ export async function providerToolFixtures(): Promise<ProviderToolFixture[]> {
         add("Claude", wildcard.replace("*", tool.name));
         add(
           "Codex",
-          projectCodexDynamicToolItem({
-            type: "mcpToolCall",
-            id: tool.name,
-            server,
-            tool: tool.name,
-            arguments: {},
-            status: "completed",
-          }).toolName,
+          Effect.runSync(
+            projectCodexDynamicToolItem({
+              type: "mcpToolCall",
+              id: tool.name,
+              server,
+              tool: tool.name,
+              arguments: {},
+              status: "completed",
+            }).pipe(Effect.provide(NodeCrypto.layer)),
+          ).toolName,
         );
         add(
           "Cursor",

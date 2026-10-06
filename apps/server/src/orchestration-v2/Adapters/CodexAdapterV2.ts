@@ -67,6 +67,7 @@ import * as CodexClient from "effect-codex-app-server/client";
 import * as CodexErrors from "effect-codex-app-server/errors";
 import * as CodexSchema from "effect-codex-app-server/schema";
 import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -480,27 +481,30 @@ function codexDynamicToolOutput(
   return item.success === false ? { success: false } : undefined;
 }
 
-export function projectCodexDynamicToolItem(
-  item: CodexDynamicToolItem,
-): CodexDynamicToolProjection {
-  const output =
-    item.type === "mcpToolCall" ? codexMcpToolOutput(item) : codexDynamicToolOutput(item);
-  const toolName =
-    item.type === "mcpToolCall"
-      ? // The `mcp__server__tool` form every other adapter reports.
-        `mcp__${item.server}__${item.tool}`
-      : [trimText(item.namespace), item.tool].filter(Boolean).join(".");
-  const presentation = item.type === "mcpToolCall" ? mcpToolPresentation(item) : {};
-  const title = dynamicToolTitle(toolName, item.arguments) ?? presentation.title;
-  const projection: CodexDynamicToolProjection = {
-    ...presentation,
-    toolName,
-    ...(title ? { title } : {}),
-    input: item.arguments,
-    status: codexItemStatus(item.status).turnItem,
-  };
-  return output === undefined ? projection : { ...projection, output };
-}
+export const projectCodexDynamicToolItem = Effect.fn("CodexAdapterV2.projectDynamicToolItem")(
+  function* (
+    item: CodexDynamicToolItem,
+  ): Effect.fn.Return<CodexDynamicToolProjection, never, Crypto.Crypto> {
+    const output =
+      item.type === "mcpToolCall" ? codexMcpToolOutput(item) : codexDynamicToolOutput(item);
+    const toolName =
+      item.type === "mcpToolCall"
+        ? // The `mcp__server__tool` form every other adapter reports.
+          `mcp__${item.server}__${item.tool}`
+        : [trimText(item.namespace), item.tool].filter(Boolean).join(".");
+    const presentation: McpToolPresentation =
+      item.type === "mcpToolCall" ? yield* mcpToolPresentation(item) : {};
+    const title = dynamicToolTitle(toolName, item.arguments) ?? presentation.title;
+    const projection: CodexDynamicToolProjection = {
+      ...presentation,
+      toolName,
+      ...(title ? { title } : {}),
+      input: item.arguments,
+      status: codexItemStatus(item.status).turnItem,
+    };
+    return output === undefined ? projection : { ...projection, output };
+  },
+);
 
 function codexNativeItemRef(nativeItemId: string) {
   return {
@@ -1520,6 +1524,7 @@ export const layerAppServerClientFactory: Layer.Layer<
 
 export type CodexAdapterV2DriverEnv =
   | CodexAppServerClientFactory
+  | Crypto.Crypto
   | FileSystem.FileSystem
   | IdAllocatorV2
   | Path.Path
@@ -1535,6 +1540,7 @@ export const createCodexAdapterV2 = (
   Effect.gen(function* () {
     const clientFactory = yield* CodexAppServerClientFactory;
     const continuationRequests = yield* ProviderContinuationRequests;
+    const crypto = yield* Crypto.Crypto;
     const fileSystem = yield* FileSystem.FileSystem;
     const hostEnvironment = yield* HostProcessEnvironment;
     const idAllocator = yield* IdAllocatorV2;
@@ -1565,6 +1571,7 @@ export const createCodexAdapterV2 = (
       settings,
       environment: mergeProviderInstanceEnvironment(environment, hostEnvironment),
       clientFactory,
+      crypto,
       fileSystem,
       idAllocator,
       serverConfig,
@@ -1583,12 +1590,13 @@ export const CodexAdapterV2Driver: ProviderAdapterDriver<CodexSettings, CodexAda
 const layer: Layer.Layer<
   ProviderAdapterV2,
   never,
-  CodexAppServerClientFactory | FileSystem.FileSystem | IdAllocatorV2 | ServerConfig
+  CodexAppServerClientFactory | Crypto.Crypto | FileSystem.FileSystem | IdAllocatorV2 | ServerConfig
 > = Layer.effect(
   ProviderAdapterV2,
   Effect.gen(function* () {
     const clientFactory = yield* CodexAppServerClientFactory;
     const continuationRequests = yield* ProviderContinuationRequests;
+    const crypto = yield* Crypto.Crypto;
     const fileSystem = yield* FileSystem.FileSystem;
     const hostEnvironment = yield* HostProcessEnvironment;
     const idAllocator = yield* IdAllocatorV2;
@@ -1599,6 +1607,7 @@ const layer: Layer.Layer<
       settings: DEFAULT_CODEX_SETTINGS,
       environment: hostEnvironment,
       clientFactory,
+      crypto,
       fileSystem,
       idAllocator,
       serverConfig,
@@ -1620,6 +1629,7 @@ export interface CodexAdapterV2Options {
    * Codex with a current access token.
    */
   readonly resolveRuntime?: Effect.Effect<CodexEffectiveRuntime, ProviderSetupError, Scope.Scope>;
+  readonly crypto: Crypto.Crypto;
   readonly fileSystem: FileSystem.FileSystem;
   readonly idAllocator: IdAllocatorV2Shape;
   readonly serverConfig: ServerConfig["Service"];
@@ -1634,7 +1644,7 @@ export interface CodexAdapterV2Options {
 }
 
 export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): ProviderAdapterV2Shape {
-  const { clientFactory, fileSystem, idAllocator, serverConfig } = adapterOptions;
+  const { clientFactory, crypto, fileSystem, idAllocator, serverConfig } = adapterOptions;
   const continuationRequests = adapterOptions.continuationRequests;
 
   return ProviderAdapterV2.of({
@@ -3497,7 +3507,9 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
               nativeItemId: item.id,
             });
             const { ordinal, startedAt } = yield* resolveItemPosition(context, item.id);
-            const projection = projectCodexDynamicToolItem(item);
+            const projection = yield* projectCodexDynamicToolItem(item).pipe(
+              Effect.provideService(Crypto.Crypto, crypto),
+            );
             const node: OrchestrationV2ExecutionNode = {
               id: nodeId,
               threadId: context.projectionThreadId,

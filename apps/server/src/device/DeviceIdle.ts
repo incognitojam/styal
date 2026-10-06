@@ -36,6 +36,7 @@ import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -187,6 +188,7 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
   },
 ) {
   const { ledger } = options;
+  const crypto = yield* Crypto.Crypto;
   const httpClient = (yield* HttpClient.HttpClient).pipe(HttpClient.withScope);
   const booted = new Map(
     (yield* ledger.load).map((record) => [deviceKey(record.hostId, record.deviceId), record]),
@@ -278,7 +280,10 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
    * names its claims from its own id and this environment's host id there; an
    * Android device may have been asked for by AVD name before it booted.
    */
-  const holdFor = (session: DeviceSession, state: DeviceServiceState): Hold | undefined => {
+  const holdFor = Effect.fn("DeviceIdle.holdFor")(function* (
+    session: DeviceSession,
+    state: DeviceServiceState,
+  ) {
     const own = holds.get(holdKey(session.threadId, session.hostId, session.deviceId));
     if (own) return own;
     if (!session.threadId.startsWith(PEER_THREAD_PREFIX)) return undefined;
@@ -293,15 +298,15 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
       threadId: session.threadId,
       hostId: session.hostId,
       deviceId: session.deviceId,
-      names: ids.map((id) =>
+      names: yield* Effect.forEach(ids, (id) =>
         agentDeviceSession(
           `${environmentId}:${session.threadId.slice(separator + 1)}`,
           environmentDeviceHostId(options.environmentId),
           id,
-        ),
+        ).pipe(Effect.provideService(Crypto.Crypto, crypto)),
       ),
-    };
-  };
+    } satisfies Hold;
+  });
 
   const threadBusy = (threadId: ThreadId) =>
     options.threadStatus(threadId).pipe(Effect.map((status) => status === "working"));
@@ -319,7 +324,7 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
     const found: Array<ThreadDeviceRef> = [];
     for (const session of state.sessions) {
       if (session.threadId === threadId) continue;
-      const hold = holdFor(session, state);
+      const hold = yield* holdFor(session, state);
       if (
         viewers.has(deviceKey(session.hostId, session.deviceId)) ||
         (hold && !(yield* holderIdle(hold)))
@@ -421,7 +426,7 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
   ) {
     const state = yield* inner.state;
     for (const session of state.sessions.filter(onDevice(hostId, deviceId))) {
-      const hold = holdFor(session, state);
+      const hold = yield* holdFor(session, state);
       if (hold) yield* release(hold);
     }
     yield* retryUnreleased(hostId, deviceId);
@@ -445,7 +450,7 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
     for (const session of state.sessions.filter(onDevice(hostId, deviceId))) {
       if (session.threadId === threadId || session.threadId.startsWith(PEER_THREAD_PREFIX))
         continue;
-      const hold = holdFor(session, state);
+      const hold = yield* holdFor(session, state);
       if (!hold || (!takeOver && !(yield* holderIdle(hold)))) continue;
       yield* release(hold);
       yield* inner.close({ threadId: session.threadId, hostId, deviceId });
@@ -550,7 +555,7 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
   ) {
     if (shutdown) yield* releaseDevice(session.hostId, session.deviceId);
     else {
-      const hold = holdFor(session, yield* inner.state);
+      const hold = yield* holdFor(session, yield* inner.state);
       if (hold) yield* release(hold);
     }
     yield* inner.close({
@@ -648,7 +653,8 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
         )
           return;
         const status = yield* options.threadStatus(session.threadId);
-        if (status !== "archived" && !(status === "missing" && holdFor(session, current))) return;
+        if (status !== "archived" && !(status === "missing" && (yield* holdFor(session, current))))
+          return;
         yield* closeOne(session, false);
         yield* Effect.logInfo("Released a device from a thread that ended", {
           threadId: session.threadId,
@@ -670,7 +676,7 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
       deviceId: string,
     ) {
       for (const session of current.sessions.filter(onDevice(hostId, deviceId))) {
-        const hold = holdFor(session, current);
+        const hold = yield* holdFor(session, current);
         if (
           hold &&
           !hold.threadId.startsWith(PEER_THREAD_PREFIX) &&
@@ -749,6 +755,7 @@ const live = Layer.effectContext(
     const config = yield* ServerConfig.ServerConfig;
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
+    const crypto = yield* Crypto.Crypto;
     const projections = yield* ProjectionStore.ProjectionStoreV2;
     const settings = yield* ServerSettings.ServerSettingsService;
     const environment = yield* ServerEnvironment.ServerEnvironment;
@@ -806,7 +813,9 @@ const live = Layer.effectContext(
       agentEndpoint: (hostId) =>
         hostId === LOCAL_DEVICE_HOST_ID
           ? inner.currentAgentEndpoint(hostId)
-          : fs.readFileString(agentDeviceConfigPath(config.stateDir, hostId, path)).pipe(
+          : agentDeviceConfigPath(config.stateDir, hostId, path).pipe(
+              Effect.provideService(Crypto.Crypto, crypto),
+              Effect.flatMap((file) => fs.readFileString(file)),
               Effect.flatMap(Schema.decodeUnknownEffect(AgentDeviceConfig)),
               Effect.map((saved): AgentDeviceEndpoint => ({
                 baseUrl: saved.daemonBaseUrl,
