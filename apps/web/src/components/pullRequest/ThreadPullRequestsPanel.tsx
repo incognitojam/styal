@@ -1,5 +1,6 @@
 import type { ScopedThreadRef, ThreadPullRequestLink } from "@t3tools/contracts";
 import {
+  isOpen,
   resolveThreadPullRequestChains,
   visibleThreadPullRequests,
 } from "@t3tools/shared/threadPullRequests";
@@ -238,10 +239,7 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
     },
     [threadRef, unlink],
   );
-  const openCount = useMemo(
-    () => links.filter((link) => link.snapshot === null || link.snapshot.state === "open").length,
-    [links],
-  );
+  const openCount = useMemo(() => links.filter(isOpen).length, [links]);
   const lastSynced = useMemo(() => {
     let latest: string | null = null;
     for (const link of links) {
