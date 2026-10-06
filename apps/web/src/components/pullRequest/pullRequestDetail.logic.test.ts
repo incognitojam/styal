@@ -46,7 +46,6 @@ import {
   shouldRefreshPullRequestActivity,
   resolveBaseFreshness,
   resolveRequiredBranchUpdate,
-  resolvePullRequestPrimaryAction,
   resolvePullRequestMergeMethod,
   buildPullRequestTimeline,
   editPullRequestThreadComment,
@@ -234,10 +233,21 @@ describe("pull request primary control", () => {
     expect(resolvePullRequestPrimaryControl({ ...waiting, canEnableAutoMerge: false })).toBeNull();
   });
 
+  it("moves pending and failing checks to auto-merge where the host reports no merge readiness", () => {
+    const withoutReadiness = { ...open, mergeReadiness: undefined };
+    expect(resolvePullRequestPrimaryControl({ ...withoutReadiness, checksState: "pending" })).toBe(
+      "enable-auto-merge",
+    );
+    expect(resolvePullRequestPrimaryControl({ ...withoutReadiness, checksState: "failing" })).toBe(
+      "enable-auto-merge",
+    );
+  });
+
   it("does not offer auto-merge while the host state is unknown", () => {
     expect(
       resolvePullRequestPrimaryControl({
         ...open,
+        checksState: "pending",
         mergeReadiness: undefined,
         autoMergeEnabled: undefined,
       }),
@@ -257,6 +267,23 @@ describe("pull request primary control", () => {
       "resolve",
     );
     expect(resolvePullRequestPrimaryControl({ ...open, isDraft: true })).toBe("ready");
+  });
+
+  it("offers conflict resolution to a reader who cannot merge", () => {
+    expect(
+      resolvePullRequestPrimaryControl({
+        ...open,
+        mergeability: "conflicting",
+        canMerge: false,
+        canEnableAutoMerge: false,
+      }),
+    ).toBe("resolve");
+  });
+
+  it("offers no merge for a draft the reader cannot mark ready", () => {
+    expect(resolvePullRequestPrimaryControl({ ...open, isDraft: true, canMarkReady: false })).toBe(
+      null,
+    );
   });
 });
 

@@ -98,18 +98,25 @@ export function resolvePullRequestPrimaryControl(input: {
   if (input.state === "merged") return "merged";
   if (input.state === "closed") return "closed";
   if (input.mergeability === "conflicting") return "resolve";
+  if (input.isDraft) return input.canMarkReady ? "ready" : null;
   if (input.autoMergeEnabled) return "auto-merge-armed";
-  return resolvePullRequestPrimaryAction({
-    state: input.state,
-    isDraft: input.isDraft,
-    mergeability: input.mergeability,
-    mergeReadiness: input.mergeReadiness,
-    autoMergeArmed: false,
-    canReady: input.canMarkReady,
-    canMerge: input.canMerge,
-    canEnableAutoMerge: input.canEnableAutoMerge,
-    hasMergeMethod: input.hasMergeMethod,
-  });
+  if (!input.hasMergeMethod) return null;
+  // Where the host reports merge readiness, its requirements decide between Merge and Auto-merge,
+  // and check health stays context: a blocked pull request offers no Merge press the host would
+  // refuse.
+  if (input.mergeReadiness === "blocked") {
+    return input.canEnableAutoMerge ? "enable-auto-merge" : null;
+  }
+  if (
+    input.mergeReadiness === undefined &&
+    input.autoMergeEnabled === false &&
+    input.checksState !== null &&
+    input.checksState !== "passing" &&
+    input.canEnableAutoMerge
+  ) {
+    return "enable-auto-merge";
+  }
+  return input.canMerge ? "merge" : null;
 }
 
 export function pullRequestCheckoutCommand(
@@ -261,33 +268,6 @@ export function isStackedPullRequestBase(
     ? defaultRef.name.slice(remotePrefix.length)
     : defaultRef.name;
   return defaultBranch !== baseBranch;
-}
-
-/**
- * The one action that earns the header slot. A repository-policy blocker replaces a Merge press
- * the host would refuse with Auto-merge when this viewer may arm it.
- */
-export function resolvePullRequestPrimaryAction(input: {
-  readonly state: PullRequestState;
-  readonly isDraft: boolean;
-  readonly mergeability: PullRequestMergeability;
-  readonly mergeReadiness?: PullRequestMergeReadiness | undefined;
-  readonly autoMergeArmed: boolean;
-  readonly canReady: boolean;
-  readonly canMerge: boolean;
-  readonly canEnableAutoMerge: boolean;
-  readonly hasMergeMethod: boolean;
-}): "ready" | "resolve" | "merge" | "enable-auto-merge" | null {
-  if (input.state !== "open") return null;
-  if (input.autoMergeArmed) return null;
-  if (input.isDraft && input.canReady) return "ready";
-  if (!input.canMerge) return null;
-  if (input.mergeability === "conflicting") return "resolve";
-  if (!input.hasMergeMethod) return null;
-  if (input.mergeReadiness === "blocked") {
-    return input.canEnableAutoMerge ? "enable-auto-merge" : null;
-  }
-  return "merge";
 }
 
 /** Chronological ascending, oldest to newest — reversed for the "newest" reading order. */
