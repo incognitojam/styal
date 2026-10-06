@@ -2895,22 +2895,27 @@ features:
     status: maintained
     prs: []
     invariants:
-      - Unpinning a thread asks for confirmation by default on web, desktop, and mobile; web and desktop turn it off in Settings and mobile has its own device-local switch.
-      - Mobile asks before unpinning from the home list and the thread sidebar, and an explicit opt-out survives later preference writes.
-    rationale: The fork's import of upstream's web confirmation (fork commit 75082f7ea3) turned it on by default and extended it to mobile; upstream ships it off by default and web-only.
+      - Unpinning a thread asks for confirmation by default on web, desktop, and mobile.
+      - Web and desktop turn the confirmation off with the Unpin confirmation setting. Mobile has its own device-local switch under Settings, Thread behavior, and an explicit opt-out survives later preference writes.
+      - Mobile asks before unpinning from both the home list and the thread sidebar.
+    rationale: Upstream added the confirmation to web as an opt-in setting (upstream #7313), although the request it closed (upstream #6009) asked for mobile to behave the same way. The fork turns it on by default and adds it to mobile, which unpins with the same single action. Added by fork commit 75082f7ea3 and the fork's import of #7313, without a fork pull request.
     implementation_paths:
       - apps/mobile/src/features/home/useThreadListActions.ts
       - apps/mobile/src/features/settings/SettingsThreadsRouteScreen.tsx
     upstream_paths:
       - apps/mobile/src/features/home/useThreadListActions.ts
       - apps/mobile/src/persistence/mobile-preferences.ts
+      - apps/web/src/hooks/useThreadActions.ts
       - packages/contracts/src/settings.ts
     tests:
       - apps/mobile/src/lib/storage.test.ts
+      - packages/contracts/src/settings.test.ts
     upstream:
-      status: unassessed
-      tracking: []
-      retire_when: Upstream confirms unpinning by default and offers the confirmation on mobile.
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/issues/6009
+        - https://github.com/pingdotgg/t3code/pull/7313
+      retire_when: Upstream confirms unpinning by default on web and desktop and offers the confirmation on mobile.
 
   - id: turn-token-usage
     title: Show token usage under each agent turn
