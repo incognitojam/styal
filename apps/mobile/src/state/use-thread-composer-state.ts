@@ -139,9 +139,9 @@ export function useThreadComposerState() {
   } = useThreadSelection();
   const selectedThreadDetail = useSelectedThreadDetail();
   const composerDrafts = useAtomValue(composerDraftsAtom);
-  const dispatchingQueuedMessageId = useAtomValue(dispatchingQueuedMessageIdAtom);
   const acknowledgedMessages = useAtomValue(acknowledgedThreadMessagesAtom);
   const queuedMessagesByThreadKey = useThreadOutboxMessages();
+  const dispatchingQueuedMessageId = useAtomValue(dispatchingQueuedMessageIdAtom);
   const [feedbackSubmissionsByThreadKey, setFeedbackSubmissionsByThreadKey] = useState<
     Record<string, ReadonlyArray<CodexFeedbackSubmission>>
   >({});
@@ -181,6 +181,8 @@ export function useThreadComposerState() {
     [selectedThreadShell],
   );
   useServerComposerDraftSync(selectedThreadRef);
+  // The creation entry is the thread itself (rendered as the first message),
+  // not a follow-up waiting behind it.
   const selectedThreadQueuedMessages = useMemo(
     () =>
       selectedThreadKey
@@ -208,37 +210,25 @@ export function useThreadComposerState() {
   const selectedThreadActivities = selectedThreadDetail?.activities;
   const selectedTurnUsage = useTurnUsage(selectedThreadActivities);
   const selectedThreadWorktreePath = selectedThreadDetail?.worktreePath ?? null;
+  // A thread whose creation has not delivered its turn yet: the prompt only
+  // exists in the outbox, so it is appended to whatever the server has. The
+  // detail is usually present but empty during a worktree checkout, so this
+  // cannot be an either/or with the loaded messages.
+  const pendingCreationMessage = selectedThreadCreation?.message ?? null;
   const selectedThreadFeed = useMemo(() => {
-    const creationMessage = selectedThreadCreation?.message
-      ? pendingThreadCreationMessage(selectedThreadCreation.message)
-      : null;
-    const localMessages = [
-      ...(creationMessage !== null &&
-      !selectedThreadMessages?.some((message) => message.id === creationMessage.id)
-        ? [creationMessage]
-        : []),
-    ];
+    const loadedMessages = selectedThreadMessages ?? [];
     const feed =
-      selectedThreadMessages && selectedThreadActivities
-        ? buildThreadFeed(
-            {
-              messages: selectedThreadMessages,
-              activities: selectedThreadActivities,
-              worktreePath: selectedThreadWorktreePath,
-            },
-            { localMessages },
-          )
-        : creationMessage !== null
-          ? [
-              {
-                type: "message" as const,
-                id: creationMessage.id,
-                createdAt: creationMessage.createdAt,
-                message: creationMessage,
-              },
-            ]
-          : [];
-
+      (selectedThreadMessages && selectedThreadActivities) || pendingCreationMessage !== null
+        ? buildThreadFeed({
+            messages:
+              pendingCreationMessage !== null &&
+              !loadedMessages.some((message) => message.id === pendingCreationMessage.messageId)
+                ? [...loadedMessages, pendingThreadCreationMessage(pendingCreationMessage)]
+                : loadedMessages,
+            activities: selectedThreadActivities ?? [],
+            worktreePath: selectedThreadWorktreePath,
+          })
+        : [];
     const pendingAcknowledgments = acknowledgedMessages.filter(
       (message) =>
         scopedThreadKey(message.environmentId, message.threadId) === selectedThreadKey &&
@@ -250,9 +240,9 @@ export function useThreadComposerState() {
     );
   }, [
     selectedThreadActivities,
-    selectedThreadCreation,
-    selectedThreadKey,
     selectedThreadMessages,
+    pendingCreationMessage,
+    selectedThreadKey,
     selectedThreadQueuedMessages,
     selectedThreadWorktreePath,
     acknowledgedMessages,
@@ -350,7 +340,14 @@ export function useThreadComposerState() {
   }, [selectedThreadDetail, selectedThreadSessionActivity, selectedThreadShell]);
 
   const onSendMessage = useCallback(async () => {
-    if (!selectedThreadShell || selectedThreadCreation !== null) {
+    if (!selectedThreadShell) {
+      return null;
+    }
+    // The server has not created this thread yet. Queuing a follow-up against
+    // its id would strand the message: if the creation is rejected the thread
+    // never appears and the drain drops the orphan. The composer disables its
+    // send button too; this guard also covers the editor's submit key.
+    if (selectedThreadCreation !== null) {
       return null;
     }
 

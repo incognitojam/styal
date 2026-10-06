@@ -32,7 +32,6 @@ const creation: QueuedThreadMessage = {
       mimeType: "image/png",
       sizeBytes: 10,
       previewUri: "data:image/png;base64,AAAA",
-      dataUrl: "data:image/png;base64,AAAA",
     },
   ],
   modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.6-sol" },
