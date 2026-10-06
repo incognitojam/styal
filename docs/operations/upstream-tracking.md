@@ -79,6 +79,8 @@ Review `origin/main...candidate` against the upstream sources and the fork featu
 
 A cherry-pick that applies cleanly can still break fork code it does not touch: upstream may rename an export that a fork-only file still calls, or add a lint rule that fork-only files break. Before pushing, typecheck and lint each package the batch changes as a whole, not only the changed files.
 
+Also run the test files the batch adds or changes. Upstream's new tests describe upstream's behavior, so a failure can show a fork difference that no conflict touched; trace it as you would a conflict before choosing between the fork's code and the test. Fold each fix into the commit that introduced the break, with a `Fork adaptation:` note, rather than adding a commit of its own.
+
 ```bash
 node scripts/upstream/queue.ts status --fork-ref intake/<batch>
 vp run --filter @t3tools/scripts intake:check -- --base origin/main --head intake/<batch>
