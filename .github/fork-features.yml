@@ -41,6 +41,7 @@ features:
     upstream:
       status: partial
       tracking:
+        - https://github.com/pingdotgg/t3code/pull/10180
         - https://github.com/pingdotgg/t3code/pull/7592
       retire_when: Upstream uses server-reported terminal liveness to limit close confirmation to active foreground or setup work across every terminal close path.
 
@@ -70,8 +71,10 @@ features:
       - apps/server/src/project/AddProjectDefaultDirectory.test.ts
       - packages/client-runtime/src/operations/projects.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/14844
+        - https://github.com/pingdotgg/t3code/pull/16268
       retire_when: Upstream opens the Add Project browser in ~/Developer on macOS when that folder exists and no base directory is configured.
 
   - id: antigravity-reasoning-effort
@@ -121,9 +124,9 @@ features:
       - apps/web/src/providerInstances.test.ts
       - packages/shared/src/model.test.ts
     upstream:
-      status: partial
+      status: tracking
       tracking:
-        - https://github.com/pingdotgg/t3code/commit/5cc99e1c23980d7995a13c47f969b47cb68ed1be
+        - https://github.com/pingdotgg/t3code/blob/9bd1d8009a6b7c50f9dd9458e2bf27d481ff3b43/apps/server/src/provider/AntigravityProvider.ts
       retire_when: Upstream groups Antigravity thinking variants into model generations with separate reasoning controls and preserves native selections on every client and dispatch path.
 
   - id: arbitrary-file-attachments
@@ -189,6 +192,7 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/pull/10404
         - https://github.com/pingdotgg/t3code/pull/10449
+        - https://github.com/pingdotgg/t3code/pull/12620
         - https://github.com/pingdotgg/t3code/pull/8235
         - https://github.com/pingdotgg/t3code/pull/8236
         - https://github.com/pingdotgg/t3code/pull/8237
@@ -213,12 +217,12 @@ features:
     upstream:
       status: tracking
       tracking:
-        - https://github.com/pingdotgg/t3code/commit/34096519121033ccf72cd43ea5350f9482df188a
+        - https://github.com/pingdotgg/t3code/pull/15818
       retire_when: Upstream offers an equivalent Reply action above the full assistant text selection, with fallback placement near the top edge.
 
   - id: background-task-endings
     title: Show background task endings on the call that started them and in the turn they wake
-    status: maintained
+    status: review-needed
     prs: [535, 601]
     invariants:
       - A background task that ends after its launching tool call returned reports its ending on that call's row in the original turn, on web and mobile.
@@ -241,15 +245,17 @@ features:
       - apps/mobile/src/lib/threadActivity.test.ts
       - apps/web/src/session-logic.test.ts
     upstream:
-      status: tracking
+      status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/10295
         - https://github.com/pingdotgg/t3code/pull/13789
+        - https://github.com/pingdotgg/t3code/pull/13948
+        - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream keeps a background task's ending with the tool call or run that started it on web and mobile, and shows a completed or failed ending in the turn it wakes the agent for.
 
   - id: claude-background-response-steering
     title: Keep Claude background responses intact when steered
-    status: maintained
+    status: review-needed
     prs: [598]
     invariants:
       - A user message sent while a Claude background response is streaming preserves its turn and text block, so a word or sentence cannot split across turns on web, desktop, or mobile.
@@ -265,11 +271,12 @@ features:
       status: tracking
       tracking:
         - https://github.com/pingdotgg/t3code/blob/5cc99e1c23980d7995a13c47f969b47cb68ed1be/apps/server/src/provider/Layers/ClaudeAdapter.ts
+        - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream preserves actively streaming synthetic Claude turns when a user sends a steer while retaining cleanup of idle synthetic turns.
 
   - id: claude-exact-history-rewind
     title: Rewind Claude turns using the complete saved history
-    status: maintained
+    status: review-needed
     prs: [611, 631, 635]
     rationale: Claude's history reader can omit retained prompts and assistant messages even though the native fork preserves them; matching its filtered message bodies or positions cannot recover those turn boundaries. The fork reads the complete saved transcript and matches it with upstream's fork boundary remapping.
     invariants:
@@ -290,11 +297,12 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/11954
-      retire_when: Upstream rewind reads the complete saved transcript, so human prompts and assistant records that getSessionMessages omits keep their turn boundaries through repeated rewinds, and rewinds at a known recent boundary when older boundaries are unknown.
+        - https://github.com/pingdotgg/t3code/pull/2829
+      retire_when: Upstream rewind keeps the turn boundaries of human prompts and assistant records that getSessionMessages omits through repeated rewinds, and rewinds at a known recent boundary when older boundaries are unknown.
 
   - id: claude-live-effort-change
     title: Apply Claude effort changes without restarting the session
-    status: maintained
+    status: review-needed
     prs: [541]
     invariants:
       - Changing only the effort level between turns on a live Claude thread applies the new level to the running Claude Code session, so its background tasks keep running and the next turn uses the new effort.
@@ -311,13 +319,15 @@ features:
       - apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts
       - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/14726
+        - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream applies Claude effort changes to a live session instead of restarting it.
 
   - id: claude-model-manifest-policy
     title: Source Claude models from the styal manifest
-    status: maintained
+    status: review-needed
     prs: [285, 405, 519]
     invariants:
       - Claude's complete built-in catalog comes from a validated manifest bundled for offline startup and refreshed from the styal fork, with invalid fetches preserving the last valid cache or bundle and a newer bundle replacing an older cache.
@@ -351,6 +361,7 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/13094
+        - https://github.com/pingdotgg/t3code/pull/13130
         - https://github.com/pingdotgg/t3code/pull/14152
         - https://github.com/pingdotgg/t3code/pull/9078
         - https://github.com/pingdotgg/t3code/pull/9084
@@ -412,8 +423,9 @@ features:
       - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
       - apps/server/src/provider/Layers/ClaudeProcess.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream's Claude adapter waits for the CLI process to exit before a stop completes and logs the process's spawn, exit and stderr.
 
   - id: clone-failure-guidance
@@ -438,8 +450,9 @@ features:
     tests:
       - apps/server/src/sourceControl/SourceControlRepositoryService.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/9831
       retire_when: Upstream gives clone authentication and rate-limit failures recovery guidance on web and mobile.
 
   - id: codex-default-effort
@@ -457,8 +470,9 @@ features:
     tests:
       - apps/server/src/provider/Layers/CodexAdapter.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/14440
       retire_when: Upstream sends Codex the effort its clients show as default when a turn names none.
 
   - id: codex-default-model
@@ -479,7 +493,7 @@ features:
     upstream:
       status: tracking
       tracking:
-        - https://github.com/pingdotgg/t3code/commit/2cbc24fcae2b5649d7b60b68da72053a37fa82d5
+        - https://github.com/pingdotgg/t3code/pull/11347
       retire_when: Upstream prefers GPT-6.1-Sol for new Codex threads, retains a fallback when it is unavailable, and shows the effort unselected turns run at.
 
   - id: codex-model-display-names
@@ -498,12 +512,12 @@ features:
     upstream:
       status: tracking
       tracking:
-        - https://github.com/pingdotgg/t3code/commit/451afcb22d93f06cb24f9bc16703404564952553
+        - https://github.com/pingdotgg/t3code/blob/9bd1d8009a6b7c50f9dd9458e2bf27d481ff3b43/packages/shared/src/model.ts
       retire_when: Upstream displays Codex model word suffixes with spaces while preserving model IDs.
 
   - id: completion-sounds
     title: Configurable thread notification sounds
-    status: review-needed
+    status: maintained
     prs: [5, 7, 19, 72, 249, 250]
     invariants:
       - Users can independently select, preview, and disable sounds for completion, input, and approval events; the sound choices are nested under the Notification sounds switch and disabled while it is off.
@@ -583,7 +597,7 @@ features:
 
   - id: data-import-from-t3-code
     title: T3 Code migration in setup and Settings
-    status: maintained
+    status: review-needed
     prs: [294, 297, 298, 300, 306, 347, 349, 379, 478]
     invariants:
       - A selected styal environment can preview and import projects, missing threads, attachments, provider continuations, and supported server preferences from a live T3 Code database, including older fork databases, without modifying the source.
@@ -649,6 +663,7 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/blob/384de0858d1f59ca2ad7c660544a5290fd9138cb/apps/web/src/components/onboarding/WelcomeWizard.tsx
+        - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: The fork replaces this implementation with equivalent safe T3 Code migration in setup and Settings, with CLI history limited to setup, preserving computer scope, sequential preference review, per-computer opt-out, retry behavior, and pending-import locks, or deliberately retires those capabilities.
 
   - id: desktop-background-updates
@@ -837,7 +852,7 @@ features:
 
   - id: drive-cli
     title: Drive environments and synthetic scenarios from the command line
-    status: maintained
+    status: review-needed
     prs: [425]
     invariants:
       - "`styal drive snapshot`, `dispatch`, and `send` use the running environment's authenticated HTTP API: a short-lived session that is then revoked for a local home, or a bearer token for a remote origin. They never fall back to reading the database offline."
@@ -859,7 +874,7 @@ features:
       status: tracking
       tracking:
         - https://github.com/pingdotgg/t3code/pull/10411
-      retire_when: Upstream merges drive commands with equivalent live control and isolated scenario serving; replace the fork copy with the upstream implementation.
+      retire_when: Upstream merges drive commands built on its orchestration V2 commands with equivalent live control and isolated scenario serving; replace the fork copy with the upstream implementation.
 
   - id: editable-diff-comments
     title: Edit anchored diff comments in place
@@ -878,13 +893,15 @@ features:
       - apps/web/src/components/diffs/DiffCommentAnnotation.test.tsx
       - apps/web/src/components/diffs/commentSubmitShortcut.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/discussions/14570
+        - https://github.com/pingdotgg/t3code/pull/12087
       retire_when: Upstream supports equivalent in-place editing of anchored diff comments with stable drafts and keyboard controls.
 
   - id: first-turn-unread-state
     title: Mark first thread completions unread
-    status: maintained
+    status: review-needed
     prs: [76]
     invariants:
       - When a user leaves a newly started thread before its first turn settles, that first completion becomes unread even if navigation happened before the server thread was available.
@@ -904,6 +921,8 @@ features:
     upstream:
       status: tracking
       tracking:
+        - https://github.com/pingdotgg/t3code/pull/15607
+        - https://github.com/pingdotgg/t3code/pull/2829
         - https://github.com/pingdotgg/t3code/pull/6662
         - https://github.com/pingdotgg/t3code/pull/9124
       retire_when: Upstream makes first completion unread when navigation happens before thread creation settles without marking historical threads unread or leaving stale state after failed creation.
@@ -942,7 +961,7 @@ features:
 
   - id: fork-agent-integration-identity
     title: Identify styal to agents and MCP clients
-    status: maintained
+    status: review-needed
     prs: [284, 301]
     invariants:
       - Fresh provider sessions advertise the product-native MCP integration as `styal`, persist that choice for recovery, and identify styal as the harness in generated agent instructions and disclosures.
@@ -986,8 +1005,10 @@ features:
       - apps/server/src/provider/RuntimeInstructions.test.ts
       - packages/shared/src/toolRowPresentation.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/15475
+        - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: The fork stops exposing a separately named agent integration or no longer needs compatibility with provider histories created under the pre-rename namespace.
 
   - id: fork-analytics-destination
@@ -1022,7 +1043,7 @@ features:
     tests:
       - apps/server/src/telemetry/AnalyticsService.test.ts
     upstream:
-      status: partial
+      status: tracking
       tracking:
         - https://github.com/pingdotgg/t3code/pull/8481
       retire_when: Upstream provides a first-class distribution identity that includes the producing repository on every analytics event.
@@ -1267,7 +1288,7 @@ features:
 
   - id: github-issue-thread-context
     title: Start a thread from a GitHub issue
-    status: maintained
+    status: review-needed
     prs: [31]
     invariants:
       - The command palette lists the current project's open GitHub issues through the GitHub CLI, with distinct states for a missing CLI, missing authentication, and no open issues, and choosing one opens a new draft with the issue attached as a removable context chip.
@@ -1295,8 +1316,10 @@ features:
       - apps/web/src/composerDraftStore.test.ts
       - apps/web/src/lib/issueContext.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/11265
+        - https://github.com/pingdotgg/t3code/pull/16319
       retire_when: Upstream starts threads from GitHub issues with the issue attached as persistent composer context.
 
   - id: github-outage-status
@@ -1338,7 +1361,7 @@ features:
 
   - id: github-pull-request-query-budget
     title: Bound GitHub pull request query cost
-    status: review-needed
+    status: maintained
     prs: [131]
     invariants:
       - Opening and refreshing a pull request cannot exhaust the GitHub GraphQL quota through unbounded nested review-thread connections.
@@ -1357,13 +1380,14 @@ features:
     upstream:
       status: partial
       tracking:
+        - https://github.com/pingdotgg/t3code/pull/16280
         - https://github.com/pingdotgg/t3code/pull/6466
         - https://github.com/pingdotgg/t3code/pull/9176
       retire_when: Upstream bounds nested GitHub review-thread query fan-out while retaining equivalent pagination and provider-budget protection.
 
   - id: github-reference-links
     title: Resolve GitHub references across chat and pull requests
-    status: review-needed
+    status: maintained
     prs: [31, 134, 329]
     invariants:
       - GitHub issue, pull request, commit, and repository references resolve against the project remote and become navigable links in chat and pull request Markdown.
@@ -1401,7 +1425,7 @@ features:
 
   - id: grok-prompt-settlement
     title: Settle Grok fallback completions after reply output quiets
-    status: maintained
+    status: review-needed
     prs: [605]
     invariants:
       - A private xAI completion keeps the standard prompt RPC alive while waiting for 250 ms without root-session reply text or thoughts, so delayed transport output can arrive before the adapter drains its event queue.
@@ -1422,12 +1446,12 @@ features:
     upstream:
       status: tracking
       tracking:
-        - https://github.com/pingdotgg/t3code/commit/5a574a77d1bef579b01d137b81888f68eabf7d4b
+        - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream retains delayed Grok reply output before fallback settlement, preserves prompt cancellation and real RPC results, and bounds failure to settle without reporting incomplete output as successful.
 
   - id: inspectable-tool-activity
     title: Keep tool activity concise and inspectable
-    status: maintained
+    status: review-needed
     prs: [4, 11, 36, 58, 60, 66, 117, 139, 158, 168, 190, 204, 230, 238, 278, 282, 301, 582]
     invariants:
       - Web and mobile name supported tool calls by their action with a concise useful argument, while agent panels and approval rows use the same vocabulary instead of raw provider names or serialized input.
@@ -1493,6 +1517,12 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/13375
+        - https://github.com/pingdotgg/t3code/pull/14860
+        - https://github.com/pingdotgg/t3code/pull/14980
+        - https://github.com/pingdotgg/t3code/pull/15475
+        - https://github.com/pingdotgg/t3code/pull/15505
+        - https://github.com/pingdotgg/t3code/pull/15506
+        - https://github.com/pingdotgg/t3code/pull/2829
         - https://github.com/pingdotgg/t3code/pull/7152
         - https://github.com/pingdotgg/t3code/pull/8395
         - https://github.com/pingdotgg/t3code/pull/9106
@@ -1530,8 +1560,10 @@ features:
       - apps/web/src/components/preview/openTerminalLinkInPreview.test.ts
       - apps/web/src/terminal/ghostty/surface.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/15328
+        - https://github.com/pingdotgg/t3code/pull/9339
       retire_when: Upstream routes local chat and terminal links through an environment-aware integrated browser with an external fallback.
 
   - id: markdown-table-layout
@@ -1558,10 +1590,10 @@ features:
       - packages/contracts/src/settings.test.ts
     upstream:
       status: partial
-      # PR 8868 exposes scrollbars only. At the assessed upstream commit,
+      # PR 8868 exposes scrollbars only. At upstream 9bd1d8009a,
       # expansion still locks column widths and collapsed cells truncate.
       tracking:
-        - https://github.com/pingdotgg/t3code/commit/e8ca3a82806dff84438d5aba66b693468f7ca426
+        - https://github.com/pingdotgg/t3code/pull/13443
         - https://github.com/pingdotgg/t3code/pull/8868
       retire_when: Upstream provides equivalent width-fitting wrapped tables, reversible untruncated horizontal scrolling without locked column widths, and discoverable overflow across shared web and desktop Markdown surfaces while preserving the Word wrap preference.
 
@@ -1616,11 +1648,12 @@ features:
       - apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts
       - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
     upstream:
-      status: partial
+      status: equivalent
       tracking:
         - https://github.com/pingdotgg/t3code/pull/10296
         - https://github.com/pingdotgg/t3code/pull/10321
         - https://github.com/pingdotgg/t3code/pull/10549
+        - https://github.com/pingdotgg/t3code/pull/2829
         - https://github.com/pingdotgg/t3code/pull/5040
         - https://github.com/pingdotgg/t3code/pull/9135
       retire_when: Upstream validates missing project and worktree paths before every provider starts, and a stream failure after a failed Claude result no longer replaces that result's error.
@@ -1642,13 +1675,15 @@ features:
     tests:
       - apps/mobile/src/features/cloud/clerkLoadRecovery.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/11013
+        - https://github.com/pingdotgg/t3code/pull/15894
       retire_when: Upstream or Clerk retries a failed headless Clerk load and bounds stalled Clerk requests on mobile.
 
   - id: preview-hidden-tab-capture
     title: Capture hidden preview tabs reliably
-    status: maintained
+    status: review-needed
     prs: [172, 174]
     invariants:
       - Screenshot and recording operations can capture a background preview tab without making it visibly active.
@@ -1672,7 +1707,10 @@ features:
     upstream:
       status: partial
       tracking:
+        - https://github.com/pingdotgg/t3code/pull/13600
+        - https://github.com/pingdotgg/t3code/pull/15328
         - https://github.com/pingdotgg/t3code/pull/8839
+        - https://github.com/pingdotgg/t3code/pull/8981
         - https://github.com/pingdotgg/t3code/pull/9001
       retire_when: Upstream reliably captures hidden preview tabs with bounded native work and no user-visible activation.
 
@@ -1708,9 +1746,11 @@ features:
       - apps/web/src/components/preview/usePreviewBridge.test.ts
       - apps/web/src/previewStateStore.test.ts
     upstream:
-      status: partial
+      status: tracking
       tracking:
-        - https://github.com/pingdotgg/t3code/pull/7445
+        - https://github.com/pingdotgg/t3code/pull/10141
+        - https://github.com/pingdotgg/t3code/pull/15328
+        - https://github.com/pingdotgg/t3code/pull/9916
       retire_when: Upstream preserves equivalent responsive device metrics, logical capture coordinates, DevTools fallback behavior, and surface ownership across panel visibility changes.
 
   - id: proactive-panels-default
@@ -1729,7 +1769,9 @@ features:
     upstream:
       status: tracking
       tracking:
-        - https://github.com/pingdotgg/t3code/commit/f22331240ed1a97fae560e314bffb75fe39db8ca
+        - https://github.com/pingdotgg/t3code/issues/15078
+        - https://github.com/pingdotgg/t3code/pull/13608
+        - https://github.com/pingdotgg/t3code/pull/14705
       retire_when: Upstream enables proactive panels by default or the fork adopts upstream's opt-in default.
 
   - id: project-action-icons
@@ -1759,8 +1801,9 @@ features:
       - apps/web/src/components/chat/MessagesTimeline.test.tsx
       - packages/contracts/src/t3ProjectFile.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/10678
       retire_when: Upstream supports the same project-action roles and consistent icon presentation across web and mobile.
 
   - id: project-action-import-review
@@ -1783,14 +1826,14 @@ features:
       - apps/web/src/projectScripts.test.ts
       - packages/contracts/src/t3ProjectFile.test.ts
     upstream:
-      status: partial
+      status: tracking
       tracking:
-        - https://github.com/pingdotgg/t3code/commit/d7819c18813fa03b033cc1c9472c9acc0ffc0618
+        - https://github.com/pingdotgg/t3code/blob/9bd1d8009a6b7c50f9dd9458e2bf27d481ff3b43/apps/web/src/components/ProjectScriptsControl.tsx
       retire_when: Upstream requires review of project file commands and worktree setup before importing from both web entry points, while keeping imported actions independent of later file changes.
 
   - id: project-agent-instructions
     title: Apply project instructions to every agent session
-    status: maintained
+    status: review-needed
     prs: [157]
     invariants:
       - Additional instructions are persisted per logical project, shared across grouped checkouts, visible and clearable in Project Settings, and retained through projection recovery.
@@ -1835,8 +1878,9 @@ features:
       - apps/server/src/provider/Layers/OpenCodeAdapter.test.ts
       - apps/server/src/provider/Layers/ProviderService.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream persists equivalent project instructions and applies them safely to fresh and recovered sessions for every supported provider without duplicating prompt content.
 
   - id: project-filter-continuity
@@ -1863,6 +1907,7 @@ features:
     upstream:
       status: partial
       tracking:
+        - https://github.com/pingdotgg/t3code/pull/14165
         - https://github.com/pingdotgg/t3code/pull/9416
       retire_when: Upstream preserves project scope across sidebar state and every new-thread entry point.
 
@@ -1891,7 +1936,7 @@ features:
 
   - id: provider-subscription-limits
     title: Keep provider usage limits across restarts and sign-out
-    status: review-needed
+    status: maintained
     prs: [225, 409]
     invariants:
       - Upstream's provider `usageLimits` snapshot is the only server model for subscription windows; the fork adds no parallel limit schema or runtime event shape.
@@ -1918,7 +1963,7 @@ features:
 
   - id: provider-task-identity-recovery
     title: Recover background task identity after provider restarts
-    status: maintained
+    status: review-needed
     prs: [291]
     invariants:
       - A delayed task completion after a provider restart or session exit recovers its missing title, task type, ownership, and tool linkage from persisted lifecycle activity before the server classifies it.
@@ -1930,13 +1975,15 @@ features:
     tests:
       - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/15323
+        - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream durably recovers missing task identity before classifying delayed lifecycle events after provider restarts.
 
   - id: provider-working-state-recovery
     title: Recover truthful Claude working state after compaction
-    status: maintained
+    status: review-needed
     prs: [290]
     invariants:
       - A cleared Claude transient status keeps an active turn running but returns an idle session to ready after manual context compaction completes.
@@ -1957,14 +2004,16 @@ features:
       - apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts
       - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
     upstream:
-      status: unassessed
-      tracking: []
-      retire_when: Upstream maps cleared Claude statuses through the active-turn lifecycle with equivalent post-compaction recovery.
+      status: equivalent
+      tracking:
+        - https://github.com/pingdotgg/t3code/issues/7589
+        - https://github.com/pingdotgg/t3code/pull/2829
+      retire_when: Upstream derives Claude working and compaction state from the active turn rather than provider status messages, with equivalent post-compaction recovery.
 
   - id: pull-request-association-continuity
     title: Keep worktrees associated with the correct pull request
-    status: maintained
-    prs: [79, 125, 211]
+    status: review-needed
+    prs: [79, 125]
     invariants:
       - Repository and pull request identity follow the branch tracking remote or selected GitHub repository without matching a same-named branch from another fork.
       - Pull request association survives hosted branch pruning.
@@ -1980,6 +2029,10 @@ features:
     upstream:
       status: partial
       tracking:
+        - https://github.com/pingdotgg/t3code/pull/13200
+        - https://github.com/pingdotgg/t3code/pull/13689
+        - https://github.com/pingdotgg/t3code/pull/14291
+        - https://github.com/pingdotgg/t3code/pull/16353
         - https://github.com/pingdotgg/t3code/pull/9125
       retire_when: Upstream keeps repository-scoped pull request association correct across multiple remotes and branch pruning.
 
@@ -2008,9 +2061,9 @@ features:
       - apps/web/src/components/chat/externalLinkContextMenu.test.ts
       - apps/web/src/hooks/useExternalLinkContextMenu.test.tsx
     upstream:
-      status: partial
+      status: tracking
       tracking:
-        - https://github.com/pingdotgg/t3code/commit/5cc99e1c23980d7995a13c47f969b47cb68ed1be
+        - https://github.com/pingdotgg/t3code/blob/9bd1d8009a6b7c50f9dd9458e2bf27d481ff3b43/apps/web/src/components/contextChipParts.tsx
       retire_when: Upstream gives PR chips in sent messages and the composer the same environment-aware context menu as Markdown links.
 
   - id: pull-request-comment-drafts
@@ -2030,8 +2083,9 @@ features:
     tests:
       - apps/web/src/components/pullRequest/pullRequestReviewStore.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/12945
       retire_when: Upstream preserves environment-scoped pull request conversation drafts across right-panel surface changes and clears them safely after posting.
 
   - id: pull-request-description-images
@@ -2090,6 +2144,8 @@ features:
     upstream:
       status: partial
       tracking:
+        - https://github.com/pingdotgg/t3code/pull/11484
+        - https://github.com/pingdotgg/t3code/pull/12190
         - https://github.com/pingdotgg/t3code/pull/9174
       retire_when: Upstream provides equivalent review-oriented default expansion with oversized-file protection and stable explicit choices across annotations and pagination.
 
@@ -2166,12 +2222,12 @@ features:
     upstream:
       status: partial
       tracking:
-        - https://github.com/pingdotgg/t3code/commit/5cc99e1c23980d7995a13c47f969b47cb68ed1be
+        - https://github.com/pingdotgg/t3code/pull/11117
       retire_when: Upstream shares cached repository label metadata across pull requests while refreshing, keeps applied state specific to the current pull request, and applies label edits optimistically with rollback on failure.
 
   - id: pull-request-linked-extras
     title: Show the current pull request and additional link count
-    status: maintained
+    status: review-needed
     prs: [537, 587]
     invariants:
       - Web and mobile show the current pull request number followed by +1 for one additional unrelated link and +2 for two; a lone link shows its number and stacks show their total layer count.
@@ -2192,12 +2248,15 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/11104
+        - https://github.com/pingdotgg/t3code/pull/13211
+        - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream shows the current pull request number and additional unrelated link count on web and mobile while retaining total layer counts for stacks.
 
   - id: pull-request-live-refresh
     title: Keep open pull request details current
-    status: review-needed
+    status: maintained
     prs: [101, 457]
+    rationale: Upstream detail reads return the held value and refresh it in the background unless a caller opts out, so its automatic refresh shows each change one refresh late. The fork's detail-only invalidation makes that refresh wait for the host.
     invariants:
       - An open pull request refreshes core host state without leaving the visible panel one stale response behind.
       - Finished turns recheck pull request details without resetting an unrelated diff; a changed pull request revision refreshes its diff.
@@ -2223,9 +2282,11 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/pull/11888
         - https://github.com/pingdotgg/t3code/pull/6466
+        - https://github.com/pingdotgg/t3code/pull/6472
         - https://github.com/pingdotgg/t3code/pull/9176
+        - https://github.com/pingdotgg/t3code/pull/9294
         - https://github.com/pingdotgg/t3code/pull/9496
-      retire_when: Upstream keeps the visible pull request current without stale responses, unnecessary activity reads, or invalidating cached diffs.
+      retire_when: Upstream's automatic pull request refresh reads fresh host state rather than the held detail value, without unnecessary activity reads or invalidating cached diffs.
 
   - id: pull-request-merge-controls-during-refresh
     title: Keep pull request merge controls visible while the stack lookup refreshes
@@ -2257,7 +2318,7 @@ features:
       - After a refused action, the next detail read goes to the host, so retrying a merge uses the current head.
       - A merge refused because the head moved reports that new commits were pushed instead of the generic access hint.
       - Hosts that do not report a head commit, older clients, and older servers merge as before.
-    rationale: Upstream single pull request merges run plain `gh pr merge`, which merges whatever the head is when the command runs.
+    rationale: Upstream single pull request merges run plain `gh pr merge`, which merges whatever the head is when the command runs. Upstream pins a head only when it removes agent credits from the merge message, and then pins the head it reads at merge time.
     implementation_paths:
       - apps/server/src/pullRequest/GitHubPullRequestCli.ts
       - apps/server/src/pullRequest/GitHubPullRequestProvider.ts
@@ -2276,14 +2337,15 @@ features:
       - apps/server/src/pullRequest/GitHubPullRequestCli.test.ts
       - apps/server/src/pullRequest/PullRequestService.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/16192
       retire_when: Upstream pins single pull request merges and auto-merges to the head commit the reader saw.
 
   - id: pull-request-open-entry-points
     title: Open associated pull requests from every workflow
     status: maintained
-    prs: [46, 166]
+    prs: [46, 166, 531, 579]
     invariants:
       - Sidebar links and proactive panels reuse the same pull request tab when the linked reference supplies its host through the URL; reopening consolidates existing duplicates without merging different hosts or environments. URL-derived hosts are resolved before rendering and on saved-panel migration, so clicking the same PR link preserves the component and cache identity.
       - The command palette and keybinding expose provider-appropriate pull request navigation only when the current thread has an associated change request, then open it in the in-app panel.
@@ -2315,8 +2377,10 @@ features:
       - apps/web/src/rightPanelStore.test.ts
       - packages/contracts/src/keybindings.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/15061
+        - https://github.com/pingdotgg/t3code/pull/9006
       retire_when: Upstream exposes equivalent in-app pull request navigation from command, keybinding, and result-toast entry points with an external fallback.
 
   - id: pull-request-required-checks
@@ -2356,13 +2420,14 @@ features:
     upstream:
       status: partial
       tracking:
+        - https://github.com/pingdotgg/t3code/pull/15057
         - https://github.com/pingdotgg/t3code/pull/7077
         - https://github.com/pingdotgg/t3code/pull/9188
       retire_when: Upstream provides a dedicated checks view with repository-policy-aware required checks and equivalent merge or auto-merge guidance in pull request details.
 
   - id: restart-stopped-tool-calls
     title: Show tool calls a server restart killed as stopped
-    status: maintained
+    status: review-needed
     prs: [532]
     invariants:
       - When startup reconciliation finds a thread whose turn was running before the restart, every tool call in that turn with no completion gets a tool.completed activity with status stopped, whether or not the thread is continued afterwards; threads whose provider session is still live are left alone.
@@ -2392,8 +2457,11 @@ features:
       - apps/web/src/session-logic.test.ts
       - packages/shared/src/toolRowPresentation.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: equivalent
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/15323
+        - https://github.com/pingdotgg/t3code/pull/15604
+        - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream records tool calls that a restart or crash left unfinished as stopped and shows them in both clients.
 
   - id: review-findings-card
@@ -2459,7 +2527,7 @@ features:
 
   - id: same-turn-follow-up-lifecycle
     title: Keep follow-up turn lifecycle state truthful
-    status: maintained
+    status: review-needed
     prs: [65, 106, 149, 206]
     invariants:
       - A queued replacement turn keeps the thread active across provider completion without briefly presenting completed work.
@@ -2474,13 +2542,15 @@ features:
       - apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts
       - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/14725
+        - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream distinguishes replacement-turn handoffs from same-turn follow-ups and settles both without false ready or Working states.
 
   - id: server-restart-continuation-note
     title: Show where a thread continued after a server restart
-    status: maintained
+    status: review-needed
     prs: [515]
     invariants:
       - When restart recovery sends a continuation, the thread records one server-restart.continued activity, timestamped before the send and attached to the turn the provider started for the continued work; background-work continuations record a separate server-restart.background-continued activity.
@@ -2509,13 +2579,16 @@ features:
       - apps/server/src/serverRuntimeStartup.reconcile.test.ts
       - apps/web/src/components/chat/MessagesTimeline.logic.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/15323
+        - https://github.com/pingdotgg/t3code/pull/15604
+        - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream records in the conversation where restart recovery continued a thread and shows it on web and mobile without folding it into grouped work.
 
   - id: server-shutdown-diagnostics
     title: Stop providers first and report slow server shutdowns
-    status: maintained
+    status: review-needed
     prs: [529, 530, 558]
     invariants:
       - Server shutdown stops provider sessions before any other shutdown step, so a launcher kill after a stalled step cannot leave a provider CLI working on its own.
@@ -2532,13 +2605,14 @@ features:
       - apps/server/src/observability/OpenSpans.test.ts
       - apps/server/src/provider/Layers/ProviderService.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream stops provider sessions first on shutdown and reports which shutdown step is still running before the process is killed.
 
   - id: server-update-guidance
     title: Match server update instructions to the advertised capability
-    status: maintained
+    status: review-needed
     prs: [351, 623]
     invariants:
       - Normal managed services retain the direct in-app Update action in chat and Connections settings.
@@ -2572,13 +2646,15 @@ features:
       - apps/web/src/versionSkew.test.ts
       - packages/shared/src/hostActivity.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/15539
+        - https://github.com/pingdotgg/t3code/pull/15604
       retire_when: Upstream provides equivalent capability-specific update guidance that distinguishes legacy service migration from foreground starts while preserving direct updates for managed services.
 
   - id: setup-script-observability
     title: Keep setup scripts safe and inspectable
-    status: maintained
+    status: review-needed
     prs: [40, 207, 208, 214, 216, 236, 237, 241]
     invariants:
       - A setup terminal is titled with its configured script name from start through exit, in every client's terminal list.
@@ -2624,7 +2700,10 @@ features:
     upstream:
       status: partial
       tracking:
-        - https://github.com/pingdotgg/t3code/pull/8936
+        - https://github.com/pingdotgg/t3code/pull/11372
+        - https://github.com/pingdotgg/t3code/pull/11832
+        - https://github.com/pingdotgg/t3code/pull/12177
+        - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream exposes equivalent cross-client setup action lifecycle detail, retained output, worktree-only setup safety, and isolation from later interactive terminal actions.
 
   - id: sidebar-attention-prominence
@@ -2648,7 +2727,7 @@ features:
 
   - id: sidebar-last-message-time
     title: Choose the timestamp shown for thread activity
-    status: maintained
+    status: review-needed
     prs: [538]
     invariants:
       - Active thread rows on web and mobile, and web command palette thread actions, default to time since the last user prompt; a local preference can instead show the latest message including agent replies. The preference does not change thread ordering.
@@ -2693,6 +2772,7 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/1996
+        - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream labels thread rows and command palette actions using the latest chat message timestamp across web and mobile without letting non-message updates reset the clock.
 
   - id: sidebar-project-thread-groups
@@ -2704,7 +2784,7 @@ features:
       - With grouping on, active threads sit under one header per logical project, so matching repositories across environments share a header. Cards under a header omit the project icon and name, while pinned, snoozed, and settled threads keep their existing layout.
       - A dragged thread reorders only within its own project and never moves a project, including the first reorder that assigns manual thread keys and the optimistic placement while those writes arrive. Dragging a project header moves the whole project, and that order persists in the client's manual project order.
       - Projects without a saved position follow their newest created or reopened active thread independently of manual thread keys.
-    rationale: With several projects active, a flat list makes the user read each card's project label to see which threads belong together. The fork keeps full thread cards under the headers and leaves grouping opt-in, whereas upstream's open proposal collapses groups into title-only lists.
+    rationale: With several projects active, a flat list makes the user read each card's project label to see which threads belong together. The fork keeps full thread cards under the headers and leaves grouping opt-in, whereas upstream's closed proposal collapsed groups into title-only lists.
     implementation_paths:
       - apps/web/src/components/Sidebar.drag.ts
       - apps/web/src/components/Sidebar.logic.ts
@@ -2769,8 +2849,10 @@ features:
       - packages/client-runtime/src/operations/projects.test.ts
       - packages/shared/src/git.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/14673
+        - https://github.com/pingdotgg/t3code/pull/16353
       retire_when: Upstream configures fork and parent remotes with an equivalent cross-client default-repository choice that remains consistent with GitHub CLI resolution and branch tracking.
 
   - id: stable-workspace-ports
@@ -2918,7 +3000,7 @@ features:
 
   - id: turn-token-usage
     title: Show token usage under each agent turn
-    status: maintained
+    status: review-needed
     prs: []
     invariants:
       - A completed or aborted turn whose provider reports token usage records one usage activity for that turn; turns without usage record nothing.
@@ -2943,8 +3025,9 @@ features:
       - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.activity.test.ts
       - packages/shared/src/turnUsage.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream shows each turn's token usage in the conversation on web, desktop, and mobile, with a way to hide it.
 
   - id: usage-carbon-estimate
@@ -2973,7 +3056,7 @@ features:
 
   - id: workspace-path-presentation
     title: Keep workspace file paths concise and actionable
-    status: maintained
+    status: review-needed
     prs: [89, 129, 337, 354, 580]
     invariants:
       - Scoped tool activity and Markdown file chips on web and mobile omit generated worktree directory names and display workspace-relative paths, while paths outside the workspace remain absolute. This includes ACP file reads (Antigravity, Cursor, Grok), which report no tool name and carry their path only as the row detail.
@@ -3022,14 +3105,15 @@ features:
       - apps/web/src/markdown-links.test.ts
       - packages/shared/src/toolRowPresentation.test.ts
     upstream:
-      status: tracking
+      status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/13375
+        - https://github.com/pingdotgg/t3code/pull/15509
       retire_when: Upstream presents equivalent workspace-scoped paths across clients, preserves descriptive Markdown link labels without redundant chips while retaining chips for file-path labels, and preserves full file targets and authored-label copy actions.
 
   - id: workspace-thread-organization
     title: Default new threads to isolated worktrees
-    status: maintained
+    status: review-needed
     prs: [199, 271]
     invariants:
       - New threads default to isolated worktrees unless a user explicitly chooses another workspace mode or the repository has no commit to branch from.
@@ -3057,5 +3141,7 @@ features:
     upstream:
       status: partial
       tracking:
+        - https://github.com/pingdotgg/t3code/pull/12954
+        - https://github.com/pingdotgg/t3code/pull/15580
         - https://github.com/pingdotgg/t3code/pull/5944
       retire_when: Upstream defaults new threads to isolated worktrees and runs first threads in the current checkout when the repository has no commit, while refusing unresolvable worktree bases with an actionable error.
