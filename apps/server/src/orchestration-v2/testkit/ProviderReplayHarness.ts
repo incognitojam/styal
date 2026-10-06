@@ -271,7 +271,10 @@ export function layerWithRegistry<Error>(
     readonly prepareForShutdownOnClose?: boolean;
   } = {},
 ): Layer.Layer<
-  Orchestrator.OrchestratorV2 | EffectWorker.OrchestrationEffectWorkerV2 | EventSink.EventSinkV2,
+  | Orchestrator.OrchestratorV2
+  | EffectWorker.OrchestrationEffectWorkerV2
+  | EventSink.EventSinkV2
+  | ProviderSessionManager.ProviderSessionManagerV2,
   Error | MigrationError | PlatformError.PlatformError | SqlError
 > {
   const layerServerConfig = Layer.effect(
@@ -484,6 +487,7 @@ export function layerWithRegistry<Error>(
   );
   const layerReplayRuntime = Layer.mergeAll(
     layerOrchestratorProvided,
+    layerProviderSessionManagerProvided,
     layerEffectWorkerProvided,
     layerEventSinkProvided,
     layerContinuationWorkerProvided,
