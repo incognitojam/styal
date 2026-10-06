@@ -63,7 +63,11 @@ Every candidate commit needs an `Upstream-PR: 1234, 5678` and/or `Upstream-Commi
 
 Read the actual source diffs when reconciling reverts or already-present work; never assume an adjacent commit implements a source. If an exact change/revert pair is accounted for together, verify its net effect and record both sources; do not silently skip either. Existing provenance proves an import was recorded, not that today's tree still has equivalent behavior.
 
+A conflict can show that an earlier import, often an early one, took a different revision of a PR than the one upstream merged, while its provenance marks the PR as recorded. When the incoming change builds on the missing parts, reconcile them in a separate commit placed before it. Give that commit the PR's `Upstream-PR` trailer and a `Fork adaptation:` note naming the earlier import, and limit it to what the incoming change needs.
+
 Upstream's direct release commits (`chore(release): prepare vX.Y.Z`) bump package versions and can touch the lockfile. Take the version bumps, keep the fork's package names and lockfile, and cite `fork-distribution-identity`.
+
+When an upstream change adds, removes, or bumps dependencies and the lockfile conflicts, keep the fork's lockfile and regenerate it with `pnpm install --lockfile-only`. In the `Fork adaptation:` note, name any package that resolves to a different version than upstream's.
 
 Keep upstream files the fork does not use identical to upstream, such as `.github/workflows/release.yml`, which is disabled in favour of the fork's own release workflows. When an import adapts an upstream change into a fork-owned file instead of the file upstream changed, apply upstream's change to its own file too. Otherwise that file drifts, and later upstream commits to it conflict.
 
