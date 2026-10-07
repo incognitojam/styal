@@ -252,7 +252,9 @@ function PullRequestCodeTab({
     refreshing: false,
   });
   const parseCache = useRef(new Map<string, RenderablePatch>());
-  const [viewer, setViewer] = useState<CodeViewHandle<ReviewAnnotationGroup> | null>(null);
+  const [viewer, setViewer] = useState<CodeViewHandle<ReviewAnnotationGroup, undefined> | null>(
+    null,
+  );
 
   const referenceKey = pullRequestReviewKey(reference);
   const commit = selectedCommitOid;
