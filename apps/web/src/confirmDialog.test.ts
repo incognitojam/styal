@@ -4,6 +4,7 @@ import { ThreadId, type ConfirmDialogThreadActivity } from "@t3tools/contracts";
 import {
   acknowledgeConfirmDialogPresentation,
   completeConfirmDialogClose,
+  isConfirmDialogActive,
   readConfirmDialogState,
   registerConfirmDialogHost,
   requestConfirmDialog,
@@ -178,6 +179,8 @@ describe("confirm dialog coordinator", () => {
 
     respondToConfirmDialog(true);
     await expect(confirmation).resolves.toBe(true);
+    // Still on screen while it closes, so nothing may cover it yet.
+    expect(isConfirmDialogActive()).toBe(true);
     expect(readConfirmDialogState()).toEqual({
       status: "closing",
       message: "Delete this thread?",
@@ -187,6 +190,7 @@ describe("confirm dialog coordinator", () => {
 
     completeConfirmDialogClose();
     expect(readConfirmDialogState()).toEqual({ status: "idle" });
+    expect(isConfirmDialogActive()).toBe(false);
     unregister();
   });
 

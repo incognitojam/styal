@@ -190,6 +190,11 @@ export function acknowledgeConfirmDialogPresentation(renderedState: ConfirmDialo
   activeConfirmation.onPresented?.();
 }
 
+/** True while a confirmation is shown, closing, or waiting to be shown. */
+export function isConfirmDialogActive(): boolean {
+  return state.status !== "idle" || activeConfirmation !== null || queuedConfirmations.length > 0;
+}
+
 export function respondToConfirmDialog(confirmed: boolean): void {
   if (state.status !== "confirming" || !activeConfirmation) return;
   if (confirmed && activeConfirmation.loading) return;
