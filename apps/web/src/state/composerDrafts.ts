@@ -39,7 +39,8 @@ export function readComposerDraftRevision(threadRef: ScopedThreadRef): number | 
   return revisions.get(scopedThreadKey(threadRef));
 }
 
-function commonFromDraft(draft: ComposerThreadDraftState): ComposerDraftCommon | null {
+function commonFromDraft(draft: ComposerThreadDraftState | null): ComposerDraftCommon | null {
+  if (draft === null) return null;
   const hasLocalOnlyContext =
     draft.images.length > 0 ||
     draft.files.length > 0 ||
@@ -128,8 +129,6 @@ export function useServerComposerDraftSync(threadRef: ScopedThreadRef | null): v
   const draft = useComposerThreadDraft(
     threadRef ?? DraftId.make("__composer-draft-sync-disabled__"),
   );
-  const draftRef = useRef(draft);
-  draftRef.current = draft;
   const controllerRef = useRef<ComposerDraftSyncController | null>(null);
 
   useEffect(() => {
@@ -139,8 +138,10 @@ export function useServerComposerDraftSync(threadRef: ScopedThreadRef | null): v
       return;
     }
     const key = scopedThreadKey(threadRef);
+    // Timers and RPC callbacks can run before React renders a send's synchronous clear.
+    const readDraft = () => useComposerDraftStore.getState().getComposerDraft(threadRef);
     const readLocal = (): ComposerDraftCommon | null => {
-      const common = commonFromDraft(draftRef.current);
+      const common = commonFromDraft(readDraft());
       if (!suppressedPostSendCommon.has(key)) return common;
       const baseline = suppressedPostSendCommon.get(key)?.baseline ?? null;
       if (composerDraftCommonEquals(common, baseline)) return null;
@@ -150,14 +151,15 @@ export function useServerComposerDraftSync(threadRef: ScopedThreadRef | null): v
       threadId: threadRef.threadId,
       readLocal,
       canApplyRemote: () => {
-        const current = draftRef.current;
+        const current = readDraft();
         return (
-          current.images.length === 0 &&
-          current.persistedAttachments.length === 0 &&
-          current.terminalContexts.length === 0 &&
-          current.issueContexts.length === 0 &&
-          current.previewAnnotations.length === 0 &&
-          current.reviewComments.length === 0
+          current === null ||
+          (current.images.length === 0 &&
+            current.persistedAttachments.length === 0 &&
+            current.terminalContexts.length === 0 &&
+            current.issueContexts.length === 0 &&
+            current.previewAnnotations.length === 0 &&
+            current.reviewComments.length === 0)
         );
       },
       shouldIgnoreRemote: (snapshot) => {
