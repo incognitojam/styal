@@ -1,5 +1,9 @@
 import { useCallback, type MouseEvent } from "react";
-import { AuthOrchestrationOperateScope, type ScopedThreadRef } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  AuthPreviewOperateScope,
+  type ScopedThreadRef,
+} from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -35,13 +39,19 @@ export function useExternalLinkContextMenu(threadRef?: ScopedThreadRef) {
     AuthOrchestrationOperateScope,
   );
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
+  const canOperatePreview = useEnvironmentScope(
+    threadRef?.environmentId ?? null,
+    AuthPreviewOperateScope,
+  );
   const openExternalLinkInPreview = useCallback(
     (url: string) => {
-      if (!threadRef) {
+      if (!threadRef || !canOperatePreview) {
         return Promise.resolve(
           AsyncResult.failure<void, BrowserPreviewUnavailableError>(
             Cause.fail(
-              new BrowserPreviewUnavailableError({ message: "Thread context is unavailable." }),
+              new BrowserPreviewUnavailableError({
+                message: "Preview access is unavailable for this client.",
+              }),
             ),
           ),
         );
@@ -63,7 +73,7 @@ export function useExternalLinkContextMenu(threadRef?: ScopedThreadRef) {
         return result;
       });
     },
-    [openPreview, threadRef],
+    [canOperatePreview, openPreview, threadRef],
   );
   const onContextMenu = useCallback(
     (event: MouseEvent<HTMLElement>, href: string) => {
@@ -84,7 +94,7 @@ export function useExternalLinkContextMenu(threadRef?: ScopedThreadRef) {
               : undefined;
       void showExternalLinkContextMenu({
         href,
-        canOpenInPreview: Boolean(threadRef) && isPreviewSupportedInRuntime(),
+        canOpenInPreview: canOperatePreview && Boolean(threadRef) && isPreviewSupportedInRuntime(),
         threadLinkAction,
         position: { x: event.clientX, y: event.clientY },
         showContextMenu: (items, position) => api.contextMenu.show(items, position),
@@ -125,7 +135,7 @@ export function useExternalLinkContextMenu(threadRef?: ScopedThreadRef) {
         },
       });
     },
-    [canOperateHost, openExternalLinkInPreview, pullRequestLinking, threadRef],
+    [canOperateHost, canOperatePreview, openExternalLinkInPreview, pullRequestLinking, threadRef],
   );
   return { onContextMenu, openExternalLinkInPreview };
 }

@@ -1,15 +1,16 @@
 "use client";
 
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
-import { FILL_PREVIEW_VIEWPORT } from "@t3tools/contracts";
+import { AuthPreviewOperateScope, FILL_PREVIEW_VIEWPORT } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { useEffect, useMemo } from "react";
+import { type ComponentProps, useEffect, useMemo } from "react";
 
 import { primaryEnvironmentIdAtom } from "~/state/primaryEnvironment";
 
 import { isElectron } from "~/env";
 import { useTheme } from "~/hooks/useTheme";
 import { useActivePreviewSessions } from "~/previewStateStore";
+import { useEnvironmentScope } from "~/state/session";
 
 import { readPreviewAnnotationTheme } from "./annotationTheme";
 import { useBrowserPointerStore } from "./browserPointerStore";
@@ -100,7 +101,7 @@ export function ElectronBrowserHost() {
         ({ threadRef, snapshot, runtimeTabId, pictureInPicture, zoomFactor, viewportFallback }) => {
           const url = snapshot.navStatus._tag === "Idle" ? null : snapshot.navStatus.url;
           return (
-            <HostedBrowserWebview
+            <AuthorizedBrowserWebview
               key={runtimeTabId}
               threadRef={threadRef}
               tabId={snapshot.tabId}
@@ -126,4 +127,12 @@ export function ElectronBrowserHost() {
       )}
     </div>
   );
+}
+
+function AuthorizedBrowserWebview(props: ComponentProps<typeof HostedBrowserWebview>) {
+  const canOperatePreview = useEnvironmentScope(
+    props.threadRef.environmentId,
+    AuthPreviewOperateScope,
+  );
+  return canOperatePreview ? <HostedBrowserWebview {...props} /> : null;
 }
