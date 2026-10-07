@@ -1,9 +1,11 @@
 import {
   AuthEnvironmentMaintainScope,
+  AuthFilesystemReadScope,
   AuthProvidersManageScope,
   AuthSettingsWriteScope,
   DEFAULT_SERVER_SETTINGS,
   ProviderInstanceId,
+  ProjectId,
   ThreadId,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
@@ -299,5 +301,52 @@ it.effect("requires task permission before attaching a prepared worktree to a th
       }).pipe(Effect.flip),
     ).toMatchObject({ requiredScope: AuthOrchestrationOperateScope });
     expect(handled).toBe(false);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("separates host file URLs from readable attachment URLs", () =>
+  Effect.gen(function* () {
+    const group = WsRpcGroup.omit(
+      ...[...WsRpcGroup.requests.keys()].filter(
+        (
+          tag,
+        ): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, typeof WS_METHODS.assetsCreateUrl> =>
+          tag !== WS_METHODS.assetsCreateUrl,
+      ),
+    );
+    let handled = 0;
+    const client = yield* RpcTest.makeClient(group).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          group.toLayerHandler(WS_METHODS.assetsCreateUrl, () =>
+            Effect.sync(() => {
+              handled++;
+              return { relativeUrl: "/api/assets/file", expiresAt: 1 };
+            }),
+          ),
+          RpcAuthorization.layer([AuthOrchestrationReadScope]),
+        ),
+      ),
+    );
+    yield* client[WS_METHODS.assetsCreateUrl]({
+      resource: { _tag: "attachment", attachmentId: "image" },
+    });
+    for (const resource of [
+      { _tag: "workspace-file", threadId: ThreadId.make("thread"), path: "file.txt" },
+      { _tag: "media-file", threadId: ThreadId.make("thread"), path: "/repo/image.png" },
+      { _tag: "draft-workspace-file", cwd: "/repo", path: "file.txt" },
+      {
+        _tag: "pull-request-file",
+        projectId: ProjectId.make("project"),
+        repository: "example/repo",
+        number: 1,
+        path: "docs/image.png",
+      },
+    ] as const) {
+      expect(
+        yield* client[WS_METHODS.assetsCreateUrl]({ resource }).pipe(Effect.flip),
+      ).toMatchObject({ requiredScope: AuthFilesystemReadScope });
+    }
+    expect(handled).toBe(1);
   }).pipe(Effect.scoped),
 );

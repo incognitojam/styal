@@ -14,7 +14,7 @@ import {
 } from "../lib/composerImages";
 import { resolveOwnedComposerAttachmentFileUri } from "../lib/composerAttachmentFiles";
 import { VideoAttachmentTile } from "./VideoAttachmentTile";
-import type { MediaActionsSource } from "../lib/mediaActions";
+import type { MediaActionsSource } from "../lib/mediaActionsSource";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   retryComposerAttachmentUpload,
