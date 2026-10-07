@@ -204,7 +204,7 @@ describe("orderDiffFiles", () => {
     ]);
   });
 
-  it("reads a fixture after the tests, even when every source file waits on an import", () => {
+  it("reads a fixture after the tests, not among the source", () => {
     expect(
       order([
         file("src/testkit/fixtures/plan/transcript.ndjson"),
