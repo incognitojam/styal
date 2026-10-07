@@ -551,7 +551,7 @@ features:
   - id: composer-draft-sync
     title: Cross-device composer draft synchronization
     status: maintained
-    prs: [23, 39, 44, 69, 195]
+    prs: [23, 39, 44, 69, 195, 657]
     invariants:
       - Mobile pending messages stay visible through upload and acknowledgment; editing persists their text and attachments into the existing draft before removing the queued copy.
       - Existing-thread draft text and settings synchronize without overwriting newer local edits; attachments remain client-owned and are not synchronized across devices.
