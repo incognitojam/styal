@@ -58,10 +58,13 @@ Set **Auto-compact after** in the Claude provider settings to an integer between
 window. Leave it empty for Claude Code's default.
 
 You can also send `/compact` in an existing conversation. Web and desktop offer
-**Compact context** from the context meter and may suggest it when you return to
-a large older thread. Neither clears a message you are drafting in the composer.
-See [commands and skills](./composer.md#commands-and-skills) for using composer
-commands.
+**Compact context** from the context meter, which does not clear a message you
+are drafting in the composer. When you return to a large thread after more than
+an hour, the send button changes to **Compact and send**: Enter summarizes the
+history first, then sends your message. To keep the full history for that
+message, open the menu next to the button and choose **Send with full
+history**. See [commands and skills](./composer.md#commands-and-skills) for using
+composer commands.
 
 ## Usage limits
 

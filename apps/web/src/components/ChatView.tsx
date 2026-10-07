@@ -45,7 +45,6 @@ import { usageLimitsBannerItem } from "./chat/ComposerUsageLimits";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import { encodeTerminalScriptPaste } from "../terminal/scriptPaste";
 import * as Schema from "effect/Schema";
-import { Minimize2Icon } from "lucide-react";
 import {
   questionAttachmentDraftId,
   questionAttachmentDraftPrefix,
@@ -506,6 +505,8 @@ import {
 } from "./chat/QueuedRunsControl";
 import { useLinkedThreadPullRequest } from "./ThreadStatusIndicators";
 import type { ComposerBannerStackItem } from "./chat/ComposerBannerStack";
+import { ThreadStatusLine } from "./chat/ThreadStatusLine";
+import { formatRelativeTimeLabel, formatRelativeTimeUntilLabel } from "../timestampFormat";
 import { ComposerSurface } from "./chat/ComposerSurface";
 import { resolveThreadSyncPhase } from "../threadSync";
 import {
@@ -516,7 +517,6 @@ import {
 import { resumesClaudeSession } from "./chat/claudeSessionResume";
 import {
   deriveLatestContextWindowSnapshot,
-  formatContextWindowTokens,
   latestProviderTurnTokenUsage,
 } from "../lib/contextWindow";
 import { EMPTY_TURN_SUMMARIES, threadUsageView } from "@t3tools/shared/turnUsage";
@@ -7793,73 +7793,61 @@ export default function ChatView(props: ChatViewProps) {
     isStoppingBackgroundWork,
     onOpenRelatedThread,
   ]);
-  // A woken thread announces itself in the open view, not just the sidebar
-  // pill. Dismissing marks the wake as seen (same acknowledgment as the
-  // pill); sending a message clears it as a side effect of the send path.
-  const wokeThreadBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
-    if (!activeThreadWokeVisible) {
-      return null;
-    }
-    return {
-      id: `thread-woke:${activeThread?.id ?? "unknown"}`,
-      variant: "info",
-      icon: <AlarmClockIcon />,
-      title: "Thread woke from snooze",
-      description: "Send a message to continue",
-      dismissLabel: "Dismiss Woke notification",
-      onDismiss: acknowledgeActiveThreadWoke,
-    };
-  }, [acknowledgeActiveThreadWoke, activeThread?.id, activeThreadWokeVisible]);
-  const parkedThreadBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
-    if (!activeThreadSnoozed && !activeThreadSettled) {
-      return null;
-    }
-    const isSnoozed = activeThreadSnoozed;
-    return {
-      id: `thread-${isSnoozed ? "snoozed" : "settled"}:${activeThread?.id ?? "unknown"}`,
-      variant: "info",
-      icon: isSnoozed ? <AlarmClockIcon /> : <CheckCircle2Icon />,
-      title: `This thread is ${isSnoozed ? "snoozed" : "settled"}`,
-      description: `Send a message to ${isSnoozed ? "wake" : "unsettle"}`,
-      actions: (
-        <Button
-          size="xs"
-          variant="ghost"
-          disabled={!canOperateThread || (isSnoozed ? isUnsnoozing : isUnsettling)}
-          onClick={() =>
-            void (isSnoozed ? handleUnsnoozeActiveThread() : handleUnsettleActiveThread())
-          }
-        >
-          {isSnoozed
-            ? isUnsnoozing
-              ? "Waking..."
-              : "Wake now"
-            : isUnsettling
-              ? "Un-settling..."
-              : "Un-settle"}
-        </Button>
-      ),
-    };
+  // Settled, snoozed, and woke are thread state, not composer actions: each
+  // gets one quiet line after the last message instead of a banner. A woken
+  // thread announces itself here, not just in the sidebar pill. Dismissing
+  // marks the wake as seen (same acknowledgment as the pill); sending a
+  // message clears it as a side effect of the send path.
+  // Memoized: it is the timeline's list footer, and a new element re-renders that footer.
+  // nowMinute keeps the relative time fresh.
+  const threadStatusLine = useMemo(() => {
+    void nowMinute;
+    return activeThreadSnoozed ? (
+      <ThreadStatusLine
+        icon={<AlarmClockIcon />}
+        label={
+          activeThreadShell?.snoozedUntil
+            ? `Snoozed, ${formatRelativeTimeUntilLabel(activeThreadShell.snoozedUntil)}`
+            : "Snoozed"
+        }
+        actionLabel={isUnsnoozing ? "Waking..." : "Wake now"}
+        actionDisabled={!canOperateThread || isUnsnoozing}
+        onAction={() => void handleUnsnoozeActiveThread()}
+      />
+    ) : activeThreadSettled ? (
+      <ThreadStatusLine
+        icon={<CheckCircle2Icon />}
+        label={
+          activeThreadShell?.settledAt
+            ? `Settled ${formatRelativeTimeLabel(activeThreadShell.settledAt)}`
+            : "Settled"
+        }
+        actionLabel={isUnsettling ? "Un-settling..." : "Un-settle"}
+        actionDisabled={!canOperateThread || isUnsettling}
+        onAction={() => void handleUnsettleActiveThread()}
+      />
+    ) : activeThreadWokeVisible ? (
+      <ThreadStatusLine
+        icon={<AlarmClockIcon />}
+        label="Woke from snooze"
+        actionLabel="Dismiss"
+        onAction={acknowledgeActiveThreadWoke}
+      />
+    ) : null;
   }, [
-    activeThread?.id,
+    acknowledgeActiveThreadWoke,
     activeThreadSettled,
+    activeThreadShell?.settledAt,
+    activeThreadShell?.snoozedUntil,
     activeThreadSnoozed,
+    activeThreadWokeVisible,
     canOperateThread,
-    handleUnsnoozeActiveThread,
     handleUnsettleActiveThread,
-    isUnsnoozing,
+    handleUnsnoozeActiveThread,
     isUnsettling,
+    isUnsnoozing,
+    nowMinute,
   ]);
-  // Session-scoped dismissals, one key per (thread, snapshot). A set rather
-  // than a single slot so dismissing the banner on one thread does not
-  // resurface it on another thread dismissed earlier.
-  const [dismissedResumeCompactionKeys, setDismissedResumeCompactionKeys] = useState<
-    ReadonlySet<string>
-  >(new Set());
-  const resumeCompactionKey =
-    activeThread && activeContextWindow
-      ? `${activeThread.id}:${activeContextWindow.updatedAt}`
-      : null;
   const activeThreadHasCompactableConversation = serverVisibleTurnItems.some(
     ({ item }) =>
       item.type === "user_message" &&
@@ -7897,81 +7885,44 @@ export default function ChatView(props: ChatViewProps) {
     void sendStandaloneCommand("/compact", "Failed to compact context.");
   };
 
-  const resumeCompactionBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
-    if (
-      !activeThread ||
-      !activeContextWindow ||
-      resumeCompactionKey === null ||
-      dismissedResumeCompactionKeys.has(resumeCompactionKey) ||
-      resumeCompactionPermanentlyDismissed ||
-      nativeResumeCompactionDismissed ||
-      pendingUserInputs.length > 0 ||
-      phase === "running" ||
-      !shouldOfferResumeCompaction({
-        provider: resumesClaudeSession(
-          providerInstanceEntries,
-          activeThread.modelSelection.instanceId,
-          selectedProviderEntry,
-        )
-          ? selectedProvider
-          : null,
-        usedTokens: activeContextWindow.usedTokens,
-        updatedAt: activeContextWindow.updatedAt,
-        now: `${nowMinute}:00.000Z`,
-      })
-    ) {
-      return null;
+  // Tokens a stale Claude session would re-read on its next turn. While set,
+  // Enter compacts first and the composer's send button says so; "Send with
+  // full history" in its menu skips that once. Held queues and multi-model
+  // sends never compact first, so the offer hides for them, as does a switch that
+  // hands off a summary instead of resuming the native Claude session.
+  const resumeCompactionTokens =
+    activeContextWindow &&
+    !resumeCompactionPermanentlyDismissed &&
+    !nativeResumeCompactionDismissed &&
+    !compactDisabled &&
+    !hasHeldQueuedRuns &&
+    multipleModelSelections === null &&
+    activeThread &&
+    shouldOfferResumeCompaction({
+      provider: resumesClaudeSession(
+        providerInstanceEntries,
+        activeThread.modelSelection.instanceId,
+        selectedProviderEntry,
+      )
+        ? selectedProvider
+        : null,
+      usedTokens: activeContextWindow.usedTokens,
+      updatedAt: activeContextWindow.updatedAt,
+      now: `${nowMinute}:00.000Z`,
+    })
+      ? activeContextWindow.usedTokens
+      : null;
+  // Set only for the synchronous span of a "Send with full history" submit;
+  // onSend reads it before its first await.
+  const keepFullHistoryOnceRef = useRef(false);
+  const sendWithFullHistory = useCallback((send: () => void) => {
+    keepFullHistoryOnceRef.current = true;
+    try {
+      send();
+    } finally {
+      keepFullHistoryOnceRef.current = false;
     }
-
-    const dismiss = () =>
-      setDismissedResumeCompactionKeys((keys) => new Set(keys).add(resumeCompactionKey));
-    const compactAction = (
-      <Button
-        size="xs"
-        variant="ghost"
-        disabled={compactDisabled}
-        onClick={() => {
-          if (compactDisabled) return;
-          onCompactContext();
-        }}
-      >
-        Compact
-      </Button>
-    );
-    return {
-      id: `resume-compaction:${resumeCompactionKey}`,
-      variant: "info",
-      icon: <Minimize2Icon />,
-      title: "Resume with less context",
-      description: `${formatContextWindowTokens(activeContextWindow.usedTokens)} tokens from earlier`,
-      actions: compactDisabledReason ? (
-        <Tooltip>
-          <TooltipTrigger render={<span className="inline-flex">{compactAction}</span>} />
-          <TooltipPopup side="top">{compactDisabledReason}</TooltipPopup>
-        </Tooltip>
-      ) : (
-        compactAction
-      ),
-      dismissLabel: "Keep full history",
-      onDismiss: dismiss,
-    };
-  }, [
-    activeContextWindow,
-    activeThread,
-    compactDisabled,
-    compactDisabledReason,
-    dismissedResumeCompactionKeys,
-    nativeResumeCompactionDismissed,
-    nowMinute,
-    onCompactContext,
-    pendingUserInputs.length,
-    phase,
-    providerInstanceEntries,
-    resumeCompactionKey,
-    resumeCompactionPermanentlyDismissed,
-    selectedProvider,
-    selectedProviderEntry,
-  ]);
+  }, []);
   const handleRestoreThreadBranch = useCallback(() => {
     if (!canWriteSourceControl) return;
     if (gitStatusQuery.data?.hasWorkingTreeChanges) {
@@ -8023,10 +7974,6 @@ export default function ChatView(props: ChatViewProps) {
     const backgroundWorkItems = [goalBannerItem, backgroundWorkBannerItem].filter(
       (item) => item !== null,
     );
-    const resumeCompactionItems =
-      resumeCompactionBannerItem === null ? [] : [resumeCompactionBannerItem];
-    const wokeThreadItems = wokeThreadBannerItem === null ? [] : [wokeThreadBannerItem];
-    const parkedThreadItems = parkedThreadBannerItem === null ? [] : [parkedThreadBannerItem];
     // The user asked for this one, so it leads the notice tier instead of trailing it.
     const usageLimitsItems = usageLimitsBanner === null ? [] : [usageLimitsBanner];
     const projectCloneItems = projectCloneBannerItem === null ? [] : [projectCloneBannerItem];
@@ -8038,9 +7985,6 @@ export default function ChatView(props: ChatViewProps) {
         ...projectCloneItems,
         ...systemComposerBannerItems,
         ...backgroundWorkItems,
-        ...resumeCompactionItems,
-        ...wokeThreadItems,
-        ...parkedThreadItems,
       ];
     }
     return [
@@ -8050,8 +7994,6 @@ export default function ChatView(props: ChatViewProps) {
       ...projectCloneItems,
       ...systemComposerBannerItems,
       ...backgroundWorkItems,
-      ...resumeCompactionItems,
-      ...wokeThreadItems,
       {
         id: `branch-mismatch:${activeBranchMismatchKey}`,
         variant: "info",
@@ -8090,7 +8032,6 @@ export default function ChatView(props: ChatViewProps) {
           setBranchMismatchDismissTick((tick) => tick + 1);
         },
       },
-      ...parkedThreadItems,
     ];
   }, [
     activeBranchMismatchKey,
@@ -8104,13 +8045,10 @@ export default function ChatView(props: ChatViewProps) {
     backgroundWorkBannerItem,
     goalBannerItem,
     localCheckoutBranchMismatch,
-    parkedThreadBannerItem,
     projectCloneBannerItem,
-    resumeCompactionBannerItem,
     showBranchMismatchBanner,
     systemComposerBannerItems,
     usageLimitsBanner,
-    wokeThreadBannerItem,
   ]);
 
   useEffect(() => {
@@ -8934,6 +8872,7 @@ export default function ChatView(props: ChatViewProps) {
     },
   ) => {
     e?.preventDefault();
+    const keepFullHistory = keepFullHistoryOnceRef.current;
     // Typed out in full rather than picked from the menu. Attachments or contexts
     // mean the user is sending a prompt, so those go through as usual.
     if (
@@ -9482,7 +9421,16 @@ export default function ChatView(props: ChatViewProps) {
     );
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
-    const shouldQueueBehindActiveRun = phase === "running" && dispatchMode === "queue";
+    // A stale Claude session compacts before this message so the turn does not re-read the
+    // old history. The message queues behind the /compact run, since steering into it is
+    // rejected.
+    const compactBeforeSend =
+      resumeCompactionTokens !== null &&
+      !keepFullHistory &&
+      messageTextForSend.toLowerCase() !== "/compact";
+    const turnDispatchMode = compactBeforeSend ? "queue" : dispatchMode;
+    const shouldQueueBehindActiveRun =
+      compactBeforeSend || (phase === "running" && dispatchMode === "queue");
     const outgoingMessageText = formatOutgoingPrompt({
       provider: ctxSelectedProvider,
       model: ctxSelectedModel,
@@ -10069,6 +10017,22 @@ export default function ChatView(props: ChatViewProps) {
       failure = turnAttachmentsResult;
     }
 
+    if (failure === null && compactBeforeSend) {
+      const compactResult = await startThreadTurn({
+        environmentId,
+        input: {
+          threadId: threadIdForSend,
+          message: { messageId: newMessageId(), role: "user", text: "/compact", attachments: [] },
+          modelSelection: ctxSelectedModelSelection,
+          runtimeMode,
+          interactionMode: sendInteractionMode,
+        },
+      });
+      if (compactResult._tag === "Failure") {
+        failure = compactResult;
+      }
+    }
+
     let backgroundDraftOpened = false;
     let turnStartSucceeded = false;
     if (failure === null && turnAttachmentsResult._tag === "Success") {
@@ -10146,7 +10110,7 @@ export default function ChatView(props: ChatViewProps) {
           titleSeed: title,
           runtimeMode,
           interactionMode: sendInteractionMode,
-          dispatchMode,
+          dispatchMode: turnDispatchMode,
           ...(bootstrap ? { bootstrap } : {}),
           ...(composerDraftRevision === undefined ? {} : { composerDraftRevision }),
           createdAt: messageCreatedAt,
@@ -11614,6 +11578,7 @@ export default function ChatView(props: ChatViewProps) {
                 {...(draftId ? { onWorktreeSetupWorkLocally } : {})}
                 {...(onOpenWorktreeSetupTerminal ? { onOpenWorktreeSetupTerminal } : {})}
                 isPreparingWorktree={!paintOnlyDisplayedTimeline && isPreparingWorktree}
+                footer={paintOnlyDisplayedTimeline ? null : threadStatusLine}
                 listRef={legendListRef}
                 timelineEntries={displayedTimeline.entries}
                 providerStatuses={
@@ -11868,6 +11833,8 @@ export default function ChatView(props: ChatViewProps) {
                                 ) : null
                               }
                               bannerItems={composerBannerItems}
+                              resumeCompactionTokens={resumeCompactionTokens}
+                              onSendWithFullHistory={sendWithFullHistory}
                               // With attachments or contexts aboard the pick just inserts the
                               // text, so it sends as a prompt like the typed path would.
                               onUsageLimitsCommand={

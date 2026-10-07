@@ -444,8 +444,8 @@ features:
     status: maintained
     prs: [507]
     invariants:
-      - The web composer offers to compact a Claude thread of at least 100,000 tokens once 60 minutes have passed since its last context update, matching Claude Code's one-hour prompt cache TTL rather than Claude Code's 70-minute resume prompt.
-      - The offer appears only when the next turn resumes the thread's native Claude session; a switch from another provider or to a Claude instance with separate history hands off a summary, so the current usage does not describe it.
+      - The web composer's send button becomes Compact and send for a Claude thread of at least 100,000 tokens once 60 minutes have passed since its last context update, matching Claude Code's one-hour prompt cache TTL rather than upstream's and Claude Code's 70-minute resume threshold.
+      - Compact and send appears only when the next turn resumes the thread's native Claude session; a switch from another provider or to a Claude instance with separate history hands off a summary, so the current usage does not describe it.
     implementation_paths:
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/chat/ContextWindowMeter.logic.ts
