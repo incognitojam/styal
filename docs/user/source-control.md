@@ -171,9 +171,10 @@ For GitHub pull requests:
 - With several remotes, the **Pull requests** page follows the current branch's tracked remote, or
   the default repository when the branch does not track one.
 
-A pull request's changed files open expanded, except lockfiles and very large files, which stay
-folded until you open them. A thread's Files viewer also folds lockfiles and files the repository
-marks `linguist-generated`.
+Changed files in a pull request's Code tab and a thread's diff panel start collapsed. To open them
+expanded, set **Default diff file state** to Expanded in **Settings → General**. Generated files,
+such as lockfiles and files the repository marks `linguist-generated`, still start collapsed until
+you open them.
 
 **Proactive panels** is on by default: a newly linked review opens automatically, and agent work
 that changes files switches to its diff when the turn completes. Turn it off in

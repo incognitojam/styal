@@ -3,10 +3,9 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   applyPullRequestDiffPage,
+  fileDiffFoldDefault,
   isFileDiffCollapsed,
   isLineInFileDiff,
-  PULL_REQUEST_DIFF_AUTO_FOLD_LINE_THRESHOLD,
-  shouldAutoFoldFileDiff,
   toggleFileDiffFoldForViewed,
   type PullRequestDiffSlice,
 } from "./pullRequestDiff.logic";
@@ -98,145 +97,106 @@ describe("isLineInFileDiff", () => {
 });
 
 describe("isFileDiffCollapsed", () => {
-  const NO_OVERRIDES: ReadonlyMap<string, boolean> = new Map();
+  const NO_TOGGLES: ReadonlySet<string> = new Set();
 
   it("opens every file before the reader has touched anything", () => {
-    expect(isFileDiffCollapsed("a.ts", null, NO_OVERRIDES)).toBe(false);
-    expect(isFileDiffCollapsed("b.ts", null, NO_OVERRIDES)).toBe(false);
+    expect(isFileDiffCollapsed("a.ts", null, NO_TOGGLES)).toBe(false);
+    expect(isFileDiffCollapsed("b.ts", null, NO_TOGGLES)).toBe(false);
   });
 
   it("opens every file once the toolbar has asked for it", () => {
-    // Pressing the toolbar clears the reader's per-file overrides, which is why the map is empty.
-    expect(isFileDiffCollapsed("a.ts", "expanded", NO_OVERRIDES)).toBe(false);
-    expect(isFileDiffCollapsed("b.ts", "expanded", NO_OVERRIDES)).toBe(false);
+    // Pressing the toolbar clears the reader's own toggles, which is why the set is empty here.
+    expect(isFileDiffCollapsed("a.ts", "expanded", NO_TOGGLES)).toBe(false);
+    expect(isFileDiffCollapsed("b.ts", "expanded", NO_TOGGLES)).toBe(false);
   });
 
   it("folds every file again on the second press", () => {
-    expect(isFileDiffCollapsed("a.ts", "folded", NO_OVERRIDES)).toBe(true);
-    expect(isFileDiffCollapsed("b.ts", "folded", NO_OVERRIDES)).toBe(true);
+    expect(isFileDiffCollapsed("a.ts", "folded", NO_TOGGLES)).toBe(true);
+    expect(isFileDiffCollapsed("b.ts", "folded", NO_TOGGLES)).toBe(true);
   });
 
   it("keeps a file the reader folded closed as the next slice arrives", () => {
     // The file keys grow with every slice, so the answer for one already folded must not depend
     // on how many of them there are by then.
-    const overrides = new Map([["b.ts", true]]);
-    expect(isFileDiffCollapsed("b.ts", null, overrides)).toBe(true);
-    expect(isFileDiffCollapsed("c.ts", null, overrides)).toBe(false);
+    const toggled = new Set(["b.ts"]);
+    expect(isFileDiffCollapsed("b.ts", null, toggled)).toBe(true);
+    expect(isFileDiffCollapsed("c.ts", null, toggled)).toBe(false);
   });
 
-  it("keeps a later per-file override ahead of either toolbar choice", () => {
-    expect(isFileDiffCollapsed("a.ts", "expanded", new Map([["a.ts", true]]))).toBe(true);
-    expect(isFileDiffCollapsed("a.ts", "folded", new Map([["a.ts", false]]))).toBe(false);
-  });
-
-  it("starts an oversized file folded until the reader opens it", () => {
-    expect(isFileDiffCollapsed("large.ts", null, NO_OVERRIDES, true)).toBe(true);
-    expect(isFileDiffCollapsed("large.ts", null, new Map([["large.ts", false]]), true)).toBe(false);
-  });
-
-  it("lets the toolbar override an oversized file's automatic fold", () => {
-    expect(isFileDiffCollapsed("large.ts", "expanded", NO_OVERRIDES, true)).toBe(false);
-    expect(isFileDiffCollapsed("small.ts", "folded", NO_OVERRIDES, false)).toBe(true);
-  });
-
-  it("does not reverse a manual choice when the automatic default changes", () => {
-    const opened = new Map([["large.ts", false]]);
-    expect(isFileDiffCollapsed("large.ts", null, opened, true)).toBe(false);
-    expect(isFileDiffCollapsed("large.ts", null, opened, false)).toBe(false);
-  });
-});
-
-describe("shouldAutoFoldFileDiff", () => {
-  const fileWithLineCount = (unifiedLineCount: number) =>
-    ({ name: "src/app.ts", unifiedLineCount }) as FileDiffMetadata;
-
-  it("folds only files taller than the automatic limit", () => {
-    expect(
-      shouldAutoFoldFileDiff(fileWithLineCount(PULL_REQUEST_DIFF_AUTO_FOLD_LINE_THRESHOLD), false),
-    ).toBe(false);
-    expect(
-      shouldAutoFoldFileDiff(
-        fileWithLineCount(PULL_REQUEST_DIFF_AUTO_FOLD_LINE_THRESHOLD + 1),
-        false,
-      ),
-    ).toBe(true);
-  });
-
-  it("keeps an oversized file open when it carries a review annotation", () => {
-    expect(
-      shouldAutoFoldFileDiff(
-        fileWithLineCount(PULL_REQUEST_DIFF_AUTO_FOLD_LINE_THRESHOLD + 1),
-        true,
-      ),
-    ).toBe(false);
-  });
-
-  it("folds a file the repository attributes as generated, whatever its name", () => {
-    const attributed = new Set(["src/schema.ts"]);
-    expect(
-      shouldAutoFoldFileDiff(
-        { name: "src/schema.ts", unifiedLineCount: 10 } as FileDiffMetadata,
-        false,
-        attributed,
-      ),
-    ).toBe(true);
-    expect(
-      shouldAutoFoldFileDiff(
-        { name: "src/schema.ts", unifiedLineCount: 10 } as FileDiffMetadata,
-        false,
-      ),
-    ).toBe(false);
-  });
-
-  it("folds a lockfile or build output without requiring it to cross the size limit", () => {
-    expect(
-      shouldAutoFoldFileDiff(
-        { name: "packages/app/bun.lock", unifiedLineCount: 10 } as FileDiffMetadata,
-        false,
-      ),
-    ).toBe(true);
-    expect(
-      shouldAutoFoldFileDiff(
-        { name: "dist/app.js", unifiedLineCount: 10 } as FileDiffMetadata,
-        false,
-      ),
-    ).toBe(true);
-    expect(
-      shouldAutoFoldFileDiff({ name: "bun.lock", unifiedLineCount: 10 } as FileDiffMetadata, true),
-    ).toBe(false);
+  it("still answers to a toggle after either toolbar press", () => {
+    expect(isFileDiffCollapsed("a.ts", "expanded", new Set(["a.ts"]))).toBe(true);
+    expect(isFileDiffCollapsed("a.ts", "folded", new Set(["a.ts"]))).toBe(false);
   });
 });
 
 describe("toggleFileDiffFoldForViewed", () => {
   it("puts a file away when it is ticked off", () => {
-    expect([...toggleFileDiffFoldForViewed("a.ts", true, new Map())]).toEqual([["a.ts", true]]);
+    // Files start expanded, so ticking one off is the case that has somewhere to go.
+    expect([...toggleFileDiffFoldForViewed("a.ts", true, null, new Set())]).toEqual(["a.ts"]);
   });
 
   it("brings a file back when the tick is taken off", () => {
-    expect([...toggleFileDiffFoldForViewed("a.ts", false, new Map([["a.ts", true]]))]).toEqual([
-      ["a.ts", false],
-    ]);
-  });
-
-  it("opens a file that was folded automatically when the tick is taken off", () => {
-    expect([...toggleFileDiffFoldForViewed("large.ts", false, new Map())]).toEqual([
-      ["large.ts", false],
-    ]);
+    expect([...toggleFileDiffFoldForViewed("a.ts", false, null, new Set(["a.ts"]))]).toEqual([]);
   });
 
   it("leaves the fold alone when it already says what the tick does", () => {
-    const folded = new Map([["a.ts", true]]);
-    expect(toggleFileDiffFoldForViewed("a.ts", true, folded)).toBe(folded);
+    const folded = new Set(["a.ts"]);
+    expect(toggleFileDiffFoldForViewed("a.ts", true, null, folded)).toBe(folded);
+  });
+
+  it("moves against whatever the toolbar last asked for", () => {
+    // Everything is open, so ticking a file off has to fold that one against the default.
+    expect([...toggleFileDiffFoldForViewed("a.ts", true, "expanded", new Set())]).toEqual(["a.ts"]);
+    expect(toggleFileDiffFoldForViewed("a.ts", false, "expanded", new Set()).size).toBe(0);
   });
 
   it("touches only the file that was ticked", () => {
-    const overrides = new Map([
-      ["a.ts", true],
-      ["b.ts", true],
-    ]);
-    expect([...toggleFileDiffFoldForViewed("a.ts", false, overrides)]).toEqual([
-      ["a.ts", false],
-      ["b.ts", true],
-    ]);
+    const toggled = new Set(["a.ts", "b.ts"]);
+    expect([...toggleFileDiffFoldForViewed("a.ts", false, null, toggled)]).toEqual(["b.ts"]);
+  });
+});
+
+describe("fileDiffFoldDefault", () => {
+  const NO_ATTRIBUTIONS: ReadonlySet<string> = new Set();
+  const NO_TOGGLES: ReadonlySet<string> = new Set();
+  const collapsedWhenOpening = (path: string, generatedPaths = NO_ATTRIBUTIONS) =>
+    isFileDiffCollapsed(path, fileDiffFoldDefault(path, null, false, generatedPaths), NO_TOGGLES);
+
+  it("folds lockfiles and build output when files open expanded", () => {
+    expect(collapsedWhenOpening("src/app.ts")).toBe(false);
+    expect(collapsedWhenOpening("pnpm-lock.yaml")).toBe(true);
+    expect(collapsedWhenOpening("packages/app/dist/index.js")).toBe(true);
+  });
+
+  it("folds a file the repository attributes as generated, whatever its name", () => {
+    expect(collapsedWhenOpening("src/schema.ts", new Set(["src/schema.ts"]))).toBe(true);
+  });
+
+  it("folds every file when files open collapsed", () => {
+    expect(fileDiffFoldDefault("src/app.ts", null, true, NO_ATTRIBUTIONS)).toBe("folded");
+    expect(fileDiffFoldDefault("pnpm-lock.yaml", null, true, NO_ATTRIBUTIONS)).toBe("folded");
+  });
+
+  it("opens a folded lockfile the reader toggles", () => {
+    const foldDefault = fileDiffFoldDefault("pnpm-lock.yaml", null, false, NO_ATTRIBUTIONS);
+    expect(isFileDiffCollapsed("pnpm-lock.yaml", foldDefault, new Set(["pnpm-lock.yaml"]))).toBe(
+      false,
+    );
+  });
+
+  it("follows the toolbar for generated files once the reader expands or folds everything", () => {
+    expect(fileDiffFoldDefault("pnpm-lock.yaml", "expanded", false, NO_ATTRIBUTIONS)).toBe(
+      "expanded",
+    );
+    expect(fileDiffFoldDefault("src/app.ts", "folded", false, NO_ATTRIBUTIONS)).toBe("folded");
+  });
+
+  it("leaves a folded lockfile alone when ticked and opens it when the tick is taken off", () => {
+    const foldDefault = fileDiffFoldDefault("pnpm-lock.yaml", null, false, NO_ATTRIBUTIONS);
+    const toggled = toggleFileDiffFoldForViewed("pnpm-lock.yaml", false, foldDefault, NO_TOGGLES);
+    expect(isFileDiffCollapsed("pnpm-lock.yaml", foldDefault, toggled)).toBe(false);
+    expect(toggleFileDiffFoldForViewed("pnpm-lock.yaml", true, foldDefault, NO_TOGGLES)).toBe(
+      NO_TOGGLES,
+    );
   });
 });
