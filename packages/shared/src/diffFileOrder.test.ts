@@ -41,9 +41,19 @@ describe("diffFileTier", () => {
     expect(diffFileTier("tests/helpers/app.ts")).toBe("test");
   });
 
+  it("counts fixtures and test harnesses as tests", () => {
+    expect(diffFileTier("src/orchestration/testkit/fixtures/plan/codex_transcript.ndjson")).toBe(
+      "test",
+    );
+    expect(diffFileTier("src/__fixtures__/response.json")).toBe("test");
+    expect(diffFileTier("internal/parser/testdata/input.txt")).toBe("test");
+    expect(diffFileTier("src/testkit/harness.ts")).toBe("test");
+  });
+
   it("treats everything else as source, including files merely named like a directory", () => {
     expect(diffFileTier("src/app.ts")).toBe("source");
     expect(diffFileTier("src/testing.ts")).toBe("source");
+    expect(diffFileTier("src/fixtures.ts")).toBe("source");
     expect(diffFileTier("src/dist.ts")).toBe("source");
   });
 
@@ -191,6 +201,22 @@ describe("orderDiffFiles", () => {
       "src/a.test.ts",
       "dist/a.js",
       "pnpm-lock.yaml",
+    ]);
+  });
+
+  it("reads a fixture after the tests, even when every source file waits on an import", () => {
+    expect(
+      order([
+        file("src/testkit/fixtures/plan/transcript.ndjson"),
+        file("src/adapters/CodexAdapter.ts", ['import { catalog } from "../provider/catalog.ts";']),
+        file("src/adapters/CodexAdapter.test.ts"),
+        file("src/provider/catalog.ts"),
+      ]),
+    ).toEqual([
+      "src/provider/catalog.ts",
+      "src/adapters/CodexAdapter.ts",
+      "src/adapters/CodexAdapter.test.ts",
+      "src/testkit/fixtures/plan/transcript.ndjson",
     ]);
   });
 
