@@ -695,11 +695,11 @@ function ThreadRouteContent(
     () =>
       inspectorMode === null ? null : (
         <ThreadInspectorContentStack
-          Files={FilesInspector}
-          Git={GitInspector}
+          renderFiles={FilesInspector}
+          renderGit={GitInspector}
           mode={inspectorMode}
           resetKeys={[routeThreadIdentity, selectedThreadCwd]}
-          Route={props.renderInspector ? RouteInspector : undefined}
+          renderRoute={props.renderInspector ? RouteInspector : undefined}
         />
       ),
     [
