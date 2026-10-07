@@ -1,5 +1,6 @@
 import {
   AuthEnvironmentMaintainScope,
+  AuthDiagnosticsReadScope,
   AuthFilesystemReadScope,
   AuthProvidersManageScope,
   AuthSettingsWriteScope,
@@ -194,7 +195,17 @@ describe("RPC scope middleware", () => {
     ),
   );
 
-  it.effect("checks each RPC's declared scope before its handler runs", () =>
+  it.effect.each([
+    { scopes: [AuthOrchestrationReadScope], missing: AuthEnvironmentMaintainScope },
+    {
+      scopes: [AuthOrchestrationReadScope, AuthEnvironmentMaintainScope],
+      missing: AuthDiagnosticsReadScope,
+    },
+    {
+      scopes: [AuthOrchestrationReadScope, AuthDiagnosticsReadScope],
+      missing: AuthEnvironmentMaintainScope,
+    },
+  ])("rejects telemetry retry without $missing before its handler runs", ({ scopes, missing }) =>
     Effect.gen(function* () {
       const handled: Array<string> = [];
       const client = yield* RpcTest.makeClient(group).pipe(
@@ -204,7 +215,7 @@ describe("RPC scope middleware", () => {
             group.toLayerHandler(WS_METHODS.serverRetryResourceTelemetry, () =>
               Effect.sync(() => handled.push("retry")).pipe(Effect.andThen(Effect.never)),
             ),
-            RpcAuthorization.layer([AuthOrchestrationReadScope]),
+            RpcAuthorization.layer(scopes),
           ),
         ),
       );
@@ -214,7 +225,7 @@ describe("RPC scope middleware", () => {
         yield* client[WS_METHODS.serverRetryResourceTelemetry]({}).pipe(Effect.flip),
       ).toMatchObject({
         _tag: "EnvironmentAuthorizationError",
-        requiredScope: AuthEnvironmentMaintainScope,
+        requiredScope: missing,
       });
       expect(handled).toEqual([]);
     }).pipe(Effect.scoped),

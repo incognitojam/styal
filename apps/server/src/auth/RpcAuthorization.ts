@@ -12,6 +12,7 @@ import {
   AuthEnvironmentMaintainScope,
   AuthFilesystemReadScope,
   AuthFilesystemWriteScope,
+  AuthDiagnosticsReadScope,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthPreviewOperateScope,
@@ -92,17 +93,19 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverDisableAcpRegistryProvider]: AuthProvidersManageScope,
   [WS_METHODS.serverLogoutAcpRegistry]: AuthProvidersManageScope,
   [WS_METHODS.serverDiscoverSourceControl]: AuthOrchestrationReadScope,
-  [WS_METHODS.serverGetTraceDiagnostics]: AuthOrchestrationReadScope,
-  [WS_METHODS.serverGetProcessDiagnostics]: AuthOrchestrationReadScope,
+  [WS_METHODS.serverGetTraceDiagnostics]: AuthDiagnosticsReadScope,
+  [WS_METHODS.serverGetProcessDiagnostics]: AuthDiagnosticsReadScope,
+  // Load-balancing new threads reads host load; that is part of operating
+  // threads, not of inspecting diagnostics.
   [WS_METHODS.serverGetHostResources]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetHostActivity]: AuthOrchestrationReadScope,
-  [WS_METHODS.serverGetProcessResourceHistory]: AuthOrchestrationReadScope,
-  [WS_METHODS.serverGetResourceTelemetryHistory]: AuthOrchestrationReadScope,
-  [WS_METHODS.serverRetryResourceTelemetry]: AuthEnvironmentMaintainScope,
-  [WS_METHODS.serverGetUsageSummary]: AuthOrchestrationReadScope,
+  [WS_METHODS.serverGetProcessResourceHistory]: AuthDiagnosticsReadScope,
+  [WS_METHODS.serverGetResourceTelemetryHistory]: AuthDiagnosticsReadScope,
+  [WS_METHODS.serverRetryResourceTelemetry]: AuthDiagnosticsReadScope,
+  [WS_METHODS.serverGetUsageSummary]: AuthDiagnosticsReadScope,
   [WS_METHODS.serverPreviewLegacyImport]: AuthOrchestrationReadScope,
   [WS_METHODS.serverImportLegacyData]: AuthOrchestrationOperateScope,
-  [WS_METHODS.serverRefreshUsageRates]: AuthOrchestrationReadScope,
+  [WS_METHODS.serverRefreshUsageRates]: AuthDiagnosticsReadScope,
   [WS_METHODS.serverSignalProcess]: AuthEnvironmentMaintainScope,
   [WS_METHODS.serverReportClientActivity]: AuthOrchestrationReadScope,
   [WS_METHODS.serverReportForkClientUsage]: AuthOrchestrationReadScope,
@@ -167,7 +170,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.subscribeVcsStatus]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeWorktreeSetup]: AuthOrchestrationReadScope,
   [WS_METHODS.worktreeSetupCancel]: AuthOrchestrationOperateScope,
-  [WS_METHODS.subscribeResourceTelemetry]: AuthOrchestrationReadScope,
+  [WS_METHODS.subscribeResourceTelemetry]: AuthDiagnosticsReadScope,
   [WS_METHODS.vcsRefreshStatus]: AuthOrchestrationReadScope,
   [WS_METHODS.gitResolvePullRequest]: AuthOrchestrationReadScope,
   [WS_METHODS.vcsListRefs]: AuthOrchestrationReadScope,
@@ -249,6 +252,9 @@ const requiredScopesForRpcCall = (
   method: string,
   payload: unknown,
 ): ReadonlyArray<AuthEnvironmentScope> => {
+  if (method === WS_METHODS.serverRetryResourceTelemetry) {
+    return [AuthEnvironmentMaintainScope, AuthDiagnosticsReadScope];
+  }
   if (method === WS_METHODS.assetsCreateUrl) {
     const { resource } = Schema.decodeUnknownSync(AssetCreateUrlInput)(payload);
     return [
