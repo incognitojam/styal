@@ -23,6 +23,7 @@ import {
   applySyncedComposerDraftCommon,
   composerDraftsAtom,
   composerDraftsLoadedAtom,
+  getComposerDraftSnapshot,
   type ComposerDraft,
 } from "./use-composer-drafts";
 
@@ -80,8 +81,6 @@ export function useServerComposerDraftSync(threadRef: ScopedThreadRef | null): v
   const draftKey =
     threadRef === null ? null : scopedThreadKey(threadRef.environmentId, threadRef.threadId);
   const draft = draftKey === null ? null : (drafts[draftKey] ?? null);
-  const draftRef = useRef<ComposerDraft | null>(draft);
-  draftRef.current = draft;
   const controllerRef = useRef<ComposerDraftSyncController | null>(null);
 
   useEffect(() => {
@@ -91,8 +90,10 @@ export function useServerComposerDraftSync(threadRef: ScopedThreadRef | null): v
       return;
     }
     const key = draftKey;
+    // Sending clears the atom synchronously, before React necessarily renders it.
+    const readDraft = () => getComposerDraftSnapshot(key);
     const readLocal = () => {
-      const common = commonFromDraft(draftRef.current ?? { text: "", attachments: [] });
+      const common = commonFromDraft(readDraft());
       if (!suppressedPostSendCommon.has(key)) return common;
       const baseline = suppressedPostSendCommon.get(key) ?? null;
       if (composerDraftCommonEquals(common, baseline)) return null;
@@ -102,7 +103,7 @@ export function useServerComposerDraftSync(threadRef: ScopedThreadRef | null): v
     const controller = createComposerDraftSyncController({
       threadId: threadRef.threadId,
       readLocal,
-      canApplyRemote: () => (draftRef.current?.attachments.length ?? 0) === 0,
+      canApplyRemote: () => readDraft().attachments.length === 0,
       applyRemote: (common) => applySyncedComposerDraftCommon(key, common),
       update: async (input) => {
         const result = await composerDraftEnvironment.update.run(appAtomRegistry, {
