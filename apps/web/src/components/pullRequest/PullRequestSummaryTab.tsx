@@ -380,7 +380,7 @@ function CommentGroup({
       className="overflow-hidden rounded-lg border border-border/70 bg-muted/20"
       onOpenChange={onOpenChange}
     >
-      <div className="flex items-center gap-3 pl-3">
+      <div className="flex items-center gap-1 pl-3">
         <div className="flex shrink-0 -space-x-1.5">
           {authors.slice(0, 3).map((actor) => (
             <PullRequestActorLabel
@@ -408,7 +408,7 @@ function CommentGroup({
         </div>
         <CollapsibleTrigger
           aria-label={label}
-          className="group flex min-w-0 flex-1 items-center gap-3 rounded-md py-3 pr-3 text-left hover:bg-muted/30"
+          className="group flex min-w-0 flex-1 items-center gap-3 rounded-md py-3 pr-3 pl-2 text-left hover:bg-muted/30"
         >
           <span className="min-w-0 flex-1 space-y-1">
             <span className="block text-xs font-medium text-foreground/90">{label}</span>
