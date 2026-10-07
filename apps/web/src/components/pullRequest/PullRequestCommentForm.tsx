@@ -1,3 +1,4 @@
+import { useAtomCommand } from "~/state/use-atom-command";
 /**
  * The comment half of the floating composer: a remark on the pull request itself, optionally
  * the one that closes or reopens it. The popover around it belongs to PullRequestComposer.
@@ -6,7 +7,6 @@ import type { EnvironmentId, PullRequestDetailView, PullRequestRef } from "@t3to
 import { SendIcon } from "lucide-react";
 import { useState, type RefObject } from "react";
 
-import { useAtomCommand } from "~/state/use-atom-command";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 
 import { Button } from "../ui/button";
@@ -47,7 +47,9 @@ export function PullRequestCommentForm({
   const setConversationDraft = usePullRequestReviewStore((store) => store.setConversationDraft);
   const clearConversationDraft = usePullRequestReviewStore((store) => store.clearConversationDraft);
   const [submitting, setSubmitting] = useState<"comment" | "close" | "reopen" | null>(null);
-  const postComment = useAtomCommand(pullRequestEnvironment.comment, { reportFailure: false });
+  const postComment = useAtomCommand(pullRequestEnvironment.comment, {
+    reportFailure: false,
+  });
   const followUpAction =
     detail.state === "open" &&
     detail.capabilities.actions.includes("close") &&
