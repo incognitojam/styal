@@ -70,3 +70,4 @@ export * from "./worktreeSetup.ts";
 export * from "./commandOutput.ts";
 export * from "./secretRequest.ts";
 export * from "./forkClientUsage.ts";
+export * from "./clientRpcPermissions.ts";

@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   importThreads: vi.fn(),
   refresh: vi.fn(),
+  canOperate: true,
   candidates: [] as Array<{
     title: string;
     path: string;
@@ -44,6 +45,10 @@ vi.mock("../../onboarding/useProjectScans", () => ({
 vi.mock("../../state/entities", () => ({ readProjects: () => [] }));
 vi.mock("../../state/projects", () => ({ projectEnvironment: { create: "create" } }));
 vi.mock("../../state/agentSessions", () => ({ agentSessionImport: "history" }));
+vi.mock("../../state/session", () => ({
+  useEnvironmentScope: () => mocks.canOperate,
+  readEnvironmentScope: () => mocks.canOperate,
+}));
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: (command: string) => (command === "create" ? mocks.create : mocks.importThreads),
 }));
@@ -58,6 +63,7 @@ describe("setup CLI history importer", () => {
     hooks.reset();
     mocks.create.mockReset();
     mocks.importThreads.mockReset();
+    mocks.canOperate = true;
     mocks.create.mockResolvedValue({ _tag: "Success", value: {} });
     mocks.importThreads.mockResolvedValue({
       _tag: "Success",
@@ -118,6 +124,39 @@ describe("setup CLI history importer", () => {
     expect(mocks.create.mock.calls[1]?.[0].input.projectId).toBe(
       mocks.create.mock.calls[0]?.[0].input.projectId,
     );
+    expect(mocks.create.mock.calls[1]?.[0].input.commandId).toBe(
+      mocks.create.mock.calls[0]?.[0].input.commandId,
+    );
+  });
+  it("keeps the selection and writes nothing without permission to operate the environment", async () => {
+    mocks.canOperate = false;
+    expect((await render().run()).success).toBe(false);
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.importThreads).not.toHaveBeenCalled();
+    expect(render().error).toBe("This connection cannot import projects or thread history.");
+    expect(render().selected).toHaveLength(2);
+  });
+  it("stops before importing history when permission is revoked and retries with the same project", async () => {
+    mocks.candidates = [
+      {
+        title: "new",
+        path: "/demo/new",
+        threadCount: 3,
+        sources: ["codex"],
+        lastActiveAt: new Date().toISOString(),
+        git: { remoteKey: null, repository: null },
+      },
+    ];
+    mocks.create.mockImplementationOnce(async () => {
+      mocks.canOperate = false;
+      return { _tag: "Success", value: {} };
+    });
+    expect((await render().run()).success).toBe(false);
+    expect(mocks.importThreads).not.toHaveBeenCalled();
+    mocks.canOperate = true;
+    expect(render().error).toBe("");
+    expect((await render().run()).success).toBe(true);
+    expect(mocks.importThreads).toHaveBeenCalledTimes(1);
     expect(mocks.create.mock.calls[1]?.[0].input.commandId).toBe(
       mocks.create.mock.calls[0]?.[0].input.commandId,
     );

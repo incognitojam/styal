@@ -1,5 +1,5 @@
 import { useCallback, type MouseEvent } from "react";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope, type ScopedThreadRef } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -22,6 +22,7 @@ import { readLocalApi } from "~/localApi";
 import { isPreviewSupportedInRuntime } from "~/previewStateStore";
 import { readThreadShell } from "~/state/entities";
 import { previewEnvironment } from "~/state/preview";
+import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { writeTextToClipboard } from "./useCopyToClipboard";
 import { usePullRequestLinking } from "./usePullRequestLinking";
@@ -29,6 +30,10 @@ import { usePullRequestLinking } from "./usePullRequestLinking";
 /** Link actions shared by Markdown links and PR chips, scoped to their conversation. */
 export function useExternalLinkContextMenu(threadRef?: ScopedThreadRef) {
   const pullRequestLinking = usePullRequestLinking(threadRef?.environmentId);
+  const canOperateHost = useEnvironmentScope(
+    threadRef?.environmentId ?? null,
+    AuthOrchestrationOperateScope,
+  );
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
   const openExternalLinkInPreview = useCallback(
     (url: string) => {
@@ -69,13 +74,14 @@ export function useExternalLinkContextMenu(threadRef?: ScopedThreadRef) {
       if (!api) return;
       // Read on invocation so a link/unlink elsewhere immediately changes the next menu.
       const thread = threadRef ? readThreadShell(threadRef) : null;
-      const threadLinkAction = !thread
-        ? undefined
-        : pullRequestLinking.isLinked(thread, href)
-          ? "unlink-from-thread"
-          : pullRequestLinking.canLink(href)
-            ? "link-to-thread"
-            : undefined;
+      const threadLinkAction =
+        !thread || !canOperateHost
+          ? undefined
+          : pullRequestLinking.isLinked(thread, href)
+            ? "unlink-from-thread"
+            : pullRequestLinking.canLink(href)
+              ? "link-to-thread"
+              : undefined;
       void showExternalLinkContextMenu({
         href,
         canOpenInPreview: Boolean(threadRef) && isPreviewSupportedInRuntime(),
@@ -96,6 +102,7 @@ export function useExternalLinkContextMenu(threadRef?: ScopedThreadRef) {
             (!linked && !pullRequestLinking.isLinked(readThreadShell(threadRef), target))
           )
             return;
+          if (!readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope)) return;
           await pullRequestLinking.changeLink(threadRef, target, linked);
         },
         reportFailure: (operation, cause) => {
@@ -118,7 +125,7 @@ export function useExternalLinkContextMenu(threadRef?: ScopedThreadRef) {
         },
       });
     },
-    [openExternalLinkInPreview, pullRequestLinking, threadRef],
+    [canOperateHost, openExternalLinkInPreview, pullRequestLinking, threadRef],
   );
   return { onContextMenu, openExternalLinkInPreview };
 }

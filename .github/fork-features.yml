@@ -1044,7 +1044,7 @@ features:
     status: maintained
     prs: [746, 805]
     invariants:
-      - Web, desktop, and mobile clients can authorize an already connected environment as a device host without SSH configuration.
+      - Web, desktop, and mobile clients with settings:write on both environments can authorize an already connected environment as a device host without SSH configuration; devices:operate stays in the legacy wire vocabulary for older clients.
       - Device-only credentials are stored in the source server's secret store and remain usable after client disconnects or server restarts.
       - Peer access is limited to local devices and expires. Removing a host revokes access when the target is reachable; offline removal reports how to revoke the remaining grant. Ordinary client credentials cannot use peer endpoints.
       - Thread and driver sessions are distinct across environments, and agents see other environments' device reservations.

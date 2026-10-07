@@ -23,6 +23,11 @@ const harness = vi.hoisted(() => ({
 }));
 
 vi.mock("~/state/entities", () => ({ readThreadShell: () => harness.thread }));
+vi.mock("~/state/session", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/state/session")>()),
+  readEnvironmentScope: () => true,
+  useEnvironmentScope: () => true,
+}));
 vi.mock("./usePullRequestLinking", () => ({
   usePullRequestLinking: () => ({
     canLink: () => harness.canLink,

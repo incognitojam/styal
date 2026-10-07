@@ -150,6 +150,7 @@ export interface ThreadDetailScreenProps {
   readonly turnUsageByTurnId: ReadonlyMap<string, TurnSummaryView>;
   readonly worktreeSetup?: WorktreeSetupCardProps | null;
   readonly setupWorkingStartedAt?: string | null;
+  readonly canOperateThread: boolean;
   readonly selectedThread: EnvironmentThreadShell;
   readonly contentPresentation: ThreadContentPresentation;
   readonly screenTone: StatusTone;
@@ -1300,6 +1301,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                   >
                     {props.activePendingApproval ? (
                       <PendingApprovalCard
+                        canOperateThread={props.canOperateThread}
                         approval={props.activePendingApproval}
                         respondingApprovalId={props.respondingApprovalId}
                         onRespond={props.onRespondToApproval}
@@ -1312,6 +1314,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                           threadId: props.selectedThread.id,
                         }}
                         workspaceRoot={props.threadCwd}
+                        canOperateThread={props.canOperateThread}
                         pendingUserInput={props.activePendingUserInput}
                         maxHeight={pendingUserInputMaxHeight}
                         collapsed={userInputCollapsed}
@@ -1379,6 +1382,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                 ) : (
                   <>
                     <ThreadComposer
+                      canOperateThread={props.canOperateThread}
                       reportedModelSelection={reportedModelSelection}
                       editorRef={composerEditorRef}
                       draftMessage={props.draftMessage}

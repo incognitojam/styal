@@ -80,6 +80,9 @@ export type ServerAuthSessionMethod = typeof ServerAuthSessionMethod.Type;
 
 export const AuthOrchestrationReadScope = "orchestration:read" as const;
 export const AuthOrchestrationOperateScope = "orchestration:operate" as const;
+export const AuthSettingsWriteScope = "settings:write" as const;
+export const AuthProvidersManageScope = "providers:manage" as const;
+export const AuthEnvironmentMaintainScope = "environment:maintain" as const;
 export const AuthTerminalOperateScope = "terminal:operate" as const;
 export const AuthReviewWriteScope = "review:write" as const;
 export const AuthAccessReadScope = "access:read" as const;
@@ -91,6 +94,9 @@ export const AuthEnvironmentScope = Schema.Literals([
   AuthDeviceOperateScope,
   AuthOrchestrationReadScope,
   AuthOrchestrationOperateScope,
+  AuthSettingsWriteScope,
+  AuthProvidersManageScope,
+  AuthEnvironmentMaintainScope,
   AuthTerminalOperateScope,
   AuthReviewWriteScope,
   AuthAccessReadScope,
@@ -105,6 +111,9 @@ export type AuthEnvironmentScopes = typeof AuthEnvironmentScopes.Type;
 export const AuthStandardClientScopes = [
   AuthOrchestrationReadScope,
   AuthOrchestrationOperateScope,
+  AuthSettingsWriteScope,
+  AuthProvidersManageScope,
+  AuthEnvironmentMaintainScope,
   AuthTerminalOperateScope,
   AuthReviewWriteScope,
   AuthRelayReadScope,
@@ -147,6 +156,8 @@ export const ServerAuthDescriptor = Schema.Struct({
   bootstrapMethods: Schema.Array(ServerAuthBootstrapMethod),
   sessionMethods: Schema.Array(ServerAuthSessionMethod),
   sessionCookieName: TrimmedNonEmptyString,
+  /** Older servers omit this and authorize self-updates with orchestration:operate. */
+  serverUpdateScope: Schema.optionalKey(Schema.Literal(AuthEnvironmentMaintainScope)),
 });
 export type ServerAuthDescriptor = typeof ServerAuthDescriptor.Type;
 
