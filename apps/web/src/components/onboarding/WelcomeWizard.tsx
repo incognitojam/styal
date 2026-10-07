@@ -12,7 +12,12 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { defaultInstanceIdForDriver, ProviderDriverKind, ThreadId } from "@t3tools/contracts";
+import {
+  AuthTerminalOperateScope,
+  defaultInstanceIdForDriver,
+  ProviderDriverKind,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import {
   ArrowRightIcon,
@@ -46,6 +51,7 @@ import { useEnvironments, usePrimaryEnvironment } from "../../state/environments
 import { useEnvironmentShellStatuses, useProjects, useThreadShells } from "../../state/entities";
 import { isOnboardingRelayEnvironment } from "../../onboarding/targetEnvironment.logic";
 import { serverEnvironment } from "../../state/server";
+import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import { terminalEnvironment } from "../../state/terminal";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { connectPairing } from "../../connection/onboarding";
@@ -777,6 +783,7 @@ function ConnectedAgentsStep({
     displayName: string;
     autoStart: boolean;
   } | null>(null);
+  const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
 
   // Re-probe on entry so freshly installed CLIs show up without a manual
   // refresh; harmless when nothing changed (single-flighted per environment).
@@ -810,6 +817,11 @@ function ConnectedAgentsStep({
   return (
     <section>
       <h2 className="mb-2 text-sm font-medium">{machineLabel}</h2>
+      {!canOperateTerminal ? (
+        <p className="mb-2 text-sm text-muted-foreground">
+          This connection cannot control terminals.
+        </p>
+      ) : null}
       <div className="space-y-1.5">
         {primaryAgents.map(({ driver, provider, instanceId }) =>
           driver === "codex" && serverConfig !== null ? (
@@ -824,7 +836,11 @@ function ConnectedAgentsStep({
               }
               terminalOpen={terminalSession?.driver === driver}
               onOpenTerminal={() => {
-                if (provider === undefined) return;
+                if (
+                  provider === undefined ||
+                  !readEnvironmentScope(environmentId, AuthTerminalOperateScope)
+                )
+                  return;
                 void onTerminalSessionChange({
                   terminalId: `onboarding-${driver}-${randomUUID()}`,
                   environmentId,
@@ -851,9 +867,14 @@ function ConnectedAgentsStep({
               driver={driver}
               provider={provider}
               terminalOpen={terminalSession?.driver === driver}
-              terminalAvailable={serverConfig !== null}
+              terminalAvailable={serverConfig !== null && canOperateTerminal}
               onOpenTerminal={() => {
-                if (provider === undefined || serverConfig === null) return;
+                if (
+                  provider === undefined ||
+                  serverConfig === null ||
+                  !readEnvironmentScope(environmentId, AuthTerminalOperateScope)
+                )
+                  return;
                 void onTerminalSessionChange({
                   terminalId: `onboarding-${driver}-${randomUUID()}`,
                   environmentId,
@@ -932,6 +953,7 @@ function OnboardingCodexSetup({
   } | null;
   readonly onAutoStartConsumed: () => void;
 }) {
+  const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
   const update = useAtomCommand(serverEnvironment.updateSettings, "Codex setup settings");
   const instanceId =
     createdAccount?.instanceId ??
@@ -979,7 +1001,7 @@ function OnboardingCodexSetup({
       driver="codex"
       provider={provider}
       terminalOpen={terminalOpen}
-      terminalAvailable
+      terminalAvailable={canOperateTerminal}
       onOpenTerminal={onOpenTerminal}
     />
   ) : (
@@ -1074,6 +1096,7 @@ function AgentInstallTerminal({
 }) {
   const { command, cwd, driver, environmentId, keybindings, providerInstanceId, terminalId } =
     session;
+  const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
   // Same terminal typography preference the thread drawer honors.
   const [advancedTypography] = useLocalStorage(
     TYPOGRAPHY_ADVANCED_STORAGE_KEY,
@@ -1107,6 +1130,10 @@ function AgentInstallTerminal({
 
     setupQueueRef.current = setupQueueRef.current.then(async () => {
       if (activeSetupGenerationRef.current !== generation) return;
+      if (!readEnvironmentScope(environmentId, AuthTerminalOperateScope)) {
+        setSetupState("openFailed");
+        return;
+      }
       const opened = await openTerminal({
         environmentId,
         input: {
@@ -1122,6 +1149,10 @@ function AgentInstallTerminal({
       }
 
       if (activeSetupGenerationRef.current !== generation) return;
+      if (!readEnvironmentScope(environmentId, AuthTerminalOperateScope)) {
+        setSetupState("writeFailed");
+        return;
+      }
 
       const wrote = await writeTerminal({
         environmentId,
@@ -1132,12 +1163,14 @@ function AgentInstallTerminal({
     });
 
     // User-driven exits confirm server-reported activity before unmounting.
-    // Cleanup also releases the PTY after a natural session exit.
+    // Cleanup also releases the PTY after a natural session exit, but only while
+    // this connection still has terminal access; revocation leaves it running.
     return () => {
       if (activeSetupGenerationRef.current === generation) {
         activeSetupGenerationRef.current = null;
       }
       setupQueueRef.current = setupQueueRef.current.then(async () => {
+        if (!readEnvironmentScope(environmentId, AuthTerminalOperateScope)) return;
         await closeTerminal({
           environmentId,
           input: { threadId: AGENT_ONBOARDING_THREAD_ID, terminalId, deleteHistory: true },
@@ -1163,7 +1196,9 @@ function AgentInstallTerminal({
     >
       <div className="flex items-center justify-between border-b border-border/60 bg-background/60 px-3 py-1.5">
         <span className="text-2xs font-medium text-muted-foreground">
-          {setupState === "writeFailed" ? (
+          {!canOperateTerminal ? (
+            "This connection cannot control terminals."
+          ) : setupState === "writeFailed" ? (
             <>
               Run <code className="rounded bg-muted px-1 font-mono">{command}</code> in this
               terminal.
@@ -1178,7 +1213,16 @@ function AgentInstallTerminal({
         </span>
         <div className="flex items-center gap-1">
           {setupState === "openFailed" ? (
-            <Button size="xs" variant="ghost" onClick={() => setSetupAttempt((value) => value + 1)}>
+            <Button
+              size="xs"
+              variant="ghost"
+              disabled={!canOperateTerminal}
+              onClick={() => {
+                if (readEnvironmentScope(environmentId, AuthTerminalOperateScope)) {
+                  setSetupAttempt((value) => value + 1);
+                }
+              }}
+            >
               Retry
             </Button>
           ) : null}
