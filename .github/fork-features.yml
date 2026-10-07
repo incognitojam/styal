@@ -802,11 +802,12 @@ features:
   - id: diff-file-review-order
     title: Order diff files by review relevance
     status: maintained
-    prs: [274, 275, 296]
+    prs: [274, 275, 296, 636, 653]
     invariants:
       - Turn, working-tree, branch, and pull request diffs order source dependencies first, their tests next, and repository-attributed or recognized generated output last across web, desktop, and mobile review surfaces. A working-tree or branch diff too large to load at once loads its files in that tier order, by path within each tier, since their import lines are not known until they load.
       - Test and generated tiers remain visible, generated files start collapsed, and explicit reader fold choices take precedence over automatic classification.
       - One persisted web preference switches the diff panel and pull request Code tab between relevance and alphabetical order.
+    rationale: Upstream orders files by relevance only in the web pull request Code tab, by name patterns alone, without tier labels, collapsed generated files, or a way back to alphabetical order (upstream #6039). The fork moved that ordering into shared code so turn, working-tree, and branch diffs and mobile review read the same way, and lets repository `linguist-generated` attributes mark generated files.
     implementation_paths:
       - .gitattributes
       - apps/mobile/src/features/review/reviewFileVisibility.ts
@@ -846,8 +847,10 @@ features:
       - packages/shared/src/diffFileOrder.test.ts
       - packages/shared/src/generatedFiles.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/10304
+        - https://github.com/pingdotgg/t3code/pull/6039
       retire_when: Upstream applies equivalent shared relevance ordering, repository generated-file attributes, tier presentation, and persisted ordering controls across every review surface.
 
   - id: drive-cli
