@@ -75,9 +75,14 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   as of [revision 5cc99e1](https://github.com/pingdotgg/t3code/tree/5cc99e1c23980d7995a13c47f969b47cb68ed1be),
   checked October 1, 2026.
 - **Forks with an explicit destination.** Cloning a GitHub fork configures its parent remote and lets
-  you choose the default repository for pull requests and issues. The choice stays consistent with
-  the GitHub CLI, while branches that track a remote keep their own repository association.
-  [Source control integrations](./source-control.md).
+  you choose the default repository for pull requests and issues. Adding an existing folder whose
+  remotes point at several GitHub repositories asks the same question, and project settings can
+  change the choice later. It is the setting `gh repo set-default` stores, so T3 Code and the GitHub
+  CLI target the same repository. [Source control integrations](./source-control.md#choose-the-default-repository).
+  Compared with [T3 Code revision 611132c](https://github.com/pingdotgg/t3code/tree/611132c171f3a821bd2e32f22261135cef6330ac),
+  checked October 7, 2026, which does not add a fork's parent when cloning, offers no way to choose
+  the default repository, and links pull requests to a project's `upstream` remote even when the
+  default is another repository.
 - **A dedicated view of required checks.** T3 Code already displays checks and supports auto-merge.
   styal adds a separate Checks tab that identifies checks required by repository policy and shows
   required checks that have not reported yet. When branch rules require current checks, it explains

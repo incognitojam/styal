@@ -8,6 +8,7 @@ import {
 import * as Option from "effect/Option";
 
 import {
+  addProjectDefaultRepositoryChoices,
   buildAddProjectRemoteSourceReadiness,
   buildProjectCreateCommand,
   canCreateProjectInEnvironment,
@@ -66,6 +67,52 @@ describe("repository owner avatars", () => {
         nameWithOwner: "",
       }),
     ).toBeNull();
+  });
+});
+
+describe("default repository choices when adding a checkout", () => {
+  const remote = (remoteName: string, url: string, nameWithOwner: string | null = null) => ({
+    remoteName,
+    url,
+    nameWithOwner,
+    provider: url.includes("github") ? ("github" as const) : ("gitlab" as const),
+  });
+  const fork = remote("origin", "git@github.com:octocat/t3code.git", "octocat/t3code");
+  const parent = remote("upstream", "https://github.com/pingdotgg/t3code", "pingdotgg/t3code");
+
+  it("offers each GitHub repository once, in the order gh ranks their remotes", () => {
+    expect(
+      addProjectDefaultRepositoryChoices({ remotes: [fork, parent], defaultRemoteName: null }),
+    ).toEqual([parent, fork]);
+    // A second remote for the fork collapses into the remote gh ranks higher.
+    const forkAgain = remote("mine", "https://github.com/OctoCat/t3code.git", "OctoCat/t3code");
+    expect(
+      addProjectDefaultRepositoryChoices({
+        remotes: [forkAgain, fork, parent],
+        defaultRemoteName: null,
+      }),
+    ).toEqual([parent, fork]);
+  });
+
+  it("asks nothing once a default is set or only one GitHub repository is named", () => {
+    expect(
+      addProjectDefaultRepositoryChoices({ remotes: [fork, parent], defaultRemoteName: "origin" }),
+    ).toEqual([]);
+    expect(
+      addProjectDefaultRepositoryChoices({
+        remotes: [fork, remote("backup", "https://github.com/octocat/t3code", "octocat/t3code")],
+        defaultRemoteName: null,
+      }),
+    ).toEqual([]);
+    expect(
+      addProjectDefaultRepositoryChoices({
+        remotes: [fork, remote("mirror", "git@gitlab.com:octocat/t3code.git", "octocat/t3code")],
+        defaultRemoteName: null,
+      }),
+    ).toEqual([]);
+    expect(
+      addProjectDefaultRepositoryChoices({ remotes: [fork], defaultRemoteName: null }),
+    ).toEqual([]);
   });
 });
 

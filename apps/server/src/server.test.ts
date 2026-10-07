@@ -164,6 +164,7 @@ import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
+import * as ProcessRunner from "./processRunner.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
@@ -7481,6 +7482,87 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           }),
         ),
       );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("applies a new default repository to the project's identity right away", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({
+        prefix: "t3-ws-default-repository-",
+      });
+      const processRunner = yield* ProcessRunner.ProcessRunner.pipe(
+        Effect.provide(ProcessRunner.layer),
+      );
+      const git = (args: ReadonlyArray<string>) =>
+        processRunner
+          .run({ command: "git", args: ["-C", workspaceRoot, ...args] })
+          .pipe(Effect.orDie);
+      yield* git(["init", "-q"]);
+      yield* git(["remote", "add", "origin", "git@github.com:octocat/t3code.git"]);
+      yield* git(["remote", "add", "upstream", "git@github.com:T3Tools/t3code.git"]);
+
+      const resolver = yield* RepositoryIdentityResolver.make().pipe(
+        Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
+      );
+      const projectId = ProjectId.make("project-default-repository");
+      const dispatched: Array<{ readonly type: string; readonly projectId?: string }> = [];
+
+      yield* buildAppUnderTest({
+        layers: {
+          repositoryIdentityResolver: { resolve: resolver.resolve },
+          projectionSnapshotQuery: {
+            getActiveProjectByWorkspaceRoot: (root) =>
+              Effect.succeed(
+                root === workspaceRoot
+                  ? Option.some({
+                      id: projectId,
+                      title: "t3code",
+                      workspaceRoot,
+                      defaultModelSelection: null,
+                      scripts: [],
+                      createdAt: "2026-01-01T00:00:00.000Z",
+                      updatedAt: "2026-01-01T00:00:00.000Z",
+                      deletedAt: null,
+                    })
+                  : Option.none(),
+              ),
+          },
+          sourceControlRepositoryService: {
+            setDefaultRepository: (input) =>
+              git(["config", `remote.${input.remoteName}.gh-resolved`, "base"]).pipe(
+                Effect.as({ remotes: [], defaultRemoteName: input.remoteName }),
+              ),
+          },
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.sync(() => {
+                dispatched.push({
+                  type: command.type,
+                  ...("projectId" in command ? { projectId: command.projectId } : {}),
+                });
+                return { sequence: dispatched.length };
+              }),
+          },
+        },
+      });
+
+      assert.equal((yield* resolver.resolve(workspaceRoot))?.locator.remoteName, "upstream");
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.sourceControlSetDefaultRepository]({
+            cwd: workspaceRoot,
+            remoteName: "origin",
+          }),
+        ),
+      );
+
+      // Without waiting for the cached identity to expire.
+      const identity = yield* resolver.resolve(workspaceRoot);
+      assert.equal(identity?.canonicalKey, "github.com/octocat/t3code");
+      assert.deepEqual(dispatched, [{ type: "project.meta.update", projectId }]);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

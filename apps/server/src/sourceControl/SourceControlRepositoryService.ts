@@ -557,10 +557,9 @@ export const make = Effect.gen(function* () {
       provider: input.provider,
       parentNameWithOwner,
       protocol: resolveCloneProtocol(input.repository, input.cloneUrl, input.protocol),
-      // `gh repo clone` would pick the parent here, but T3 identifies a
-      // checkout by the remote its branch tracks: pinning the fork keeps
-      // the two agreeing for work on the fork, and choosing the parent
-      // stays one keystroke away for contributing upstream.
+      // `gh repo clone` would pick the parent here. The fork is the
+      // repository the user asked to clone, so it is the default unless the
+      // parent was chosen; either way the pin makes T3 and `gh` agree.
       defaultRepository: input.defaultRepository ?? "cloned",
     }).pipe(
       Effect.tapError((cause) =>

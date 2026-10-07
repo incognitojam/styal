@@ -4,6 +4,8 @@ import type {
   EnvironmentId,
   OrchestrationCommand,
   ProjectId,
+  SourceControlDefaultRepositoryRemote,
+  SourceControlDefaultRepositoryState,
   SourceControlDiscoveryResult,
   SourceControlProviderKind,
   SourceControlRepositoryInfo,
@@ -157,6 +159,39 @@ export function repositoryOwnerAvatarUrl(input: {
     return null;
   }
   return `https://${host}/${owner}.png?size=${input.size ?? 64}`;
+}
+
+// The remotes repository identity prefers when no default is set.
+const PREFERRED_REMOTE_ORDER = ["upstream", "origin"];
+
+function preferredRemoteRank(remoteName: string): number {
+  const index = PREFERRED_REMOTE_ORDER.indexOf(remoteName);
+  return index === -1 ? PREFERRED_REMOTE_ORDER.length : index;
+}
+
+/**
+ * The repositories to offer when an existing checkout is added as a project, one
+ * remote each, in the order repository identity ranks them, so the first is the
+ * one that applies until a default is set. Empty when there is nothing to ask: a
+ * default is already set (`gh repo set-default`), or the remotes name at most
+ * one GitHub repository.
+ */
+export function addProjectDefaultRepositoryChoices(
+  state: SourceControlDefaultRepositoryState,
+): ReadonlyArray<SourceControlDefaultRepositoryRemote> {
+  if (state.defaultRemoteName !== null) return [];
+  const choices = new Map<string, SourceControlDefaultRepositoryRemote>();
+  const ranked = [...state.remotes].sort(
+    (left, right) =>
+      preferredRemoteRank(left.remoteName) - preferredRemoteRank(right.remoteName) ||
+      left.remoteName.localeCompare(right.remoteName),
+  );
+  for (const remote of ranked) {
+    if (remote.provider !== "github" || remote.nameWithOwner === null) continue;
+    const repository = normalizeGitRemoteUrl(remote.url);
+    if (!choices.has(repository)) choices.set(repository, remote);
+  }
+  return choices.size > 1 ? [...choices.values()] : [];
 }
 
 export function sortAddProjectProviderSources(

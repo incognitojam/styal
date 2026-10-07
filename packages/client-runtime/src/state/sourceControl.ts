@@ -1,4 +1,5 @@
 import { WS_METHODS } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
 import { Atom } from "effect/unstable/reactivity";
 
 import {
@@ -16,6 +17,10 @@ export function createSourceControlEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | EnvironmentCacheStore | R, E>,
 ) {
   const commandScheduler = createAtomCommandScheduler();
+  const defaultRepository = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:source-control:default-repository",
+    tag: WS_METHODS.sourceControlGetDefaultRepository,
+  });
   return {
     discovery: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:source-control-discovery",
@@ -25,10 +30,7 @@ export function createSourceControlEnvironmentAtoms<R, E>(
       label: "environment-data:source-control:repository",
       tag: WS_METHODS.sourceControlLookupRepository,
     }),
-    defaultRepository: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "environment-data:source-control:default-repository",
-      tag: WS_METHODS.sourceControlGetDefaultRepository,
-    }),
+    defaultRepository,
     issues: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:source-control:issues",
       tag: WS_METHODS.sourceControlListIssues,
@@ -55,6 +57,10 @@ export function createSourceControlEnvironmentAtoms<R, E>(
       tag: WS_METHODS.sourceControlSetDefaultRepository,
       scheduler: vcsCommandScheduler,
       concurrency: vcsCommandConcurrency,
+      // A new default can move the checkout to another project group, whose
+      // settings rows read the default again; they must not get the old pin.
+      onSuccess: ({ environmentId, input: { cwd } }, registry) =>
+        Effect.sync(() => registry.refresh(defaultRepository({ environmentId, input: { cwd } }))),
     }),
     // Clone-backed project creation. The RPC returns once the project exists
     // and the clone runs in the background; `projectClones` carries progress.

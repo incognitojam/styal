@@ -52,9 +52,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
           return {
             stdout: input.args.includes("rev-parse")
               ? `${rootPath}\n`
-              : input.args.includes("for-each-ref")
-                ? ""
-                : `remote.origin.url ${remoteUrl}\n`,
+              : `remote.origin.url ${remoteUrl}\n`,
             stderr: "",
             code: ChildProcessSpawner.ExitCode(0),
             timedOut: false,
@@ -103,31 +101,15 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       expect(refinements).toBe(1);
       expect(calls).toEqual([
         ["-C", "/repo/packages/web", "rev-parse", "--show-toplevel"],
-        ["-C", "/repo", "for-each-ref", "--format=%(HEAD)%09%(upstream:remotename)", "refs/heads"],
         ["-C", "/repo", "config", "--get-regexp", "^remote\\..*\\.(url|gh-resolved)$"],
-        ["-C", "/repo", "for-each-ref", "--format=%(HEAD)%09%(upstream:remotename)", "refs/heads"],
       ]);
 
       const refreshed = yield* resolver.resolve("/repo/packages/web", { refresh: true });
       expect(refreshed?.rootPath).toBe("/repo/packages/web");
       expect(yield* resolver.resolve("/repo/packages/web")).toEqual(refreshed);
-      expect(calls.slice(4)).toEqual([
+      expect(calls.slice(2)).toEqual([
         ["-C", "/repo/packages/web", "rev-parse", "--show-toplevel"],
-        [
-          "-C",
-          "/repo/packages/web",
-          "for-each-ref",
-          "--format=%(HEAD)%09%(upstream:remotename)",
-          "refs/heads",
-        ],
         ["-C", "/repo/packages/web", "config", "--get-regexp", "^remote\\..*\\.(url|gh-resolved)$"],
-        [
-          "-C",
-          "/repo/packages/web",
-          "for-each-ref",
-          "--format=%(HEAD)%09%(upstream:remotename)",
-          "refs/heads",
-        ],
       ]);
       remoteUrl = "git@ssh.forge.test:team/repo.git";
       const forgejo = yield* resolver.resolve(rootPath, { refresh: true });
@@ -158,9 +140,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
               ? failed
                 ? ""
                 : "/repo\n"
-              : input.args.includes("for-each-ref")
-                ? ""
-                : "remote.origin.url git@github.com:T3Tools/t3code.git\n",
+              : "remote.origin.url git@github.com:T3Tools/t3code.git\n",
             stderr: failed ? "temporary Git failure" : "",
             code: ChildProcessSpawner.ExitCode(failed ? 1 : 0),
             timedOut: false,
@@ -185,7 +165,6 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       expect(calls).toEqual([
         ["-C", "/repo/packages/web", "rev-parse", "--show-toplevel"],
         ["-C", "/repo/packages/web", "rev-parse", "--show-toplevel"],
-        ["-C", "/repo", "for-each-ref", "--format=%(HEAD)%09%(upstream:remotename)", "refs/heads"],
         ["-C", "/repo", "config", "--get-regexp", "^remote\\..*\\.(url|gh-resolved)$"],
       ]);
     }).pipe(Effect.provide(resolverLayer));
@@ -327,7 +306,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 
-  it.effect("follows branch remote changes before gh's selected default", () =>
+  it.effect("ignores the remote the current branch tracks", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const cwd = yield* fileSystem.makeTempDirectoryScoped({
@@ -339,23 +318,21 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       yield* git(cwd, ["config", "user.email", "test@example.com"]);
       yield* git(cwd, ["config", "user.name", "Test User"]);
       yield* git(cwd, ["commit", "--allow-empty", "-m", "Initial commit"]);
-      yield* git(cwd, ["remote", "add", "origin", "git@github.com:T3Tools/t3code.git"]);
-      yield* git(cwd, ["remote", "add", "fork", "git@github.com:julius/t3code.git"]);
-      yield* git(cwd, ["config", "remote.origin.gh-resolved", "base"]);
+      yield* git(cwd, ["remote", "add", "origin", "git@github.com:julius/t3code.git"]);
+      yield* git(cwd, ["remote", "add", "upstream", "git@github.com:T3Tools/t3code.git"]);
+      yield* git(cwd, ["remote", "add", "fork", "git@github.com:octocat/t3code.git"]);
       yield* git(cwd, ["config", "branch.feature/branch-target.remote", "fork"]);
       yield* git(cwd, ["config", "branch.feature/branch-target.merge", "refs/heads/main"]);
 
       const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
       const identity = yield* resolver.resolve(cwd);
+      expect(identity?.locator.remoteName).toBe("upstream");
+      expect(identity?.canonicalKey).toBe("github.com/t3tools/t3code");
 
-      expect(identity?.locator.remoteName).toBe("fork");
-      expect(identity?.canonicalKey).toBe("github.com/julius/t3code");
-
-      yield* git(cwd, ["checkout", "-b", "feature/no-branch-target"]);
-
-      const fallbackIdentity = yield* resolver.resolve(cwd);
-      expect(fallbackIdentity?.locator.remoteName).toBe("origin");
-      expect(fallbackIdentity?.canonicalKey).toBe("github.com/t3tools/t3code");
+      yield* git(cwd, ["config", "remote.origin.gh-resolved", "base"]);
+      const pinnedIdentity = yield* resolver.resolve(cwd, { refresh: true });
+      expect(pinnedIdentity?.locator.remoteName).toBe("origin");
+      expect(pinnedIdentity?.canonicalKey).toBe("github.com/julius/t3code");
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 

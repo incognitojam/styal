@@ -5,6 +5,7 @@ import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
+  addProjectDefaultRepositoryChoices,
   canCreateProjectInEnvironment,
   getCloneDestinationBrowsePath,
   getCloneDestinationPath,
@@ -35,6 +36,7 @@ import {
   type FilesystemBrowseResult,
   type ProjectId,
   type SourceControlCloneDefaultRepository,
+  type SourceControlDefaultRepositoryRemote,
   type SourceControlDiscoveryResult,
   type SourceControlProviderKind,
   type SourceControlRepositoryInfo,
@@ -49,6 +51,7 @@ import {
   ArrowLeftIcon,
   ChartNoAxesColumnIcon,
   CircleDotIcon,
+  ClockIcon,
   CornerLeftUpIcon,
   ExternalLinkIcon,
   FileSearchIcon,
@@ -246,6 +249,43 @@ function RepositoryOwnerAvatar({
   );
 }
 
+// Reads on its own: the palette title sits above the context card, too far
+// away to be read as one sentence with this.
+const DEFAULT_REPOSITORY_GROUP_LABEL = "Where pull requests, issues, and releases go";
+
+/** One repository in a default-repository step, modelled on `gh repo set-default`. */
+function defaultRepositoryChoiceItem(input: {
+  readonly value: string;
+  readonly searchTerms: ReadonlyArray<string>;
+  readonly nameWithOwner: string;
+  readonly remoteName: string;
+  readonly repositoryUrl: string;
+  readonly fallbackIcon: ReactNode;
+  readonly disabled?: boolean;
+  readonly run: () => Promise<void>;
+}): CommandPaletteActionItem {
+  return {
+    kind: "action",
+    value: input.value,
+    searchTerms: input.searchTerms,
+    title: input.nameWithOwner,
+    // The remote name says which repository this is without a sentence.
+    titleTrailingContent: (
+      <span className="ml-auto shrink-0 text-muted-foreground/85 text-xs">{input.remoteName}</span>
+    ),
+    icon: (
+      <RepositoryOwnerAvatar
+        fallback={input.fallbackIcon}
+        nameWithOwner={input.nameWithOwner}
+        repositoryUrl={input.repositoryUrl}
+      />
+    ),
+    keepOpen: true,
+    ...(input.disabled ? { disabled: true } : {}),
+    run: input.run,
+  };
+}
+
 const APPEARANCE_OPTIONS = [
   { mode: "system", label: "System", icon: MonitorIcon },
   { mode: "light", label: "Light", icon: SunIcon },
@@ -350,6 +390,18 @@ type AddProjectCloneFlow =
       readonly repository: SourceControlRepositoryInfo | null;
       readonly remoteUrl: string;
       readonly defaultRepository?: SourceControlCloneDefaultRepository;
+    }
+  /**
+   * An existing checkout stops here when its remotes name several GitHub
+   * repositories and no default is set. Back returns to `query`, the browsed path.
+   */
+  | {
+      readonly step: "checkout-default";
+      readonly environmentId: EnvironmentId;
+      readonly cwd: string;
+      readonly query: string;
+      readonly choices: ReadonlyArray<SourceControlDefaultRepositoryRemote>;
+      readonly pending: boolean;
     };
 
 const REMOTE_PROJECT_SOURCES: ReadonlyArray<AddProjectRemoteSource> = [
@@ -427,7 +479,9 @@ function remoteProjectSourceIcon(source: AddProjectRemoteSource, className: stri
 function remoteProjectInputPlaceholder(flow: AddProjectCloneFlow | null): string | null {
   if (!flow) return null;
   if (flow.step === "confirm") return null;
-  if (flow.step === "default") return "Choose the default repository";
+  if (flow.step === "default" || flow.step === "checkout-default") {
+    return "Choose the default repository";
+  }
   if (flow.source === "url") {
     return "Enter Git clone URL";
   }
@@ -795,6 +849,14 @@ function OpenCommandPaletteDialog(props: {
   const lookupRepository = useAtomQueryRunner(sourceControlEnvironment.repository, {
     reportFailure: false,
   });
+  const readDefaultRepository = useAtomQueryRunner(sourceControlEnvironment.defaultRepository, {
+    reportFailure: false,
+    reportDefect: false,
+    refresh: true,
+  });
+  const writeDefaultRepository = useAtomCommand(sourceControlEnvironment.setDefaultRepository, {
+    reportFailure: false,
+  });
   const loadBrowsePath = useAtomQueryRunner(filesystemEnvironment.browse, {
     reportFailure: false,
     reportDefect: false,
@@ -1144,7 +1206,8 @@ function OpenCommandPaletteDialog(props: {
     browseEnvironment?.serverConfig?.environment.platform.os,
   );
   const isRemoteProjectCloneFlow = addProjectCloneFlow !== null;
-  const isRemoteProjectDefaultStep = addProjectCloneFlow?.step === "default";
+  const isRemoteProjectDefaultStep =
+    addProjectCloneFlow?.step === "default" || addProjectCloneFlow?.step === "checkout-default";
   // Repository/default steps type into a list; other states browse paths.
   const isRemoteProjectPathStep =
     addProjectCloneFlow === null || addProjectCloneFlow.step === "confirm";
@@ -1560,6 +1623,14 @@ function OpenCommandPaletteDialog(props: {
 
   function popView(): void {
     browseNavigation.invalidate();
+    // The checkout's default-repository step sits on the browse view; going
+    // back returns to the path that was being added.
+    if (addProjectCloneFlow?.step === "checkout-default") {
+      setAddProjectCloneFlow(null);
+      setHighlightedItemValue(null);
+      setQuery(addProjectCloneFlow.query);
+      return;
+    }
     setAddProjectCloneFlow(null);
     setIssuePickerEmptyMessage(null);
     if (viewStack.length <= 1) {
@@ -2478,6 +2549,52 @@ function OpenCommandPaletteDialog(props: {
         : allThreadItems,
   });
 
+  const createAndOpenProject = useCallback(
+    async (environmentId: EnvironmentId, cwd: string) => {
+      const projectId = newProjectId();
+      const createResult = await createProject({
+        environmentId,
+        input: {
+          projectId,
+          title: inferProjectTitleFromPath(cwd),
+          workspaceRoot: cwd,
+          createWorkspaceRootIfMissing: true,
+          defaultModelSelection: null,
+        },
+      });
+      if (createResult._tag === "Failure") {
+        if (!isAtomCommandInterrupted(createResult)) {
+          const error = squashAtomCommandFailure(createResult);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Failed to add project",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            }),
+          );
+        }
+        return;
+      }
+
+      const navigationResult = await settlePromise(() =>
+        handleNewThread(scopeProjectRef(environmentId, projectId)),
+      );
+      if (navigationResult._tag === "Failure") {
+        const error = squashAtomCommandFailure(navigationResult);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Failed to add project",
+            description: error instanceof Error ? error.message : "An error occurred.",
+          }),
+        );
+        return;
+      }
+      setOpen(false);
+    },
+    [createProject, handleNewThread, setOpen],
+  );
+
   const handleAddProjectForEnvironment = useCallback(
     async (input: {
       readonly environmentId: EnvironmentId;
@@ -2562,60 +2679,81 @@ function OpenCommandPaletteDialog(props: {
         return;
       }
 
-      const projectId = newProjectId();
-      const createResult = await createProject({
+      // A checkout whose remotes name several GitHub repositories asks which one
+      // is the default before it becomes a project, as a fork clone does. A
+      // server without the default-repository RPC fails the read and skips this.
+      const defaultRepository = await readDefaultRepository({
         environmentId: input.environmentId,
-        input: {
-          projectId,
-          title: inferProjectTitleFromPath(cwd),
-          workspaceRoot: cwd,
-          createWorkspaceRootIfMissing: true,
-          defaultModelSelection: null,
-        },
+        input: { cwd },
       });
-      if (createResult._tag === "Failure") {
-        if (!isAtomCommandInterrupted(createResult)) {
-          const error = squashAtomCommandFailure(createResult);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Failed to add project",
-              description: error instanceof Error ? error.message : "An error occurred.",
-            }),
-          );
-        }
+      const choices =
+        defaultRepository._tag === "Success"
+          ? addProjectDefaultRepositoryChoices(defaultRepository.value)
+          : [];
+      if (choices.length > 0) {
+        setAddProjectCloneFlow({
+          step: "checkout-default",
+          environmentId: input.environmentId,
+          cwd,
+          query: rawCwd,
+          choices,
+          pending: false,
+        });
+        setHighlightedItemValue(null);
+        setQuery("");
         return;
       }
 
-      const navigationResult = await settlePromise(() =>
-        handleNewThread(scopeProjectRef(input.environmentId, projectId)),
-      );
-      if (navigationResult._tag === "Failure") {
-        const error = squashAtomCommandFailure(navigationResult);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Failed to add project",
-            description: error instanceof Error ? error.message : "An error occurred.",
-          }),
-        );
-        return;
-      }
-      setOpen(false);
+      await createAndOpenProject(input.environmentId, cwd);
     },
     [
       handleNewThread,
-      createProject,
+      createAndOpenProject,
       environments,
       navigate,
       primaryEnvironmentId,
       projects,
       providers,
+      readDefaultRepository,
       setOpen,
       clientSettings.sidebarThreadSortOrder,
       threads,
     ],
   );
+
+  /**
+   * Leaves the checkout's default-repository step: pins the chosen remote, or
+   * none for "Decide later", then adds the checkout. A pin that fails to write
+   * still adds the project, since the choice stays available in its settings.
+   */
+  async function chooseCheckoutDefaultRepository(remoteName: string | null): Promise<void> {
+    const flow = addProjectCloneFlow;
+    if (flow?.step !== "checkout-default" || flow.pending) {
+      return;
+    }
+    setAddProjectCloneFlow({ ...flow, pending: true });
+    if (remoteName !== null) {
+      const result = await writeDefaultRepository({
+        environmentId: flow.environmentId,
+        input: { cwd: flow.cwd, remoteName },
+      });
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Default repository not set",
+            description: "Choose it later in the project's settings.",
+          }),
+        );
+      }
+    }
+    await createAndOpenProject(flow.environmentId, flow.cwd);
+    setAddProjectCloneFlow((current) =>
+      current?.step === "checkout-default" && current.cwd === flow.cwd
+        ? { ...current, pending: false }
+        : current,
+    );
+  }
 
   const handleAddProject = useCallback(
     async (rawCwd: string) => {
@@ -2984,6 +3122,14 @@ function OpenCommandPaletteDialog(props: {
   );
 
   const remoteProjectContext = useMemo(() => {
+    if (addProjectCloneFlow?.step === "checkout-default") {
+      return {
+        label: "Folder",
+        title: inferProjectTitleFromPath(addProjectCloneFlow.cwd),
+        description: addProjectCloneFlow.cwd,
+        icon: <FolderIcon className={ITEM_ICON_CLASS} />,
+      };
+    }
     if (addProjectCloneFlow?.step !== "confirm" && addProjectCloneFlow?.step !== "default") {
       return null;
     }
@@ -2992,6 +3138,7 @@ function OpenCommandPaletteDialog(props: {
     const parentNameWithOwner =
       flow.step === "default" ? flow.parentNameWithOwner : flow.repository?.parentNameWithOwner;
     return {
+      label: "Repository",
       title: flow.repository?.nameWithOwner ?? flow.repositoryInput,
       // A fork keeps the same second line across both steps. The clone URL only
       // stands in where the title is not already the repository's full name.
@@ -3005,8 +3152,7 @@ function OpenCommandPaletteDialog(props: {
   /**
    * The fork step, modelled on `gh repo set-default`: pick which repository
    * pull requests, issues, and releases should target once both remotes exist.
-   * The fork leads: it is the repository the user asked to clone, and it keeps
-   * the pin agreeing with the remote a branch on the fork tracks.
+   * The fork leads: it is the repository the user asked to clone.
    */
   const cloneDefaultRepositoryGroups = useMemo((): CommandPaletteView["groups"] => {
     if (addProjectCloneFlow?.step !== "default") {
@@ -3026,35 +3172,72 @@ function OpenCommandPaletteDialog(props: {
     return [
       {
         value: "clone-default-repository",
-        // Reads on its own: the palette title sits above the repository card, too
-        // far away to be read as one sentence with this.
-        label: "Where pull requests, issues, and releases go",
-        items: options.map((option) => ({
-          kind: "action" as const,
-          value: `action:clone-default-repository:${option.choice}`,
-          searchTerms: [option.nameWithOwner, option.choice, option.remoteName],
-          title: option.nameWithOwner,
-          // The remote name says which repository this is without a sentence.
-          titleTrailingContent: (
-            <span className="ml-auto shrink-0 text-muted-foreground/85 text-xs">
-              {option.remoteName}
-            </span>
-          ),
-          icon: (
-            <RepositoryOwnerAvatar
-              fallback={remoteProjectSourceIcon(flow.source, ITEM_ICON_CLASS)}
-              nameWithOwner={option.nameWithOwner}
-              repositoryUrl={flow.repository.url}
-            />
-          ),
-          keepOpen: true,
-          run: async () => {
-            chooseCloneDefaultRepository(option.choice);
-          },
-        })),
+        label: DEFAULT_REPOSITORY_GROUP_LABEL,
+        items: options.map((option) =>
+          defaultRepositoryChoiceItem({
+            value: `action:clone-default-repository:${option.choice}`,
+            searchTerms: [option.nameWithOwner, option.choice, option.remoteName],
+            nameWithOwner: option.nameWithOwner,
+            remoteName: option.remoteName,
+            repositoryUrl: flow.repository.url,
+            fallbackIcon: remoteProjectSourceIcon(flow.source, ITEM_ICON_CLASS),
+            run: async () => {
+              chooseCloneDefaultRepository(option.choice);
+            },
+          }),
+        ),
       },
     ];
     // `chooseCloneDefaultRepository` reads the same flow state this memo keys on.
+  }, [addProjectCloneFlow]);
+
+  /**
+   * The same choice for an existing checkout, over every GitHub repository its
+   * remotes name, first the one that applies without a default. "Decide later"
+   * writes no default; project settings can still change it.
+   */
+  const checkoutDefaultRepositoryGroups = useMemo((): CommandPaletteView["groups"] => {
+    if (addProjectCloneFlow?.step !== "checkout-default") {
+      return [];
+    }
+
+    const flow = addProjectCloneFlow;
+    return [
+      {
+        value: "checkout-default-repository",
+        label: DEFAULT_REPOSITORY_GROUP_LABEL,
+        items: [
+          ...flow.choices.map((remote) =>
+            defaultRepositoryChoiceItem({
+              value: `action:checkout-default-repository:${remote.remoteName}`,
+              searchTerms: [remote.nameWithOwner ?? remote.url, remote.remoteName],
+              nameWithOwner: remote.nameWithOwner ?? remote.url,
+              remoteName: remote.remoteName,
+              repositoryUrl: remote.url,
+              fallbackIcon: <GitHubIcon className={ITEM_ICON_CLASS} />,
+              disabled: flow.pending,
+              run: () => chooseCheckoutDefaultRepository(remote.remoteName),
+            }),
+          ),
+          {
+            kind: "action" as const,
+            value: "action:checkout-default-repository:later",
+            searchTerms: ["decide later", "skip"],
+            title: "Decide later",
+            titleTrailingContent: (
+              <span className="ml-auto shrink-0 text-muted-foreground/85 text-xs">
+                GitHub CLI decides
+              </span>
+            ),
+            icon: <ClockIcon className={ITEM_ICON_CLASS} />,
+            keepOpen: true,
+            ...(flow.pending ? { disabled: true } : {}),
+            run: () => chooseCheckoutDefaultRepository(null),
+          },
+        ],
+      },
+    ];
+    // `chooseCheckoutDefaultRepository` reads the same flow state this memo keys on.
   }, [addProjectCloneFlow]);
 
   let displayedGroups: CommandPaletteView["groups"] = filteredGroups;
@@ -3062,6 +3245,8 @@ function OpenCommandPaletteDialog(props: {
     displayedGroups = [];
   } else if (addProjectCloneFlow?.step === "default") {
     displayedGroups = cloneDefaultRepositoryGroups;
+  } else if (addProjectCloneFlow?.step === "checkout-default") {
+    displayedGroups = checkoutDefaultRepositoryGroups;
   } else if (addProjectCloneFlow?.step === "confirm") {
     displayedGroups = relativePathNeedsActiveProject ? [] : cloneDestinationBrowseGroups;
   } else if (isBrowsing) {
@@ -3094,11 +3279,12 @@ function OpenCommandPaletteDialog(props: {
       ? "Create & Add"
       : "Add";
   const addShortcutLabel = hasHighlightedBrowseItem ? `${submitModifierLabel} Enter` : "Enter";
-  const remoteProjectButtonLabel = addProjectCloneFlow
-    ? addProjectCloneFlow.source === "url"
-      ? "Continue"
-      : "Lookup"
-    : null;
+  const remoteProjectButtonLabel =
+    addProjectCloneFlow && addProjectCloneFlow.step !== "checkout-default"
+      ? addProjectCloneFlow.source === "url"
+        ? "Continue"
+        : "Lookup"
+      : null;
   const isRemoteProjectPending = isRemoteProjectLookingUp || isRemoteProjectCloning;
   const canSubmitRemoteProjectFlow =
     addProjectCloneFlow?.step === "repository" &&
@@ -3482,7 +3668,9 @@ function OpenCommandPaletteDialog(props: {
     >
       {remoteProjectContext ? (
         <div className="p-2 pb-0">
-          <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Repository</div>
+          <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">
+            {remoteProjectContext.label}
+          </div>
           <div className="flex min-h-8 items-center gap-2 rounded-sm px-2 py-1.5">
             {remoteProjectContext.icon}
             <span className="flex min-w-0 flex-1 flex-col">

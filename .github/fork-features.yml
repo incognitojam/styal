@@ -2037,11 +2037,14 @@ features:
 
   - id: pull-request-association-continuity
     title: Keep worktrees associated with the correct pull request
-    status: review-needed
+    status: maintained
     prs: [79, 125]
     invariants:
-      - Repository and pull request identity follow the branch tracking remote or selected GitHub repository without matching a same-named branch from another fork.
-      - Pull request association survives hosted branch pruning.
+      - Repository identity uses the checkout's `gh repo set-default` choice (`remote.<name>.gh-resolved`, including an `owner/repo` value), else `upstream`, then `origin`, then the first remote, and never the remote the current branch tracks.
+      - Pull request association does not match a same-named branch from another fork.
+      - Pull request association survives hosted branch pruning by recovering the head branch from the branch's remote and merge configuration.
+      - A cached repository identity resolves without running git.
+    rationale: Upstream's repository identity follows `upstream`, then `origin`, and ignores `gh repo set-default`, while `gh` and upstream's own GitHub API calls honour it. The fork prefers that default first, so the app and agents running `gh` in the checkout pick the same repository. Identity no longer follows the branch's tracking remote, which disagreed with `gh` and ran git on every lookup. Unlike `gh`, a remote named `github` is not ranked before `origin`.
     implementation_paths:
       - apps/server/src/git/GitManager.ts
       - apps/server/src/project/RepositoryIdentityResolver.ts
@@ -2057,9 +2060,11 @@ features:
         - https://github.com/pingdotgg/t3code/pull/13200
         - https://github.com/pingdotgg/t3code/pull/13689
         - https://github.com/pingdotgg/t3code/pull/14291
+        - https://github.com/pingdotgg/t3code/pull/16321
+        - https://github.com/pingdotgg/t3code/pull/16322
         - https://github.com/pingdotgg/t3code/pull/16353
         - https://github.com/pingdotgg/t3code/pull/9125
-      retire_when: Upstream keeps repository-scoped pull request association correct across multiple remotes and branch pruning.
+      retire_when: Upstream's repository identity honours `gh repo set-default` before `upstream` and `origin`, and upstream keeps pull request association correct across forks and branch pruning.
 
   - id: pull-request-chip-context-menu
     title: Give pull request chips the chat link menu
@@ -2775,8 +2780,9 @@ features:
     prs: [123]
     invariants:
       - Cloning a GitHub fork offers a default repository choice, keeps the fork as `origin`, and adds and fetches the parent as `upstream` without changing non-fork clone behavior, whether the clone blocks or runs in the background.
-      - T3 Code and the GitHub CLI share the selected default through `remote.<name>.gh-resolved`, and web and mobile allow that choice to be inspected, changed, or cleared after cloning.
-      - Branch tracking remotes continue to take precedence for repository identity, while the default repository resolves otherwise ambiguous untracked branches.
+      - Adding an existing folder on web, desktop, or mobile asks for the default repository only when its remotes point at more than one distinct GitHub repository and no default is set, offers each repository once, and lets the user decide later without writing a default.
+      - T3 Code and the GitHub CLI share the selected default through `remote.<name>.gh-resolved`, web and mobile allow that choice to be inspected, changed, or cleared after adding the project, and a change applies to the project's repository identity without waiting for the identity cache.
+    rationale: Upstream has no default-repository choice and does not add a fork's parent remote. The fork asks when cloning a fork and when adding a checkout whose remotes name several GitHub repositories, and stores the answer where `gh repo set-default` does, so the app and agents running `gh` in the checkout pick the same repository. Two remotes for one repository, non-GitHub remotes, and an existing default have nothing to ask.
     implementation_paths:
       - apps/mobile/src/features/projects/AddProjectScreen.tsx
       - apps/mobile/src/features/threads/git/GitDefaultRepositorySheet.tsx
@@ -2784,6 +2790,7 @@ features:
       - apps/server/src/project/RepositoryIdentityResolver.ts
       - apps/server/src/sourceControl/GitHubCli.ts
       - apps/server/src/sourceControl/SourceControlRepositoryService.ts
+      - apps/server/src/ws.ts
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/settings/ProjectSettingsPanel.tsx
       - packages/client-runtime/src/operations/projects.ts
@@ -2796,6 +2803,7 @@ features:
       - apps/server/src/project/RepositoryIdentityResolver.ts
       - apps/server/src/sourceControl/GitHubCli.ts
       - apps/server/src/sourceControl/SourceControlRepositoryService.ts
+      - apps/server/src/ws.ts
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/settings/ProjectSettingsPanel.tsx
       - packages/client-runtime/src/operations/projects.ts
@@ -2805,6 +2813,7 @@ features:
     tests:
       - apps/server/src/project/ProjectCloneTracker.test.ts
       - apps/server/src/project/RepositoryIdentityResolver.test.ts
+      - apps/server/src/server.test.ts
       - apps/server/src/sourceControl/GitHubCli.test.ts
       - apps/server/src/sourceControl/SourceControlRepositoryService.test.ts
       - packages/client-runtime/src/operations/projects.test.ts
@@ -2812,9 +2821,12 @@ features:
     upstream:
       status: tracking
       tracking:
+        - https://github.com/pingdotgg/t3code/pull/14291
         - https://github.com/pingdotgg/t3code/pull/14673
+        - https://github.com/pingdotgg/t3code/pull/16321
+        - https://github.com/pingdotgg/t3code/pull/16322
         - https://github.com/pingdotgg/t3code/pull/16353
-      retire_when: Upstream configures fork and parent remotes with an equivalent cross-client default-repository choice that remains consistent with GitHub CLI resolution and branch tracking.
+      retire_when: Upstream configures fork and parent remotes and offers an equivalent cross-client default-repository choice, on clone and when adding a checkout with several GitHub repositories, that stays consistent with GitHub CLI resolution.
 
   - id: stable-workspace-ports
     title: Assign stable development ports per workspace
