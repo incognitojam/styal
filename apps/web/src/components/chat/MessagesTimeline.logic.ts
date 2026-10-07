@@ -7,6 +7,7 @@ import {
 } from "@t3tools/shared/toolRowPresentation";
 import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
 export { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
+import { isLiveSubagentTurnItem } from "@t3tools/client-runtime/state/subagentRuntime";
 import * as Equal from "effect/Equal";
 import * as DateTime from "effect/DateTime";
 import { shallow } from "zustand/vanilla/shallow";
@@ -834,6 +835,7 @@ interface SupersededAttemptFold {
 function deriveSupersededAttemptFolds(
   timelineEntries: ReadonlyArray<TimelineEntry>,
   unfoldedRunIds: ReadonlySet<RunId>,
+  liveSubagentEntryIds: ReadonlySet<string>,
 ): ReadonlyMap<string, SupersededAttemptFold> {
   const entriesByAttemptId = new Map<RunAttemptId, TimelineEntry[]>();
   for (const entry of timelineEntries) {
@@ -844,6 +846,8 @@ function deriveSupersededAttemptFolds(
       // A published page stays visible, as it does when its turn folds.
       entry.kind === "html-render" ||
       timelineEntryIsPersistentResourceCard(entry) ||
+      // A steer supersedes the attempt but leaves its children running.
+      liveSubagentEntryIds.has(entry.id) ||
       (entry.kind === "work" && entry.entry.itemType === "system_notice")
     ) {
       continue;
@@ -900,6 +904,43 @@ function timelineEntryEndedAt(entry: TimelineEntry): string {
       entry.projectedItem.item.completedAt ?? entry.projectedItem.item.updatedAt,
     );
   return entry.createdAt;
+}
+
+/**
+ * Subagent cards that stay out of their turn's folds. A child can keep working
+ * after its launching turn settles (or its attempt is superseded), and the
+ * waiting footer counts it, so its card stays visible until the child ends.
+ * Adjacent cards from one provider turn render as a single grouped row; the
+ * whole group stays visible while any member is live, so a launch batch never
+ * shows half of its children.
+ */
+function liveSubagentCardEntryIds(entries: ReadonlyArray<TimelineEntry>): ReadonlySet<string> {
+  const visible = new Set<string>();
+  let batch: Array<Extract<TimelineEntry, { kind: "event" }>> = [];
+  const flush = () => {
+    if (batch.length === 0) return;
+    if (batch.some((entry) => isLiveSubagentTurnItem(entry.projectedItem.item))) {
+      for (const entry of batch) visible.add(entry.id);
+    }
+    batch = [];
+  };
+  for (const entry of entries) {
+    if (entry.kind !== "event" || entry.projectedItem.item.type !== "subagent") {
+      flush();
+      continue;
+    }
+    const item = entry.projectedItem.item;
+    const previous = batch.at(-1)?.projectedItem.item;
+    if (
+      previous !== undefined &&
+      (previous.runId !== item.runId || previous.providerTurnId !== item.providerTurnId)
+    ) {
+      flush();
+    }
+    batch.push(entry);
+  }
+  flush();
+  return visible;
 }
 
 /** `runlessKey` stands in for the run of entries that have none. */
@@ -1021,6 +1062,7 @@ function deriveTurnFolds(input: {
   unfoldedRunIds: ReadonlySet<RunId>;
   /** Keeps the latest runless response open; V2 work must not reopen imported turns. */
   runlessWorkActive: boolean;
+  liveSubagentEntryIds: ReadonlySet<string>;
 }): ReadonlyMap<string, TurnFold> {
   const interruptedRunIds = new Set<RunId>();
   for (const entry of input.timelineEntries) {
@@ -1138,10 +1180,11 @@ function deriveTurnFolds(input: {
       if (!isCompaction && index > terminalEntryIndex && !isFoldableTrailingActivity) {
         continue;
       }
-      // Submitted answers and linked resources stay visible after the
-      // surrounding work folds.
+      // Submitted answers, linked resources, and still-working children stay
+      // visible after the surrounding work folds.
       if (
         timelineEntryIsPersistentResourceCard(entry) ||
+        input.liveSubagentEntryIds.has(entry.id) ||
         (entry.kind === "work" && entry.entry.questionAnswer !== undefined) ||
         (entry.kind === "work" && workEntryReviewFindings(entry.entry))
       ) {
@@ -1426,9 +1469,11 @@ export function deriveMessagesTimelineRows(input: {
   );
   const unsettledRunId = deriveUnsettledRunId(input.latestRun ?? null, input.runningRunId ?? null);
   const failedRunIds = failedTimelineRunIds(timelineEntries, input.latestRun ?? null);
+  const liveSubagentEntryIds = liveSubagentCardEntryIds(timelineEntries);
   const supersededFoldsByAnchorEntryId = deriveSupersededAttemptFolds(
     timelineEntries,
     failedRunIds,
+    liveSubagentEntryIds,
   );
   const activeVisualResponseRunIds = deriveActiveVisualResponseRunIds({
     timelineEntries: timelineEntries,
@@ -1447,6 +1492,7 @@ export function deriveMessagesTimelineRows(input: {
       ),
     ),
     runlessWorkActive,
+    liveSubagentEntryIds,
   });
   const collapsedEntryIds = new Set<string>();
   for (const fold of foldsByAnchorEntryId.values()) {
