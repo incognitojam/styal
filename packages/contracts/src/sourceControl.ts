@@ -173,7 +173,7 @@ export type SourceControlRepositoryLookupInput = typeof SourceControlRepositoryL
  * Which repository a fork clone should treat as its default: the repository
  * that was cloned, or the one it was forked from. Mirrors the choice
  * `gh repo set-default` writes, and only applies when the clone is a fork.
- * Omitted means `parent`, which is what `gh repo clone` picks for a fork.
+ * Omitted means `cloned`, although `gh repo clone` picks the parent for a fork.
  */
 export const SourceControlCloneDefaultRepository = Schema.Literals(["cloned", "parent"]);
 export type SourceControlCloneDefaultRepository = typeof SourceControlCloneDefaultRepository.Type;

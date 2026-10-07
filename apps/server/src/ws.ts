@@ -1829,6 +1829,24 @@ const makeWsRpcLayer = (
           .refreshStatus(cwd)
           .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
 
+      /**
+       * Repository identity follows the default repository, so a changed default
+       * applies now rather than when the identity cache expires. Re-emitting the
+       * project at that root carries the new identity to every client.
+       */
+      const refreshRepositoryIdentity = (cwd: string) =>
+        Effect.gen(function* () {
+          yield* repositoryIdentityResolver.resolve(cwd, { refresh: true });
+          const project = yield* projectionSnapshotQuery.getActiveProjectByWorkspaceRoot(cwd);
+          if (Option.isNone(project)) return;
+          const command = yield* normalizeDispatchCommand({
+            type: "project.meta.update",
+            commandId: yield* serverCommandId("default-repository"),
+            projectId: project.value.id,
+          });
+          yield* dispatchNormalizedCommand(command);
+        }).pipe(Effect.ignoreCause({ log: true }));
+
       return WsRpcGroup.of({
         [WS_METHODS.composerDraftUpdate]: (input) =>
           observeRpcEffect(
@@ -3117,7 +3135,9 @@ const makeWsRpcLayer = (
         [WS_METHODS.sourceControlSetDefaultRepository]: (input) =>
           observeRpcEffect(
             WS_METHODS.sourceControlSetDefaultRepository,
-            sourceControlRepositories.setDefaultRepository(input),
+            sourceControlRepositories
+              .setDefaultRepository(input)
+              .pipe(Effect.tap(() => refreshRepositoryIdentity(input.cwd))),
             {
               "rpc.aggregate": "source-control",
             },

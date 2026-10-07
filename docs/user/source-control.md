@@ -86,18 +86,25 @@ For a local Git repository without a remote, **Publish Repository** creates a ho
 adds it as `origin`, and pushes your commits. If there are no commits yet, it creates the remote;
 make your first commit before pushing.
 
-### Clone a GitHub fork
+### Choose the default repository
+
+When a checkout has several remotes, pull requests, issues, and the **Pull requests** page use its
+**default repository**. This is the same setting as `gh repo set-default`, so T3 Code and the
+GitHub CLI, including agents that run `gh` in the checkout, use the same repository. Without a
+default, T3 Code uses the `upstream` remote's repository, or `origin`'s when there is no `upstream`.
+The GitHub CLI picks the same one unless a remote is named `github`.
 
 Cloning a GitHub fork keeps your fork as `origin`, adds the repository it was forked from as
-`upstream`, and asks you to choose the **default repository**. Pull requests, issues, and the
-**Pull requests** page use the default repository. Choose the original project when you are
-cloning to contribute to it.
+`upstream`, and asks you to choose the default repository. Choose the original project when you
+are cloning to contribute to it. Clones from other hosts or a plain Git URL do not get this step.
 
-A branch that tracks a remote belongs to that remote's repository, regardless of the default. To
-change the default later, select the project in the Settings breadcrumb and change **Default
+Adding an existing folder with **Add Project** asks the same question when its remotes point at
+more than one GitHub repository and no default is set. Choose **Decide later** to leave the default
+unset.
+
+To change the default later, select the project in the Settings breadcrumb and change **Default
 repository** in the Project category; a project with several checkouts shows it under each
-checkout. This is the same setting as `gh repo set-default`, so the two stay in agreement. Clones from other hosts or a
-plain Git URL do not get this step.
+checkout.
 
 ## Create a pull request
 
@@ -168,8 +175,8 @@ For GitHub pull requests:
 - On web and desktop, pull request links in descriptions and comments open another tab beside the
   same thread when the linked repository is available in that environment. Cmd/Ctrl-click opens the
   link in your browser.
-- With several remotes, the **Pull requests** page follows the current branch's tracked remote, or
-  the default repository when the branch does not track one.
+- With several remotes, the **Pull requests** page uses the
+  [default repository](#choose-the-default-repository).
 
 Changed files in a pull request's Code tab and a thread's diff panel start collapsed. To open them
 expanded, set **Default diff file state** to Expanded in **Settings → General**. Generated files,

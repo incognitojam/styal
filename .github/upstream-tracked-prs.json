@@ -65,6 +65,10 @@
       "reason": "When a Claude background task or subagent finishes while the agent is idle, the agent wakes and keeps working, but the thread briefly reads as done: the completion sound and notification fire then, and again when the woken turn settles. This keeps the thread working through that handoff (fixes #13625). #14073 fixes the same alert inside the Claude adapter instead; take whichever upstream merges."
     },
     {
+      "pr": 14291,
+      "reason": "Makes upstream's repository identity honour gh repo set-default, which the fork's resolver has done since fork #123, including `owner/repo` values. When it merges, take upstream's version and keep the fork's rule that the branch's tracking remote does not count (ledger pull-request-association-continuity)."
+    },
+    {
       "pr": 14445,
       "reason": "Imported early from its unmerged commits: Claude Haiku 4.5 shows thinking On by default, matching Claude Code, and Claude text generation sends a thinking setting only when one was chosen. When it merges, the queue takes it and must reconcile with that import; the fork's manifest copy was reapplied with its own updatedAt, so expect a conflict there only."
     }

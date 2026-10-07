@@ -16,7 +16,6 @@ import * as ProcessRunner from "../processRunner.ts";
 const DEFAULT_REPOSITORY_IDENTITY_CACHE_CAPACITY = 512;
 const DEFAULT_POSITIVE_CACHE_TTL = Duration.minutes(1);
 const DEFAULT_NEGATIVE_CACHE_TTL = Duration.minutes(1);
-const CACHE_KEY_SEPARATOR = "\0";
 
 export interface RepositoryIdentityResolverOptions {
   readonly cacheCapacity?: number;
@@ -59,12 +58,6 @@ function parseRemoteConfig(stdout: string): {
     : null;
 
   return { remotes, ghDefaultRemote };
-}
-
-function parseCurrentBranchRemoteName(stdout: string): string | null {
-  const current = stdout.split("\n").find((line) => line.startsWith("*\t"));
-  const remoteName = current?.slice(2).trim() ?? "";
-  return remoteName.length > 0 ? remoteName : null;
 }
 
 function pickPrimaryRemote(
@@ -145,11 +138,10 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
   cacheKey: string,
 ): Effect.fn.Return<RepositoryIdentity | null, never, ProcessRunner.ProcessRunner> {
   const processRunner = yield* ProcessRunner.ProcessRunner;
-  const [rootPath = cacheKey, branchRemoteName = ""] = cacheKey.split(CACHE_KEY_SEPARATOR);
   const remoteConfigResult = yield* processRunner
     .run({
       command: "git",
-      args: ["-C", rootPath, "config", "--get-regexp", "^remote\\..*\\.(url|gh-resolved)$"],
+      args: ["-C", cacheKey, "config", "--get-regexp", "^remote\\..*\\.(url|gh-resolved)$"],
       timeoutBehavior: "timedOutResult",
     })
     .pipe(Effect.option);
@@ -158,22 +150,23 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
   }
 
   const { remotes, ghDefaultRemote } = parseRemoteConfig(remoteConfigResult.value.stdout);
+  // Follow `gh`, so the app and agents running `gh` in the checkout agree: the
+  // `gh repo set-default` choice, else upstream, then origin. The remote the
+  // current branch tracks does not count.
   const remote = pickPrimaryRemote(remotes, [
-    branchRemoteName || null,
     ghDefaultRemote?.remoteName ?? null,
     "upstream",
     "origin",
   ]);
   if (!remote) return null;
 
-  const usesBranchRemote = branchRemoteName.length > 0 && remotes.has(branchRemoteName);
   const repositoryPath =
-    !usesBranchRemote && remote.remoteName === ghDefaultRemote?.remoteName
+    remote.remoteName === ghDefaultRemote?.remoteName
       ? (ghDefaultRemote.repositoryPath ?? undefined)
       : undefined;
   return buildRepositoryIdentity({
     ...remote,
-    rootPath,
+    rootPath: cacheKey,
     ...(repositoryPath ? { repositoryPath } : {}),
   });
 });
@@ -225,27 +218,8 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
     "RepositoryIdentityResolver.resolve",
   )(function* (cwd, options) {
     if (options?.refresh) yield* Cache.invalidate(repositoryRootCache, cwd);
-    const rootPath = yield* Cache.get(repositoryRootCache, cwd);
-    if (rootPath === null) return null;
-    // The root is stable across checkouts; the branch's remote is not.
-    const branchRemoteResult = yield* processRunner
-      .run({
-        command: "git",
-        args: [
-          "-C",
-          rootPath,
-          "for-each-ref",
-          "--format=%(HEAD)%09%(upstream:remotename)",
-          "refs/heads",
-        ],
-        timeoutBehavior: "timedOutResult",
-      })
-      .pipe(Effect.option);
-    const branchRemoteName =
-      branchRemoteResult._tag === "Some" && branchRemoteResult.value.code === 0
-        ? parseCurrentBranchRemoteName(branchRemoteResult.value.stdout)
-        : null;
-    const cacheKey = `${rootPath}${CACHE_KEY_SEPARATOR}${branchRemoteName ?? ""}`;
+    const cacheKey = yield* Cache.get(repositoryRootCache, cwd);
+    if (cacheKey === null) return null;
     if (options?.refresh) yield* Cache.invalidate(repositoryIdentityCache, cacheKey);
     return yield* Cache.get(repositoryIdentityCache, cacheKey);
   });

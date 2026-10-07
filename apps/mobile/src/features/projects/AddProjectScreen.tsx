@@ -3,6 +3,7 @@ import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { MaterialButton } from "../../components/MaterialButton";
 import {
+  addProjectDefaultRepositoryChoices,
   addProjectRemoteSourceLabel,
   addProjectRemoteSourcePathHint,
   addProjectRemoteSourceProvider,
@@ -45,6 +46,7 @@ import {
   resolveEnvironmentMachineKind,
   SourceControlRepositoryError,
   type SourceControlCloneDefaultRepository,
+  type SourceControlDefaultRepositoryRemote,
 } from "@t3tools/contracts";
 import {
   CommonActions,
@@ -303,6 +305,52 @@ function SelectedCheckmark(props: { readonly selected: boolean }) {
   }
   return (
     <SymbolView name="checkmark" size={15} tintColorClassName="accent-primary" type="monochrome" />
+  );
+}
+
+/**
+ * The default-repository choice, modelled on `gh repo set-default`: which
+ * repository pull requests, issues, and releases target. Fork clones and
+ * existing checkouts with several GitHub repositories both ask it.
+ */
+function DefaultRepositorySection(props: { readonly children: ReactNode }) {
+  return (
+    <>
+      <SectionTitle>Default repository</SectionTitle>
+      <Text className="px-1 text-xs text-foreground-muted">
+        Where pull requests, issues, and releases go
+      </Text>
+      <ListSection>{props.children}</ListSection>
+    </>
+  );
+}
+
+function DefaultRepositoryRow(props: {
+  readonly nameWithOwner: string;
+  readonly remoteName: string;
+  readonly remoteUrl: string | null;
+  readonly provider: AddProjectRemoteProviderKind;
+  readonly isFirst?: boolean;
+  readonly disabled?: boolean;
+  readonly right?: ReactNode;
+  readonly onPress: () => void;
+}) {
+  return (
+    <ListRow
+      isFirst={props.isFirst}
+      title={props.nameWithOwner}
+      subtitle={props.remoteName}
+      icon={
+        <RepositoryOwnerAvatar
+          nameWithOwner={props.nameWithOwner}
+          provider={props.provider}
+          remoteUrl={props.remoteUrl}
+        />
+      }
+      disabled={props.disabled}
+      {...("right" in props ? { right: props.right } : {})}
+      onPress={props.onPress}
+    />
   );
 }
 
@@ -979,10 +1027,35 @@ function FolderBrowser(props: {
 export function AddProjectLocalFolderScreen(props: { readonly environmentId?: string | string[] }) {
   const environment = useEnvironmentFromParam(props.environmentId);
   const createProject = useCreateProject(environment);
+  const projects = useProjects();
+  const readDefaultRepository = useAtomQueryRunner(sourceControlEnvironment.defaultRepository, {
+    reportFailure: false,
+    reportDefect: false,
+    refresh: true,
+  });
+  const writeDefaultRepository = useAtomCommand(sourceControlEnvironment.setDefaultRepository, {
+    reportFailure: false,
+  });
   const { isBrowseNavigating, navigateToBrowsePath, pathInput, setPathInput } =
     useBrowsePathInput(environment);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A checkout whose remotes name several GitHub repositories, and no default
+  // yet, stops here to choose one before it becomes a project.
+  const [defaultRepositoryPrompt, setDefaultRepositoryPrompt] = useState<{
+    readonly path: string;
+    readonly choices: ReadonlyArray<SourceControlDefaultRepositoryRemote>;
+  } | null>(null);
+
+  const addProject = useCallback(
+    async (path: string) => {
+      const result = await createProject(path);
+      if (result && AsyncResult.isFailure(result)) {
+        setError(errorMessage(Cause.squash(result.cause)));
+      }
+    },
+    [createProject],
+  );
 
   const submitPath = useCallback(async () => {
     if (!environment || isBrowseNavigating || isSubmitting) return;
@@ -998,12 +1071,104 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
     }
 
     setIsSubmitting(true);
-    const result = await createProject(resolved.path);
-    if (result && AsyncResult.isFailure(result)) {
-      setError(errorMessage(Cause.squash(result.cause)));
+    const isExisting =
+      findExistingAddProject({
+        projects,
+        environmentId: environment.environmentId,
+        path: resolved.path,
+      }) !== null;
+    // A server without the default-repository RPC fails the read and skips the choice.
+    const defaultRepository = isExisting
+      ? null
+      : await readDefaultRepository({
+          environmentId: environment.environmentId,
+          input: { cwd: resolved.path },
+        });
+    const choices =
+      defaultRepository !== null && AsyncResult.isSuccess(defaultRepository)
+        ? addProjectDefaultRepositoryChoices(defaultRepository.value)
+        : [];
+    if (choices.length > 0) {
+      setDefaultRepositoryPrompt({ path: resolved.path, choices });
+    } else {
+      await addProject(resolved.path);
     }
     setIsSubmitting(false);
-  }, [createProject, environment, isBrowseNavigating, isSubmitting, pathInput]);
+  }, [
+    addProject,
+    environment,
+    isBrowseNavigating,
+    isSubmitting,
+    pathInput,
+    projects,
+    readDefaultRepository,
+  ]);
+
+  /** Pins the chosen remote, or none for "Decide later", then adds the checkout. */
+  const chooseDefaultRepository = useCallback(
+    async (remoteName: string | null) => {
+      if (!environment || defaultRepositoryPrompt === null || isSubmitting) return;
+      setError(null);
+      setIsSubmitting(true);
+      if (remoteName !== null) {
+        const result = await writeDefaultRepository({
+          environmentId: environment.environmentId,
+          input: { cwd: defaultRepositoryPrompt.path, remoteName },
+        });
+        // The project is still worth adding; the choice stays available later.
+        if (AsyncResult.isFailure(result)) {
+          Alert.alert("Default repository not set", "You can choose it later.");
+        }
+      }
+      await addProject(defaultRepositoryPrompt.path);
+      setIsSubmitting(false);
+    },
+    [addProject, defaultRepositoryPrompt, environment, isSubmitting, writeDefaultRepository],
+  );
+
+  if (environment && defaultRepositoryPrompt !== null) {
+    return (
+      <AddProjectShell title="Local folder">
+        {error ? <ErrorBanner message={error} /> : null}
+        <View className="rounded-[24px] bg-card px-4 py-3">
+          <Text className="text-base font-t3-bold">
+            {inferProjectTitleFromPath(defaultRepositoryPrompt.path)}
+          </Text>
+          <Text className="mt-0.5 text-xs text-foreground-muted" numberOfLines={2}>
+            {defaultRepositoryPrompt.path}
+          </Text>
+        </View>
+        <DefaultRepositorySection>
+          {defaultRepositoryPrompt.choices.map((remote, index) => (
+            <DefaultRepositoryRow
+              key={remote.remoteName}
+              isFirst={index === 0}
+              nameWithOwner={remote.nameWithOwner ?? remote.url}
+              remoteName={remote.remoteName}
+              provider="github"
+              remoteUrl={remote.url}
+              disabled={isSubmitting}
+              onPress={() => void chooseDefaultRepository(remote.remoteName)}
+            />
+          ))}
+          <ListRow
+            title="Decide later"
+            subtitle="GitHub CLI decides"
+            icon={
+              <SymbolView
+                name="clock"
+                size={Platform.OS === "android" ? 24 : 17}
+                tintColorClassName="accent-icon-muted"
+                type="monochrome"
+              />
+            }
+            disabled={isSubmitting}
+            onPress={() => void chooseDefaultRepository(null)}
+          />
+        </DefaultRepositorySection>
+      </AddProjectShell>
+    );
+  }
 
   return (
     <AddProjectShell title="Local folder">
@@ -1194,41 +1359,25 @@ export function AddProjectDestinationScreen(props: {
         </View>
       ) : null}
       {parentRepository && repositoryTitle && provider ? (
-        <>
-          <SectionTitle>Default repository</SectionTitle>
-          <Text className="px-1 text-xs text-foreground-muted">
-            Where pull requests, issues, and releases go
-          </Text>
-          <ListSection>
-            <ListRow
-              isFirst
-              title={repositoryTitle}
-              subtitle="origin"
-              icon={
-                <RepositoryOwnerAvatar
-                  nameWithOwner={repositoryTitle}
-                  provider={provider}
-                  remoteUrl={remoteUrl}
-                />
-              }
-              right={<SelectedCheckmark selected={defaultRepository === "cloned"} />}
-              onPress={() => setDefaultRepository("cloned")}
-            />
-            <ListRow
-              title={parentRepository}
-              subtitle="upstream"
-              icon={
-                <RepositoryOwnerAvatar
-                  nameWithOwner={parentRepository}
-                  provider={provider}
-                  remoteUrl={remoteUrl}
-                />
-              }
-              right={<SelectedCheckmark selected={defaultRepository === "parent"} />}
-              onPress={() => setDefaultRepository("parent")}
-            />
-          </ListSection>
-        </>
+        <DefaultRepositorySection>
+          <DefaultRepositoryRow
+            isFirst
+            nameWithOwner={repositoryTitle}
+            remoteName="origin"
+            provider={provider}
+            remoteUrl={remoteUrl}
+            right={<SelectedCheckmark selected={defaultRepository === "cloned"} />}
+            onPress={() => setDefaultRepository("cloned")}
+          />
+          <DefaultRepositoryRow
+            nameWithOwner={parentRepository}
+            remoteName="upstream"
+            provider={provider}
+            remoteUrl={remoteUrl}
+            right={<SelectedCheckmark selected={defaultRepository === "parent"} />}
+            onPress={() => setDefaultRepository("parent")}
+          />
+        </DefaultRepositorySection>
       ) : null}
       {environment ? (
         <>
