@@ -2152,12 +2152,13 @@ features:
       retire_when: Upstream resolves repository-relative images in pull request descriptions against the pull request head rather than the local workspace.
 
   - id: pull-request-diff-expansion
-    title: Open reviewable pull request diffs by default
-    status: review-needed
-    prs: [105]
+    title: Fold generated files in pull request diffs
+    status: maintained
+    prs: [105, 275]
     invariants:
-      - Ordinary pull request files open expanded, while individually oversized files start folded so one generated or lock file cannot dominate the review scroll.
-      - Annotated files remain open, explicit per-file choices remain stable, and expand or collapse all controls govern files loaded by later pagination.
+      - When the default diff file state is Expanded, the pull request Code tab opens generated files, such as lockfiles and paths the repository marks `linguist-generated`, folded and every other file expanded; Collapsed folds every file.
+      - A per-file toggle, a viewed tick, and Expand all or Collapse all override a generated file's starting fold.
+    rationale: Upstream's default diff file state applies one fold to every file, so with Expanded a lockfile opens at full length in the Code tab, and upstream only sorts generated files last. The fork's thread diff panel already folds generated files under Expanded, so the Code tab matches it. The generated fold is the starting point for each file on top of upstream's set of toggled files, which keeps upstream's viewed-file folding unchanged.
     implementation_paths:
       - apps/web/src/components/pullRequest/PullRequestCodeTab.tsx
       - apps/web/src/components/pullRequest/pullRequestDiff.logic.ts
@@ -2171,8 +2172,9 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/pull/11484
         - https://github.com/pingdotgg/t3code/pull/12190
-        - https://github.com/pingdotgg/t3code/pull/9174
-      retire_when: Upstream provides equivalent review-oriented default expansion with oversized-file protection and stable explicit choices across annotations and pagination.
+        - https://github.com/pingdotgg/t3code/pull/13280
+        - https://github.com/pingdotgg/t3code/pull/16446
+      retire_when: Upstream starts generated files folded in the pull request Code tab when files open expanded, while per-file toggles, viewed ticks, and the expand or collapse all control still override that fold.
 
   - id: pull-request-label-catalogue-cache
     title: Responsive pull request label pickers

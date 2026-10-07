@@ -80,59 +80,58 @@ export function isLineInFileDiff(
 /** What the toolbar last asked of every file at once, null being the reader asking nothing yet. */
 export type DiffFoldOverride = "expanded" | "folded" | null;
 
-/** Past this height, one file stops being a useful part of the surrounding scroll. */
-export const PULL_REQUEST_DIFF_AUTO_FOLD_LINE_THRESHOLD = 1_200;
-
 /**
- * Oversized and generated files stay out of the way, unless a conversation gives the reader a
- * target.
+ * The fold a file starts from, before the reader toggles it: the toolbar's last choice, or else
+ * the saved default. When the saved default opens files, generated files such as lockfiles still
+ * start folded. `generatedPaths` carries the repository's `linguist-generated` attributions.
  */
-export function shouldAutoFoldFileDiff(
-  file: FileDiffMetadata,
-  hasAnnotations: boolean,
-  generatedPaths?: ReadonlySet<string>,
-): boolean {
-  return (
-    !hasAnnotations &&
-    (diffFileTier(file.name ?? file.prevName ?? "", generatedPaths) === "generated" ||
-      file.unifiedLineCount > PULL_REQUEST_DIFF_AUTO_FOLD_LINE_THRESHOLD)
-  );
+export function fileDiffFoldDefault(
+  path: string,
+  foldOverride: DiffFoldOverride,
+  diffFilesCollapsed: boolean,
+  generatedPaths: ReadonlySet<string>,
+): DiffFoldOverride {
+  if (foldOverride !== null) return foldOverride;
+  return diffFilesCollapsed || diffFileTier(path, generatedPaths) === "generated"
+    ? "folded"
+    : "expanded";
 }
 
 /**
  * Whether a file is drawn folded.
  *
- * A diff arrives a slice at a time, so the toolbar's choice is kept as the default that later
- * files inherit. Per-file choices are explicit answers: an annotation can change an oversized
- * file's automatic default without reversing what the reader already chose. Ordinary files start
- * open while individually oversized files start folded.
+ * A diff arrives a slice at a time, so the reader's own choices are kept as the difference from
+ * what the toolbar last said rather than as the set of folded files: a file that has not loaded
+ * yet cannot be in a set, and would otherwise land expanded moments after the reader folded
+ * everything. The caller supplies the saved default until the toolbar overrides it; individual
+ * files can still be toggled independently.
  */
 export function isFileDiffCollapsed(
   fileKey: string,
   foldOverride: DiffFoldOverride,
-  fileFoldOverrides: ReadonlyMap<string, boolean>,
-  autoFolded = false,
+  toggledFileKeys: ReadonlySet<string>,
 ): boolean {
-  const fileOverride = fileFoldOverrides.get(fileKey);
-  if (fileOverride !== undefined) return fileOverride;
-  const foldedByDefault = foldOverride === null ? autoFolded : foldOverride === "folded";
-  return foldedByDefault;
+  const foldedByDefault = foldOverride === "folded";
+  return toggledFileKeys.has(fileKey) ? !foldedByDefault : foldedByDefault;
 }
 
 /**
  * The reader's fold choices after a file was ticked off, or put back.
  *
  * Clearing a file puts it away and un-clearing brings it back, so the tick moves the fold as if
- * the reader had pressed the chevron themselves. The choice is stored as that file's override,
- * which the toolbar clears, so "collapse all" still ticks nothing off.
+ * the reader had pressed the chevron themselves, which keeps folding a difference from what the
+ * toolbar last asked, and so keeps "collapse all" from ticking anything off.
  */
 export function toggleFileDiffFoldForViewed(
   fileKey: string,
   viewed: boolean,
-  fileFoldOverrides: ReadonlyMap<string, boolean>,
-): ReadonlyMap<string, boolean> {
-  if (fileFoldOverrides.get(fileKey) === viewed) return fileFoldOverrides;
-  const next = new Map(fileFoldOverrides);
-  next.set(fileKey, viewed);
+  foldOverride: DiffFoldOverride,
+  toggledFileKeys: ReadonlySet<string>,
+): ReadonlySet<string> {
+  if (isFileDiffCollapsed(fileKey, foldOverride, toggledFileKeys) === viewed)
+    return toggledFileKeys;
+  const next = new Set(toggledFileKeys);
+  if (next.has(fileKey)) next.delete(fileKey);
+  else next.add(fileKey);
   return next;
 }
