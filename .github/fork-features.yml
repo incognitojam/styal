@@ -2183,7 +2183,7 @@ features:
 
   - id: pull-request-linked-extras
     title: Show the current pull request and additional link count
-    status: review-needed
+    status: retiring
     prs: [537, 587]
     invariants:
       - Web and mobile show the current pull request number followed by +1 for one additional unrelated link and +2 for two; a lone link shows its number and stacks show their total layer count.
@@ -2206,7 +2206,7 @@ features:
         - https://github.com/pingdotgg/t3code/pull/11104
         - https://github.com/pingdotgg/t3code/pull/13211
         - https://github.com/pingdotgg/t3code/pull/2829
-      retire_when: Upstream shows the current pull request number and additional unrelated link count on web and mobile while retaining total layer counts for stacks.
+      retire_when: Upstream's pull request badge button and its pull request list tooltip are taken in. The maintainer chose upstream's badge over this label format and the hover-card-only list.
 
   - id: pull-request-live-refresh
     title: Keep open pull request details current
@@ -2485,7 +2485,7 @@ features:
 
   - id: server-restart-continuation-note
     title: Show where a thread continued after a server restart
-    status: review-needed
+    status: maintained
     prs: [515]
     invariants:
       - When restart recovery sends a continuation, the thread records one server-restart.continued activity, timestamped before the send and attached to the turn the provider started for the continued work; background-work continuations record a separate server-restart.background-continued activity.
@@ -2493,6 +2493,7 @@ features:
       - Web and mobile show the restart as a standalone note in the turn's work that is never merged into grouped work rows and stays visible when a folded turn has nothing else to hide, while context compaction keeps its divider; each standalone kind names how clients draw it, so a new kind does not inherit the restart note.
       - A turn opened by a server-restart.continued note with no user message since the previous turn folds together with that turn as one response, with one "Worked for" row and one final answer; the time between the interrupted turn's last entry and the note is left out of that duration; background-work continuations stay separate.
       - While a promptless replacement turn is working, mobile keeps all provider turns since the latest user message unfolded and their assistant footers hidden, matching web; live tool indicators stay scoped to the replacement turn, and a new user message starts a separate response.
+    rationale: Upstream's new orchestrator continues a restarted thread with a visible "Continue where you left off." message that starts a new response. The fork shows the restart as a small note inside the interrupted response, so the work reads as one answer. When the new orchestrator is taken in, web and mobile draw its continuation message as this note.
     implementation_paths:
       - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/lib/threadActivity.ts
@@ -2547,7 +2548,7 @@ features:
 
   - id: server-update-guidance
     title: Match server update instructions to the advertised capability
-    status: review-needed
+    status: maintained
     prs: [351, 623]
     invariants:
       - Normal managed services retain the direct in-app Update action in chat and Connections settings.
@@ -2557,6 +2558,7 @@ features:
       - When thread continuation is requested, the confirmation says a thread will continue only if the same selection the continuation step uses includes it; every other active thread is described as interrupted.
       - Continuation after an update also covers settled threads whose background work (monitors, background shells, subagents) is live; after the restart they receive a prompt to restart that work instead of a promptless turn continuation.
       - A turn the restart cut short is recorded as interrupted before its continuation turn starts, rather than closed as completed when the resumed session reports ready.
+    rationale: Upstream leaves threads asleep after a restart even when their background work, such as a monitor or background shell, was still running. The fork prompts those threads to restart the work after an in-app update, because the update stopped work the user had left running and the restart is usually short. A thread the user settles has no live work to restart, since settling stops its provider session.
     implementation_paths:
       - apps/server/src/environment/HostActivity.ts
       - apps/server/src/serverRuntimeStartup.ts
@@ -3053,12 +3055,12 @@ features:
 
   - id: workspace-thread-organization
     title: Default new threads to isolated worktrees
-    status: review-needed
+    status: maintained
     prs: [199, 271]
     invariants:
       - New threads default to isolated worktrees unless a user explicitly chooses another workspace mode or the repository has no commit to branch from.
       - In a repository without a commit, web and mobile run new threads in the current checkout while retaining the worktree default for after the first commit; the server rejects an unresolvable worktree base with an actionable error.
-    rationale: Choosing New worktree means the agent works apart from the user's checkout. Falling back to the project checkout when the base cannot be resolved would let the agent edit the user's current branch without being asked, so the server refuses instead.
+    rationale: Choosing New worktree means the agent works apart from the user's checkout. Falling back to the project checkout when the base cannot be resolved would let the agent edit the user's current branch without being asked, so the server refuses instead. Upstream now takes the workspace mode from `t3.json` and project settings and otherwise uses the current checkout. When that change is taken in, worktree (or the current checkout when the repository has no commit) becomes styal's built-in last step of that order, so `t3.json` and project settings still take precedence.
     implementation_paths:
       - apps/mobile/src/features/threads/new-task-flow-provider.tsx
       - apps/server/src/ws.ts
