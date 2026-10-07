@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-  # Redeploys main after a variable or secret change, which no longer rides
-  # along with the next unrelated merge.
   workflow_dispatch:
 
 permissions:
