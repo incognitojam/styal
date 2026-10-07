@@ -16,7 +16,16 @@ const GENERATED_DIRECTORIES = new Set([
   "build",
   "vendor",
 ]);
-const TEST_DIRECTORIES = new Set(["__tests__", "tests", "test"]);
+// Fixtures and test harnesses only matter once the tests that load them have been read.
+const TEST_DIRECTORIES = new Set([
+  "__tests__",
+  "tests",
+  "test",
+  "__fixtures__",
+  "fixtures",
+  "testdata",
+  "testkit",
+]);
 const MODULE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
 
 /**
