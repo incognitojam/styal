@@ -257,6 +257,25 @@ management is available through `npx @styal/cli auth --help`.
 A session with an open connection stays listed after its access credential
 expires.
 
+To choose a token's permissions, pass `--scope` once for each scope you want:
+
+```sh
+npx @styal/cli pair --scope orchestration:read --scope relay:read
+```
+
+The selected scopes replace the default permissions. The same option works with
+`npx @styal/cli auth pairing create` and `npx @styal/cli auth session issue`;
+each command's `--help` lists the available scopes. Without `--scope`, pairing
+tokens retain standard client permissions and issued bearer sessions retain
+administrative permissions.
+
+To change an existing client's permissions, create a fresh pairing link with the
+scopes it needs. In a browser opened directly on the environment, open that link
+to replace the browser's current grant. For mobile or a saved remote environment
+in web or desktop, use **Add Environment** with the fresh link or code; pairing
+the same environment replaces its saved grant. Reconnecting alone does not change
+permissions.
+
 To remove an environment from styal Link, open your account menu's **styal Link**
 page, or **Settings → styal Link** on mobile, and choose **Deregister**. This
 revokes its cloud access and frees its host space even when the environment is

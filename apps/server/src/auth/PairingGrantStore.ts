@@ -70,6 +70,15 @@ export class UnavailableBootstrapCredentialError extends Schema.TaggedError<Unav
   }
 }
 
+export class BootstrapCredentialScopeNotGrantedError extends Schema.TaggedError<BootstrapCredentialScopeNotGrantedError>()(
+  "BootstrapCredentialScopeNotGrantedError",
+  {},
+) {
+  override get message(): string {
+    return "The requested authentication scope was not granted.";
+  }
+}
+
 export const BootstrapCredentialInvalidError = Schema.Union([
   UnknownBootstrapCredentialError,
   ExpiredBootstrapCredentialError,
@@ -175,6 +184,7 @@ export const isBootstrapCredentialInternalError = Schema.is(BootstrapCredentialI
 export const BootstrapCredentialError = Schema.Union([
   BootstrapCredentialInvalidError,
   BootstrapCredentialInternalError,
+  BootstrapCredentialScopeNotGrantedError,
 ]);
 export type BootstrapCredentialError = typeof BootstrapCredentialError.Type;
 
@@ -221,6 +231,7 @@ export class PairingGrantStore extends Context.Service<
       credential: string,
       input?: {
         readonly proofKeyThumbprint?: string;
+        readonly requestedScopes?: ReadonlyArray<AuthEnvironmentScope>;
       },
     ) => Effect.Effect<BootstrapGrant, BootstrapCredentialError>;
   }
@@ -233,7 +244,7 @@ interface StoredBootstrapGrant extends BootstrapGrant {
 type ConsumeResult =
   | {
       readonly _tag: "error";
-      readonly reason: "not-found" | "expired";
+      readonly reason: "not-found" | "expired" | "scope-not-granted";
       readonly error: BootstrapCredentialError;
     }
   | {
@@ -481,6 +492,17 @@ export const make = Effect.gen(function* () {
             ];
           }
 
+          if (input?.requestedScopes?.some((scope) => !grant.scopes.includes(scope))) {
+            return [
+              {
+                _tag: "error",
+                reason: "scope-not-granted",
+                error: new BootstrapCredentialScopeNotGrantedError({}),
+              },
+              current,
+            ];
+          }
+
           const remainingUses = grant.remainingUses;
           if (typeof remainingUses === "number") {
             if (remainingUses <= 1) {
@@ -519,10 +541,16 @@ export const make = Effect.gen(function* () {
         return yield* seededResult.error;
       }
 
+      // The scope check is part of the UPDATE's WHERE clause so a rejected
+      // request cannot consume a one-time link. The re-check below only
+      // explains why nothing matched.
       const consumed = yield* pairingLinks
         .consumeAvailable({
           credential,
           proofKeyThumbprint: input?.proofKeyThumbprint ?? null,
+          ...(input?.requestedScopes !== undefined
+            ? { requestedScopes: input.requestedScopes }
+            : {}),
           consumedAt: now,
           now,
         })
@@ -566,6 +594,10 @@ export const make = Effect.gen(function* () {
         matching.value.proofKeyThumbprint !== input?.proofKeyThumbprint
       ) {
         return yield* new BootstrapCredentialProofKeyMismatchError({});
+      }
+
+      if (input?.requestedScopes?.some((scope) => !matching.value.scopes.includes(scope))) {
+        return yield* new BootstrapCredentialScopeNotGrantedError({});
       }
 
       return yield* new UnavailableBootstrapCredentialError({});
