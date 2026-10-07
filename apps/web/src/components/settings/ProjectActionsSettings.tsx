@@ -2,6 +2,7 @@ import { useScopedSettingsWriteAllowed } from "./useScopedSettings";
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { EnvironmentId, type T3ProjectFileScript } from "@t3tools/contracts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
+import { projectScriptMenuLabel } from "@t3tools/shared/projectScripts";
 import { ChevronDownIcon, PlusIcon } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { useT3ProjectFileState } from "../../hooks/useT3ProjectFileScripts";
@@ -150,9 +151,7 @@ export function ProjectActionsSettings() {
                       <ScriptIcon icon={fileScript.icon ?? "play"} className="size-4 shrink-0" />
                       <div className="min-w-0 flex-1">
                         <div className="truncate font-medium">
-                          {fileScript.runOnWorktreeCreate
-                            ? `${fileScript.name} (setup)`
-                            : fileScript.name}
+                          {projectScriptMenuLabel(fileScript)}
                         </div>
                         <div className="truncate font-mono text-muted-foreground">
                           {fileScript.command}

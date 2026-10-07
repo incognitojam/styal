@@ -9,9 +9,11 @@ import {
   type ProjectScript,
 } from "@t3tools/contracts";
 import {
+  isProjectCheckoutRun,
   isSetupScriptOutsideWorktree,
   projectScriptRuntimeEnv,
   resolveProjectScripts,
+  settleProjectScript,
   setupProjectScript,
 } from "@t3tools/shared/projectScripts";
 import * as Clock from "effect/Clock";
@@ -71,9 +73,16 @@ const SetupRunActivityPayload = Schema.Struct({
 });
 const decodeSetupRunActivityPayload = Schema.decodeUnknownOption(SetupRunActivityPayload);
 
+type ProjectScriptTrigger = "setup" | "settle";
+
+/** Settle runs use `settle-<scriptId>` terminals; everything else is a setup run. */
+const triggerForTerminalId = (terminalId: string): ProjectScriptTrigger =>
+  terminalId.startsWith("settle-") ? "settle" : "setup";
+
 interface ActiveSetupRun {
   readonly runId: string;
   readonly threadId: string;
+  readonly trigger: ProjectScriptTrigger;
   readonly scriptId: string;
   readonly scriptName: string;
   readonly scriptIcon?: ProjectScriptIcon;
@@ -102,6 +111,7 @@ function deriveUnfinishedSetupRuns(
       unfinished.set(runId, {
         ...payload.value,
         threadId: activity.threadId,
+        trigger: triggerForTerminalId(payload.value.terminalId),
         startedAt: activity.createdAt,
         startedActivityRecorded: activity.kind === "setup-script.started",
         pendingOutcome: null,
@@ -150,9 +160,18 @@ export interface ProjectSetupScriptRunnerResultNotAWorktree {
   readonly scriptName: string;
 }
 
+/** A settle run is still going in the thread's settle terminal, so no second one starts. */
+export interface ProjectSetupScriptRunnerResultAlreadyRunning {
+  readonly status: "already-running";
+  readonly scriptId: string;
+  readonly scriptName: string;
+  readonly terminalId: string;
+}
+
 export type ProjectSetupScriptRunnerResult =
   | ProjectSetupScriptRunnerResultNoScript
   | ProjectSetupScriptRunnerResultNotAWorktree
+  | ProjectSetupScriptRunnerResultAlreadyRunning
   | ProjectSetupScriptRunnerResultStarted;
 
 export interface ProjectSetupScriptRunnerInput {
@@ -160,6 +179,8 @@ export interface ProjectSetupScriptRunnerInput {
   readonly projectId?: string;
   readonly projectCwd?: string;
   readonly worktreePath: string;
+  /** Which project script to run. Defaults to the worktree setup script. */
+  readonly trigger?: ProjectScriptTrigger;
   readonly project?: {
     readonly id: ProjectId;
     readonly workspaceRoot: string;
@@ -381,9 +402,12 @@ export const make = Effect.gen(function* () {
         }),
       ),
     );
-    yield* increment(setupScriptRunsTotal, { outcome: outcome.outcome });
+    yield* increment(setupScriptRunsTotal, { outcome: outcome.outcome, trigger: run.trigger });
     yield* Metric.update(
-      Metric.withAttributes(setupScriptDuration, metricAttributes({ outcome: outcome.outcome })),
+      Metric.withAttributes(
+        setupScriptDuration,
+        metricAttributes({ outcome: outcome.outcome, trigger: run.trigger }),
+      ),
       Duration.millis(durationMs),
     );
   });
@@ -628,15 +652,46 @@ export const make = Effect.gen(function* () {
           }),
       ),
     );
-    const script = setupProjectScript(resolveProjectScripts(settings, project));
+    const trigger = input.trigger ?? "setup";
+    const scripts = resolveProjectScripts(settings, project);
+    const script =
+      trigger === "settle" ? settleProjectScript(scripts) : setupProjectScript(scripts);
     if (!script) {
       return {
         status: "no-script",
       } as const;
     }
 
-    const terminalId = input.preferredTerminalId ?? `setup-${script.id}`;
+    // Each thread has one terminal per lifecycle script. A later run restarts
+    // the exited session in place, so settling repeatedly does not pile up tabs.
+    const terminalId = input.preferredTerminalId ?? `${trigger}-${script.id}`;
     const cwd = input.worktreePath;
+
+    if (trigger === "settle") {
+      // A settle script deletes worktree state, so a thread in the project's own
+      // checkout skips it like a thread without a worktree, without a work-log row.
+      if (isProjectCheckoutRun({ projectCwd: project.workspaceRoot, worktreePath: cwd })) {
+        yield* Effect.logInfo("skipped settle script in the project checkout", {
+          threadId: input.threadId,
+          scriptId: script.id,
+          worktreePath: cwd,
+        });
+        return { status: "not-a-worktree", scriptId: script.id, scriptName: script.name } as const;
+      }
+      // Reopening a running session would attach to it and start nothing, so a
+      // thread that settles again during cleanup leaves the first run going.
+      const active = (yield* SynchronizedRef.get(activeRunsRef)).has(
+        terminalKey(input.threadId, terminalId),
+      );
+      if (active) {
+        return {
+          status: "already-running",
+          scriptId: script.id,
+          scriptName: script.name,
+          terminalId,
+        } as const;
+      }
+    }
     const requestedAt = yield* nowIso;
     nextRunSequence += 1;
     const runId = `${input.threadId}:${script.id}:${requestedAt}:${nextRunSequence}`;
@@ -645,6 +700,7 @@ export const make = Effect.gen(function* () {
     // root is destructive rather than merely useless: a setup line that links
     // $T3CODE_PROJECT_ROOT/.env into the cwd would clobber the file it links to.
     if (
+      trigger === "setup" &&
       isSetupScriptOutsideWorktree({
         script,
         projectCwd: project.workspaceRoot,
@@ -692,6 +748,7 @@ export const make = Effect.gen(function* () {
     const activeRun: ActiveSetupRun = {
       runId,
       threadId: input.threadId,
+      trigger,
       scriptId: script.id,
       scriptName: script.name,
       scriptIcon: script.icon,

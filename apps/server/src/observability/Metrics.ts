@@ -56,11 +56,11 @@ export const terminalRestartsTotal = Metric.counter("t3_terminal_restarts_total"
 });
 
 export const setupScriptRunsTotal = Metric.counter("t3_setup_script_runs_total", {
-  description: "Total setup script runs by terminal outcome.",
+  description: "Total setup and settle script runs by trigger and terminal outcome.",
 });
 
 export const setupScriptDuration = Metric.timer("t3_setup_script_duration", {
-  description: "Setup script run duration.",
+  description: "Setup and settle script run duration by trigger and outcome.",
 });
 
 /**

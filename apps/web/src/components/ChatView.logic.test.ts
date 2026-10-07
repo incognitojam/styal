@@ -1346,6 +1346,16 @@ describe("project script terminal selection", () => {
     ).toBe("term-1");
   });
 
+  it("does not reuse the finite settle-script terminal", () => {
+    expect(
+      resolveProjectScriptBaseTerminalId({
+        activeTerminalId: "settle-clean",
+        knownTerminalIds: ["setup-setup-worktree", "settle-clean"],
+        defaultTerminalId: "term-1",
+      }),
+    ).toBe("term-1");
+  });
+
   it("continues to reuse an active interactive terminal", () => {
     expect(
       resolveProjectScriptBaseTerminalId({
@@ -1394,6 +1404,7 @@ describe("terminal open target", () => {
     expect(hasInteractiveTerminal([])).toBe(false);
     expect(hasInteractiveTerminal(["setup-setup-worktree"])).toBe(false);
     expect(hasInteractiveTerminal(["setup-setup-worktree", "term-1"])).toBe(true);
+    expect(hasInteractiveTerminal(["setup-setup-worktree", "settle-clean"])).toBe(false);
   });
 });
 

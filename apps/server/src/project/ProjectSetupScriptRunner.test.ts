@@ -197,3 +197,138 @@ it.effect(
     }).pipe(Effect.provide(Layer.mergeAll(dependencies, runner)));
   },
 );
+
+it.effect(
+  "runs the settle script in one retained terminal per thread, outside the checkout",
+  () => {
+    const listeners = new Set<
+      Parameters<TerminalManager.TerminalManager["Service"]["subscribe"]>[0]
+    >();
+    const openCommand = vi.fn(
+      (input: Parameters<TerminalManager.TerminalManager["Service"]["openCommand"]>[0]) =>
+        Effect.succeed({
+          threadId: input.threadId,
+          terminalId: input.terminalId,
+          cwd: input.cwd,
+          worktreePath: input.worktreePath ?? null,
+          status: "running" as const,
+          pid: 123,
+          history: "",
+          exitCode: null,
+          exitSignal: null,
+          label: "Shell",
+          updatedAt: "2026-06-20T00:00:00.000Z",
+        }),
+    );
+    const subscribe: TerminalManager.TerminalManager["Service"]["subscribe"] = (listener) =>
+      Effect.sync(() => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      });
+    const projectId = ProjectId.make("project:settle-v2");
+    const threadId = ThreadId.make("thread:settle-v2");
+    const project = {
+      id: projectId,
+      title: "Project",
+      workspaceRoot: "/synthetic/repo",
+      repositoryIdentity: null,
+      faviconPath: null,
+      defaultModelSelection: null,
+      scripts: [
+        {
+          id: "setup",
+          name: "Install dependencies",
+          command: "vp install",
+          icon: "configure" as const,
+          runOnWorktreeCreate: true,
+        },
+        {
+          id: "clean",
+          name: "Clean",
+          command: "cargo clean",
+          icon: "build" as const,
+          runOnWorktreeCreate: false,
+          runOnSettle: true,
+        },
+      ],
+      createdAt: "2026-06-20T00:00:00.000Z",
+      updatedAt: "2026-06-20T00:00:00.000Z",
+      deletedAt: null,
+    };
+    const dependencies = Layer.mergeAll(
+      stores,
+      sink,
+      importer,
+      Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeedSome(project) }),
+      Layer.mock(TerminalManager.TerminalManager)({ openCommand, subscribe }),
+      ServerSettings.layerTest(),
+    );
+    const runner = ProjectSetupScriptRunner.layer.pipe(Layer.provide(dependencies));
+    return Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`INSERT INTO projection_projects (project_id, title, workspace_root, scripts_json, created_at, updated_at)
+    VALUES (${projectId}, 'Settle', '/synthetic/repo', '[]', ${project.createdAt}, ${project.updatedAt})`;
+      yield* sql`INSERT INTO projection_threads (thread_id, project_id, title, runtime_mode, interaction_mode, created_at, updated_at)
+    VALUES (${threadId}, ${projectId}, 'Settle', 'full-access', 'default', ${project.createdAt}, ${project.updatedAt})`;
+      yield* (yield* LegacyImporter.LegacyV1ThreadImporter).reconcileShells;
+      const service = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const settleRows = Effect.map(projections.getThreadProjection(threadId), (projection) =>
+        projection.turnItems.filter(
+          (item) => item.type === "command_execution" && item.setupScript?.scriptId === "clean",
+        ),
+      );
+      const settle = (worktreePath: string) =>
+        service.runForThread({ threadId, projectId, worktreePath, trigger: "settle" });
+
+      const first = yield* settle("/synthetic/repo-worktree");
+      assert.equal(first.status, "started");
+      if (first.status !== "started") return;
+      assert.equal(first.terminalId, "settle-clean");
+      assert.equal(openCommand.mock.calls[0]?.[0].command, "cargo clean");
+      assert.equal(openCommand.mock.calls[0]?.[0].label, "Clean");
+      assert.equal(openCommand.mock.calls[0]?.[0].cwd, "/synthetic/repo-worktree");
+
+      // Settling again while cleanup runs must not attach a second run to it.
+      assert.equal((yield* settle("/synthetic/repo-worktree")).status, "already-running");
+      assert.equal(openCommand.mock.calls.length, 1);
+
+      yield* Effect.forEach([...listeners], (listener) =>
+        listener({
+          type: "exited",
+          threadId,
+          terminalId: "settle-clean",
+          exitCode: 0,
+          exitSignal: null,
+        }),
+      );
+      const [completed] = yield* settleRows;
+      assert.equal(completed?.status, "completed");
+      assert.equal(completed?.title, "Clean");
+
+      const second = yield* settle("/synthetic/repo-worktree");
+      assert.equal(second.status === "started" && second.terminalId, "settle-clean");
+      assert.equal(openCommand.mock.calls.length, 2);
+      yield* Effect.forEach([...listeners], (listener) =>
+        listener({
+          type: "exited",
+          threadId,
+          terminalId: "settle-clean",
+          exitCode: 1,
+          exitSignal: null,
+        }),
+      );
+      assert.deepEqual(
+        (yield* settleRows).map((item) => item.status),
+        ["completed", "failed"],
+      );
+
+      // The project's own checkout is skipped without running or logging a row.
+      assert.equal((yield* settle("/synthetic/repo/")).status, "not-a-worktree");
+      assert.equal(openCommand.mock.calls.length, 2);
+      assert.equal((yield* settleRows).length, 2);
+    }).pipe(Effect.provide(Layer.mergeAll(dependencies, runner)));
+  },
+);

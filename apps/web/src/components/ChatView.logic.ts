@@ -34,6 +34,7 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
+import { isLifecycleScriptTerminalId } from "@t3tools/shared/projectScripts";
 import { videoMimeType } from "@t3tools/shared/video";
 import {
   appendCodexArtifactTemplateUsePrompt,
@@ -464,17 +465,9 @@ export function resolveDraftPromotionNavigationTarget(input: {
   return runStarted || startupStopped || messagePersisted ? input.serverThreadRef : null;
 }
 
-/**
- * Setup-script terminals run one finite command and are kept around only so their
- * output stays inspectable, so nothing that wants a shell should land on them.
- */
-function isSetupScriptTerminalId(terminalId: string): boolean {
-  return terminalId.startsWith("setup-");
-}
-
-/** A thread with only setup sessions has no shell to open onto, so one has to be started. */
+/** A thread with only setup or settle sessions has no shell to open onto, so one has to be started. */
 export function hasInteractiveTerminal(terminalIds: ReadonlyArray<string>): boolean {
-  return terminalIds.some((terminalId) => !isSetupScriptTerminalId(terminalId));
+  return terminalIds.some((terminalId) => !isLifecycleScriptTerminalId(terminalId));
 }
 
 /**
@@ -501,7 +494,7 @@ export function resolveProjectScriptBaseTerminalId(input: {
   defaultTerminalId: string;
 }): string {
   const reusableTerminalIds = input.knownTerminalIds.filter(
-    (terminalId) => !isSetupScriptTerminalId(terminalId),
+    (terminalId) => !isLifecycleScriptTerminalId(terminalId),
   );
   return reusableTerminalIds.includes(input.activeTerminalId)
     ? input.activeTerminalId

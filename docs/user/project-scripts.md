@@ -16,6 +16,8 @@ Each action has:
 - A shell command.
 - An optional keyboard shortcut.
 - An option to run automatically after T3 Code creates a worktree for a new thread.
+- An option to run in a thread's worktree each time the thread settles, for example to delete
+  build output. See [Settle finished work](./thread-sidebar.md#settle-finished-work).
 
 Actions are saved for one checkout, not for every checkout in its project group. Saved actions are
 available to connected clients, including mobile. On mobile, open a thread's terminal menu to run
@@ -71,6 +73,8 @@ Each script supports these fields:
   or `deploy`. The default is `play`.
 - `runOnWorktreeCreate` (optional): whether importing this script should make it the automatic
   setup action. The default is `false`.
+- `runOnSettle` (optional): whether importing this script should make it the action that runs
+  when a thread settles. The default is `false`.
 
 Scripts in `t3.json` are templates and never run directly from the checked-in file. Import one
 from the thread actions menu or from **Settings** → **Projects** → **Actions**. The **Add Action**

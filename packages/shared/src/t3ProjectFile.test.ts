@@ -50,6 +50,7 @@ describe("buildT3ProjectFileJsonSchema", () => {
       "command",
       "icon",
       "name",
+      "runOnSettle",
       "runOnWorktreeCreate",
     ]);
   });

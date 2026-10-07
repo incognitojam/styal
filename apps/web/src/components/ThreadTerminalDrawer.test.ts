@@ -76,6 +76,7 @@ describe("terminal selection actions", () => {
   it("retains completed setup terminals for inspection", () => {
     expect(shouldRetainExitedTerminal("setup-setup-worktree", "exited")).toBe(true);
     expect(shouldRetainExitedTerminal("setup-setup-worktree", "closed")).toBe(false);
+    expect(shouldRetainExitedTerminal("settle-clean", "exited")).toBe(true);
     expect(shouldRetainExitedTerminal("term-1", "exited")).toBe(false);
   });
 });

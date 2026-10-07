@@ -2877,8 +2877,8 @@ features:
     prs: [399]
     invariants:
       - Selecting a t3.json action in the thread action menu or Project Settings opens a prefilled Add Action form without saving or running the command.
-      - The form shows the command and worktree-creation setting, leaves the keybinding empty, and allows editing or canceling before saving a checkout-local copy.
-      - Enabling worktree runs or replacing an existing setup action is stated before saving; later t3.json edits do not silently change saved actions.
+      - The form shows the command and the worktree-creation and settle settings, leaves the keybinding empty, and allows editing or canceling before saving a checkout-local copy.
+      - Enabling worktree or settle runs, or replacing an existing setup or settle action, is stated before saving; later t3.json edits do not silently change saved actions.
     implementation_paths:
       - apps/web/src/components/ProjectScriptsControl.tsx
       - apps/web/src/components/projectScriptEditor.tsx
@@ -4000,19 +4000,22 @@ features:
 
   - id: setup-script-observability
     title: Keep setup scripts safe and inspectable
-    status: review-needed
+    status: maintained
     prs: [40, 207, 208, 214, 216, 236, 237, 241]
     invariants:
-      - A setup terminal is titled with its configured script name from start through exit, in every client's terminal list.
+      - A setup or settle terminal is titled with its configured script name from start through exit, in every client's terminal list.
       - A terminal opened locally survives server session-list reconciliation until the server reports it, so focus stays on it rather than falling back to a setup session.
-      - Opening the terminal on a thread whose only sessions are retained setup terminals starts an interactive shell instead of focusing the finite session.
+      - Opening the terminal on a thread whose only sessions are retained setup or settle terminals starts an interactive shell instead of focusing the finite session.
       - Worktree-creation setup actions never run against a project root; server, web, and mobile refuse the run and explain why before a script can overwrite files it meant to copy or link.
-      - Web and mobile work logs identify the configured setup action and truthfully distinguish requested, running, completed, failed, and stopped states.
-      - Setup terminal output remains inspectable after exit, and later toolbar actions start on the first click without reusing the finite setup session.
+      - Web and mobile work logs identify the configured setup or settle action and truthfully distinguish requested, running, completed, failed, and stopped states.
+      - Setup and settle terminal output remains inspectable after exit, and later toolbar actions start on the first click without reusing the finite session.
+      - The settle action runs as one finite command in a single settle terminal per thread, restarted in place by later settlements; a settlement during a running settle action starts nothing, and a thread whose worktree is the project checkout skips it without a work-log row.
+    rationale: Setup runs as the terminal's own process, so the exit code is exact on every shell and setup cannot hang on a sentinel. That finite session is what makes the titled, retained setup terminal and the per-run work log possible. Upstream's settle action is built into its sentinel runner, so the fork runs it on the same process runner.
     implementation_paths:
       - apps/mobile/src/features/threads/ThreadRouteScreen.tsx
       - apps/mobile/src/features/threads/thread-work-log.tsx
       - apps/mobile/src/lib/threadActivity.ts
+      - apps/server/src/orchestration-v2/ThreadSettlementService.ts
       - apps/server/src/project/ProjectSetupScriptRunner.ts
       - apps/web/src/components/ChatView.logic.ts
       - apps/web/src/components/ChatView.tsx
@@ -4049,6 +4052,8 @@ features:
         - https://github.com/pingdotgg/t3code/pull/11372
         - https://github.com/pingdotgg/t3code/pull/11832
         - https://github.com/pingdotgg/t3code/pull/12177
+        - https://github.com/pingdotgg/t3code/pull/16290
+        - https://github.com/pingdotgg/t3code/pull/18891
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream exposes equivalent cross-client setup action lifecycle detail, retained output, worktree-only setup safety, and isolation from later interactive terminal actions.
 

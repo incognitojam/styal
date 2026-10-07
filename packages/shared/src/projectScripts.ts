@@ -103,9 +103,43 @@ export function isSetupScriptOutsideWorktree(input: {
   projectCwd: string;
   worktreePath?: string | null;
 }): boolean {
-  if (!input.script.runOnWorktreeCreate) return false;
+  return input.script.runOnWorktreeCreate && isProjectCheckoutRun(input);
+}
+
+/**
+ * Whether a run would land in the project's own checkout rather than a separate
+ * worktree. Setup and settle scripts are written for a worktree and skip it.
+ */
+export function isProjectCheckoutRun(input: {
+  projectCwd: string;
+  worktreePath?: string | null;
+}): boolean {
   if (!input.worktreePath) return true;
   return stripTrailingSeparators(input.worktreePath) === stripTrailingSeparators(input.projectCwd);
 }
 
+/**
+ * Setup and settle scripts each run as one finite command in a terminal named
+ * `setup-<scriptId>` or `settle-<scriptId>`. The session is kept after exit so
+ * its output stays inspectable, so nothing that wants a shell should land on it.
+ */
+export function isLifecycleScriptTerminalId(terminalId: string): boolean {
+  return terminalId.startsWith("setup-") || terminalId.startsWith("settle-");
+}
+
 const stripTrailingSeparators = (value: string): string => value.replace(/[/\\]+$/, "");
+
+/** Menu label naming the lifecycle roles a script runs in, e.g. "Clean (on settle)". */
+export function projectScriptMenuLabel(
+  script: Pick<ProjectScript, "name" | "runOnSettle"> & { readonly runOnWorktreeCreate?: boolean },
+): string {
+  const roles = [
+    ...(script.runOnWorktreeCreate ? ["setup"] : []),
+    ...(script.runOnSettle ? ["on settle"] : []),
+  ];
+  return roles.length === 0 ? script.name : `${script.name} (${roles.join(", ")})`;
+}
+
+export function settleProjectScript(scripts: readonly ProjectScript[]): ProjectScript | null {
+  return scripts.find((script) => script.runOnSettle === true) ?? null;
+}

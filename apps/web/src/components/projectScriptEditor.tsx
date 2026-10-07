@@ -102,6 +102,7 @@ export interface NewProjectScriptInput {
   runOnWorktreeCreate: boolean;
   /** Setup scripts only: hold the agent until the script exits. */
   waitForSetup: boolean;
+  runOnSettle: boolean;
   /** Omit to preserve the current shortcut when the form did not edit it. */
   keybinding?: string | null;
 }
@@ -114,6 +115,7 @@ export const EMPTY_PROJECT_SCRIPT_INPUT: NewProjectScriptInput = {
   icon: "play",
   runOnWorktreeCreate: false,
   waitForSetup: false,
+  runOnSettle: false,
   keybinding: null,
 };
 
@@ -134,6 +136,7 @@ export function editorRequestForFileScript(
       icon: fileScript.icon ?? "play",
       runOnWorktreeCreate: fileScript.runOnWorktreeCreate ?? false,
       waitForSetup: fileScript.runOnWorktreeCreate === true && fileScript.async === false,
+      runOnSettle: fileScript.runOnSettle ?? false,
       keybinding: null,
     },
   };
@@ -151,6 +154,7 @@ export function editorRequestForScript(
       icon: script.icon,
       runOnWorktreeCreate: script.runOnWorktreeCreate,
       waitForSetup: script.runOnWorktreeCreate && script.async === false,
+      runOnSettle: script.runOnSettle ?? false,
       keybinding: keybindingValueForCommand(keybindings, commandForProjectScript(script.id)),
     },
   };
@@ -191,6 +195,7 @@ export function ProjectScriptEditorDialog({
   const [iconPickerOpen, setIconPickerOpen] = useComposerMenuState(!canEditActions);
   const [runOnWorktreeCreate, setRunOnWorktreeCreate] = useState(false);
   const [waitForSetup, setWaitForSetup] = useState(false);
+  const [runOnSettle, setRunOnSettle] = useState(false);
   const [keybinding, setKeybinding] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useComposerMenuState(!canEditActions);
@@ -210,6 +215,12 @@ export function ProjectScriptEditorDialog({
     : null;
   const isEnablingSetup =
     runOnWorktreeCreate && (!isEditing || !displayedRequest?.initial.runOnWorktreeCreate);
+  const replacedSettleScript = runOnSettle
+    ? scripts.find(
+        (script) => script.runOnSettle === true && script.id !== displayedRequest?.scriptId,
+      )
+    : null;
+  const isEnablingSettle = runOnSettle && (!isEditing || !displayedRequest?.initial.runOnSettle);
 
   // A save completion must not affect a replacement request or an unmounted editor.
   useLayoutEffect(
@@ -231,6 +242,7 @@ export function ProjectScriptEditorDialog({
     setIconPickerOpen(false);
     setRunOnWorktreeCreate(request.initial.runOnWorktreeCreate);
     setWaitForSetup(request.initial.waitForSetup);
+    setRunOnSettle(request.initial.runOnSettle);
     setKeybinding(request.initial.keybinding ?? "");
     setValidationError(null);
     setSavingRequest(null);
@@ -301,6 +313,7 @@ export function ProjectScriptEditorDialog({
         icon,
         runOnWorktreeCreate,
         waitForSetup: runOnWorktreeCreate && waitForSetup,
+        runOnSettle,
         ...((request.scriptId === null && canChangeKeybinding) || changesKeybinding
           ? { keybinding: keybindingRule?.key ?? null }
           : {}),
@@ -461,6 +474,20 @@ export function ProjectScriptEditorDialog({
                     {replacedSetupScript
                       ? `Saving will replace “${replacedSetupScript.name}” as the action that runs automatically in new worktrees.`
                       : "Saving will run this action automatically in new worktrees."}
+                  </p>
+                )}
+                <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035]">
+                  <span>Run in the thread's worktree when the thread settles</span>
+                  <Switch
+                    checked={runOnSettle}
+                    onCheckedChange={(checked) => setRunOnSettle(Boolean(checked))}
+                  />
+                </label>
+                {isEnablingSettle && (
+                  <p className="text-sm text-muted-foreground">
+                    {replacedSettleScript
+                      ? `Saving will replace “${replacedSettleScript.name}” as the action that runs when a thread settles.`
+                      : "Saving will run this action in a thread's worktree each time the thread settles."}
                   </p>
                 )}
                 {validationError && <p className="text-sm text-destructive">{validationError}</p>}

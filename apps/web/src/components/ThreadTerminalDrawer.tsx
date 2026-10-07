@@ -28,6 +28,7 @@ import {
   type ScopedThreadRef,
   type ThreadId,
 } from "@t3tools/contracts";
+import { isLifecycleScriptTerminalId } from "@t3tools/shared/projectScripts";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import * as Schema from "effect/Schema";
 import {
@@ -333,7 +334,7 @@ export function shouldRetainExitedTerminal(
   terminalId: string,
   status: TerminalSessionState["status"],
 ): boolean {
-  return status === "exited" && terminalId.startsWith("setup-");
+  return status === "exited" && isLifecycleScriptTerminalId(terminalId);
 }
 
 interface TerminalViewportProps {

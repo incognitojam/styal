@@ -114,9 +114,9 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [Project instructions](./project-settings.md#give-agents-project-instructions).
 - **Review shared actions before importing.** Selecting an action from `t3.json` opens its command
   for review before saving a checkout-local copy. The confirmation states when the action will run
-  in new worktrees or replace an existing setup action. [Project actions](./project-scripts.md). Compared with
-  [T3 Code revision d7819c1](https://github.com/pingdotgg/t3code/tree/d7819c18813fa03b033cc1c9472c9acc0ffc0618),
-  checked September 22, 2026, which imports file actions when selected.
+  in new worktrees or when threads settle, and when it replaces an existing setup or settle action. [Project actions](./project-scripts.md). Compared with
+  [T3 Code revision 079e4bc](https://github.com/pingdotgg/t3code/tree/079e4bccdcffc56c54bd69523ed77c006553ea21),
+  checked October 18, 2026, which imports file actions when selected.
 - **Drafts that follow you.** Existing-thread draft text and model settings sync between clients
   connected to the same server. Attachments and other device-specific context stay local; drafts
   containing that context are withheld from other clients to avoid sending an incomplete message.
