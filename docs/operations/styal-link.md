@@ -23,7 +23,7 @@ JWT template, and the `t3-code-relay` audience.
 | Desktop redirect URIs   | `styal-dev://app/` (dev), `styal-preview://app/` (PR previews), `styal://app/` (packaged)                                                | `apps/desktop`, see connect-setup.md                                     |
 | macOS bundle ID         | `build.styal.app`, `build.styal.app.preview` (PR previews)                                                                               | `DESKTOP_APP_ID`, `scripts/build-desktop-artifact.ts`                    |
 | Clerk application       | `styal` (`app_3IPih12l7JcyeHP2MlqFOESKdGN`)                                                                                              | Clerk Dashboard                                                          |
-| Relay                   | `https://relay.styal.build`, deployed by `deploy-relay.yml` on push to main                                                              | `infra/relay/README.md`                                                  |
+| Relay                   | `https://relay.styal.build`, deployed by `deploy-relay.yml` on relay changes to main                                                     | `infra/relay/README.md`                                                  |
 | Development relay       | `https://relay-dev.styal.build` (stage `dev`, development Clerk), deployed after the production relay                                    | `deploy-relay.yml`                                                       |
 | Relay database          | Neon project `styal-relay` (`divine-frog-52827132`, `aws-eu-west-2`): prod adopts its `production` branch, dev stages fork Neon branches | `infra/relay/src/db.ts`                                                  |
 | Relay API zone          | `styal.build` (`RELAY_API_ZONE_NAME`), so the relay serves `relay.styal.build`                                                           | `production` environment variable                                        |
@@ -97,7 +97,7 @@ set fails the build) and builds Link-disabled with a notice while `RELAY_URL` is
 No client build in CI uses the development instance. It exists for local development: the
 repository-root `.env` carries its identifiers (`.env.development.example`), paired with the shared
 `dev` relay stage so dev-Clerk tokens are verified by a dev-Clerk relay. `deploy-relay.yml` deploys
-that stage after production on every push to `main`, reusing the production environment's
+that stage after production, reusing the production environment's
 deployment and push credentials with the development instance's `CLERK_DEV_SECRET_KEY`. One APNs
 key and one Firebase service account serve both relays, because each device registers its own
 bundle ID and APNs environment. To try relay changes

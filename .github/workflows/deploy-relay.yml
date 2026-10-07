@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  # Redeploys main after a variable or secret change, which no longer rides
+  # along with the next unrelated merge.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,8 +18,46 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  changes:
+    name: Check for relay changes
+    # A manual run from another branch would deploy that branch to production.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      deploy: ${{ github.event_name == 'workflow_dispatch' || steps.changed.outputs.changed == 'true' }}
+    steps:
+      - name: Checkout
+        if: github.event_name == 'push'
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - id: changed
+        if: github.event_name == 'push'
+        uses: ./.github/actions/changed-since-last-deploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          workflow: deploy-relay.yml
+          paths: |
+            infra/relay
+            packages/client-runtime
+            packages/contracts
+            packages/shared
+            patches
+            package.json
+            pnpm-lock.yaml
+            pnpm-workspace.yaml
+            .github/workflows/deploy-relay.yml
+            .github/actions/changed-since-last-deploy
+
   deploy_relay:
     name: Deploy production relay
+    needs: changes
+    if: needs.changes.outputs.deploy == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment:
