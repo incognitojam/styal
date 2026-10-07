@@ -81,6 +81,15 @@ The app can update the `.deb` installation itself. Installing an update may ask
 for your password. If no password prompt is available, download the new `.deb`
 and run the command above again.
 
+### The `styal` command
+
+The desktop app includes the `styal` command-line tool. To run it from any
+terminal, open **Settings → General → About** and choose **Install** next to
+**styal command**. On macOS and Linux it adds a `styal` link to a folder on your
+`PATH`; on Windows it adds the app's command folder to your `PATH`. Open a new
+terminal afterwards. **Remove** takes it off again. If you already have `styal`
+from npm, it stays as it is.
+
 ### Windows Subsystem for Linux
 
 Choose a WSL distro in **Settings → Connections** to run agents and projects

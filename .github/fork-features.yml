@@ -1552,6 +1552,7 @@ features:
       - Android APK updates download inside styal with progress, cancellation and retry; incomplete APKs are discarded, complete APKs remain available after installer dismissal, and installs require Android's source permission and system confirmation. Downloads finishing in the background wait for an explicit install action.
       - Mobile About styal identifies the installed binary by its native version and build number on Android and iOS, retaining non-production variant labels.
       - Settings that exist only in styal show the monochrome styal mark beside their title, limited to ledger features that are still maintained or under review; fork refinements of upstream settings stay unmarked.
+      - The desktop app's CLI launcher and its Settings install are named `styal`, so they never take over or remove an upstream `t3` command.
     implementation_paths:
       - .github/scripts/publish-android-release.sh
       - .github/scripts/release-changelog.sh
@@ -1572,6 +1573,8 @@ features:
       - apps/desktop/resources/dmg/dmg-background-nightly.svg
       - apps/desktop/resources/installer.nsh
       - apps/desktop/src/app/DesktopAssets.ts
+      - apps/desktop/src/app/DesktopCliCommand.ts
+      - apps/desktop/src/app/DesktopCliShim.ts
       - apps/desktop/src/app/DesktopEarlyElectronStartup.ts
       - apps/desktop/src/app/DesktopEnvironment.ts
       - apps/desktop/src/app/DesktopInstallVariant.ts

@@ -16,7 +16,7 @@ import { makeComponentLogger } from "./DesktopObservability.ts";
 // so its launcher mounts the AppImage itself instead of pointing into it.
 const { logInfo, logWarning } = makeComponentLogger("desktop-cli-shim");
 
-const MARKER = `Written by styal: runs the desktop app's bundled ${CLI_COMMAND_NAME} CLI.`;
+export const MARKER = `Written by styal: runs the desktop app's bundled ${CLI_COMMAND_NAME} CLI.`;
 
 /** Server entry inside the app, relative to its server root (an asar archive when packaged). */
 const SERVER_ENTRY = "apps/server/dist/bin.mjs";
@@ -127,6 +127,14 @@ export const renderCliShim = (input: {
   ].join("\n");
 };
 
+/** Where the packaged app keeps its launcher: `<T3 home>/bin/styal`, `styal.cmd` on Windows. */
+export const launcherPath = (environment: DesktopEnvironment.DesktopEnvironment["Service"]) =>
+  environment.path.join(
+    environment.baseDir,
+    "bin",
+    environment.platform === "win32" ? `${CLI_COMMAND_NAME}.cmd` : CLI_COMMAND_NAME,
+  );
+
 /**
  * Writes the packaged app's launcher to `<T3 home>/bin` and returns its path
  * for the backend's T3CODE_CLI_PATH. Development builds run from a checkout
@@ -138,11 +146,7 @@ export const install = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = environment.path;
   const windows = environment.platform === "win32";
-  const shimPath = path.join(
-    environment.baseDir,
-    "bin",
-    windows ? `${CLI_COMMAND_NAME}.cmd` : CLI_COMMAND_NAME,
-  );
+  const shimPath = launcherPath(environment);
   const entry = path.join(environment.serverRoot, SERVER_ENTRY);
   const target: CliShimTarget = windows
     ? { kind: "windows", executable: process.execPath, entry }

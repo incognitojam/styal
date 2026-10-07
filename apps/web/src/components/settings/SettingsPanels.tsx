@@ -61,6 +61,7 @@ import {
   HOSTED_APP_CHANNEL,
   HOSTED_APP_CHANNEL_LABEL,
 } from "../../branding";
+import { CliCommandSettingsRow } from "./CliCommandSettingsRow";
 import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
@@ -517,6 +518,7 @@ function AboutVersionSection() {
           }
         />
       ) : null}
+      {hasDesktopBridge ? <CliCommandSettingsRow /> : null}
     </>
   );
 }
