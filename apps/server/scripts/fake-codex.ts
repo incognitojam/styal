@@ -27,6 +27,15 @@
  * and diffs see a real change. A `hold` step keeps the turn running until it
  * is interrupted. `"error": "..."` on a turn fails it after its steps.
  *
+ * A `question` step asks the user and waits for the answers, like Codex's
+ * request_user_input tool. Questions use Codex's wire shape, and a later
+ * message can quote an answer with `{{answer:<question id>}}`:
+ *
+ *   { "type": "question", "questions": [{ "id": "store", "header": "Store",
+ *       "question": "Where should the cache live?", "options": [
+ *         { "label": "Memory", "description": "Fastest." }] }] },
+ *   { "type": "message", "text": "Using {{answer:store}}." }
+ *
  * Steps start 250 ms apart, like a provider waiting on its model. The server
  * captures the pre-turn checkpoint while the turn starts, so a file written
  * instantly would already be in that baseline and the turn diff would be
@@ -53,6 +62,7 @@ type Step =
       readonly exitCode?: number;
     }
   | { readonly type: "writeFile"; readonly path: string; readonly content: string }
+  | { readonly type: "question"; readonly questions: ReadonlyArray<JsonObject> }
   | { readonly type: "hold" };
 
 interface ScenarioTurn {
@@ -120,7 +130,16 @@ function makeActiveTurn(turnId: string): ActiveTurn {
 
 function runAppServer(): void {
   const threads = new Map<string, { cwd: string }>();
+  const pendingRequests = new Map<string, (result: JsonObject) => void>();
   let activeTurn: ActiveTurn | null = null;
+
+  /** Sends a request to the server and settles with its result. */
+  const request = (method: string, params: JsonObject) =>
+    new Promise<JsonObject>((resolve) => {
+      const id = `fake-codex-${NodeCrypto.randomUUID()}`;
+      pendingRequests.set(id, resolve);
+      send({ id, method, params });
+    });
 
   const threadResponse = (params: JsonObject, threadId: string) => {
     const cwd = typeof params.cwd === "string" ? params.cwd : process.cwd();
@@ -167,6 +186,7 @@ function runAppServer(): void {
 
     let interrupted = false;
     let error = turn.error;
+    const answers: Record<string, ReadonlyArray<string>> = {};
     for (const step of turn.steps) {
       const delay = new Promise<"elapsed">((resolve) =>
         setTimeout(() => resolve("elapsed"), scenario.stepDelayMs ?? 250),
@@ -180,8 +200,41 @@ function runAppServer(): void {
         interrupted = true;
         break;
       }
+      if (step.type === "question") {
+        const response = await Promise.race([
+          request("item/tool/requestUserInput", {
+            threadId,
+            turnId,
+            itemId: NodeCrypto.randomUUID(),
+            questions: step.questions,
+          }),
+          active.interrupted,
+        ]);
+        if (response === "interrupted") {
+          interrupted = true;
+          break;
+        }
+        const answered = (response.answers ?? {}) as Record<string, { answers: string[] }>;
+        for (const [questionId, answer] of Object.entries(answered)) {
+          answers[questionId] = answer.answers;
+        }
+        continue;
+      }
       try {
-        emitStep(threadId, turnId, cwd, step);
+        emitStep(
+          threadId,
+          turnId,
+          cwd,
+          step.type === "message"
+            ? {
+                ...step,
+                text: step.text.replace(
+                  /\{\{answer:([^}]+)\}\}/g,
+                  (_, questionId: string) => answers[questionId]?.join(", ") ?? "",
+                ),
+              }
+            : step,
+        );
       } catch (cause) {
         error = cause instanceof Error ? cause.message : String(cause);
         break;
@@ -278,8 +331,19 @@ function runAppServer(): void {
   const input = NodeReadline.createInterface({ input: process.stdin });
   input.on("line", (line) => {
     if (line.trim().length === 0) return;
-    const message = JSON.parse(line) as { id?: unknown; method?: string; params?: JsonObject };
-    // Responses to server requests and notifications such as `initialized` need no reply.
+    const message = JSON.parse(line) as {
+      id?: unknown;
+      method?: string;
+      params?: JsonObject;
+      result?: JsonObject;
+    };
+    if (message.method === undefined && typeof message.id === "string") {
+      const resolve = pendingRequests.get(message.id);
+      pendingRequests.delete(message.id);
+      resolve?.(message.result ?? {});
+      return;
+    }
+    // Other responses and notifications such as `initialized` need no reply.
     if (message.method === undefined || !("id" in message)) return;
     handleRequest(message.id, message.method, message.params ?? {});
   });
@@ -353,6 +417,7 @@ function emitStep(threadId: string, turnId: string, cwd: string, step: Step): vo
       completed({ type: "fileChange", id: itemId, changes: [change], status: "completed" });
       return;
     }
+    case "question":
     case "hold":
       return;
   }

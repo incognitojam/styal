@@ -111,6 +111,64 @@ it.layer(
     }).pipe(Effect.scoped),
   );
 
+  it.effect("asks scripted questions and quotes the answers", () =>
+    Effect.gen(function* () {
+      const { launcher, workspace } = yield* installFakeCodex({
+        turns: [
+          {
+            steps: [
+              {
+                type: "question",
+                questions: [
+                  {
+                    id: "store",
+                    header: "Store",
+                    question: "Where should the cache live?",
+                    options: [{ label: "Memory", description: "Fastest." }],
+                  },
+                  { id: "ttl", header: "TTL", question: "How long should entries live?" },
+                ],
+              },
+              { type: "message", text: "Caching in {{answer:store}} for {{answer:ttl}}." },
+            ],
+          },
+        ],
+      });
+      const runtime = yield* startSession(launcher, workspace);
+      const turnEvents = yield* runtime.events.pipe(
+        Stream.tap((event) =>
+          event.method === "item/tool/requestUserInput" && event.requestId
+            ? runtime
+                .respondToUserInput(event.requestId, { store: "Redis", ttl: "1 hour" })
+                .pipe(Effect.orDie)
+            : Effect.void,
+        ),
+        Stream.takeUntil((event) => event.method === "turn/completed"),
+        Stream.runCollect,
+        Effect.forkScoped,
+      );
+
+      yield* runtime.start();
+      yield* runtime.sendTurn({ input: "Add a cache." });
+      const events = Array.from(yield* Fiber.join(turnEvents));
+
+      const request = events.find((event) => event.method === "item/tool/requestUserInput");
+      const payload = request?.payload as { questions: Array<{ id: string }> } | undefined;
+      assert.deepEqual(
+        payload?.questions.map((question) => question.id),
+        ["store", "ttl"],
+      );
+      const streamedText = events
+        .filter((event) => event.method === "item/agentMessage/delta")
+        .map((event) => event.textDelta)
+        .join("");
+      assert.equal(streamedText, "Caching in Redis for 1 hour.");
+      const completed = events.at(-1)?.payload as { turn: { status: string } };
+      assert.equal(completed.turn.status, "completed");
+      yield* runtime.close;
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("keeps a held turn running until it is interrupted", () =>
     Effect.gen(function* () {
       const { launcher, workspace } = yield* installFakeCodex({
