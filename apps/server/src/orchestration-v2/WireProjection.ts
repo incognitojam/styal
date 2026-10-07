@@ -8,6 +8,8 @@ import { isReportFindingsToolName } from "@t3tools/shared/reviewFindings";
 import { compactDynamicToolOutput, toolOutputIndicatesFailure } from "@t3tools/shared/toolOutput";
 
 const MAX_DETAIL_STRING_BYTES = 32_768;
+/** The wire reads only this much command output; storage reads may stop here too. */
+export const COMMAND_OUTPUT_WIRE_PREFIX_LENGTH = MAX_DETAIL_STRING_BYTES;
 const MAX_DYNAMIC_VALUE_BYTES = 16_384;
 
 const REPORTED_FINDING_MAX = 32;
@@ -108,6 +110,8 @@ function summarizeDynamicValue(value: unknown): unknown {
   return {
     summary: firstLine.length <= 160 ? firstLine : `${firstLine.slice(0, 159).trimEnd()}…`,
     truncated: true,
+    // Pending background work skips persistent monitors by this flag.
+    ...(isPersistentDynamicToolInput(value) ? { persistent: true } : {}),
   };
 }
 
@@ -131,7 +135,7 @@ export function projectTurnItemForWire(item: OrchestrationV2TurnItem): Orchestra
         item.outputIndicatesFailure === true ||
         (item.exitCode !== undefined && item.exitCode !== 0) ||
         (output !== undefined &&
-          toolOutputIndicatesFailure(output.slice(0, MAX_DETAIL_STRING_BYTES)));
+          toolOutputIndicatesFailure(output.slice(0, COMMAND_OUTPUT_WIRE_PREFIX_LENGTH)));
       return failed ? { ...projected, outputIndicatesFailure: true } : projected;
     }
     case "file_change": {
@@ -166,6 +170,15 @@ export function projectTurnItemForWire(item: OrchestrationV2TurnItem): Orchestra
     default:
       return item;
   }
+}
+
+function isPersistentDynamicToolInput(input: unknown): boolean {
+  return (
+    input !== null &&
+    typeof input === "object" &&
+    !Array.isArray(input) &&
+    Reflect.get(input, "persistent") === true
+  );
 }
 
 export function projectContextHandoffForWire(
