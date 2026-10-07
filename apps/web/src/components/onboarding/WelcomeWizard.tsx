@@ -49,7 +49,10 @@ import { legacyImportPendingCount } from "../../state/dataImport";
 import { OnboardingImportStep } from "./OnboardingImportStep";
 import { useEnvironments, usePrimaryEnvironment } from "../../state/environments";
 import { useEnvironmentShellStatuses, useProjects, useThreadShells } from "../../state/entities";
-import { isOnboardingRelayEnvironment } from "../../onboarding/targetEnvironment.logic";
+import {
+  isOnboardingRelayEnvironment,
+  resolveOnboardingSetup,
+} from "../../onboarding/targetEnvironment.logic";
 import { serverEnvironment } from "../../state/server";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import { terminalEnvironment } from "../../state/terminal";
@@ -63,6 +66,7 @@ import { readCodexSetupMode } from "../settings/CodexSetupSection.logic";
 import { buildProviderInstanceUpdatePatch } from "../settings/SettingsPanels.logic";
 import { TerminalViewport } from "../ThreadTerminalDrawer";
 import { CloudEnvironmentConnectRows } from "../cloud/CloudEnvironmentConnectList";
+import { presentSavedCloudEnvironmentConnection } from "../cloud/cloudEnvironmentConnectionPresentation";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { StyalWordmark } from "../StyalWordmark";
 import { Alert, AlertDescription } from "../ui/alert";
@@ -160,14 +164,13 @@ export function WelcomeWizard({
   const primaryEnvironment = usePrimaryEnvironment();
   const selectedIds =
     selection ?? new Set(primaryEnvironment ? [primaryEnvironment.environmentId] : []);
-  const selectedEnvironmentIds = environments
-    .filter((environment) => selectedIds.has(environment.environmentId))
-    .map((environment) => environment.environmentId);
+  // Setup covers the selected computers that connected; ones that cannot connect are skipped.
+  const connectionSetup = resolveOnboardingSetup(environments, selectedIds);
   const projects = useProjects();
   const threads = useThreadShells();
   const shellStatuses = useEnvironmentShellStatuses();
   const hostedConnectionSetup = resolveHostedConnectionSetup({
-    environmentIds: selectedEnvironmentIds,
+    environmentIds: connectionSetup.environmentIds,
     liveEnvironmentIds: new Set(
       [...shellStatuses]
         .filter(([, status]) => status === "live")
@@ -243,7 +246,7 @@ export function WelcomeWizard({
   );
   const continueFromConnection = () => {
     if (!automaticHostedFirstRun) {
-      startSetup(selectedEnvironmentIds);
+      startSetup(connectionSetup.environmentIds);
       return;
     }
     if (hostedConnectionSetup._tag === "Pending") return;
@@ -299,7 +302,7 @@ export function WelcomeWizard({
                 }
                 checkingWorkspace={
                   automaticHostedFirstRun &&
-                  selectedIds.size > 0 &&
+                  connectionSetup.ready &&
                   hostedConnectionSetup._tag === "Pending"
                 }
                 onContinue={continueFromConnection}
@@ -364,15 +367,11 @@ function ConnectionStep({
   );
   const [pairingOpen, setPairingOpen] = useState(expandPairingInitially);
   const [isPairing, setIsPairing] = useState(false);
-  const connectionsReady =
-    selectedIds.size > 0 &&
-    [...selectedIds].every((id) =>
-      environments.some(
-        (environment) =>
-          environment.environmentId === id && environment.connection.phase === "connected",
-      ),
-    );
+  const { ready: connectionsReady, skippedIds } = resolveOnboardingSetup(environments, selectedIds);
   const ready = connectionsReady && !checkingWorkspace;
+  const skippedLabels = environments
+    .filter((environment) => skippedIds.includes(environment.environmentId))
+    .map((environment) => environment.label);
   const continueRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (
@@ -415,7 +414,7 @@ function ConnectionStep({
                     {environment.label}
                   </span>
                   <span className="shrink-0 text-xs text-muted-foreground">
-                    {environment.connection.phase === "connected" ? "Connected" : "Connecting…"}
+                    {presentSavedCloudEnvironmentConnection(environment.connection).buttonLabel}
                   </span>
                 </span>
                 {environment.displayUrl ? (
@@ -470,6 +469,12 @@ function ConnectionStep({
           </Collapsible>
         </div>
       </div>
+      {skippedLabels.length > 0 ? (
+        <p className="mt-4 text-xs text-muted-foreground">
+          Not connected, so setup skips {skippedLabels.join(", ")}. You can set{" "}
+          {skippedLabels.length === 1 ? "it" : "them"} up later from Settings.
+        </p>
+      ) : null}
       <div className="mt-6 flex flex-col-reverse gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
         <p className="min-w-0 text-xs leading-relaxed text-muted-foreground">
           styal collects anonymous usage data to help us improve it. To read more about how your
