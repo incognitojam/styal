@@ -47,6 +47,7 @@
     "@opencode/schema": "2.0.23",
     "@posthog/core": "catalog:",
     "@t3tools/provider-core": "workspace:*",
+    "@t3tools/provider-pi": "workspace:*",
     "diff": "8.0.3",
     "effect": "catalog:",
     "jose": "catalog:",

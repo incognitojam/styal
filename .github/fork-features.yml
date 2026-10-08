@@ -2919,7 +2919,6 @@ features:
       - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.ts
-      - apps/server/src/orchestration-v2/Adapters/PiAdapterV2.ts
       - apps/server/src/orchestration-v2/ProjectStore.ts
       - apps/server/src/orchestration-v2/RuntimePolicy.ts
       - apps/server/src/persistence/ForkMigrations/003_ProjectAdditionalInstructions.ts
@@ -2927,6 +2926,7 @@ features:
       - apps/web/src/components/settings/ProjectSettingsPanel.tsx
       - packages/contracts/src/orchestrationV2.ts
       - packages/provider-core/src/server/ProviderAdapter.ts
+      - packages/provider-pi/src/server/adapter.ts
     upstream_paths:
       - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
@@ -2935,13 +2935,13 @@ features:
       - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.ts
-      - apps/server/src/orchestration-v2/Adapters/PiAdapterV2.ts
       - apps/server/src/orchestration-v2/ProjectStore.ts
       - apps/server/src/orchestration-v2/RuntimePolicy.ts
       - apps/server/src/provider/CodexDeveloperInstructions.ts
       - apps/web/src/components/settings/ProjectSettingsPanel.tsx
       - packages/contracts/src/orchestrationV2.ts
       - packages/provider-core/src/server/ProviderAdapter.ts
+      - packages/provider-pi/src/server/adapter.ts
     tests:
       - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.test.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
@@ -2950,10 +2950,10 @@ features:
       - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.test.ts
       - apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.test.ts
       - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.test.ts
-      - apps/server/src/orchestration-v2/Adapters/PiAdapterV2.test.ts
       - apps/server/src/orchestration-v2/ProjectStore.test.ts
       - apps/server/src/orchestration-v2/RuntimePolicy.test.ts
       - apps/server/src/persistence/ForkMigrations/003_ProjectAdditionalInstructions.test.ts
+      - packages/provider-pi/src/server/adapter.test.ts
     upstream:
       status: tracking
       tracking:
@@ -4344,12 +4344,12 @@ features:
       - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.ts
-      - apps/server/src/orchestration-v2/Adapters/PiAdapterV2.ts
       - apps/server/src/orchestration-v2/RuntimePolicy.ts
       - apps/server/src/persistence/ForkMigrations/002_WorkspacePortAllocations.ts
       - apps/server/src/server.ts
       - apps/server/src/terminal/Manager.ts
       - apps/server/src/workspace/WorkspacePortAllocator.ts
+      - packages/provider-pi/src/server/adapter.ts
       - scripts/dev-runner.ts
       - t3.json
     upstream_paths:
@@ -4361,9 +4361,9 @@ features:
       - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.ts
-      - apps/server/src/orchestration-v2/Adapters/PiAdapterV2.ts
       - apps/server/src/orchestration-v2/RuntimePolicy.ts
       - apps/server/src/terminal/Manager.ts
+      - packages/provider-pi/src/server/adapter.ts
       - scripts/dev-runner.ts
       - t3.json
     tests:
@@ -4376,11 +4376,11 @@ features:
       - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.test.ts
       - apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.test.ts
       - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.test.ts
-      - apps/server/src/orchestration-v2/Adapters/PiAdapterV2.test.ts
       - apps/server/src/orchestration-v2/RuntimePolicy.test.ts
       - apps/server/src/persistence/ForkMigrations.test.ts
       - apps/server/src/terminal/Manager.test.ts
       - apps/server/src/workspace/WorkspacePortAllocator.test.ts
+      - packages/provider-pi/src/server/adapter.test.ts
       - scripts/dev-runner.test.ts
     upstream:
       status: tracking

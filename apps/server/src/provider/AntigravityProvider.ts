@@ -18,7 +18,7 @@ import type * as EffectAcpSchema from "effect-acp/compat";
 
 import { groupAntigravityModels } from "./AntigravityModels.ts";
 import type { AcpSessionRuntimeStartResult } from "./acp/AcpSessionRuntime.ts";
-import { makeManagedServerProvider } from "./makeManagedServerProvider.ts";
+import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
 import {
   makeManualOnlyProviderMaintenanceCapabilities,
   type ProviderMaintenanceCapabilities,
