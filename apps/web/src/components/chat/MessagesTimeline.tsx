@@ -2441,7 +2441,8 @@ function TurnFoldActivityStat({ stat }: { stat: TurnFoldActivitySummary }) {
 
 /**
  * Hover-revealed wall-clock time with a full-date tooltip — the same metadata
- * presentation as message rows, for work entries and turn folds. The parent
+ * presentation as message rows, for work entries. Turn folds have none: the
+ * user message that starts the turn already reveals the same time. The parent
  * carries `group/timeline-row`; hover or focus on an existing control reveals
  * the time without adding a tab stop. Hidden timestamps stay outside the row
  * layout. Visibility changes immediately so leaving flow cannot overlap text
@@ -2481,7 +2482,7 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
   const Icon = row.expanded ? ChevronDownIcon : ChevronRightIcon;
 
   return (
-    <div className="group/timeline-row relative flex items-center gap-1 border-b border-border/60 pb-2 pe-0.5 pt-1">
+    <div className="flex items-center border-b border-border/60 pb-2 pe-0.5 pt-1">
       <button
         type="button"
         aria-expanded={row.expanded}
@@ -2502,11 +2503,6 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
         ) : null}
         <Icon className="size-3.5 shrink-0" />
       </button>
-      <TimelineRowTimestamp
-        createdAt={row.createdAt}
-        timestampFormat={ctx.timestampFormat}
-        className="ms-auto"
-      />
     </div>
   );
 }
