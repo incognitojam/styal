@@ -2995,31 +2995,30 @@ features:
       retire_when: Upstream provides equivalent full-snapshot transcript export from every thread action surface with safe clipboard ordering.
 
   - id: thread-unpin-confirmation
-    title: Confirm unpinning threads by default on every client
+    title: Confirm unpinning threads by default on mobile
     status: maintained
-    prs: []
+    prs: [672]
     invariants:
-      - Unpinning a thread asks for confirmation by default on web, desktop, and mobile.
-      - Web and desktop turn the confirmation off with the Unpin confirmation setting. Mobile has its own device-local switch under Settings, Thread behavior, and an explicit opt-out survives later preference writes.
+      - Unpinning a thread asks for confirmation by default on mobile until mobile offers Undo.
+      - Mobile has its own device-local switch under Settings, Thread behavior, and an explicit opt-out survives later preference writes.
       - Mobile asks before unpinning from both the home list and the thread sidebar.
-    rationale: Upstream added the confirmation to web as an opt-in setting (upstream #7313), although the request it closed (upstream #6009) asked for mobile to behave the same way. The fork turns it on by default and adds it to mobile, which unpins with the same single action. Added by fork commit 75082f7ea3 and the fork's import of #7313, without a fork pull request.
+    rationale: The fork's default-on web and desktop confirmation was retired in favor of upstream's opt-in confirmation and Undo (upstream #10744 and #12848). Mobile still has no Undo, so its default-on confirmation remains to guard accidental unpinning. Compared with upstream revision a6ec88f7a716fc421bd22c2484881c44110f9375 on October 8, 2026. The original confirmation was added by fork commit 75082f7ea3 and the fork's import of #7313, without a fork pull request.
     implementation_paths:
       - apps/mobile/src/features/home/useThreadListActions.ts
       - apps/mobile/src/features/settings/SettingsThreadsRouteScreen.tsx
     upstream_paths:
       - apps/mobile/src/features/home/useThreadListActions.ts
       - apps/mobile/src/persistence/mobile-preferences.ts
-      - apps/web/src/hooks/useThreadActions.ts
-      - packages/contracts/src/settings.ts
     tests:
       - apps/mobile/src/lib/storage.test.ts
-      - packages/contracts/src/settings.test.ts
     upstream:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/issues/6009
+        - https://github.com/pingdotgg/t3code/pull/10744
+        - https://github.com/pingdotgg/t3code/pull/12848
         - https://github.com/pingdotgg/t3code/pull/7313
-      retire_when: Upstream confirms unpinning by default on web and desktop and offers the confirmation on mobile.
+      retire_when: Mobile offers Undo that restores an accidentally unpinned thread's previous pinned position, or upstream confirms unpinning by default on mobile.
 
   - id: turn-token-usage
     title: Show token usage under each agent turn
