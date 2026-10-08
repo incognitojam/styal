@@ -31,6 +31,8 @@ export class CloudSession extends Context.Service<
   {
     readonly identity: Effect.Effect<Option.Option<CloudSessionIdentity>>;
     readonly clerkToken: Effect.Effect<string, ConnectionAttemptError>;
+    /** Why there is no identity: the sign-in is still loading, unreachable, or signed out. */
+    readonly missingSession: Effect.Effect<never, ConnectionAttemptError>;
   }
 >()("@t3tools/client-runtime/platform/capabilities/CloudSession") {}
 

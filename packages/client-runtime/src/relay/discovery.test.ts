@@ -145,6 +145,9 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
                   : Effect.succeed(token),
               ),
             ),
+            missingSession: Effect.fail(
+              new ConnectionBlockedError({ reason: "authentication", detail: "Signed out." }),
+            ),
           }),
         ),
         Layer.succeed(Connectivity.Connectivity, connectivity),
@@ -291,6 +294,9 @@ describe("RelayEnvironmentDiscovery", () => {
             Layer.succeed(ClientCapabilities.CloudSession, {
               identity: Effect.succeed(Option.some({ accountId: "account-1" })),
               clerkToken: Effect.succeed("clerk-token"),
+              missingSession: Effect.fail(
+                new ConnectionBlockedError({ reason: "authentication", detail: "Signed out." }),
+              ),
             }),
             Layer.succeed(Connectivity.Connectivity, {
               status: SubscriptionRef.get(networkStatus),

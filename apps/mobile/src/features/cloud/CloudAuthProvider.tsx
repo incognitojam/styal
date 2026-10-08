@@ -1,6 +1,10 @@
 import { ClerkProvider, getClerkInstance, useAuth, useClerk } from "@clerk/expo";
 import { tokenCache } from "@clerk/expo/token-cache";
-import { ManagedRelay, setManagedRelaySession } from "@t3tools/client-runtime/relay";
+import {
+  ManagedRelay,
+  managedRelayAuthLoadAtom,
+  setManagedRelaySession,
+} from "@t3tools/client-runtime/relay";
 import {
   reportAtomCommandResult,
   settleAsyncResult,
@@ -25,7 +29,6 @@ import {
 } from "../agent-awareness/remoteRegistration";
 import { limitClerkRequestDuration, retryFailedClerkLoads } from "./clerkLoadRecovery";
 import { clearConnectOnboardingRequest, requestConnectOnboarding } from "./connectOnboarding";
-import { cloudAuthCheckingAtom } from "./cloudAuthState";
 import { resolveCloudPublicConfig, resolveRelayClerkTokenOptions } from "./publicConfig";
 import { removeCloudEnvironments } from "./cloud-drafts";
 
@@ -66,7 +69,7 @@ export async function cleanUpCloudRelayAccount(
 export function deactivateCloudRelayAccount(): void {
   setAgentAwarenessRelayTokenProvider(null);
   setManagedRelaySession(appAtomRegistry, null);
-  appAtomRegistry.set(cloudAuthCheckingAtom, false);
+  appAtomRegistry.set(managedRelayAuthLoadAtom, "loaded");
 }
 
 export function activateCloudRelayAccount(
@@ -78,19 +81,24 @@ export function activateCloudRelayAccount(
     accountId,
     readClerkToken: tokenProvider,
   });
-  appAtomRegistry.set(cloudAuthCheckingAtom, false);
+  appAtomRegistry.set(managedRelayAuthLoadAtom, "loaded");
 }
 
 function ClerkLoadRecovery() {
   const clerk = useClerk();
   useEffect(
     () =>
-      retryFailedClerkLoads(clerk, (listener) => {
-        const subscription = AppState.addEventListener("change", (state) => {
-          if (state === "active") listener();
-        });
-        return () => subscription.remove();
-      }),
+      retryFailedClerkLoads(
+        clerk,
+        (listener) => {
+          const subscription = AppState.addEventListener("change", (state) => {
+            if (state === "active") listener();
+          });
+          return () => subscription.remove();
+        },
+        // Stays "failed" through retries until a load activates or clears the session.
+        () => appAtomRegistry.set(managedRelayAuthLoadAtom, "failed"),
+      ),
     [clerk],
   );
   return null;
@@ -193,7 +201,7 @@ function CloudAuthBridge(props: { readonly children: ReactNode }) {
         // A failed activation leaves no relay session, so connections must stop
         // reporting that the sign-in is still loading.
         if (result._tag !== "Success" && !cancelled) {
-          appAtomRegistry.set(cloudAuthCheckingAtom, false);
+          appAtomRegistry.set(managedRelayAuthLoadAtom, "loaded");
         }
         reportAtomCommandResult(result, { label: "cloud account activation" });
       });

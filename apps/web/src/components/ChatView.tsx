@@ -47,7 +47,7 @@ import {
   type WorktreeSetupSnapshot,
 } from "@t3tools/contracts";
 import { type EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
-import { managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
+import { managedRelayAuthLoadAtom, managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
 import {
   isOrchestrationDispatchCommandError,
   wasBootstrapThreadDeleted,
@@ -687,8 +687,8 @@ type EnvironmentUnavailableState = {
   readonly environmentId: EnvironmentId;
   readonly label: string;
   readonly connection: EnvironmentConnectionPresentation;
-  /** A styal Link environment that cannot connect because there is no cloud session. */
-  readonly needsCloudSignIn: boolean;
+  /** Why a styal Link environment has no cloud session to connect with, if it has none. */
+  readonly missingCloudSession: "loading" | "failed" | "signed-out" | null;
 };
 
 function eventPathContainsSelector(event: Event, selector: string): boolean {
@@ -2397,6 +2397,7 @@ export default function ChatView(props: ChatViewProps) {
   }, [activeReconnectingEnvironmentId]);
   const activeEnvironmentUnavailableLabel = activeEnvironment?.label ?? null;
   const managedRelaySession = useAtomValue(managedRelaySessionAtom);
+  const managedRelayAuthLoad = useAtomValue(managedRelayAuthLoadAtom);
   const activeEnvironmentUnavailableState = useMemo<EnvironmentUnavailableState | null>(() => {
     if (!activeEnvironmentUnavailable || !activeEnvironmentUnavailableLabel || !activeEnvironment) {
       return null;
@@ -2406,12 +2407,18 @@ export default function ChatView(props: ChatViewProps) {
       environmentId: activeEnvironment.environmentId,
       label: activeEnvironmentUnavailableLabel,
       connection: activeEnvironment.connection,
-      needsCloudSignIn: activeEnvironment.relayManaged && managedRelaySession === null,
+      missingCloudSession:
+        !activeEnvironment.relayManaged || managedRelaySession !== null
+          ? null
+          : managedRelayAuthLoad === "loaded"
+            ? "signed-out"
+            : managedRelayAuthLoad,
     };
   }, [
     activeEnvironment,
     activeEnvironmentUnavailable,
     activeEnvironmentUnavailableLabel,
+    managedRelayAuthLoad,
     managedRelaySession,
   ]);
   const handleReconnectActiveEnvironment = useCallback(
@@ -2730,9 +2737,11 @@ export default function ChatView(props: ChatViewProps) {
     // While an update runs, transient connect blips are expected (the server
     // restarts) and the update banner already shows progress. Hard failure
     // phases still surface so the Reconnect action stays reachable.
+    // Until the sign-in loads there is nothing to act on; it settles within seconds.
     const suppressUnavailableBanner =
-      environmentReconnecting &&
-      (updateRunning || (!reconnectingThroughVersionSkew && !reconnectWarningGraceElapsed));
+      activeEnvironmentUnavailableState?.missingCloudSession === "loading" ||
+      (environmentReconnecting &&
+        (updateRunning || (!reconnectingThroughVersionSkew && !reconnectWarningGraceElapsed)));
     if (activeEnvironmentUnavailableState && unavailableConnection && !suppressUnavailableBanner) {
       if (reconnectingThroughVersionSkew) {
         items.push({
@@ -2750,8 +2759,25 @@ export default function ChatView(props: ChatViewProps) {
           description: "Finishing an update",
           actions: disconnectAction,
         });
+      } else if (activeEnvironmentUnavailableState.missingCloudSession === "failed") {
+        // Clerk loads once per page, so only a reload retries it.
+        items.push({
+          id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,
+          variant: "warning",
+          icon: <WifiOffIcon />,
+          title: "Can't reach styal Link sign-in",
+          description: `Check your connection, then reload to reach ${activeEnvironmentUnavailableState.label}.`,
+          actions: (
+            <>
+              <Button size="xs" variant="ghost" onClick={() => window.location.reload()}>
+                Reload
+              </Button>
+              {disconnectAction}
+            </>
+          ),
+        });
       } else if (
-        activeEnvironmentUnavailableState.needsCloudSignIn &&
+        activeEnvironmentUnavailableState.missingCloudSession === "signed-out" &&
         unavailableConnection.phase === "error"
       ) {
         // Reconnect cannot help without a cloud session; signing in retries the

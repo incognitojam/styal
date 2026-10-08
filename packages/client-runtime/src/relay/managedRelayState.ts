@@ -17,6 +17,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 
+import { ConnectionBlockedError } from "../connection/model.ts";
 import { findErrorTraceId } from "../errors/errorTrace.ts";
 import * as ManagedRelay from "./managedRelay.ts";
 import { relayProtectedErrorMessage } from "./errorPresentation.ts";
@@ -72,6 +73,32 @@ export const managedRelaySessionAtom = Atom.make<ManagedRelaySession | null>(nul
   Atom.keepAlive,
   Atom.withLabel("managed-relay:session"),
 );
+
+/**
+ * Progress of the cloud sign-in SDK. Until it loads there is no session either
+ * way, so this tells "still loading" and "unreachable" apart from signed out.
+ */
+export type ManagedRelayAuthLoadState = "loading" | "failed" | "loaded";
+
+export const managedRelayAuthLoadAtom = Atom.make<ManagedRelayAuthLoadState>("loading").pipe(
+  Atom.keepAlive,
+  Atom.withLabel("managed-relay:auth-load"),
+);
+
+/** The connection error for a styal Link environment while there is no cloud session. */
+export function managedRelayMissingSessionError(
+  loadState: ManagedRelayAuthLoadState,
+): ConnectionBlockedError {
+  return new ConnectionBlockedError({
+    reason: "authentication",
+    detail:
+      loadState === "loading"
+        ? "Waiting for the styal Link sign-in to load."
+        : loadState === "failed"
+          ? "Can't reach styal Link sign-in. Check your connection."
+          : "Sign in to styal Link to connect this environment.",
+  });
+}
 
 const managedRelaySessionControls = new WeakMap<ManagedRelaySession, ManagedRelaySessionControl>();
 
@@ -171,6 +198,16 @@ export function managedRelayAccountChanges(
 ): Stream.Stream<string | null> {
   return AtomRegistry.toStream(registry, managedRelaySessionAtom).pipe(
     Stream.map((session) => session?.accountId ?? null),
+    Stream.changes,
+    Stream.drop(1),
+  );
+}
+
+/** Emits when the sign-in SDK settles or fails, so blocked connections re-report why. */
+export function managedRelayAuthLoadChanges(
+  registry: AtomRegistry.AtomRegistry,
+): Stream.Stream<ManagedRelayAuthLoadState> {
+  return AtomRegistry.toStream(registry, managedRelayAuthLoadAtom).pipe(
     Stream.changes,
     Stream.drop(1),
   );

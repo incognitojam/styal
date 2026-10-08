@@ -13,7 +13,13 @@ import {
   Connectivity,
   Wakeups,
 } from "@t3tools/client-runtime/connection";
-import { managedRelayAccountChanges, managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
+import {
+  managedRelayAccountChanges,
+  managedRelayAuthLoadAtom,
+  managedRelayAuthLoadChanges,
+  managedRelayMissingSessionError,
+  managedRelaySessionAtom,
+} from "@t3tools/client-runtime/relay";
 import { AuthStandardClientScopes } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -25,7 +31,6 @@ import Constants from "expo-constants";
 import * as Network from "expo-network";
 import { AppState } from "react-native";
 
-import { cloudAuthCheckingAtom } from "../features/cloud/cloudAuthState";
 import { authClientMetadata } from "../lib/authClientMetadata";
 import * as Runtime from "../lib/runtime";
 import * as MobileStorage from "../persistence/mobile-storage";
@@ -107,30 +112,30 @@ const wakeupsLayer = Wakeups.layer({
         (subscription) => Effect.sync(() => subscription.remove()),
       ).pipe(Effect.asVoid),
     ),
-    managedRelayAccountChanges(appAtomRegistry).pipe(
-      Stream.map(() => "credentials-changed" as const),
-    ),
+    Stream.merge(
+      managedRelayAccountChanges(appAtomRegistry),
+      managedRelayAuthLoadChanges(appAtomRegistry),
+    ).pipe(Stream.map(() => "credentials-changed" as const)),
   ),
 });
 
 const capabilitiesLayer = Layer.effectContext(
   Effect.gen(function* () {
     const storage = yield* MobileStorage.MobileStorage;
+    const missingSession = Effect.suspend(() =>
+      Effect.fail(managedRelayMissingSessionError(appAtomRegistry.get(managedRelayAuthLoadAtom))),
+    );
     return Context.make(
       CloudSession,
       CloudSession.of({
         identity: Effect.sync(() =>
           Option.fromNullishOr(appAtomRegistry.get(managedRelaySessionAtom)),
         ),
+        missingSession,
         clerkToken: Effect.gen(function* () {
           const session = appAtomRegistry.get(managedRelaySessionAtom);
           if (session === null) {
-            return yield* new ConnectionBlockedError({
-              reason: "authentication",
-              detail: appAtomRegistry.get(cloudAuthCheckingAtom)
-                ? "Waiting for the styal Link sign-in to load."
-                : "Sign in to styal Link to connect this environment.",
-            });
+            return yield* missingSession;
           }
           const token = yield* session.readClerkToken().pipe(
             Effect.mapError(

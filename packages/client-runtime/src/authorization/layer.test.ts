@@ -14,6 +14,7 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as TestClock from "effect/testing/TestClock";
 
+import { ConnectionBlockedError, ConnectionTransientError } from "../connection/model.ts";
 import { DPOP_UNKNOWN_HINT } from "../relay/errorPresentation.ts";
 import * as ManagedRelay from "../relay/managedRelay.ts";
 import { remoteHttpClientLayer } from "../rpc/http.ts";
@@ -110,6 +111,7 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
   readonly beforeBootstrap?: Effect.Effect<void, ManagedRelay.ManagedRelayClientError>;
   readonly beforePut?: Effect.Effect<void>;
   readonly clerkToken?: ClientCapabilities.CloudSession["Service"]["clerkToken"];
+  readonly missingSession?: ClientCapabilities.CloudSession["Service"]["missingSession"];
 }) {
   const tokens = yield* Ref.make(
     new Map(
@@ -197,6 +199,11 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
         Layer.succeed(ClientCapabilities.CloudSession, {
           identity: Ref.get(session),
           clerkToken: input.clerkToken ?? Effect.succeed("clerk-session"),
+          missingSession:
+            input.missingSession ??
+            Effect.fail(
+              new ConnectionBlockedError({ reason: "authentication", detail: "Signed out." }),
+            ),
         }),
         Layer.succeed(ClientCapabilities.RelayDeviceIdentity, {
           deviceId: Effect.succeed(Option.some("device-1")),
@@ -701,9 +708,17 @@ describe("RemoteEnvironmentAuthorization", () => {
     }),
   );
 
-  it.effect("asks a signed-out client to sign in instead of reporting a changed session", () =>
+  it.effect("reports the platform's reason for a missing cloud session", () =>
     Effect.gen(function* () {
-      const harness = yield* makeHarness({ responses: [] });
+      const harness = yield* makeHarness({
+        responses: [],
+        missingSession: Effect.fail(
+          new ConnectionTransientError({
+            reason: "network",
+            detail: "Can't reach styal Link sign-in. Check your connection.",
+          }),
+        ),
+      });
       yield* Ref.set(harness.session, Option.none());
       const error = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization.pipe(
         Effect.flatMap((remote) =>
@@ -713,9 +728,8 @@ describe("RemoteEnvironmentAuthorization", () => {
         Effect.provide(harness.layer),
       );
       expect(error).toMatchObject({
-        _tag: "ConnectionBlockedError",
-        reason: "authentication",
-        detail: "Sign in to styal Link to connect this environment.",
+        _tag: "ConnectionTransientError",
+        detail: "Can't reach styal Link sign-in. Check your connection.",
       });
       expect(yield* Ref.get(harness.bootstrapCalls)).toBe(0);
     }),

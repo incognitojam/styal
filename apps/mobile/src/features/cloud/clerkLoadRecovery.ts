@@ -68,12 +68,13 @@ function isHeadlessClerkLoader(clerk: object): clerk is HeadlessClerkLoader {
 /**
  * Reloads Clerk after each failed startup load, with exponential backoff capped at
  * {@link CLERK_LOAD_RETRY_MAX_DELAY_MS}. A pending retry runs immediately when the
- * app returns to the foreground. Takes the `useClerk()` instance and returns a
- * cleanup function.
+ * app returns to the foreground. Takes the `useClerk()` instance, calls
+ * `onLoadFailed` after each failed load, and returns a cleanup function.
  */
 export function retryFailedClerkLoads(
   clerk: object,
   onAppActive: (listener: () => void) => () => void,
+  onLoadFailed?: () => void,
 ): () => void {
   if (!isHeadlessClerkLoader(clerk)) return () => {};
 
@@ -87,6 +88,7 @@ export function retryFailedClerkLoads(
   };
   const handleStatus = (status: string | undefined) => {
     if (status !== "error" || retryTimer !== undefined) return;
+    onLoadFailed?.();
     const delay = Math.min(
       CLERK_LOAD_RETRY_INITIAL_DELAY_MS * 2 ** failures,
       CLERK_LOAD_RETRY_MAX_DELAY_MS,

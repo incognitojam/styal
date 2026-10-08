@@ -23,7 +23,13 @@ import {
 } from "@t3tools/client-runtime/connection";
 import { bootstrapRemoteBearerSession } from "@t3tools/client-runtime/authorization";
 import { fetchRemoteEnvironmentDescriptor } from "@t3tools/client-runtime/environment";
-import { managedRelayAccountChanges, managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
+import {
+  managedRelayAccountChanges,
+  managedRelayAuthLoadAtom,
+  managedRelayAuthLoadChanges,
+  managedRelayMissingSessionError,
+  managedRelaySessionAtom,
+} from "@t3tools/client-runtime/relay";
 import { EnvironmentRpcRequestObserver } from "@t3tools/client-runtime/rpc";
 import {
   AuthStandardClientScopes,
@@ -110,9 +116,10 @@ const wakeupsLayer = Wakeups.layer({
           }),
       ).pipe(Effect.asVoid),
     ),
-    managedRelayAccountChanges(appAtomRegistry).pipe(
-      Stream.map(() => "credentials-changed" as const),
-    ),
+    Stream.merge(
+      managedRelayAccountChanges(appAtomRegistry),
+      managedRelayAuthLoadChanges(appAtomRegistry),
+    ).pipe(Stream.map(() => "credentials-changed" as const)),
   ),
 });
 
@@ -182,17 +189,18 @@ const capabilitiesLayer = Layer.effectContext(
       metadata: clientMetadata(),
       scopes: AuthStandardClientScopes,
     });
+    const missingSession = Effect.suspend(() =>
+      Effect.fail(managedRelayMissingSessionError(appAtomRegistry.get(managedRelayAuthLoadAtom))),
+    );
     const cloudSession = CloudSession.of({
       identity: Effect.sync(() =>
         Option.fromNullishOr(appAtomRegistry.get(managedRelaySessionAtom)),
       ),
+      missingSession,
       clerkToken: Effect.gen(function* () {
         const session = appAtomRegistry.get(managedRelaySessionAtom);
         if (session === null) {
-          return yield* new ConnectionBlockedError({
-            reason: "authentication",
-            detail: "Sign in to styal Link to connect this environment.",
-          });
+          return yield* missingSession;
         }
         const token = yield* session.readClerkToken().pipe(
           Effect.mapError(
