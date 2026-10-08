@@ -186,7 +186,6 @@ features:
       - apps/mobile/src/state/use-composer-drafts.ts
       - apps/server/src/attachmentStore.ts
       - apps/server/src/orchestration-v2/AttachmentClaims.ts
-      - apps/server/src/orchestration-v2/AttachmentPrompt.ts
       - apps/server/src/orchestration-v2/ThreadMessageIntake.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
@@ -194,6 +193,7 @@ features:
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/composerDraftStore.ts
       - packages/contracts/src/orchestrationV2.ts
+      - packages/provider-core/src/server/attachmentPrompt.ts
     upstream_paths:
       - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/lib/attachmentUpload.ts
@@ -202,13 +202,13 @@ features:
       - apps/mobile/src/state/use-composer-drafts.ts
       - apps/server/src/attachmentStore.ts
       - apps/server/src/orchestration-v2/AttachmentClaims.ts
-      - apps/server/src/orchestration-v2/AttachmentPrompt.ts
       - apps/server/src/orchestration-v2/ThreadMessageIntake.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/composerDraftStore.ts
       - packages/contracts/src/orchestrationV2.ts
+      - packages/provider-core/src/server/attachmentPrompt.ts
     tests:
       - apps/mobile/src/features/sharing/incoming-share-inbox.test.ts
       - apps/mobile/src/features/sharing/incoming-share-presentation.test.ts
@@ -222,13 +222,13 @@ features:
       - apps/server/src/attachmentStore.test.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
       - apps/server/src/orchestration-v2/AttachmentClaims.test.ts
-      - apps/server/src/orchestration-v2/AttachmentPrompt.test.ts
       - apps/server/src/orchestration-v2/ThreadMessageIntake.test.ts
       - apps/web/src/components/ChatView.logic.test.ts
       - apps/web/src/components/chat/ComposerPrimaryActions.test.tsx
       - apps/web/src/composerDraftStore.test.ts
       - apps/web/src/lib/threadTranscript.test.ts
       - packages/contracts/src/orchestrationV2.test.ts
+      - packages/provider-core/src/server/attachmentPrompt.test.ts
     upstream:
       status: partial
       tracking:
@@ -1430,11 +1430,11 @@ features:
       - apps/server/src/orchestration-v2/ProviderSessionManager.ts
       - apps/server/src/project/AgentSessionImporter.ts
       - apps/server/src/provider/CodexDeveloperInstructions.ts
-      - apps/server/src/provider/RuntimeInstructions.ts
       - apps/server/src/provider/acp/AcpRuntimeModel.ts
       - packages/client-runtime/src/work-log/presentation.ts
       - packages/provider-core/src/server/mcpSession.ts
       - packages/provider-core/src/server/orchestrationInstructions.ts
+      - packages/provider-core/src/server/runtimeInstructions.ts
       - packages/shared/src/styalToolWording.ts
       - packages/shared/src/t3McpToolPresentation.ts
       - packages/shared/src/toolActivity.ts
@@ -1450,10 +1450,10 @@ features:
       - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
       - apps/server/src/orchestration-v2/ProviderSessionManager.ts
       - apps/server/src/provider/CodexDeveloperInstructions.ts
-      - apps/server/src/provider/RuntimeInstructions.ts
       - packages/provider-core/src/server/mcpSession.ts
       - packages/provider-core/src/server/mcpToolPresentation.ts
       - packages/provider-core/src/server/orchestrationInstructions.ts
+      - packages/provider-core/src/server/runtimeInstructions.ts
     tests:
       - apps/mobile/src/lib/threadActivity.test.ts
       - apps/server/src/mcp/AcpMcpOverAcpBridge.test.ts
@@ -4800,12 +4800,12 @@ features:
       - apps/server/src/orchestration-v2/Orchestrator.ts
       - apps/server/src/orchestration-v2/WorkflowRunWatchReactor.ts
       - apps/server/src/orchestration-v2/workflowRunWatch.ts
-      - apps/server/src/provider/RuntimeInstructions.ts
       - apps/server/src/pullRequest/GitHubPullRequestApi.ts
       - apps/server/src/telemetry/FeatureUsage.ts
       - apps/server/src/telemetry/WorkflowRunWatchUsage.ts
       - packages/client-runtime/src/operations/commands.ts
       - packages/contracts/src/threadPullRequest.ts
+      - packages/provider-core/src/server/runtimeInstructions.ts
       - packages/shared/src/orchestrationV2PendingBackgroundWork.ts
     upstream_paths:
       - apps/server/src/mcp/toolkits/pullRequests/handlers.ts
