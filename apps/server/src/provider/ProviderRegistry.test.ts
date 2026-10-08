@@ -68,6 +68,17 @@ const decodeServerSettings = Schema.decodeSync(ServerSettings);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const encodedDefaultServerSettings = encodeServerSettings(DEFAULT_SERVER_SETTINGS);
 
+/** Default slots that settings mark disabled, so their probes never spawn. */
+const disabledDefaultSlots = (
+  ...drivers: ReadonlyArray<string>
+): ContractServerSettings["providerInstances"] =>
+  Object.fromEntries(
+    drivers.map((driver) => [
+      ProviderInstanceId.make(driver),
+      { driver: ProviderDriverKind.make(driver), enabled: false },
+    ]),
+  );
+
 const defaultClaudeSettings: ClaudeSettings = Schema.decodeSync(ClaudeSettings)({});
 const defaultCodexSettings: CodexSettings = Schema.decodeSync(CodexSettings)({});
 const decodeCodexSettings = Schema.decodeSync(CodexSettings);
@@ -2666,24 +2677,18 @@ it.layer(
         const serverSettings = yield* makeMutableServerSettingsService(
           decodeServerSettings(
             deepMerge(encodedDefaultServerSettings, {
-              providers: {
-                // Disable every built-in probe that would otherwise spawn
-                // on the CI host. `enabled: false` short-circuits each
-                // driver's probe *before* it touches the spawner, so the
-                // test environment stays isolated from the dev
-                // machine's PATH.
-                codex: { enabled: false },
-                claudeAgent: { enabled: false },
-                cursor: { enabled: false },
-                grok: { enabled: false },
-                opencode: { enabled: false },
-              },
               // `providerInstances` keys are branded `ProviderInstanceId`;
               // the branded index signature rejects plain string literals
               // at the TS level even though the runtime schema happily
               // accepts + decodes them. Cast the patch to `unknown` so
               // the `Schema.decodeSync` below does the real validation.
               providerInstances: {
+                // Disable every built-in probe that would otherwise spawn
+                // on the CI host. `enabled: false` short-circuits each
+                // driver's probe *before* it touches the spawner, so the
+                // test environment stays isolated from the dev
+                // machine's PATH.
+                ...disabledDefaultSlots("codex", "claudeAgent", "cursor", "grok", "opencode"),
                 // Matches the shape the user had in `.t3/dev/settings.json`
                 // when the bug was reported: a custom enabled Codex instance
                 // pointing at a binary the server has to actually spawn.
@@ -2784,12 +2789,13 @@ it.layer(
         const mutableServerSettings = yield* makeMutableServerSettingsService(
           decodeServerSettings(
             deepMerge(encodedDefaultServerSettings, {
-              providers: {
-                codex: { enabled: true, binaryPath: firstMissing },
-                claudeAgent: { enabled: false },
-                cursor: { enabled: false },
-                grok: { enabled: false },
-                opencode: { enabled: false },
+              providerInstances: {
+                ...disabledDefaultSlots("claudeAgent", "cursor", "grok", "opencode"),
+                [ProviderInstanceId.make("codex")]: {
+                  driver: ProviderDriverKind.make("codex"),
+                  enabled: true,
+                  config: { binaryPath: firstMissing },
+                },
               },
             }),
           ),
@@ -2874,8 +2880,13 @@ it.layer(
             ),
           );
           yield* serverSettings.updateSettings({
-            providers: {
-              codex: { enabled: true, binaryPath: secondMissing },
+            providerInstances: {
+              ...disabledDefaultSlots("claudeAgent", "cursor", "grok", "opencode"),
+              [ProviderInstanceId.make("codex")]: {
+                driver: ProviderDriverKind.make("codex"),
+                enabled: true,
+                config: { binaryPath: secondMissing },
+              },
             },
           });
           // Start the lazy stream only after publishing. A watcher that did
@@ -2903,14 +2914,8 @@ it.layer(
         const serverSettings = yield* makeMutableServerSettingsService(
           decodeServerSettings(
             deepMerge(encodedDefaultServerSettings, {
-              providers: {
-                codex: { enabled: false },
-                claudeAgent: { enabled: false },
-                cursor: { enabled: false },
-                grok: { enabled: false },
-                opencode: { enabled: false },
-              },
               providerInstances: {
+                ...disabledDefaultSlots("codex", "claudeAgent", "cursor", "grok", "opencode"),
                 ghost_main: {
                   driver: "ghostDriver",
                   displayName: "A fork-only driver we don't ship",
@@ -2974,14 +2979,7 @@ it.layer(
           const serverSettings = yield* makeMutableServerSettingsService(
             decodeServerSettings(
               deepMerge(encodedDefaultServerSettings, {
-                providers: {
-                  codex: {
-                    enabled: false,
-                  },
-                  grok: {
-                    enabled: false,
-                  },
-                },
+                providerInstances: disabledDefaultSlots("codex", "grok"),
               }),
             ),
           );
