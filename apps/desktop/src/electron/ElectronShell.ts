@@ -14,8 +14,9 @@ import * as Electron from "electron";
 const SAFE_WEB_EXTERNAL_PROTOCOLS = new Set(["http:", "https:"]);
 
 // Remote open-in-editor deep links (`vscode://vscode-remote/ssh-remote+…`,
-// `zed://ssh/<host>/<path>`) must reach the OS handler when requested by
-// trusted T3 UI; every other non-web scheme stays blocked.
+// `zed://ssh/<host>/<path>`, `jetbrains://gateway/ssh/environment?h=…`) must
+// reach the OS handler when requested by trusted T3 UI; every other non-web
+// scheme stays blocked.
 const REMOTE_EDITOR_PROTOCOLS = new Set(
   REMOTE_CAPABLE_EDITOR_IDS.flatMap((id) => {
     const scheme = remoteSchemeForEditor(id);
@@ -32,9 +33,13 @@ const isRemoteEditorUrl = (url: URL) =>
   url.password.length === 0 &&
   (url.protocol === "zed:"
     ? url.host === "ssh" && ZED_SSH_PATHNAME.test(url.pathname)
-    : url.host === "vscode-remote" &&
-      url.pathname.startsWith("/ssh-remote+") &&
-      url.pathname.length > "/ssh-remote+".length);
+    : url.protocol === "jetbrains:"
+      ? url.host === "gateway" &&
+        url.pathname === "/ssh/environment" &&
+        (url.searchParams.get("h") ?? "").length > 0
+      : url.host === "vscode-remote" &&
+        url.pathname.startsWith("/ssh-remote+") &&
+        url.pathname.length > "/ssh-remote+".length);
 
 function parseUrlWhen(rawUrl: unknown, isAllowed: (url: URL) => boolean): Option.Option<string> {
   if (typeof rawUrl !== "string") {
