@@ -184,6 +184,44 @@ describe("DesktopAppIdentity", () => {
     );
   });
 
+  it.effect.each([
+    { stage: "Stable", environment: {}, runtimeName: "styal", displayName: "styal" },
+    {
+      stage: "Nightly",
+      environment: { appVersion: "0.0.43-nightly.20260929.2428" },
+      runtimeName: "styal",
+      displayName: "styal (Nightly)",
+    },
+    {
+      stage: "Dev",
+      environment: { env: { VITE_DEV_SERVER_URL: "http://localhost:5173" } },
+      runtimeName: "styal-dev",
+      displayName: "styal (Dev)",
+    },
+  ])(
+    "uses a valid native User-Agent product name for $stage",
+    ({ environment, runtimeName, displayName }) => {
+      const calls: ElectronAppCalls = {
+        setAboutPanelOptions: [],
+        setDockIcon: [],
+        setName: [],
+      };
+
+      return withIdentity(
+        Effect.gen(function* () {
+          const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+          yield* identity.configure;
+
+          assert.equal(calls.setName[0], runtimeName);
+          // RFC 9110's token grammar, after Electron removes ASCII spaces.
+          assert.match(runtimeName.replaceAll(" ", ""), /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/);
+          assert.equal(calls.setAboutPanelOptions[0]?.applicationName, displayName);
+        }),
+        { calls, environment },
+      );
+    },
+  );
+
   it.effect("sets the dock icon only when running unpackaged", () => {
     const calls: ElectronAppCalls = {
       setAboutPanelOptions: [],
