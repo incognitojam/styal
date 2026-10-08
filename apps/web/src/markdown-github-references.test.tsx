@@ -5,7 +5,7 @@ import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import { describe, expect, it } from "vite-plus/test";
 
-import { CHAT_MARKDOWN_SANITIZE_SCHEMA } from "./components/ChatMarkdown";
+import { CHAT_MARKDOWN_SANITIZE_SCHEMA } from "@t3tools/shared/markdownPipeline";
 
 import {
   collectGithubReferences,

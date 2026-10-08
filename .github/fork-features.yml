@@ -2101,6 +2101,7 @@ features:
       - apps/web/src/components/pullRequest/PullRequestMarkdown.tsx
       - apps/web/src/lib/openPullRequestLink.ts
       - apps/web/src/markdown-github-references.ts
+      - packages/shared/src/markdownPipeline.ts
     upstream_paths:
       - apps/server/src/ws.ts
       - apps/web/src/components/ChatMarkdown.tsx
@@ -2318,6 +2319,7 @@ features:
       - apps/web/src/timestampFormat.ts
       - packages/client-runtime/src/mentionedTimes.ts
       - packages/contracts/src/environment.ts
+      - packages/shared/src/markdownPipeline.ts
     upstream_paths:
       - apps/server/src/environment/ServerEnvironment.ts
       - apps/web/src/components/ChatMarkdown.tsx

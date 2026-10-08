@@ -62,7 +62,8 @@ import {
 import { type GhosttyColor, type GhosttyTheme } from "~/terminal/ghostty/core";
 import { registerTerminalScriptPasteSurface } from "~/terminal/scriptPaste";
 import { useOpenInPreferredEditor } from "../editorPreferences";
-import { isTerminalUrl, resolvePathLinkTarget } from "../terminal-links";
+import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
+import { isTerminalUrl } from "../terminal-links";
 import {
   isDiffToggleShortcut,
   isTerminalClearShortcut,

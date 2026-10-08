@@ -80,6 +80,7 @@ function Player() {
         clearPreview: () => {},
         registerTimeline: () => {},
         reportDetailsCard: () => {},
+        detailsCardTopInset: 0,
       }}
     >
       <ThreadPreviewMiniPlayer threadRef={threadRef} miniPlayer={miniPlayer} />
