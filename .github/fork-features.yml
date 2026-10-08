@@ -4232,7 +4232,7 @@ features:
       - apps/mobile/src/features/threads/git/GitDefaultRepositorySheet.tsx
       - apps/server/src/project/ProjectCloneTracker.ts
       - apps/server/src/project/RepositoryIdentityResolver.ts
-      - apps/server/src/sourceControl/GitHubRepositoryApi.ts
+      - apps/server/src/sourceControl/GitHubSourceControlProvider.ts
       - apps/server/src/sourceControl/SourceControlRepositoryService.ts
       - apps/server/src/ws.ts
       - apps/web/src/components/CommandPalette.tsx
@@ -4245,7 +4245,7 @@ features:
       - apps/mobile/src/features/projects/AddProjectScreen.tsx
       - apps/server/src/project/ProjectCloneTracker.ts
       - apps/server/src/project/RepositoryIdentityResolver.ts
-      - apps/server/src/sourceControl/GitHubRepositoryApi.ts
+      - apps/server/src/sourceControl/GitHubSourceControlProvider.ts
       - apps/server/src/sourceControl/SourceControlRepositoryService.ts
       - apps/server/src/ws.ts
       - apps/web/src/components/CommandPalette.tsx
@@ -4257,7 +4257,7 @@ features:
     tests:
       - apps/server/src/project/ProjectCloneTracker.test.ts
       - apps/server/src/project/RepositoryIdentityResolver.test.ts
-      - apps/server/src/sourceControl/GitHubRepositoryApi.test.ts
+      - apps/server/src/sourceControl/GitHubSourceControlProvider.test.ts
       - apps/server/src/sourceControl/SourceControlRepositoryService.test.ts
       - packages/client-runtime/src/operations/projects.test.ts
       - packages/shared/src/git.test.ts

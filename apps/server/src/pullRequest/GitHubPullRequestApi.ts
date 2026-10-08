@@ -44,7 +44,6 @@ import {
 
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
 
-import { AllowGitHubReserve } from "../sourceControl/GitHubRepositoryApi.ts";
 import * as GitHubApi from "../sourceControl/GitHubApi.ts";
 import { readGraphQlPages } from "../sourceControl/githubGraphQl.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
@@ -1676,7 +1675,7 @@ export const make = Effect.gen(function* () {
 
   const getPullRequestDetail: GitHubPullRequestApi["Service"]["getPullRequestDetail"] = (input) => {
     const { owner, name } = parseRepositorySelector(input.repository);
-    return AllowGitHubReserve.pipe(
+    return GitHubApi.AllowGitHubReserve.pipe(
       Effect.flatMap((allowReserve) => {
         const readCore = (includeDeployments: boolean) =>
           graphqlRead({
@@ -2338,7 +2337,7 @@ export const make = Effect.gen(function* () {
     // GitHub answers `isRequired` per pull request, and an Enterprise server whose schema predates
     // it fails this read, which the caller takes as "unknown" rather than "none required".
     getRequiredChecks: (input) =>
-      AllowGitHubReserve.pipe(
+      GitHubApi.AllowGitHubReserve.pipe(
         Effect.flatMap((allowReserve) => readAllCheckContexts(input, allowReserve, true)),
         Effect.map((all) => requiredChecksFromContexts(all.contexts)),
       ),
