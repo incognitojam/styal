@@ -1585,6 +1585,19 @@ function PullRequestCodeTab({
             {...(diffSortMode === "smart" ? { renderHeaderFilenameSuffix } : {})}
             renderHeaderMetadata={renderHeaderMetadata}
             renderAnnotation={renderAnnotation}
+            // Find can ask again before the unfolded file arrives, so this unfolds and never folds.
+            onRevealSearchMatch={(item) => {
+              const diff = items.find((candidate) => candidate.id === item.id);
+              if (!diff) return;
+              setToggledFiles((current) =>
+                toggleFileDiffFoldForViewed(
+                  item.id,
+                  false,
+                  foldOverrideForFile(resolveFileDiffPath(diff.fileDiff)),
+                  current,
+                ),
+              );
+            }}
             unsafeCSSExtra={REPLACE_FILE_COUNTS_CSS}
           />
         </div>
