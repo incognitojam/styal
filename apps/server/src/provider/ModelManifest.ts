@@ -228,10 +228,7 @@ function isLegacyModel(
   const family = driverKind === "codex" ? codexModelFamily(slug) : slug;
   const catalogModel =
     findCatalogModel(manifest, driverKind, slug) ?? findCatalogModel(manifest, driverKind, family);
-  if (catalogModel) return catalogModel.status === "legacy";
-  const currentModels = manifest.currentModels[driverKind];
-  if (!currentModels) return false;
-  return !currentModels.includes(slug) && !currentModels.includes(family);
+  return catalogModel?.status === "legacy";
 }
 
 /**
