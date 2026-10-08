@@ -10,6 +10,7 @@ import * as Layer from "effect/Layer";
 import { HostProcessPlatform, HostProcessArchitecture } from "@t3tools/shared/hostProcess";
 import * as DesktopEnvironment from "../../src/app/DesktopEnvironment.ts";
 import * as DesktopConfig from "../../src/app/DesktopConfig.ts";
+import * as ElectronDialog from "../../src/electron/ElectronDialog.ts";
 import * as BrowserSession from "../../src/preview/BrowserSession.ts";
 import * as DesktopBrowserHost from "../../src/preview/DesktopBrowserHost.ts";
 import * as PreviewManager from "../../src/preview/Manager.ts";
@@ -78,7 +79,7 @@ async function run() {
     });
     const runtime = PreviewManager.layer.pipe(
       Layer.provide(DesktopBrowserHost.layer),
-      Layer.provide(BrowserSession.layer),
+      Layer.provide(BrowserSession.layer.pipe(Layer.provide(ElectronDialog.layer))),
       // Calibration measures captures; renderer telemetry would only add files to its artifacts.
       Layer.provide(
         Layer.succeed(DesktopRendererHistory.DesktopRendererHistory, {
