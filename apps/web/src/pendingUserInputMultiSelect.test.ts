@@ -35,7 +35,7 @@ const ttl: UserInputQuestion = {
 };
 const typed = "  Mobile too, with offline support  ";
 const typeAnswer = (draft: Parameters<typeof setPendingUserInputCustomAnswer>[0], text: string) =>
-  setPendingUserInputCustomAnswer(draft, text, true);
+  setPendingUserInputCustomAnswer(draft, text, { multiSelect: true });
 
 describe("multi-select answers with a typed addition", () => {
   it.each([true, false])(

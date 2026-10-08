@@ -45,8 +45,12 @@ export function resolvePendingUserInputAnswer(
 ): string | string[] | null {
   if (draft?.attachmentsBlocked) return null;
   const customAnswer =
-    question.allowCustomAnswer === false ? null : normalizeDraftAnswer(draft?.customAnswer);
-  if (customAnswer && !question.multiSelect) {
+    question.allowCustomAnswer === false
+      ? null
+      : question.initialAnswer !== undefined
+        ? (draft?.customAnswer ?? null)
+        : normalizeDraftAnswer(draft?.customAnswer);
+  if (customAnswer !== null && customAnswer.length > 0 && !question.multiSelect) {
     return customAnswer;
   }
 
@@ -59,13 +63,13 @@ export function resolvePendingUserInputAnswer(
     }
     return selectedOptionValues.length > 0
       ? selectedOptionValues
-      : question.allowCustomAnswer !== false && (draft?.attachmentCount ?? 0) > 0
-        ? ""
-        : null;
+      : (customAnswer ??
+          (question.allowCustomAnswer !== false && (draft?.attachmentCount ?? 0) > 0 ? "" : null));
   }
 
   return (
     selectedOptionValues[0] ??
+    customAnswer ??
     (question.allowCustomAnswer !== false && (draft?.attachmentCount ?? 0) > 0 ? "" : null)
   );
 }
@@ -73,10 +77,11 @@ export function resolvePendingUserInputAnswer(
 export function setPendingUserInputCustomAnswer(
   draft: PendingUserInputDraftAnswer | undefined,
   customAnswer: string,
-  multiSelect = false,
+  question?: Pick<UserInputQuestion, "initialAnswer" | "multiSelect">,
 ): PendingUserInputDraftAnswer {
   const selectedOptionValues =
-    !multiSelect && customAnswer.trim().length > 0
+    !question?.multiSelect &&
+    (question?.initialAnswer !== undefined || customAnswer.trim().length > 0)
       ? undefined
       : normalizeSelectedOptionValues(draft?.selectedOptionValues);
 
@@ -166,7 +171,7 @@ export function findFirstUnansweredPendingUserInputQuestionIndex(
   draftAnswers: Record<string, PendingUserInputDraftAnswer>,
 ): number {
   const unansweredIndex = questions.findIndex(
-    (question) => !resolvePendingUserInputAnswer(question, draftAnswers[question.id]),
+    (question) => resolvePendingUserInputAnswer(question, draftAnswers[question.id]) === null,
   );
 
   return unansweredIndex === -1 ? Math.max(questions.length - 1, 0) : unansweredIndex;
@@ -197,7 +202,8 @@ export function derivePendingUserInputProgress(
     selectedOptionValues: normalizeSelectedOptionValues(activeDraft?.selectedOptionValues),
     customAnswer,
     resolvedAnswer,
-    usingCustomAnswer: customAnswer.trim().length > 0,
+    usingCustomAnswer:
+      (activeQuestion?.initialAnswer !== undefined ? customAnswer : customAnswer.trim()).length > 0,
     answeredQuestionCount,
     isLastQuestion,
     isComplete: buildPendingUserInputAnswers(questions, draftAnswers) !== null,

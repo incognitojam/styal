@@ -196,6 +196,8 @@ export function QuestionAttachments(props: {
       <TextInputWrapper onPaste={paste}>
         <TextInput
           value={props.value}
+          multiline={props.question.initialAnswer !== undefined}
+          submitBehavior={props.question.initialAnswer !== undefined ? "newline" : undefined}
           editable={!props.disabled}
           accessibilityLabel={props.question.multiSelect ? "Additional answer" : "Custom answer"}
           accessibilityHint={
