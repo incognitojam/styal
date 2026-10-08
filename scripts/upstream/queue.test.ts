@@ -222,20 +222,26 @@ describe("chronological upstream queue", () => {
     const input = [integration(1), integration(2), integration(3)];
     const cache = { [sha(1)]: [pr], [sha(2)]: [pr], [sha(3)]: [{ ...pr, mergedAt: null }] };
     assert.deepEqual(
-      associatePRs(input, cache, "example/upstream", new Set([sha(2)])).map((entry) => entry.pr),
+      associatePRs(input, cache, "example/upstream", new Set([sha(2)]), new Set([sha(2)])).map(
+        (entry) => entry.pr,
+      ),
       [12, 12, null],
     );
     assert.throws(
-      () => associatePRs(input, cache, "example/upstream", new Set()),
+      () => associatePRs(input, cache, "example/upstream", new Set(), new Set([sha(2)])),
       "outside target",
     );
-    assert.throws(() => associatePRs(input, {}, "example/upstream", new Set()), "Missing GitHub");
+    assert.throws(
+      () => associatePRs(input, {}, "example/upstream", new Set(), new Set()),
+      "Missing GitHub",
+    );
     assert.throws(
       () =>
         associatePRs(
           [input[0]!],
           { [sha(1)]: [pr, { ...pr, number: 13 }] },
           "example/upstream",
+          new Set([sha(2)]),
           new Set([sha(2)]),
         ),
       "Ambiguous",
@@ -256,7 +262,13 @@ describe("chronological upstream queue", () => {
       [sha(2)]: [pr],
       [sha(3)]: [{ ...pr, baseRepository: { nameWithOwner: "example/other" } }],
     };
-    const associated = associatePRs(integrations, cache, "example/upstream", new Set([sha(2)]));
+    const associated = associatePRs(
+      integrations,
+      cache,
+      "example/upstream",
+      new Set([sha(2)]),
+      new Set([sha(2)]),
+    );
     assert.deepEqual(
       associated.map((entry) => entry.pr),
       [12, 12, null],
@@ -271,7 +283,33 @@ describe("chronological upstream queue", () => {
       [sha(3)],
     );
     assert.throws(
-      () => associatePRs(integrations, cache, "example/upstream", new Set()),
+      () => associatePRs(integrations, cache, "example/upstream", new Set(), new Set([sha(2)])),
+      "outside target",
+    );
+  });
+
+  it("treats a commit that a side branch's sync PR carried as a direct commit", () => {
+    const syncPR = {
+      number: 30,
+      mergedAt: "2026-01-02",
+      baseRefName: "feature/long-lived",
+      baseRepository: { nameWithOwner: "example/upstream" },
+      // The sync PR merged into the side branch, so its merge commit is not on main.
+      mergeCommit: { oid: sha(9) },
+    };
+    const squashPR = { ...syncPR, number: 31, baseRefName: "main", mergeCommit: { oid: sha(2) } };
+    const integrations = [integration(1), integration(2)];
+    const cache = { [sha(1)]: [syncPR], [sha(2)]: [squashPR, syncPR] };
+    const mainline = new Set([sha(1), sha(2)]);
+    assert.deepEqual(
+      associatePRs(integrations, cache, "example/upstream", mainline, mainline).map(
+        (entry) => entry.pr,
+      ),
+      [null, 31],
+    );
+    // A PR that did merge into main still may not be split by the target.
+    assert.throws(
+      () => associatePRs(integrations, cache, "example/upstream", new Set([sha(1)]), mainline),
       "outside target",
     );
   });

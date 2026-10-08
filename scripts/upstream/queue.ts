@@ -331,14 +331,20 @@ export function associatePRs(
   associations: Associations,
   repository: string,
   chain: Set<string>,
+  mainline: ReadonlySet<string>,
 ): Integration[] {
   return integrations.map((entry) => {
     const prs = associations[entry.sha];
     if (!prs) throw new Error(`Missing GitHub metadata for ${entry.sha}.`);
     // A PR can merge into an intermediate branch before its commits reach main.
     // The target's first-parent chain, not the PR's base branch name, establishes coverage.
+    // A PR whose merge commit never lands on upstream main's first-parent history only
+    // carried this commit into a side branch, as a "merge main into" sync PR does.
     const merged = prs.filter(
-      (pr) => pr.mergedAt !== null && pr.baseRepository.nameWithOwner === repository,
+      (pr) =>
+        pr.mergedAt !== null &&
+        pr.baseRepository.nameWithOwner === repository &&
+        (pr.mergeCommit === null || mainline.has(pr.mergeCommit.oid)),
     );
     if (merged.some((pr) => !pr.mergeCommit || !chain.has(pr.mergeCommit.oid))) {
       throw new Error(
@@ -537,6 +543,7 @@ function main() {
     associations,
     state.upstreamRepository,
     targetChain,
+    new Set(upstreamChain),
   );
   if (command === "target") {
     NodeFS.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
